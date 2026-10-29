@@ -413,6 +413,116 @@ the strong clause: unlabeled 2,985 / 4,134.)
   with the marks. `--max-moved` and `--max-interior-change` (off by default) are then tuned on the
   marks with `--rescore`.
 
+### Verifier on the synthetic edits (`eval/verify_synth.py`, subset, 2026-10-29)
+
+The same 300 images and edits as the synthetic retrieval test below; each original verified against each edited
+copy (all should match). 3,900 pairs, 39 min.
+
+| Edit | Matched | Why the rest failed |
+|---|---|---|
+| JPEG q30, color shift, text overlay, letterbox 10%, mirror | 300 / 300 each | |
+| Crop 80% / 60% / 40%, crop 50% + mirror | 300 / 300 each | |
+| Crop 25% | 297 | 3 never aligned (0 inliers) |
+| **Downscale to 25%** | **260** | **40 never aligned:** the copy is tiny (originals p50 862 px → ~215 px); every original ≥ 923 px long side worked |
+| **Grayscale** | **210** | **90 aligned perfectly (p50 1,720 inliers) but noise 0.078 > 0.06:** the color model maps the copy onto the original, and gray can't be mapped back to color |
+| **Rotate 90°** | **28** | No rotation attempts (only mirror); the 28 are near-symmetric images |
+
+- **Crops, overlays and letterboxing are solved:** the stage SSCD's threshold failed on (a 25% crop scores ~0.54) the
+  verifier accepts 99–100% of the time, so k-NN rank + verifier works as designed.
+- **Fixes needed** (the first two done, see "Verifier fixes and speed"):
+  - **Color fit in both directions** (copy → original and original → copy, keep the better). Also explains the
+    real k-NN miss 5172, a heavy grade (white wall → yellow) at PDQ distance 12.
+  - **Scale normalization for very different sizes:** match a tiny copy against the original at a comparable
+    size, not 1024 px vs ~215 px. Also explains the real miss 6041 (236 px copy of a 1340 px original).
+  - **Rotations:** better left to PDQ's 8-orientation query (exact rotated copies, 99.7% within d ≤ 31) than to
+    4× the local-feature work; revisit if the full set shows rotated *edited* copies.
+- **The candidate motion rule rarely hurts real copies:** 19 of ~3,500 matched edited copies would flip (6
+  downscale and 6 rotation by motion, 4 grayscale and 2 text overlays by interior change, 1 crop).
+
+### Which candidate pairs need the verifier (k-NN set, subset, 2026-10-29)
+
+8,344 k-NN pairs over 9,307 images = **0.9 pairs per image**; 28% of images have none (p90 4, max 48).
+
+| PDQ distance | Pairs | Verifier match | | SSCD cosine | Pairs | Verifier match |
+|---|---|---|---|---|---|---|
+| ≤ 8 | 27.7% | 100% | | 0.40–0.50 | **48.5%** | **1.2%** |
+| 9–22 | 4.7% | 99.5% | | 0.50–0.70 | 6.9% | 26% |
+| 23–31 | 1.7% | 98.6% | | 0.70–0.88 | 4.9% | 96% |
+| 32–60 | 3.3% | 95.3% | | 0.88–0.95 | 7.1% | 99.8% |
+| > 60 | 62.5% | 15.2% | | ≥ 0.95 | 32.7% | 100% |
+
+- **Shortcut: accept PDQ ≤ 22 or SSCD ≥ 0.95 without verifying.** 35% of pairs. The verifier (with the motion
+  rule) disagreed on 5 of 2,896, and by eye **the shortcut was right every time**: a heavy grade and a 236 px copy
+  the verifier can't handle yet, a FaceApp edit and two AI variants the motion rule flagged. After the shortcut,
+  only 31% of images need local features at all.
+- **The low band is the cost sink:** SSCD 0.40–0.50 is half the pairs but 1.2% matches; it can't be dropped
+  (heavy crops live there). Rejecting on inlier count before the dense stage doesn't help: < 40 inliers removes
+  28% of pairs but loses verifier matches and edited copies, and pairs under 20 already skip it.
+- **Cost (`profile_verify`, 200 pairs, RTX 2060):**
+
+  | Stage | Cost |
+  |---|---|
+  | DISK features, image + mirrored | 2 × 109 ms **per image** |
+  | LightGlue, as-is + mirrored | 2 × 42 ms per pair |
+  | Robust color fit | 81 ms per aligned pair |
+  | Misalignment-tolerant residual (25 shifted copies, NumPy) | 102 ms per aligned pair |
+  | Optical flow (motion) | 36 ms per aligned pair |
+  | MAGSAC | 2 × 3 ms |
+
+  ≈ 240 ms per image + 330 ms per pair. Biggest levers: extract mirrored features only when the upright match
+  fails (most pairs aren't mirrored), compute the residual and color fit on the GPU (both are simple array math),
+  run the CPU part in parallel workers, and try faster local features (SuperPoint / ALIKED + LightGlue, lower
+  resolution) against this same synthetic + labeled + cross-group test.
+- Rough scale at the subset's rate (0.9 pairs per image, likely an overestimate, as the subset is enriched with
+  labeled duplicates): 63M pairs, 41M after the shortcut. At today's speed that is over a year; with the levers
+  above, on the order of weeks. The full set will give the real candidate rate.
+
+### Verifier fixes and speed (subset, 2026-10-29)
+
+Changes in `eval/verify.py`, all four pair sets rerun:
+
+- **Tiny copies:** images under 512 px are upscaled to 512 px before feature extraction. On the 40
+  failed 25% downscales: 0/40 → 40/40 (upscaling to the original's working side and downscaling the
+  original also gave 40/40, but each cost one 25% crop).
+- **Color fit in both directions:** the other image is mapped onto the reference as before; the reverse
+  (reference onto the other) is used only when it fits **at least 2× better** (`REVERSE_COLOR_GAIN`).
+  Simply keeping the better direction doubled the false matches (cross-group 5 → 10, k-NN cross-group
+  5 → 8, all at noise 0.051–0.059): the extra freedom flattens the residual of unrelated pictures too.
+  Measured fit ratios: those false matches ≤ 1.56×; grayscale copies ≥ 5.1×; real heavy grades 6–8×; a
+  washed-out real copy 2.7×.
+- **Mirror only when needed:** the mirrored image is aligned only if the as-is alignment has < 200 inliers
+  (45% of k-NN pairs skip it), and retried when a skipped pair then doesn't match: a mirrored copy of a
+  near-symmetric picture can align as-is with ~280 inliers and fail.
+- **Speed:** color fit by weighted normal equations, the tolerant residual on the GPU (240 → 8 ms), and
+  the comparison (color fit, residual, flow) on 4 CPU threads while the main thread extracts and matches
+  the next pair. Per image 239 → 127 ms, per pair 334 → 265 ms serial. More workers don't help: the GPU
+  main thread is the limit (DISK 61% of it, LightGlue 29%).
+
+| Set | Baseline | Now (DISK) | ALIKED |
+|---|---|---|---|
+| Synthetic: downscale 25% | 260 / 300 | **300** | 300 |
+| Synthetic: grayscale | 210 / 300 | **300** | 300 |
+| Synthetic: crop 25% | 297 / 300 | 297 | 300 |
+| Synthetic: rotate 90° | 28 / 300 | 28 | **196** (9 of DISK's 28 lost) |
+| Synthetic: other 9 edits | 300 each | 300 each | 300 each |
+| Labeled duplicates | 698 / 698 | 698 | 698 |
+| Cross-group false matches | 5 / 4,632 | **5** | **9** |
+| k-NN: cross-group false matches | 5 / 205 | 5 | 7 |
+| k-NN: unlabeled matches | 2,973 / 7,119 | 2,979 (+6, none lost) | 3,005 (+32, −6 vs DISK) |
+| Throughput (pairs/s; synth / labeled / cross / k-NN) | 1.7 / – / – / 1.5 | 4.9 / 3.4 / 5.0 / 3.7 | 6.5 / 5.4 / 3.0* / 4.9 |
+
+\* the GPU was likely shared during that run; ALIKED extraction alone is 42 ms vs DISK's 116 ms per image
+(LightGlue ~30 ms per pair for both; DISK under fp16 autocast is 6× slower, ALIKED fp16 only 8% faster).
+
+- **Both real k-NN misses are fixed:** 5172 (heavy grade) and 6041 (236 px copy) now match, so the shortcut
+  disagreements above were the verifier's limits, not the shortcut's.
+- **`similiar_but_not_dups`:** +3 matches with DISK, two of them only by noise moving 0.0603 → 0.0599 at the
+  0.06 threshold.
+- **DISK stays the default.** ALIKED is faster and handles 90° rotations, but finds fewer inliers, so
+  borderline pairs move across the noise threshold in both directions and false matches rise (5 → 9).
+  Rotation is cheaper to get from PDQ's 8-orientation query or by trying the rotations only when the first
+  alignment is weak (like the mirror). `--features aliked` stays available.
+
 ### Synthetic edits, all models (subset, 2026-10-29)
 
 300 random images, each edit applied, then the edited copy is searched in the 9.3k-image subset.
@@ -526,9 +636,9 @@ Sample of 1,500 random test-set images (79 img/s, 4 workers):
 ## Pending
 
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
-- Verifier on the synthetic edits (heavy crops, 90° rotation, overlays, letterbox): not measured yet.
-- Which pairs need the verifier at all (PDQ tier, high-SSCD band, faster verifier): ~1.5 pairs/s and
-  ~0.9 candidate pairs per image on the subset would mean over a year for 70M.
+- Verifier speed, next levers: TensorRT / lower resolution for DISK and LightGlue (the GPU main thread is
+  the limit now); rotation retry only for weak alignments, if the full set shows rotated edited copies.
+- Pipeline shortcut: accept PDQ ≤ 22 or SSCD ≥ 0.95 without the verifier.
 - Border trimming before embedding; grouping (union-find + split pass) on the verified k-NN graph.
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
   comparison (see "Verifier prototype, first run").

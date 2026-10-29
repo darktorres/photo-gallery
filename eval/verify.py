@@ -16,12 +16,16 @@ Duplicates and variants (local edits of the same picture) are not told apart for
 a "match".
 
 Per pair:
-  1. Match local features (DISK + LightGlue) between A and B, and between A and mirrored B.
+  1. Match local features (DISK + LightGlue) between A and B; also between A and mirrored B
+     unless the first alignment is already strong. Images work at a long side between
+     MIN_WORK_SIDE and WORK_SIDE: DISK finds almost nothing usable on a ~200 px image.
   2. Fit a homography with MAGSAC. Undoes crops, zooms and mirrors.
   3. Warp the less-contained image onto the more-contained one (the "reference"), on a
      comparison canvas, with both blurred to the same effective resolution.
   4. Fit one global color mapping (quadratic in RGB, Tukey-reweighted so a locally edited
-     region does not bias it). Undoes grading, grayscale, brightness and contrast.
+     region does not bias it), other -> reference; reference -> other instead only if that fits
+     REVERSE_COLOR_GAIN times better: grayscale can't be mapped back to color, but color maps onto
+     grayscale. Undoes grading, grayscale, brightness and contrast.
   5. Residual = per-pixel color difference, tolerant to 2 px of misalignment. "noise" = its
      median over the overlap. Regions clearly above the noise level are "changed"; connected
      regions are measured, overall and away from the frame edges ("interior": a different frame of
@@ -39,15 +43,21 @@ Decision (decide()):
 --rescore re-applies the decision thresholds to an existing CSV without touching images.
 
 Writes <prefix>_<model>.csv / .json and one diagnostic image per pair in <prefix>_<model>/
-(reference | other, aligned and color-mapped | residual heat map with changed regions).
+(reference | other, aligned | residual heat map with changed regions; the two images in the colors
+they were compared in).
+
+Steps 1-2 run on the GPU in the main thread, steps 3-5 on --workers CPU threads (PairRunner).
 """
 
 import argparse
 import csv
 import json
 import time
+import zlib
+from collections import deque
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import dataclass
-from functools import lru_cache
+from functools import lru_cache, partial
 
 import cv2
 import numpy as np
@@ -58,11 +68,19 @@ from common import DATA_ROOT, WORK_DIR, ground_truth, image_list, load_rgb
 # isort: split
 import kornia.feature as KF  # after common: weights download under CACHE_DIR
 
-WORK_SIDE = 1024  # feature extraction resolution (long side)
+WORK_SIDE = 1024  # feature extraction resolution (long side); larger images are downscaled
+MIN_WORK_SIDE = 512  # ... smaller ones upscaled to this (25%-downscaled copies: 0/40 aligned as is, 40/40 at 512)
+# Don't try the mirrored image if the as-is alignment has this many inliers (45% of k-NN pairs), unless the
+# pair then doesn't match: a mirrored symmetric picture can align as is with ~300 inliers (2026-10-29).
+MIRROR_SKIP_INLIERS = 200
 CANVAS_SIDE = 512  # comparison resolution (long side of the reference)
 NUM_FEATURES = 2048
 RANSAC_PX = 3.0  # reprojection threshold at WORK_SIDE
 INTERIOR_MARGIN = 0.08  # edge band (fraction of the canvas's short side) excluded from "interior" changes
+# Map the reference's colors onto the other image (instead of the reverse) only if that fits this many times
+# better: grayscale / washed-out copies 2.7-35x; everything else <= 1.56x, where taking the better of two noisy
+# fits only made different pictures look closer (5 new false matches on the cross-group set, 2026-10-29).
+REVERSE_COLOR_GAIN = 2.0
 MOVE_PX = 2.0  # optical flow (canvas px) above which a changed pixel may count as moved
 FB_PX = 1.0  # max forward-backward flow inconsistency (canvas px) for a real displacement
 
@@ -109,15 +127,23 @@ def decide(m: dict, params: Params) -> str:
 
 # ---------- features ----------
 
+FEATURES = ("disk", "aliked")  # local features (each with its own LightGlue weights)
+
+
 class Features:
-    def __init__(self) -> None:
-        self.disk = KF.DISK.from_pretrained("depth", device=DEVICE)
-        self.matcher = KF.LightGlueMatcher("disk").eval().to(DEVICE)
+    def __init__(self, kind: str = "disk") -> None:
+        self.kind = kind
+        if kind == "disk":
+            self.net = KF.DISK.from_pretrained("depth", device=DEVICE)
+        else:  # top-k mode: the NUM_FEATURES strongest, like DISK
+            self.net = KF.ALIKED.from_pretrained("aliked-n16", max_num_keypoints=NUM_FEATURES, detection_threshold=0,
+                                                 device=DEVICE)
+        self.matcher = KF.LightGlueMatcher(kind).eval().to(DEVICE)
 
     @torch.inference_mode()
     def extract(self, img: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
         t = torch.from_numpy(np.array(img)).to(DEVICE).permute(2, 0, 1)[None].float() / 255.0
-        f = self.disk(t, n=NUM_FEATURES, pad_if_not_divisible=True)[0]
+        f = self.net(t, n=NUM_FEATURES, pad_if_not_divisible=True)[0] if self.kind == "disk" else self.net(t)[0]
         return f.keypoints, f.descriptors
 
     @torch.inference_mode()
@@ -134,21 +160,30 @@ class Features:
 
 @dataclass
 class Prepared:
-    img: np.ndarray  # uint8 RGB at WORK_SIDE (never upscaled)
-    flipped: np.ndarray  # the same, mirrored
-    scale: float  # working px per original px
+    img: np.ndarray  # uint8 RGB, long side between MIN_WORK_SIDE and WORK_SIDE
+    scale: float  # working px per original px (> 1 for upscaled small images)
     feats: tuple  # DISK (keypoints, descriptors) of img
-    feats_flipped: tuple
+    _mirror: tuple | None = None  # (mirrored img, its features), extracted on first use
+
+    def mirrored(self, features: Features) -> tuple[np.ndarray, tuple]:
+        if self._mirror is None:
+            flipped = np.ascontiguousarray(self.img[:, ::-1])
+            self._mirror = (flipped, features.extract(flipped))
+        return self._mirror
 
 
 def prepare(features: Features, rel: str) -> Prepared:
-    im = load_rgb(DATA_ROOT / rel)
-    scale = min(1.0, WORK_SIDE / max(im.size))
-    if scale < 1.0:
+    return prepare_image(features, load_rgb(DATA_ROOT / rel))
+
+
+def prepare_image(features: Features, im) -> Prepared:
+    """`im`: an upright RGB PIL image."""
+    side = max(im.size)
+    scale = min(WORK_SIDE, max(MIN_WORK_SIDE, side)) / side
+    if scale != 1.0:
         im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), resample=4)  # LANCZOS
     img = np.asarray(im)
-    flipped = np.ascontiguousarray(img[:, ::-1])
-    return Prepared(img, flipped, scale, features.extract(img), features.extract(flipped))
+    return Prepared(img, scale, features.extract(img))
 
 
 # ---------- geometry ----------
@@ -192,21 +227,31 @@ def quad_features(x: np.ndarray) -> np.ndarray:
     return np.stack([np.ones_like(r), r, g, b, r * r, g * g, b * b, r * g, r * b, g * b], axis=-1)
 
 
-def fit_color(src: np.ndarray, dst: np.ndarray, rng: np.random.Generator, samples: int = 40000) -> np.ndarray:
-    """Quadratic RGB mapping src -> dst (N x 3 each), robust to a minority of edited pixels."""
-    if len(src) > samples:
-        pick = rng.choice(len(src), samples, replace=False)
-        src, dst = src[pick], dst[pick]
-    phi = quad_features(src)
-    w = np.ones(len(src), np.float32)
+def fit_color(src: np.ndarray, dst: np.ndarray) -> tuple[np.ndarray, float]:
+    """Quadratic RGB mapping src -> dst (N x 3 each), robust to a minority of edited pixels.
+
+    Returns the coefficients and the fit's relative error: median residual over dst's color spread,
+    so the two directions of a pair compare fairly (a washed-out dst doesn't win just by being flat).
+    """
+    phi = quad_features(src.astype(np.float64))
+    dst = dst.astype(np.float64)
+    w = np.ones(len(src))
     coef = np.zeros((phi.shape[1], 3))
+    r = np.zeros(len(src))
     for _ in range(8):
-        sw = np.sqrt(w)[:, None]
-        coef, *_ = np.linalg.lstsq(phi * sw, dst * sw, rcond=None)
+        # Weighted least squares via the 10x10 normal equations; lstsq there also copes with a
+        # rank-deficient src (grayscale: r = g = b).
+        pw = phi * w[:, None]
+        coef = np.linalg.lstsq(pw.T @ phi, pw.T @ dst, rcond=None)[0]
         r = np.linalg.norm(phi @ coef - dst, axis=1)
         sigma = 1.4826 * np.median(r) + 1e-3
         w = np.clip(1 - (r / (4.685 * sigma)) ** 2, 0, None) ** 2  # Tukey biweight
-    return coef
+    spread = float(np.sqrt(dst.var(axis=0).sum())) + 1e-3
+    return coef, float(np.median(r)) / spread
+
+
+def apply_color(img: np.ndarray, coef: np.ndarray) -> np.ndarray:
+    return np.clip(quad_features(img) @ coef.astype(np.float32), 0, 1).astype(np.float32)
 
 
 def motion(ref: np.ndarray, other: np.ndarray, region: np.ndarray) -> np.ndarray:
@@ -237,49 +282,85 @@ def motion(ref: np.ndarray, other: np.ndarray, region: np.ndarray) -> np.ndarray
                             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))) > 0
 
 
+@torch.inference_mode()
 def tolerant_diff(ref: np.ndarray, other: np.ndarray, radius: int = 2) -> np.ndarray:
     """Per-pixel RGB distance to the best-matching pixel within +-radius: ignores sub-pixel misalignment."""
-    best = np.full(ref.shape[:2], np.inf, np.float32)
+    r, o = torch.from_numpy(ref).to(DEVICE), torch.from_numpy(other).to(DEVICE)
+    best = torch.full(r.shape[:2], float("inf"), device=DEVICE)
     for dy in range(-radius, radius + 1):
         for dx in range(-radius, radius + 1):
-            shifted = np.roll(other, (dy, dx), axis=(0, 1))
-            best = np.minimum(best, np.linalg.norm(ref - shifted, axis=2))
-    return best
+            shifted = torch.roll(o, (dy, dx), dims=(0, 1))
+            best = torch.minimum(best, torch.linalg.vector_norm(r - shifted, dim=2))
+    return best.cpu().numpy()
 
 
 # ---------- one pair ----------
 
-def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, rng: np.random.Generator):
+@dataclass
+class Aligned:
+    """Result of the GPU half: the alignment, or the reason there is none (out["decision"] set)."""
+    out: dict
+    ref: np.ndarray | None = None  # the more-contained image (working resolution)
+    other: np.ndarray | None = None
+    ref_scale: float = 1.0  # working px per original px
+    other_scale: float = 1.0
+    h: np.ndarray | None = None  # other -> ref
+    mirror_skipped: bool = False  # the mirrored image wasn't tried (strong as-is alignment)
+
+
+def align(features: Features, pa: Prepared, pb: Prepared, params: Params, mirror: bool = False) -> Aligned:
+    """Matches A with B as is, then (unless that alignment is already strong and `mirror` is off) with
+    B mirrored, and keeps whichever aligns with more inliers."""
     hw_a, hw_b = pa.img.shape[:2], pb.img.shape[:2]
-    # Try B as is and mirrored; keep whichever aligns with more inliers.
-    best = None
-    for flipped in (False, True):
-        fb = pb.feats_flipped if flipped else pb.feats
-        pts_a, pts_b = features.match(pa.feats, fb, hw_a, hw_b)
-        h, inliers = fit_homography(pts_a, pts_b)  # B -> A
-        if best is None or inliers > best[2]:
-            best = (flipped, h, inliers, len(pts_a))
-    flipped, h_ba, inliers, matches = best
+    pts_a, pts_b = features.match(pa.feats, pb.feats, hw_a, hw_b)
+    h, inliers = fit_homography(pts_a, pts_b)  # B -> A
+    best = (False, h, inliers, len(pts_a), pb.img)
+    skip = not mirror and inliers >= MIRROR_SKIP_INLIERS
+    if not skip:
+        img_m, feats_m = pb.mirrored(features)
+        pts_a, pts_b = features.match(pa.feats, feats_m, hw_a, hw_b)
+        h, inliers = fit_homography(pts_a, pts_b)
+        if inliers > best[2]:
+            best = (True, h, inliers, len(pts_a), img_m)
+    flipped, h_ba, inliers, matches, img_b = best
     out = {"inliers": inliers, "matches": matches, "flipped": flipped}
     if h_ba is None or inliers < params.min_inliers:
-        return {**out, "decision": "unrelated"}, None
+        return Aligned({**out, "decision": "unrelated"})
 
-    img_b = pb.flipped if flipped else pb.img
     cover_a = coverage(h_ba, hw_b, hw_a)  # how much of A shows up in B
     cover_b = coverage(np.linalg.inv(h_ba), hw_a, hw_b)  # how much of B shows up in A
+    out["cover_a"], out["cover_b"] = cover_a, cover_b
     # Reference = the more-contained image (the crop), so the overlap fills the canvas.
     if cover_a >= cover_b:
-        ref, other, ref_p, other_p, h = pa.img, img_b, pa, pb, h_ba
-        out["reference"] = "a"
-    else:
-        ref, other, ref_p, other_p, h = img_b, pa.img, pb, pa, np.linalg.inv(h_ba)
-        out["reference"] = "b"
-    out["cover_a"], out["cover_b"] = cover_a, cover_b
+        return Aligned({**out, "reference": "a"}, pa.img, img_b, pa.scale, pb.scale, h_ba, skip)
+    return Aligned({**out, "reference": "b"}, img_b, pa.img, pb.scale, pa.scale, np.linalg.inv(h_ba), skip)
 
+
+def retry_mirrored(features: Features, pa: Prepared, pb: Prepared, al: Aligned, result: tuple, params: Params,
+                   rng: np.random.Generator) -> tuple:
+    """`result` of compare(al); if the mirrored image was skipped and the pair doesn't match, tries it
+    after all (a mirrored symmetric picture also aligns as is), and keeps it if it aligns better."""
+    if not al.mirror_skipped or result[0].get("decision") == "match":
+        return result
+    again = align(features, pa, pb, params, mirror=True)
+    return compare(again, params, rng) if again.out["flipped"] else result
+
+
+def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, rng: np.random.Generator):
+    """Both halves in the calling thread: (measurements and decision, diagnostic image or None)."""
+    al = align(features, pa, pb, params)
+    return retry_mirrored(features, pa, pb, al, compare(al, params, rng), params, rng)
+
+
+def compare(al: Aligned, params: Params, rng: np.random.Generator, samples: int = 40000):
+    """The CPU half: warp onto the comparison canvas, undo color edits, measure what is left."""
+    out, ref, other = al.out, al.ref, al.other
+    if al.h is None or ref is None or other is None:
+        return out, None
     # Comparison canvas: the reference at CANVAS_SIDE.
     c = min(1.0, CANVAS_SIDE / max(ref.shape[:2]))
     cw, ch = max(1, round(ref.shape[1] * c)), max(1, round(ref.shape[0] * c))
-    h_canvas = np.diag([c, c, 1.0]) @ h
+    h_canvas = np.diag([c, c, 1.0]) @ al.h
     ref_c = cv2.resize(ref, (cw, ch), interpolation=cv2.INTER_AREA).astype(np.float32) / 255.0
     s_other = float(np.sqrt(abs(np.linalg.det(h_canvas[:2, :2]))))  # canvas px per other working px
     other_src = blur(other.astype(np.float32) / 255.0, 0.5 * np.sqrt(max(0.0, 1 / s_other**2 - 1)))
@@ -292,16 +373,28 @@ def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, 
         return {**out, "decision": "unrelated"}, None
 
     # Same effective resolution: a low-res original upsampled onto the canvas is blurrier.
-    e_ref = 0.5 * max(1.0, c / ref_p.scale)
-    e_other = 0.5 * max(1.0, s_other / other_p.scale)
+    e_ref = 0.5 * max(1.0, c / al.ref_scale)
+    e_other = 0.5 * max(1.0, s_other / al.other_scale)
     e = max(e_ref, e_other)
     ref_c = blur(ref_c, 1.0 + np.sqrt(max(0.0, e**2 - e_ref**2)))
     other_c = blur(other_c, 1.0 + np.sqrt(max(0.0, e**2 - e_other**2)))
 
-    coef = fit_color(other_c[valid], ref_c[valid], rng)
-    mapped = np.clip(quad_features(other_c) @ coef, 0, 1).astype(np.float32)
+    # Color mapping both ways on the same pixels; compare in the reference's colors unless the other image
+    # lost color information the mapping can't restore (REVERSE_COLOR_GAIN).
+    ref_v, other_v = ref_c[valid], other_c[valid]
+    if len(ref_v) > samples:
+        pick = rng.choice(len(ref_v), samples, replace=False)
+        ref_v, other_v = ref_v[pick], other_v[pick]
+    to_ref, err_to_ref = fit_color(other_v, ref_v)
+    to_other, err_to_other = fit_color(ref_v, other_v)
+    if err_to_ref <= REVERSE_COLOR_GAIN * err_to_other:
+        ref_cmp, other_cmp = ref_c, apply_color(other_c, to_ref)
+        out["color_to"] = "reference"
+    else:
+        ref_cmp, other_cmp = apply_color(ref_c, to_other), other_c
+        out["color_to"] = "other"
 
-    residual = blur(tolerant_diff(ref_c, mapped), 1.5)
+    residual = blur(tolerant_diff(ref_cmp, other_cmp), 1.5)
     rv = residual[valid]
     noise = float(np.median(rv))
     mad = float(1.4826 * np.median(np.abs(rv - noise)))
@@ -319,7 +412,7 @@ def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, 
     in_areas = in_stats[1:, cv2.CC_STAT_AREA] if k > 1 else np.zeros(0)
     # Of what changed (dilated a little: a moved edge leaves change on both sides), how much moved?
     near_change = cv2.dilate(changed, np.ones((9, 9), np.uint8)).astype(bool) & valid
-    moved = motion(ref_c, mapped, near_change)
+    moved = motion(ref_cmp, other_cmp, near_change)
     out.update({
         "noise": noise,
         "res_p99": float(np.quantile(rv, 0.99)),
@@ -334,12 +427,12 @@ def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, 
     })
     out["decision"] = decide(out, params)
 
-    # Diagnostic panels: reference with the other frame outlined | other aligned + mapped | residual.
+    # Diagnostic panels, in the compared colors: reference with the other frame outlined | other aligned | residual.
     corners = np.array([[0, 0], [other.shape[1], 0], [other.shape[1], other.shape[0]], [0, other.shape[0]]], np.float32)
     frame = cv2.perspectiveTransform(corners[None], h_canvas)[0].astype(np.int32)
-    p1 = (ref_c * 255).astype(np.uint8).copy()
+    p1 = (ref_cmp * 255).astype(np.uint8).copy()
     cv2.polylines(p1, [frame], True, (0, 220, 255), 2)
-    p2 = (np.where(valid[..., None], mapped, 0.5) * 255).astype(np.uint8)
+    p2 = (np.where(valid[..., None], other_cmp, 0.5) * 255).astype(np.uint8)
     gray = cv2.cvtColor(p1, cv2.COLOR_RGB2GRAY)
     heat = cv2.applyColorMap(np.clip(residual / (3 * threshold) * 255, 0, 255).astype(np.uint8), cv2.COLORMAP_INFERNO)
     p3 = cv2.addWeighted(cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), 0.35, heat, 0.65, 0)
@@ -355,14 +448,57 @@ def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, 
 
 # ---------- driver ----------
 
-def main() -> None:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--pairs", choices=tuple(PAIR_SETS), default="labeled")
-    parser.add_argument("--model", default="sscd_fp16", help="embedding used for similarities and candidate selection")
-    parser.add_argument("--floor", type=float, default=0.4,
-                        help="min similarity for an unlabeled or negative pair to be checked")
-    parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
-    parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")
+class PairRunner:
+    """Verifies pairs with the GPU half (align) in the calling thread and the CPU half (compare) on
+    worker threads, so the GPU extracts and matches the next pairs while earlier ones are compared.
+    Finished pairs go to `done(row, out, diag)` in submission order."""
+
+    def __init__(self, features: Features, params: Params, workers: int, done) -> None:
+        self.features, self.params, self.done = features, params, done
+        self.pool = ThreadPoolExecutor(max(1, workers))
+        self.pending: deque[tuple[dict, Future, tuple | None]] = deque()
+        self.max_pending = 2 * max(1, workers)
+
+    def submit(self, row: dict, get_a, get_b) -> None:
+        """`get_a`, `get_b`: return the two Prepared images; a failure there is the pair's error."""
+        retry = None
+        try:
+            pa, pb = get_a(), get_b()
+            al = align(self.features, pa, pb, self.params)
+        except Exception as e:  # one bad file must not stop the run
+            fut: Future = Future()
+            fut.set_exception(e)
+        else:
+            # Seeded per pair: results don't depend on thread timing or on where a resumed run started.
+            seed = zlib.crc32(str(row["id"]).encode())
+            fut = self.pool.submit(compare, al, self.params, np.random.default_rng(seed))
+            retry = (pa, pb, al, seed)
+        self.pending.append((row, fut, retry))
+        while len(self.pending) > self.max_pending:
+            self._finish_one()
+
+    def _finish_one(self) -> None:
+        row, fut, retry = self.pending.popleft()
+        try:
+            out, diag = fut.result()
+            if retry is not None:  # in this thread: the mirrored attempt needs the GPU
+                pa, pb, al, seed = retry
+                out, diag = retry_mirrored(self.features, pa, pb, al, (out, diag), self.params,
+                                           np.random.default_rng(seed))
+        except Exception as e:
+            out, diag = {"decision": "error", "error": f"{type(e).__name__}: {e}"}, None
+        self.done(row, out, diag)
+
+    def close(self) -> None:
+        while self.pending:
+            self._finish_one()
+        self.pool.shutdown()
+
+
+def add_decision_args(parser: argparse.ArgumentParser) -> None:
+    """The verifier's thresholds as command-line options, and --workers (shared with verify_synth.py)."""
+    parser.add_argument("--workers", type=int, default=4, help="CPU threads for the dense comparison")
+    parser.add_argument("--features", choices=FEATURES, default="disk", help="local features for the alignment")
     parser.add_argument("--min-inliers", type=int, default=20)
     parser.add_argument("--abs-threshold", type=float, default=0.08)
     parser.add_argument("--noise-k", type=float, default=6.0)
@@ -374,11 +510,26 @@ def main() -> None:
     # Off until tuned on hand marks (viewer: pair_marks.json); try them with --rescore.
     parser.add_argument("--max-moved", type=float, default=0.0, help="0 = off")
     parser.add_argument("--max-interior-change", type=float, default=0.0, help="0 = off")
+
+
+def params_from(args: argparse.Namespace) -> Params:
+    return Params(args.min_inliers, args.abs_threshold, args.noise_k, args.max_noise, args.strong_inliers,
+                  args.strong_ratio, args.max_moved, args.max_interior_change)
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--pairs", choices=tuple(PAIR_SETS), default="labeled")
+    parser.add_argument("--model", default="sscd_fp16", help="embedding used for similarities and candidate selection")
+    parser.add_argument("--floor", type=float, default=0.4,
+                        help="min similarity for an unlabeled or negative pair to be checked")
+    parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
+    parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")
+    add_decision_args(parser)
     parser.add_argument("--rescore", action="store_true",
                         help="re-apply the decision thresholds to the existing CSV (no image work)")
     args = parser.parse_args()
-    params = Params(args.min_inliers, args.abs_threshold, args.noise_k, args.max_noise, args.strong_inliers,
-                    args.strong_ratio, args.max_moved, args.max_interior_change)
+    params = params_from(args)
     prefix, labels = PAIR_SETS[args.pairs]
 
     if args.rescore:
@@ -444,46 +595,91 @@ def main() -> None:
     print(f"{len(pairs)} pairs: " + ", ".join(f"{sum(p[0] == lab for p in pairs)} {lab}" for lab in labels)
           + f" (floor {args.floor})", flush=True)
 
-    features = Features()
+    features = Features(args.features)
     prepared = lru_cache(maxsize=256)(lambda i: prepare(features, files[i]))
     diag_dir = WORK_DIR / f"{prefix}_{args.model}"
     diag_dir.mkdir(exist_ok=True)
-    rng = np.random.default_rng(0)
 
-    results = []
-    start = time.time()
-    for pid, (label, a, b) in enumerate(pairs):
-        row = {"id": pid, "label": label, "similarity": float(emb[a] @ emb[b]), "path_a": files[a], "path_b": files[b]}
-        try:
-            out, diag = verify_pair(features, prepared(a), prepared(b), params, rng)
-        except Exception as e:  # one bad file must not stop the run
-            out, diag = {"decision": "error", "error": f"{type(e).__name__}: {e}"}, None
+    results: list = [None] * len(pairs)
+    checkpoint = Checkpoint(prefix, args.model)
+    start, verified = time.time(), 0
+
+    def done(row: dict, out: dict, diag) -> None:
+        nonlocal verified
         row.update(out)
         if diag is not None:
-            cv2.imwrite(str(diag_dir / f"{pid}.jpg"), diag, [cv2.IMWRITE_JPEG_QUALITY, 85])
-        if label in EXPECTED:
-            row["correct"] = row["decision"] == EXPECTED[label]
-        results.append(row)
-        if (pid + 1) % 100 == 0:
-            print(f"  {pid + 1}/{len(pairs)}  {(pid + 1) / (time.time() - start):.1f} pairs/s", flush=True)
+            cv2.imwrite(str(diag_dir / f"{row['id']}.jpg"), diag, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        if row["label"] in EXPECTED:
+            row["correct"] = row["decision"] == EXPECTED[row["label"]]
+        results[row["id"]] = row
+        checkpoint.add(row)
+        verified += 1
+        if verified % 100 == 0:
+            print(f"  {verified}/{len(pairs)}  {verified / (time.time() - start):.1f} pairs/s", flush=True)
+
+    runner = PairRunner(features, params, args.workers, done)
+    for pid, (label, a, b) in enumerate(pairs):
+        if (row := checkpoint.done(pid)) is not None:
+            results[pid] = row
+            continue
+        row = {"id": pid, "label": label, "similarity": float(emb[a] @ emb[b]), "path_a": files[a], "path_b": files[b]}
+        runner.submit(row, partial(prepared, a), partial(prepared, b))
+    runner.close()
     write_outputs(prefix, args, params, labels, results, round(time.time() - start, 1))
+    checkpoint.finish()
+
+
+COLUMNS = ["id", "label", "similarity", "decision", "correct", "inliers", "matches", "flipped", "reference",
+           "cover_a", "cover_b", "overlap", "color_to", "noise", "res_p99", "changed_frac", "blob_frac",
+           "interior_changed_frac", "interior_regions", "moved_frac", "moved_share", "error",
+           "path_a", "path_b"]
+
+
+def csv_row(r: dict) -> dict:
+    return {k: (f"{v:.4f}" if isinstance(v, float) else v) for k, v in r.items()}
+
+
+class Checkpoint:
+    """Appends every finished pair to <prefix>_<model>.partial.csv, so an interrupted run resumes where it
+    stopped instead of starting over. Pair ids must be stable across runs (same inputs and options);
+    delete the file to start fresh. Removed once the run completes."""
+
+    def __init__(self, prefix: str, model: str) -> None:
+        self.path = WORK_DIR / f"{prefix}_{model}.partial.csv"
+        self.rows: dict[str, dict] = {}
+        if self.path.exists():
+            with open(self.path, newline="", encoding="utf-8") as f:
+                self.rows = {r["id"]: {k: v for k, v in r.items() if v != ""} for r in csv.DictReader(f)}
+            print(f"resuming: {len(self.rows)} pairs already done ({self.path.name})", flush=True)
+        self._file = open(self.path, "a", newline="", encoding="utf-8")  # noqa: SIM115 (kept open for the run)
+        self._writer = csv.DictWriter(self._file, COLUMNS, extrasaction="ignore")
+        if not self.rows:
+            self._writer.writeheader()
+
+    def done(self, pid) -> dict | None:
+        return self.rows.get(str(pid))
+
+    def add(self, row: dict) -> None:
+        self._writer.writerow(csv_row(row))
+        self._file.flush()
+
+    def finish(self) -> None:
+        self._file.close()
+        self.path.unlink()
 
 
 def write_outputs(prefix: str, args, params: Params, labels: tuple, results: list[dict], seconds: float) -> None:
-    columns = ["id", "label", "similarity", "decision", "correct", "inliers", "matches", "flipped", "reference",
-               "cover_a", "cover_b", "overlap", "noise", "res_p99", "changed_frac", "blob_frac",
-               "interior_changed_frac", "interior_regions", "moved_frac", "moved_share", "error",
-               "path_a", "path_b"]
     with open(WORK_DIR / f"{prefix}_{args.model}.csv", "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, columns, extrasaction="ignore")
+        w = csv.DictWriter(f, COLUMNS, extrasaction="ignore")
         w.writeheader()
         for r in results:
-            w.writerow({k: (f"{v:.4f}" if isinstance(v, float) else v) for k, v in r.items()})
+            w.writerow(csv_row(r))
 
     decisions = ["match", "unrelated", "error"]
     confusion = {lab: {d: sum(r["label"] == lab and r["decision"] == d for r in results) for d in decisions}
                  for lab in labels}
-    summary = {"pairs_set": args.pairs, "model": args.model, "floor": args.floor, "params": vars(params),
+    summary = {"pairs_set": args.pairs, "model": args.model, "floor": args.floor,
+               "features": getattr(args, "features", "disk"), "params": vars(params),
                "pairs": len(results), "seconds": seconds, "confusion": confusion}
     (WORK_DIR / f"{prefix}_{args.model}.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 

@@ -37,6 +37,7 @@ $py = 'D:\PhotoGallery\venv-eval\Scripts\python.exe'
 & $py verify.py --model sscd_fp16     # second stage: align pairs, classify match / unrelated
 & $py verify.py --pairs cross_groups --floor 0.3   # ... on the negative set (pairs across dups2 groups)
 & $py verify.py --pairs knn           # ... on real k-NN candidates (each image's 10 nearest above 0.4)
+& $py verify_synth.py                 # ... on synth.py's edited copies (crops, overlays, rotation...): all should match
 & $py pdq.py                          # PDQ hashes -> emb_pdq.npy; then evaluate.py --model pdq
 & $py pdq.py --synth                  # PDQ robustness to the same synthetic edits
 & $py bench_decode.py                 # JPEG decode pipelines: speed and embedding drift (idle machine)
@@ -64,9 +65,13 @@ Rerun `make_subset.py` after editing the labeled folders: `files.txt` is a cache
 
 `verify.py` checks every labeled duplicate pair plus every `similiar_but_not_dups` pair whose
 embedding similarity clears `--floor` (the non-duplicates a candidate stage would hand it). Per
-pair it matches DISK + LightGlue features (also against the mirrored image), fits a MAGSAC
-homography, warps one image onto the other, fits a robust global color mapping, and measures
-what is left:
+pair it matches DISK + LightGlue features (`--features aliked` for ALIKED; also against the mirrored
+image unless the first alignment is already strong), fits a MAGSAC homography, warps one image onto
+the other, fits a robust global color mapping (onto the reference, or the reverse when that fits at
+least 2× better: grayscale can't be mapped back to color), and measures what is left. Images smaller than 512 px are upscaled
+for feature extraction; DISK finds almost nothing on a ~200 px copy. Feature extraction and
+matching run on the GPU in the main thread, the comparison on `--workers` CPU threads (default 4).
+The decision:
 
 - **match:** after alignment and color mapping the pixels agree (median residual ≤ `--max-noise`).
   Duplicates and variants are not told apart for now. Different frames of one shoot are *not*
@@ -86,7 +91,9 @@ picture" (buttons, or open a pair and press S / D to mark and move on, ← / →
 one image at a time in a shared box; Space (or a click on the image) swaps A and B. Marks go to
 `pair_marks.json` in the run folder, keyed by the image pair, so they survive reruns; the Summary tab
 shows how often the verifier agrees with them.
-`--rescore` re-applies the thresholds to the stored measurements without redoing image work. Needs
+`--rescore` re-applies the thresholds to the stored measurements without redoing image work. Runs are
+resumable: each finished pair is appended to `<prefix>_<model>.partial.csv`, a restarted run skips those, and
+the file is removed when the run completes (delete it to start over, e.g. after changing options). Needs
 `kornia` and `opencv-python-headless`; DISK and LightGlue weights download to the cache dir.
 
 ### Viewer
@@ -111,6 +118,7 @@ thumbnails (click a pair for full size). Thumbnails are cached in `D:\PhotoGalle
 | `verify_<model>/<id>.jpg` | Verifier diagnostic per pair: reference · aligned + color-mapped · residual |
 | `verify_cross_<model>.csv`, `.json`, `/` | The same for the cross-group negative set |
 | `verify_knn_<model>.csv`, `.json`, `/` | The same for real k-NN candidate pairs (labeled where known) |
+| `verify_synth_<model>.csv`, `.json`, `/` | The same for original vs synthetic edited copy (label = the edit) |
 | `quality_pdq.npy` | PDQ's own hash quality score per image (0–100) |
 | `synth_pdq.json` | PDQ synthetic robustness; `dihedral` = best of the 8 rotations/mirrors |
 | `bench_decode.json` | Decode pipelines: img/s and SSCD cosine vs the PIL reference |

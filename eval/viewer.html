@@ -48,7 +48,7 @@
   figure img { width: 100%; height: 300px; object-fit: contain; background: var(--bg); border-radius: 6px; display: block; }
   figcaption { font-size: 11px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
   figcaption b { color: var(--text); font-weight: 500; }
-  .more { margin: 16px auto; display: block; font: inherit; padding: 6px 16px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  .sentinel { height: 1px; }
   .empty { color: var(--muted); padding: 40px 0; text-align: center; }
   .modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 10; display: none; padding: 16px; cursor: zoom-out; }
   .modal.open { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; }
@@ -185,10 +185,18 @@ function el(tag, attrs = {}, ...children) {
   return node;
 }
 
+// Bumped by every render(). A response that arrives after the user switched tab, run or model is
+// dropped (Stale), so a slow earlier load can't overwrite the current page or its state.
+let renderGen = 0;
+class Stale extends Error {}
+
 async function api(path, params = {}) {
+  const gen = renderGen;
   const r = await fetch(path + "?" + new URLSearchParams(params));
   if (!r.ok) throw new Error(await r.text());
-  return r.json();
+  const data = await r.json();
+  if (gen !== renderGen) throw new Stale();
+  return data;
 }
 
 const fmt = (v, d = 3) => (v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(d));
@@ -212,6 +220,7 @@ function buildModelSelect() {
 }
 
 async function render() {
+  renderGen++;
   buildTabs();
   const [, , hint] = TABS.find(([k]) => k === state.tab);
   $("hint").textContent = hint;
@@ -229,7 +238,7 @@ async function render() {
     else if (isBorders) await renderBorders();
     else await loadPairs();
   } catch (e) {
-    $("content").replaceChildren(el("p", { class: "empty" }, "Error: " + e.message));
+    if (!(e instanceof Stale)) $("content").replaceChildren(el("p", { class: "empty" }, "Error: " + e.message));
   }
 }
 
@@ -513,14 +522,28 @@ function openSingle(src) {
   m.classList.add("open", "single");
 }
 
+// Infinite scroll: an empty element after the grid loads the next page once it comes within
+// 1500 px of the viewport. Observing a new one reports its state right away, so pages keep
+// loading until the window is filled.
+let loadNext = null;
+const scrollObserver = new IntersectionObserver((entries) => {
+  if (entries.some((e) => e.isIntersecting)) loadNext?.();
+}, { rootMargin: "0px 0px 1500px 0px" });
+
+function setSentinel(more) {
+  scrollObserver.disconnect();
+  document.querySelector(".sentinel")?.remove();
+  loadNext = more;
+  if (!more) return;
+  const s = el("div", { class: "sentinel" });
+  $("content").append(s);
+  scrollObserver.observe(s);
+}
+
 function showMore() {
-  const grid = $("grid");
-  document.querySelector(".more")?.remove();
-  grid.append(...state.view.slice(state.shown, state.shown + PAGE).map(card));
+  $("grid").append(...state.view.slice(state.shown, state.shown + PAGE).map(card));
   state.shown += PAGE;
-  if (state.shown < state.view.length) {
-    $("content").append(el("button", { class: "more", onclick: showMore }, `Show more (${state.view.length - state.shown} left)`));
-  }
+  setSentinel(state.shown < state.view.length ? showMore : null);
 }
 
 function openModal(r) {
@@ -632,12 +655,9 @@ async function toggleFalsePositive(r, card, btn) {
 }
 
 function showMoreBorders() {
-  document.querySelector(".more")?.remove();
   $("bgrid").append(...bstate.view.slice(bstate.shown, bstate.shown + PAGE).map(borderCard));
   bstate.shown += PAGE;
-  if (bstate.shown < bstate.view.length) {
-    $("content").append(el("button", { class: "more", onclick: showMoreBorders }, `Show more (${bstate.view.length - bstate.shown} left)`));
-  }
+  setSentinel(bstate.shown < bstate.view.length ? showMoreBorders : null);
 }
 
 function openBorder(r) {

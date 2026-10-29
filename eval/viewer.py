@@ -4,7 +4,8 @@ Usage: python viewer.py [--port 8765] [--no-browser]  ->  http://127.0.0.1:8765
 
 Shows every run directory under D:\\PhotoGallery that holds a files.txt (eval_smoke,
 eval, ...): a model comparison, and the pair lists written by evaluate.py as
-side-by-side thumbnails, plus verify.py's decisions and diagnostic images. The Borders page
+side-by-side thumbnails, plus verify.py's decisions and diagnostic images, and group.py's groups
+(marking a group writes pair marks: same within a set, different across sets). The Borders page
 reviews tools/borders.py scans (any folder under D:\\PhotoGallery with a report.csv) and saves
 false-positive marks to that folder's review.json. Binds to localhost only and serves only files inside
 DATA_ROOT. Thumbnails are cached under CACHE_DIR/viewer_thumbs.
@@ -44,6 +45,7 @@ PAIR_FILES = {
 }
 # verify.py's diagnostic image folders, by pair kind.
 DIAG_PREFIX = {"verify": "verify", "verify_cross": "verify_cross", "verify_knn": "verify_knn"}
+GROUPS_FILE = "groups_{}.json"  # group.py
 
 # tools/borders.py output folders (under RUNS_ROOT, holding report.csv) and the review verdicts
 # saved next to it; borders.py --apply skips false positives. Keep in sync with borders.py.
@@ -59,6 +61,7 @@ def list_runs() -> list[dict]:
         # Pair lists that exist only for some models (verify*.csv): kind -> models that have it.
         by_kind = {kind: [m for m in models if (d / pattern.format(m)).exists()]
                    for kind, pattern in PAIR_FILES.items() if kind in DIAG_PREFIX}
+        by_kind["groups"] = [m for m in models if (d / GROUPS_FILE.format(m)).exists()]
         runs.append({"name": d.name, "models": models, "models_by_kind": by_kind})
     return runs
 
@@ -136,6 +139,26 @@ def pairs(run: str, model: str, kind: str) -> list[dict]:
         row["size_a"] = image_size(row["path_a"])
         row["size_b"] = image_size(row["path_b"])
     return rows
+
+
+def label_of(rel: str) -> str:
+    """Where an image sits in the labeled layout: dups2/<NNN> (a labeled group), else its top folder."""
+    parts = rel.split("/")
+    return "/".join(parts[:2]) if len(parts) == 3 and parts[0] == "dups2" else parts[0] if len(parts) > 1 else ""
+
+
+def groups(run: str, model: str) -> dict | None:
+    """group.py's groups with each member's size and label folder."""
+    if not re.fullmatch(r"[\w.-]+", model):
+        raise ValueError("bad model")
+    path = run_dir(run) / GROUPS_FILE.format(model)
+    if not path.exists():
+        return None
+    data = json.loads(path.read_text(encoding="utf-8"))
+    for g in data["groups"]:
+        g["sizes"] = [image_size(p) for p in g["members"]]
+        g["labels"] = [label_of(p) for p in g["members"]]
+    return data
 
 
 def diagnostic_file(run: str, model: str, kind: str, pair_id: str) -> Path:
@@ -242,22 +265,29 @@ def run_files(run: str, mtime: float) -> frozenset[str]:
 
 
 def set_mark(run: str, a: str, b: str, mark: str | None) -> dict:
-    if mark not in (None, *PAIR_MARK_VALUES):
-        raise ValueError(f"bad mark: {mark}")
+    return set_marks(run, [(a, b, mark)])
+
+
+def set_marks(run: str, items: list) -> dict:
+    """Sets (mark) or clears (None) the marks of many pairs at once: [(a, b, mark), ...]."""
     known = run_files(run, (run_dir(run) / "files.txt").stat().st_mtime)
-    if a not in known or b not in known:
-        raise ValueError("unknown image path")
+    for a, b, mark in items:
+        if mark not in (None, *PAIR_MARK_VALUES):
+            raise ValueError(f"bad mark: {mark}")
+        if a not in known or b not in known or a == b:
+            raise ValueError("unknown image path")
     target = run_dir(run) / PAIR_MARKS
     with review_lock:
         marks = load_marks(run)
-        if mark is None:
-            marks.pop(pair_key(a, b), None)
-        else:
-            marks[pair_key(a, b)] = mark
+        for a, b, mark in items:
+            if mark is None:
+                marks.pop(pair_key(a, b), None)
+            else:
+                marks[pair_key(a, b)] = mark
         tmp = target.with_suffix(".tmp")
         tmp.write_text(json.dumps(marks, indent=1, ensure_ascii=False), encoding="utf-8")
         os.replace(tmp, target)
-    return {"mark": mark, "marked": len(marks)}
+    return {"changed": len(items), "marked": len(marks)}
 
 
 def dataset_file(rel: str) -> Path:
@@ -308,6 +338,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply_json(load_marks(q["run"]))
             elif url.path == "/api/pairs":
                 self.reply_json(pairs(q["run"], q["model"], q["kind"]))
+            elif url.path == "/api/groups":
+                self.reply_json(groups(q["run"], q["model"]))
             elif url.path == "/img":
                 path = dataset_file(q["path"])
                 size = int(q.get("size", "0"))
@@ -352,6 +384,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply_json(set_verdict(body["scan"], int(body["i"]), body.get("verdict")))
             elif url.path == "/api/marks":
                 self.reply_json(set_mark(body["run"], body["a"], body["b"], body.get("mark")))
+            elif url.path == "/api/marks/bulk":
+                self.reply_json(set_marks(body["run"], [(a, b, m) for a, b, m in body["marks"]]))
             else:
                 self.reply(b"not found", "text/plain", status=404)
         except (KeyError, ValueError, IndexError, TypeError) as e:

@@ -18,7 +18,8 @@ Methods:
   match is outvoted by the conflicts it would bring into the cluster.
 
 Scored on the labels: dups2/<NNN> groups (different folders = different pictures) and the loose dups2 files
-(each has a duplicate among the others). Writes groups_<model>.json.
+(each has a duplicate among the others). Writes groups_<model>.json (largest group first, each with the
+signed edges inside it), browsable on the viewer's Groups page.
 """
 
 import argparse
@@ -170,6 +171,7 @@ def main() -> None:
         "max_noise"]
 
     weights: dict[tuple[str, str], float] = {}
+    kinds: dict[tuple[str, str], str] = {}  # "pdq" / "sscd" (shortcut) / "verifier"
     source = Counter()
     for r in rows:
         a, b = sorted((r["path_a"], r["path_b"]))
@@ -178,7 +180,7 @@ def main() -> None:
         if w is None:
             source["not aligned (no edge)"] += 1
             continue
-        weights[(a, b)] = w
+        weights[(a, b)], kinds[(a, b)] = w, why or "verifier"
         source[why or ("verifier match" if w > 0 else "verifier conflict")] += 1
         if why and r["decision"] != "match":
             source[f"{why} shortcut overriding a verifier non-match"] += 1
@@ -195,7 +197,14 @@ def main() -> None:
     print(f"  labeled folders: {s['folders_whole']}/{s['labeled_folders']} whole, split into n: "
           f"{s['folders_split'] or '-'}; groups merging folders: {s['groups_merging_folders'] or '-'}")
     print(f"  loose dups2 files grouped with another loose file: {s['loose_grouped_with_loose']}/{s['loose_files']}")
-    result = {"args": vars(args), "max_noise": max_noise, "edges": dict(source), "score": s, "groups": groups}
+    # Each group with the evidence inside it, for the viewer's Groups page: [i, j, weight, kind], member indices.
+    where = {p: (g, i) for g, members in enumerate(groups) for i, p in enumerate(members)}
+    inside: list[list] = [[] for _ in groups]
+    for (a, b), w in weights.items():
+        if a in where and b in where and where[a][0] == where[b][0]:
+            inside[where[a][0]].append([where[a][1], where[b][1], round(w, 3), kinds[(a, b)]])
+    result = {"args": vars(args), "max_noise": max_noise, "edges": dict(source), "score": s,
+              "groups": [{"members": m, "edges": e} for m, e in zip(groups, inside, strict=True)]}
     (WORK_DIR / f"groups_{args.model}.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
 
 

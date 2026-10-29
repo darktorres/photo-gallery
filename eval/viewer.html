@@ -101,6 +101,17 @@
   .badge.warn { background: hsl(40 80% 30%); color: var(--text); }
   .modal .marks { grid-column: 1 / -1; justify-content: center; margin: 0; cursor: default; }
   .modal .marks .hint { margin: 0; color: #bbb; }
+  /* Groups page: each member's set (A-D) = which picture it is; marks are saved per pair. */
+  .s0 { --set: hsl(200 80% 65%); } .s1 { --set: hsl(40 90% 60%); } .s2 { --set: hsl(300 60% 72%); } .s3 { --set: hsl(130 50% 60%); }
+  .side.set, .setchip { background: var(--set); }
+  .gcard { cursor: default; }
+  .gthumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .gtile { position: relative; }
+  .gtile img { width: 100%; height: 200px; object-fit: contain; background: var(--bg); border-radius: 6px; display: block; cursor: zoom-in; border: 3px solid transparent; }
+  .gthumbs.split .gtile img { border-color: var(--set); }
+  .setchip { position: absolute; top: 6px; left: 6px; font: inherit; font-size: 12px; font-weight: 700; color: #111; border: 0; border-radius: 4px; padding: 1px 7px; cursor: pointer; }
+  .gtile figcaption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk.unsaved { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
   @media (max-width: 700px) { .modal.open { grid-template-columns: 1fr; } figure img { height: 200px; } }
 </style>
 </head>
@@ -130,8 +141,24 @@
     </select></label>
     <label id="bcount"></label>
   </div>
+  <label id="model-wrap" hidden>Model <select id="model"></select></label>
+  <div class="controls" id="group-controls" hidden>
+    <label>Show <select id="gshow">
+      <option value="all">all</option>
+      <option value="unmarked">not fully marked</option>
+      <option value="marked">marked</option>
+      <option value="split">marked as several pictures</option>
+      <option value="merges">merges labeled folders</option>
+      <option value="conflicts">has aligned-but-different pairs</option>
+    </select></label>
+    <label>Min size <input id="gmin" type="number" min="2" value="2"></label>
+    <label>Sort <select id="gsort">
+      <option value="size">largest first</option>
+      <option value="conflicts">most conflicts first</option>
+    </select></label>
+    <label id="gcount"></label>
+  </div>
   <div class="controls" id="pair-controls" hidden>
-    <label>Model <select id="model"></select></label>
     <label>Sort <select id="sort">
       <option value="file">as written</option>
       <option value="asc">score ↑</option>
@@ -172,6 +199,7 @@ const TABS = [
   ["verify_cross", "Verifier: cross-group", "verify.py on pairs from two different dups2 groups (different pictures: should be unrelated). A “match” here is either a verifier false positive or a variant split across groups. Same diagnostic as the Verifier tab."],
   ["verify_knn", "Verifier: k-NN candidates", "verify.py on what the pipeline would really check: each image's 10 nearest neighbors above the floor. Mark pairs “same picture” (incl. edits: retouch, recolor, crop, overlay) or “different picture” (another photo, another frame of the same shoot). Fastest: click a pair, then S / D to mark and move on. Marks are saved per image pair (pair_marks.json), shared by all verifier tabs and kept across reruns. Diagnostic: cyan = changed, green = moved (optical flow)."],
 ];
+TABS.push(["groups", "Groups", "group.py: near-duplicate groups built from the verified k-NN pairs (multicut). Is each group one picture? If so, Save. If not, click the letter on each image (or open the group and press 1–4) so each picture gets its own set, then Save: pairs within a set are marked “same picture”, pairs across sets “different” (pair_marks.json, shared with the verifier tabs). Click an image to flip through the group at full size."]);
 TABS.push(["borders", "Borders", "tools/borders.py detections. Magenta = what would be cut. Mark the wrong ones with “Mark false positive” (saved immediately to the scan's review.json; borders.py --apply then leaves those files alone). Click an image for full size."]);
 const VERIFY_TABS = ["verify", "verify_cross", "verify_knn"];
 const PAGE = 60;
@@ -240,7 +268,10 @@ async function render() {
   $("run-wrap").hidden = isBorders;
   $("border-controls").hidden = !isBorders;
   const isTables = state.tab === "summary" || state.tab === "benchmarks";
-  $("pair-controls").hidden = isTables || isBorders;
+  const isGroups = state.tab === "groups";
+  $("pair-controls").hidden = isTables || isBorders || isGroups;
+  $("group-controls").hidden = !isGroups;
+  $("model-wrap").hidden = isTables || isBorders;
   $("verdict-wrap").hidden = !VERIFY_TABS.includes(state.tab);
   $("label-wrap").hidden = !VERIFY_TABS.includes(state.tab);
   $("content").replaceChildren(el("p", { class: "empty" }, "Loading…"));
@@ -248,6 +279,7 @@ async function render() {
     if (state.tab === "summary") await renderSummary();
     else if (state.tab === "benchmarks") await renderBenchmarks();
     else if (isBorders) await renderBorders();
+    else if (isGroups) await renderGroups();
     else await loadPairs();
   } catch (e) {
     if (!(e instanceof Stale)) $("content").replaceChildren(el("p", { class: "empty" }, "Error: " + e.message));
@@ -599,6 +631,220 @@ function openAt(i) {
   openModal(state.view[i]);
 }
 
+// ---------- groups ----------
+
+// view: filtered groups; open: index in view of the group in the modal; member / prev: shown and previously
+// shown image there (Space goes back, to compare any two).
+const gstate = { data: null, view: [], shown: 0, open: -1, member: 0, prev: null, imgs: [] };
+const SETS = "ABCD";
+const keyOf = (a, b) => [a, b].sort().join("|");
+
+async function renderGroups() {
+  if (!state.model) { $("content").replaceChildren(el("p", { class: "empty" }, "No groups in this run: run group.py.")); return; }
+  const [data, marks] = await Promise.all([api("/api/groups", { run: state.run, model: state.model }),
+    api("/api/marks", { run: state.run })]);
+  state.marks = marks;
+  data.groups.forEach((g, k) => {
+    g.n = k + 1;
+    g.matches = g.edges.filter((e) => e[2] > 0).length;
+    g.conflicts = g.edges.length - g.matches;
+    g.shortcuts = g.edges.filter((e) => e[3] !== "verifier").length;
+    g.folders = [...new Set(g.labels.filter((l) => l.startsWith("dups2/")))];
+    g.sets = setsFromMarks(g);
+  });
+  gstate.data = data;
+  applyGroupFilters();
+}
+
+function memberPairs(g) {
+  const out = [];
+  for (let i = 0; i < g.members.length; i++) for (let j = i + 1; j < g.members.length; j++) out.push([i, j]);
+  return out;
+}
+
+// The saved marks as sets: images joined by "same" marks share a set; images without any mark go in A.
+function setsFromMarks(g) {
+  const parent = g.members.map((_, i) => i);
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  const touched = g.members.map(() => false);
+  for (const [i, j] of memberPairs(g)) {
+    const m = state.marks[keyOf(g.members[i], g.members[j])];
+    if (m) touched[i] = touched[j] = true;
+    if (m === "same") parent[find(i)] = find(j);
+  }
+  const ids = new Map();
+  return g.members.map((_, i) => {
+    if (!touched[i]) return 0;
+    const root = find(i);
+    if (!ids.has(root)) ids.set(root, Math.min(ids.size, SETS.length - 1));
+    return ids.get(root);
+  });
+}
+
+function markStatus(g) {
+  const pairs = memberPairs(g);
+  const marked = pairs.filter(([i, j]) => state.marks[keyOf(g.members[i], g.members[j])]).length;
+  return { total: pairs.length, marked, done: marked === pairs.length };
+}
+
+function applyGroupFilters() {
+  if (!gstate.data) return;
+  const show = $("gshow").value, min = parseInt($("gmin").value, 10) || 2;
+  let view = gstate.data.groups.filter((g) => g.members.length >= min);
+  const keep = {
+    unmarked: (g) => !markStatus(g).done,
+    marked: (g) => markStatus(g).done,
+    split: (g) => markStatus(g).done && new Set(setsFromMarks(g)).size > 1,
+    merges: (g) => g.folders.length > 1,
+    conflicts: (g) => g.conflicts > 0,
+  }[show];
+  if (keep) view = view.filter(keep);
+  if ($("gsort").value === "conflicts") view = [...view].sort((a, b) => b.conflicts - a.conflicts || b.members.length - a.members.length);
+  gstate.view = view;
+  gstate.shown = 0;
+  $("gcount").textContent = `${view.length.toLocaleString()} of ${gstate.data.groups.length.toLocaleString()} groups`;
+  const s = gstate.data.score, lp = s.labeled_pairs;
+  const scoreLine = el("p", { class: "hint" },
+    `${gstate.data.args.method}: labeled pairs precision ${fmt(lp.precision, 4)} · recall ${fmt(lp.recall, 4)} · ` +
+    `labeled folders whole ${s.folders_whole}/${s.labeled_folders} · groups merging labeled folders: ` +
+    (s.groups_merging_folders.map((f) => f.join(" + ")).join(", ") || "none"));
+  if (!view.length) { $("content").replaceChildren(scoreLine, el("p", { class: "empty" }, "No groups.")); return; }
+  $("content").replaceChildren(scoreLine, el("div", { class: "grid", id: "ggrid", style: "grid-template-columns:1fr" }));
+  showMoreGroups();
+}
+
+function showMoreGroups() {
+  $("ggrid").append(...gstate.view.slice(gstate.shown, gstate.shown + PAGE).map(groupCard));
+  gstate.shown += PAGE;
+  setSentinel(gstate.shown < gstate.view.length ? showMoreGroups : null);
+}
+
+function groupCard(g) {
+  const st = markStatus(g);
+  const saved = setsFromMarks(g);
+  const savedSets = new Set(saved).size, nsets = new Set(g.sets).size;
+  const unsaved = !st.done || g.sets.some((s, i) => s !== saved[i]);
+  const head = el("div", { class: "card-head" },
+    el("span", { class: "badge" }, `#${g.n}`), el("b", {}, `${g.members.length} images`),
+    el("span", { class: "badge" }, `${g.matches} match edges` + (g.shortcuts ? ` (${g.shortcuts} by shortcut)` : "")),
+    g.conflicts ? el("span", { class: "badge warn" }, `${g.conflicts} aligned but different`) : "",
+    g.folders.length > 1 ? el("span", { class: "badge bad" }, "merges " + g.folders.join(" + ")) : "",
+    el("span", { class: "stats" }, st.done ? `✓ marked: ${savedSets === 1 ? "all same picture" : savedSets + " different pictures"}`
+      : st.marked ? `${st.marked} / ${st.total} pairs marked` : "not marked"));
+  const tiles = g.members.map((path, i) => el("figure", { class: `gtile s${g.sets[i]}` },
+    el("img", { src: imgUrl(path, 320), loading: "lazy", alt: path.split("/").at(-1), onclick: () => openGroup(g, i) }),
+    el("button", { class: "setchip", title: "Which picture this is (click to change): images in one set are the same picture",
+      onclick: () => { g.sets[i] = (g.sets[i] + 1) % SETS.length; repaintGroup(g); } }, SETS[g.sets[i]]),
+    el("figcaption", { title: path }, `${g.labels[i] || "–"} · ${g.sizes[i]}`)));
+  const node = el("div", { class: "card gcard" + (st.done ? (savedSets === 1 ? " mark-same" : " mark-different") : "") },
+    head, el("div", { class: "gthumbs" + (nsets > 1 ? " split" : "") }, tiles),
+    el("div", { class: "marks" },
+      el("button", { class: "mk same" + (unsaved ? " unsaved" : ""), onclick: () => saveGroup(g) },
+        nsets === 1 ? "Save: all same picture" : `Save: ${nsets} different pictures`),
+      st.marked ? el("button", { class: "mk", onclick: () => clearGroup(g) }, "Clear this group's marks") : ""));
+  g.node = node;
+  return node;
+}
+
+function repaintGroup(g) {
+  if (g.node?.isConnected) g.node.replaceWith(groupCard(g));
+  updateGroupModal();
+}
+
+async function postMarks(items) {
+  const res = await fetch("/api/marks/bulk", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run: state.run, marks: items }),
+  });
+  if (!res.ok) { alert("Saving the marks failed: " + await res.text()); return false; }
+  for (const [a, b, m] of items) {
+    if (m) state.marks[keyOf(a, b)] = m; else delete state.marks[keyOf(a, b)];
+  }
+  return true;
+}
+
+async function saveGroup(g) {
+  const items = memberPairs(g).map(([i, j]) => [g.members[i], g.members[j], g.sets[i] === g.sets[j] ? "same" : "different"]);
+  if (await postMarks(items)) repaintGroup(g);
+}
+
+async function clearGroup(g) {
+  if (await postMarks(memberPairs(g).map(([i, j]) => [g.members[i], g.members[j], null]))) {
+    g.sets = g.members.map(() => 0);
+    repaintGroup(g);
+  }
+}
+
+// Group view: one member at a time in a fixed box. ← / → (or a click) step through the group, Space returns to
+// the previously shown image, 1-4 set the image's set, Enter saves, PgUp / PgDn change group, Esc closes.
+function openGroup(g, i) {
+  const m = $("modal");
+  gstate.open = gstate.view.indexOf(g);
+  gstate.imgs = [];
+  gstate.prev = null;
+  gstate.stack = el("div", { class: "stack", onclick: (e) => { e.stopPropagation(); showMember(gstate.member + 1); } });
+  gstate.caption = el("figcaption");
+  gstate.bar = el("div", { class: "marks" });
+  gstate.bar.addEventListener("click", (e) => e.stopPropagation());
+  m.replaceChildren(el("figure", { class: "flip" }, gstate.stack, gstate.caption), gstate.bar);
+  m.dataset.view = "group";
+  m.classList.add("open", "single");
+  gstate.member = i;
+  showMember(i);
+}
+
+function openGroupAt(k) {
+  if (k < 0 || k >= gstate.view.length) return;
+  while (gstate.shown <= k) showMoreGroups();
+  openGroup(gstate.view[k], 0);
+}
+
+function showMember(i) {
+  const g = gstate.view[gstate.open], n = g.members.length;
+  i = (i + n) % n;
+  if (i !== gstate.member) gstate.prev = gstate.member;
+  gstate.member = i;
+  if (!gstate.imgs[i]) {
+    gstate.imgs[i] = el("img", { src: imgUrl(g.members[i]), alt: g.members[i] });
+    gstate.stack.append(gstate.imgs[i]);
+  }
+  gstate.imgs.forEach((img, k) => img?.classList.toggle("off", k !== i));
+  new Image().src = imgUrl(g.members[(i + 1) % n]);  // warm the cache for →
+  updateGroupModal();
+}
+
+function updateGroupModal() {
+  const m = $("modal");
+  if (gstate.open < 0 || m.dataset.view !== "group" || !m.classList.contains("open")) return;
+  const g = gstate.view[gstate.open], i = gstate.member;
+  const mine = g.edges.filter((e) => e[0] === i || e[1] === i);
+  const pos = mine.filter((e) => e[2] > 0).length;
+  gstate.caption.replaceChildren(el("span", { class: `side set s${g.sets[i]}` }, SETS[g.sets[i]]),
+    `${i + 1} / ${g.members.length} · ${g.members[i]} · ${g.sizes[i]} · matched ${pos}, aligned-but-different ${mine.length - pos}`);
+  const nsets = new Set(g.sets).size;
+  gstate.bar.replaceChildren(el("span", { class: "hint" },
+    `Group #${g.n} (${gstate.open + 1} / ${gstate.view.length}) · ← → image · Space previous image · 1–4 set this image · ` +
+    `Enter save (${nsets === 1 ? "all same picture" : nsets + " different pictures"}) · PgUp / PgDn group · Esc close`));
+}
+
+function groupKey(e) {
+  const g = gstate.view[gstate.open];
+  if (!g) return;
+  const key = e.key.toLowerCase();
+  if (key === " ") {
+    e.preventDefault();
+    if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
+    if (!e.repeat && gstate.prev != null) showMember(gstate.prev);
+  } else if (key === "arrowright") { e.preventDefault(); showMember(gstate.member + 1); }
+  else if (key === "arrowleft") { e.preventDefault(); showMember(gstate.member - 1); }
+  else if (/^[1-4]$/.test(key)) { g.sets[gstate.member] = Number(key) - 1; repaintGroup(g); }
+  else if (key === "enter") { e.preventDefault(); saveGroup(g); }
+  else if (key === "pagedown") { e.preventDefault(); openGroupAt(gstate.open + 1); }
+  else if (key === "pageup") { e.preventDefault(); openGroupAt(gstate.open - 1); }
+}
+
+for (const id of ["gshow", "gmin", "gsort"]) $(id).addEventListener("change", applyGroupFilters);
+
 // ---------- borders ----------
 
 const bstate = { scans: null, scan: null, rows: [], view: [], shown: 0 };
@@ -711,6 +957,10 @@ $("modal").addEventListener("click", () => $("modal").classList.remove("open"));
 document.addEventListener("keydown", async (e) => {
   const m = $("modal");
   if (e.key === "Escape") { m.classList.remove("open"); return; }
+  if (m.classList.contains("open") && m.dataset.view === "group" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    groupKey(e);
+    return;
+  }
   // Swap, navigation and marking only while a pair is open in the modal.
   if (!m.classList.contains("open") || m.dataset.view !== "pair" || e.ctrlKey || e.altKey || e.metaKey) return;
   const r = state.view[state.open];

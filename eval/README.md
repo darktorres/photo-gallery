@@ -104,6 +104,13 @@ the file is removed when the run completes (delete it to start over, e.g. after 
 run folder under `D:\PhotoGallery` side by side: a model comparison, and each pair list as
 thumbnails (click a pair for full size). Thumbnails are cached in `D:\PhotoGallery\cache\viewer_thumbs`.
 
+The **Groups** page shows `group.py`'s groups, largest first, with filters for unmarked groups, groups that
+merge labeled folders, and groups with aligned-but-different pairs inside. Mark a group by giving each
+picture in it its own set (letters A–D on the thumbnails, or keys 1–4 in the full view) and saving: pairs
+within a set become "same picture" marks, pairs across sets "different" (in `pair_marks.json`, shared with the
+verifier tabs). The full view shows one member at a time in a fixed box: ← / → step through the group, Space
+returns to the previously shown image, Enter saves, PgUp / PgDn change group.
+
 ## Outputs (in the work dir)
 
 | File | Contents |

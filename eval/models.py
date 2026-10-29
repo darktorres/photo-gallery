@@ -6,9 +6,9 @@ would throw away exactly the borders that distinguish crops of the same picture.
 """
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 import torch
 import torchvision

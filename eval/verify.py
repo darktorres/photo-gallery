@@ -55,7 +55,8 @@ import torch
 
 from common import DATA_ROOT, WORK_DIR, ground_truth, image_list, load_rgb
 
-import kornia.feature as KF  # noqa: E402  (after common: weights download under CACHE_DIR)
+# isort: split
+import kornia.feature as KF  # after common: weights download under CACHE_DIR
 
 WORK_SIDE = 1024  # feature extraction resolution (long side)
 CANVAS_SIDE = 512  # comparison resolution (long side of the reference)
@@ -401,7 +402,7 @@ def main() -> None:
         positives = [(a, b) for a, b in gt.positives if ok[a] and ok[b]]
         pool = np.array([i for i in gt.negative_pool if ok[i]])
         rows, cols = np.nonzero(np.triu(emb[pool] @ emb[pool].T >= args.floor, k=1))
-        similar = [(int(pool[r]), int(pool[c])) for r, c in zip(rows, cols)]
+        similar = [(int(pool[r]), int(pool[c])) for r, c in zip(rows, cols, strict=True)]
         if args.limit:
             positives, similar = positives[:args.limit], similar[:args.limit]
         # "similar_folder": no ground truth under the current rule (variants count as matches,
@@ -491,11 +492,14 @@ def write_outputs(prefix: str, args, params: Params, labels: tuple, results: lis
     print("|---|" + "---|" * len(decisions))
     for lab, counts in confusion.items():
         print(f"| {lab} | " + " | ".join(str(counts[d]) for d in decisions) + " |")
+    def quantiles(rows: list[dict], key: str) -> str:
+        return " / ".join(f"{v:.4f}" for v in np.quantile([float(r[key]) for r in rows], [0.1, 0.5, 0.9, 0.99]))
+
     for lab in labels:
         aligned = [r for r in results if r["label"] == lab and "blob_frac" in r]
         if aligned:
-            q = lambda k: " / ".join(f"{v:.4f}" for v in np.quantile([float(r[k]) for r in aligned], [0.1, 0.5, 0.9, 0.99]))
-            print(f"{lab} (aligned: {len(aligned)}): blob_frac p10/50/90/99 {q('blob_frac')}; noise {q('noise')}")
+            print(f"{lab} (aligned: {len(aligned)}): blob_frac p10/50/90/99 {quantiles(aligned, 'blob_frac')}; "
+                  f"noise {quantiles(aligned, 'noise')}")
 
 
 if __name__ == "__main__":

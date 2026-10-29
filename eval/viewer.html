@@ -1,4 +1,4 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -203,6 +203,7 @@ const fmt = (v, d = 3) => (v == null || Number.isNaN(v) ? "–" : Number(v).toFi
 const pct = (v) => (v == null ? "–" : (100 * v).toFixed(1) + "%");
 const heat = (v) => `background:hsl(${Math.round(120 * Math.max(0, Math.min(1, v)))} 55% var(--heat-l))`;
 const imgUrl = (path, size) => "/img?" + new URLSearchParams(size ? { path, size } : { path });
+const diagUrl = (id) => "/diag?" + new URLSearchParams({ run: state.run, model: state.model, kind: state.tab, id });
 
 // ---------- layout ----------
 
@@ -505,8 +506,6 @@ async function toggleMark(r, mark) {
   return true;
 }
 
-const diagUrl = (id) => "/diag?" + new URLSearchParams({ run: state.run, model: state.model, kind: state.tab, id });
-
 function verifyStats(r) {
   if (r.error) return r.error;
   const parts = [`${r.inliers}/${r.matches} inliers`];
@@ -623,17 +622,17 @@ function borderCard(r) {
   const marked = r.verdict === FP;
   const btn = el("button", { class: "fp", type: "button", "aria-pressed": String(marked) },
     marked ? "✓ False positive" : "Mark false positive");
-  const card = el("div", { class: "card bcard" + (marked ? " marked" : "") },
+  const node = el("div", { class: "card bcard" + (marked ? " marked" : "") },
     el("div", { class: "bthumb", onclick: () => openBorder(r) }, borderImage(r, 480)),
     el("div", { class: "bcap" }, el("b", {}, r.name), el("br"),
       `${r.folder} · ${r.width}×${r.height} · cut L${r.crop[0]} T${r.crop[1]} R${r.crop[2]} B${r.crop[3]}`, el("br"),
       r.sides.replace(/ dev \d+ drift \d+/g, "")),
     btn);
-  btn.addEventListener("click", () => toggleFalsePositive(r, card, btn));
-  return card;
+  btn.addEventListener("click", () => toggleFalsePositive(r, node, btn));
+  return node;
 }
 
-async function toggleFalsePositive(r, card, btn) {
+async function toggleFalsePositive(r, node, btn) {
   const verdict = r.verdict === FP ? null : FP;
   btn.disabled = true;
   try {
@@ -643,7 +642,7 @@ async function toggleFalsePositive(r, card, btn) {
     });
     if (!res.ok) throw new Error(await res.text());
     r.verdict = verdict;
-    card.classList.toggle("marked", !!verdict);
+    node.classList.toggle("marked", !!verdict);
     btn.setAttribute("aria-pressed", String(!!verdict));
     btn.textContent = verdict ? "✓ False positive" : "Mark false positive";
     updateBorderCount();  // the card stays until the filters are re-applied

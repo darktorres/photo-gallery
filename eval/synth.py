@@ -11,8 +11,8 @@ understates retrieval when the original has a real duplicate elsewhere in the li
 import argparse
 import json
 import random
+from collections.abc import Sequence
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 import torch

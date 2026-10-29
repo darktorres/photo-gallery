@@ -80,7 +80,7 @@ overhead across 70M files, it is more like **1–3 days**. A second pass costs t
   the head. M0 benchmarks three orderings on a 100k sample: path order, NTFS file-ID (MFT record) order, and
   physical order (first-extent LCN via `FSCTL_GET_RETRIEVAL_POINTERS`).
 
-```
+```text
 Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-disk location
         │
   [1 reader per HDD]  sequential reads → raw bytes ─► BLAKE3/xxh3 of file bytes   (tier 0a)
@@ -205,7 +205,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 ## 8. Milestones
 
-**M0 — Evaluation and benchmarks (before any 70M work)**
+### M0 — Evaluation and benchmarks (before any 70M work)
 
 - Copy a ~200k sample to D:, including known Pinterest crop/edit groups. Hand-label ~2k pairs in three
   classes: duplicate, crop/edit duplicate, not a duplicate.
@@ -225,25 +225,25 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
   backed by a number.
 
-**M1 — Core and ingest (on the sample)**
+### M1 — Core and ingest (on the sample)
 
 - Cargo workspace (`core`, `ingest`, `ui`), catalog schema, Everything-based scanner, the single-pass
   pipeline, tiers 0–1, thumbnails, resumability.
 
-**M2 — Desktop UI**
+### M2 — Desktop UI
 
 - QML grid with lazy model and thumbnail provider, viewer and loupe, ratings in the catalog, merged-drives
   tree.
 
-**M3 — Near-duplicates**
+### M3 — Near-duplicates
 
 - Tier 2 (embeddings + ANN, query-then-insert), grouping and split pass, the review UI with feedback buttons.
 
-**M4 — Full library run**
+### M4 — Full library run
 
 - Background ingestion of all 70M images with progress, pause/resume, and throttling while the UI is in use.
 
-**M5 — Precision**
+### M5 — Precision
 
 - Tier 3 verifier trained on review labels, local-feature check for heavy crops, keeper selection.
 

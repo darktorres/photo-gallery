@@ -1,0 +1,12 @@
+# Lint config for the Python scripts (eval/, tools/). Run from the repo root: ruff check .
+target-version = "py312"
+line-length = 130
+src = ["eval", "tools"]  # their modules import each other as first-party (from common import ...)
+
+[lint]
+select = ["E", "W", "F", "I", "B", "UP", "SIM", "C4", "PIE", "RUF", "PLE", "PLW"]
+ignore = [
+    "E741",     # l, t, r, b for the four crop sides reads better than any longer name
+    "PLW2901",  # rebinding a loop/with variable (im = exif_transpose(im)) is the PIL idiom
+    "RUF001",   # × and – in printed text are intentional
+]

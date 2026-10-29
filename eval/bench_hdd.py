@@ -152,16 +152,15 @@ def main() -> None:
         samples = {name: files[k * step:k * step + args.dense] for k, name in enumerate(orders)}
     else:
         samples = {name: files[k::args.stride] for k, name in enumerate(orders)}
+    all_sampled = [p for paths in samples.values() for p in paths]
     meta = {}
     t = time.perf_counter()
-    for name, paths in samples.items():
-        for p in paths:
-            lcn, extents = cluster_map(p)
-            meta[p] = (os.stat(p).st_ino & 0xFFFFFFFFFFFF, lcn, extents)
+    for p in all_sampled:
+        lcn, extents = cluster_map(p)
+        meta[p] = (os.stat(p).st_ino & 0xFFFFFFFFFFFF, lcn, extents)
     print(f"metadata for {len(meta):,} sampled files: {time.perf_counter() - t:.0f} s", flush=True)
 
     # How well does path order already follow the physical layout?
-    all_sampled = [p for paths in samples.values() for p in paths]
     position = {p: i for i, p in enumerate(files)}
     path_pos = np.array([position[p] for p in all_sampled], dtype=np.float64)
     mfts = np.array([meta[p][0] for p in all_sampled], dtype=np.float64)

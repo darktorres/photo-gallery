@@ -138,8 +138,8 @@ def main() -> None:
         "failed_images": int((~ok).sum()),
         "groups": len(gt.groups),
         "positive_pairs": len(positives),
-        "hard_negative_pairs": int(len(neg_sims)),
-        "cross_group_pairs": int(len(cross_sims)),
+        "hard_negative_pairs": len(neg_sims),
+        "cross_group_pairs": len(cross_sims),
         "unpaired_files": len(unpaired_pool),
         "recall_at_1": float((ranks < 1).mean()),
         "recall_at_10": float((ranks < 10).mean()),
@@ -167,7 +167,7 @@ def main() -> None:
     # Proposed pairing of the loose dups2 files (best match of each, deduplicated).
     # "mutual" = each is the other's best match: a strong candidate for a subfolder.
     proposals = {}
-    for i, (j, s) in enumerate(zip(best_idx, best_sims)):
+    for i, (j, s) in enumerate(zip(best_idx, best_sims, strict=True)):
         key = (min(i, int(j)), max(i, int(j)))
         proposals[key] = (float(s), int(best_idx[j]) == i)
     with open(WORK_DIR / f"unpaired_pairs_{args.model}.csv", "w", newline="", encoding="utf-8") as f:

@@ -3,7 +3,7 @@ that only hash images don't pay for importing it."""
 
 import io
 import random
-from typing import Callable
+from collections.abc import Callable
 
 from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 

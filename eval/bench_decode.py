@@ -102,7 +102,7 @@ def nvjpeg_run(files: list[str], batch: int) -> tuple[list, float, int]:
                     decoded.append(decode_jpeg(t, mode=ImageReadMode.RGB, device="cuda"))
                 except RuntimeError:
                     decoded.append(None)
-        for k, (img, data) in enumerate(zip(decoded, blobs)):
+        for k, (img, data) in enumerate(zip(decoded, blobs, strict=True)):
             if img is None:  # CMYK and other formats nvJPEG rejects: CPU path
                 fallbacks += 1
                 out[s + k] = _pil(data, draft=False)

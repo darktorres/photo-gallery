@@ -214,8 +214,9 @@ DINOv2 51–52, CLIP 54).
 | 0.90 | 0.909 | 88.3% | 2,496 | 26 / 68,265 (0.04%) |
 | 0.95 | 0.879 | 92.4% | 2,653 | 42 / 68,265 (0.06%) |
 
-  Flagged unlabeled pairs include real but unlabeled duplicates. Precision is unknown until
-  `review_*.csv` is labeled.
+Flagged unlabeled pairs include real but unlabeled duplicates. Precision is unknown until
+`review_*.csv` is labeled.
+
 - **Score separation (pre-fix run, same subset):** hard negatives p99 ≈ 0.30; positives
   p10 ≈ 0.89.
 - **What it misses (viewer, scores 0.48–0.78):** strong color grading (e.g. yellow vs
@@ -244,6 +245,7 @@ needs a stage that aligns the two images and looks at *where* they differ (see
 ### Verifier prototype, first run (subset, 2026-10-28)
 
 `eval/verify.py`:
+
 1. DISK + LightGlue matching, also against the mirrored image.
 2. MAGSAC homography.
 3. Warp onto a 512 px canvas.
@@ -341,6 +343,7 @@ are *different pictures*, not matches. dups2/090 held two such pairs and was spl
 the strong clause: unlabeled 2,985 / 4,134.)
 
 **Interior changes don't separate same-shoot frames on their own:**
+
 - 670/671 have 25–32 changed regions inside; labeled duplicates at most 13. "≥ 15 regions or > 15%
   interior change" flips 0 duplicates, 52 similar-folder and 58 unlabeled k-NN matches to unrelated.
 - Looking at 20 of the 58 flipped k-NN pairs: **~11 correct** (front vs back of a cosplay, other
@@ -437,6 +440,7 @@ default, writes cleaned copies only with `--apply`, never touches originals. Def
 lossless `jpegtran` crop (left/top snapped to the 8/16 px JPEG block).
 
 Sample of 1,500 random test-set images (79 img/s, 4 workers):
+
 - **35 with borders (2.3%)**, all correct on visual review: black letterbox bars, thin
   (5–20 px) dark frames around AI art, white side padding, a purple frame.
 - **Rejected look-alikes:** plain studio walls, skies, and white backgrounds. Rules that made the

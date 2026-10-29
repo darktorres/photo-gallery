@@ -380,6 +380,33 @@ the strong clause: unlabeled 2,985 / 4,134.)
   - **Gray zone:** 448 is a body-reshape (liquify) edit, a real local geometric change, so it moves
     like a pose change; a hair recolor (5152) changes 18% of the interior. Whether such edits are
     "the same picture" is a definition question, and 63 pairs are too few to set thresholds.
+- **Rerun of all three sets with motion (subset, 2026-10-29; decisions unchanged, rules off).** Among
+  pairs the verifier matches:
+
+  | Set / label | Matched | moved > 0 | moved p99 / max | interior change p99 / max |
+  |---|---|---|---|---|
+  | Labeled duplicates | 698 | 1.3% | 0.000 / 0.074 (448) | 0.041 / 0.132 |
+  | Cross-group (different pictures) | 5 | 100% | all 0.027–0.037 | 0.196 / 0.200 |
+  | Similar folder | 231 | 81% | 0.061 / 0.129 | 0.208 / 0.393 |
+  | k-NN unlabeled | 2,973 | 6.8% | 0.013 / 0.195 | 0.135 / 0.363 |
+
+  Candidate rules, pairs flipped from match to unrelated (k-NN set; cross-group = known errors,
+  duplicate = known losses, the rest unknown until marked):
+
+  | Rule | Cross-group (of 5) | Duplicates (of 698) | Similar folder | Unlabeled |
+  |---|---|---|---|---|
+  | moved > 0.012 only | **5** | 1 (448) | 34 | 37 |
+  | interior > 0.15 only | 1 | 0 | 9 | 21 |
+  | **moved > 0.012 or interior > 0.15** | **5** | 1 (448) | 39 | 56 |
+  | moved > 0.005 or interior > 0.15 | 5 | 1 | 78 | 109 |
+  | moved > 0.02 or interior > 0.20 | 4 | 1 | 24 | 32 |
+
+  - **Motion alone removes every known false match** (all 5, including 125 vs 673, a different photo
+    of the same person) at the cost of one labeled duplicate, 448, the liquify edit.
+  - Plain duplicates almost never move (98.7% exactly 0). The similar folder moves a lot (81%), as it
+    holds AI regenerations and other shots, whose truth is unknown.
+  - Whether the 56 unlabeled pairs the combined rule flips are right is the open question: the
+    hand marks answer it.
 - **Next: hand marks.** The viewer's verifier tabs now have "Same picture (S)" / "Different picture
   (D)" marks per pair (`pair_marks.json` in the run folder, keyed by the image pair, kept across
   reruns), filters for unmarked / disagreements, and the Summary shows how often the verifier agrees
@@ -498,8 +525,11 @@ Sample of 1,500 random test-set images (79 img/s, 4 workers):
 
 ## Pending
 
-- Verifier on real k-NN candidates (`verify.py --pairs knn`, running): precision needs the
-  unlabeled pairs judged by eye.
+- Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
+- Verifier on the synthetic edits (heavy crops, 90° rotation, overlays, letterbox): not measured yet.
+- Which pairs need the verifier at all (PDQ tier, high-SSCD band, faster verifier): ~1.5 pairs/s and
+  ~0.9 candidate pairs per image on the subset would mean over a year for 70M.
+- Border trimming before embedding; grouping (union-find + split pass) on the verified k-NN graph.
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
   comparison (see "Verifier prototype, first run").
 - Hand-label a sample of `review_*.csv` to estimate real precision.

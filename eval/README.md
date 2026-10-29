@@ -82,7 +82,8 @@ consistent optical flow, i.e. things that moved, as in another frame) are drawn 
 `--max-interior-change`, which are off until tuned on hand marks.
 
 **Hand marks:** in the viewer's verifier tabs, mark pairs "same picture" (incl. edits) or "different
-picture" (buttons, or open a pair and press S / D to mark and move on, ← / → to browse). Marks go to
+picture" (buttons, or open a pair and press S / D to mark and move on, ← / → to browse). An open pair shows
+one image at a time in a shared box; Space (or a click on the image) swaps A and B. Marks go to
 `pair_marks.json` in the run folder, keyed by the image pair, so they survive reruns; the Summary tab
 shows how often the verifier agrees with them.
 `--rescore` re-applies the thresholds to the stored measurements without redoing image work. Needs

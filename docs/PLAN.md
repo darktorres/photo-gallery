@@ -143,13 +143,28 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
     LightGlue exported to ONNX, run through `ort`).
   - Geometric check: Hough pre-filter, then clique-filtered RANSAC. That paper reports about 12 ms per pair
     (RANSAC 2D Cliques).
+- **Vision-language model as a last-resort judge** (option, later): only for pairs the verifier can't settle
+  geometrically, e.g. a liquify/slimming edit vs another frame, or a hair recolor (FINDINGS: the gray zone).
+  Ask a VLM (e.g. Claude vision) "same picture, possibly edited, or a different picture?", cache the answer per
+  pair, and treat it like a review label. Expected to be a small fraction of pairs; cost and latency per pair
+  decide whether it's worth it over hand review.
 
 **Grouping:**
 
 - Verified edges → union-find → split pass that re-checks members against a pivot (Pinterest k-cut).
 - Each group gets a canonical **keeper**: the largest pixel area that contains the others, then the highest
-  quality.
+  quality. **Folder preferences** override this: an ordered list of patterns (e.g. prefer `originals\` over
+  `backup\` or `pinterest\`); newest/oldest as further tie-breakers.
 - "Not a duplicate" decisions are stored per pair and are never re-proposed.
+
+**Removal (quarantine and restore):**
+
+- Removed files are *moved* into a quarantine folder on their own drive, so the move is a rename, not a copy.
+  The folder structure is kept: `E:\pinterest\a\b.jpg` → `E:\_quarantine\<date>\pinterest\a\b.jpg`.
+- Every move is recorded (catalog table and a `manifest.json` per batch): original path, quarantine path, group,
+  keeper, reason, time.
+- **Restore** puts files back from the record and refuses to overwrite a file that has reappeared at the
+  original path. Emptying the quarantine is a separate, explicit step.
 
 ---
 

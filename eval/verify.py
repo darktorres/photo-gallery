@@ -40,6 +40,9 @@ Decision (decide()):
               "homography" with 20-120 inliers between unrelated pictures too, but their pixels
               don't agree once aligned.
 
+--shortcut (pipeline mode, off for evaluation) accepts pairs with PDQ distance <= 22 or SSCD cosine >= 0.95
+without image work (group.py's shortcut(); about a third of k-NN pairs, all of which the verifier matched).
+
 --rescore re-applies the decision thresholds to an existing CSV without touching images.
 
 Writes <prefix>_<model>.csv / .json and one diagnostic image per pair in <prefix>_<model>/
@@ -64,6 +67,7 @@ import numpy as np
 import torch
 
 from common import DATA_ROOT, WORK_DIR, ground_truth, image_list, load_rgb
+from group import SHORTCUT_PDQ, SHORTCUT_SIM, pdq_distances, shortcut
 
 # isort: split
 import kornia.feature as KF  # after common: weights download under CACHE_DIR
@@ -109,6 +113,8 @@ def decide(m: dict, params: Params) -> str:
     """match / unrelated from a pair's measurements (see the module docstring)."""
     if m.get("decision") == "error":
         return "error"
+    if m.get("shortcut"):  # accepted without image work (--shortcut)
+        return "match"
     if m.get("noise") is None:  # never aligned
         return "unrelated"
     inliers = int(m["inliers"])
@@ -525,6 +531,8 @@ def main() -> None:
                         help="min similarity for an unlabeled or negative pair to be checked")
     parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
     parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")
+    parser.add_argument("--shortcut", action="store_true",
+                        help="accept PDQ <= 22 or SSCD >= 0.95 without image work (pipeline mode)")
     add_decision_args(parser)
     parser.add_argument("--rescore", action="store_true",
                         help="re-apply the decision thresholds to the existing CSV (no image work)")
@@ -617,12 +625,16 @@ def main() -> None:
         if verified % 100 == 0:
             print(f"  {verified}/{len(pairs)}  {verified / (time.time() - start):.1f} pairs/s", flush=True)
 
+    pdq = pdq_distances(files) if args.shortcut else None
     runner = PairRunner(features, params, args.workers, done)
     for pid, (label, a, b) in enumerate(pairs):
         if (row := checkpoint.done(pid)) is not None:
             results[pid] = row
             continue
         row = {"id": pid, "label": label, "similarity": float(emb[a] @ emb[b]), "path_a": files[a], "path_b": files[b]}
+        if pdq and (why := shortcut(pdq(files[a], files[b]), row["similarity"], SHORTCUT_PDQ, SHORTCUT_SIM)):
+            done(row, {"decision": "match", "shortcut": why}, None)
+            continue
         runner.submit(row, partial(prepared, a), partial(prepared, b))
     runner.close()
     write_outputs(prefix, args, params, labels, results, round(time.time() - start, 1))
@@ -631,7 +643,7 @@ def main() -> None:
 
 COLUMNS = ["id", "label", "similarity", "decision", "correct", "inliers", "matches", "flipped", "reference",
            "cover_a", "cover_b", "overlap", "color_to", "noise", "res_p99", "changed_frac", "blob_frac",
-           "interior_changed_frac", "interior_regions", "moved_frac", "moved_share", "error",
+           "interior_changed_frac", "interior_regions", "moved_frac", "moved_share", "shortcut", "error",
            "path_a", "path_b"]
 
 

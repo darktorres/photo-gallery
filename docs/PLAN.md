@@ -151,7 +151,9 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 
 **Grouping:**
 
-- Verified edges → union-find → split pass that re-checks members against a pivot (Pinterest k-cut).
+- Verified edges, signed (match / aligned-but-different, weighted by the verifier's margin) → correlation
+  clustering by greedy additive edge contraction (multicut). Measured in M0 to beat union-find plus a split
+  pass (FINDINGS: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
 - Each group gets a canonical **keeper**: the largest pixel area that contains the others, then the highest
   quality. **Folder preferences** override this: an ordered list of patterns (e.g. prefer `originals\` over
   `backup\` or `pinterest\`); newest/oldest as further tie-breakers.
@@ -252,7 +254,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 ### M3 — Near-duplicates
 
-- Tier 2 (embeddings + ANN, query-then-insert), grouping and split pass, the review UI with feedback buttons.
+- Tier 2 (embeddings + ANN, query-then-insert), grouping (multicut), the review UI with feedback buttons.
 
 ### M4 — Full library run
 

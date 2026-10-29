@@ -38,6 +38,8 @@ $py = 'D:\PhotoGallery\venv-eval\Scripts\python.exe'
 & $py verify.py --pairs cross_groups --floor 0.3   # ... on the negative set (pairs across dups2 groups)
 & $py verify.py --pairs knn           # ... on real k-NN candidates (each image's 10 nearest above 0.4)
 & $py verify_synth.py                 # ... on synth.py's edited copies (crops, overlays, rotation...): all should match
+& $py verify.py --pairs knn --shortcut   # pipeline mode: PDQ <= 22 or SSCD >= 0.95 accepted without image work
+& $py group.py                        # groups from the verified k-NN pairs (multicut), scored on the labels
 & $py pdq.py                          # PDQ hashes -> emb_pdq.npy; then evaluate.py --model pdq
 & $py pdq.py --synth                  # PDQ robustness to the same synthetic edits
 & $py bench_decode.py                 # JPEG decode pipelines: speed and embedding drift (idle machine)
@@ -119,6 +121,7 @@ thumbnails (click a pair for full size). Thumbnails are cached in `D:\PhotoGalle
 | `verify_cross_<model>.csv`, `.json`, `/` | The same for the cross-group negative set |
 | `verify_knn_<model>.csv`, `.json`, `/` | The same for real k-NN candidate pairs (labeled where known) |
 | `verify_synth_<model>.csv`, `.json`, `/` | The same for original vs synthetic edited copy (label = the edit) |
+| `groups_<model>.json` | `group.py`: edge counts, scores against the labels, and the groups (largest first) |
 | `quality_pdq.npy` | PDQ's own hash quality score per image (0–100) |
 | `synth_pdq.json` | PDQ synthetic robustness; `dihedral` = best of the 8 rotations/mirrors |
 | `bench_decode.json` | Decode pipelines: img/s and SSCD cosine vs the PIL reference |

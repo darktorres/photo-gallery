@@ -523,6 +523,42 @@ Changes in `eval/verify.py`, all four pair sets rerun:
   Rotation is cheaper to get from PDQ's 8-orientation query or by trying the rotations only when the first
   alignment is weak (like the mirror). `--features aliked` stays available.
 
+### Shortcut and grouping (`eval/group.py`, k-NN set, subset, 2026-10-29)
+
+**Shortcut** (PDQ ≤ 22 with both hashes reliable, or SSCD ≥ 0.95): 2,896 of the 8,344 k-NN pairs (35%), and
+the fixed verifier matched **every one** of them, so skipping it changes nothing. `verify.py --shortcut` now
+does that in pipeline mode (decision "match", `shortcut` = pdq / sscd, no image work).
+
+**Grouping.** Each candidate pair becomes a signed edge: +1 for the shortcut, the verifier's decision weighted
+by its noise margin when it compared the pair, and nothing when it couldn't align it (two crops of one picture
+that don't overlap say nothing about each other). 7,300 of 8,344 pairs carry evidence: 3,908 match, 3,392
+"aligned but different".
+
+| Method | Groups (2+) | Largest | Labeled pairs precision / recall | Folders merged | Folders split | Loose files grouped |
+|---|---|---|---|---|---|---|
+| Connected components (union-find) | 2,869 | 17, 17, 7 | 0.9887 / 1.0 | 125+673, 670+671 | 0 | 4,458 / 4,574 |
+| Min-cut split of conflicts (tried, dropped) | 2,871 | 17, 17, 7 | 0.9943 / 0.9986 | 670+671 | 1 | 4,457 |
+| **Multicut (GAEC)** | 2,874 | 13, 12, 7 | **0.9943 / 1.0** | 670+671 | 0 | 4,458 |
+| Multicut + candidate motion rule | 2,847 | 12, 9, 6 | **1.0 / 0.9986** | none | 1 (429) | 4,434 |
+
+- **Connected components chain:** the two 17-image groups were a mirror-selfie series (one room, different
+  outfits and poses) and AI portraits of different faces on one template. One false edge or a dense run of
+  borderline ones is enough.
+- **Min-cut on conflicts** (cut a group between two images the verifier aligned and called different, when at
+  most one match edge joins them) fixed 125+673 but split folder 125: with equal edge weights any bridge is a
+  minimum cut, often the wrong one. Replaced by:
+- **Multicut** (correlation clustering, greedy additive edge contraction, Keuper et al. 2015): merge the two
+  clusters with the largest positive summed weight until none is left, so a match is outvoted by the conflicts
+  it would bring in. Fixes 125+673 without splitting anything, shrinks both chains.
+- **What's left is the verifier's decision, not the grouping:**
+  - 670+671 (different frames of one beach shoot) match at noise 0.02 with `moved_frac` ≈ 0.03; the motion rule
+    separates them, but also splits folder 429, an AI image whose copy has a slight body warp (`moved_frac` 0.07).
+    Frames vs. local warps is exactly what the hand marks have to decide.
+  - The AI-portrait group (12) matches at noise 0.03–0.05 with low motion and interior change: same pose,
+    framing and background, different face. Median noise can't see a different face; a face-region or
+    learned decision could (see "duplicate vs variant" in Pending).
+- Cost: grouping 8.3k pairs takes about a second (pure Python).
+
 ### Synthetic edits, all models (subset, 2026-10-29)
 
 300 random images, each edit applied, then the edited copy is searched in the 9.3k-image subset.
@@ -638,8 +674,9 @@ Sample of 1,500 random test-set images (79 img/s, 4 workers):
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
 - Verifier speed, next levers: TensorRT / lower resolution for DISK and LightGlue (the GPU main thread is
   the limit now); rotation retry only for weak alignments, if the full set shows rotated edited copies.
-- Pipeline shortcut: accept PDQ ≤ 22 or SSCD ≥ 0.95 without the verifier.
-- Border trimming before embedding; grouping (union-find + split pass) on the verified k-NN graph.
+- Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
+  template portraits with different faces (the 12-image group).
+- Border trimming before embedding.
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
   comparison (see "Verifier prototype, first run").
 - Hand-label a sample of `review_*.csv` to estimate real precision.

@@ -1,11 +1,14 @@
-"""SSCD on ONNX Runtime and TensorRT: ONNX export, int8 quantization, engine builds, and runners that plug into
-models.SPECS like any torch module (CUDA tensors in, L2-normalized fp32 embeddings out).
+"""SSCD (and the verifier's DISK) on ONNX Runtime and TensorRT: ONNX export, int8 quantization, engine builds, and
+runners that plug in like torch modules. SSCD's go into models.SPECS (CUDA tensors in, L2-normalized fp32
+embeddings out); DISK's U-Net replaces the torch one inside kornia's DISK (verify.py --disk-runtime trt).
 
 Files (built on first use, under CACHE_DIR):
   onnx/sscd_<size>_fp32.onnx, _fp16.onnx   exported from models.SSCD (see SSCDExport)
   onnx/sscd_<size>_int8.onnx               int8 Q/DQ on the convolutions, fp16 elsewhere (NVIDIA ModelOpt PTQ)
   onnx/calib_<size>.npy                    the calibration batch: CALIB_IMAGES unlabeled images not in files.txt
   trt/sscd_<size>_<precision>.plan         TensorRT engines (batch 1..MAX_BATCH)
+  onnx/disk_<precision>.onnx, trt/disk_<precision>_trt<N>.plan   DISK's U-Net (one image, any size up to
+                                           DISK_MAX_SIDE, multiples of 16)
 
 TensorRT 11 only builds strongly typed networks: the precision is the ONNX graph's own (fp16 weights and
 activations, or int8 Q/DQ), there is no fp16/int8 builder switch. ModelOpt pins older onnx / onnxruntime
@@ -152,16 +155,22 @@ def _quantize_int8(src: Path, calib: Path, dst: Path, method: str = "entropy", e
 
 # --- TensorRT (this venv's TensorRT 11) ---
 
-def engine_path(size: int, precision: str) -> Path:
+def _trt_major() -> str:
     import tensorrt as trt
 
-    path = TRT_DIR / f"sscd_{size}_{precision}_trt{trt.__version__.split('.')[0]}.plan"
+    return trt.__version__.split(".")[0]
+
+
+def engine_path(size: int, precision: str) -> Path:
+    path = TRT_DIR / f"sscd_{size}_{precision}_trt{_trt_major()}.plan"
     if not path.exists():
-        build_engine(onnx_path(size, precision), path, size)
+        build_engine(onnx_path(size, precision), path,
+                     ((1, 3, size, size), (OPT_BATCH, 3, size, size), (MAX_BATCH, 3, size, size)))
     return path
 
 
-def build_engine(onnx: Path, path: Path, size: int) -> None:
+def build_engine(onnx: Path, path: Path, shapes: tuple[tuple[int, ...], ...]) -> None:
+    """Builds the engine for input shapes (min, opt, max)."""
     import tensorrt as trt
 
     TRT_DIR.mkdir(parents=True, exist_ok=True)
@@ -174,8 +183,7 @@ def build_engine(onnx: Path, path: Path, size: int) -> None:
     config = builder.create_builder_config()
     config.set_memory_pool_limit(trt.MemoryPoolType.WORKSPACE, 2 << 30)
     profile = builder.create_optimization_profile()
-    name = network.get_input(0).name
-    profile.set_shape(name, (1, 3, size, size), (OPT_BATCH, 3, size, size), (MAX_BATCH, 3, size, size))
+    profile.set_shape(network.get_input(0).name, *shapes)
     config.add_optimization_profile(profile)
     plan = builder.build_serialized_network(network, config)
     if plan is None:
@@ -183,16 +191,15 @@ def build_engine(onnx: Path, path: Path, size: int) -> None:
     path.write_bytes(bytes(plan))
 
 
-class TRTModule(nn.Module):
-    """Runs a TensorRT engine on torch's current CUDA stream (the cached engine for size and precision, or the
-    given plan file)."""
+class TRTRunner(nn.Module):
+    """Runs a TensorRT engine (one input, one output) on torch's current CUDA stream; returns fp32."""
 
-    def __init__(self, size: int, precision: str, plan: Path | None = None):
+    def __init__(self, plan: Path):
         super().__init__()
         import tensorrt as trt
 
         runtime = trt.Runtime(trt.Logger(trt.Logger.WARNING))
-        self.engine = runtime.deserialize_cuda_engine((plan or engine_path(size, precision)).read_bytes())
+        self.engine = runtime.deserialize_cuda_engine(plan.read_bytes())
         self.context = self.engine.create_execution_context()
         names = [self.engine.get_tensor_name(i) for i in range(self.engine.num_io_tensors)]
         self.input = next(n for n in names if self.engine.get_tensor_mode(n) == trt.TensorIOMode.INPUT)
@@ -209,7 +216,54 @@ class TRTModule(nn.Module):
         self.context.set_tensor_address(self.output, y.data_ptr())
         if not self.context.execute_async_v3(torch.cuda.current_stream().cuda_stream):
             raise RuntimeError("TensorRT execution failed")
-        return nn.functional.normalize(y.float(), dim=1)
+        return y.float()
+
+
+class TRTModule(TRTRunner):
+    """SSCD on TensorRT: the cached engine for size and precision, or the given plan file."""
+
+    def __init__(self, size: int, precision: str, plan: Path | None = None):
+        super().__init__(plan or engine_path(size, precision))
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return nn.functional.normalize(super().forward(x), dim=1)
+
+
+# --- DISK (the verifier's local features) ---
+
+DISK_MAX_SIDE = 1024  # verify.WORK_SIDE: the largest image the engine takes
+DISK_OPT = (1, 3, 1024, 688)  # a typical working image: portrait 2:3 at the long side
+
+
+def disk_onnx_path(precision: str) -> Path:
+    """kornia's DISK U-Net ("depth" weights), any height and width (multiples of 16)."""
+    path = ONNX_DIR / f"disk_{precision}.onnx"
+    if path.exists():
+        return path
+    import kornia.feature as KF
+
+    ONNX_DIR.mkdir(parents=True, exist_ok=True)
+    dtype = {"fp32": torch.float32, "fp16": torch.float16}[precision]
+    unet = KF.DISK.from_pretrained("depth").unet.eval().to(dtype)
+    x = torch.zeros(1, 3, 256, 192, dtype=dtype)
+    torch.onnx.export(unet, (x,), str(path), input_names=["x"], output_names=["y"], opset_version=17,
+                      dynamic_axes={"x": {2: "h", 3: "w"}, "y": {2: "h", 3: "w"}}, dynamo=False)
+    return path
+
+
+def disk_engine_path(precision: str) -> Path:
+    path = TRT_DIR / f"disk_{precision}_trt{_trt_major()}.plan"
+    if not path.exists():
+        build_engine(disk_onnx_path(precision), path,
+                     ((1, 3, 16, 16), DISK_OPT, (1, 3, DISK_MAX_SIDE, DISK_MAX_SIDE)))
+    return path
+
+
+class DiskUnetTRT(TRTRunner):
+    """Drop-in for kornia's DISK.unet: (1, 3, H, W) -> (1, 129, H, W) fp32 (heatmap + dense descriptors)."""
+
+    def __init__(self, precision: str):
+        super().__init__(disk_engine_path(precision))
 
 
 # --- ONNX Runtime ---

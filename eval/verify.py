@@ -18,7 +18,9 @@ a "match".
 Per pair:
   1. Match local features (DISK + LightGlue) between A and B; also between A and mirrored B
      unless the first alignment is already strong. Images work at a long side between
-     MIN_WORK_SIDE and WORK_SIDE: DISK finds almost nothing usable on a ~200 px image.
+     MIN_WORK_SIDE and WORK_SIDE: DISK finds almost nothing usable on a ~200 px image. With
+     --rotations, a pair that doesn't match is retried against B rotated in those steps
+     (DISK isn't rotation-invariant), its matches mapped back into B's own frame.
   2. Fit a homography with MAGSAC. Undoes crops, zooms and mirrors.
   3. Warp the less-contained image onto the more-contained one (the "reference"), on a
      comparison canvas, with both blurred to the same effective resolution.
@@ -49,7 +51,8 @@ Writes <prefix>_<model>.csv / .json and one diagnostic image per pair in <prefix
 (reference | other, aligned | residual heat map with changed regions; the two images in the colors
 they were compared in).
 
-Steps 1-2 run on the GPU in the main thread, steps 3-5 on --workers CPU threads (PairRunner).
+Images are decoded and resized ahead on --loaders CPU threads (Prefetcher), steps 1-2 run on the GPU in the
+main thread, steps 3-5 on --workers CPU threads (PairRunner).
 """
 
 import argparse
@@ -70,7 +73,8 @@ from common import DATA_ROOT, WORK_DIR, ground_truth, image_list, load_rgb
 from group import SHORTCUT_PDQ, SHORTCUT_SIM, pdq_distances, shortcut
 
 # isort: split
-import kornia.feature as KF  # after common: weights download under CACHE_DIR
+import kornia as K  # after common: weights download under CACHE_DIR
+import kornia.feature as KF
 
 WORK_SIDE = 1024  # feature extraction resolution (long side); larger images are downscaled
 MIN_WORK_SIDE = 512  # ... smaller ones upscaled to this (25%-downscaled copies: 0/40 aligned as is, 40/40 at 512)
@@ -133,32 +137,49 @@ def decide(m: dict, params: Params) -> str:
 
 # ---------- features ----------
 
-FEATURES = ("disk", "aliked")  # local features (each with its own LightGlue weights)
+FEATURES = ("disk", "aliked", "sift")  # local features (each with its own LightGlue weights)
+ROTATIONS = {"none": (), "90": (90, 180, 270), "45": (45, 90, 135, 180, 225, 270, 315)}
+
+
+DISK_RUNTIMES = ("trt", "torch")
 
 
 class Features:
-    def __init__(self, kind: str = "disk") -> None:
+    def __init__(self, kind: str = "disk", disk_runtime: str = "trt", rotations: tuple[int, ...] = ()) -> None:
         self.kind = kind
+        self.rotations = rotations  # tried for a pair that doesn't match as is (retry_variants)
         if kind == "disk":
             self.net = KF.DISK.from_pretrained("depth", device=DEVICE)
+            if disk_runtime == "trt":  # the U-Net on TensorRT fp16 (accel.py); kornia's keypoint selection stays
+                import accel
+
+                self.net.unet = accel.DiskUnetTRT("fp16")
+        elif kind == "sift":  # rotation-invariant; LightGlue's SIFT weights expect OpenCV's descriptor layout
+            self.net = KF.SIFTFeature(num_features=NUM_FEATURES, upright=False, rootsift=True, device=DEVICE,
+                                      descriptor_layout="opencv")
         else:  # top-k mode: the NUM_FEATURES strongest, like DISK
             self.net = KF.ALIKED.from_pretrained("aliked-n16", max_num_keypoints=NUM_FEATURES, detection_threshold=0,
                                                  device=DEVICE)
         self.matcher = KF.LightGlueMatcher(kind).eval().to(DEVICE)
 
     @torch.inference_mode()
-    def extract(self, img: np.ndarray) -> tuple[torch.Tensor, torch.Tensor]:
+    def extract(self, img: np.ndarray) -> tuple:
+        """(keypoints, descriptors) or, for SIFT, (keypoints, descriptors, local affine frames)."""
         t = torch.from_numpy(np.array(img)).to(DEVICE).permute(2, 0, 1)[None].float() / 255.0
+        if self.kind == "sift":
+            lafs, _, descs = self.net(K.color.rgb_to_grayscale(t))
+            return KF.get_laf_center(lafs)[0], descs[0], lafs
         f = self.net(t, n=NUM_FEATURES, pad_if_not_divisible=True)[0] if self.kind == "disk" else self.net(t)[0]
         return f.keypoints, f.descriptors
 
     @torch.inference_mode()
     def match(self, fa, fb, hw_a, hw_b) -> tuple[np.ndarray, np.ndarray]:
-        (ka, da), (kb, db) = fa, fb
+        (ka, da, *frames_a), (kb, db, *frames_b) = fa, fb
         if len(ka) < 8 or len(kb) < 8:
             return np.zeros((0, 2), np.float32), np.zeros((0, 2), np.float32)
-        lafs_a = KF.laf_from_center_scale_ori(ka[None], torch.ones(1, len(ka), 1, 1, device=DEVICE))
-        lafs_b = KF.laf_from_center_scale_ori(kb[None], torch.ones(1, len(kb), 1, 1, device=DEVICE))
+        ones = lambda k: torch.ones(1, len(k), 1, 1, device=DEVICE)  # noqa: E731
+        lafs_a = frames_a[0] if frames_a else KF.laf_from_center_scale_ori(ka[None], ones(ka))
+        lafs_b = frames_b[0] if frames_b else KF.laf_from_center_scale_ori(kb[None], ones(kb))
         _, idx = self.matcher(da, db, lafs_a, lafs_b, hw1=hw_a, hw2=hw_b)
         idx = idx.cpu().numpy()
         return ka[idx[:, 0]].cpu().numpy(), kb[idx[:, 1]].cpu().numpy()
@@ -178,18 +199,71 @@ class Prepared:
         return self._mirror
 
 
-def prepare(features: Features, rel: str) -> Prepared:
-    return prepare_image(features, load_rgb(DATA_ROOT / rel))
+def rotated_features(features: Features, img: np.ndarray, angle: float) -> tuple[tuple[int, int], tuple, np.ndarray]:
+    """Features of `img` rotated `angle` degrees counter-clockwise on an enlarged canvas (fitted to WORK_SIDE):
+    (that image's height and width, its features, the 2x3 affine map from its pixels back to img's)."""
+    h, w = img.shape[:2]
+    m = cv2.getRotationMatrix2D(((w - 1) / 2, (h - 1) / 2), angle, 1.0)
+    cos, sin = abs(m[0, 0]), abs(m[0, 1])
+    fit = min(1.0, WORK_SIDE / max(w * cos + h * sin, h * cos + w * sin))
+    nw, nh = max(1, round((w * cos + h * sin) * fit)), max(1, round((h * cos + w * sin) * fit))
+    m = cv2.getRotationMatrix2D(((w - 1) / 2, (h - 1) / 2), angle, fit)
+    m[0, 2] += (nw - 1) / 2 - (w - 1) / 2
+    m[1, 2] += (nh - 1) / 2 - (h - 1) / 2
+    out = cv2.warpAffine(img, m, (nw, nh), flags=cv2.INTER_LINEAR, borderMode=cv2.BORDER_CONSTANT, borderValue=(0, 0, 0))
+    return (nh, nw), features.extract(out), cv2.invertAffineTransform(m)
 
 
-def prepare_image(features: Features, im) -> Prepared:
-    """`im`: an upright RGB PIL image."""
+def work_image(im) -> tuple[np.ndarray, float]:
+    """`im`: an upright RGB PIL image -> (uint8 RGB array at the working resolution, its scale). CPU only."""
     side = max(im.size)
     scale = min(WORK_SIDE, max(MIN_WORK_SIDE, side)) / side
     if scale != 1.0:
         im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), resample=4)  # LANCZOS
-    img = np.asarray(im)
+    return np.asarray(im), scale
+
+
+def load_work_image(rel: str) -> tuple[np.ndarray, float]:
+    return work_image(load_rgb(DATA_ROOT / rel))
+
+
+def prepared(features: Features, work: tuple[np.ndarray, float]) -> Prepared:
+    """The GPU part: features of a working-resolution image."""
+    img, scale = work
     return Prepared(img, scale, features.extract(img))
+
+
+def prepare(features: Features, rel: str) -> Prepared:
+    return prepared(features, load_work_image(rel))
+
+
+def prepare_image(features: Features, im) -> Prepared:
+    """`im`: an upright RGB PIL image."""
+    return prepared(features, work_image(im))
+
+
+class Prefetcher:
+    """Runs `load` (the CPU part of preparing images: decode, edit, resize) on its own threads for `keys`, in the
+    order they will be asked for and up to `ahead` of them in advance, so the main thread only feeds the GPU.
+    A key that isn't pending (asked for again after the caller's cache dropped it) loads in the caller."""
+
+    def __init__(self, load, keys, threads: int, ahead: int = 32) -> None:
+        self.load, self.keys, self.ahead = load, iter(keys), ahead
+        self.pool = ThreadPoolExecutor(max(1, threads), thread_name_prefix="load")
+        self.pending: dict = {}
+        self._fill()
+
+    def _fill(self) -> None:
+        while len(self.pending) < self.ahead and (key := next(self.keys, None)) is not None:
+            self.pending.setdefault(key, self.pool.submit(self.load, key))
+
+    def get(self, key):
+        fut = self.pending.pop(key, None)
+        self._fill()
+        return fut.result() if fut is not None else self.load(key)
+
+    def close(self) -> None:
+        self.pool.shutdown(cancel_futures=True)
 
 
 # ---------- geometry ----------
@@ -329,8 +403,15 @@ def align(features: Features, pa: Prepared, pb: Prepared, params: Params, mirror
         if inliers > best[2]:
             best = (True, h, inliers, len(pts_a), img_m)
     flipped, h_ba, inliers, matches, img_b = best
-    out = {"inliers": inliers, "matches": matches, "flipped": flipped}
-    if h_ba is None or inliers < params.min_inliers:
+    return _aligned({"inliers": inliers, "matches": matches, "flipped": flipped}, pa, img_b, pb.scale, h_ba,
+                    params, skip)
+
+
+def _aligned(out: dict, pa: Prepared, img_b: np.ndarray, scale_b: float, h_ba: np.ndarray | None, params: Params,
+             skip: bool = False) -> Aligned:
+    """Picks the reference (the more-contained image) for an alignment B -> A, or rejects a weak one."""
+    hw_a, hw_b = pa.img.shape[:2], img_b.shape[:2]
+    if h_ba is None or out["inliers"] < params.min_inliers:
         return Aligned({**out, "decision": "unrelated"})
 
     cover_a = coverage(h_ba, hw_b, hw_a)  # how much of A shows up in B
@@ -338,24 +419,53 @@ def align(features: Features, pa: Prepared, pb: Prepared, params: Params, mirror
     out["cover_a"], out["cover_b"] = cover_a, cover_b
     # Reference = the more-contained image (the crop), so the overlap fills the canvas.
     if cover_a >= cover_b:
-        return Aligned({**out, "reference": "a"}, pa.img, img_b, pa.scale, pb.scale, h_ba, skip)
-    return Aligned({**out, "reference": "b"}, img_b, pa.img, pb.scale, pa.scale, np.linalg.inv(h_ba), skip)
+        return Aligned({**out, "reference": "a"}, pa.img, img_b, pa.scale, scale_b, h_ba, skip)
+    return Aligned({**out, "reference": "b"}, img_b, pa.img, scale_b, pa.scale, np.linalg.inv(h_ba), skip)
 
 
-def retry_mirrored(features: Features, pa: Prepared, pb: Prepared, al: Aligned, result: tuple, params: Params,
+def align_rotated(features: Features, pa: Prepared, pb: Prepared, params: Params, beat: int) -> Aligned | None:
+    """Matches A with B rotated by each of features.rotations; the best rotation's matches are mapped back
+    into B's own frame, so the alignment and the comparison use B as it is. None unless some rotation aligns
+    with more than `beat` inliers."""
+    best = None
+    for angle in features.rotations:
+        hw_r, feats_r, back = rotated_features(features, pb.img, angle)
+        pts_a, pts_r = features.match(pa.feats, feats_r, pa.img.shape[:2], hw_r)
+        pts_b = (pts_r @ back[:, :2].T + back[:, 2]).astype(np.float32) if len(pts_r) else pts_r
+        h, inliers = fit_homography(pts_a, pts_b)
+        if h is not None and inliers > beat and (best is None or inliers > best[1]):
+            best, beat = (h, inliers, len(pts_a), angle), inliers
+    if best is None:
+        return None
+    h, inliers, matches, angle = best
+    return _aligned({"inliers": inliers, "matches": matches, "flipped": False, "rotation": angle}, pa, pb.img,
+                    pb.scale, h, params)
+
+
+def retry_variants(features: Features, pa: Prepared, pb: Prepared, al: Aligned, result: tuple, params: Params,
                    rng: np.random.Generator) -> tuple:
-    """`result` of compare(al); if the mirrored image was skipped and the pair doesn't match, tries it
-    after all (a mirrored symmetric picture also aligns as is), and keeps it if it aligns better."""
-    if not al.mirror_skipped or result[0].get("decision") == "match":
+    """`result` of compare(al). If the pair doesn't match: tries the mirrored image if it was skipped (a mirrored
+    symmetric picture also aligns as is), then B rotated (features.rotations); a retry replaces the result
+    only by aligning better (mirror) or by matching (rotation)."""
+    if result[0].get("decision") == "match":
         return result
-    again = align(features, pa, pb, params, mirror=True)
-    return compare(again, params, rng) if again.out["flipped"] else result
+    if al.mirror_skipped:
+        again = align(features, pa, pb, params, mirror=True)
+        if again.out["flipped"]:
+            result = compare(again, params, rng)
+            if result[0].get("decision") == "match":
+                return result
+    if features.rotations:
+        rot = align_rotated(features, pa, pb, params, beat=int(result[0].get("inliers", 0)))
+        if rot is not None and (rotated := compare(rot, params, rng))[0].get("decision") == "match":
+            return rotated
+    return result
 
 
 def verify_pair(features: Features, pa: Prepared, pb: Prepared, params: Params, rng: np.random.Generator):
     """Both halves in the calling thread: (measurements and decision, diagnostic image or None)."""
     al = align(features, pa, pb, params)
-    return retry_mirrored(features, pa, pb, al, compare(al, params, rng), params, rng)
+    return retry_variants(features, pa, pb, al, compare(al, params, rng), params, rng)
 
 
 def compare(al: Aligned, params: Params, rng: np.random.Generator, samples: int = 40000):
@@ -487,9 +597,9 @@ class PairRunner:
         row, fut, retry = self.pending.popleft()
         try:
             out, diag = fut.result()
-            if retry is not None:  # in this thread: the mirrored attempt needs the GPU
+            if retry is not None:  # in this thread: the mirrored / rotated attempts need the GPU
                 pa, pb, al, seed = retry
-                out, diag = retry_mirrored(self.features, pa, pb, al, (out, diag), self.params,
+                out, diag = retry_variants(self.features, pa, pb, al, (out, diag), self.params,
                                            np.random.default_rng(seed))
         except Exception as e:
             out, diag = {"decision": "error", "error": f"{type(e).__name__}: {e}"}, None
@@ -503,8 +613,13 @@ class PairRunner:
 
 def add_decision_args(parser: argparse.ArgumentParser) -> None:
     """The verifier's thresholds as command-line options, and --workers (shared with verify_synth.py)."""
-    parser.add_argument("--workers", type=int, default=4, help="CPU threads for the dense comparison")
+    parser.add_argument("--workers", type=int, default=8, help="CPU threads for the dense comparison")
+    parser.add_argument("--loaders", type=int, default=4, help="CPU threads decoding and resizing images ahead")
     parser.add_argument("--features", choices=FEATURES, default="disk", help="local features for the alignment")
+    parser.add_argument("--disk-runtime", choices=DISK_RUNTIMES, default="trt",
+                        help="DISK's U-Net on TensorRT fp16 (3x faster, same features) or torch fp32")
+    parser.add_argument("--rotations", choices=tuple(ROTATIONS), default="none",
+                        help="for a pair that doesn't match as is, also try the other image rotated in these steps")
     parser.add_argument("--min-inliers", type=int, default=20)
     parser.add_argument("--abs-threshold", type=float, default=0.08)
     parser.add_argument("--noise-k", type=float, default=6.0)
@@ -603,8 +718,7 @@ def main() -> None:
     print(f"{len(pairs)} pairs: " + ", ".join(f"{sum(p[0] == lab for p in pairs)} {lab}" for lab in labels)
           + f" (floor {args.floor})", flush=True)
 
-    features = Features(args.features)
-    prepared = lru_cache(maxsize=256)(lambda i: prepare(features, files[i]))
+    features = Features(args.features, args.disk_runtime, ROTATIONS[args.rotations])
     diag_dir = WORK_DIR / f"{prefix}_{args.model}"
     diag_dir.mkdir(exist_ok=True)
 
@@ -626,7 +740,7 @@ def main() -> None:
             print(f"  {verified}/{len(pairs)}  {verified / (time.time() - start):.1f} pairs/s", flush=True)
 
     pdq = pdq_distances(files) if args.shortcut else None
-    runner = PairRunner(features, params, args.workers, done)
+    todo = []  # (row, a, b) of the pairs that need image work
     for pid, (label, a, b) in enumerate(pairs):
         if (row := checkpoint.done(pid)) is not None:
             results[pid] = row
@@ -635,13 +749,22 @@ def main() -> None:
         if pdq and (why := shortcut(pdq(files[a], files[b]), row["similarity"], SHORTCUT_PDQ, SHORTCUT_SIM)):
             done(row, {"decision": "match", "shortcut": why}, None)
             continue
-        runner.submit(row, partial(prepared, a), partial(prepared, b))
+        todo.append((row, a, b))
+
+    # Each image's first use, in order: what the prefetcher decodes ahead of the GPU.
+    first_use = dict.fromkeys(i for _, a, b in todo for i in (a, b))
+    prefetch = Prefetcher(lambda i: load_work_image(files[i]), first_use, args.loaders)
+    cached = lru_cache(maxsize=256)(lambda i: prepared(features, prefetch.get(i)))
+    runner = PairRunner(features, params, args.workers, done)
+    for row, a, b in todo:
+        runner.submit(row, partial(cached, a), partial(cached, b))
     runner.close()
+    prefetch.close()
     write_outputs(prefix, args, params, labels, results, round(time.time() - start, 1))
     checkpoint.finish()
 
 
-COLUMNS = ["id", "label", "similarity", "decision", "correct", "inliers", "matches", "flipped", "reference",
+COLUMNS = ["id", "label", "similarity", "decision", "correct", "inliers", "matches", "flipped", "rotation", "reference",
            "cover_a", "cover_b", "overlap", "color_to", "noise", "res_p99", "changed_frac", "blob_frac",
            "interior_changed_frac", "interior_regions", "moved_frac", "moved_share", "shortcut", "error",
            "path_a", "path_b"]

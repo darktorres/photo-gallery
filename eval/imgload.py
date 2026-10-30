@@ -1,5 +1,6 @@
 """Batched embedding shared by embed.py, synth.py and check_groups.py."""
 
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
@@ -33,6 +34,31 @@ class FileSource:
 
     def __call__(self, i: int) -> Image.Image:
         return load_rgb(self.root / self.files[i])
+
+
+def trim_borders(im: Image.Image) -> Image.Image:
+    """`im` without solid or blurred padding borders: tools/borders.py's detector at its default settings, as the
+    ingest pipeline would run it before embedding."""
+    tools = str(Path(__file__).resolve().parents[1] / "tools")
+    if tools not in sys.path:
+        sys.path.append(tools)
+    import borders
+
+    box, accepted, _ = borders.detect(np.asarray(im), borders.Params())
+    return im.crop(box) if accepted else im
+
+
+class TrimmedSource:
+    """Another source's images with their borders trimmed (picklable, like the sources it wraps)."""
+
+    def __init__(self, source: ImageSource):
+        self.source = source
+
+    def __len__(self) -> int:
+        return len(self.source)
+
+    def __call__(self, i: int) -> Image.Image:
+        return trim_borders(self.source(i))
 
 
 class ImageDataset(Dataset):

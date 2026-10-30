@@ -242,6 +242,32 @@ cu13):
   now clamps its per-channel max at fp16's smallest normal number (2^-14), which leaves the result
   unchanged.
 
+### A second model: CLIP / SigLIP 2 image encoders (`eval/bench_semantic.py`, 2026-10-30)
+
+For PLAN §9 decision 2 (keywords and semantic search in the first pass). Image towers from `open_clip`, exported to
+ONNX in fp16 and built as TensorRT 11 engines like SSCD's. Speed is GPU-only (batch 64). "Cosine" compares
+TensorRT with torch fp32 on 128 real images. Quality is the published zero-shot ImageNet-1k top-1: there are no
+keyword labels here, so it ranks the models, not their fit to this library.
+
+| Model (open_clip) | Input | Image tower | ImageNet zero-shot | torch fp16 img/s | TensorRT fp16 img/s | GPU hours for 70M | Cosine min |
+|---|---|---|---|---|---|---|---|
+| CLIP ViT-B/32 (LAION-2B) | 224 px | 88 M | 66.6% | 1,506 | 2,171 | 9 | 0.9996 |
+| SigLIP 2 B/32 | 256 px | 95 M | 74.0% | 1,214 | 2,198 | 9 | 0.9994 |
+| **SigLIP 2 B/16** | 224 px | 93 M | **78.2%** | 448 | **741** | **26** | 0.9999 |
+| SigLIP 2 L/16 | 256 px | 316 M | 82.5% | 109 | 178 | 109 | 0.9997 |
+| SigLIP 2 So400m/14 | 224 px | 428 M | 83.2% | 78 | 122 | 159 | 0.9994 |
+
+ImageNet numbers: SigLIP 2 paper (arXiv 2502.14786, Table 1); CLIP B/32 from open_clip's results table.
+
+- **TensorRT fp16 is safe for all of them** (cosine ≥ 0.9994), at 1.5–1.8× torch fp16.
+- **Cost in the first pass:** SSCD on TensorRT is ~14 GPU hours for 70M, and the pass is CPU-bound (decoding ~1.5
+  days). SigLIP 2 B/16 adds 26 GPU hours, so the GPU stays within the decode time (~40 h of ~36 h; about even).
+  B/32 is nearly free, and L/16 makes the GPU the limit (~5 days). PLAN's "roughly double GPU time" holds for B/16,
+  but the wall time barely changes because decoding dominates.
+- **Suggested:** SigLIP 2 B/16 in the first pass (12 points above CLIP B/32, within the decode budget). Given
+  "quality over speed", L/16 (+4.3 points, ~5 days) is the alternative. Both read the same decoded image, resized
+  to their own input.
+
 ## Bugs found
 
 - **Meta's SSCD TorchScript breaks in fp16:** `.half()` collapses every image to the same
@@ -650,6 +676,73 @@ Changes in `eval/verify.py`, all four pair sets rerun:
   Rotation is cheaper to get from PDQ's 8-orientation query or by trying the rotations only when the first
   alignment is weak (like the mirror). `--features aliked` stays available.
 
+### Verifier: TensorRT, rotations, SIFT, resolution (subset, 2026-10-30)
+
+**DISK on TensorRT.** Only DISK's U-Net runs as a TensorRT 11 fp16 engine (`accel.DiskUnetTRT`, dynamic sides
+up to 1024 px); kornia's keypoint selection and LightGlue stay in PyTorch. Per image 35 ms vs 113 ms, 98% the same
+keypoints, descriptor cosine 0.9999 (a TensorRT fp32 engine gives no speedup, 108 ms). `--disk-runtime trt` is now
+the default. All four sets rerun:
+
+| Set | torch DISK | TensorRT DISK |
+|---|---|---|
+| Labeled duplicates | 698 / 698 | 698 / 698 |
+| Synthetic (13 edits × 300) | 3,625 match | 3,626 (3 rot90 pairs flip, ~20 inliers) |
+| Cross-group false matches | 5 / 4,632 | 7 |
+| k-NN: decisions changed | – | 30 / 8,344 (20 → match, 10 → unrelated) |
+| k-NN: cross-group false matches | 5 / 205 | 7 |
+
+- **The flips show a fragile measurement, not TensorRT drift.** Rerunning the two new cross-group matches (group
+  125 vs 673, one shoot) in torch reproduces torch's numbers exactly, so the difference comes from the features.
+  For some pairs the median residual swings far more than the threshold margin when a few keypoints change:
+  k-NN 978 (similar-folder) 0.272 → 0.033 and 4157 0.014 → 0.076, at equal inlier counts. About 0.3% of pairs
+  sit there. That belongs to the decision rule (hand marks), not to the runtime.
+
+**Throughput** (labeled set, 1,043 pairs, quiet machine; the four-set runs above overlapped the M1 session's CPU
+load and read 4.3–4.7 pairs/s):
+
+| Configuration | Time | Pairs/s | Decisions |
+|---|---|---|---|
+| torch DISK (before) | 303 s | 3.4 | – |
+| torch DISK, images decoded ahead (`--loaders 4`) | 266 s | 3.9 | identical |
+| TensorRT DISK | 177 s | 5.9 | 9 similar-folder pairs flip (net +6 matches) |
+| TensorRT DISK, decoded ahead | 175–179 s | 5.9 | identical to TensorRT |
+| ... and 8 comparison workers (new default) | 155 s | **6.7** | identical |
+| ... at 768 px, 2,048 keypoints (4 workers) | 163 s | 6.4 | duplicates 698; similar-folder 232 (237) |
+| ... at 768 px, 1,024 keypoints (4 workers) | 141 s | 7.4 | duplicates 698; similar-folder 226 (237) |
+
+- **Where the time goes now** (py-spy, TensorRT + decoding ahead, 175 s): the main thread is busy 133 s,
+  LightGlue 68 s and DISK incl. keypoint selection 51 s. The comparison workers use 275 thread-s, decoding 41.
+  Decoding ahead only helped the slower torch path. **LightGlue is the next lever**: on TensorRT (LightGlue-ONNX
+  exists), or fewer keypoints.
+- **Lower resolution** keeps all labeled duplicates and every synthetic edit within 1–3 images at 768 px (crop 25%:
+  298 at 768/2,048 and 295 at 768/1,024 vs 297), but similar-folder matches drop (237 → 226). That is unscored,
+  so the cross-group set has to be run at 768 px before choosing it.
+
+**Rotations.** New synthetic edits (`edits.py`, appended so the older edits keep their seeds): a 3–15° tilt cropped to
+the picture, and 30°, 45°, 135° and random 0–360° on an enlarged black canvas. 300 images each:
+
+| Verifier | tilt + crop | 30° | 45° | 135° | any | 90° | Time (1,800 pairs) |
+|---|---|---|---|---|---|---|---|
+| DISK | 300 | 300 | 283 | 0 | 87 | 29 | 551 s |
+| DISK, retry at 90° steps (`--rotations 90`) | 300 | 300 | 298 | 299 | 300 | 300 | (slowed by a concurrent GPU test) |
+| DISK, retry at 45° steps (`--rotations 45`) | 300 | 300 | **300** | **300** | **300** | **300** | 1,123 s |
+| SIFT (`--features sift`) | 300 | 300 | **300** | **300** | **300** | **300** | 511 s |
+
+- **Retry:** a pair that doesn't match is matched again against B rotated by each step. The rotated copy's
+  matched points are mapped back into B, so the homography, color fit and comparison use the images as they are.
+  A retry only replaces the result if it matches.
+- **No false matches from retries:** the cross-group set with 45° retries has the same 7 matches as without, and no
+  rotated attempt matched any of the 4,625 others. 90° steps try a subset of those angles, so they can't add any
+  either. **Cost:** every non-matching pair pays 7 extra extractions + matchings (cross-group 3,532 s vs 984 s).
+  Retries should therefore be gated, e.g. only for candidates whose SSCD similarity is high for an unaligned pair.
+- **SSCD finds rotated copies:** R@10 1.000 for every angle (cosine p10 0.50–0.55, above the k-NN floor 0.4), so they
+  reach the verifier as candidates. Rotation is covered end to end with DISK + retries.
+- **SIFT** (kornia, RootSIFT, oriented; LightGlue's SIFT weights) as the only features: synthetic 5,400 / 5,400 (all
+  18 edits, incl. crop 25%), labeled 697 / 698, cross-group 9 false matches (5 with DISK; 3 new ones are weak, 37–73
+  inliers). It misses `dups2/533` (14 inliers; DISK 326) and is slower on real images (labeled 402 s vs DISK's
+  177 s, no TensorRT). **DISK stays the default**; SIFT is a possible fallback, but the 45°-step retry is cleaner (no
+  new false matches).
+
 ### Shortcut and grouping (`eval/group.py`, k-NN set, subset, 2026-10-29)
 
 **Shortcut** (PDQ ≤ 22 with both hashes reliable, or SSCD ≥ 0.95): 2,896 of the 8,344 k-NN pairs (35%), and
@@ -752,6 +845,23 @@ Sample of 1,500 random test-set images (79 img/s, 4 workers):
 - **Detection only on stored pixels**, so EXIF orientation stays valid after cropping.
 - **For the NDD pipeline:** the same detector should run before embedding (design conclusion 3).
 
+### Trimming before embedding (`embed.py --trim`, `synth.py --trim`, subset, 2026-10-30)
+
+The detector runs on each decoded image and the crop is embedded (`imgload.TrimmedSource`). It trims 223 of the
+subset's 9,306 images (2.4%), and it also runs on the synthetic edited copies.
+
+| SSCD fp16 | Untrimmed | Trimmed |
+|---|---|---|
+| Letterbox 10%: R@1 / cosine p50 | 0.807 / 0.740 | **0.930 / 0.998** |
+| Other 17 synthetic edits: R@1 | – | same within ±1 image (R@10 1.000 everywhere) |
+| Labeled pairs: R@1 / R@10 | 0.964 / 1.000 | 0.962 / 1.000 |
+| Flagged pairs at 80 / 90 / 95 / 98% recall | 2,086 / 2,485 / 2,643 / 2,835 | 2,085 / 2,465 / 2,627 / 2,839 |
+| Cross-group pairs flagged at 98% recall | 4 / 915,283 | 4 |
+
+- **A letterboxed copy becomes the same picture to SSCD** (cosine 0.74 → 0.998), and nothing else moves: the labeled
+  set barely has borders, so it's neutral there. Trimming stays in the design (design conclusion 3); cost is the
+  detector's CPU time (~80 img/s per thread on full-size images, less on the DCT-scaled decode).
+
 ## M1 import (Rust, `crates/`, 2026-10-30)
 
 Measured on `dups2` (5,937 files, copy on D:), with the other session's GPU benchmarks running alongside, so
@@ -806,10 +916,13 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
 2. **Heavy crops:** a single global threshold fails, but rank still works. Use k-NN rank plus a
    verifier for the ~0.4–0.88 band (Pinterest-style), not a lower global threshold.
 3. **Borders:** trim borders before embedding, including blurred padding bars (a common
-   Pinterest/TikTok edit seen in `dups2/075`).
-4. **Rotation:** SSCD still ranks a 90°-rotated copy in the top 10 (R@10 1.00), but far below
-   threshold, so rank + verifier covers it (the verifier would need to try rotations as it tries
-   mirrors). Apply EXIF orientation everywhere; PDQ's dihedral query covers the exact-copy tier.
+   Pinterest/TikTok edit seen in `dups2/075`). Measured 2026-10-30: fixes letterboxed copies, neutral elsewhere
+   ("Trimming before embedding").
+4. **Rotation:** SSCD still ranks copies at any rotation in the top 10 (R@10 1.00), but far below
+   threshold, so rank + verifier covers it: the verifier retries a pair that doesn't match with the other
+   image rotated in 45° (or 90°) steps, with no new false matches ("Verifier: TensorRT, rotations, SIFT,
+   resolution"). Gate the retries to keep their cost down. Apply EXIF orientation everywhere; PDQ's dihedral
+   query covers the exact-copy tier.
 5. **Throughput:** read in MFT order with a deep queue (~1,600 files/s), decode with DCT scaling
    (~550 img/s on 12 threads), embed with SSCD fp16 on TensorRT (1,390 img/s; 410 in torch). The CPU is
    now the limit: decoding ~1.5 days for 70M, plus thumbnail encoding. SSCD fp16 is the model; 288px is
@@ -825,11 +938,13 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
 ## Pending
 
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
-- Verifier speed, next levers: TensorRT (via `accel.py`'s export path) / lower resolution for DISK and LightGlue (the GPU main thread is
-  the limit now); rotation retry only for weak alignments, if the full set shows rotated edited copies.
+- Verifier speed, next levers (DISK is on TensorRT, 6.7 pairs/s): LightGlue on TensorRT or fewer keypoints; 768 px
+  needs a cross-group run before adoption; gate the rotation retries (e.g. by SSCD similarity).
+- Verifier robustness: the median-residual measure swings for ~0.3% of pairs when a few keypoints change
+  (TensorRT vs torch flips); look at those with the hand marks.
+- PLAN §9 decision 2 (second model): SigLIP 2 B/16 suggested, L/16 the quality alternative (user's call).
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
   template portraits with different faces (the 12-image group).
-- Border trimming before embedding.
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
   comparison (see "Verifier prototype, first run").
 - Hand-label a sample of `review_*.csv` to estimate real precision.

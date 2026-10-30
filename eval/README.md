@@ -33,11 +33,14 @@ $py = 'D:\PhotoGallery\venv-eval\Scripts\python.exe'
 & $py embed.py --model sscd           # embed all images -> emb_sscd.npy
 & $py evaluate.py --model sscd        # recall, thresholds, flagged pairs, CSVs
 & $py synth.py --model sscd           # robustness to crops, flips, overlays...
+& $py embed.py --model sscd_fp16 --trim   # borders cut first (tools/borders.py) -> emb_sscd_fp16_trim.npy
+& $py synth.py --model sscd_fp16 --trim   # ... and its synthetic robustness (edited copies trimmed too)
 & $py check_groups.py                 # audit dups2/<NNN> folders for unrelated pictures
 & $py verify.py --model sscd_fp16     # second stage: align pairs, classify match / unrelated
 & $py verify.py --pairs cross_groups --floor 0.3   # ... on the negative set (pairs across dups2 groups)
 & $py verify.py --pairs knn           # ... on real k-NN candidates (each image's 10 nearest above 0.4)
 & $py verify_synth.py                 # ... on synth.py's edited copies (crops, overlays, rotation...): all should match
+& $py verify_synth.py --edits rot_45 rot_any --prefix verify_rot --rotations 45   # some edits; 45° retries
 & $py verify.py --pairs knn --shortcut   # pipeline mode: PDQ <= 22 or SSCD >= 0.95 accepted without image work
 & $py group.py                        # groups from the verified k-NN pairs (multicut), scored on the labels
 & $py pdq.py                          # PDQ hashes -> emb_pdq.npy; then evaluate.py --model pdq
@@ -46,6 +49,7 @@ $py = 'D:\PhotoGallery\venv-eval\Scripts\python.exe'
 & $py bench_hdd.py                    # HDD read order on E: (path / MFT / physical), unbuffered, read-only
 & $py bench_thumbs.py                 # grid thumbnails: resize pipelines, formats x quality (bytes, SSIMULACRA2, ms)
 & $py bench_models.py --models sscd_fp16 sscd_trt_fp16 sscd_trt_int8   # TensorRT / ONNX Runtime (accel.py)
+& $py bench_semantic.py               # CLIP / SigLIP 2 image encoders: torch fp16 vs TensorRT fp16 (a second model)
 & $py viewer.py                       # browse all results visually (local web page)
 ```
 
@@ -57,7 +61,8 @@ Synthetic edits live in `edits.py` (torch-free, shared by `synth.py` and `pdq.py
 The same SSCD weights also run outside PyTorch (`accel.py`): `sscd_trt_fp16` / `sscd_trt_int8` (TensorRT 11
 engines), `sscd_ort_cuda_fp32` / `_fp16` (ONNX Runtime's CUDA provider) and `sscd_ort_trt10_fp16` / `_int8`
 (ONNX Runtime's TensorRT provider). They plug into every script above like the torch models. The ONNX graphs,
-calibration batch and engines are built on first use under `D:\PhotoGallery\cache\onnx` and `\trt`; build the
+calibration batch and engines are built on first use under `D:\PhotoGallery\cache\onnx` and `\trt` (also the
+verifier's DISK U-Net, `disk_fp16`, and `bench_semantic.py`'s encoders); build the
 int8 graph with `PG_WORK_DIR` on the subset, so the calibration images come from outside it. Requirements beyond
 this venv:
 
@@ -87,12 +92,16 @@ Rerun `make_subset.py` after editing the labeled folders: `files.txt` is a cache
 
 `verify.py` checks every labeled duplicate pair plus every `similiar_but_not_dups` pair whose
 embedding similarity clears `--floor` (the non-duplicates a candidate stage would hand it). Per
-pair it matches DISK + LightGlue features (`--features aliked` for ALIKED; also against the mirrored
-image unless the first alignment is already strong), fits a MAGSAC homography, warps one image onto
+pair it matches DISK + LightGlue features (`--features aliked` for ALIKED, `sift` for SIFT; also against the
+mirrored image unless the first alignment is already strong), fits a MAGSAC homography, warps one image onto
 the other, fits a robust global color mapping (onto the reference, or the reverse when that fits at
 least 2× better: grayscale can't be mapped back to color), and measures what is left. Images smaller than 512 px are upscaled
-for feature extraction; DISK finds almost nothing on a ~200 px copy. Feature extraction and
-matching run on the GPU in the main thread, the comparison on `--workers` CPU threads (default 4).
+for feature extraction; DISK finds almost nothing on a ~200 px copy. DISK's U-Net runs as a TensorRT fp16
+engine (`--disk-runtime torch` for PyTorch fp32; same keypoints to 98%). DISK is not rotation-invariant (past
+~45° it fails): `--rotations 90` / `45` retries a pair that doesn't match with the second image rotated in those
+steps, matching the rotated copy's features and mapping them back, so everything after uses the images as they
+are. Images are decoded and resized ahead on `--loaders` CPU threads (default 4), feature extraction and
+matching run on the GPU in the main thread, the comparison on `--workers` CPU threads (default 8).
 The decision:
 
 - **match:** after alignment and color mapping the pixels agree (median residual ≤ `--max-noise`).
@@ -137,7 +146,7 @@ returns to the previously shown image, Enter saves, PgUp / PgDn change group.
 | File | Contents |
 |---|---|
 | `files.txt` | Canonical image list; row i of every embedding file is line i |
-| `emb_<model>.npy`, `ok_<model>.npy` | L2-normalized fp16 embeddings; load-success mask |
+| `emb_<model>.npy`, `ok_<model>.npy` | L2-normalized fp16 embeddings; load-success mask (`<model>_trim`: `--trim`) |
 | `results_<model>.json` | Recall@k and operating points (threshold for 80/90/95/98% recall) |
 | `misses_<model>.csv` | Labeled duplicate pairs the model scores lowest |
 | `hard_negatives_<model>.csv` | Non-duplicate pairs the model scores highest |
@@ -148,10 +157,11 @@ returns to the previously shown image, Enter saves, PgUp / PgDn change group.
 | `verify_<model>/<id>.jpg` | Verifier diagnostic per pair: reference · aligned + color-mapped · residual |
 | `verify_cross_<model>.csv`, `.json`, `/` | The same for the cross-group negative set |
 | `verify_knn_<model>.csv`, `.json`, `/` | The same for real k-NN candidate pairs (labeled where known) |
-| `verify_synth_<model>.csv`, `.json`, `/` | The same for original vs synthetic edited copy (label = the edit) |
+| `verify_synth_<model>.csv`, `.json`, `/` | The same for original vs synthetic edited copy (label = the edit; `--prefix` renames) |
 | `groups_<model>.json` | `group.py`: edge counts, scores against the labels, and the groups (largest first) |
 | `quality_pdq.npy` | PDQ's own hash quality score per image (0–100) |
 | `synth_pdq.json` | PDQ synthetic robustness; `dihedral` = best of the 8 rotations/mirrors |
 | `bench_decode.json` | Decode pipelines: img/s and SSCD cosine vs the PIL reference |
 | `bench_hdd.json` | Read order on the HDD: files/s and MB/s per order, layout correlations |
 | `bench_thumbs.json`, `_zoneplate.png` | Thumbnails: resize scores, bytes / score / ms per format and quality, SSCD re-use |
+| `bench_semantic.json` | CLIP / SigLIP 2 encoders: params, img/s (torch fp16, TensorRT fp16), cosine vs fp32 |

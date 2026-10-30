@@ -1,11 +1,12 @@
 """Synthetic robustness: how far can an image be edited before the model stops finding it?
 
-Usage: python synth.py --model sscd [--count 1000]
+Usage: python synth.py --model sscd [--count 1000] [--trim]
 
 For a fixed random sample of images, apply each transform, embed the edited copy, and
 check whether the untouched original comes back from the full 190k index. R@1 slightly
 understates retrieval when the original has a real duplicate elsewhere in the library
-(that copy can win rank 1), so R@10 is reported too.
+(that copy can win rank 1), so R@10 is reported too. With --trim, borders are cut from the edited copies
+too and the index is embed.py --trim's (files named <model>_trim).
 """
 
 import argparse
@@ -20,7 +21,7 @@ from PIL import Image
 
 from common import DATA_ROOT, WORK_DIR, image_list, load_rgb
 from edits import TRANSFORMS, edit_seed
-from imgload import ImageDataset, embed
+from imgload import ImageDataset, TrimmedSource, embed
 from models import SPECS, build_transform, load_model
 
 
@@ -48,12 +49,15 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--seed", type=int, default=0)
+    parser.add_argument("--trim", action="store_true",
+                        help="cut borders from originals and edited copies (needs embed.py --trim)")
     args = parser.parse_args()
+    name = f"{args.model}_trim" if args.trim else args.model
 
     device = torch.device("cuda")
     files = image_list()
-    ok = np.load(WORK_DIR / f"ok_{args.model}.npy")
-    db = torch.from_numpy(np.load(WORK_DIR / f"emb_{args.model}.npy")).to(device)
+    ok = np.load(WORK_DIR / f"ok_{name}.npy")
+    db = torch.from_numpy(np.load(WORK_DIR / f"emb_{name}.npy")).to(device)
 
     # Same sample for every model, so results are comparable.
     sample = sorted(random.Random(args.seed).sample(list(np.flatnonzero(ok)), args.count))
@@ -61,7 +65,7 @@ def main() -> None:
     originals = torch.tensor(sample, device=device)
 
     thresholds = {}
-    results_path = WORK_DIR / f"results_{args.model}.json"
+    results_path = WORK_DIR / f"results_{name}.json"
     if results_path.exists():
         for p in json.loads(results_path.read_text(encoding="utf-8"))["operating_points"]:
             thresholds[p["target_recall"]] = p["threshold"]
@@ -71,16 +75,17 @@ def main() -> None:
     transform = build_transform(spec)
 
     rows = []
-    for t_index, name in enumerate(TRANSFORMS):
-        dataset = ImageDataset(TransformSource(DATA_ROOT, sample_paths, name, args.seed + t_index), transform, spec.size)
-        q, q_ok = embed(model, spec, dataset, args.batch, args.workers, device, f"{args.model}/{name}")
+    for t_index, edit in enumerate(TRANSFORMS):
+        source = TransformSource(DATA_ROOT, sample_paths, edit, args.seed + t_index)
+        dataset = ImageDataset(TrimmedSource(source) if args.trim else source, transform, spec.size)
+        q, q_ok = embed(model, spec, dataset, args.batch, args.workers, device, f"{name}/{edit}")
         q = torch.from_numpy(q).to(device)
         keep = torch.from_numpy(q_ok).to(device)
         cos = (q.float() * db[originals].float()).sum(1)[keep].cpu().numpy()
         top = (q @ db.T).topk(10, dim=1).indices[keep]
         hits = top == originals[keep].unsqueeze(1)
         rows.append({
-            "transform": name,
+            "transform": edit,
             "r1": hits[:, 0].float().mean().item(),
             "r10": hits.any(1).float().mean().item(),
             "cos_p10": float(np.quantile(cos, 0.10)),
@@ -88,9 +93,9 @@ def main() -> None:
             **{f"above_t{int(r * 100)}": float((cos >= t).mean()) for r, t in thresholds.items() if r in (0.90, 0.95)},
         })
 
-    (WORK_DIR / f"synth_{args.model}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
+    (WORK_DIR / f"synth_{name}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
     threshold_cols = [k for k in rows[0] if k.startswith("above_t")]
-    print(f"## {args.model}: synthetic robustness, {args.count} images, retrieved from {len(files):,}")
+    print(f"## {name}: synthetic robustness, {args.count} images, retrieved from {len(files):,}")
     header = ["transform", "R@1", "R@10", "cos p10", "cos p50"] + [
         f"≥ thr@{c[7:]}%recall" for c in threshold_cols]
     print("| " + " | ".join(header) + " |")

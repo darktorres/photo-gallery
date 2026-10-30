@@ -2,6 +2,7 @@
 that only hash images don't pay for importing it."""
 
 import io
+import math
 import random
 from collections.abc import Callable
 
@@ -41,6 +42,33 @@ def hflip(im: Image.Image, rng: random.Random) -> Image.Image:
 
 def rot90(im: Image.Image, rng: random.Random) -> Image.Image:
     return im.rotate(90, expand=True)
+
+
+def rotate(low: float, high: float) -> Callable[[Image.Image, random.Random], Image.Image]:
+    """Rotation by an angle in [low, high) degrees (counter-clockwise) on an enlarged canvas, corners black."""
+    def apply(im: Image.Image, rng: random.Random) -> Image.Image:
+        return im.rotate(rng.uniform(low, high), resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(0, 0, 0))
+    return apply
+
+
+def _inner_rect(w: int, h: int, angle: float) -> tuple[float, float]:
+    """Largest axis-aligned rectangle inside a w x h rectangle rotated by `angle` radians."""
+    long_side, short_side = max(w, h), min(w, h)
+    sin_a, cos_a = abs(math.sin(angle)), abs(math.cos(angle))
+    if short_side <= 2 * sin_a * cos_a * long_side or abs(sin_a - cos_a) < 1e-10:
+        x = 0.5 * short_side
+        return (x / sin_a, x / cos_a) if w >= h else (x / cos_a, x / sin_a)
+    cos_2a = cos_a * cos_a - sin_a * sin_a
+    return (w * cos_a - h * sin_a) / cos_2a, (h * cos_a - w * sin_a) / cos_2a
+
+
+def tilt_crop(im: Image.Image, rng: random.Random) -> Image.Image:
+    """A straightened (or tilted) copy: rotated 3-15 degrees either way, cropped to the inside of the picture."""
+    deg = rng.uniform(3, 15) * rng.choice((-1, 1))
+    rotated = im.rotate(deg, resample=Image.Resampling.BICUBIC, expand=True)
+    cw, ch = _inner_rect(im.width, im.height, math.radians(deg))
+    x, y = (rotated.width - cw) / 2, (rotated.height - ch) / 2
+    return rotated.crop((round(x), round(y), round(x + cw), round(y + ch)))
 
 
 def letterbox(im: Image.Image, rng: random.Random) -> Image.Image:
@@ -89,6 +117,12 @@ TRANSFORMS: dict[str, Callable[[Image.Image, random.Random], Image.Image]] = {
     "crop_40pct": crop_area(0.40),
     "crop_25pct": crop_area(0.25),
     "crop_50pct_hflip": crop50_hflip,
+    # Added 2026-10-30 (appended, so the edits above keep their seeds): rotations other than 90 degrees.
+    "rot_tilt_crop": tilt_crop,
+    "rot_30": rotate(30, 30),
+    "rot_45": rotate(45, 45),
+    "rot_135": rotate(135, 135),
+    "rot_any": rotate(0, 360),
 }
 
 

@@ -8,6 +8,8 @@
 mod folders;
 mod gallery;
 mod library;
+#[cfg(debug_assertions)]
+mod live_reload;
 mod panic_log;
 mod providers;
 mod settings;
@@ -60,7 +62,14 @@ fn run_app() {
                 };
             }
         }
-        engine.load(&QUrl::from("qrc:/qt/qml/pg/gallery/qml/Main.qml"));
+        let main_qml = QUrl::from("qrc:/qt/qml/pg/gallery/qml/Main.qml");
+        #[cfg(debug_assertions)]
+        live_reload::ffi::enable_live_reload(
+            engine.as_mut(),
+            &main_qml,
+            &QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml")),
+        );
+        engine.load(&main_qml);
     }
     if let Some(app) = app.as_mut() {
         app.exec();

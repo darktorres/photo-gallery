@@ -26,6 +26,11 @@ cargo test --release
 C:\Qt\6.9.2\msvc2022_64\bin\windeployqt.exe --release --qmldir crates\ui\qml --no-translations target\release\gallery.exe
 ```
 
+A debug build (`cargo build`, then the same `windeployqt --release` on `target\debug\gallery.exe`: it links the
+release Qt too) reads the QML from `crates\ui\qml` instead of the copy compiled into it, and reloads the window
+whenever a file there changes, where it was: QML edits show without a rebuild. QML errors go to the debugger
+output unless `QT_FORCE_STDERR_LOGGING=1` is set.
+
 ## Run
 
 The catalog lives in `D:\PhotoGallery\catalog` (`PG_CATALOG_DIR`, or `--catalog-dir` on the command line, to

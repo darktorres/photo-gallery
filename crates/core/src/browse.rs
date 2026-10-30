@@ -2,7 +2,7 @@
 //! node ("merged drives"), the files of a node filtered and sorted, ratings and turns (queued for the files),
 //! saved views and where the user was.
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
@@ -46,7 +46,7 @@ pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
         stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
 
     let mut tree = FolderTree { nodes: Vec::new(), roots: Vec::new() };
-    let mut by_key: HashMap<String, usize> = HashMap::new();
+    let mut by_key: BTreeMap<String, usize> = BTreeMap::new();
     for (path, count) in &folders {
         let drive = if merged_path(path).len() < path.len() { &path[..2] } else { "" };
         let mut parent: Option<usize> = None;

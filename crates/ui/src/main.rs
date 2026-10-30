@@ -56,7 +56,7 @@ fn run_app() {
                 ("thumbhash", providers::KIND_THUMBHASH),
                 ("full", providers::KIND_FULL),
             ] {
-                // SAFETY: the engine takes ownership of the provider.
+                // SAFETY: a new provider, which the engine takes ownership of.
                 unsafe {
                     qml.as_mut().add_image_provider(&QString::from(name), providers::ffi::new_image_provider(kind))
                 };
@@ -86,12 +86,15 @@ fn attach_console() {
         SetStdHandle,
     };
     let valid = |h: HANDLE| !h.is_null() && h != INVALID_HANDLE_VALUE;
+    // SAFETY: GetStdHandle and AttachConsole take no pointers.
     let missing: Vec<STD_HANDLE> =
         [STD_OUTPUT_HANDLE, STD_ERROR_HANDLE].into_iter().filter(|&s| !valid(unsafe { GetStdHandle(s) })).collect();
+    // SAFETY: as above.
     if missing.is_empty() || unsafe { AttachConsole(ATTACH_PARENT_PROCESS) } == 0 {
         return;
     }
     let name: Vec<u16> = "CONOUT$\0".encode_utf16().collect();
+    // SAFETY: `name` is NUL-terminated and outlives the call; the null pointers are optional arguments.
     let out = unsafe {
         CreateFileW(
             name.as_ptr(),
@@ -105,6 +108,7 @@ fn attach_console() {
     };
     if valid(out) {
         for s in missing {
+            // SAFETY: `out` is a valid console handle, kept open for the rest of the process.
             unsafe { SetStdHandle(s, out) };
         }
     }
@@ -121,5 +125,6 @@ fn message_box(message: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};
     let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
     let (text, caption) = (wide(message), wide("Photo Gallery"));
+    // SAFETY: both strings are NUL-terminated and outlive the call; no owner window.
     unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
 }

@@ -30,6 +30,7 @@ impl Options {
 }
 
 fn set_priority(priority: THREAD_PRIORITY) {
+    // SAFETY: GetCurrentThread's pseudo-handle is always valid for the calling thread.
     unsafe { SetThreadPriority(GetCurrentThread(), priority) };
 }
 

@@ -13,7 +13,7 @@ use std::os::windows::ffi::OsStrExt;
 
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, ScannedFile};
-use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, GetLastError, HANDLE, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
     FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
@@ -41,6 +41,7 @@ struct Dir(HANDLE);
 
 impl Drop for Dir {
     fn drop(&mut self) {
+        // SAFETY: the handle came from a successful CreateFileW (`Dir::open`) and is closed only here.
         unsafe { CloseHandle(self.0) };
     }
 }
@@ -50,6 +51,7 @@ impl Dir {
         // The \\?\ prefix lifts the 260-character limit.
         let long = if path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}\") };
         let wide: Vec<u16> = OsStr::new(&long).encode_wide().chain([0]).collect();
+        // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.
         let h = unsafe {
             CreateFileW(
                 wide.as_ptr(),
@@ -68,7 +70,8 @@ impl Dir {
     }
 
     fn volume_serial(&self) -> Result<u32> {
-        let mut info: BY_HANDLE_FILE_INFORMATION = unsafe { std::mem::zeroed() };
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: an open handle, and `info` is the struct the call fills.
         if unsafe { GetFileInformationByHandle(self.0, &mut info) } == 0 {
             bail!("GetFileInformationByHandle: {}", std::io::Error::last_os_error());
         }
@@ -80,6 +83,7 @@ impl Dir {
         let mut buf = vec![0u64; 8192];
         let mut out = Vec::new();
         loop {
+            // SAFETY: an open handle, and `buf` is writable for the length given.
             let ok = unsafe {
                 GetFileInformationByHandleEx(
                     self.0,
@@ -89,20 +93,23 @@ impl Dir {
                 )
             };
             if ok == 0 {
-                let err = unsafe { GetLastError() };
-                if err == ERROR_NO_MORE_FILES {
+                let err = std::io::Error::last_os_error();
+                if err.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) {
                     return Ok(out);
                 }
-                bail!("listing directory: {}", std::io::Error::from_raw_os_error(err as i32));
+                bail!("listing directory: {err}");
             }
             let base = buf.as_ptr().cast::<u8>();
             let mut offset = 0usize;
             loop {
-                // SAFETY: the API filled `buf` with a chain of records linked by NextEntryOffset.
-                let info = unsafe { &*base.add(offset).cast::<FILE_ID_BOTH_DIR_INFO>() };
-                let name_ptr = unsafe { base.add(offset + std::mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName)) };
-                let name =
-                    unsafe { std::slice::from_raw_parts(name_ptr.cast::<u16>(), info.FileNameLength as usize / 2) };
+                // SAFETY: the API filled `buf` with a chain of 8-byte-aligned records linked by NextEntryOffset,
+                // each followed by its FileNameLength bytes of name.
+                let (info, name) = unsafe {
+                    let record = base.add(offset);
+                    let info = &*record.cast::<FILE_ID_BOTH_DIR_INFO>();
+                    let name_ptr = record.add(std::mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName));
+                    (info, std::slice::from_raw_parts(name_ptr.cast::<u16>(), info.FileNameLength as usize / 2))
+                };
                 let name = String::from_utf16_lossy(name);
                 if name != "." && name != ".." {
                     out.push(DirEntry {

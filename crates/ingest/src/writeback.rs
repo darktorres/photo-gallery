@@ -478,18 +478,23 @@ fn die_with_us(child: &Child) {
     };
     // The job handle is never closed: the system closes it when the process exits.
     static JOB: OnceLock<usize> = OnceLock::new();
-    let job = *JOB.get_or_init(|| unsafe {
-        let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-        let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = std::mem::zeroed();
+    let job = *JOB.get_or_init(|| {
+        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
         info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        SetInformationJobObject(
-            job,
-            JobObjectExtendedLimitInformation,
-            (&raw const info).cast(),
-            std::mem::size_of_val(&info) as u32,
-        );
-        job as usize
+        // SAFETY: null security attributes and name are allowed; `info` is the struct this information class
+        // takes, with its size.
+        unsafe {
+            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
+            SetInformationJobObject(
+                job,
+                JobObjectExtendedLimitInformation,
+                (&raw const info).cast(),
+                std::mem::size_of_val(&info) as u32,
+            );
+            job as usize
+        }
     });
+    // SAFETY: the job handle is never closed, and the child's handle is open while `child` lives.
     unsafe { AssignProcessToJobObject(job as _, child.as_raw_handle() as _) };
 }
 

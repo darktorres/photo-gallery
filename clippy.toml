@@ -1,0 +1,8 @@
+# std's hash maps are randomly seeded, so iterating one gives a different order on every run, and anything that
+# order reaches (a report, a list, a test) changes with it. Use BTreeMap/BTreeSet; if hashing is ever needed for
+# speed, a fixed-seed hasher.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "randomly seeded; use BTreeMap (or a fixed-seed hasher)" },
+    { path = "std::collections::HashSet", reason = "randomly seeded; use BTreeSet (or a fixed-seed hasher)" },
+    { path = "std::hash::RandomState", reason = "randomly seeded" },
+]

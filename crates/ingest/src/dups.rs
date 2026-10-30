@@ -2,7 +2,7 @@
 //! together. Grouping here is plain connected components, enough to inspect tiers 0–1. The real grouping is
 //! multicut over verified tier-2 edges (PLAN §5, M3).
 
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 
 use anyhow::Result;
 use pg_core::catalog::Catalog;
@@ -10,7 +10,7 @@ use pg_core::catalog::Catalog;
 /// FINDINGS "Shortcut and grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked.
 pub const DEFAULT_GROUP_DISTANCE: u32 = 22;
 
-struct UnionFind(HashMap<i64, i64>);
+struct UnionFind(BTreeMap<i64, i64>);
 
 impl UnionFind {
     fn find(&mut self, x: i64) -> i64 {
@@ -55,7 +55,7 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     }
 
     // Groups: tiers 0a and 0b, plus PDQ pairs up to `group_distance`.
-    let mut uf = UnionFind(HashMap::new());
+    let mut uf = UnionFind(BTreeMap::new());
     for column in ["file_hash", "pixel_hash"] {
         let mut stmt = conn.prepare(&format!(
             "SELECT a.{column}, a.file_id {current} AND a.{column} IN
@@ -79,7 +79,8 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
         uf.union(a, b);
     }
     let ids: Vec<i64> = uf.0.keys().copied().collect();
-    let mut groups: HashMap<i64, Vec<i64>> = HashMap::new();
+    // Members in id order; groups by size, then by their smallest id (the root).
+    let mut groups: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
     for id in ids {
         let root = uf.find(id);
         groups.entry(root).or_default().push(id);

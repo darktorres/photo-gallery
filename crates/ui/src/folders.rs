@@ -95,7 +95,7 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
-use std::collections::HashSet;
+use std::collections::BTreeSet;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
@@ -116,7 +116,7 @@ type Visible = Option<usize>;
 pub struct FolderRust {
     tree: FolderTree,
     visible: Vec<Visible>,
-    expanded: HashSet<usize>,
+    expanded: BTreeSet<usize>,
 }
 
 impl Default for FolderRust {
@@ -124,7 +124,7 @@ impl Default for FolderRust {
         let mut this = FolderRust {
             tree: FolderTree { nodes: Vec::new(), roots: Vec::new() },
             visible: Vec::new(),
-            expanded: HashSet::new(),
+            expanded: BTreeSet::new(),
         };
         this.load();
         this
@@ -134,7 +134,7 @@ impl Default for FolderRust {
 impl FolderRust {
     fn load(&mut self) {
         // Expanded folders stay expanded across reloads (the background job reloads after every scan).
-        let keep: HashSet<String> = self.expanded.iter().map(|&n| self.tree.nodes[n].merged_path.clone()).collect();
+        let keep: BTreeSet<String> = self.expanded.iter().map(|&n| self.tree.nodes[n].merged_path.clone()).collect();
         self.tree = state::with_catalog(|c| browse::folder_tree(&c.conn)).unwrap_or_else(|e| {
             eprintln!("folder tree: {e:#}");
             FolderTree { nodes: Vec::new(), roots: Vec::new() }

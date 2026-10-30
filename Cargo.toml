@@ -30,5 +30,11 @@ weezl = "0.1"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 
+# Each crate opts in with `[lints] workspace = true`. Kept at "warn" so work in progress builds; `cargo clippy
+# --workspace --all-targets -- -D warnings` (just lint) holds the tree to them.
+[workspace.lints.clippy]
+# Every unsafe block says why it is sound.
+undocumented_unsafe_blocks = "warn"
+
 [profile.release]
 debug = "line-tables-only"

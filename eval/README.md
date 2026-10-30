@@ -66,7 +66,7 @@ this venv:
   It pins older onnx / onnxruntime versions, hence its own venv. Removed after the int8 evaluation.
 - `D:\PhotoGallery\tools\tensorrt-10.16.1.11-cu13`: TensorRT 10 DLLs (the `tensorrt-cu13-libs` wheel from
   pypi.nvidia.com, unpacked) for ONNX Runtime's TensorRT provider, which is built against TensorRT 10.
-- The venv is on CUDA 13 (torch 2.15 cu132, onnxruntime-gpu 1.31.1, `tensorrt-cu13`), which needs NVIDIA
+- The venv is on CUDA 13 (torch 2.15 cu134, onnxruntime-gpu 1.31.1, `tensorrt-cu13`), which needs NVIDIA
   driver ≥ 580.
 
 `bench_thumbs.py` uses libjxl's `ssimulacra2.exe` and `cjpegli.exe` from `D:\PhotoGallery\tools\libjxl-0.11.1`

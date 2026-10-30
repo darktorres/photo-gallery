@@ -17,7 +17,7 @@ not run yet). Browse them with `eval/viewer.py`.
 | GPU | RTX 2060, 6 GB, sm_75 |
 | Library | E: 22 TB Exos HDD (21.4 TB used); C: has ~60 GB free after the 2026-10-28 cleanup (keep everything off it) |
 | Fast storage | D: 2 TB NVMe |
-| Eval Python | `D:\PhotoGallery\venv-eval` (torch 2.15 + CUDA 13.2 since 2026-10-30, NVIDIA driver 621.01); global Python's torch is CPU-only |
+| Eval Python | `D:\PhotoGallery\venv-eval` (torch 2.15 + CUDA 13.4 since 2026-10-30, NVIDIA driver 621.01); global Python's torch is CPU-only |
 | Port 8765 | Used by the user's `servidor_teste.py`; the viewer takes the next free port (8766) |
 
 ## Test set (2026-10-28)
@@ -234,7 +234,7 @@ cu13):
   Python package is 11. TensorRT 11 only builds strongly typed networks: the precision comes from the
   ONNX graph, with no fp16/int8 builder flags. ONNX Runtime's TensorRT 10 has no strongly typed mode, so
   it gets the fp16 graph *and* `trt_fp16_enable` (without the flag it runs the fp16 graph in fp32, 336
-  img/s). The torch upgrade (2.11 cu128 → 2.15 cu132) reproduces the stored SSCD fp16 embeddings at
+  img/s). The torch upgrade (2.11 cu128 → 2.15 cu132, then cu134, which measures the same) reproduces the stored SSCD fp16 embeddings at
   cosine ≥ 0.99991; TensorRT fp16 rebuilt on CUDA 13 gives the same subset retrieval (R@1 0.963 vs 0.964,
   same cross-group counts). The verifier (kornia DISK + LightGlue) runs unchanged.
 - **fp16 subnormal bug (found with the CUDA 13 stack):** GeM's eps (1e-6) is subnormal in fp16; TensorRT

@@ -251,6 +251,7 @@ ApplicationWindow {
             model: folders
             currentIndex: 0
             ScrollBar.vertical: ScrollBar {}
+            WheelScroller {}
             delegate: ItemDelegate {
                 id: node
                 required property int index
@@ -304,6 +305,7 @@ ApplicationWindow {
                 onWidthChanged: layoutTimer.restart()
                 Keys.onPressed: (e) => win.gridKey(e)
 
+                WheelScroller {}
                 WheelHandler {
                     acceptedModifiers: Qt.ControlModifier
                     onWheel: (ev) => win.setSize(win.rowHeight * (ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1))
@@ -442,6 +444,7 @@ ApplicationWindow {
                     clip: true
                     model: library.roots
                     ScrollBar.vertical: ScrollBar {}
+                    WheelScroller {}
                     delegate: RowLayout {
                         required property string modelData
                         width: ListView.view.width

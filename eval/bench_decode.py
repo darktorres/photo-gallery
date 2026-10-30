@@ -39,10 +39,10 @@ def _pil(data: bytes, draft: bool) -> np.ndarray:
         return np.asarray(im.resize((SIDE, SIDE), Image.Resampling.BILINEAR))
 
 
-def _vips(data: bytes) -> np.ndarray:
+def _vips(data: bytes, width: int = SIDE, height: int = SIDE) -> np.ndarray:
     import pyvips
 
-    im = pyvips.Image.thumbnail_buffer(data, SIDE, height=SIDE, size="force")
+    im = pyvips.Image.thumbnail_buffer(data, width, height=height, size="force")
     if im.interpretation not in ("srgb", "rgb", "b-w") or im.bands not in (1, 3):
         im = im.colourspace("srgb")
     if im.hasalpha():

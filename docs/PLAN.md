@@ -102,9 +102,9 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 - **Compute estimates (est.):**
   - Decoding Pinterest-size JPEGs at roughly 2–5 ms each across 12 threads is about 3k img/s, so the CPU keeps
     up.
-  - SSCD-class ResNet50 at about 288 px with fp16/int8 TensorRT on the 2060 gives about 500–1000 img/s, i.e.
-    20–40 h. That overlaps with the I/O, so wall-clock is roughly max(I/O, GPU) ≈ **1.5–3 days** for the first
-    pass. After that, only new files are processed.
+  - SSCD at 320 px, fp16 on TensorRT (via `ort`'s TensorRT provider), measured at ~1,390 img/s on the 2060
+    (M0), i.e. ~14 h. The pass is then CPU-bound (decode plus thumbnail encode), roughly **2–4 days** for the
+    first pass depending on the thumbnail format. After that, only new files are processed.
 
 ---
 
@@ -235,8 +235,8 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - **Throughput benchmarks:**
   - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image`.
   - Resize with `fast_image_resize`, verified with the aliasing paper's downsampled-circle test.
-  - Thumbnail encode with JPEG (turbo/jpegli) vs WebP.
-  - `ort` with CUDA vs TensorRT EP, fp16 vs int8.
+  - Thumbnail encode with JPEG (turbo/jpegli) vs WebP (done: AVIF/WebP/JPEG XL too, FINDINGS "Thumbnails").
+  - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, FINDINGS "TensorRT and ONNX Runtime").
 - **ANN bake-off** on 5M vectors: USearch HNSW int8 vs FAISS IVF-PQ, measuring recall at radius, RAM and
   insert speed.
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
@@ -276,8 +276,10 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 ## 9. Open decisions
 
-1. **Thumbnail size:** small (~200 px, ~350 GB) vs model-reusable (≥256 px, ~2–3× larger, makes later re-analysis possible
-   without re-reading E:).
+1. **Thumbnail size:** row height and quality target vs disk. Measured (FINDINGS "Thumbnails"): at score 80,
+   70M thumbnails take 0.5–0.8 TB at 256 px and 0.95–1.5 TB at 384 px depending on format. Thumbnails turned out
+   not to be a usable re-analysis source (compression moves embeddings too much), so they are sized for display
+   only.
 2. **What runs in the first full pass:** SSCD only, or SSCD plus a semantic model (CLIP/SigLIP) so keywords and
    semantic search never need a second pass. A semantic model would roughly double GPU time.
 3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). M0

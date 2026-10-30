@@ -106,6 +106,79 @@ RAM, machine otherwise idle. Cosine = SSCD fp16 embedding vs the same image thro
   order) and SSCD fp16 (410 img/s) are now within the same range, so the pass is GPU-bound at
   ~2 days.
 
+### Thumbnails (`eval/bench_thumbs.py`, 300 random images, 2026-10-30)
+
+Grid thumbnails for a justified layout: height = the row height in device pixels, width from the
+aspect ratio, never enlarged. Quality is SSIMULACRA2 (libjxl's tool; ~90 visually lossless, 80
+very high, 70 high, 50 medium). Times are one thread, files in RAM, machine in use.
+
+**Resize** (from the original file to the exact thumbnail size; score vs a float Lanczos3 resize of the
+full decode, 384 px; zone plate = worst-case aliasing test):
+
+| Pipeline | Score mean / p10 | ms | Zone plate |
+|---|---|---|---|
+| Full decode + Lanczos3 | 96.6 / 95.9 | 19.0 | 94.6 |
+| **DCT-scaled decode keeping ≥ 4× the target + Lanczos3** | **96.6 / 95.9** | 18.5 | 73.9 |
+| DCT-scaled decode keeping ≥ 2× + Lanczos3 | 95.7 / 94.7 | 16.4 | 58.8 |
+| libvips `thumbnail` (shrink-on-load + Lanczos3) | 95.5 / 94.4 | 13.2 | 58.7 |
+| DCT-scaled decode keeping ≥ 1× + Lanczos3 | 87.5 / 75.5 | 7.7 | 36.7 |
+| Full decode + antialiased bilinear | 86.0 / 82.3 | 13.0 | 43.9 |
+
+- **Lanczos3 from at least 4× the target is the thumbnail path**: the full-decode quality, and on large
+  originals (camera photos) still the 1/2–1/4 DCT-scaled decode. On this sample (median 800×1200)
+  there is little to scale, hence the same time. libvips (= 2× margin) is softer on some images
+  (p10 at 256 px: 87.7 vs 96.5).
+- The embedder's input (DCT-scaled to just ≥ 320 px, "Decode benchmark") is fine for SSCD but not
+  for thumbnails (p10 75). Bilinear is too soft. The ingest decodes once and makes both outputs.
+
+**Encode** at the same quality, 384 px (mean bytes per thumbnail; × 70M):
+
+| Format | Score 70 | Score 80 | Score 85 | Encode ms | Decode ms |
+|---|---|---|---|---|---|
+| JPEG (libjpeg-turbo, 4:2:0) | 13.8 KB (964 GB) | 21.9 KB (1.53 TB) | 29.6 KB (2.07 TB) | 0.9 | 0.6 |
+| JPEG (jpegli, 4:2:0, sequential) | 12.2 KB (853 GB) | 19.9 KB (1.39 TB) | – | 1.4 | 0.7 |
+| JPEG (jpegli defaults: 4:4:4, progressive) | 12.8 KB | 19.7 KB | 26.4 KB | 3.4 | 1.7 |
+| JPEG (mozjpeg) | 12.2 KB | 19.9 KB | 28.5 KB | 12.7 | 0.8 |
+| WebP (method 4) | 10.7 KB (747 GB) | 16.9 KB (1.19 TB) | 23.4 KB (1.64 TB) | 20 | 2.7 |
+| JPEG XL (effort 7) | 10.8 KB | 16.4 KB | 21.7 KB | 75 | 5.0 |
+| AVIF (speed 6) | 8.2 KB (571 GB) | 13.6 KB (949 GB) | 19.0 KB (1.33 TB) | 93 | 3.3 |
+
+Other row heights at score 80: 256 px: JPEG 815 GB, WebP 611 GB, AVIF 512 GB; 512 px: JPEG 2.37 TB,
+WebP 1.88 TB, AVIF 1.47 TB.
+
+- **Disk is the binding constraint.** D: has ~690 GB free. PLAN's ~350 GB (5 KB at ~200 px) only holds
+  around 256 px at score 60–70. At 384 px only AVIF at about score 70 fits.
+- **AVIF is the smallest at every quality** (score 80: −38% vs JPEG, −20% vs WebP), but at speed 6 it
+  encodes in ~0.1 s per 384 px thumbnail (~7 days of all 12 threads for 70M) and decodes 5× slower than
+  JPEG (3 ms; a screen of 60 thumbnails is ~15 ms on 12 threads, fine).
+- **AVIF encoder speed** (100 of the images, 384 px; bytes at score 70 / 80, encode ms):
+
+  | AVIF speed | Score 70 | Score 80 | Encode ms | 70M on 12 threads |
+  |---|---|---|---|---|
+  | 6 (default) | ~7.6 KB | 12.9 KB | 110 | ~7.4 days |
+  | **8** | 8.5 KB | 13.7 KB | 40 | ~2.7 days |
+  | 9 (10 is identical) | 9.8 KB | 15.7 KB | 9 | ~0.6 days |
+  | WebP method 4, for reference | 10.2 KB | 16.2 KB | 21 | ~1.4 days |
+
+  Speed 8 keeps most of AVIF's advantage (−15% vs WebP) at 2× WebP's encode time; speed 9 is
+  faster than WebP and still a little smaller.
+- JPEG XL loses to AVIF on size and to WebP on speed. Progressive JPEG is ~2× slower to decode for
+  0–3% fewer bytes. jpegli 4:2:0 sequential is the best JPEG (−9%, decodes like any JPEG); mozjpeg
+  matches its size at 10× the encode time.
+
+**Thumbnails as a source for later models** (SSCD fp16 on the thumbnail vs on the original, cosine):
+
+| Height | Uncompressed thumbnail: min / p1 / p50 | As JPEG q85 (score ~82): min / p1 / p50 |
+|---|---|---|
+| 256 px | 0.730 / 0.872 / 0.984 | 0.661 / 0.790 / 0.931 |
+| 384 px | 0.844 / 0.981 / 0.998 | 0.800 / 0.897 / 0.978 |
+| 512 px | 0.912 / 0.997 / 0.999 | 0.889 / 0.948 / 0.992 |
+
+- Compression moves the embedding more than the size does, and tall images (a 256 px-high
+  infographic is ~120 px wide) lose the most. A re-analysis source would need ≥ 512 px at near-lossless
+  quality, i.e. several TB. **So thumbnails are sized for display only** (PLAN §9 decision 1), and any
+  model wanted later should run in the ingest pass (decision 2), which reads the originals anyway.
+
 ## Model speed (RTX 2060, GPU only, synthetic input, batch 64)
 
 | Model | img/s | GPU days for 70M |
@@ -119,7 +192,46 @@ RAM, machine otherwise idle. Cosine = SSCD fp16 embedding vs the same image thro
 | DINOv2-B fp16 224px | 356 | 2.3 |
 | CLIP B/32 fp16 224px | 1498 | 0.5 |
 
-TensorRT and int8 are not tried yet.
+### TensorRT and ONNX Runtime for SSCD (`eval/accel.py`, 2026-10-30)
+
+Same weights exported to ONNX (`accel.SSCDExport`: BatchNorm folded, fp16-safe GeM; see "Bugs found"),
+RTX 2060, batch 64, 320 px, GPU only:
+
+| Runtime | img/s | GPU days for 70M | Cosine vs torch fp32 (9.3k subset): min / p1 |
+|---|---|---|---|
+| torch fp32 | 241 | 3.4 | – |
+| torch fp16 autocast (current) | 410 | 2.0 | 0.9998 / 0.9999 |
+| ONNX Runtime CUDA provider, fp32 | 201 | 4.0 | 1.0000 |
+| ONNX Runtime CUDA provider, fp16 | 310 | 2.6 | 0.9999 (128 images) |
+| ONNX Runtime TensorRT provider (TensorRT 10), fp16 | 1,382 | 0.6 | 0.9997 (128 images) |
+| **TensorRT 11, fp16** | **1,390** | **0.6** | 0.9996 / 0.9999 |
+| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 | 0.3 | 0.7334 / 0.9293 |
+
+- **TensorRT fp16 is 3.4× torch fp16, with the same embeddings.** On the subset its retrieval is
+  identical to `sscd_fp16`: R@1 0.964, R@10 1.0, the same thresholds (±0.0004) and flagged pairs (±5),
+  0 cross-group pairs at ≤ 95% recall.
+- **ONNX Runtime's TensorRT provider is as fast as TensorRT itself**, so the Rust side can use the `ort`
+  crate with the TensorRT provider (engine cache on disk) and needs no TensorRT bindings of its own.
+  ONNX Runtime's own CUDA kernels are slower than torch.
+- **int8 is not worth it.** Calibration variants (128–256 images; cosine vs fp32 min / p1, img/s):
+
+  | int8 variant | Cosine min / p1 | img/s |
+  |---|---|---|
+  | entropy calibration, everything quantized | 0.90 / 0.93 | 2,959 |
+  | max calibration | 0.80 / 0.95 | 2,874 |
+  | entropy, first conv + layer4 kept fp16 | 0.91 / 0.97 | 2,193 |
+  | max, first conv + layer4 kept fp16 | 0.94 / 0.96 | 2,217 |
+
+  Subset retrieval with the first variant is nearly unchanged (R@1 0.962 vs 0.964, same cross-group
+  counts), but single images move as far as cosine 0.73, and at fp16 speed the GPU is no longer the
+  bottleneck: the 70M pass is CPU-bound (decode ~550 img/s, thumbnails), so int8 would save nothing.
+  (ONNX Runtime's TensorRT provider also rejects the int8 Q/DQ graph's input profile; not pursued.)
+- **Consequence:** the GPU has ~2/3 of the ingest pass free. A second model in the first pass (PLAN §9
+  decision 2, e.g. CLIP/SigLIP for keywords) costs little GPU time if it also runs on TensorRT.
+- Setup notes: onnxruntime-gpu 1.27+ on PyPI is built for CUDA 13 (needs driver ≥ 580; this machine
+  has 576.57), so 1.26.0 is used. Its TensorRT provider is built against TensorRT 10, while the
+  `tensorrt` Python package is 11. TensorRT 11 only builds strongly typed networks: the precision
+  comes from the ONNX graph, with no fp16/int8 builder flags.
 
 ## Bugs found
 
@@ -128,6 +240,12 @@ TensorRT and int8 are not tried yet.
   (`models.SSCD`) with the weights remapped from ClassyVision to torchvision names.
   Verified against the TorchScript: fp32 max |diff| 1.3e-7; fp16 autocast cosine ≥ 0.999985.
   GeM pooling runs in fp32 (x³ overflows fp16). This module is also the ONNX export source.
+  - **Real cause (found 2026-10-30): not TorchScript.** SSCD's BatchNorm running variances reach
+    3.5e7, beyond fp16's maximum (65,504). Any pure-fp16 cast turns them into inf and zeroes those
+    channels; the rebuilt module breaks the same way under `.half()` (cosine 0.04 vs fp32). Autocast
+    keeps BatchNorm parameters in fp32, which is why it worked. The export (`accel.SSCDExport`)
+    folds BatchNorm into the convolutions in fp32 first and computes GeM rescaled by the per-channel
+    max: a pure fp16 graph then matches fp32 at cosine ≥ 0.99995.
 - **R@k metric undercounted groups of 3+:** another member of the same group ranking ahead of
   the scored partner counted as a miss (R@1 read 0.935 for every model). Fixed so only
   images outside the group count as ranked ahead.
@@ -663,16 +781,20 @@ Sample of 1,500 random test-set images (79 img/s, 4 workers):
    threshold, so rank + verifier covers it (the verifier would need to try rotations as it tries
    mirrors). Apply EXIF orientation everywhere; PDQ's dihedral query covers the exact-copy tier.
 5. **Throughput:** read in MFT order with a deep queue (~1,600 files/s), decode with DCT scaling
-   (~550 img/s on 12 threads), embed with SSCD fp16 (410 img/s). The GPU is the limit: about 2 days
-   for 70M. SSCD fp16 is the model; 288px is the same quality (R@10, cross-group 0) if speed is
-   ever needed. SSCD-large, DINOv2 and CLIP are dropped as candidate models.
+   (~550 img/s on 12 threads), embed with SSCD fp16 on TensorRT (1,390 img/s; 410 in torch). The CPU is
+   now the limit: decoding ~1.5 days for 70M, plus thumbnail encoding. SSCD fp16 is the model; 288px is
+   the same quality (R@10, cross-group 0) if speed is ever needed. SSCD-large, DINOv2 and CLIP are
+   dropped as candidate models. int8 is not used (see "TensorRT and ONNX Runtime").
 6. **PDQ** is an optional cheap tier for near-exact copies (~80% of labeled pairs at d ≤ 22 with
    0 false positives), never a replacement for SSCD.
+7. **Thumbnails:** Lanczos3 from a DCT-scaled decode kept ≥ 4× the target; display-only (not a
+   re-analysis source). Size and format wait on the user: disk (~690 GB free on D:) vs quality, see
+   "Thumbnails"; AVIF speed 8 is the smallest per quality at an affordable encode cost.
 
 ## Pending
 
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
-- Verifier speed, next levers: TensorRT / lower resolution for DISK and LightGlue (the GPU main thread is
+- Verifier speed, next levers: TensorRT (via `accel.py`'s export path) / lower resolution for DISK and LightGlue (the GPU main thread is
   the limit now); rotation retry only for weak alignments, if the full set shows rotated edited copies.
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
   template portraits with different faces (the 12-image group).
@@ -680,6 +802,6 @@ Sample of 1,500 random test-set images (79 img/s, 4 workers):
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
   comparison (see "Verifier prototype, first run").
 - Hand-label a sample of `review_*.csv` to estimate real precision.
-- TensorRT / int8 for SSCD (only if the GPU-bound ~2 days ever matters).
+- Thumbnail row height, quality target and format (user decision; numbers in "Thumbnails").
 - IVF vs exact k-NN (needs the full set).
 - Full-set runs (on hold until the user says go).

@@ -44,6 +44,8 @@ $py = 'D:\PhotoGallery\venv-eval\Scripts\python.exe'
 & $py pdq.py --synth                  # PDQ robustness to the same synthetic edits
 & $py bench_decode.py                 # JPEG decode pipelines: speed and embedding drift (idle machine)
 & $py bench_hdd.py                    # HDD read order on E: (path / MFT / physical), unbuffered, read-only
+& $py bench_thumbs.py                 # grid thumbnails: resize pipelines, formats x quality (bytes, SSIMULACRA2, ms)
+& $py bench_models.py --models sscd_fp16 sscd_trt_fp16 sscd_trt_int8   # TensorRT / ONNX Runtime (accel.py)
 & $py viewer.py                       # browse all results visually (local web page)
 ```
 
@@ -51,6 +53,22 @@ Models: `sscd`, `sscd_fp16`, `sscd_288_fp16`, `sscd_ts`, `sscd_large`, `dinov2_s
 `clip_b32` (see `models.py`), and `pdq` (hash stored as ±1/16 vectors: cosine = 1 − Hamming/128,
 so every tool here works on it unchanged; Meta's match threshold d ≤ 31 is cosine ≥ 0.758).
 Synthetic edits live in `edits.py` (torch-free, shared by `synth.py` and `pdq.py`).
+
+The same SSCD weights also run outside PyTorch (`accel.py`): `sscd_trt_fp16` / `sscd_trt_int8` (TensorRT 11
+engines), `sscd_ort_cuda_fp32` / `_fp16` (ONNX Runtime's CUDA provider) and `sscd_ort_trt10_fp16` / `_int8`
+(ONNX Runtime's TensorRT provider). They plug into every script above like the torch models. The ONNX graphs,
+calibration batch and engines are built on first use under `D:\PhotoGallery\cache\onnx` and `\trt`; build the
+int8 graph with `PG_WORK_DIR` on the subset, so the calibration images come from outside it. Requirements beyond
+this venv:
+
+- `D:\PhotoGallery\venv-quant`: NVIDIA ModelOpt (`pip install "nvidia-modelopt[onnx]"`) for int8
+  quantization. It pins older onnx / onnxruntime versions, hence its own venv.
+- `D:\PhotoGallery\tools\tensorrt-10.16.1.11`: TensorRT 10 DLLs (the `tensorrt-cu12-libs` wheel from
+  pypi.nvidia.com, unpacked) for ONNX Runtime's TensorRT provider, which is built against TensorRT 10.
+- onnxruntime-gpu **1.26.0**: the newest build for CUDA 12. Later ones need CUDA 13, i.e. driver ≥ 580.
+
+`bench_thumbs.py` uses libjxl's `ssimulacra2.exe` (0.12) and `cjpegli.exe` (0.11.1, the last libjxl
+release that ships it) from `D:\PhotoGallery\tools` (GitHub release zips of libjxl/libjxl).
 
 ### Quick-test subset
 
@@ -133,3 +151,4 @@ returns to the previously shown image, Enter saves, PgUp / PgDn change group.
 | `synth_pdq.json` | PDQ synthetic robustness; `dihedral` = best of the 8 rotations/mirrors |
 | `bench_decode.json` | Decode pipelines: img/s and SSCD cosine vs the PIL reference |
 | `bench_hdd.json` | Read order on the HDD: files/s and MB/s per order, layout correlations |
+| `bench_thumbs.json`, `_zoneplate.png` | Thumbnails: resize scores, bytes / score / ms per format and quality, SSCD re-use |

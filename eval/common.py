@@ -9,6 +9,7 @@ from collections import defaultdict
 from dataclasses import dataclass
 from itertools import combinations
 from pathlib import Path
+from typing import BinaryIO
 
 from PIL import Image, ImageOps
 
@@ -26,9 +27,15 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 Image.MAX_IMAGE_PIXELS = None
 
 
-def load_rgb(path: Path) -> Image.Image:
-    """Decode, apply EXIF orientation, and flatten transparency onto white."""
+def load_rgb(path: Path | BinaryIO, draft: tuple[int, int] | None = None) -> Image.Image:
+    """Decode, apply EXIF orientation, and flatten transparency onto white.
+
+    draft=(w, h): let a JPEG decode at 1/2, 1/4 or 1/8 scale in the DCT (libjpeg-turbo) while staying at least
+    w x h after orientation; other formats decode in full."""
     with Image.open(path) as im:
+        if draft and im.format == "JPEG":
+            swap = im.getexif().get(0x0112, 1) in (5, 6, 7, 8)  # rotated a quarter turn
+            im.draft("RGB" if im.mode == "RGB" else None, (draft[1], draft[0]) if swap else draft)
         im = ImageOps.exif_transpose(im)
         if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
             rgba = im.convert("RGBA")

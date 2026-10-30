@@ -125,6 +125,18 @@ def _sscd(variant: str) -> Callable[[], nn.Module]:
     return load
 
 
+def _accel(runtime: str, precision: str, size: int = 320) -> Callable[[], nn.Module]:
+    """SSCD on TensorRT ("trt") or ONNX Runtime ("cuda" / "trt10" providers); see accel.py."""
+    def load() -> nn.Module:
+        import accel
+
+        if runtime == "trt":
+            return accel.TRTModule(size, precision)
+        return accel.ORTModule(size, precision, "trt" if runtime == "ort_trt10" else "cuda")
+
+    return load
+
+
 def _timm(name: str, **kwargs) -> Callable[[], nn.Module]:
     def load() -> nn.Module:
         import timm
@@ -165,6 +177,13 @@ SPECS: dict[str, ModelSpec] = {
     "sscd_288_fp16": ModelSpec(288, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "amp", _sscd("sscd_disc_mixup")),
     # Meta's TorchScript, fp32 only: the reference the rebuilt module is checked against.
     "sscd_ts": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32", _sscd_torchscript("sscd_disc_mixup")),
+    # The same weights exported to ONNX (accel.py): TensorRT 11 engines, and ONNX Runtime with its CUDA provider
+    # or its TensorRT 10 provider. Their precision is the engine's own, hence "fp32" (no autocast) here.
+    **{f"sscd_{runtime}_{precision}": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32",
+                                                _accel(runtime, precision))
+       for runtime, precisions in (("trt", ("fp16", "int8")), ("ort_cuda", ("fp32", "fp16")),
+                                   ("ort_trt10", ("fp16", "int8")))
+       for precision in precisions},
     # ResNeXt101 variant: kept as TorchScript fp32 (its trunk isn't remapped).
     "sscd_large": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32",
                             _sscd_torchscript("sscd_disc_large")),

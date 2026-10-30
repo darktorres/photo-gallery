@@ -102,7 +102,6 @@
   .modal .marks { grid-column: 1 / -1; justify-content: center; margin: 0; cursor: default; }
   .modal .marks .hint { margin: 0; color: #bbb; }
   /* Groups page: each member's set (A-D) = which picture it is; marks are saved per pair. */
-  .s0 { --set: hsl(200 80% 65%); } .s1 { --set: hsl(40 90% 60%); } .s2 { --set: hsl(300 60% 72%); } .s3 { --set: hsl(130 50% 60%); }
   .side.set, .setchip { background: var(--set); }
   .gcard { cursor: default; }
   .gthumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
@@ -199,7 +198,7 @@ const TABS = [
   ["verify_cross", "Verifier: cross-group", "verify.py on pairs from two different dups2 groups (different pictures: should be unrelated). A “match” here is either a verifier false positive or a variant split across groups. Same diagnostic as the Verifier tab."],
   ["verify_knn", "Verifier: k-NN candidates", "verify.py on what the pipeline would really check: each image's 10 nearest neighbors above the floor. Mark pairs “same picture” (incl. edits: retouch, recolor, crop, overlay) or “different picture” (another photo, another frame of the same shoot). Fastest: click a pair, then S / D to mark and move on. Marks are saved per image pair (pair_marks.json), shared by all verifier tabs and kept across reruns. Diagnostic: cyan = changed, green = moved (optical flow)."],
 ];
-TABS.push(["groups", "Groups", "group.py: near-duplicate groups built from the verified k-NN pairs (multicut). Is each group one picture? If so, Save. If not, click the letter on each image (or open the group and press 1–4) so each picture gets its own set, then Save: pairs within a set are marked “same picture”, pairs across sets “different” (pair_marks.json, shared with the verifier tabs). Click an image to flip through the group at full size."]);
+TABS.push(["groups", "Groups", "group.py: near-duplicate groups built from the verified k-NN pairs (multicut). Is each group one picture? If so, Save. If not, click the letter on each image (or open the group and press its letter) so each picture gets its own set, then Save: pairs within a set are marked “same picture”, pairs across sets “different” (pair_marks.json, shared with the verifier tabs). Click an image to flip through the group at full size."]);
 TABS.push(["borders", "Borders", "tools/borders.py detections. Magenta = what would be cut. Mark the wrong ones with “Mark false positive” (saved immediately to the scan's review.json; borders.py --apply then leaves those files alone). Click an image for full size."]);
 const VERIFY_TABS = ["verify", "verify_cross", "verify_knn"];
 const PAGE = 60;
@@ -636,7 +635,9 @@ function openAt(i) {
 // view: filtered groups; open: index in view of the group in the modal; member / prev: shown and previously
 // shown image there (Space goes back, to compare any two).
 const gstate = { data: null, view: [], shown: 0, open: -1, member: 0, prev: null, imgs: [] };
-const SETS = "ABCD";
+// Sets: as many as the group has images. Named A, B, C... (then 27, 28...), colored by the golden angle.
+const setName = (k) => (k < 26 ? String.fromCharCode(65 + k) : String(k + 1));
+const setStyle = (k) => `--set: hsl(${(200 + k * 137.5) % 360} 75% 65%)`;
 const keyOf = (a, b) => [a, b].sort().join("|");
 
 async function renderGroups() {
@@ -676,7 +677,7 @@ function setsFromMarks(g) {
   return g.members.map((_, i) => {
     if (!touched[i]) return 0;
     const root = find(i);
-    if (!ids.has(root)) ids.set(root, Math.min(ids.size, SETS.length - 1));
+    if (!ids.has(root)) ids.set(root, ids.size);
     return ids.get(root);
   });
 }
@@ -731,10 +732,12 @@ function groupCard(g) {
     g.folders.length > 1 ? el("span", { class: "badge bad" }, "merges " + g.folders.join(" + ")) : "",
     el("span", { class: "stats" }, st.done ? `✓ marked: ${savedSets === 1 ? "all same picture" : savedSets + " different pictures"}`
       : st.marked ? `${st.marked} / ${st.total} pairs marked` : "not marked"));
-  const tiles = g.members.map((path, i) => el("figure", { class: `gtile s${g.sets[i]}` },
+  const tiles = g.members.map((path, i) => el("figure", { class: "gtile", style: setStyle(g.sets[i]) },
     el("img", { src: imgUrl(path, 320), loading: "lazy", alt: path.split("/").at(-1), onclick: () => openGroup(g, i) }),
-    el("button", { class: "setchip", title: "Which picture this is (click to change): images in one set are the same picture",
-      onclick: () => { g.sets[i] = (g.sets[i] + 1) % SETS.length; repaintGroup(g); } }, SETS[g.sets[i]]),
+    el("button", { class: "setchip",
+      title: "Which picture this is: images in one set are the same picture. Click: next set (the ones in use, then a " +
+        "new one); Shift+click: previous",
+      onclick: (e) => { cycleSet(g, i, e.shiftKey ? -1 : 1); } }, setName(g.sets[i])),
     el("figcaption", { title: path }, `${g.labels[i] || "–"} · ${g.sizes[i]}`)));
   const node = el("div", { class: "card gcard" + (st.done ? (savedSets === 1 ? " mark-same" : " mark-different") : "") },
     head, el("div", { class: "gthumbs" + (nsets > 1 ? " split" : "") }, tiles),
@@ -744,6 +747,13 @@ function groupCard(g) {
       st.marked ? el("button", { class: "mk", onclick: () => clearGroup(g) }, "Clear this group's marks") : ""));
   g.node = node;
   return node;
+}
+
+// Step image i through the sets in use plus one new set (at most one set per image).
+function cycleSet(g, i, step) {
+  const n = Math.min(g.members.length, Math.max(...g.sets) + 2);
+  g.sets[i] = (((g.sets[i] + step) % n) + n) % n;
+  repaintGroup(g);
 }
 
 function repaintGroup(g) {
@@ -776,7 +786,7 @@ async function clearGroup(g) {
 }
 
 // Group view: one member at a time in a fixed box. ← / → (or a click) step through the group, Space returns to
-// the previously shown image, 1-4 set the image's set, Enter saves, PgUp / PgDn change group, Esc closes.
+// the previously shown image, a letter (or 1-9) sets the image's set, Enter saves, PgUp / PgDn change group, Esc closes.
 function openGroup(g, i) {
   const m = $("modal");
   gstate.open = gstate.view.indexOf(g);
@@ -819,11 +829,11 @@ function updateGroupModal() {
   const g = gstate.view[gstate.open], i = gstate.member;
   const mine = g.edges.filter((e) => e[0] === i || e[1] === i);
   const pos = mine.filter((e) => e[2] > 0).length;
-  gstate.caption.replaceChildren(el("span", { class: `side set s${g.sets[i]}` }, SETS[g.sets[i]]),
+  gstate.caption.replaceChildren(el("span", { class: "side set", style: setStyle(g.sets[i]) }, setName(g.sets[i])),
     `${i + 1} / ${g.members.length} · ${g.members[i]} · ${g.sizes[i]} · matched ${pos}, aligned-but-different ${mine.length - pos}`);
   const nsets = new Set(g.sets).size;
   gstate.bar.replaceChildren(el("span", { class: "hint" },
-    `Group #${g.n} (${gstate.open + 1} / ${gstate.view.length}) · ← → image · Space previous image · 1–4 set this image · ` +
+    `Group #${g.n} (${gstate.open + 1} / ${gstate.view.length}) · ← → image · Space previous image · A–Z (or 1–9) set this image · ` +
     `Enter save (${nsets === 1 ? "all same picture" : nsets + " different pictures"}) · PgUp / PgDn group · Esc close`));
 }
 
@@ -837,7 +847,10 @@ function groupKey(e) {
     if (!e.repeat && gstate.prev != null) showMember(gstate.prev);
   } else if (key === "arrowright") { e.preventDefault(); showMember(gstate.member + 1); }
   else if (key === "arrowleft") { e.preventDefault(); showMember(gstate.member - 1); }
-  else if (/^[1-4]$/.test(key)) { g.sets[gstate.member] = Number(key) - 1; repaintGroup(g); }
+  else if (!e.ctrlKey && !e.altKey && !e.metaKey && /^([a-z]|[1-9])$/.test(key)) {
+    const k = /\d/.test(key) ? Number(key) - 1 : key.charCodeAt(0) - 97;
+    if (k < g.members.length) { g.sets[gstate.member] = k; repaintGroup(g); }
+  }
   else if (key === "enter") { e.preventDefault(); saveGroup(g); }
   else if (key === "pagedown") { e.preventDefault(); openGroupAt(gstate.open + 1); }
   else if (key === "pageup") { e.preventDefault(); openGroupAt(gstate.open - 1); }

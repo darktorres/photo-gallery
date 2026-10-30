@@ -124,7 +124,8 @@ thumbnails (click a pair for full size). Thumbnails are cached in `D:\PhotoGalle
 
 The **Groups** page shows `group.py`'s groups, largest first, with filters for unmarked groups, groups that
 merge labeled folders, and groups with aligned-but-different pairs inside. Mark a group by giving each
-picture in it its own set (letters A–D on the thumbnails, or keys 1–4 in the full view) and saving: pairs
+picture in it its own set (click the letter on a thumbnail to step through the sets in use plus a new one,
+Shift+click back; or press the set's letter, or 1–9, in the full view; up to one set per image) and saving: pairs
 within a set become "same picture" marks, pairs across sets "different" (in `pair_marks.json`, shared with the
 verifier tabs). The full view shows one member at a time in a fixed box: ← / → step through the group, Space
 returns to the previously shown image, Enter saves, PgUp / PgDn change group.

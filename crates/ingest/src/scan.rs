@@ -10,7 +10,6 @@
 
 use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
-use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, ScannedFile};
@@ -20,6 +19,8 @@ use windows_sys::Win32::Storage::FileSystem::{
     FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
     FILE_SHARE_WRITE, FileIdBothDirectoryInfo, GetFileInformationByHandle, GetFileInformationByHandleEx, OPEN_EXISTING,
 };
+
+use crate::control::Control;
 
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jfif", "png", "gif", "webp", "bmp", "tif", "tiff"];
 /// Folders never descended into.
@@ -132,9 +133,13 @@ fn is_image(name: &str) -> bool {
 
 /// An absolute folder path without a trailing backslash (a drive root is `D:`).
 pub fn normalize_root(root: &str) -> Result<String> {
-    let abs = std::path::absolute(root).with_context(|| format!("bad path {root}"))?;
-    let s = abs.to_string_lossy();
-    let s = s.strip_prefix(r"\\?\").unwrap_or(&s);
+    // canonicalize gives the real case (a folder typed in lower case still matches the catalog's paths).
+    let real = std::fs::canonicalize(root).with_context(|| format!("can't open {root}"))?;
+    let s = real.to_string_lossy();
+    let s = match s.strip_prefix(r"\\?\UNC\") {
+        Some(unc) => format!(r"\\{unc}"),
+        None => s.strip_prefix(r"\\?\").unwrap_or(&s).to_string(),
+    };
     Ok(s.trim_end_matches('\\').to_string())
 }
 
@@ -143,20 +148,26 @@ pub struct ScanStats {
     pub files: u64,
     pub missing: usize,
     pub errors: u64,
+    /// False when stopped early; nothing is marked missing then.
+    pub complete: bool,
 }
 
-pub fn scan(catalog: &mut Catalog, root: &str) -> Result<ScanStats> {
-    let root = normalize_root(root)?;
-    let volume = Dir::open(&root)?.volume_serial()?;
-    let scan_id = catalog.begin_scan(&root)?;
-    let start = Instant::now();
-    let mut stats = ScanStats { folders: 0, files: 0, missing: 0, errors: 0 };
-    let mut stack = vec![root.clone()];
+/// Record the image files under `root` (from `normalize_root`); files it no longer holds are marked missing.
+pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStats> {
+    let volume = Dir::open(root)?.volume_serial()?;
+    let scan_id = catalog.begin_scan(root)?;
+    let mut stats = ScanStats { folders: 0, files: 0, missing: 0, errors: 0, complete: false };
+    let mut stack = vec![root.to_string()];
     let mut tx = catalog.conn.transaction()?;
     let mut in_tx = 0;
-    let mut last_report = Instant::now();
+    ctl.begin("scan", root.to_string(), 0);
 
     while let Some(dir) = stack.pop() {
+        if !ctl.checkpoint() {
+            tx.commit()?;
+            ctl.finish();
+            return Ok(stats);
+        }
         let entries = match Dir::open(&dir).and_then(|d| d.entries()) {
             Ok(e) => e,
             Err(e) => {
@@ -198,14 +209,12 @@ pub fn scan(catalog: &mut Catalog, root: &str) -> Result<ScanStats> {
             tx = catalog.conn.transaction()?;
             in_tx = 0;
         }
-        if last_report.elapsed().as_secs() >= 5 {
-            last_report = Instant::now();
-            let secs = start.elapsed().as_secs_f64();
-            eprintln!("  {} folders, {} images, {:.0} images/s", stats.folders, stats.files, stats.files as f64 / secs);
-        }
+        ctl.set_done(stats.files);
     }
     tx.commit()?;
-    stats.missing = catalog.mark_missing(&root, scan_id)?;
+    stats.missing = catalog.mark_missing(root, scan_id)?;
     catalog.finish_scan(scan_id)?;
+    stats.complete = true;
+    ctl.finish();
     Ok(stats)
 }

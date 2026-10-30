@@ -5,8 +5,10 @@ See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.
 - `core` (`pg-core`): catalog (SQLite), decoding, the import analysis (tiers 0a/0b/1, dimensions, ThumbHash),
   the PDQ index, the thumbnail cache, folder browsing (merged drives), the justified layout and ratings. No UI
   dependency.
-- `ingest` (`pg-ingest`, binary `pg`): the command-line front end (scan, import, thumbnails, reports).
-- `ui` (`pg-ui`, binary `gallery`): the desktop app, Qt 6 Quick over CXX-Qt.
+- `ingest` (`pg-ingest`): the passes over the originals (scan, import, thumbnails), the app's background job
+  that runs them, and the command line.
+- `ui` (`pg-ui`, binary `gallery`): the one program. Without arguments it opens the desktop app (Qt 6 Quick
+  over CXX-Qt); with a command it runs that pass on the command line.
 
 ## Build
 
@@ -22,18 +24,30 @@ C:\Qt\6.9.2\msvc2022_64\bin\windeployqt.exe --release --qmldir crates\ui\qml --n
 
 ## Run
 
-The catalog lives in `D:\PhotoGallery\catalog` (`--catalog-dir` or `PG_CATALOG_DIR` to change it, for both
-programs).
+The catalog lives in `D:\PhotoGallery\catalog` (`PG_CATALOG_DIR`, or `--catalog-dir` on the command line, to
+change it).
+
+Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
+makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
+below normal priority (thumbnails at idle), so the window and the thumbnails on screen come first. Quitting at
+any point is safe: the next start finishes what's pending.
+
+The same passes on the command line, without the window (for scripts, profiling and checking results):
 
 ```powershell
-$pg = '.\target\release\pg.exe'
-& $pg scan 'D:\PhotoGallery\datasets\pinterest'   # record image files (identity, size, mtime); unseen ones -> missing
-& $pg import                                      # analyze new/changed files; resumable, stop it any time
-& $pg thumbs --height 256                         # optional: pre-make thumbnails at one grid height
-& $pg status                                      # counts
-& $pg dups --show 5                               # what tiers 0-1 found, and the groups they form
-.\target\release\gallery.exe                      # the desktop app
+$g = '.\target\release\gallery.exe'
+& $g scan 'D:\PhotoGallery\datasets\pinterest' | Out-Host  # add to the library and record image files
+& $g scan | Out-Host                                       # rescan the whole library
+& $g import | Out-Host                                     # analyze new/changed files; resumable
+& $g thumbs --height 256 | Out-Host                        # thumbnails at one grid height
+& $g status | Out-Host                                     # library folders and counts
+& $g dups --show 5 | Out-Host                              # what tiers 0-1 found, and the groups they form
+& $g remove 'D:\PhotoGallery\datasets\pinterest'           # take a folder out (its files are hidden, not deleted)
 ```
+
+`gallery.exe` is a GUI program, so no console window opens when it starts from Explorer. Its commands print to
+the console they were typed in. PowerShell doesn't wait for a GUI program unless its output is piped, hence
+`| Out-Host`.
 
 - **Scan** lists folders by directory handle, which yields each file's NTFS file ID: a moved or renamed file
   keeps its row and its analysis.
@@ -44,8 +58,12 @@ $pg = '.\target\release\pg.exe'
   whose size or mtime changed.
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped (`--cap-gb`, default 50; `PG_THUMB_CAP_GB` for the
-  app). `pg thumbs` fills it at idle CPU priority, evicting other heights first; the app makes the ones on
-  screen on demand, newest request first.
+  app). The background job (or `gallery thumbs`) fills it at idle CPU priority for the grid's current height,
+  evicting other heights first, and starts over when the size changes. The ones on screen are made on demand,
+  newest request first.
+- **Library**: the folders added (`roots` table, schema v3). None is inside another: adding a parent replaces
+  its children, and adding a subfolder only rescans it. Removing one marks its files missing; adding it back
+  restores them with their analysis and ratings.
 
 ## The app
 
@@ -60,5 +78,5 @@ $pg = '.\target\release\pg.exe'
   the image to reveal black bars, 0–5 rates, Esc closes.
 - Ratings are stored in the catalog (`ratings` table), not in the files.
 - Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
-  --viewer-keys=LBZ --screenshot=<png>`. With `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll`
+  --viewer-keys=LBZ --library=1 --add-folder=<path> --screenshot=<png> --wait=<s>`. With `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll`
   next to the exe, from Qt's `plugins\platforms`) and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens.

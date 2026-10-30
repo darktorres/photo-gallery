@@ -39,6 +39,11 @@ pub fn get() -> &'static AppState {
     STATE.get().expect("state::init not called")
 }
 
+/// The thumbnail cache, shared by the image provider and the background job.
+pub fn thumbs() -> &'static Mutex<ThumbCache> {
+    &get().thumbs
+}
+
 /// Run `f` with this thread's catalog connection.
 pub fn with_catalog<R>(f: impl FnOnce(&Catalog) -> Result<R>) -> Result<R> {
     CATALOG.with(|c| {
@@ -74,7 +79,7 @@ fn read_original(path: &str) -> std::io::Result<Vec<u8>> {
 /// otherwise made now from the original and cached. With the original offline, the best smaller one.
 pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
     let browse::FileSource { path, mtime, .. } = source(file_id)?;
-    let cached = get().thumbs.lock().unwrap().get_nearest(file_id, height, mtime)?;
+    let cached = thumbs().lock().unwrap().get_nearest(file_id, height, mtime)?;
     if let Some((h, data)) = &cached
         && *h >= height
     {
@@ -85,7 +90,7 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
         Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
     };
     let data = with_codecs(|d, e| thumbs::make(&bytes, height as usize, d, e))?;
-    get().thumbs.lock().unwrap().put_batch(&[(file_id, height, mtime, data.clone())], None)?;
+    thumbs().lock().unwrap().put_batch(&[(file_id, height, mtime, data.clone())], None)?;
     Ok(data)
 }
 

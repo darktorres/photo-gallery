@@ -929,8 +929,10 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "pg-core",
+ "pg-ingest",
  "thumbhash",
  "turbojpeg",
+ "windows-sys",
 ]
 
 [[package]]

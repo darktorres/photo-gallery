@@ -82,6 +82,11 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "mergedPath"]
         fn merged_path(self: &FolderModel, row: i32) -> QString;
+
+        /// The visible row of a merged path (`""` = "All"), or -1.
+        #[qinvokable]
+        #[cxx_name = "rowOf"]
+        fn row_of(self: &FolderModel, merged: &QString) -> i32;
     }
 }
 
@@ -124,16 +129,22 @@ impl Default for FolderRust {
 
 impl FolderRust {
     fn load(&mut self) {
+        // Expanded folders stay expanded across reloads (the background job reloads after every scan).
+        let keep: HashSet<String> = self.expanded.iter().map(|&n| self.tree.nodes[n].merged_path.clone()).collect();
         self.tree = state::with_catalog(|c| browse::folder_tree(&c.conn)).unwrap_or_else(|e| {
             eprintln!("folder tree: {e:#}");
             FolderTree { nodes: Vec::new(), roots: Vec::new() }
         });
-        // Open single-child chains from the top (D:\PhotoGallery\datasets\pinterest shows its contents at once).
-        self.expanded.clear();
-        let mut level = self.tree.roots.clone();
-        while level.len() == 1 {
-            self.expanded.insert(level[0]);
-            level = self.tree.nodes[level[0]].children.clone();
+        self.expanded =
+            (0..self.tree.nodes.len()).filter(|&n| keep.contains(&self.tree.nodes[n].merged_path)).collect();
+        // Otherwise open single-child chains from the top (D:\PhotoGallery\datasets\pinterest shows its contents
+        // at once).
+        if self.expanded.is_empty() {
+            let mut level = self.tree.roots.clone();
+            while level.len() == 1 {
+                self.expanded.insert(level[0]);
+                level = self.tree.nodes[level[0]].children.clone();
+            }
         }
         let roots = self.tree.roots.clone();
         self.visible = std::iter::once(None).chain(self.visible_below(&roots)).collect();
@@ -243,5 +254,13 @@ impl qobject::FolderModel {
             Some(Some(n)) => QString::from(&self.tree.nodes[n].merged_path),
             _ => QString::default(),
         }
+    }
+
+    fn row_of(&self, merged: &QString) -> i32 {
+        let merged = merged.to_string();
+        self.visible
+            .iter()
+            .position(|v| v.map_or(merged.is_empty(), |n| self.tree.nodes[n].merged_path == merged))
+            .map_or(-1, |r| r as i32)
     }
 }

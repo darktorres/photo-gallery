@@ -1,0 +1,184 @@
+//! The library (the folders the user added) and the background job that keeps the catalog in step with them:
+//! scan, import, thumbnails (`pg_ingest::runner`). QML polls `poll()` for progress, and reloads its views on
+//! `scanned` (the folder tree changed) and `imported` (sizes and placeholders changed).
+
+#[cxx_qt::bridge]
+pub mod qobject {
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
+        include!("cxx-qt-lib/qurl.h");
+        type QUrl = cxx_qt_lib::QUrl;
+    }
+
+    extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        #[qproperty(QStringList, roots)]
+        #[qproperty(bool, busy)]
+        #[qproperty(bool, paused)]
+        #[qproperty(QString, status)]
+        /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
+        #[qproperty(f64, progress)]
+        /// The latest error or note from the job, until the next one.
+        #[qproperty(QString, message)]
+        type Library = super::LibraryRust;
+    }
+
+    unsafe extern "RustQt" {
+        #[qsignal]
+        fn scanned(self: Pin<&mut Library>);
+
+        #[qsignal]
+        fn imported(self: Pin<&mut Library>);
+
+        /// Start the background job; it first finishes whatever is pending.
+        #[qinvokable]
+        fn start(self: Pin<&mut Library>, thumb_height: i32);
+
+        #[qinvokable]
+        #[cxx_name = "addFolder"]
+        fn add_folder(self: Pin<&mut Library>, url: &QUrl);
+
+        #[qinvokable]
+        #[cxx_name = "removeFolder"]
+        fn remove_folder(self: Pin<&mut Library>, path: &QString);
+
+        /// Scan every library folder again (new, changed, moved and deleted files).
+        #[qinvokable]
+        fn rescan(self: Pin<&mut Library>);
+
+        /// The grid's thumbnail height in device pixels; the job makes thumbnails at this one.
+        #[qinvokable]
+        #[cxx_name = "setThumbHeight"]
+        fn set_thumb_height(self: &Library, height: i32);
+
+        #[qinvokable]
+        #[cxx_name = "togglePause"]
+        fn toggle_pause(self: Pin<&mut Library>);
+
+        #[qinvokable]
+        fn poll(self: Pin<&mut Library>);
+    }
+}
+
+use core::pin::Pin;
+use std::sync::OnceLock;
+
+use cxx_qt::CxxQtType;
+use cxx_qt_lib::{QString, QStringList, QUrl};
+use pg_ingest::runner::{Generation, Runner};
+use pg_ingest::scan::normalize_root;
+
+use crate::state;
+
+static RUNNER: OnceLock<Runner> = OnceLock::new();
+
+#[derive(Default)]
+pub struct LibraryRust {
+    roots: QStringList,
+    busy: bool,
+    paused: bool,
+    status: QString,
+    progress: f64,
+    message: QString,
+    seen: Generation,
+}
+
+fn library_roots() -> Vec<String> {
+    state::with_catalog(|c| c.roots()).unwrap_or_else(|e| {
+        eprintln!("library: {e:#}");
+        Vec::new()
+    })
+}
+
+impl qobject::Library {
+    fn load_roots(self: Pin<&mut Self>) {
+        self.set_roots(library_roots().iter().map(QString::from).collect());
+    }
+
+    fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
+        self.as_mut().load_roots();
+        let height = thumb_height.max(1) as u32;
+        RUNNER.get_or_init(|| Runner::start(state::get().catalog_path.clone(), state::thumbs(), height));
+    }
+
+    fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
+        let path = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
+        let root = match normalize_root(&path) {
+            Ok(r) => r,
+            Err(e) => return self.set_message(QString::from(&format!("{e:#}"))),
+        };
+        match state::with_catalog(|c| c.add_root(&root)) {
+            // A folder inside the library is just rescanned.
+            Ok(added) => {
+                if !added {
+                    self.as_mut()
+                        .set_message(QString::from(&format!("{root} is already in the library: rescanning it")));
+                }
+            }
+            Err(e) => return self.set_message(QString::from(&format!("{e:#}"))),
+        }
+        self.as_mut().load_roots();
+        if let Some(r) = RUNNER.get() {
+            r.scan(vec![root]);
+        }
+    }
+
+    fn remove_folder(mut self: Pin<&mut Self>, path: &QString) {
+        if let Err(e) = state::with_catalog(|c| c.remove_root(&path.to_string())) {
+            return self.set_message(QString::from(&format!("{e:#}")));
+        }
+        // A scan of it in progress stops; the job skips folders no longer in the library.
+        if let Some(r) = RUNNER.get() {
+            r.scan(Vec::new());
+        }
+        self.as_mut().load_roots();
+        self.scanned();
+    }
+
+    fn rescan(self: Pin<&mut Self>) {
+        if let Some(r) = RUNNER.get() {
+            r.scan(library_roots());
+        }
+    }
+
+    fn set_thumb_height(&self, height: i32) {
+        if let Some(r) = RUNNER.get() {
+            r.set_thumb_height(height.max(1) as u32);
+        }
+    }
+
+    fn toggle_pause(mut self: Pin<&mut Self>) {
+        let Some(r) = RUNNER.get() else { return };
+        r.set_paused(!r.is_paused());
+        self.as_mut().poll();
+    }
+
+    fn poll(mut self: Pin<&mut Self>) {
+        let Some(r) = RUNNER.get() else { return };
+        let p = r.progress();
+        let paused = r.is_paused();
+        let status = match (paused, p.status()) {
+            (true, s) if s.is_empty() => "Background work paused".to_string(),
+            (true, s) => format!("Paused · {s}"),
+            (false, s) => s,
+        };
+        self.as_mut().set_busy(!p.phase.is_empty());
+        self.as_mut().set_paused(paused);
+        self.as_mut().set_status(QString::from(&status));
+        self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
+        if let Some(last) = r.take_messages().pop() {
+            self.as_mut().set_message(QString::from(&last));
+        }
+        let now = r.generation();
+        let seen = std::mem::replace(&mut self.as_mut().rust_mut().seen, now);
+        if now.scans != seen.scans {
+            self.scanned();
+        } else if now.imports != seen.imports {
+            self.imported();
+        }
+    }
+}

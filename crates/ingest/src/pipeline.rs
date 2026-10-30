@@ -9,10 +9,28 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
+use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY};
+
+use crate::control::Control;
 
 pub struct Options {
     pub readers: usize,
     pub workers: usize,
+    /// Thread priority of the readers and workers (`THREAD_PRIORITY_*`). Below normal keeps the app's own threads
+    /// (the UI, thumbnails on screen) ahead of a background pass.
+    pub priority: THREAD_PRIORITY,
+}
+
+impl Options {
+    /// 8 reads in flight, a worker per logical CPU.
+    pub fn new(priority: THREAD_PRIORITY) -> Options {
+        let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
+        Options { readers: 8, workers: cpus, priority }
+    }
+}
+
+fn set_priority(priority: THREAD_PRIORITY) {
+    unsafe { SetThreadPriority(GetCurrentThread(), priority) };
 }
 
 /// A long-path-safe form of an absolute path.
@@ -21,10 +39,12 @@ pub fn long_path(path: &str) -> String {
 }
 
 /// Read `paths[i]`, run `process` on its bytes (with per-worker state from `init`), and call `sink(i, result,
-/// bytes read)` in completion order. `sink` returns false to stop early.
+/// bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on `ctl`, and
+/// reading waits while `ctl` is paused.
 pub fn run<S, R>(
     paths: &[String],
     opts: &Options,
+    ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
     process: impl Fn(&mut S, &[u8]) -> Result<R> + Sync,
     mut sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
@@ -42,7 +62,8 @@ where
             let raw_tx = raw_tx.clone();
             let (next, stop) = (&next, &stop);
             s.spawn(move || {
-                while !stop.load(Ordering::Relaxed) {
+                set_priority(opts.priority);
+                while !stop.load(Ordering::Relaxed) && ctl.checkpoint() {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(path) = paths.get(i) else { break };
                     if raw_tx.send((i, std::fs::read(long_path(path)))).is_err() {
@@ -57,6 +78,7 @@ where
             let (raw_rx, res_tx) = (raw_rx.clone(), res_tx.clone());
             let (init, process) = (&init, &process);
             s.spawn(move || {
+                set_priority(opts.priority);
                 let mut state = match init() {
                     Ok(st) => st,
                     Err(e) => {
@@ -83,7 +105,7 @@ where
                 stop.store(true, Ordering::Relaxed);
                 return Err(out.err().unwrap().context("worker setup"));
             }
-            if !sink(i, out, len)? {
+            if !sink(i, out, len)? || ctl.stop_requested() {
                 stop.store(true, Ordering::Relaxed);
                 break;
             }

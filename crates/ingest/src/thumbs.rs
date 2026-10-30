@@ -1,16 +1,18 @@
 //! The background thumbnail task (PLAN §6): after the import, thumbnails for every analyzed file at the height
-//! the grid currently uses, in on-disk order, until done or until the cache is full of that height. Runs at low
-//! priority by default, as it competes with the user for the disk and the CPU.
+//! the grid currently uses, in on-disk order, until done or until the cache is full of that height. Runs at idle
+//! priority, as it competes with the user for the disk and the CPU. The cache is shared with the app's on-demand
+//! thumbnails, so it is locked per batch only.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_core::decode::Decoder;
 use pg_core::thumbs::{self, ThumbCache};
 use turbojpeg::Compressor;
 
+use crate::control::Control;
 use crate::pipeline::{self, Options};
-use crate::progress::Progress;
 
 const BATCH: usize = 200;
 
@@ -20,20 +22,29 @@ pub struct ThumbStats {
     pub cache_full: bool,
 }
 
-pub fn run(cache: &mut ThumbCache, catalog_path: &Path, height: u32, opts: &Options) -> Result<ThumbStats> {
-    let items = cache.pending(catalog_path, height)?;
+pub fn run(
+    cache: &Mutex<ThumbCache>,
+    catalog_path: &Path,
+    height: u32,
+    opts: &Options,
+    ctl: &Control,
+) -> Result<ThumbStats> {
+    let items = cache.lock().unwrap().pending(catalog_path, height)?;
+    let mut stats = ThumbStats { made: 0, failed: 0, cache_full: false };
+    if items.is_empty() {
+        return Ok(stats);
+    }
     eprintln!(
         "{} files need a {height} px thumbnail; cache holds {:.2} GB",
         items.len(),
-        cache.total_bytes() as f64 / 1e9
+        cache.lock().unwrap().total_bytes() as f64 / 1e9
     );
     let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
-    let mut stats = ThumbStats { made: 0, failed: 0, cache_full: false };
     let mut batch = Vec::with_capacity(BATCH);
-    let mut progress = Progress::new("thumbs", items.len());
+    ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
 
-    let mut flush = |batch: &mut Vec<(i64, u32, i64, Vec<u8>)>, stats: &mut ThumbStats| -> Result<bool> {
-        let stored = cache.put_batch(batch, Some(height))?;
+    let flush = |batch: &mut Vec<(i64, u32, i64, Vec<u8>)>, stats: &mut ThumbStats| -> Result<bool> {
+        let stored = cache.lock().unwrap().put_batch(batch, Some(height))?;
         if stored {
             stats.made += batch.len();
         } else {
@@ -46,10 +57,11 @@ pub fn run(cache: &mut ThumbCache, catalog_path: &Path, height: u32, opts: &Opti
     pipeline::run(
         &paths,
         opts,
+        ctl,
         || Ok((Decoder::new()?, Compressor::new()?)),
         |(decoder, encoder), bytes| thumbs::make(bytes, height as usize, decoder, encoder),
         |i, result, len| {
-            progress.add(len, result.is_err());
+            ctl.add(len, result.is_err());
             match result {
                 Ok(data) => batch.push((items[i].id, height, items[i].mtime, data)),
                 // The import already decoded these files; a failure here is a file changed or gone since.
@@ -67,6 +79,6 @@ pub fn run(cache: &mut ThumbCache, catalog_path: &Path, height: u32, opts: &Opti
     if !stats.cache_full {
         flush(&mut batch, &mut stats)?;
     }
-    progress.finish();
+    ctl.finish();
     Ok(stats)
 }

@@ -266,6 +266,11 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   (newest request first) and ThumbHash placeholders. Viewer with Lanczos fit, 1:1, 10× loupe and a frame to
   reveal black bars. Ratings 0–5 in the catalog (schema v2). The tree merges folders by their path below the
   drive.
+- **One program (user decision, 2026-10-30):** no separate importer. `gallery.exe` holds the library (folders
+  added in the app; schema v3) and runs scan → import → thumbnails as a background job, with progress and
+  pause. A new folder, a rescan or a new grid size interrupts the pass in progress, which resumes from the
+  catalog. The same passes are commands of the same exe (`gallery import`, …) for scripts and profiling.
+  Part of M4 is therefore done; still open there are throttling while the UI is in use, and the 70M scale.
 
 ### M3 — Near-duplicates
 

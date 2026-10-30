@@ -10,8 +10,8 @@ use pg_core::decode::Decoder;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
 use pg_core::pdq_index::PdqIndex;
 
+use crate::control::Control;
 use crate::pipeline::{self, Options};
-use crate::progress::Progress;
 
 const BATCH: usize = 500;
 
@@ -21,18 +21,21 @@ pub struct ImportStats {
     pub pairs: usize,
 }
 
-pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool) -> Result<ImportStats> {
+pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
     let items = catalog.pending_import(retry_errors)?;
     let mut index = PdqIndex::default();
     for (id, hash) in catalog.pdq_hashes()? {
         index.insert(id, &hash);
     }
+    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0 };
+    if items.is_empty() {
+        return Ok(stats);
+    }
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
     let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
 
-    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0 };
     let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);
-    let mut progress = Progress::new("import", items.len());
+    ctl.begin("import", String::new(), items.len() as u64);
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.conn.transaction()?;
@@ -76,10 +79,11 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool) -> Resu
     pipeline::run(
         &paths,
         opts,
+        ctl,
         Decoder::new,
         |decoder, bytes| analyze(bytes, decoder),
         |i, result, len| {
-            progress.add(len, result.is_err());
+            ctl.add(len, result.is_err());
             batch.push((i, result));
             if batch.len() >= BATCH {
                 flush(&mut batch, &mut stats)?;
@@ -88,6 +92,6 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool) -> Resu
         },
     )?;
     flush(&mut batch, &mut stats)?;
-    progress.finish();
+    ctl.finish();
     Ok(stats)
 }

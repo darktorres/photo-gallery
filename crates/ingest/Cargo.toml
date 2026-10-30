@@ -4,10 +4,6 @@ edition.workspace = true
 version.workspace = true
 publish.workspace = true
 
-[[bin]]
-name = "pg"
-path = "src/main.rs"
-
 [dependencies]
 pg-core = { path = "../core" }
 anyhow.workspace = true

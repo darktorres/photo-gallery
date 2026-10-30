@@ -1,6 +1,8 @@
-// Main window: merged folder tree on the left, justified thumbnail grid on the right, viewer on top.
+// Main window: merged folder tree on the left, justified thumbnail grid on the right, viewer on top. The
+// library (folders the user added) is imported by a background job; its progress is in the bottom bar.
 import QtQuick
 import QtQuick.Controls
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window
 import pg.gallery
@@ -39,6 +41,20 @@ ApplicationWindow {
 
     FolderModel { id: folders }
     GalleryModel { id: gallery }
+    Library {
+        id: library
+        onScanned: win.reloadAll()
+        onImported: win.refreshGrid()
+    }
+    Timer {
+        interval: 500
+        running: true
+        repeat: true
+        onTriggered: library.poll()
+    }
+    onThumbHeightChanged: library.setThumbHeight(thumbHeight)
+    // A refresh that waits for the viewer to close (it would renumber the items under it).
+    property bool refreshPending: false
 
     Timer {
         id: thumbTimer
@@ -69,6 +85,34 @@ ApplicationWindow {
         gallery.relayout(grid.width, rowHeight, gap)
         if (anchor >= 0)
             grid.positionViewAtIndex(gallery.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
+    }
+
+    // The folder tree changed (a scan): reload it, keeping the open folder if it still exists.
+    function reloadAll() {
+        const path = gallery.folder
+        folders.reload()
+        const row = folders.rowOf(path)
+        tree.currentIndex = Math.max(row, 0)
+        if (row < 0)
+            openFolder(0)
+        else
+            refreshGrid()
+    }
+
+    // Re-read the open folder (new files, new sizes), keeping the selection or the top of the view in place.
+    function refreshGrid() {
+        if (viewer.visible) {
+            refreshPending = true
+            return
+        }
+        const hadCurrent = current >= 0
+        const keep = hadCurrent ? current : topItem()
+        const fid = keep >= 0 ? gallery.fileId(keep) : -1
+        gallery.openFolder(gallery.folder, recursive)
+        const i = fid >= 0 ? gallery.indexOf(fid) : -1
+        current = hadCurrent ? i : -1
+        if (i >= 0)
+            grid.positionViewAtIndex(gallery.rowOf(i), hadCurrent ? ListView.Contain : ListView.Beginning)
     }
 
     function openFolder(row) {
@@ -131,6 +175,10 @@ ApplicationWindow {
                 }
             }
             Item { Layout.fillWidth: true }
+            Button {
+                text: "Library…"
+                onClicked: libraryPanel.visible = true
+            }
             Label { text: "Size" }
             Slider {
                 from: 60
@@ -148,14 +196,44 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        Label {
+        RowLayout {
             anchors.fill: parent
             anchors.leftMargin: 8
-            verticalAlignment: Text.AlignVCenter
-            elide: Text.ElideMiddle
-            color: "#aaaaaa"
-            text: gallery.revision >= 0 && win.current >= 0 ? gallery.info(win.current)
-                : "Click to select · double-click or Enter to view · 0–5 rate · arrows move · Ctrl+wheel or Ctrl +/− resize"
+            anchors.rightMargin: 8
+            spacing: 12
+            Label {
+                Layout.fillWidth: true
+                elide: Text.ElideMiddle
+                color: "#aaaaaa"
+                text: gallery.revision >= 0 && win.current >= 0 ? gallery.info(win.current)
+                    : "Click to select · double-click or Enter to view · 0–5 rate · arrows move · Ctrl+wheel or Ctrl +/− resize"
+            }
+            // The latest error or note from the background job; click to dismiss.
+            Label {
+                visible: library.message.length > 0
+                text: "⚠ " + library.message
+                color: "#e0a050"
+                elide: Text.ElideMiddle
+                Layout.maximumWidth: 500
+                TapHandler { onTapped: library.message = "" }
+            }
+            Label {
+                visible: library.status.length > 0
+                text: library.status
+                color: "#aaaaaa"
+            }
+            ProgressBar {
+                visible: library.busy
+                indeterminate: library.progress < 0
+                value: Math.max(library.progress, 0)
+                Layout.preferredWidth: 140
+            }
+            Button {
+                visible: library.busy || library.paused
+                text: library.paused ? "Resume" : "Pause"
+                flat: true
+                onClicked: library.togglePause()
+            }
         }
     }
 
@@ -262,6 +340,9 @@ ApplicationWindow {
                                 Image {
                                     id: thumb
                                     anchors.fill: parent
+                                    // Files not imported yet have no size: their cell is square until they are.
+                                    fillMode: Image.PreserveAspectCrop
+                                    clip: true
                                     source: "image://thumb/" + cell.fid + "/" + win.thumbHeight
                                     asynchronous: true
                                     retainWhileLoading: true
@@ -304,7 +385,8 @@ ApplicationWindow {
             Label {
                 anchors.centerIn: parent
                 visible: gallery.count === 0
-                text: "No images here.\nImport with pg.exe (scan, then import), then pick a folder."
+                text: library.roots.length === 0 ? "No folders in the library yet.\nAdd one with Library… (top right)."
+                    : library.busy ? "Nothing here yet: the library is being imported." : "No images here."
                 horizontalAlignment: Text.AlignHCenter
                 color: "#888888"
             }
@@ -317,14 +399,88 @@ ApplicationWindow {
         gallery: gallery
         onClosed: (i) => {
             win.select(i)
+            if (win.refreshPending) {
+                win.refreshPending = false
+                win.refreshGrid()
+            }
             grid.forceActiveFocus()
         }
+    }
+
+    // The library folders, over a dimmed window (an item in the page, like the viewer, so window grabs include it).
+    Rectangle {
+        id: libraryPanel
+        anchors.fill: parent
+        visible: false
+        color: "#b0000000"
+        focus: visible
+        onVisibleChanged: if (!visible) grid.forceActiveFocus()
+        Keys.onEscapePressed: visible = false
+        // Clicks outside the panel close it; none reach the grid below.
+        MouseArea { anchors.fill: parent; onClicked: libraryPanel.visible = false }
+
+        Pane {
+            anchors.centerIn: parent
+            width: 680
+            height: 440
+            padding: 16
+            MouseArea { anchors.fill: parent }
+            ColumnLayout {
+                anchors.fill: parent
+                spacing: 10
+                Label { text: "Library folders"; font.bold: true; font.pixelSize: 16 }
+                Label {
+                    text: "Images in these folders and their subfolders are imported in the background. Removing a "
+                        + "folder only hides its images: adding it back restores them, ratings included."
+                    color: "#999999"
+                    wrapMode: Text.Wrap
+                    Layout.fillWidth: true
+                }
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.fillHeight: true
+                    clip: true
+                    model: library.roots
+                    ScrollBar.vertical: ScrollBar {}
+                    delegate: RowLayout {
+                        required property string modelData
+                        width: ListView.view.width
+                        Label { text: modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                        Button { text: "Remove"; flat: true; onClicked: library.removeFolder(modelData) }
+                    }
+                    Label {
+                        anchors.centerIn: parent
+                        visible: library.roots.length === 0
+                        text: "No folders yet."
+                        color: "#888888"
+                    }
+                }
+                RowLayout {
+                    Button { text: "Add folder…"; onClicked: folderDialog.open() }
+                    Button {
+                        text: "Rescan all"
+                        enabled: library.roots.length > 0
+                        onClicked: library.rescan()
+                    }
+                    Item { Layout.fillWidth: true }
+                    Button { text: "Close"; onClicked: libraryPanel.visible = false }
+                }
+            }
+        }
+    }
+
+    FolderDialog {
+        id: folderDialog
+        title: "Add a folder to the library"
+        onAccepted: library.addFolder(selectedFolder)
     }
     }
 
     // Test hooks, for checking the UI without a person at the screen:
     //   --size=<px>  row height   --select=<n>  select item n   --view=<n>  open item n in the viewer
-    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame)   --screenshot=<png>  save the window after 4 s and quit
+    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame)   --library=1  open the library folders
+    //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
+    //   --screenshot=<png>  save the window after 4 s (or --wait=<s>) and quit
     function arg(name) {
         for (const a of Qt.application.arguments)
             if (a.startsWith("--" + name + "="))
@@ -333,7 +489,7 @@ ApplicationWindow {
     }
     Timer {
         id: shotTimer
-        interval: 4000
+        interval: (Number(win.arg("wait")) || 4) * 1000
         onTriggered: page.grabToImage((r) => {
             r.saveToFile(win.arg("screenshot"))
             Qt.quit()
@@ -350,6 +506,9 @@ ApplicationWindow {
             for (const k of arg("viewer-keys"))
                 viewer[{ L: "loupe", B: "frame", Z: "actual" }[k]] = true
         }
+        if (arg("library")) libraryPanel.visible = true
         if (arg("screenshot")) shotTimer.start()
+        library.start(thumbHeight)
+        if (arg("add-folder")) library.addFolder("file:///" + arg("add-folder").replace(/\\/g, "/"))
     }
 }

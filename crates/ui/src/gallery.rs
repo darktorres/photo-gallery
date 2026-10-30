@@ -63,6 +63,11 @@ pub mod qobject {
         #[cxx_name = "fileId"]
         fn file_id(self: &GalleryModel, item: i32) -> i64;
 
+        /// The item showing a file, or -1.
+        #[qinvokable]
+        #[cxx_name = "indexOf"]
+        fn index_of(self: &GalleryModel, file_id: i64) -> i32;
+
         /// Width ÷ height, as laid out.
         #[qinvokable]
         fn aspect(self: &GalleryModel, item: i32) -> f64;
@@ -190,6 +195,10 @@ impl qobject::GalleryModel {
 
     fn file_id(&self, item: i32) -> i64 {
         self.item(item).map_or(-1, |i| i.id)
+    }
+
+    fn index_of(&self, file_id: i64) -> i32 {
+        self.items.iter().position(|i| i.id == file_id).map_or(-1, |i| i as i32)
     }
 
     fn aspect(&self, item: i32) -> f64 {

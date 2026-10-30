@@ -13,7 +13,7 @@ use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::pdq;
 
 /// `MIGRATIONS[i]` takes the schema from version i to i + 1; `PRAGMA user_version` holds the current one.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2];
+const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
 
 const SCHEMA_V1: &str = r"
 CREATE TABLE scans(
@@ -81,6 +81,25 @@ CREATE TABLE ratings(
     updated INTEGER NOT NULL                                  -- Unix seconds
 );
 ";
+
+/// The library: folders the user added, which a rescan walks again. None is inside another. Existing catalogs
+/// start with the roots they were scanned from.
+const SCHEMA_V3: &str = r"
+CREATE TABLE roots(
+    path  TEXT PRIMARY KEY,  -- absolute, no trailing backslash
+    added INTEGER NOT NULL   -- Unix seconds
+);
+INSERT OR IGNORE INTO roots SELECT root, min(started) FROM scans GROUP BY root;
+";
+
+/// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
+const UNDER_ROOT: &str = "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')";
+
+/// Whether `path` is `root` or inside it (Windows paths: case-insensitive).
+pub fn is_under(path: &str, root: &str) -> bool {
+    let (p, r) = (path.to_lowercase(), root.to_lowercase());
+    p == r || p.strip_prefix(&r).is_some_and(|rest| rest.starts_with('\\'))
+}
 
 /// Files whose analysis is absent or stale (?1 = IMPORT_VERSION, ?2 = also retry failed files).
 const PENDING: &str = "FROM files f LEFT JOIN analysis a ON a.file_id = f.id
@@ -168,13 +187,46 @@ impl Catalog {
 
     /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions).
     pub fn mark_missing(&self, root: &str, scan: i64) -> Result<usize> {
-        // Folders equal to root or below it: path in [root\, root]) — ']' is the character after '\'.
         Ok(self.conn.execute(
-            "UPDATE files SET missing = 1
-             WHERE missing = 0 AND last_scan < ?2 AND folder_id IN (
-                SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']'))",
+            &format!(
+                "UPDATE files SET missing = 1 WHERE missing = 0 AND last_scan < ?2 AND folder_id IN ({UNDER_ROOT})"
+            ),
             params![root, scan],
         )?)
+    }
+
+    /// The library folders, by path.
+    pub fn roots(&self) -> Result<Vec<String>> {
+        let mut stmt = self.conn.prepare("SELECT path FROM roots ORDER BY path")?;
+        let rows = stmt.query_map([], |r| r.get(0))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Add a folder to the library. A folder already inside the library adds nothing (returns false); one that
+    /// contains library folders replaces them.
+    pub fn add_root(&self, root: &str) -> Result<bool> {
+        let roots = self.roots()?;
+        if roots.iter().any(|r| is_under(root, r)) {
+            return Ok(false);
+        }
+        for r in roots.iter().filter(|r| is_under(r, root)) {
+            self.conn.execute("DELETE FROM roots WHERE path = ?1", [r])?;
+        }
+        self.conn.execute("INSERT INTO roots(path, added) VALUES (?1, unixepoch())", [root])?;
+        Ok(true)
+    }
+
+    /// Take a folder out of the library. Its files are marked missing, not deleted: adding it back (or the drive
+    /// returning) brings them back with their analysis and ratings. Returns how many files it hid.
+    pub fn remove_root(&self, root: &str) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        tx.execute("DELETE FROM roots WHERE path = ?1", [root])?;
+        let n = tx.execute(
+            &format!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN ({UNDER_ROOT})"),
+            [root],
+        )?;
+        tx.commit()?;
+        Ok(n)
     }
 
     /// Files whose analysis is absent or stale, in on-disk order (volume, then MFT record number), which reads
@@ -268,5 +320,22 @@ impl Catalog {
             )?,
             pdq_pairs: one("SELECT count(*) FROM present_pdq_pairs")?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roots_never_nest() {
+        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        assert!(c.add_root(r"D:\a\b").unwrap());
+        assert!(c.add_root(r"D:\a\bc").unwrap());
+        assert!(!c.add_root(r"d:\A\b\c").unwrap(), "inside an existing root");
+        assert!(c.add_root(r"D:\a").unwrap(), "replaces both");
+        assert_eq!(c.roots().unwrap(), [r"D:\a"]);
+        c.remove_root(r"D:\a").unwrap();
+        assert!(c.roots().unwrap().is_empty());
     }
 }

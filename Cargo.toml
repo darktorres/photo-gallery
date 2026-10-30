@@ -1,0 +1,26 @@
+[workspace]
+resolver = "3"
+members = ["crates/core", "crates/ingest", "crates/ui"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+blake3 = "1"
+clap = { version = "4", features = ["derive", "env"] }
+crossbeam-channel = "0.5"
+fast_image_resize = "6"
+image = { version = "0.25", default-features = false, features = ["png", "gif", "webp", "bmp", "tiff", "jpeg"] }
+kamadak-exif = "0.6"
+pdqhash = "0.1"
+rusqlite = { version = "0.37", features = ["bundled"] }
+thumbhash = "0.1"
+turbojpeg = { version = "1", features = ["cmake"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+
+[profile.release]
+debug = "line-tables-only"

@@ -1,0 +1,19 @@
+[package]
+name = "pg-core"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+fast_image_resize.workspace = true
+image.workspace = true
+kamadak-exif.workspace = true
+rusqlite.workspace = true
+thumbhash.workspace = true
+turbojpeg.workspace = true
+xxhash-rust.workspace = true
+blake3.workspace = true
+
+[dev-dependencies]
+pdqhash.workspace = true

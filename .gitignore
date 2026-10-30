@@ -3,3 +3,5 @@ __pycache__/
 /target/
 # Large outputs live on D:\PhotoGallery, never in the repo.
 *.npy
+# Written by cxx-qt-build on every UI build (points qmlls at target/).
+.qmlls.ini

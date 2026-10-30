@@ -1,0 +1,93 @@
+//! The shape every pass over the originals shares (PLAN §4): files read in the given (on-disk) order with a few
+//! reads in flight, processed on a CPU pool, results handed to one writer on the calling thread.
+//!
+//! Reads go to the disk in list order from `readers` threads at once. FINDINGS "I/O": ≥ 8 reads in flight let
+//! the drive reorder them and reach sequential speed even in path order, and sparse reads only speed up with
+//! queue depth.
+
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+
+use anyhow::Result;
+use crossbeam_channel::bounded;
+
+pub struct Options {
+    pub readers: usize,
+    pub workers: usize,
+}
+
+/// A long-path-safe form of an absolute path.
+pub fn long_path(path: &str) -> String {
+    if path.len() < 240 || path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}") }
+}
+
+/// Read `paths[i]`, run `process` on its bytes (with per-worker state from `init`), and call `sink(i, result,
+/// bytes read)` in completion order. `sink` returns false to stop early.
+pub fn run<S, R>(
+    paths: &[String],
+    opts: &Options,
+    init: impl Fn() -> Result<S> + Sync,
+    process: impl Fn(&mut S, &[u8]) -> Result<R> + Sync,
+    mut sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
+) -> Result<()>
+where
+    R: Send,
+{
+    let next = AtomicUsize::new(0);
+    let stop = AtomicBool::new(false);
+    let (raw_tx, raw_rx) = bounded::<(usize, std::io::Result<Vec<u8>>)>(opts.readers * 4);
+    let (res_tx, res_rx) = bounded::<(usize, Result<R>, usize)>(opts.workers * 4);
+
+    std::thread::scope(|s| {
+        for _ in 0..opts.readers {
+            let raw_tx = raw_tx.clone();
+            let (next, stop) = (&next, &stop);
+            s.spawn(move || {
+                while !stop.load(Ordering::Relaxed) {
+                    let i = next.fetch_add(1, Ordering::Relaxed);
+                    let Some(path) = paths.get(i) else { break };
+                    if raw_tx.send((i, std::fs::read(long_path(path)))).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop(raw_tx);
+
+        for _ in 0..opts.workers {
+            let (raw_rx, res_tx) = (raw_rx.clone(), res_tx.clone());
+            let (init, process) = (&init, &process);
+            s.spawn(move || {
+                let mut state = match init() {
+                    Ok(st) => st,
+                    Err(e) => {
+                        let _ = res_tx.send((usize::MAX, Err(e), 0));
+                        return;
+                    }
+                };
+                for (i, bytes) in raw_rx {
+                    let (out, len) = match bytes {
+                        Ok(b) => (process(&mut state, &b), b.len()),
+                        Err(e) => (Err(anyhow::Error::new(e).context("read")), 0),
+                    };
+                    if res_tx.send((i, out, len)).is_err() {
+                        break;
+                    }
+                }
+            });
+        }
+        drop((raw_rx, res_tx));
+
+        // Leaving this closure drops `res_rx`, which unblocks and ends the workers, then the readers.
+        for (i, out, len) in res_rx {
+            if i == usize::MAX {
+                stop.store(true, Ordering::Relaxed);
+                return Err(out.err().unwrap().context("worker setup"));
+            }
+            if !sink(i, out, len)? {
+                stop.store(true, Ordering::Relaxed);
+                break;
+            }
+        }
+        Ok(())
+    })
+}

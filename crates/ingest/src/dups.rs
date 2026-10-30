@@ -1,0 +1,106 @@
+//! Report of what tiers 0–1 found: identical files, identical pixels, and PDQ pairs, plus the groups they form
+//! together. Grouping here is plain connected components, enough to inspect tiers 0–1. The real grouping is
+//! multicut over verified tier-2 edges (PLAN §5, M3).
+
+use std::collections::HashMap;
+
+use anyhow::Result;
+use pg_core::catalog::Catalog;
+
+/// FINDINGS "Shortcut and grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked.
+pub const DEFAULT_GROUP_DISTANCE: u32 = 22;
+
+struct UnionFind(HashMap<i64, i64>);
+
+impl UnionFind {
+    fn find(&mut self, x: i64) -> i64 {
+        let p = *self.0.entry(x).or_insert(x);
+        if p == x {
+            return x;
+        }
+        let root = self.find(p);
+        self.0.insert(x, root);
+        root
+    }
+
+    fn union(&mut self, a: i64, b: i64) {
+        let (ra, rb) = (self.find(a), self.find(b));
+        if ra != rb {
+            self.0.insert(ra.max(rb), ra.min(rb));
+        }
+    }
+}
+
+pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()> {
+    let conn = &catalog.conn;
+    let current = "FROM analysis a JOIN files f ON f.id = a.file_id WHERE a.error IS NULL AND f.missing = 0";
+    for (tier, column) in [("0a identical files", "file_hash"), ("0b identical pixels", "pixel_hash")] {
+        let (groups, files): (i64, i64) = conn.query_row(
+            &format!(
+                "SELECT count(*), coalesce(sum(n), 0) FROM
+                 (SELECT count(*) AS n {current} GROUP BY a.{column} HAVING n > 1)"
+            ),
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        println!("tier {tier}: {groups} groups, {files} files");
+    }
+    println!("tier 1 PDQ pairs by distance:");
+    for (lo, hi) in [(0, 0), (1, 8), (9, 22), (23, 31)] {
+        let n: i64 =
+            conn.query_row("SELECT count(*) FROM present_pdq_pairs WHERE distance BETWEEN ?1 AND ?2", [lo, hi], |r| {
+                r.get(0)
+            })?;
+        println!("  {lo:>2}–{hi:<2}: {n}");
+    }
+
+    // Groups: tiers 0a and 0b, plus PDQ pairs up to `group_distance`.
+    let mut uf = UnionFind(HashMap::new());
+    for column in ["file_hash", "pixel_hash"] {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT a.{column}, a.file_id {current} AND a.{column} IN
+             (SELECT a.{column} {current} GROUP BY a.{column} HAVING count(*) > 1) ORDER BY a.{column}"
+        ))?;
+        let mut rows = stmt.query([])?;
+        let mut prev: Option<(Vec<u8>, i64)> = None;
+        while let Some(r) = rows.next()? {
+            let (h, id): (Vec<u8>, i64) = (r.get(0)?, r.get(1)?);
+            if let Some((ph, pid)) = &prev
+                && *ph == h
+            {
+                uf.union(*pid, id);
+            }
+            prev = Some((h, id));
+        }
+    }
+    let mut stmt = conn.prepare("SELECT a, b FROM present_pdq_pairs WHERE distance <= ?1")?;
+    for pair in stmt.query_map([group_distance], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
+        let (a, b) = pair?;
+        uf.union(a, b);
+    }
+    let ids: Vec<i64> = uf.0.keys().copied().collect();
+    let mut groups: HashMap<i64, Vec<i64>> = HashMap::new();
+    for id in ids {
+        let root = uf.find(id);
+        groups.entry(root).or_default().push(id);
+    }
+    let mut groups: Vec<Vec<i64>> = groups.into_values().filter(|g| g.len() > 1).collect();
+    groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
+    let files: usize = groups.iter().map(Vec::len).sum();
+    println!(
+        "groups (tiers 0a + 0b + PDQ ≤ {group_distance}): {} groups, {files} files, largest {:?}",
+        groups.len(),
+        groups.iter().take(5).map(Vec::len).collect::<Vec<_>>()
+    );
+
+    let mut path = conn.prepare(
+        "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+    )?;
+    for g in groups.iter().take(show) {
+        println!("\n{} files:", g.len());
+        for id in g.iter().take(20) {
+            println!("  {}", path.query_row([id], |r| r.get::<_, String>(0))?);
+        }
+    }
+    Ok(())
+}

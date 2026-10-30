@@ -1,0 +1,19 @@
+[package]
+name = "pg-ingest"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[[bin]]
+name = "pg"
+path = "src/main.rs"
+
+[dependencies]
+pg-core = { path = "../core" }
+anyhow.workspace = true
+blake3.workspace = true
+clap.workspace = true
+crossbeam-channel.workspace = true
+rusqlite.workspace = true
+windows-sys.workspace = true
+turbojpeg.workspace = true

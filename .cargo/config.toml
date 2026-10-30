@@ -1,0 +1,3 @@
+# Qt for the UI crate (cxx-qt-build finds Qt through qmake). The MSVC kit matches Rust's msvc target.
+[env]
+QMAKE = "C:/Qt/6.9.2/msvc2022_64/bin/qmake.exe"

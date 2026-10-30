@@ -69,13 +69,15 @@ paper name are from that paper.
 
 ---
 
-## 4. Ingestion: one pass over the HDD produces everything
+## 4. Ingestion: one pass over the HDD produces every analysis
 
 Reading 21.4 TB from one HDD takes **about 27 h at an average 220 MB/s, best case (est.)**. With per-file seek
 overhead across 70M files, it is more like **1–3 days**. A second pass costs the same again. Two rules follow:
 
-- **Everything we might want from the original pixels is produced in the same pass:** file hash, pixel hash,
-  PDQ, embeddings, thumbnails and EXIF.
+- **Every analysis of the original pixels is produced in the same pass:** file hash, pixel hash, PDQ,
+  embeddings, dimensions, ThumbHash placeholder and EXIF.
+- **Thumbnails are not part of the import** (user decision, 2026-10-30): the import stays fast, and a
+  background task makes them afterwards (§6).
 - **Read in on-disk order with a single reader thread per HDD.** Parallel random reads on one spindle thrash
   the head. M0 benchmarks three orderings on a 100k sample: path order, NTFS file-ID (MFT record) order, and
   physical order (first-extent LCN via `FSCTL_GET_RETRIEVAL_POINTERS`).
@@ -89,7 +91,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
         │             → EXIF orientation applied → sRGB
         ├─► hash of decoded pixels                                   (tier 0b: metadata-only differences)
         ├─► PDQ, 256 bits + 8 dihedral variants (rotations and mirrors) (tier 1)
-        ├─► grid thumbnail + ThumbHash placeholder
+        ├─► dimensions + ThumbHash placeholder (the grid lays out before any thumbnail exists)
         └─► model input (frozen, antialiased resize) ─► [GPU batcher] ─► embeddings (tier 2)
                                                      │
   [catalog writer]   one SQLite transaction per batch → crash-safe, resumable
@@ -103,8 +105,8 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
   - Decoding Pinterest-size JPEGs at roughly 2–5 ms each across 12 threads is about 3k img/s, so the CPU keeps
     up.
   - SSCD at 320 px, fp16 on TensorRT (via `ort`'s TensorRT provider), measured at ~1,390 img/s on the 2060
-    (M0), i.e. ~14 h. The pass is then CPU-bound (decode plus thumbnail encode), roughly **2–4 days** for the
-    first pass depending on the thumbnail format. After that, only new files are processed.
+    (M0), i.e. ~14 h. The pass is then CPU-bound on decoding, roughly **1.5–2 days** for the first pass. After
+    that, only new files are processed.
 
 ---
 
@@ -178,12 +180,15 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 | Embeddings (source of truth) | Flat memory-mapped fp16 file, row = catalog id | ~72 GB |
 | ANN index | USearch or FAISS file | 3–30 GB |
 | PDQ multi-index | Rebuilt in RAM at startup from the catalog | (RAM) |
-| Grid thumbnails | **Packed shard files** (not 70M loose files), shards in folder order so one screen ≈ one sequential read | 70M × ~5 KB ≈ **350 GB** at ~200 px (est.); size and format decided in M0 |
+| Thumbnail cache | **Packed shard files** (not loose files), keyed by (file, size) | Size-capped, least recently used evicted |
 | ThumbHash placeholders | Column in the catalog | ~2 GB |
 
-Thumbnails make browsing work even when the originals are offline (Plex-like, from the notes). They are also why
-the thumbnail size is a real decision: a ≥256 px thumbnail would let *future* models (e.g., CLIP keywords) run
-without another 1–3 day pass over E:, but it costs ~2–3× the disk space.
+**Thumbnails (user decision, 2026-10-30):** made by a **background task after the import**, never during it,
+at the size the grid currently uses. The size is **adjustable at runtime**: changing it queues new
+thumbnails, and visible items are made first, on demand. Placeholders (ThumbHash) and the dimensions come from
+the import, so the grid lays out instantly while thumbnails fill in. Thumbnails are display-only (FINDINGS
+"Thumbnails": compression moves embeddings too much to re-analyse them), so the cache can be evicted and rebuilt
+at any time. It costs a second read of the originals, in the background and in on-disk order.
 
 ---
 
@@ -204,7 +209,8 @@ Shape:
 - **Justified layout computed in Rust.** Immich's `justified-layout` is Rust source, so we can use it natively
   instead of through WASM. QML only positions the delegates.
 - **Thumbnail provider:** a `QQuickAsyncImageProvider` (a thin C++ class if CXX-Qt can't express it directly)
-  that reads the packed shards. ThumbHash placeholders show instantly, and images fade in (Wallhaven-style).
+  that reads the cache at the current grid size, or asks the thumbnail task for it first. ThumbHash
+  placeholders show instantly, and images fade in (Wallhaven-style).
 - **Viewer:**
   - Original via a fast decode path.
   - An antialiased downscale for fit-to-screen.
@@ -244,13 +250,22 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 ### M1 — Core and ingest (on the sample)
 
-- Cargo workspace (`core`, `ingest`, `ui`), catalog schema, Everything-based scanner, the single-pass
-  pipeline, tiers 0–1, thumbnails, resumability.
+- Cargo workspace (`core`, `ingest`, `ui`), catalog schema, scanner, the single-pass import pipeline,
+  tiers 0–1, resumability.
+- Background thumbnail task (after import, size chosen at runtime) and its cache.
+- **Status (2026-10-30):** built and verified on `dups2` (FINDINGS "M1 import"; usage in `crates/README.md`).
+  The scanner lists directories by handle (NTFS file IDs, no admin) instead of Everything: the installed
+  Everything is 1.4, whose SDK has no file IDs. Not yet run on the full 190k sample.
 
 ### M2 — Desktop UI
 
 - QML grid with lazy model and thumbnail provider, viewer and loupe, ratings in the catalog, merged-drives
   tree.
+- **Status (2026-10-30):** first version built (`gallery.exe`, `crates/ui`). Justified rows from Rust in a
+  virtualized ListView. The row height is adjustable at runtime, with thumbnails made on demand at that size
+  (newest request first) and ThumbHash placeholders. Viewer with Lanczos fit, 1:1, 10× loupe and a frame to
+  reveal black bars. Ratings 0–5 in the catalog (schema v2). The tree merges folders by their path below the
+  drive.
 
 ### M3 — Near-duplicates
 
@@ -276,10 +291,8 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 ## 9. Open decisions
 
-1. **Thumbnail size:** row height and quality target vs disk. Measured (FINDINGS "Thumbnails"): at score 80,
-   70M thumbnails take 0.5–0.8 TB at 256 px and 0.95–1.5 TB at 384 px depending on format. Thumbnails turned out
-   not to be a usable re-analysis source (compression moves embeddings too much), so they are sized for display
-   only.
+1. ~~**Thumbnail size**~~ **Decided 2026-10-30:** no fixed size. Thumbnails are a background task after the
+   import, at a size adjustable at runtime, in a size-capped cache (§6). Open: the cache format and its cap.
 2. **What runs in the first full pass:** SSCD only, or SSCD plus a semantic model (CLIP/SigLIP) so keywords and
    semantic search never need a second pass. A semantic model would roughly double GPU time.
 3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). M0

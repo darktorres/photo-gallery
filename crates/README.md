@@ -21,7 +21,7 @@ says why. Its test (`crates/ingest/tests/writeback.rs`) works on generated files
 
 ```powershell
 cargo build --release
-cargo test --release
+cargo test  # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
 # Once (and after Qt updates): put the Qt DLLs and QML modules next to gallery.exe.
 C:\Qt\6.9.2\msvc2022_64\bin\windeployqt.exe --release --qmldir crates\ui\qml --no-translations target\release\gallery.exe
 ```

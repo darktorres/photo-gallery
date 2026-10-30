@@ -36,5 +36,11 @@ xxhash-rust = { version = "0.8", features = ["xxh3"] }
 # Every unsafe block says why it is sound.
 undocumented_unsafe_blocks = "warn"
 
+# Debug builds (and `cargo test`) with the dependencies optimized: decoding, resizing and hashing are all in
+# them (libjpeg-turbo too: its CMake build follows the opt-level), and unoptimized they are many times slower.
+# Our own crates stay at opt-level 0, so they rebuild as fast and step in a debugger as before.
+[profile.dev.package."*"]
+opt-level = 3
+
 [profile.release]
 debug = "line-tables-only"

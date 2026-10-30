@@ -1,7 +1,7 @@
 // Full-window viewer (PLAN §7): fit to screen with an antialiased (Lanczos3) downscale made in Rust, 1:1 with
 // panning, a 10× loupe to judge sharpness, and a bright frame around the image to reveal black bars.
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Fusion
 import QtQuick.Window
 
 Rectangle {

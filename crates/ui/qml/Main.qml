@@ -1,7 +1,7 @@
 // Main window: merged folder tree on the left, justified thumbnail grid on the right, viewer on top. The
 // library (folders the user added) is imported by a background job; its progress is in the bottom bar.
 import QtQuick
-import QtQuick.Controls
+import QtQuick.Controls.Fusion
 import QtQuick.Dialogs
 import QtQuick.Layouts
 import QtQuick.Window

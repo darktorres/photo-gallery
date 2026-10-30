@@ -39,10 +39,8 @@ fn run_app() {
         fatal(&format!("Can't open the catalog: {e:#}"));
     }
 
-    // SAFETY: still single-threaded; Qt reads these when the application starts.
-    unsafe {
-        std::env::set_var("QT_QUICK_CONTROLS_STYLE", "Fusion");
-    }
+    // The controls style is Fusion, imported by name in the QML (`QtQuick.Controls.Fusion`): it follows the
+    // window's dark palette. The default on Windows, the native style, draws light system buttons regardless.
     let mut app = QGuiApplication::new();
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {

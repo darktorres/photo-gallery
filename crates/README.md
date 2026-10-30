@@ -13,8 +13,8 @@ See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.
 
 ## Build
 
-Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crate) and Qt 6.9 for MSVC
-(`C:\Qt\6.9.2\msvc2022_64`, set in `.cargo/config.toml`). Writing ratings into files needs
+Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crate) and Qt 6.12 for MSVC
+(`C:\Qt\6.12.0\msvc2022_64`, set in `.cargo/config.toml`). Writing ratings into files needs
 [ExifTool](https://exiftool.org) on `PATH` (or `PG_EXIFTOOL`); without it they stay queued and the bottom bar
 says why. Its test (`crates/ingest/tests/writeback.rs`) works on generated files in
 `D:\PhotoGallery\scratch_rate` (`PG_TEST_DIR`), and skips itself without ExifTool.

@@ -3,7 +3,7 @@
 set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
 # The Qt kit .cargo/config.toml builds against.
-qt := "C:/Qt/6.9.2/msvc2022_64"
+qt := "C:/Qt/6.12.0/msvc2022_64"
 
 [private]
 default:

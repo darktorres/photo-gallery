@@ -8,6 +8,7 @@
 mod folders;
 mod gallery;
 mod library;
+mod panic_log;
 mod providers;
 mod settings;
 mod state;
@@ -35,6 +36,7 @@ fn main() {
 fn run_app() {
     let catalog_dir =
         std::env::var_os("PG_CATALOG_DIR").map_or_else(|| PathBuf::from(cli::DEFAULT_CATALOG_DIR), PathBuf::from);
+    panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
     let cap_gb: f64 = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| s.parse().ok()).unwrap_or(50.0);
     if let Err(e) = state::init(catalog_dir, (cap_gb * 1e9) as i64) {
         fatal(&format!("Can't open the catalog: {e:#}"));
@@ -101,9 +103,14 @@ fn attach_console() {
 
 /// A GUI program has nowhere to print: show the error, then quit.
 fn fatal(message: &str) -> ! {
+    message_box(message);
+    std::process::exit(1);
+}
+
+/// An error message box, from any thread (it runs its own message loop).
+fn message_box(message: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};
     let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
     let (text, caption) = (wide(message), wide("Photo Gallery"));
     unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
-    std::process::exit(1);
 }

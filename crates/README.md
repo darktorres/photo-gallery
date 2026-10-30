@@ -39,7 +39,8 @@ made before it is refused with "delete it and re-import". The migration mechanis
 Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
 below normal priority (thumbnails at idle), so the window and the thumbnails on screen come first. Quitting at
-any point is safe: the next start finishes what's pending.
+any point is safe: the next start finishes what's pending. An internal error (a Rust panic) shows a message and
+appends its details and backtrace to `gallery.log` beside the catalog folder (`D:\PhotoGallery\gallery.log`).
 
 The same passes on the command line, without the window (for scripts, profiling and checking results):
 

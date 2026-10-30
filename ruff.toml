@@ -1,4 +1,4 @@
-# Lint config for the Python scripts (eval/, tools/). Run from the repo root: ruff check .
+# Lint config for the Python scripts (eval/, tools/). Run by `just lint`.
 target-version = "py312"
 line-length = 130
 src = ["eval", "tools"]  # their modules import each other as first-party (from common import ...)

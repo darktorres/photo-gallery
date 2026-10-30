@@ -19,21 +19,24 @@ Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crat
 says why. Its test (`crates/ingest/tests/writeback.rs`) works on generated files in
 `D:\PhotoGallery\scratch_rate` (`PG_TEST_DIR`), and skips itself without ExifTool.
 
+The commands are in the `Justfile` ([just](https://just.systems); `just` lists them):
+
 ```powershell
-cargo build --release
-cargo test  # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
-# Once (and after Qt updates): put the Qt DLLs and QML modules next to gallery.exe.
-C:\Qt\6.9.2\msvc2022_64\bin\windeployqt.exe --release --qmldir crates\ui\qml --no-translations target\release\gallery.exe
+just deploy  # release build, then the Qt DLLs and QML modules next to gallery.exe (once, and after Qt updates)
+just build   # rebuild
+just run     # the app; `just run status`, `just run scan <folder>`… for the command line
+just test    # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
+just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint
 ```
 
-A debug build (`cargo build`, then the same `windeployqt --release` on `target\debug\gallery.exe`: it links the
-release Qt too) reads the QML from `crates\ui\qml` instead of the copy compiled into it, and reloads the window
-whenever a file there changes, where it was: QML edits show without a rebuild. QML errors go to the debugger
-output unless `QT_FORCE_STDERR_LOGGING=1` is set.
+`just deploy debug`, then `just dev`, give the debug build (it links the release Qt too). It reads the QML from
+`crates\ui\qml` instead of the copy compiled into it and reloads the window whenever a file there changes, where
+it was: QML edits show without a rebuild. QML errors go to the debugger output unless
+`QT_FORCE_STDERR_LOGGING=1` is set.
 
-Dependency checks (`cargo binstall cargo-deny cargo-machete` once): `cargo deny check` for advisories,
-licenses (the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and
-`pg-ingest`; `cargo machete` for unused dependencies.
+`just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
+(the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and `pg-ingest`;
+`cargo machete` finds unused dependencies.
 
 ## Run
 

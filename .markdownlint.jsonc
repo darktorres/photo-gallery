@@ -1,4 +1,4 @@
-// markdownlint config for docs/ and READMEs. Run from the repo root: markdownlint docs "**/README.md"
+// markdownlint config for docs/ and READMEs. Run by `just lint`.
 {
   "default": true,
   // Prose wraps near 100 columns and table rows are as long as their content.

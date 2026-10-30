@@ -21,9 +21,10 @@ are a random sample of the work dir's files.txt.
 3. Re-use: SSCD embedding of the thumbnail vs of the original (cosine): could a later model run on thumbnails
    instead of re-reading the originals (PLAN open decision 1)?
 
-SSIMULACRA2 (-inf..100; ~90 visually lossless, 70 high, 50 medium quality) is libjxl 0.12's reference tool.
-cjpegli comes from libjxl 0.11.1 (jpegli moved out of libjxl afterwards) and is run as a program, so its encode
-speed is its own report. Both live under PG_TOOLS_DIR (default D:\\PhotoGallery\\tools). Timings run in one
+SSIMULACRA2 (-inf..100; ~90 visually lossless, 70 high, 50 medium quality) is libjxl's reference tool, and
+cjpegli is run as a program, so its encode speed is its own report. Both come from libjxl 0.11.1, the last
+release that ships cjpegli (jpegli moved out of libjxl afterwards; 0.12's ssimulacra2 scores identically),
+under PG_TOOLS_DIR (default D:\\PhotoGallery\\tools). Timings run in one
 process after the parallel quality pass; other load on the machine skews them.
 Writes WORK_DIR/bench_thumbs.json.
 """
@@ -51,7 +52,7 @@ from bench_decode import _vips
 from common import CACHE_DIR, DATA_ROOT, WORK_DIR, image_list, load_rgb
 
 TOOLS_DIR = Path(os.environ.get("PG_TOOLS_DIR", r"D:\PhotoGallery\tools"))
-SSIMULACRA2 = TOOLS_DIR / "libjxl-0.12.0" / "x64-windows-static" / "bin" / "ssimulacra2.exe"
+SSIMULACRA2 = TOOLS_DIR / "libjxl-0.11.1" / "ssimulacra2.exe"
 CJPEGLI = TOOLS_DIR / "libjxl-0.11.1" / "cjpegli.exe"
 
 MAX_ASPECT = 3.0  # panoramas: width capped at this x the row height

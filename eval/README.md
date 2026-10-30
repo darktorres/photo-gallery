@@ -61,14 +61,16 @@ calibration batch and engines are built on first use under `D:\PhotoGallery\cach
 int8 graph with `PG_WORK_DIR` on the subset, so the calibration images come from outside it. Requirements beyond
 this venv:
 
-- `D:\PhotoGallery\venv-quant`: NVIDIA ModelOpt (`pip install "nvidia-modelopt[onnx]"`) for int8
-  quantization. It pins older onnx / onnxruntime versions, hence its own venv.
-- `D:\PhotoGallery\tools\tensorrt-10.16.1.11`: TensorRT 10 DLLs (the `tensorrt-cu12-libs` wheel from
+- Only to rebuild the int8 graph (int8 is not used; its built graph and engine stay in the cache):
+  `D:\PhotoGallery\venv-quant` with NVIDIA ModelOpt (`python -m venv` it, then `pip install "nvidia-modelopt[onnx]"`).
+  It pins older onnx / onnxruntime versions, hence its own venv. Removed after the int8 evaluation.
+- `D:\PhotoGallery\tools\tensorrt-10.16.1.11-cu13`: TensorRT 10 DLLs (the `tensorrt-cu13-libs` wheel from
   pypi.nvidia.com, unpacked) for ONNX Runtime's TensorRT provider, which is built against TensorRT 10.
-- onnxruntime-gpu **1.26.0**: the newest build for CUDA 12. Later ones need CUDA 13, i.e. driver ≥ 580.
+- The venv is on CUDA 13 (torch 2.15 cu132, onnxruntime-gpu 1.31.1, `tensorrt-cu13`), which needs NVIDIA
+  driver ≥ 580.
 
-`bench_thumbs.py` uses libjxl's `ssimulacra2.exe` (0.12) and `cjpegli.exe` (0.11.1, the last libjxl
-release that ships it) from `D:\PhotoGallery\tools` (GitHub release zips of libjxl/libjxl).
+`bench_thumbs.py` uses libjxl's `ssimulacra2.exe` and `cjpegli.exe` from `D:\PhotoGallery\tools\libjxl-0.11.1`
+(the GitHub release zip of libjxl/libjxl; 0.11.1 is the last release that ships cjpegli).
 
 ### Quick-test subset
 

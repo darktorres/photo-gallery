@@ -9,7 +9,7 @@ Files (built on first use, under CACHE_DIR):
 
 TensorRT 11 only builds strongly typed networks: the precision is the ONNX graph's own (fp16 weights and
 activations, or int8 Q/DQ), there is no fp16/int8 builder switch. ModelOpt pins older onnx / onnxruntime
-versions, so it runs from its own venv (PG_QUANT_PYTHON, default D:\\PhotoGallery\\venv-quant). ONNX Runtime 1.31's
+versions, so it runs from its own venv (PG_QUANT_PYTHON, default D:\\PhotoGallery\\venv-quant). ONNX Runtime's
 TensorRT provider is built against TensorRT 10, whose DLLs live in TRT10_DIR (outside this venv's TensorRT 11).
 """
 
@@ -33,10 +33,11 @@ from models import SPECS, SSCD, build_transform
 ONNX_DIR = CACHE_DIR / "onnx"
 TRT_DIR = CACHE_DIR / "trt"
 QUANT_PYTHON = Path(os.environ.get("PG_QUANT_PYTHON", r"D:\PhotoGallery\venv-quant\Scripts\python.exe"))
-TRT10_DIR = Path(os.environ.get("PG_TRT10_DIR", r"D:\PhotoGallery\tools\tensorrt-10.16.1.11"))
+TRT10_DIR = Path(os.environ.get("PG_TRT10_DIR", r"D:\PhotoGallery\tools\tensorrt-10.16.1.11-cu13"))
 CALIB_IMAGES = 512
 MAX_BATCH = 128
 OPT_BATCH = 64
+FP16_TINY = 2.0 ** -14  # smallest normal fp16 number
 
 
 def _fold(conv: nn.Module, bn: nn.Module) -> nn.Conv2d:
@@ -52,6 +53,8 @@ class SSCDExport(nn.Module):
       every pure-fp16 SSCD (autocast keeps BN parameters in fp32, so it never showed there).
     - GeM is computed as m * mean((x / m)^p)^(1/p) with m the per-channel maximum: identical to mean(x^p)^(1/p) in
       exact arithmetic, but every power stays <= 1, where x^3 itself overflows fp16 for activations above ~40.
+      m is clamped at fp16's smallest normal number: GeM's eps (1e-6) is subnormal in fp16, TensorRT flushes it
+      to zero, and an all-zero channel (common after ReLU) then gives 0/0 = NaN.
     - The L2 normalization is left to the caller: a 512-d sum of squares can overflow fp16 too."""
 
     def __init__(self, sscd: SSCD):
@@ -73,7 +76,7 @@ class SSCDExport(nn.Module):
         x = r.layer4(r.layer3(r.layer2(r.layer1(x))))
         pool = self.sscd.pool
         x = x.clamp(min=pool.eps)
-        m = x.amax(dim=(2, 3), keepdim=True)
+        m = x.amax(dim=(2, 3), keepdim=True).clamp(min=FP16_TINY)
         x = (x / m).pow(pool.p).mean(dim=(2, 3)).pow(1.0 / pool.p) * m.flatten(1)
         return self.sscd.project(x)
 
@@ -239,13 +242,13 @@ def _ort_session(path: Path, provider: str, precision: str, size: int):
 class ORTModule(nn.Module):
     """ONNX Runtime with the CUDA or TensorRT provider, inputs and outputs bound to torch CUDA memory.
 
-    provider="trt" runs ONNX Runtime's own TensorRT 10 build: it takes the fp32 graph and builds it in fp16
-    (trt_fp16_enable), or the int8 Q/DQ graph; provider="cuda" runs the graph in its own precision."""
+    Both providers get the graph of the requested precision (provider="trt": ONNX Runtime's own TensorRT 10
+    build, which has no strongly typed mode: an fp16 graph also needs trt_fp16_enable, or it runs in fp32 at
+    a quarter of the speed)."""
 
     def __init__(self, size: int, precision: str, provider: str):
         super().__init__()
-        graph = {"cuda": precision, "trt": "fp32" if precision == "fp16" else precision}[provider]
-        self.session = _ort_session(onnx_path(size, graph), provider, precision, size)
+        self.session = _ort_session(onnx_path(size, precision), provider, precision, size)
         meta_in, meta_out = self.session.get_inputs()[0], self.session.get_outputs()[0]
         to_torch = {"tensor(float)": torch.float32, "tensor(float16)": torch.float16}
         self.input, self.output = meta_in.name, meta_out.name

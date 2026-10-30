@@ -17,7 +17,7 @@ not run yet). Browse them with `eval/viewer.py`.
 | GPU | RTX 2060, 6 GB, sm_75 |
 | Library | E: 22 TB Exos HDD (21.4 TB used); C: has ~60 GB free after the 2026-10-28 cleanup (keep everything off it) |
 | Fast storage | D: 2 TB NVMe |
-| Eval Python | `D:\PhotoGallery\venv-eval` (torch 2.11 + CUDA 12.8); global Python's torch is CPU-only |
+| Eval Python | `D:\PhotoGallery\venv-eval` (torch 2.15 + CUDA 13.2 since 2026-10-30, NVIDIA driver 621.01); global Python's torch is CPU-only |
 | Port 8765 | Used by the user's `servidor_teste.py`; the viewer takes the next free port (8766) |
 
 ## Test set (2026-10-28)
@@ -195,17 +195,19 @@ WebP 1.88 TB, AVIF 1.47 TB.
 ### TensorRT and ONNX Runtime for SSCD (`eval/accel.py`, 2026-10-30)
 
 Same weights exported to ONNX (`accel.SSCDExport`: BatchNorm folded, fp16-safe GeM; see "Bugs found"),
-RTX 2060, batch 64, 320 px, GPU only:
+RTX 2060, batch 64, 320 px, GPU only. Measured first on the CUDA 12 stack (driver 576.57), then again after
+the driver update on CUDA 13 (driver 621.01: torch 2.15 cu132, onnxruntime-gpu 1.31.1, TensorRT 11.4 / 10.16
+cu13):
 
-| Runtime | img/s | GPU days for 70M | Cosine vs torch fp32 (9.3k subset): min / p1 |
+| Runtime | img/s, CUDA 12 → 13 | GPU days for 70M | Cosine vs torch fp32 (9.3k subset): min / p1 |
 |---|---|---|---|
-| torch fp32 | 241 | 3.4 | – |
-| torch fp16 autocast (current) | 410 | 2.0 | 0.9998 / 0.9999 |
-| ONNX Runtime CUDA provider, fp32 | 201 | 4.0 | 1.0000 |
-| ONNX Runtime CUDA provider, fp16 | 310 | 2.6 | 0.9999 (128 images) |
-| ONNX Runtime TensorRT provider (TensorRT 10), fp16 | 1,382 | 0.6 | 0.9997 (128 images) |
-| **TensorRT 11, fp16** | **1,390** | **0.6** | 0.9996 / 0.9999 |
-| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 | 0.3 | 0.7334 / 0.9293 |
+| torch fp32 | 241 → 231 | 3.5 | – |
+| torch fp16 autocast | 410 → 459 | 1.8 | 0.9998 / 0.9999 |
+| ONNX Runtime CUDA provider, fp32 | 201 → 232 | 3.5 | 1.0000 |
+| ONNX Runtime CUDA provider, fp16 | 310 → 446 | 1.8 | 0.9998 (128 images) |
+| ONNX Runtime TensorRT provider (TensorRT 10), fp16 | 1,382 → 1,420 | 0.6 | 0.9997 (128 images) |
+| **TensorRT 11, fp16** | **1,390 → 1,438** | **0.6** | 0.9996 / 0.9999 |
+| TensorRT 11, int8 (ModelOpt PTQ, entropy calibration) | 2,801 → 2,893 | 0.3 | 0.7334 / 0.9293 |
 
 - **TensorRT fp16 is 3.4× torch fp16, with the same embeddings.** On the subset its retrieval is
   identical to `sscd_fp16`: R@1 0.964, R@10 1.0, the same thresholds (±0.0004) and flagged pairs (±5),
@@ -228,10 +230,17 @@ RTX 2060, batch 64, 320 px, GPU only:
   (ONNX Runtime's TensorRT provider also rejects the int8 Q/DQ graph's input profile; not pursued.)
 - **Consequence:** the GPU has ~2/3 of the ingest pass free. A second model in the first pass (PLAN §9
   decision 2, e.g. CLIP/SigLIP for keywords) costs little GPU time if it also runs on TensorRT.
-- Setup notes: onnxruntime-gpu 1.27+ on PyPI is built for CUDA 13 (needs driver ≥ 580; this machine
-  has 576.57), so 1.26.0 is used. Its TensorRT provider is built against TensorRT 10, while the
-  `tensorrt` Python package is 11. TensorRT 11 only builds strongly typed networks: the precision
-  comes from the ONNX graph, with no fp16/int8 builder flags.
+- Setup notes: ONNX Runtime's TensorRT provider is built against TensorRT 10, while the `tensorrt`
+  Python package is 11. TensorRT 11 only builds strongly typed networks: the precision comes from the
+  ONNX graph, with no fp16/int8 builder flags. ONNX Runtime's TensorRT 10 has no strongly typed mode, so
+  it gets the fp16 graph *and* `trt_fp16_enable` (without the flag it runs the fp16 graph in fp32, 336
+  img/s). The torch upgrade (2.11 cu128 → 2.15 cu132) reproduces the stored SSCD fp16 embeddings at
+  cosine ≥ 0.99991; TensorRT fp16 rebuilt on CUDA 13 gives the same subset retrieval (R@1 0.963 vs 0.964,
+  same cross-group counts). The verifier (kornia DISK + LightGlue) runs unchanged.
+- **fp16 subnormal bug (found with the CUDA 13 stack):** GeM's eps (1e-6) is subnormal in fp16; TensorRT
+  10.16 flushes it to zero, and all-zero channels then give 0/0 = NaN in every output. The rescaled GeM
+  now clamps its per-channel max at fp16's smallest normal number (2^-14), which leaves the result
+  unchanged.
 
 ## Bugs found
 

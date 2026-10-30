@@ -81,7 +81,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         opts,
         ctl,
         Decoder::new,
-        |decoder, bytes| analyze(bytes, decoder),
+        |decoder, i, bytes| analyze(bytes, items[i].rotation, decoder),
         |i, result, len| {
             ctl.add(len, result.is_err());
             batch.push((i, result));

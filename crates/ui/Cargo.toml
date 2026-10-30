@@ -15,6 +15,8 @@ anyhow.workspace = true
 cxx = "1"
 cxx-qt = "0.10"
 cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
+serde.workspace = true
+serde_json.workspace = true
 thumbhash.workspace = true
 turbojpeg.workspace = true
 windows-sys.workspace = true

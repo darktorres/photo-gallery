@@ -14,6 +14,12 @@ thumbhash.workspace = true
 turbojpeg.workspace = true
 xxhash-rust.workspace = true
 blake3.workspace = true
+crc32fast.workspace = true
+image-webp.workspace = true
+miniz_oxide.workspace = true
+png.workspace = true
+quick-xml.workspace = true
+weezl.workspace = true
 
 [dev-dependencies]
 pdqhash.workspace = true

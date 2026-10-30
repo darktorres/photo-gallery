@@ -87,6 +87,10 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "rowOf"]
         fn row_of(self: &FolderModel, merged: &QString) -> i32;
+
+        /// Expand the folders above a merged path so it shows; its row, or -1 if there is no such folder.
+        #[qinvokable]
+        fn reveal(self: Pin<&mut FolderModel>, merged: &QString) -> i32;
     }
 }
 
@@ -254,6 +258,32 @@ impl qobject::FolderModel {
             Some(Some(n)) => QString::from(&self.tree.nodes[n].merged_path),
             _ => QString::default(),
         }
+    }
+
+    fn reveal(mut self: Pin<&mut Self>, merged: &QString) -> i32 {
+        let row = self.row_of(merged);
+        if row >= 0 {
+            return row;
+        }
+        let target = merged.to_string().to_lowercase();
+        let above: Vec<usize> = (0..self.tree.nodes.len())
+            .filter(|&n| {
+                let path = self.tree.nodes[n].merged_path.to_lowercase();
+                target.strip_prefix(&path).is_some_and(|rest| rest.starts_with('\\'))
+            })
+            .collect();
+        if above.is_empty() {
+            return -1;
+        }
+        self.as_mut().begin_reset_model();
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.expanded.extend(above);
+            let roots = this.tree.roots.clone();
+            this.visible = std::iter::once(None).chain(this.visible_below(&roots)).collect();
+        }
+        self.as_mut().end_reset_model();
+        self.row_of(merged)
     }
 
     fn row_of(&self, merged: &QString) -> i32 {

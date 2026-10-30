@@ -1,6 +1,8 @@
-//! The library (the folders the user added) and the background job that keeps the catalog in step with them:
-//! scan, import, thumbnails (`pg_ingest::runner`). QML polls `poll()` for progress, and reloads its views on
-//! `scanned` (the folder tree changed) and `imported` (sizes and placeholders changed).
+//! The library (the folders the user added) and the background work that keeps the catalog and the files in step:
+//! the job that scans, imports and makes thumbnails (`pg_ingest::runner`), and the writer that puts ratings and
+//! turns into the files (`pg_ingest::writeback`). QML polls `poll()` for progress, and reloads its views on
+//! `scanned` (the folder tree changed), `imported` (sizes and placeholders changed) and `filesChanged` (files were
+//! turned).
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -24,6 +26,8 @@ pub mod qobject {
         #[qproperty(f64, progress)]
         /// The latest error or note from the job, until the next one.
         #[qproperty(QString, message)]
+        /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
+        #[qproperty(QString, writes, cxx_name = "writeStatus")]
         type Library = super::LibraryRust;
     }
 
@@ -34,7 +38,12 @@ pub mod qobject {
         #[qsignal]
         fn imported(self: Pin<&mut Library>);
 
-        /// Start the background job; it first finishes whatever is pending.
+        /// Files were turned (rewritten or turned in the catalog): their images and sizes changed.
+        #[qsignal]
+        #[cxx_name = "filesChanged"]
+        fn files_changed(self: Pin<&mut Library>);
+
+        /// Start the background job and the writer; they first finish whatever is pending.
         #[qinvokable]
         fn start(self: Pin<&mut Library>, thumb_height: i32);
 
@@ -71,10 +80,19 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use pg_ingest::runner::{Generation, Runner};
 use pg_ingest::scan::normalize_root;
+use pg_ingest::writeback::Writer;
 
 use crate::state;
 
 static RUNNER: OnceLock<Runner> = OnceLock::new();
+static WRITER: OnceLock<Writer> = OnceLock::new();
+
+/// Something was queued for the files (a rating, a turn).
+pub fn wake_writer() {
+    if let Some(w) = WRITER.get() {
+        w.wake();
+    }
+}
 
 #[derive(Default)]
 pub struct LibraryRust {
@@ -84,7 +102,9 @@ pub struct LibraryRust {
     status: QString,
     progress: f64,
     message: QString,
+    writes: QString,
     seen: Generation,
+    seen_turned: u64,
 }
 
 fn library_roots() -> Vec<String> {
@@ -103,6 +123,14 @@ impl qobject::Library {
         self.as_mut().load_roots();
         let height = thumb_height.max(1) as u32;
         RUNNER.get_or_init(|| Runner::start(state::get().catalog_path.clone(), state::thumbs(), height));
+        // A turned file needs its analysis and thumbnails redone: the job's work.
+        WRITER.get_or_init(|| {
+            Writer::start(state::get().catalog_path.clone(), state::thumbs(), || {
+                if let Some(r) = RUNNER.get() {
+                    r.wake();
+                }
+            })
+        });
     }
 
     fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
@@ -172,6 +200,21 @@ impl qobject::Library {
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
         if let Some(last) = r.take_messages().pop() {
             self.as_mut().set_message(QString::from(&last));
+        }
+        if let Some(w) = WRITER.get() {
+            let s = w.status();
+            let writes = match (s.queued, s.error) {
+                (0, None) => String::new(),
+                (n, None) => format!("Writing {n} change{} into files", if n == 1 { "" } else { "s" }),
+                (n, Some(e)) => format!("{n} change{} not yet in the files: {e}", if n == 1 { "" } else { "s" }),
+            };
+            if self.writes.to_string() != writes {
+                self.as_mut().set_writes(QString::from(&writes));
+            }
+            let turned = w.turned();
+            if std::mem::replace(&mut self.as_mut().rust_mut().seen_turned, turned) != turned {
+                self.as_mut().files_changed();
+            }
         }
         let now = r.generation();
         let seen = std::mem::replace(&mut self.as_mut().rust_mut().seen, now);

@@ -9,6 +9,7 @@ mod folders;
 mod gallery;
 mod library;
 mod providers;
+mod settings;
 mod state;
 
 use std::ffi::OsString;

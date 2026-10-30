@@ -8,7 +8,7 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_core::decode::Decoder;
-use pg_core::thumbs::{self, ThumbCache};
+use pg_core::thumbs::{self, Thumb, ThumbCache};
 use turbojpeg::Compressor;
 
 use crate::control::Control;
@@ -43,7 +43,7 @@ pub fn run(
     let mut batch = Vec::with_capacity(BATCH);
     ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
 
-    let flush = |batch: &mut Vec<(i64, u32, i64, Vec<u8>)>, stats: &mut ThumbStats| -> Result<bool> {
+    let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
         let stored = cache.lock().unwrap().put_batch(batch, Some(height))?;
         if stored {
             stats.made += batch.len();
@@ -59,11 +59,11 @@ pub fn run(
         opts,
         ctl,
         || Ok((Decoder::new()?, Compressor::new()?)),
-        |(decoder, encoder), bytes| thumbs::make(bytes, height as usize, decoder, encoder),
+        |(decoder, encoder), i, bytes| thumbs::make(bytes, height as usize, items[i].source.rotation, decoder, encoder),
         |i, result, len| {
             ctl.add(len, result.is_err());
             match result {
-                Ok(data) => batch.push((items[i].id, height, items[i].mtime, data)),
+                Ok(data) => batch.push(Thumb { file_id: items[i].id, height, source: items[i].source, data }),
                 // The import already decoded these files; a failure here is a file changed or gone since.
                 Err(e) => {
                     stats.failed += 1;

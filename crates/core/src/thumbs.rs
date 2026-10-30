@@ -22,9 +22,16 @@ const DECODE_MARGIN: usize = 4;
 const JPEG_QUALITY: i32 = 85;
 pub const FORMAT_JPEG: &str = "jpeg";
 
-/// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept.
-pub fn make(bytes: &[u8], height: usize, decoder: &mut Decoder, encoder: &mut Compressor) -> Result<Vec<u8>> {
-    let decoded = decoder.decode(bytes, MinSize::Upright(0, height * DECODE_MARGIN))?;
+/// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
+/// file's catalog rotation.
+pub fn make(
+    bytes: &[u8],
+    height: usize,
+    turns: u8,
+    decoder: &mut Decoder,
+    encoder: &mut Compressor,
+) -> Result<Vec<u8>> {
+    let decoded = decoder.decode(bytes, MinSize::Upright(0, height * DECODE_MARGIN), turns)?;
     let img = &decoded.image;
     let small = to_height(img, height);
     let img = small.as_ref().unwrap_or(img);
@@ -46,32 +53,72 @@ pub struct ThumbCache {
     total_bytes: i64,
 }
 
+/// What a thumbnail was made from: the file's mtime and its catalog rotation (`files.rotation`). A thumbnail is
+/// current while both still match the file.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Source {
+    pub mtime: i64,
+    pub rotation: u8,
+}
+
+pub struct Thumb {
+    pub file_id: i64,
+    /// The requested grid height (the image may be smaller).
+    pub height: u32,
+    pub source: Source,
+    pub data: Vec<u8>,
+}
+
 /// A file the background task still has to thumbnail at the current height.
 pub struct ThumbWork {
     pub id: i64,
     pub path: String,
-    pub mtime: i64,
+    pub source: Source,
 }
+
+/// The cache's layout version (`PRAGMA user_version`). It is a cache: a file of another version is emptied and
+/// refilled, never migrated.
+const CACHE_VERSION: i64 = 2;
+
+const CACHE_SCHEMA: &str = "
+CREATE TABLE thumbs(
+    file_id   INTEGER NOT NULL,  -- catalog files.id
+    height    INTEGER NOT NULL,  -- requested grid height (the image may be smaller)
+    mtime     INTEGER NOT NULL,  -- Source: stale when either differs from the file's
+    rotation  INTEGER NOT NULL,
+    format    TEXT NOT NULL,
+    bytes     INTEGER NOT NULL,
+    last_used INTEGER NOT NULL,  -- Unix seconds
+    data      BLOB NOT NULL,
+    PRIMARY KEY(file_id, height));
+CREATE INDEX thumbs_lru ON thumbs(last_used);";
 
 impl ThumbCache {
     pub fn open(path: &Path, cap_bytes: i64) -> Result<ThumbCache> {
         let conn = Connection::open(path)?;
         // auto_vacuum must be set before the first table exists.
         conn.execute_batch(
-            "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;
-             CREATE TABLE IF NOT EXISTS thumbs(
-                file_id   INTEGER NOT NULL,  -- catalog files.id
-                height    INTEGER NOT NULL,  -- requested grid height (the image may be smaller)
-                mtime     INTEGER NOT NULL,  -- the file's mtime when made; stale when it differs
-                format    TEXT NOT NULL,
-                bytes     INTEGER NOT NULL,
-                last_used INTEGER NOT NULL,  -- Unix seconds
-                data      BLOB NOT NULL,
-                PRIMARY KEY(file_id, height));
-             CREATE INDEX IF NOT EXISTS thumbs_lru ON thumbs(last_used);",
+            "PRAGMA auto_vacuum = INCREMENTAL; PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL;",
         )?;
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        if version != CACHE_VERSION {
+            conn.execute_batch(&format!(
+                "BEGIN; DROP TABLE IF EXISTS thumbs; {CACHE_SCHEMA} PRAGMA user_version = {CACHE_VERSION}; COMMIT;
+                 PRAGMA incremental_vacuum;"
+            ))?;
+        }
         let total_bytes = conn.query_row("SELECT coalesce(sum(bytes), 0) FROM thumbs", [], |r| r.get(0))?;
         Ok(ThumbCache { conn, cap_bytes, total_bytes })
+    }
+
+    /// The file was rewritten without changing its pixels (a rating written into it): its thumbnails still
+    /// show it, so they follow it to the new mtime.
+    pub fn retag(&self, file_id: i64, old_mtime: i64, new_mtime: i64) -> Result<()> {
+        self.conn.execute(
+            "UPDATE thumbs SET mtime = ?3 WHERE file_id = ?1 AND mtime = ?2",
+            params![file_id, old_mtime, new_mtime],
+        )?;
+        Ok(())
     }
 
     pub fn total_bytes(&self) -> i64 {
@@ -82,16 +129,16 @@ impl ThumbCache {
         self.total_bytes >= self.cap_bytes
     }
 
-    /// The cached thumbnail closest to `height` that was made from the file's current version: the smallest one
-    /// at least that high, else the largest below it. Returns its height and bytes.
-    pub fn get_nearest(&self, file_id: i64, height: u32, mtime: i64) -> Result<Option<(u32, Vec<u8>)>> {
+    /// The cached thumbnail closest to `height` that was made from the file as it is now (`source`): the smallest
+    /// one at least that high, else the largest below it. Returns its height and bytes.
+    pub fn get_nearest(&self, file_id: i64, height: u32, source: Source) -> Result<Option<(u32, Vec<u8>)>> {
         let found: Option<(u32, Vec<u8>)> = self
             .conn
             .prepare_cached(
-                "SELECT height, data FROM thumbs WHERE file_id = ?1 AND mtime = ?3
+                "SELECT height, data FROM thumbs WHERE file_id = ?1 AND mtime = ?3 AND rotation = ?4
                  ORDER BY height < ?2, abs(height - ?2) LIMIT 1",
             )?
-            .query_row(params![file_id, height, mtime], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(params![file_id, height, source.mtime, source.rotation], |r| Ok((r.get(0)?, r.get(1)?)))
             .optional()?;
         if let Some((h, _)) = &found {
             self.conn
@@ -103,23 +150,31 @@ impl ThumbCache {
 
     /// Store a batch in one transaction. With `keep_height`, eviction spares that height (the background task
     /// filling the cache for the current grid); returns false, storing nothing more, once it can't make room.
-    pub fn put_batch(&mut self, items: &[(i64, u32, i64, Vec<u8>)], keep_height: Option<u32>) -> Result<bool> {
-        let incoming: i64 = items.iter().map(|i| i.3.len() as i64).sum();
+    pub fn put_batch(&mut self, items: &[Thumb], keep_height: Option<u32>) -> Result<bool> {
+        let incoming: i64 = items.iter().map(|t| t.data.len() as i64).sum();
         if !self.make_room(incoming, keep_height)? {
             return Ok(false);
         }
         let tx = self.conn.transaction()?;
         let mut delta = 0;
-        for (file_id, height, mtime, data) in items {
+        for Thumb { file_id, height, source, data } in items {
             let old: Option<i64> = tx
                 .prepare_cached("SELECT bytes FROM thumbs WHERE file_id = ?1 AND height = ?2")?
                 .query_row(params![file_id, height], |r| r.get(0))
                 .optional()?;
             tx.prepare_cached(
-                "INSERT OR REPLACE INTO thumbs(file_id, height, mtime, format, bytes, last_used, data)
-                 VALUES (?1, ?2, ?3, ?4, ?5, unixepoch(), ?6)",
+                "INSERT OR REPLACE INTO thumbs(file_id, height, mtime, rotation, format, bytes, last_used, data)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7)",
             )?
-            .execute(params![file_id, height, mtime, FORMAT_JPEG, data.len() as i64, data])?;
+            .execute(params![
+                file_id,
+                height,
+                source.mtime,
+                source.rotation,
+                FORMAT_JPEG,
+                data.len() as i64,
+                data
+            ])?;
             delta += data.len() as i64 - old.unwrap_or(0);
         }
         tx.commit()?;
@@ -166,15 +221,21 @@ impl ThumbCache {
         self.conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()])?;
         let result = (|| {
             let mut stmt = self.conn.prepare(
-                "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime
+                "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
+                        f.rotation
                  FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
                  LEFT JOIN thumbs t ON t.file_id = f.id AND t.height = ?1
                  WHERE f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
-                   AND (t.file_id IS NULL OR t.mtime != f.mtime)
+                   AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
                  ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
             )?;
-            let rows =
-                stmt.query_map([height], |r| Ok(ThumbWork { id: r.get(0)?, path: r.get(1)?, mtime: r.get(2)? }))?;
+            let rows = stmt.query_map([height], |r| {
+                Ok(ThumbWork {
+                    id: r.get(0)?,
+                    path: r.get(1)?,
+                    source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
+                })
+            })?;
             Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
         })();
         self.conn.execute("DETACH DATABASE cat", [])?;

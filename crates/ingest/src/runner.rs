@@ -82,6 +82,11 @@ impl Runner {
         self.inner.wake_up(q);
     }
 
+    /// The catalog has new work outside a scan (a file turned in place needs its analysis redone): start a round.
+    pub fn wake(&self) {
+        self.inner.wake_up(self.inner.queue.lock().unwrap());
+    }
+
     /// The grid's thumbnail height changed: make the missing ones at the new height instead.
     pub fn set_thumb_height(&self, height: u32) {
         if self.inner.thumb_height.swap(height, Ordering::Relaxed) != height {

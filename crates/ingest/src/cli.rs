@@ -13,6 +13,7 @@ use pg_core::thumbs::ThumbCache;
 use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_IDLE, THREAD_PRIORITY_NORMAL};
 
 use crate::control::Control;
+use crate::writeback::Writer;
 use crate::{dups, import, pipeline, scan, thumbs};
 
 pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
@@ -75,7 +76,10 @@ enum Command {
         #[arg(long)]
         foreground: bool,
     },
-    /// The library folders and counts of files, analyses and pairs.
+    /// Write the ratings and turns made in the app into the files, until none is left (the app does this in the
+    /// background).
+    Write,
+    /// The library folders and counts of files, analyses, pairs and pending writes.
     Status,
     /// What tiers 0–1 found, and the groups they form.
     Dups {
@@ -173,6 +177,40 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             println!(
                 "{} files ({} missing), {} analyzed, {} failed, {} pending, {} PDQ pairs",
                 s.files, s.missing, s.analyzed, s.failed, s.pending, s.pdq_pairs
+            );
+            println!("{} changes to write into files ({} failing)", s.queued_writes, s.failed_writes);
+            let mut errors = catalog.conn.prepare("SELECT error FROM file_writes WHERE error IS NOT NULL LIMIT 5")?;
+            for e in errors.query_map([], |r| r.get::<_, String>(0))? {
+                println!("  {}", e?);
+            }
+        }
+        Command::Write => {
+            let cache = Box::leak(Box::new(Mutex::new(ThumbCache::open(
+                &cli.catalog_dir.join("thumbs.sqlite"),
+                (50.0 * 1e9) as i64,
+            )?)));
+            let writer = Writer::start(catalog_path.clone(), cache, || {});
+            writer.wake();
+            // Until nothing writable is left (failures past their retries stay queued and are reported).
+            loop {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                let left: i64 = catalog.conn.query_row(
+                    "SELECT count(*) FROM file_writes WHERE attempts < 5 AND (error IS NULL OR temp IS NOT NULL)",
+                    [],
+                    |r| r.get(0),
+                )?;
+                if left == 0 {
+                    break;
+                }
+            }
+            drop(writer);
+            let s = catalog.status()?;
+            println!(
+                "written; {} left ({} failing), {} files to re-import (turned), {:.1} s",
+                s.queued_writes,
+                s.failed_writes,
+                s.pending,
+                start.elapsed().as_secs_f64()
             );
         }
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,

@@ -9,3 +9,4 @@ pub mod pipeline;
 pub mod runner;
 pub mod scan;
 pub mod thumbs;
+pub mod writeback;

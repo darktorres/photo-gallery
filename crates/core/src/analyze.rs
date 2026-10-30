@@ -33,15 +33,18 @@ pub struct Analysis {
     /// The 8 dihedral PDQ hashes, for the query side of tier 1. Not stored.
     pub pdq_dihedral: [pdq::Hash; 8],
     pub thumbhash: Vec<u8>,
+    /// The rating the file itself holds (metadata::read_rating), for the catalog's three-way sync.
+    pub file_rating: Option<u8>,
 }
 
 pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
     *blake3::hash(bytes).as_bytes()
 }
 
-pub fn analyze(bytes: &[u8], decoder: &mut Decoder) -> Result<Analysis> {
+/// `turns`: the file's catalog rotation (quarter turns clockwise), part of what "upright" means.
+pub fn analyze(bytes: &[u8], turns: u8, decoder: &mut Decoder) -> Result<Analysis> {
     let file_hash = file_hash(bytes);
-    let decoded = decoder.decode(bytes, MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT))?;
+    let decoded = decoder.decode(bytes, MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT), turns)?;
     let img = &decoded.image;
 
     let pdq_in = fit_within(img, PDQ_SIDE);
@@ -58,6 +61,7 @@ pub fn analyze(bytes: &[u8], decoder: &mut Decoder) -> Result<Analysis> {
         pdq,
         pdq_dihedral,
         thumbhash: thumbhash(img),
+        file_rating: crate::metadata::read_rating(bytes, decoded.format),
     })
 }
 

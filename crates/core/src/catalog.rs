@@ -6,16 +6,22 @@
 
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::pdq;
 
-/// `MIGRATIONS[i]` takes the schema from version i to i + 1; `PRAGMA user_version` holds the current one.
-const MIGRATIONS: &[&str] = &[SCHEMA_V1, SCHEMA_V2, SCHEMA_V3];
+/// Schema versioning (`PRAGMA user_version`). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
+/// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
+///
+/// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit
+/// the baseline and catalogs are rebuilt; from then on the baseline is frozen and every change is a migration.
+/// Versions 1–3 were development catalogs from before the baseline: refused, to be deleted and re-imported.
+const BASELINE_VERSION: i64 = 4;
+const MIGRATIONS: &[&str] = &[];
 
-const SCHEMA_V1: &str = r"
+const BASELINE: &str = r"
 CREATE TABLE scans(
     id       INTEGER PRIMARY KEY,
     root     TEXT NOT NULL,
@@ -36,6 +42,8 @@ CREATE TABLE files(
     mtime     INTEGER NOT NULL,  -- FILETIME: 100 ns since 1601 UTC
     last_scan INTEGER NOT NULL REFERENCES scans(id),
     missing   INTEGER NOT NULL DEFAULT 0,
+    rotation  INTEGER NOT NULL DEFAULT 0,  -- quarter turns clockwise kept here, for files that can't be rotated
+                                           -- in place (metadata::rotation_method); applied after EXIF orientation
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
@@ -71,25 +79,54 @@ CREATE INDEX pdq_pairs_b ON pdq_pairs(b);
 CREATE VIEW present_pdq_pairs AS
     SELECT p.* FROM pdq_pairs p JOIN files fa ON fa.id = p.a JOIN files fb ON fb.id = p.b
     WHERE fa.missing = 0 AND fb.missing = 0;
-";
 
-/// M2: ratings live in the catalog, not in the files (PLAN §2: XMP only round-trips for JPEG).
-const SCHEMA_V2: &str = r"
-CREATE TABLE ratings(
-    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
-    rating  INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),  -- unrated files have no row
-    updated INTEGER NOT NULL                                  -- Unix seconds
-);
-";
-
-/// The library: folders the user added, which a rescan walks again. None is inside another. Existing catalogs
-/// start with the roots they were scanned from.
-const SCHEMA_V3: &str = r"
+-- The library: folders the user added, which a rescan walks again. None is inside another.
 CREATE TABLE roots(
     path  TEXT PRIMARY KEY,  -- absolute, no trailing backslash
     added INTEGER NOT NULL   -- Unix seconds
 );
-INSERT OR IGNORE INTO roots SELECT root, min(started) FROM scans GROUP BY root;
+
+-- Ratings: the catalog is the source of truth, for every format (PLAN §2). Unrated files have no row.
+CREATE TABLE ratings(
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    rating  INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    updated INTEGER NOT NULL  -- Unix seconds
+);
+-- The rating the file itself holds, as last read by the import or written by the app (0–5; no row: none).
+-- A file rating that differs from this was changed by another program, and is adopted (store_analysis).
+CREATE TABLE file_ratings(
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    value   INTEGER NOT NULL CHECK (value BETWEEN 0 AND 5)
+);
+-- Changes waiting to be written into the files (ingest::writeback), so a write survives quitting. `value` is
+-- the rating, or the quarter turns clockwise still to apply. `temp` is set once the new content is complete
+-- beside the original, carrying `temp_value`; a row with it set is finished by copying it in (the file keeps its
+-- NTFS identity). The user may change `value` meanwhile: what is left after `temp_value` is written stays queued.
+CREATE TABLE file_writes(
+    file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
+    value    INTEGER NOT NULL,
+    queued   INTEGER NOT NULL,  -- Unix seconds
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error    TEXT,
+    temp       TEXT,
+    temp_value INTEGER,
+    PRIMARY KEY(file_id, kind)
+);
+
+-- Saved views (ImageRater's bookmarks): a folder, a rating filter and an order.
+CREATE TABLE views(
+    name      TEXT PRIMARY KEY,
+    folder    TEXT NOT NULL,     -- merged path (browse::merged_path); '' = all folders
+    recursive INTEGER NOT NULL,
+    filter    TEXT NOT NULL,     -- browse::Filter::key
+    sort      TEXT NOT NULL      -- browse::Sort::key
+);
+-- Where the user was (the open view and the selected file), restored at start.
+CREATE TABLE session(
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
 ";
 
 /// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
@@ -110,6 +147,35 @@ pub struct Catalog {
     pub conn: Connection,
 }
 
+/// Bring a catalog to the current schema: a new one gets the baseline, then each migration it lacks runs in its
+/// own transaction.
+fn migrate(conn: &Connection, baseline: &str, migrations: &[&str]) -> Result<()> {
+    // Each step is all or nothing: the transaction rolls back when dropped on an error.
+    let step = |sql: &str, to: i64| -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch(sql)?;
+        tx.pragma_update(None, "user_version", to)?;
+        Ok(tx.commit()?)
+    };
+    let current = BASELINE_VERSION + migrations.len() as i64;
+    let mut version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+    if version == 0 {
+        step(baseline, BASELINE_VERSION).context("creating the catalog")?;
+        version = BASELINE_VERSION;
+    }
+    if version < BASELINE_VERSION {
+        bail!("made by a development build before the baseline schema (version {version}): delete it and re-import");
+    }
+    if version > current {
+        bail!("schema version {version} is newer than this build's ({current})");
+    }
+    for (i, sql) in migrations.iter().enumerate().skip((version - BASELINE_VERSION) as usize) {
+        let to = BASELINE_VERSION + i as i64 + 1;
+        step(sql, to).with_context(|| format!("migration to schema version {to}"))?;
+    }
+    Ok(())
+}
+
 /// A file as the scanner saw it.
 pub struct ScannedFile<'a> {
     pub volume: u32,
@@ -125,6 +191,8 @@ pub struct WorkItem {
     pub path: String,
     pub size: i64,
     pub mtime: i64,
+    /// Catalog rotation (`files.rotation`), applied when decoding.
+    pub rotation: u8,
 }
 
 pub struct Status {
@@ -134,6 +202,9 @@ pub struct Status {
     pub failed: i64,
     pub pending: i64,
     pub pdq_pairs: i64,
+    /// Ratings and turns not yet written into the files, and those that keep failing.
+    pub queued_writes: i64,
+    pub failed_writes: i64,
 }
 
 impl Catalog {
@@ -143,13 +214,8 @@ impl Catalog {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
              PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
         )?;
-        let version: usize = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
-        if version > MIGRATIONS.len() {
-            anyhow::bail!("catalog schema {version} is newer than this build ({})", MIGRATIONS.len());
-        }
-        for (i, sql) in MIGRATIONS.iter().enumerate().skip(version) {
-            conn.execute_batch(&format!("BEGIN; {sql} PRAGMA user_version = {}; COMMIT;", i + 1))?;
-        }
+        migrate(&conn, BASELINE, MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
+        conn.create_collation("PATH", crate::browse::path_collation)?;
         Ok(Catalog { conn })
     }
 
@@ -233,11 +299,12 @@ impl Catalog {
     /// ~3× faster than path order on an HDD (FINDINGS "I/O").
     pub fn pending_import(&self, retry_errors: bool) -> Result<Vec<WorkItem>> {
         let mut stmt = self.conn.prepare(&format!(
-            "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime
+            "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
+                    f.rotation
              {PENDING} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
         ))?;
         let rows = stmt.query_map(params![IMPORT_VERSION, retry_errors], |r| {
-            Ok(WorkItem { id: r.get(0)?, path: r.get(1)?, size: r.get(2)?, mtime: r.get(3)? })
+            Ok(WorkItem { id: r.get(0)?, path: r.get(1)?, size: r.get(2)?, mtime: r.get(3)?, rotation: r.get(4)? })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -279,6 +346,82 @@ impl Catalog {
             a.pdq.quality,
             &a.thumbhash,
         ])?;
+        Self::sync_file_rating(tx, item.id, a.file_rating)
+    }
+
+    /// Three-way rating sync. `file_ratings` holds what the file was last known to hold; a file rating that
+    /// differs from it was set by another program after that, so it becomes the catalog rating. Otherwise the
+    /// catalog's stands (it may be newer and not written back yet, or the file can't hold one). A write of our own
+    /// still queued is newer than anything in the file: nothing is adopted then.
+    fn sync_file_rating(tx: &Transaction, file_id: i64, in_file: Option<u8>) -> Result<()> {
+        let known: Option<u8> = tx
+            .prepare_cached("SELECT value FROM file_ratings WHERE file_id = ?1")?
+            .query_row([file_id], |r| r.get(0))
+            .optional()?;
+        let queued: bool = tx
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND kind = 'rating')")?
+            .query_row([file_id], |r| r.get(0))?;
+        if in_file == known || queued {
+            return Ok(());
+        }
+        match in_file {
+            Some(n @ 1..=5) => tx
+                .prepare_cached(
+                    "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
+                     ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated",
+                )?
+                .execute(params![file_id, n])?,
+            _ => tx.prepare_cached("DELETE FROM ratings WHERE file_id = ?1")?.execute([file_id])?,
+        };
+        Self::set_file_rating(tx, file_id, in_file)
+    }
+
+    /// Record what the file holds now (read by the import, or just written by the app).
+    pub fn set_file_rating(conn: &Connection, file_id: i64, value: Option<u8>) -> Result<()> {
+        match value {
+            Some(v) => conn
+                .prepare_cached(
+                    "INSERT INTO file_ratings(file_id, value) VALUES (?1, ?2)
+                     ON CONFLICT(file_id) DO UPDATE SET value = excluded.value",
+                )?
+                .execute(params![file_id, v.min(5)])?,
+            None => conn.prepare_cached("DELETE FROM file_ratings WHERE file_id = ?1")?.execute([file_id])?,
+        };
+        Ok(())
+    }
+
+    /// The app rewrote a file in place (ingest::writeback): record its new size and mtime, so the scanner and the
+    /// import see it as the file it is. `before` is the (size, mtime) the file had on disk just before the write.
+    /// After a metadata-only change (`metadata_only` = the new BLAKE3) an analysis made from exactly those bytes
+    /// stays valid and follows the file: nothing is re-imported. After a pixel change it is left stale, so the
+    /// import redoes it (new upright size, hashes, PDQ).
+    pub fn file_rewritten(
+        conn: &Connection,
+        file_id: i64,
+        before: (i64, i64),
+        after: (i64, i64),
+        metadata_only: Option<[u8; 32]>,
+    ) -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id, after.0, after.1])?;
+        if let Some(file_hash) = metadata_only {
+            tx.execute(
+                "UPDATE analysis SET size = ?2, mtime = ?3, file_hash = ?4
+                 WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
+                params![file_id, after.0, after.1, &file_hash[..], before.0, before.1],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
+    /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the file's analysis is redone with it, and
+    /// its thumbnails no longer match (thumbs::Source).
+    pub fn add_catalog_rotation(conn: &Connection, file_id: i64, turns: u8) -> Result<()> {
+        let tx = conn.unchecked_transaction()?;
+        tx.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id, turns])?;
+        tx.execute("UPDATE analysis SET version = 0 WHERE file_id = ?1", [file_id])?;
+        tx.commit()?;
         Ok(())
     }
 
@@ -319,6 +462,8 @@ impl Catalog {
                 |r| r.get(0),
             )?,
             pdq_pairs: one("SELECT count(*) FROM present_pdq_pairs")?,
+            queued_writes: one("SELECT count(*) FROM file_writes")?,
+            failed_writes: one("SELECT count(*) FROM file_writes WHERE error IS NOT NULL")?,
         })
     }
 }
@@ -337,5 +482,91 @@ mod tests {
         assert_eq!(c.roots().unwrap(), [r"D:\a"]);
         c.remove_root(r"D:\a").unwrap();
         assert!(c.roots().unwrap().is_empty());
+    }
+
+    fn version(conn: &Connection) -> i64 {
+        conn.query_row("PRAGMA user_version", [], |r| r.get(0)).unwrap()
+    }
+
+    #[test]
+    fn migrations_apply_once_in_order() {
+        let conn = Connection::open_in_memory().unwrap();
+        migrate(&conn, BASELINE, &[]).unwrap();
+        assert_eq!(version(&conn), BASELINE_VERSION);
+        // A later build adds two migrations: both run, in order, once.
+        let later = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);"];
+        migrate(&conn, BASELINE, &later).unwrap();
+        migrate(&conn, BASELINE, &later).unwrap();
+        assert_eq!(version(&conn), BASELINE_VERSION + 2);
+        assert_eq!(conn.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        // An older build refuses the newer catalog.
+        assert!(migrate(&conn, BASELINE, &later[..1]).is_err());
+        // A failed migration leaves the catalog at the last good version.
+        let broken = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);", "NOT SQL"];
+        assert!(migrate(&conn, BASELINE, &broken).is_err());
+        assert_eq!(version(&conn), BASELINE_VERSION + 2);
+    }
+
+    #[test]
+    fn refuses_pre_baseline_catalogs() {
+        let conn = Connection::open_in_memory().unwrap();
+        conn.execute_batch("CREATE TABLE files(id INTEGER); PRAGMA user_version = 3;").unwrap();
+        let err = migrate(&conn, BASELINE, MIGRATIONS).unwrap_err();
+        assert!(format!("{err:#}").contains("delete it and re-import"));
+    }
+
+    /// A catalog with one file in it.
+    fn one_file() -> (Catalog, i64) {
+        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.conn
+            .execute_batch(
+                "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
+                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x');
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, size, mtime, last_scan)
+                    VALUES (1, 1, 1, 1, 'a.jpg', 10, 100, 1);",
+            )
+            .unwrap();
+        (c, 1)
+    }
+
+    fn rating(c: &Catalog, id: i64) -> Option<u8> {
+        c.conn.query_row("SELECT rating FROM ratings WHERE file_id = ?1", [id], |r| r.get(0)).optional().unwrap()
+    }
+
+    fn set_rating(c: &Catalog, id: i64, n: u8) {
+        crate::browse::set_rating(&c.conn, id, n, false).unwrap();
+    }
+
+    #[test]
+    fn three_way_rating_sync() {
+        let (c, id) = one_file();
+        let sync = |in_file| {
+            let tx = c.conn.unchecked_transaction().unwrap();
+            Catalog::sync_file_rating(&tx, id, in_file).unwrap();
+            tx.commit().unwrap();
+        };
+        // First import of a file rated elsewhere (ImageRater, Explorer): adopted.
+        sync(Some(4));
+        assert_eq!(rating(&c, id), Some(4));
+        // Rated in the app, not written back (or the format can't hold it): the file still says 4, as known, so
+        // re-imports keep the catalog's 2.
+        set_rating(&c, id, 2);
+        sync(Some(4));
+        assert_eq!(rating(&c, id), Some(2));
+        // Another program changes the file's rating: that is newer, and adopted.
+        sync(Some(5));
+        assert_eq!(rating(&c, id), Some(5));
+        // Another program clears it (writes 0, or removes it): the catalog follows.
+        sync(Some(0));
+        assert_eq!(rating(&c, id), None);
+        sync(None);
+        assert_eq!(rating(&c, id), None);
+        // A write of the app's own still queued wins over the file.
+        set_rating(&c, id, 3);
+        c.conn
+            .execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rating', 3, 0)", [id])
+            .unwrap();
+        sync(Some(1));
+        assert_eq!(rating(&c, id), Some(3));
     }
 }

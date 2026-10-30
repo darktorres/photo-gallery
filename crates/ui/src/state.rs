@@ -4,17 +4,19 @@
 
 use std::cell::RefCell;
 use std::path::PathBuf;
-use std::sync::{Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use pg_core::browse;
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Decoder, MinSize, Rgb};
-use pg_core::resize::fit_box;
+use pg_core::decode::{Decoder, MinSize, Rgb, transform};
+use pg_core::metadata::compose_orientation;
+use pg_core::resize::{fit_box, resize_region};
 use pg_core::thumbs::{self, ThumbCache};
 use turbojpeg::Compressor;
 
 pub struct AppState {
+    pub catalog_dir: PathBuf,
     pub catalog_path: PathBuf,
     thumbs: Mutex<ThumbCache>,
 }
@@ -32,7 +34,7 @@ pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: i64) -> Result<()> {
     let catalog_path = catalog_dir.join("catalog.sqlite");
     Catalog::open(&catalog_path)?;
     let thumbs = Mutex::new(ThumbCache::open(&catalog_dir.join("thumbs.sqlite"), thumb_cap_bytes)?);
-    STATE.set(AppState { catalog_path, thumbs }).map_err(|_| anyhow::anyhow!("state initialized twice"))
+    STATE.set(AppState { catalog_dir, catalog_path, thumbs }).map_err(|_| anyhow::anyhow!("state initialized twice"))
 }
 
 pub fn get() -> &'static AppState {
@@ -78,8 +80,9 @@ fn read_original(path: &str) -> std::io::Result<Vec<u8>> {
 /// A JPEG thumbnail `height` px high: from the cache when one at least that high exists (the UI scales it down),
 /// otherwise made now from the original and cached. With the original offline, the best smaller one.
 pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
-    let browse::FileSource { path, mtime, .. } = source(file_id)?;
-    let cached = thumbs().lock().unwrap().get_nearest(file_id, height, mtime)?;
+    let browse::FileSource { path, mtime, rotation, .. } = source(file_id)?;
+    let current = thumbs::Source { mtime, rotation };
+    let cached = thumbs().lock().unwrap().get_nearest(file_id, height, current)?;
     if let Some((h, data)) = &cached
         && *h >= height
     {
@@ -89,28 +92,109 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
         Ok(b) => b,
         Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
     };
-    let data = with_codecs(|d, e| thumbs::make(&bytes, height as usize, d, e))?;
-    thumbs().lock().unwrap().put_batch(&[(file_id, height, mtime, data.clone())], None)?;
+    let data = with_codecs(|d, e| thumbs::make(&bytes, height as usize, rotation, d, e))?;
+    let thumb = thumbs::Thumb { file_id, height, source: current, data: data.clone() };
+    thumbs().lock().unwrap().put_batch(&[thumb], None)?;
     Ok(data)
 }
 
-/// The ThumbHash placeholder as a tiny RGBA image.
-pub fn thumbhash(file_id: i64) -> Result<(usize, usize, Vec<u8>)> {
+/// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
+pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Rgb> {
+    with_codecs(|d, _| Ok(d.decode(jpeg, MinSize::Full, turns)?.image))
+}
+
+/// The ThumbHash placeholder as a tiny RGBA image, turned by `turns`.
+pub fn thumbhash(file_id: i64, turns: u8) -> Result<(usize, usize, Vec<u8>)> {
     let hash = source(file_id)?.thumbhash.context("not imported yet")?;
-    thumbhash::thumb_hash_to_rgba(&hash).map_err(|_| anyhow::anyhow!("bad thumbhash"))
+    let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(&hash).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
+    let (rgba, w, h) = transform(&rgba, w, h, 4, compose_orientation(1, turns));
+    Ok((w, h, rgba))
 }
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
 const DECODE_MARGIN: usize = 4;
 
-/// The original, upright, fitted into `fit` (width, height) with Lanczos3 and never enlarged; `None` for full
-/// size.
-pub fn full_image(file_id: i64, fit: Option<(usize, usize)>) -> Result<Rgb> {
-    let bytes = read_original(&source(file_id)?.path).context("original unavailable")?;
-    let min = fit.map_or(MinSize::Full, |(w, h)| MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN));
-    let img = with_codecs(|d, _| d.decode(&bytes, min))?.image;
-    Ok(match fit {
-        Some((w, h)) => fit_box(&img, w, h).unwrap_or(img),
-        None => img,
-    })
+/// What the viewer asks for.
+#[derive(Clone, Copy, Debug)]
+pub enum View {
+    /// Fitted into (width, height) device pixels, never enlarged.
+    Fit(usize, usize),
+    /// Full size (1:1 and beyond, and the loupe).
+    Full,
+    /// Zoom between fit and 1:1: the region (x, y, w, h, as fractions of the upright image) at (width, height)
+    /// device pixels, the part of the zoomed image that is on screen.
+    Region((f64, f64, f64, f64), usize, usize),
+}
+
+/// The last decode, kept for the zoom regions that follow each other while the user zooms and pans one image.
+struct Decoded {
+    file_id: i64,
+    mtime: i64,
+    rotation: u8,
+    /// Upright full size, and the decode (possibly DCT-scaled).
+    full: (usize, usize),
+    image: Arc<Rgb>,
+}
+
+static LAST_DECODE: Mutex<Option<Decoded>> = Mutex::new(None);
+
+/// The original, upright (EXIF and catalog rotation, then `turns` not yet written), as the viewer asks for it.
+pub fn full_image(file_id: i64, view: View, turns: u8) -> Result<Rgb> {
+    let mut src = source(file_id)?;
+    src.rotation = (src.rotation + turns) % 4;
+    match view {
+        View::Fit(w, h) => {
+            let img = decode(file_id, &src, MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN))?;
+            Ok(fit_box(&img, w, h).unwrap_or_else(|| (*img).clone()))
+        }
+        View::Full => Ok((*decode(file_id, &src, MinSize::Full)?).clone()),
+        View::Region((x, y, rw, rh), w, h) => {
+            // The whole image at a scale where the region keeps ≥ DECODE_MARGIN× the output pixels.
+            let box_w = (w as f64 * DECODE_MARGIN as f64 / rw.max(1e-6)).ceil() as usize;
+            let box_h = (h as f64 * DECODE_MARGIN as f64 / rh.max(1e-6)).ceil() as usize;
+            let img = decode(file_id, &src, MinSize::Fit(box_w, box_h))?;
+            let (iw, ih) = (img.width as f64, img.height as f64);
+            Ok(resize_region(&img, (x * iw, y * ih, rw * iw, rh * ih), w, h))
+        }
+    }
+}
+
+/// Decode at least `min`, reusing the last decode of the same file when it is big enough.
+fn decode(file_id: i64, src: &browse::FileSource, min: MinSize) -> Result<Arc<Rgb>> {
+    {
+        let last = LAST_DECODE.lock().unwrap();
+        if let Some(d) = last.as_ref()
+            && d.file_id == file_id
+            && d.mtime == src.mtime
+            && d.rotation == src.rotation
+            && big_enough(d.image.width, d.image.height, d.full, min)
+        {
+            return Ok(d.image.clone());
+        }
+    }
+    let bytes = read_original(&src.path).context("original unavailable")?;
+    let decoded = with_codecs(|d, _| d.decode(&bytes, min, src.rotation))?;
+    let full = (decoded.full_width as usize, decoded.full_height as usize);
+    let image = Arc::new(decoded.image);
+    *LAST_DECODE.lock().unwrap() =
+        Some(Decoded { file_id, mtime: src.mtime, rotation: src.rotation, full, image: image.clone() });
+    Ok(image)
+}
+
+/// Whether a decode of `w × h` (of an upright full size `full`) satisfies `min`.
+fn big_enough(w: usize, h: usize, full: (usize, usize), min: MinSize) -> bool {
+    if (w, h) == full {
+        return true;
+    }
+    match min {
+        MinSize::Full => false,
+        MinSize::Fit(bw, bh) => {
+            let scale = (bw as f64 / full.0 as f64).min(bh as f64 / full.1 as f64).min(1.0);
+            w as f64 >= (full.0 as f64 * scale).floor() && h as f64 >= (full.1 as f64 * scale).floor()
+        }
+        MinSize::Upright(mw, mh) => w >= mw.min(full.0) && h >= mh.min(full.1),
+        MinSize::Sides(long, short) => {
+            w.max(h) >= long.min(full.0.max(full.1)) && w.min(h) >= short.min(full.0.min(full.1))
+        }
+    }
 }

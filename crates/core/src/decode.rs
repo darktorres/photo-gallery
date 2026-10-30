@@ -32,6 +32,13 @@ impl Format {
         })
     }
 
+    /// The inverse of [`Format::name`].
+    pub fn from_name(name: &str) -> Option<Format> {
+        [Format::Jpeg, Format::Png, Format::Gif, Format::Webp, Format::Bmp, Format::Tiff]
+            .into_iter()
+            .find(|f| f.name() == name)
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Format::Jpeg => "jpeg",
@@ -45,6 +52,7 @@ impl Format {
 }
 
 /// An upright RGB image.
+#[derive(Clone)]
 pub struct Rgb {
     pub width: usize,
     pub height: usize,
@@ -54,7 +62,7 @@ pub struct Rgb {
 pub struct Decoded {
     pub image: Rgb,
     pub format: Format,
-    /// EXIF orientation (1–8) that was applied.
+    /// Orientation (1–8) that was applied: the EXIF one, combined with the catalog rotation.
     pub orientation: u8,
     /// Upright dimensions of the full-size image.
     pub full_width: u32,
@@ -86,10 +94,11 @@ impl Decoder {
         Ok(Decoder { jpeg: Decompressor::new()? })
     }
 
-    /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller).
-    pub fn decode(&mut self, bytes: &[u8], min: MinSize) -> Result<Decoded> {
+    /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller). `turns` is
+    /// the catalog rotation (`files.rotation`, quarter turns clockwise), applied after the EXIF orientation.
+    pub fn decode(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
         let format = Format::sniff(bytes).context("unknown image format")?;
-        let orientation = exif_orientation(bytes);
+        let orientation = crate::metadata::compose_orientation(exif_orientation(bytes), turns);
         let quarter_turn = matches!(orientation, 5..=8);
 
         let jpeg = match format {
@@ -189,9 +198,15 @@ pub fn orient(img: Rgb, orientation: u8) -> Rgb {
     if !(2..=8).contains(&orientation) {
         return img;
     }
-    let (w, h) = (img.width, img.height);
+    let (pixels, width, height) = transform(&img.pixels, img.width, img.height, 3, orientation);
+    Rgb { width, height, pixels }
+}
+
+/// Apply an EXIF orientation (1–8) to a packed `w` × `h` raster of `unit`-byte pixels: the raster as it is shown.
+/// Returns it with its new width and height.
+pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: u8) -> (Vec<u8>, usize, usize) {
     let (ow, oh) = if orientation >= 5 { (h, w) } else { (w, h) };
-    let mut out = vec![0u8; img.pixels.len()];
+    let mut out = vec![0u8; w * h * unit];
     for y in 0..oh {
         for x in 0..ow {
             // Source pixel for output (x, y).
@@ -202,13 +217,14 @@ pub fn orient(img: Rgb, orientation: u8) -> Rgb {
                 5 => (y, x),
                 6 => (y, h - 1 - x),
                 7 => (w - 1 - y, h - 1 - x),
-                _ => (w - 1 - y, x), // 8
+                8 => (w - 1 - y, x),
+                _ => (x, y),
             };
-            let (s, d) = ((sy * w + sx) * 3, (y * ow + x) * 3);
-            out[d..d + 3].copy_from_slice(&img.pixels[s..s + 3]);
+            let (s, d) = ((sy * w + sx) * unit, (y * ow + x) * unit);
+            out[d..d + unit].copy_from_slice(&pixels[s..s + unit]);
         }
     }
-    Rgb { width: ow, height: oh, pixels: out }
+    (out, ow, oh)
 }
 
 #[cfg(test)]

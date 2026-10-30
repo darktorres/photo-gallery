@@ -1,5 +1,6 @@
 // Main window: merged folder tree on the left, justified thumbnail grid on the right, viewer on top. The
 // library (folders the user added) is imported by a background job; its progress is in the bottom bar.
+import QtQml.Models
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Dialogs
@@ -30,13 +31,19 @@ ApplicationWindow {
         placeholderText: "#777777"
     }
 
+    Settings { id: settings }
+
     // The grid's row height in logical px: the thumbnail size, adjustable at any time (slider, Ctrl+wheel,
     // Ctrl +/-). The layout follows it at once; the thumbnails re-requested at the new size follow after a short
-    // pause (thumbHeight), and meanwhile the old ones are scaled.
-    property real rowHeight: 220
+    // pause (thumbHeight), and meanwhile the old ones are scaled. Remembered across runs.
+    property real rowHeight: settings.rowHeight
     property int thumbHeight: Math.round(rowHeight * Screen.devicePixelRatio)
     property int current: -1
+    // What the grid shows: the open folder (gallery.folder), with or without subfolders, which ratings
+    // (browse::Filter keys) in what order (browse::Sort keys). Remembered across runs, and in saved views.
     property bool recursive: true
+    property string filter: "all"
+    property string sort: "name"
     readonly property real gap: 4
 
     FolderModel { id: folders }
@@ -45,6 +52,8 @@ ApplicationWindow {
         id: library
         onScanned: win.reloadAll()
         onImported: win.refreshGrid()
+        // Turned files changed in place: no renumbering, so the viewer can stay open.
+        onFilesChanged: gallery.refreshTurned()
     }
     Timer {
         interval: 500
@@ -59,8 +68,21 @@ ApplicationWindow {
     Timer {
         id: thumbTimer
         interval: 300
-        onTriggered: win.thumbHeight = Math.round(win.rowHeight * Screen.devicePixelRatio)
+        onTriggered: {
+            win.thumbHeight = Math.round(win.rowHeight * Screen.devicePixelRatio)
+            settings.rowHeight = win.rowHeight
+        }
     }
+    // The selected file, saved once the selection rests.
+    Timer {
+        id: sessionTimer
+        interval: 1000
+        onTriggered: {
+            const i = viewer.visible ? viewer.index : win.current
+            settings.setSession("file", String(i >= 0 ? gallery.fileId(i) : -1))
+        }
+    }
+    onCurrentChanged: sessionTimer.restart()
     Timer {
         id: layoutTimer
         interval: 50
@@ -108,17 +130,51 @@ ApplicationWindow {
         const hadCurrent = current >= 0
         const keep = hadCurrent ? current : topItem()
         const fid = keep >= 0 ? gallery.fileId(keep) : -1
-        gallery.openFolder(gallery.folder, recursive)
-        const i = fid >= 0 ? gallery.indexOf(fid) : -1
+        gallery.openFolder(gallery.folder, recursive, filter, sort)
+        let i = fid >= 0 ? gallery.indexOf(fid) : -1
+        // The selected file left the view (rated out of "Unrated"): select what took its place.
+        if (i < 0 && hadCurrent && gallery.count > 0)
+            i = Math.min(keep, gallery.count - 1)
         current = hadCurrent ? i : -1
         if (i >= 0)
             grid.positionViewAtIndex(gallery.rowOf(i), hadCurrent ? ListView.Contain : ListView.Beginning)
     }
 
     function openFolder(row) {
+        openPath(folders.mergedPath(row))
+    }
+
+    // Show a merged folder (`""` = all) with the current subfolders, filter and sort, and remember it.
+    function openPath(path) {
         current = -1
-        gallery.openFolder(folders.mergedPath(row), recursive)
+        gallery.openFolder(path, recursive, filter, sort)
         grid.positionViewAtBeginning()
+        filterBox.currentIndex = filterBox.indexOfValue(filter)
+        sortBox.currentIndex = sortBox.indexOfValue(sort)
+        settings.setSession("folder", path)
+        settings.setSession("recursive", String(recursive))
+        settings.setSession("filter", filter)
+        settings.setSession("sort", sort)
+    }
+
+    // Open a folder by path, showing it in the tree (its parents expanded).
+    function goTo(path) {
+        const row = folders.reveal(path)
+        tree.currentIndex = Math.max(row, 0)
+        if (row >= 0)
+            tree.positionViewAtIndex(row, ListView.Contain)
+        openPath(row >= 0 ? path : "")
+    }
+
+    function applyView(name) {
+        const v = settings.view(name)
+        if (v.filter === undefined)
+            return
+        recursive = v.recursive
+        filter = v.filter
+        sort = v.sort
+        goTo(v.folder)
+        grid.forceActiveFocus()
     }
 
     function select(i) {
@@ -142,6 +198,7 @@ ApplicationWindow {
         else if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter || e.key === Qt.Key_Space) && current >= 0)
             viewer.show(current)
         else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5 && current >= 0) gallery.setRating(current, e.key - Qt.Key_0)
+        else if (e.key === Qt.Key_R && current >= 0) gallery.rotate(current, e.modifiers & Qt.ShiftModifier ? 1 : -1)
         else return
         e.accepted = true
     }
@@ -171,7 +228,83 @@ ApplicationWindow {
                 checked: win.recursive
                 onToggled: {
                     win.recursive = checked
-                    gallery.openFolder(gallery.folder, checked)
+                    win.openPath(gallery.folder)
+                }
+            }
+            ComboBox {
+                id: filterBox
+                textRole: "text"
+                valueRole: "key"
+                model: [
+                    { key: "all", text: "All ratings" },
+                    { key: "unrated", text: Ratings.symbol(0) + " Unrated" },
+                    { key: "rated", text: "Rated" },
+                    { key: "1", text: Ratings.symbol(1) + " 1 star" },
+                    { key: "2", text: Ratings.symbol(2) + " 2 stars" },
+                    { key: "3", text: Ratings.symbol(3) + " 3 stars" },
+                    { key: "4", text: Ratings.symbol(4) + " 4 stars" },
+                    { key: "5", text: Ratings.symbol(5) + " 5 stars" },
+                ]
+                onActivated: {
+                    win.filter = currentValue
+                    win.openPath(gallery.folder)
+                    grid.forceActiveFocus()
+                }
+                Layout.preferredWidth: 140
+            }
+            ComboBox {
+                id: sortBox
+                textRole: "text"
+                valueRole: "key"
+                model: [
+                    { key: "name", text: "By name" },
+                    { key: "size", text: "Largest first" },
+                    { key: "date", text: "Newest first" },
+                ]
+                onActivated: {
+                    win.sort = currentValue
+                    win.openPath(gallery.folder)
+                    grid.forceActiveFocus()
+                }
+                Layout.preferredWidth: 140
+            }
+            // Saved views (ImageRater's bookmarks): a folder with its subfolders, filter and sort, by name.
+            Button {
+                id: viewsButton
+                text: "Views ▾"
+                onClicked: viewsMenu.popup(viewsButton, 0, viewsButton.height)
+                Menu {
+                    id: viewsMenu
+                    Instantiator {
+                        model: settings.views
+                        delegate: MenuItem {
+                            required property string modelData
+                            text: modelData
+                            onTriggered: win.applyView(modelData)
+                        }
+                        onObjectAdded: (i, o) => viewsMenu.insertItem(i, o)
+                        onObjectRemoved: (i, o) => viewsMenu.removeItem(o)
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: "Save current view…"
+                        onTriggered: saveViewDialog.open()
+                    }
+                    Menu {
+                        id: deleteMenu
+                        title: "Delete view"
+                        enabled: settings.views.length > 0
+                        Instantiator {
+                            model: settings.views
+                            delegate: MenuItem {
+                                required property string modelData
+                                text: modelData
+                                onTriggered: settings.deleteView(modelData)
+                            }
+                            onObjectAdded: (i, o) => deleteMenu.insertItem(i, o)
+                            onObjectRemoved: (i, o) => deleteMenu.removeItem(o)
+                        }
+                    }
                 }
             }
             Item { Layout.fillWidth: true }
@@ -205,8 +338,18 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 elide: Text.ElideMiddle
                 color: "#aaaaaa"
-                text: gallery.revision >= 0 && win.current >= 0 ? gallery.info(win.current)
-                    : "Click to select · double-click or Enter to view · 0–5 rate · arrows move · Ctrl+wheel or Ctrl +/− resize"
+                text: gallery.revision >= 0 && win.current >= 0
+                    ? gallery.info(win.current) + "   " + (gallery.rating(win.current) > 0 ? Ratings.symbol(gallery.rating(win.current)) : "")
+                    : "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move"
+                      + " · Ctrl+wheel or Ctrl +/− resize"
+            }
+            // Ratings and turns on their way into the files, or why they aren't.
+            Label {
+                visible: library.writeStatus.length > 0
+                text: library.writeStatus
+                color: library.writeStatus.indexOf(":") >= 0 ? "#e0a050" : "#aaaaaa"
+                elide: Text.ElideMiddle
+                Layout.maximumWidth: 500
             }
             // The latest error or note from the background job; click to dismiss.
             Label {
@@ -327,14 +470,16 @@ ApplicationWindow {
                                 id: cell
                                 required property int index
                                 readonly property int item: rowItem.firstItem + index
-                                readonly property double fid: gallery.fileId(item)
+                                // Changes when the file is rewritten or turned (gallery.imageKey).
+                                readonly property string key: gallery.revision >= 0 ? gallery.imageKey(item) : ""
+                                readonly property int rating: gallery.revision >= 0 ? gallery.rating(item) : 0
                                 width: gallery.aspect(item) * rowItem.rowHeight
                                 height: rowItem.rowHeight
 
                                 // ThumbHash placeholder (from the import) until the thumbnail arrives.
                                 Image {
                                     anchors.fill: parent
-                                    source: "image://thumbhash/" + cell.fid
+                                    source: "image://thumbhash/" + cell.key
                                     asynchronous: true
                                     smooth: true
                                     visible: thumb.status !== Image.Ready
@@ -345,7 +490,7 @@ ApplicationWindow {
                                     // Files not imported yet have no size: their cell is square until they are.
                                     fillMode: Image.PreserveAspectCrop
                                     clip: true
-                                    source: "image://thumb/" + cell.fid + "/" + win.thumbHeight
+                                    source: "image://thumb/" + cell.key + "/" + win.thumbHeight
                                     asynchronous: true
                                     retainWhileLoading: true
                                     smooth: true
@@ -364,11 +509,11 @@ ApplicationWindow {
                                     anchors.left: parent.left
                                     anchors.bottom: parent.bottom
                                     anchors.margins: 4
-                                    text: "★".repeat(gallery.revision >= 0 ? gallery.rating(cell.item) : 0)
-                                    color: "#ffd24a"
+                                    visible: cell.rating > 0
+                                    text: Ratings.symbol(cell.rating)
                                     style: Text.Outline
                                     styleColor: "black"
-                                    font.pixelSize: 14
+                                    font.pixelSize: 16
                                 }
                                 MouseArea {
                                     anchors.fill: parent
@@ -399,6 +544,8 @@ ApplicationWindow {
         id: viewer
         anchors.fill: parent
         gallery: gallery
+        settings: settings
+        onIndexChanged: sessionTimer.restart()
         onClosed: (i) => {
             win.select(i)
             if (win.refreshPending) {
@@ -458,6 +605,14 @@ ApplicationWindow {
                         color: "#888888"
                     }
                 }
+                CheckBox {
+                    text: "Write ratings and turns into the files too (where the format allows)"
+                    checked: settings.writeBack
+                    onToggled: settings.writeBack = checked
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Ratings are always kept in the catalog. With this on, they also go into the image "
+                        + "files (XMP), so other programs see them; turns rotate the files losslessly."
+                }
                 RowLayout {
                     Button { text: "Add folder…"; onClicked: folderDialog.open() }
                     Button {
@@ -477,11 +632,43 @@ ApplicationWindow {
         title: "Add a folder to the library"
         onAccepted: library.addFolder(selectedFolder)
     }
+
+    Dialog {
+        id: saveViewDialog
+        title: "Save the current view"
+        anchors.centerIn: parent
+        modal: true
+        standardButtons: Dialog.Save | Dialog.Cancel
+        onAboutToShow: {
+            viewName.text = ""
+            viewName.forceActiveFocus()
+        }
+        onAccepted: if (viewName.text.trim().length)
+            settings.saveView(viewName.text, gallery.folder, win.recursive, win.filter, win.sort)
+        onClosed: grid.forceActiveFocus()
+        ColumnLayout {
+            Label {
+                text: (gallery.folder.length ? gallery.folder : "All folders") + (win.recursive ? " and subfolders" : "")
+                    + " · " + filterBox.currentText + " · " + sortBox.currentText
+                color: "#999999"
+            }
+            TextField {
+                id: viewName
+                placeholderText: "Name (one already saved is replaced)"
+                Layout.preferredWidth: 400
+                onAccepted: saveViewDialog.accept()
+            }
+        }
+    }
     }
 
     // Test hooks, for checking the UI without a person at the screen:
     //   --size=<px>  row height   --select=<n>  select item n   --view=<n>  open item n in the viewer
-    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame)   --library=1  open the library folders
+    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame); also H (zen), + (zoom in), 1 (1:1), < > (turn left,
+    //                         right), digits after "r" rate
+    //   --zoom=<factor>  zoom the viewer to this many device px per image px
+    //   --menu=views  open the views menu   --apply-view=<name>  open a saved view
+    //   --library=1  open the library folders
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
     //   --screenshot=<png>  save the window after 4 s (or --wait=<s>) and quit
     function arg(name) {
@@ -489,6 +676,11 @@ ApplicationWindow {
             if (a.startsWith("--" + name + "="))
                 return a.substring(name.length + 3)
         return ""
+    }
+    Timer {
+        id: menuTimer
+        interval: 500
+        onTriggered: viewsButton.clicked()
     }
     Timer {
         id: shotTimer
@@ -500,15 +692,35 @@ ApplicationWindow {
     }
 
     Component.onCompleted: {
-        openFolder(0)
+        // Where the user was.
+        recursive = settings.session("recursive", "true") === "true"
+        filter = settings.session("filter", "all")
+        sort = settings.session("sort", "name")
+        goTo(settings.session("folder", ""))
         relayout()
+        const last = gallery.indexOf(Number(settings.session("file", "-1")))
+        if (last >= 0) select(last)
+
         if (arg("size")) setSize(Number(arg("size")))
         if (arg("select")) select(Number(arg("select")))
         if (arg("view")) {
             viewer.show(Number(arg("view")))
-            for (const k of arg("viewer-keys"))
-                viewer[{ L: "loupe", B: "frame", Z: "actual" }[k]] = true
+            const keys = arg("viewer-keys")
+            for (let k = 0; k < keys.length; k++) {
+                const c = keys[k]
+                if (c === "L") viewer.loupe = true
+                else if (c === "B") viewer.frame = true
+                else if (c === "H") viewer.zen = true
+                else if (c === "+") viewer.setZoom(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2)
+                else if (c === "1") viewer.setZoom(1, viewer.width / 2, viewer.height / 2)
+                else if (c === "<") viewer.turn(-1)
+                else if (c === ">") viewer.turn(1)
+                else if (c === "r" && k + 1 < keys.length) viewer.rate(Number(keys[++k]))
+            }
+            if (arg("zoom")) viewer.setZoom(Number(arg("zoom")), viewer.width / 2, viewer.height / 2)
         }
+        if (arg("apply-view")) applyView(arg("apply-view"))
+        if (arg("menu") === "views") menuTimer.start()
         if (arg("library")) libraryPanel.visible = true
         if (arg("screenshot")) shotTimer.start()
         library.start(thumbHeight)

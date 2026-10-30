@@ -38,7 +38,7 @@ pub fn long_path(path: &str) -> String {
     if path.len() < 240 || path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}") }
 }
 
-/// Read `paths[i]`, run `process` on its bytes (with per-worker state from `init`), and call `sink(i, result,
+/// Read `paths[i]`, run `process(state, i, bytes)` (with per-worker state from `init`), and call `sink(i, result,
 /// bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on `ctl`, and
 /// reading waits while `ctl` is paused.
 pub fn run<S, R>(
@@ -46,7 +46,7 @@ pub fn run<S, R>(
     opts: &Options,
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
-    process: impl Fn(&mut S, &[u8]) -> Result<R> + Sync,
+    process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
     mut sink: impl FnMut(usize, Result<R>, usize) -> Result<bool>,
 ) -> Result<()>
 where
@@ -88,7 +88,7 @@ where
                 };
                 for (i, bytes) in raw_rx {
                     let (out, len) = match bytes {
-                        Ok(b) => (process(&mut state, &b), b.len()),
+                        Ok(b) => (process(&mut state, i, &b), b.len()),
                         Err(e) => (Err(anyhow::Error::new(e).context("read")), 0),
                     };
                     if res_tx.send((i, out, len)).is_err() {

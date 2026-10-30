@@ -22,7 +22,7 @@ fn main() -> anyhow::Result<()> {
         let _ = pg_core::decode::exif_orientation(b);
         t[1] += s.elapsed();
         let s = Instant::now();
-        let d = dec.decode(b, MinSize::Sides(512, 320))?;
+        let d = dec.decode(b, MinSize::Sides(512, 320), 0)?;
         t[2] += s.elapsed();
         let s = Instant::now();
         let _ = analyze::pixel_hash(&d.image);
@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
         let _ = pdq::hash_rgb_dihedral(&img.pixels, img.width, img.height);
         t[5] += s.elapsed();
         let s = Instant::now();
-        let _ = analyze::analyze(b, &mut dec)?;
+        let _ = analyze::analyze(b, 0, &mut dec)?;
         t[6] += s.elapsed();
     }
     for (name, d) in ["blake3", "exif", "decode", "pixel hash", "resize 512", "pdq", "analyze total"].iter().zip(t) {

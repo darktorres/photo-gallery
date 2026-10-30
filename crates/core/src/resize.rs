@@ -38,6 +38,23 @@ pub fn to_height(img: &Rgb, height: usize) -> Option<Rgb> {
     Some(resize(img, w, height))
 }
 
+/// A region of the image (in its pixels; fractional edges are exact) resampled to `width × height`: the viewer's
+/// zoom between fit and 1:1 renders only what is on screen.
+pub fn resize_region(img: &Rgb, region: (f64, f64, f64, f64), width: usize, height: usize) -> Rgb {
+    let src = ImageRef::new(img.width as u32, img.height as u32, &img.pixels, PixelType::U8x3)
+        .expect("buffer matches its size");
+    let mut dst = Image::new(width.max(1) as u32, height.max(1) as u32, PixelType::U8x3);
+    let (x, y, w, h) = region;
+    let options = ResizeOptions::new().resize_alg(ResizeAlg::Convolution(FilterType::Lanczos3)).crop(
+        x,
+        y,
+        w.max(1.0),
+        h.max(1.0),
+    );
+    Resizer::new().resize(&src, &mut dst, &options).expect("same pixel type");
+    Rgb { width: width.max(1), height: height.max(1), pixels: dst.into_vec() }
+}
+
 pub fn resize(img: &Rgb, width: usize, height: usize) -> Rgb {
     let src = ImageRef::new(img.width as u32, img.height as u32, &img.pixels, PixelType::U8x3)
         .expect("buffer matches its size");

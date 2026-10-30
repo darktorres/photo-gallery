@@ -271,6 +271,19 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   pause. A new folder, a rescan or a new grid size interrupts the pass in progress, which resumes from the
   catalog. The same passes are commands of the same exe (`gallery import`, …) for scripts and profiling.
   Part of M4 is therefore done; still open there are throttling while the UI is in use, and the 70M scale.
+- **ImageRater's features (user request, 2026-10-30):** ported as features, not code, and without Everything.
+  Rating bar with ImageRater's symbols, rate-and-advance with a popup, ↑/↓ shortcuts, filters (unrated, rated,
+  1–5) and sorts (largest, newest) in SQL, saved views, the last place restored at start, continuous zoom
+  (Lanczos region renders between fit and 1:1, nearest neighbour above), Real Size, zen mode, swipes, ±4
+  preloading. Ratings are written back into the files (XMP via ExifTool, queued and in place) for every format
+  that holds XMP, and read from them at import with a three-way sync. Turns are lossless and in the pixels where
+  the format allows. Usage in `crates/README.md`. Reverse image search (Yandex) is deferred: its results must
+  show inside the app, to be designed separately.
+- **Schema:** one baseline until the first release (pre-release changes edit it; older catalogs are refused
+  with "delete it and re-import"). The migration loop exists, tested with a synthetic step, with no
+  migrations yet; the first catalog worth keeping (M4 at the latest) starts real ones.
+- **Open for M4:** the grid loads the whole result list (filtered and sorted in SQL) into memory. That is fine
+  per folder, but "All folders" at 70M needs the paged model of §7.
 
 ### M3 — Near-duplicates
 
@@ -290,7 +303,8 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - A pix-plot-style 2D map (UMAP).
 - Format conversions (ImageReduce; GIF→WebP/WebM; JPEG XL/jpegli).
 - gallery-dl / Grabber integration.
-- Writing ratings back to XMP where the format supports it.
+- Reverse image search with the results shown in the app (ImageRater opened Yandex in a browser).
+- Rating from a phone (ImageRater was a web app on the LAN): a small triage page served by `gallery.exe`.
 
 ---
 

@@ -7,6 +7,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# kamadak-exif's library is named `exif`, which cargo-machete doesn't know without `--with-metadata`.
+[package.metadata.cargo-machete]
+ignored = ["kamadak-exif"]
+
 [dependencies]
 anyhow.workspace = true
 fast_image_resize.workspace = true

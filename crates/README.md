@@ -31,6 +31,10 @@ release Qt too) reads the QML from `crates\ui\qml` instead of the copy compiled 
 whenever a file there changes, where it was: QML edits show without a rebuild. QML errors go to the debugger
 output unless `QT_FORCE_STDERR_LOGGING=1` is set.
 
+Dependency checks (`cargo binstall cargo-deny cargo-machete` once): `cargo deny check` for advisories,
+licenses (the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and
+`pg-ingest`; `cargo machete` for unused dependencies.
+
 ## Run
 
 The catalog lives in `D:\PhotoGallery\catalog` (`PG_CATALOG_DIR`, or `--catalog-dir` on the command line, to

@@ -10,7 +10,6 @@ workspace = true
 [dependencies]
 pg-core = { path = "../core" }
 anyhow.workspace = true
-blake3.workspace = true
 clap.workspace = true
 crossbeam-channel.workspace = true
 rusqlite.workspace = true

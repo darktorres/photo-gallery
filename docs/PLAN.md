@@ -327,8 +327,12 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 1. ~~**Thumbnail size**~~ **Decided 2026-10-30:** no fixed size. Thumbnails are a background task after the
    import, at a size adjustable at runtime, in a size-capped cache (§6). Open: the cache format and its cap.
-2. **What runs in the first full pass:** SSCD only, or SSCD plus a semantic model (CLIP/SigLIP) so keywords and
-   semantic search never need a second pass. A semantic model would roughly double GPU time.
+2. ~~**What runs in the first full pass**~~ **Decided 2026-10-30:** SSCD plus a semantic model, **SigLIP 2
+   So400m/16 NaFlex** (native aspect ratio, 256 patches; TensorRT fp16), so keywords and semantic search need no
+   second decode of the originals. Cost: ~154 GPU hours for 70M (~6.4 days), so the GPU, not decoding (~1.5 days),
+   becomes the limit of that pass. NaFlex needs only ~208 × 304 px at 256 patches, so it can also run as a
+   background GPU task on the import's downscaled working image instead of holding up the import (FINDINGS: "A
+   second model" and "NaFlex").
 3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). M0
    measures this.
 4. **Heavy crops:** if M0 shows SSCD misses small crops, consider region embeddings for reference images. That

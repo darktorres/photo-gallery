@@ -66,9 +66,10 @@ enum Command {
         /// Grid row height in device pixels; any value, chosen at runtime.
         #[arg(long)]
         height: u32,
-        /// Cache size limit.
-        #[arg(long, default_value_t = 50.0)]
-        cap_gb: f64,
+        /// Set the cache's size limit, kept in the cache: the app keeps to it too. Without it, the limit stays as it
+        /// is (50 GB for a new cache).
+        #[arg(long)]
+        cap_gb: Option<f64>,
         #[command(flatten)]
         pipeline: PipelineArgs,
         /// Run at normal CPU priority instead of idle.
@@ -162,15 +163,16 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { THREAD_PRIORITY_NORMAL } else { THREAD_PRIORITY_IDLE });
-            let cache = ThumbCache::open(&cli.catalog_dir, (cap_gb * 1e9) as i64, report())?;
+            let cache = ThumbCache::open(&cli.catalog_dir, cap_gb.map(|gb| (gb * 1e9) as i64), report())?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
             cache.flush();
             println!(
-                "{} thumbnails at {height} px ({} failed){}; cache {:.2} GB, {:.1} s",
+                "{} thumbnails at {height} px ({} failed){}; cache {:.2} of {:.2} GB, {:.1} s",
                 s.made,
                 s.failed,
                 if s.cache_full { ", stopped: cache full" } else { "" },
                 cache.totals()?.0 as f64 / 1e9,
+                cache.cap()? as f64 / 1e9,
                 start.elapsed().as_secs_f64()
             );
         }
@@ -184,10 +186,13 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 s.files, s.missing, s.analyzed, s.failed, s.pending, s.pdq_pairs
             );
             println!("{} changes to write into files ({} failing)", s.queued_writes, s.failed_writes);
-            match ThumbCache::read_totals(&cli.catalog_dir)? {
-                Some((bytes, thumbnails)) => {
-                    println!("thumbnail cache: {thumbnails} thumbnails, {:.2} GB", bytes as f64 / 1e9)
-                }
+            match ThumbCache::read_usage(&cli.catalog_dir)? {
+                Some(u) => println!(
+                    "thumbnail cache: {} thumbnails, {:.2} of {:.2} GB",
+                    u.count,
+                    u.bytes as f64 / 1e9,
+                    u.cap as f64 / 1e9
+                ),
                 None => println!("thumbnail cache: none yet"),
             }
             let mut errors = catalog.conn.prepare("SELECT error FROM file_writes WHERE error IS NOT NULL LIMIT 5")?;
@@ -196,9 +201,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             }
         }
         Command::Write => {
-            // Only retagged here (never filled), so the cap doesn't matter.
-            let cache: &'static ThumbCache =
-                Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, (50.0 * 1e9) as i64, report())?));
+            // Only retagged here (never filled): the cap stays as it is.
+            let cache: &'static ThumbCache = Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, None, report())?));
             let writer = Writer::start(catalog_path.clone(), cache, || {});
             writer.wake();
             // Until nothing writable is left (failures past their retries stay queued and are reported).

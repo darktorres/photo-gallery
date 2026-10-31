@@ -3,8 +3,9 @@
 //! (file, height), so changing it only means new entries, and old heights age out.
 //!
 //! The cache is a separate SQLite file (one packed file instead of millions of loose ones), capped in bytes. The
-//! background task fills it up to the cap and may evict other heights to make room for the current one; on-demand
-//! requests evict the least recently used entries of any height.
+//! cap is kept in the file, so every process that writes it (the app, `gallery thumbs`) keeps it to the same one;
+//! `open` changes it when asked. The background task fills it up to the cap and may evict other heights to make
+//! room for the current one; on-demand requests evict the least recently used entries of any height.
 //!
 //! The layout keeps every scan off the pixels (FINDINGS "Startup"): the entries (a few dozen bytes each) and the
 //! JPEGs are separate tables, so the entries pack densely while the JPEGs stay in their own pages, and the totals
@@ -92,13 +93,17 @@ pub struct ThumbWork {
     pub poster_ms: Option<i64>,
 }
 
-/// The cache's layout version. It is in the file's name, so builds of different layouts never share (or wipe)
-/// one file; a file of another version is deleted, never migrated: it is a cache.
-pub const CACHE_VERSION: i64 = 3;
+/// The cache's layout version (`PRAGMA user_version`). Before the first release, layout changes edit `SCHEMA` in
+/// place and it stays 1: an existing cache file is deleted by hand, like the catalog. A file of another version is
+/// refused (the cache is then disabled), never migrated.
+pub const CACHE_VERSION: i64 = 1;
+
+/// The cap of a new cache, until one is set (`ThumbCache::open`).
+pub const DEFAULT_CAP_BYTES: i64 = 50_000_000_000;
 
 /// The cache file in the catalog folder.
 pub fn cache_path(dir: &Path) -> PathBuf {
-    dir.join(format!("thumbs-v{CACHE_VERSION}.sqlite"))
+    dir.join("thumbs.sqlite")
 }
 
 /// A hit not touched for this long is touched again: least recently used to the hour, which is what eviction
@@ -142,6 +147,10 @@ CREATE TABLE totals(
     bytes INTEGER NOT NULL,
     count INTEGER NOT NULL);
 INSERT INTO totals VALUES (1, 0, 0);
+-- The size limit, in bytes, for every process that writes the file (the row is made with the file).
+CREATE TABLE limits(
+    one INTEGER PRIMARY KEY CHECK (one = 1),
+    cap INTEGER NOT NULL);
 CREATE TRIGGER entries_added AFTER INSERT ON entries BEGIN
     UPDATE totals SET bytes = bytes + new.bytes, count = count + 1;
 END;
@@ -161,6 +170,14 @@ const CONNECTION_PRAGMAS: &str =
 /// Where the writer's own failures go (an on-demand put, touches): nothing waits for those, and the thumbnail was
 /// shown anyway.
 pub type Report = Box<dyn Fn(&anyhow::Error) + Send>;
+
+/// What a cache holds (bytes, entries) and may hold (`cap`, bytes).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Usage {
+    pub bytes: i64,
+    pub count: i64,
+    pub cap: i64,
+}
 
 /// The totals as they were and as the entries have them, when `heal` had to fix them: (bytes, count) each.
 pub type Drift = ((i64, i64), (i64, i64));
@@ -200,18 +217,21 @@ enum Op {
 }
 
 impl ThumbCache {
-    /// Open (or create) the cache in the catalog folder `dir`, capped at `cap_bytes`, and start its writer. The
-    /// writer first deletes the files of other cache versions there (one still open elsewhere is left for the next
-    /// start).
-    pub fn open(dir: &Path, cap_bytes: i64, report: Report) -> Result<ThumbCache> {
+    /// Open (or create) the cache in the catalog folder `dir` and start its writer. With `cap_bytes`, that is the
+    /// cache's cap from now on, for every process (one far over it comes down at the next write); without, the cap
+    /// stays as it is (`DEFAULT_CAP_BYTES` for a new cache).
+    pub fn open(dir: &Path, cap_bytes: Option<i64>, report: Report) -> Result<ThumbCache> {
+        if let Some(cap) = cap_bytes
+            && cap < 0
+        {
+            bail!("a thumbnail cache cap of {cap} bytes");
+        }
         let path = cache_path(dir);
-        let conn = open_writer(&path)?;
-        let dir = dir.to_path_buf();
+        let conn = open_writer(&path, cap_bytes)?;
         let (ops, inbox) = mpsc::channel();
-        let writer = std::thread::Builder::new().name("thumbnail cache".into()).spawn(move || {
-            delete_other_versions(&dir);
-            write_loop(conn, cap_bytes, inbox, &report);
-        })?;
+        let writer = std::thread::Builder::new()
+            .name("thumbnail cache".into())
+            .spawn(move || write_loop(conn, inbox, &report))?;
         Ok(ThumbCache { store: Some(Store { path, ops: Mutex::new(Some(ops)), writer: Mutex::new(Some(writer)) }) })
     }
 
@@ -286,15 +306,23 @@ impl ThumbCache {
         answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
     }
 
-    /// Bytes and entries in the cache in the catalog folder `dir`, read without opening it for writing (nothing
+    /// What the cache in the catalog folder `dir` holds and may hold, read without opening it for writing (nothing
     /// created, nothing deleted); none if there is no cache file.
-    pub fn read_totals(dir: &Path) -> Result<Option<(i64, i64)>> {
+    pub fn read_usage(dir: &Path) -> Result<Option<Usage>> {
         let path = cache_path(dir);
         if !path.exists() {
             return Ok(None);
         }
         let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
-        Ok(Some(conn.query_row("SELECT bytes, count FROM totals", [], |r| Ok((r.get(0)?, r.get(1)?)))?))
+        Ok(Some(conn.query_row("SELECT t.bytes, t.count, l.cap FROM totals t, limits l", [], |r| {
+            Ok(Usage { bytes: r.get(0)?, count: r.get(1)?, cap: r.get(2)? })
+        })?))
+    }
+
+    /// The cap, as the file has it now (another process may have changed it).
+    pub fn cap(&self) -> Result<i64> {
+        let Some(store) = &self.store else { return Ok(0) };
+        with_reader(&store.path, |conn| Ok(conn.query_row("SELECT cap FROM limits", [], |r| r.get(0))?))
     }
 
     /// Bytes and entries in the cache.
@@ -382,8 +410,8 @@ fn unix_now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
-/// The writer's connection, with the layout created in a new file.
-fn open_writer(path: &Path) -> Result<Connection> {
+/// The writer's connection, with the layout created in a new file, and the cap set if one is given.
+fn open_writer(path: &Path, cap_bytes: Option<i64>) -> Result<Connection> {
     let mut conn = Connection::open(path)?;
     // auto_vacuum must be set before the first table exists.
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
@@ -394,31 +422,18 @@ fn open_writer(path: &Path) -> Result<Connection> {
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if version(&tx)? == 0 {
             tx.execute_batch(&format!("{SCHEMA} PRAGMA user_version = {CACHE_VERSION};"))?;
+            tx.execute("INSERT INTO limits VALUES (1, ?1)", [cap_bytes.unwrap_or(DEFAULT_CAP_BYTES)])?;
         }
         tx.commit()?;
     }
-    match version(&conn)? {
-        CACHE_VERSION => Ok(conn),
-        v => bail!("{}: layout version {v}, expected {CACHE_VERSION}", path.display()),
+    let v = version(&conn)?;
+    if v != CACHE_VERSION {
+        bail!("{}: layout version {v}, expected {CACHE_VERSION}; it is only a cache: delete it", path.display());
     }
-}
-
-/// Delete the cache files of other versions in `dir` (`thumbs.sqlite` before versions were in the name,
-/// `thumbs-vN.sqlite`), with their WAL and shared memory; a file open in another process stays until a later start.
-fn delete_other_versions(dir: &Path) {
-    let ours = format!("thumbs-v{CACHE_VERSION}.sqlite");
-    for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
-        let name = entry.file_name().to_string_lossy().into_owned();
-        let base = ["-wal", "-shm", "-journal"].iter().find_map(|s| name.strip_suffix(s)).unwrap_or(&name);
-        let is_cache = base == "thumbs.sqlite"
-            || base
-                .strip_prefix("thumbs-v")
-                .and_then(|v| v.strip_suffix(".sqlite"))
-                .is_some_and(|v| !v.is_empty() && v.bytes().all(|b| b.is_ascii_digit()));
-        if is_cache && base != ours {
-            let _ = std::fs::remove_file(entry.path());
-        }
+    if let Some(cap) = cap_bytes {
+        conn.execute("UPDATE limits SET cap = ?1", [cap])?;
     }
+    Ok(conn)
 }
 
 thread_local! {
@@ -490,7 +505,7 @@ impl Touches {
     }
 }
 
-fn write_loop(mut conn: Connection, cap_bytes: i64, inbox: Receiver<Op>, report: &Report) {
+fn write_loop(mut conn: Connection, inbox: Receiver<Op>, report: &Report) {
     let report_touches = |r: Result<()>| {
         if let Err(e) = r {
             report(&e.context("thumbnail cache: touches not written yet"));
@@ -516,7 +531,7 @@ fn write_loop(mut conn: Connection, cap_bytes: i64, inbox: Receiver<Op>, report:
                 touches.since.get_or_insert_with(Instant::now);
             }
             Some(Op::Put { thumbs, keep_height, reply }) => {
-                let stored = put(&mut conn, cap_bytes, &thumbs, keep_height, &mut touches);
+                let stored = put(&mut conn, &thumbs, keep_height, &mut touches);
                 match reply {
                     Some(reply) => {
                         let _ = reply.send(stored);
@@ -553,21 +568,15 @@ fn write_loop(mut conn: Connection, cap_bytes: i64, inbox: Receiver<Op>, report:
     report_touches(touches.flush(&mut conn));
 }
 
-/// Store `thumbs` in one IMMEDIATE transaction: drop the entries they replace, read the total, evict what's
-/// needed, then write. Reading and writing in one write transaction is what keeps two writers (the app and
+/// Store `thumbs` in one IMMEDIATE transaction: drop the entries they replace, read the total and the cap, evict
+/// what's needed, then write. Reading and writing in one write transaction is what keeps two writers (the app and
 /// `gallery thumbs`) from both seeing room for their batch, and from failing with SQLITE_BUSY_SNAPSHOT. Dropping
 /// the replaced entries first keeps eviction from counting them twice (replaced, then evicted).
-fn put(
-    conn: &mut Connection,
-    cap_bytes: i64,
-    thumbs: &[Thumb],
-    keep_height: Option<u32>,
-    touches: &mut Touches,
-) -> Result<bool> {
+fn put(conn: &mut Connection, thumbs: &[Thumb], keep_height: Option<u32>, touches: &mut Touches) -> Result<bool> {
     let incoming: i64 = thumbs.iter().map(|t| t.data.len() as i64).sum();
     // Far over the cap: down to a slice of it first, a slice per transaction.
     loop {
-        let total: i64 = conn.query_row("SELECT bytes FROM totals", [], |r| r.get(0))?;
+        let (total, cap_bytes) = total_and_cap(conn)?;
         if total + incoming - cap_bytes <= EVICT_SLICE {
             break;
         }
@@ -587,7 +596,7 @@ fn put(
             replaced.execute(params![t.file_id, t.height])?;
         }
     }
-    let total: i64 = tx.query_row("SELECT bytes FROM totals", [], |r| r.get(0))?;
+    let (total, cap_bytes) = total_and_cap(&tx)?;
     let excess = total + incoming - cap_bytes;
     let mut touched = false;
     if excess > 0 {
@@ -628,6 +637,10 @@ fn put(
         touches.clear();
     }
     Ok(true)
+}
+
+fn total_and_cap(conn: &Connection) -> Result<(i64, i64)> {
+    Ok(conn.query_row("SELECT t.bytes, l.cap FROM totals t, limits l", [], |r| Ok((r.get(0)?, r.get(1)?)))?)
 }
 
 /// Delete the least recently used entries, sparing `keep_height`, until `target` bytes are freed or none is left;
@@ -698,7 +711,7 @@ mod tests {
 
     /// A cache whose writer fails the test on any error it can't return.
     fn open(dir: &Path, cap_bytes: i64) -> ThumbCache {
-        ThumbCache::open(dir, cap_bytes, Box::new(|e| panic!("{e:#}"))).unwrap()
+        ThumbCache::open(dir, Some(cap_bytes), Box::new(|e| panic!("{e:#}"))).unwrap()
     }
 
     fn src(mtime: i64) -> Source {
@@ -801,6 +814,26 @@ mod tests {
     }
 
     #[test]
+    fn one_cap_for_every_writer() {
+        let dir = scratch("cap");
+        assert_eq!(ThumbCache::read_usage(&dir).unwrap(), None);
+        let first = ThumbCache::open(&dir, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        assert_eq!(first.cap().unwrap(), DEFAULT_CAP_BYTES, "a new cache");
+        assert!(first.put_batch((0..10).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
+        // Another process sets a lower cap: the first one keeps to it at its next write.
+        let second = open(&dir, 500);
+        assert_eq!(first.cap().unwrap(), 500);
+        assert!(first.put_batch(vec![thumb(20, 80, 1, 100)], Some(80)).unwrap());
+        assert!(first.totals().unwrap().0 <= 500);
+        // Opened without one, the cap stays.
+        drop(second);
+        drop(ThumbCache::open(&dir, None, Box::new(|e| panic!("{e:#}"))).unwrap());
+        let usage = ThumbCache::read_usage(&dir).unwrap().unwrap();
+        assert_eq!((usage.cap, usage.bytes, usage.count), (500, first.totals().unwrap().0, first.totals().unwrap().1));
+        assert!(ThumbCache::open(&dir, Some(-1), Box::new(|_| {})).is_err());
+    }
+
+    #[test]
     fn shrink_gives_pages_back() {
         let dir = scratch("shrink");
         let cache = open(&dir, 1 << 30);
@@ -854,30 +887,22 @@ mod tests {
     }
 
     #[test]
-    fn other_versions_go_this_one_stays() {
-        let dir = scratch("versions");
-        for name in
-            ["thumbs.sqlite", "thumbs.sqlite-wal", "thumbs-v2.sqlite", "thumbs-v2.sqlite-shm", "thumbs-vx.sqlite"]
-        {
-            std::fs::write(dir.join(name), b"old").unwrap();
-        }
+    fn reopened_it_keeps_what_it_held() {
+        let dir = scratch("reopen");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
-        // The deletion runs in the background.
-        let deadline = Instant::now() + Duration::from_secs(5);
-        while dir.join("thumbs.sqlite").exists() && Instant::now() < deadline {
-            std::thread::sleep(Duration::from_millis(20));
-        }
-        std::thread::sleep(Duration::from_millis(100));
-        for gone in ["thumbs.sqlite", "thumbs.sqlite-wal", "thumbs-v2.sqlite", "thumbs-v2.sqlite-shm"] {
-            assert!(!dir.join(gone).exists(), "{gone}");
-        }
-        assert!(dir.join("thumbs-vx.sqlite").exists(), "not a cache name");
         drop(cache);
-        // Reopened: what was stored is still there.
         let cache = open(&dir, 1 << 30);
         assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_some());
         assert_eq!(cache.totals().unwrap(), (10, 1));
+    }
+
+    #[test]
+    fn another_layout_is_refused() {
+        let dir = scratch("layout");
+        Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
+        let e = ThumbCache::open(&dir, None, Box::new(|_| {})).err().expect("refused");
+        assert!(format!("{e:#}").contains("layout version 7"), "{e:#}");
     }
 
     #[test]

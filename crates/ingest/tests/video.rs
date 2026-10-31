@@ -206,7 +206,7 @@ fn videos() {
         .unwrap();
     assert_eq!(taken, Some(local));
 
-    let cache = ThumbCache::open(&dir, 1 << 30, Box::new(|e| panic!("{e:#}"))).unwrap();
+    let cache = ThumbCache::open(&dir, Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap();
     let made = thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }

@@ -30,7 +30,7 @@ thread_local! {
 
 /// Opens (and migrates) the catalog, as this thread's connection, and the thumbnail cache. Call once, on the GUI
 /// thread, before the UI starts. A cache that can't be opened only means thumbnails aren't kept.
-pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: i64) -> Result<()> {
+pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
     std::fs::create_dir_all(&catalog_dir)?;
     let catalog_path = catalog_dir.join("catalog.sqlite");
     let catalog = Catalog::open(&catalog_path)?;

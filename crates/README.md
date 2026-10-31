@@ -106,8 +106,9 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
   where the last one stopped, and redoes files whose size or mtime changed.
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
-  (`thumbs-v3.sqlite`, the layout's version in the name) is keyed by (file, height) and capped (`--cap-gb`,
-  default 50; `PG_THUMB_CAP_GB` for the app). The background job (or `gallery thumbs`) fills it at idle CPU
+  (`thumbs.sqlite`) is keyed by (file, height) and capped. The cap is kept
+  in the cache, so the app and `gallery thumbs` keep to the same one: 50 GB for a new cache, changed by
+  `gallery thumbs --cap-gb` or the app's `PG_THUMB_CAP_GB`, and shown by `gallery status`. The background job (or `gallery thumbs`) fills it at idle CPU
   priority for the grid's current height, evicting only other heights, and starts over when the size changes.
   The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
   A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB without tone mapping, so
@@ -118,8 +119,9 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
     the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
-  - A cache file of another version is deleted at the start (one still open elsewhere is left for the next),
-    never migrated; one that can't be opened at all only means thumbnails aren't kept.
+  - Its layout version stays 1 before the first release, like the catalog's: a layout change edits it in place,
+    and an existing cache file is deleted by hand. A file of another version is refused, and one that can't be
+    opened only means thumbnails aren't kept.
 - **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
   its children, and adding a subfolder only rescans it. Removing one marks its files missing; adding it back
   restores them with their analysis and ratings.

@@ -7,7 +7,10 @@ use crate::decode::{Decoder, MinSize, Rgb};
 use crate::pdq;
 use crate::resize::fit_within;
 
-/// Bump when anything below changes what is stored; files analyzed by an older version are redone.
+/// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
+/// in place. Not a schema version: bump it when a change below alters what is stored, before the first release too,
+/// since redoing the analyses keeps the library, ratings and views, where deleting the catalog loses them. A
+/// change to the tables instead edits the catalog's baseline in place (`catalog::BASELINE_VERSION` stays 1).
 pub const IMPORT_VERSION: i64 = 1;
 
 /// The JPEG decode keeps at least this many pixels on the upright long side…

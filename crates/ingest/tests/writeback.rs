@@ -99,7 +99,7 @@ fn ratings_and_turns_reach_the_files() {
     assert_eq!(before.len(), files.len());
 
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, 1 << 30, Box::new(|e| panic!("{e:#}"))).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs, || {});
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.

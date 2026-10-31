@@ -50,8 +50,15 @@ fn run_app() {
     let catalog_dir =
         std::env::var_os("PG_CATALOG_DIR").map_or_else(|| PathBuf::from(cli::DEFAULT_CATALOG_DIR), PathBuf::from);
     panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
-    let cap_gb: f64 = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| s.parse().ok()).unwrap_or(50.0);
-    if let Err(e) = state::init(catalog_dir, (cap_gb * 1e9) as i64) {
+    // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
+    let cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match s.parse::<f64>() {
+        Ok(gb) => Some((gb * 1e9) as i64),
+        Err(_) => {
+            eprintln!("PG_THUMB_CAP_GB={s} isn't a number of GB: the thumbnail cache keeps its cap");
+            None
+        }
+    });
+    if let Err(e) = state::init(catalog_dir, cap) {
         fatal(&format!("Can't open the catalog: {e:#}"));
     }
 

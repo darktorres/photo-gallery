@@ -1,6 +1,8 @@
 __pycache__/
 *.pyc
 /target/
+# The JPEG decoder comparison is its own workspace (eval/jpeg-decoders).
+/eval/jpeg-decoders/target/
 # Large outputs live on D:\PhotoGallery, never in the repo.
 *.npy
 # Written by cxx-qt-build on every UI build (points qmlls at target/).

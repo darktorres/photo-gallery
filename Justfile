@@ -35,11 +35,12 @@ fmt:
     cargo fmt --all
 
 # Every check: formatting, clippy, dependencies (cargo-deny, cargo-machete), the Python, the Markdown and the QML.
+# cargo-machete reads only our crates: vendor/ keeps the upstream's lints (vendor/README.md).
 lint: && lint-qml
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo deny check
-    cargo machete
+    cargo machete crates
     ruff check .
     markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
 

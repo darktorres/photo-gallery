@@ -27,7 +27,8 @@ def gradient(width, height, top, bottom):
     draw = ImageDraw.Draw(img)
     for y in range(height):
         t = y / max(height - 1, 1)
-        draw.line([(0, y), (width, y)], fill=tuple(round(a + (b - a) * t) for a, b in zip(top, bottom)) + (255,))
+        rgb = (round(a + (b - a) * t) for a, b in zip(top, bottom, strict=True))
+        draw.line([(0, y), (width, y)], fill=(*rgb, 255))
     return img
 
 

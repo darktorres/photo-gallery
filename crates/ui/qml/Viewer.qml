@@ -5,6 +5,8 @@
 // around the image to reveal black bars. Rating a picture moves on to the next one. Videos play with Qt Multimedia
 // on our FFmpeg; animated GIF, APNG and WebP with our AnimationPlayer (src/animation.rs), into the same
 // VideoOutput. Both are fitted and never enlarged; the poster or first frame shows until the first frame played.
+pragma ComponentBehavior: Bound
+
 import QtMultimedia
 import QtQuick
 import QtQuick.Controls.Fusion
@@ -188,9 +190,9 @@ Rectangle {
     }
 
     WheelHandler {
-        id: wheel
+        id: wheelZoom
         onWheel: (ev) => viewer.setZoom(viewer.zoom * Math.pow(1.25, ev.angleDelta.y / 120),
-                                        wheel.point.position.x, wheel.point.position.y)
+                                        wheelZoom.point.position.x, wheelZoom.point.position.y)
     }
     PinchHandler {
         id: pinch
@@ -249,7 +251,7 @@ Rectangle {
     }
     Timer {
         id: zenTimer
-        interval: Qt.styleHints.mouseDoubleClickInterval
+        interval: Application.styleHints.mouseDoubleClickInterval
         onTriggered: viewer.zen = !viewer.zen
     }
 
@@ -562,6 +564,7 @@ Rectangle {
                 Repeater {
                     model: 6
                     ToolButton {
+                        id: star
                         required property int index
                         text: Ratings.symbol(index)
                         font.pixelSize: 22
@@ -569,11 +572,11 @@ Rectangle {
                         ToolTip.text: index === 0 ? "Unrated (0)" : index + (index === 1 ? " star" : " stars") + " (" + index + ")"
                         background: Rectangle {
                             radius: width / 2
-                            color: parent.hovered ? "#40ffffff" : "transparent"
+                            color: star.hovered ? "#40ffffff" : "transparent"
                             border.color: "#ffd24a"
-                            border.width: viewer.rating === parent.index ? 2 : 0
+                            border.width: viewer.rating === star.index ? 2 : 0
                         }
-                        onClicked: viewer.rate(index)
+                        onClicked: viewer.rate(star.index)
                     }
                 }
                 ToolButton {

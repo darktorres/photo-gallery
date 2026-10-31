@@ -3,7 +3,13 @@ use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 fn main() {
     let mut builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("pg.gallery")
-            .qml_files(["qml/Main.qml", "qml/FilterBar.qml", "qml/Viewer.qml", "qml/WheelScroller.qml", "qml/YandexPanel.qml"])
+            .qml_files([
+                "qml/Main.qml",
+                "qml/FilterBar.qml",
+                "qml/Viewer.qml",
+                "qml/WheelScroller.qml",
+                "qml/YandexPanel.qml",
+            ])
             .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true)),
     )
     .qt_module("Quick")

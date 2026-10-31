@@ -1,5 +1,7 @@
 // Main window: merged folder tree on the left, justified thumbnail grid on the right, viewer on top. The
 // library (folders the user added) is imported by a background job; its progress is in the bottom bar.
+pragma ComponentBehavior: Bound
+
 import QtQml.Models
 import QtQuick
 import QtQuick.Controls.Fusion
@@ -13,7 +15,7 @@ ApplicationWindow {
     width: 1600
     height: 1000
     visible: true
-    title: "Photo Gallery" + (gallery.folder.length ? " — " + gallery.folder : "")
+    title: "Photo Gallery" + (galleryModel.folder.length ? " — " + galleryModel.folder : "")
     color: "#181818"
     palette {
         window: "#202020"
@@ -31,15 +33,15 @@ ApplicationWindow {
         placeholderText: "#777777"
     }
 
-    Settings { id: settings }
+    Settings { id: appSettings }
 
     // The grid's row height in logical px: the thumbnail size, adjustable at any time (slider, Ctrl+wheel,
     // Ctrl +/-). The layout follows it at once; the thumbnails re-requested at the new size follow after a short
     // pause (thumbHeight), and meanwhile the old ones are scaled. Remembered across runs.
-    property real rowHeight: settings.rowHeight
+    property real rowHeight: appSettings.rowHeight
     property int thumbHeight: Math.round(rowHeight * Screen.devicePixelRatio)
     property int current: -1
-    // What the grid shows: the open folder (gallery.folder), with or without subfolders, the files the filter bar
+    // What the grid shows: the open folder (galleryModel.folder), with or without subfolders, the files the filter bar
     // keeps (filterBar.query, a query::Query) in an order (a query::Sort). Remembered across runs, and in saved
     // views.
     property bool recursive: true
@@ -48,13 +50,13 @@ ApplicationWindow {
     readonly property real gap: 4
 
     FolderModel { id: folders }
-    GalleryModel { id: gallery }
+    GalleryModel { id: galleryModel }
     Library {
         id: library
         onScanned: win.reloadAll()
         onImported: win.refreshGrid()
         // Turned files changed in place: no renumbering, so the viewer can stay open.
-        onFilesChanged: gallery.refreshTurned()
+        onFilesChanged: galleryModel.refreshTurned()
     }
     Timer {
         interval: 500
@@ -71,7 +73,7 @@ ApplicationWindow {
         interval: 300
         onTriggered: {
             win.thumbHeight = Math.round(win.rowHeight * Screen.devicePixelRatio)
-            settings.rowHeight = win.rowHeight
+            appSettings.rowHeight = win.rowHeight
         }
     }
     // The selected file, saved once the selection rests.
@@ -80,7 +82,7 @@ ApplicationWindow {
         interval: 1000
         onTriggered: {
             const i = viewer.visible ? viewer.index : win.current
-            settings.setSession("file", String(i >= 0 ? gallery.fileId(i) : -1))
+            appSettings.setSession("file", String(i >= 0 ? galleryModel.fileId(i) : -1))
         }
     }
     onCurrentChanged: sessionTimer.restart()
@@ -108,34 +110,34 @@ ApplicationWindow {
     // and the bar is closed.
     function updateFacets() {
         if (filtersOpen || filterBar.active > 0)
-            filterBar.facets = JSON.parse(gallery.facets(gallery.folder, recursive, JSON.stringify(filterBar.query)))
+            filterBar.facets = JSON.parse(galleryModel.facets(galleryModel.folder, recursive, JSON.stringify(filterBar.query)))
     }
 
     // The filters changed: apply them after a short pause, so typing a number doesn't re-list at every key.
     Timer {
         id: applyTimer
         interval: 300
-        onTriggered: win.openPath(gallery.folder)
+        onTriggered: win.openPath(galleryModel.folder)
     }
     onFiltersOpenChanged: updateFacets()
 
     // The first item of the topmost visible row, to keep the view anchored across relayouts.
     function topItem() {
         const row = grid.indexAt(10, grid.contentY + 1)
-        const del = row >= 0 ? grid.itemAtIndex(row) : null
+        const del = row >= 0 ? grid.itemAtIndex(row) as GridRow : null
         return del ? del.firstItem : -1
     }
 
     function relayout() {
         const anchor = current >= 0 ? current : topItem()
-        gallery.relayout(grid.width, rowHeight, gap)
+        galleryModel.relayout(grid.width, rowHeight, gap)
         if (anchor >= 0)
-            grid.positionViewAtIndex(gallery.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
+            grid.positionViewAtIndex(galleryModel.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
     }
 
     // The folder tree changed (a scan): reload it, keeping the open folder if it still exists.
     function reloadAll() {
-        const path = gallery.folder
+        const path = galleryModel.folder
         folders.reload()
         const row = folders.rowOf(path)
         tree.currentIndex = Math.max(row, 0)
@@ -153,16 +155,16 @@ ApplicationWindow {
         }
         const hadCurrent = current >= 0
         const keep = hadCurrent ? current : topItem()
-        const fid = keep >= 0 ? gallery.fileId(keep) : -1
-        gallery.openFolder(gallery.folder, recursive, JSON.stringify(filterBar.query), JSON.stringify(sort))
+        const fid = keep >= 0 ? galleryModel.fileId(keep) : -1
+        galleryModel.openFolder(galleryModel.folder, recursive, JSON.stringify(filterBar.query), JSON.stringify(sort))
         updateFacets()
-        let i = fid >= 0 ? gallery.indexOf(fid) : -1
+        let i = fid >= 0 ? galleryModel.indexOf(fid) : -1
         // The selected file left the view (rated out of "Unrated"): select what took its place.
-        if (i < 0 && hadCurrent && gallery.count > 0)
-            i = Math.min(keep, gallery.count - 1)
+        if (i < 0 && hadCurrent && galleryModel.count > 0)
+            i = Math.min(keep, galleryModel.count - 1)
         current = hadCurrent ? i : -1
         if (i >= 0)
-            grid.positionViewAtIndex(gallery.rowOf(i), hadCurrent ? ListView.Contain : ListView.Beginning)
+            grid.positionViewAtIndex(galleryModel.rowOf(i), hadCurrent ? ListView.Contain : ListView.Beginning)
     }
 
     function openFolder(row) {
@@ -173,14 +175,14 @@ ApplicationWindow {
     function openPath(path) {
         current = -1
         const query = JSON.stringify(filterBar.query)
-        gallery.openFolder(path, recursive, query, JSON.stringify(sort))
+        galleryModel.openFolder(path, recursive, query, JSON.stringify(sort))
         updateFacets()
         grid.positionViewAtBeginning()
         sortBox.currentIndex = sortBox.indexOfValue(sort.key)
-        settings.setSession("folder", path)
-        settings.setSession("recursive", String(recursive))
-        settings.setSession("query", query)
-        settings.setSession("sort", JSON.stringify(sort))
+        appSettings.setSession("folder", path)
+        appSettings.setSession("recursive", String(recursive))
+        appSettings.setSession("query", query)
+        appSettings.setSession("sort", JSON.stringify(sort))
     }
 
     // Open a folder by path, showing it in the tree (its parents expanded).
@@ -193,7 +195,7 @@ ApplicationWindow {
     }
 
     function applyView(name) {
-        const v = settings.view(name)
+        const v = appSettings.view(name)
         if (v.query === undefined)
             return
         recursive = v.recursive
@@ -207,7 +209,7 @@ ApplicationWindow {
         if (i < 0)
             return
         current = i
-        grid.positionViewAtIndex(gallery.rowOf(i), ListView.Contain)
+        grid.positionViewAtIndex(galleryModel.rowOf(i), ListView.Contain)
     }
 
     function gridKey(e) {
@@ -215,16 +217,16 @@ ApplicationWindow {
         const ctrl = e.modifiers & Qt.ControlModifier
         if (ctrl && (e.key === Qt.Key_Plus || e.key === Qt.Key_Equal)) setSize(rowHeight * 1.15)
         else if (ctrl && e.key === Qt.Key_Minus) setSize(rowHeight / 1.15)
-        else if (e.key === Qt.Key_Left) select(gallery.neighbor(c, -1, 0))
-        else if (e.key === Qt.Key_Right) select(gallery.neighbor(c, 1, 0))
-        else if (e.key === Qt.Key_Up) select(gallery.neighbor(c, 0, -1))
-        else if (e.key === Qt.Key_Down) select(gallery.neighbor(c, 0, 1))
+        else if (e.key === Qt.Key_Left) select(galleryModel.neighbor(c, -1, 0))
+        else if (e.key === Qt.Key_Right) select(galleryModel.neighbor(c, 1, 0))
+        else if (e.key === Qt.Key_Up) select(galleryModel.neighbor(c, 0, -1))
+        else if (e.key === Qt.Key_Down) select(galleryModel.neighbor(c, 0, 1))
         else if (e.key === Qt.Key_Home) select(0)
-        else if (e.key === Qt.Key_End) select(gallery.count - 1)
+        else if (e.key === Qt.Key_End) select(galleryModel.count - 1)
         else if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter || e.key === Qt.Key_Space) && current >= 0)
             viewer.show(current)
-        else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5 && current >= 0) gallery.setRating(current, e.key - Qt.Key_0)
-        else if (e.key === Qt.Key_R && current >= 0) gallery.rotate(current, e.modifiers & Qt.ShiftModifier ? 1 : -1)
+        else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5 && current >= 0) galleryModel.setRating(current, e.key - Qt.Key_0)
+        else if (e.key === Qt.Key_R && current >= 0) galleryModel.rotate(current, e.modifiers & Qt.ShiftModifier ? 1 : -1)
         else if (e.key === Qt.Key_F && !ctrl) filtersOpen = !filtersOpen
         else return
         e.accepted = true
@@ -244,14 +246,14 @@ ApplicationWindow {
             anchors.rightMargin: 8
             spacing: 12
             Label {
-                text: gallery.folder.length ? gallery.folder : "All folders"
+                text: galleryModel.folder.length ? galleryModel.folder : "All folders"
                 font.bold: true
                 elide: Text.ElideMiddle
                 Layout.maximumWidth: 600
             }
             Label {
                 color: "#999999"
-                text: gallery.count.toLocaleString(Qt.locale(), "f", 0)
+                text: galleryModel.count.toLocaleString(Qt.locale(), "f", 0)
                     + (filterBar.active > 0 ? " of " + filterBar.facets.total.toLocaleString(Qt.locale(), "f", 0) : "")
                     + " files"
             }
@@ -260,7 +262,7 @@ ApplicationWindow {
                 checked: win.recursive
                 onToggled: {
                     win.recursive = checked
-                    win.openPath(gallery.folder)
+                    win.openPath(galleryModel.folder)
                 }
             }
             Button {
@@ -286,7 +288,7 @@ ApplicationWindow {
                 onActivated: {
                     // Name reads A→Z; the others start with the largest, newest or longest.
                     win.sort = { key: currentValue, descending: currentValue !== "name" }
-                    win.openPath(gallery.folder)
+                    win.openPath(galleryModel.folder)
                     grid.forceActiveFocus()
                 }
                 Layout.preferredWidth: 160
@@ -295,7 +297,7 @@ ApplicationWindow {
                 text: win.sort.descending ? "↓" : "↑"
                 onClicked: {
                     win.sort = { key: win.sort.key, descending: !win.sort.descending }
-                    win.openPath(gallery.folder)
+                    win.openPath(galleryModel.folder)
                     grid.forceActiveFocus()
                 }
                 ToolTip.visible: hovered
@@ -310,7 +312,7 @@ ApplicationWindow {
                 Menu {
                     id: viewsMenu
                     Instantiator {
-                        model: settings.views
+                        model: appSettings.views
                         delegate: MenuItem {
                             required property string modelData
                             text: modelData
@@ -327,13 +329,13 @@ ApplicationWindow {
                     Menu {
                         id: deleteMenu
                         title: "Delete view"
-                        enabled: settings.views.length > 0
+                        enabled: appSettings.views.length > 0
                         Instantiator {
-                            model: settings.views
+                            model: appSettings.views
                             delegate: MenuItem {
                                 required property string modelData
                                 text: modelData
-                                onTriggered: settings.deleteView(modelData)
+                                onTriggered: appSettings.deleteView(modelData)
                             }
                             onObjectAdded: (i, o) => deleteMenu.insertItem(i, o)
                             onObjectRemoved: (i, o) => deleteMenu.removeItem(o)
@@ -372,8 +374,8 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 elide: Text.ElideMiddle
                 color: "#aaaaaa"
-                text: gallery.revision >= 0 && win.current >= 0
-                    ? gallery.info(win.current) + "   " + (gallery.rating(win.current) > 0 ? Ratings.symbol(gallery.rating(win.current)) : "")
+                text: galleryModel.revision >= 0 && win.current >= 0
+                    ? galleryModel.info(win.current) + "   " + (galleryModel.rating(win.current) > 0 ? Ratings.symbol(galleryModel.rating(win.current)) : "")
                     : "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move"
                       + " · F filters · Ctrl+wheel or Ctrl +/− resize"
             }
@@ -482,7 +484,7 @@ ApplicationWindow {
                 anchors.margins: win.gap
                 clip: true
                 focus: true
-                model: gallery
+                model: galleryModel
                 spacing: win.gap
                 cacheBuffer: 1500
                 reuseItems: true
@@ -497,7 +499,8 @@ ApplicationWindow {
                     onWheel: (ev) => win.setSize(win.rowHeight * (ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1))
                 }
 
-                delegate: Item {
+                // A row of the grid: a component with a name, so topItem() can read its firstItem typed.
+                component GridRow: Item {
                     id: rowItem
                     required property int firstItem
                     required property int itemCount
@@ -513,11 +516,11 @@ ApplicationWindow {
                                 id: cell
                                 required property int index
                                 readonly property int item: rowItem.firstItem + index
-                                // Changes when the file is rewritten or turned (gallery.imageKey).
-                                readonly property string key: gallery.revision >= 0 ? gallery.imageKey(item) : ""
-                                readonly property int rating: gallery.revision >= 0 ? gallery.rating(item) : 0
-                                readonly property string badge: gallery.revision >= 0 ? gallery.badge(item) : ""
-                                width: gallery.aspect(item) * rowItem.rowHeight
+                                // Changes when the file is rewritten or turned (galleryModel.imageKey).
+                                readonly property string key: galleryModel.revision >= 0 ? galleryModel.imageKey(item) : ""
+                                readonly property int rating: galleryModel.revision >= 0 ? galleryModel.rating(item) : 0
+                                readonly property string badge: galleryModel.revision >= 0 ? galleryModel.badge(item) : ""
+                                width: galleryModel.aspect(item) * rowItem.rowHeight
                                 height: rowItem.rowHeight
 
                                 // ThumbHash placeholder (from the import) until the thumbnail arrives.
@@ -586,11 +589,12 @@ ApplicationWindow {
                         }
                     }
                 }
+                delegate: GridRow {}
             }
 
             Label {
                 anchors.centerIn: parent
-                visible: gallery.count === 0
+                visible: galleryModel.count === 0
                 text: library.roots.length === 0 ? "No folders in the library yet.\nAdd one with Library… (top right)."
                     : filterBar.active > 0 ? "Nothing here matches the filters."
                     : library.busy ? "Nothing here yet: the library is being imported." : "No images here."
@@ -603,8 +607,8 @@ ApplicationWindow {
     Viewer {
         id: viewer
         anchors.fill: parent
-        gallery: gallery
-        settings: settings
+        gallery: galleryModel
+        settings: appSettings
         onIndexChanged: sessionTimer.restart()
         onFindSimilar: (path) => yandexPanel.show(path)
         onClosed: (i) => {
@@ -658,10 +662,11 @@ ApplicationWindow {
                     ScrollBar.vertical: ScrollBar {}
                     WheelScroller {}
                     delegate: RowLayout {
+                        id: rootRow
                         required property string modelData
                         width: ListView.view.width
-                        Label { text: modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                        Button { text: "Remove"; flat: true; onClicked: library.removeFolder(modelData) }
+                        Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                        Button { text: "Remove"; flat: true; onClicked: library.removeFolder(rootRow.modelData) }
                     }
                     Label {
                         anchors.centerIn: parent
@@ -672,8 +677,8 @@ ApplicationWindow {
                 }
                 CheckBox {
                     text: "Write ratings and turns into the files too (where the format allows)"
-                    checked: settings.writeBack
-                    onToggled: settings.writeBack = checked
+                    checked: appSettings.writeBack
+                    onToggled: appSettings.writeBack = checked
                     ToolTip.visible: hovered
                     ToolTip.text: "Ratings are always kept in the catalog. With this on, they also go into the image "
                         + "files (XMP), so other programs see them; turns rotate the files losslessly."
@@ -716,12 +721,12 @@ ApplicationWindow {
             viewName.forceActiveFocus()
         }
         onAccepted: if (viewName.text.trim().length)
-            settings.saveView(viewName.text, gallery.folder, win.recursive, JSON.stringify(filterBar.query),
+            appSettings.saveView(viewName.text, galleryModel.folder, win.recursive, JSON.stringify(filterBar.query),
                 JSON.stringify(win.sort))
         onClosed: grid.forceActiveFocus()
         ColumnLayout {
             Label {
-                text: (gallery.folder.length ? gallery.folder : "All folders") + (win.recursive ? " and subfolders" : "")
+                text: (galleryModel.folder.length ? galleryModel.folder : "All folders") + (win.recursive ? " and subfolders" : "")
                     + " · " + filterBar.describe() + " · " + sortBox.currentText + (win.sort.descending ? " ↓" : " ↑")
                 color: "#999999"
             }
@@ -767,15 +772,15 @@ ApplicationWindow {
 
     Component.onCompleted: {
         // Where the user was.
-        recursive = settings.session("recursive", "true") === "true"
-        filterBar.load(parseJson(settings.session("query", "{}"), {}))
-        sort = parseJson(settings.session("sort", ""), { key: "name", descending: false })
+        recursive = appSettings.session("recursive", "true") === "true"
+        filterBar.load(parseJson(appSettings.session("query", "{}"), {}))
+        sort = parseJson(appSettings.session("sort", ""), { key: "name", descending: false })
         if (arg("query")) filterBar.load(parseJson(arg("query"), {}))
         if (arg("sort")) sort = parseJson(arg("sort"), sort)
         if (arg("filters")) filtersOpen = true
-        goTo(settings.session("folder", ""))
+        goTo(appSettings.session("folder", ""))
         relayout()
-        const last = gallery.indexOf(Number(settings.session("file", "-1")))
+        const last = galleryModel.indexOf(Number(appSettings.session("file", "-1")))
         if (last >= 0) select(last)
 
         if (arg("size")) setSize(Number(arg("size")))

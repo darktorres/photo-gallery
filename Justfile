@@ -34,11 +34,15 @@ test *args:
 fmt:
     cargo fmt --all
 
-# Every check: formatting, clippy, dependencies (cargo-deny, cargo-machete), the Python and the Markdown.
-lint:
+# Every check: formatting, clippy, dependencies (cargo-deny, cargo-machete), the Python, the Markdown and the QML.
+lint: && lint-qml
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
     cargo deny check
     cargo machete
     ruff check .
     markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
+
+# qmllint on the QML, failing on any warning. Uses the pg.gallery types of the last build, so build first.
+lint-qml:
+    pwsh -NoLogo -NoProfile -File tools/lint-qml.ps1 -Qt {{ qt }}

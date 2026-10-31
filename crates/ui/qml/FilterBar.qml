@@ -2,6 +2,8 @@
 // Facets combine with AND, the choices inside one with OR, and an empty facet doesn't filter. Each choice shows
 // how many files it would show given the other facets (gallery.facets). Edits change `query` and fire edited();
 // the window applies them after a short pause.
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts

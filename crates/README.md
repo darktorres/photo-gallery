@@ -36,7 +36,7 @@ just deploy  # release build, then the Qt DLLs and QML modules next to gallery.e
 just build   # rebuild
 just run     # the app; `just run status`, `just run scan <folder>`… for the command line
 just test    # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
-just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint
+just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint, then qmllint (just lint-qml)
 ```
 
 `just deploy debug`, then `just dev`, give the debug build (it links the release Qt too). It reads the QML from
@@ -46,7 +46,8 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 
 `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
 (the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and `pg-ingest`;
-`cargo machete` finds unused dependencies.
+`cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning; it reads the Rust types from
+the last build, so build first (`tools/lint-qml.ps1` says why it lints a copy of the module in `target\qmllint`).
 
 ## Run
 

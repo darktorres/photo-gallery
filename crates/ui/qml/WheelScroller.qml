@@ -62,7 +62,7 @@ WheelHandler {
             moveTo(clamp(destination - ev.pixelDelta.y))
             return
         }
-        destination = clamp(destination - ev.angleDelta.y / 120 * Qt.styleHints.wheelScrollLines * lineHeight)
+        destination = clamp(destination - ev.angleDelta.y / 120 * Application.styleHints.wheelScrollLines * lineHeight)
         if (!frames.running) {
             written = view().contentY
             frames.start()

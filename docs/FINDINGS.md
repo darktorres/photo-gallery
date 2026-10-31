@@ -1147,8 +1147,13 @@ JavaScript sets, and no challenge is passed. The user should decide before the p
 - Verifier robustness: the median-residual measure swings for ~0.3% of pairs when a few keypoints change
   (TensorRT vs torch flips); look at those with the hand marks.
 - Second model (So400m NaFlex): TensorRT fp16 reaches cosine 0.997 vs fp32, while torch fp16 and ONNX Runtime CUDA
-  on the same fp16 graph reach 0.9993 (fp32 LayerNorm doesn't help), so a TensorRT kernel loses it; find it or
-  accept it. A small text-query test on this library would check the semantic quality and the 256-patch budget.
+  on the same fp16 graph reach 0.9993 (fp32 LayerNorm doesn't help), so a TensorRT kernel loses it. It changes
+  neighbours: on 512 random images (2026-10-31, quiet machine) the nearest neighbour matches fp32 for 0.939 with
+  TensorRT vs 0.984 with torch fp16 (top-5 overlap 0.961 vs 0.990; 0.949 vs 0.996 on 512 subset images). The
+  flipped ones are near-ties (fp32 top-1/top-2 gap median 0.0013 vs 0.011 overall), but the loss is ~4x torch's,
+  so find the kernel before adopting. Speed confirmed at 126 img/s with the engine alone; with the fp32 model
+  also on the 6 GB GPU, Windows spills to shared memory and it drops to ~1 img/s. A small text-query test on this
+  library would check the semantic quality and the 256-patch budget.
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
   template portraits with different faces (the 12-image group).
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused

@@ -883,6 +883,159 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
   dropped that to 64 files/s, because it also throttles I/O on an idle disk, so the task uses idle *CPU*
   priority instead (330 files/s with the other session busy).
 
+## Videos and animations (M2, 2026-10-30)
+
+Our FFmpeg is BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`), shared with Qt 6.12's player.
+
+### Measured here
+
+- **Dataset videos** (`pinterest`, 1,712 files copied to `D:\PhotoGallery\scratch_videos_all`): 837 H.264,
+  748 VP9 and 127 VP8. There is no AV1, HEVC or HDR among them, and 45 are larger than 1080p. Import: 1,712
+  files with 0 failed, in 20 s (84 files/s, about 200 MB/s). Thumbnails (poster frames at 256 px): 1,712 with
+  0 failed, in 19.5 s. 63 H.264 files carry a creation date.
+- **Qt's player can't play AV1 on this GPU** (RTX 2060, Turing, which has no AV1 decoder):
+  - Qt picks FFmpeg's built-in `av1` decoder with d3d11va. That decoder only decodes on the GPU. Qt checks
+    only that a D3D11 device can be created, not that the GPU decodes the codec. FFmpeg then fails its
+    hardware setup on every frame, and the decoder has no software path.
+  - Qt falls back to software only when the decoder fails to open (`qffmpegcodeccontext.cpp`,
+    `qffmpeghwaccel.cpp`, v6.12.0 and the dev branch alike), so the result is 0 frames and no error shown.
+  - The only switch is `QT_FFMPEG_DECODING_HW_DEVICE_TYPES`. It's private API, global for every codec, and
+    read once per process.
+  - Our stopgap (`crates/ui/src/video_decoding.rs`): ask D3D11 for the AV1 profile at startup and, without
+    it, turn hardware decoding off. Then AV1 plays through libdav1d (61 frames in 2.4 s), but every codec
+    decodes on the CPU on this machine.
+  - Rust's `std::env::set_var` doesn't reach Qt here. Qt reads the C runtime's copy of the environment,
+    which `SetEnvironmentVariableW` doesn't update, so the variable is set with `qputenv`.
+- **FFmpeg can't loop animated WebP:** its `webp_anim` demuxer can't seek back to the start.
+  `ffmpeg -stream_loop 2` gives 10 frames instead of 30, while GIF and APNG give 30. Through Qt's player, an
+  animated WebP plays once, then restarts tens of thousands of times a second.
+  - Qt's `AnimatedImage` has no APNG, and WebP only with the Qt Image Formats add-on, which isn't installed.
+  - So animations play through our own player (`crates/ui/src/animation.rs`: the `image` crate's decoders,
+    frames pushed into the VideoOutput's sink). Verified for WebP (70 ms frames, loops), GIF and APNG (200 ms
+    frames, loop), and pause.
+- **libwebp_anim merges identical frames:** 10 identical frames became one still VP8L image. Tests check the
+  total duration, not frame counts.
+- **Offscreen Qt (software scene graph) draws no video frames.** Playback can only be checked through the
+  sink's frame count and the player's position.
+
+### Video player options (web research, 2026-10-30; player not chosen yet)
+
+- **Qt Multimedia:**
+  - The same failure shows on other hardware (Qt Forum, "Qt Multimedia 6.7.2 with ffmpeg cannot decode h264
+    on Pi5", topic 159939; a reply blames missing checks that the chosen hardware decoder can work).
+  - Qt's GStreamer backend page calls Qt Multimedia "not a general purpose streaming framework". That backend
+    is for embedded Linux, not Windows.
+- **libmpv:**
+  - Its manual says that when hardware decoding isn't possible, "mpv will fall back on software decoding";
+    it goes down the list of hardware decoders, then software, for each file.
+  - It has `loop-file`, `frame-step` and HDR tone mapping.
+  - Qt Quick integrations (KDE MpvQt, mpv-examples, 2026 guides) render through OpenGL, so they force Qt
+    Quick off Direct3D (`QQuickWindow::setGraphicsApi(OpenGL)`).
+  - mpv PR #17764, "libmpv: add D3D11 render API backend", is merged (milestone 0.42.0). mpv renders into an
+    application-owned `ID3D11Texture2D` on the application's device. The latest release is still 0.41.0
+    (2025-12-21).
+  - Daily LGPL builds of libmpv from mpv's git exist (zhongfly/mpv-winbuild, `mpv-dev-lgpl-x86_64-…`; the
+    2026-10-29 build). They link their own FFmpeg statically.
+- **GStreamer:**
+  - It registers its D3D11 decoders (`d3d11av1dec`, …) only when the GPU supports them, so falling back per
+    codec is built in (GStreamer `d3d11` plugin documentation).
+  - `qml6d3d11sink` (gst-plugins-bad) shows D3D11 frames in a Qt 6 QQuickItem without copies.
+  - Costs: a third media stack and a large runtime. The Qt plugin is built against a Qt version (not checked
+    for 6.12).
+- **QtAVPlayer** (github.com/valbok/QtAVPlayer: MIT, 454 stars, active October 2026):
+  - FFmpeg decoding, frames into `QVideoSink` (D3D11 frames without copies are claimed), sound through
+    `QAudioSink`, accurate seeking, frame stepping.
+  - It claims an automatic fallback to software decoding. Not verified for the AV1 case above.
+- **Rust:**
+  - No mature player library. A July 2026 survey of Rust media crates lists decoding toolkits only, and
+    ffmpeg-next is in "maintenance-only mode".
+  - GUI crates wrap GStreamer (`iced_video_player`) or libmpv (`egui_sharkplayer`, through `libmpv2`), or
+    hand-roll FFmpeg playback (`egui-video`).
+- **Options (not decided):** third-party wrappers (QtAVPlayer, MpvQt, `libmpv2`) are out: the integration
+  stays ours. The two candidates are our own engine on our FFmpeg 9, or libmpv on a pinned master commit
+  with the D3D11 render API. Both are written up, with spikes, in [VIDEO_PLAYER.md](VIDEO_PLAYER.md).
+  Animations stay on our own decoders either way.
+
+## Reverse image search: Yandex (ImageRater port, 2026-10-31)
+
+ImageRater (`ImageRater/shared/static/frontend.js`, `reverseImageSearch`, lines 984–1026) uploads the photo to
+`yandex.com/images-apphost/image-download` and opens `yandex.com/images/search?cbir_id=…` in a new tab. Only
+`yandex.com` is used there; `.ru` hosts appear only in the browser's analytics traffic. The upload returns
+`cbir_id` and `sizes.orig.path`. Measured here with a standalone Rust probe (scratchpad, not committed) and
+a Playwright browser session on the same test image (a generated 64×64 PNG).
+
+### What the results page contains
+
+- **Two lists.** Sites (`cbir_page=sites`, paged with `&p=N`) and Similar (`cbir_page=similar`, one page).
+- **Data source.** The results are an HTML-escaped state blob in the page (`originalImage&quot;:{&quot;url&quot;:…`).
+  The infinite scroll renders from this blob with no further requests. The DOM stops at about 150 items, so it
+  is not a complete source.
+- **Sites record fields.** `title`, `description`, `url` (source page), `domain`, `thumb` (URL, width, height)
+  and `originalImage.url`, the full-size file to download.
+- **Similar items.** 55 items, `pos` 0–54. Each item's `img_url=` parameter is the full-size URL.
+- **Overlap.** 43 of the 55 Similar images also appear in the Sites set (browser data).
+- **Browser totals.** Sites pages 0–5 hold 492 unique originals in all (pages 4 and 6–10 come back empty; pages
+  beyond 10 were not checked).
+
+### Why a plain HTTP client gets fewer results
+
+Measured with the same URLs and the same test image:
+
+| Client | Sites p0 | Sites p1 | Similar |
+|---|---|---|---|
+| Browser (Chrome, Playwright) | 160 records | 155 | 55 items |
+| Probe, no cookies | 118 records (79 unique sources) | 0 | 40 items |
+| Probe, homepage visited first (`yandex.com/`, cookie jar) | 118 | not measured | 40 |
+| Probe, `yp` cookie with screen metrics only | **160** | 0 | **55** |
+| Probe, `yp` + `spravka` | not measured | **155** | not measured |
+
+- **Not the cause:** HTTP/1.1 vs HTTP/2 (curl gives the same 118), compression, and browser-like request headers.
+- **`yp` cookie.** The browser's JavaScript writes screen metrics into `yp`, in the shape `<ts>.szm.1:WxH:WxH`.
+  A fresh client gets `<ts>.ygu.1` from `yandex.com/` and nothing from `yandex.com/images/`. With `yp` in szm
+  shape and no other cookie, page 0 and Similar match the browser.
+- **`spravka` cookie.** Sites pages 1 and up are empty without it. It appears to be Yandex's anti-robot token;
+  the browser had it, probably from the captcha it passed earlier in the session. This was not confirmed.
+  The probe does not send it.
+- **Captcha.** Yandex returned `showcaptcha` after a few dozen requests from the automated browser. It was
+  cleared by hand. Nothing in this section gets past it.
+
+### Crawlers script: `crawlers/yandex-reverse/search.py` (2026-10-31)
+
+The crawlers monorepo already has a Yandex client. Its `perform_yandex_search` gets the same two groups, and
+the Sites list above was the wrong target for group 1:
+
+- **Group 1 is "other sizes".** The script reads `initialState.cbirOtherSizes` from the `ImagesApp-*`
+  `data-state` attribute on the results page. Those are the same image at other resolutions, which is what
+  group 1 means. The Sites list (`cbir_page=sites`) is a different section.
+- **Group 2 is the similar JSON API.** `images/search?format=json&request=…&cbir_page=similar&p=N` (the request
+  body names the `serpList/fetch` ajax block). Each item's `img_url` query parameter is the full-size URL.
+- **Measured on a public-domain photo** (Fronalpstock, Wikimedia Commons, 14.6 MB JPEG), same settings for both
+  runs (`SIMILAR_PAGES_TO_DOWNLOAD = 5`):
+
+| Run | Other sizes | Similar |
+|---|---|---|
+| As written (no cookies) | **18** (largest 10109×4542) | 40, page 1 fails (`Unexpected API response structure … 'blocks'`) |
+| With `yp` cookie (szm) | **18** | **55** in one page |
+
+- **Group 1 needs no cookie.** The other-sizes block is in the initial HTML, and the count matched with and
+  without `yp`.
+- **Group 2 needs the `yp` cookie** for the full 55. Without it, page 1 comes back with an error structure.
+- **Not measured:** whether the browser shows all 18 other sizes or about 5 (the user's "5 or so shown").
+- The script's known failures (`files_not_working.md`): upload 400s, SSL EOF and remote disconnects.
+  `tasks.md`: CDN 403s that load in a browser, and no captcha validation for HTML responses.
+
+### Open decision
+
+The two groups now look like this:
+
+- **Group 1 (other sizes):** plain HTTP is enough, and no challenge handling is involved.
+- **Group 2 (similar):** plain HTTP with the `yp` szm cookie returns all 55 in one request.
+- **Sites list:** only needed if the user wants that section too. Pages 1 and up need `spravka`, and copying it
+  from a passed-challenge session would get around the bot check, so the app should not do it.
+
+Whether `yp` szm counts as getting around the check is a judgment call: it sends a cookie the site's own
+JavaScript sets, and no challenge is passed. The user should decide before the port relies on it.
+
 ## Decisions
 
 - **2026-10-28 (revised the same day): no duplicate / variant distinction for now.** Local-edit
@@ -908,6 +1061,9 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
   variants with redrawn details may have few matchable points.
 - **2026-10-28: benchmark decoders** (PIL full, PIL `draft()`, libvips, nvJPEG) for speed and
   embedding drift. Done 2026-10-29, see "Decode benchmark": DCT-scaled decode wins.
+- **2026-10-30: second model = SigLIP 2 So400m/16 NaFlex** (256 patches, TensorRT fp16) for keywords and semantic
+  search, alongside SSCD (PLAN §9 decision 2). Chosen over B/16 for quality (ImageNet zero-shot 83.5 vs 78.5 at
+  256 patches), over the fixed So400m for the native aspect ratio at the same cost. ~154 GPU hours for 70M.
 
 ## Design conclusions so far
 
@@ -942,7 +1098,9 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
   needs a cross-group run before adoption; gate the rotation retries (e.g. by SSCD similarity).
 - Verifier robustness: the median-residual measure swings for ~0.3% of pairs when a few keypoints change
   (TensorRT vs torch flips); look at those with the hand marks.
-- PLAN §9 decision 2 (second model): SigLIP 2 B/16 suggested, L/16 the quality alternative (user's call).
+- Second model (So400m NaFlex): TensorRT fp16 reaches cosine 0.997 vs fp32, while torch fp16 and ONNX Runtime CUDA
+  on the same fp16 graph reach 0.9993 (fp32 LayerNorm doesn't help), so a TensorRT kernel loses it; find it or
+  accept it. A small text-query test on this library would check the semantic quality and the 256-patch budget.
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
   template portraits with different faces (the 12-image group).
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
@@ -951,3 +1109,6 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
 - Thumbnail cache format and cap (size is runtime-adjustable, decided 2026-10-30).
 - IVF vs exact k-NN (needs the full set).
 - Full-set runs (on hold until the user says go).
+- Yandex reverse search port: group 1 (other sizes) and group 2 (similar) work over plain HTTP, with the `yp`
+  szm cookie needed for the full similar set. Decide whether sending `yp` is acceptable, and whether the Sites
+  section is wanted (its pages 1+ need `spravka`). See "Reverse image search: Yandex".

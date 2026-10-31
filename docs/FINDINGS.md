@@ -893,6 +893,16 @@ Our FFmpeg is BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`
   748 VP9 and 127 VP8. There is no AV1, HEVC or HDR among them, and 45 are larger than 1080p. Import: 1,712
   files with 0 failed, in 20 s (84 files/s, about 200 MB/s). Thumbnails (poster frames at 256 px): 1,712 with
   0 failed, in 19.5 s. 63 H.264 files carry a creation date.
+- **What the dataset videos test** (header-only ffprobe of all 1,712, one at a time; 1,689 answered, and a
+  re-run of a failed one worked, so the 23 failures were the run's):
+  - All 8-bit 4:2:0; profiles: VP9 profile 0, H.264 Constrained Baseline (581), High (232) and Main (23).
+  - 3 are HLG with BT.2020 primaries (`tumblr_*`), 8-bit. No PQ, no 10-bit, no Dolby Vision.
+  - No display-matrix rotation; 1,409 are stored portrait.
+  - 1,057 have no audio. The other 632 are AAC, all but 7 stereo, mostly 44.1 kHz.
+  - One has a variable frame rate; two start more than 0.1 s late (an edit list or a delay).
+  - Median length 6.4 s, longest 9 min.
+  - So a player test bed also needs generated or sourced HEVC, AV1, 10-bit, PQ, Dolby Vision, rotated and
+    mirrored, and surround files.
 - **Qt's player can't play AV1 on this GPU** (RTX 2060, Turing, which has no AV1 decoder):
   - Qt picks FFmpeg's built-in `av1` decoder with d3d11va. That decoder only decodes on the GPU. Qt checks
     only that a D3D11 device can be created, not that the GPU decodes the codec. FFmpeg then fails its

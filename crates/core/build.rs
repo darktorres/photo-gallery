@@ -9,6 +9,11 @@ const DLLS: &[&str] = &["avcodec", "avformat", "avutil", "swresample", "swscale"
 
 fn main() {
     println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+    // Only Windows loads DLLs from beside the binary. Elsewhere (the callgrind benches under WSL2) FFmpeg is the
+    // system's, and FFMPEG_DIR points at its headers.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
+        return;
+    }
     let Some(dir) = std::env::var_os("FFMPEG_DIR") else { return };
     let bin = Path::new(&dir).join("bin");
     println!("cargo:rerun-if-changed={}", bin.display());

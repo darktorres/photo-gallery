@@ -60,6 +60,8 @@ fn clips(exe: &Path) -> PathBuf {
     encode("prores.mov", &["-c:v", "prores_ks"]);
     // A phone held upright: stored landscape, displayed turned 90° counterclockwise.
     run(exe, &["-display_rotation", "90", "-i", &out("h264.mp4"), "-c", "copy", &out("rotated.mp4")]);
+    // A selfie camera's mirror: displayed flipped left to right.
+    run(exe, &["-display_hflip", "-i", &out("h264.mp4"), "-c", "copy", &out("mirrored.mp4")]);
     // Animations: 0.8 to 1.2 s (red and blue, then green), outside the media folder.
     let anim = dir.join("anim");
     std::fs::create_dir_all(&anim).unwrap();
@@ -148,6 +150,16 @@ fn videos() {
     assert_eq!((f.width, f.height), (160, 80));
     assert!(near(pixel(&f, 20, 40), RED), "{:?}", pixel(&f, 20, 40));
 
+    // Mirrored: blue on the left. A catalog turn comes after the mirror: red at the top.
+    let mirrored = media.join("mirrored.mp4");
+    let p = probe(&mirrored).unwrap();
+    assert_eq!((p.width, p.height, p.orientation), (160, 80, 2));
+    let f = frame(&mirrored, 500, 0).unwrap();
+    assert!(near(pixel(&f, 20, 40), BLUE) && near(pixel(&f, 140, 40), RED), "{:?}", pixel(&f, 20, 40));
+    let f = frame(&mirrored, 500, 1).unwrap();
+    assert_eq!((f.width, f.height), (80, 160));
+    assert!(near(pixel(&f, 40, 20), BLUE) && near(pixel(&f, 40, 140), RED), "{:?}", pixel(&f, 40, 20));
+
     assert_eq!(poster_ms(3000), 300);
     assert_eq!(poster_ms(3_600_000), 10_000);
 
@@ -159,7 +171,7 @@ fn videos() {
     scan::scan(&mut catalog, &root, &ctl).unwrap();
     let opts = Options::new(0);
     let stats = import::import(&mut catalog, &opts, false, &ctl).unwrap();
-    assert_eq!((stats.files, stats.failed), (5, 0));
+    assert_eq!((stats.files, stats.failed), (6, 0));
     // Name, kind, width, height, duration, poster time, whether the pixel hash is missing.
     type Row = (String, String, i64, i64, i64, i64, Option<i64>);
     let rows: Vec<Row> = catalog
@@ -197,5 +209,5 @@ fn videos() {
 
     let cache = Mutex::new(ThumbCache::open(&dir.join("thumbs.sqlite"), 1 << 30).unwrap());
     let made = thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
-    assert_eq!((made.made, made.failed), (5, 0));
+    assert_eq!((made.made, made.failed), (6, 0));
 }

@@ -903,6 +903,10 @@ Our FFmpeg is BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`
   - Median length 6.4 s, longest 9 min.
   - So a player test bed also needs generated or sourced HEVC, AV1, 10-bit, PQ, Dolby Vision, rotated and
     mirrored, and surround files.
+- **A display matrix's mirror comes after its rotation** (`av_display_matrix_flip` negates the first column;
+  Qt's player reads it as "mirrored horizontally after rotation"). EXIF mirrors before rotating, so a mirrored
+  matrix's turn is reversed. The importer had it the other way round, so every mirror came out wrong (a
+  horizontal flip stored as a vertical one). Fixed 2026-10-31; the eight matrices ffmpeg writes are a unit test.
 - **Qt's player can't play AV1 on this GPU** (RTX 2060, Turing, which has no AV1 decoder):
   - Qt picks FFmpeg's built-in `av1` decoder with d3d11va. That decoder only decodes on the GPU. Qt checks
     only that a D3D11 device can be created, not that the GPU decodes the codec. FFmpeg then fails its

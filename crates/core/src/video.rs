@@ -62,21 +62,28 @@ fn display_orientation(stream: &ffmpeg::format::stream::Stream) -> u8 {
     else {
         return 1;
     };
-    let data = sd.data();
-    if data.len() < 36 {
-        return 1;
+    match sd.data().as_chunks::<4>().0.get(..9) {
+        Some(m) => matrix_orientation(std::array::from_fn(|i| i32::from_le_bytes(m[i]))),
+        None => 1,
     }
-    let m: Vec<f64> = data.as_chunks::<4>().0.iter().take(9).map(|c| i32::from_le_bytes(*c) as f64).collect();
-    let (s0, s1) = (m[0].hypot(m[3]), m[1].hypot(m[4]));
+}
+
+/// The orientation (EXIF 1–8) of a display matrix (`a b u c d v x y w`, 16.16 fixed point but for u, v and w).
+fn matrix_orientation(m: [i32; 9]) -> u8 {
+    let [a, b, _, c, d, ..] = m.map(f64::from);
+    // A negative determinant is a mirror. FFmpeg's flip (av_display_matrix_flip) mirrors the shown picture after
+    // the rotation, by negating a and c; undo it to read the rotation.
+    let mirrored = a * d - b * c < 0.0;
+    let (a, c) = if mirrored { (-a, -c) } else { (a, c) };
+    let (s0, s1) = (a.hypot(c), b.hypot(d));
     if s0 == 0.0 || s1 == 0.0 {
         return 1;
     }
     // av_display_rotation_get is the counterclockwise angle; turning clockwise by the opposite shows it upright.
-    let clockwise = (m[1] / s1).atan2(m[0] / s0).to_degrees();
+    let clockwise = (b / s1).atan2(a / s0).to_degrees();
     let turns = ((clockwise / 90.0).round() as i64).rem_euclid(4) as u8;
-    // A negative determinant is a mirror (applied before the rotation, as FFmpeg's players do).
-    let mirrored = m[0] * m[4] - m[1] * m[3] < 0.0;
-    orientation_from(mirrored, turns)
+    // EXIF mirrors the stored picture before the rotation: the same picture with the turn reversed.
+    orientation_from(mirrored, if mirrored { (4 - turns) % 4 } else { turns })
 }
 
 pub fn probe(path: &Path) -> Result<Probe> {
@@ -256,4 +263,33 @@ pub fn analyze(path: &Path, turns: u8) -> Result<Analysis> {
         duration_ms: Some(p.duration_ms),
         poster_ms: Some(poster),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The eight matrices ffmpeg writes for `-display_rotation` and `-display_hflip`/`-display_vflip`, with the
+    /// orientation that shows the picture as ffmpeg's own autorotate does (checked on a four-colour clip).
+    #[test]
+    fn display_matrix_orientations() {
+        const ONE: i32 = 1 << 16;
+        let m = |a: i32, b: i32, c: i32, d: i32| [a * ONE, b * ONE, 0, c * ONE, d * ONE, 0, 0, 0, 1 << 30];
+        let cases = [
+            (m(1, 0, 0, 1), 1),   // none
+            (m(-1, 0, 0, 1), 2),  // hflip
+            (m(-1, 0, 0, -1), 3), // 180
+            (m(1, 0, 0, -1), 4),  // vflip, also 180 + hflip
+            (m(0, 1, 1, 0), 5),   // 270 + hflip (transpose)
+            (m(0, 1, -1, 0), 6),  // 270 counterclockwise, i.e. 90 clockwise
+            (m(0, -1, -1, 0), 7), // 90 + hflip (transverse)
+            (m(0, -1, 1, 0), 8),  // 90 counterclockwise
+        ];
+        for (matrix, want) in cases {
+            assert_eq!(matrix_orientation(matrix), want, "{matrix:?}");
+        }
+        // Scaled and slightly off (a muxer's rounding) still snaps to the nearest quarter turn.
+        assert_eq!(matrix_orientation([2 * ONE, -ONE / 50, 0, 0, -2 * ONE, 0, 0, 0, 1 << 30]), 4);
+        assert_eq!(matrix_orientation([0; 9]), 1);
+    }
 }

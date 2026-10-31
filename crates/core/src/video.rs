@@ -66,7 +66,7 @@ fn display_orientation(stream: &ffmpeg::format::stream::Stream) -> u8 {
     if data.len() < 36 {
         return 1;
     }
-    let m: Vec<f64> = data.chunks_exact(4).take(9).map(|c| i32::from_le_bytes(c.try_into().unwrap()) as f64).collect();
+    let m: Vec<f64> = data.as_chunks::<4>().0.iter().take(9).map(|c| i32::from_le_bytes(*c) as f64).collect();
     let (s0, s1) = (m[0].hypot(m[3]), m[1].hypot(m[4]));
     if s0 == 0.0 || s1 == 0.0 {
         return 1;

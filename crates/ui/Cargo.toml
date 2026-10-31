@@ -14,6 +14,9 @@ ignored = ["cxx"]
 [[bin]]
 name = "gallery"
 path = "src/main.rs"
+# No unit tests here (the UI is checked through its test hooks, crates/README.md). The empty test binary would
+# still link Qt and run from target/<profile>/deps, where the Qt DLLs aren't, and fail with STATUS_DLL_NOT_FOUND.
+test = false
 
 [dependencies]
 pg-core = { path = "../core" }

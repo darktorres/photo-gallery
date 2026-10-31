@@ -105,8 +105,12 @@ fn dct_matrix() -> &'static [[f32; BUFFER]; DCT_OUT] {
 /// Luma → two-pass Jarosz tent filter → 64×64 decimation → 16×16 DCT, plus the quality metric.
 fn dct16(rgb: &[u8], width: usize, height: usize) -> ([f32; DCT_OUT * DCT_OUT], u8) {
     assert!(width > 0 && height > 0 && rgb.len() == width * height * 3);
-    let mut luma: Vec<f32> =
-        rgb.chunks_exact(3).map(|p| p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114).collect();
+    let mut luma: Vec<f32> = rgb
+        .as_chunks::<3>()
+        .0
+        .iter()
+        .map(|p| p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114)
+        .collect();
 
     let window_cols = width.div_ceil(2 * BUFFER);
     let window_rows = height.div_ceil(2 * BUFFER);

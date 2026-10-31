@@ -99,6 +99,6 @@ pub fn pixel_hash(img: &Rgb) -> [u8; 16] {
 pub(crate) fn thumbhash(img: &Rgb) -> Vec<u8> {
     let small = fit_within(img, THUMBHASH_SIDE);
     let small = small.as_ref().unwrap_or(img);
-    let rgba: Vec<u8> = small.pixels.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();
+    let rgba: Vec<u8> = small.pixels.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
     thumbhash::rgba_to_thumb_hash(small.width, small.height, &rgba)
 }

@@ -40,4 +40,4 @@ lint:
     cargo deny check
     cargo machete
     ruff check .
-    markdownlint --ignore target --ignore .playwright-mcp docs "**/README.md"
+    markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"

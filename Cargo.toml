@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/core", "crates/ingest", "crates/ui"]
+# Vendored crates (see vendor/README.md) keep their own lints and formatting, so they stay out of the workspace.
+exclude = ["vendor"]
 
 [workspace.package]
 edition = "2024"
@@ -44,3 +46,7 @@ opt-level = 3
 
 [profile.release]
 debug = "line-tables-only"
+
+# turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app (vendor/README.md).
+[patch.crates-io]
+turbojpeg-sys = { path = "vendor/turbojpeg-sys" }

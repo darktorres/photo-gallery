@@ -277,8 +277,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   (Lanczos region renders between fit and 1:1, nearest neighbour above), Real Size, zen mode, swipes, ±4
   preloading. Ratings are written back into the files (XMP via ExifTool, queued and in place) for every format
   that holds XMP, and read from them at import with a three-way sync. Turns are lossless and in the pixels where
-  the format allows. Usage in `crates/README.md`. Reverse image search (Yandex) is deferred: its results must
-  show inside the app, to be designed separately.
+  the format allows. Usage in `crates/README.md`. Reverse image search (Yandex) came after, inside the app (below).
 - **Filters and videos (user request, 2026-10-30):** one query model (`query.rs`, JSON in views and the
   session) replaces the rating filter. Its facets are type (image, animated, video), extension, rating, shape,
   size, megapixels, duration, date taken (read at import), date modified, duplicates, import status and name.
@@ -288,6 +287,16 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   FFmpeg 9 (BtbN `lgpl-shared`, which has dav1d), shared with Qt's player in place of Qt's copy. On a GPU
   without AV1 decoding the player decodes on the CPU (`crates/ui/src/video_decoding.rs`). Videos get no
   near-duplicate detection, and their ratings and turns stay in the catalog (see Later).
+- **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
+  groups in a panel: the photo's other sizes (to find a better copy) and similar images (to find more), all of
+  them, not just the first page (`pg_core::yandex`, ported from the crawlers repo's `search.py`; why the browser
+  sees more is in `docs/FINDINGS.md`). A click picks a result; **Save N images…** downloads the picks into a
+  folder chosen in a dialog, as `size WxH.ext` and `similar N.ext`, with "(2)", "(3)"… added on a clash. Open, for
+  picking and saving:
+  - **Select all** for each group, and **Shift-click** to pick a range.
+  - **Double-click** a result to see it at full size before saving.
+  - The folder dialog opens at the photo's folder, or the last folder saved to.
+  - Saved files are named after the photo (`IMG_1234 (yandex 1920x1080).jpg`), so they sort next to it.
 - **Schema (user decision, 2026-10-30):** one baseline, at version 1, until the first catalog worth keeping (M4
   at the latest). Pre-release changes edit it in place, with no new version; catalogs made before are deleted
   and re-imported. The migration loop exists, tested with a synthetic step, with no migrations yet; that first
@@ -313,7 +322,6 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - A pix-plot-style 2D map (UMAP).
 - Format conversions (ImageReduce; GIF→WebP/WebM; JPEG XL/jpegli).
 - gallery-dl / Grabber integration.
-- Reverse image search with the results shown in the app (ImageRater opened Yandex in a browser).
 - Rating from a phone (ImageRater was a web app on the LAN): a small triage page served by `gallery.exe`.
 - More formats: HEIC/AVIF through libheif (dav1d, libde265), RAW through LibRaw (embedded previews, ratings in
   `.xmp` sidecars), and JPEG XL through libjxl, all built through a pinned vcpkg manifest on D:.

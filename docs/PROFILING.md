@@ -8,6 +8,46 @@ measured on.
 
 ---
 
+## Tool: Pin call graph, `tools/profiling/callgraph` (2026-10-31)
+
+Callgrind's view of the **Windows app**: instructions per function, self and inclusive, with call counts and the call
+graph, in callgrind's output format (one file per thread), so `cgtab.py` and KCachegrind read it. It is a Pin tool
+built against the Pin 4.3 kit inside SDE, since SDE's `-mix` has self counts only, and callgrind can't run the app.
+
+```powershell
+bash tools/profiling/callgraph/build.sh          # from Git Bash: target/pin/callgraph.dll, a few seconds
+just deploy release pdb                          # once: Qt's PDBs beside its DLLs (Qt's "Debug Information Files")
+$env:PG_CATALOG_DIR = 'D:\…\scratch\catalog'; $env:PG_PREFS = 'D:\…\scratch\gallery.json'
+tools/profiling/callgraph/profile.ps1 -Out D:\…\profiles\ready   # to pg_stage_ready; -Stop/-Start take any stage
+python tools/profiling/cgtab.py table D:\…\profiles\ready.<pid>-<thread> --sort incl
+```
+
+- **Stages:** `crates/ui/src/trace.rs` marks the start's stages with functions of plain C names (`pg_stage_main` …
+  `pg_stage_ready`). `-stop STAGE` stops every thread when one enters it, writes the profile and ends the process, so
+  nothing after it is counted. SDE's `-control stop:…` didn't do that: threads started later kept counting. `-start
+  STAGE` zeroes the counts. With `PG_TRACE=1` the app prints each stage's milliseconds since process start.
+- **Threads** are named from `SetThreadDescription` (Rust's and Qt's thread names) in `PREFIX.<pid>.threads`, with
+  each thread's total and every image loaded.
+- **Symbols:** Pin reads a PDB only from beside its DLL or from where it was built; it ignores `_NT_SYMBOL_PATH` and
+  DIA's registry path. Where it has one (our exe, Qt with `just deploy release pdb`) a function is Pin's routine.
+  Elsewhere Pin's routines are the exports, each spanning to the next (SDE's wrong names), so the tool names a
+  function by the address it was entered at, `ntdll.dll+0x1fa14`. `symbolize.py` (run by `profile.ps1`) then names
+  those with dbghelp from Microsoft's symbol server, cached in `D:\symbols`, turns the positions (instruction
+  addresses) into source lines, and demangles Rust's v0 names with `llvm-cxxfilt`. It needs the Windows SDK's x64
+  debugging tools. Windows' public PDBs have no lines (`???`), and NVIDIA's driver has no symbols (nearest export).
+- **No symbol lookups in the app:** the tool first asked Pin for source lines (`PIN_GetSourceLocation`, a request to
+  Pin's `pind` process), while instrumenting and then at the stop. Both times the gallery waited forever on one.
+- **Model:** a shadow stack per thread, following call and ret. Frames that end without a ret (longjmp, exception
+  unwinding, kernel callbacks) are dropped once the stack pointer is above them. Entering another function at the
+  frame's entry stack pointer is a tail call (the frame is replaced, as callgrind does), and so is an indirect jump
+  there. That is how Windows' control-flow-guard thunks (`guard_dispatch_icall_nop`, `jmp rax`) reach their target;
+  before that rule, a thunk's frame took in everything its DLL called through it. A jump table in a frameless
+  function looks the same and shows as a call to `Function+0x…`. Indirect recursion is counted twice in inclusive
+  cost, as with callgrind (`QQmlObjectCreator::finalize` shows 119%).
+- **Checked** on a small C program (`mid` 1,000 calls, `leaf` 2,010 including 10 tail calls, recursion cut by
+  `longjmp`): counts and inclusive costs as expected.
+- **Cost:** the start to `ready` takes about 7 minutes under Pin, and `symbolize.py` a few more.
+
 ## Tool: Intel SDE (2026-10-31)
 
 **Why SDE:** we wanted exact instruction counts on Windows, from instrumentation rather than sampling. The options
@@ -36,11 +76,13 @@ sde.exe -mix -omix out.txt -- prog.exe args     # per-function and per-block cou
   which is compiled into the exe.
 - **Wrong names in DLLs without PDBs:** they get the nearest export's name, e.g. `av_parser_close` in `avcodec-6.dll`.
   Treat those rows as "somewhere in that DLL".
-- **Self counts only:** each function's count excludes its callees. There is no call graph and no kcachegrind view.
+- **Self counts only:** each function's count excludes its callees. There is no call graph and no kcachegrind view:
+  the Pin call graph above has both.
 - **Threads:** counts are per thread. For pipelines, add the threads up; the split between them varies from run to
   run.
-- **Whole run:** the totals include startup, opening the catalog and exit. To measure one region, SDE takes markers
-  compiled into the code (`-start_ssc_mark` / `-stop_ssc_mark`). We don't have these yet (see *Open*).
+- **Whole run:** the totals include startup, opening the catalog and exit. `-control stop:enter_func:pg_stage_ready:bcast`
+  stops at a startup stage (`crates/ui/src/trace.rs`; Rust's `::` paths can't be named there, hence the C names),
+  but threads started after the stop still count.
 - **Slowdown:** about 10–100×, roughly valgrind's.
 
 ## Tool: WSL2 + callgrind / gungraun (2026-10-31)
@@ -127,6 +169,38 @@ cost, but indirect recursion (A → B → A) is still counted twice.
 ---
 
 ## Measurements
+
+### The start, to `ready` (Pin call graph, release `gallery.exe` with the trace stages, scratch copy of the pinterest catalog, 2026-10-31)
+
+Catalog: 189,518 files, 690 folders; the session folder is "All folders", so the grid lists every file.
+**15.15 G instructions in 85 threads** from process start to `pg_stage_ready`. SDE's 17.4–18.1 G included threads
+that kept counting after it (a 0.96 G SQLite thread: the library's first import check, which starts at `ready`).
+
+| Thread | Instructions | What |
+|---|---:|---|
+| catalog reader | 10.90 G | the grid's `browse::list_files` 10.25 G; the tree and the rest 0.65 G |
+| main | 1.24 G | QML creation, fonts, a Direct3D 9 probe |
+| QSGRenderThread | 1.18 G | the Direct3D 11 device |
+| video decoding | 0.93 G | `choose_video_decoding`'s own Direct3D 11 device (the AV1 probe) |
+| an NVIDIA driver thread | 0.32 G | driver internals |
+| QQmlThread | 0.30 G | QML type loading |
+
+- **The name sort, about 7.0 G (46%).** In `list_files`, SQLite's sorter (`vdbeSorterSort`) is 7.59 G, nearly all
+  of it `browse::path_collation`: 1.59 M comparisons at about 4,400 instructions each. Unicode lowercasing
+  (`FlatMap<Chars, ToLowercase>`, `to_lower`, `ToCasefold`) is 5.67 G, and rusqlite's `String::from_utf8_lossy` of
+  both strings on every comparison 1.24 G. The rest of SQLite's work on the list is about 2.6 G.
+- **The GPU driver verifying its signature, 2.0 G (13%), in 11 scans.** Each Direct3D device creation reaches NVIDIA's
+  loader (`nvldumdx!OpenAdapter`), which checks its DLL's signature, and Windows scans the whole file
+  (`imagehlp!RabinKarpFindPatternInBuffer`, about 182 M instructions a scan). Main: 3 scans, 0.55 G, from Qt's
+  window creation (`WindowCreationData::create` → `calcPosition` → `GpuDescription::detect` → `Direct3DCreate9`).
+  Render thread: 4 scans, 0.73 G (`QRhiD3D11::create`). Video probe: 4 scans, 0.73 G. This is SDE's "imagehlp"
+  row, and the GPU opened three times.
+- **Text and fonts on the main thread, about 0.3 G:** DirectWrite reading glyph coverage and the character map
+  (0.23 G self), and Qt loading kerning pairs.
+
+**Leads** (not acted on): an ASCII fast path in `path_collation` that compares bytes until a non-ASCII byte, and no
+per-comparison UTF-8 conversion; caching the video probe's result per adapter and driver version; finding why Qt
+creates a Direct3D 9 object during window creation.
 
 ### JPEG decoders (`eval/jpeg-decoders`, 2026-10-31)
 
@@ -225,8 +299,8 @@ Catalog: 189,518 files, all analyzed, 5,216 PDQ pairs, no thumbnails. 18 s under
 
 - **What to measure next:** the hot paths of the app, i.e. `thumbs` on a small folder (decode, resize, encode) and
   `import`. Use a separate `--catalog-dir`, never the real catalog.
-- **Region markers:** a small inline-asm `ssc_mark(id)` helper (`mov ebx, id` followed by the SSC marker bytes `64 67 90`), so
-  `-start_ssc_mark` / `-stop_ssc_mark` can count one stage without startup.
+- **Region markers** beyond the start: the start's stages are functions (`crates/ui/src/trace.rs`) that both SDE
+  and the Pin call graph stop at. Other regions (a scan, a thumbnail pass) would get stages the same way.
 - **Repeatability under SDE:** check that two runs of the same command give the same count (single-threaded paths
   should be identical). Under callgrind/gungraun they are (see above).
 - **More bench inputs:** a PNG, a WebP, a large (12 MP) JPEG, and one that decodes with DCT scaling.

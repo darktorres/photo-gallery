@@ -302,6 +302,34 @@ position grid is resized to each image's grid. One model serves every N, and the
   queries with hand-checked results (incl. text-in-image queries), comparing B/16 fixed 224, B/16 NaFlex 256 and
   So400m NaFlex 256.
 
+#### Why So400m loses precision on TensorRT: fp16 accumulation (2026-10-31)
+
+- **Not one layer.** An engine with every encoder layer's output as an extra output (32 images, valid tokens only)
+  has ~5× torch fp16's relative error from layer 0 on, and 1.9× already after the patch-embedding matmul. The error
+  grows the same way in every layer, so it isn't one bad layer or op. The extra outputs don't change it (worst
+  final cosine 0.9931 vs 0.9924 untapped).
+- **The kernels.** The engine inspector names them. Myelin compiles the QKV, out-projection and fc2 matmuls (and
+  the patch embedding) to `turing_h1688gemm_*` and `sm75_xmma_gemm_f16f16_f16f16_f16_*`, which accumulate in
+  **fp16**. Only fc1 + GELU gets `turing_fp16_s1688gemm_*_gelu` (fp32 accumulation). cuBLAS (torch, ONNX Runtime)
+  accumulates fp16 matmuls in fp32. On GeForce Turing, fp16 accumulation runs at twice the rate, and TensorRT
+  picks kernels by time.
+- **One Linear alone, at So400m's shapes** (16,384 tokens; error vs float64):
+
+| Shape | cuBLAS fp16 | TensorRT fp16 | TensorRT, output cast to fp32 | TensorRT, inputs cast to fp32 |
+|---|---|---|---|---|
+| QKV 1152→1152 | 2.1e-4 | 2.3e-3 (1.0 ms) | 2.3e-3 (same kernel) | 2.1e-4 (7.9 ms, `sgemm`) |
+| fc1 1152→4304 | 2.1e-4 | 2.3e-3 (5.0 ms) | 2.3e-3 | 2.1e-4 (28.9 ms) |
+| fc2 4304→1152 | 2.1e-4 | 4.1e-3 (4.3 ms) | 4.1e-3 | 2.1e-4 (27.7 ms) |
+
+- **No switch.** TensorRT 11 has no accumulation setting: it is strongly typed, and its builder flags only cover
+  TF32 and strict NaNs. Writing the matmul in fp32 gets the precision back, but only through plain fp32 `sgemm`
+  (no tensor cores), ~6–7× slower per matmul.
+- **The cost of fp32 accumulation**, each alone on the GPU (batch 64): TensorRT fp16 126 img/s (6.4 days for 70M),
+  **torch pure fp16 with SDPA 87 img/s (9.3 days)**, ONNX Runtime CUDA fp16 61 img/s (13 days). The earlier
+  "1 img/s" for ONNX Runtime was a GPU-memory spill: the fp32 reference model was on the 6 GB GPU too.
+- SSCD and DISK on TensorRT keep their measured quality (cosine ≥ 0.9994, same retrieval and decisions), so for
+  those models the fp16 accumulation is harmless.
+
 ## Bugs found
 
 - **Meta's SSCD TorchScript breaks in fp16:** `.half()` collapses every image to the same
@@ -1154,11 +1182,12 @@ JavaScript sets, and no challenge is passed. The user should decide before the p
 - Verifier robustness: the median-residual measure swings for ~0.3% of pairs when a few keypoints change
   (TensorRT vs torch flips); look at those with the hand marks.
 - Second model (So400m NaFlex): TensorRT fp16 reaches cosine 0.997 vs fp32, while torch fp16 and ONNX Runtime CUDA
-  on the same fp16 graph reach 0.9993 (fp32 LayerNorm doesn't help), so a TensorRT kernel loses it. It changes
+  on the same fp16 graph reach 0.9993 (fp32 LayerNorm doesn't help). Cause found 2026-10-31: TensorRT's matmuls
+  accumulate in fp16 ("Why So400m loses precision on TensorRT"); choose a runtime. It changes
   neighbours: on 512 random images (2026-10-31, quiet machine) the nearest neighbour matches fp32 for 0.939 with
   TensorRT vs 0.984 with torch fp16 (top-5 overlap 0.961 vs 0.990; 0.949 vs 0.996 on 512 subset images). The
-  flipped ones are near-ties (fp32 top-1/top-2 gap median 0.0013 vs 0.011 overall), but the loss is ~4x torch's,
-  so find the kernel before adopting. Speed confirmed at 126 img/s with the engine alone; with the fp32 model
+  flipped ones are near-ties (fp32 top-1/top-2 gap median 0.0013 vs 0.011 overall), but the loss is ~4x torch's.
+  Speed confirmed at 126 img/s with the engine alone; with the fp32 model
   also on the 6 GB GPU, Windows spills to shared memory and it drops to ~1 img/s. A small text-query test on this
   library would check the semantic quality and the 256-patch budget.
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and

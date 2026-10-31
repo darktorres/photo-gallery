@@ -139,18 +139,38 @@ Rectangle {
                     implicitWidth: 28
                     implicitHeight: 28
                 }
-                Label {
-                    text: yandex.status
-                    color: "#999999"
-                    elide: Text.ElideRight
-                    Layout.fillWidth: true
-                }
+                Item { Layout.fillWidth: true }
                 Button {
                     text: "Save " + panel.pickedCount + (panel.pickedCount === 1 ? " image…" : " images…")
                     enabled: panel.pickedCount > 0 && !yandex.busy
                     onClicked: saveDialog.open()
                 }
                 Button { text: "Close"; onClicked: panel.close() }
+            }
+
+            // The status in full: wrapped, so nothing is cut off, and selectable so it can be copied.
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 10
+                visible: yandex.status.length > 0
+
+                TextEdit {
+                    id: statusText
+                    Layout.fillWidth: true
+                    text: yandex.status
+                    color: "#cccccc"
+                    font.pixelSize: 13
+                    wrapMode: TextEdit.Wrap
+                    readOnly: true
+                    selectByMouse: true
+                }
+                Button {
+                    text: "Copy"
+                    onClicked: {
+                        statusText.selectAll()
+                        statusText.copy()
+                    }
+                }
             }
 
             Flickable {

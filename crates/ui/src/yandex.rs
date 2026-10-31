@@ -80,39 +80,36 @@ fn set_status(shared: &Mutex<Shared>, text: impl Into<String>) {
 /// What the user reads when a request fails.
 fn explain(e: YandexError) -> String {
     match e {
-        YandexError::Captcha => {
-            "Yandex asked for a captcha. Open yandex.com in a browser, solve it, then search again.".to_string()
-        }
+        // Solving it in a browser doesn't help: the app doesn't share the browser's cookies.
+        YandexError::Captcha => "Yandex asked for a captcha, which the app can't answer. Try again later.".to_string(),
         other => other.to_string(),
     }
 }
 
-/// The Content-Type Yandex's upload expects, from the file's extension. Videos and anything else are refused.
-fn content_type_for(path: &str) -> Option<&'static str> {
-    let ext = Path::new(path).extension()?.to_str()?.to_ascii_lowercase();
-    match ext.as_str() {
-        "jpg" | "jpeg" => Some("image/jpeg"),
-        "png" => Some("image/png"),
-        "webp" => Some("image/webp"),
-        "gif" => Some("image/gif"),
-        "bmp" => Some("image/bmp"),
-        _ => None,
-    }
+/// Still images only: videos and anything else are refused before anything is sent.
+fn is_still_image(path: &str) -> bool {
+    let ext = Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
+    matches!(ext.as_deref(), Some("jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp"))
 }
 
-/// The search, on its own thread: upload, other sizes, similar. Returns the results as JSON, or the message to show.
-fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<String, String> {
-    let content_type = content_type_for(path)
-        .ok_or_else(|| "Yandex search takes still images (JPEG, PNG, WebP, GIF or BMP).".to_string())?;
+/// The search, on its own thread: upload, other sizes, similar. Returns the results as JSON with a note when the
+/// similar images failed (the other sizes are still shown, as the crawler keeps them), or the message to show.
+fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<(String, Option<String>), String> {
+    if !is_still_image(path) {
+        return Err("Yandex search takes still images (JPEG, PNG, WebP, GIF or BMP).".to_string());
+    }
     let bytes = std::fs::read(path).map_err(|e| format!("Can't read the photo: {e}"))?;
-    let mut client = Client::new();
+    let mut client = Client::new().map_err(explain)?;
     set_status(shared, "Uploading the photo…");
-    let upload = client.upload(&bytes, content_type).map_err(explain)?;
+    let upload = client.upload(&bytes).map_err(explain)?;
     set_status(shared, "Reading the other sizes…");
     let other = client.other_sizes(&upload).map_err(explain)?;
     set_status(shared, "Reading similar images…");
-    let similar = client.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES).map_err(explain)?;
-    Ok(json!({
+    let (similar, note) = match client.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
+        Ok(similar) => (similar, None),
+        Err(e) => (Vec::new(), Some(format!("Similar images failed: {}", explain(e)))),
+    };
+    let json = json!({
         "otherSizes": other
             .iter()
             .map(|s| json!({"group": s.group, "width": s.width, "height": s.height, "url": s.url}))
@@ -123,7 +120,8 @@ fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<String, String> {
                             "imageUrl": s.image_url, "thumbUrl": s.thumb_url}))
             .collect::<Vec<_>>(),
     })
-    .to_string())
+    .to_string();
+    Ok((json, note))
 }
 
 /// A file name without characters that Windows refuses in names.
@@ -153,7 +151,10 @@ struct Saved {
 
 /// Downloads every item into `folder`, one at a time (the client paces nothing here; these are CDN files).
 fn save_all(items: &[DownloadItem], folder: &Path, shared: &Mutex<Shared>) -> Saved {
-    let client = Client::new();
+    let client = match Client::new() {
+        Ok(client) => client,
+        Err(e) => return Saved { written: 0, failed: items.len(), first_error: Some(explain(e)) },
+    };
     let mut saved = Saved { written: 0, failed: 0, first_error: None };
     for (i, item) in items.iter().enumerate() {
         set_status(shared, format!("Saving {} of {}…", i + 1, items.len()));
@@ -184,14 +185,17 @@ impl qobject::YandexSearch {
             s.busy = true;
             s.status = "Starting…".to_string();
         }
+        // QML runs its poll timer while the `busy` property is set, and only poll() sets it: set it here too.
+        self.as_mut().set_busy(true);
+        self.as_mut().set_status(QString::from("Starting…"));
         self.as_mut().set_results(QString::default());
         thread::spawn(move || {
             let outcome = find_similar(&path, &shared);
             let mut s = lock(&shared);
             match outcome {
-                Ok(json) => {
+                Ok((json, note)) => {
                     s.results = Some(json);
-                    s.status = String::new();
+                    s.status = note.unwrap_or_default();
                 }
                 Err(message) => s.status = message,
             }
@@ -207,14 +211,17 @@ impl qobject::YandexSearch {
             Err(e) => return self.as_mut().set_status(QString::from(&format!("Nothing to save: {e}"))),
         };
         let shared = self.shared.clone();
+        let starting = format!("Saving {} files…", items.len());
         {
             let mut s = lock(&shared);
             if s.busy {
                 return;
             }
             s.busy = true;
-            s.status = format!("Saving {} files…", items.len());
+            s.status = starting.clone();
         }
+        self.as_mut().set_busy(true);
+        self.as_mut().set_status(QString::from(&starting));
         thread::spawn(move || {
             let saved = save_all(&items, Path::new(&folder), &shared);
             let mut s = lock(&shared);

@@ -1063,11 +1063,18 @@ the Sites list above was the wrong target for group 1:
 | Run | Other sizes | Similar |
 |---|---|---|
 | As written (no cookies) | **18** (largest 10109×4542) | 40, page 1 fails (`Unexpected API response structure … 'blocks'`) |
-| With `yp` cookie (szm) | **18** | **55** in one page |
+| With `yp` cookie (szm) | **18** | **55**, page 1 fails the same way |
 
 - **Group 1 needs no cookie.** The other-sizes block is in the initial HTML, and the count matched with and
   without `yp`.
-- **Group 2 needs the `yp` cookie** for the full 55. Without it, page 1 comes back with an error structure.
+- **Group 2 needs the `yp` cookie** for the full 55 on page 0.
+- **Page 1 of Similar is a captcha, with or without `yp`** (rechecked 2026-10-31). Yandex answers it with HTTP
+  200 and JSON `{"type": "captcha", "captcha": {…}}`, which links to `showcaptcha`. The script never reports it:
+  it reads that as an unexpected structure, stops paging and keeps page 0. So the script gets one page of
+  similar images, whatever `SIMILAR_PAGES_TO_DOWNLOAD` says (20 in the script).
+- **The app's first version failed on it.** Its client reported the page-1 captcha as an error of the whole
+  search, so the other sizes and page 0 were dropped and the panel said "captcha". It now does what the script
+  does: a failure on a page after the first ends the list.
 - **Not measured:** whether the browser shows all 18 other sizes or about 5 (the user's "5 or so shown").
 - The script's known failures (`files_not_working.md`): upload 400s, SSL EOF and remote disconnects.
   `tasks.md`: CDN 403s that load in a browser, and no captcha validation for HTML responses.

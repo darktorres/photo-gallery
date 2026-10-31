@@ -12,14 +12,19 @@
 //! Endpoints and parsing follow `crawlers/yandex-reverse/search.py`.
 
 use std::io::Read;
+use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use serde_json::Value;
 
 const UPLOAD_URL: &str = "https://yandex.com/images-apphost/image-download?cbird=111";
 const SEARCH_URL: &str = "https://yandex.com/images/search";
+/// The same User-Agent as `crawlers/yandex-reverse/search.py`, which Yandex serves without a captcha.
 const USER_AGENT: &str =
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/156.0.0.0 Safari/537.36";
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36";
+/// The similar endpoint's `request` parameter, byte for byte as the crawler's `json.dumps(..., separators=(",", ":"))`
+/// writes it: key order and all.
+const SIMILAR_REQUEST: &str = r#"{"blocks":[{"block":"extra-content","params":{},"version":2},{"block":{"block":"i-react-ajax-adapter:ajax"},"params":{"type":"ImagesApp","ajaxKey":"serpList/fetch"},"version":2}]}"#;
 const TIMEOUT: Duration = Duration::from_secs(30);
 /// Pause between requests. A burst of automated requests gets a captcha.
 const MIN_INTERVAL: Duration = Duration::from_millis(1500);
@@ -103,26 +108,20 @@ pub struct Client {
     last_request: Option<Instant>,
 }
 
-impl Default for Client {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 impl Client {
-    pub fn new() -> Self {
-        Self { agent: ureq::AgentBuilder::new().timeout(TIMEOUT).build(), yp: yp_cookie(), last_request: None }
+    /// Fails only when the system's TLS stack can't start: ureq's `native-tls` feature doesn't install a connector
+    /// by itself, so without this agent every `https://` request fails.
+    pub fn new() -> Result<Self, YandexError> {
+        let tls = ureq::native_tls::TlsConnector::new().map_err(|e| YandexError::Transport(format!("TLS: {e}")))?;
+        let agent = ureq::AgentBuilder::new().timeout(TIMEOUT).tls_connector(Arc::new(tls)).build();
+        Ok(Self { agent, yp: yp_cookie(), last_request: None })
     }
 
-    /// Uploads an image and returns the ids that the result requests need.
-    pub fn upload(&mut self, image: &[u8], content_type: &str) -> Result<Upload, YandexError> {
+    /// Uploads an image and returns the ids that the result requests need. The body is the raw file, with no
+    /// Content-Type, as the crawler sends it.
+    pub fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {
         self.pace();
-        let req = self
-            .agent
-            .post(UPLOAD_URL)
-            .set("User-Agent", USER_AGENT)
-            .set("Cookie", &self.yp)
-            .set("Content-Type", content_type);
+        let req = self.agent.post(UPLOAD_URL).set("User-Agent", USER_AGENT).set("Cookie", &self.yp);
         let body = read_response(req.send_bytes(image))?;
         let v: Value = serde_json::from_str(&body).map_err(|_| YandexError::Unexpected("upload is not JSON"))?;
         let cbir_id = v["cbir_id"].as_str().ok_or(YandexError::Unexpected("upload has no cbir_id"))?;
@@ -145,14 +144,14 @@ impl Client {
     }
 
     /// Visually similar images. Pages are fetched until one is empty, has no next link, or `max_pages` is reached.
-    /// A page after the first that doesn't have the expected JSON counts as the end of the list.
+    /// Only a failure on the first page is an error. Yandex answers page 1 with a captcha (2026-10-31, the crawler
+    /// too), so a failure on a later page ends the list with the pages already read, as the crawler does.
     pub fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Vec<SimilarItem>, YandexError> {
         let mut all = Vec::new();
         for page in 0..max_pages {
-            let body = self.similar_request(up, page)?;
-            let parsed = match parse_similar_page(&body) {
+            let parsed = match self.similar_request(up, page).and_then(|body| parse_similar_page(&body)) {
                 Ok(p) => p,
-                Err(YandexError::Unexpected(_)) if page > 0 => break,
+                Err(_) if page > 0 => break,
                 Err(e) => return Err(e),
             };
             if parsed.items.is_empty() {
@@ -167,22 +166,12 @@ impl Client {
     }
 
     fn similar_request(&mut self, up: &Upload, page: u32) -> Result<String, YandexError> {
-        let request = serde_json::json!({
-            "blocks": [
-                {"block": "extra-content", "params": {}, "version": 2},
-                {
-                    "block": {"block": "i-react-ajax-adapter:ajax"},
-                    "params": {"type": "ImagesApp", "ajaxKey": "serpList/fetch"},
-                    "version": 2
-                }
-            ]
-        });
-        let text = format!("url:\"{}\"", without_scheme(&up.orig_url));
+        let text = format!("url:\"{}\"", host_and_path(&up.orig_url));
         let req = self
             .agent
             .get(SEARCH_URL)
             .query("format", "json")
-            .query("request", &request.to_string())
+            .query("request", SIMILAR_REQUEST)
             .query("cbir_id", &up.cbir_id)
             .query("url", &up.orig_url)
             .query("rpt", "imagelike")
@@ -195,7 +184,7 @@ impl Client {
 
     fn send(&mut self, req: ureq::Request) -> Result<String, YandexError> {
         self.pace();
-        let req = req.set("User-Agent", USER_AGENT).set("Accept-Language", "en-US,en;q=0.9").set("Cookie", &self.yp);
+        let req = req.set("User-Agent", USER_AGENT).set("Cookie", &self.yp);
         read_response(req.call())
     }
 
@@ -287,8 +276,10 @@ fn yp_cookie() -> String {
 }
 
 /// The URL without its scheme: `avatars.mds.yandex.net/get-images-cbir/…/orig`.
-fn without_scheme(url: &str) -> &str {
-    url.split_once("://").map_or(url, |(_, rest)| rest)
+/// `host/path` of a URL, without the scheme and the query, as the crawler's `netloc + path`.
+fn host_and_path(url: &str) -> &str {
+    let rest = url.split_once("://").map_or(url, |(_, rest)| rest);
+    rest.split(['?', '#']).next().unwrap_or(rest)
 }
 
 /// The results page's `ImagesApp-*` element carries its state as an HTML-escaped `data-state` attribute.
@@ -521,11 +512,20 @@ mod tests {
     }
 
     #[test]
-    fn scheme_is_dropped_for_the_text_parameter() {
+    fn text_parameter_is_host_and_path_without_query() {
         assert_eq!(
-            without_scheme("https://avatars.mds.yandex.net/get-images-cbir/1/2/orig"),
+            host_and_path("https://avatars.mds.yandex.net/get-images-cbir/1/2/orig"),
             "avatars.mds.yandex.net/get-images-cbir/1/2/orig"
         );
+        assert_eq!(host_and_path("https://a.example/x/orig?x=1#f"), "a.example/x/orig");
+    }
+
+    #[test]
+    fn similar_request_is_the_crawlers_json() {
+        // The same bytes `json.dumps(request_json, separators=(",", ":"))` gives in the crawler.
+        let v: serde_json::Value = serde_json::from_str(SIMILAR_REQUEST).unwrap();
+        assert_eq!(v["blocks"][1]["params"]["ajaxKey"], "serpList/fetch");
+        assert!(SIMILAR_REQUEST.starts_with(r#"{"blocks":[{"block":"extra-content""#));
     }
 
     #[test]

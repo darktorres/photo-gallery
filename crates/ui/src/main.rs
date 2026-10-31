@@ -17,6 +17,7 @@ mod providers;
 mod settings;
 mod state;
 mod video_decoding;
+mod yandex;
 
 use std::ffi::OsString;
 use std::path::PathBuf;

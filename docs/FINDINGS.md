@@ -268,6 +268,40 @@ ImageNet numbers: SigLIP 2 paper (arXiv 2502.14786, Table 1); CLIP B/32 from ope
   "quality over speed", L/16 (+4.3 points, ~5 days) is the alternative. Both read the same decoded image, resized
   to their own input.
 
+#### NaFlex: native aspect ratio (2026-10-30)
+
+The fixed-resolution SigLIP 2 models **squash** every image to a square (open_clip's `resize_mode='squash'`, as in
+training). This library is portrait: height/width median 1.5, 79% taller than 5:4, 2.4% wider than 4:3 (all 188k
+images). NaFlex keeps the aspect ratio: the image is resized to a grid of 16 px patches, at most N of them, and the
+sequence is padded and masked. A 2:3 picture becomes 13 × 19 patches (208 × 304 px) at N = 256. The learned 16 × 16
+position grid is resized to each image's grid. One model serves every N, and the embeddings share one space.
+
+- **Checkpoints:** B/16 and So400m/16 only (`google/siglip2-{base,so400m}-patch16-naflex`), Hugging Face
+  `transformers` only (not open_clip). `transformers` 5.22 is now in the eval venv.
+- **Quality** (paper Table 7, at an equal 256 tokens): B/16 NaFlex is slightly *below* fixed on natural images
+  (ImageNet 78.5 vs 79.1, COCO text→image 51.1 vs 53.2) and above it on text-heavy images (HierText 7.4 vs 6.1,
+  SciCap 19.7 vs 17.1, Screen2Words 14.8 vs 12.9). So400m NaFlex is on par (ImageNet 83.5 vs 83.4, COCO 55.1 vs
+  55.4, HierText 9.2 vs 7.9). These benchmarks are mostly near-square photos, so they show little of the 1.5×
+  squash this library would get.
+- **TensorRT works** with the position grid resized outside the engine. A batch of 256 images had only 16–19
+  distinct grids, so the resized grids can be cached per shape. The engine takes (patches, positions, mask) at a
+  fixed length (prototype in the session scratchpad). It matches the HF model to 3e-6 in fp32. Measured on the
+  RTX 2060 (batch 64):
+
+| Model | Tokens | torch fp16 img/s | TensorRT fp16 img/s | GPU hours for 70M | TensorRT vs fp32 cosine min |
+|---|---|---|---|---|---|
+| B/16 fixed 224 | 196 | 448 | 741 | 26 | 0.9999 |
+| B/16 fixed 256 | 256 | 280 | 411 | 47 | – |
+| **B/16 NaFlex** | ≤ 256 | 278 | 383 | 51 | 0.9995 |
+| So400m/14 fixed 224 | 256 | 65–78 | 122 | 159 | 0.9994 |
+| **So400m/16 NaFlex** | ≤ 256 | 66 | 126 | 154 | 0.997 |
+
+- **Conclusion:** at equal tokens NaFlex costs the same (So400m) or 7% more (B/16, the mask). Its gain is no
+  distortion of portrait images and better text-in-image retrieval. On the published natural-image numbers it is
+  equal or slightly worse. Which matters more for this library can only be measured here: a small set of text
+  queries with hand-checked results (incl. text-in-image queries), comparing B/16 fixed 224, B/16 NaFlex 256 and
+  So400m NaFlex 256.
+
 ## Bugs found
 
 - **Meta's SSCD TorchScript breaks in fp16:** `.half()` collapses every image to the same

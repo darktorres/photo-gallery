@@ -3,7 +3,7 @@ use cxx_qt_build::{CxxQtBuilder, QmlFile, QmlModule};
 fn main() {
     let mut builder = CxxQtBuilder::new_qml_module(
         QmlModule::new("pg.gallery")
-            .qml_files(["qml/Main.qml", "qml/FilterBar.qml", "qml/Viewer.qml", "qml/WheelScroller.qml"])
+            .qml_files(["qml/Main.qml", "qml/FilterBar.qml", "qml/Viewer.qml", "qml/WheelScroller.qml", "qml/YandexPanel.qml"])
             .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true)),
     )
     .qt_module("Quick")
@@ -17,6 +17,7 @@ fn main() {
         "src/providers.rs",
         "src/settings.rs",
         "src/video_decoding.rs",
+        "src/yandex.rs",
     ])
     .cpp_file("cpp/app_icon.cpp")
     .cpp_file("cpp/frame_sink.cpp")

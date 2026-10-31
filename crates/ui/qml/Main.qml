@@ -606,6 +606,7 @@ ApplicationWindow {
         gallery: gallery
         settings: settings
         onIndexChanged: sessionTimer.restart()
+        onFindSimilar: (path) => yandexPanel.show(path)
         onClosed: (i) => {
             win.select(i)
             if (win.refreshPending) {
@@ -685,6 +686,12 @@ ApplicationWindow {
                 }
             }
         }
+    }
+
+    // Reverse image search for the viewer's photo (over the viewer, so it comes after it).
+    YandexPanel {
+        id: yandexPanel
+        onClosed: grid.forceActiveFocus()
     }
 
     FolderDialog {

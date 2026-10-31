@@ -18,3 +18,4 @@ pub mod resize;
 pub mod rotate;
 pub mod thumbs;
 pub mod video;
+pub mod yandex;

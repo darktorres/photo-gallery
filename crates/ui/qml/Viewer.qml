@@ -41,6 +41,8 @@ Rectangle {
     // Sound, for the session.
     property bool muted: false
     property real volume: 1
+    // The bar's "find similar" button: the photo's file, for the Yandex panel (Main.qml).
+    signal findSimilar(string path)
 
     // The view: `zoom` device pixels per image pixel, the image's top-left corner at (ox, oy) in logical pixels.
     property real zoom: 1
@@ -542,6 +544,14 @@ Rectangle {
                 id: barRow
                 anchors.centerIn: parent
                 spacing: 4
+                ToolButton {
+                    text: "≈"
+                    visible: viewer.still
+                    font.pixelSize: 22
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Find similar images on Yandex"
+                    onClicked: viewer.findSimilar(gallery.filePath(viewer.index))
+                }
                 ToolButton {
                     text: "⟲"
                     font.pixelSize: 22

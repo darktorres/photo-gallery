@@ -20,6 +20,7 @@ kamadak-exif.workspace = true
 rusqlite.workspace = true
 thumbhash.workspace = true
 turbojpeg.workspace = true
+ureq.workspace = true
 xxhash-rust.workspace = true
 blake3.workspace = true
 crc32fast.workspace = true

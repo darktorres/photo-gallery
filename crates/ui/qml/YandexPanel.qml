@@ -1,6 +1,7 @@
 // Reverse image search on Yandex for the photo in the viewer: its other sizes, and the images that look like it.
-// Pick any of them and save the picks into a folder. The search and the saving run on background threads in the
-// YandexSearch object; this panel polls it while it is busy. Over a dimmed window, like the library panel.
+// Pick any of them and save the picks into a folder. The search, the results, the picks and the saving are the
+// YandexSearch object's (src/yandex.rs), which works on background threads; this panel polls it while it is busy.
+// Over a dimmed window, like the library panel.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -14,18 +15,7 @@ Rectangle {
 
     signal closed()
 
-    property string photo: ""
-    // The picks, by key ("o" + index, "s" + position): {url, name} for each one that is saved.
-    property var picked: ({})
-    readonly property int pickedCount: Object.keys(picked).length
-    property var otherSizes: []
-    property var similar: []
-
-    function show(path) {
-        photo = path
-        picked = ({})
-        otherSizes = []
-        similar = []
+    function show(path: string) {
         visible = true
         // The keys come here (Escape closes), not to the viewer's photo stepping behind.
         forceActiveFocus()
@@ -37,24 +27,16 @@ Rectangle {
         closed()
     }
 
-    function toggle(key, item) {
-        const next = Object.assign({}, picked)
-        if (next[key] !== undefined)
-            delete next[key]
-        else
-            next[key] = item
-        picked = next
-    }
-
-    // A result: its picture with its size, outlined when picked. A click toggles the pick.
+    // A result (YandexSearch's item `first + index`): its picture with its size, outlined when picked. A click
+    // toggles the pick.
     component ResultTile: Rectangle {
         id: tile
-        required property string key
-        required property string fullUrl
-        required property string thumbUrl
-        required property string label
-        required property string fileName
-        readonly property bool isPicked: panel.picked[tile.key] !== undefined
+        required property int index
+        property int first: 0
+        readonly property int item: first + index
+        readonly property bool isPicked: yandex.revision >= 0 && yandex.isPicked(item)
+        readonly property int pixelWidth: yandex.revision >= 0 ? yandex.width(item) : 0
+        readonly property int pixelHeight: yandex.revision >= 0 ? yandex.height(item) : 0
 
         width: 176
         height: 176
@@ -66,7 +48,7 @@ Rectangle {
         Image {
             anchors.fill: parent
             anchors.margins: 6
-            source: tile.thumbUrl
+            source: yandex.revision >= 0 ? yandex.thumb(tile.item) : ""
             sourceSize.width: 320
             sourceSize.height: 320
             fillMode: Image.PreserveAspectFit
@@ -76,14 +58,14 @@ Rectangle {
             anchors.left: parent.left
             anchors.bottom: parent.bottom
             anchors.margins: 6
-            text: tile.label
+            text: tile.pixelWidth > 0 ? tile.pixelWidth + "×" + tile.pixelHeight : ""
             color: "#dddddd"
             font.pixelSize: 11
         }
         MouseArea {
             anchors.fill: parent
             cursorShape: Qt.PointingHandCursor
-            onClicked: panel.toggle(tile.key, { url: tile.fullUrl, name: tile.fileName })
+            onClicked: yandex.togglePick(tile.item)
         }
     }
 
@@ -100,17 +82,7 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
-    YandexSearch {
-        id: yandex
-        onResultsChanged: {
-            // Cleared when a search starts; nothing to read until it ends.
-            if (yandex.results === "")
-                return
-            const data = JSON.parse(yandex.results)
-            panel.otherSizes = data.otherSizes
-            panel.similar = data.similar
-        }
-    }
+    YandexSearch { id: yandex }
 
     // While a search or a save runs, the object's state comes across on each tick.
     Timer {
@@ -123,7 +95,7 @@ Rectangle {
     FolderDialog {
         id: saveDialog
         title: "Save the picked images into"
-        onAccepted: yandex.download(JSON.stringify(Object.keys(panel.picked).map(k => panel.picked[k])), selectedFolder)
+        onAccepted: yandex.download(selectedFolder)
     }
 
     Pane {
@@ -150,8 +122,8 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "Save " + panel.pickedCount + (panel.pickedCount === 1 ? " image…" : " images…")
-                    enabled: panel.pickedCount > 0 && !yandex.busy
+                    text: "Save " + yandex.pickedCount + (yandex.pickedCount === 1 ? " image…" : " images…")
+                    enabled: yandex.pickedCount > 0 && !yandex.busy
                     onClicked: saveDialog.open()
                 }
                 Button { text: "Close"; onClicked: panel.close() }
@@ -196,52 +168,37 @@ Rectangle {
                     spacing: 12
 
                     Label {
-                        text: "Other sizes of this photo (" + panel.otherSizes.length + ")"
+                        text: "Other sizes of this photo (" + yandex.otherCount + ")"
                         font.bold: true
-                        visible: panel.otherSizes.length > 0
+                        visible: yandex.otherCount > 0
                     }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 8
                         Repeater {
-                            model: panel.otherSizes
-                            ResultTile {
-                                required property var modelData
-                                required property int index
-                                key: "o" + index
-                                fullUrl: modelData.url
-                                thumbUrl: modelData.url
-                                label: modelData.width + "×" + modelData.height
-                                fileName: "size " + modelData.width + "x" + modelData.height
-                            }
+                            model: yandex.otherCount
+                            ResultTile {}
                         }
                     }
 
                     Label {
-                        text: "Similar images (" + panel.similar.length + ")"
+                        text: "Similar images (" + yandex.similarCount + ")"
                         font.bold: true
-                        visible: panel.similar.length > 0
+                        visible: yandex.similarCount > 0
                     }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 8
                         Repeater {
-                            model: panel.similar
-                            ResultTile {
-                                required property var modelData
-                                key: "s" + modelData.pos
-                                fullUrl: modelData.imageUrl
-                                thumbUrl: modelData.thumbUrl || modelData.imageUrl || ""
-                                label: modelData.width > 0 ? modelData.width + "×" + modelData.height : ""
-                                fileName: "similar " + (modelData.pos + 1)
-                            }
+                            model: yandex.similarCount
+                            ResultTile { first: yandex.otherCount }
                         }
                     }
 
                     Label {
                         text: "No results."
                         color: "#888888"
-                        visible: !yandex.busy && panel.otherSizes.length === 0 && panel.similar.length === 0
+                        visible: !yandex.busy && yandex.otherCount === 0 && yandex.similarCount === 0
                             && yandex.status === ""
                     }
                 }

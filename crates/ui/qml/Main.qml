@@ -15,7 +15,7 @@ ApplicationWindow {
     width: 1600
     height: 1000
     visible: true
-    title: "Photo Gallery" + (galleryModel.folder.length ? " — " + galleryModel.folder : "")
+    title: "Photo Gallery" + (view.folder.length ? " — " + view.folder : "")
     color: "#181818"
     palette {
         window: "#202020"
@@ -41,16 +41,21 @@ ApplicationWindow {
     property real rowHeight: appSettings.rowHeight
     property int thumbHeight: Math.round(rowHeight * Screen.devicePixelRatio)
     property int current: -1
-    // What the grid shows: the open folder (galleryModel.folder), with or without subfolders, the files the filter bar
-    // keeps (filterBar.query, a query::Query) in an order (a query::Sort). Remembered across runs, and in saved
-    // views.
-    property bool recursive: true
-    property var sort: ({ key: "name", descending: false })
     property bool filtersOpen: false
     readonly property real gap: 4
+    // query::SortKey names, and the sort box's names for them.
+    readonly property list<string> sortKeys: ["name", "size", "modified", "taken", "megapixels", "duration"]
+    readonly property list<string> sortNames: ["By name", "By file size", "By date modified", "By date taken",
+        "By megapixels", "By duration"]
+    // The test hook's rating keys (--viewer-keys): "r3" rates 3.
+    readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
     FolderModel { id: folders }
     GalleryModel { id: galleryModel }
+    // Where the grid looks, with or without subfolders, in what order; with the filter bar's query, a view.
+    // Remembered across runs, and in saved views (src/view.rs).
+    View { id: view }
+    CommandLine { id: commandLine }
     Library {
         id: library
         onScanned: win.reloadAll()
@@ -81,8 +86,7 @@ ApplicationWindow {
         id: sessionTimer
         interval: 1000
         onTriggered: {
-            const i = viewer.visible ? viewer.index : win.current
-            appSettings.setSession("file", String(i >= 0 ? galleryModel.fileId(i) : -1))
+            appSettings.lastFile = galleryModel.fileId(viewer.visible ? viewer.index : win.current)
         }
     }
     onCurrentChanged: sessionTimer.restart()
@@ -96,33 +100,25 @@ ApplicationWindow {
         thumbTimer.restart()
     }
 
-    function setSize(h) { rowHeight = Math.max(60, Math.min(800, Math.round(h))) }
-
-    function parseJson(text, fallback) {
-        try {
-            return JSON.parse(text)
-        } catch (e) {
-            return fallback
-        }
-    }
+    function setSize(h: real) { rowHeight = Math.max(60, Math.min(800, Math.round(h))) }
 
     // The counts next to the filter choices, and "N of M". Not needed (and not computed) while nothing filters
     // and the bar is closed.
     function updateFacets() {
         if (filtersOpen || filterBar.active > 0)
-            filterBar.facets = JSON.parse(galleryModel.facets(galleryModel.folder, recursive, JSON.stringify(filterBar.query)))
+            filterBar.countFacets(view.folder, view.recursive)
     }
 
     // The filters changed: apply them after a short pause, so typing a number doesn't re-list at every key.
     Timer {
         id: applyTimer
         interval: 300
-        onTriggered: win.openPath(galleryModel.folder)
+        onTriggered: win.openPath(view.folder)
     }
     onFiltersOpenChanged: updateFacets()
 
     // The first item of the topmost visible row, to keep the view anchored across relayouts.
-    function topItem() {
+    function topItem(): int {
         const row = grid.indexAt(10, grid.contentY + 1)
         const del = row >= 0 ? grid.itemAtIndex(row) as GridRow : null
         return del ? del.firstItem : -1
@@ -137,7 +133,7 @@ ApplicationWindow {
 
     // The folder tree changed (a scan): reload it, keeping the open folder if it still exists.
     function reloadAll() {
-        const path = galleryModel.folder
+        const path = view.folder
         folders.reload()
         const row = folders.rowOf(path)
         tree.currentIndex = Math.max(row, 0)
@@ -155,10 +151,8 @@ ApplicationWindow {
         }
         const hadCurrent = current >= 0
         const keep = hadCurrent ? current : topItem()
-        const fid = keep >= 0 ? galleryModel.fileId(keep) : -1
-        galleryModel.openFolder(galleryModel.folder, recursive, JSON.stringify(filterBar.query), JSON.stringify(sort))
+        let i = galleryModel.openFolder(view.folder, view.recursive, filterBar.query, view.sortJson(), keep)
         updateFacets()
-        let i = fid >= 0 ? galleryModel.indexOf(fid) : -1
         // The selected file left the view (rated out of "Unrated"): select what took its place.
         if (i < 0 && hadCurrent && galleryModel.count > 0)
             i = Math.min(keep, galleryModel.count - 1)
@@ -167,26 +161,23 @@ ApplicationWindow {
             grid.positionViewAtIndex(galleryModel.rowOf(i), hadCurrent ? ListView.Contain : ListView.Beginning)
     }
 
-    function openFolder(row) {
+    function openFolder(row: int) {
         openPath(folders.mergedPath(row))
     }
 
     // Show a merged folder (`""` = all) with the current subfolders, filters and sort, and remember it.
-    function openPath(path) {
+    function openPath(path: string) {
         current = -1
-        const query = JSON.stringify(filterBar.query)
-        galleryModel.openFolder(path, recursive, query, JSON.stringify(sort))
+        view.folder = path
+        galleryModel.openFolder(path, view.recursive, filterBar.query, view.sortJson(), -1)
         updateFacets()
         grid.positionViewAtBeginning()
-        sortBox.currentIndex = sortBox.indexOfValue(sort.key)
-        appSettings.setSession("folder", path)
-        appSettings.setSession("recursive", String(recursive))
-        appSettings.setSession("query", query)
-        appSettings.setSession("sort", JSON.stringify(sort))
+        sortBox.currentIndex = sortKeys.indexOf(view.sortKey)
+        view.saveSession(filterBar.query)
     }
 
     // Open a folder by path, showing it in the tree (its parents expanded).
-    function goTo(path) {
+    function goTo(path: string) {
         const row = folders.reveal(path)
         tree.currentIndex = Math.max(row, 0)
         if (row >= 0)
@@ -194,25 +185,23 @@ ApplicationWindow {
         openPath(row >= 0 ? path : "")
     }
 
-    function applyView(name) {
-        const v = appSettings.view(name)
-        if (v.query === undefined)
+    function applyView(name: string) {
+        const query = view.applyView(name)
+        if (query === "")
             return
-        recursive = v.recursive
-        filterBar.load(parseJson(v.query, {}))
-        sort = parseJson(v.sort, { key: "name", descending: false })
-        goTo(v.folder)
+        filterBar.query = query
+        goTo(view.folder)
         grid.forceActiveFocus()
     }
 
-    function select(i) {
+    function select(i: int) {
         if (i < 0)
             return
         current = i
         grid.positionViewAtIndex(galleryModel.rowOf(i), ListView.Contain)
     }
 
-    function gridKey(e) {
+    function gridKey(e: KeyEvent) {
         const c = current < 0 ? 0 : current
         const ctrl = e.modifiers & Qt.ControlModifier
         if (ctrl && (e.key === Qt.Key_Plus || e.key === Qt.Key_Equal)) setSize(rowHeight * 1.15)
@@ -246,23 +235,23 @@ ApplicationWindow {
             anchors.rightMargin: 8
             spacing: 12
             Label {
-                text: galleryModel.folder.length ? galleryModel.folder : "All folders"
+                text: view.folder.length ? view.folder : "All folders"
                 font.bold: true
                 elide: Text.ElideMiddle
                 Layout.maximumWidth: 600
             }
             Label {
                 color: "#999999"
-                text: galleryModel.count.toLocaleString(Qt.locale(), "f", 0)
-                    + (filterBar.active > 0 ? " of " + filterBar.facets.total.toLocaleString(Qt.locale(), "f", 0) : "")
+                text: Qt.locale().toString(galleryModel.count)
+                    + (filterBar.active > 0 ? " of " + Qt.locale().toString(filterBar.total) : "")
                     + " files"
             }
             CheckBox {
                 text: "Include subfolders"
-                checked: win.recursive
+                checked: view.recursive
                 onToggled: {
-                    win.recursive = checked
-                    win.openPath(galleryModel.folder)
+                    view.recursive = checked
+                    win.openPath(view.folder)
                 }
             }
             Button {
@@ -274,34 +263,25 @@ ApplicationWindow {
             }
             ComboBox {
                 id: sortBox
-                textRole: "text"
-                valueRole: "key"
-                // query::SortKey
-                model: [
-                    { key: "name", text: "By name" },
-                    { key: "size", text: "By file size" },
-                    { key: "modified", text: "By date modified" },
-                    { key: "taken", text: "By date taken" },
-                    { key: "megapixels", text: "By megapixels" },
-                    { key: "duration", text: "By duration" },
-                ]
-                onActivated: {
+                model: win.sortNames
+                onActivated: (i) => {
                     // Name reads A→Z; the others start with the largest, newest or longest.
-                    win.sort = { key: currentValue, descending: currentValue !== "name" }
-                    win.openPath(galleryModel.folder)
+                    view.sortKey = win.sortKeys[i]
+                    view.descending = i !== 0
+                    win.openPath(view.folder)
                     grid.forceActiveFocus()
                 }
                 Layout.preferredWidth: 160
             }
             Button {
-                text: win.sort.descending ? "↓" : "↑"
+                text: view.descending ? "↓" : "↑"
                 onClicked: {
-                    win.sort = { key: win.sort.key, descending: !win.sort.descending }
-                    win.openPath(galleryModel.folder)
+                    view.descending = !view.descending
+                    win.openPath(view.folder)
                     grid.forceActiveFocus()
                 }
                 ToolTip.visible: hovered
-                ToolTip.text: win.sort.descending ? "Descending (click for ascending)" : "Ascending (click for descending)"
+                ToolTip.text: view.descending ? "Descending (click for ascending)" : "Ascending (click for descending)"
                 Layout.preferredWidth: 32
             }
             // Saved views (ImageRater's bookmarks): a folder with its subfolders, filters and sort, by name.
@@ -312,14 +292,14 @@ ApplicationWindow {
                 Menu {
                     id: viewsMenu
                     Instantiator {
-                        model: appSettings.views
+                        model: view.savedViews
                         delegate: MenuItem {
                             required property string modelData
                             text: modelData
                             onTriggered: win.applyView(modelData)
                         }
-                        onObjectAdded: (i, o) => viewsMenu.insertItem(i, o)
-                        onObjectRemoved: (i, o) => viewsMenu.removeItem(o)
+                        onObjectAdded: (i, o) => viewsMenu.insertItem(i, o as MenuItem)
+                        onObjectRemoved: (i, o) => viewsMenu.removeItem(o as MenuItem)
                     }
                     MenuSeparator {}
                     MenuItem {
@@ -329,16 +309,16 @@ ApplicationWindow {
                     Menu {
                         id: deleteMenu
                         title: "Delete view"
-                        enabled: appSettings.views.length > 0
+                        enabled: view.savedViews.length > 0
                         Instantiator {
-                            model: appSettings.views
+                            model: view.savedViews
                             delegate: MenuItem {
                                 required property string modelData
                                 text: modelData
-                                onTriggered: appSettings.deleteView(modelData)
+                                onTriggered: view.deleteView(modelData)
                             }
-                            onObjectAdded: (i, o) => deleteMenu.insertItem(i, o)
-                            onObjectRemoved: (i, o) => deleteMenu.removeItem(o)
+                            onObjectAdded: (i, o) => deleteMenu.insertItem(i, o as MenuItem)
+                            onObjectRemoved: (i, o) => deleteMenu.removeItem(o as MenuItem)
                         }
                     }
                 }
@@ -383,7 +363,7 @@ ApplicationWindow {
             Label {
                 visible: library.writeStatus.length > 0
                 text: library.writeStatus
-                color: library.writeStatus.indexOf(":") >= 0 ? "#e0a050" : "#aaaaaa"
+                color: library.writeFailed ? "#e0a050" : "#aaaaaa"
                 elide: Text.ElideMiddle
                 Layout.maximumWidth: 500
             }
@@ -418,11 +398,11 @@ ApplicationWindow {
 
     FilterBar {
         id: filterBar
+        onEdited: applyTimer.restart()
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: topBar.bottom
         visible: win.filtersOpen
-        onEdited: applyTimer.restart()
     }
 
     SplitView {
@@ -431,7 +411,7 @@ ApplicationWindow {
         anchors.top: filterBar.visible ? filterBar.bottom : topBar.bottom
         anchors.bottom: bottomBar.top
 
-        ListView {
+        WheelListView {
             id: tree
             SplitView.preferredWidth: 320
             SplitView.minimumWidth: 160
@@ -439,7 +419,6 @@ ApplicationWindow {
             model: folders
             currentIndex: 0
             ScrollBar.vertical: ScrollBar {}
-            WheelScroller {}
             delegate: ItemDelegate {
                 id: node
                 required property int index
@@ -449,6 +428,7 @@ ApplicationWindow {
                 required property bool expanded
                 required property double total
                 required property string drives
+                required property bool merged
                 width: ListView.view.width
                 height: 26
                 rightPadding: 18  // clear of the scrollbar
@@ -463,8 +443,8 @@ ApplicationWindow {
                     }
                     Label { text: node.name; elide: Text.ElideRight; Layout.fillWidth: true }
                     // Folders present on more than one drive are merged into this one node.
-                    Label { text: node.drives; color: "#6fbf8f"; visible: node.drives.indexOf(" ") >= 0; font.pixelSize: 11 }
-                    Label { text: node.total.toLocaleString(Qt.locale(), "f", 0); color: "#888888"; font.pixelSize: 11 }
+                    Label { text: node.drives; color: "#6fbf8f"; visible: node.merged; font.pixelSize: 11 }
+                    Label { text: Qt.locale().toString(node.total, "f", 0); color: "#888888"; font.pixelSize: 11 }
                 }
                 onClicked: {
                     tree.currentIndex = index
@@ -478,7 +458,7 @@ ApplicationWindow {
         Item {
             SplitView.fillWidth: true
 
-            ListView {
+            WheelListView {
                 id: grid
                 anchors.fill: parent
                 anchors.margins: win.gap
@@ -493,16 +473,16 @@ ApplicationWindow {
                 onWidthChanged: layoutTimer.restart()
                 Keys.onPressed: (e) => win.gridKey(e)
 
-                WheelScroller {}
                 WheelHandler {
                     acceptedModifiers: Qt.ControlModifier
                     onWheel: (ev) => win.setSize(win.rowHeight * (ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1))
                 }
 
-                // A row of the grid: a component with a name, so topItem() can read its firstItem typed.
+                // A row of the grid: a component with a name, so topItem() can read its firstItem typed (and final,
+                // so the QML compiler can trust it through the cast).
                 component GridRow: Item {
                     id: rowItem
-                    required property int firstItem
+                    required final property int firstItem
                     required property int itemCount
                     required property real rowHeight
                     width: grid.width
@@ -607,8 +587,23 @@ ApplicationWindow {
     Viewer {
         id: viewer
         anchors.fill: parent
-        gallery: galleryModel
+        count: galleryModel.count
+        // The shown item, read again when the gallery changes it in place (a rating, a turn). Out of range (-1:
+        // closed), the gallery gives empty values.
+        key: galleryModel.revision >= 0 ? galleryModel.imageKey(viewer.index) : ""
+        neighbourKeys: galleryModel.revision >= 0 && viewer.visible ? galleryModel.keysAround(viewer.index, 4) : []
+        turns: galleryModel.revision >= 0 ? galleryModel.pendingTurns(viewer.index) : 0
+        rating: galleryModel.revision >= 0 ? galleryModel.rating(viewer.index) : 0
+        fw: galleryModel.revision >= 0 ? galleryModel.fullWidth(viewer.index) : 0
+        fh: galleryModel.revision >= 0 ? galleryModel.fullHeight(viewer.index) : 0
+        kind: galleryModel.revision >= 0 ? galleryModel.mediaType(viewer.index) : ""
+        playerTurns: galleryModel.revision >= 0 ? galleryModel.playerTurns(viewer.index) : 0
+        fileUrl: galleryModel.revision >= 0 ? galleryModel.fileUrl(viewer.index) : Qt.url("")
+        filePath: galleryModel.revision >= 0 ? galleryModel.filePath(viewer.index) : ""
+        info: galleryModel.revision >= 0 ? galleryModel.info(viewer.index) : ""
         settings: appSettings
+        onRated: (i, r) => galleryModel.setRating(i, r)
+        onTurned: (i, d) => galleryModel.rotate(i, d)
         onIndexChanged: sessionTimer.restart()
         onFindSimilar: (path) => yandexPanel.show(path)
         onClosed: (i) => {
@@ -654,13 +649,12 @@ ApplicationWindow {
                     wrapMode: Text.Wrap
                     Layout.fillWidth: true
                 }
-                ListView {
+                WheelListView {
                     Layout.fillWidth: true
                     Layout.fillHeight: true
                     clip: true
                     model: library.roots
                     ScrollBar.vertical: ScrollBar {}
-                    WheelScroller {}
                     delegate: RowLayout {
                         id: rootRow
                         required property string modelData
@@ -720,14 +714,12 @@ ApplicationWindow {
             viewName.text = ""
             viewName.forceActiveFocus()
         }
-        onAccepted: if (viewName.text.trim().length)
-            appSettings.saveView(viewName.text, galleryModel.folder, win.recursive, JSON.stringify(filterBar.query),
-                JSON.stringify(win.sort))
+        onAccepted: view.saveView(viewName.text, filterBar.query)
         onClosed: grid.forceActiveFocus()
         ColumnLayout {
             Label {
-                text: (galleryModel.folder.length ? galleryModel.folder : "All folders") + (win.recursive ? " and subfolders" : "")
-                    + " · " + filterBar.describe() + " · " + sortBox.currentText + (win.sort.descending ? " ↓" : " ↑")
+                text: (view.folder.length ? view.folder : "All folders") + (view.recursive ? " and subfolders" : "")
+                    + " · " + filterBar.description + " · " + sortBox.currentText + (view.descending ? " ↓" : " ↑")
                 color: "#999999"
             }
             TextField {
@@ -749,47 +741,32 @@ ApplicationWindow {
     //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
     //   --library=1  open the library folders
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
-    //   --screenshot=<png>  save the window after 4 s (or --wait=<s>) and quit
-    function arg(name) {
-        for (const a of Qt.application.arguments)
-            if (a.startsWith("--" + name + "="))
-                return a.substring(name.length + 3)
-        return ""
-    }
+    //   --screenshot=<png>  save the window after 4 s (or --wait=<s>) and quit (src/screenshot.rs)
     Timer {
         id: menuTimer
         interval: 500
         onTriggered: viewsButton.clicked()
     }
-    Timer {
-        id: shotTimer
-        interval: (Number(win.arg("wait")) || 4) * 1000
-        onTriggered: page.grabToImage((r) => {
-            r.saveToFile(win.arg("screenshot"))
-            Qt.quit()
-        })
-    }
+    // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
+    readonly property list<string> viewerKeys: commandLine.keys("viewer-keys")
 
     Component.onCompleted: {
-        // Where the user was.
-        recursive = appSettings.session("recursive", "true") === "true"
-        filterBar.load(parseJson(appSettings.session("query", "{}"), {}))
-        sort = parseJson(appSettings.session("sort", ""), { key: "name", descending: false })
-        if (arg("query")) filterBar.load(parseJson(arg("query"), {}))
-        if (arg("sort")) sort = parseJson(arg("sort"), sort)
-        if (arg("filters")) filtersOpen = true
-        goTo(appSettings.session("folder", ""))
+        // Where the user was: the folder, subfolders and sort are the view's (it read them at its start), the
+        // filters the bar's.
+        filterBar.query = commandLine.has("query") ? commandLine.text("query") : view.sessionQuery()
+        if (commandLine.has("sort")) view.setSortJson(commandLine.text("sort"))
+        if (commandLine.has("filters")) filtersOpen = true
+        goTo(view.folder)
         relayout()
-        const last = galleryModel.indexOf(Number(appSettings.session("file", "-1")))
+        const last = galleryModel.indexOf(appSettings.lastFile)
         if (last >= 0) select(last)
 
-        if (arg("size")) setSize(Number(arg("size")))
-        if (arg("select")) select(Number(arg("select")))
-        if (arg("view")) {
-            viewer.show(Number(arg("view")))
-            const keys = arg("viewer-keys")
-            for (let k = 0; k < keys.length; k++) {
-                const c = keys[k]
+        if (commandLine.has("size")) setSize(commandLine.number("size", rowHeight))
+        if (commandLine.has("select")) select(commandLine.number("select", -1))
+        if (commandLine.has("view")) {
+            viewer.show(commandLine.number("view", -1))
+            for (let k = 0; k < viewerKeys.length; k++) {
+                const c = viewerKeys[k]
                 if (c === "L") viewer.loupe = true
                 else if (c === "B") viewer.frame = true
                 else if (c === "H") viewer.zen = true
@@ -798,15 +775,14 @@ ApplicationWindow {
                 else if (c === "1") viewer.setZoom(1, viewer.width / 2, viewer.height / 2)
                 else if (c === "<") viewer.turn(-1)
                 else if (c === ">") viewer.turn(1)
-                else if (c === "r" && k + 1 < keys.length) viewer.rate(Number(keys[++k]))
+                else if (ratingKeys.indexOf(c) >= 0) viewer.rate(ratingKeys.indexOf(c))
             }
-            if (arg("zoom")) viewer.setZoom(Number(arg("zoom")), viewer.width / 2, viewer.height / 2)
+            if (commandLine.has("zoom")) viewer.setZoom(commandLine.number("zoom", 1), viewer.width / 2, viewer.height / 2)
         }
-        if (arg("apply-view")) applyView(arg("apply-view"))
-        if (arg("menu") === "views") menuTimer.start()
-        if (arg("library")) libraryPanel.visible = true
-        if (arg("screenshot")) shotTimer.start()
+        if (commandLine.has("apply-view")) applyView(commandLine.text("apply-view"))
+        if (commandLine.text("menu") === "views") menuTimer.start()
+        if (commandLine.has("library")) libraryPanel.visible = true
         library.start(thumbHeight)
-        if (arg("add-folder")) library.addFolder("file:///" + arg("add-folder").replace(/\\/g, "/"))
+        if (commandLine.has("add-folder")) library.addFolder(commandLine.url("add-folder"))
     }
 }

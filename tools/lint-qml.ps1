@@ -1,14 +1,16 @@
-# qmllint on crates/ui/qml, failing on any warning (`just lint-qml`). Run it after a build: it reads the types of
-# the pg.gallery module (the Rust QObjects) from the last build's plugin.qmltypes.
+# The QML's lint (`just lint-qml`), failing on any warning: qmllint's, and the QML compiler's. Every binding and
+# function must compile to C++ (qmlcachegen, at build time), none left to the interpreter. qmlcachegen falls back to
+# bytecode quietly, and says why only with --verbose; qmllint's own compiler pass (--compiler) misses much of what it
+# rejects, so qmlcachegen itself is run here as the build runs it. Run this after a build: it reads the types of the
+# pg.gallery module (the Rust QObjects) from the last build's plugin.qmltypes.
 #
-# The module that cxx-qt-build writes can't be linted against as it is: its qmldir lists the QML as qml/Main.qml
-# and so on beside itself, where there is no QML (Qt's CMake build copies it there; cxx-qt doesn't), and it doesn't
-# name the module the models' base class comes from (QAbstractListModel, QtQml.Models). So the module is laid out
-# again in target/qmllint/pg/gallery: the qmldir with flat paths and that dependency, the qmltypes, and copies of
-# the QML. The files are linted there by absolute path, as part of their module: qmllint matches a file to its
-# qmldir entry (Ratings is a singleton only through it) by the path it was given. With absolute paths qmllint
-# 6.12 prints no text, only its JSON report, so the warnings are printed from that, as crates/ui/qml paths (the
-# line numbers are the same).
+# The module is laid out in target/qmllint/pg/gallery as the build lays it out (vendor/README.md, qt-build-utils): its
+# qmldir, its qmltypes and, beside them, copies of the QML as the qmldir lists them (qml/Main.qml, ...), plus a
+# resource file mapping the module's resource paths to them, which qmlcachegen resolves the module through. The
+# copies are of the sources as they are now, so the QML can be linted again without a rebuild. qmllint matches a file
+# to its qmldir entry (Ratings is a singleton only through it) by the path it was given, so the copies are linted.
+# With absolute paths qmllint 6.12 prints no text, only its JSON report, so the warnings are printed from that. All
+# are printed as crates/ui/qml paths (the line numbers are the same).
 param([string]$Qt = "C:/Qt/6.12.0/msvc2022_64")
 
 $ErrorActionPreference = "Stop"
@@ -21,24 +23,56 @@ if (-not $types) { throw "No pg.gallery module in target/: build the app first (
 $imports = "$root/target/qmllint"
 $module = "$imports/pg/gallery"
 if (Test-Path $imports) { Remove-Item -Recurse -Force $imports }
-New-Item -ItemType Directory -Force $module | Out-Null
-Copy-Item $types.FullName $module
-$qmldir = (Get-Content "$($types.DirectoryName)/qmldir") -replace ' qml/', ' '
-$qmldir + "depends QtQml.Models" | Set-Content "$module/qmldir"
-Copy-Item "$root/crates/ui/qml/*.qml" $module
+New-Item -ItemType Directory -Force "$module/qml" | Out-Null
+Copy-Item $types.FullName, "$($types.DirectoryName)/qmldir" $module
+Copy-Item "$root/crates/ui/qml/*.qml" "$module/qml"
+$names = (Get-ChildItem "$module/qml/*.qml").Name
+$entries = @("<file alias=`"qmldir`">$module/qmldir</file>") + ($names | ForEach-Object { "<file alias=`"qml/$_`">$module/qml/$_</file>" })
+$qrc = "$module/module.qrc"
+"<RCC><qresource prefix=`"/qt/qml/pg/gallery`">$($entries -join '')</qresource></RCC>" | Set-Content $qrc
 
-$files = (Get-ChildItem "$module/*.qml").Name | ForEach-Object { "$module/$_" }
-$report = & "$Qt/bin/qmllint.exe" -I $imports --json - $files | Out-String | ConvertFrom-Json
-$count = 0
+$warnings = [System.Collections.Generic.List[string]]::new()
+function Add-Warning([string]$path, [string]$line, [string]$column, [string]$message) {
+    $name = $path.Replace('\', '/').Replace("$module/qml/", "crates/ui/qml/")
+    $warnings.Add("${name}:${line}:${column}: $message")
+}
+
+$report = & "$Qt/bin/qmllint.exe" -I $imports --json - ($names | ForEach-Object { "$module/qml/$_" }) |
+    Out-String | ConvertFrom-Json
 foreach ($file in $report.files) {
-    $name = $file.filename.Replace("$module/", "crates/ui/qml/")
-    foreach ($w in $file.warnings) {
-        "${name}:$($w.line):$($w.column): $($w.type): $($w.message) [$($w.id)]"
-        $count++
+    foreach ($w in $file.warnings) { Add-Warning $file.filename $w.line $w.column "$($w.message) [$($w.id)]" }
+}
+
+# qmlcachegen says why it left something to the interpreter (--verbose), and lists what it compiled and what it
+# didn't (--dump-aot-stats, into <output>.aotstats): the verdict, should a reason go unsaid.
+$compiled = 0
+$functions = 0
+# Its findings come on stderr, which isn't an error here.
+$ErrorActionPreference = "Continue"
+foreach ($name in $names) {
+    $out = "$imports/$name.cpp"
+    $log = & "$Qt/bin/qmlcachegen.exe" -i "$module/qmldir" --resource $qrc --resource-path "/qt/qml/pg/gallery/qml/$name" `
+        --verbose --dump-aot-stats --module-id pg.gallery -o $out "$module/qml/$name" 2>&1
+    if ($LASTEXITCODE -ne 0) { throw "qmlcachegen failed on ${name}:`n$($log -join "`n")" }
+    # Each finding is one "Warning:"/"Error:" line (the source line and a caret under it follow).
+    foreach ($l in $log) {
+        if ("$l" -match '^(?:Warning|Error): (.+?):(\d+):(\d+): (.*)$') {
+            Add-Warning $Matches[1] $Matches[2] $Matches[3] $Matches[4]
+        }
+    }
+    foreach ($entry in (Get-Content "$out.aotstats" -Raw | ConvertFrom-Json).modules.moduleFiles.entries) {
+        $functions++
+        if ($entry.codegenResult -eq 0) { $compiled++; continue }
+        Add-Warning "$module/qml/$name" $entry.line $entry.column `
+            "$($entry.functionName) is left to the interpreter: $($entry.message) [aot]"
     }
 }
-if ($count -gt 0) {
-    "$count QML warning(s)."
+
+# Both tools report some findings alike.
+$unique = @($warnings | Select-Object -Unique)
+$unique
+if ($unique.Count -gt 0) {
+    "$($unique.Count) QML warning(s); $compiled of $functions bindings and functions compiled to C++."
     exit 1
 }
-"QML: no warnings ($($report.files.Count) files)."
+"QML: no warnings; all $functions bindings and functions compiled to C++ ($($names.Count) files)."

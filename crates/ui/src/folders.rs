@@ -109,6 +109,7 @@ const ROLE_EXPANDABLE: i32 = 258;
 const ROLE_EXPANDED: i32 = 259;
 const ROLE_TOTAL: i32 = 260;
 const ROLE_DRIVES: i32 = 261;
+const ROLE_MERGED: i32 = 262;
 
 /// A visible row: `None` is the "All" row.
 type Visible = Option<usize>;
@@ -182,6 +183,7 @@ impl qobject::FolderModel {
                 ROLE_EXPANDABLE | ROLE_EXPANDED => QVariant::from(&false),
                 ROLE_TOTAL => QVariant::from(&total),
                 ROLE_DRIVES => QVariant::from(&QString::default()),
+                ROLE_MERGED => QVariant::from(&false),
                 _ => QVariant::default(),
             };
         };
@@ -193,6 +195,8 @@ impl qobject::FolderModel {
             ROLE_EXPANDED => QVariant::from(&self.expanded.contains(&n)),
             ROLE_TOTAL => QVariant::from(&node.total),
             ROLE_DRIVES => QVariant::from(&QString::from(&node.drives)),
+            // On more than one drive.
+            ROLE_MERGED => QVariant::from(&node.drives.contains(' ')),
             _ => QVariant::default(),
         }
     }
@@ -206,6 +210,7 @@ impl qobject::FolderModel {
             (ROLE_EXPANDED, "expanded"),
             (ROLE_TOTAL, "total"),
             (ROLE_DRIVES, "drives"),
+            (ROLE_MERGED, "merged"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }

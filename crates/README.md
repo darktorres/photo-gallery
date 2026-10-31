@@ -36,7 +36,7 @@ just deploy  # release build, then the Qt DLLs and QML modules next to gallery.e
 just build   # rebuild
 just run     # the app; `just run status`, `just run scan <folder>`… for the command line
 just test    # a debug build, with the dependencies optimized (Cargo.toml), so decoding runs at full speed
-just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint, then qmllint (just lint-qml)
+just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint, then the QML's (just lint-qml)
 ```
 
 `just deploy debug`, then `just dev`, give the debug build (it links the release Qt too). It reads the QML from
@@ -46,8 +46,17 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 
 `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
 (the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and `pg-ingest`;
-`cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning; it reads the Rust types from
-the last build, so build first (`tools/lint-qml.ps1` says why it lints a copy of the module in `target\qmllint`).
+`cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or
+function the QML compiler (qmlcachegen, as the build runs it) leaves to the interpreter instead of compiling to C++.
+It reads the Rust types from the last build, so build first (`tools/lint-qml.ps1` says why it lints a copy of the
+module in `target\qmllint`).
+
+The QML compiles to C++ only where it is typed throughout. So the Rust objects' properties are `FINAL`. A Rust
+object's methods are called only in the file that makes it, by its id: through a property, a method can't be
+compiled, because a subclass could replace it. FilterBar owns the filters and Main the gallery model, and the
+viewer gets the shown item's values as properties. Text and numbers come typed from Rust (`CommandLine`,
+`Library.writeFailed`), not from JavaScript's string functions, which aren't compiled. qt-build-utils is vendored so
+that the compiler sees the module's types (`vendor/README.md`).
 
 ## Run
 

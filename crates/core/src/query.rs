@@ -65,6 +65,21 @@ pub enum Orientation {
 }
 
 impl Orientation {
+    const ALL: [Orientation; 3] = [Orientation::Landscape, Orientation::Portrait, Orientation::Square];
+
+    /// The name in JSON.
+    pub fn key(self) -> &'static str {
+        match self {
+            Orientation::Landscape => "landscape",
+            Orientation::Portrait => "portrait",
+            Orientation::Square => "square",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Orientation> {
+        Orientation::ALL.into_iter().find(|o| o.key() == key)
+    }
+
     fn sql(self) -> &'static str {
         match self {
             Orientation::Landscape => "(a.width - a.height) * 100 > a.width",
@@ -87,6 +102,21 @@ pub enum Status {
 }
 
 impl Status {
+    const ALL: [Status; 3] = [Status::Imported, Status::Pending, Status::Failed];
+
+    /// The name in JSON.
+    pub fn key(self) -> &'static str {
+        match self {
+            Status::Imported => "imported",
+            Status::Pending => "pending",
+            Status::Failed => "failed",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Status> {
+        Status::ALL.into_iter().find(|s| s.key() == key)
+    }
+
     fn sql(self) -> String {
         let current = format!("s.version = {IMPORT_VERSION} AND s.size = f.size AND s.mtime = f.mtime");
         match self {
@@ -281,6 +311,166 @@ impl Query {
     }
 }
 
+/// Editing a query from a filter bar. Facets and values go by their JSON names: list facets `types`, `exts`,
+/// `ratings` (`"0"`–`"5"`), `orientations` and `status`; range facets `size_mb`, `megapixels` and `duration_s`
+/// (ends `min`, `max`) and `taken` and `modified` (ends `from`, `to`, as `YYYY-MM-DD`). A name or value it doesn't
+/// know changes nothing.
+impl Query {
+    /// How many facets filter.
+    pub fn active(&self) -> usize {
+        [
+            !self.types.is_empty(),
+            !self.exts.is_empty(),
+            !self.ratings.is_empty(),
+            !self.size_mb.is_empty(),
+            !self.megapixels.is_empty(),
+            !self.orientations.is_empty(),
+            !self.taken.is_empty(),
+            !self.modified.is_empty(),
+            !self.duration_s.is_empty(),
+            self.duplicates.is_some(),
+            !self.status.is_empty(),
+            !self.name.is_empty(),
+        ]
+        .into_iter()
+        .filter(|&filters| filters)
+        .count()
+    }
+
+    /// The values chosen in a list facet, in the order they were chosen.
+    pub fn chosen(&self, facet: &str) -> Vec<String> {
+        match facet {
+            "types" => self.types.iter().map(|t| t.key().to_string()).collect(),
+            "exts" => self.exts.clone(),
+            "ratings" => self.ratings.iter().map(u8::to_string).collect(),
+            "orientations" => self.orientations.iter().map(|o| o.key().to_string()).collect(),
+            "status" => self.status.iter().map(|s| s.key().to_string()).collect(),
+            _ => Vec::new(),
+        }
+    }
+
+    pub fn has(&self, facet: &str, value: &str) -> bool {
+        self.chosen(facet).iter().any(|v| v == value)
+    }
+
+    /// Choose a value of a list facet, or unchoose it if it is chosen.
+    pub fn toggle(&mut self, facet: &str, value: &str) {
+        fn flip<T: PartialEq>(list: &mut Vec<T>, value: T) {
+            match list.iter().position(|v| *v == value) {
+                Some(i) => {
+                    list.remove(i);
+                }
+                None => list.push(value),
+            }
+        }
+        match facet {
+            "types" => MediaType::from_key(value).into_iter().for_each(|t| flip(&mut self.types, t)),
+            "exts" => flip(&mut self.exts, value.to_string()),
+            "ratings" => {
+                value.parse::<u8>().ok().filter(|&n| n <= 5).into_iter().for_each(|n| flip(&mut self.ratings, n))
+            }
+            "orientations" => Orientation::from_key(value).into_iter().for_each(|o| flip(&mut self.orientations, o)),
+            "status" => Status::from_key(value).into_iter().for_each(|s| flip(&mut self.status, s)),
+            _ => {}
+        }
+    }
+
+    fn range_mut(&mut self, facet: &str) -> Option<&mut Range> {
+        match facet {
+            "size_mb" => Some(&mut self.size_mb),
+            "megapixels" => Some(&mut self.megapixels),
+            "duration_s" => Some(&mut self.duration_s),
+            _ => None,
+        }
+    }
+
+    fn date_range_mut(&mut self, facet: &str) -> Option<&mut DateRange> {
+        match facet {
+            "taken" => Some(&mut self.taken),
+            "modified" => Some(&mut self.modified),
+            _ => None,
+        }
+    }
+
+    /// One end of a range facet as text, `""` when it is open.
+    pub fn bound(&self, facet: &str, end: &str) -> String {
+        let number = |r: &Range| match end {
+            "min" => r.min,
+            "max" => r.max,
+            _ => None,
+        };
+        let day = |r: &DateRange| match end {
+            "from" => r.from.clone(),
+            "to" => r.to.clone(),
+            _ => None,
+        };
+        match facet {
+            "size_mb" => number(&self.size_mb).map(|v| v.to_string()),
+            "megapixels" => number(&self.megapixels).map(|v| v.to_string()),
+            "duration_s" => number(&self.duration_s).map(|v| v.to_string()),
+            "taken" => day(&self.taken),
+            "modified" => day(&self.modified),
+            _ => None,
+        }
+        .unwrap_or_default()
+    }
+
+    /// Set one end of a range facet from what was typed. Text that doesn't parse (see `bound_is_valid`) leaves
+    /// that end open.
+    pub fn set_bound(&mut self, facet: &str, end: &str, text: &str) {
+        if let Some(r) = self.range_mut(facet) {
+            let value = parse_number(text);
+            match end {
+                "min" => r.min = value,
+                "max" => r.max = value,
+                _ => {}
+            }
+        } else if let Some(r) = self.date_range_mut(facet) {
+            let value = parse_day(text);
+            match end {
+                "from" => r.from = value,
+                "to" => r.to = value,
+                _ => {}
+            }
+        }
+    }
+
+    /// Whether text typed for a range facet is empty (an open end) or parses: a number (`,` or `.` before the
+    /// decimals) for `size_mb`, `megapixels` and `duration_s`, a calendar day `YYYY-MM-DD` for `taken` and `modified`.
+    pub fn bound_is_valid(facet: &str, text: &str) -> bool {
+        text.trim().is_empty()
+            || match facet {
+                "taken" | "modified" => parse_day(text).is_some(),
+                _ => parse_number(text).is_some(),
+            }
+    }
+}
+
+/// A number as typed, with a comma or a point before the decimals.
+fn parse_number(text: &str) -> Option<f64> {
+    text.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite())
+}
+
+/// A calendar day `YYYY-MM-DD` that exists.
+fn parse_day(text: &str) -> Option<String> {
+    let t = text.trim();
+    let b = t.as_bytes();
+    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
+    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' || !digits(0..4) || !digits(5..7) || !digits(8..10) {
+        return None;
+    }
+    let (y, m, d): (u32, u32, u32) = (t[0..4].parse().ok()?, t[5..7].parse().ok()?, t[8..10].parse().ok()?);
+    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
+    let days = match m {
+        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+        4 | 6 | 9 | 11 => 30,
+        2 if leap => 29,
+        2 => 28,
+        _ => return None,
+    };
+    (1..=days).contains(&d).then(|| t.to_string())
+}
+
 /// A duplicate among the present files: identical bytes (tier 0a), identical pixels (0b) or a tier-1 pair within
 /// `GROUP_DISTANCE`. The pair table's primary key is (a, b) and it has an index on b, hence one EXISTS per side.
 fn duplicates() -> String {
@@ -319,6 +509,27 @@ pub struct Sort {
     pub key: SortKey,
     #[serde(default)]
     pub descending: bool,
+}
+
+impl SortKey {
+    const ALL: [SortKey; 6] =
+        [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Taken, SortKey::Megapixels, SortKey::Duration];
+
+    /// The name in JSON.
+    pub fn key(self) -> &'static str {
+        match self {
+            SortKey::Name => "name",
+            SortKey::Size => "size",
+            SortKey::Modified => "modified",
+            SortKey::Taken => "taken",
+            SortKey::Megapixels => "megapixels",
+            SortKey::Duration => "duration",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<SortKey> {
+        SortKey::ALL.into_iter().find(|k| k.key() == key)
+    }
 }
 
 impl Default for Sort {
@@ -392,6 +603,85 @@ mod tests {
         assert_eq!(Sort::from_json(&s.to_json()), s);
         assert_eq!(Sort::from_json(r#"{"key":"size"}"#), Sort { key: SortKey::Size, descending: false });
         assert_eq!(MediaType::from_key("animated"), Some(MediaType::Animated));
+    }
+
+    fn json<T: Serialize>(value: &T) -> String {
+        serde_json::to_string(value).unwrap()
+    }
+
+    #[test]
+    fn keys_are_the_json_names() {
+        for t in [MediaType::Image, MediaType::Animated, MediaType::Video] {
+            assert_eq!(json(&t), format!("\"{}\"", t.key()));
+        }
+        for o in Orientation::ALL {
+            assert_eq!(json(&o), format!("\"{}\"", o.key()));
+            assert_eq!(Orientation::from_key(o.key()), Some(o));
+        }
+        for s in Status::ALL {
+            assert_eq!(json(&s), format!("\"{}\"", s.key()));
+            assert_eq!(Status::from_key(s.key()), Some(s));
+        }
+        for k in SortKey::ALL {
+            assert_eq!(json(&k), format!("\"{}\"", k.key()));
+            assert_eq!(SortKey::from_key(k.key()), Some(k));
+        }
+        assert_eq!(SortKey::from_key("nope"), None);
+    }
+
+    #[test]
+    fn list_facets_toggle() {
+        let mut q = Query::default();
+        q.toggle("types", "video");
+        q.toggle("ratings", "0");
+        q.toggle("ratings", "5");
+        q.toggle("exts", "jpg");
+        q.toggle("orientations", "square");
+        q.toggle("status", "failed");
+        assert_eq!(q.types, vec![MediaType::Video]);
+        assert_eq!(q.ratings, vec![0, 5]);
+        assert!(q.has("ratings", "5") && q.has("exts", "jpg") && !q.has("types", "image"));
+        assert_eq!(q.chosen("ratings"), vec!["0", "5"]);
+        assert_eq!(q.active(), 5);
+        q.toggle("ratings", "0");
+        q.toggle("types", "video");
+        assert_eq!(q.ratings, vec![5]);
+        assert!(q.types.is_empty());
+        assert_eq!(q.active(), 4);
+        // Unknown facets and values, and ratings out of range, change nothing.
+        let before = q.clone();
+        q.toggle("types", "picture");
+        q.toggle("ratings", "6");
+        q.toggle("ratings", "x");
+        q.toggle("colour", "red");
+        assert_eq!(q, before);
+    }
+
+    #[test]
+    fn range_facets_parse_what_was_typed() {
+        let mut q = Query::default();
+        q.set_bound("size_mb", "min", " 1,5 ");
+        q.set_bound("megapixels", "max", "12");
+        q.set_bound("taken", "from", "2024-02-29");
+        assert_eq!(q.size_mb, Range { min: Some(1.5), max: None });
+        assert_eq!(q.bound("size_mb", "min"), "1.5");
+        assert_eq!(q.bound("megapixels", "max"), "12");
+        assert_eq!(q.bound("taken", "from"), "2024-02-29");
+        assert_eq!(q.bound("taken", "to"), "");
+        assert_eq!(q.active(), 3);
+        // Text that doesn't parse opens that end again.
+        q.set_bound("size_mb", "min", "lots");
+        q.set_bound("taken", "from", "2023-02-29");
+        assert!(q.size_mb.is_empty() && q.taken.is_empty());
+        assert_eq!(q.active(), 1);
+        assert!(Query::bound_is_valid("size_mb", ""));
+        assert!(Query::bound_is_valid("duration_s", "2.5"));
+        assert!(!Query::bound_is_valid("duration_s", "inf"));
+        assert!(!Query::bound_is_valid("size_mb", "1 MB"));
+        assert!(Query::bound_is_valid("modified", "2000-12-31"));
+        assert!(!Query::bound_is_valid("modified", "2000-13-01"));
+        assert!(!Query::bound_is_valid("modified", "1900-02-29"));
+        assert!(!Query::bound_is_valid("modified", "2000-1-1"));
     }
 
     #[test]

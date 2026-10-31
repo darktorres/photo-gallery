@@ -44,6 +44,7 @@ lint: && lint-qml
     ruff check .
     markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
 
-# qmllint on the QML, failing on any warning. Uses the pg.gallery types of the last build, so build first.
+# qmllint and the QML compiler on the QML, failing on any warning or anything not compiled to C++. Uses the
+# pg.gallery types of the last build, so build first.
 lint-qml:
     pwsh -NoLogo -NoProfile -File tools/lint-qml.ps1 -Qt {{ qt }}

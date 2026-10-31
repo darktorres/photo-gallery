@@ -15,6 +15,8 @@ pub mod qobject {
         type QVariant = cxx_qt_lib::QVariant;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
         include!("cxx-qt-lib/qurl.h");
         type QUrl = cxx_qt_lib::QUrl;
     }
@@ -23,9 +25,8 @@ pub mod qobject {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
-        #[qproperty(i32, count)]
-        #[qproperty(i32, revision)]
-        #[qproperty(QString, folder)]
+        #[qproperty(i32, count, READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
         type GalleryModel = super::GalleryRust;
     }
 
@@ -53,7 +54,9 @@ pub mod qobject {
         fn end_reset_model(self: Pin<&mut GalleryModel>);
 
         /// Show the files of a merged folder (`""` = everything), with or without its subfolders, that pass the
-        /// filters (`query::Query` as JSON), in an order (`query::Sort` as JSON).
+        /// filters (`query::Query` as JSON), in an order (`query::Sort` as JSON): `view::View`'s and
+        /// `filters::Filters`'. Returns where the file that was item `keep` is now: -1 if it isn't shown (or `keep`
+        /// is -1).
         #[qinvokable]
         #[cxx_name = "openFolder"]
         fn open_folder(
@@ -62,13 +65,8 @@ pub mod qobject {
             recursive: bool,
             query: &QString,
             sort: &QString,
-        );
-
-        /// What the filter bar shows for a folder and filters (`browse::Facets`), as JSON: `total`, `matching`,
-        /// `types` (type → count) and `exts` (`[extension, count]`, most first). JSON keeps nested data out of
-        /// cxx-qt's map types, which the compiled QML can't take.
-        #[qinvokable]
-        fn facets(self: &GalleryModel, merged: &QString, recursive: bool, query: &QString) -> QString;
+            keep: i32,
+        ) -> i32;
 
         /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
         #[qinvokable]
@@ -92,6 +90,12 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "imageKey"]
         fn image_key(self: &GalleryModel, item: i32) -> QString;
+
+        /// The image keys of the items up to `reach` before and after `item`, nearest first, for the viewer to
+        /// preload.
+        #[qinvokable]
+        #[cxx_name = "keysAround"]
+        fn keys_around(self: &GalleryModel, item: i32, reach: i32) -> QStringList;
 
         /// Upright size in pixels, as shown (pending turns included); 0 before the import.
         #[qinvokable]
@@ -176,7 +180,7 @@ pub mod qobject {
 use core::pin::Pin;
 
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QUrl, QVariant};
+use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QUrl, QVariant};
 use pg_core::browse::{self, Item};
 use pg_core::layout::{self, Row};
 use pg_core::media::{self, Kind};
@@ -192,7 +196,6 @@ const ROLE_HEIGHT: i32 = 258;
 pub struct GalleryRust {
     count: i32,
     revision: i32,
-    folder: QString,
     items: Vec<Item>,
     rows: Vec<Row>,
     spacing: f64,
@@ -249,7 +252,15 @@ impl qobject::GalleryModel {
         self.rows.len() as i32
     }
 
-    fn open_folder(mut self: Pin<&mut Self>, merged: &QString, recursive: bool, query: &QString, sort: &QString) {
+    fn open_folder(
+        mut self: Pin<&mut Self>,
+        merged: &QString,
+        recursive: bool,
+        query: &QString,
+        sort: &QString,
+        keep: i32,
+    ) -> i32 {
+        let kept = self.file_id(keep);
         let path = merged.to_string();
         let (query, sort) = (Query::from_json(&query.to_string()), Sort::from_json(&sort.to_string()));
         let items = state::with_catalog(|c| browse::list_files(&c.conn, &path, recursive, &query, sort))
@@ -260,22 +271,9 @@ impl qobject::GalleryModel {
         let count = items.len() as i32;
         self.as_mut().rust_mut().items = items;
         self.as_mut().set_count(count);
-        self.as_mut().set_folder(merged.clone());
         let (w, h, s) = (self.width, self.row_height, self.spacing);
-        self.relayout(w, h, s);
-    }
-
-    fn facets(&self, merged: &QString, recursive: bool, query: &QString) -> QString {
-        let path = merged.to_string();
-        let query = Query::from_json(&query.to_string());
-        let f = state::with_catalog(|c| browse::facets(&c.conn, &path, recursive, &query)).unwrap_or_else(|e| {
-            eprintln!("facets of {path}: {e:#}");
-            browse::Facets::default()
-        });
-        let types: serde_json::Map<String, serde_json::Value> =
-            f.types.iter().map(|(t, n)| (t.key().to_string(), (*n).into())).collect();
-        let json = serde_json::json!({ "total": f.total, "matching": f.matching, "types": types, "exts": f.exts });
-        QString::from(&json.to_string())
+        self.as_mut().relayout(w, h, s);
+        if kept < 0 { -1 } else { self.index_of(kept) }
     }
 
     fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
@@ -311,6 +309,17 @@ impl qobject::GalleryModel {
         self.item(item).map_or_else(QString::default, |i| {
             QString::from(&format!("{}@{}.{}.{}", i.id, i.mtime, i.rotation, i.pending_turns))
         })
+    }
+
+    fn keys_around(&self, item: i32, reach: i32) -> QStringList {
+        if self.item(item).is_none() {
+            return QStringList::default();
+        }
+        (1..=reach)
+            .flat_map(|d| [item - d, item + d])
+            .filter(|&i| self.item(i).is_some())
+            .map(|i| self.image_key(i))
+            .collect()
     }
 
     fn full_width(&self, item: i32) -> i32 {

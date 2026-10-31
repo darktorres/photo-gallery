@@ -1,30 +1,22 @@
 //! What the app remembers. Preferences (write-back, Real Size, row height) are the user's, not the catalog's: they
 //! go in `gallery.json` beside the catalog folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` overrides), so they
 //! outlive a catalog rebuild. Saved views and where the user was refer to the catalog's folders and files, so they
-//! live in it (`views`, `session`). Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
+//! live in it (`views`, `session`): the views and the session's folder, query and sort are `view::View`'s, the
+//! selected file is here. Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
 
 #[cxx_qt::bridge]
 pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-    }
-
     extern "RustQt" {
         #[qobject]
         #[qml_element]
         /// Write ratings and turns into the files too (on by default); off keeps them in the catalog only.
-        #[qproperty(bool, write_back, cxx_name = "writeBack", READ, WRITE = set_write_back_saved, NOTIFY)]
+        #[qproperty(bool, write_back, cxx_name = "writeBack", READ, WRITE = set_write_back_saved, NOTIFY, FINAL)]
         /// The viewer opens images at 1:1 instead of fitted (ImageRater's Real Size), across images and runs.
-        #[qproperty(bool, real_size, cxx_name = "realSize", READ, WRITE = set_real_size_saved, NOTIFY)]
+        #[qproperty(bool, real_size, cxx_name = "realSize", READ, WRITE = set_real_size_saved, NOTIFY, FINAL)]
         /// The grid's row height in logical pixels.
-        #[qproperty(f64, row_height, cxx_name = "rowHeight", READ, WRITE = set_row_height_saved, NOTIFY)]
-        /// Names of the saved views, sorted.
-        #[qproperty(QStringList, views)]
+        #[qproperty(f64, row_height, cxx_name = "rowHeight", READ, WRITE = set_row_height_saved, NOTIFY, FINAL)]
+        /// The id of the file selected (or open in the viewer) last, -1 for none: the session's `file`.
+        #[qproperty(i64, last_file, cxx_name = "lastFile", READ, WRITE = set_last_file_saved, NOTIFY, FINAL)]
         type Settings = super::SettingsRust;
     }
 
@@ -32,36 +24,7 @@ pub mod qobject {
         fn set_write_back_saved(self: Pin<&mut Settings>, value: bool);
         fn set_real_size_saved(self: Pin<&mut Settings>, value: bool);
         fn set_row_height_saved(self: Pin<&mut Settings>, value: f64);
-
-        /// A saved view: `folder` (merged path, `""` = all), `recursive`, `query` and `sort` (`query::Query` and
-        /// `query::Sort` as JSON), or an empty map. A map inside a QVariant: moc and the QML compiler know that type (not cxx-qt-lib's alias for
-        /// the map, which crashed the compiled QML).
-        #[qinvokable]
-        fn view(self: &Settings, name: &QString) -> QVariant;
-
-        /// Save (or replace) a view.
-        #[qinvokable]
-        #[cxx_name = "saveView"]
-        fn save_view(
-            self: Pin<&mut Settings>,
-            name: &QString,
-            folder: &QString,
-            recursive: bool,
-            query: &QString,
-            sort: &QString,
-        );
-
-        #[qinvokable]
-        #[cxx_name = "deleteView"]
-        fn delete_view(self: Pin<&mut Settings>, name: &QString);
-
-        /// Where the user was (`folder`, `recursive`, `query`, `sort`, `file`), `fallback` if unknown.
-        #[qinvokable]
-        fn session(self: &Settings, key: &QString, fallback: &QString) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "setSession"]
-        fn set_session(self: &Settings, key: &QString, value: &QString);
+        fn set_last_file_saved(self: Pin<&mut Settings>, value: i64);
     }
 }
 
@@ -70,9 +33,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QMap, QMapPair_QString_QVariant, QString, QStringList, QVariant};
-use pg_core::browse::{self, View};
-use pg_core::query::{Query, Sort};
+use pg_core::browse;
 use serde::{Deserialize, Serialize};
 
 use crate::state;
@@ -140,25 +101,19 @@ pub struct SettingsRust {
     write_back: bool,
     real_size: bool,
     row_height: f64,
-    views: QStringList,
+    last_file: i64,
 }
 
 impl Default for SettingsRust {
     fn default() -> SettingsRust {
         let p = prefs();
-        SettingsRust { write_back: p.write_back, real_size: p.real_size, row_height: p.row_height, views: view_names() }
+        let last_file = state::with_catalog(|c| browse::session_get(&c.conn, "file"))
+            .ok()
+            .flatten()
+            .and_then(|id| id.parse().ok())
+            .unwrap_or(-1);
+        SettingsRust { write_back: p.write_back, real_size: p.real_size, row_height: p.row_height, last_file }
     }
-}
-
-fn view_names() -> QStringList {
-    state::with_catalog(|c| browse::views(&c.conn))
-        .unwrap_or_else(|e| {
-            eprintln!("views: {e:#}");
-            Vec::new()
-        })
-        .iter()
-        .map(|v| QString::from(&v.name))
-        .collect()
 }
 
 impl qobject::Settings {
@@ -186,62 +141,13 @@ impl qobject::Settings {
         }
     }
 
-    fn view(&self, name: &QString) -> QVariant {
-        let name = name.to_string();
-        let mut map = QMap::<QMapPair_QString_QVariant>::default();
-        let found =
-            state::with_catalog(|c| browse::views(&c.conn)).ok().and_then(|vs| vs.into_iter().find(|v| v.name == name));
-        if let Some(v) = found {
-            map.insert(QString::from("folder"), QVariant::from(&QString::from(&v.folder)));
-            map.insert(QString::from("recursive"), QVariant::from(&v.recursive));
-            map.insert(QString::from("query"), QVariant::from(&QString::from(&v.query.to_json())));
-            map.insert(QString::from("sort"), QVariant::from(&QString::from(&v.sort.to_json())));
-        }
-        QVariant::from(&map)
-    }
-
-    fn save_view(
-        self: Pin<&mut Self>,
-        name: &QString,
-        folder: &QString,
-        recursive: bool,
-        query: &QString,
-        sort: &QString,
-    ) {
-        let name = name.to_string().trim().to_string();
-        if name.is_empty() {
-            return;
-        }
-        let view = View {
-            name,
-            folder: folder.to_string(),
-            recursive,
-            query: Query::from_json(&query.to_string()),
-            sort: Sort::from_json(&sort.to_string()),
-        };
-        if let Err(e) = state::with_catalog(|c| browse::save_view(&c.conn, &view)) {
-            eprintln!("saving view: {e:#}");
-        }
-        self.set_views(view_names());
-    }
-
-    fn delete_view(self: Pin<&mut Self>, name: &QString) {
-        if let Err(e) = state::with_catalog(|c| browse::delete_view(&c.conn, &name.to_string())) {
-            eprintln!("deleting view: {e:#}");
-        }
-        self.set_views(view_names());
-    }
-
-    fn session(&self, key: &QString, fallback: &QString) -> QString {
-        match state::with_catalog(|c| browse::session_get(&c.conn, &key.to_string())) {
-            Ok(Some(v)) => QString::from(&v),
-            _ => fallback.clone(),
-        }
-    }
-
-    fn set_session(&self, key: &QString, value: &QString) {
-        if let Err(e) = state::with_catalog(|c| browse::session_set(&c.conn, &key.to_string(), &value.to_string())) {
-            eprintln!("session: {e:#}");
+    fn set_last_file_saved(mut self: Pin<&mut Self>, value: i64) {
+        if self.last_file != value {
+            if let Err(e) = state::with_catalog(|c| browse::session_set(&c.conn, "file", &value.to_string())) {
+                eprintln!("session: {e:#}");
+            }
+            self.as_mut().rust_mut().last_file = value;
+            self.last_file_changed();
         }
     }
 }

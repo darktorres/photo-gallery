@@ -7,6 +7,8 @@
 
 mod animation;
 mod app_icon;
+mod command_line;
+mod filters;
 mod folders;
 mod gallery;
 mod library;
@@ -14,9 +16,11 @@ mod library;
 mod live_reload;
 mod panic_log;
 mod providers;
+mod screenshot;
 mod settings;
 mod state;
 mod video_decoding;
+mod view;
 mod yandex;
 
 use std::ffi::OsString;
@@ -75,7 +79,8 @@ fn run_app() {
             &main_qml,
             &QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml")),
         );
-        engine.load(&main_qml);
+        engine.as_mut().load(&main_qml);
+        screenshot::schedule(engine);
     }
     if let Some(app) = app.as_mut() {
         app.exec();

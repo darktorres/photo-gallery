@@ -18,16 +18,18 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        #[qproperty(QStringList, roots)]
-        #[qproperty(bool, busy)]
-        #[qproperty(bool, paused)]
-        #[qproperty(QString, status)]
+        #[qproperty(QStringList, roots, READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(bool, paused, READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
         /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
-        #[qproperty(f64, progress)]
+        #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
         /// The latest error or note from the job, until the next one.
-        #[qproperty(QString, message)]
+        #[qproperty(QString, message, READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
-        #[qproperty(QString, writes, cxx_name = "writeStatus")]
+        #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
+        /// Whether the latest write failed (the status says why).
+        #[qproperty(bool, write_failed, cxx_name = "writeFailed", READ, WRITE, NOTIFY, FINAL)]
         type Library = super::LibraryRust;
     }
 
@@ -103,6 +105,7 @@ pub struct LibraryRust {
     progress: f64,
     message: QString,
     writes: QString,
+    write_failed: bool,
     seen: Generation,
     seen_turned: u64,
 }
@@ -203,6 +206,7 @@ impl qobject::Library {
         }
         if let Some(w) = WRITER.get() {
             let s = w.status();
+            let failed = s.error.is_some();
             let writes = match (s.queued, s.error) {
                 (0, None) => String::new(),
                 (n, None) => format!("Writing {n} change{} into files", if n == 1 { "" } else { "s" }),
@@ -211,6 +215,7 @@ impl qobject::Library {
             if self.writes.to_string() != writes {
                 self.as_mut().set_writes(QString::from(&writes));
             }
+            self.as_mut().set_write_failed(failed);
             let turned = w.turned();
             if std::mem::replace(&mut self.as_mut().rust_mut().seen_turned, turned) != turned {
                 self.as_mut().files_changed();

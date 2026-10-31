@@ -5,6 +5,11 @@
 // around the image to reveal black bars. Rating a picture moves on to the next one. Videos play with Qt Multimedia
 // on our FFmpeg; animated GIF, APNG and WebP with our AnimationPlayer (src/animation.rs), into the same
 // VideoOutput. Both are fitted and never enlarged; the poster or first frame shows until the first frame played.
+//
+// The gallery's items are the window's (Main.qml): it gives the one shown, by the properties below, and does the
+// ratings and turns asked for (rated(), turned()). The QML compiler compiles a call into the gallery model to C++
+// only where the model is named by its id, in the window. (Reading and writing a final property through another
+// object compiles: Settings.realSize.)
 pragma ComponentBehavior: Bound
 
 import QtMultimedia
@@ -17,32 +22,47 @@ import pg.gallery
 Rectangle {
     id: viewer
 
-    required property var gallery
-    required property var settings
+    // The item shown (-1: none, and the viewer is closed), of `count`.
     property int index: -1
+    required property int count
+    // The shown item, from the gallery (which changes them in place, at a rating or a turn).
+    // Its image's key (image://full/<key>/…); the keys of the items around it, preloaded.
+    required property string key
+    required property list<string> neighbourKeys
+    // Quarter turns asked for but not yet in the file; its rating.
+    required property int turns
+    required property int rating
+    // Upright size in image pixels (pending turns included); 0 before the import, which leaves only the fit.
+    required property int fw
+    required property int fh
+    // image, animated or video (query::MediaType). Only still images zoom.
+    required property string kind
+    // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
+    required property int playerTurns
+    // The file, for the players; a line about it for the bar.
+    required property url fileUrl
+    required property string filePath
+    required property string info
+    // Real Size (Z): open images at 1:1 instead of fitted.
+    required property Settings settings
+
     property bool loupe: false    // L: 10× loupe under the cursor
     property bool frame: false    // B: bright frame around the image
     property bool zen: false      // H or a tap: nothing over the picture
     readonly property real dpr: Screen.devicePixelRatio
 
-    // The current item, re-read when the gallery changes it in place (a rating, a turn).
-    readonly property int rev: gallery.revision
-    readonly property string key: rev >= 0 && index >= 0 ? gallery.imageKey(index) : ""
-    readonly property int turns: rev >= 0 && index >= 0 ? gallery.pendingTurns(index) : 0
-    readonly property int rating: rev >= 0 && index >= 0 ? gallery.rating(index) : 0
-    // Upright size in image pixels (pending turns included); 0 before the import, which leaves only the fit.
-    readonly property int fw: rev >= 0 && index >= 0 ? gallery.fullWidth(index) : 0
-    readonly property int fh: rev >= 0 && index >= 0 ? gallery.fullHeight(index) : 0
-    // image, animated or video (query::MediaType). Only still images zoom.
-    readonly property string kind: rev >= 0 && index >= 0 ? gallery.mediaType(index) : "image"
     readonly property bool still: kind === "image"
     readonly property bool zoomable: fw > 0 && fh > 0 && still
-    // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
-    readonly property int playerTurns: rev >= 0 && index >= 0 ? gallery.playerTurns(index) : 0
+    readonly property bool playsVideo: visible && kind === "video"
+    readonly property bool playsAnimation: visible && kind === "animated"
     readonly property real playScale: fw > 0 && fh > 0 ? Math.min(width / fw, height / fh, 1 / dpr) : 0
     // Sound, for the session.
     property bool muted: false
     property real volume: 1
+
+    // Rate the shown item, turn it by quarter turns (1 = clockwise): the window does it.
+    signal rated(int index, int rating)
+    signal turned(int index, int turns)
     // The bar's "find similar" button: the photo's file, for the Yandex panel (Main.qml).
     signal findSimilar(string path)
 
@@ -65,7 +85,7 @@ Rectangle {
     visible: index >= 0
     focus: visible
 
-    function show(i) {
+    function show(i: int) {
         index = i
         resetView()
         forceActiveFocus()
@@ -77,8 +97,8 @@ Rectangle {
         closed(i)
     }
 
-    function step(d) {
-        const n = Math.max(0, Math.min(gallery.count - 1, index + d))
+    function step(d: int) {
+        const n = Math.max(0, Math.min(count - 1, index + d))
         if (n !== index) {
             index = n
             resetView()
@@ -86,16 +106,16 @@ Rectangle {
     }
 
     // Rate, show the rating's symbol for a moment, and move on (ImageRater's triage).
-    function rate(r) {
+    function rate(r: int) {
         if (index < 0)
             return
-        gallery.setRating(index, r)
+        rated(index, r)
         popup.show(r)
         step(1)
     }
 
-    function turn(d) {
-        gallery.rotate(index, d)
+    function turn(d: int) {
+        turned(index, d)
         resetView()
     }
 
@@ -108,12 +128,13 @@ Rectangle {
             player.play()
     }
 
-    function time(ms) {
+    // A playback position: m:ss, or h:mm:ss from an hour.
+    function time(ms: real): string {
         const s = Math.floor(ms / 1000)
-        const two = (n) => (n < 10 ? "0" : "") + n
-        return s >= 3600 ? Math.floor(s / 3600) + ":" + two(Math.floor(s / 60) % 60) + ":" + two(s % 60)
-                         : Math.floor(s / 60) + ":" + two(s % 60)
+        return s >= 3600 ? Math.floor(s / 3600) + ":" + twoDigits(Math.floor(s / 60) % 60) + ":" + twoDigits(s % 60)
+                         : Math.floor(s / 60) + ":" + twoDigits(s % 60)
     }
+    function twoDigits(n: int): string { return (n < 10 ? "0" : "") + n }
 
     // Keep the image on screen: centred along a side that fits, otherwise no gap at the edges.
     function clampView() {
@@ -123,7 +144,7 @@ Rectangle {
     }
 
     // Zoom to `z` keeping the image point under (px, py) where it is.
-    function setZoom(z, px, py) {
+    function setZoom(z: real, px: real, py: real) {
         if (!zoomable)
             return
         z = Math.max(fitZoom, Math.min(32, z))
@@ -146,7 +167,7 @@ Rectangle {
     }
 
     // Double-click: fit ↔ 1:1 at the point clicked.
-    function toggleOneToOne(px, py) {
+    function toggleOneToOne(px: real, py: real) {
         if (fitted)
             setZoom(1, px, py)
         else
@@ -158,11 +179,11 @@ Rectangle {
     onFwChanged: if (fitted) resetView()
     onFhChanged: if (fitted) resetView()
 
-    // The image for item i fitted to the window by Rust (shown 1:1 in device pixels).
-    function fitSource(i) {
-        if (i < 0 || i >= gallery.count)
+    // An image (by its key) fitted to the window by Rust (shown 1:1 in device pixels).
+    function fitSource(imageKey: string): string {
+        if (imageKey === "")
             return ""
-        return "image://full/" + gallery.imageKey(i) + "/" + Math.round(width * dpr) + "x" + Math.round(height * dpr)
+        return "image://full/" + imageKey + "/" + Math.round(width * dpr) + "x" + Math.round(height * dpr)
     }
 
     Keys.onPressed: (e) => {
@@ -258,7 +279,7 @@ Rectangle {
     // Fitted by Rust. When zoomed, the GPU stretches it over the image's place until a sharper layer is ready.
     Image {
         id: fit
-        source: viewer.visible ? viewer.fitSource(viewer.rev >= 0 ? viewer.index : -1) : ""
+        source: viewer.visible ? viewer.fitSource(viewer.key) : ""
         width: viewer.zoomed ? viewer.dw : implicitWidth / viewer.dpr
         height: viewer.zoomed ? viewer.dh : implicitHeight / viewer.dpr
         x: viewer.zoomable ? viewer.ox + (viewer.dw - width) / 2 : (viewer.width - width) / 2
@@ -272,14 +293,15 @@ Rectangle {
     // It is placed by the part of the image it shows, so it stays aligned while the view moves on.
     Image {
         id: region
-        property var rect: [0, 0, 0, 0]
-        property var next: [0, 0, 0, 0]
-        onStatusChanged: if (status === Image.Ready) rect = next
+        // The part of the image shown and the one being rendered, as fractions of the image.
+        property rect shown: Qt.rect(0, 0, 0, 0)
+        property rect next: Qt.rect(0, 0, 0, 0)
+        onStatusChanged: if (status === Image.Ready) shown = next
         visible: status === Image.Ready && viewer.zoomed && !viewer.pixels
-        x: viewer.ox + rect[0] * viewer.dw
-        y: viewer.oy + rect[1] * viewer.dh
-        width: rect[2] * viewer.dw
-        height: rect[3] * viewer.dh
+        x: viewer.ox + shown.x * viewer.dw
+        y: viewer.oy + shown.y * viewer.dh
+        width: shown.width * viewer.dw
+        height: shown.height * viewer.dh
         asynchronous: true
         retainWhileLoading: true
         cache: false
@@ -295,13 +317,17 @@ Rectangle {
             const x1 = Math.min(viewer.ox + viewer.dw, viewer.width), y1 = Math.min(viewer.oy + viewer.dh, viewer.height)
             if (x1 <= x0 || y1 <= y0)
                 return
-            const r = [(x0 - viewer.ox) / viewer.dw, (y0 - viewer.oy) / viewer.dh,
-                       (x1 - x0) / viewer.dw, (y1 - y0) / viewer.dh].map((v) => Number(v.toFixed(6)))
-            region.next = r
-            region.source = "image://full/" + viewer.key + "/region/" + r.join(",") + "/"
-                + Math.round((x1 - x0) * viewer.dpr) + "x" + Math.round((y1 - y0) * viewer.dpr)
+            const rx = viewer.sixPlaces((x0 - viewer.ox) / viewer.dw), ry = viewer.sixPlaces((y0 - viewer.oy) / viewer.dh)
+            const rw = viewer.sixPlaces((x1 - x0) / viewer.dw), rh = viewer.sixPlaces((y1 - y0) / viewer.dh)
+            const source = "image://full/" + viewer.key + "/region/" + rx + "," + ry + "," + rw + "," + rh
+                + "/" + Math.round((x1 - x0) * viewer.dpr) + "x" + Math.round((y1 - y0) * viewer.dpr)
+            // Before the source: a cached region is ready at once.
+            region.next = Qt.rect(rx, ry, rw, rh)
+            region.source = source
         }
     }
+    // A fraction of the image, to six places: the region's URL names it, so a pixel of panning doesn't make a new one.
+    function sixPlaces(v: real): real { return Math.round(v * 1e6) / 1e6 }
     // 1:1 and beyond (and the loupe's source): the original, nearest neighbour.
     Image {
         id: full
@@ -339,7 +365,7 @@ Rectangle {
     }
     MediaPlayer {
         id: player
-        source: viewer.visible && viewer.kind === "video" ? viewer.gallery.fileUrl(viewer.index) : ""
+        source: viewer.playsVideo ? viewer.fileUrl : Qt.url("")
         videoOutput: videoOut
         audioOutput: AudioOutput {
             muted: viewer.muted
@@ -348,13 +374,13 @@ Rectangle {
         loops: MediaPlayer.Infinite
         onSourceChanged: {
             videoOut.started = false
-            if (source.toString().length)
+            if (viewer.playsVideo)
                 play()
         }
     }
     AnimationPlayer {
         id: animPlayer
-        source: viewer.visible && viewer.kind === "animated" ? viewer.gallery.filePath(viewer.index) : ""
+        source: viewer.playsAnimation ? viewer.filePath : ""
         onSourceChanged: videoOut.started = false
         Component.onCompleted: setSink(videoOut.videoSink)
     }
@@ -367,12 +393,12 @@ Rectangle {
 
     // Neighbours, preloaded so stepping is instant (same URLs, so the pixmap cache serves them).
     Repeater {
-        model: viewer.visible ? [-4, -3, -2, -1, 1, 2, 3, 4] : []
+        model: viewer.neighbourKeys
         Image {
-            required property int modelData
+            required property string modelData
             visible: false
             asynchronous: true
-            source: viewer.fitSource(viewer.rev >= 0 ? viewer.index + modelData : -1)
+            source: viewer.fitSource(modelData)
         }
     }
 
@@ -432,7 +458,7 @@ Rectangle {
             color: "#999999"
             style: Text.Outline
             styleColor: "black"
-            text: (viewer.index + 1) + " / " + viewer.gallery.count
+            text: (viewer.index + 1) + " / " + viewer.count
         }
         Label {
             anchors.right: closeButton.left
@@ -466,14 +492,14 @@ Rectangle {
             color: "#cccccc"
             style: Text.Outline
             styleColor: "black"
-            text: (viewer.rev >= 0 && viewer.index >= 0 ? viewer.gallery.info(viewer.index) : "")
+            text: viewer.info
                 + (viewer.rating > 0 ? "   " + Ratings.symbol(viewer.rating) : "")
                 + (viewer.zoomable ? "   " + Math.round(viewer.zoom * 100) + "%" : "")
                 + (viewer.settings.realSize ? "   [real size]" : "")
                 + (viewer.loupe ? "   [loupe 10×]" : "")
                 + (viewer.turns !== 0 ? "   — turning…" : "")
                 + (fit.status === Image.Error ? "   — original unavailable" : "")
-                + (viewer.kind === "video" && player.error !== MediaPlayer.NoError ? "   — " + player.errorString : "")
+                + (viewer.kind === "video" && player.errorString !== "" ? "   — " + player.errorString : "")
         }
 
         // Video transport: play/pause, position (drag to seek), sound.
@@ -552,7 +578,7 @@ Rectangle {
                     font.pixelSize: 22
                     ToolTip.visible: hovered
                     ToolTip.text: "Find similar images on Yandex"
-                    onClicked: viewer.findSimilar(viewer.gallery.filePath(viewer.index))
+                    onClicked: viewer.findSimilar(viewer.filePath)
                 }
                 ToolButton {
                     text: "⟲"
@@ -598,7 +624,7 @@ Rectangle {
         font.pixelSize: 120
         style: Text.Outline
         styleColor: "black"
-        function show(r) {
+        function show(r: int) {
             text = Ratings.symbol(r)
             fade.restart()
         }

@@ -34,9 +34,9 @@ pub mod qobject {
         #[qobject]
         #[qml_element]
         /// The file played (a path); empty stops.
-        #[qproperty(QString, source, READ, WRITE = set_source_and_play, NOTIFY)]
+        #[qproperty(QString, source, READ, WRITE = set_source_and_play, NOTIFY, FINAL)]
         /// False pauses.
-        #[qproperty(bool, playing, READ, WRITE = set_playing_and_apply, NOTIFY)]
+        #[qproperty(bool, playing, READ, WRITE = set_playing_and_apply, NOTIFY, FINAL)]
         type AnimationPlayer = super::AnimationPlayerRust;
     }
 

@@ -40,8 +40,13 @@ ApplicationWindow {
     // pause (thumbHeight), and meanwhile the old ones are scaled. Remembered across runs.
     property real rowHeight: appSettings.rowHeight
     property int thumbHeight: Math.round(rowHeight * Screen.devicePixelRatio)
-    property int current: -1
+    // The selected item (-1: none): the gallery's, so it stays with its file when the list is refreshed.
+    property alias current: galleryModel.current
     property bool filtersOpen: false
+    // The first list is shown and the test hooks have run (the --screenshot hook waits for it).
+    property bool ready: false
+    // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
+    property int loadedIndex: -2
     readonly property real gap: 4
     // query::SortKey names, and the sort box's names for them.
     readonly property list<string> sortKeys: ["name", "size", "modified", "taken", "megapixels", "duration"]
@@ -50,8 +55,17 @@ ApplicationWindow {
     // The test hook's rating keys (--viewer-keys): "r3" rates 3.
     readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
-    FolderModel { id: folders }
-    GalleryModel { id: galleryModel }
+    // Both read the catalog off the GUI thread: what they were asked for arrives later (onLoaded).
+    FolderModel {
+        id: folders
+        onLoaded: win.treeLoaded()
+    }
+    GalleryModel {
+        id: galleryModel
+        // Without a selection, a refreshed list keeps the top row's file in view.
+        onAboutToLoad: galleryModel.anchor = win.current >= 0 ? -1 : win.topItem()
+        onLoaded: (index) => win.gridLoaded(index)
+    }
     // Where the grid looks, with or without subfolders, in what order; with the filter bar's query, a view.
     // Remembered across runs, and in saved views (src/view.rs).
     View { id: view }
@@ -70,8 +84,8 @@ ApplicationWindow {
         onTriggered: library.poll()
     }
     onThumbHeightChanged: library.setThumbHeight(thumbHeight)
-    // A refresh that waits for the viewer to close (it would renumber the items under it).
-    property bool refreshPending: false
+    // The tree has been shown once: from then on a new tree (a scan) leaves its folders as the user left them.
+    property bool treeShown: false
 
     Timer {
         id: thumbTimer
@@ -85,9 +99,8 @@ ApplicationWindow {
     Timer {
         id: sessionTimer
         interval: 1000
-        onTriggered: {
-            appSettings.lastFile = galleryModel.fileId(viewer.visible ? viewer.index : win.current)
-        }
+        // Not before the start selected it: a key pressed on the empty grid would save no file.
+        onTriggered: if (win.ready) appSettings.lastFile = galleryModel.fileId(viewer.visible ? viewer.index : win.current)
     }
     onCurrentChanged: sessionTimer.restart()
     Timer {
@@ -127,38 +140,75 @@ ApplicationWindow {
     function relayout() {
         const anchor = current >= 0 ? current : topItem()
         galleryModel.relayout(grid.width, rowHeight, gap)
-        if (anchor >= 0)
+        if (loadedIndex > -2)
+            gridLoaded(loadedIndex)
+        else if (anchor >= 0)
             grid.positionViewAtIndex(galleryModel.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
     }
 
-    // The folder tree changed (a scan): reload it, keeping the open folder if it still exists.
-    function reloadAll() {
-        const path = view.folder
-        folders.reload()
-        const row = folders.rowOf(path)
-        tree.currentIndex = Math.max(row, 0)
-        if (row < 0)
-            openFolder(0)
-        else
-            refreshGrid()
-    }
-
-    // Re-read the open folder (new files, new sizes), keeping the selection or the top of the view in place.
-    function refreshGrid() {
-        if (viewer.visible) {
-            refreshPending = true
+    // A list asked for is shown: keep the selection in view, else the file that was at the top (`index`), else
+    // start at the top. The first one with the tree in finishes the start.
+    function gridLoaded(index: int) {
+        // Laid out only once the grid has a width (relayout() comes back here).
+        if (galleryModel.count > 0 && galleryModel.rowOf(0) < 0) {
+            loadedIndex = index
             return
         }
-        const hadCurrent = current >= 0
-        const keep = hadCurrent ? current : topItem()
-        let i = galleryModel.openFolder(view.folder, view.recursive, filterBar.query, view.sortJson(), keep)
+        loadedIndex = -2
+        if (current >= 0)
+            grid.positionViewAtIndex(galleryModel.rowOf(current), ListView.Contain)
+        else if (index >= 0)
+            grid.positionViewAtIndex(galleryModel.rowOf(index), ListView.Beginning)
+        else
+            grid.positionViewAtBeginning()
+        // The tree says whether the folder is still there: without it this may be a list of a folder gone.
+        if (!ready && treeShown)
+            started()
+    }
+
+    // The folder tree is in. At the start, the open folder is shown in it (its parents expanded); after a scan it
+    // is only found again, the tree left as the user left it. A folder gone opens all folders.
+    function treeLoaded() {
+        const first = !treeShown
+        treeShown = true
+        const row = first ? folders.reveal(view.folder) : folders.rowOf(view.folder)
+        if (row >= 0) {
+            tree.currentIndex = row
+            if (first)
+                tree.positionViewAtIndex(row, ListView.Contain)
+            // Spelled as the tree spells it (paths match in any case): the list already shows it.
+            const spelled = folders.mergedPath(row)
+            if (spelled !== view.folder) {
+                view.folder = spelled
+                view.saveSession(filterBar.query)
+            }
+        } else if (folders.contains(view.folder)) {
+            // Under a folder the user collapsed.
+            tree.currentIndex = -1
+        } else {
+            tree.currentIndex = 0
+            if (view.folder !== "") {
+                openPath("")
+                return
+            }
+        }
+        // The list came first (and isn't waiting for the grid's width): the start finishes now.
+        if (!ready && !galleryModel.loading && loadedIndex === -2)
+            started()
+    }
+
+    // The folder tree changed (a scan): read it again, and the open folder's files.
+    function reloadAll() {
+        folders.reload()
+        refreshGrid()
+    }
+
+    // Re-read the open folder (new files, new sizes), keeping the selection or the top of the view in place. While
+    // the viewer is open the new list waits for it to close (it could take away the pictures being rated, out of
+    // "Unrated", and the viewer's place with them).
+    function refreshGrid() {
+        galleryModel.openFolder(view.folder, view.recursive, filterBar.query, view.sortJson(), true)
         updateFacets()
-        // The selected file left the view (rated out of "Unrated"): select what took its place.
-        if (i < 0 && hadCurrent && galleryModel.count > 0)
-            i = Math.min(keep, galleryModel.count - 1)
-        current = hadCurrent ? i : -1
-        if (i >= 0)
-            grid.positionViewAtIndex(galleryModel.rowOf(i), hadCurrent ? ListView.Contain : ListView.Beginning)
     }
 
     function openFolder(row: int) {
@@ -167,22 +217,21 @@ ApplicationWindow {
 
     // Show a merged folder (`""` = all) with the current subfolders, filters and sort, and remember it.
     function openPath(path: string) {
-        current = -1
         view.folder = path
-        galleryModel.openFolder(path, view.recursive, filterBar.query, view.sortJson(), -1)
+        galleryModel.openFolder(path, view.recursive, filterBar.query, view.sortJson(), false)
         updateFacets()
-        grid.positionViewAtBeginning()
         sortBox.currentIndex = sortKeys.indexOf(view.sortKey)
         view.saveSession(filterBar.query)
     }
 
-    // Open a folder by path, showing it in the tree (its parents expanded).
+    // Open a folder by path, showing it in the tree (its parents expanded). Before the tree is in, it is shown
+    // when it arrives (treeLoaded).
     function goTo(path: string) {
         const row = folders.reveal(path)
         tree.currentIndex = Math.max(row, 0)
         if (row >= 0)
             tree.positionViewAtIndex(row, ListView.Contain)
-        openPath(row >= 0 ? path : "")
+        openPath(row >= 0 ? folders.mergedPath(row) : folders.ready ? "" : path)
     }
 
     function applyView(name: string) {
@@ -195,7 +244,7 @@ ApplicationWindow {
     }
 
     function select(i: int) {
-        if (i < 0)
+        if (i < 0 || i >= galleryModel.count)
             return
         current = i
         grid.positionViewAtIndex(galleryModel.rowOf(i), ListView.Contain)
@@ -242,9 +291,16 @@ ApplicationWindow {
             }
             Label {
                 color: "#999999"
-                text: Qt.locale().toString(galleryModel.count)
-                    + (filterBar.active > 0 ? " of " + Qt.locale().toString(filterBar.total) : "")
-                    + " files"
+                text: galleryModel.loading && galleryModel.count === 0 ? "Loading…"
+                    : Qt.locale().toString(galleryModel.count)
+                      + (filterBar.active > 0 ? " of " + Qt.locale().toString(filterBar.total) : "")
+                      + " files"
+            }
+            BusyIndicator {
+                running: galleryModel.loading
+                visible: running
+                Layout.preferredWidth: 20
+                Layout.preferredHeight: 20
             }
             CheckBox {
                 text: "Include subfolders"
@@ -574,7 +630,7 @@ ApplicationWindow {
 
             Label {
                 anchors.centerIn: parent
-                visible: galleryModel.count === 0
+                visible: galleryModel.count === 0 && !galleryModel.loading
                 text: library.roots.length === 0 ? "No folders in the library yet.\nAdd one with Library… (top right)."
                     : filterBar.active > 0 ? "Nothing here matches the filters."
                     : library.busy ? "Nothing here yet: the library is being imported." : "No images here."
@@ -587,6 +643,7 @@ ApplicationWindow {
     Viewer {
         id: viewer
         anchors.fill: parent
+        index: galleryModel.viewing
         count: galleryModel.count
         // The shown item, read again when the gallery changes it in place (a rating, a turn). Out of range (-1:
         // closed), the gallery gives empty values.
@@ -602,18 +659,14 @@ ApplicationWindow {
         filePath: galleryModel.revision >= 0 ? galleryModel.filePath(viewer.index) : ""
         info: galleryModel.revision >= 0 ? galleryModel.info(viewer.index) : ""
         settings: appSettings
+        onMoved: (i) => galleryModel.viewing = i
+        // Closed: the keys go back to the grid.
+        onVisibleChanged: if (!visible) grid.forceActiveFocus()
         onRated: (i, r) => galleryModel.setRating(i, r)
         onTurned: (i, d) => galleryModel.rotate(i, d)
         onIndexChanged: sessionTimer.restart()
         onFindSimilar: (path) => yandexPanel.show(path)
-        onClosed: (i) => {
-            win.select(i)
-            if (win.refreshPending) {
-                win.refreshPending = false
-                win.refreshGrid()
-            }
-            grid.forceActiveFocus()
-        }
+        onClosed: (i) => win.select(i)
     }
 
     // The library folders, over a dimmed window (an item in the page, like the viewer, so window grabs include it).
@@ -741,7 +794,8 @@ ApplicationWindow {
     //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
     //   --library=1  open the library folders
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
-    //   --screenshot=<png>  save the window after 4 s (or --wait=<s>) and quit (src/screenshot.rs)
+    //   --screenshot=<png>  save the window 4 s (or --wait=<s>) after it is ready, and quit (src/screenshot.rs)
+    // --query, --sort and --apply-view shape the first list; the others act on it (started()).
     Timer {
         id: menuTimer
         interval: 500
@@ -750,16 +804,33 @@ ApplicationWindow {
     // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
     readonly property list<string> viewerKeys: commandLine.keys("viewer-keys")
 
+    // The window is up: ask for where the user was. Nothing here waits for the catalog; the tree and the files
+    // arrive later, in either order (treeLoaded, gridLoaded), and the second of them finishes the start (started).
     Component.onCompleted: {
-        // Where the user was: the folder, subfolders and sort are the view's (it read them at its start), the
-        // filters the bar's.
+        // The folder, subfolders and sort are the view's (it read them at its start), the filters the bar's.
         filterBar.query = commandLine.has("query") ? commandLine.text("query") : view.sessionQuery()
         if (commandLine.has("sort")) view.setSortJson(commandLine.text("sort"))
+        if (commandLine.has("apply-view")) {
+            const query = view.applyView(commandLine.text("apply-view"))
+            if (query !== "")
+                filterBar.query = query
+        }
         if (commandLine.has("filters")) filtersOpen = true
-        goTo(view.folder)
+        sortBox.currentIndex = sortKeys.indexOf(view.sortKey)
         relayout()
+        folders.reload()
+        // As it was left: whether the folder still exists is known once the tree is in (treeLoaded).
+        galleryModel.openFolder(view.folder, view.recursive, filterBar.query, view.sortJson(), true)
+        updateFacets()
+    }
+
+    // The first list is shown: select the file the user was on, run the test hooks, then start the background job
+    // (after the first reads, which it would compete with for the disk).
+    function started() {
+        ready = true
         const last = galleryModel.indexOf(appSettings.lastFile)
         if (last >= 0) select(last)
+        if (commandLine.has("apply-view")) view.saveSession(filterBar.query)
 
         if (commandLine.has("size")) setSize(commandLine.number("size", rowHeight))
         if (commandLine.has("select")) select(commandLine.number("select", -1))
@@ -779,7 +850,6 @@ ApplicationWindow {
             }
             if (commandLine.has("zoom")) viewer.setZoom(commandLine.number("zoom", 1), viewer.width / 2, viewer.height / 2)
         }
-        if (commandLine.has("apply-view")) applyView(commandLine.text("apply-view"))
         if (commandLine.text("menu") === "views") menuTimer.start()
         if (commandLine.has("library")) libraryPanel.visible = true
         library.start(thumbHeight)

@@ -192,6 +192,11 @@ the import, so the grid lays out instantly while thumbnails fill in. Thumbnails 
 "Thumbnails": compression moves embeddings too much to re-analyse them), so the cache can be evicted and rebuilt
 at any time. It costs a second read of the originals, in the background and in on-disk order.
 
+**Cache layout now (2026-10-31):** one SQLite file, `thumbs-v3.sqlite`, with the entries (file, height, source,
+size, last use) apart from the JPEGs and the totals kept by triggers, so nothing that runs often reads the JPEGs
+(FINDINGS "Startup"). The JPEGs are keyed by entry id, so they can move to packed shard files later without
+touching the entries. Format and cap are still open (§9.1).
+
 ---
 
 ## 7. Desktop UI: Qt 6 Quick (QML) + CXX-Qt

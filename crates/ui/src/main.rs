@@ -14,6 +14,7 @@ mod gallery;
 mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
+mod loader;
 mod panic_log;
 mod providers;
 mod screenshot;
@@ -44,7 +45,8 @@ fn main() {
 }
 
 fn run_app() {
-    video_decoding::choose();
+    // Meanwhile the catalog opens and Qt starts; Qt Multimedia reads the result when the QML makes the player.
+    let video_decoding = video_decoding::choose_in_background();
     let catalog_dir =
         std::env::var_os("PG_CATALOG_DIR").map_or_else(|| PathBuf::from(cli::DEFAULT_CATALOG_DIR), PathBuf::from);
     panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
@@ -79,12 +81,18 @@ fn run_app() {
             &main_qml,
             &QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml")),
         );
+        if video_decoding.join().is_err() {
+            eprintln!("the video decoding probe failed: Qt Multimedia picks its own decoders");
+        }
         engine.as_mut().load(&main_qml);
         screenshot::schedule(engine);
     }
     if let Some(app) = app.as_mut() {
         app.exec();
     }
+    loader::stop();
+    library::stop();
+    state::shutdown();
 }
 
 /// Make stdout and stderr reach the console the command was typed in. A GUI-subsystem program starts without

@@ -1,5 +1,10 @@
 //! The grid model: the files of the open folder, laid out in justified rows (`pg_core::layout`). QML sees one
 //! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index.
+//!
+//! The files are listed off the GUI thread (`loader`): `openFolder` asks, and the list arrives later (`loaded`).
+//! So that nothing is renumbered under the user, the model keeps the items QML holds: the selection (`current`)
+//! moves with its file when a new list arrives, and while the viewer is open (`viewing`) an arriving list waits
+//! for it to close. A rating or a turn made while a list was on its way is read again into it.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -27,10 +32,31 @@ pub mod qobject {
         #[qml_element]
         #[qproperty(i32, count, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
+        /// A list asked for (`openFolder`) hasn't arrived yet; the one shown stays meanwhile.
+        #[qproperty(bool, loading, READ, WRITE, NOTIFY, FINAL)]
+        /// The selected item (-1: none): it follows its file to a new list.
+        #[qproperty(i32, current, READ, WRITE, NOTIFY, FINAL)]
+        /// The viewer's item (-1: closed). While it is open, a list that arrives is held, and shown when it closes.
+        #[qproperty(i32, viewing, READ, WRITE = set_viewing_holding, NOTIFY, FINAL)]
+        /// Without a selection, the item a new list keeps in view (the top one): set in `aboutToLoad`.
+        #[qproperty(i32, anchor, READ, WRITE, NOTIFY, FINAL)]
         type GalleryModel = super::GalleryRust;
     }
 
+    impl cxx_qt::Threading for GalleryModel {}
+
     unsafe extern "RustQt" {
+        fn set_viewing_holding(self: Pin<&mut GalleryModel>, value: i32);
+
+        /// A new list is about to replace the shown one: the last moment to set `anchor`.
+        #[qsignal]
+        #[cxx_name = "aboutToLoad"]
+        fn about_to_load(self: Pin<&mut GalleryModel>);
+
+        /// The list asked for is shown. `index`: where `anchor`'s file is now (-1: not kept, or gone).
+        #[qsignal]
+        fn loaded(self: Pin<&mut GalleryModel>, index: i32);
+
         #[qinvokable]
         #[cxx_override]
         fn data(self: &GalleryModel, index: &QModelIndex, role: i32) -> QVariant;
@@ -55,8 +81,8 @@ pub mod qobject {
 
         /// Show the files of a merged folder (`""` = everything), with or without its subfolders, that pass the
         /// filters (`query::Query` as JSON), in an order (`query::Sort` as JSON): `view::View`'s and
-        /// `filters::Filters`'. Returns where the file that was item `keep` is now: -1 if it isn't shown (or `keep`
-        /// is -1).
+        /// `filters::Filters`'. The list arrives later (`loaded`). With `keep` (the same folder, refreshed), the
+        /// selection and `anchor` stay with their files; otherwise the selection is cleared.
         #[qinvokable]
         #[cxx_name = "openFolder"]
         fn open_folder(
@@ -65,8 +91,8 @@ pub mod qobject {
             recursive: bool,
             query: &QString,
             sort: &QString,
-            keep: i32,
-        ) -> i32;
+            keep: bool,
+        );
 
         /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
         #[qinvokable]
@@ -179,28 +205,65 @@ pub mod qobject {
 
 use core::pin::Pin;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QUrl, QVariant};
 use pg_core::browse::{self, Item};
 use pg_core::layout::{self, Row};
 use pg_core::media::{self, Kind};
 use pg_core::query::{MediaType, Query, Sort};
 
+use crate::loader::{self, Kind as Load};
 use crate::{library, settings, state};
 
 const ROLE_FIRST: i32 = 256;
 const ROLE_COUNT: i32 = 257;
 const ROLE_HEIGHT: i32 = 258;
 
-#[derive(Default)]
 pub struct GalleryRust {
     count: i32,
     revision: i32,
+    loading: bool,
+    current: i32,
+    viewing: i32,
+    anchor: i32,
     items: Vec<Item>,
     rows: Vec<Row>,
     spacing: f64,
     width: f64,
     row_height: f64,
+    /// The latest list asked for; older ones arriving are dropped.
+    generation: u64,
+    /// Whether it keeps the selection: every request since the last list shown was a refresh of the same folder.
+    keep: bool,
+    /// A list that arrived while the viewer was open (its generation, its items).
+    held: Option<(u64, Vec<Item>)>,
+    /// Files rated or turned since it was asked for (its snapshot may predate them), and whether turns were
+    /// written meanwhile (`refreshTurned`).
+    edited: Vec<i64>,
+    turned: bool,
+}
+
+impl Default for GalleryRust {
+    fn default() -> Self {
+        GalleryRust {
+            count: 0,
+            revision: 0,
+            loading: false,
+            current: -1,
+            viewing: -1,
+            anchor: -1,
+            items: Vec::new(),
+            rows: Vec::new(),
+            spacing: 0.0,
+            width: 0.0,
+            row_height: 0.0,
+            generation: 0,
+            keep: false,
+            held: None,
+            edited: Vec::new(),
+            turned: false,
+        }
+    }
 }
 
 fn media_type(i: &Item) -> MediaType {
@@ -258,22 +321,99 @@ impl qobject::GalleryModel {
         recursive: bool,
         query: &QString,
         sort: &QString,
-        keep: i32,
-    ) -> i32 {
-        let kept = self.file_id(keep);
+        keep: bool,
+    ) {
+        let generation = {
+            let mut this = self.as_mut().rust_mut();
+            this.generation += 1;
+            // A folder change still on its way stays one: a refresh asked meanwhile mustn't keep a selection made
+            // in another folder.
+            this.keep = keep && (this.keep || !this.loading);
+            this.edited.clear();
+            this.turned = false;
+            this.generation
+        };
+        self.as_mut().set_loading(true);
         let path = merged.to_string();
         let (query, sort) = (Query::from_json(&query.to_string()), Sort::from_json(&sort.to_string()));
-        let items = state::with_catalog(|c| browse::list_files(&c.conn, &path, recursive, &query, sort))
-            .unwrap_or_else(|e| {
-                eprintln!("listing {path}: {e:#}");
-                Vec::new()
-            });
+        let model = self.qt_thread();
+        let shown = path.clone();
+        loader::submit(
+            Load::Grid,
+            move |c| browse::list_files(&c.conn, &path, recursive, &query, sort),
+            move |items| {
+                let items = items.unwrap_or_else(|e| {
+                    eprintln!("listing {shown}: {e:#}");
+                    Vec::new()
+                });
+                // Fails only when the model is gone (the window closing): nothing left to show it in.
+                let _ = model.queue(move |model| model.apply(generation, items));
+            },
+        );
+    }
+
+    fn set_viewing_holding(mut self: Pin<&mut Self>, value: i32) {
+        if self.viewing == value {
+            return;
+        }
+        self.as_mut().rust_mut().viewing = value;
+        self.as_mut().viewing_changed();
+        if value < 0
+            && let Some((generation, items)) = self.as_mut().rust_mut().held.take()
+        {
+            self.apply(generation, items);
+        }
+    }
+
+    /// Show a list `open_folder` asked for, unless a newer one was asked for since; while the viewer is open, when
+    /// it closes.
+    fn apply(mut self: Pin<&mut Self>, generation: u64, mut items: Vec<Item>) {
+        if generation != self.generation {
+            return;
+        }
+        if self.viewing >= 0 {
+            self.as_mut().rust_mut().held = Some((generation, items));
+            return;
+        }
+        self.as_mut().about_to_load();
+        let keep = self.keep;
+        let (current, anchor) = (self.file_id(self.current), self.file_id(self.anchor));
+        // What was rated or turned since the list was read, as the catalog has it now (this thread's connection
+        // sees its own writes).
+        let edited = std::mem::take(&mut self.as_mut().rust_mut().edited);
+        for id in edited {
+            if let Some(slot) = items.iter_mut().find(|i| i.id == id) {
+                match state::with_catalog(|c| browse::reload_item(&c.conn, id)) {
+                    Ok(Some(fresh)) => *slot = fresh,
+                    Ok(None) => {}
+                    Err(e) => eprintln!("reloading {id}: {e:#}"),
+                }
+            }
+        }
         let count = items.len() as i32;
         self.as_mut().rust_mut().items = items;
         self.as_mut().set_count(count);
         let (w, h, s) = (self.width, self.row_height, self.spacing);
         self.as_mut().relayout(w, h, s);
-        if kept < 0 { -1 } else { self.index_of(kept) }
+        // Before the turns are read again: they aren't on their way any more.
+        self.as_mut().set_loading(false);
+        if std::mem::take(&mut self.as_mut().rust_mut().turned) {
+            self.as_mut().refresh_turned();
+        }
+        // The selection stays with its file; if the file left the list (rated out of "Unrated"), what took its place.
+        let new_current = match (keep, self.current) {
+            (false, _) | (true, -1) => -1,
+            (true, old) => {
+                let i = self.index_of(current);
+                if i >= 0 || count == 0 { i } else { old.min(count - 1) }
+            }
+        };
+        let kept = if keep && anchor >= 0 { self.index_of(anchor) } else { -1 };
+        self.as_mut().set_current(new_current);
+        self.as_mut().set_anchor(-1);
+        let revision = self.revision + 1;
+        self.as_mut().set_revision(revision);
+        self.loaded(kept);
     }
 
     fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
@@ -349,6 +489,9 @@ impl qobject::GalleryModel {
             let mut this = self.as_mut().rust_mut();
             let i = &mut this.items[item as usize];
             i.pending_turns = (i.pending_turns + turns) % 4;
+            if this.loading {
+                this.edited.push(id);
+            }
         }
         // An odd turn changes the item's shape, and so the rows.
         if turns % 2 == 1 {
@@ -360,6 +503,10 @@ impl qobject::GalleryModel {
     }
 
     fn refresh_turned(mut self: Pin<&mut Self>) {
+        // The list on its way may have been read before these turns were written: do it again when it arrives.
+        if self.loading {
+            self.as_mut().rust_mut().turned = true;
+        }
         let waiting: Vec<usize> = (0..self.items.len()).filter(|&i| self.items[i].pending_turns != 0).collect();
         if waiting.is_empty() {
             return;
@@ -403,7 +550,13 @@ impl qobject::GalleryModel {
         if write_back {
             library::wake_writer();
         }
-        self.as_mut().rust_mut().items[item as usize].rating = rating;
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.items[item as usize].rating = rating;
+            if this.loading {
+                this.edited.push(id);
+            }
+        }
         let revision = self.revision + 1;
         self.set_revision(revision);
     }

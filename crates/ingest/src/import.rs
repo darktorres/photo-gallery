@@ -26,13 +26,14 @@ pub struct ImportStats {
 
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
     let items = catalog.pending_import(retry_errors)?;
+    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0 };
+    // Most rounds (a new thumbnail height, a turn) have nothing to import: don't load every hash for them.
+    if items.is_empty() {
+        return Ok(stats);
+    }
     let mut index = PdqIndex::default();
     for (id, hash) in catalog.pdq_hashes()? {
         index.insert(id, &hash);
-    }
-    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0 };
-    if items.is_empty() {
-        return Ok(stats);
     }
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
     let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();

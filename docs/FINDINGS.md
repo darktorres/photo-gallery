@@ -1123,6 +1123,79 @@ the Sites list above was the wrong target for group 1:
   ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with
   a note; one on the upload or the other sizes is the search's error. A captcha is reported, never retried.
 
+## Startup (2026-10-31)
+
+Measured on a copy of the real catalog (189,518 files, 690 folders; session "All folders", recursive, by name) and
+its thumbnail cache (189,518 thumbnails at 220 px, 2 GB), release build, timestamps logged from process start
+(temporary traces). "Cold" is the first run after copying the files; "warm" the next one.
+
+### Before
+
+| Step | Cold | Warm | On the GUI thread? |
+|---|---|---|---|
+| Process start → `main` (DLLs) | 0.3 s | 0.03 s | — |
+| D3D11 AV1 probe (`video_decoding`) | 0.33 s | 0.32 s | yes, before anything |
+| `state::init`: `SELECT sum(bytes) FROM thumbs` | **10.7 s** | 0.46 s | yes, **before any window** |
+| `engine.load` until `onCompleted` | 3.0 s | 2.1 s | yes |
+| — of which Qt Multimedia's hardware probe | 1.36 s | 1.36 s | yes |
+| `onCompleted`: the grid's list (`list_files`, 189k rows) and layout | 1.0 s | 0.75 s | yes |
+| **First frame** | **15.4 s** | **3.7 s** | |
+| The job's `pending()`, holding the cache mutex the thumbnails need | 1.7 s | 1.6 s | no, but it blocks them |
+
+- **The cache's layout made every metadata scan read the JPEGs' pages.** `thumbs` was one rowid table with each
+  ~10.5 KB JPEG inline as its last column, so each row's start (with `bytes`, `mtime`, `last_used`) sat on its own
+  leaf page among the blobs' overflow pages. `sum(bytes)` read 522 MB in 127k page reads. Measured read-only with
+  `GetProcessIoCounters`.
+- **`pending()` read 2 GB with nothing pending.** It looks each catalog file up in `thumbs`, in the catalog's
+  on-disk order: random order for `thumbs`. With SQLite's default 2 MB page cache every lookup re-read its index
+  and table pages: 498k reads (2.6 per file), 6.2 s even with the file in Windows' cache. It ran under the mutex
+  the on-screen thumbnails lock, after the import pass at startup and at every row-height change.
+- **Qt Multimedia probes every hardware device type for 1.4 s** (CUDA 0.11 s, QSV 0.85 s, Vulkan 0.3 s;
+  `qt.multimedia.ffmpeg.hwaccel`, "Device types checked"), on the GUI thread when the hidden viewer's player is
+  made. It does so for `QT_FFMPEG_ENCODING_HW_DEVICE_TYPES` too: unset, the list is probed (`qffmpeghwaccel.cpp`,
+  `deviceTypes(const char*)`), and the app never encodes through Qt. Our `QT_FFMPEG_DECODING_HW_DEVICE_TYPES` was
+  set only on a GPU without AV1 decoding, so on one with it the decoders were probed as well.
+- **SQLite details found on the way** (Python 3.12's SQLite 3.49, in memory): after an upsert that updates,
+  `last_insert_rowid()` is the id of the last row *inserted*, another file's, so keying the JPEGs by it would have
+  put one file's thumbnail under another; `RETURNING id` is right on both paths. A deferred transaction that
+  reads, then writes after another connection committed, fails at once with `SQLITE_BUSY_SNAPSHOT` (517), whatever
+  the busy timeout: two processes writing the old cache (the app and `gallery thumbs`) could fail at random.
+  `INSERT OR REPLACE` fires delete triggers only with `recursive_triggers` on. On Windows a SQLite file open
+  elsewhere can't be deleted (WinError 32: SQLite opens without `FILE_SHARE_DELETE`).
+- **Two more, found reviewing the change.** `PRAGMA incremental_vacuum(N)` frees one page per step (it returns a
+  row per page), and rusqlite's `execute_batch` steps each statement once: through it the old cache's "vacuum"
+  freed one page a call. It has to be stepped to the end. `sqlite3_interrupt` only stops the statements running
+  at that moment: one arriving between two statements of a read is lost (and `in_scope` dropped the failed rows
+  of an interrupted folder scan, so the read went on). A flag checked by a progress handler, cleared only when the
+  next request starts, cancels the whole read.
+
+### After
+
+The same catalog copy, with the new cache filled (`gallery thumbs --height 220`, 183,612 thumbnails, 2.00 GB, 492 s
+at idle priority). "First" is the first run after a new build, whose pages and the catalog's weren't in
+Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
+
+| Step | First | Warm |
+|---|---|---|
+| Process start → `main` | 0.07 s | 0.02 s |
+| `state::init` (the totals are one row) | 0.01 s | 0.01 s |
+| Qt starts, the D3D11 probe (on a thread) joined | 0.38 s | 0.33 s |
+| `engine.load` (no Qt probe: both lists set) | 1.33 s | 0.70 s |
+| **First frame**, "Loading…" | **1.80 s** | **1.07 s** |
+| The grid's list, read off the GUI thread, shown | 4.5 s | 2.2 s |
+| `gallery thumbs` with nothing pending: open, heal, `pending()`, all of it | 1.0 s | |
+
+- **The window paints 3.5× sooner warm, and no longer waits for the disk.** Nothing before the first frame
+  reads the cache or the files; the catalog's only read there is opening it.
+- **`pending()` with 189k files to do takes 0.5 s** (it was 1.6 s with nothing to do, and blocked the
+  thumbnails); the first run of the new build made the empty `thumbs-v3.sqlite` and deleted the old 2 GB file.
+- **What's left in `engine.load` is Qt's.** Creating the viewer's `MediaPlayer`, `AudioOutput` and
+  `VideoOutput` (which loads the FFmpeg plugin) made no measurable difference in Qt's `qml` tool: 0.61–0.82 s from
+  process start to the first frame with them, 0.64–0.80 s without, over three runs each. So they aren't deferred.
+- **The cache's totals held** through a `gallery thumbs --cap-gb 1.9 --height 100` run killed after 20 s: 1.897 GB
+  in 187,068 entries, equal to the entries' sum, no JPEG without its entry; the 11,000 new 100 px thumbnails had
+  evicted 220 px ones, the least recently used first.
+
 ## Decisions
 
 - **2026-10-28 (revised the same day): no duplicate / variant distinction for now.** Local-edit

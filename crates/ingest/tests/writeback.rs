@@ -6,7 +6,6 @@
 
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
 use std::time::{Duration, Instant};
 
 use pg_core::catalog::Catalog;
@@ -99,8 +98,8 @@ fn ratings_and_turns_reach_the_files() {
     let before = ids(&c);
     assert_eq!(before.len(), files.len());
 
-    let thumbs: &'static Mutex<ThumbCache> =
-        Box::leak(Box::new(Mutex::new(ThumbCache::open(&dir.join("thumbs.sqlite"), 1 << 30).unwrap())));
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, 1 << 30, Box::new(|e| panic!("{e:#}"))).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs, || {});
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.

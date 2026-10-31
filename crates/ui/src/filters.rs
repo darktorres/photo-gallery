@@ -39,7 +39,13 @@ pub mod qobject {
         type Filters = super::FiltersRust;
     }
 
+    impl cxx_qt::Threading for Filters {}
+
     unsafe extern "RustQt" {
+        /// The counts `countFacets` asked for are in.
+        #[qsignal]
+        fn counted(self: Pin<&mut Filters>);
+
         fn set_query_loaded(self: Pin<&mut Filters>, value: &QString);
         fn set_name_edited(self: Pin<&mut Filters>, value: &QString);
         fn set_duplicates_edited(self: Pin<&mut Filters>, value: i32);
@@ -95,7 +101,8 @@ pub mod qobject {
         fn ext_count(self: &Filters, ext: &QString) -> i32;
 
         /// Count a merged folder's files (`""` = all folders), with or without its subfolders: `total`, `matching`,
-        /// the types' and extensions' counts.
+        /// the types' and extensions' counts. Counted off the GUI thread; they change when the counts are in
+        /// (`counted`).
         #[qinvokable]
         #[cxx_name = "countFacets"]
         fn count_facets(self: Pin<&mut Filters>, folder: &QString, recursive: bool);
@@ -104,12 +111,12 @@ pub mod qobject {
 
 use core::pin::Pin;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_core::browse::{self, Facets};
 use pg_core::query::{DateRange, MediaType, Query, Range};
 
-use crate::state;
+use crate::loader::{self, Kind};
 
 pub struct FiltersRust {
     query: QString,
@@ -124,6 +131,8 @@ pub struct FiltersRust {
     description: QString,
     parsed: Query,
     facets: Facets,
+    /// The latest counts asked for; older ones arriving are dropped.
+    generation: u64,
 }
 
 impl Default for FiltersRust {
@@ -143,6 +152,7 @@ impl Default for FiltersRust {
             description: QString::from(&describe(&parsed, &QStringList::default())),
             parsed,
             facets: Facets::default(),
+            generation: 0,
         }
     }
 }
@@ -339,16 +349,37 @@ impl qobject::Filters {
     }
 
     fn count_facets(mut self: Pin<&mut Self>, folder: &QString, recursive: bool) {
-        let path = folder.to_string();
-        let facets =
-            state::with_catalog(|c| browse::facets(&c.conn, &path, recursive, &self.parsed)).unwrap_or_else(|e| {
-                eprintln!("facets of {path}: {e:#}");
-                Facets::default()
-            });
+        let generation = {
+            let mut this = self.as_mut().rust_mut();
+            this.generation += 1;
+            this.generation
+        };
+        let (path, query) = (folder.to_string(), self.parsed.clone());
+        let filters = self.qt_thread();
+        let shown = path.clone();
+        loader::submit(
+            Kind::Facets,
+            move |c| browse::facets(&c.conn, &path, recursive, &query),
+            move |facets| {
+                let facets = facets.unwrap_or_else(|e| {
+                    eprintln!("facets of {shown}: {e:#}");
+                    Facets::default()
+                });
+                // Fails only when the filter bar is gone (the window closing).
+                let _ = filters.queue(move |filters| filters.apply_facets(generation, facets));
+            },
+        );
+    }
+
+    fn apply_facets(mut self: Pin<&mut Self>, generation: u64, facets: Facets) {
+        if generation != self.generation {
+            return;
+        }
         let (total, matching) = (count(facets.total), count(facets.matching));
         self.as_mut().rust_mut().facets = facets;
         self.as_mut().set_total(total);
         self.as_mut().set_matching(matching);
-        self.sync();
+        self.as_mut().sync();
+        self.counted();
     }
 }

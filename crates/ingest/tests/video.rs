@@ -9,7 +9,6 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use std::sync::Mutex;
 
 use pg_core::animation;
 use pg_core::catalog::Catalog;
@@ -207,7 +206,7 @@ fn videos() {
         .unwrap();
     assert_eq!(taken, Some(local));
 
-    let cache = Mutex::new(ThumbCache::open(&dir.join("thumbs.sqlite"), 1 << 30).unwrap());
+    let cache = ThumbCache::open(&dir, 1 << 30, Box::new(|e| panic!("{e:#}"))).unwrap();
     let made = thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }

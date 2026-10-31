@@ -1,6 +1,6 @@
-//! The `--screenshot=<png>` test hook (with `--wait=<s>`, 4 by default): save the window once it has settled, then
-//! quit (cpp/screenshot.cpp). For checking the UI without a person at the screen, with the QML's own hooks
-//! (Main.qml).
+//! The `--screenshot=<png>` test hook (with `--wait=<s>`, 4 by default, after the window is `ready`): save the
+//! window once it has settled, then quit (cpp/screenshot.cpp). For checking the UI without a person at the screen,
+//! with the QML's own hooks (Main.qml).
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -11,7 +11,7 @@ pub mod ffi {
         type QString = cxx_qt_lib::QString;
 
         include!("pg-ui/cpp/screenshot.h");
-        /// `delay_ms` after the call, save the window the engine shows to `path`, then quit.
+        /// `delay_ms` after the window the engine shows is `ready`, save it to `path`, then quit.
         #[namespace = "pg"]
         fn save_screenshot_later(engine: Pin<&mut QQmlApplicationEngine>, path: &QString, delay_ms: i32);
     }

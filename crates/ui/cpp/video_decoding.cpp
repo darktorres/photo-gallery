@@ -2,7 +2,7 @@
 // av_hwdevice_ctx_create picks without a device name), the AV1 Main profile, NV12 output (8-bit, which every AV1
 // decoder that has the profile also outputs).
 //
-// The setting goes through qputenv: Qt reads it from the C runtime's environment, which Rust's set_var
+// The settings go through qputenv: Qt reads them from the C runtime's environment, which Rust's set_var
 // (SetEnvironmentVariableW) doesn't update.
 
 #include "video_decoding.h"
@@ -44,10 +44,14 @@ bool gpu_decodes_av1() {
 }  // namespace
 
 void choose_video_decoding() {
-    constexpr const char* device_types = "QT_FFMPEG_DECODING_HW_DEVICE_TYPES";
-    // An empty list (Qt documents it as ","): no GPU decoding.
-    if (!qEnvironmentVariableIsSet(device_types) && !gpu_decodes_av1())
-        qputenv(device_types, ",");
+    // An empty list (Qt documents it as ","): none.
+    constexpr const char* decoding = "QT_FFMPEG_DECODING_HW_DEVICE_TYPES";
+    constexpr const char* encoding = "QT_FFMPEG_ENCODING_HW_DEVICE_TYPES";
+    if (!qEnvironmentVariableIsSet(decoding))
+        qputenv(decoding, gpu_decodes_av1() ? "d3d11va" : ",");
+    // Nothing is encoded through Qt Multimedia.
+    if (!qEnvironmentVariableIsSet(encoding))
+        qputenv(encoding, ",");
 }
 
 }  // namespace pg

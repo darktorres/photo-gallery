@@ -22,8 +22,9 @@ import pg.gallery
 Rectangle {
     id: viewer
 
-    // The item shown (-1: none, and the viewer is closed), of `count`.
-    property int index: -1
+    // The item shown (-1: none, and the viewer is closed), of `count`: the gallery's (it follows the file when the
+    // list is refreshed). Showing another asks the window (`moved`).
+    required property int index
     required property int count
     // The shown item, from the gallery (which changes them in place, at a rating or a turn).
     // Its image's key (image://full/<key>/…); the keys of the items around it, preloaded.
@@ -60,7 +61,8 @@ Rectangle {
     property bool muted: false
     property real volume: 1
 
-    // Rate the shown item, turn it by quarter turns (1 = clockwise): the window does it.
+    // Show another item (-1: close), rate the shown one, turn it by quarter turns (1 = clockwise): the window does it.
+    signal moved(int index)
     signal rated(int index, int rating)
     signal turned(int index, int turns)
     // The bar's "find similar" button: the photo's file, for the Yandex panel (Main.qml).
@@ -86,21 +88,21 @@ Rectangle {
     focus: visible
 
     function show(i: int) {
-        index = i
+        moved(i)
         resetView()
         forceActiveFocus()
     }
 
+    // The item it was on first, while the list is still the one it showed: closing may show a list that waited.
     function close() {
-        const i = index
-        index = -1
-        closed(i)
+        closed(index)
+        moved(-1)
     }
 
     function step(d: int) {
         const n = Math.max(0, Math.min(count - 1, index + d))
         if (n !== index) {
-            index = n
+            moved(n)
             resetView()
         }
     }

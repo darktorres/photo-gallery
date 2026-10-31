@@ -96,6 +96,16 @@ pub fn wake_writer() {
     }
 }
 
+/// After the event loop, before the thumbnail cache closes: let the file write in progress finish, with its
+/// thumbnails retagged. The background job is left to end with the process: what it stops in the middle (a batch
+/// of thumbnails, an analysis) is redone at the next start, and waiting for it could keep the process alive for
+/// as long as reading a large file takes.
+pub fn stop() {
+    if let Some(w) = WRITER.get() {
+        w.stop();
+    }
+}
+
 #[derive(Default)]
 pub struct LibraryRust {
     roots: QStringList,

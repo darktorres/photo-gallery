@@ -1,6 +1,6 @@
 //! Shared state and the image work behind the QML image providers. Provider requests run on Qt thread-pool
-//! threads; each thread keeps its own catalog connection and decoder (thread-locals), and the thumbnail cache is
-//! shared behind a mutex.
+//! threads; each thread keeps its own catalog connection and decoder (thread-locals), and reads the thumbnail
+//! cache through its own connection too (`ThumbCache` takes no lock to read).
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -18,7 +18,7 @@ use turbojpeg::Compressor;
 pub struct AppState {
     pub catalog_dir: PathBuf,
     pub catalog_path: PathBuf,
-    thumbs: Mutex<ThumbCache>,
+    thumbs: ThumbCache,
 }
 
 static STATE: OnceLock<AppState> = OnceLock::new();
@@ -28,12 +28,20 @@ thread_local! {
     static CODECS: RefCell<Option<(Decoder, Compressor)>> = const { RefCell::new(None) };
 }
 
-/// Opens (and migrates) the catalog and the thumbnail cache. Call once, before the UI starts.
+/// Opens (and migrates) the catalog, as this thread's connection, and the thumbnail cache. Call once, on the GUI
+/// thread, before the UI starts. A cache that can't be opened only means thumbnails aren't kept.
 pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: i64) -> Result<()> {
     std::fs::create_dir_all(&catalog_dir)?;
     let catalog_path = catalog_dir.join("catalog.sqlite");
-    Catalog::open(&catalog_path)?;
-    let thumbs = Mutex::new(ThumbCache::open(&catalog_dir.join("thumbs.sqlite"), thumb_cap_bytes)?);
+    let catalog = Catalog::open(&catalog_path)?;
+    // Kept for the GUI thread rather than closed: closing the last connection checkpoints and deletes the WAL,
+    // and the first QML object would open it again.
+    CATALOG.with(|c| *c.borrow_mut() = Some(catalog));
+    let thumbs =
+        ThumbCache::open(&catalog_dir, thumb_cap_bytes, Box::new(|e| eprintln!("{e:#}"))).unwrap_or_else(|e| {
+            eprintln!("thumbnail cache disabled: {e:#}");
+            ThumbCache::disabled()
+        });
     STATE.set(AppState { catalog_dir, catalog_path, thumbs }).map_err(|_| anyhow::anyhow!("state initialized twice"))
 }
 
@@ -42,8 +50,15 @@ pub fn get() -> &'static AppState {
 }
 
 /// The thumbnail cache, shared by the image provider and the background job.
-pub fn thumbs() -> &'static Mutex<ThumbCache> {
+pub fn thumbs() -> &'static ThumbCache {
     &get().thumbs
+}
+
+/// After the event loop: write what the thumbnail cache's writer still holds (the `static` is never dropped).
+pub fn shutdown() {
+    if let Some(state) = STATE.get() {
+        state.thumbs.close();
+    }
 }
 
 /// Run `f` with this thread's catalog connection.
@@ -85,7 +100,7 @@ fn read_original(path: &str) -> std::io::Result<Vec<u8>> {
 pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
     let browse::FileSource { path, mtime, rotation, poster_ms, .. } = source(file_id)?;
     let current = thumbs::Source { mtime, rotation };
-    let cached = thumbs().lock().unwrap().get_nearest(file_id, height, current)?;
+    let cached = thumbs().get_nearest(file_id, height, current)?;
     if let Some((h, data)) = &cached
         && *h >= height
     {
@@ -104,8 +119,8 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
         };
         with_codecs(|d, e| thumbs::make(&bytes, height as usize, rotation, d, e))?
     };
-    let thumb = thumbs::Thumb { file_id, height, source: current, data: data.clone() };
-    thumbs().lock().unwrap().put_batch(&[thumb], None)?;
+    // Kept in the background: shown now, whatever the write does.
+    thumbs().put(thumbs::Thumb { file_id, height, source: current, data: data.clone() });
     Ok(data)
 }
 

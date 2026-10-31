@@ -5,6 +5,8 @@
 //! again. That is all the resumability there is: every batch is one transaction, and the work list is a query.
 
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -201,6 +203,15 @@ pub struct WorkItem {
     pub kind: Kind,
 }
 
+/// Whether an error is a statement stopped by [`Catalog::cancel_when`]'s flag.
+pub fn interrupted(e: &anyhow::Error) -> bool {
+    e.chain().any(|c| {
+        c.downcast_ref::<rusqlite::Error>()
+            .and_then(rusqlite::Error::sqlite_error_code)
+            .is_some_and(|code| code == rusqlite::ErrorCode::OperationInterrupted)
+    })
+}
+
 pub struct Status {
     pub files: i64,
     pub missing: i64,
@@ -224,6 +235,15 @@ impl Catalog {
         conn.create_collation("PATH", crate::browse::path_collation)?;
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
+    }
+
+    /// Stop the statements on this connection while `cancel` is set (from any thread): each fails with an error for
+    /// which [`interrupted`] is true, including those started after it was set, until it is cleared. Unlike
+    /// SQLite's interrupt, which only reaches the statements running at that moment, it can't fall between two
+    /// statements of a read.
+    pub fn cancel_when(&self, cancel: Arc<AtomicBool>) {
+        // Checked every 1000 virtual-machine steps: microseconds.
+        self.conn.progress_handler(1000, Some(move || cancel.load(Ordering::Relaxed)));
     }
 
     pub fn begin_scan(&self, root: &str) -> Result<i64> {
@@ -513,6 +533,23 @@ mod tests {
         assert_eq!(c.roots().unwrap(), [r"D:\a"]);
         c.remove_root(r"D:\a").unwrap();
         assert!(c.roots().unwrap().is_empty());
+    }
+
+    #[test]
+    fn cancelled_until_cleared() {
+        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        c.cancel_when(cancel.clone());
+        let long =
+            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000) SELECT count(*) FROM n";
+        let run = || c.conn.query_row(long, [], |r| r.get::<_, i64>(0)).map_err(anyhow::Error::from);
+        assert_eq!(run().unwrap(), 100_000);
+        // Set between statements (SQLite's own interrupt would be lost there): every statement fails.
+        cancel.store(true, Ordering::Relaxed);
+        assert!(interrupted(&run().unwrap_err()));
+        assert!(interrupted(&run().unwrap_err()));
+        cancel.store(false, Ordering::Relaxed);
+        assert_eq!(run().unwrap(), 100_000);
     }
 
     fn version(conn: &Connection) -> i64 {

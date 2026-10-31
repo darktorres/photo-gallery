@@ -106,11 +106,20 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
   where the last one stopped, and redoes files whose size or mtime changed.
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
-  (`thumbs.sqlite`) is keyed by (file, height) and capped (`--cap-gb`, default 50; `PG_THUMB_CAP_GB` for the
-  app). The background job (or `gallery thumbs`) fills it at idle CPU priority for the grid's current height,
-  evicting other heights first, and starts over when the size changes. The ones on screen are made on demand,
-  newest request first. A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB
-  without tone mapping, so their posters look washed out.
+  (`thumbs-v3.sqlite`, the layout's version in the name) is keyed by (file, height) and capped (`--cap-gb`,
+  default 50; `PG_THUMB_CAP_GB` for the app). The background job (or `gallery thumbs`) fills it at idle CPU
+  priority for the grid's current height, evicting only other heights, and starts over when the size changes.
+  The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
+  A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB without tone mapping, so
+  their posters look washed out.
+  - Layout (`thumbs.rs`): the entries (a few dozen bytes each) and the JPEGs are separate tables, and the totals
+    are one row that triggers keep, so opening the cache and listing what's missing never read the JPEGs
+    (FINDINGS "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
+    the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its
+    entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
+    down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
+  - A cache file of another version is deleted at the start (one still open elsewhere is left for the next),
+    never migrated; one that can't be opened at all only means thumbnails aren't kept.
 - **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
   its children, and adding a subfolder only rescans it. Removing one marks its files missing; adding it back
   restores them with their analysis and ratings.
@@ -120,6 +129,12 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 ## The app
 
 ImageRater's triage, without Everything: open "Unrated", largest first, rate each picture and move on.
+
+The window comes up before anything is read from the catalog: the folder tree, the grid's files and the filter
+counts are read by a thread of their own (`loader.rs`), oldest request first, each kind keeping only its newest
+(which cancels one of its kind running), and shown when they arrive ("Loading…" meanwhile). The selection stays
+with its file when a list is refreshed; while the viewer is open a new list waits for it to close. A rating or a turn
+made while a list was on its way is kept. Startup times are in FINDINGS "Startup".
 
 - **Folder tree** (left): folders with the same path on different drives are one node (their drives are shown
   in green). "All folders" lists everything; "Include subfolders" toggles recursion.
@@ -178,9 +193,10 @@ ImageRater's triage, without Everything: open "Unrated", largest first, rate eac
   file follows in the background, and its analysis and thumbnails are redone.
 - Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
   --viewer-keys=LBHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
-  --library=1 --add-folder=<path> --screenshot=<png> --wait=<s>`. With `QT_QPA_PLATFORM=offscreen` (needs
-  `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`) and `QT_QPA_FONTDIR=C:\Windows\Fonts`
-  no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages. Offscreen draws with Qt's software
-  renderer, which shows no video frames: check playback through the player's state and position instead. Menus
-  are in the window's overlay, which the screenshot doesn't include. Rating and turning hooks write to the catalog and the files: use them on a scratch library
-  (`PG_CATALOG_DIR`, `PG_PREFS`).
+  --library=1 --add-folder=<path> --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the
+  first list; the others act on it once it is shown, and `--wait` (4 s by default) counts from then. With
+  `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`)
+  and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages.
+  Offscreen draws with Qt's software renderer, which shows no video frames: check playback through the player's
+  state and position instead. The screenshot is the window as shown, menus included. Rating and turning hooks
+  write to the catalog and the files: use them on a scratch library (`PG_CATALOG_DIR`, `PG_PREFS`).

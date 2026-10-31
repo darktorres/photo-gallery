@@ -136,16 +136,11 @@ impl qobject::View {
     }
 
     fn save_session(&self, query: &QString) {
-        let values = [
-            ("folder", self.folder.to_string()),
-            ("recursive", self.recursive.to_string()),
-            ("query", query.to_string()),
-            ("sort", self.sort().to_json()),
-        ];
-        for (key, value) in values {
-            if let Err(e) = state::with_catalog(|c| browse::session_set(&c.conn, key, &value)) {
-                eprintln!("session: {e:#}");
-            }
+        let (folder, recursive, query, sort) =
+            (self.folder.to_string(), self.recursive.to_string(), query.to_string(), self.sort().to_json());
+        let values = [("folder", &*folder), ("recursive", &*recursive), ("query", &*query), ("sort", &*sort)];
+        if let Err(e) = state::with_catalog(|c| browse::session_set_many(&c.conn, &values)) {
+            eprintln!("session: {e:#}");
         }
     }
 

@@ -132,7 +132,8 @@ impl Item {
 /// Case-insensitive comparison of names and paths as Windows sees them (Unicode, unlike SQLite's NOCASE).
 /// Registered on every catalog connection (`Catalog::open`).
 pub fn path_collation(a: &str, b: &str) -> std::cmp::Ordering {
-    a.to_lowercase().cmp(&b.to_lowercase()).then_with(|| a.cmp(b))
+    // Character by character, without allocating: a sort compares every name many times (FINDINGS "Startup").
+    a.chars().flat_map(char::to_lowercase).cmp(b.chars().flat_map(char::to_lowercase)).then_with(|| a.cmp(b))
 }
 
 /// What an `Item` is read from (`item_from_row`), with `f` the file.
@@ -184,11 +185,14 @@ fn in_scope<T>(
     f: impl FnOnce(&Transaction) -> Result<T>,
 ) -> Result<T> {
     let merged = merged.to_lowercase();
-    let mut folders: Vec<(String, i64)> = conn
+    // A row that fails (the read cancelled) fails the scope: a shorter list of folders would look like a result.
+    let all: Vec<(String, i64)> = conn
         .prepare("SELECT path, id FROM folders")?
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?
-        .filter_map(|r| {
-            let (path, id) = r.ok()?;
+        .collect::<rusqlite::Result<_>>()?;
+    let mut folders: Vec<(String, i64)> = all
+        .into_iter()
+        .filter_map(|(path, id)| {
             let m = merged_path(&path).to_lowercase();
             let inside = m == merged
                 || (recursive
@@ -196,7 +200,8 @@ fn in_scope<T>(
             inside.then_some((m, id))
         })
         .collect();
-    folders.sort();
+    // In the tree's order: by folder name at each level (`p\sub` right after `p`, before `p-x`).
+    folders.sort_by(|(a, a_id), (b, b_id)| a.split('\\').cmp(b.split('\\')).then(a_id.cmp(b_id)));
 
     let tx = conn.unchecked_transaction()?;
     tx.execute_batch(
@@ -416,6 +421,16 @@ pub fn session_set(conn: &Connection, key: &str, value: &str) -> Result<()> {
     Ok(())
 }
 
+/// Several session keys, in one transaction.
+pub fn session_set_many(conn: &Connection, values: &[(&str, &str)]) -> Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    for (key, value) in values {
+        session_set(&tx, key, value)?;
+    }
+    tx.commit()?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -488,6 +503,37 @@ mod tests {
         assert_eq!(ids(&c, "", true, &ratings(&[0, 2]), Sort::default()), [2, 3, 4]);
         let bmp = list_files(&c.conn, "p\\sub", false, &all, Sort::default()).unwrap();
         assert!(!bmp[0].rating_in_file, "BMP keeps its rating in the catalog");
+    }
+
+    #[test]
+    fn folders_in_the_trees_order() {
+        let c = library();
+        // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
+        c.conn
+            .execute_batch(
+                "INSERT INTO folders(id, path) VALUES (4, 'D:\\p-x');
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
+                 VALUES (9, 1, 9, 4, 'z.jpg', 'jpg', 'image', 1, 1, 1);",
+            )
+            .unwrap();
+        assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
+        let tree = folder_tree(&c.conn).unwrap();
+        let roots: Vec<&str> = tree.roots.iter().map(|&n| tree.nodes[n].name.as_str()).collect();
+        assert_eq!(roots, ["p", "p-x"]);
+    }
+
+    #[test]
+    fn path_order() {
+        use std::cmp::Ordering::*;
+        // Case-insensitively first (Unicode, unlike SQLite's NOCASE), then exactly, so the order is total.
+        assert_eq!(path_collation("a.jpg", "B.jpg"), Less);
+        assert_eq!(path_collation("Ä.jpg", "b.jpg"), Greater);
+        assert_eq!(path_collation("ä.jpg", "Ä.JPG"), Greater);
+        assert_eq!(path_collation("B.jpg", "b.jpg"), Less);
+        assert_eq!(path_collation("img10", "IMG10"), Greater);
+        assert_eq!(path_collation("abc", "ABC"), Greater);
+        assert_eq!(path_collation("ab", "abc"), Less);
+        assert_eq!(path_collation("same", "same"), Equal);
     }
 
     /// `library()` plus a video, an animated GIF, a file the import couldn't read and one not imported yet, with

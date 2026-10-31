@@ -1,10 +1,9 @@
 //! The background thumbnail task (PLAN §6): after the import, thumbnails for every analyzed file at the height
 //! the grid currently uses, in on-disk order, until done or until the cache is full of that height. Runs at idle
 //! priority, as it competes with the user for the disk and the CPU. The cache is shared with the app's on-demand
-//! thumbnails, so it is locked per batch only.
+//! thumbnails; neither waits for the other but in the cache's writer, one batch at a time.
 
 use std::path::Path;
-use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_core::decode::Decoder;
@@ -22,35 +21,33 @@ pub struct ThumbStats {
     pub cache_full: bool,
 }
 
-pub fn run(
-    cache: &Mutex<ThumbCache>,
-    catalog_path: &Path,
-    height: u32,
-    opts: &Options,
-    ctl: &Control,
-) -> Result<ThumbStats> {
-    let items = cache.lock().unwrap().pending(catalog_path, height)?;
+pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options, ctl: &Control) -> Result<ThumbStats> {
+    if let Some((kept, actual)) = cache.heal()? {
+        eprintln!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed");
+    }
+    let items = cache.pending(catalog_path, height)?;
     let mut stats = ThumbStats { made: 0, failed: 0, cache_full: false };
     if items.is_empty() {
+        cache.shrink()?;
         return Ok(stats);
     }
     eprintln!(
         "{} files need a {height} px thumbnail; cache holds {:.2} GB",
         items.len(),
-        cache.lock().unwrap().total_bytes() as f64 / 1e9
+        cache.totals()?.0 as f64 / 1e9
     );
     let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
     let mut batch = Vec::with_capacity(BATCH);
     ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
 
     let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
-        let stored = cache.lock().unwrap().put_batch(batch, Some(height))?;
+        let n = batch.len();
+        let stored = cache.put_batch(std::mem::replace(batch, Vec::with_capacity(BATCH)), Some(height))?;
         if stored {
-            stats.made += batch.len();
+            stats.made += n;
         } else {
             stats.cache_full = true;
         }
-        batch.clear();
         Ok(stored)
     };
 
@@ -92,5 +89,6 @@ pub fn run(
         flush(&mut batch, &mut stats)?;
     }
     ctl.finish();
+    cache.shrink()?;
     Ok(stats)
 }

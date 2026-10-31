@@ -59,7 +59,7 @@ pub struct WriteStatus {
 
 struct Inner {
     catalog_path: PathBuf,
-    thumbs: &'static Mutex<ThumbCache>,
+    thumbs: &'static ThumbCache,
     wake: (Mutex<bool>, Condvar),
     status: Mutex<WriteStatus>,
     /// Files whose pixels changed (turned), so the app reloads them.
@@ -70,7 +70,7 @@ struct Inner {
 
 pub struct Writer {
     inner: Arc<Inner>,
-    thread: Option<JoinHandle<()>>,
+    thread: Mutex<Option<JoinHandle<()>>>,
 }
 
 impl Writer {
@@ -78,7 +78,7 @@ impl Writer {
     /// background job should run.
     pub fn start(
         catalog_path: PathBuf,
-        thumbs: &'static Mutex<ThumbCache>,
+        thumbs: &'static ThumbCache,
         on_pixels_changed: impl Fn() + Send + Sync + 'static,
     ) -> Writer {
         let inner = Arc::new(Inner {
@@ -93,7 +93,7 @@ impl Writer {
         let job = inner.clone();
         let thread =
             std::thread::Builder::new().name("file writer".into()).spawn(move || job.run()).expect("spawn writer");
-        Writer { inner, thread: Some(thread) }
+        Writer { inner, thread: Mutex::new(Some(thread)) }
     }
 
     /// Something was queued.
@@ -110,16 +110,21 @@ impl Writer {
     pub fn turned(&self) -> u64 {
         self.inner.turned.load(Ordering::Relaxed)
     }
-}
 
-/// Stops the thread after the write in progress (a queued write waits for the next start).
-impl Drop for Writer {
-    fn drop(&mut self) {
+    /// Stop the thread after the write in progress (a queued write waits for the next start), and wait for it.
+    /// Idempotent; dropping the writer does it too.
+    pub fn stop(&self) {
         self.inner.stop.store(true, Ordering::Relaxed);
         self.wake();
-        if let Some(t) = self.thread.take() {
+        if let Some(t) = self.thread.lock().unwrap().take() {
             let _ = t.join();
         }
+    }
+}
+
+impl Drop for Writer {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -311,8 +316,11 @@ impl Inner {
         Catalog::file_rewritten(conn, job.file_id, before, after, new_hash)?;
         if job.kind == "rating" {
             Catalog::set_file_rating(conn, job.file_id, Some(job.value as u8))?;
-            // The pixels didn't change: the thumbnails still show the file.
-            self.thumbs.lock().unwrap().retag(job.file_id, before.1, after.1)?;
+            // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
+            // busy or closing), they are only made again: the write is done all the same.
+            if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
+                eprintln!("thumbnails of file {}: {e:#}", job.file_id);
+            }
         }
         self.done(conn, job, job.value)?;
         if pixels_changed {

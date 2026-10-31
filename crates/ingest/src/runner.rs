@@ -28,7 +28,7 @@ struct Queue {
 
 struct Inner {
     catalog_path: PathBuf,
-    thumbs: &'static Mutex<ThumbCache>,
+    thumbs: &'static ThumbCache,
     ctl: Control,
     queue: Mutex<Queue>,
     wake: Condvar,
@@ -54,7 +54,7 @@ pub struct Runner {
 impl Runner {
     /// Start the job thread. It begins by importing whatever is pending and making the thumbnails still missing
     /// at `thumb_height`.
-    pub fn start(catalog_path: PathBuf, thumbs: &'static Mutex<ThumbCache>, thumb_height: u32) -> Runner {
+    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, thumb_height: u32) -> Runner {
         let inner = Arc::new(Inner {
             catalog_path,
             thumbs,

@@ -3,7 +3,6 @@
 
 use std::ffi::OsString;
 use std::path::PathBuf;
-use std::sync::Mutex;
 use std::time::Instant;
 
 use anyhow::Result;
@@ -21,7 +20,7 @@ pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
 #[derive(Parser)]
 #[command(name = "gallery", version, about = "Photo gallery. Without a command, opens the app.")]
 struct Cli {
-    /// Folder holding catalog.sqlite and thumbs.sqlite (on D:, never C:).
+    /// Folder holding catalog.sqlite and the thumbnail cache (on D:, never C:).
     #[arg(long, env = "PG_CATALOG_DIR", default_value = DEFAULT_CATALOG_DIR)]
     catalog_dir: PathBuf,
     #[command(subcommand)]
@@ -92,6 +91,11 @@ enum Command {
     },
 }
 
+/// The thumbnail cache's background failures, on stderr with the progress.
+fn report() -> pg_core::thumbs::Report {
+    Box::new(|e| eprintln!("{e:#}"))
+}
+
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
 pub fn wants_cli(args: &[OsString]) -> bool {
     let cmd = Cli::command();
@@ -158,14 +162,15 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { THREAD_PRIORITY_NORMAL } else { THREAD_PRIORITY_IDLE });
-            let cache = Mutex::new(ThumbCache::open(&cli.catalog_dir.join("thumbs.sqlite"), (cap_gb * 1e9) as i64)?);
+            let cache = ThumbCache::open(&cli.catalog_dir, (cap_gb * 1e9) as i64, report())?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
+            cache.flush();
             println!(
                 "{} thumbnails at {height} px ({} failed){}; cache {:.2} GB, {:.1} s",
                 s.made,
                 s.failed,
                 if s.cache_full { ", stopped: cache full" } else { "" },
-                cache.lock().unwrap().total_bytes() as f64 / 1e9,
+                cache.totals()?.0 as f64 / 1e9,
                 start.elapsed().as_secs_f64()
             );
         }
@@ -179,16 +184,21 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 s.files, s.missing, s.analyzed, s.failed, s.pending, s.pdq_pairs
             );
             println!("{} changes to write into files ({} failing)", s.queued_writes, s.failed_writes);
+            match ThumbCache::read_totals(&cli.catalog_dir)? {
+                Some((bytes, thumbnails)) => {
+                    println!("thumbnail cache: {thumbnails} thumbnails, {:.2} GB", bytes as f64 / 1e9)
+                }
+                None => println!("thumbnail cache: none yet"),
+            }
             let mut errors = catalog.conn.prepare("SELECT error FROM file_writes WHERE error IS NOT NULL LIMIT 5")?;
             for e in errors.query_map([], |r| r.get::<_, String>(0))? {
                 println!("  {}", e?);
             }
         }
         Command::Write => {
-            let cache = Box::leak(Box::new(Mutex::new(ThumbCache::open(
-                &cli.catalog_dir.join("thumbs.sqlite"),
-                (50.0 * 1e9) as i64,
-            )?)));
+            // Only retagged here (never filled), so the cap doesn't matter.
+            let cache: &'static ThumbCache =
+                Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, (50.0 * 1e9) as i64, report())?));
             let writer = Writer::start(catalog_path.clone(), cache, || {});
             writer.wake();
             // Until nothing writable is left (failures past their retries stay queued and are reported).
@@ -204,6 +214,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 }
             }
             drop(writer);
+            cache.close();
             let s = catalog.status()?;
             println!(
                 "written; {} left ({} failing), {} files to re-import (turned), {:.1} s",

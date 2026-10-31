@@ -1,5 +1,9 @@
 //! The folder tree (merged across drives, `pg_core::browse::folder_tree`) as a flat list model: each visible
 //! node is a row with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All".
+//!
+//! The tree is read off the GUI thread (`loader`): `reload` asks, `loaded` says it's shown. Until the first one,
+//! only "All" is there (`ready` is false). Paths match as Windows matches them, ignoring case: the tree keeps the
+//! case of one drive's folder, the session another's.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -21,10 +25,18 @@ pub mod qobject {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
+        /// The tree has been read at least once.
+        #[qproperty(bool, ready, READ, WRITE, NOTIFY, FINAL)]
         type FolderModel = super::FolderRust;
     }
 
+    impl cxx_qt::Threading for FolderModel {}
+
     unsafe extern "RustQt" {
+        /// The tree `reload` asked for is shown.
+        #[qsignal]
+        fn loaded(self: Pin<&mut FolderModel>);
+
         #[qinvokable]
         #[cxx_override]
         fn data(self: &FolderModel, index: &QModelIndex, role: i32) -> QVariant;
@@ -70,7 +82,7 @@ pub mod qobject {
         #[inherit]
         fn index(self: &FolderModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
-        /// Re-read the tree from the catalog (after a scan).
+        /// Read the tree from the catalog (at the start, after a scan); it is shown when it arrives (`loaded`).
         #[qinvokable]
         fn reload(self: Pin<&mut FolderModel>);
 
@@ -91,17 +103,21 @@ pub mod qobject {
         /// Expand the folders above a merged path so it shows; its row, or -1 if there is no such folder.
         #[qinvokable]
         fn reveal(self: Pin<&mut FolderModel>, merged: &QString) -> i32;
+
+        /// Whether the tree has a merged path (`"` = "All"), shown or under a collapsed folder.
+        #[qinvokable]
+        fn contains(self: &FolderModel, merged: &QString) -> bool;
     }
 }
 
 use core::pin::Pin;
 use std::collections::BTreeSet;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_core::browse::{self, FolderTree};
 
-use crate::state;
+use crate::loader::{self, Kind};
 
 const ROLE_NAME: i32 = 256;
 const ROLE_DEPTH: i32 = 257;
@@ -115,33 +131,36 @@ const ROLE_MERGED: i32 = 262;
 type Visible = Option<usize>;
 
 pub struct FolderRust {
+    ready: bool,
     tree: FolderTree,
     visible: Vec<Visible>,
     expanded: BTreeSet<usize>,
+    /// The latest tree asked for; older ones arriving are dropped.
+    generation: u64,
 }
 
 impl Default for FolderRust {
     fn default() -> Self {
-        let mut this = FolderRust {
+        FolderRust {
+            ready: false,
             tree: FolderTree { nodes: Vec::new(), roots: Vec::new() },
-            visible: Vec::new(),
+            visible: vec![None],
             expanded: BTreeSet::new(),
-        };
-        this.load();
-        this
+            generation: 0,
+        }
     }
 }
 
 impl FolderRust {
-    fn load(&mut self) {
-        // Expanded folders stay expanded across reloads (the background job reloads after every scan).
-        let keep: BTreeSet<String> = self.expanded.iter().map(|&n| self.tree.nodes[n].merged_path.clone()).collect();
-        self.tree = state::with_catalog(|c| browse::folder_tree(&c.conn)).unwrap_or_else(|e| {
-            eprintln!("folder tree: {e:#}");
-            FolderTree { nodes: Vec::new(), roots: Vec::new() }
-        });
-        self.expanded =
-            (0..self.tree.nodes.len()).filter(|&n| keep.contains(&self.tree.nodes[n].merged_path)).collect();
+    /// Show a new tree. Expanded folders stay expanded (the background job reloads after every scan), as they are
+    /// now: the user may have opened some while it was read.
+    fn replace(&mut self, tree: FolderTree) {
+        let keep: BTreeSet<String> =
+            self.expanded.iter().map(|&n| self.tree.nodes[n].merged_path.to_lowercase()).collect();
+        self.tree = tree;
+        self.expanded = (0..self.tree.nodes.len())
+            .filter(|&n| keep.contains(&self.tree.nodes[n].merged_path.to_lowercase()))
+            .collect();
         // Otherwise open single-child chains from the top (D:\PhotoGallery\datasets\pinterest shows its contents
         // at once).
         if self.expanded.is_empty() {
@@ -165,6 +184,12 @@ impl FolderRust {
             }
         }
         out
+    }
+
+    /// The node of a merged path, in any case.
+    fn find(&self, merged: &str) -> Option<usize> {
+        let merged = merged.to_lowercase();
+        (0..self.tree.nodes.len()).find(|&n| self.tree.nodes[n].merged_path.to_lowercase() == merged)
     }
 
     fn node(&self, row: i32) -> Option<Visible> {
@@ -222,9 +247,35 @@ impl qobject::FolderModel {
     }
 
     fn reload(mut self: Pin<&mut Self>) {
+        let generation = {
+            let mut this = self.as_mut().rust_mut();
+            this.generation += 1;
+            this.generation
+        };
+        let model = self.qt_thread();
+        loader::submit(
+            Kind::Tree,
+            |c| browse::folder_tree(&c.conn),
+            move |tree| {
+                let tree = tree.unwrap_or_else(|e| {
+                    eprintln!("folder tree: {e:#}");
+                    FolderTree { nodes: Vec::new(), roots: Vec::new() }
+                });
+                // Fails only when the model is gone (the window closing).
+                let _ = model.queue(move |model| model.apply(generation, tree));
+            },
+        );
+    }
+
+    fn apply(mut self: Pin<&mut Self>, generation: u64, tree: FolderTree) {
+        if generation != self.generation {
+            return;
+        }
         self.as_mut().begin_reset_model();
-        self.as_mut().rust_mut().load();
-        self.end_reset_model();
+        self.as_mut().rust_mut().replace(tree);
+        self.as_mut().end_reset_model();
+        self.as_mut().set_ready(true);
+        self.loaded();
     }
 
     fn toggle(mut self: Pin<&mut Self>, row: i32) {
@@ -267,7 +318,7 @@ impl qobject::FolderModel {
 
     fn reveal(mut self: Pin<&mut Self>, merged: &QString) -> i32 {
         let row = self.row_of(merged);
-        if row >= 0 {
+        if row >= 0 || self.find(&merged.to_string()).is_none() {
             return row;
         }
         let target = merged.to_string().to_lowercase();
@@ -291,11 +342,16 @@ impl qobject::FolderModel {
         self.row_of(merged)
     }
 
-    fn row_of(&self, merged: &QString) -> i32 {
+    fn contains(&self, merged: &QString) -> bool {
         let merged = merged.to_string();
+        merged.is_empty() || self.find(&merged).is_some()
+    }
+
+    fn row_of(&self, merged: &QString) -> i32 {
+        let merged = merged.to_string().to_lowercase();
         self.visible
             .iter()
-            .position(|v| v.map_or(merged.is_empty(), |n| self.tree.nodes[n].merged_path == merged))
+            .position(|v| v.map_or(merged.is_empty(), |n| self.tree.nodes[n].merged_path.to_lowercase() == merged))
             .map_or(-1, |r| r as i32)
     }
 }

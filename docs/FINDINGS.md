@@ -779,6 +779,11 @@ load and read 4.3–4.7 pairs/s):
 - **Lower resolution** keeps all labeled duplicates and every synthetic edit within 1–3 images at 768 px (crop 25%:
   298 at 768/2,048 and 295 at 768/1,024 vs 297), but similar-folder matches drop (237 → 226). That is unscored,
   so the cross-group set has to be run at 768 px before choosing it.
+- **768 px / 2,048 keypoints, cross-group and k-NN sets (2026-10-31): not adopted, 1024 px stays.** Cross-group
+  (4,632 pairs, floor 0.3): 8 false matches vs 7; the new one (groups 162 vs 572) has SSCD similarity 0.339, below
+  the 0.4 k-NN floor, the rest are the known one-shoot pairs (670/671, 125/673). k-NN set (8,344 pairs): 52 decisions
+  flip (0.6%); duplicates 698 / 698, similar-folder 222 matches (224), unlabeled 3,000 (2,989). The gain is only ~9%
+  on a quiet machine (labeled 169 s vs 185 s), because LightGlue and the comparison, not DISK, dominate.
 
 **Rotations.** New synthetic edits (`edits.py`, appended so the older edits keep their seeds): a 3–15° tilt cropped to
 the picture, and 30°, 45°, 135° and random 0–360° on an enlarged black canvas. 300 images each:
@@ -1107,17 +1112,16 @@ the Sites list above was the wrong target for group 1:
 - The script's known failures (`files_not_working.md`): upload 400s, SSL EOF and remote disconnects.
   `tasks.md`: CDN 403s that load in a browser, and no captcha validation for HTML responses.
 
-### Open decision
+### Decision and the port (2026-10-31)
 
-The two groups now look like this:
-
-- **Group 1 (other sizes):** plain HTTP is enough, and no challenge handling is involved.
-- **Group 2 (similar):** plain HTTP with the `yp` szm cookie returns all 55 in one request.
-- **Sites list:** only needed if the user wants that section too. Pages 1 and up need `spravka`, and copying it
-  from a passed-challenge session would get around the bot check, so the app should not do it.
-
-Whether `yp` szm counts as getting around the check is a judgment call: it sends a cookie the site's own
-JavaScript sets, and no challenge is passed. The user should decide before the port relies on it.
+- **The `yp` szm cookie is sent** (user decision): it is a cookie the site's own JavaScript sets, and no
+  challenge is passed. `spravka` is never sent, so the Sites list is not fetched (its pages 1 and up need it,
+  and copying it from a passed-challenge session would get around the bot check).
+- **The port** (`pg_core::yandex`, the panel in `crates/ui`, usage in PLAN §8 M2): plain HTTP to `yandex.com`
+  like the script, group 1 from the results page's `cbirOtherSizes`, group 2 from the similar JSON API with
+  `yp`, up to 5 pages. Like the script, a failure on a page after the first (in practice the page-1 captcha)
+  ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with
+  a note; one on the upload or the other sizes is the search's error. A captcha is reported, never retried.
 
 ## Decisions
 
@@ -1147,6 +1151,7 @@ JavaScript sets, and no challenge is passed. The user should decide before the p
 - **2026-10-30: second model = SigLIP 2 So400m/16 NaFlex** (256 patches, TensorRT fp16) for keywords and semantic
   search, alongside SSCD (PLAN §9 decision 2). Chosen over B/16 for quality (ImageNet zero-shot 83.5 vs 78.5 at
   256 patches), over the fixed So400m for the native aspect ratio at the same cost. ~154 GPU hours for 70M.
+- **2026-10-31: the Yandex client sends the `yp` szm cookie and never `spravka`** ("Reverse image search: Yandex").
 
 ## Design conclusions so far
 
@@ -1177,8 +1182,8 @@ JavaScript sets, and no challenge is passed. The user should decide before the p
 ## Pending
 
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.
-- Verifier speed, next levers (DISK is on TensorRT, 6.7 pairs/s): LightGlue on TensorRT or fewer keypoints; 768 px
-  needs a cross-group run before adoption; gate the rotation retries (e.g. by SSCD similarity).
+- Verifier speed, next levers (DISK is on TensorRT, 6.7 pairs/s): LightGlue on TensorRT or fewer keypoints (768 px
+  was tried and dropped, ~9% faster); gate the rotation retries (e.g. by SSCD similarity).
 - Verifier robustness: the median-residual measure swings for ~0.3% of pairs when a few keypoints change
   (TensorRT vs torch flips); look at those with the hand marks.
 - Second model (So400m NaFlex): TensorRT fp16 reaches cosine 0.997 vs fp32, while torch fp16 and ONNX Runtime CUDA
@@ -1198,6 +1203,7 @@ JavaScript sets, and no challenge is passed. The user should decide before the p
 - Thumbnail cache format and cap (size is runtime-adjustable, decided 2026-10-30).
 - IVF vs exact k-NN (needs the full set).
 - Full-set runs (on hold until the user says go).
-- Yandex reverse search port: group 1 (other sizes) and group 2 (similar) work over plain HTTP, with the `yp`
-  szm cookie needed for the full similar set. Decide whether sending `yp` is acceptable, and whether the Sites
-  section is wanted (its pages 1+ need `spravka`). See "Reverse image search: Yandex".
+- Video player: Qt Multimedia plays videos now, with hardware decoding turned off on a GPU without AV1 decoding
+  (a stopgap, "Videos and animations"). Choose between our own engine on our FFmpeg 9 and libmpv with its D3D11
+  render API ([VIDEO_PLAYER.md](VIDEO_PLAYER.md)).
+- Yandex: whether the browser shows all 18 other sizes or about 5 is not measured; only one photo was tested.

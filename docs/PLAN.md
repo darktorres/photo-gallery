@@ -1,7 +1,8 @@
 # Photo Gallery — Plan
 
-Status: brainstorm / pre-implementation. Written 2026-10-28 from `photo gallery.txt`, the 25 papers in
-`Research/`, and lessons from `DuplicateFinder/` and `ImageRater/`.
+Written 2026-10-28 from `photo gallery.txt`, the 25 papers in `Research/`, and lessons from `DuplicateFinder/`
+and `ImageRater/`. Status (2026-10-31): M0's benchmarks are done, its labels and thresholds are not; M1 and M2 are
+built (§8); M3–M5 are not started.
 
 Numbers marked **(est.)** are back-of-envelope estimates to be replaced by benchmarks in M0. Numbers with a
 paper name are from that paper.
@@ -79,8 +80,9 @@ overhead across 70M files, it is more like **1–3 days**. A second pass costs t
 - **Thumbnails are not part of the import** (user decision, 2026-10-30): the import stays fast, and a
   background task makes them afterwards (§6).
 - **Read in on-disk order with a single reader thread per HDD.** Parallel random reads on one spindle thrash
-  the head. M0 benchmarks three orderings on a 100k sample: path order, NTFS file-ID (MFT record) order, and
-  physical order (first-extent LCN via `FSCTL_GET_RETRIEVAL_POINTERS`).
+  the head. M0 compared path order, NTFS file-ID (MFT record) order and physical order (first-extent LCN via
+  `FSCTL_GET_RETRIEVAL_POINTERS`): MFT order, or 8 reads in flight, reaches the disk's sequential speed, ~3× path
+  order (FINDINGS "I/O"). The import reads in MFT order with 8 reads in flight.
 
 ```text
 Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-disk location
@@ -101,9 +103,9 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
   pipeline that produced them.
 - **File identity is (volume serial, NTFS file ID), plus size and mtime.** Moves and renames then need no
   rehash. Later, the NTFS USN journal (or Everything) provides incremental changes.
-- **Compute estimates (est.):**
-  - Decoding Pinterest-size JPEGs at roughly 2–5 ms each across 12 threads is about 3k img/s, so the CPU keeps
-    up.
+- **Compute estimates:**
+  - Decoding with DCT scaling measured ~550 img/s on 12 threads (M0, FINDINGS "Design conclusions so far"), not
+    the ~3k img/s first estimated, so the CPU, not the disk (~1,600 files/s), sets the pace.
   - SSCD at 320 px, fp16 on TensorRT (via `ort`'s TensorRT provider), measured at ~1,390 img/s on the 2060
     (M0), i.e. ~14 h. The pass is then CPU-bound on decoding, roughly **1.5–2 days** for the first pass. After
     that, only new files are processed.
@@ -233,20 +235,28 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - Copy a ~200k sample to D:, including known Pinterest crop/edit groups. Hand-label ~2k pairs in three
   classes: duplicate, crop/edit duplicate, not a duplicate.
 - **Model bake-off** on crop recall at very low false-positive rates:
-  - SSCD (`disc_mixup`) vs DINOv2 vs CLIP vs PDQ.
-  - Measure flip tolerance, to decide whether to embed mirrored images too.
-  - Measure crop-size limits, to decide whether reference images need *region embeddings*.
+  - SSCD (`disc_mixup`) vs DINOv2 vs CLIP vs PDQ (done: SSCD fp16; PDQ as a cheap tier for near-exact copies;
+    FINDINGS "Design conclusions so far").
+  - Measure flip tolerance, to decide whether to embed mirrored images too (done on the subset: SSCD tolerates
+    flips, so no mirrored embedding; to confirm on the full set).
+  - Measure crop-size limits, to decide whether reference images need *region embeddings* (partly: a global
+    threshold fails on heavy crops but rank holds, so k-NN rank plus a verifier; region embeddings still open,
+    §9 decision 4).
   - Python is used here only for ONNX export and the evaluation notebooks.
-- **I/O benchmark** of read orderings on E: (path vs file ID vs LCN).
+- **I/O benchmark** of read orderings on E: (path vs file ID vs LCN) (done: MFT order, or 8 reads in flight, ~3×
+  path order; FINDINGS "I/O").
 - **Throughput benchmarks:**
-  - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image`.
-  - Resize with `fast_image_resize`, verified with the aliasing paper's downsampled-circle test.
+  - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image` (done: DCT-scaled decode, FINDINGS "Decode
+    benchmark"; the import uses libjpeg-turbo).
+  - Resize with `fast_image_resize`, verified with the aliasing paper's downsampled-circle test (not done).
   - Thumbnail encode with JPEG (turbo/jpegli) vs WebP (done: AVIF/WebP/JPEG XL too, FINDINGS "Thumbnails").
   - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, FINDINGS "TensorRT and ONNX Runtime").
 - **ANN bake-off** on 5M vectors: USearch HNSW int8 vs FAISS IVF-PQ, measuring recall at radius, RAM and
   insert speed.
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
-  backed by a number.
+  backed by a number. Met: the model and the read order; the thumbnail size is no longer fixed (§6). Open: the
+  thresholds (they wait on the hand marks, FINDINGS "Pending"), the thumbnail cache's format and cap, and the
+  index type (the ANN bake-off needs the full set).
 
 ### M1 — Core and ingest (on the sample)
 
@@ -301,6 +311,8 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   at the latest). Pre-release changes edit it in place, with no new version; catalogs made before are deleted
   and re-imported. The migration loop exists, tested with a synthetic step, with no migrations yet; that first
   kept catalog starts real ones.
+- **Open: the video player.** Qt Multimedia plays videos, with hardware decoding off on a GPU without AV1
+  decoding (a stopgap). The choice between our own engine on our FFmpeg 9 and libmpv is in `docs/VIDEO_PLAYER.md`.
 - **Open for M4:** the grid loads the whole result list (filtered and sorted in SQL) into memory. That is fine
   per folder, but "All folders" at 70M needs the paged model of §7.
 
@@ -341,8 +353,8 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
    becomes the limit of that pass. NaFlex needs only ~208 × 304 px at 256 patches, so it can also run as a
    background GPU task on the import's downscaled working image instead of holding up the import (FINDINGS: "A
    second model" and "NaFlex").
-3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). M0
-   measures this.
+3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). Measured
+   on the subset: SSCD tolerates flips, so no flipped embedding, pending confirmation on the full set.
 4. **Heavy crops:** if M0 shows SSCD misses small crops, consider region embeddings for reference images. That
    costs multiples of index size, and could be limited to cluster heads.
 5. **ANN backend:** USearch (simple, about 27 GB RAM) vs FAISS (about 3 GB, training step, harder Windows

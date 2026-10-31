@@ -329,6 +329,47 @@ position grid is resized to each image's grid. One model serves every N, and the
   "1 img/s" for ONNX Runtime was a GPU-memory spill: the fp32 reference model was on the 6 GB GPU too.
 - SSCD and DISK on TensorRT keep their measured quality (cosine ≥ 0.9994, same retrieval and decisions), so for
   those models the fp16 accumulation is harmless.
+- **ONNX Runtime's transformer optimizer** (`optimize_model`, model types bert, vit and clip, then fp16 with fp32
+  I/O; 512 random library images vs torch fp32, alone on the GPU, batch 64): every type fuses the 28 GELUs
+  (`FastGelu`) and nothing else; **none fuses attention**, whose pattern in our NaFlex export (the padding mask) it
+  doesn't recognize. The GELU fusion alone: **63 → 84 img/s** (9.6 days for 70M, level with torch fp16), with
+  the same fidelity (nearest neighbour as fp32 0.979 vs 0.977; top-5 overlap 0.986 vs 0.988; worst cosine
+  0.9956). Fused attention would need the export to write attention in the optimizer's pattern, or ONNX Runtime's
+  `MultiHeadAttention` op directly.
+
+## Nearest-neighbour search (`eval/bench_ann.py`, 5M synthetic vectors, 2026-10-31)
+
+No full-library embeddings exist yet, so the index bake-off (PLAN M0) ran on 5M synthetic vectors: a Gaussian with
+the subset's SSCD mean and covariance, L2-normalized (random-pair cosine p50/p99 0.076/0.236 vs real 0.071/0.265),
+plus 10,000 queries, each with one planted partner in the index at a cosine uniform in 0.3–0.99. The measure that
+matters is **partners found**: the share of partners with cosine ≥ 0.4 that come back in the top 10 (the k-NN
+candidate rule). Recall@10 against exact search counts unrelated background neighbours, which here are near-ties
+(the Gaussian has no cluster structure), so it means little.
+
+| Search | Partners found (≥ 0.4) | 0.4–0.5 | 0.8–1.0 | Queries/s | Build | RAM (5M) |
+|---|---|---|---|---|---|---|
+| **Exact, GPU** | **0.997** | 0.985 | 1.000 | (below) | none | base on disk |
+| USearch HNSW int8 (M 16, ef_add 128), ef 64 | 0.131 | 0.024 | 0.245 | 4,223 | 3,788 s (1,320/s) | 5.05 GB |
+| ... ef 256 | 0.260 | 0.059 | 0.473 | 1,301 | | |
+| FAISS IVF8192,PQ64, nprobe 64 | 0.579 | 0.184 | 0.924 | 840 | 484 s | 0.35 GB |
+| ... nprobe 256 | 0.762 | 0.398 | 0.987 | 240 | | |
+| ... nprobe 256 + exact rerank of 100 | 0.767 | 0.427 | 0.987 | 222 | | |
+| FAISS IVF8192,SQ8, nprobe 256 | 0.769 | 0.441 | 0.987 | 21 | 238 s | 2.44 GB |
+
+- **Exact search on the GPU is fast enough for 70M all-pairs.** An fp16 GEMM (fp32 accumulation) plus top-10
+  runs at **10.4 G pairs/s** on the 2060, so 70M × 70M is **~131 GPU hours (~5.5 days)**, in the range already
+  accepted for the embedding passes. It reaches the ceiling the planted pairs allow (0.997; even exact search
+  misses 32% of partners at 0.3–0.4, where unrelated images score higher). New images later cost little: 10,000
+  new against 70M is ~70 s.
+- **The approximate indexes lose many partners on this data.** HNSW finds at most 26%, even only 47% of partners
+  at cosine 0.8–1.0. IVF finds 99% of those at nprobe 256 but only 40–44% at 0.4–0.5, the heavy crops. USearch's
+  int8 storage is not the cause: it moves cosines by 0.003 on average (p99 0.009).
+- **The data is a worst case for them.** A Gaussian has no clusters: a query's background neighbours are all at
+  ~0.29, so a graph walk gets no gradient toward the partner. Real embeddings cluster (the subset's nearest-
+  neighbour cosine p50 is 0.89, with duplicates), so real recall will be higher, by an amount only the full set's
+  embeddings can show. Exact search doesn't depend on it.
+- **USearch at 70M** would need ~71 GB of RAM in int8 and a build of 15+ hours, slowing as the graph grows.
+- FAISS warned that 300,000 training points are slightly fewer than it wants for 8,192 lists (319,488); minor.
 
 ## Bugs found
 
@@ -1209,7 +1250,8 @@ Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
 
 - **2026-10-28: quality over speed.** Days or weeks of processing are acceptable. Heavier
   models (SSCD-large, fp32), exact rather than approximate k-NN (very rough estimate: about
-  3 days brute force for 70M on the 2060, streaming from the NVMe), multiple embeddings per
+  3 days brute force for 70M on the 2060, streaming from the NVMe; measured 2026-10-31: ~5.5 days,
+  "Nearest-neighbour search"), multiple embeddings per
   image, and a learned geometric verifier are all in scope. Resumability and the user's
   review time (precision) remain the real constraints.
 - **2026-10-28: stay on Windows.** CUDA, nvJPEG, PyTorch, TensorRT and ONNX Runtime all work.
@@ -1251,6 +1293,12 @@ Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
    re-analysis source). **User decision 2026-10-30:** not made during the import; a background task makes
    them afterwards at a size adjustable at runtime, into a size-capped cache (PLAN §6). The size/format
    numbers in "Thumbnails" now size that cache rather than a fixed 70M store.
+8. **k-NN candidates by exact search on the GPU** (recommended, not decided; PLAN §9 decision 5), not an
+   approximate index: ~5.5 days for 70M all-pairs on the
+   2060 at the recall ceiling, ~70 s per 10,000 new images afterwards. On synthetic 5M data the best approximate
+   index (FAISS IVF, nprobe 256) loses ~23% of the partners at ≥ 0.4 and over half of the heavy crops; real data
+   will do better, but exact search makes that question moot ("Nearest-neighbour search"). An index is still
+   needed for interactive semantic search, where one text query must scan 70M So400m vectors.
 
 ## Pending
 
@@ -1266,15 +1314,17 @@ Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
   TensorRT vs 0.984 with torch fp16 (top-5 overlap 0.961 vs 0.990; 0.949 vs 0.996 on 512 subset images). The
   flipped ones are near-ties (fp32 top-1/top-2 gap median 0.0013 vs 0.011 overall), but the loss is ~4x torch's.
   Speed confirmed at 126 img/s with the engine alone; with the fp32 model
-  also on the 6 GB GPU, Windows spills to shared memory and it drops to ~1 img/s. A small text-query test on this
-  library would check the semantic quality and the 256-patch budget.
+  also on the 6 GB GPU, Windows spills to shared memory and it drops to ~1 img/s. ONNX Runtime with the
+  optimizer's GELU fusion reaches 84 img/s at torch fp16's fidelity; attention isn't fused (2026-10-31). A small
+  text-query test on this library would check the semantic quality and the 256-patch budget.
 - Hand marks also decide the remaining grouping errors: different frames (670+671) vs local warps (429), and
   template portraits with different faces (the 12-image group).
 - (Deferred) duplicate vs variant: learned decision on per-region features + face-focused
   comparison (see "Verifier prototype, first run").
 - Hand-label a sample of `review_*.csv` to estimate real precision.
 - Thumbnail cache format and cap (size is runtime-adjustable, decided 2026-10-30).
-- IVF vs exact k-NN (needs the full set).
+- Exact all-pairs k-NN (design conclusion 8): write it streaming the fp16 base from the NVMe, with
+  checkpoints. Semantic search's index (So400m, 1152-d): FAISS IVF on real vectors once they exist.
 - Full-set runs (on hold until the user says go).
 - Video player: Qt Multimedia plays videos now, with hardware decoding turned off on a GPU without AV1 decoding
   (a stopgap, "Videos and animations"). Choose between our own engine on our FFmpeg 9 and libmpv with its D3D11

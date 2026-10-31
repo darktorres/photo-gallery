@@ -25,13 +25,13 @@ def knn(emb: torch.Tensor, k: int, chunk: int = 2048) -> tuple[np.ndarray, np.nd
     sims = np.empty((n, k), dtype=np.float32)
     idx = np.empty((n, k), dtype=np.int64)
     for start in range(0, n, chunk):
-        q = emb[start:start + chunk]
+        q = emb[start : start + chunk]
         s = q @ emb.T
         rows = torch.arange(len(q), device=emb.device)
         s[rows, rows + start] = -2.0
         values, indices = s.topk(k, dim=1)
-        sims[start:start + len(q)] = values.float().cpu().numpy()
-        idx[start:start + len(q)] = indices.cpu().numpy()
+        sims[start : start + len(q)] = values.float().cpu().numpy()
+        idx[start : start + len(q)] = indices.cpu().numpy()
     return sims, idx
 
 
@@ -59,7 +59,7 @@ def directed_ranks(positives: list[tuple[int, int]], groups: list[list[int]], id
             if not len(hit):
                 ranks.append(k)
                 continue
-            ahead = idx[q][:hit[0]]
+            ahead = idx[q][: hit[0]]
             ranks.append(sum(group_of.get(int(j)) != group_of[q] for j in ahead))
     return np.array(ranks)
 
@@ -118,18 +118,20 @@ def main() -> None:
     operating_points = []
     for target in TARGET_RECALLS:
         t = float(np.quantile(pos_sims, 1 - target, method="lower"))
-        operating_points.append({
-            "target_recall": target,
-            "threshold": t,
-            "recall": float((pos_sims >= t).mean()),
-            "flagged_pairs": int((flagged_sims >= t).sum()),
-            "images_with_a_match": int((sims[:, 0] >= t).sum()),
-            # Rows whose k-th neighbor still clears t: their flagged counts are truncated at k.
-            "saturated_rows": int((sims[:, -1] >= t).sum()),
-            "hard_negative_pairs_flagged": int((neg_sims >= t).sum()),
-            "cross_group_pairs_flagged": int((cross_sims >= t).sum()),
-            "unpaired_with_partner": float((best_sims >= t).mean()),
-        })
+        operating_points.append(
+            {
+                "target_recall": target,
+                "threshold": t,
+                "recall": float((pos_sims >= t).mean()),
+                "flagged_pairs": int((flagged_sims >= t).sum()),
+                "images_with_a_match": int((sims[:, 0] >= t).sum()),
+                # Rows whose k-th neighbor still clears t: their flagged counts are truncated at k.
+                "saturated_rows": int((sims[:, -1] >= t).sum()),
+                "hard_negative_pairs_flagged": int((neg_sims >= t).sum()),
+                "cross_group_pairs_flagged": int((cross_sims >= t).sum()),
+                "unpaired_with_partner": float((best_sims >= t).mean()),
+            }
+        )
 
     summary = {
         "model": args.model,
@@ -190,22 +192,30 @@ def main() -> None:
             w.writerow([f"{flagged_sims[i]:.4f}", files[a], files[b]])
 
     print(f"## {args.model} (dim {summary['dim']}, {n} images, {summary['failed_images']} failed to load)")
-    print(f"labeled: {len(gt.groups)} groups -> {len(positives)} positive pairs; {len(neg_sims)} hard negative pairs; "
-          f"{len(unpaired_pool)} unpaired dups2 files")
-    print(f"retrieval of the partner: R@1 {summary['recall_at_1']:.3f}  R@10 {summary['recall_at_10']:.3f}  "
-          f"R@{args.k} {summary[f'recall_at_{args.k}']:.3f}")
+    print(
+        f"labeled: {len(gt.groups)} groups -> {len(positives)} positive pairs; {len(neg_sims)} hard negative pairs; "
+        f"{len(unpaired_pool)} unpaired dups2 files"
+    )
+    print(
+        f"retrieval of the partner: R@1 {summary['recall_at_1']:.3f}  R@10 {summary['recall_at_10']:.3f}  "
+        f"R@{args.k} {summary[f'recall_at_{args.k}']:.3f}"
+    )
     print(f"similarity quantiles p1/p10/p50/p90/p99: positives {quantiles(pos_sims)}")
     print(f"                                       hard negatives {quantiles(neg_sims)}")
     print(f"                                       cross-group    {quantiles(cross_sims)}")
     print()
-    print("| target recall | threshold | recall | unpaired files with a partner | flagged pairs (unlabeled) "
-          "| images with a match | similar-folder pairs flagged | cross-group pairs flagged |")
+    print(
+        "| target recall | threshold | recall | unpaired files with a partner | flagged pairs (unlabeled) "
+        "| images with a match | similar-folder pairs flagged | cross-group pairs flagged |"
+    )
     print("|---|---|---|---|---|---|---|---|")
     for p in operating_points:
-        print(f"| {p['target_recall']:.2f} | {p['threshold']:.3f} | {p['recall']:.3f} | {p['unpaired_with_partner']:.3f} "
-              f"| {p['flagged_pairs']:,} | {p['images_with_a_match']:,} "
-              f"| {p['hard_negative_pairs_flagged']} / {len(neg_sims)} "
-              f"| {p['cross_group_pairs_flagged']} / {len(cross_sims):,} |")
+        print(
+            f"| {p['target_recall']:.2f} | {p['threshold']:.3f} | {p['recall']:.3f} | {p['unpaired_with_partner']:.3f} "
+            f"| {p['flagged_pairs']:,} | {p['images_with_a_match']:,} "
+            f"| {p['hard_negative_pairs_flagged']} / {len(neg_sims)} "
+            f"| {p['cross_group_pairs_flagged']} / {len(cross_sims):,} |"
+        )
 
 
 if __name__ == "__main__":

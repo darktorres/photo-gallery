@@ -76,8 +76,10 @@ def hash_all(workers: int) -> None:
     np.save(WORK_DIR / "emb_pdq.npy", emb)
     np.save(WORK_DIR / "ok_pdq.npy", ok)
     np.save(WORK_DIR / "quality_pdq.npy", quality)
-    print(f"pdq: {len(files)} images, {elapsed:.0f} s ({len(files) / elapsed:.0f} img/s, {workers} processes), "
-          f"{int((~ok).sum())} failed; quality < 50 (unreliable hash): {int(((quality < 50) & ok).sum())}")
+    print(
+        f"pdq: {len(files)} images, {elapsed:.0f} s ({len(files) / elapsed:.0f} img/s, {workers} processes), "
+        f"{int((~ok).sum())} failed; quality < 50 (unreliable hash): {int(((quality < 50) & ok).sum())}"
+    )
 
 
 def synth(count: int, seed: int, workers: int) -> None:
@@ -132,8 +134,14 @@ def synth(count: int, seed: int, workers: int) -> None:
         print("|---|---|---|---|---|---|" + ("---|" if t95 is not None else ""))
         for r in rows:
             v = r["dihedral"] if variant == "dihedral" else r
-            cells = [r["transform"], f"{v['r1']:.3f}", f"{v['r10']:.3f}", f"{v['d_p50']:.0f}", f"{v['d_p90']:.0f}",
-                     f"{v['within_31']:.3f}"] + ([f"{v['above_t95']:.3f}"] if t95 is not None else [])
+            cells = [
+                r["transform"],
+                f"{v['r1']:.3f}",
+                f"{v['r10']:.3f}",
+                f"{v['d_p50']:.0f}",
+                f"{v['d_p90']:.0f}",
+                f"{v['within_31']:.3f}",
+            ] + ([f"{v['above_t95']:.3f}"] if t95 is not None else [])
             print("| " + " | ".join(cells) + " |")
 
 

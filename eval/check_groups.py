@@ -46,8 +46,7 @@ def main() -> None:
 
     root = DATA_ROOT / GROUPS_DIR
     folders = sorted(p for p in root.iterdir() if p.is_dir())
-    members = {f.name: sorted(p.name for p in f.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
-               for f in folders}
+    members = {f.name: sorted(p.name for p in f.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTS) for f in folders}
     files = [f"{GROUPS_DIR}/{g}/{name}" for g, names in members.items() for name in names]
 
     device = torch.device("cuda")

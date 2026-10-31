@@ -60,8 +60,20 @@ PREVIEW_SIDE = 360
 JPEGTRAN = shutil.which("jpegtran")
 REVIEW_FILE = "review.json"  # written by eval/viewer.py's Borders page
 FALSE_POSITIVE = "false_positive"
-COLUMNS = ["path", "width", "height", "status", "crop_left", "crop_top", "crop_right", "crop_bottom",
-           "sides", "rejected", "output", "error"]
+COLUMNS = [
+    "path",
+    "width",
+    "height",
+    "status",
+    "crop_left",
+    "crop_top",
+    "crop_right",
+    "crop_bottom",
+    "sides",
+    "rejected",
+    "output",
+    "error",
+]
 
 
 @dataclass(frozen=True)
@@ -107,6 +119,7 @@ class Side:
 
 # ---------- detection ----------
 
+
 def gray(rows: np.ndarray) -> np.ndarray:
     return rows.mean(axis=2, dtype=np.float32)
 
@@ -123,8 +136,8 @@ def run_length(mask: np.ndarray, max_gap: int = 2, resume: int = 3) -> int:
         if mask[i]:
             i += 1
             continue
-        rest = np.flatnonzero(mask[i:i + max_gap + 1])
-        if not len(rest) or not mask[i + rest[0]:i + rest[0] + resume].all() or i + rest[0] + resume > n:
+        rest = np.flatnonzero(mask[i : i + max_gap + 1])
+        if not len(rest) or not mask[i + rest[0] : i + rest[0] + resume].all() or i + rest[0] + resume > n:
             break
         i += rest[0]
     return i
@@ -142,7 +155,7 @@ def solid_lines(rows: np.ndarray, p: Params) -> tuple[np.ndarray, np.ndarray]:
 def refine_seam(a: np.ndarray, guess: int, before: int, after: int) -> int:
     """The first strong line-to-line change in [guess - before, guess + after]."""
     lo, hi = max(1, guess - before), min(a.shape[0] - 1, guess + after)
-    win = a[lo - 1:hi + 1, ::2].astype(np.int16)
+    win = a[lo - 1 : hi + 1, ::2].astype(np.int16)
     step = np.abs(np.diff(win, axis=0)).max(axis=2).mean(axis=1)  # step[k] = change into line lo+k
     strong = np.flatnonzero(step >= max(3.0, 0.5 * step.max()))
     return lo + int(strong[0]) if len(strong) else guess
@@ -193,7 +206,7 @@ def solid_side(a: np.ndarray, name: str, p: Params, depth_max: int, color: str) 
         return Side(name, "solid", end, color, 0.0, False, "too deep")
     # JPEG ringing next to the content makes the run stop a few lines early.
     seam = refine_seam(a, end, 3, 12)
-    sub = a[max(0, seam - 8):seam + 9, ::2].astype(np.int16)
+    sub = a[max(0, seam - 8) : seam + 9, ::2].astype(np.int16)
     hd = np.abs(np.diff(gray(sub), axis=1))
     hd_cum = np.concatenate([np.zeros((1, hd.shape[1]), np.float32), np.cumsum(hd, axis=0)])
     off = seam - max(0, seam - 8)
@@ -203,7 +216,7 @@ def solid_side(a: np.ndarray, name: str, p: Params, depth_max: int, color: str) 
     straight = float(seam_straightness(sub, hd_cum, np.array([off]), p, k)[0])
     if straight < p.straight:
         return Side(name, "solid", seam, color, straight, False, "seam not straight")
-    core = a[:max(1, seam - 10), ::2].astype(np.int16)  # away from the seam's JPEG ringing
+    core = a[: max(1, seam - 10), ::2].astype(np.int16)  # away from the seam's JPEG ringing
     line_color = np.median(core, axis=1)
     dev = float(np.median(np.abs(core - np.median(line_color, axis=0)).max(axis=2)))
     drift = float(np.ptp(line_color, axis=0).max())
@@ -213,7 +226,7 @@ def solid_side(a: np.ndarray, name: str, p: Params, depth_max: int, color: str) 
 def blur_side(a: np.ndarray, name: str, p: Params, depth_max: int) -> Side | None:
     """A blurred bar has no fixed color and may hold a blurred copy of the content, so instead of
     following a run of similar lines, find the first straight sharp seam below a smooth region."""
-    sub = a[:depth_max + 72, ::2].astype(np.int16)
+    sub = a[: depth_max + 72, ::2].astype(np.int16)
     hd = np.abs(np.diff(gray(sub), axis=1))  # (D, W - 1)
     act = hd.mean(axis=1)
     hd_cum = np.concatenate([np.zeros((1, hd.shape[1]), np.float32), np.cumsum(hd, axis=0)])
@@ -241,8 +254,11 @@ def judge(side: Side, other: Side | None, p: Params) -> None:
     if side.kind == "blur":
         # A smooth sky above a straight horizon, or a plain wall beside a door frame, looks like
         # a blurred bar. Padding tools center the content: real bars come in equal pairs.
-        if not (other is not None and other.kind == "blur"
-                and abs(side.depth - other.depth) <= max(4, p.blur_sym * max(side.depth, other.depth))):
+        if not (
+            other is not None
+            and other.kind == "blur"
+            and abs(side.depth - other.depth) <= max(4, p.blur_sym * max(side.depth, other.depth))
+        ):
             side.accepted, side.reason = False, "blurred bar without an equal opposite bar"
         return
     if side.drift > p.max_drift or side.dev > (p.flat_dev_paired if paired else p.flat_dev):
@@ -262,7 +278,7 @@ def side_view(a: np.ndarray, name: str) -> np.ndarray:
 def detect(a: np.ndarray, p: Params) -> tuple[tuple[int, int, int, int], list[Side], list[Side]]:
     """Content box (left, top, right, bottom; right/bottom exclusive), accepted and rejected sides."""
     h, w = a.shape[:2]
-    center = a[h // 3:2 * h // 3:4, w // 8:7 * w // 8:2]
+    center = a[h // 3 : 2 * h // 3 : 4, w // 8 : 7 * w // 8 : 2]
     content_act = float(np.median(detail(gray(center.astype(np.int16))))) if center.size else 0.0
     blur_thr = max(p.blur_abs, p.blur_rel * content_act) if content_act >= p.min_content_act else None
 
@@ -307,6 +323,7 @@ def detect(a: np.ndarray, p: Params) -> tuple[tuple[int, int, int, int], list[Si
 
 
 # ---------- loading and writing ----------
+
 
 def pixels(im: Image.Image) -> np.ndarray:
     """Stored pixels as RGB (no EXIF rotation: the crop applies to the stored image)."""
@@ -380,8 +397,12 @@ def preview(a: np.ndarray, box, accepted: list[Side], rejected: list[Side], dest
     draw = ImageDraw.Draw(im)
     for side in rejected:  # where a rejected candidate would have cut
         d = round(side.depth * s)
-        line = {"top": [0, d, im.width, d], "bottom": [0, im.height - d, im.width, im.height - d],
-                "left": [d, 0, d, im.height], "right": [im.width - d, 0, im.width - d, im.height]}[side.name]
+        line = {
+            "top": [0, d, im.width, d],
+            "bottom": [0, im.height - d, im.width, im.height - d],
+            "left": [d, 0, d, im.height],
+            "right": [im.width - d, 0, im.width - d, im.height],
+        }[side.name]
         draw.line(line, fill=(255, 210, 0), width=2)
     if accepted:
         draw.rectangle([l, t, r - 1, b - 1], outline=(255, 0, 200), width=2)
@@ -389,6 +410,7 @@ def preview(a: np.ndarray, box, accepted: list[Side], rejected: list[Side], dest
 
 
 # ---------- driver ----------
+
 
 @dataclass(frozen=True)
 class Job:
@@ -445,18 +467,26 @@ def write_html(out: Path, rows: list[dict]) -> None:
         name = Path(r["path"]).name
         crop = f"L{r['crop_left']} T{r['crop_top']} R{r['crop_right']} B{r['crop_bottom']}"
         detail_text = r.get("sides") or r.get("rejected") or ""
-        return (f'<figure><a href="{html.escape(Path(r["path"]).as_uri())}"><img loading="lazy" '
-                f'src="{html.escape(r["preview"])}"></a><figcaption><b>{html.escape(name)}</b><br>'
-                f'{r["width"]}×{r["height"]} · cut {crop}<br>{html.escape(detail_text)}</figcaption></figure>')
+        return (
+            f'<figure><a href="{html.escape(Path(r["path"]).as_uri())}"><img loading="lazy" '
+            f'src="{html.escape(r["preview"])}"></a><figcaption><b>{html.escape(name)}</b><br>'
+            f"{r['width']}×{r['height']} · cut {crop}<br>{html.escape(detail_text)}</figcaption></figure>"
+        )
 
     found = [r for r in rows if r["status"] == "border" and r.get("preview")]
     rejected = [r for r in rows if r["status"] == "rejected" and r.get("preview")]
     errors = [r for r in rows if r["status"] == "error"]
-    body = [f"<h1>Borders</h1><p>{len(rows):,} images scanned · {len(found):,} with borders · "
-            f"{len(rejected):,} rejected candidates · {len(errors):,} errors. Magenta: area removed. "
-            f"Yellow line: a rejected candidate's cut. Click an image for the original.</p>",
-            f"<h2>Borders found ({len(found):,})</h2><div class=grid>", *map(card, found), "</div>",
-            f"<h2>Rejected candidates ({len(rejected):,})</h2><div class=grid>", *map(card, rejected), "</div>"]
+    body = [
+        f"<h1>Borders</h1><p>{len(rows):,} images scanned · {len(found):,} with borders · "
+        f"{len(rejected):,} rejected candidates · {len(errors):,} errors. Magenta: area removed. "
+        f"Yellow line: a rejected candidate's cut. Click an image for the original.</p>",
+        f"<h2>Borders found ({len(found):,})</h2><div class=grid>",
+        *map(card, found),
+        "</div>",
+        f"<h2>Rejected candidates ({len(rejected):,})</h2><div class=grid>",
+        *map(card, rejected),
+        "</div>",
+    ]
     if errors:
         body.append(f"<h2>Errors ({len(errors):,})</h2><ul>")
         body += [f"<li>{html.escape(r['path'])}: {html.escape(r.get('error', ''))}</li>" for r in errors]
@@ -474,7 +504,7 @@ figure {{ margin: 0; background: var(--panel); border: 1px solid var(--line); bo
 figure img {{ width: 100%; height: 280px; object-fit: contain; display: block; }}
 figcaption {{ font-size: 11px; color: var(--muted); margin-top: 6px; overflow-wrap: anywhere; }}
 figcaption b {{ color: var(--text); font-weight: 500; }}
-</style></head><body>{''.join(body)}</body></html>"""
+</style></head><body>{"".join(body)}</body></html>"""
     (out / "report.html").write_text(page, encoding="utf-8")
 
 
@@ -486,6 +516,7 @@ def load_review(out: Path) -> dict[str, str]:
 
 def write_md(out: Path, rows: list[dict], roots: list[Path], review: dict[str, str]) -> None:
     """report.md: summary, every file with a border (path, cut per side, what was found), errors."""
+
     def rel(path: str) -> str:
         for root in roots:
             if Path(path).is_relative_to(root):
@@ -499,12 +530,13 @@ def write_md(out: Path, rows: list[dict], roots: list[Path], review: dict[str, s
     marked = [r for r in detected if review.get(r["path"]) == FALSE_POSITIVE]
     found = [r for r in detected if review.get(r["path"]) != FALSE_POSITIVE]
     errors = [r for r in rows if r["status"] == "error"]
+
     def kind(side: str) -> str:
         # Side.describe(): "top: solid #rrggbb dev .. drift .. 95px straight 1.00" or "top: blur 155px ..."
         words = side.split()
         if words[1] == "blur":
             return "blurred bar"
-        rgb = [int(words[2][i:i + 2], 16) for i in (1, 3, 5)]
+        rgb = [int(words[2][i : i + 2], 16) for i in (1, 3, 5)]
         return "black / near-black" if max(rgb) <= 40 else "white / near-white" if min(rgb) >= 215 else "other color"
 
     kinds: dict[str, int] = {}
@@ -513,42 +545,64 @@ def write_md(out: Path, rows: list[dict], roots: list[Path], review: dict[str, s
     reasons: dict[str, int] = {}
     for r in rows:
         for s in filter(None, (r.get("rejected") or "").split("; ")):
-            reason = s[s.rfind("[") + 1:-1] if s.endswith("]") else "?"
+            reason = s[s.rfind("[") + 1 : -1] if s.endswith("]") else "?"
             reasons[reason] = reasons.get(reason, 0) + 1
 
     counts = {s: sum(r["status"] == s for r in rows) for s in ("border", "rejected", "none", "skipped", "error")}
     lines = [
-        "# Border detection report", "",
+        "# Border detection report",
+        "",
         f"Source: {', '.join(f'`{r}`' for r in roots)}  ",
-        "Generated by `tools/borders.py` (dry run unless `--apply`). Visual review: `report.html` in this folder.", "",
-        "## Summary", "",
-        "| | Images |", "|---|---|",
+        "Generated by `tools/borders.py` (dry run unless `--apply`). Visual review: `report.html` in this folder.",
+        "",
+        "## Summary",
+        "",
+        "| | Images |",
+        "|---|---|",
         f"| Scanned | {len(rows):,} |",
         f"| **With borders** | **{len(found):,}** ({len(found) / max(1, len(rows)):.1%}) |",
         f"| Detected, but marked false positive in review | {len(marked):,} |",
         f"| Rejected candidates only (walls, skies, plain backgrounds) | {counts['rejected']:,} |",
         f"| No border | {counts['none']:,} |",
         f"| Skipped (tiny or animated) | {counts['skipped']:,} |",
-        f"| Errors | {counts['error']:,} |", "",
-        "Borders found, by side:", "",
-        "| Kind | Sides |", "|---|---|",
-        *(f"| {k} | {v:,} |" for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])), "",
-        "Rejected candidates, by reason:", "",
-        "| Reason | Sides |", "|---|---|",
-        *(f"| {k} | {v:,} |" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])), "",
-        f"## Files with borders ({len(found):,})", "",
-        "Cut = pixels removed from the left, top, right and bottom edges.", "",
-        "| File | Size | Cut L / T / R / B | Found |", "|---|---|---|---|",
+        f"| Errors | {counts['error']:,} |",
+        "",
+        "Borders found, by side:",
+        "",
+        "| Kind | Sides |",
+        "|---|---|",
+        *(f"| {k} | {v:,} |" for k, v in sorted(kinds.items(), key=lambda kv: -kv[1])),
+        "",
+        "Rejected candidates, by reason:",
+        "",
+        "| Reason | Sides |",
+        "|---|---|",
+        *(f"| {k} | {v:,} |" for k, v in sorted(reasons.items(), key=lambda kv: -kv[1])),
+        "",
+        f"## Files with borders ({len(found):,})",
+        "",
+        "Cut = pixels removed from the left, top, right and bottom edges.",
+        "",
+        "| File | Size | Cut L / T / R / B | Found |",
+        "|---|---|---|---|",
     ]
+
     def table_row(r: dict) -> str:
         cut = f"{r['crop_left']} / {r['crop_top']} / {r['crop_right']} / {r['crop_bottom']}"
         return f"| {cell(rel(r['path']))} | {r['width']}×{r['height']} | {cut} | {cell(r['sides'])} |"
 
     lines += map(table_row, found)
     if marked:
-        lines += ["", f"## Marked false positive in review ({len(marked):,})", "",
-                  "Not cropped by `--apply`.", "",
-                  "| File | Size | Cut L / T / R / B | Found |", "|---|---|---|---|", *map(table_row, marked)]
+        lines += [
+            "",
+            f"## Marked false positive in review ({len(marked):,})",
+            "",
+            "Not cropped by `--apply`.",
+            "",
+            "| File | Size | Cut L / T / R / B | Found |",
+            "|---|---|---|---|",
+            *map(table_row, marked),
+        ]
     if errors:
         lines += ["", f"## Errors ({len(errors):,})", "", "| File | Error |", "|---|---|"]
         lines += [f"| {cell(rel(r['path']))} | {cell(r.get('error') or '')} |" for r in errors]
@@ -596,8 +650,7 @@ def main() -> None:
     if args.apply:
         # Borders found by an earlier dry run still need their cleaned copy: process them again
         # (detection is deterministic), except those marked as false positives in the viewer.
-        redo = {r["path"] for r in done
-                if r["status"] == "border" and not r.get("output") and r["path"] not in false_positives}
+        redo = {r["path"] for r in done if r["status"] == "border" and not r.get("output") and r["path"] not in false_positives}
         if redo:
             done = [r for r in done if r["path"] not in redo]
             with open(report, "w", newline="", encoding="utf-8") as f:
@@ -605,12 +658,17 @@ def main() -> None:
                 w.writeheader()
                 w.writerows(done)
     seen = {r["path"] for r in done}
-    todo = [Job(str(p), str(root), str(args.out), args.apply, args.mode, params)
-            for p, root in jobs if str(p) not in seen and not (args.apply and str(p) in false_positives)]
+    todo = [
+        Job(str(p), str(root), str(args.out), args.apply, args.mode, params)
+        for p, root in jobs
+        if str(p) not in seen and not (args.apply and str(p) in false_positives)
+    ]
     in_scope = {str(p) for p, _ in jobs}
-    print(f"{len(jobs):,} images, {len(seen & in_scope):,} already done, {len(todo):,} to process"
-          + (f", {len(false_positives & in_scope):,} marked false positive (not cropped)" if args.apply else ""),
-          flush=True)
+    print(
+        f"{len(jobs):,} images, {len(seen & in_scope):,} already done, {len(todo):,} to process"
+        + (f", {len(false_positives & in_scope):,} marked false positive (not cropped)" if args.apply else ""),
+        flush=True,
+    )
 
     new_file = not report.exists()
     start = time.time()

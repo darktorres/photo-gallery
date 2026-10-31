@@ -79,8 +79,9 @@ class ImageDataset(Dataset):
             return torch.zeros(3, self.size, self.size), False
 
 
-def embed(model: torch.nn.Module, spec: ModelSpec, dataset: ImageDataset, batch_size: int,
-          workers: int, device: torch.device, desc: str) -> tuple[np.ndarray, np.ndarray]:
+def embed(
+    model: torch.nn.Module, spec: ModelSpec, dataset: ImageDataset, batch_size: int, workers: int, device: torch.device, desc: str
+) -> tuple[np.ndarray, np.ndarray]:
     """Returns (L2-normalized float16 embeddings, ok mask). Failed items get zero vectors."""
     loader = DataLoader(dataset, batch_size=batch_size, num_workers=workers, pin_memory=True)
     out: np.ndarray | None = None
@@ -93,8 +94,8 @@ def embed(model: torch.nn.Module, spec: ModelSpec, dataset: ImageDataset, batch_
             y[~ok_batch.to(device)] = 0
             if out is None:
                 out = np.zeros((len(dataset), y.shape[1]), dtype=np.float16)
-            out[pos:pos + len(y)] = y.cpu().numpy()
-            ok[pos:pos + len(y)] = ok_batch.numpy()
+            out[pos : pos + len(y)] = y.cpu().numpy()
+            ok[pos : pos + len(y)] = ok_batch.numpy()
             pos += len(y)
     assert out is not None
     return out, ok

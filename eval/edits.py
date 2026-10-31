@@ -11,14 +11,16 @@ from PIL import Image, ImageDraw, ImageEnhance, ImageFont, ImageOps
 
 def crop_area(fraction: float) -> Callable[[Image.Image, random.Random], Image.Image]:
     """Random crop keeping `fraction` of the area, with mild aspect-ratio change."""
+
     def apply(im: Image.Image, rng: random.Random) -> Image.Image:
         w, h = im.size
         r = rng.uniform(0.8, 1.25)
-        cw = max(1, min(w, round(w * fraction ** 0.5 * r)))
+        cw = max(1, min(w, round(w * fraction**0.5 * r)))
         ch = max(1, min(h, round(h * fraction / (cw / w))))
         x = rng.randint(0, w - cw)
         y = rng.randint(0, h - ch)
         return im.crop((x, y, x + cw, y + ch))
+
     return apply
 
 
@@ -28,6 +30,7 @@ def jpeg(quality: int) -> Callable[[Image.Image, random.Random], Image.Image]:
         im.save(buf, "JPEG", quality=quality)
         buf.seek(0)
         return Image.open(buf).convert("RGB")
+
     return apply
 
 
@@ -46,8 +49,10 @@ def rot90(im: Image.Image, rng: random.Random) -> Image.Image:
 
 def rotate(low: float, high: float) -> Callable[[Image.Image, random.Random], Image.Image]:
     """Rotation by an angle in [low, high) degrees (counter-clockwise) on an enlarged canvas, corners black."""
+
     def apply(im: Image.Image, rng: random.Random) -> Image.Image:
         return im.rotate(rng.uniform(low, high), resample=Image.Resampling.BICUBIC, expand=True, fillcolor=(0, 0, 0))
+
     return apply
 
 
@@ -94,8 +99,9 @@ def text_overlay(im: Image.Image, rng: random.Random) -> Image.Image:
         font = ImageFont.load_default(size)
     draw = ImageDraw.Draw(im)
     for line, y in (("FOLLOW FOR MORE", 0.15), ("@some_account", 0.80)):
-        draw.text((w * 0.05, h * y), line, font=font, fill=(255, 255, 255),
-                  stroke_width=max(1, size // 12), stroke_fill=(0, 0, 0))
+        draw.text(
+            (w * 0.05, h * y), line, font=font, fill=(255, 255, 255), stroke_width=max(1, size // 12), stroke_fill=(0, 0, 0)
+        )
     return im
 
 

@@ -38,8 +38,10 @@ def main() -> None:
 
     np.save(WORK_DIR / f"emb_{name}.npy", emb)
     np.save(WORK_DIR / f"ok_{name}.npy", ok)
-    print(f"{name}: {len(files)} images, dim {emb.shape[1]}, {elapsed:.0f} s "
-          f"({len(files) / elapsed:.0f} img/s), {int((~ok).sum())} failed")
+    print(
+        f"{name}: {len(files)} images, dim {emb.shape[1]}, {elapsed:.0f} s "
+        f"({len(files) / elapsed:.0f} img/s), {int((~ok).sum())} failed"
+    )
     for path in first_failures(files, ok):
         print(f"  failed: {path}")
 

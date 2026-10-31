@@ -76,8 +76,16 @@ def engine(name: str, arch: str, pretrained: str, batch: int) -> tuple[accel.TRT
             accel.ONNX_DIR.mkdir(parents=True, exist_ok=True)
             visual = visual.half().cuda()
             x = torch.zeros(2, 3, size, size, dtype=torch.float16, device="cuda")
-            torch.onnx.export(visual, (x,), str(onnx), input_names=["x"], output_names=["y"], opset_version=17,
-                              dynamic_axes={"x": {0: "batch"}, "y": {0: "batch"}}, dynamo=False)
+            torch.onnx.export(
+                visual,
+                (x,),
+                str(onnx),
+                input_names=["x"],
+                output_names=["y"],
+                opset_version=17,
+                dynamic_axes={"x": {0: "batch"}, "y": {0: "batch"}},
+                dynamo=False,
+            )
         del visual
         torch.cuda.empty_cache()  # the build needs the GPU memory
         accel.build_engine(onnx, plan, ((1, 3, size, size), (batch, 3, size, size), (batch, 3, size, size)))
@@ -106,31 +114,44 @@ def main() -> None:
         torch_fp16 = autocast_fp16(visual)
 
         with torch.inference_mode():
-            ref = torch.nn.functional.normalize(torch.cat([visual(x[s:s + 32]) for s in range(0, len(x), 32)]), dim=1)
-            got = {"torch_fp16": torch.cat([torch_fp16(x[s:s + 32]) for s in range(0, len(x), 32)]),
-                   "trt_fp16": torch.cat([trt_model(x[s:s + 32]) for s in range(0, len(x), 32)])}
+            ref = torch.nn.functional.normalize(torch.cat([visual(x[s : s + 32]) for s in range(0, len(x), 32)]), dim=1)
+            got = {
+                "torch_fp16": torch.cat([torch_fp16(x[s : s + 32]) for s in range(0, len(x), 32)]),
+                "trt_fp16": torch.cat([trt_model(x[s : s + 32]) for s in range(0, len(x), 32)]),
+            }
         cosine = {k: (torch.nn.functional.normalize(v, dim=1) * ref).sum(1).cpu().numpy() for k, v in got.items()}
-        rates = {"torch_fp16": throughput(torch_fp16, synthetic, args.iters),
-                 "trt_fp16": throughput(trt_model, synthetic, args.iters)}
-        report[name] = {"arch": arch, "pretrained": pretrained, "size": size, "params_m": round(params, 1),
-                        "imagenet_zero_shot": in1k, "imagenet_source": source,
-                        "img_s": {k: round(v) for k, v in rates.items()},
-                        "cos_vs_fp32": {k: {"min": float(c.min()), "p1": float(np.percentile(c, 1))}
-                                        for k, c in cosine.items()}}
+        rates = {
+            "torch_fp16": throughput(torch_fp16, synthetic, args.iters),
+            "trt_fp16": throughput(trt_model, synthetic, args.iters),
+        }
+        report[name] = {
+            "arch": arch,
+            "pretrained": pretrained,
+            "size": size,
+            "params_m": round(params, 1),
+            "imagenet_zero_shot": in1k,
+            "imagenet_source": source,
+            "img_s": {k: round(v) for k, v in rates.items()},
+            "cos_vs_fp32": {k: {"min": float(c.min()), "p1": float(np.percentile(c, 1))} for k, c in cosine.items()},
+        }
         out_path.write_text(json.dumps(report, indent=1), encoding="utf-8")
         print(f"{name}: {report[name]}", flush=True)
         del visual, trt_model, x, synthetic
         torch.cuda.empty_cache()
 
     print(f"\n## Image encoders on the RTX 2060 (batch {args.batch}, GPU only); cache: {CACHE_DIR}")
-    print("| model | input | params (M) | ImageNet zero-shot | torch fp16 img/s | TensorRT fp16 img/s "
-          "| GPU h for 70M (TensorRT) | TensorRT vs fp32 cosine min |")
+    print(
+        "| model | input | params (M) | ImageNet zero-shot | torch fp16 img/s | TensorRT fp16 img/s "
+        "| GPU h for 70M (TensorRT) | TensorRT vs fp32 cosine min |"
+    )
     print("|---|---|---|---|---|---|---|---|")
     for name, r in report.items():
         trt_rate = r["img_s"]["trt_fp16"]
-        print(f"| {name} | {r['size']} px | {r['params_m']:.0f} | {r['imagenet_zero_shot']:.1f}% "
-              f"| {r['img_s']['torch_fp16']:,} | {trt_rate:,} | {70e6 / trt_rate / 3600:.0f} "
-              f"| {r['cos_vs_fp32']['trt_fp16']['min']:.4f} |")
+        print(
+            f"| {name} | {r['size']} px | {r['params_m']:.0f} | {r['imagenet_zero_shot']:.1f}% "
+            f"| {r['img_s']['torch_fp16']:,} | {trt_rate:,} | {70e6 / trt_rate / 3600:.0f} "
+            f"| {r['cos_vs_fp32']['trt_fp16']['min']:.4f} |"
+        )
 
 
 if __name__ == "__main__":

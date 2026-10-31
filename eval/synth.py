@@ -49,8 +49,9 @@ def main() -> None:
     parser.add_argument("--batch", type=int, default=64)
     parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--seed", type=int, default=0)
-    parser.add_argument("--trim", action="store_true",
-                        help="cut borders from originals and edited copies (needs embed.py --trim)")
+    parser.add_argument(
+        "--trim", action="store_true", help="cut borders from originals and edited copies (needs embed.py --trim)"
+    )
     args = parser.parse_args()
     name = f"{args.model}_trim" if args.trim else args.model
 
@@ -84,20 +85,21 @@ def main() -> None:
         cos = (q.float() * db[originals].float()).sum(1)[keep].cpu().numpy()
         top = (q @ db.T).topk(10, dim=1).indices[keep]
         hits = top == originals[keep].unsqueeze(1)
-        rows.append({
-            "transform": edit,
-            "r1": hits[:, 0].float().mean().item(),
-            "r10": hits.any(1).float().mean().item(),
-            "cos_p10": float(np.quantile(cos, 0.10)),
-            "cos_p50": float(np.quantile(cos, 0.50)),
-            **{f"above_t{int(r * 100)}": float((cos >= t).mean()) for r, t in thresholds.items() if r in (0.90, 0.95)},
-        })
+        rows.append(
+            {
+                "transform": edit,
+                "r1": hits[:, 0].float().mean().item(),
+                "r10": hits.any(1).float().mean().item(),
+                "cos_p10": float(np.quantile(cos, 0.10)),
+                "cos_p50": float(np.quantile(cos, 0.50)),
+                **{f"above_t{int(r * 100)}": float((cos >= t).mean()) for r, t in thresholds.items() if r in (0.90, 0.95)},
+            }
+        )
 
     (WORK_DIR / f"synth_{name}.json").write_text(json.dumps(rows, indent=2), encoding="utf-8")
     threshold_cols = [k for k in rows[0] if k.startswith("above_t")]
     print(f"## {name}: synthetic robustness, {args.count} images, retrieved from {len(files):,}")
-    header = ["transform", "R@1", "R@10", "cos p10", "cos p50"] + [
-        f"≥ thr@{c[7:]}%recall" for c in threshold_cols]
+    header = ["transform", "R@1", "R@10", "cos p10", "cos p50"] + [f"≥ thr@{c[7:]}%recall" for c in threshold_cols]
     print("| " + " | ".join(header) + " |")
     print("|" + "---|" * len(header))
     for r in rows:

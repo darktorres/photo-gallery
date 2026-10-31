@@ -59,8 +59,11 @@ def list_runs() -> list[dict]:
     for d in sorted(p for p in RUNS_ROOT.iterdir() if p.is_dir() and (p / "files.txt").exists()):
         models = sorted(p.stem.removeprefix("results_") for p in d.glob("results_*.json"))
         # Pair lists that exist only for some models (verify*.csv): kind -> models that have it.
-        by_kind = {kind: [m for m in models if (d / pattern.format(m)).exists()]
-                   for kind, pattern in PAIR_FILES.items() if kind in DIAG_PREFIX}
+        by_kind = {
+            kind: [m for m in models if (d / pattern.format(m)).exists()]
+            for kind, pattern in PAIR_FILES.items()
+            if kind in DIAG_PREFIX
+        }
         by_kind["groups"] = [m for m in models if (d / GROUPS_FILE.format(m)).exists()]
         runs.append({"name": d.name, "models": models, "models_by_kind": by_kind})
     return runs
@@ -187,7 +190,7 @@ def side_kind(side: str) -> str:
     words = side.split()
     if words[1] == "blur":
         return "blur"
-    rgb = [int(words[2][i:i + 2], 16) for i in (1, 3, 5)]
+    rgb = [int(words[2][i : i + 2], 16) for i in (1, 3, 5)]
     return "black" if max(rgb) <= 40 else "white" if min(rgb) >= 215 else "color"
 
 
@@ -205,12 +208,19 @@ def border_rows(scan: str) -> list[dict]:
         rows = [r for r in csv.DictReader(f) if r["status"] == "border"]
     out = []
     for i, r in enumerate(rows):
-        out.append({
-            "i": i, "path": r["path"], "name": Path(r["path"]).name, "folder": Path(r["path"]).parent.name,
-            "width": int(r["width"]), "height": int(r["height"]),
-            "crop": [int(r[k]) for k in ("crop_left", "crop_top", "crop_right", "crop_bottom")],
-            "sides": r["sides"], "kinds": sorted({side_kind(s) for s in r["sides"].split("; ")}),
-        })
+        out.append(
+            {
+                "i": i,
+                "path": r["path"],
+                "name": Path(r["path"]).name,
+                "folder": Path(r["path"]).parent.name,
+                "width": int(r["width"]),
+                "height": int(r["height"]),
+                "crop": [int(r[k]) for k in ("crop_left", "crop_top", "crop_right", "crop_bottom")],
+                "sides": r["sides"],
+                "kinds": sorted({side_kind(s) for s in r["sides"].split("; ")}),
+            }
+        )
     _border_cache[report] = (mtime, out)
     return out
 

@@ -47,6 +47,7 @@ def _sscd_torchscript_path(variant: str) -> Path:
 def _sscd_torchscript(variant: str) -> Callable[[], nn.Module]:
     """Meta's published TorchScript, as-is. Reference only: casting it to fp16 with
     .half() silently breaks the traced backbone (relative error ~1.0)."""
+
     def load() -> nn.Module:
         return torch.jit.load(str(_sscd_torchscript_path(variant)), map_location="cpu")
 
@@ -127,6 +128,7 @@ def _sscd(variant: str) -> Callable[[], nn.Module]:
 
 def _accel(runtime: str, precision: str, size: int = 320) -> Callable[[], nn.Module]:
     """SSCD on TensorRT ("trt") or ONNX Runtime ("cuda" / "trt10" providers); see accel.py."""
+
     def load() -> nn.Module:
         import accel
 
@@ -179,19 +181,20 @@ SPECS: dict[str, ModelSpec] = {
     "sscd_ts": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32", _sscd_torchscript("sscd_disc_mixup")),
     # The same weights exported to ONNX (accel.py): TensorRT 11 engines, and ONNX Runtime with its CUDA provider
     # or its TensorRT 10 provider. Their precision is the engine's own, hence "fp32" (no autocast) here.
-    **{f"sscd_{runtime}_{precision}": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32",
-                                                _accel(runtime, precision))
-       for runtime, precisions in (("trt", ("fp16", "int8")), ("ort_cuda", ("fp32", "fp16")),
-                                   ("ort_trt10", ("fp16", "int8")))
-       for precision in precisions},
+    **{
+        f"sscd_{runtime}_{precision}": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32", _accel(runtime, precision))
+        for runtime, precisions in (("trt", ("fp16", "int8")), ("ort_cuda", ("fp32", "fp16")), ("ort_trt10", ("fp16", "int8")))
+        for precision in precisions
+    },
     # ResNeXt101 variant: kept as TorchScript fp32 (its trunk isn't remapped).
-    "sscd_large": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32",
-                            _sscd_torchscript("sscd_disc_large")),
+    "sscd_large": ModelSpec(320, IMAGENET_MEAN, IMAGENET_STD, BILINEAR, "fp32", _sscd_torchscript("sscd_disc_large")),
     # DINOv2 (self-supervised, general purpose).
-    "dinov2_s": ModelSpec(224, IMAGENET_MEAN, IMAGENET_STD, BICUBIC, "amp",
-                          _timm("vit_small_patch14_dinov2.lvd142m", img_size=224)),
-    "dinov2_b": ModelSpec(224, IMAGENET_MEAN, IMAGENET_STD, BICUBIC, "amp",
-                          _timm("vit_base_patch14_dinov2.lvd142m", img_size=224)),
+    "dinov2_s": ModelSpec(
+        224, IMAGENET_MEAN, IMAGENET_STD, BICUBIC, "amp", _timm("vit_small_patch14_dinov2.lvd142m", img_size=224)
+    ),
+    "dinov2_b": ModelSpec(
+        224, IMAGENET_MEAN, IMAGENET_STD, BICUBIC, "amp", _timm("vit_base_patch14_dinov2.lvd142m", img_size=224)
+    ),
     # CLIP (semantic). Expected to over-merge "same subject" images; included as a reference.
     "clip_b32": ModelSpec(224, CLIP_MEAN, CLIP_STD, BICUBIC, "amp", _open_clip("ViT-B-32", "laion2b_s34b_b79k")),
 }
@@ -209,8 +212,10 @@ def run(model: nn.Module, spec: ModelSpec, x: torch.Tensor) -> torch.Tensor:
 
 def build_transform(spec: ModelSpec) -> T.Compose:
     # torchvision resizes PIL images with PIL itself, which antialiases on downscale.
-    return T.Compose([
-        T.Resize((spec.size, spec.size), interpolation=spec.interpolation, antialias=True),
-        T.ToTensor(),
-        T.Normalize(spec.mean, spec.std),
-    ])
+    return T.Compose(
+        [
+            T.Resize((spec.size, spec.size), interpolation=spec.interpolation, antialias=True),
+            T.ToTensor(),
+            T.Normalize(spec.mean, spec.std),
+        ]
+    )

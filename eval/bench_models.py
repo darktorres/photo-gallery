@@ -39,8 +39,7 @@ def main() -> None:
                 run(model, spec, x)
             torch.cuda.synchronize()
         rate = args.batch * args.iters / (time.perf_counter() - start)
-        print(f"| {name} | {spec.size}px {spec.precision} | {dim} | {params:.0f} | {rate:.0f} "
-              f"| {70e6 / rate / 86400:.1f} |")
+        print(f"| {name} | {spec.size}px {spec.precision} | {dim} | {params:.0f} | {rate:.0f} | {70e6 / rate / 86400:.1f} |")
         del model
         torch.cuda.empty_cache()
 

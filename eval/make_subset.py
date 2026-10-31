@@ -21,9 +21,7 @@ def main() -> None:
     args = parser.parse_args()
 
     files = sorted(
-        p.relative_to(DATA_ROOT).as_posix()
-        for p in DATA_ROOT.rglob("*")
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+        p.relative_to(DATA_ROOT).as_posix() for p in DATA_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
     )
     labeled = [f for f in files if f.startswith((f"{GROUPS_DIR}/", f"{NEGATIVES_DIR}/"))]
     rest = sorted(set(files) - set(labeled))

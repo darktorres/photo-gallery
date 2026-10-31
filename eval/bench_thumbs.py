@@ -96,6 +96,7 @@ def float_lanczos(im: Image.Image, size: tuple[int, int]) -> np.ndarray:
 
 # --- Encoders: (settings, encode(rgb uint8 array, setting) -> bytes, decode(bytes) -> rgb array) ---
 
+
 def _pil_encode(fmt: str, **kwargs) -> Callable[[np.ndarray, float], bytes]:
     def encode(a: np.ndarray, q: float) -> bytes:
         buf = io.BytesIO()
@@ -117,8 +118,9 @@ def _jpegli(*options: str) -> Callable[[np.ndarray, float], bytes]:
     def encode(a: np.ndarray, q: float) -> bytes:
         src, dst = _tmp() / "jpegli.ppm", _tmp() / "jpegli.jpg"
         Image.fromarray(a).save(src)
-        out = subprocess.run([str(CJPEGLI), str(src), str(dst), "-q", str(int(q)), *options],
-                             capture_output=True, text=True, check=True)
+        out = subprocess.run(
+            [str(CJPEGLI), str(src), str(dst), "-q", str(int(q)), *options], capture_output=True, text=True, check=True
+        )
         m = re.search(r"([\d.]+) MP/s", out.stdout + out.stderr)
         _JPEGLI_MPS[0] = float(m[1]) if m else float("nan")
         return dst.read_bytes()
@@ -155,6 +157,7 @@ CODECS: dict[str, tuple[tuple[float, ...], Callable[[np.ndarray, float], bytes],
 
 # --- SSIMULACRA2 via libjxl's tool ---
 
+
 @cache
 def _tmp() -> Path:
     """This process's scratch folder (pool workers each get their own)."""
@@ -176,6 +179,7 @@ def save_reference(a: np.ndarray, name: str = "reference.ppm") -> Path:
 
 
 # --- Quality pass (one image per task, in parallel) ---
+
 
 def quality(job: tuple[str, tuple[int, ...]]) -> dict | None:
     rel, heights = job
@@ -202,6 +206,7 @@ def quality(job: tuple[str, tuple[int, ...]]) -> dict | None:
 
 
 # --- Timing pass (one process) ---
+
 
 def timed(fn: Callable, *args) -> tuple:
     """(fn(*args), milliseconds)."""
@@ -240,6 +245,7 @@ def timing(files: list[str], heights: tuple[int, ...]) -> dict:
 
 # --- Zone plate (aliasing) ---
 
+
 def zone_plate(n: int = 2048) -> np.ndarray:
     """cos(pi r^2 / n): the local frequency rises from 0 at the center to Nyquist at the edge midpoints."""
     y, x = np.mgrid[:n, :n] - n / 2
@@ -268,6 +274,7 @@ def zone_plate_test(side: int = 256) -> dict:
 
 # --- Re-use for embeddings ---
 
+
 def sscd_reuse(files: list[str], heights: tuple[int, ...]) -> dict:
     """Cosine between SSCD fp16 on the original and on the thumbnail (uncompressed, and as JPEG q85)."""
     import torch
@@ -287,7 +294,7 @@ def sscd_reuse(files: list[str], heights: tuple[int, ...]) -> dict:
     cos: dict[tuple[int, str], list[np.ndarray]] = {(row, k): [] for row in heights for k in ("raw", "jpeg85")}
     for s in range(0, len(files), 32):  # in chunks: full-size originals are large
         originals = []
-        for rel in files[s:s + 32]:
+        for rel in files[s : s + 32]:
             try:
                 originals.append(load_rgb(DATA_ROOT / rel))
             except Exception:
@@ -301,12 +308,12 @@ def sscd_reuse(files: list[str], heights: tuple[int, ...]) -> dict:
     out: dict = {}
     for (row, kind), parts in cos.items():
         c = np.concatenate(parts)
-        out.setdefault(str(row), {})[kind] = {"min": float(c.min()), "p1": float(np.percentile(c, 1)),
-                                              "p50": float(np.median(c))}
+        out.setdefault(str(row), {})[kind] = {"min": float(c.min()), "p1": float(np.percentile(c, 1)), "p50": float(np.median(c))}
     return out
 
 
 # --- Summaries ---
+
 
 def iso_quality(curve: list[tuple[float, float]], target: float) -> float | None:
     """Mean bytes at a mean score, interpolated along a codec's (score, bytes) sweep."""
@@ -347,14 +354,20 @@ def main() -> None:
                 b = np.array([r["encode"][row][codec][s][0] for r in results])
                 q = np.array([r["encode"][row][codec][s][1] for r in results])
                 report["encode"][row][codec][str(s)] = {
-                    "bytes_mean": float(b.mean()), "bytes_median": float(np.median(b)),
-                    "score_mean": float(q.mean()), "score_p10": float(np.percentile(q, 10))}
+                    "bytes_mean": float(b.mean()),
+                    "bytes_median": float(np.median(b)),
+                    "score_mean": float(q.mean()),
+                    "score_p10": float(np.percentile(q, 10)),
+                }
         report["iso_quality"][row] = {
-            str(t): {c: iso_quality([(v["score_mean"], v["bytes_mean"]) for v in report["encode"][row][c].values()], t)
-                     for c in CODECS} for t in SCORE_TARGETS}
+            str(t): {
+                c: iso_quality([(v["score_mean"], v["bytes_mean"]) for v in report["encode"][row][c].values()], t) for c in CODECS
+            }
+            for t in SCORE_TARGETS
+        }
 
     report["zone_plate"] = zone_plate_test()
-    report["timing_ms"] = timing(files[:args.timing], heights)
+    report["timing_ms"] = timing(files[: args.timing], heights)
     if not args.no_sscd:
         report["sscd_cosine"] = sscd_reuse(files, heights)
     (WORK_DIR / "bench_thumbs.json").write_text(json.dumps(report, indent=1), encoding="utf-8")
@@ -366,8 +379,10 @@ def main() -> None:
     print("| method | " + " | ".join(f"{h}px" for h in heights) + " | zone plate |")
     print("|---|" + "---|" * (len(heights) + 1))
     for m in RESIZE_METHODS:
-        cells = [f"{report['resize'][h][m]['mean']:.1f} / {report['resize'][h][m]['p10']:.1f}; "
-                 f"{t['resize'][h][m]:.1f} ms" for h in heights]
+        cells = [
+            f"{report['resize'][h][m]['mean']:.1f} / {report['resize'][h][m]['p10']:.1f}; {t['resize'][h][m]:.1f} ms"
+            for h in heights
+        ]
         print(f"| {m} | " + " | ".join(cells) + f" | {report['zone_plate'][m]:.1f} |")
     for row in heights:
         print(f"\n## Encode at {row}px (mean bytes, SSIMULACRA2 mean / p10, encode / decode ms)")
@@ -375,8 +390,10 @@ def main() -> None:
         print("|---|---|---|---|---|---|")
         for codec, per in report["encode"][row].items():
             for s, v in per.items():
-                print(f"| {codec} | {s} | {v['bytes_mean']:.0f} | {v['score_mean']:.1f} / {v['score_p10']:.1f} "
-                      f"| {t['encode'][row][codec][s]:.2f} | {t['decode'][row][codec][s]:.2f} |")
+                print(
+                    f"| {codec} | {s} | {v['bytes_mean']:.0f} | {v['score_mean']:.1f} / {v['score_p10']:.1f} "
+                    f"| {t['encode'][row][codec][s]:.2f} | {t['decode'][row][codec][s]:.2f} |"
+                )
         print(f"\n## Same quality at {row}px: mean bytes (70M thumbnails, GB)")
         print("| codec | " + " | ".join(f"score {s}" for s in SCORE_TARGETS) + " |")
         print("|---|" + "---|" * len(SCORE_TARGETS))
@@ -389,8 +406,7 @@ def main() -> None:
     if "sscd_cosine" in report:
         print("\n## SSCD on the thumbnail vs on the original (cosine min / p1 / p50)")
         for row, kinds in report["sscd_cosine"].items():
-            print(f"  {row}px: " + "; ".join(f"{k} {v['min']:.3f} / {v['p1']:.3f} / {v['p50']:.3f}"
-                                            for k, v in kinds.items()))
+            print(f"  {row}px: " + "; ".join(f"{k} {v['min']:.3f} / {v['p1']:.3f} / {v['p50']:.3f}" for k, v in kinds.items()))
 
 
 if __name__ == "__main__":

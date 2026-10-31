@@ -95,8 +95,11 @@ FB_PX = 1.0  # max forward-backward flow inconsistency (canvas px) for a real di
 DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 # --pairs -> (output prefix, labels in it)
-PAIR_SETS = {"labeled": ("verify", ("duplicate", "similar_folder")), "cross_groups": ("verify_cross", ("cross_group",)),
-             "knn": ("verify_knn", ("duplicate", "cross_group", "similar_folder", "unlabeled"))}
+PAIR_SETS = {
+    "labeled": ("verify", ("duplicate", "similar_folder")),
+    "cross_groups": ("verify_cross", ("cross_group",)),
+    "knn": ("verify_knn", ("duplicate", "cross_group", "similar_folder", "unlabeled")),
+}
 # The right decision per label; labels without one (similar_folder) aren't scored.
 EXPECTED = {"duplicate": "match", "cross_group": "unrelated"}
 
@@ -129,8 +132,7 @@ def decide(m: dict, params: Params) -> str:
         return "unrelated"
     if float(m["noise"]) <= params.max_noise:
         return "match"
-    if params.strong_inliers and inliers >= params.strong_inliers \
-            and inliers >= params.strong_ratio * max(1, int(m["matches"])):
+    if params.strong_inliers and inliers >= params.strong_inliers and inliers >= params.strong_ratio * max(1, int(m["matches"])):
         return "match"
     return "unrelated"
 
@@ -155,11 +157,13 @@ class Features:
 
                 self.net.unet = accel.DiskUnetTRT("fp16")
         elif kind == "sift":  # rotation-invariant; LightGlue's SIFT weights expect OpenCV's descriptor layout
-            self.net = KF.SIFTFeature(num_features=NUM_FEATURES, upright=False, rootsift=True, device=DEVICE,
-                                      descriptor_layout="opencv")
+            self.net = KF.SIFTFeature(
+                num_features=NUM_FEATURES, upright=False, rootsift=True, device=DEVICE, descriptor_layout="opencv"
+            )
         else:  # top-k mode: the NUM_FEATURES strongest, like DISK
-            self.net = KF.ALIKED.from_pretrained("aliked-n16", max_num_keypoints=NUM_FEATURES, detection_threshold=0,
-                                                 device=DEVICE)
+            self.net = KF.ALIKED.from_pretrained(
+                "aliked-n16", max_num_keypoints=NUM_FEATURES, detection_threshold=0, device=DEVICE
+            )
         self.matcher = KF.LightGlueMatcher(kind).eval().to(DEVICE)
 
     @torch.inference_mode()
@@ -268,13 +272,15 @@ class Prefetcher:
 
 # ---------- geometry ----------
 
+
 def coverage(h: np.ndarray, src_hw: tuple[int, int], dst_hw: tuple[int, int]) -> float:
     """Fraction of the destination frame covered by the source frame mapped through h."""
     q = 4  # at quarter resolution
     s = np.diag([1 / q, 1 / q, 1.0])
     src = np.ones((max(1, src_hw[0] // q), max(1, src_hw[1] // q)), np.uint8)
-    out = cv2.warpPerspective(src, s @ h @ np.linalg.inv(s), (max(1, dst_hw[1] // q), max(1, dst_hw[0] // q)),
-                              flags=cv2.INTER_NEAREST)
+    out = cv2.warpPerspective(
+        src, s @ h @ np.linalg.inv(s), (max(1, dst_hw[1] // q), max(1, dst_hw[0] // q)), flags=cv2.INTER_NEAREST
+    )
     return float(out.mean())
 
 
@@ -297,6 +303,7 @@ def fit_homography(pts_dst: np.ndarray, pts_src: np.ndarray) -> tuple[np.ndarray
 
 
 # ---------- photometry ----------
+
 
 def blur(img: np.ndarray, sigma: float) -> np.ndarray:
     return cv2.GaussianBlur(img, (0, 0), sigma) if sigma > 0.05 else img
@@ -358,8 +365,7 @@ def motion(ref: np.ndarray, other: np.ndarray, region: np.ndarray) -> np.ndarray
     res_before = blur(np.linalg.norm(ref - other, axis=2), 2.0)
     res_after = blur(np.linalg.norm(ref - warped, axis=2), 2.0)
     moved = region & consistent & (np.linalg.norm(fwd, axis=2) > MOVE_PX) & (res_after < 0.5 * res_before)
-    return cv2.morphologyEx(moved.astype(np.uint8), cv2.MORPH_OPEN,
-                            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))) > 0
+    return cv2.morphologyEx(moved.astype(np.uint8), cv2.MORPH_OPEN, cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))) > 0
 
 
 @torch.inference_mode()
@@ -376,9 +382,11 @@ def tolerant_diff(ref: np.ndarray, other: np.ndarray, radius: int = 2) -> np.nda
 
 # ---------- one pair ----------
 
+
 @dataclass
 class Aligned:
     """Result of the GPU half: the alignment, or the reason there is none (out["decision"] set)."""
+
     out: dict
     ref: np.ndarray | None = None  # the more-contained image (working resolution)
     other: np.ndarray | None = None
@@ -403,12 +411,12 @@ def align(features: Features, pa: Prepared, pb: Prepared, params: Params, mirror
         if inliers > best[2]:
             best = (True, h, inliers, len(pts_a), img_m)
     flipped, h_ba, inliers, matches, img_b = best
-    return _aligned({"inliers": inliers, "matches": matches, "flipped": flipped}, pa, img_b, pb.scale, h_ba,
-                    params, skip)
+    return _aligned({"inliers": inliers, "matches": matches, "flipped": flipped}, pa, img_b, pb.scale, h_ba, params, skip)
 
 
-def _aligned(out: dict, pa: Prepared, img_b: np.ndarray, scale_b: float, h_ba: np.ndarray | None, params: Params,
-             skip: bool = False) -> Aligned:
+def _aligned(
+    out: dict, pa: Prepared, img_b: np.ndarray, scale_b: float, h_ba: np.ndarray | None, params: Params, skip: bool = False
+) -> Aligned:
     """Picks the reference (the more-contained image) for an alignment B -> A, or rejects a weak one."""
     hw_a, hw_b = pa.img.shape[:2], img_b.shape[:2]
     if h_ba is None or out["inliers"] < params.min_inliers:
@@ -438,12 +446,14 @@ def align_rotated(features: Features, pa: Prepared, pb: Prepared, params: Params
     if best is None:
         return None
     h, inliers, matches, angle = best
-    return _aligned({"inliers": inliers, "matches": matches, "flipped": False, "rotation": angle}, pa, pb.img,
-                    pb.scale, h, params)
+    return _aligned(
+        {"inliers": inliers, "matches": matches, "flipped": False, "rotation": angle}, pa, pb.img, pb.scale, h, params
+    )
 
 
-def retry_variants(features: Features, pa: Prepared, pb: Prepared, al: Aligned, result: tuple, params: Params,
-                   rng: np.random.Generator) -> tuple:
+def retry_variants(
+    features: Features, pa: Prepared, pb: Prepared, al: Aligned, result: tuple, params: Params, rng: np.random.Generator
+) -> tuple:
     """`result` of compare(al). If the pair doesn't match: tries the mirrored image if it was skipped (a mirrored
     symmetric picture also aligns as is), then B rotated (features.rotations); a retry replaces the result
     only by aligning better (mirror) or by matching (rotation)."""
@@ -529,18 +539,20 @@ def compare(al: Aligned, params: Params, rng: np.random.Generator, samples: int 
     # Of what changed (dilated a little: a moved edge leaves change on both sides), how much moved?
     near_change = cv2.dilate(changed, np.ones((9, 9), np.uint8)).astype(bool) & valid
     moved = motion(ref_cmp, other_cmp, near_change)
-    out.update({
-        "noise": noise,
-        "res_p99": float(np.quantile(rv, 0.99)),
-        "changed_frac": float(changed.sum() / valid.sum()),
-        "blob_frac": float(areas.max() / valid.sum()),
-        "interior_changed_frac": float(in_changed.sum() / max(1, interior.sum())),
-        # Distinct changed regions inside, ignoring specks below 0.05% of the overlap.
-        "interior_regions": int((in_areas >= 0.0005 * valid.sum()).sum()),
-        # Share of the overlap that moved, and share of the change that motion explains.
-        "moved_frac": float(moved.sum() / valid.sum()),
-        "moved_share": float(moved.sum() / max(1, near_change.sum())),
-    })
+    out.update(
+        {
+            "noise": noise,
+            "res_p99": float(np.quantile(rv, 0.99)),
+            "changed_frac": float(changed.sum() / valid.sum()),
+            "blob_frac": float(areas.max() / valid.sum()),
+            "interior_changed_frac": float(in_changed.sum() / max(1, interior.sum())),
+            # Distinct changed regions inside, ignoring specks below 0.05% of the overlap.
+            "interior_regions": int((in_areas >= 0.0005 * valid.sum()).sum()),
+            # Share of the overlap that moved, and share of the change that motion explains.
+            "moved_frac": float(moved.sum() / valid.sum()),
+            "moved_share": float(moved.sum() / max(1, near_change.sum())),
+        }
+    )
     out["decision"] = decide(out, params)
 
     # Diagnostic panels, in the compared colors: reference with the other frame outlined | other aligned | residual.
@@ -563,6 +575,7 @@ def compare(al: Aligned, params: Params, rng: np.random.Generator, samples: int 
 
 
 # ---------- driver ----------
+
 
 class PairRunner:
     """Verifies pairs with the GPU half (align) in the calling thread and the CPU half (compare) on
@@ -599,8 +612,7 @@ class PairRunner:
             out, diag = fut.result()
             if retry is not None:  # in this thread: the mirrored / rotated attempts need the GPU
                 pa, pb, al, seed = retry
-                out, diag = retry_variants(self.features, pa, pb, al, (out, diag), self.params,
-                                           np.random.default_rng(seed))
+                out, diag = retry_variants(self.features, pa, pb, al, (out, diag), self.params, np.random.default_rng(seed))
         except Exception as e:
             out, diag = {"decision": "error", "error": f"{type(e).__name__}: {e}"}, None
         self.done(row, out, diag)
@@ -616,10 +628,18 @@ def add_decision_args(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--workers", type=int, default=8, help="CPU threads for the dense comparison")
     parser.add_argument("--loaders", type=int, default=4, help="CPU threads decoding and resizing images ahead")
     parser.add_argument("--features", choices=FEATURES, default="disk", help="local features for the alignment")
-    parser.add_argument("--disk-runtime", choices=DISK_RUNTIMES, default="trt",
-                        help="DISK's U-Net on TensorRT fp16 (3x faster, same features) or torch fp32")
-    parser.add_argument("--rotations", choices=tuple(ROTATIONS), default="none",
-                        help="for a pair that doesn't match as is, also try the other image rotated in these steps")
+    parser.add_argument(
+        "--disk-runtime",
+        choices=DISK_RUNTIMES,
+        default="trt",
+        help="DISK's U-Net on TensorRT fp16 (3x faster, same features) or torch fp32",
+    )
+    parser.add_argument(
+        "--rotations",
+        choices=tuple(ROTATIONS),
+        default="none",
+        help="for a pair that doesn't match as is, also try the other image rotated in these steps",
+    )
     parser.add_argument("--min-inliers", type=int, default=20)
     parser.add_argument("--abs-threshold", type=float, default=0.08)
     parser.add_argument("--noise-k", type=float, default=6.0)
@@ -634,23 +654,32 @@ def add_decision_args(parser: argparse.ArgumentParser) -> None:
 
 
 def params_from(args: argparse.Namespace) -> Params:
-    return Params(args.min_inliers, args.abs_threshold, args.noise_k, args.max_noise, args.strong_inliers,
-                  args.strong_ratio, args.max_moved, args.max_interior_change)
+    return Params(
+        args.min_inliers,
+        args.abs_threshold,
+        args.noise_k,
+        args.max_noise,
+        args.strong_inliers,
+        args.strong_ratio,
+        args.max_moved,
+        args.max_interior_change,
+    )
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--pairs", choices=tuple(PAIR_SETS), default="labeled")
     parser.add_argument("--model", default="sscd_fp16", help="embedding used for similarities and candidate selection")
-    parser.add_argument("--floor", type=float, default=0.4,
-                        help="min similarity for an unlabeled or negative pair to be checked")
+    parser.add_argument("--floor", type=float, default=0.4, help="min similarity for an unlabeled or negative pair to be checked")
     parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
     parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")
-    parser.add_argument("--shortcut", action="store_true",
-                        help="accept PDQ <= 22 or SSCD >= 0.95 without image work (pipeline mode)")
+    parser.add_argument(
+        "--shortcut", action="store_true", help="accept PDQ <= 22 or SSCD >= 0.95 without image work (pipeline mode)"
+    )
     add_decision_args(parser)
-    parser.add_argument("--rescore", action="store_true",
-                        help="re-apply the decision thresholds to the existing CSV (no image work)")
+    parser.add_argument(
+        "--rescore", action="store_true", help="re-apply the decision thresholds to the existing CSV (no image work)"
+    )
     args = parser.parse_args()
     params = params_from(args)
     prefix, labels = PAIR_SETS[args.pairs]
@@ -678,7 +707,7 @@ def main() -> None:
         rows, cols = np.nonzero(np.triu(emb[pool] @ emb[pool].T >= args.floor, k=1))
         similar = [(int(pool[r]), int(pool[c])) for r, c in zip(rows, cols, strict=True)]
         if args.limit:
-            positives, similar = positives[:args.limit], similar[:args.limit]
+            positives, similar = positives[: args.limit], similar[: args.limit]
         # "similar_folder": no ground truth under the current rule (variants count as matches,
         # and that folder mixes variants with genuinely different pictures).
         pairs = [("duplicate", a, b) for a, b in positives] + [("similar_folder", a, b) for a, b in similar]
@@ -705,7 +734,7 @@ def main() -> None:
         # Sorted by key, so consecutive pairs share image a and hit the feature cache.
         pairs = [(label_of(int(k), *divmod(int(k), n)), *divmod(int(k), n)) for k in np.sort(keys)]
         if args.limit:
-            pairs = pairs[:args.limit]
+            pairs = pairs[: args.limit]
     else:
         members = np.array([i for g in gt.groups for i in g if ok[i]])
         group = np.array([gi for gi, g in enumerate(gt.groups) for i in g if ok[i]])
@@ -714,9 +743,13 @@ def main() -> None:
         order = np.argsort(-sims[rows, cols])  # most similar (hardest) first
         pairs = [("cross_group", int(members[rows[i]]), int(members[cols[i]])) for i in order]
         if args.limit:
-            pairs = pairs[:args.limit]
-    print(f"{len(pairs)} pairs: " + ", ".join(f"{sum(p[0] == lab for p in pairs)} {lab}" for lab in labels)
-          + f" (floor {args.floor})", flush=True)
+            pairs = pairs[: args.limit]
+    print(
+        f"{len(pairs)} pairs: "
+        + ", ".join(f"{sum(p[0] == lab for p in pairs)} {lab}" for lab in labels)
+        + f" (floor {args.floor})",
+        flush=True,
+    )
 
     features = Features(args.features, args.disk_runtime, ROTATIONS[args.rotations])
     diag_dir = WORK_DIR / f"{prefix}_{args.model}"
@@ -764,10 +797,34 @@ def main() -> None:
     checkpoint.finish()
 
 
-COLUMNS = ["id", "label", "similarity", "decision", "correct", "inliers", "matches", "flipped", "rotation", "reference",
-           "cover_a", "cover_b", "overlap", "color_to", "noise", "res_p99", "changed_frac", "blob_frac",
-           "interior_changed_frac", "interior_regions", "moved_frac", "moved_share", "shortcut", "error",
-           "path_a", "path_b"]
+COLUMNS = [
+    "id",
+    "label",
+    "similarity",
+    "decision",
+    "correct",
+    "inliers",
+    "matches",
+    "flipped",
+    "rotation",
+    "reference",
+    "cover_a",
+    "cover_b",
+    "overlap",
+    "color_to",
+    "noise",
+    "res_p99",
+    "changed_frac",
+    "blob_frac",
+    "interior_changed_frac",
+    "interior_regions",
+    "moved_frac",
+    "moved_share",
+    "shortcut",
+    "error",
+    "path_a",
+    "path_b",
+]
 
 
 def csv_row(r: dict) -> dict:
@@ -811,11 +868,17 @@ def write_outputs(prefix: str, args, params: Params, labels: tuple, results: lis
             w.writerow(csv_row(r))
 
     decisions = ["match", "unrelated", "error"]
-    confusion = {lab: {d: sum(r["label"] == lab and r["decision"] == d for r in results) for d in decisions}
-                 for lab in labels}
-    summary = {"pairs_set": args.pairs, "model": args.model, "floor": args.floor,
-               "features": getattr(args, "features", "disk"), "params": vars(params),
-               "pairs": len(results), "seconds": seconds, "confusion": confusion}
+    confusion = {lab: {d: sum(r["label"] == lab and r["decision"] == d for r in results) for d in decisions} for lab in labels}
+    summary = {
+        "pairs_set": args.pairs,
+        "model": args.model,
+        "floor": args.floor,
+        "features": getattr(args, "features", "disk"),
+        "params": vars(params),
+        "pairs": len(results),
+        "seconds": seconds,
+        "confusion": confusion,
+    }
     (WORK_DIR / f"{prefix}_{args.model}.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
 
     print(f"\n{len(results)} pairs ({seconds} s of image work)")
@@ -823,14 +886,17 @@ def write_outputs(prefix: str, args, params: Params, labels: tuple, results: lis
     print("|---|" + "---|" * len(decisions))
     for lab, counts in confusion.items():
         print(f"| {lab} | " + " | ".join(str(counts[d]) for d in decisions) + " |")
+
     def quantiles(rows: list[dict], key: str) -> str:
         return " / ".join(f"{v:.4f}" for v in np.quantile([float(r[key]) for r in rows], [0.1, 0.5, 0.9, 0.99]))
 
     for lab in labels:
         aligned = [r for r in results if r["label"] == lab and "blob_frac" in r]
         if aligned:
-            print(f"{lab} (aligned: {len(aligned)}): blob_frac p10/50/90/99 {quantiles(aligned, 'blob_frac')}; "
-                  f"noise {quantiles(aligned, 'noise')}")
+            print(
+                f"{lab} (aligned: {len(aligned)}): blob_frac p10/50/90/99 {quantiles(aligned, 'blob_frac')}; "
+                f"noise {quantiles(aligned, 'noise')}"
+            )
 
 
 if __name__ == "__main__":

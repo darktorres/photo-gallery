@@ -144,8 +144,7 @@ def score(groups: list[list[str]], files: list[str]) -> dict:
     loose = {files[i] for i in gt.unpaired_pool}
     loose_grouped = sum(any(q in loose and q != p for q in groups[group_of[p]]) for p in loose if p in group_of)
     return {
-        "labeled_pairs": {"precision": tp / max(tp + fp, 1), "recall": tp / max(tp + fn, 1), "tp": tp, "fp": fp,
-                          "fn": fn},
+        "labeled_pairs": {"precision": tp / max(tp + fp, 1), "recall": tp / max(tp + fn, 1), "tp": tp, "fp": fp, "fn": fn},
         "labeled_folders": len(gt.groups),
         "folders_whole": sum(v == 1 for v in spread),
         "folders_split": {str(k): v for k, v in sorted(Counter(spread).items()) if k > 1},
@@ -167,8 +166,7 @@ def main() -> None:
     pdq = pdq_distances(files)
     with open(WORK_DIR / f"verify_knn_{args.model}.csv", newline="", encoding="utf-8") as f:
         rows = list(csv.DictReader(f))
-    max_noise = json.loads((WORK_DIR / f"verify_knn_{args.model}.json").read_text(encoding="utf-8"))["params"][
-        "max_noise"]
+    max_noise = json.loads((WORK_DIR / f"verify_knn_{args.model}.json").read_text(encoding="utf-8"))["params"]["max_noise"]
 
     weights: dict[tuple[str, str], float] = {}
     kinds: dict[tuple[str, str], str] = {}  # "pdq" / "sscd" (shortcut) / "verifier"
@@ -190,12 +188,15 @@ def main() -> None:
     groups.sort(key=len, reverse=True)
     s = score(groups, files)
     lp = s["labeled_pairs"]
-    print(f"\n## {args.method}: {len(groups)} groups of 2+ ({sum(map(len, groups))} images), "
-          f"largest {[len(g) for g in groups[:8]]}")
+    print(
+        f"\n## {args.method}: {len(groups)} groups of 2+ ({sum(map(len, groups))} images), largest {[len(g) for g in groups[:8]]}"
+    )
     print(f"  sizes: {dict(sorted(Counter(map(len, groups)).items()))}")
     print(f"  labeled pairs: precision {lp['precision']:.4f} recall {lp['recall']:.4f} (fp {lp['fp']}, fn {lp['fn']})")
-    print(f"  labeled folders: {s['folders_whole']}/{s['labeled_folders']} whole, split into n: "
-          f"{s['folders_split'] or '-'}; groups merging folders: {s['groups_merging_folders'] or '-'}")
+    print(
+        f"  labeled folders: {s['folders_whole']}/{s['labeled_folders']} whole, split into n: "
+        f"{s['folders_split'] or '-'}; groups merging folders: {s['groups_merging_folders'] or '-'}"
+    )
     print(f"  loose dups2 files grouped with another loose file: {s['loose_grouped_with_loose']}/{s['loose_files']}")
     # Each group with the evidence inside it, for the viewer's Groups page: [i, j, weight, kind], member indices.
     where = {p: (g, i) for g, members in enumerate(groups) for i, p in enumerate(members)}
@@ -203,8 +204,13 @@ def main() -> None:
     for (a, b), w in weights.items():
         if a in where and b in where and where[a][0] == where[b][0]:
             inside[where[a][0]].append([where[a][1], where[b][1], round(w, 3), kinds[(a, b)]])
-    result = {"args": vars(args), "max_noise": max_noise, "edges": dict(source), "score": s,
-              "groups": [{"members": m, "edges": e} for m, e in zip(groups, inside, strict=True)]}
+    result = {
+        "args": vars(args),
+        "max_noise": max_noise,
+        "edges": dict(source),
+        "score": s,
+        "groups": [{"members": m, "edges": e} for m, e in zip(groups, inside, strict=True)],
+    }
     (WORK_DIR / f"groups_{args.model}.json").write_text(json.dumps(result, indent=1), encoding="utf-8")
 
 

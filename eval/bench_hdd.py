@@ -33,13 +33,26 @@ from common import IMAGE_EXTS, WORK_DIR
 
 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
 kernel32.CreateFileW.restype = wintypes.HANDLE
-kernel32.CreateFileW.argtypes = [wintypes.LPCWSTR, wintypes.DWORD, wintypes.DWORD, wintypes.LPVOID,
-                                 wintypes.DWORD, wintypes.DWORD, wintypes.HANDLE]
-kernel32.ReadFile.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD,
-                              ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
-kernel32.DeviceIoControl.argtypes = [wintypes.HANDLE, wintypes.DWORD, wintypes.LPVOID, wintypes.DWORD,
-                                     wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD),
-                                     wintypes.LPVOID]
+kernel32.CreateFileW.argtypes = [
+    wintypes.LPCWSTR,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    wintypes.LPVOID,
+    wintypes.DWORD,
+    wintypes.DWORD,
+    wintypes.HANDLE,
+]
+kernel32.ReadFile.argtypes = [wintypes.HANDLE, wintypes.LPVOID, wintypes.DWORD, ctypes.POINTER(wintypes.DWORD), wintypes.LPVOID]
+kernel32.DeviceIoControl.argtypes = [
+    wintypes.HANDLE,
+    wintypes.DWORD,
+    wintypes.LPVOID,
+    wintypes.DWORD,
+    wintypes.LPVOID,
+    wintypes.DWORD,
+    ctypes.POINTER(wintypes.DWORD),
+    wintypes.LPVOID,
+]
 kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
 kernel32.VirtualAlloc.restype = wintypes.LPVOID
 kernel32.VirtualAlloc.argtypes = [wintypes.LPVOID, ctypes.c_size_t, wintypes.DWORD, wintypes.DWORD]
@@ -70,8 +83,9 @@ def cluster_map(path: str) -> tuple[int, int]:
         start_vcn = ctypes.c_longlong(0)
         out = ctypes.create_string_buffer(64 * 1024)
         returned = wintypes.DWORD()
-        ok = kernel32.DeviceIoControl(h, FSCTL_GET_RETRIEVAL_POINTERS, ctypes.byref(start_vcn), 8, out, len(out),
-                                      ctypes.byref(returned), None)
+        ok = kernel32.DeviceIoControl(
+            h, FSCTL_GET_RETRIEVAL_POINTERS, ctypes.byref(start_vcn), 8, out, len(out), ctypes.byref(returned), None
+        )
         if not ok and ctypes.get_last_error() != ERROR_MORE_DATA:
             return -1, 0
         extents = int.from_bytes(out.raw[0:4], "little")
@@ -136,8 +150,9 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--root", default=r"E:\Wow!™\_Pinterest_torresdark\pinterest")
     parser.add_argument("--stride", type=int, default=25)
-    parser.add_argument("--dense", type=int, default=0,
-                        help="instead of every --stride-th file, read blocks of this many consecutive files")
+    parser.add_argument(
+        "--dense", type=int, default=0, help="instead of every --stride-th file, read blocks of this many consecutive files"
+    )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
 
@@ -149,9 +164,9 @@ def main() -> None:
     if args.dense:
         # Contiguous blocks of the path order, spread over the folder: neighboring files, as in a full pass.
         step = len(files) // len(orders)
-        samples = {name: files[k * step:k * step + args.dense] for k, name in enumerate(orders)}
+        samples = {name: files[k * step : k * step + args.dense] for k, name in enumerate(orders)}
     else:
-        samples = {name: files[k::args.stride] for k, name in enumerate(orders)}
+        samples = {name: files[k :: args.stride] for k, name in enumerate(orders)}
     all_sampled = [p for paths in samples.values() for p in paths]
     meta = {}
     t = time.perf_counter()
@@ -193,14 +208,18 @@ def main() -> None:
             rng.shuffle(paths)
         depth = 8 if name.endswith("qd8") else 1
         seconds, total = timed_read(paths, depth)
-        row = {"order": name, "files": len(paths), "seconds": seconds, "files_s": len(paths) / seconds,
-               "mb_s": total / seconds / 1e6, "avg_kb": total / len(paths) / 1e3}
+        row = {
+            "order": name,
+            "files": len(paths),
+            "seconds": seconds,
+            "files_s": len(paths) / seconds,
+            "mb_s": total / seconds / 1e6,
+            "avg_kb": total / len(paths) / 1e3,
+        }
         rows.append(row)
-        print(f"  {name}: {row['files_s']:.0f} files/s, {row['mb_s']:.0f} MB/s ({len(paths)} files, {seconds:.0f} s)",
-              flush=True)
+        print(f"  {name}: {row['files_s']:.0f} files/s, {row['mb_s']:.0f} MB/s ({len(paths)} files, {seconds:.0f} s)", flush=True)
 
-    out = {"root": args.root, "files": len(files), "stride": args.stride, "dense": args.dense, "layout": layout,
-           "rows": rows}
+    out = {"root": args.root, "files": len(files), "stride": args.stride, "dense": args.dense, "layout": layout, "rows": rows}
     name = f"bench_hdd_dense{args.dense}.json" if args.dense else "bench_hdd.json"
     (WORK_DIR / name).write_text(json.dumps(out, indent=2), encoding="utf-8")
     print("\n| order | files/s | MB/s | days for 70M files at this rate |")
@@ -208,8 +227,10 @@ def main() -> None:
     for r in rows:
         print(f"| {r['order']} | {r['files_s']:.0f} | {r['mb_s']:.0f} | {70e6 / r['files_s'] / 86400:.1f} |")
     if not args.dense:
-        print(f"\nNote: each sample is 1 in {args.stride} files, so seeks are longer than in a full pass; compare "
-              "orders, not absolute rates.")
+        print(
+            f"\nNote: each sample is 1 in {args.stride} files, so seeks are longer than in a full pass; compare "
+            "orders, not absolute rates."
+        )
 
 
 if __name__ == "__main__":

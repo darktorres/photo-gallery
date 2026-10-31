@@ -46,13 +46,27 @@ def scene(width, height):
     cx, cy = 0.70 * width, 0.30 * height
     draw.ellipse([cx - sun, cy - sun, cx + sun, cy + sun], fill=(255, 205, 96, 255))
     draw.polygon(
-        [(0, 0.74 * height), (0.34 * width, 0.36 * height), (0.58 * width, 0.62 * height),
-         (0.80 * width, 0.42 * height), (width, 0.70 * height), (width, height), (0, height)],
+        [
+            (0, 0.74 * height),
+            (0.34 * width, 0.36 * height),
+            (0.58 * width, 0.62 * height),
+            (0.80 * width, 0.42 * height),
+            (width, 0.70 * height),
+            (width, height),
+            (0, height),
+        ],
         fill=(86, 124, 118, 255),
     )
     draw.polygon(
-        [(0, 0.90 * height), (0.26 * width, 0.62 * height), (0.50 * width, 0.86 * height),
-         (0.76 * width, 0.56 * height), (width, 0.90 * height), (width, height), (0, height)],
+        [
+            (0, 0.90 * height),
+            (0.26 * width, 0.62 * height),
+            (0.50 * width, 0.86 * height),
+            (0.76 * width, 0.56 * height),
+            (width, 0.90 * height),
+            (width, height),
+            (0, height),
+        ],
         fill=(38, 78, 68, 255),
     )
     return img

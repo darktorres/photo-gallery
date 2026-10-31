@@ -84,8 +84,7 @@ def main() -> None:
     def load(i: int) -> tuple:
         """On the prefetcher's threads: the original and its edited copies, at working resolution."""
         im = load_rgb(DATA_ROOT / files[sample[i]])
-        copies = {t: work_image(TRANSFORMS[edits[t]](im, random.Random(edit_seed(seed_of[edits[t]], i))))
-                  for t in todo[i]}
+        copies = {t: work_image(TRANSFORMS[edits[t]](im, random.Random(edit_seed(seed_of[edits[t]], i)))) for t in todo[i]}
         return work_image(im), copies
 
     prefetch = Prefetcher(load, todo, args.loaders, ahead=8)
@@ -96,8 +95,7 @@ def main() -> None:
         rel = files[sample[i]]
         for t_index in ts:
             name = edits[t_index]
-            row = {"id": f"{name}_{i}", "label": name, "path_a": rel, "path_b": f"{name}:{rel}",
-                   "slot": i * len(edits) + t_index}
+            row = {"id": f"{name}_{i}", "label": name, "path_a": rel, "path_b": f"{name}:{rel}", "slot": i * len(edits) + t_index}
             runner.submit(row, lambda o=original: o, partial(prepared, features, copies[t_index]))
     runner.close()
     prefetch.close()

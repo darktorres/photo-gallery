@@ -44,6 +44,7 @@ def load_rgb(path: Path | BinaryIO, draft: tuple[int, int] | None = None) -> Ima
             return flat
         return im.convert("RGB")
 
+
 # dups2/<NNN>/<files>: matched duplicate groups.
 # dups2/<file>: each file has a duplicate among the other loose files; not yet paired.
 GROUPS_DIR = "dups2"
@@ -57,9 +58,7 @@ def image_list() -> list[str]:
     if cache.exists():
         return cache.read_text(encoding="utf-8").splitlines()
     files = sorted(
-        p.relative_to(DATA_ROOT).as_posix()
-        for p in DATA_ROOT.rglob("*")
-        if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+        p.relative_to(DATA_ROOT).as_posix() for p in DATA_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
     )
     WORK_DIR.mkdir(parents=True, exist_ok=True)
     cache.write_text("\n".join(files), encoding="utf-8")

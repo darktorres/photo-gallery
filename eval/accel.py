@@ -40,7 +40,7 @@ TRT10_DIR = Path(os.environ.get("PG_TRT10_DIR", r"D:\PhotoGallery\tools\tensorrt
 CALIB_IMAGES = 512
 MAX_BATCH = 128
 OPT_BATCH = 64
-FP16_TINY = 2.0 ** -14  # smallest normal fp16 number
+FP16_TINY = 2.0**-14  # smallest normal fp16 number
 
 
 def _fold(conv: nn.Module, bn: nn.Module) -> nn.Conv2d:
@@ -97,8 +97,16 @@ def onnx_path(size: int, precision: str) -> Path:
     assert isinstance(sscd, SSCD)
     model = SSCDExport(sscd).eval().to(dtype)
     x = torch.zeros(2, 3, size, size, dtype=dtype)
-    torch.onnx.export(model, (x,), str(path), input_names=["x"], output_names=["y"], opset_version=17,
-                      dynamic_axes={"x": {0: "batch"}, "y": {0: "batch"}}, dynamo=False)
+    torch.onnx.export(
+        model,
+        (x,),
+        str(path),
+        input_names=["x"],
+        output_names=["y"],
+        opset_version=17,
+        dynamic_axes={"x": {0: "batch"}, "y": {0: "batch"}},
+        dynamo=False,
+    )
     return path
 
 
@@ -109,8 +117,9 @@ def calibration_batch(size: int) -> Path:
     if path.exists():
         return path
     evaluated = set(image_list())
-    pool = sorted(p.relative_to(DATA_ROOT).as_posix() for p in DATA_ROOT.rglob("*")
-                  if p.is_file() and p.suffix.lower() in IMAGE_EXTS)
+    pool = sorted(
+        p.relative_to(DATA_ROOT).as_posix() for p in DATA_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+    )
     pool = [p for p in pool if p.split("/")[0] not in (GROUPS_DIR, NEGATIVES_DIR) and p not in evaluated]
     random.Random(0).shuffle(pool)
     transform = build_transform(replace(SPECS["sscd"], size=size))
@@ -147,13 +156,13 @@ def _quantize_int8(src: Path, calib: Path, dst: Path, method: str = "entropy", e
     options = json.dumps({"calibration_method": method, "nodes_to_exclude": list(exclude) or None})
     env = {**os.environ, "PATH": str(Path(torch.__file__).parent / "lib") + os.pathsep + os.environ["PATH"]}
     try:
-        subprocess.run([str(QUANT_PYTHON), "-c", QUANTIZE_SCRIPT, str(work), str(calib), str(dst), options],
-                       check=True, env=env)
+        subprocess.run([str(QUANT_PYTHON), "-c", QUANTIZE_SCRIPT, str(work), str(calib), str(dst), options], check=True, env=env)
     finally:
         work.unlink(missing_ok=True)
 
 
 # --- TensorRT (this venv's TensorRT 11) ---
+
 
 def _trt_major() -> str:
     import tensorrt as trt
@@ -164,8 +173,9 @@ def _trt_major() -> str:
 def engine_path(size: int, precision: str) -> Path:
     path = TRT_DIR / f"sscd_{size}_{precision}_trt{_trt_major()}.plan"
     if not path.exists():
-        build_engine(onnx_path(size, precision), path,
-                     ((1, 3, size, size), (OPT_BATCH, 3, size, size), (MAX_BATCH, 3, size, size)))
+        build_engine(
+            onnx_path(size, precision), path, ((1, 3, size, size), (OPT_BATCH, 3, size, size), (MAX_BATCH, 3, size, size))
+        )
     return path
 
 
@@ -246,16 +256,23 @@ def disk_onnx_path(precision: str) -> Path:
     dtype = {"fp32": torch.float32, "fp16": torch.float16}[precision]
     unet = KF.DISK.from_pretrained("depth").unet.eval().to(dtype)
     x = torch.zeros(1, 3, 256, 192, dtype=dtype)
-    torch.onnx.export(unet, (x,), str(path), input_names=["x"], output_names=["y"], opset_version=17,
-                      dynamic_axes={"x": {2: "h", 3: "w"}, "y": {2: "h", 3: "w"}}, dynamo=False)
+    torch.onnx.export(
+        unet,
+        (x,),
+        str(path),
+        input_names=["x"],
+        output_names=["y"],
+        opset_version=17,
+        dynamic_axes={"x": {2: "h", 3: "w"}, "y": {2: "h", 3: "w"}},
+        dynamo=False,
+    )
     return path
 
 
 def disk_engine_path(precision: str) -> Path:
     path = TRT_DIR / f"disk_{precision}_trt{_trt_major()}.plan"
     if not path.exists():
-        build_engine(disk_onnx_path(precision), path,
-                     ((1, 3, 16, 16), DISK_OPT, (1, 3, DISK_MAX_SIDE, DISK_MAX_SIDE)))
+        build_engine(disk_onnx_path(precision), path, ((1, 3, 16, 16), DISK_OPT, (1, 3, DISK_MAX_SIDE, DISK_MAX_SIDE)))
     return path
 
 
@@ -268,6 +285,7 @@ class DiskUnetTRT(TRTRunner):
 
 # --- ONNX Runtime ---
 
+
 def _ort_session(path: Path, provider: str, precision: str, size: int):
     import onnxruntime as ort
 
@@ -276,11 +294,17 @@ def _ort_session(path: Path, provider: str, precision: str, size: int):
         cache = TRT_DIR / "ort"
         cache.mkdir(parents=True, exist_ok=True)
         shape = lambda b: f"x:{b}x3x{size}x{size}"  # noqa: E731
-        options = {"trt_engine_cache_enable": True, "trt_engine_cache_path": str(cache),
-                   "trt_timing_cache_enable": True, "trt_fp16_enable": precision != "fp32",
-                   "trt_int8_enable": precision == "int8", "trt_max_workspace_size": 2 << 30,
-                   "trt_profile_min_shapes": shape(1), "trt_profile_opt_shapes": shape(OPT_BATCH),
-                   "trt_profile_max_shapes": shape(MAX_BATCH)}
+        options = {
+            "trt_engine_cache_enable": True,
+            "trt_engine_cache_path": str(cache),
+            "trt_timing_cache_enable": True,
+            "trt_fp16_enable": precision != "fp32",
+            "trt_int8_enable": precision == "int8",
+            "trt_max_workspace_size": 2 << 30,
+            "trt_profile_min_shapes": shape(1),
+            "trt_profile_opt_shapes": shape(OPT_BATCH),
+            "trt_profile_max_shapes": shape(MAX_BATCH),
+        }
         providers = [("TensorrtExecutionProvider", options), "CUDAExecutionProvider"]
     else:
         providers = ["CUDAExecutionProvider"]
@@ -318,4 +342,3 @@ class ORTModule(nn.Module):
         torch.cuda.current_stream().synchronize()  # ONNX Runtime runs on its own stream
         self.session.run_with_iobinding(binding)
         return nn.functional.normalize(y.float(), dim=1)
-

@@ -1,4 +1,5 @@
-//! Scanner: walks a folder tree and records every image file's identity, size and mtime in the catalog.
+//! Scanner: walks a folder tree and records every media file's identity, size and mtime in the catalog (which
+//! files are media: `media::kind_of`).
 //!
 //! Directories are listed with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`, which returns each
 //! entry's NTFS file ID along with its size and times, without opening the files and without admin rights. The
@@ -13,6 +14,7 @@ use std::os::windows::ffi::OsStrExt;
 
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, ScannedFile};
+use pg_core::media;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -22,7 +24,6 @@ use windows_sys::Win32::Storage::FileSystem::{
 
 use crate::control::Control;
 
-const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jfif", "png", "gif", "webp", "bmp", "tif", "tiff"];
 /// Folders never descended into.
 const SKIP_DIRS: &[&str] = &["$RECYCLE.BIN", "System Volume Information", "_quarantine"];
 /// Files per catalog transaction.
@@ -134,10 +135,6 @@ impl Dir {
     }
 }
 
-fn is_image(name: &str) -> bool {
-    name.rsplit_once('.').is_some_and(|(_, ext)| IMAGE_EXTENSIONS.iter().any(|e| e.eq_ignore_ascii_case(ext)))
-}
-
 /// An absolute folder path without a trailing backslash (a drive root is `D:`).
 pub fn normalize_root(root: &str) -> Result<String> {
     // canonicalize gives the real case (a folder typed in lower case still matches the catalog's paths).
@@ -159,7 +156,7 @@ pub struct ScanStats {
     pub complete: bool,
 }
 
-/// Record the image files under `root` (from `normalize_root`); files it no longer holds are marked missing.
+/// Record the media files under `root` (from `normalize_root`); files it no longer holds are marked missing.
 pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStats> {
     let volume = Dir::open(root)?.volume_serial()?;
     let scan_id = catalog.begin_scan(root)?;
@@ -195,9 +192,9 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
                 }
                 continue;
             }
-            if !is_image(&e.name) {
+            let Some(kind) = media::kind_of(&e.name) else {
                 continue;
-            }
+            };
             let folder = match folder_id {
                 Some(id) => id,
                 None => *folder_id.insert(Catalog::folder_id(&tx, &dir)?),
@@ -206,7 +203,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
                 &tx,
                 scan_id,
                 folder,
-                &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, size: e.size, mtime: e.mtime },
+                &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, kind, size: e.size, mtime: e.mtime },
             )?;
             stats.files += 1;
             in_tx += 1;

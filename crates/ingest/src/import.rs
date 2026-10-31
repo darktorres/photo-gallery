@@ -3,10 +3,13 @@
 //! during the import (query-then-insert). Results are committed in batches: stopping at any point loses at most
 //! the current batch, and the next run picks up the rest from the catalog.
 
+use std::path::Path;
+
 use anyhow::Result;
 use pg_core::analyze::{Analysis, analyze};
 use pg_core::catalog::Catalog;
 use pg_core::decode::Decoder;
+use pg_core::media::Kind;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
 use pg_core::pdq_index::PdqIndex;
 
@@ -44,10 +47,10 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
             match result {
                 Ok(a) => {
                     Catalog::store_analysis(&tx, item, &a)?;
-                    if a.pdq.quality >= MIN_QUALITY {
+                    if let Some(px) = a.pixels.as_ref().filter(|px| px.pdq.quality >= MIN_QUALITY) {
                         // Best distance per neighbour over the 8 orientations of the new image.
                         let mut best: Vec<(i64, u32, usize)> = Vec::new();
-                        for (v, h) in a.pdq_dihedral.iter().enumerate() {
+                        for (v, h) in px.pdq_dihedral.iter().enumerate() {
                             for (other, d) in index.query(h, MATCH_DISTANCE) {
                                 match best.iter_mut().find(|b| b.0 == other) {
                                     Some(b) if d < b.1 => *b = (other, d, v),
@@ -62,7 +65,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                                 stats.pairs += 1;
                             }
                         }
-                        index.insert(item.id, &a.pdq.hash);
+                        index.insert(item.id, &px.pdq.hash);
                     }
                 }
                 Err(e) => {
@@ -76,14 +79,23 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         Ok(())
     };
 
+    let video = |i: usize| items[i].kind == Kind::Video;
     pipeline::run(
         &paths,
+        |i| !video(i),
         opts,
         ctl,
         Decoder::new,
-        |decoder, i, bytes| analyze(bytes, items[i].rotation, decoder),
+        |decoder, i, bytes| {
+            if video(i) {
+                pg_core::video::analyze(Path::new(&pipeline::long_path(&items[i].path)), items[i].rotation)
+            } else {
+                analyze(bytes, items[i].rotation, decoder)
+            }
+        },
         |i, result, len| {
-            ctl.add(len, result.is_err());
+            // A video is streamed by its worker: count its size as read.
+            ctl.add(if video(i) { items[i].size as usize } else { len }, result.is_err());
             batch.push((i, result));
             if batch.len() >= BATCH {
                 flush(&mut batch, &mut stats)?;

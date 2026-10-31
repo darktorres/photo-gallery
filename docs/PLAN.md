@@ -279,9 +279,19 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   that holds XMP, and read from them at import with a three-way sync. Turns are lossless and in the pixels where
   the format allows. Usage in `crates/README.md`. Reverse image search (Yandex) is deferred: its results must
   show inside the app, to be designed separately.
-- **Schema:** one baseline until the first release (pre-release changes edit it; older catalogs are refused
-  with "delete it and re-import"). The migration loop exists, tested with a synthetic step, with no
-  migrations yet; the first catalog worth keeping (M4 at the latest) starts real ones.
+- **Filters and videos (user request, 2026-10-30):** one query model (`query.rs`, JSON in views and the
+  session) replaces the rating filter. Its facets are type (image, animated, video), extension, rating, shape,
+  size, megapixels, duration, date taken (read at import), date modified, duplicates, import status and name.
+  Facets combine with AND, values within one with OR, and the type and extension facets show counts. Sorts are
+  a key and a direction. To make "video" a type, videos are now scanned, imported (streamed hash, probe, poster
+  frame), thumbnailed and played (Qt Multimedia). Animated GIF/APNG/WebP play too. Decoding uses our own
+  FFmpeg 9 (BtbN `lgpl-shared`, which has dav1d), shared with Qt's player in place of Qt's copy. On a GPU
+  without AV1 decoding the player decodes on the CPU (`crates/ui/src/video_decoding.rs`). Videos get no
+  near-duplicate detection, and their ratings and turns stay in the catalog (see Later).
+- **Schema (user decision, 2026-10-30):** one baseline, at version 1, until the first catalog worth keeping (M4
+  at the latest). Pre-release changes edit it in place, with no new version; catalogs made before are deleted
+  and re-imported. The migration loop exists, tested with a synthetic step, with no migrations yet; that first
+  kept catalog starts real ones.
 - **Open for M4:** the grid loads the whole result list (filtered and sorted in SQL) into memory. That is fine
   per folder, but "All folders" at 70M needs the paged model of §7.
 
@@ -305,6 +315,11 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - gallery-dl / Grabber integration.
 - Reverse image search with the results shown in the app (ImageRater opened Yandex in a browser).
 - Rating from a phone (ImageRater was a web app on the LAN): a small triage page served by `gallery.exe`.
+- More formats: HEIC/AVIF through libheif (dav1d, libde265), RAW through LibRaw (embedded previews, ratings in
+  `.xmp` sidecars), and JPEG XL through libjxl, all built through a pinned vcpkg manifest on D:.
+- Video near-duplicates (frame sampling, re-encodes, trims), and ratings written into video files without
+  rewriting gigabytes.
+- HDR video posters: tone mapping (PQ/HLG) instead of a plain conversion to RGB.
 
 ---
 

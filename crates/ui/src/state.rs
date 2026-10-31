@@ -3,7 +3,7 @@
 //! shared behind a mutex.
 
 use std::cell::RefCell;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
@@ -72,15 +72,18 @@ fn source(file_id: i64) -> Result<browse::FileSource> {
     with_catalog(|c| browse::file_source(&c.conn, file_id))?.context("unknown file")
 }
 
+pub(crate) fn long_path(path: &str) -> String {
+    if path.len() < 240 || path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}") }
+}
+
 fn read_original(path: &str) -> std::io::Result<Vec<u8>> {
-    let long = if path.len() < 240 || path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}") };
-    std::fs::read(long)
+    std::fs::read(long_path(path))
 }
 
 /// A JPEG thumbnail `height` px high: from the cache when one at least that high exists (the UI scales it down),
 /// otherwise made now from the original and cached. With the original offline, the best smaller one.
 pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
-    let browse::FileSource { path, mtime, rotation, .. } = source(file_id)?;
+    let browse::FileSource { path, mtime, rotation, poster_ms, .. } = source(file_id)?;
     let current = thumbs::Source { mtime, rotation };
     let cached = thumbs().lock().unwrap().get_nearest(file_id, height, current)?;
     if let Some((h, data)) = &cached
@@ -88,11 +91,19 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
     {
         return Ok(data.clone());
     }
-    let bytes = match read_original(&path) {
-        Ok(b) => b,
-        Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
+    let data = if let Some(at) = poster_ms {
+        // A video: its poster frame.
+        match pg_core::video::frame(Path::new(&long_path(&path)), at, rotation) {
+            Ok(frame) => with_codecs(|_, e| thumbs::encode(&frame, height as usize, e))?,
+            Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
+        }
+    } else {
+        let bytes = match read_original(&path) {
+            Ok(b) => b,
+            Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
+        };
+        with_codecs(|d, e| thumbs::make(&bytes, height as usize, rotation, d, e))?
     };
-    let data = with_codecs(|d, e| thumbs::make(&bytes, height as usize, rotation, d, e))?;
     let thumb = thumbs::Thumb { file_id, height, source: current, data: data.clone() };
     thumbs().lock().unwrap().put_batch(&[thumb], None)?;
     Ok(data)
@@ -172,10 +183,15 @@ fn decode(file_id: i64, src: &browse::FileSource, min: MinSize) -> Result<Arc<Rg
             return Ok(d.image.clone());
         }
     }
-    let bytes = read_original(&src.path).context("original unavailable")?;
-    let decoded = with_codecs(|d, _| d.decode(&bytes, min, src.rotation))?;
-    let full = (decoded.full_width as usize, decoded.full_height as usize);
-    let image = Arc::new(decoded.image);
+    let (full, image) = if let Some(at) = src.poster_ms {
+        // A video: its poster frame stands for it until it plays.
+        let frame = pg_core::video::frame(Path::new(&long_path(&src.path)), at, src.rotation)?;
+        ((frame.width, frame.height), Arc::new(frame))
+    } else {
+        let bytes = read_original(&src.path).context("original unavailable")?;
+        let decoded = with_codecs(|d, _| d.decode(&bytes, min, src.rotation))?;
+        ((decoded.full_width as usize, decoded.full_height as usize), Arc::new(decoded.image))
+    };
     *LAST_DECODE.lock().unwrap() =
         Some(Decoded { file_id, mtime: src.mtime, rotation: src.rotation, full, image: image.clone() });
     Ok(image)

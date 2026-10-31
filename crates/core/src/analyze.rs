@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 
-use crate::decode::{Decoder, Format, MinSize, Rgb};
+use crate::decode::{Decoder, MinSize, Rgb};
 use crate::pdq;
 use crate::resize::fit_within;
 
@@ -22,19 +22,35 @@ const THUMBHASH_SIDE: usize = 100;
 pub struct Analysis {
     /// BLAKE3 of the file bytes (tier 0a).
     pub file_hash: [u8; 32],
-    /// XXH3-128 of the upright decoded pixels (tier 0b), see [`pixel_hash`].
-    pub pixel_hash: [u8; 16],
-    pub format: Format,
+    /// The image format (`decode::Format::name`), or a video's codec (`video::Probe::codec`).
+    pub format: String,
+    /// EXIF orientation (1–8) the file asks for (a video's display matrix).
     pub orientation: u8,
     /// Upright full-size dimensions.
     pub width: u32,
     pub height: u32,
-    pub pdq: pdq::Pdq,
-    /// The 8 dihedral PDQ hashes, for the query side of tier 1. Not stored.
-    pub pdq_dihedral: [pdq::Hash; 8],
     pub thumbhash: Vec<u8>,
     /// The rating the file itself holds (metadata::read_rating), for the catalog's three-way sync.
     pub file_rating: Option<u8>,
+    /// Frames in the file (more than one: animated); an image's analysis is of the first.
+    pub frames: u32,
+    /// When it was taken (metadata::read_taken): wall-clock time, or a UTC instant when `taken_utc` (the catalog
+    /// stores it as this computer's wall-clock time).
+    pub taken: Option<i64>,
+    pub taken_utc: bool,
+    /// Tiers 0b and 1, for images. Videos have none (their near-duplicates are later work).
+    pub pixels: Option<PixelHashes>,
+    /// Videos: length, and where the frame for the ThumbHash and thumbnails is.
+    pub duration_ms: Option<i64>,
+    pub poster_ms: Option<i64>,
+}
+
+pub struct PixelHashes {
+    /// XXH3-128 of the upright decoded pixels (tier 0b), see [`pixel_hash`].
+    pub pixel_hash: [u8; 16],
+    pub pdq: pdq::Pdq,
+    /// The 8 dihedral PDQ hashes, for the query side of tier 1. Not stored.
+    pub pdq_dihedral: [pdq::Hash; 8],
 }
 
 pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
@@ -53,15 +69,18 @@ pub fn analyze(bytes: &[u8], turns: u8, decoder: &mut Decoder) -> Result<Analysi
 
     Ok(Analysis {
         file_hash,
-        pixel_hash: pixel_hash(img),
-        format: decoded.format,
+        format: decoded.format.name().to_string(),
         orientation: decoded.orientation,
         width: decoded.full_width,
         height: decoded.full_height,
-        pdq,
-        pdq_dihedral,
         thumbhash: thumbhash(img),
         file_rating: crate::metadata::read_rating(bytes, decoded.format),
+        frames: crate::metadata::frame_count(bytes, decoded.format),
+        taken: crate::metadata::read_taken(bytes, decoded.format),
+        taken_utc: false,
+        pixels: Some(PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral }),
+        duration_ms: None,
+        poster_ms: None,
     })
 }
 
@@ -77,7 +96,7 @@ pub fn pixel_hash(img: &Rgb) -> [u8; 16] {
     h.digest128().to_le_bytes()
 }
 
-fn thumbhash(img: &Rgb) -> Vec<u8> {
+pub(crate) fn thumbhash(img: &Rgb) -> Vec<u8> {
     let small = fit_within(img, THUMBHASH_SIDE);
     let small = small.as_ref().unwrap_or(img);
     let rgba: Vec<u8> = small.pixels.chunks_exact(3).flat_map(|p| [p[0], p[1], p[2], 255]).collect();

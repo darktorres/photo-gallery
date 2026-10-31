@@ -7,8 +7,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use pg_core::catalog::Catalog;
 
-/// FINDINGS "Shortcut and grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked.
-pub const DEFAULT_GROUP_DISTANCE: u32 = 22;
+pub const DEFAULT_GROUP_DISTANCE: u32 = pg_core::pdq::GROUP_DISTANCE;
 
 struct UnionFind(BTreeMap<i64, i64>);
 

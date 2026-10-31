@@ -129,7 +129,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             for root in roots {
                 let s = scan::scan(&mut catalog, &root, &ctl)?;
                 println!(
-                    "{root}: {} images in {} folders, {} now missing, {} unreadable folders ({:.1} s)",
+                    "{root}: {} files in {} folders, {} now missing, {} unreadable folders ({:.1} s)",
                     s.files,
                     s.folders,
                     s.missing,

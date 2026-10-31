@@ -10,15 +10,16 @@ use anyhow::{Context, Result, bail};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
+use crate::media::{self, Kind};
 use crate::pdq;
 
-/// Schema versioning (`PRAGMA user_version`). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
+/// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
 ///
 /// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit
-/// the baseline and catalogs are rebuilt; from then on the baseline is frozen and every change is a migration.
-/// Versions 1–3 were development catalogs from before the baseline: refused, to be deleted and re-imported.
-const BASELINE_VERSION: i64 = 4;
+/// the baseline in place, without a new version, and catalogs made before the edit are deleted and rebuilt. From
+/// then on the baseline is frozen and every change is a migration.
+const BASELINE_VERSION: i64 = 1;
 const MIGRATIONS: &[&str] = &[];
 
 const BASELINE: &str = r"
@@ -38,6 +39,8 @@ CREATE TABLE files(
     file_ref  INTEGER NOT NULL,  -- NTFS file ID; the low 48 bits are the MFT record number
     folder_id INTEGER NOT NULL REFERENCES folders(id),
     name      TEXT NOT NULL,
+    ext       TEXT NOT NULL,     -- the name's last extension, lower case (media::extension)
+    kind      TEXT NOT NULL,     -- media::Kind::key, from the extension: 'image' | 'video'
     size      INTEGER NOT NULL,
     mtime     INTEGER NOT NULL,  -- FILETIME: 100 ns since 1601 UTC
     last_scan INTEGER NOT NULL REFERENCES scans(id),
@@ -62,7 +65,11 @@ CREATE TABLE analysis(
     height      INTEGER,
     pdq         BLOB,              -- tier 1: 32 bytes, Meta's byte order
     pdq_quality INTEGER,
-    thumbhash   BLOB
+    thumbhash   BLOB,
+    frames      INTEGER,           -- frames in the file: > 1 is an animated image (or a video)
+    taken       INTEGER,           -- when it was taken, as wall-clock time (no time zone) in Unix seconds
+    duration_ms INTEGER,           -- videos
+    poster_ms   INTEGER            -- videos: where the frame for the ThumbHash and the thumbnails is
 );
 CREATE INDEX analysis_file_hash ON analysis(file_hash);
 CREATE INDEX analysis_pixel_hash ON analysis(pixel_hash);
@@ -114,13 +121,13 @@ CREATE TABLE file_writes(
     PRIMARY KEY(file_id, kind)
 );
 
--- Saved views (ImageRater's bookmarks): a folder, a rating filter and an order.
+-- Saved views (ImageRater's bookmarks): a folder, the filters and an order.
 CREATE TABLE views(
     name      TEXT PRIMARY KEY,
     folder    TEXT NOT NULL,     -- merged path (browse::merged_path); '' = all folders
     recursive INTEGER NOT NULL,
-    filter    TEXT NOT NULL,     -- browse::Filter::key
-    sort      TEXT NOT NULL      -- browse::Sort::key
+    query     TEXT NOT NULL,     -- query::Query as JSON
+    sort      TEXT NOT NULL      -- query::Sort as JSON
 );
 -- Where the user was (the open view and the selected file), restored at start.
 CREATE TABLE session(
@@ -163,11 +170,8 @@ fn migrate(conn: &Connection, baseline: &str, migrations: &[&str]) -> Result<()>
         step(baseline, BASELINE_VERSION).context("creating the catalog")?;
         version = BASELINE_VERSION;
     }
-    if version < BASELINE_VERSION {
-        bail!("made by a development build before the baseline schema (version {version}): delete it and re-import");
-    }
     if version > current {
-        bail!("schema version {version} is newer than this build's ({current})");
+        bail!("schema version {version}, which this build doesn't know (it has {current}): made by another build");
     }
     for (i, sql) in migrations.iter().enumerate().skip((version - BASELINE_VERSION) as usize) {
         let to = BASELINE_VERSION + i as i64 + 1;
@@ -181,6 +185,7 @@ pub struct ScannedFile<'a> {
     pub volume: u32,
     pub file_ref: u64,
     pub name: &'a str,
+    pub kind: Kind,
     pub size: u64,
     pub mtime: i64,
 }
@@ -193,6 +198,7 @@ pub struct WorkItem {
     pub mtime: i64,
     /// Catalog rotation (`files.rotation`), applied when decoding.
     pub rotation: u8,
+    pub kind: Kind,
 }
 
 pub struct Status {
@@ -216,6 +222,7 @@ impl Catalog {
         )?;
         migrate(&conn, BASELINE, MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
         conn.create_collation("PATH", crate::browse::path_collation)?;
+        crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
     }
 
@@ -241,13 +248,23 @@ impl Catalog {
     /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
     pub fn upsert_file(tx: &Transaction, scan: i64, folder: i64, f: &ScannedFile) -> Result<()> {
         tx.prepare_cached(
-            "INSERT INTO files(volume, file_ref, folder_id, name, size, mtime, last_scan)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+            "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
              ON CONFLICT(volume, file_ref) DO UPDATE SET
-                folder_id = excluded.folder_id, name = excluded.name, size = excluded.size,
-                mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0",
+                folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
+                size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0",
         )?
-        .execute(params![f.volume, f.file_ref as i64, folder, f.name, f.size as i64, f.mtime, scan])?;
+        .execute(params![
+            f.volume,
+            f.file_ref as i64,
+            folder,
+            f.name,
+            media::extension(f.name),
+            f.kind.key(),
+            f.size as i64,
+            f.mtime,
+            scan
+        ])?;
         Ok(())
     }
 
@@ -300,11 +317,18 @@ impl Catalog {
     pub fn pending_import(&self, retry_errors: bool) -> Result<Vec<WorkItem>> {
         let mut stmt = self.conn.prepare(&format!(
             "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
-                    f.rotation
+                    f.rotation, f.kind
              {PENDING} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
         ))?;
         let rows = stmt.query_map(params![IMPORT_VERSION, retry_errors], |r| {
-            Ok(WorkItem { id: r.get(0)?, path: r.get(1)?, size: r.get(2)?, mtime: r.get(3)?, rotation: r.get(4)? })
+            Ok(WorkItem {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                size: r.get(2)?,
+                mtime: r.get(3)?,
+                rotation: r.get(4)?,
+                kind: Kind::from_key(&r.get::<_, String>(5)?).unwrap_or(Kind::Image),
+            })
         })?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
@@ -328,8 +352,10 @@ impl Catalog {
         tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?.execute([item.id])?;
         tx.prepare_cached(
             "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, analyzed, error, file_hash, pixel_hash,
-                format, orientation, width, height, pdq, pdq_quality, thumbhash)
-             VALUES (?1, ?2, ?3, ?4, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                format, orientation, width, height, pdq, pdq_quality, thumbhash, frames, taken, duration_ms,
+                poster_ms)
+             VALUES (?1, ?2, ?3, ?4, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                     CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18)",
         )?
         .execute(params![
             item.id,
@@ -337,14 +363,19 @@ impl Catalog {
             item.size,
             item.mtime,
             &a.file_hash[..],
-            &a.pixel_hash[..],
-            a.format.name(),
+            a.pixels.as_ref().map(|p| p.pixel_hash.to_vec()),
+            a.format,
             a.orientation,
             a.width,
             a.height,
-            &a.pdq.hash.0[..],
-            a.pdq.quality,
+            a.pixels.as_ref().map(|p| p.pdq.hash.0.to_vec()),
+            a.pixels.as_ref().map(|p| p.pdq.quality),
             &a.thumbhash,
+            a.frames,
+            a.taken,
+            a.taken_utc,
+            a.duration_ms,
+            a.poster_ms,
         ])?;
         Self::sync_file_rating(tx, item.id, a.file_rating)
     }
@@ -507,14 +538,6 @@ mod tests {
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
     }
 
-    #[test]
-    fn refuses_pre_baseline_catalogs() {
-        let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch("CREATE TABLE files(id INTEGER); PRAGMA user_version = 3;").unwrap();
-        let err = migrate(&conn, BASELINE, MIGRATIONS).unwrap_err();
-        assert!(format!("{err:#}").contains("delete it and re-import"));
-    }
-
     /// A catalog with one file in it.
     fn one_file() -> (Catalog, i64) {
         let c = Catalog::open(Path::new(":memory:")).unwrap();
@@ -522,8 +545,8 @@ mod tests {
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
                  INSERT INTO folders(id, path) VALUES (1, 'D:\\x');
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, size, mtime, last_scan)
-                    VALUES (1, 1, 1, 1, 'a.jpg', 10, 100, 1);",
+                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
+                    VALUES (1, 1, 1, 1, 'a.jpg', 'jpg', 'image', 10, 100, 1);",
             )
             .unwrap();
         (c, 1)

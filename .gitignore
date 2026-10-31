@@ -5,3 +5,5 @@ __pycache__/
 *.npy
 # Written by cxx-qt-build on every UI build (points qmlls at target/).
 .qmlls.ini
+# Logs of the Playwright MCP browser.
+.playwright-mcp/

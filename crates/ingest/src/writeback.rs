@@ -24,6 +24,7 @@ use anyhow::{Context, Result, bail};
 use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Format, exif_orientation};
+use pg_core::media::Kind;
 use pg_core::metadata::{patch_orientation, read_rating};
 use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
@@ -204,12 +205,25 @@ impl Inner {
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {
         let conn = &catalog.conn;
-        let (path, format): (String, Option<String>) = conn.query_row(
-            "SELECT fo.path || '\\' || f.name, a.format FROM files f JOIN folders fo ON fo.id = f.folder_id
+        let (path, format, kind): (String, Option<String>, String) = conn.query_row(
+            "SELECT fo.path || '\\' || f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
              LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
             [job.file_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
+
+        // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog, and their ratings are
+        // never queued (browse::set_rating).
+        if kind == Kind::Video.key() && job.temp.is_none() {
+            if job.kind == "rotation" {
+                Catalog::add_catalog_rotation(conn, job.file_id, job.value.rem_euclid(4) as u8)?;
+                self.done(conn, job, job.value)?;
+                self.pixels_changed();
+            } else {
+                self.done(conn, job, job.value)?;
+            }
+            return Ok(());
+        }
 
         if let Some((temp, written)) = &job.temp {
             // Interrupted after the new content was complete: finish the copy. What the file held before is

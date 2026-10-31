@@ -5,6 +5,7 @@
 // A GUI program: no console window when started from Explorer. The command line attaches to its caller's console.
 #![windows_subsystem = "windows"]
 
+mod animation;
 mod app_icon;
 mod folders;
 mod gallery;
@@ -15,6 +16,7 @@ mod panic_log;
 mod providers;
 mod settings;
 mod state;
+mod video_decoding;
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -37,6 +39,7 @@ fn main() {
 }
 
 fn run_app() {
+    video_decoding::choose();
     let catalog_dir =
         std::env::var_os("PG_CATALOG_DIR").map_or_else(|| PathBuf::from(cli::DEFAULT_CATALOG_DIR), PathBuf::from);
     panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));

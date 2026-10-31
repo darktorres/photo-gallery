@@ -14,8 +14,9 @@ build profile="release":
     cargo build {{ if profile == "release" { "--release" } else { "" } }}
 
 # Build, then put the Qt DLLs and QML modules next to gallery.exe (needed once per profile, and after Qt updates).
+# Not Qt's FFmpeg: the build already put ours there (crates/README.md "Build").
 deploy profile="release": (build profile)
-    {{ qt }}/bin/windeployqt.exe --release --qmldir crates/ui/qml --no-translations target/{{ profile }}/gallery.exe
+    {{ qt }}/bin/windeployqt.exe --release --qmldir crates/ui/qml --no-translations --no-ffmpeg target/{{ profile }}/gallery.exe
 
 # Run the release build: the app, or a command (`just run scan D:\Photos`, `just run status`).
 run *args:

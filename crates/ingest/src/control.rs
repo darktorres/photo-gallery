@@ -38,7 +38,7 @@ impl Progress {
         let secs = self.started.elapsed().as_secs_f64().max(1e-3);
         if self.total == 0 {
             return format!(
-                "  {} {}: {} images, {:.0} images/s, {secs:.0} s",
+                "  {} {}: {} files, {:.0} files/s, {secs:.0} s",
                 self.phase,
                 self.detail,
                 self.done,

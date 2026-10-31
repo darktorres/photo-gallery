@@ -16,6 +16,7 @@ clap = { version = "4", features = ["derive", "env"] }
 crc32fast = "1"
 crossbeam-channel = "0.5"
 fast_image_resize = "6"
+ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-scaling"] }
 image = { version = "0.25", default-features = false, features = ["png", "gif", "webp", "bmp", "tiff", "jpeg"] }
 image-webp = "0.2"
 kamadak-exif = "0.6"
@@ -23,7 +24,7 @@ miniz_oxide = "0.8"
 pdqhash = "0.1"
 png = "0.18"
 quick-xml = "0.42"
-rusqlite = { version = "0.37", features = ["bundled", "collation"] }
+rusqlite = { version = "0.37", features = ["bundled", "collation", "functions"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 thumbhash = "0.1"
@@ -46,6 +47,11 @@ opt-level = 3
 
 [profile.release]
 debug = "line-tables-only"
+
+# Build scripts optimized in release too, as the dev profile's `package."*"` already does: unoptimized, bindgen
+# (ffmpeg-sys-next's build script) overflows the 1 MB stack of Windows' main thread.
+[profile.release.build-override]
+opt-level = 3
 
 # turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app (vendor/README.md).
 [patch.crates-io]

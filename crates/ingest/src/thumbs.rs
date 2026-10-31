@@ -56,10 +56,22 @@ pub fn run(
 
     pipeline::run(
         &paths,
+        |i| items[i].poster_ms.is_none(),
         opts,
         ctl,
         || Ok((Decoder::new()?, Compressor::new()?)),
-        |(decoder, encoder), i, bytes| thumbs::make(bytes, height as usize, items[i].source.rotation, decoder, encoder),
+        |(decoder, encoder), i, bytes| {
+            let item = &items[i];
+            match item.poster_ms {
+                // A video: its poster frame, read by FFmpeg itself.
+                Some(at) => {
+                    let path = pipeline::long_path(&item.path);
+                    let frame = pg_core::video::frame(Path::new(&path), at, item.source.rotation)?;
+                    thumbs::encode(&frame, height as usize, encoder)
+                }
+                None => thumbs::make(bytes, height as usize, item.source.rotation, decoder, encoder),
+            }
+        },
         |i, result, len| {
             ctl.add(len, result.is_err());
             match result {

@@ -1,0 +1,259 @@
+//! Videos, through FFmpeg (our own pinned build, which Qt Multimedia plays them with too: crates/README.md
+//! "Build"): what the import stores about one, and the frame its ThumbHash and thumbnails are made from.
+//!
+//! "Upright" is as players show it: the stream's display matrix (a phone's rotation tag) applied, then the
+//! catalog rotation. Near-duplicate detection doesn't cover videos yet (PLAN, later list): no pixel hash or PDQ.
+
+use std::io::Read;
+use std::path::Path;
+use std::sync::Once;
+
+use anyhow::{Context, Result, bail};
+use ffmpeg::format::Pixel;
+use ffmpeg::media::Type;
+use ffmpeg::util::frame;
+use ffmpeg_next as ffmpeg;
+
+use crate::analyze::{Analysis, thumbhash};
+use crate::decode::{Rgb, orient};
+use crate::metadata::{compose_orientation, orientation_from, parse_iso_date};
+
+/// The poster frame is this far into the video…
+const POSTER_FRACTION: f64 = 0.1;
+/// …but no later than this (a long video's first scene is usually its title).
+const POSTER_MAX_MS: i64 = 10_000;
+
+fn init() {
+    static INIT: Once = Once::new();
+    INIT.call_once(|| {
+        let _ = ffmpeg::init();
+        // Damaged files would otherwise print warnings on stderr; failures come back as errors.
+        ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Fatal);
+    });
+}
+
+/// What a video is, as far as the catalog cares.
+#[derive(Debug, PartialEq)]
+pub struct Probe {
+    /// Upright display size (display matrix applied, square pixels).
+    pub width: u32,
+    pub height: u32,
+    pub duration_ms: i64,
+    /// The video codec's short name (`h264`, `hevc`, `vp9`, `av1`…).
+    pub codec: String,
+    /// Frames in the stream (counted by the container, else estimated from the duration and frame rate).
+    pub frames: u32,
+    /// When it was recorded: `(seconds, is_utc)`. Phones' local-time tag gives wall-clock time; the standard
+    /// `creation_time` is UTC.
+    pub taken: Option<(i64, bool)>,
+    /// EXIF-style orientation (1–8) of the display matrix.
+    pub orientation: u8,
+}
+
+fn open(path: &Path) -> Result<ffmpeg::format::context::Input> {
+    init();
+    ffmpeg::format::input(path).with_context(|| format!("opening {}", path.display()))
+}
+
+/// The orientation (EXIF 1–8) that shows the stream as its display matrix asks. The matrix maps stored to shown
+/// pixels; FFmpeg's players apply the same (`-autorotate`).
+fn display_orientation(stream: &ffmpeg::format::stream::Stream) -> u8 {
+    let Some(sd) = stream.side_data().find(|sd| sd.kind() == ffmpeg::codec::packet::side_data::Type::DisplayMatrix)
+    else {
+        return 1;
+    };
+    let data = sd.data();
+    if data.len() < 36 {
+        return 1;
+    }
+    let m: Vec<f64> = data.chunks_exact(4).take(9).map(|c| i32::from_le_bytes(c.try_into().unwrap()) as f64).collect();
+    let (s0, s1) = (m[0].hypot(m[3]), m[1].hypot(m[4]));
+    if s0 == 0.0 || s1 == 0.0 {
+        return 1;
+    }
+    // av_display_rotation_get is the counterclockwise angle; turning clockwise by the opposite shows it upright.
+    let clockwise = (m[1] / s1).atan2(m[0] / s0).to_degrees();
+    let turns = ((clockwise / 90.0).round() as i64).rem_euclid(4) as u8;
+    // A negative determinant is a mirror (applied before the rotation, as FFmpeg's players do).
+    let mirrored = m[0] * m[4] - m[1] * m[3] < 0.0;
+    orientation_from(mirrored, turns)
+}
+
+pub fn probe(path: &Path) -> Result<Probe> {
+    let input = open(path)?;
+    let stream = input.streams().best(Type::Video).context("no video stream")?;
+    let params = stream.parameters();
+    let decoder = ffmpeg::codec::context::Context::from_parameters(params.clone())?.decoder().video()?;
+    let codec = params.id().name().to_string();
+    let (mut w, h) = (decoder.width(), decoder.height());
+    if w == 0 || h == 0 {
+        bail!("no picture size");
+    }
+    let sar = decoder.aspect_ratio();
+    if sar.numerator() > 0 && sar.denominator() > 0 && sar.numerator() != sar.denominator() {
+        w = (w as f64 * sar.numerator() as f64 / sar.denominator() as f64).round() as u32;
+    }
+    let orientation = display_orientation(&stream);
+    let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
+
+    let tb = stream.time_base();
+    let in_ms = |t: i64| t as f64 * tb.numerator() as f64 * 1000.0 / tb.denominator().max(1) as f64;
+    let duration_ms = if stream.duration() > 0 {
+        in_ms(stream.duration()) as i64
+    } else {
+        // The container's, in AV_TIME_BASE (µs).
+        input.duration().max(0) / 1000
+    };
+    let rate = stream.avg_frame_rate();
+    let frames = match stream.frames() {
+        n if n > 0 => n,
+        _ if rate.numerator() > 0 && rate.denominator() > 0 => {
+            (duration_ms as f64 / 1000.0 * rate.numerator() as f64 / rate.denominator() as f64).round() as i64
+        }
+        _ => 1,
+    };
+
+    let tag = |key: &str| {
+        input.metadata().get(key).map(str::to_string).or_else(|| stream.metadata().get(key).map(str::to_string))
+    };
+    let taken = tag("com.apple.quicktime.creationdate")
+        .and_then(|d| parse_iso_date(&d))
+        .map(|s| (s, false))
+        .or_else(|| tag("creation_time").and_then(|d| parse_iso_date(&d)).map(|s| (s, true)))
+        // Cameras and muxers without a clock write the container's epoch.
+        .filter(|&(s, _)| s > 0);
+
+    Ok(Probe { width, height, duration_ms, codec, frames: frames.clamp(1, u32::MAX as i64) as u32, taken, orientation })
+}
+
+/// Where the poster frame is in a video of this length.
+pub fn poster_ms(duration_ms: i64) -> i64 {
+    ((duration_ms as f64 * POSTER_FRACTION) as i64).clamp(0, POSTER_MAX_MS)
+}
+
+/// The frame shown at `at_ms` (the first at or after it; the last one if the video is shorter), upright and
+/// turned `turns` quarter turns clockwise further (the catalog rotation), as RGB at its display size.
+pub fn frame(path: &Path, at_ms: i64, turns: u8) -> Result<Rgb> {
+    let mut input = open(path)?;
+    let stream = input.streams().best(Type::Video).context("no video stream")?;
+    let index = stream.index();
+    let orientation = compose_orientation(display_orientation(&stream), turns);
+    let tb = stream.time_base();
+    let start = if stream.start_time() == ffmpeg::ffi::AV_NOPTS_VALUE { 0 } else { stream.start_time() };
+    let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?.decoder().video()?;
+    let ms = |t: i64| ((t - start) as f64 * tb.numerator() as f64 * 1000.0 / tb.denominator().max(1) as f64) as i64;
+    if at_ms > 0 {
+        // To the keyframe at or before it (AV_TIME_BASE = µs); decoding goes on from there. A file that can't
+        // seek is decoded from the start.
+        let _ = input.seek(at_ms * 1000, ..at_ms * 1000);
+    }
+
+    let mut decoded = frame::Video::empty();
+    let mut last: Option<frame::Video> = None;
+    let mut found = None;
+    'packets: for (s, packet) in input.packets() {
+        if s.index() != index {
+            continue;
+        }
+        // A damaged packet only loses its frames.
+        if decoder.send_packet(&packet).is_err() {
+            continue;
+        }
+        while decoder.receive_frame(&mut decoded).is_ok() {
+            let t = decoded.timestamp().map_or(at_ms, ms);
+            let f = std::mem::replace(&mut decoded, frame::Video::empty());
+            if t >= at_ms {
+                found = Some(f);
+                break 'packets;
+            }
+            last = Some(f);
+        }
+    }
+    if found.is_none() {
+        let _ = decoder.send_eof();
+        while decoder.receive_frame(&mut decoded).is_ok() {
+            last = Some(std::mem::replace(&mut decoded, frame::Video::empty()));
+        }
+    }
+    let f = found.or(last).context("no frame decoded")?;
+    Ok(orient(to_rgb(f)?, orientation))
+}
+
+/// RGB at the display size (non-square pixels made square), converted with the frame's own color matrix and
+/// range. HD video that doesn't say is taken as BT.709, as players do.
+fn to_rgb(mut src: frame::Video) -> Result<Rgb> {
+    use ffmpeg::util::color::{Range, Space};
+    let (w, h) = (src.width(), src.height());
+    let sar = src.aspect_ratio();
+    let dw = if sar.numerator() > 0 && sar.denominator() > 0 {
+        ((w as f64 * sar.numerator() as f64 / sar.denominator() as f64).round() as u32).max(1)
+    } else {
+        w
+    };
+    if src.color_space() == Space::Unspecified {
+        src.set_color_space(if h >= 720 { Space::BT709 } else { Space::BT470BG });
+    }
+    if src.color_range() == Range::Unspecified {
+        src.set_color_range(Range::MPEG);
+    }
+    let mut dst = frame::Video::new(Pixel::RGB24, dw, h);
+    dst.set_color_range(Range::JPEG);
+    // SAFETY: a fresh context is allocated, used once on two valid frames (src decoded, dst allocated above with
+    // its format and size) and freed before returning; sws_scale_frame reads src's color properties itself.
+    let ret = unsafe {
+        let mut ctx = ffmpeg::ffi::sws_alloc_context();
+        if ctx.is_null() {
+            bail!("sws_alloc_context failed");
+        }
+        let ret = ffmpeg::ffi::sws_scale_frame(ctx, dst.as_mut_ptr(), src.as_ptr());
+        ffmpeg::ffi::sws_free_context(&mut ctx);
+        ret
+    };
+    if ret < 0 {
+        bail!("converting the frame to RGB: {}", ffmpeg::Error::from(ret));
+    }
+    let (stride, data) = (dst.stride(0), dst.data(0));
+    let row = dw as usize * 3;
+    let pixels = (0..h as usize).flat_map(|y| &data[y * stride..y * stride + row]).copied().collect();
+    Ok(Rgb { width: dw as usize, height: h as usize, pixels })
+}
+
+/// BLAKE3 of a file, streamed (videos aren't read into memory whole).
+pub fn file_hash(path: &Path) -> Result<[u8; 32]> {
+    let mut file = std::fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
+    let mut hasher = blake3::Hasher::new();
+    let mut buf = vec![0u8; 1 << 20];
+    loop {
+        let n = file.read(&mut buf)?;
+        if n == 0 {
+            break;
+        }
+        hasher.update(&buf[..n]);
+    }
+    Ok(*hasher.finalize().as_bytes())
+}
+
+/// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
+/// of the poster frame. `turns` is the catalog rotation.
+pub fn analyze(path: &Path, turns: u8) -> Result<Analysis> {
+    let file_hash = file_hash(path)?;
+    let p = probe(path)?;
+    let poster = poster_ms(p.duration_ms);
+    let img = frame(path, poster, turns)?;
+    let (width, height) = if turns % 2 == 1 { (p.height, p.width) } else { (p.width, p.height) };
+    Ok(Analysis {
+        file_hash,
+        format: p.codec,
+        orientation: p.orientation,
+        width,
+        height,
+        thumbhash: thumbhash(&img),
+        file_rating: None,
+        frames: p.frames,
+        taken: p.taken.map(|t| t.0),
+        taken_utc: p.taken.is_some_and(|t| t.1),
+        pixels: None,
+        duration_ms: Some(p.duration_ms),
+        poster_ms: Some(poster),
+    })
+}

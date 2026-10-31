@@ -15,6 +15,8 @@ pub mod qobject {
         type QVariant = cxx_qt_lib::QVariant;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qurl.h");
+        type QUrl = cxx_qt_lib::QUrl;
     }
 
     extern "RustQt" {
@@ -50,18 +52,23 @@ pub mod qobject {
         #[cxx_name = "endResetModel"]
         fn end_reset_model(self: Pin<&mut GalleryModel>);
 
-        /// Show the files of a merged folder (`""` = everything), with or without its subfolders, that pass a
-        /// rating filter (`browse::Filter` key: all, unrated, rated, 1–5), in an order (`browse::Sort` key: name,
-        /// size, date).
+        /// Show the files of a merged folder (`""` = everything), with or without its subfolders, that pass the
+        /// filters (`query::Query` as JSON), in an order (`query::Sort` as JSON).
         #[qinvokable]
         #[cxx_name = "openFolder"]
         fn open_folder(
             self: Pin<&mut GalleryModel>,
             merged: &QString,
             recursive: bool,
-            filter: &QString,
+            query: &QString,
             sort: &QString,
         );
+
+        /// What the filter bar shows for a folder and filters (`browse::Facets`), as JSON: `total`, `matching`,
+        /// `types` (type → count) and `exts` (`[extension, count]`, most first). JSON keeps nested data out of
+        /// cxx-qt's map types, which the compiled QML can't take.
+        #[qinvokable]
+        fn facets(self: &GalleryModel, merged: &QString, recursive: bool, query: &QString) -> QString;
 
         /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
         #[qinvokable]
@@ -125,6 +132,32 @@ pub mod qobject {
         #[qinvokable]
         fn path(self: &GalleryModel, item: i32) -> QString;
 
+        /// What the grid marks on a thumbnail besides its rating: a video's length (`▶ 1:23`), the format of an
+        /// animated image (`GIF`, `APNG`, `WEBP`), or nothing.
+        #[qinvokable]
+        fn badge(self: &GalleryModel, item: i32) -> QString;
+
+        /// `image`, `animated` or `video` (`query::MediaType`): what the viewer shows it with.
+        #[qinvokable]
+        #[cxx_name = "mediaType"]
+        fn media_type(self: &GalleryModel, item: i32) -> QString;
+
+        /// The file as a URL, for Qt's player (videos).
+        #[qinvokable]
+        #[cxx_name = "fileUrl"]
+        fn file_url(self: &GalleryModel, item: i32) -> QUrl;
+
+        /// The file's path (for `AnimationPlayer`), or `""`.
+        #[qinvokable]
+        #[cxx_name = "filePath"]
+        fn file_path(self: &GalleryModel, item: i32) -> QString;
+
+        /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the
+        /// turns not yet written. (A video's own rotation tag is applied by the player.)
+        #[qinvokable]
+        #[cxx_name = "playerTurns"]
+        fn player_turns(self: &GalleryModel, item: i32) -> i32;
+
         /// One line for the status bar: path, dimensions, file size, and where the rating is kept if not in the
         /// file (the QML adds the rating's symbol).
         #[qinvokable]
@@ -143,9 +176,11 @@ pub mod qobject {
 use core::pin::Pin;
 
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_core::browse::{self, Filter, Item, Sort};
+use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QUrl, QVariant};
+use pg_core::browse::{self, Item};
 use pg_core::layout::{self, Row};
+use pg_core::media::{self, Kind};
+use pg_core::query::{MediaType, Query, Sort};
 
 use crate::{library, settings, state};
 
@@ -163,6 +198,14 @@ pub struct GalleryRust {
     spacing: f64,
     width: f64,
     row_height: f64,
+}
+
+fn media_type(i: &Item) -> MediaType {
+    match i.kind {
+        Kind::Video => MediaType::Video,
+        Kind::Image if i.animated => MediaType::Animated,
+        Kind::Image => MediaType::Image,
+    }
 }
 
 impl GalleryRust {
@@ -206,10 +249,10 @@ impl qobject::GalleryModel {
         self.rows.len() as i32
     }
 
-    fn open_folder(mut self: Pin<&mut Self>, merged: &QString, recursive: bool, filter: &QString, sort: &QString) {
+    fn open_folder(mut self: Pin<&mut Self>, merged: &QString, recursive: bool, query: &QString, sort: &QString) {
         let path = merged.to_string();
-        let (filter, sort) = (Filter::from_key(&filter.to_string()), Sort::from_key(&sort.to_string()));
-        let items = state::with_catalog(|c| browse::list_files(&c.conn, &path, recursive, filter, sort))
+        let (query, sort) = (Query::from_json(&query.to_string()), Sort::from_json(&sort.to_string()));
+        let items = state::with_catalog(|c| browse::list_files(&c.conn, &path, recursive, &query, sort))
             .unwrap_or_else(|e| {
                 eprintln!("listing {path}: {e:#}");
                 Vec::new()
@@ -220,6 +263,19 @@ impl qobject::GalleryModel {
         self.as_mut().set_folder(merged.clone());
         let (w, h, s) = (self.width, self.row_height, self.spacing);
         self.relayout(w, h, s);
+    }
+
+    fn facets(&self, merged: &QString, recursive: bool, query: &QString) -> QString {
+        let path = merged.to_string();
+        let query = Query::from_json(&query.to_string());
+        let f = state::with_catalog(|c| browse::facets(&c.conn, &path, recursive, &query)).unwrap_or_else(|e| {
+            eprintln!("facets of {path}: {e:#}");
+            browse::Facets::default()
+        });
+        let types: serde_json::Map<String, serde_json::Value> =
+            f.types.iter().map(|(t, n)| (t.key().to_string(), (*n).into())).collect();
+        let json = serde_json::json!({ "total": f.total, "matching": f.matching, "types": types, "exts": f.exts });
+        QString::from(&json.to_string())
     }
 
     fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
@@ -345,6 +401,44 @@ impl qobject::GalleryModel {
 
     fn path(&self, item: i32) -> QString {
         self.item(item).map_or_else(QString::default, |i| QString::from(&i.path))
+    }
+
+    fn badge(&self, item: i32) -> QString {
+        let Some(i) = self.item(item) else { return QString::default() };
+        let text = match media_type(i) {
+            MediaType::Video => match i.duration_ms {
+                Some(ms) => {
+                    let s = (ms + 500) / 1000;
+                    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
+                    if h > 0 { format!("▶ {h}:{m:02}:{s:02}") } else { format!("▶ {m}:{s:02}") }
+                }
+                None => "▶".to_string(),
+            },
+            MediaType::Animated => match media::extension(&i.path).as_str() {
+                "png" => "APNG".to_string(),
+                ext => ext.to_uppercase(),
+            },
+            MediaType::Image => String::new(),
+        };
+        QString::from(&text)
+    }
+
+    fn media_type(&self, item: i32) -> QString {
+        QString::from(self.item(item).map_or("image", |i| media_type(i).key()))
+    }
+
+    fn file_url(&self, item: i32) -> QUrl {
+        // fromUserInput makes a local path a file URL, escaping what URLs reserve (names here contain '#').
+        self.item(item)
+            .map_or_else(QUrl::default, |i| QUrl::from_user_input(&QString::from(&i.path), &QString::default()))
+    }
+
+    fn file_path(&self, item: i32) -> QString {
+        self.item(item).map_or_else(QString::default, |i| QString::from(&i.path))
+    }
+
+    fn player_turns(&self, item: i32) -> i32 {
+        self.item(item).map_or(0, |i| ((i.rotation + i.pending_turns) % 4) as i32)
     }
 
     fn info(&self, item: i32) -> QString {

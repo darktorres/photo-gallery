@@ -5,10 +5,12 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params, params_from_iter};
 
 use crate::decode::Format;
+use crate::media::Kind;
 use crate::metadata;
+use crate::query::{Facet, MediaType, Query, Sort};
 
 /// A folder's path without its drive: `E:\pinterest\a` and `D:\pinterest\a` are both `pinterest\a`; a drive
 /// root is the empty path. Other paths (UNC) are kept whole.
@@ -112,6 +114,11 @@ pub struct Item {
     pub rating_in_file: bool,
     /// Quarter turns clockwise asked for but not yet written (`queue_rotation`): the grid shows them already.
     pub pending_turns: u8,
+    pub kind: Kind,
+    /// More than one frame (known after the import).
+    pub animated: bool,
+    /// Videos, once imported.
+    pub duration_ms: Option<i64>,
 }
 
 impl Item {
@@ -119,78 +126,6 @@ impl Item {
     pub fn aspect(&self) -> f64 {
         let (w, h) = if self.pending_turns % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) };
         if w > 0 && h > 0 { w as f64 / h as f64 } else { 1.0 }
-    }
-}
-
-/// Which files a view shows, by rating (ImageRater's Unrated / Rated / N-star searches).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Filter {
-    All,
-    Unrated,
-    Rated,
-    Exactly(u8),
-}
-
-impl Filter {
-    pub fn key(self) -> String {
-        match self {
-            Filter::All => "all".into(),
-            Filter::Unrated => "unrated".into(),
-            Filter::Rated => "rated".into(),
-            Filter::Exactly(n) => n.to_string(),
-        }
-    }
-
-    pub fn from_key(key: &str) -> Filter {
-        match key {
-            "unrated" => Filter::Unrated,
-            "rated" => Filter::Rated,
-            k => k.parse().ok().filter(|n| (1..=5).contains(n)).map_or(Filter::All, Filter::Exactly),
-        }
-    }
-
-    fn sql(self) -> String {
-        match self {
-            Filter::All => "1".into(),
-            Filter::Unrated => "r.rating IS NULL".into(),
-            Filter::Rated => "r.rating IS NOT NULL".into(),
-            Filter::Exactly(n) => format!("r.rating = {}", n.clamp(1, 5)),
-        }
-    }
-}
-
-/// The order of a view. Name keeps folders together (in path order); the others sort across folders, as
-/// ImageRater's triage did (largest first).
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Sort {
-    Name,
-    Largest,
-    Newest,
-}
-
-impl Sort {
-    pub fn key(self) -> &'static str {
-        match self {
-            Sort::Name => "name",
-            Sort::Largest => "size",
-            Sort::Newest => "date",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Sort {
-        match key {
-            "size" => Sort::Largest,
-            "date" => Sort::Newest,
-            _ => Sort::Name,
-        }
-    }
-
-    fn sql(self) -> &'static str {
-        match self {
-            Sort::Name => "v.ord, f.name COLLATE PATH",
-            Sort::Largest => "f.size DESC, v.ord, f.name COLLATE PATH",
-            Sort::Newest => "f.mtime DESC, v.ord, f.name COLLATE PATH",
-        }
     }
 }
 
@@ -202,7 +137,8 @@ pub fn path_collation(a: &str, b: &str) -> std::cmp::Ordering {
 
 /// What an `Item` is read from (`item_from_row`), with `f` the file.
 const ITEM_COLUMNS: &str = "f.id, fo.path || '\\' || f.name, f.mtime, f.size, f.rotation, coalesce(a.width, 0),
-    coalesce(a.height, 0), coalesce(r.rating, 0), a.format, coalesce(w.value, 0)";
+    coalesce(a.height, 0), coalesce(r.rating, 0), a.format, coalesce(w.value, 0), f.kind, coalesce(a.frames, 1),
+    a.duration_ms";
 const ITEM_JOINS: &str = "JOIN folders fo ON fo.id = f.folder_id
     LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
@@ -210,6 +146,7 @@ const ITEM_JOINS: &str = "JOIN folders fo ON fo.id = f.folder_id
 
 fn item_from_row(r: &rusqlite::Row) -> rusqlite::Result<Item> {
     let format: Option<String> = r.get(8)?;
+    let kind = Kind::from_key(&r.get::<_, String>(10)?).unwrap_or(Kind::Image);
     Ok(Item {
         id: r.get(0)?,
         path: r.get(1)?,
@@ -219,8 +156,13 @@ fn item_from_row(r: &rusqlite::Row) -> rusqlite::Result<Item> {
         width: r.get(5)?,
         height: r.get(6)?,
         rating: r.get(7)?,
-        rating_in_file: format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
+        // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
+        rating_in_file: kind == Kind::Image
+            && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
         pending_turns: r.get(9)?,
+        kind,
+        animated: r.get::<_, i64>(11)? > 1,
+        duration_ms: r.get(12)?,
     })
 }
 
@@ -232,10 +174,15 @@ pub fn reload_item(conn: &Connection, file_id: i64) -> Result<Option<Item>> {
         .optional()?)
 }
 
-/// The present files of a merged folder (on every drive), optionally with everything below it, that pass the
-/// filter, in the given order. The folder match is done here (merged paths are a Rust function); filtering and
-/// sorting are SQL.
-pub fn list_files(conn: &Connection, merged: &str, recursive: bool, filter: Filter, sort: Sort) -> Result<Vec<Item>> {
+/// Run `f` with `temp.view_folders` holding the folders of a merged folder (on every drive), optionally with
+/// everything below it, each with its rank in path order (`ord`; the drives of one merged folder share it). The
+/// folder match is done here, as merged paths are a Rust function; the rest is SQL.
+fn in_scope<T>(
+    conn: &Connection,
+    merged: &str,
+    recursive: bool,
+    f: impl FnOnce(&Transaction) -> Result<T>,
+) -> Result<T> {
     let merged = merged.to_lowercase();
     let mut folders: Vec<(String, i64)> = conn
         .prepare("SELECT path, id FROM folders")?
@@ -251,7 +198,6 @@ pub fn list_files(conn: &Connection, merged: &str, recursive: bool, filter: Filt
         .collect();
     folders.sort();
 
-    // Folders with the same merged path (one per drive) share a rank, so they list as one.
     let tx = conn.unchecked_transaction()?;
     tx.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS view_folders(id INTEGER PRIMARY KEY, ord INTEGER NOT NULL);
@@ -267,16 +213,65 @@ pub fn list_files(conn: &Connection, merged: &str, recursive: bool, filter: Filt
             insert.execute(params![id, ord])?;
         }
     }
-    let sql = format!(
-        "SELECT {ITEM_COLUMNS} FROM temp.view_folders v JOIN files f ON f.folder_id = v.id {ITEM_JOINS}
-         WHERE f.missing = 0 AND {}
-         ORDER BY {}",
-        filter.sql(),
-        sort.sql()
-    );
-    let items = tx.prepare(&sql)?.query_map([], item_from_row)?.collect::<rusqlite::Result<Vec<_>>>()?;
+    let out = f(&tx)?;
     tx.commit()?;
-    Ok(items)
+    Ok(out)
+}
+
+/// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
+pub fn list_files(conn: &Connection, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Item>> {
+    in_scope(conn, merged, recursive, |tx| {
+        let cond = query.condition();
+        let sql = format!(
+            "SELECT {ITEM_COLUMNS} FROM temp.view_folders v JOIN files f ON f.folder_id = v.id {ITEM_JOINS}
+             WHERE f.missing = 0 AND {}
+             ORDER BY {}",
+            cond.sql,
+            sort.sql()
+        );
+        let mut stmt = tx.prepare(&sql)?;
+        let items = stmt.query_map(params_from_iter(cond.params), item_from_row)?;
+        Ok(items.collect::<rusqlite::Result<Vec<_>>>()?)
+    })
+}
+
+/// What the filter bar shows next to its choices, for a view's folder.
+#[derive(Default, Debug, PartialEq)]
+pub struct Facets {
+    /// Present files in the folder, unfiltered.
+    pub total: i64,
+    /// Those the query passes.
+    pub matching: i64,
+    /// Per type and per extension (most files first): how many files choosing it would show, given the other
+    /// facets.
+    pub types: Vec<(MediaType, i64)>,
+    pub exts: Vec<(String, i64)>,
+}
+
+pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
+    in_scope(conn, merged, recursive, |tx| {
+        let from = format!("FROM temp.view_folders v JOIN files f ON f.folder_id = v.id {ITEM_JOINS}");
+        let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
+            let cond = query.condition_without(skip);
+            let sql = format!("SELECT {select}, count(*) {from} WHERE f.missing = 0 AND {} {group}", cond.sql);
+            let mut stmt = tx.prepare(&sql)?;
+            let rows = stmt.query_map(params_from_iter(cond.params), |r| Ok((r.get(0)?, r.get(1)?)))?;
+            Ok(rows.collect::<rusqlite::Result<_>>()?)
+        };
+        let total: i64 = tx.query_row(
+            "SELECT count(*) FROM temp.view_folders v JOIN files f ON f.folder_id = v.id WHERE f.missing = 0",
+            [],
+            |r| r.get(0),
+        )?;
+        let matching = count(None, "''", "")?.first().map_or(0, |r| r.1);
+        let mut types: Vec<(MediaType, i64)> = count(Some(Facet::Types), MediaType::CASE, "GROUP BY 1")?
+            .into_iter()
+            .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
+            .collect();
+        types.sort();
+        let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
+        Ok(Facets { total, matching, types, exts })
+    })
 }
 
 /// Rate a file: 1–5, or 0 to clear. The catalog changes at once. With `write_back`, the rating is also queued
@@ -348,42 +343,50 @@ pub struct FileSource {
     pub mtime: i64,
     pub rotation: u8,
     pub thumbhash: Option<Vec<u8>>,
+    /// For a video, the time of the frame that stands for it (`video::poster_ms`; 0 before the import).
+    pub poster_ms: Option<i64>,
 }
 
 pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>> {
     Ok(conn
         .prepare_cached(
-            "SELECT fo.path || '\\' || f.name, f.mtime, f.rotation, a.thumbhash FROM files f
+            "SELECT fo.path || '\\' || f.name, f.mtime, f.rotation, a.thumbhash, f.kind, a.poster_ms FROM files f
              JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id
              WHERE f.id = ?1",
         )?
         .query_row([file_id], |r| {
-            Ok(FileSource { path: r.get(0)?, mtime: r.get(1)?, rotation: r.get(2)?, thumbhash: r.get(3)? })
+            let video = r.get::<_, String>(4)? == Kind::Video.key();
+            Ok(FileSource {
+                path: r.get(0)?,
+                mtime: r.get(1)?,
+                rotation: r.get(2)?,
+                thumbhash: r.get(3)?,
+                poster_ms: if video { Some(r.get::<_, Option<i64>>(5)?.unwrap_or(0)) } else { None },
+            })
         })
         .optional()?)
 }
 
-/// A saved view (ImageRater's bookmarks): where, which ratings, in what order.
-#[derive(Clone, PartialEq, Eq, Debug)]
+/// A saved view (ImageRater's bookmarks): where, which files, in what order.
+#[derive(Clone, PartialEq, Debug)]
 pub struct View {
     pub name: String,
     /// Merged path; `""` for all folders.
     pub folder: String,
     pub recursive: bool,
-    pub filter: Filter,
+    pub query: Query,
     pub sort: Sort,
 }
 
 pub fn views(conn: &Connection) -> Result<Vec<View>> {
-    let mut stmt =
-        conn.prepare("SELECT name, folder, recursive, filter, sort FROM views ORDER BY name COLLATE PATH")?;
+    let mut stmt = conn.prepare("SELECT name, folder, recursive, query, sort FROM views ORDER BY name COLLATE PATH")?;
     let rows = stmt.query_map([], |r| {
         Ok(View {
             name: r.get(0)?,
             folder: r.get(1)?,
             recursive: r.get(2)?,
-            filter: Filter::from_key(&r.get::<_, String>(3)?),
-            sort: Sort::from_key(&r.get::<_, String>(4)?),
+            query: Query::from_json(&r.get::<_, String>(3)?),
+            sort: Sort::from_json(&r.get::<_, String>(4)?),
         })
     })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
@@ -392,8 +395,8 @@ pub fn views(conn: &Connection) -> Result<Vec<View>> {
 /// Save a view, replacing one of the same name.
 pub fn save_view(conn: &Connection, v: &View) -> Result<()> {
     conn.execute(
-        "INSERT OR REPLACE INTO views(name, folder, recursive, filter, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![v.name, v.folder, v.recursive, v.filter.key(), v.sort.key()],
+        "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
+        params![v.name, v.folder, v.recursive, v.query.to_json(), v.sort.to_json()],
     )?;
     Ok(())
 }
@@ -416,6 +419,7 @@ pub fn session_set(conn: &Connection, key: &str, value: &str) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::query::{DateRange, Orientation, Range, SortKey, Status};
 
     #[test]
     fn merged_paths() {
@@ -442,9 +446,9 @@ mod tests {
         ] {
             c.conn
                 .execute(
-                    "INSERT INTO files(id, volume, file_ref, folder_id, name, size, mtime, last_scan)
-                     VALUES (?1, 1, ?1, ?2, ?3, ?4, ?5, 1)",
-                    params![id, folder, name, size, mtime],
+                    "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
+                     VALUES (?1, 1, ?1, ?2, ?3, ?4, 'image', ?5, ?6, 1)",
+                    params![id, folder, name, crate::media::extension(name), size, mtime],
                 )
                 .unwrap();
             c.conn
@@ -459,26 +463,143 @@ mod tests {
         c
     }
 
-    fn ids(c: &crate::catalog::Catalog, folder: &str, recursive: bool, filter: Filter, sort: Sort) -> Vec<i64> {
-        list_files(&c.conn, folder, recursive, filter, sort).unwrap().iter().map(|i| i.id).collect()
+    fn ids(c: &crate::catalog::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
+        list_files(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|i| i.id).collect()
+    }
+
+    fn by(key: SortKey, descending: bool) -> Sort {
+        Sort { key, descending }
     }
 
     #[test]
-    fn filters_and_sorts() {
+    fn ratings_and_orders() {
         let c = library();
+        let all = Query::default();
+        let ratings = |r: &[u8]| Query { ratings: r.to_vec(), ..Query::default() };
         // Name: both drives' "p" as one folder, by name (Unicode case-insensitive: Ä after b), then "p\sub".
-        assert_eq!(ids(&c, "p", true, Filter::All, Sort::Name), [2, 1, 3, 4]);
-        assert_eq!(ids(&c, "p", false, Filter::All, Sort::Name), [2, 1, 3]);
-        assert_eq!(ids(&c, "", true, Filter::All, Sort::Largest), [4, 1, 3, 2]);
-        assert_eq!(ids(&c, "", true, Filter::All, Sort::Newest), [2, 4, 1, 3]);
-        assert_eq!(ids(&c, "", true, Filter::Unrated, Sort::Largest), [4, 2]);
-        assert_eq!(ids(&c, "", true, Filter::Rated, Sort::Name), [1, 3]);
-        assert_eq!(ids(&c, "", true, Filter::Exactly(2), Sort::Name), [3]);
-        for f in [Filter::All, Filter::Unrated, Filter::Rated, Filter::Exactly(5)] {
-            assert_eq!(Filter::from_key(&f.key()), f);
-        }
-        let bmp = list_files(&c.conn, "p\\sub", false, Filter::All, Sort::Name).unwrap();
+        assert_eq!(ids(&c, "p", true, &all, Sort::default()), [2, 1, 3, 4]);
+        assert_eq!(ids(&c, "p", false, &all, Sort::default()), [2, 1, 3]);
+        assert_eq!(ids(&c, "p", true, &all, by(SortKey::Name, true)), [4, 3, 1, 2]);
+        assert_eq!(ids(&c, "", true, &all, by(SortKey::Size, true)), [4, 1, 3, 2]);
+        assert_eq!(ids(&c, "", true, &all, by(SortKey::Modified, true)), [2, 4, 1, 3]);
+        assert_eq!(ids(&c, "", true, &ratings(&[0]), by(SortKey::Size, true)), [4, 2]);
+        assert_eq!(ids(&c, "", true, &ratings(&[1, 2, 3, 4, 5]), Sort::default()), [1, 3]);
+        assert_eq!(ids(&c, "", true, &ratings(&[2]), Sort::default()), [3]);
+        assert_eq!(ids(&c, "", true, &ratings(&[0, 2]), Sort::default()), [2, 3, 4]);
+        let bmp = list_files(&c.conn, "p\\sub", false, &all, Sort::default()).unwrap();
         assert!(!bmp[0].rating_in_file, "BMP keeps its rating in the catalog");
+    }
+
+    /// `library()` plus a video, an animated GIF, a file the import couldn't read and one not imported yet, with
+    /// duplicates: 1 and 3 are the same bytes, 2–4 a close tier-1 pair, 2–6 a distant one.
+    fn mixed_library() -> crate::catalog::Catalog {
+        let c = library();
+        c.conn
+            .execute_batch(
+                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan) VALUES
+                    (5, 1, 5, 3, 'Clip.MP4', 'mp4', 'video', 50, 7, 1),
+                    (6, 1, 6, 1, 'anim.gif', 'gif', 'image', 15, 2, 1),
+                    (7, 1, 7, 2, 'broken.jpg', 'jpg', 'image', 5, 4, 1),
+                    (8, 1, 8, 2, 'new.webp', 'webp', 'image', 6, 6, 1);
+                 INSERT INTO analysis(file_id, version, size, mtime, analyzed, format, width, height, frames,
+                                      duration_ms) VALUES
+                    (5, 1, 50, 7, 0, NULL, 1920, 1080, 300, 12000),
+                    (6, 1, 15, 2, 0, 'gif', 3, 3, 10, NULL);
+                 INSERT INTO analysis(file_id, version, size, mtime, analyzed, error) VALUES (7, 1, 5, 4, 0, 'bad');
+                 UPDATE analysis SET file_hash = x'01' WHERE file_id IN (1, 3);
+                 UPDATE analysis SET taken = 1714557600 WHERE file_id = 1; -- 2024-05-01 10:00
+                 INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (2, 4, 10, 0), (2, 6, 30, 0);",
+            )
+            .unwrap();
+        c
+    }
+
+    #[test]
+    fn facets_filter() {
+        let c = mixed_library();
+        let q = |f: &dyn Fn(&mut Query)| {
+            let mut q = Query::default();
+            f(&mut q);
+            ids(&c, "", true, &q, Sort::default())
+        };
+        assert_eq!(q(&|_| {}), [2, 6, 1, 7, 8, 3, 4, 5]);
+        assert_eq!(q(&|q| q.types = vec![MediaType::Video]), [5]);
+        assert_eq!(q(&|q| q.types = vec![MediaType::Animated, MediaType::Video]), [6, 5]);
+        assert_eq!(q(&|q| q.types = vec![MediaType::Image]), [2, 1, 7, 8, 3, 4]);
+        assert_eq!(q(&|q| q.exts = vec!["JPG".into()]), [1, 7, 3]);
+        assert_eq!(q(&|q| q.orientations = vec![Orientation::Square]), [6]);
+        assert_eq!(q(&|q| q.orientations = vec![Orientation::Landscape]), [2, 1, 3, 4, 5]);
+        assert!(q(&|q| q.orientations = vec![Orientation::Portrait]).is_empty());
+        assert_eq!(q(&|q| q.megapixels.min = Some(5e-6)), [2, 6, 1, 3, 4, 5]);
+        assert_eq!(q(&|q| q.megapixels.max = Some(1e-5)), [6]);
+        assert_eq!(
+            q(&|q| q.size_mb = Range { min: Some(20.0 / 1_048_576.0), max: Some(40.0 / 1_048_576.0) }),
+            [1, 3, 4]
+        );
+        assert_eq!(q(&|q| q.duration_s.min = Some(10.0)), [5]);
+        assert_eq!(q(&|q| q.duplicates = Some(true)), [2, 1, 3, 4]);
+        assert_eq!(q(&|q| q.duplicates = Some(false)), [6, 5]);
+        assert_eq!(q(&|q| q.status = vec![Status::Failed]), [7]);
+        assert_eq!(q(&|q| q.status = vec![Status::Pending]), [8]);
+        assert_eq!(q(&|q| q.status = vec![Status::Imported]), [2, 6, 1, 3, 4, 5]);
+        let day = |from: &str, to: &str| DateRange { from: Some(from.into()), to: Some(to.into()) };
+        assert_eq!(q(&|q| q.taken = day("2024-05-01", "2024-05-01")), [1]);
+        assert!(q(&|q| q.taken.from = Some("2024-05-02".into())).is_empty());
+        // A malformed date doesn't filter.
+        assert_eq!(q(&|q| q.taken.from = Some("2024-13-45".into())).len(), 8);
+        // The test files' mtimes are FILETIMEs a few hundred ns after 1601.
+        assert_eq!(q(&|q| q.modified = day("1600-12-30", "1601-01-02")).len(), 8);
+        assert!(q(&|q| q.modified.from = Some("2000-01-01".into())).is_empty());
+        assert_eq!(q(&|q| q.name = "ä".into()), [3]);
+        assert_eq!(q(&|q| q.name = "clip".into()), [5]);
+        // Facets combine with AND.
+        assert_eq!(
+            q(&|q| {
+                q.exts = vec!["jpg".into()];
+                q.duplicates = Some(true)
+            }),
+            [1, 3]
+        );
+    }
+
+    #[test]
+    fn sorts_put_missing_values_last() {
+        let c = mixed_library();
+        let all = Query::default();
+        assert_eq!(ids(&c, "", true, &all, by(SortKey::Megapixels, true)), [5, 2, 1, 3, 4, 6, 7, 8]);
+        assert_eq!(ids(&c, "", true, &all, by(SortKey::Megapixels, false)), [6, 2, 1, 3, 4, 5, 7, 8]);
+        assert_eq!(ids(&c, "", true, &all, by(SortKey::Duration, true)), [5, 2, 6, 1, 7, 8, 3, 4]);
+        assert_eq!(ids(&c, "", true, &all, by(SortKey::Taken, true))[0], 1);
+    }
+
+    #[test]
+    fn facet_counts() {
+        let c = mixed_library();
+        let videos = Query { types: vec![MediaType::Video], ..Query::default() };
+        let f = facets(&c.conn, "", true, &videos).unwrap();
+        assert_eq!((f.total, f.matching), (8, 1));
+        // A facet's own choices are counted without it; the other facets apply.
+        assert_eq!(f.types, [(MediaType::Image, 6), (MediaType::Animated, 1), (MediaType::Video, 1)]);
+        assert_eq!(f.exts, [("mp4".to_string(), 1)]);
+        let f = facets(&c.conn, "p", false, &Query::default()).unwrap();
+        assert_eq!(
+            f.exts,
+            [("jpg".to_string(), 3), ("gif".to_string(), 1), ("png".to_string(), 1), ("webp".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn views_keep_their_query() {
+        let c = library();
+        let v = View {
+            name: "Unrated videos".into(),
+            folder: "p".into(),
+            recursive: true,
+            query: Query { types: vec![MediaType::Video], ratings: vec![0], ..Query::default() },
+            sort: by(SortKey::Size, true),
+        };
+        save_view(&c.conn, &v).unwrap();
+        assert_eq!(views(&c.conn).unwrap(), [v]);
     }
 
     fn queued(c: &crate::catalog::Catalog, id: i64, kind: &str) -> Option<i64> {
@@ -514,7 +635,7 @@ mod tests {
         assert_eq!(queued(&c, 1, "rotation"), None);
         // The grid shows a pending turn, aspect included.
         queue_rotation(&c.conn, 1, 3).unwrap();
-        let items = list_files(&c.conn, "", true, Filter::All, Sort::Name).unwrap();
+        let items = list_files(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
         let item = items.iter().find(|i| i.id == 1).unwrap();
         assert_eq!(item.pending_turns, 3);
         assert_eq!(item.aspect(), 3.0 / 4.0);

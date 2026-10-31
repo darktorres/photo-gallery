@@ -33,8 +33,8 @@ pub mod qobject {
         fn set_real_size_saved(self: Pin<&mut Settings>, value: bool);
         fn set_row_height_saved(self: Pin<&mut Settings>, value: f64);
 
-        /// A saved view: `folder` (merged path, `""` = all), `recursive`, `filter` and `sort` (their keys), or an
-        /// empty map. A map inside a QVariant: moc and the QML compiler know that type (not cxx-qt-lib's alias for
+        /// A saved view: `folder` (merged path, `""` = all), `recursive`, `query` and `sort` (`query::Query` and
+        /// `query::Sort` as JSON), or an empty map. A map inside a QVariant: moc and the QML compiler know that type (not cxx-qt-lib's alias for
         /// the map, which crashed the compiled QML).
         #[qinvokable]
         fn view(self: &Settings, name: &QString) -> QVariant;
@@ -47,7 +47,7 @@ pub mod qobject {
             name: &QString,
             folder: &QString,
             recursive: bool,
-            filter: &QString,
+            query: &QString,
             sort: &QString,
         );
 
@@ -55,7 +55,7 @@ pub mod qobject {
         #[cxx_name = "deleteView"]
         fn delete_view(self: Pin<&mut Settings>, name: &QString);
 
-        /// Where the user was (`folder`, `recursive`, `filter`, `sort`, `file`), `fallback` if unknown.
+        /// Where the user was (`folder`, `recursive`, `query`, `sort`, `file`), `fallback` if unknown.
         #[qinvokable]
         fn session(self: &Settings, key: &QString, fallback: &QString) -> QString;
 
@@ -71,7 +71,8 @@ use std::sync::Mutex;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QMap, QMapPair_QString_QVariant, QString, QStringList, QVariant};
-use pg_core::browse::{self, Filter, Sort, View};
+use pg_core::browse::{self, View};
+use pg_core::query::{Query, Sort};
 use serde::{Deserialize, Serialize};
 
 use crate::state;
@@ -193,8 +194,8 @@ impl qobject::Settings {
         if let Some(v) = found {
             map.insert(QString::from("folder"), QVariant::from(&QString::from(&v.folder)));
             map.insert(QString::from("recursive"), QVariant::from(&v.recursive));
-            map.insert(QString::from("filter"), QVariant::from(&QString::from(&v.filter.key())));
-            map.insert(QString::from("sort"), QVariant::from(&QString::from(v.sort.key())));
+            map.insert(QString::from("query"), QVariant::from(&QString::from(&v.query.to_json())));
+            map.insert(QString::from("sort"), QVariant::from(&QString::from(&v.sort.to_json())));
         }
         QVariant::from(&map)
     }
@@ -204,7 +205,7 @@ impl qobject::Settings {
         name: &QString,
         folder: &QString,
         recursive: bool,
-        filter: &QString,
+        query: &QString,
         sort: &QString,
     ) {
         let name = name.to_string().trim().to_string();
@@ -215,8 +216,8 @@ impl qobject::Settings {
             name,
             folder: folder.to_string(),
             recursive,
-            filter: Filter::from_key(&filter.to_string()),
-            sort: Sort::from_key(&sort.to_string()),
+            query: Query::from_json(&query.to_string()),
+            sort: Sort::from_json(&sort.to_string()),
         };
         if let Err(e) = state::with_catalog(|c| browse::save_view(&c.conn, &view)) {
             eprintln!("saving view: {e:#}");

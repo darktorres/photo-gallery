@@ -16,6 +16,8 @@ use crate::decode::Format;
 
 const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
 const NS_MICROSOFT_PHOTO: &str = "http://ns.microsoft.com/photo/1.0/";
+const NS_EXIF: &str = "http://ns.adobe.com/exif/1.0/";
+const NS_PHOTOSHOP: &str = "http://ns.adobe.com/photoshop/1.0/";
 const JPEG_XMP: &[u8] = b"http://ns.adobe.com/xap/1.0/\0";
 const JPEG_XMP_EXTENSION: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
 const EXIF_TAG_RATING: u16 = 0x4746;
@@ -57,43 +59,51 @@ fn xmp_packets(bytes: &[u8], format: Format) -> Vec<Vec<u8>> {
     }
 }
 
-/// `xmp:Rating` and `MicrosoftPhoto:Rating` (mapped from percent) of one packet, as attributes of an
-/// `rdf:Description` or as elements.
+/// `xmp:Rating` and `MicrosoftPhoto:Rating` (mapped from percent) of one packet.
 fn ratings_in_xmp(packet: &[u8]) -> (Option<u8>, Option<u8>) {
+    let [xmp, microsoft] = xmp_properties(packet, [(NS_XMP, "Rating"), (NS_MICROSOFT_PHOTO, "Rating")]);
+    let number = |v: Option<String>| v.and_then(|v| v.parse::<f64>().ok());
+    (number(xmp).and_then(xmp_value), number(microsoft).map(percent))
+}
+
+/// The first value of each wanted property (namespace URI, local name) in one packet, as an attribute of an
+/// `rdf:Description` or as an element's text, trimmed; empty values are skipped.
+fn xmp_properties<const N: usize>(packet: &[u8], wanted: [(&str, &str); N]) -> [Option<String>; N] {
     let text = String::from_utf8_lossy(packet);
     // The packet wrapper (<?xpacket ...?>) is a processing instruction, which the parser skips.
     let mut reader = NsReader::from_str(&text);
-    let (mut xmp, mut microsoft) = (None, None);
-    // Set while inside a rating element, to read its text.
-    let mut inside: Option<bool> = None;
+    let mut found: [Option<String>; N] = std::array::from_fn(|_| None);
+    // Set while inside a wanted element, to read its text.
+    let mut inside: Option<usize> = None;
+    let which = |ns: &ResolveResult, local: &str| {
+        wanted
+            .iter()
+            .position(|(uri, name)| matches!(ns, ResolveResult::Bound(Namespace(n)) if n == uri) && local == *name)
+    };
+    let keep = |found: &mut [Option<String>; N], i: usize, value: &str| {
+        let value = value.trim();
+        if found[i].is_none() && !value.is_empty() {
+            found[i] = Some(value.to_string());
+        }
+    };
     while let Ok((ns, event)) = reader.read_resolved_event() {
-        let which = |ns: &ResolveResult, local: &str| match ns {
-            ResolveResult::Bound(Namespace(n)) if local == "Rating" && *n == NS_XMP => Some(true),
-            ResolveResult::Bound(Namespace(n)) if local == "Rating" && *n == NS_MICROSOFT_PHOTO => Some(false),
-            _ => None,
-        };
         match event {
             Event::Start(e) | Event::Empty(e) => {
                 inside = which(&ns, e.local_name().as_ref());
                 for attr in e.attributes().flatten() {
                     let (ans, local) = reader.resolver().resolve_attribute(attr.key);
-                    let value = attr
-                        .normalized_value(quick_xml::XmlVersion::Implicit1_0)
-                        .ok()
-                        .and_then(|v| v.trim().parse::<f64>().ok());
-                    match (which(&ans, local.as_ref()), value) {
-                        (Some(true), Some(v)) => xmp = xmp.or(Some(xmp_value(v))),
-                        (Some(false), Some(v)) => microsoft = microsoft.or(Some(percent(v))),
-                        _ => {}
+                    if let Some(i) = which(&ans, local.as_ref())
+                        && let Ok(v) = attr.normalized_value(quick_xml::XmlVersion::Implicit1_0)
+                    {
+                        keep(&mut found, i, &v);
                     }
                 }
             }
             Event::Text(t) => {
-                let value = quick_xml::escape::unescape(&t).ok().and_then(|v| v.trim().parse::<f64>().ok());
-                match (inside, value) {
-                    (Some(true), Some(v)) => xmp = xmp.or(Some(xmp_value(v))),
-                    (Some(false), Some(v)) => microsoft = microsoft.or(Some(percent(v))),
-                    _ => {}
+                if let Some(i) = inside
+                    && let Ok(v) = quick_xml::escape::unescape(&t)
+                {
+                    keep(&mut found, i, &v);
                 }
             }
             Event::End(_) => inside = None,
@@ -101,7 +111,7 @@ fn ratings_in_xmp(packet: &[u8]) -> (Option<u8>, Option<u8>) {
             _ => {}
         }
     }
-    (xmp.flatten(), microsoft)
+    found
 }
 
 /// XMP rating: a real number in -1..=5; -1 (rejected) and anything out of range read as no rating.
@@ -128,6 +138,104 @@ fn exif_rating(bytes: &[u8]) -> Option<u8> {
         return Some(v.min(5) as u8);
     }
     field(EXIF_TAG_RATING_PERCENT).and_then(|f| f.value.get_uint(0)).map(|v| percent(v as f64))
+}
+
+// --- Date taken ---------------------------------------------------------------------------------------------
+
+/// When the picture was taken, as wall-clock time (no time zone: what the camera's clock showed) in Unix seconds:
+/// EXIF DateTimeOriginal, then DateTimeDigitized, then XMP `exif:DateTimeOriginal`, `photoshop:DateCreated` and
+/// `xmp:CreateDate`. `None` when the file says nothing.
+pub fn read_taken(bytes: &[u8], format: Format) -> Option<i64> {
+    exif_taken(bytes, format).or_else(|| {
+        xmp_packets(bytes, format).iter().find_map(|packet| {
+            let dates = xmp_properties(
+                packet,
+                [(NS_EXIF, "DateTimeOriginal"), (NS_PHOTOSHOP, "DateCreated"), (NS_XMP, "CreateDate")],
+            );
+            dates.into_iter().flatten().find_map(|d| parse_iso_date(&d))
+        })
+    })
+}
+
+fn exif_taken(bytes: &[u8], format: Format) -> Option<i64> {
+    let block = exif_block(bytes, format)?;
+    let exif = exif::Reader::new().read_raw(bytes[block].to_vec()).ok()?;
+    [exif::Tag::DateTimeOriginal, exif::Tag::DateTimeDigitized].into_iter().find_map(|tag| {
+        let field = exif.get_field(tag, exif::In::PRIMARY)?;
+        let exif::Value::Ascii(ref v) = field.value else { return None };
+        let d = exif::DateTime::from_ascii(v.first()?).ok()?;
+        let n = |v: u8| i64::from(v);
+        wall_clock_seconds(i64::from(d.year), n(d.month), n(d.day), n(d.hour), n(d.minute), n(d.second))
+    })
+}
+
+/// `YYYY-MM-DD`, optionally followed by `THH:MM[:SS[.fff]]` and a zone (ignored: the wall-clock time is kept).
+pub fn parse_iso_date(s: &str) -> Option<i64> {
+    let num = |s: &str| -> Option<i64> {
+        if s.is_empty() || !s.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        s.parse().ok()
+    };
+    let (date, time) = s.trim().split_once('T').unwrap_or((s.trim(), ""));
+    let mut d = date.splitn(3, '-');
+    let (y, m, day) = (num(d.next()?)?, num(d.next()?)?, num(d.next()?)?);
+    let (mut h, mut mi, mut sec) = (0, 0, 0);
+    if !time.is_empty() {
+        let clock = time.split(['Z', '+', '-']).next()?;
+        let mut t = clock.splitn(3, ':');
+        h = num(t.next()?)?;
+        mi = num(t.next()?)?;
+        if let Some(s) = t.next() {
+            sec = num(s.split('.').next()?)?;
+        }
+    }
+    wall_clock_seconds(y, m, day, h, mi, sec)
+}
+
+/// Seconds since 1970-01-01 00:00 of a calendar date and time (proleptic Gregorian, no time zone); `None` for an
+/// impossible one (EXIF's blank `0000:00:00 00:00:00` included).
+pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Option<i64> {
+    let leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    let month_days = [31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31];
+    if !(1..=9999).contains(&y) || !(1..=12).contains(&m) || d < 1 || d > month_days[m as usize - 1] {
+        return None;
+    }
+    if !(0..24).contains(&h) || !(0..60).contains(&mi) || !(0..=60).contains(&s) {
+        return None;
+    }
+    // Howard Hinnant's days_from_civil.
+    let y = if m <= 2 { y - 1 } else { y };
+    let era = y.div_euclid(400);
+    let yoe = y - era * 400;
+    let doy = (153 * ((m + 9) % 12) + 2) / 5 + d - 1;
+    let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    let days = era * 146_097 + doe - 719_468;
+    Some(days * 86_400 + h * 3600 + mi * 60 + s)
+}
+
+// --- Animation --------------------------------------------------------------------------------------------------
+
+/// How many frames the file holds: more than one is an animated GIF, PNG (APNG) or WebP. Read from the container
+/// only (no decoding).
+pub fn frame_count(bytes: &[u8], format: Format) -> u32 {
+    let n = match format {
+        Format::Gif => {
+            gif_blocks(bytes).map(|b| b.iter().filter(|b| matches!(b, GifBlock::Image { .. })).count() as u32)
+        }
+        // acTL comes before the first IDAT.
+        Format::Png => png_chunks(bytes)
+            .take_while(|c| &c.kind != b"IDAT")
+            .find(|c| &c.kind == b"acTL")
+            .and_then(|c| Some(u32::from_be_bytes(c.data.get(..4)?.try_into().ok()?))),
+        Format::Webp => {
+            let animated =
+                webp_chunks(bytes).any(|c| &c.kind == b"VP8X" && c.data.first().is_some_and(|f| f & 0x02 != 0));
+            animated.then(|| webp_chunks(bytes).filter(|c| &c.kind == b"ANMF").count() as u32)
+        }
+        Format::Jpeg | Format::Bmp | Format::Tiff => None,
+    };
+    n.unwrap_or(1).max(1)
 }
 
 // --- Containers -------------------------------------------------------------------------------------------------
@@ -372,7 +480,7 @@ fn orientation_parts(o: u8) -> (bool, u8) {
     }
 }
 
-fn orientation_from(mirrored: bool, turns: u8) -> u8 {
+pub(crate) fn orientation_from(mirrored: bool, turns: u8) -> u8 {
     match (mirrored, turns % 4) {
         (false, 0) => 1,
         (true, 0) => 2,
@@ -504,5 +612,104 @@ mod tests {
     #[test]
     fn percent_scale() {
         assert_eq!([0.0, 1.0, 25.0, 50.0, 75.0, 99.0, 100.0].map(percent), [0, 1, 2, 3, 4, 5, 5]);
+    }
+
+    /// A little-endian TIFF block whose Exif IFD holds DateTimeOriginal.
+    fn tiff_taken(date: &[u8; 19]) -> Vec<u8> {
+        let mut t = b"II*\0".to_vec();
+        t.extend(8u32.to_le_bytes());
+        // IFD0: one entry, the Exif IFD pointer (LONG) → 26.
+        t.extend(1u16.to_le_bytes());
+        t.extend([0x69, 0x87, 4, 0]);
+        t.extend(1u32.to_le_bytes());
+        t.extend(26u32.to_le_bytes());
+        t.extend(0u32.to_le_bytes());
+        // Exif IFD: DateTimeOriginal (ASCII, 20 bytes) at 44.
+        t.extend(1u16.to_le_bytes());
+        t.extend([0x03, 0x90, 2, 0]);
+        t.extend(20u32.to_le_bytes());
+        t.extend(44u32.to_le_bytes());
+        t.extend(0u32.to_le_bytes());
+        t.extend(date);
+        t.push(0);
+        t
+    }
+
+    fn png_chunk(kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut c = (data.len() as u32).to_be_bytes().to_vec();
+        c.extend(kind);
+        c.extend(data);
+        c.extend(crc32fast::hash(&[&kind[..], data].concat()).to_be_bytes());
+        c
+    }
+
+    #[test]
+    fn taken_from_exif_then_xmp() {
+        assert_eq!(read_taken(&tiff_taken(b"2023:07:15 18:30:05"), Format::Tiff), Some(1_689_445_805));
+        // A camera with its clock never set writes a blank date: no date.
+        assert_eq!(read_taken(&tiff_taken(b"0000:00:00 00:00:00"), Format::Tiff), None);
+
+        let xmp = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/"
+            xmp:CreateDate="2020-01-01T00:00:00"><exif:DateTimeOriginal>2019-02-03T04:05:06.78-03:00</exif:DateTimeOriginal>
+            </rdf:Description></rdf:RDF></x:xmpmeta>"#;
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend(png_chunk(b"iTXt", &[&b"XML:com.adobe.xmp\0\0\0\0\0"[..], xmp].concat()));
+        png.extend(png_chunk(b"IEND", b""));
+        // exif:DateTimeOriginal wins over xmp:CreateDate; the zone is dropped, the wall-clock time kept.
+        assert_eq!(read_taken(&png, Format::Png), wall_clock_seconds(2019, 2, 3, 4, 5, 6));
+        assert_eq!(parse_iso_date("2024-02-29"), wall_clock_seconds(2024, 2, 29, 0, 0, 0));
+        assert_eq!(parse_iso_date("2023-02-29"), None);
+        assert_eq!(parse_iso_date("2024-05-01T10:00Z"), Some(1_714_557_600));
+        assert_eq!(wall_clock_seconds(1970, 1, 1, 0, 0, 0), Some(0));
+        assert_eq!(wall_clock_seconds(1601, 1, 1, 0, 0, 0), Some(-11_644_473_600));
+    }
+
+    #[test]
+    fn frames_of_animations() {
+        use image::codecs::gif::GifEncoder;
+        let gif = |frames: usize| {
+            let mut out = Vec::new();
+            let mut enc = GifEncoder::new(&mut out);
+            for i in 0..frames {
+                let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([i as u8 * 60, 0, 0, 255]));
+                enc.encode_frame(image::Frame::new(img)).unwrap();
+            }
+            drop(enc);
+            out
+        };
+        assert_eq!(frame_count(&gif(1), Format::Gif), 1);
+        assert_eq!(frame_count(&gif(3), Format::Gif), 3);
+
+        let apng = |frames: u32| {
+            let mut out = Vec::new();
+            let mut enc = png::Encoder::new(&mut out, 2, 2);
+            enc.set_color(png::ColorType::Rgb);
+            if frames > 1 {
+                enc.set_animated(frames, 0).unwrap();
+            }
+            let mut w = enc.write_header().unwrap();
+            for _ in 0..frames {
+                w.write_image_data(&[7; 12]).unwrap();
+            }
+            w.finish().unwrap();
+            out
+        };
+        assert_eq!(frame_count(&apng(1), Format::Png), 1);
+        assert_eq!(frame_count(&apng(4), Format::Png), 4);
+
+        // WebP: the container says it, the VP8X animation flag and one ANMF chunk per frame.
+        let webp = |flags: u8, frames: usize| {
+            let chunk = |kind: &[u8; 4], data: &[u8]| [&kind[..], &(data.len() as u32).to_le_bytes(), data].concat();
+            let mut body = b"WEBP".to_vec();
+            body.extend(chunk(b"VP8X", &[flags, 0, 0, 0, 1, 0, 0, 1, 0, 0]));
+            body.extend(chunk(b"ANIM", &[0; 6]));
+            for _ in 0..frames {
+                body.extend(chunk(b"ANMF", &[0; 16]));
+            }
+            [&b"RIFF"[..], &(body.len() as u32).to_le_bytes(), &body].concat()
+        };
+        assert_eq!(frame_count(&webp(0x02, 5), Format::Webp), 5);
+        assert_eq!(frame_count(&webp(0x00, 0), Format::Webp), 1);
     }
 }

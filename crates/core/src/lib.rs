@@ -4,13 +4,17 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 pub mod analyze;
+pub mod animation;
 pub mod browse;
 pub mod catalog;
 pub mod decode;
 pub mod layout;
+pub mod media;
 pub mod metadata;
 pub mod pdq;
 pub mod pdq_index;
+pub mod query;
 pub mod resize;
 pub mod rotate;
 pub mod thumbs;
+pub mod video;

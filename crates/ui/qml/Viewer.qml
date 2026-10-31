@@ -2,7 +2,10 @@
 // downscale made in Rust; zoom from fit to 32× around the cursor (wheel, pinch, + −) and pan by dragging. Between
 // fit and 1:1 the GPU scales the fitted image at once, and Rust renders the visible part with Lanczos after a
 // pause; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe, a bright frame
-// around the image to reveal black bars. Rating a picture moves on to the next one.
+// around the image to reveal black bars. Rating a picture moves on to the next one. Videos play with Qt Multimedia
+// on our FFmpeg; animated GIF, APNG and WebP with our AnimationPlayer (src/animation.rs), into the same
+// VideoOutput. Both are fitted and never enlarged; the poster or first frame shows until the first frame played.
+import QtMultimedia
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts
@@ -28,7 +31,16 @@ Rectangle {
     // Upright size in image pixels (pending turns included); 0 before the import, which leaves only the fit.
     readonly property int fw: rev >= 0 && index >= 0 ? gallery.fullWidth(index) : 0
     readonly property int fh: rev >= 0 && index >= 0 ? gallery.fullHeight(index) : 0
-    readonly property bool zoomable: fw > 0 && fh > 0
+    // image, animated or video (query::MediaType). Only still images zoom.
+    readonly property string kind: rev >= 0 && index >= 0 ? gallery.mediaType(index) : "image"
+    readonly property bool still: kind === "image"
+    readonly property bool zoomable: fw > 0 && fh > 0 && still
+    // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
+    readonly property int playerTurns: rev >= 0 && index >= 0 ? gallery.playerTurns(index) : 0
+    readonly property real playScale: fw > 0 && fh > 0 ? Math.min(width / fw, height / fh, 1 / dpr) : 0
+    // Sound, for the session.
+    property bool muted: false
+    property real volume: 1
 
     // The view: `zoom` device pixels per image pixel, the image's top-left corner at (ox, oy) in logical pixels.
     property real zoom: 1
@@ -81,6 +93,22 @@ Rectangle {
     function turn(d) {
         gallery.rotate(index, d)
         resetView()
+    }
+
+    function togglePlay() {
+        if (kind === "animated")
+            animPlayer.playing = !animPlayer.playing
+        else if (player.playbackState === MediaPlayer.PlayingState)
+            player.pause()
+        else
+            player.play()
+    }
+
+    function time(ms) {
+        const s = Math.floor(ms / 1000)
+        const two = (n) => (n < 10 ? "0" : "") + n
+        return s >= 3600 ? Math.floor(s / 3600) + ":" + two(Math.floor(s / 60) % 60) + ":" + two(s % 60)
+                         : Math.floor(s / 60) + ":" + two(s % 60)
     }
 
     // Keep the image on screen: centred along a side that fits, otherwise no gap at the edges.
@@ -151,6 +179,8 @@ Rectangle {
         else if (e.key === Qt.Key_L) loupe = !loupe
         else if (e.key === Qt.Key_B) frame = !frame
         else if (e.key === Qt.Key_H) zen = !zen
+        else if (e.key === Qt.Key_K && !still) togglePlay()
+        else if (e.key === Qt.Key_M && kind === "video") muted = !muted
         else return
         e.accepted = true
     }
@@ -232,6 +262,7 @@ Rectangle {
         asynchronous: true
         retainWhileLoading: true
         smooth: viewer.zoomed
+        visible: viewer.still || !videoOut.started
     }
     // Between fit and 1:1: the visible part, rendered by Rust at the zoom (Lanczos3), after zooming and panning stop.
     // It is placed by the part of the image it shows, so it stays aligned while the view moves on.
@@ -270,7 +301,7 @@ Rectangle {
     // 1:1 and beyond (and the loupe's source): the original, nearest neighbour.
     Image {
         id: full
-        source: viewer.visible && viewer.key.length && (viewer.pixels || viewer.loupe)
+        source: viewer.visible && viewer.still && viewer.key.length && (viewer.pixels || viewer.loupe)
                 ? "image://full/" + viewer.key + "/full" : ""
         visible: viewer.pixels && status === Image.Ready
         x: viewer.ox
@@ -279,6 +310,55 @@ Rectangle {
         height: viewer.dh
         asynchronous: true
         smooth: false
+    }
+
+    // Videos and animations, fitted (never enlarged), turned by the catalog's turns.
+    Item {
+        id: playArea
+        visible: !viewer.still && viewer.playScale > 0
+        width: viewer.fw * viewer.playScale
+        height: viewer.fh * viewer.playScale
+        anchors.centerIn: parent
+        Item {
+            anchors.centerIn: parent
+            width: viewer.playerTurns % 2 ? parent.height : parent.width
+            height: viewer.playerTurns % 2 ? parent.width : parent.height
+            rotation: viewer.playerTurns * 90
+            VideoOutput {
+                id: videoOut
+                // Set by the first frame, so the poster stays until then.
+                property bool started: false
+                anchors.fill: parent
+                fillMode: VideoOutput.PreserveAspectFit
+            }
+        }
+    }
+    MediaPlayer {
+        id: player
+        source: viewer.visible && viewer.kind === "video" ? viewer.gallery.fileUrl(viewer.index) : ""
+        videoOutput: videoOut
+        audioOutput: AudioOutput {
+            muted: viewer.muted
+            volume: viewer.volume
+        }
+        loops: MediaPlayer.Infinite
+        onSourceChanged: {
+            videoOut.started = false
+            if (source.toString().length)
+                play()
+        }
+    }
+    AnimationPlayer {
+        id: animPlayer
+        source: viewer.visible && viewer.kind === "animated" ? viewer.gallery.filePath(viewer.index) : ""
+        onSourceChanged: videoOut.started = false
+        Component.onCompleted: setSink(videoOut.videoSink)
+    }
+    Connections {
+        target: videoOut.videoSink
+        function onVideoFrameChanged() {
+            videoOut.started = true
+        }
     }
 
     // Neighbours, preloaded so stepping is instant (same URLs, so the pixmap cache serves them).
@@ -311,7 +391,7 @@ Rectangle {
         id: loupeBox
         readonly property real u: (hover.point.position.x - fit.x) / Math.max(1, fit.width)
         readonly property real v: (hover.point.position.y - fit.y) / Math.max(1, fit.height)
-        visible: viewer.loupe && !viewer.zoomed && hover.hovered && full.status === Image.Ready
+        visible: viewer.loupe && viewer.still && !viewer.zoomed && hover.hovered && full.status === Image.Ready
                  && u >= 0 && u <= 1 && v >= 0 && v <= 1
         width: 400
         height: 400
@@ -357,8 +437,12 @@ Rectangle {
             color: "#999999"
             style: Text.Outline
             styleColor: "black"
-            text: "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1 · Z real size"
-                + " · L loupe · B frame · H hide · Esc close"
+            text: viewer.kind === "video"
+                ? "← → step · K play/pause · M mute · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
+                : viewer.kind === "animated"
+                ? "← → step · K play/pause · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
+                : "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1 · Z real size"
+                  + " · L loupe · B frame · H hide · Esc close"
         }
         ToolButton {
             id: closeButton
@@ -385,6 +469,63 @@ Rectangle {
                 + (viewer.loupe ? "   [loupe 10×]" : "")
                 + (viewer.turns !== 0 ? "   — turning…" : "")
                 + (fit.status === Image.Error ? "   — original unavailable" : "")
+                + (viewer.kind === "video" && player.error !== MediaPlayer.NoError ? "   — " + player.errorString : "")
+        }
+
+        // Video transport: play/pause, position (drag to seek), sound.
+        Rectangle {
+            id: transport
+            visible: viewer.kind === "video"
+            anchors.horizontalCenter: parent.horizontalCenter
+            anchors.bottom: bar.top
+            anchors.bottomMargin: 8
+            width: Math.min(parent.width - 40, 900)
+            height: transportRow.implicitHeight + 8
+            radius: 8
+            color: "#a0000000"
+            RowLayout {
+                id: transportRow
+                anchors.fill: parent
+                anchors.leftMargin: 8
+                anchors.rightMargin: 8
+                spacing: 8
+                ToolButton {
+                    text: player.playbackState === MediaPlayer.PlayingState ? "⏸" : "▶"
+                    font.pixelSize: 18
+                    onClicked: viewer.togglePlay()
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Play / pause (K)"
+                }
+                Label { text: viewer.time(player.position); color: "#cccccc" }
+                Slider {
+                    id: seek
+                    Layout.fillWidth: true
+                    from: 0
+                    to: Math.max(1, player.duration)
+                    enabled: player.seekable
+                    onMoved: player.position = value
+                    // Follows the playback except while dragged.
+                    Binding on value {
+                        when: !seek.pressed
+                        value: player.position
+                    }
+                }
+                Label { text: viewer.time(player.duration); color: "#cccccc" }
+                ToolButton {
+                    text: viewer.muted || viewer.volume === 0 ? "🔇" : "🔊"
+                    font.pixelSize: 16
+                    onClicked: viewer.muted = !viewer.muted
+                    ToolTip.visible: hovered
+                    ToolTip.text: "Mute (M)"
+                }
+                Slider {
+                    from: 0
+                    to: 1
+                    value: viewer.volume
+                    onMoved: viewer.volume = value
+                    Layout.preferredWidth: 100
+                }
+            }
         }
 
         // Rating bar: ImageRater's symbols, the current rating ringed; clicking one rates and moves on.

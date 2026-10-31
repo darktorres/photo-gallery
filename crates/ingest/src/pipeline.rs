@@ -41,9 +41,11 @@ pub fn long_path(path: &str) -> String {
 
 /// Read `paths[i]`, run `process(state, i, bytes)` (with per-worker state from `init`), and call `sink(i, result,
 /// bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on `ctl`, and
-/// reading waits while `ctl` is paused.
+/// reading waits while `ctl` is paused. Files for which `whole(i)` is false aren't read: `process` gets no bytes
+/// and opens the file itself (videos, which are streamed, not loaded).
 pub fn run<S, R>(
     paths: &[String],
+    whole: impl Fn(usize) -> bool + Sync,
     opts: &Options,
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
@@ -61,13 +63,14 @@ where
     std::thread::scope(|s| {
         for _ in 0..opts.readers {
             let raw_tx = raw_tx.clone();
-            let (next, stop) = (&next, &stop);
+            let (next, stop, whole) = (&next, &stop, &whole);
             s.spawn(move || {
                 set_priority(opts.priority);
                 while !stop.load(Ordering::Relaxed) && ctl.checkpoint() {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(path) = paths.get(i) else { break };
-                    if raw_tx.send((i, std::fs::read(long_path(path)))).is_err() {
+                    let bytes = if whole(i) { std::fs::read(long_path(path)) } else { Ok(Vec::new()) };
+                    if raw_tx.send((i, bytes)).is_err() {
                         break;
                     }
                 }

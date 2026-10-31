@@ -39,11 +39,12 @@ ApplicationWindow {
     property real rowHeight: settings.rowHeight
     property int thumbHeight: Math.round(rowHeight * Screen.devicePixelRatio)
     property int current: -1
-    // What the grid shows: the open folder (gallery.folder), with or without subfolders, which ratings
-    // (browse::Filter keys) in what order (browse::Sort keys). Remembered across runs, and in saved views.
+    // What the grid shows: the open folder (gallery.folder), with or without subfolders, the files the filter bar
+    // keeps (filterBar.query, a query::Query) in an order (a query::Sort). Remembered across runs, and in saved
+    // views.
     property bool recursive: true
-    property string filter: "all"
-    property string sort: "name"
+    property var sort: ({ key: "name", descending: false })
+    property bool filtersOpen: false
     readonly property real gap: 4
 
     FolderModel { id: folders }
@@ -95,6 +96,29 @@ ApplicationWindow {
 
     function setSize(h) { rowHeight = Math.max(60, Math.min(800, Math.round(h))) }
 
+    function parseJson(text, fallback) {
+        try {
+            return JSON.parse(text)
+        } catch (e) {
+            return fallback
+        }
+    }
+
+    // The counts next to the filter choices, and "N of M". Not needed (and not computed) while nothing filters
+    // and the bar is closed.
+    function updateFacets() {
+        if (filtersOpen || filterBar.active > 0)
+            filterBar.facets = JSON.parse(gallery.facets(gallery.folder, recursive, JSON.stringify(filterBar.query)))
+    }
+
+    // The filters changed: apply them after a short pause, so typing a number doesn't re-list at every key.
+    Timer {
+        id: applyTimer
+        interval: 300
+        onTriggered: win.openPath(gallery.folder)
+    }
+    onFiltersOpenChanged: updateFacets()
+
     // The first item of the topmost visible row, to keep the view anchored across relayouts.
     function topItem() {
         const row = grid.indexAt(10, grid.contentY + 1)
@@ -130,7 +154,8 @@ ApplicationWindow {
         const hadCurrent = current >= 0
         const keep = hadCurrent ? current : topItem()
         const fid = keep >= 0 ? gallery.fileId(keep) : -1
-        gallery.openFolder(gallery.folder, recursive, filter, sort)
+        gallery.openFolder(gallery.folder, recursive, JSON.stringify(filterBar.query), JSON.stringify(sort))
+        updateFacets()
         let i = fid >= 0 ? gallery.indexOf(fid) : -1
         // The selected file left the view (rated out of "Unrated"): select what took its place.
         if (i < 0 && hadCurrent && gallery.count > 0)
@@ -144,17 +169,18 @@ ApplicationWindow {
         openPath(folders.mergedPath(row))
     }
 
-    // Show a merged folder (`""` = all) with the current subfolders, filter and sort, and remember it.
+    // Show a merged folder (`""` = all) with the current subfolders, filters and sort, and remember it.
     function openPath(path) {
         current = -1
-        gallery.openFolder(path, recursive, filter, sort)
+        const query = JSON.stringify(filterBar.query)
+        gallery.openFolder(path, recursive, query, JSON.stringify(sort))
+        updateFacets()
         grid.positionViewAtBeginning()
-        filterBox.currentIndex = filterBox.indexOfValue(filter)
-        sortBox.currentIndex = sortBox.indexOfValue(sort)
+        sortBox.currentIndex = sortBox.indexOfValue(sort.key)
         settings.setSession("folder", path)
         settings.setSession("recursive", String(recursive))
-        settings.setSession("filter", filter)
-        settings.setSession("sort", sort)
+        settings.setSession("query", query)
+        settings.setSession("sort", JSON.stringify(sort))
     }
 
     // Open a folder by path, showing it in the tree (its parents expanded).
@@ -168,11 +194,11 @@ ApplicationWindow {
 
     function applyView(name) {
         const v = settings.view(name)
-        if (v.filter === undefined)
+        if (v.query === undefined)
             return
         recursive = v.recursive
-        filter = v.filter
-        sort = v.sort
+        filterBar.load(parseJson(v.query, {}))
+        sort = parseJson(v.sort, { key: "name", descending: false })
         goTo(v.folder)
         grid.forceActiveFocus()
     }
@@ -199,6 +225,7 @@ ApplicationWindow {
             viewer.show(current)
         else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5 && current >= 0) gallery.setRating(current, e.key - Qt.Key_0)
         else if (e.key === Qt.Key_R && current >= 0) gallery.rotate(current, e.modifiers & Qt.ShiftModifier ? 1 : -1)
+        else if (e.key === Qt.Key_F && !ctrl) filtersOpen = !filtersOpen
         else return
         e.accepted = true
     }
@@ -222,7 +249,12 @@ ApplicationWindow {
                 elide: Text.ElideMiddle
                 Layout.maximumWidth: 600
             }
-            Label { text: gallery.count.toLocaleString(Qt.locale(), "f", 0) + " images"; color: "#999999" }
+            Label {
+                color: "#999999"
+                text: gallery.count.toLocaleString(Qt.locale(), "f", 0)
+                    + (filterBar.active > 0 ? " of " + filterBar.facets.total.toLocaleString(Qt.locale(), "f", 0) : "")
+                    + " files"
+            }
             CheckBox {
                 text: "Include subfolders"
                 checked: win.recursive
@@ -231,44 +263,46 @@ ApplicationWindow {
                     win.openPath(gallery.folder)
                 }
             }
-            ComboBox {
-                id: filterBox
-                textRole: "text"
-                valueRole: "key"
-                model: [
-                    { key: "all", text: "All ratings" },
-                    { key: "unrated", text: Ratings.symbol(0) + " Unrated" },
-                    { key: "rated", text: "Rated" },
-                    { key: "1", text: Ratings.symbol(1) + " 1 star" },
-                    { key: "2", text: Ratings.symbol(2) + " 2 stars" },
-                    { key: "3", text: Ratings.symbol(3) + " 3 stars" },
-                    { key: "4", text: Ratings.symbol(4) + " 4 stars" },
-                    { key: "5", text: Ratings.symbol(5) + " 5 stars" },
-                ]
-                onActivated: {
-                    win.filter = currentValue
-                    win.openPath(gallery.folder)
-                    grid.forceActiveFocus()
-                }
-                Layout.preferredWidth: 140
+            Button {
+                text: "Filters" + (filterBar.active > 0 ? " (" + filterBar.active + ")" : "") + (win.filtersOpen ? " ▴" : " ▾")
+                highlighted: filterBar.active > 0
+                onClicked: win.filtersOpen = !win.filtersOpen
+                ToolTip.visible: hovered
+                ToolTip.text: "Filter by type, extension, rating, size, date, duplicates… (F)"
             }
             ComboBox {
                 id: sortBox
                 textRole: "text"
                 valueRole: "key"
+                // query::SortKey
                 model: [
                     { key: "name", text: "By name" },
-                    { key: "size", text: "Largest first" },
-                    { key: "date", text: "Newest first" },
+                    { key: "size", text: "By file size" },
+                    { key: "modified", text: "By date modified" },
+                    { key: "taken", text: "By date taken" },
+                    { key: "megapixels", text: "By megapixels" },
+                    { key: "duration", text: "By duration" },
                 ]
                 onActivated: {
-                    win.sort = currentValue
+                    // Name reads A→Z; the others start with the largest, newest or longest.
+                    win.sort = { key: currentValue, descending: currentValue !== "name" }
                     win.openPath(gallery.folder)
                     grid.forceActiveFocus()
                 }
-                Layout.preferredWidth: 140
+                Layout.preferredWidth: 160
             }
-            // Saved views (ImageRater's bookmarks): a folder with its subfolders, filter and sort, by name.
+            Button {
+                text: win.sort.descending ? "↓" : "↑"
+                onClicked: {
+                    win.sort = { key: win.sort.key, descending: !win.sort.descending }
+                    win.openPath(gallery.folder)
+                    grid.forceActiveFocus()
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: win.sort.descending ? "Descending (click for ascending)" : "Ascending (click for descending)"
+                Layout.preferredWidth: 32
+            }
+            // Saved views (ImageRater's bookmarks): a folder with its subfolders, filters and sort, by name.
             Button {
                 id: viewsButton
                 text: "Views ▾"
@@ -341,7 +375,7 @@ ApplicationWindow {
                 text: gallery.revision >= 0 && win.current >= 0
                     ? gallery.info(win.current) + "   " + (gallery.rating(win.current) > 0 ? Ratings.symbol(gallery.rating(win.current)) : "")
                     : "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move"
-                      + " · Ctrl+wheel or Ctrl +/− resize"
+                      + " · F filters · Ctrl+wheel or Ctrl +/− resize"
             }
             // Ratings and turns on their way into the files, or why they aren't.
             Label {
@@ -380,10 +414,19 @@ ApplicationWindow {
         }
     }
 
-    SplitView {
+    FilterBar {
+        id: filterBar
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: topBar.bottom
+        visible: win.filtersOpen
+        onEdited: applyTimer.restart()
+    }
+
+    SplitView {
+        anchors.left: parent.left
+        anchors.right: parent.right
+        anchors.top: filterBar.visible ? filterBar.bottom : topBar.bottom
         anchors.bottom: bottomBar.top
 
         ListView {
@@ -473,6 +516,7 @@ ApplicationWindow {
                                 // Changes when the file is rewritten or turned (gallery.imageKey).
                                 readonly property string key: gallery.revision >= 0 ? gallery.imageKey(item) : ""
                                 readonly property int rating: gallery.revision >= 0 ? gallery.rating(item) : 0
+                                readonly property string badge: gallery.revision >= 0 ? gallery.badge(item) : ""
                                 width: gallery.aspect(item) * rowItem.rowHeight
                                 height: rowItem.rowHeight
 
@@ -515,6 +559,21 @@ ApplicationWindow {
                                     styleColor: "black"
                                     font.pixelSize: 16
                                 }
+                                // Animated images (and, later, videos) say so.
+                                Label {
+                                    anchors.right: parent.right
+                                    anchors.top: parent.top
+                                    anchors.margins: 4
+                                    visible: cell.badge.length > 0
+                                    text: cell.badge
+                                    font.pixelSize: 11
+                                    font.bold: true
+                                    color: "white"
+                                    padding: 2
+                                    leftPadding: 4
+                                    rightPadding: 4
+                                    background: Rectangle { color: "#a0000000"; radius: 3 }
+                                }
                                 MouseArea {
                                     anchors.fill: parent
                                     onClicked: {
@@ -533,6 +592,7 @@ ApplicationWindow {
                 anchors.centerIn: parent
                 visible: gallery.count === 0
                 text: library.roots.length === 0 ? "No folders in the library yet.\nAdd one with Library… (top right)."
+                    : filterBar.active > 0 ? "Nothing here matches the filters."
                     : library.busy ? "Nothing here yet: the library is being imported." : "No images here."
                 horizontalAlignment: Text.AlignHCenter
                 color: "#888888"
@@ -644,12 +704,13 @@ ApplicationWindow {
             viewName.forceActiveFocus()
         }
         onAccepted: if (viewName.text.trim().length)
-            settings.saveView(viewName.text, gallery.folder, win.recursive, win.filter, win.sort)
+            settings.saveView(viewName.text, gallery.folder, win.recursive, JSON.stringify(filterBar.query),
+                JSON.stringify(win.sort))
         onClosed: grid.forceActiveFocus()
         ColumnLayout {
             Label {
                 text: (gallery.folder.length ? gallery.folder : "All folders") + (win.recursive ? " and subfolders" : "")
-                    + " · " + filterBox.currentText + " · " + sortBox.currentText
+                    + " · " + filterBar.describe() + " · " + sortBox.currentText + (win.sort.descending ? " ↓" : " ↑")
                 color: "#999999"
             }
             TextField {
@@ -664,10 +725,11 @@ ApplicationWindow {
 
     // Test hooks, for checking the UI without a person at the screen:
     //   --size=<px>  row height   --select=<n>  select item n   --view=<n>  open item n in the viewer
-    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame); also H (zen), + (zoom in), 1 (1:1), < > (turn left,
+    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame); also H (zen), K (play/pause), + (zoom in), 1 (1:1), < > (turn left,
     //                         right), digits after "r" rate
     //   --zoom=<factor>  zoom the viewer to this many device px per image px
     //   --menu=views  open the views menu   --apply-view=<name>  open a saved view
+    //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
     //   --library=1  open the library folders
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
     //   --screenshot=<png>  save the window after 4 s (or --wait=<s>) and quit
@@ -694,8 +756,11 @@ ApplicationWindow {
     Component.onCompleted: {
         // Where the user was.
         recursive = settings.session("recursive", "true") === "true"
-        filter = settings.session("filter", "all")
-        sort = settings.session("sort", "name")
+        filterBar.load(parseJson(settings.session("query", "{}"), {}))
+        sort = parseJson(settings.session("sort", ""), { key: "name", descending: false })
+        if (arg("query")) filterBar.load(parseJson(arg("query"), {}))
+        if (arg("sort")) sort = parseJson(arg("sort"), sort)
+        if (arg("filters")) filtersOpen = true
         goTo(settings.session("folder", ""))
         relayout()
         const last = gallery.indexOf(Number(settings.session("file", "-1")))
@@ -711,6 +776,7 @@ ApplicationWindow {
                 if (c === "L") viewer.loupe = true
                 else if (c === "B") viewer.frame = true
                 else if (c === "H") viewer.zen = true
+                else if (c === "K") viewer.togglePlay()
                 else if (c === "+") viewer.setZoom(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2)
                 else if (c === "1") viewer.setZoom(1, viewer.width / 2, viewer.height / 2)
                 else if (c === "<") viewer.turn(-1)

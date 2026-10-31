@@ -12,7 +12,7 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoder, MinSize};
+use crate::decode::{Decoder, MinSize, Rgb};
 use crate::resize::to_height;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
@@ -32,7 +32,11 @@ pub fn make(
     encoder: &mut Compressor,
 ) -> Result<Vec<u8>> {
     let decoded = decoder.decode(bytes, MinSize::Upright(0, height * DECODE_MARGIN), turns)?;
-    let img = &decoded.image;
+    encode(&decoded.image, height, encoder)
+}
+
+/// A thumbnail `height` px high (or the image's own height) of pixels decoded elsewhere (a video's frame).
+pub fn encode(img: &Rgb, height: usize, encoder: &mut Compressor) -> Result<Vec<u8>> {
     let small = to_height(img, height);
     let img = small.as_ref().unwrap_or(img);
     encoder.set_quality(JPEG_QUALITY)?;
@@ -74,6 +78,8 @@ pub struct ThumbWork {
     pub id: i64,
     pub path: String,
     pub source: Source,
+    /// For a video, the time of its poster frame (`video::poster_ms`).
+    pub poster_ms: Option<i64>,
 }
 
 /// The cache's layout version (`PRAGMA user_version`). It is a cache: a file of another version is emptied and
@@ -222,7 +228,7 @@ impl ThumbCache {
         let result = (|| {
             let mut stmt = self.conn.prepare(
                 "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
-                        f.rotation
+                        f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END
                  FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
                  LEFT JOIN thumbs t ON t.file_id = f.id AND t.height = ?1
                  WHERE f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
@@ -234,6 +240,7 @@ impl ThumbCache {
                     id: r.get(0)?,
                     path: r.get(1)?,
                     source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
+                    poster_ms: r.get(4)?,
                 })
             })?;
             Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)

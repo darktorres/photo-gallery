@@ -15,6 +15,9 @@ pub const HASH_BYTES: usize = 32;
 pub const MATCH_DISTANCE: u32 = 31;
 /// Below this quality the hash is unreliable (flat or near-flat images); Meta's recommendation.
 pub const MIN_QUALITY: u8 = 50;
+/// Distance up to which a tier-1 pair counts as the same picture when grouping and filtering (FINDINGS "Shortcut and
+/// grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked).
+pub const GROUP_DISTANCE: u32 = 22;
 
 const BUFFER: usize = 64;
 const DCT_OUT: usize = 16;

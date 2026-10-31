@@ -19,6 +19,16 @@ Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crat
 says why. Its test (`crates/ingest/tests/writeback.rs`) works on generated files in
 `D:\PhotoGallery\scratch_rate` (`PG_TEST_DIR`), and skips itself without ExifTool.
 
+Videos go through FFmpeg 9, our own copy rather than the one Qt bundles: BtbN's prebuilt `lgpl-shared` package
+(`D:\PhotoGallery\tools\ffmpeg-9.0`, `FFMPEG_DIR` in `.cargo/config.toml`; the exact build is in its
+`SOURCE.txt`). It has dav1d for AV1, which Qt's copy lacks. Its bindings are generated with libclang (LLVM,
+`LIBCLANG_PATH`). `pg-core`'s build script copies its DLLs next to the binaries. Qt Multimedia plays videos with
+the same DLLs: Qt 6.12 is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
+--no-ffmpeg`. The video test (`crates/ingest/tests/video.rs`) makes its clips and animations with an `ffmpeg`
+command line that has the GPL encoders (libx264, libvpx, libaom, libwebp), such as gyan.dev's "essentials" build
+(`choco install ffmpeg`). It looks on `PATH`, or at `PG_FFMPEG`; our LGPL package lacks libx264. The clips go in
+`D:\PhotoGallery\scratch_video`, and the test skips itself without that ffmpeg.
+
 The commands are in the `Justfile` ([just](https://just.systems); `just` lists them):
 
 ```powershell
@@ -43,10 +53,11 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 The catalog lives in `D:\PhotoGallery\catalog` (`PG_CATALOG_DIR`, or `--catalog-dir` on the command line, to
 change it). The app's preferences (write-back, Real Size, row height) are in `gallery.json` beside the catalog
 folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they survive rebuilding the catalog.
-Saved views and where you were (folder, filter, sort, selected file) are in the catalog.
+Saved views and where you were (folder, filters, sort, selected file) are in the catalog.
 
-The catalog schema is one baseline (`catalog.rs`); until the first release, schema changes edit it and a catalog
-made before it is refused with "delete it and re-import". The migration mechanism is in place for later.
+The catalog schema is one baseline (`catalog.rs`). Until the first catalog worth keeping, schema changes edit it in
+place, with no new version, so a catalog made before a change has to be deleted and re-imported. The migration
+mechanism is in place for later, unused.
 
 Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
@@ -58,7 +69,7 @@ The same passes on the command line, without the window (for scripts, profiling 
 
 ```powershell
 $g = '.\target\release\gallery.exe'
-& $g scan 'D:\PhotoGallery\datasets\pinterest' | Out-Host  # add to the library and record image files
+& $g scan 'D:\PhotoGallery\datasets\pinterest' | Out-Host  # add to the library and record its media files
 & $g scan | Out-Host                                       # rescan the whole library
 & $g import | Out-Host                                     # analyze new/changed files; resumable
 & $g thumbs --height 256 | Out-Host                        # thumbnails at one grid height
@@ -73,17 +84,23 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 `| Out-Host`.
 
 - **Scan** lists folders by directory handle, which yields each file's NTFS file ID: a moved or renamed file
-  keeps its row and its analysis.
+  keeps its row and its analysis. It records the files whose extension is a supported format (`media.rs`), with
+  their extension and kind.
 - **Import** reads files in MFT-record order with 8 reads in flight, decodes once (libjpeg-turbo, DCT-scaled
-  to ≥ 512 × 320), and stores the BLAKE3 file hash, the pixel hash, PDQ, dimensions and a ThumbHash. Each new
+  to ≥ 512 × 320), and stores the BLAKE3 file hash, the pixel hash, PDQ, dimensions and a ThumbHash, plus the
+  frame count (from the GIF, APNG or WebP container) and the date taken (EXIF DateTimeOriginal, else XMP). Each new
   PDQ hash is queried (all 8 orientations) and then inserted, so tier-1 pairs (d ≤ 31) come out of the import
-  itself. Every 500 files is one transaction; a rerun continues where the last one stopped, and redoes files
-  whose size or mtime changed.
+  itself. A video (`video.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
+  creation date come from the container: the rotation matrix, and Apple's local creation date before the UTC
+  `creation_time`. Its ThumbHash comes from the poster frame, at 10% of the duration (at most 10 s). Videos get
+  no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
+  where the last one stopped, and redoes files whose size or mtime changed.
 - **Thumbs** makes no thumbnails during the import: they are made afterwards, for any height. The cache
   (`thumbs.sqlite`) is keyed by (file, height) and capped (`--cap-gb`, default 50; `PG_THUMB_CAP_GB` for the
   app). The background job (or `gallery thumbs`) fills it at idle CPU priority for the grid's current height,
   evicting other heights first, and starts over when the size changes. The ones on screen are made on demand,
-  newest request first.
+  newest request first. A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB
+  without tone mapping, so their posters look washed out.
 - **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
   its children, and adding a subfolder only rescans it. Removing one marks its files missing; adding it back
   restores them with their analysis and ratings.
@@ -96,14 +113,21 @@ ImageRater's triage, without Everything: open "Unrated", largest first, rate eac
 
 - **Folder tree** (left): folders with the same path on different drives are one node (their drives are shown
   in green). "All folders" lists everything; "Include subfolders" toggles recursion.
-- **Top bar**: which ratings to show (all, unrated, rated, exactly 1–5) and the order (by name, largest first,
-  newest first), filtered and sorted in SQL. **Views ▾** saves the current folder, subfolders, filter and sort
-  under a name (ImageRater's bookmarks), and opens or deletes saved ones. The list re-filters when it is
-  reopened, not under you: a picture rated out of "Unrated" stays until then.
+- **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file size, date
+  modified, date taken, megapixels, duration) and its direction (↑ / ↓). **Views ▾** saves the current folder,
+  subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
+- **Filter bar** (`FilterBar.qml`, `query.rs`): type (image, animated, video), extension, rating (unrated,
+  1–5), shape (landscape, portrait, square), file size, megapixels, duration, date taken, date modified,
+  duplicates (has / has none, from tiers 0a, 0b and tier-1 pairs within PDQ 22), import status (imported, not
+  yet, unreadable) and part of the name. Facets combine with AND, the choices inside one with OR. Each type and
+  extension shows how many files choosing it would show, given the other facets. Filtering and sorting are
+  SQL (values bound, not spliced); a change applies 0.3 s after the last edit. The list re-filters when it is
+  reopened or the filters change, not under you: a picture rated out of "Unrated" stays until then.
 - **Grid**: justified rows. The **size slider**, Ctrl+wheel or Ctrl +/− change the row height at runtime; the
   layout follows at once, thumbnails at the new size follow a moment later (the old ones are scaled meanwhile,
   and the ThumbHash placeholder shows until the first one arrives). Arrows move, 0–5 rates, **R** / **Shift+R**
-  turn left / right, Enter or double-click opens the viewer. A badge shows each rating's symbol.
+  turn left / right, Enter or double-click opens the viewer. A badge shows each rating's symbol, another a
+  video's length (▶ 1:23) or the format of an animated image (GIF, APNG, WEBP).
 - **Viewer**:
   - ← → (or Backspace / Space) step; 4 pictures each way are preloaded.
   - **0–5**, **↑** (4) and **↓** (1) rate and move to the next picture, showing the rating's symbol for half a
@@ -118,10 +142,19 @@ ImageRater's triage, without Everything: open "Unrated", largest first, rate eac
   - **L** a 10× nearest-neighbour loupe under the cursor, **B** a magenta frame around the image to reveal black
     bars, **H** or a click hides everything over the picture (zen). Touch: swipe left / right to step, up / down
     to rate 4 / 1. Esc, Enter or ✕ close.
+  - **Videos** play with Qt Multimedia, fitted and never enlarged. They start with sound and loop, and the poster
+    shows until the first frame. The transport bar has play / pause (**K**), the time, a seek bar, mute (**M**)
+    and volume. Rating, turning and stepping work as on pictures; zoom, the loupe and Real Size are for stills.
+    The player decodes on the GPU, except on a GPU without AV1 decoding (this machine's RTX 2060). There every
+    video decodes on the CPU (AV1 through dav1d) (`video_decoding.rs` explains why).
+  - **Animated** GIF, APNG and WebP play the same way: our FFmpeg decodes all three. Qt's `AnimatedImage` has no
+    APNG, and has WebP only with Qt's Image Formats add-on. They loop silently, without the transport bar; **K**
+    pauses.
 - **Ratings**: the catalog (`ratings` table) is the source of truth for every format. With "Write ratings and
   turns into the files too" (Library…, on by default) they also go into the file as `XMP:Rating` wherever the
   format holds XMP (JPEG, PNG, WebP, TIFF, GIF), by a background writer (ExifTool), 2 s after the last change so
-  quick changes coalesce. BMP and other formats keep it in the catalog only (the status line says so). Writes
+  quick changes coalesce. BMP, videos and other formats keep it in the catalog only (the status line says so).
+  ExifTool could write XMP into an MP4 or MOV, but it rewrites the whole file, gigabytes for a video. Writes
   are queued in the catalog (`file_writes`), so they survive quitting, wait for offline drives, and retry; the
   bottom bar shows what is pending or failing. A file is rewritten in place, keeping its NTFS identity, and a
   rating write doesn't make it look changed to the import. Ratings already in files (ImageRater, Explorer,
@@ -130,12 +163,14 @@ ImageRater's triage, without Everything: open "Unrated", largest first, rate eac
 - **Turns** are lossless and real wherever possible, so every program shows them: JPEG pixels are turned with
   libjpeg-turbo's perfect transform (otherwise the EXIF Orientation tag), PNG, BMP, still GIF and lossless WebP
   are re-encoded losslessly, TIFF gets its Orientation tag. What none of that covers (lossy or animated WebP,
-  animated GIF, AVIF…) is turned in the catalog and at display. The grid and viewer show a turn at once; the
+  animated GIF, videos…) is turned in the catalog and at display. A video's own rotation matrix is applied by
+  the player and by the import; the catalog's turns go on top. The grid and viewer show a turn at once; the
   file follows in the background, and its analysis and thumbnails are redone.
 - Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
-  --viewer-keys=LBH+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --library=1 --add-folder=<path>
-  --screenshot=<png> --wait=<s>`. With `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll` next to
-  the exe, from Qt's `plugins\platforms`) and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens; set
-  `QT_FORCE_STDERR_LOGGING=1` to see QML messages. Menus are in the window's overlay, which the screenshot
-  doesn't include. Rating and turning hooks write to the catalog and the files: use them on a scratch library
+  --viewer-keys=LBHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
+  --library=1 --add-folder=<path> --screenshot=<png> --wait=<s>`. With `QT_QPA_PLATFORM=offscreen` (needs
+  `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`) and `QT_QPA_FONTDIR=C:\Windows\Fonts`
+  no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages. Offscreen draws with Qt's software
+  renderer, which shows no video frames: check playback through the player's state and position instead. Menus
+  are in the window's overlay, which the screenshot doesn't include. Rating and turning hooks write to the catalog and the files: use them on a scratch library
   (`PG_CATALOG_DIR`, `PG_PREFS`).

@@ -275,6 +275,7 @@ impl qobject::FolderModel {
         self.as_mut().rust_mut().replace(tree);
         self.as_mut().end_reset_model();
         self.as_mut().set_ready(true);
+        crate::trace::pg_stage_tree_shown();
         self.loaded();
     }
 

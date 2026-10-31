@@ -70,6 +70,16 @@ ApplicationWindow {
     // Remembered across runs, and in saved views (src/view.rs).
     View { id: view }
     CommandLine { id: commandLine }
+    // The start's stages, for measuring it (src/trace.rs).
+    Stages { id: stages }
+    Connections {
+        id: firstFrame
+        target: win
+        function onFrameSwapped() {
+            firstFrame.enabled = false
+            stages.firstFrame()
+        }
+    }
     Library {
         id: library
         onScanned: win.reloadAll()
@@ -828,6 +838,7 @@ ApplicationWindow {
     // (after the first reads, which it would compete with for the disk).
     function started() {
         ready = true
+        stages.ready()
         const last = galleryModel.indexOf(appSettings.lastFile)
         if (last >= 0) select(last)
         if (commandLine.has("apply-view")) view.saveSession(filterBar.query)

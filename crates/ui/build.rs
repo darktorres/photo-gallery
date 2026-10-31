@@ -30,6 +30,7 @@ fn main() {
         "src/providers.rs",
         "src/screenshot.rs",
         "src/settings.rs",
+        "src/trace.rs",
         "src/video_decoding.rs",
         "src/view.rs",
         "src/yandex.rs",

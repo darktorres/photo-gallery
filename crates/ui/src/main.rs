@@ -20,6 +20,7 @@ mod providers;
 mod screenshot;
 mod settings;
 mod state;
+mod trace;
 mod video_decoding;
 mod view;
 mod yandex;
@@ -45,6 +46,7 @@ fn main() {
 }
 
 fn run_app() {
+    trace::pg_stage_main();
     // Meanwhile the catalog opens and Qt starts; Qt Multimedia reads the result when the QML makes the player.
     let video_decoding = video_decoding::choose_in_background();
     let catalog_dir =
@@ -61,6 +63,7 @@ fn run_app() {
     if let Err(e) = state::init(catalog_dir, cap) {
         fatal(&format!("Can't open the catalog: {e:#}"));
     }
+    trace::pg_stage_init_done();
 
     // The controls style is Fusion, imported by name in the QML (`QtQuick.Controls.Fusion`): it follows the
     // window's dark palette. The default on Windows, the native style, draws light system buttons regardless.
@@ -91,7 +94,9 @@ fn run_app() {
         if video_decoding.join().is_err() {
             eprintln!("the video decoding probe failed: Qt Multimedia picks its own decoders");
         }
+        trace::pg_stage_qml_load();
         engine.as_mut().load(&main_qml);
+        trace::pg_stage_qml_loaded();
         screenshot::schedule(engine);
     }
     if let Some(app) = app.as_mut() {

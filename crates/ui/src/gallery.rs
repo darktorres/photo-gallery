@@ -213,7 +213,7 @@ use pg_core::media::{self, Kind};
 use pg_core::query::{MediaType, Query, Sort};
 
 use crate::loader::{self, Kind as Load};
-use crate::{library, settings, state};
+use crate::{library, settings, state, trace};
 
 const ROLE_FIRST: i32 = 256;
 const ROLE_COUNT: i32 = 257;
@@ -413,6 +413,7 @@ impl qobject::GalleryModel {
         self.as_mut().set_anchor(-1);
         let revision = self.revision + 1;
         self.as_mut().set_revision(revision);
+        trace::pg_stage_list_shown();
         self.loaded(kept);
     }
 

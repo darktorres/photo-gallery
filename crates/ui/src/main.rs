@@ -5,6 +5,7 @@
 // A GUI program: no console window when started from Explorer. The command line attaches to its caller's console.
 #![windows_subsystem = "windows"]
 
+mod app_icon;
 mod folders;
 mod gallery;
 mod library;
@@ -47,6 +48,7 @@ fn run_app() {
     // The controls style is Fusion, imported by name in the QML (`QtQuick.Controls.Fusion`): it follows the
     // window's dark palette. The default on Windows, the native style, draws light system buttons regardless.
     let mut app = QGuiApplication::new();
+    app_icon::ffi::set_app_icon();
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {
         {

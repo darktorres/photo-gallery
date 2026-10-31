@@ -30,3 +30,4 @@ windows-sys.workspace = true
 
 [build-dependencies]
 cxx-qt-build = "0.10"
+winres = "0.1"

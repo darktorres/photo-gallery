@@ -1,6 +1,8 @@
 // Reverse image search on Yandex for the photo in the viewer: its other sizes, and the images that look like it.
 // Pick any of them and save the picks into a folder. The search and the saving run on background threads in the
 // YandexSearch object; this panel polls it while it is busy. Over a dimmed window, like the library panel.
+pragma ComponentBehavior: Bound
+
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Dialogs
@@ -25,6 +27,8 @@ Rectangle {
         otherSizes = []
         similar = []
         visible = true
+        // The keys come here (Escape closes), not to the viewer's photo stepping behind.
+        forceActiveFocus()
         yandex.search(path)
     }
 
@@ -50,7 +54,7 @@ Rectangle {
         required property string thumbUrl
         required property string label
         required property string fileName
-        readonly property bool isPicked: panel.picked[key] !== undefined
+        readonly property bool isPicked: panel.picked[tile.key] !== undefined
 
         width: 176
         height: 176
@@ -88,16 +92,21 @@ Rectangle {
     color: "#b0000000"
     focus: visible
     Keys.onEscapePressed: close()
-    // Clicks on the dimmed background close it; none reach the grid below.
-    MouseArea { anchors.fill: parent; onClicked: panel.close() }
+    // Clicks on the dimmed background close it. No click or wheel reaches the viewer below: the results' Flickable
+    // passes the wheel on at its ends, and the viewer would zoom.
+    MouseArea {
+        anchors.fill: parent
+        onClicked: panel.close()
+        onWheel: (wheel) => wheel.accepted = true
+    }
 
     YandexSearch {
         id: yandex
         onResultsChanged: {
             // Cleared when a search starts; nothing to read until it ends.
-            if (results.length === 0)
+            if (yandex.results === "")
                 return
-            const data = JSON.parse(results)
+            const data = JSON.parse(yandex.results)
             panel.otherSizes = data.otherSizes
             panel.similar = data.similar
         }
@@ -152,7 +161,7 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
-                visible: yandex.status.length > 0
+                visible: yandex.status !== ""
 
                 TextEdit {
                     id: statusText
@@ -233,7 +242,7 @@ Rectangle {
                         text: "No results."
                         color: "#888888"
                         visible: !yandex.busy && panel.otherSizes.length === 0 && panel.similar.length === 0
-                            && yandex.status.length === 0
+                            && yandex.status === ""
                     }
                 }
             }

@@ -550,7 +550,7 @@ Rectangle {
                     font.pixelSize: 22
                     ToolTip.visible: hovered
                     ToolTip.text: "Find similar images on Yandex"
-                    onClicked: viewer.findSimilar(gallery.filePath(viewer.index))
+                    onClicked: viewer.findSimilar(viewer.gallery.filePath(viewer.index))
                 }
                 ToolButton {
                     text: "⟲"

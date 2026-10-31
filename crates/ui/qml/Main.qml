@@ -626,8 +626,12 @@ ApplicationWindow {
         focus: visible
         onVisibleChanged: if (!visible) grid.forceActiveFocus()
         Keys.onEscapePressed: visible = false
-        // Clicks outside the panel close it; none reach the grid below.
-        MouseArea { anchors.fill: parent; onClicked: libraryPanel.visible = false }
+        // Clicks outside the panel close it; no click or wheel reaches the grid below.
+        MouseArea {
+            anchors.fill: parent
+            onClicked: libraryPanel.visible = false
+            onWheel: (wheel) => wheel.accepted = true
+        }
 
         Pane {
             anchors.centerIn: parent
@@ -691,7 +695,8 @@ ApplicationWindow {
     // Reverse image search for the viewer's photo (over the viewer, so it comes after it).
     YandexPanel {
         id: yandexPanel
-        onClosed: grid.forceActiveFocus()
+        // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer is gone.
+        onClosed: viewer.visible ? viewer.forceActiveFocus() : grid.forceActiveFocus()
     }
 
     FolderDialog {

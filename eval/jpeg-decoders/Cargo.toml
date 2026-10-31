@@ -3,7 +3,7 @@ name = "jpeg-decoders"
 edition = "2024"
 version = "0.1.0"
 publish = false
-description = "Speed and output of JPEG decoders on the library's kinds of files (docs/PROFILING.md)"
+description = "Speed and output of JPEG decoders on the library's kinds of files (docs/JPEG_DECODERS.md)"
 
 # Not a member of the app's workspace: the decoders compared here aren't the app's dependencies.
 [workspace]

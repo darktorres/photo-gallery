@@ -1,4 +1,4 @@
-"""nvJPEG (torchvision.io.decode_jpeg on CUDA) against CPU decoders on Windows, for docs/PROFILING.md.
+"""nvJPEG (torchvision.io.decode_jpeg on CUDA) against CPU decoders on Windows, for docs/JPEG_DECODERS.md.
 
 Run with the eval venv (torch with CUDA): python -I eval/jpeg-decoders/gpu.py FILE...
 

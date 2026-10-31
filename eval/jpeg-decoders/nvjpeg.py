@@ -1,4 +1,4 @@
-"""nvJPEG with Huffman decoding on the CPU (HYBRID) against on the GPU (GPU_HYBRID), for docs/PROFILING.md.
+"""nvJPEG with Huffman decoding on the CPU (HYBRID) against on the GPU (GPU_HYBRID), for docs/JPEG_DECODERS.md.
 
 Run with the eval venv (torch with CUDA): python -I eval/jpeg-decoders/nvjpeg.py [--interpolate] [--batches 1,64] FILE...
 

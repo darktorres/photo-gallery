@@ -1,5 +1,5 @@
 //! JPEG decoders behind one interface, each decoding to packed RGB8 on one thread, for the speed and output
-//! comparison in docs/PROFILING.md.
+//! comparison in docs/JPEG_DECODERS.md.
 //!
 //! - libjpeg-turbo as the app calls it (`pg-core` decode.rs): accurate integer IDCT, smooth upsampling.
 //! - libjpeg-turbo with `TJPARAM_FASTDCT` and `TJPARAM_FASTUPSAMPLE`: the fast but less accurate options.

@@ -1,5 +1,5 @@
 #!/bin/bash
-# The JPEG decoder comparison under WSL (docs/PROFILING.md "JPEG decoders"). From the repo, in PowerShell:
+# The JPEG decoder comparison under WSL (docs/JPEG_DECODERS.md). From the repo, in PowerShell:
 #   wsl -d Ubuntu-26.04 -u root -- bash eval/jpeg-decoders/wsl.sh STEP...
 # Steps: inputs (copy the 7 files to WSL's disk), check (clippy, rustfmt), compare (output vs libjpeg-turbo),
 # time (median wall ms), bench (callgrind through gungraun, then the table), marginal (callgrind on whole runs,

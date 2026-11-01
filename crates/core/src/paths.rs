@@ -11,12 +11,29 @@ const SHORT: usize = 240;
 
 /// The verbatim form of an absolute path (`D:\…` or `\\server\share\…`) when it is long, else the path itself.
 pub fn verbatim(path: &str) -> Cow<'_, str> {
-    if path.len() < SHORT || path.starts_with(r"\\?\") || path.starts_with(r"\\.\") {
-        Cow::Borrowed(path)
+    match split(path, path.len()) {
+        ("", path) => Cow::Borrowed(path),
+        (prefix, rest) => Cow::Owned([prefix, rest].concat()),
+    }
+}
+
+/// [`verbatim`] of `path` followed by `tail` (which counts towards the length), as NUL-terminated UTF-16 for a
+/// Win32 call, written into `out`.
+pub fn verbatim_wide(path: &str, tail: &str, out: &mut Vec<u16>) {
+    let (prefix, rest) = split(path, path.len() + tail.len());
+    out.clear();
+    out.extend(prefix.encode_utf16().chain(rest.encode_utf16()).chain(tail.encode_utf16()).chain([0]));
+}
+
+/// What the verbatim form of a path `len` bytes long that starts with `path` puts first, and the part of `path`
+/// that follows it (the leading `\\` of a share gives way to `\\?\UNC\`).
+fn split(path: &str, len: usize) -> (&'static str, &str) {
+    if len < SHORT || path.starts_with(r"\\?\") || path.starts_with(r"\\.\") {
+        ("", path)
     } else if let Some(unc) = path.strip_prefix(r"\\") {
-        Cow::Owned(format!(r"\\?\UNC\{unc}"))
+        (r"\\?\UNC\", unc)
     } else {
-        Cow::Owned(format!(r"\\?\{path}"))
+        (r"\\?\", path)
     }
 }
 
@@ -32,6 +49,17 @@ mod tests {
         assert_eq!(verbatim(&format!(r"\\nas\photos\{dir}\b.jpg")), format!(r"\\?\UNC\nas\photos\{dir}\b.jpg"));
         let already = format!(r"\\?\D:\{dir}");
         assert_eq!(verbatim(&already), already);
+        let mut wide = Vec::new();
+        for (path, tail) in [(r"D:\a", r"\"), (&*format!(r"D:\{dir}"), r"\"), (&*format!(r"\\nas\{dir}"), r"\")] {
+            verbatim_wide(path, tail, &mut wide);
+            let whole = verbatim(&format!("{path}{tail}")).encode_utf16().chain([0]).collect::<Vec<_>>();
+            assert_eq!(wide, whole, "{path}");
+        }
+        // The tail counts: a folder just short of the limit is long with its backslash.
+        let edge = format!(r"D:\{}", "x".repeat(SHORT - 4));
+        assert_eq!(edge.len(), SHORT - 1);
+        verbatim_wide(&edge, r"\", &mut wide);
+        assert!(String::from_utf16(&wide).unwrap().starts_with(r"\\?\D:"));
     }
 
     /// std reads a file through a path past the limit as it is (it makes the verbatim form itself).

@@ -1,5 +1,5 @@
 //! Scanner: walks a folder tree and records every media file's identity, size and mtime in the catalog (which
-//! files are media: `media::kind_of`).
+//! files are media: `media::Ext::of_name`).
 //!
 //! Directories are listed with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`, which returns each
 //! entry's NTFS file ID along with its size and times, without opening the files and without admin rights. The
@@ -9,13 +9,10 @@
 //! PLAN §8 named an Everything-based scanner: the running Everything is 1.4, whose SDK has no file IDs, so the
 //! scanner lists directories itself. Everything (or the USN journal) remains the option for incremental changes.
 
-use std::ffi::OsStr;
-use std::os::windows::ffi::OsStrExt;
-
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, ScanWriter, ScannedFile};
-use pg_core::media;
-use pg_core::paths::verbatim;
+use pg_core::media::Ext;
+use pg_core::paths::verbatim_wide;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -30,12 +27,25 @@ const SKIP_DIRS: &[&str] = &["$RECYCLE.BIN", "System Volume Information", "_quar
 /// Files per catalog transaction.
 const BATCH: usize = 10_000;
 
+/// A folder or a media file in a listing. Junctions, symlinks (which would loop or leave the tree) and files the
+/// library doesn't hold aren't listed.
 struct DirEntry {
     name: String,
-    is_dir: bool,
+    /// `None` for a folder.
+    ext: Option<Ext>,
     file_ref: u64,
     size: u64,
     mtime: i64,
+}
+
+/// What listing a folder needs, kept from one folder to the next.
+struct Lister {
+    /// The folder's path as NUL-terminated UTF-16.
+    wide: Vec<u16>,
+    /// The records, as u64s to keep them 8-byte aligned as they must be.
+    buf: Vec<u64>,
+    /// Entries of earlier listings keep their names' buffers: a listing fills the first ones.
+    entries: Vec<DirEntry>,
 }
 
 /// An open directory handle.
@@ -49,11 +59,10 @@ impl Drop for Dir {
 }
 
 impl Dir {
-    fn open(path: &str) -> Result<Dir> {
+    fn open(path: &str, wide: &mut Vec<u16>) -> Result<Dir> {
         // With its trailing backslash (a drive root is `D:`, which alone means the drive's current folder), and
         // in its verbatim form when long, which lifts the 260-character limit.
-        let dir = format!(r"{path}\");
-        let wide: Vec<u16> = OsStr::new(&*verbatim(&dir)).encode_wide().chain([0]).collect();
+        verbatim_wide(path, "\\", wide);
         // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.
         let h = unsafe {
             CreateFileW(
@@ -81,10 +90,9 @@ impl Dir {
         Ok(info.dwVolumeSerialNumber)
     }
 
-    fn entries(&self) -> Result<Vec<DirEntry>> {
-        // u64 storage keeps the buffer 8-byte aligned, as the records require.
-        let mut buf = vec![0u64; 8192];
-        let mut out = Vec::new();
+    /// The folder's subfolders and media files: the first `n` of `entries`, `n` returned.
+    fn entries(&self, buf: &mut [u64], entries: &mut Vec<DirEntry>) -> Result<usize> {
+        let mut n = 0;
         loop {
             // SAFETY: an open handle, and `buf` is writable for the length given.
             let ok = unsafe {
@@ -92,13 +100,13 @@ impl Dir {
                     self.0,
                     FileIdBothDirectoryInfo,
                     buf.as_mut_ptr().cast(),
-                    (buf.len() * 8) as u32,
+                    std::mem::size_of_val(buf) as u32,
                 )
             };
             if ok == 0 {
                 let err = std::io::Error::last_os_error();
                 if err.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) {
-                    return Ok(out);
+                    return Ok(n);
                 }
                 bail!("listing directory: {err}");
             }
@@ -113,20 +121,23 @@ impl Dir {
                     let name_ptr = record.add(std::mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName));
                     (info, std::slice::from_raw_parts(name_ptr.cast::<u16>(), info.FileNameLength as usize / 2))
                 };
-                let name = String::from_utf16_lossy(name);
-                if name != "." && name != ".." {
-                    out.push(DirEntry {
-                        is_dir: info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0,
-                        // Junctions and symlinks would loop or leave the tree.
-                        file_ref: if info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0 {
-                            0
-                        } else {
-                            info.FileId as u64
-                        },
-                        size: info.EndOfFile as u64,
-                        mtime: info.LastWriteTime,
-                        name,
-                    });
+                let folder = info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
+                let reparse = info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
+                const DOT: u16 = b'.' as u16;
+                let ext = if folder { None } else { Ext::of_name_utf16(name) };
+                if !reparse && info.FileId != 0 && (folder && name != [DOT] && name != [DOT, DOT] || ext.is_some()) {
+                    if n == entries.len() {
+                        entries.push(DirEntry { name: String::new(), ext: None, file_ref: 0, size: 0, mtime: 0 });
+                    }
+                    let e = &mut entries[n];
+                    // As `String::from_utf16_lossy`, into the entry's buffer.
+                    e.name.clear();
+                    e.name.extend(
+                        char::decode_utf16(name.iter().copied()).map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER)),
+                    );
+                    (e.ext, e.file_ref, e.size, e.mtime) =
+                        (ext, info.FileId as u64, info.EndOfFile as u64, info.LastWriteTime);
+                    n += 1;
                 }
                 if info.NextEntryOffset == 0 {
                     break;
@@ -160,7 +171,11 @@ pub struct ScanStats {
 
 /// Record the media files under `root` (from `normalize_root`); files it no longer holds are marked missing.
 pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStats> {
-    let volume = Dir::open(root)?.volume_serial()?;
+    let mut lister = Lister { wide: Vec::new(), buf: vec![0; 8192], entries: Vec::new() };
+    // Opened once, for its volume and its listing.
+    let root_dir = Dir::open(root, &mut lister.wide)?;
+    let volume = root_dir.volume_serial()?;
+    let mut root_dir = Some(root_dir);
     let scan_id = catalog.begin_scan(root)?;
     let mut stats = ScanStats { folders: 0, files: 0, missing: 0, errors: 0, complete: false };
     let mut stack = vec![root.to_string()];
@@ -176,27 +191,23 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             ctl.finish();
             return Ok(stats);
         }
-        let entries = match Dir::open(&dir).and_then(|d| d.entries()) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("skipped: {e:#}");
-                stats.errors += 1;
-                continue;
-            }
-        };
+        let Lister { wide, buf, entries } = &mut lister;
+        let listed =
+            match root_dir.take().map_or_else(|| Dir::open(&dir, wide), Ok).and_then(|d| d.entries(buf, entries)) {
+                Ok(n) => n,
+                Err(e) => {
+                    eprintln!("skipped: {e:#}");
+                    stats.errors += 1;
+                    continue;
+                }
+            };
         stats.folders += 1;
         let mut folder = None;
-        for e in entries {
-            if e.file_ref == 0 {
-                continue; // reparse point
-            }
-            if e.is_dir {
+        for e in &entries[..listed] {
+            let Some(ext) = e.ext else {
                 if !SKIP_DIRS.iter().any(|s| s.eq_ignore_ascii_case(&e.name)) {
-                    stack.push(format!("{dir}\\{}", e.name));
+                    stack.push([dir.as_str(), "\\", &e.name].concat());
                 }
-                continue;
-            }
-            let Some(kind) = media::kind_of(&e.name) else {
                 continue;
             };
             if folder.is_none() {
@@ -205,7 +216,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             let Some(folder) = &folder else { unreachable!("set above") };
             writer.upsert_file(
                 folder,
-                &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, kind, size: e.size, mtime: e.mtime },
+                &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, ext, size: e.size, mtime: e.mtime },
             )?;
             stats.files += 1;
             in_tx += 1;

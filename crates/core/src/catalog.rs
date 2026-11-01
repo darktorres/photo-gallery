@@ -19,7 +19,7 @@ use rusqlite::{Connection, OptionalExtension, Statement, Transaction, Transactio
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
-use crate::media::{self, Kind};
+use crate::media::{Ext, Kind};
 use crate::pdq;
 use crate::pdq_index::PdqIndex;
 
@@ -90,7 +90,7 @@ CREATE TABLE files(
     file_ref  INTEGER NOT NULL,  -- NTFS file ID; the low 48 bits are the MFT record number
     folder_id INTEGER NOT NULL REFERENCES folders(id),
     name      TEXT NOT NULL,
-    ext       TEXT NOT NULL,     -- the name's last extension, lower case (media::extension)
+    ext       TEXT NOT NULL,     -- the name's last extension, lower case (media::Ext)
     kind      TEXT NOT NULL,     -- media::Kind::key, from the extension: 'image' | 'video'
     size      INTEGER NOT NULL,
     mtime     INTEGER NOT NULL,  -- FILETIME: 100 ns since 1601 UTC
@@ -448,7 +448,7 @@ fn build_copy(path: &Path, new_path: &Path) -> Result<()> {
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
             let text = |i| ctx.get_raw(i).as_str().map_err(|e| rusqlite::Error::UserFunctionError(e.into()));
-            Ok(crate::browse::order_key(text(0)?, text(1)?))
+            Ok(crate::browse::order_key_of(text(0)?, text(1)?))
         },
     )?;
     new.execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
@@ -616,7 +616,8 @@ pub struct ScannedFile<'a> {
     pub volume: u32,
     pub file_ref: u64,
     pub name: &'a str,
-    pub kind: Kind,
+    /// Its last extension (`Ext::of_name`), which also says its kind.
+    pub ext: Ext,
     pub size: u64,
     pub mtime: i64,
 }
@@ -982,14 +983,14 @@ impl<'tx> ScanWriter<'tx> {
     /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
     pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<()> {
         // `pending` and `seq` follow from the triggers.
-        let order_key = [folder.key.as_slice(), &crate::browse::name_key(f.name)].concat();
+        let order_key = crate::browse::order_key(&folder.key, f.name);
         self.file.execute(params![
             f.volume,
             f.file_ref as i64,
             folder.id,
             f.name,
-            media::extension(f.name),
-            f.kind.key(),
+            f.ext.name(),
+            f.ext.kind().key(),
             f.size as i64,
             f.mtime,
             self.scan,
@@ -1230,13 +1231,13 @@ pub(crate) mod fixture {
                     f.file_ref,
                     f.folder,
                     f.name,
-                    crate::media::extension(f.name),
+                    crate::media::Ext::of_name(f.name).expect("a media file").name(),
                     f.kind,
                     f.size,
                     f.mtime,
                     f.missing,
                     f.rotation,
-                    crate::browse::order_key(&folder, f.name)
+                    crate::browse::order_key_of(&folder, f.name)
                 ],
             )
             .unwrap();
@@ -1333,7 +1334,7 @@ mod tests {
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
         };
         for (key, folder, name) in keys {
-            assert_eq!(key, crate::browse::order_key(&folder, &name), "{name}");
+            assert_eq!(key, crate::browse::order_key_of(&folder, &name), "{name}");
         }
         assert_eq!(
             rows("SELECT file_id || ':' || rotation || kind FROM analysis ORDER BY 1"),
@@ -1460,8 +1461,8 @@ mod tests {
         let tx = c.conn.transaction().unwrap();
         let mut writer = ScanWriter::new(&tx, scan).unwrap();
         let folder = writer.folder(r"D:\x").unwrap();
-        let kind = media::kind_of(name).unwrap();
-        writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref: 7, name, kind, size, mtime }).unwrap();
+        let ext = Ext::of_name(name).unwrap();
+        writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref: 7, name, ext, size, mtime }).unwrap();
         drop(writer);
         tx.commit().unwrap();
     }
@@ -1618,8 +1619,8 @@ mod tests {
             let tx = c.conn.transaction().unwrap();
             let mut writer = ScanWriter::new(&tx, scan).unwrap();
             let folder = writer.folder(r"D:\x").unwrap();
-            let kind = media::kind_of(name).unwrap();
-            let file = ScannedFile { volume: 1, file_ref: 10 + n as u64, name, kind, size: 10, mtime: 100 };
+            let ext = Ext::of_name(name).unwrap();
+            let file = ScannedFile { volume: 1, file_ref: 10 + n as u64, name, ext, size: 10, mtime: 100 };
             writer.upsert_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();

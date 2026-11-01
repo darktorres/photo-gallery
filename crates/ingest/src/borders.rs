@@ -12,7 +12,7 @@ use pg_core::analyze::{Analyzer, FileBorders};
 use pg_core::borders::{self as detector, Detector, Side};
 use pg_core::catalog::{BordersWriter, Catalog};
 use pg_core::decode::Rgb;
-use pg_core::media::{self, Kind};
+use pg_core::media::{Ext, Kind};
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -97,7 +97,7 @@ fn image_files(paths: &[PathBuf]) -> Result<Vec<String>> {
         Ok(())
     }
     fn is_image(path: &Path) -> bool {
-        path.file_name().and_then(|n| n.to_str()).and_then(media::kind_of) == Some(Kind::Image)
+        path.file_name().and_then(|n| n.to_str()).and_then(Ext::of_name).map(Ext::kind) == Some(Kind::Image)
     }
     let mut out = Vec::new();
     for p in paths {

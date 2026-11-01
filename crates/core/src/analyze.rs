@@ -3,7 +3,7 @@
 
 use anyhow::Result;
 
-use crate::borders::{self, Detection};
+use crate::borders::{self, Detection, Detector};
 use crate::decode::{Decoder, MinSize, Rgb};
 use crate::pdq;
 use crate::resize::fit_within;
@@ -90,12 +90,12 @@ pub fn analyze(bytes: &[u8], turns: u8, decoder: &mut Decoder) -> Result<Analysi
 
 /// The borders of a file ([`borders::detect`] on its stored pixels, at full size), looked for after the import, in
 /// a pass of their own. `None` for animated images and images too small to look at.
-pub fn borders_of(bytes: &[u8], turns: u8, decoder: &mut Decoder) -> Result<FileBorders> {
+pub fn borders_of(bytes: &[u8], turns: u8, decoder: &mut Decoder, detector: &mut Detector) -> Result<FileBorders> {
     let stored = decoder.decode_stored(bytes, MinSize::Full, turns)?;
     let frames = crate::metadata::frame_count(bytes, stored.format);
     let (width, height) = (stored.full_width, stored.full_height);
     let borders = (frames <= 1 && (width.min(height) as usize) >= borders::MIN_SIDE)
-        .then(|| borders::detect(&stored.image, &borders::Params::default()));
+        .then(|| detector.detect(&stored.image, &borders::Params::default()));
     Ok(FileBorders { width, height, borders })
 }
 

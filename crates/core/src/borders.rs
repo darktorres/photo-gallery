@@ -328,10 +328,47 @@ pub fn upright(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
     [a.0.min(c.0), a.1.min(c.1), a.0.max(c.0), a.1.max(c.1)]
 }
 
-/// Find the borders of a stored image.
+/// Find the borders of a stored image, once. A pass over many images keeps a [`Detector`] instead.
 pub fn detect(img: &Rgb, p: &Params) -> Detection {
+    Detector::default().detect(img, p)
+}
+
+/// The border detector's buffers, kept from image to image: each grows to what the largest image so far needed.
+#[derive(Default)]
+pub struct Detector {
+    lines: SolidLines,
+    sums: DetailSums,
+    /// [`blur_side`]'s line details, summed down the lines.
+    act_cum: Vec<f64>,
+    /// [`blur_threshold`]'s line details.
+    details: Vec<f64>,
+}
+
+impl Detector {
+    /// Find the borders of a stored image.
+    pub fn detect(&mut self, img: &Rgb, p: &Params) -> Detection {
+        detect_with(self, img, p)
+    }
+
+    /// The bytes its buffers hold.
+    pub fn capacity_bytes(&self) -> usize {
+        self.lines.medians2.capacity() * size_of::<[i32; 3]>()
+            + self.lines.solid.capacity()
+            + self.sums.cum.capacity() * size_of::<u32>()
+            + (self.act_cum.capacity() + self.details.capacity()) * size_of::<f64>()
+    }
+
+    /// Frees its buffers if they hold more than `bytes` (after an image far larger than the rest).
+    pub fn trim(&mut self, bytes: usize) {
+        if self.capacity_bytes() > bytes {
+            *self = Detector::default();
+        }
+    }
+}
+
+fn detect_with(d: &mut Detector, img: &Rgb, p: &Params) -> Detection {
     let (w, h) = (img.width, img.height);
-    let blur_thr = blur_threshold(img, p);
+    let blur_thr = blur_threshold(img, p, &mut d.details);
     let mut content = [0, 0, w, h];
     let mut sides: Vec<Side> = Vec::new();
     // Nested borders, e.g. a thin line inside a blurred bar.
@@ -340,7 +377,7 @@ pub fn detect(img: &Rgb, p: &Params) -> Detection {
         // Top/bottom first, then left/right on what is left, so corners never mix two borders.
         for pair in [[Edge::Top, Edge::Bottom], [Edge::Left, Edge::Right]] {
             let found = pair.map(|edge| {
-                detect_side(&View::new(img, content, edge), p, blur_thr).map(|mut s| {
+                detect_side(d, &View::new(img, content, edge), p, blur_thr).map(|mut s| {
                     s.pass = pass;
                     s
                 })
@@ -389,24 +426,34 @@ pub fn detect(img: &Rgb, p: &Params) -> Detection {
 
 /// The detail below which a line is blurred: a fraction of the image's central detail. `None` for images that are
 /// smooth overall, where blurred bars aren't looked for.
-fn blur_threshold(img: &Rgb, p: &Params) -> Option<f64> {
+fn blur_threshold(img: &Rgb, p: &Params, details: &mut Vec<f64>) -> Option<f64> {
     let (w, h) = (img.width, img.height);
     // Every 4th line of the middle third, every other pixel of the middle three quarters.
     let (x0, x1) = (w / 8, 7 * w / 8);
-    let xs: Vec<usize> = (x0..x1).step_by(2).collect();
-    let mut details: Vec<f64> = (h / 3..2 * h / 3)
-        .step_by(4)
-        .filter(|_| xs.len() > 1)
-        .map(|y| {
+    let xs = (x0..x1).step_by(2);
+    let n = xs.len();
+    details.clear();
+    if n > 1 {
+        details.extend((h / 3..2 * h / 3).step_by(4).map(|y| {
             let sum = |x: usize| {
                 let i = (y * w + x) * 3;
                 img.pixels[i] as i32 + img.pixels[i + 1] as i32 + img.pixels[i + 2] as i32
             };
-            let total: i64 = xs.windows(2).map(|x| (sum(x[1]) - sum(x[0])).abs() as i64).sum();
-            total as f64 / (3.0 * (xs.len() - 1) as f64)
-        })
-        .collect();
-    let content_act = median_f64(&mut details).unwrap_or(0.0);
+            let mut prev = sum(x0);
+            let total: i64 = xs
+                .clone()
+                .skip(1)
+                .map(|x| {
+                    let g = sum(x);
+                    let step = (g - prev).abs() as i64;
+                    prev = g;
+                    step
+                })
+                .sum();
+            total as f64 / (3.0 * (n - 1) as f64)
+        }));
+    }
+    let content_act = median_f64(details).unwrap_or(0.0);
     (content_act >= p.min_content_act).then(|| p.blur_abs.max(p.blur_rel * content_act))
 }
 
@@ -448,15 +495,26 @@ impl<'a> View<'a> {
         [px[0] as i32, px[1] as i32, px[2] as i32]
     }
 
-    /// A line's pixels as the sums of their channels (3 × gray).
-    fn gray3(&self, line: usize) -> Vec<i32> {
-        (0..self.positions).map(|k| self.at(line, k).iter().sum()).collect()
+    /// A read pixel as the sum of its channels (3 × gray).
+    #[inline]
+    fn gray3(&self, line: usize, k: usize) -> i32 {
+        self.at(line, k).iter().sum()
     }
 
-    /// A line's detail: 3 × |gray step| between neighbouring read pixels, summed.
+    /// A line's steps between neighbouring read pixels, 3 × |gray step|, in order (`positions - 1` of them).
+    fn steps3(&self, line: usize) -> impl Iterator<Item = u32> + '_ {
+        let mut prev = if self.positions > 0 { self.gray3(line, 0) } else { 0 };
+        (1..self.positions).map(move |k| {
+            let g = self.gray3(line, k);
+            let step = (g - prev).unsigned_abs();
+            prev = g;
+            step
+        })
+    }
+
+    /// A line's detail: its steps, summed.
     fn detail3(&self, line: usize) -> i64 {
-        let g = self.gray3(line);
-        g.windows(2).map(|w| (w[1] - w[0]).abs() as i64).sum()
+        self.steps3(line).map(i64::from).sum()
     }
 
     /// Mean gray step of a line (`borders.py`'s `detail`).
@@ -467,23 +525,30 @@ impl<'a> View<'a> {
 
 /// Per line: twice its median colour, and whether it is solid (see the module comment). Each line depends only on
 /// itself and the line before, so the lines are measured as far as they are asked for.
+#[derive(Default)]
 struct SolidLines {
     medians2: Vec<[i32; 3]>,
     solid: Vec<bool>,
 }
 
 impl SolidLines {
-    fn new() -> SolidLines {
-        SolidLines { medians2: Vec::new(), solid: Vec::new() }
+    /// Start over, for another side.
+    fn clear(&mut self) {
+        self.medians2.clear();
+        self.solid.clear();
     }
 
     fn measure_to(&mut self, v: &View, n: usize, p: &Params) {
         while self.solid.len() < n {
             let line = self.solid.len();
-            let pixels: Vec<[i32; 3]> = (0..v.positions).map(|k| v.at(line, k)).collect();
-            let m2 = median2(&pixels);
-            let off = pixels.iter().filter(|px| (0..3).any(|c| (2 * px[c] - m2[c]).abs() > 2 * p.tol)).count();
-            let off_ok = (off as f64 / pixels.len() as f64) < p.solid_off;
+            let m2 = median2(v, line);
+            let off = (0..v.positions)
+                .filter(|&k| {
+                    let px = v.at(line, k);
+                    (0..3).any(|c| (2 * px[c] - m2[c]).abs() > 2 * p.tol)
+                })
+                .count();
+            let off_ok = (off as f64 / v.positions as f64) < p.solid_off;
             // The colour may change from line to line by tol / 3 at most.
             let jump_ok =
                 self.medians2.last().is_none_or(|prev| (0..3).all(|c| 3 * (m2[c] - prev[c]).abs() <= 2 * p.tol));
@@ -493,17 +558,17 @@ impl SolidLines {
     }
 }
 
-/// Twice the per-channel median (numpy's: the mean of the middle two of an even count), from histograms.
-fn median2(pixels: &[[i32; 3]]) -> [i32; 3] {
-    let mut out = [0; 3];
-    for (c, o) in out.iter_mut().enumerate() {
-        let mut hist = [0u32; 256];
-        for px in pixels {
-            hist[px[c] as usize] += 1;
+/// Twice the per-channel median of a line's read pixels (numpy's: the mean of the middle two of an even count), from
+/// histograms.
+fn median2(v: &View, line: usize) -> [i32; 3] {
+    let mut hists = [[0u32; 256]; 3];
+    for k in 0..v.positions {
+        let px = v.at(line, k);
+        for (hist, value) in hists.iter_mut().zip(px) {
+            hist[value as usize] += 1;
         }
-        *o = hist_median2(&hist, pixels.len());
     }
-    out
+    hists.map(|hist| hist_median2(&hist, v.positions))
 }
 
 /// Twice the median of `n` values counted in `hist` (value = index).
@@ -555,53 +620,64 @@ fn run_length(mask: &[bool]) -> usize {
     i
 }
 
+/// [`refine_seam`]'s widest span: `before + after + 1` lines.
+const SEAM_SPAN: usize = 16;
+
 /// The first strong line-to-line change in `[guess - before, guess + after]`.
 fn refine_seam(v: &View, guess: usize, before: usize, after: usize) -> usize {
+    assert!(before + after < SEAM_SPAN, "a seam is looked for in at most {SEAM_SPAN} lines");
     let lo = guess.saturating_sub(before).max(1);
     let hi = (guess + after).min(v.depth - 1);
     if hi < lo {
         return guess;
     }
     // step[k]: the mean (over read positions) of the largest channel change into line lo + k.
-    let steps: Vec<f64> = (lo..=hi)
-        .map(|line| {
-            let total: i64 = (0..v.positions)
-                .map(|k| {
-                    let (a, b) = (v.at(line - 1, k), v.at(line, k));
-                    (0..3).map(|c| (b[c] - a[c]).abs()).max().unwrap_or(0) as i64
-                })
-                .sum();
-            total as f64 / v.positions as f64
-        })
-        .collect();
+    let mut steps = [0.0f64; SEAM_SPAN];
+    let steps = &mut steps[..=hi - lo];
+    for (step, line) in steps.iter_mut().zip(lo..=hi) {
+        let total: i64 = (0..v.positions)
+            .map(|k| {
+                let (a, b) = (v.at(line - 1, k), v.at(line, k));
+                (0..3).map(|c| (b[c] - a[c]).abs()).max().unwrap_or(0) as i64
+            })
+            .sum();
+        *step = total as f64 / v.positions as f64;
+    }
     let max = steps.iter().copied().fold(0.0, f64::max);
     let strong = 3.0f64.max(0.5 * max);
     steps.iter().position(|&s| s >= strong).map_or(guess, |k| lo + k)
 }
 
-/// Per-line horizontal detail per column, 3 × |gray step|, summed down the lines: `cum[i][j]` is the sum over lines
-/// `first..first + i` at column step `j`.
+/// Per-line horizontal detail per column, 3 × |gray step|, summed down the lines: row `i` of `cum` (`cols` wide) is
+/// the sum over lines `first..first + i` at each column step.
+#[derive(Default)]
 struct DetailSums {
     first: usize,
-    cum: Vec<Vec<u32>>,
+    cols: usize,
+    cum: Vec<u32>,
 }
 
 impl DetailSums {
-    fn new(v: &View, lines: std::ops::Range<usize>) -> DetailSums {
+    /// Measure `lines` of `v`, replacing what was measured before.
+    fn measure(&mut self, v: &View, lines: std::ops::Range<usize>) {
         let cols = v.positions.saturating_sub(1);
-        let mut cum = vec![vec![0u32; cols]];
-        for line in lines.clone() {
-            let g = v.gray3(line);
-            let prev = cum.last().unwrap();
-            let next: Vec<u32> = (0..cols).map(|j| prev[j] + (g[j + 1] - g[j]).unsigned_abs()).collect();
-            cum.push(next);
+        self.first = lines.start;
+        self.cols = cols;
+        self.cum.clear();
+        self.cum.reserve((lines.len() + 1) * cols);
+        self.cum.resize(cols, 0);
+        for (i, line) in lines.enumerate() {
+            let prev = i * cols;
+            for (j, step) in v.steps3(line).enumerate() {
+                let next = self.cum[prev + j] + step;
+                self.cum.push(next);
+            }
         }
-        DetailSums { first: lines.start, cum }
     }
 
     /// The sum over lines `a..b` at column step `j`.
     fn sum(&self, a: usize, b: usize, j: usize) -> u32 {
-        self.cum[b - self.first][j] - self.cum[a - self.first][j]
+        self.cum[(b - self.first) * self.cols + j] - self.cum[(a - self.first) * self.cols + j]
     }
 }
 
@@ -626,17 +702,18 @@ fn seam_straightness(v: &View, sums: &DetailSums, row: usize, k: usize, p: &Para
     sharp as f64 / cols as f64
 }
 
-/// What starts a side's detection: its first lines solid, or blurred. `blur_thr`: see [`blur_threshold`].
-fn starts(v: &View, p: &Params, blur_thr: Option<f64>) -> Option<(Kind, SolidLines)> {
+/// What starts a side's detection: its first lines solid (measured into `lines`), or blurred. `blur_thr`: see
+/// [`blur_threshold`].
+fn starts(v: &View, p: &Params, blur_thr: Option<f64>, lines: &mut SolidLines) -> Option<Kind> {
     if v.depth < 4 || v.positions < 2 {
         return None;
     }
-    let mut lines = SolidLines::new();
+    lines.clear();
     lines.measure_to(v, 4, p);
     if lines.solid.iter().all(|&s| s) {
-        return Some((Kind::Solid, lines));
+        return Some(Kind::Solid);
     }
-    blurred(v, blur_thr).then_some((Kind::Blur, lines))
+    blurred(v, blur_thr).then_some(Kind::Blur)
 }
 
 /// Whether the first four lines have less detail than `blur_thr`.
@@ -645,19 +722,18 @@ fn blurred(v: &View, blur_thr: Option<f64>) -> bool {
 }
 
 /// A border at the edge of `v`, if any (accepted, or a rejected candidate).
-fn detect_side(v: &View, p: &Params, blur_thr: Option<f64>) -> Option<Side> {
+fn detect_side(d: &mut Detector, v: &View, p: &Params, blur_thr: Option<f64>) -> Option<Side> {
     let depth_max = (v.depth as f64 * p.max_frac) as usize;
     if depth_max < p.min_px + 8 {
         return None;
     }
-    let (kind, lines) = starts(v, p, blur_thr)?;
-    match kind {
-        Kind::Solid => solid_side(v, p, depth_max, lines),
-        Kind::Blur => blur_side(v, p, depth_max),
+    match starts(v, p, blur_thr, &mut d.lines)? {
+        Kind::Solid => solid_side(v, p, depth_max, &mut d.lines, &mut d.sums),
+        Kind::Blur => blur_side(v, p, depth_max, &mut d.sums, &mut d.act_cum),
     }
 }
 
-fn solid_side(v: &View, p: &Params, depth_max: usize, mut lines: SolidLines) -> Option<Side> {
+fn solid_side(v: &View, p: &Params, depth_max: usize, lines: &mut SolidLines, sums: &mut DetailSums) -> Option<Side> {
     let m0 = lines.medians2[0];
     let color = [0, 1, 2].map(|c| (m0[c] / 2) as u8);
     let side = |depth: usize, straight: f64, rejected| Side {
@@ -698,8 +774,8 @@ fn solid_side(v: &View, p: &Params, depth_max: usize, mut lines: SolidLines) -> 
     if k < 1 || s1 - s0 < off + 1 + k {
         return Some(side(seam, 0.0, Some(Reason::NoSeam)));
     }
-    let sums = DetailSums::new(v, s0..s1);
-    let straight = seam_straightness(v, &sums, seam, k, p);
+    sums.measure(v, s0..s1);
+    let straight = seam_straightness(v, sums, seam, k, p);
     if straight < p.straight {
         return Some(side(seam, straight, Some(Reason::SeamNotStraight)));
     }
@@ -737,7 +813,7 @@ fn solid_side(v: &View, p: &Params, depth_max: usize, mut lines: SolidLines) -> 
 
 /// A blurred bar has no fixed colour and may hold a blurred copy of the content, so instead of following a run of
 /// similar lines, find the first straight sharp seam below a smooth region.
-fn blur_side(v: &View, p: &Params, depth_max: usize) -> Option<Side> {
+fn blur_side(v: &View, p: &Params, depth_max: usize, sums: &mut DetailSums, act_cum: &mut Vec<f64>) -> Option<Side> {
     const K: usize = 6;
     const CONTENT: usize = 64;
     let lines = (depth_max + 72).min(v.depth);
@@ -746,15 +822,18 @@ fn blur_side(v: &View, p: &Params, depth_max: usize) -> Option<Side> {
     if first >= last {
         return None;
     }
-    let sums = DetailSums::new(v, 0..lines);
+    sums.measure(v, 0..lines);
+    let sums = &*sums;
     // Each line's detail (as the sum over its columns: only ratios of them are compared), summed down the lines.
-    let mut act_cum = vec![0.0f64];
+    act_cum.clear();
+    act_cum.reserve(lines + 1);
+    act_cum.push(0.0);
     for line in 0..lines {
         let act: u64 = (0..v.positions - 1).map(|j| sums.sum(line, line + 1, j) as u64).sum();
         act_cum.push(act_cum[line] + act as f64);
     }
     let found = (first..last).find_map(|row| {
-        let straight = seam_straightness(v, &sums, row, K, p);
+        let straight = seam_straightness(v, sums, row, K, p);
         // The mean detail of the bar above the row, and of the content below it.
         let bar = act_cum[row] / row as f64;
         let content = (act_cum[row + CONTENT] - act_cum[row]) / CONTENT as f64;
@@ -1021,6 +1100,32 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn a_kept_detector_finds_what_a_new_one_does() {
+        // Images of different sizes and borders, in an order where each leaves larger buffers than the next needs.
+        let mut images = Vec::new();
+        let mut letterbox = content(400, 300, 11);
+        fill(&mut letterbox, 0, 0, 400, 40, |_, _| [0, 0, 0]);
+        fill(&mut letterbox, 0, 260, 400, 300, |_, _| [0, 0, 0]);
+        let mut bars = content(300, 520, 12);
+        fill(&mut bars, 0, 0, 300, 110, bar);
+        fill(&mut bars, 0, 410, 300, 520, bar);
+        let mut padded = content(500, 300, 13);
+        fill(&mut padded, 0, 0, 90, 300, |_, _| [255, 255, 255]);
+        let mut small = content(120, 90, 14);
+        fill(&mut small, 0, 0, 120, 12, |_, _| [30, 60, 90]);
+        images.extend([bars, letterbox, content(400, 300, 15), padded, small]);
+        let mut kept = Detector::default();
+        for _ in 0..2 {
+            for img in &images {
+                assert_eq!(kept.detect(img, &Params::default()), detect(img, &Params::default()));
+            }
+        }
+        assert!(kept.capacity_bytes() > 0);
+        kept.trim(0);
+        assert_eq!(kept.capacity_bytes(), 0);
     }
 
     #[test]

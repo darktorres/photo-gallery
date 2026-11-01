@@ -9,7 +9,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, ensure};
 use pg_core::analyze::{FileBorders, borders_of};
-use pg_core::borders::{self as detector, Side};
+use pg_core::borders::{self as detector, Detector, Side};
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, Rgb};
 use pg_core::media::{self, Kind};
@@ -56,8 +56,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         |_| true,
         opts,
         ctl,
-        Decoder::new,
-        |decoder, i, bytes| borders_of(bytes, items[i].rotation, decoder),
+        || Ok((Decoder::new()?, Detector::default())),
+        |(decoder, detector), i, bytes| borders_of(bytes, items[i].rotation, decoder, detector),
         |i, result, len| {
             ctl.add(len, result.is_err());
             batch.push((i, result));
@@ -129,8 +129,8 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
         |_| true,
         opts,
         ctl,
-        Decoder::new,
-        |decoder, _, bytes| borders_of(bytes, 0, decoder),
+        || Ok((Decoder::new()?, Detector::default())),
+        |(decoder, detector), _, bytes| borders_of(bytes, 0, decoder, detector),
         |i, result, len| {
             ctl.add(len, result.is_err());
             let path = field(&files[i]);
@@ -188,6 +188,8 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
 /// at). Returns how many it read.
 pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
     let mut n = 0;
+    let mut finder = Detector::default();
+    let mut img = Rgb { width: 0, height: 0, pixels: Vec::new() };
     loop {
         if input.fill_buf()?.is_empty() {
             return Ok(n);
@@ -196,10 +198,11 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
         input.read_exact(&mut size).context("reading an image's size")?;
         let [w, h] = [&size[..4], &size[4..]].map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
         ensure!(w.checked_mul(h).is_some_and(|p| p <= 1 << 30), "image {n}: {w} × {h} is too large");
-        let mut pixels = vec![0u8; w * h * 3];
-        input.read_exact(&mut pixels).with_context(|| format!("reading image {n}'s pixels"))?;
+        (img.width, img.height) = (w, h);
+        img.pixels.resize(w * h * 3, 0);
+        input.read_exact(&mut img.pixels).with_context(|| format!("reading image {n}'s pixels"))?;
         let [l, t, r, b] = if w.min(h) >= detector::MIN_SIDE {
-            detector::detect(&Rgb { width: w, height: h, pixels }, &detector::Params::default()).content
+            finder.detect(&img, &detector::Params::default()).content
         } else {
             [0, 0, w as u32, h as u32]
         };

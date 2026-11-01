@@ -30,6 +30,26 @@ impl Kind {
     }
 }
 
+/// One of the extensions the library holds, as a byte: images first, then videos, in the lists' order.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Ext(u8);
+
+impl Ext {
+    /// A lower-case extension (`files.ext`); `None` if the library doesn't hold it.
+    pub fn of(ext: &str) -> Option<Ext> {
+        IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS).position(|e| *e == ext).map(|i| Ext(i as u8))
+    }
+
+    pub fn name(self) -> &'static str {
+        let i = self.0 as usize;
+        IMAGE_EXTENSIONS.get(i).unwrap_or_else(|| &VIDEO_EXTENSIONS[i - IMAGE_EXTENSIONS.len()])
+    }
+
+    pub fn kind(self) -> Kind {
+        if (self.0 as usize) < IMAGE_EXTENSIONS.len() { Kind::Image } else { Kind::Video }
+    }
+}
+
 /// A name's last extension in lower case (`a.mozjpeg.JPG` → `jpg`); empty when it has none.
 pub fn extension(name: &str) -> String {
     name.rsplit_once('.').map_or(String::new(), |(_, ext)| ext.to_lowercase())
@@ -58,6 +78,11 @@ mod tests {
         assert_eq!(kind_of("x.WebP"), Some(Kind::Image));
         assert_eq!(kind_of("clip.MP4"), Some(Kind::Video));
         assert_eq!(kind_of("notes.txt"), None);
+        for ext in IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS) {
+            let e = Ext::of(ext).unwrap();
+            assert_eq!((e.name(), Some(e.kind())), (*ext, kind_of(&format!("a.{ext}"))));
+        }
+        assert_eq!(Ext::of("txt"), None);
         assert_eq!(kind_of("jpg"), None);
         assert_eq!(Kind::from_key(Kind::Video.key()), Some(Kind::Video));
     }

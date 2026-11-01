@@ -1,5 +1,7 @@
 //! The grid model: the files of the open folder, laid out in justified rows (`pg_core::layout`). QML sees one
-//! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index.
+//! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index. The
+//! model holds a compact entry per file (`browse::Entry`); a file's path and size are read when it is shown
+//! (`browse::details`), for the selection and the viewer's file.
 //!
 //! The files are listed off the GUI thread (`loader`): `openFolder` asks, and the list arrives later (`loaded`).
 //! So that nothing is renumbered under the user, the model keeps the items QML holds: the selection (`current`)
@@ -159,9 +161,6 @@ pub mod qobject {
         #[cxx_name = "setRating"]
         fn set_rating(self: Pin<&mut GalleryModel>, item: i32, rating: i32);
 
-        #[qinvokable]
-        fn path(self: &GalleryModel, item: i32) -> QString;
-
         /// What the grid marks on a thumbnail besides its rating: a video's length (`▶ 1:23`), the format of an
         /// animated image (`GIF`, `APNG`, `WEBP`), or nothing.
         #[qinvokable]
@@ -204,12 +203,12 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
+use std::cell::RefCell;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QUrl, QVariant};
-use pg_core::browse::{self, Item};
+use pg_core::browse::{self, Details, Entry};
 use pg_core::layout::{self, Row};
-use pg_core::media::{self, Kind};
 use pg_core::query::{MediaType, Query, Sort};
 
 use crate::loader::{self, Kind as Load};
@@ -226,7 +225,10 @@ pub struct GalleryRust {
     current: i32,
     viewing: i32,
     anchor: i32,
-    items: Vec<Item>,
+    entries: Vec<Entry>,
+    /// The details read last, of at most two files (the selection's and the viewer's), newest first. Emptied
+    /// whenever a list is shown or a file changes.
+    details: RefCell<Vec<(i64, Details)>>,
     rows: Vec<Row>,
     spacing: f64,
     width: f64,
@@ -235,8 +237,8 @@ pub struct GalleryRust {
     generation: u64,
     /// Whether it keeps the selection: every request since the last list shown was a refresh of the same folder.
     keep: bool,
-    /// A list that arrived while the viewer was open (its generation, its items).
-    held: Option<(u64, Vec<Item>)>,
+    /// A list that arrived while the viewer was open (its generation, its entries).
+    held: Option<(u64, Vec<Entry>)>,
     /// Files rated or turned since it was asked for (its snapshot may predate them), and whether turns were
     /// written meanwhile (`refreshTurned`).
     edited: Vec<i64>,
@@ -252,7 +254,8 @@ impl Default for GalleryRust {
             current: -1,
             viewing: -1,
             anchor: -1,
-            items: Vec::new(),
+            entries: Vec::new(),
+            details: RefCell::new(Vec::new()),
             rows: Vec::new(),
             spacing: 0.0,
             width: 0.0,
@@ -266,17 +269,35 @@ impl Default for GalleryRust {
     }
 }
 
-fn media_type(i: &Item) -> MediaType {
-    match i.kind {
-        Kind::Video => MediaType::Video,
-        Kind::Image if i.animated => MediaType::Animated,
-        Kind::Image => MediaType::Image,
-    }
-}
-
 impl GalleryRust {
-    fn item(&self, i: i32) -> Option<&Item> {
-        usize::try_from(i).ok().and_then(|i| self.items.get(i))
+    fn item(&self, i: i32) -> Option<&Entry> {
+        usize::try_from(i).ok().and_then(|i| self.entries.get(i))
+    }
+
+    /// `f` of an item's entry and details; `None` without the item, or when its file is gone from the catalog.
+    fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
+        let e = self.item(item)?;
+        let mut memo = self.details.borrow_mut();
+        if let Some(at) = memo.iter().position(|(id, _)| *id == e.id) {
+            let found = memo.remove(at);
+            memo.insert(0, found);
+        } else {
+            let details = match state::with_catalog(|c| browse::details(&c.conn, e.id)) {
+                Ok(d) => d?,
+                Err(err) => {
+                    eprintln!("reading {}: {err:#}", e.id);
+                    return None;
+                }
+            };
+            memo.truncate(1);
+            memo.insert(0, (e.id, details));
+        }
+        Some(f(e, &memo[0].1))
+    }
+
+    /// A file changed, or a list is shown: what was read of it may be stale.
+    fn forget_details(&mut self) {
+        self.details.get_mut().clear();
     }
 
     fn row_index(&self, item: usize) -> usize {
@@ -286,7 +307,7 @@ impl GalleryRust {
     /// Left edge and width of an item in its row.
     fn span(&self, item: usize) -> (f64, f64) {
         let row = &self.rows[self.row_index(item)];
-        let w = |i: usize| layout::clamp_aspect(self.items[i].aspect()) * row.height;
+        let w = |i: usize| layout::clamp_aspect(self.entries[i].aspect()) * row.height;
         let x: f64 = (row.first..item).map(|i| w(i) + self.spacing).sum();
         (x, w(item))
     }
@@ -340,14 +361,14 @@ impl qobject::GalleryModel {
         let shown = path.clone();
         loader::submit(
             Load::Grid,
-            move |c| browse::list_files(&c.conn, &path, recursive, &query, sort),
-            move |items| {
-                let items = items.unwrap_or_else(|e| {
+            move |c| browse::list_grid(&c.conn, &path, recursive, &query, sort),
+            move |entries| {
+                let entries = entries.unwrap_or_else(|e| {
                     eprintln!("listing {shown}: {e:#}");
                     Vec::new()
                 });
                 // Fails only when the model is gone (the window closing): nothing left to show it in.
-                let _ = model.queue(move |model| model.apply(generation, items));
+                let _ = model.queue(move |model| model.apply(generation, entries));
             },
         );
     }
@@ -359,20 +380,20 @@ impl qobject::GalleryModel {
         self.as_mut().rust_mut().viewing = value;
         self.as_mut().viewing_changed();
         if value < 0
-            && let Some((generation, items)) = self.as_mut().rust_mut().held.take()
+            && let Some((generation, entries)) = self.as_mut().rust_mut().held.take()
         {
-            self.apply(generation, items);
+            self.apply(generation, entries);
         }
     }
 
     /// Show a list `open_folder` asked for, unless a newer one was asked for since; while the viewer is open, when
     /// it closes.
-    fn apply(mut self: Pin<&mut Self>, generation: u64, mut items: Vec<Item>) {
+    fn apply(mut self: Pin<&mut Self>, generation: u64, mut entries: Vec<Entry>) {
         if generation != self.generation {
             return;
         }
         if self.viewing >= 0 {
-            self.as_mut().rust_mut().held = Some((generation, items));
+            self.as_mut().rust_mut().held = Some((generation, entries));
             return;
         }
         self.as_mut().about_to_load();
@@ -382,16 +403,20 @@ impl qobject::GalleryModel {
         // sees its own writes).
         let edited = std::mem::take(&mut self.as_mut().rust_mut().edited);
         for id in edited {
-            if let Some(slot) = items.iter_mut().find(|i| i.id == id) {
-                match state::with_catalog(|c| browse::reload_item(&c.conn, id)) {
+            if let Some(slot) = entries.iter_mut().find(|e| e.id == id) {
+                match state::with_catalog(|c| browse::entry(&c.conn, id)) {
                     Ok(Some(fresh)) => *slot = fresh,
                     Ok(None) => {}
                     Err(e) => eprintln!("reloading {id}: {e:#}"),
                 }
             }
         }
-        let count = items.len() as i32;
-        self.as_mut().rust_mut().items = items;
+        let count = entries.len() as i32;
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.entries = entries;
+            this.forget_details();
+        }
         self.as_mut().set_count(count);
         let (w, h, s) = (self.width, self.row_height, self.spacing);
         self.as_mut().relayout(w, h, s);
@@ -424,7 +449,7 @@ impl qobject::GalleryModel {
             this.width = width;
             this.row_height = row_height;
             this.spacing = spacing;
-            let aspects: Vec<f64> = this.items.iter().map(Item::aspect).collect();
+            let aspects: Vec<f64> = this.entries.iter().map(Entry::aspect).collect();
             this.rows = if width > 0.0 && row_height > 0.0 {
                 layout::justify(&aspects, width, row_height, spacing)
             } else {
@@ -439,7 +464,7 @@ impl qobject::GalleryModel {
     }
 
     fn index_of(&self, file_id: i64) -> i32 {
-        self.items.iter().position(|i| i.id == file_id).map_or(-1, |i| i as i32)
+        self.entries.iter().position(|e| e.id == file_id).map_or(-1, |i| i as i32)
     }
 
     fn aspect(&self, item: i32) -> f64 {
@@ -464,11 +489,11 @@ impl qobject::GalleryModel {
     }
 
     fn full_width(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |i| if i.pending_turns % 2 == 1 { i.height } else { i.width } as i32)
+        self.item(item).map_or(0, |e| e.shown_size().0 as i32)
     }
 
     fn full_height(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |i| if i.pending_turns % 2 == 1 { i.width } else { i.height } as i32)
+        self.item(item).map_or(0, |e| e.shown_size().1 as i32)
     }
 
     fn pending_turns(&self, item: i32) -> i32 {
@@ -488,8 +513,9 @@ impl qobject::GalleryModel {
         library::wake_writer();
         {
             let mut this = self.as_mut().rust_mut();
-            let i = &mut this.items[item as usize];
-            i.pending_turns = (i.pending_turns + turns) % 4;
+            let e = &mut this.entries[item as usize];
+            e.pending_turns = (e.pending_turns + turns) % 4;
+            this.forget_details();
             if this.loading {
                 this.edited.push(id);
             }
@@ -508,17 +534,21 @@ impl qobject::GalleryModel {
         if self.loading {
             self.as_mut().rust_mut().turned = true;
         }
-        let waiting: Vec<usize> = (0..self.items.len()).filter(|&i| self.items[i].pending_turns != 0).collect();
+        // Not the queued turns (`file_writes`): the writer deletes a turn's row once it's written, so these are
+        // exactly the entries that still show one.
+        let waiting: Vec<usize> = (0..self.entries.len()).filter(|&i| self.entries[i].pending_turns != 0).collect();
         if waiting.is_empty() {
             return;
         }
+        // A written turn changes the file's size too.
+        self.as_mut().rust_mut().forget_details();
         let mut reshaped = false;
         for i in waiting {
-            let id = self.items[i].id;
-            match state::with_catalog(|c| browse::reload_item(&c.conn, id)) {
+            let id = self.entries[i].id;
+            match state::with_catalog(|c| browse::entry(&c.conn, id)) {
                 Ok(Some(fresh)) => {
-                    reshaped |= fresh.aspect() != self.items[i].aspect();
-                    self.as_mut().rust_mut().items[i] = fresh;
+                    reshaped |= fresh.aspect() != self.entries[i].aspect();
+                    self.as_mut().rust_mut().entries[i] = fresh;
                 }
                 Ok(None) => {}
                 Err(e) => eprintln!("reloading {id}: {e:#}"),
@@ -533,7 +563,7 @@ impl qobject::GalleryModel {
     }
 
     fn rating_in_file(&self, item: i32) -> bool {
-        self.item(item).is_some_and(|i| i.rating_in_file)
+        self.with_details(item, |_, d| d.rating_in_file).unwrap_or(false)
     }
 
     fn rating(&self, item: i32) -> i32 {
@@ -553,7 +583,8 @@ impl qobject::GalleryModel {
         }
         {
             let mut this = self.as_mut().rust_mut();
-            this.items[item as usize].rating = rating;
+            this.entries[item as usize].rating = rating;
+            this.forget_details();
             if this.loading {
                 this.edited.push(id);
             }
@@ -562,14 +593,10 @@ impl qobject::GalleryModel {
         self.set_revision(revision);
     }
 
-    fn path(&self, item: i32) -> QString {
-        self.item(item).map_or_else(QString::default, |i| QString::from(&i.path))
-    }
-
     fn badge(&self, item: i32) -> QString {
-        let Some(i) = self.item(item) else { return QString::default() };
-        let text = match media_type(i) {
-            MediaType::Video => match i.duration_ms {
+        let Some(e) = self.item(item) else { return QString::default() };
+        let text = match e.media_type() {
+            MediaType::Video => match e.duration_ms() {
                 Some(ms) => {
                     let s = (ms + 500) / 1000;
                     let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
@@ -577,7 +604,7 @@ impl qobject::GalleryModel {
                 }
                 None => "▶".to_string(),
             },
-            MediaType::Animated => match media::extension(&i.path).as_str() {
+            MediaType::Animated => match e.ext.name() {
                 "png" => "APNG".to_string(),
                 ext => ext.to_uppercase(),
             },
@@ -587,34 +614,33 @@ impl qobject::GalleryModel {
     }
 
     fn media_type(&self, item: i32) -> QString {
-        QString::from(self.item(item).map_or("image", |i| media_type(i).key()))
+        QString::from(self.item(item).map_or("image", |e| e.media_type().key()))
     }
 
     fn file_url(&self, item: i32) -> QUrl {
         // fromUserInput makes a local path a file URL, escaping what URLs reserve (names here contain '#').
-        self.item(item)
-            .map_or_else(QUrl::default, |i| QUrl::from_user_input(&QString::from(&i.path), &QString::default()))
+        self.with_details(item, |_, d| QUrl::from_user_input(&QString::from(&d.path), &QString::default()))
+            .unwrap_or_default()
     }
 
     fn file_path(&self, item: i32) -> QString {
-        self.item(item).map_or_else(QString::default, |i| QString::from(&i.path))
+        self.with_details(item, |_, d| QString::from(&d.path)).unwrap_or_default()
     }
 
     fn player_turns(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |i| ((i.rotation + i.pending_turns) % 4) as i32)
+        self.item(item).map_or(0, |e| ((e.rotation + e.pending_turns) % 4) as i32)
     }
 
     fn info(&self, item: i32) -> QString {
-        let Some(i) = self.item(item) else { return QString::default() };
-        let dims = if i.width > 0 {
-            format!("{} × {}", self.full_width(item), self.full_height(item))
-        } else {
-            "not imported".to_string()
-        };
-        let bytes = i.size as f64;
-        let size = if bytes >= 1e6 { format!("{:.1} MB", bytes / 1e6) } else { format!("{:.0} KB", bytes / 1e3) };
-        let kept = if i.rating > 0 && !i.rating_in_file { "   rating kept in the catalog" } else { "" };
-        QString::from(&format!("{}   {dims}   {size}{kept}", i.path))
+        self.with_details(item, |e, d| {
+            let (w, h) = e.shown_size();
+            let dims = if w > 0 { format!("{w} × {h}") } else { "not imported".to_string() };
+            let bytes = d.size as f64;
+            let size = if bytes >= 1e6 { format!("{:.1} MB", bytes / 1e6) } else { format!("{:.0} KB", bytes / 1e3) };
+            let kept = if e.rating > 0 && !d.rating_in_file { "   rating kept in the catalog" } else { "" };
+            QString::from(&format!("{}   {dims}   {size}{kept}", d.path))
+        })
+        .unwrap_or_default()
     }
 
     fn row_of(&self, item: i32) -> i32 {
@@ -625,7 +651,7 @@ impl qobject::GalleryModel {
     }
 
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
-        let n = self.items.len() as i32;
+        let n = self.entries.len() as i32;
         if n == 0 || self.rows.is_empty() {
             return -1;
         }

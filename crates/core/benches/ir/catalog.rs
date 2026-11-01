@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pg_core::browse::{self, Facets, FolderTree, Item};
+use pg_core::browse::{self, Entry, Facets, FolderTree};
 use pg_core::catalog::{Catalog, WorkItem};
 use pg_core::query::{Query, Sort, SortKey};
 use pg_core::thumbs::ThumbWork;
@@ -68,7 +68,7 @@ fn for_list(which: List) -> (Catalog, List) {
 #[bench::all_unrated(args = (List::AllUnrated), setup = for_list)]
 #[bench::folder_recursive(args = (List::FolderRecursive), setup = for_list)]
 #[bench::folder_flat(args = (List::FolderFlat), setup = for_list)]
-fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Item>) {
+fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
     let name = Sort::default();
     let unrated = Query { ratings: vec![0], ..Query::default() };
     let (folder, recursive, query, sort) = match which {
@@ -78,8 +78,8 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Item>) {
         List::FolderRecursive => (r"PhotoGallery\datasets\pinterest\_todo", true, Query::default(), name),
         List::FolderFlat => (r"PhotoGallery\datasets\pinterest\_incoming", false, Query::default(), name),
     };
-    let items = browse::list_files(&catalog.conn, folder, recursive, &query, sort).unwrap();
-    (catalog, black_box(items))
+    let entries = browse::list_grid(&catalog.conn, folder, recursive, &query, sort).unwrap();
+    (catalog, black_box(entries))
 }
 
 // The folder tree with its counts.

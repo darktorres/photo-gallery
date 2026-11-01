@@ -547,19 +547,18 @@ impl Sort {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".into())
     }
 
-    /// The ORDER BY list. Ties (and files without the value, which come last either way) keep name order
-    /// (`files.order_key`, then the id for files of the same name in the same folder on two drives).
-    pub fn sql(self) -> String {
-        let dir = if self.descending { "DESC" } else { "ASC" };
-        let then = "f.order_key, f.id";
+    /// The value sorted on, as an integer expression over the file `f` and its analysis `a` (NULL: none, which
+    /// comes last either way); `None` for name order (`files.order_key`, then the id for files of the same name in
+    /// the same folder on two drives), which is also every other key's order for ties (`browse::list_grid`).
+    pub fn key_sql(self) -> Option<String> {
         let mtime_local = format!("unixepoch(f.mtime / 10000000 - {FILETIME_UNIX_OFFSET}, 'unixepoch', 'localtime')");
         match self.key {
-            SortKey::Name => format!("f.order_key {dir}, f.id {dir}"),
-            SortKey::Size => format!("f.size {dir}, {then}"),
-            SortKey::Modified => format!("f.mtime {dir}, {then}"),
-            SortKey::Taken => format!("coalesce(a.taken, {mtime_local}) {dir}, {then}"),
-            SortKey::Megapixels => format!("a.width * a.height IS NULL, a.width * a.height {dir}, {then}"),
-            SortKey::Duration => format!("a.duration_ms IS NULL, a.duration_ms {dir}, {then}"),
+            SortKey::Name => None,
+            SortKey::Size => Some("f.size".into()),
+            SortKey::Modified => Some("f.mtime".into()),
+            SortKey::Taken => Some(format!("coalesce(a.taken, {mtime_local})")),
+            SortKey::Megapixels => Some("a.width * a.height".into()),
+            SortKey::Duration => Some("a.duration_ms".into()),
         }
     }
 }

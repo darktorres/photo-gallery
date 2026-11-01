@@ -5,11 +5,11 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use rusqlite::types::Value;
+use rusqlite::types::{Type, Value};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
 use crate::decode::Format;
-use crate::media::Kind;
+use crate::media::{Ext, Kind};
 use crate::metadata;
 use crate::query::{Facet, MediaType, Query, Sort};
 
@@ -172,91 +172,159 @@ pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
     Ok(tree)
 }
 
-/// A file as the grid shows it. `width`/`height` are 0 until the file is imported.
-pub struct Item {
+/// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
+/// The rest is read when the file is shown (`details`). Small and without a `String`, so a list of 190,000 is
+/// 7.6 MB and quick to build.
+#[derive(Clone, Copy, PartialEq, Debug)]
+pub struct Entry {
     pub id: i64,
-    pub path: String,
+    /// With `rotation`, what makes an image URL current.
     pub mtime: i64,
-    pub size: i64,
-    /// Catalog rotation (quarter turns clockwise); with `mtime`, what makes an image URL current.
-    pub rotation: u8,
+    /// As analyzed, without `pending_turns`; 0 until the file is imported.
     pub width: u32,
     pub height: u32,
-    pub rating: u8,
-    /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
-    pub rating_in_file: bool,
+    /// Videos, once imported; `Entry::NO_DURATION` otherwise.
+    pub duration_ms: u32,
+    pub ext: Ext,
+    /// Catalog rotation (quarter turns clockwise).
+    pub rotation: u8,
     /// Quarter turns clockwise asked for but not yet written (`queue_rotation`): the grid shows them already.
     pub pending_turns: u8,
-    pub kind: Kind,
+    pub rating: u8,
     /// More than one frame (known after the import).
     pub animated: bool,
-    /// Videos, once imported.
-    pub duration_ms: Option<i64>,
 }
 
-impl Item {
-    /// Width ÷ height as shown, pending turns included.
+impl Entry {
+    pub const NO_DURATION: u32 = u32::MAX;
+
+    pub fn kind(&self) -> Kind {
+        self.ext.kind()
+    }
+
+    pub fn media_type(&self) -> MediaType {
+        match self.kind() {
+            Kind::Video => MediaType::Video,
+            Kind::Image if self.animated => MediaType::Animated,
+            Kind::Image => MediaType::Image,
+        }
+    }
+
+    pub fn duration_ms(&self) -> Option<u32> {
+        (self.duration_ms != Entry::NO_DURATION).then_some(self.duration_ms)
+    }
+
+    /// Width and height as shown, pending turns included; 0 before the import.
+    pub fn shown_size(&self) -> (u32, u32) {
+        if self.pending_turns % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) }
+    }
+
+    /// Width ÷ height as shown; 1 before the import.
     pub fn aspect(&self) -> f64 {
-        let (w, h) = if self.pending_turns % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) };
+        let (w, h) = self.shown_size();
         if w > 0 && h > 0 { w as f64 / h as f64 } else { 1.0 }
     }
 }
 
-/// What an `Item` is read from (`item_from_row`), with `f` the file.
-const ITEM_COLUMNS: &str = "f.id, fo.path || '\\' || f.name, f.mtime, f.size, f.rotation, coalesce(a.width, 0),
-    coalesce(a.height, 0), coalesce(r.rating, 0), a.format, coalesce(w.value, 0), f.kind, coalesce(a.frames, 1),
-    a.duration_ms";
-const ITEM_JOINS: &str = "JOIN folders fo ON fo.id = f.folder_id
-    LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
+/// What an `Entry` is read from (`entry_from_row`), with `f` the file.
+const ENTRY_COLUMNS: &str = "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
+    f.rotation, coalesce(w.value, 0), coalesce(r.rating, 0), coalesce(a.frames, 1)";
+/// What the entries and the filters read besides the file.
+const FILE_JOINS: &str = "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
     LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = 'rotation'";
 
-fn item_from_row(r: &rusqlite::Row) -> rusqlite::Result<Item> {
-    let format: Option<String> = r.get(8)?;
-    let kind = Kind::from_key(&r.get::<_, String>(10)?).unwrap_or(Kind::Image);
-    Ok(Item {
+fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
+    let ext = r.get_ref(5)?.as_str()?;
+    Ok(Entry {
         id: r.get(0)?,
-        path: r.get(1)?,
-        mtime: r.get(2)?,
-        size: r.get(3)?,
-        rotation: r.get(4)?,
-        width: r.get(5)?,
-        height: r.get(6)?,
-        rating: r.get(7)?,
-        // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
-        rating_in_file: kind == Kind::Image
-            && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
-        pending_turns: r.get(9)?,
-        kind,
-        animated: r.get::<_, i64>(11)? > 1,
-        duration_ms: r.get(12)?,
+        mtime: r.get(1)?,
+        width: r.get(2)?,
+        height: r.get(3)?,
+        duration_ms: r
+            .get::<_, Option<i64>>(4)?
+            .map_or(Entry::NO_DURATION, |ms| ms.clamp(0, u32::MAX as i64 - 1) as u32),
+        // The scan records only files with these extensions.
+        ext: Ext::of(ext).ok_or_else(|| rusqlite::Error::InvalidColumnType(5, format!("ext {ext}"), Type::Text))?,
+        rotation: r.get(6)?,
+        pending_turns: r.get(7)?,
+        rating: r.get(8)?,
+        animated: r.get::<_, i64>(9)? > 1,
     })
 }
 
-/// Read an item again (after its file was turned), keeping its place in the list. `None` if it is gone.
-pub fn reload_item(conn: &Connection, file_id: i64) -> Result<Option<Item>> {
+/// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
+pub fn entry(conn: &Connection, file_id: i64) -> Result<Option<Entry>> {
     Ok(conn
-        .prepare_cached(&format!("SELECT {ITEM_COLUMNS} FROM files f {ITEM_JOINS} WHERE f.id = ?1"))?
-        .query_row([file_id], item_from_row)
+        .prepare_cached(&format!("SELECT {ENTRY_COLUMNS} FROM files f {FILE_JOINS} WHERE f.id = ?1"))?
+        .query_row([file_id], entry_from_row)
         .optional()?)
 }
 
+/// `list_grid`'s query: the entries in name order, then the sort key if it isn't the name.
+fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
+    let key = sort.key_sql();
+    // Name order backwards for "by name, descending"; the other keys take their ties in name order.
+    let dir = if key.is_none() && sort.descending { "DESC" } else { "ASC" };
+    // `missing = 0` is written out, not bound: it's the `files_order` index's condition.
+    format!(
+        "SELECT {ENTRY_COLUMNS}{} FROM files f {FILE_JOINS}
+         WHERE f.missing = 0 AND {scope} AND {cond}
+         ORDER BY f.order_key {dir}, f.id {dir}",
+        key.map_or(String::new(), |k| format!(", {k}")),
+    )
+}
+
 /// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
-pub fn list_files(conn: &Connection, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Item>> {
+///
+/// They are read in name order from the `files_order` index, so SQLite never sorts. Another order is a stable
+/// sort here on that key alone, files without it last: files with the same key stay in name order.
+pub fn list_grid(conn: &Connection, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
     let (scope, mut values) = scope(merged, recursive);
     let cond = query.condition();
     values.extend(cond.params);
-    // `missing = 0` is written out, not bound: it's the `files_order` index's condition.
-    let sql = format!(
-        "SELECT {ITEM_COLUMNS} FROM files f {ITEM_JOINS}
-         WHERE f.missing = 0 AND {scope} AND {}
-         ORDER BY {}",
-        cond.sql,
-        sort.sql()
-    );
-    let mut stmt = conn.prepare(&sql)?;
-    let items = stmt.query_map(params_from_iter(values), item_from_row)?;
-    Ok(items.collect::<rusqlite::Result<Vec<_>>>()?)
+    let mut stmt = conn.prepare(&grid_sql(&scope, &cond.sql, sort))?;
+    if sort.key_sql().is_none() {
+        let entries = stmt.query_map(params_from_iter(values), entry_from_row)?;
+        return Ok(entries.collect::<rusqlite::Result<Vec<_>>>()?);
+    }
+    let keyed = stmt.query_map(params_from_iter(values), |r| Ok((r.get::<_, Option<i64>>(10)?, entry_from_row(r)?)))?;
+    let mut keyed = keyed.collect::<rusqlite::Result<Vec<_>>>()?;
+    keyed.sort_by(|(a, _), (b, _)| match (a, b) {
+        (Some(a), Some(b)) if sort.descending => b.cmp(a),
+        (Some(a), Some(b)) => a.cmp(b),
+        (a, b) => b.is_some().cmp(&a.is_some()),
+    });
+    Ok(keyed.into_iter().map(|(_, e)| e).collect())
+}
+
+/// What a file's grid entry leaves out, for the file shown (the selection, the viewer's).
+#[derive(Clone, PartialEq, Debug)]
+pub struct Details {
+    pub path: String,
+    pub size: i64,
+    /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
+    pub rating_in_file: bool,
+}
+
+pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
+    Ok(conn
+        .prepare_cached(
+            "SELECT fo.path || '\\' || f.name, f.size, f.kind, a.format FROM files f
+             JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
+             WHERE f.id = ?1",
+        )?
+        .query_row([file_id], |r| {
+            let format: Option<String> = r.get(3)?;
+            Ok(Details {
+                path: r.get(0)?,
+                size: r.get(1)?,
+                // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
+                rating_in_file: r.get_ref(2)?.as_str()? == Kind::Image.key()
+                    && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
+            })
+        })
+        .optional()?)
 }
 
 /// What the filter bar shows next to its choices, for a view's folder.
@@ -277,7 +345,7 @@ pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -
     let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
         let cond = query.condition_without(skip);
         let sql = format!(
-            "SELECT {select}, count(*) FROM files f {ITEM_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
+            "SELECT {select}, count(*) FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
             cond.sql
         );
         let values = scope_values.iter().cloned().chain(cond.params);
@@ -498,7 +566,7 @@ mod tests {
     }
 
     fn ids(c: &crate::catalog::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
-        list_files(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|i| i.id).collect()
+        list_grid(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|e| e.id).collect()
     }
 
     fn by(key: SortKey, descending: bool) -> Sort {
@@ -520,8 +588,14 @@ mod tests {
         assert_eq!(ids(&c, "", true, &ratings(&[1, 2, 3, 4, 5]), Sort::default()), [1, 3]);
         assert_eq!(ids(&c, "", true, &ratings(&[2]), Sort::default()), [3]);
         assert_eq!(ids(&c, "", true, &ratings(&[0, 2]), Sort::default()), [2, 3, 4]);
-        let bmp = list_files(&c.conn, "p\\sub", false, &all, Sort::default()).unwrap();
-        assert!(!bmp[0].rating_in_file, "BMP keeps its rating in the catalog");
+        let bmp = details(&c.conn, 4).unwrap().unwrap();
+        assert!(!bmp.rating_in_file, "BMP keeps its rating in the catalog");
+        assert!(details(&c.conn, 1).unwrap().unwrap().rating_in_file);
+        assert_eq!(
+            details(&c.conn, 2).unwrap(),
+            Some(Details { path: r"E:\p\a.png".into(), size: 10, rating_in_file: true })
+        );
+        assert_eq!(details(&c.conn, 99).unwrap(), None);
     }
 
     #[test]
@@ -705,22 +779,23 @@ mod tests {
     #[test]
     fn lists_read_the_order_index() {
         let c = library();
-        let (scope, values) = scope("p", true);
-        let plan: Vec<String> = c
-            .conn
-            .prepare(&format!(
-                "EXPLAIN QUERY PLAN SELECT {ITEM_COLUMNS} FROM files f {ITEM_JOINS}
-                 WHERE f.missing = 0 AND {scope} AND 1 ORDER BY {}",
-                Sort::default().sql()
-            ))
-            .unwrap()
-            .query_map(params_from_iter(values), |r| r.get(3))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        let plan = plan.join("\n");
-        assert!(plan.contains("USING INDEX files_order"), "{plan}");
-        assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
+        for (folder, recursive) in [("p", true), ("p", false), ("", true)] {
+            for sort in [Sort::default(), by(SortKey::Name, true), by(SortKey::Taken, true)] {
+                let (scope, values) = scope(folder, recursive);
+                let unrated = Query { ratings: vec![0], ..Query::default() }.condition();
+                let plan: Vec<String> = c
+                    .conn
+                    .prepare(&format!("EXPLAIN QUERY PLAN {}", grid_sql(&scope, &unrated.sql, sort)))
+                    .unwrap()
+                    .query_map(params_from_iter(values.into_iter().chain(unrated.params)), |r| r.get(3))
+                    .unwrap()
+                    .collect::<rusqlite::Result<_>>()
+                    .unwrap();
+                let plan = plan.join("\n");
+                assert!(plan.contains("USING INDEX files_order"), "{plan}");
+                assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
+            }
+        }
         let plan: Vec<String> = c
             .conn
             .prepare("EXPLAIN QUERY PLAN SELECT folder_id, count(*) FROM files WHERE missing = 0 GROUP BY folder_id")
@@ -820,6 +895,44 @@ mod tests {
         assert_eq!(ids(&c, "", true, &all, by(SortKey::Taken, true))[0], 1);
     }
 
+    /// The order SQLite gave when it sorted (before the sort moved here): the key, files without it last, then
+    /// name order ascending.
+    fn sorted_by_sqlite(c: &crate::catalog::Catalog, sort: Sort) -> Vec<i64> {
+        let order = match sort.key_sql() {
+            None if sort.descending => "f.order_key DESC, f.id DESC".to_string(),
+            None => "f.order_key, f.id".to_string(),
+            Some(k) => format!("{k} IS NULL, {k} {}, f.order_key, f.id", if sort.descending { "DESC" } else { "ASC" }),
+        };
+        let sql = format!("SELECT f.id FROM files f {FILE_JOINS} WHERE f.missing = 0 ORDER BY {order}");
+        c.conn.prepare(&sql).unwrap().query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    }
+
+    #[test]
+    fn grid_lists_sort_as_sqlite_did() {
+        let c = mixed_library();
+        // Ties: four 4×3 images, and no taken date or duration on most.
+        for key in
+            [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Taken, SortKey::Megapixels, SortKey::Duration]
+        {
+            for descending in [false, true] {
+                let sort = by(key, descending);
+                assert_eq!(ids(&c, "", true, &Query::default(), sort), sorted_by_sqlite(&c, sort), "{sort:?}");
+            }
+        }
+        // Each entry as read alone.
+        for e in list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap() {
+            assert_eq!(entry(&c.conn, e.id).unwrap(), Some(e));
+        }
+        let entries = list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
+        let get = |id: i64| *entries.iter().find(|e| e.id == id).unwrap();
+        let (clip, gif, broken) = (get(5), get(6), get(7));
+        assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
+        assert_eq!((gif.media_type(), gif.duration_ms(), gif.ext.name()), (MediaType::Animated, None, "gif"));
+        // Not imported (its analysis failed): no size yet, square.
+        assert_eq!((broken.shown_size(), broken.aspect()), ((0, 0), 1.0));
+        assert_eq!(entry(&c.conn, 99).unwrap(), None);
+    }
+
     #[test]
     fn facet_counts() {
         let c = mixed_library();
@@ -883,10 +996,10 @@ mod tests {
         assert_eq!(queued(&c, 1, "rotation"), None);
         // The grid shows a pending turn, aspect included.
         queue_rotation(&c.conn, 1, 3).unwrap();
-        let items = list_files(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
-        let item = items.iter().find(|i| i.id == 1).unwrap();
-        assert_eq!(item.pending_turns, 3);
-        assert_eq!(item.aspect(), 3.0 / 4.0);
-        assert_eq!(reload_item(&c.conn, 1).unwrap().map(|i| i.pending_turns), Some(3));
+        let entries = list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
+        let e = entries.iter().find(|e| e.id == 1).unwrap();
+        assert_eq!(e.pending_turns, 3);
+        assert_eq!((e.shown_size(), e.aspect()), ((3, 4), 3.0 / 4.0));
+        assert_eq!(entry(&c.conn, 1).unwrap().map(|e| e.pending_turns), Some(3));
     }
 }

@@ -35,7 +35,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoder, Format, MinSize, Rgb, exif_orientation, release_over};
+use crate::decode::{Decoder, Format, MinSize, Rgb, release_over};
 use crate::resize::Resizer;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
@@ -95,7 +95,7 @@ impl Maker {
     fn make_image(&mut self, bytes: &[u8], height: usize, turns: u8) -> Result<Vec<u8>> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
-        let exif = exif_orientation(bytes);
+        let exif = crate::metadata::orientation(bytes, format);
         self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
         self.encode_image(height)
     }

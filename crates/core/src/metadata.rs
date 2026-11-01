@@ -1,10 +1,13 @@
-//! Ratings and orientation as the files themselves hold them (PLAN §2: the catalog is the source of truth; the
-//! file is read at import and written back by `ingest::writeback`).
+//! Ratings, dates, orientation and frame counts as the files themselves hold them (PLAN §2: the catalog is the
+//! source of truth; the file is read at import, [`Meta::read`], and written back by `ingest::writeback`).
 //!
 //! The rating is read from the file's XMP packet, found where each container keeps it and parsed as XML with
 //! namespaces resolved. A byte search could pick up the XMP of an embedded thumbnail or an edit history; this
 //! only reads the packet the container declares as the image's own. EXIF Rating/RatingPercent (what Windows
 //! writes) are the fallback.
+//!
+//! EXIF is read in place by a reader of its own: IFD0 and the Exif IFD, only the tags used here, every offset
+//! checked. A broken field elsewhere in the block (a thumbnail's IFD, GPS) doesn't lose the ones read.
 
 use std::borrow::Cow;
 use std::collections::BTreeMap;
@@ -32,40 +35,66 @@ pub fn can_hold_rating(format: Format) -> bool {
     !matches!(format, Format::Bmp)
 }
 
-/// The file's own rating: 0–5 (0 = explicitly unrated), or `None` when it holds none. XMP `xmp:Rating` first
-/// (the standard packet, then the extended one), then `MicrosoftPhoto:Rating`, then EXIF Rating and RatingPercent.
-/// XMP's -1 ("rejected") has no equivalent here and reads as no rating.
-pub fn read_rating(bytes: &[u8], format: Format) -> Option<u8> {
-    let packets = xmp_packets(bytes, format);
-    let mut microsoft = None;
-    for packet in &packets {
-        let (xmp, ms) = ratings_in_xmp(packet);
-        if xmp.is_some() {
-            return xmp;
+/// What the import reads from a file's metadata: one walk of its container, one read of its EXIF block, and one
+/// parse of each XMP packet.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Meta {
+    /// EXIF orientation 1–8; 1 when absent or unreadable.
+    pub orientation: u8,
+    /// The file's own rating: 0–5 (0 = explicitly unrated), or `None` when it holds none. XMP `xmp:Rating` first
+    /// (the standard packet, then the extended one), then `MicrosoftPhoto:Rating`, then EXIF Rating and
+    /// RatingPercent. XMP's -1 ("rejected") has no equivalent here and reads as no rating.
+    pub rating: Option<u8>,
+    /// When the picture was taken, as wall-clock time (no time zone: what the camera's clock showed) in Unix
+    /// seconds: EXIF DateTimeOriginal, then DateTimeDigitized, then XMP `exif:DateTimeOriginal`,
+    /// `photoshop:DateCreated` and `xmp:CreateDate`. `None` when the file says nothing.
+    pub taken: Option<i64>,
+    /// How many frames the file holds: more than one is an animated GIF, PNG (APNG) or WebP. Read from the
+    /// container only (no decoding).
+    pub frames: u32,
+}
+
+/// The XMP properties read from each packet: `xmp:Rating`, `MicrosoftPhoto:Rating`, and the dates.
+const XMP_WANTED: [(&str, &str); 5] = [
+    (NS_XMP, "Rating"),
+    (NS_MICROSOFT_PHOTO, "Rating"),
+    (NS_EXIF, "DateTimeOriginal"),
+    (NS_PHOTOSHOP, "DateCreated"),
+    (NS_XMP, "CreateDate"),
+];
+
+impl Meta {
+    pub fn read(bytes: &[u8], format: Format) -> Meta {
+        let mut container = Container::walk(bytes, format);
+        let exif = container.exif.clone().and_then(|block| Exif::read(&bytes[block])).unwrap_or_default();
+        if format == Format::Tiff {
+            // A TIFF file keeps its packet in IFD0.
+            container.xmp.extend(exif.xmp.map(Cow::Borrowed));
         }
-        microsoft = microsoft.or(ms);
+        // In packet order: the first packet's value of each, but MicrosoftPhoto's only counts without an XMP one.
+        let (mut xmp_rating, mut microsoft, mut xmp_taken) = (None, None, None);
+        let number = |v: Option<String>| v.and_then(|v| v.parse::<f64>().ok());
+        for packet in &container.xmp {
+            let [rating, ms, original, created, create] = xmp_properties(packet, XMP_WANTED);
+            xmp_rating = xmp_rating.or_else(|| number(rating).and_then(xmp_value));
+            microsoft = microsoft.or_else(|| number(ms).map(percent));
+            xmp_taken = xmp_taken
+                .or_else(|| [original, created, create].into_iter().flatten().find_map(|d| parse_iso_date(&d)));
+        }
+        let exif_rating =
+            || exif.rating.map(|v| v.min(5) as u8).or_else(|| exif.rating_percent.map(|v| percent(v as f64)));
+        Meta {
+            orientation: exif.orientation(),
+            rating: xmp_rating.or(microsoft).or_else(exif_rating),
+            taken: exif.dates.iter().flatten().find_map(|d| exif_date(d)).or(xmp_taken),
+            frames: container.frames,
+        }
     }
-    microsoft.or_else(|| exif_rating(bytes))
 }
 
-/// The XMP packets a file declares, main one first: borrowed from the file, but for a reassembled extended packet
-/// and a compressed PNG one.
-fn xmp_packets(bytes: &[u8], format: Format) -> Vec<Cow<'_, [u8]>> {
-    match format {
-        Format::Jpeg => jpeg_xmp(bytes),
-        Format::Png => png_chunks(bytes).filter(|c| &c.kind == b"iTXt").filter_map(|c| png_itxt_xmp(c.data)).collect(),
-        Format::Webp => webp_chunks(bytes).filter(|c| &c.kind == b"XMP ").map(|c| Cow::Borrowed(c.data)).collect(),
-        Format::Tiff => tiff_xmp(bytes).map(Cow::Owned).into_iter().collect(),
-        Format::Gif => gif_xmp(bytes).map(Cow::Borrowed).into_iter().collect(),
-        Format::Bmp => Vec::new(),
-    }
-}
-
-/// `xmp:Rating` and `MicrosoftPhoto:Rating` (mapped from percent) of one packet.
-fn ratings_in_xmp(packet: &[u8]) -> (Option<u8>, Option<u8>) {
-    let [xmp, microsoft] = xmp_properties(packet, [(NS_XMP, "Rating"), (NS_MICROSOFT_PHOTO, "Rating")]);
-    let number = |v: Option<String>| v.and_then(|v| v.parse::<f64>().ok());
-    (number(xmp).and_then(xmp_value), number(microsoft).map(percent))
+/// The EXIF orientation (1–8) of a file, alone; 1 when absent or unreadable.
+pub fn orientation(bytes: &[u8], format: Format) -> u8 {
+    exif_block(bytes, format).and_then(|block| Exif::read(&bytes[block])).unwrap_or_default().orientation()
 }
 
 /// The first value of each wanted property (namespace URI, local name) in one packet, as an attribute of an
@@ -133,43 +162,176 @@ fn percent(v: f64) -> u8 {
     }
 }
 
-fn exif_rating(bytes: &[u8]) -> Option<u8> {
-    let exif = exif::Reader::new().read_from_container(&mut std::io::Cursor::new(bytes)).ok()?;
-    let field = |tag| exif.get_field(exif::Tag(exif::Context::Tiff, tag), exif::In::PRIMARY);
-    if let Some(v) = field(EXIF_TAG_RATING).and_then(|f| f.value.get_uint(0)) {
-        return Some(v.min(5) as u8);
+// --- EXIF -------------------------------------------------------------------------------------------------------
+
+/// A TIFF structure (an EXIF block, or a TIFF file), read in place: every offset is checked against it.
+struct Tiff<'a> {
+    data: &'a [u8],
+    little_endian: bool,
+}
+
+/// An IFD entry: its tag, type, count, and where it is (its 12 bytes).
+struct Entry {
+    tag: u16,
+    kind: u16,
+    count: u32,
+    at: usize,
+}
+
+const TIFF_BYTE: u16 = 1;
+const TIFF_ASCII: u16 = 2;
+const TIFF_SHORT: u16 = 3;
+const TIFF_LONG: u16 = 4;
+const TIFF_UNDEFINED: u16 = 7;
+
+impl<'a> Tiff<'a> {
+    /// The byte order, then 42.
+    fn new(data: &'a [u8]) -> Option<Tiff<'a>> {
+        let little_endian = match data.get(..2)? {
+            b"II" => true,
+            b"MM" => false,
+            _ => return None,
+        };
+        let tiff = Tiff { data, little_endian };
+        (tiff.u16_at(2)? == 42).then_some(tiff)
     }
-    field(EXIF_TAG_RATING_PERCENT).and_then(|f| f.value.get_uint(0)).map(|v| percent(v as f64))
-}
 
-// --- Date taken ---------------------------------------------------------------------------------------------
+    fn u16_at(&self, i: usize) -> Option<u16> {
+        self.u16_of(self.data.get(i..i.checked_add(2)?)?)
+    }
 
-/// When the picture was taken, as wall-clock time (no time zone: what the camera's clock showed) in Unix seconds:
-/// EXIF DateTimeOriginal, then DateTimeDigitized, then XMP `exif:DateTimeOriginal`, `photoshop:DateCreated` and
-/// `xmp:CreateDate`. `None` when the file says nothing.
-pub fn read_taken(bytes: &[u8], format: Format) -> Option<i64> {
-    exif_taken(bytes, format).or_else(|| {
-        xmp_packets(bytes, format).iter().find_map(|packet| {
-            let dates = xmp_properties(
-                packet,
-                [(NS_EXIF, "DateTimeOriginal"), (NS_PHOTOSHOP, "DateCreated"), (NS_XMP, "CreateDate")],
-            );
-            dates.into_iter().flatten().find_map(|d| parse_iso_date(&d))
+    fn u32_at(&self, i: usize) -> Option<u32> {
+        self.u32_of(self.data.get(i..i.checked_add(4)?)?)
+    }
+
+    /// The SHORT at the start of `b`, in the block's byte order.
+    fn u16_of(&self, b: &[u8]) -> Option<u16> {
+        let b: [u8; 2] = b.get(..2)?.try_into().ok()?;
+        Some(if self.little_endian { u16::from_le_bytes(b) } else { u16::from_be_bytes(b) })
+    }
+
+    /// The LONG at the start of `b`, in the block's byte order.
+    fn u32_of(&self, b: &[u8]) -> Option<u32> {
+        let b: [u8; 4] = b.get(..4)?.try_into().ok()?;
+        Some(if self.little_endian { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) })
+    }
+
+    /// IFD0's offset.
+    fn ifd0(&self) -> Option<usize> {
+        Some(self.u32_at(4)? as usize)
+    }
+
+    /// The entries of the IFD at `offset`, as far as they are in the block.
+    fn entries(&self, offset: usize) -> impl Iterator<Item = Entry> + '_ {
+        let count = self.u16_at(offset).unwrap_or(0) as usize;
+        (0..count).map_while(move |k| {
+            let at = offset.checked_add(2 + 12 * k)?;
+            Some(Entry { tag: self.u16_at(at)?, kind: self.u16_at(at + 2)?, count: self.u32_at(at + 4)?, at })
         })
-    })
+    }
+
+    /// An entry's value bytes: in the entry when they fit in 4 bytes, else where it points. `None` for a type
+    /// whose size isn't known, or a value outside the block.
+    fn value(&self, e: &Entry) -> Option<&'a [u8]> {
+        let unit: usize = match e.kind {
+            1 | 2 | 6 | 7 => 1,
+            3 | 8 => 2,
+            4 | 9 | 11 => 4,
+            5 | 10 | 12 => 8,
+            _ => return None,
+        };
+        let len = unit.checked_mul(e.count as usize)?;
+        let start = if len <= 4 { e.at + 8 } else { self.u32_at(e.at + 8)? as usize };
+        self.data.get(start..start.checked_add(len)?)
+    }
+
+    /// An entry's first value as an unsigned integer (BYTE, SHORT or LONG).
+    fn uint(&self, e: &Entry) -> Option<u32> {
+        let v = self.value(e)?;
+        match e.kind {
+            TIFF_BYTE => v.first().map(|&b| u32::from(b)),
+            TIFF_SHORT => self.u16_of(v).map(u32::from),
+            TIFF_LONG => self.u32_of(v),
+            _ => None,
+        }
+    }
+
+    /// An ASCII entry's first string (up to its first NUL).
+    fn ascii(&self, e: &Entry) -> Option<&'a [u8]> {
+        let v = self.value(e).filter(|_| e.kind == TIFF_ASCII)?;
+        v.split(|&b| b == 0).next()
+    }
+
+    /// A BYTE or UNDEFINED entry's bytes.
+    fn bytes(&self, e: &Entry) -> Option<&'a [u8]> {
+        self.value(e).filter(|_| matches!(e.kind, TIFF_BYTE | TIFF_UNDEFINED))
+    }
 }
 
-fn exif_taken(bytes: &[u8], format: Format) -> Option<i64> {
-    let block = exif_block(bytes, format)?;
-    let exif = exif::Reader::new().read_raw(bytes[block].to_vec()).ok()?;
-    [exif::Tag::DateTimeOriginal, exif::Tag::DateTimeDigitized].into_iter().find_map(|tag| {
-        let field = exif.get_field(tag, exif::In::PRIMARY)?;
-        let exif::Value::Ascii(ref v) = field.value else { return None };
-        let d = exif::DateTime::from_ascii(v.first()?).ok()?;
-        let n = |v: u8| i64::from(v);
-        wall_clock_seconds(i64::from(d.year), n(d.month), n(d.day), n(d.hour), n(d.minute), n(d.second))
-    })
+/// What the import reads of an EXIF block: IFD0's orientation, rating and XMP (where a TIFF file keeps its
+/// packet), and the Exif IFD's dates. A field that doesn't fit in the block reads as absent, and the rest are still
+/// read; a tag given twice reads as the last one.
+#[derive(Default)]
+struct Exif<'a> {
+    orientation: Option<u32>,
+    rating: Option<u32>,
+    rating_percent: Option<u32>,
+    xmp: Option<&'a [u8]>,
+    /// DateTimeOriginal, then DateTimeDigitized.
+    dates: [Option<&'a [u8]>; 2],
 }
+
+const EXIF_TAG_EXIF_IFD: u16 = 0x8769;
+const EXIF_TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
+const EXIF_TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
+
+impl<'a> Exif<'a> {
+    fn read(block: &'a [u8]) -> Option<Exif<'a>> {
+        let tiff = Tiff::new(block)?;
+        let mut exif = Exif::default();
+        let mut exif_ifd = None;
+        for e in tiff.entries(tiff.ifd0()?) {
+            match e.tag {
+                EXIF_TAG_ORIENTATION => exif.orientation = tiff.uint(&e),
+                EXIF_TAG_RATING => exif.rating = tiff.uint(&e),
+                EXIF_TAG_RATING_PERCENT => exif.rating_percent = tiff.uint(&e),
+                TIFF_TAG_XMP => exif.xmp = tiff.bytes(&e),
+                EXIF_TAG_EXIF_IFD => exif_ifd = tiff.uint(&e),
+                _ => {}
+            }
+        }
+        for e in exif_ifd.into_iter().flat_map(|ifd| tiff.entries(ifd as usize)) {
+            match e.tag {
+                EXIF_TAG_DATE_TIME_ORIGINAL => exif.dates[0] = tiff.ascii(&e),
+                EXIF_TAG_DATE_TIME_DIGITIZED => exif.dates[1] = tiff.ascii(&e),
+                _ => {}
+            }
+        }
+        Some(exif)
+    }
+
+    fn orientation(&self) -> u8 {
+        self.orientation.filter(|o| (1..=8).contains(o)).map_or(1, |o| o as u8)
+    }
+}
+
+/// An EXIF date, `YYYY:MM:DD HH:MM:SS` (anything after it ignored), as wall-clock seconds; `None` when blank,
+/// malformed or impossible. The format rules are kamadak-exif's (`DateTime::from_ascii`), which read them before.
+fn exif_date(data: &[u8]) -> Option<i64> {
+    if data == b"    :  :     :  :  " || data == b"                   " || data.len() < 19 {
+        return None;
+    }
+    if [(4, b':'), (7, b':'), (10, b' '), (13, b':'), (16, b':')].iter().any(|&(i, c)| data[i] != c) {
+        return None;
+    }
+    let num = |r: std::ops::Range<usize>| {
+        let digits = &data[r];
+        digits.iter().all(u8::is_ascii_digit).then(|| digits.iter().fold(0, |n, &d| n * 10 + i64::from(d - b'0')))
+    };
+    wall_clock_seconds(num(0..4)?, num(5..7)?, num(8..10)?, num(11..13)?, num(14..16)?, num(17..19)?)
+}
+
+// --- Dates ------------------------------------------------------------------------------------------------------
 
 /// `YYYY-MM-DD`, optionally followed by `THH:MM[:SS[.fff]]` and a zone (ignored: the wall-clock time is kept).
 pub fn parse_iso_date(s: &str) -> Option<i64> {
@@ -216,33 +378,89 @@ pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Op
     Some(days * 86_400 + h * 3600 + mi * 60 + s)
 }
 
-// --- Animation --------------------------------------------------------------------------------------------------
+// --- Containers -------------------------------------------------------------------------------------------------
 
-/// How many frames the file holds: more than one is an animated GIF, PNG (APNG) or WebP. Read from the container
-/// only (no decoding).
-pub fn frame_count(bytes: &[u8], format: Format) -> u32 {
-    let n = match format {
-        Format::Gif => {
-            let mut blocks = gif_blocks(bytes);
-            let images = blocks.by_ref().filter(|b| matches!(b, GifBlock::Image { .. })).count() as u32;
-            blocks.complete().then_some(images)
-        }
-        // acTL comes before the first IDAT.
-        Format::Png => png_chunks(bytes)
-            .take_while(|c| &c.kind != b"IDAT")
-            .find(|c| &c.kind == b"acTL")
-            .and_then(|c| Some(u32::from_be_bytes(c.data.get(..4)?.try_into().ok()?))),
-        Format::Webp => {
-            let animated =
-                webp_chunks(bytes).any(|c| &c.kind == b"VP8X" && c.data.first().is_some_and(|f| f & 0x02 != 0));
-            animated.then(|| webp_chunks(bytes).filter(|c| &c.kind == b"ANMF").count() as u32)
-        }
-        Format::Jpeg | Format::Bmp | Format::Tiff => None,
-    };
-    n.unwrap_or(1).max(1)
+/// Where a file's container keeps the metadata the import reads, found in one walk of it.
+struct Container<'a> {
+    /// The EXIF block (a TIFF structure).
+    exif: Option<std::ops::Range<usize>>,
+    /// The XMP packets the container declares, main one first: borrowed from the file, but for a reassembled
+    /// extended JPEG packet and a compressed PNG one. (A TIFF file's is in its IFD0, read with the EXIF block.)
+    xmp: Vec<Cow<'a, [u8]>>,
+    frames: u32,
 }
 
-// --- Containers -------------------------------------------------------------------------------------------------
+impl<'a> Container<'a> {
+    fn walk(bytes: &'a [u8], format: Format) -> Container<'a> {
+        let mut c = Container { exif: None, xmp: Vec::new(), frames: 1 };
+        match format {
+            Format::Jpeg => {
+                let mut extended = ExtendedXmps::default();
+                for s in jpeg_segments(bytes).filter(|s| s.marker == 0xE1) {
+                    if c.exif.is_none() {
+                        c.exif = jpeg_exif(&s);
+                    }
+                    if let Some(packet) = s.data.strip_prefix(JPEG_XMP) {
+                        c.xmp.insert(0, Cow::Borrowed(packet));
+                    } else {
+                        extended.add(s.data);
+                    }
+                }
+                c.xmp.extend(extended.packets().map(Cow::Owned));
+            }
+            Format::Png => {
+                // acTL counts before the first IDAT.
+                let (mut image_data, mut animation) = (false, None);
+                for chunk in png_chunks(bytes) {
+                    match &chunk.kind {
+                        b"eXIf" if c.exif.is_none() => c.exif = Some(chunk_data(&chunk)),
+                        b"iTXt" => c.xmp.extend(png_itxt_xmp(chunk.data)),
+                        b"IDAT" => image_data = true,
+                        b"acTL" if !image_data && animation.is_none() => {
+                            animation = Some(chunk.data.get(..4).map(|n| u32::from_be_bytes(n.try_into().unwrap())));
+                        }
+                        _ => {}
+                    }
+                }
+                c.frames = animation.flatten().unwrap_or(1).max(1);
+            }
+            Format::Webp => {
+                let (mut animated, mut frames) = (false, 0);
+                for chunk in webp_chunks(bytes) {
+                    match &chunk.kind {
+                        b"VP8X" => animated |= chunk.data.first().is_some_and(|f| f & 0x02 != 0),
+                        b"ANMF" => frames += 1,
+                        b"EXIF" if c.exif.is_none() => c.exif = Some(webp_exif(&chunk)),
+                        b"XMP " => c.xmp.push(Cow::Borrowed(chunk.data)),
+                        _ => {}
+                    }
+                }
+                c.frames = if animated { frames.max(1) } else { 1 };
+            }
+            Format::Gif => {
+                let mut blocks = gif_blocks(bytes);
+                let (mut images, mut packet) = (0, None);
+                for b in blocks.by_ref() {
+                    match b {
+                        GifBlock::Image { .. } => images += 1,
+                        GifBlock::Extension { label: 0xFF, range } if packet.is_none() => {
+                            packet = gif_xmp(bytes, range);
+                        }
+                        GifBlock::Extension { .. } => {}
+                    }
+                }
+                // Only a GIF read to its trailer.
+                if blocks.complete() {
+                    c.frames = images.max(1);
+                    c.xmp.extend(packet.map(Cow::Borrowed));
+                }
+            }
+            Format::Tiff => c.exif = Some(0..bytes.len()),
+            Format::Bmp => {}
+        }
+        c
+    }
+}
 
 /// A JPEG marker segment before the image data.
 struct Segment<'a> {
@@ -285,39 +503,44 @@ fn jpeg_segments(bytes: &[u8]) -> impl Iterator<Item = Segment<'_>> {
     })
 }
 
-/// Extended XMP being reassembled: its full length, and the chunks received by offset.
+/// A JPEG segment's EXIF block, if it is one.
+fn jpeg_exif(s: &Segment) -> Option<std::ops::Range<usize>> {
+    (s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0")).then(|| s.start + 6..s.start + s.data.len())
+}
+
+/// An extended XMP packet being reassembled: its full length, and the chunks received by offset.
 type ExtendedXmp<'a> = (usize, BTreeMap<usize, &'a [u8]>);
 
-/// The standard XMP packet, then the extended one reassembled (Adobe XMP Part 3, 1.1.3.1), if complete.
-fn jpeg_xmp(bytes: &[u8]) -> Vec<Cow<'_, [u8]>> {
-    let mut out = Vec::new();
-    // By GUID.
-    let mut extended: BTreeMap<&[u8], ExtendedXmp> = BTreeMap::new();
-    for s in jpeg_segments(bytes).filter(|s| s.marker == 0xE1) {
-        if let Some(packet) = s.data.strip_prefix(JPEG_XMP) {
-            out.insert(0, Cow::Borrowed(packet));
-        } else if let Some(rest) = s.data.strip_prefix(JPEG_XMP_EXTENSION)
+/// Extended XMP packets being reassembled (Adobe XMP Part 3, 1.1.3.1), by GUID.
+#[derive(Default)]
+struct ExtendedXmps<'a>(BTreeMap<&'a [u8], ExtendedXmp<'a>>);
+
+impl<'a> ExtendedXmps<'a> {
+    /// An APP1 segment's data, if it is a chunk of one.
+    fn add(&mut self, data: &'a [u8]) {
+        if let Some(rest) = data.strip_prefix(JPEG_XMP_EXTENSION)
             && rest.len() >= 40
         {
             let guid = &rest[..32];
             let full = u32::from_be_bytes(rest[32..36].try_into().unwrap()) as usize;
             let offset = u32::from_be_bytes(rest[36..40].try_into().unwrap()) as usize;
-            extended.entry(guid).or_insert((full, BTreeMap::new())).1.insert(offset, &rest[40..]);
+            self.0.entry(guid).or_insert((full, BTreeMap::new())).1.insert(offset, &rest[40..]);
         }
     }
-    for (full, chunks) in extended.into_values() {
-        let mut packet = Vec::with_capacity(full);
-        for (offset, data) in chunks {
-            if offset != packet.len() {
-                break;
+
+    /// The packets whose chunks are all there.
+    fn packets(self) -> impl Iterator<Item = Vec<u8>> {
+        self.0.into_values().filter_map(|(full, chunks)| {
+            let mut packet = Vec::with_capacity(full);
+            for (offset, data) in chunks {
+                if offset != packet.len() {
+                    break;
+                }
+                packet.extend_from_slice(data);
             }
-            packet.extend_from_slice(data);
-        }
-        if packet.len() == full {
-            out.push(Cow::Owned(packet));
-        }
+            (packet.len() == full).then_some(packet)
+        })
     }
-    out
 }
 
 pub(crate) struct Chunk<'a> {
@@ -385,13 +608,15 @@ pub(crate) fn webp_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
     })
 }
 
-fn tiff_xmp(bytes: &[u8]) -> Option<Vec<u8>> {
-    let exif = exif::Reader::new().read_raw(bytes.to_vec()).ok()?;
-    let field = exif.get_field(exif::Tag(exif::Context::Tiff, TIFF_TAG_XMP), exif::In::PRIMARY)?;
-    match &field.value {
-        exif::Value::Byte(v) | exif::Value::Undefined(v, _) => Some(v.clone()),
-        _ => None,
-    }
+/// A PNG chunk's data, as a range of the file.
+fn chunk_data(c: &Chunk) -> std::ops::Range<usize> {
+    c.at + 8..c.at + 8 + c.data.len()
+}
+
+/// A WebP EXIF chunk's EXIF block. Some writers keep JPEG's "Exif\0\0" prefix.
+fn webp_exif(c: &Chunk) -> std::ops::Range<usize> {
+    let skip = if c.data.starts_with(b"Exif\0\0") { 6 } else { 0 };
+    c.at + 8 + skip..c.at + 8 + c.data.len()
 }
 
 /// GIF blocks, as the structure walk sees them.
@@ -501,21 +726,15 @@ impl Iterator for GifBlocks<'_> {
     }
 }
 
-/// The XMP packet of a GIF that reads to its trailer.
-fn gif_xmp(bytes: &[u8]) -> Option<&[u8]> {
-    let mut blocks = gif_blocks(bytes);
-    let mut packet = None;
-    for b in blocks.by_ref() {
-        if let GifBlock::Extension { label: 0xFF, range } = b
-            && packet.is_none()
-            && bytes.get(range.start + 3..range.start + 14) == Some(b"XMP DataXMP")
-        {
-            let data = &bytes[range.start + 14..range.end];
-            packet = find(data, b"<?xpacket end=")
-                .and_then(|end| find(&data[end..], b"?>").map(|close| &data[..end + close + 2]));
-        }
+/// The XMP packet of an application extension (`range`: the whole block), if it holds one.
+fn gif_xmp(bytes: &[u8], range: std::ops::Range<usize>) -> Option<&[u8]> {
+    if bytes.get(range.start + 3..range.start + 14) != Some(b"XMP DataXMP") {
+        return None;
     }
-    packet.filter(|_| blocks.complete())
+    let data = &bytes[range.start + 14..range.end];
+    let end = find(data, b"<?xpacket end=")?;
+    let close = find(&data[end..], b"?>")?;
+    Some(&data[..end + close + 2])
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -561,41 +780,20 @@ pub fn compose_orientation(o: u8, turns: u8) -> u8 {
 /// Where the EXIF block (a TIFF structure) of a file is, if it has one.
 fn exif_block(bytes: &[u8], format: Format) -> Option<std::ops::Range<usize>> {
     match format {
-        Format::Jpeg => jpeg_segments(bytes)
-            .find(|s| s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0"))
-            .map(|s| s.start + 6..s.start + s.data.len()),
-        Format::Png => png_chunks(bytes).find(|c| &c.kind == b"eXIf").map(|c| c.at + 8..c.at + 8 + c.data.len()),
-        Format::Webp => webp_chunks(bytes).find(|c| &c.kind == b"EXIF").map(|c| {
-            // Some writers keep JPEG's "Exif\0\0" prefix.
-            let skip = if c.data.starts_with(b"Exif\0\0") { 6 } else { 0 };
-            c.at + 8 + skip..c.at + 8 + c.data.len()
-        }),
+        Format::Jpeg => jpeg_segments(bytes).find_map(|s| jpeg_exif(&s)),
+        Format::Png => png_chunks(bytes).find(|c| &c.kind == b"eXIf").map(|c| chunk_data(&c)),
+        Format::Webp => webp_chunks(bytes).find(|c| &c.kind == b"EXIF").map(|c| webp_exif(&c)),
         Format::Tiff => Some(0..bytes.len()),
         Format::Gif | Format::Bmp => None,
     }
 }
 
 /// Offset of the orientation value in a TIFF block's IFD0, if the tag is there as one SHORT.
-fn tiff_orientation_offset(tiff: &[u8]) -> Option<usize> {
-    let le = match tiff.get(..2)? {
-        b"II" => true,
-        b"MM" => false,
-        _ => return None,
-    };
-    let u16_at = |i: usize| {
-        tiff.get(i..i + 2).map(|b| if le { u16::from_le_bytes([b[0], b[1]]) } else { u16::from_be_bytes([b[0], b[1]]) })
-    };
-    let u32_at = |i: usize| {
-        tiff.get(i..i + 4).map(|b| {
-            let b: [u8; 4] = b.try_into().unwrap();
-            if le { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) }
-        })
-    };
-    let ifd = u32_at(4)? as usize;
-    let count = u16_at(ifd)? as usize;
-    (0..count).map(|k| ifd + 2 + 12 * k).find_map(|e| {
-        (u16_at(e)? == EXIF_TAG_ORIENTATION && u16_at(e + 2)? == 3 && u32_at(e + 4)? == 1).then_some(e + 8)
-    })
+fn tiff_orientation_offset(block: &[u8]) -> Option<usize> {
+    let tiff = Tiff::new(block)?;
+    tiff.entries(tiff.ifd0()?)
+        .find(|e| e.tag == EXIF_TAG_ORIENTATION && e.kind == TIFF_SHORT && e.count == 1)
+        .map(|e| e.at + 8)
 }
 
 /// The file with its EXIF orientation set to `o`, changed in place (same size, nothing moves), or `None` when
@@ -619,6 +817,30 @@ pub fn patch_orientation(bytes: &[u8], format: Format, o: u8) -> Option<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rating(bytes: &[u8], format: Format) -> Option<u8> {
+        Meta::read(bytes, format).rating
+    }
+
+    fn taken(bytes: &[u8], format: Format) -> Option<i64> {
+        Meta::read(bytes, format).taken
+    }
+
+    fn frames(bytes: &[u8], format: Format) -> u32 {
+        Meta::read(bytes, format).frames
+    }
+
+    /// A WebP container holding only these chunks (enough for the metadata read, which decodes nothing).
+    fn webp(chunks: &[(&[u8; 4], &[u8])]) -> Vec<u8> {
+        let mut body = b"WEBP".to_vec();
+        for (kind, data) in chunks {
+            body.extend([&kind[..], &(data.len() as u32).to_le_bytes(), data].concat());
+            if data.len() % 2 == 1 {
+                body.push(0);
+            }
+        }
+        [&b"RIFF"[..], &(body.len() as u32).to_le_bytes(), &body].concat()
+    }
 
     #[test]
     fn composes_orientations() {
@@ -654,17 +876,20 @@ mod tests {
         let attr =
             br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
             <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="4"/></rdf:RDF></x:xmpmeta>"#;
-        assert_eq!(ratings_in_xmp(attr).0, Some(4));
+        let xmp = |packet: &[u8]| rating(&webp(&[(b"XMP ", packet)]), Format::Webp);
+        assert_eq!(xmp(attr), Some(4));
         // Any prefix bound to the XMP namespace counts; a different namespace with the same prefix doesn't.
         let element = br#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
             xmlns:a="http://ns.adobe.com/xap/1.0/" xmlns:xmp="urn:other"><xmp:Rating>2</xmp:Rating>
             <a:Rating>5</a:Rating></rdf:Description></rdf:RDF>"#;
-        assert_eq!(ratings_in_xmp(element).0, Some(5));
+        assert_eq!(xmp(element), Some(5));
         let windows = br#"<rdf:Description xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/"
             MicrosoftPhoto:Rating="75"/>"#;
-        assert_eq!(ratings_in_xmp(windows), (None, Some(4)));
+        assert_eq!(xmp(windows), Some(4));
         let rejected = br#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="-1"/>"#;
-        assert_eq!(ratings_in_xmp(rejected).0, None);
+        assert_eq!(xmp(rejected), None);
+        // An XMP rating in a later packet wins over a MicrosoftPhoto one in the first.
+        assert_eq!(rating(&webp(&[(b"XMP ", windows), (b"XMP ", element)]), Format::Webp), Some(5));
     }
 
     #[test]
@@ -701,11 +926,135 @@ mod tests {
         c
     }
 
+    /// An IFD entry for [`tiff_block`]: tag, type, count, and the value's bytes (in the block's byte order).
+    type TestEntry = (u16, u16, u32, Vec<u8>);
+
+    /// A TIFF block with these IFD0 entries and, if any, an Exif IFD with those (its pointer added to IFD0). Values
+    /// over 4 bytes go after the IFDs.
+    fn tiff_block(le: bool, ifd0: &[TestEntry], exif: &[TestEntry]) -> Vec<u8> {
+        let u16b = |v: u16| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let u32b = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        let ifd_len = |n: usize| 2 + 12 * n + 4;
+        let n0 = ifd0.len() + usize::from(!exif.is_empty());
+        let exif_at = 8 + ifd_len(n0);
+        let mut data_at = exif_at + if exif.is_empty() { 0 } else { ifd_len(exif.len()) };
+        let mut data: Vec<u8> = Vec::new();
+        let mut ifd = |entries: &[TestEntry], out: &mut Vec<u8>| {
+            out.extend(u16b(entries.len() as u16));
+            for (tag, kind, count, value) in entries {
+                out.extend(u16b(*tag));
+                out.extend(u16b(*kind));
+                out.extend(u32b(*count));
+                if value.len() <= 4 {
+                    out.extend(value);
+                    out.extend(std::iter::repeat_n(0, 4 - value.len()));
+                } else {
+                    out.extend(u32b(data_at as u32));
+                    data.extend(value);
+                    data_at += value.len();
+                }
+            }
+            out.extend(u32b(0));
+        };
+        let mut block = if le { b"II".to_vec() } else { b"MM".to_vec() };
+        block.extend(u16b(42));
+        block.extend(u32b(8));
+        let mut entries = ifd0.to_vec();
+        if !exif.is_empty() {
+            entries.push((EXIF_TAG_EXIF_IFD, TIFF_LONG, 1, u32b(exif_at as u32).to_vec()));
+        }
+        ifd(&entries, &mut block);
+        if !exif.is_empty() {
+            ifd(exif, &mut block);
+        }
+        block.extend(data);
+        block
+    }
+
+    #[test]
+    fn exif_reads_what_fits_and_the_last_of_a_tag() {
+        for le in [true, false] {
+            let short =
+                |v: &[u16]| v.iter().flat_map(|&v| if le { v.to_le_bytes() } else { v.to_be_bytes() }).collect();
+            let long = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() }.to_vec();
+            let date = |d: &[u8]| (EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, [d, b"\0"].concat());
+            let read = |ifd0: &[TestEntry], exif: &[TestEntry]| Meta::read(&tiff_block(le, ifd0, exif), Format::Tiff);
+
+            let m = read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6]))], &[date(b"2023:07:15 18:30:05")]);
+            assert_eq!((m.orientation, m.taken), (6, Some(1_689_445_805)));
+            // A SHORT array stored out of the entry: its first value. BYTE and LONG count too; other types don't.
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 3, short(&[8, 1, 1]))], &[]).orientation, 8);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![3])], &[]).orientation, 3);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_LONG, 1, long(5))], &[]).orientation, 5);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_ASCII, 2, b"6\0".to_vec())], &[]).orientation, 1);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[9]))], &[]).orientation, 1);
+            // A tag given twice reads as the last.
+            let twice = [
+                (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6])),
+                (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[3])),
+            ];
+            assert_eq!(read(&twice, &[]).orientation, 3);
+            // Rating, capped at 5; RatingPercent only without it.
+            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating, Some(5));
+            let percent = (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, short(&[50]));
+            assert_eq!(read(std::slice::from_ref(&percent), &[]).rating, Some(3));
+            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating, Some(1));
+
+            // A value pointing outside the block reads as absent; the rest is still read.
+            let mut block = tiff_block(
+                le,
+                &[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[2]))],
+                &[
+                    date(b"2023:07:15 18:30:05"),
+                    (EXIF_TAG_DATE_TIME_DIGITIZED, TIFF_ASCII, 20, b"2020:01:02 03:04:05\0".to_vec()),
+                ],
+            );
+            let len = block.len();
+            // DateTimeOriginal's offset, in the Exif IFD's first entry: past the end.
+            let exif_at = 8 + 2 + 12 * 2 + 4;
+            block[exif_at + 2 + 8..exif_at + 2 + 12].copy_from_slice(&long(len as u32));
+            let m = Meta::read(&block, Format::Tiff);
+            assert_eq!((m.rating, m.taken), (Some(2), wall_clock_seconds(2020, 1, 2, 3, 4, 5)));
+        }
+        // The library's case (6 files, which kamadak-exif read no rating from): a block that ends 4 bytes early,
+        // cutting off the Exif IFD's next-IFD offset. IFD0's rating is whole, and read.
+        let exif_version = (0x9000, TIFF_UNDEFINED, 4, b"0210".to_vec());
+        let mut block =
+            tiff_block(false, &[(EXIF_TAG_RATING, TIFF_SHORT, 1, 4u16.to_be_bytes().to_vec())], &[exif_version]);
+        block.truncate(block.len() - 4);
+        assert_eq!(Meta::read(&block, Format::Tiff).rating, Some(4));
+        // Not a TIFF structure without its 42.
+        let mut block = tiff_block(true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
+        assert_eq!(orientation(&block, Format::Tiff), 6);
+        block[2] = 43;
+        assert_eq!(orientation(&block, Format::Tiff), 1);
+    }
+
+    #[test]
+    fn exif_dates_as_kamadak_read_them() {
+        assert_eq!(exif_date(b"2023:07:15 18:30:05"), Some(1_689_445_805));
+        // Anything after the seconds is ignored.
+        assert_eq!(exif_date(b"2023:07:15 18:30:05.123+02:00"), Some(1_689_445_805));
+        for bad in [
+            &b"    :  :     :  :  "[..],
+            b"                   ",
+            b"0000:00:00 00:00:00",
+            b"2023:07:15 18:30:0",
+            b"2023-07-15 18:30:05",
+            b"2023:07:15T18:30:05",
+            b"2023:07:15 18:30:5x",
+            b"2023:13:15 18:30:05",
+            b"20 3:07:15 18:30:05",
+        ] {
+            assert_eq!(exif_date(bad), None, "{}", String::from_utf8_lossy(bad));
+        }
+    }
+
     #[test]
     fn taken_from_exif_then_xmp() {
-        assert_eq!(read_taken(&tiff_taken(b"2023:07:15 18:30:05"), Format::Tiff), Some(1_689_445_805));
+        assert_eq!(taken(&tiff_taken(b"2023:07:15 18:30:05"), Format::Tiff), Some(1_689_445_805));
         // A camera with its clock never set writes a blank date: no date.
-        assert_eq!(read_taken(&tiff_taken(b"0000:00:00 00:00:00"), Format::Tiff), None);
+        assert_eq!(taken(&tiff_taken(b"0000:00:00 00:00:00"), Format::Tiff), None);
 
         let xmp = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
             <rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:exif="http://ns.adobe.com/exif/1.0/"
@@ -715,7 +1064,7 @@ mod tests {
         png.extend(png_chunk(b"iTXt", &[&b"XML:com.adobe.xmp\0\0\0\0\0"[..], xmp].concat()));
         png.extend(png_chunk(b"IEND", b""));
         // exif:DateTimeOriginal wins over xmp:CreateDate; the zone is dropped, the wall-clock time kept.
-        assert_eq!(read_taken(&png, Format::Png), wall_clock_seconds(2019, 2, 3, 4, 5, 6));
+        assert_eq!(taken(&png, Format::Png), wall_clock_seconds(2019, 2, 3, 4, 5, 6));
         assert_eq!(parse_iso_date("2024-02-29"), wall_clock_seconds(2024, 2, 29, 0, 0, 0));
         assert_eq!(parse_iso_date("2023-02-29"), None);
         assert_eq!(parse_iso_date("2024-05-01T10:00Z"), Some(1_714_557_600));
@@ -754,12 +1103,12 @@ mod tests {
             [&gif[..header], &ext, &gif[header..]].concat()
         };
         let still = with_xmp(&gif(1));
-        assert_eq!((read_rating(&still, Format::Gif), frame_count(&still, Format::Gif)), (Some(3), 1));
+        assert_eq!((rating(&still, Format::Gif), frames(&still, Format::Gif)), (Some(3), 1));
         let animated = with_xmp(&gif(3));
-        assert_eq!((read_rating(&animated, Format::Gif), frame_count(&animated, Format::Gif)), (Some(3), 3));
+        assert_eq!((rating(&animated, Format::Gif), frames(&animated, Format::Gif)), (Some(3), 3));
         // Without its trailer (a truncated download), nothing it holds is taken: one frame, no rating.
         let truncated = &animated[..animated.len() - 1];
-        assert_eq!((read_rating(truncated, Format::Gif), frame_count(truncated, Format::Gif)), (None, 1));
+        assert_eq!((rating(truncated, Format::Gif), frames(truncated, Format::Gif)), (None, 1));
     }
 
     #[test]
@@ -778,15 +1127,15 @@ mod tests {
             &[0xFF, 0xDA, 0, 2],
         ]
         .concat();
-        let packets = xmp_packets(&jpeg, Format::Jpeg);
+        let packets = Container::walk(&jpeg, Format::Jpeg).xmp;
         assert!(matches!(packets[..], [Cow::Borrowed(_), Cow::Owned(_)]));
-        assert_eq!(read_rating(&jpeg, Format::Jpeg), Some(2));
+        assert_eq!(rating(&jpeg, Format::Jpeg), Some(2));
     }
 
     #[test]
     fn frames_of_animations() {
-        assert_eq!(frame_count(&gif(1), Format::Gif), 1);
-        assert_eq!(frame_count(&gif(3), Format::Gif), 3);
+        assert_eq!(frames(&gif(1), Format::Gif), 1);
+        assert_eq!(frames(&gif(3), Format::Gif), 3);
 
         let apng = |frames: u32| {
             let mut out = Vec::new();
@@ -802,21 +1151,17 @@ mod tests {
             w.finish().unwrap();
             out
         };
-        assert_eq!(frame_count(&apng(1), Format::Png), 1);
-        assert_eq!(frame_count(&apng(4), Format::Png), 4);
+        assert_eq!(frames(&apng(1), Format::Png), 1);
+        assert_eq!(frames(&apng(4), Format::Png), 4);
 
         // WebP: the container says it, the VP8X animation flag and one ANMF chunk per frame.
-        let webp = |flags: u8, frames: usize| {
-            let chunk = |kind: &[u8; 4], data: &[u8]| [&kind[..], &(data.len() as u32).to_le_bytes(), data].concat();
-            let mut body = b"WEBP".to_vec();
-            body.extend(chunk(b"VP8X", &[flags, 0, 0, 0, 1, 0, 0, 1, 0, 0]));
-            body.extend(chunk(b"ANIM", &[0; 6]));
-            for _ in 0..frames {
-                body.extend(chunk(b"ANMF", &[0; 16]));
-            }
-            [&b"RIFF"[..], &(body.len() as u32).to_le_bytes(), &body].concat()
+        let animation = |flags: u8, frames: usize| {
+            let vp8x = [flags, 0, 0, 0, 1, 0, 0, 1, 0, 0];
+            let mut chunks: Vec<(&[u8; 4], &[u8])> = vec![(b"VP8X", &vp8x), (b"ANIM", &[0; 6])];
+            chunks.extend(std::iter::repeat_n((b"ANMF", &[0u8; 16][..]), frames));
+            webp(&chunks)
         };
-        assert_eq!(frame_count(&webp(0x02, 5), Format::Webp), 5);
-        assert_eq!(frame_count(&webp(0x00, 0), Format::Webp), 1);
+        assert_eq!(frames(&animation(0x02, 5), Format::Webp), 5);
+        assert_eq!(frames(&animation(0x00, 0), Format::Webp), 1);
     }
 }

@@ -17,7 +17,7 @@
 
 use anyhow::Result;
 
-use crate::decode::{Format, exif_orientation};
+use crate::decode::Format;
 use crate::metadata::{self, compose_orientation, png_chunks, webp_chunks};
 use crate::rewrite::{self, Op};
 
@@ -34,7 +34,7 @@ pub enum Outcome {
 
 /// Turn a file `turns` quarter turns clockwise (as shown).
 pub fn rotate(bytes: &[u8], format: Format, turns: u8) -> Result<Outcome> {
-    let shown = exif_orientation(bytes);
+    let shown = metadata::orientation(bytes, format);
     // The transform that takes the stored pixels to the new upright image.
     let total = compose_orientation(shown, turns % 4);
     let tag = || Outcome::Orientation(total);
@@ -142,12 +142,12 @@ mod tests {
                     panic!("{format:?} should be rewritten")
                 };
                 assert_eq!(Format::sniff(&out), Some(format));
-                assert_eq!(exif_orientation(&out), 1);
+                assert_eq!(metadata::orientation(&out, format), 1);
                 assert_eq!(
                     shown(&out),
                     expect_turned(original, turns),
                     "{format:?}, orientation {}, {turns} turns",
-                    exif_orientation(original)
+                    metadata::orientation(original, format)
                 );
             }
         }
@@ -232,12 +232,12 @@ mod tests {
         // MCU-aligned: the pixels turn. Decoding the turned coefficients matches turning the decoded image up
         // to the decoder's chroma rounding.
         for aligned in all_orientations(&jpeg(64, 32), Format::Jpeg) {
-            let o = exif_orientation(&aligned);
+            let o = metadata::orientation(&aligned, Format::Jpeg);
             for turns in 1..=3 {
                 let Outcome::Rewritten(out) = rotate(&aligned, Format::Jpeg, turns).unwrap() else {
                     panic!("aligned JPEG")
                 };
-                assert_eq!(exif_orientation(&out), 1);
+                assert_eq!(metadata::orientation(&out, Format::Jpeg), 1);
                 let (got, want) = (shown(&out), expect_turned(&aligned, turns));
                 assert_eq!((got.0, got.1), (want.0, want.1), "orientation {o}, {turns} turns");
                 let worst = got.2.iter().zip(&want.2).map(|(a, b)| a.abs_diff(*b)).max().unwrap();

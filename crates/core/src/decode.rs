@@ -126,22 +126,24 @@ impl Decoder {
     /// clockwise), applied after the EXIF orientation.
     pub fn decode(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
         let format = Format::sniff(bytes).context("unknown image format")?;
+        let exif = crate::metadata::orientation(bytes, format);
         let mut image = Rgb::default();
-        let info = self.decode_into(bytes, format, exif_orientation(bytes), min, turns, &mut image, &mut Vec::new())?;
+        let info = self.decode_into(bytes, format, exif, min, turns, &mut image, &mut Vec::new())?;
         Ok(Decoded { image, info })
     }
 
     /// [`Decoder::decode`] without the orientation, into new buffers.
     pub fn decode_stored(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
         let format = Format::sniff(bytes).context("unknown image format")?;
+        let exif = crate::metadata::orientation(bytes, format);
         let mut image = Rgb::default();
-        let info = self.decode_stored_into(bytes, format, exif_orientation(bytes), min, turns, &mut image)?;
+        let info = self.decode_stored_into(bytes, format, exif, min, turns, &mut image)?;
         Ok(Stored { image, info })
     }
 
     /// [`Decoder::decode`] into a worker's buffers, which keep their capacity from file to file: the pixels go into
     /// `out`, and are oriented through `spare` (swapped with `out`'s). `format` is the file's (`Format::sniff`),
-    /// `exif` its EXIF orientation (1 without one).
+    /// `exif` its EXIF orientation (`metadata::orientation`, 1 without one).
     #[allow(clippy::too_many_arguments)]
     pub fn decode_into(
         &mut self,
@@ -260,17 +262,6 @@ fn decode_other(bytes: &[u8], format: Format, out: &mut Rgb) -> Result<()> {
     };
     (out.width, out.height) = (width, height);
     Ok(())
-}
-
-/// EXIF orientation 1–8; 1 when absent or unreadable.
-pub fn exif_orientation(bytes: &[u8]) -> u8 {
-    let Ok(exif) = exif::Reader::new().read_from_container(&mut std::io::Cursor::new(bytes)) else {
-        return 1;
-    };
-    exif.get_field(exif::Tag::Orientation, exif::In::PRIMARY)
-        .and_then(|f| f.value.get_uint(0))
-        .filter(|o| (1..=8).contains(o))
-        .map_or(1, |o| o as u8)
 }
 
 /// Apply an EXIF orientation, giving the upright image.

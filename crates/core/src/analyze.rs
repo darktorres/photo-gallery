@@ -4,7 +4,8 @@
 use anyhow::{Context, Result};
 
 use crate::borders::{self, Detection, Detector};
-use crate::decode::{Decoder, Format, MinSize, Rgb, exif_orientation, release_over};
+use crate::decode::{Decoder, Format, MinSize, Rgb, release_over};
+use crate::metadata::Meta;
 use crate::pdq;
 use crate::resize::Resizer;
 
@@ -34,11 +35,11 @@ pub struct Analysis {
     pub width: u32,
     pub height: u32,
     pub thumbhash: Vec<u8>,
-    /// The rating the file itself holds (metadata::read_rating), for the catalog's three-way sync.
+    /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
     pub file_rating: Option<u8>,
     /// Frames in the file (more than one: animated); an image's analysis is of the first.
     pub frames: u32,
-    /// When it was taken (metadata::read_taken): wall-clock time, or a UTC instant when `taken_utc` (the catalog
+    /// When it was taken (`Meta::taken`): wall-clock time, or a UTC instant when `taken_utc` (the catalog
     /// stores it as this computer's wall-clock time).
     pub taken: Option<i64>,
     pub taken_utc: bool,
@@ -108,9 +109,10 @@ impl Analyzer {
     fn analyze_image(&mut self, bytes: &[u8], turns: u8) -> Result<Analysis> {
         let file_hash = file_hash(bytes);
         let format = Format::sniff(bytes).context("unknown image format")?;
+        let meta = Meta::read(bytes, format);
         let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
-        let exif = exif_orientation(bytes);
-        let info = self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
+        let (image, spare) = (&mut self.image, &mut self.spare);
+        let info = self.decoder.decode_into(bytes, format, meta.orientation, min, turns, image, spare)?;
         let img = &self.image;
 
         let pdq_img = if self.resizer.fit_within(img, PDQ_SIDE, &mut self.pdq_in) { &self.pdq_in } else { img };
@@ -123,9 +125,9 @@ impl Analyzer {
             width: info.full_width,
             height: info.full_height,
             thumbhash: thumbhash(img, &mut self.resizer, &mut self.small, &mut self.rgba),
-            file_rating: crate::metadata::read_rating(bytes, format),
-            frames: crate::metadata::frame_count(bytes, format),
-            taken: crate::metadata::read_taken(bytes, format),
+            file_rating: meta.rating,
+            frames: meta.frames,
+            taken: meta.taken,
             taken_utc: false,
             pixels: Some(PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral }),
             duration_ms: None,
@@ -148,9 +150,10 @@ impl Analyzer {
 
     fn find_borders(&mut self, bytes: &[u8], turns: u8) -> Result<FileBorders> {
         let format = Format::sniff(bytes).context("unknown image format")?;
-        let exif = exif_orientation(bytes);
-        let info = self.decoder.decode_stored_into(bytes, format, exif, MinSize::Full, turns, &mut self.image)?;
-        let frames = crate::metadata::frame_count(bytes, format);
+        let meta = Meta::read(bytes, format);
+        let info =
+            self.decoder.decode_stored_into(bytes, format, meta.orientation, MinSize::Full, turns, &mut self.image)?;
+        let frames = meta.frames;
         let (width, height) = (info.full_width, info.full_height);
         let borders = (frames <= 1 && (width.min(height) as usize) >= borders::MIN_SIDE)
             .then(|| self.detector.detect(&self.image, &borders::Params::default()));

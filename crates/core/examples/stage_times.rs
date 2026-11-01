@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 
 use pg_core::analyze::{self, Analyzer};
 use pg_core::decode::{Decoder, Format, MinSize, Rgb};
+use pg_core::metadata::Meta;
 use pg_core::pdq;
 use pg_core::resize::Resizer;
 
@@ -26,12 +27,12 @@ fn main() -> anyhow::Result<()> {
         let s = Instant::now();
         let _ = analyze::file_hash(b);
         t[0] += s.elapsed();
+        let format = Format::sniff(b).expect("an image");
         let s = Instant::now();
-        let exif = pg_core::decode::exif_orientation(b);
+        let meta = Meta::read(b, format);
         t[1] += s.elapsed();
         let s = Instant::now();
-        let format = Format::sniff(b).expect("an image");
-        dec.decode_into(b, format, exif, MinSize::Sides(512, 320), 0, &mut image, &mut spare)?;
+        dec.decode_into(b, format, meta.orientation, MinSize::Sides(512, 320), 0, &mut image, &mut spare)?;
         t[2] += s.elapsed();
         let s = Instant::now();
         let _ = analyze::pixel_hash(&image);
@@ -46,7 +47,8 @@ fn main() -> anyhow::Result<()> {
         let _ = analyzer.analyze(b, 0)?;
         t[6] += s.elapsed();
     }
-    for (name, d) in ["blake3", "exif", "decode", "pixel hash", "resize 512", "pdq", "analyze total"].iter().zip(t) {
+    for (name, d) in ["blake3", "metadata", "decode", "pixel hash", "resize 512", "pdq", "analyze total"].iter().zip(t)
+    {
         println!("{name:>14}: {:.2} ms", d.as_secs_f64() * 1e3 / bytes.len() as f64);
     }
     Ok(())

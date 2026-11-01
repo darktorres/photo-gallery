@@ -23,9 +23,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Format, exif_orientation};
+use pg_core::decode::Format;
 use pg_core::media::Kind;
-use pg_core::metadata::{patch_orientation, read_rating};
+use pg_core::metadata::{self, Meta, patch_orientation};
 use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
 use rusqlite::{OptionalExtension, params};
@@ -262,7 +262,7 @@ impl Inner {
                 let tool = exiftool_for(exiftool)?;
                 tool.write_rating(&path, &temp, rating)?;
                 let written = std::fs::read(long_path(&temp))?;
-                if read_rating(&written, format) != Some(rating) {
+                if Meta::read(&written, format).rating != Some(rating) {
                     let _ = std::fs::remove_file(long_path(&temp));
                     bail!("{path}: the rating didn't read back after writing it");
                 }
@@ -279,7 +279,7 @@ impl Inner {
                             // the catalog.
                             let tool = exiftool_for(exiftool)?;
                             match tool.write_orientation(&path, &temp, o) {
-                                Ok(()) if exif_orientation(&std::fs::read(long_path(&temp))?) == o => None,
+                                Ok(()) if metadata::orientation(&std::fs::read(long_path(&temp))?, format) == o => None,
                                 _ => {
                                     let _ = std::fs::remove_file(long_path(&temp));
                                     Catalog::add_catalog_rotation(conn, job.file_id, turns)?;

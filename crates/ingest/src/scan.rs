@@ -181,7 +181,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             }
         };
         stats.folders += 1;
-        let mut folder_id = None;
+        let mut folder = None;
         for e in entries {
             if e.file_ref == 0 {
                 continue; // reparse point
@@ -195,10 +195,10 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             let Some(kind) = media::kind_of(&e.name) else {
                 continue;
             };
-            let folder = match folder_id {
-                Some(id) => id,
-                None => *folder_id.insert(Catalog::folder_id(&tx, &dir)?),
-            };
+            if folder.is_none() {
+                folder = Some(Catalog::folder(&tx, &dir)?);
+            }
+            let Some(folder) = &folder else { unreachable!("set above") };
             Catalog::upsert_file(
                 &tx,
                 scan_id,

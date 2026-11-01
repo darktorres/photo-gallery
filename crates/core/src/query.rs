@@ -3,7 +3,7 @@
 //! the user typed bound as a parameter, and both travel as JSON (saved views, the session, the QML side).
 //!
 //! The SQL expects the browse query's aliases: `f` the file, `a` its analysis (joined only without an error), `r`
-//! its rating, `v` the view's folders (`v.ord`, for name order).
+//! its rating (`f.order_key` is the name order).
 
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
@@ -547,13 +547,14 @@ impl Sort {
         serde_json::to_string(self).unwrap_or_else(|_| "{}".into())
     }
 
-    /// The ORDER BY list. Ties (and files without the value, which come last either way) keep name order.
+    /// The ORDER BY list. Ties (and files without the value, which come last either way) keep name order
+    /// (`files.order_key`, then the id for files of the same name in the same folder on two drives).
     pub fn sql(self) -> String {
         let dir = if self.descending { "DESC" } else { "ASC" };
-        let then = "v.ord, f.name COLLATE PATH";
+        let then = "f.order_key, f.id";
         let mtime_local = format!("unixepoch(f.mtime / 10000000 - {FILETIME_UNIX_OFFSET}, 'unixepoch', 'localtime')");
         match self.key {
-            SortKey::Name => format!("v.ord {dir}, f.name COLLATE PATH {dir}"),
+            SortKey::Name => format!("f.order_key {dir}, f.id {dir}"),
             SortKey::Size => format!("f.size {dir}, {then}"),
             SortKey::Modified => format!("f.mtime {dir}, {then}"),
             SortKey::Taken => format!("coalesce(a.taken, {mtime_local}) {dir}, {then}"),
@@ -571,12 +572,23 @@ pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         2,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
-            let (Some(name), Some(text)) = (ctx.get::<Option<String>>(0)?, ctx.get::<Option<String>>(1)?) else {
+            // Borrowed from SQLite: a NULL (or a blob) contains nothing.
+            let (Ok(name), Ok(text)) = (ctx.get_raw(0).as_str(), ctx.get_raw(1).as_str()) else {
                 return Ok(false);
             };
-            Ok(name.to_lowercase().contains(&text.to_lowercase()))
+            Ok(contains_ignoring_case(name, text))
         },
     )
+}
+
+/// Whether `name` contains `text`, both in lower case (Unicode). ASCII, the usual case, without allocating.
+pub fn contains_ignoring_case(name: &str, text: &str) -> bool {
+    if name.is_ascii() && text.is_ascii() {
+        let (name, text) = (name.as_bytes(), text.as_bytes());
+        text.is_empty() || name.windows(text.len()).any(|w| w.eq_ignore_ascii_case(text))
+    } else {
+        name.to_lowercase().contains(&text.to_lowercase())
+    }
 }
 
 #[cfg(test)]

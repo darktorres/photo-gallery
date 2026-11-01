@@ -18,7 +18,7 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
     Some(path) => path,
     None => "/root/pg-bench",
 };
-const LAYOUT: &str = "v1-collation";
+const LAYOUT: &str = "v1-orderkey";
 // The thumbnail height the cache was filled at.
 const THUMB_HEIGHT: u32 = 220;
 

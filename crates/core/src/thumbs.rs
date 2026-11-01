@@ -981,15 +981,22 @@ mod tests {
         c.conn
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\p', 0);
-                 INSERT INTO folders(id, path) VALUES (1, 'D:\\p');
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
-                                   rotation)
-                 VALUES (1, 1, 30, 1, 'a.jpg', 'jpg', 'image', 1, 5, 1, 0, 0),
-                        (2, 1, 10, 1, 'b.jpg', 'jpg', 'image', 1, 5, 1, 0, 0),
-                        (3, 1, 20, 1, 'c.jpg', 'jpg', 'image', 1, 5, 1, 0, 1),
-                        (4, 1, 40, 1, 'd.jpg', 'jpg', 'image', 1, 5, 1, 1, 0);
-                 INSERT INTO analysis(file_id, version, size, mtime, analyzed)
-                 SELECT id, 1, 1, 5, 0 FROM files;",
+                 INSERT INTO folders(id, path) VALUES (1, 'D:\\p');",
+            )
+            .unwrap();
+        use crate::catalog::fixture::{File, insert};
+        insert(
+            &c.conn,
+            &[
+                File { file_ref: 30, ..File::new(1, 1, "a.jpg", 1, 5) },
+                File { file_ref: 10, ..File::new(2, 1, "b.jpg", 1, 5) },
+                File { file_ref: 20, rotation: 1, ..File::new(3, 1, "c.jpg", 1, 5) },
+                File { file_ref: 40, missing: true, ..File::new(4, 1, "d.jpg", 1, 5) },
+            ],
+        );
+        c.conn
+            .execute_batch(
+                "INSERT INTO analysis(file_id, version, size, mtime, analyzed) SELECT id, 1, 1, 5, 0 FROM files;",
             )
             .unwrap();
         let cache = open(&dir, 1 << 30);

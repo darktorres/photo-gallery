@@ -49,9 +49,14 @@ CREATE TABLE files(
     missing   INTEGER NOT NULL DEFAULT 0,
     rotation  INTEGER NOT NULL DEFAULT 0,  -- quarter turns clockwise kept here, for files that can't be rotated
                                            -- in place (metadata::rotation_method); applied after EXIF orientation
+    order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (browse::order_key)
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
+-- The grid's name order and every folder's files (a range of keys: browse::scope).
+CREATE INDEX files_order ON files(order_key) WHERE missing = 0;
+-- The folder tree's counts, from the index alone.
+CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
 CREATE TABLE analysis(
     file_id     INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
     version     INTEGER NOT NULL,  -- analyze::IMPORT_VERSION
@@ -136,7 +141,18 @@ CREATE TABLE session(
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
 );
+-- About the catalog itself. `catalog_id` is made with it: a cache keyed by file ids (the thumbnails) checks it,
+-- since a rebuilt catalog numbers its files anew.
+CREATE TABLE meta(
+    key   TEXT PRIMARY KEY,
+    value ANY NOT NULL
+);
+INSERT INTO meta(key, value) VALUES ('catalog_id', lower(hex(randomblob(16))));
 ";
+
+/// A catalog made before the current baseline (pre-release, the baseline is edited in place) lacks these.
+const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
+     + (SELECT count(*) FROM pragma_table_info('files') WHERE name = 'order_key')";
 
 /// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
 const UNDER_ROOT: &str = "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')";
@@ -192,6 +208,12 @@ pub struct ScannedFile<'a> {
     pub mtime: i64,
 }
 
+/// A folder's row, with its part of its files' order key (`browse::folder_key`).
+pub struct Folder {
+    pub id: i64,
+    pub key: Vec<u8>,
+}
+
 /// A file the import still has to analyze.
 pub struct WorkItem {
     pub id: i64,
@@ -232,9 +254,20 @@ impl Catalog {
              PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
         )?;
         migrate(&conn, BASELINE, MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
-        conn.create_collation("PATH", crate::browse::path_collation)?;
+        if conn.query_row(LAYOUT_CHECK, [], |r| r.get::<_, i64>(0))? != 2 {
+            bail!(
+                "catalog {}: made before the current layout (pre-release, the layout changes in place): delete \
+                 the catalog and import again",
+                path.display()
+            );
+        }
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
+    }
+
+    /// The id made with the catalog (`meta.catalog_id`).
+    pub fn catalog_id(&self) -> Result<String> {
+        Ok(self.conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0))?)
     }
 
     /// Stop the statements on this connection while `cancel` is set (from any thread): each fails with an error for
@@ -256,34 +289,39 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn folder_id(tx: &Transaction, path: &str) -> Result<i64> {
+    /// The folder's row, made if it's new.
+    pub fn folder(tx: &Transaction, path: &str) -> Result<Folder> {
+        let key = crate::browse::folder_key(crate::browse::merged_path(path));
         let mut get = tx.prepare_cached("SELECT id FROM folders WHERE path = ?1")?;
         if let Some(id) = get.query_row([path], |r| r.get(0)).optional()? {
-            return Ok(id);
+            return Ok(Folder { id, key });
         }
         tx.prepare_cached("INSERT INTO folders(path) VALUES (?1)")?.execute([path])?;
-        Ok(tx.last_insert_rowid())
+        Ok(Folder { id: tx.last_insert_rowid(), key })
     }
 
     /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
-    pub fn upsert_file(tx: &Transaction, scan: i64, folder: i64, f: &ScannedFile) -> Result<()> {
+    pub fn upsert_file(tx: &Transaction, scan: i64, folder: &Folder, f: &ScannedFile) -> Result<()> {
+        let order_key = [folder.key.as_slice(), &crate::browse::name_key(f.name)].concat();
         tx.prepare_cached(
-            "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+            "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(volume, file_ref) DO UPDATE SET
                 folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
-                size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0",
+                size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
+                order_key = excluded.order_key",
         )?
         .execute(params![
             f.volume,
             f.file_ref as i64,
-            folder,
+            folder.id,
             f.name,
             media::extension(f.name),
             f.kind.key(),
             f.size as i64,
             f.mtime,
-            scan
+            scan,
+            order_key
         ])?;
         Ok(())
     }
@@ -519,9 +557,84 @@ impl Catalog {
     }
 }
 
+/// Test catalogs: files inserted as the scanner would, with their order keys.
+#[cfg(test)]
+pub(crate) mod fixture {
+    use rusqlite::{Connection, params};
+
+    /// A file row; `folder` must exist in `folders`.
+    pub struct File {
+        pub id: i64,
+        pub folder: i64,
+        pub name: &'static str,
+        pub kind: &'static str,
+        pub size: i64,
+        pub mtime: i64,
+        pub file_ref: i64,
+        pub missing: bool,
+        pub rotation: u8,
+    }
+
+    impl File {
+        /// An image present on volume 1, its file reference its id.
+        pub fn new(id: i64, folder: i64, name: &'static str, size: i64, mtime: i64) -> File {
+            File { id, folder, name, kind: "image", size, mtime, file_ref: id, missing: false, rotation: 0 }
+        }
+    }
+
+    /// Insert the files (scan 1 must exist).
+    pub fn insert(conn: &Connection, files: &[File]) {
+        for f in files {
+            let folder: String =
+                conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder], |r| r.get(0)).unwrap();
+            conn.execute(
+                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
+                                   rotation, order_key)
+                 VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?11)",
+                params![
+                    f.id,
+                    f.file_ref,
+                    f.folder,
+                    f.name,
+                    crate::media::extension(f.name),
+                    f.kind,
+                    f.size,
+                    f.mtime,
+                    f.missing,
+                    f.rotation,
+                    crate::browse::order_key(&folder, f.name)
+                ],
+            )
+            .unwrap();
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_layouts_are_refused() {
+        let dir = std::env::temp_dir().join(format!("pg-layout-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("catalog.sqlite");
+        let _ = std::fs::remove_file(&path);
+        // A catalog from before the order key: version 1, without `meta` or `files.order_key`.
+        let conn = Connection::open(&path).unwrap();
+        conn.execute_batch("CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); PRAGMA user_version = 1;").unwrap();
+        drop(conn);
+        let e = Catalog::open(&path).err().expect("refused");
+        assert!(format!("{e:#}").contains("import again"), "{e:#}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn catalogs_have_their_own_id() {
+        let (a, b) = (Catalog::open(Path::new(":memory:")).unwrap(), Catalog::open(Path::new(":memory:")).unwrap());
+        assert_eq!(a.catalog_id().unwrap().len(), 32);
+        assert_ne!(a.catalog_id().unwrap(), b.catalog_id().unwrap());
+    }
 
     #[test]
     fn roots_never_nest() {
@@ -581,11 +694,10 @@ mod tests {
         c.conn
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
-                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x');
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
-                    VALUES (1, 1, 1, 1, 'a.jpg', 'jpg', 'image', 10, 100, 1);",
+                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x');",
             )
             .unwrap();
+        fixture::insert(&c.conn, &[fixture::File::new(1, 1, "a.jpg", 10, 100)]);
         (c, 1)
     }
 

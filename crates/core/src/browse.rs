@@ -5,7 +5,8 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use rusqlite::{Connection, OptionalExtension, Transaction, params, params_from_iter};
+use rusqlite::types::Value;
+use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
 use crate::decode::Format;
 use crate::media::Kind;
@@ -19,6 +20,73 @@ pub fn merged_path(path: &str) -> &str {
         [d, b':', ..] if d.is_ascii_alphabetic() => path[2..].trim_start_matches('\\'),
         _ => path,
     }
+}
+
+/// The components of a merged path, as the tree has them: `\\server\share\x` is `server`, `share`, `x`.
+fn components(merged: &str) -> impl Iterator<Item = &str> {
+    merged.split('\\').filter(|p| !p.is_empty())
+}
+
+/// The order key's part for a folder: each component of its merged path in lower case (`str::to_lowercase`, a
+/// final Σ as ς), then 0x01. Bytes 0x01 and 0x02 in a name (NTFS allows them, Win32 doesn't) are escaped as
+/// 0x02 0x02 and 0x02 0x03, which keeps the order. Compared as bytes, these keys order folders component by
+/// component, as the tree does: `p`, `p\sub`, `p-x`; the same folder on every drive is one key.
+pub fn folder_key(merged: &str) -> Vec<u8> {
+    let mut key = Vec::with_capacity(merged.len() + 4);
+    for part in components(merged) {
+        for b in part.to_lowercase().bytes() {
+            match b {
+                0x01 => key.extend([0x02, 0x02]),
+                0x02 => key.extend([0x02, 0x03]),
+                _ => key.push(b),
+            }
+        }
+        key.push(0x01);
+    }
+    key
+}
+
+/// The order key's part for a file name: 0x00, the name in lower case character by character, 0x00, the name
+/// itself. Compared as bytes (UTF-8 keeps code-point order): case-insensitive (Unicode, unlike SQLite's NOCASE),
+/// then exact, so the order is total. The leading 0x00 puts a folder's files before its subfolders.
+pub fn name_key(name: &str) -> Vec<u8> {
+    let mut key = Vec::with_capacity(2 * name.len() + 2);
+    key.push(0x00);
+    let mut buf = [0; 4];
+    for c in name.chars().flat_map(char::to_lowercase) {
+        key.extend_from_slice(c.encode_utf8(&mut buf).as_bytes());
+    }
+    key.push(0x00);
+    key.extend_from_slice(name.as_bytes());
+    key
+}
+
+/// `files.order_key`: where a file sorts by name, all drives merged: its folder's key, then its name's.
+pub fn order_key(folder_path: &str, name: &str) -> Vec<u8> {
+    let mut key = folder_key(merged_path(folder_path));
+    key.extend(name_key(name));
+    key
+}
+
+/// The files of a merged folder (optionally with everything below it), as a range of order keys: a condition
+/// on `f` and the values it binds, which the `files_order` index answers.
+fn scope(merged: &str, recursive: bool) -> (String, Vec<Value>) {
+    let mut lo = folder_key(merged);
+    let hi = if recursive {
+        // Below the folder, nothing sorts at or after 0xFF (no UTF-8 byte is 0xFF).
+        if lo.is_empty() { None } else { Some([lo.as_slice(), &[0xFF]].concat()) }
+    } else {
+        let hi = [lo.as_slice(), &[0x01]].concat();
+        lo.push(0x00);
+        Some(hi)
+    };
+    let mut values = vec![Value::Blob(lo)];
+    let mut sql = "f.order_key >= ?".to_string();
+    if let Some(hi) = hi {
+        sql.push_str(" AND f.order_key < ?");
+        values.push(Value::Blob(hi));
+    }
+    (sql, values)
 }
 
 pub struct FolderNode {
@@ -40,20 +108,24 @@ pub struct FolderTree {
 
 /// The merged tree of every folder holding present files, with their ancestors.
 pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
-    let mut stmt = conn.prepare(
-        "SELECT fo.path, count(*) FROM folders fo JOIN files f ON f.folder_id = fo.id AND f.missing = 0
-         GROUP BY fo.id",
-    )?;
-    let folders: Vec<(String, i64)> =
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?;
+    // Counted from the `files_present` index alone (no sort, no table), joined to the folders here.
+    let counts: Vec<(i64, i64)> = conn
+        .prepare("SELECT folder_id, count(*) FROM files WHERE missing = 0 GROUP BY folder_id")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let paths: BTreeMap<i64, String> = conn
+        .prepare("SELECT id, path FROM folders")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    let folders = counts.iter().filter_map(|(id, n)| Some((paths.get(id)?, *n)));
 
     let mut tree = FolderTree { nodes: Vec::new(), roots: Vec::new() };
     let mut by_key: BTreeMap<String, usize> = BTreeMap::new();
-    for (path, count) in &folders {
+    for (path, count) in folders {
         let drive = if merged_path(path).len() < path.len() { &path[..2] } else { "" };
         let mut parent: Option<usize> = None;
         let mut merged = String::new();
-        let parts: Vec<&str> = merged_path(path).split('\\').filter(|p| !p.is_empty()).collect();
+        let parts: Vec<&str> = components(merged_path(path)).collect();
         for (depth, part) in parts.iter().enumerate() {
             if !merged.is_empty() {
                 merged.push('\\');
@@ -91,7 +163,8 @@ pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
             tree.nodes[p].direct += count;
         }
     }
-    let names: Vec<String> = tree.nodes.iter().map(|n| n.name.to_lowercase()).collect();
+    // The grid's order: by `folder_key`, component by component.
+    let names: Vec<Vec<u8>> = tree.nodes.iter().map(|n| folder_key(&n.name)).collect();
     tree.roots.sort_by(|&a, &b| names[a].cmp(&names[b]));
     for node in &mut tree.nodes {
         node.children.sort_by(|&a, &b| names[a].cmp(&names[b]));
@@ -127,13 +200,6 @@ impl Item {
         let (w, h) = if self.pending_turns % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) };
         if w > 0 && h > 0 { w as f64 / h as f64 } else { 1.0 }
     }
-}
-
-/// Case-insensitive comparison of names and paths as Windows sees them (Unicode, unlike SQLite's NOCASE).
-/// Registered on every catalog connection (`Catalog::open`).
-pub fn path_collation(a: &str, b: &str) -> std::cmp::Ordering {
-    // Character by character, without allocating: a sort compares every name many times (FINDINGS "Startup").
-    a.chars().flat_map(char::to_lowercase).cmp(b.chars().flat_map(char::to_lowercase)).then_with(|| a.cmp(b))
 }
 
 /// What an `Item` is read from (`item_from_row`), with `f` the file.
@@ -175,69 +241,22 @@ pub fn reload_item(conn: &Connection, file_id: i64) -> Result<Option<Item>> {
         .optional()?)
 }
 
-/// Run `f` with `temp.view_folders` holding the folders of a merged folder (on every drive), optionally with
-/// everything below it, each with its rank in path order (`ord`; the drives of one merged folder share it). The
-/// folder match is done here, as merged paths are a Rust function; the rest is SQL.
-fn in_scope<T>(
-    conn: &Connection,
-    merged: &str,
-    recursive: bool,
-    f: impl FnOnce(&Transaction) -> Result<T>,
-) -> Result<T> {
-    let merged = merged.to_lowercase();
-    // A row that fails (the read cancelled) fails the scope: a shorter list of folders would look like a result.
-    let all: Vec<(String, i64)> = conn
-        .prepare("SELECT path, id FROM folders")?
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let mut folders: Vec<(String, i64)> = all
-        .into_iter()
-        .filter_map(|(path, id)| {
-            let m = merged_path(&path).to_lowercase();
-            let inside = m == merged
-                || (recursive
-                    && (merged.is_empty() || m.strip_prefix(&merged).is_some_and(|rest| rest.starts_with('\\'))));
-            inside.then_some((m, id))
-        })
-        .collect();
-    // In the tree's order: by folder name at each level (`p\sub` right after `p`, before `p-x`).
-    folders.sort_by(|(a, a_id), (b, b_id)| a.split('\\').cmp(b.split('\\')).then(a_id.cmp(b_id)));
-
-    let tx = conn.unchecked_transaction()?;
-    tx.execute_batch(
-        "CREATE TEMP TABLE IF NOT EXISTS view_folders(id INTEGER PRIMARY KEY, ord INTEGER NOT NULL);
-         DELETE FROM temp.view_folders;",
-    )?;
-    {
-        let mut insert = tx.prepare_cached("INSERT INTO temp.view_folders(id, ord) VALUES (?1, ?2)")?;
-        let mut ord = 0;
-        for (i, (m, id)) in folders.iter().enumerate() {
-            if i > 0 && *m != folders[i - 1].0 {
-                ord += 1;
-            }
-            insert.execute(params![id, ord])?;
-        }
-    }
-    let out = f(&tx)?;
-    tx.commit()?;
-    Ok(out)
-}
-
 /// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
 pub fn list_files(conn: &Connection, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Item>> {
-    in_scope(conn, merged, recursive, |tx| {
-        let cond = query.condition();
-        let sql = format!(
-            "SELECT {ITEM_COLUMNS} FROM temp.view_folders v JOIN files f ON f.folder_id = v.id {ITEM_JOINS}
-             WHERE f.missing = 0 AND {}
-             ORDER BY {}",
-            cond.sql,
-            sort.sql()
-        );
-        let mut stmt = tx.prepare(&sql)?;
-        let items = stmt.query_map(params_from_iter(cond.params), item_from_row)?;
-        Ok(items.collect::<rusqlite::Result<Vec<_>>>()?)
-    })
+    let (scope, mut values) = scope(merged, recursive);
+    let cond = query.condition();
+    values.extend(cond.params);
+    // `missing = 0` is written out, not bound: it's the `files_order` index's condition.
+    let sql = format!(
+        "SELECT {ITEM_COLUMNS} FROM files f {ITEM_JOINS}
+         WHERE f.missing = 0 AND {scope} AND {}
+         ORDER BY {}",
+        cond.sql,
+        sort.sql()
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let items = stmt.query_map(params_from_iter(values), item_from_row)?;
+    Ok(items.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 /// What the filter bar shows next to its choices, for a view's folder.
@@ -254,29 +273,31 @@ pub struct Facets {
 }
 
 pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
-    in_scope(conn, merged, recursive, |tx| {
-        let from = format!("FROM temp.view_folders v JOIN files f ON f.folder_id = v.id {ITEM_JOINS}");
-        let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
-            let cond = query.condition_without(skip);
-            let sql = format!("SELECT {select}, count(*) {from} WHERE f.missing = 0 AND {} {group}", cond.sql);
-            let mut stmt = tx.prepare(&sql)?;
-            let rows = stmt.query_map(params_from_iter(cond.params), |r| Ok((r.get(0)?, r.get(1)?)))?;
-            Ok(rows.collect::<rusqlite::Result<_>>()?)
-        };
-        let total: i64 = tx.query_row(
-            "SELECT count(*) FROM temp.view_folders v JOIN files f ON f.folder_id = v.id WHERE f.missing = 0",
-            [],
-            |r| r.get(0),
-        )?;
-        let matching = count(None, "''", "")?.first().map_or(0, |r| r.1);
-        let mut types: Vec<(MediaType, i64)> = count(Some(Facet::Types), MediaType::CASE, "GROUP BY 1")?
-            .into_iter()
-            .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
-            .collect();
-        types.sort();
-        let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
-        Ok(Facets { total, matching, types, exts })
-    })
+    let (scope, scope_values) = scope(merged, recursive);
+    let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
+        let cond = query.condition_without(skip);
+        let sql = format!(
+            "SELECT {select}, count(*) FROM files f {ITEM_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
+            cond.sql
+        );
+        let values = scope_values.iter().cloned().chain(cond.params);
+        let mut stmt = conn.prepare(&sql)?;
+        let rows = stmt.query_map(params_from_iter(values), |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    };
+    let total: i64 = conn.query_row(
+        &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+        params_from_iter(&scope_values),
+        |r| r.get(0),
+    )?;
+    let matching = count(None, "''", "")?.first().map_or(0, |r| r.1);
+    let mut types: Vec<(MediaType, i64)> = count(Some(Facet::Types), MediaType::CASE, "GROUP BY 1")?
+        .into_iter()
+        .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
+        .collect();
+    types.sort();
+    let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
+    Ok(Facets { total, matching, types, exts })
 }
 
 /// Rate a file: 1–5, or 0 to clear. The catalog changes at once. With `write_back`, the rating is also queued
@@ -383,8 +404,9 @@ pub struct View {
     pub sort: Sort,
 }
 
+/// The saved views, by name as the grid orders file names (`name_key`).
 pub fn views(conn: &Connection) -> Result<Vec<View>> {
-    let mut stmt = conn.prepare("SELECT name, folder, recursive, query, sort FROM views ORDER BY name COLLATE PATH")?;
+    let mut stmt = conn.prepare("SELECT name, folder, recursive, query, sort FROM views")?;
     let rows = stmt.query_map([], |r| {
         Ok(View {
             name: r.get(0)?,
@@ -394,7 +416,9 @@ pub fn views(conn: &Connection) -> Result<Vec<View>> {
             sort: Sort::from_json(&r.get::<_, String>(4)?),
         })
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut views: Vec<View> = rows.collect::<rusqlite::Result<_>>()?;
+    views.sort_by_cached_key(|v| name_key(&v.name));
+    Ok(views)
 }
 
 /// Save a view, replacing one of the same name.
@@ -434,6 +458,7 @@ pub fn session_set_many(conn: &Connection, values: &[(&str, &str)]) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::catalog::fixture;
     use crate::query::{DateRange, Orientation, Range, SortKey, Status};
 
     #[test]
@@ -459,13 +484,7 @@ mod tests {
             (3, 1, "Ä.jpg", 20, 1, "jpeg", 2),
             (4, 3, "c.bmp", 40, 5, "bmp", 0),
         ] {
-            c.conn
-                .execute(
-                    "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
-                     VALUES (?1, 1, ?1, ?2, ?3, ?4, 'image', ?5, ?6, 1)",
-                    params![id, folder, name, crate::media::extension(name), size, mtime],
-                )
-                .unwrap();
+            fixture::insert(&c.conn, &[fixture::File::new(id, folder, name, size, mtime)]);
             c.conn
                 .execute(
                     "INSERT INTO analysis(file_id, version, size, mtime, analyzed, format, width, height)
@@ -509,13 +528,8 @@ mod tests {
     fn folders_in_the_trees_order() {
         let c = library();
         // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
-        c.conn
-            .execute_batch(
-                "INSERT INTO folders(id, path) VALUES (4, 'D:\\p-x');
-                 INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan)
-                 VALUES (9, 1, 9, 4, 'z.jpg', 'jpg', 'image', 1, 1, 1);",
-            )
-            .unwrap();
+        c.conn.execute("INSERT INTO folders(id, path) VALUES (4, 'D:\\p-x')", []).unwrap();
+        fixture::insert(&c.conn, &[fixture::File::new(9, 4, "z.jpg", 1, 1)]);
         assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
         let tree = folder_tree(&c.conn).unwrap();
         let roots: Vec<&str> = tree.roots.iter().map(|&n| tree.nodes[n].name.as_str()).collect();
@@ -523,31 +537,219 @@ mod tests {
     }
 
     #[test]
-    fn path_order() {
+    fn name_order() {
         use std::cmp::Ordering::*;
+        let cmp = |a: &str, b: &str| name_key(a).cmp(&name_key(b));
         // Case-insensitively first (Unicode, unlike SQLite's NOCASE), then exactly, so the order is total.
-        assert_eq!(path_collation("a.jpg", "B.jpg"), Less);
-        assert_eq!(path_collation("Ä.jpg", "b.jpg"), Greater);
-        assert_eq!(path_collation("ä.jpg", "Ä.JPG"), Greater);
-        assert_eq!(path_collation("B.jpg", "b.jpg"), Less);
-        assert_eq!(path_collation("img10", "IMG10"), Greater);
-        assert_eq!(path_collation("abc", "ABC"), Greater);
-        assert_eq!(path_collation("ab", "abc"), Less);
-        assert_eq!(path_collation("same", "same"), Equal);
+        assert_eq!(cmp("a.jpg", "B.jpg"), Less);
+        assert_eq!(cmp("Ä.jpg", "b.jpg"), Greater);
+        assert_eq!(cmp("ä.jpg", "Ä.JPG"), Greater);
+        assert_eq!(cmp("B.jpg", "b.jpg"), Less);
+        assert_eq!(cmp("img10", "IMG10"), Greater);
+        assert_eq!(cmp("abc", "ABC"), Greater);
+        assert_eq!(cmp("ab", "abc"), Less);
+        assert_eq!(cmp("same", "same"), Equal);
+    }
+
+    /// The order before the key (kept as the reference): folders by their lowercased merged path component by
+    /// component (the scope's sort), then names by the PATH collation (characters lowercased one by one, then
+    /// bytes). Empty components are dropped, as the tree did.
+    fn reference_order(a: (&str, &str), b: (&str, &str)) -> std::cmp::Ordering {
+        let folder = |p: &str| -> Vec<String> {
+            merged_path(p).to_lowercase().split('\\').filter(|c| !c.is_empty()).map(String::from).collect()
+        };
+        let collation = |a: &str, b: &str| {
+            a.chars().flat_map(char::to_lowercase).cmp(b.chars().flat_map(char::to_lowercase)).then_with(|| a.cmp(b))
+        };
+        folder(a.0).cmp(&folder(b.0)).then_with(|| collation(a.1, b.1))
+    }
+
+    /// A small xorshift: the same cases on every run, without a dependency.
+    struct Rng(u64);
+
+    impl Rng {
+        fn next(&mut self) -> u64 {
+            self.0 ^= self.0 << 13;
+            self.0 ^= self.0 >> 7;
+            self.0 ^= self.0 << 17;
+            self.0
+        }
+
+        fn pick<'a>(&mut self, from: &[&'a str]) -> &'a str {
+            from[(self.next() % from.len() as u64) as usize]
+        }
+    }
+
+    /// Paths and names made of the pieces where lowercasing and byte order are tricky.
+    fn random_file(rng: &mut Rng) -> (String, String) {
+        const PIECES: &[&str] = &[
+            "a", "A", "b", "B", "z", "ä", "Ä", "ß", "İ", "i", "\u{212A}", "k", "K", "Σ", "σ", "ς", "e\u{301}", "é",
+            "-", ".", " ", "1", "10", "\u{1}", "\u{2}", "\u{3}", "ΑΣ", "ας", "日本", "😀",
+        ];
+        let part = |rng: &mut Rng| -> String { (0..1 + rng.next() % 3).map(|_| rng.pick(PIECES)).collect() };
+        let drive = rng.pick(&["D:", "E:", "d:", r"\\srv\share"]);
+        let mut folder = drive.to_string();
+        for _ in 0..rng.next() % 4 {
+            folder.push('\\');
+            folder.push_str(&part(rng));
+        }
+        (folder, part(rng))
+    }
+
+    #[test]
+    fn order_keys_sort_as_before() {
+        let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
+        let files: Vec<(String, String)> = (0..400).map(|_| random_file(&mut rng)).collect();
+        for a in &files {
+            for b in &files {
+                let key = order_key(&a.0, &a.1).cmp(&order_key(&b.0, &b.1));
+                assert_eq!(key, reference_order((&a.0, &a.1), (&b.0, &b.1)), "{a:?} against {b:?}");
+            }
+        }
+        // The cases named.
+        let before = |a: (&str, &str), b: (&str, &str)| assert!(order_key(a.0, a.1) < order_key(b.0, b.1));
+        before((r"D:\p", "z.jpg"), (r"D:\p\sub", "a.jpg"));
+        before((r"D:\p\sub", "z.jpg"), (r"D:\p-x", "a.jpg"));
+        before((r"E:\P", "a.jpg"), (r"D:\p", "b.jpg"));
+        before((r"D:\ας", "a"), (r"D:\ασ", "a"));
+        before((r"D:\a\b", "z"), ("D:\\a\\b\u{1}c", "a"));
+        // A final Σ in a folder name lowercases to ς, as the whole path did.
+        assert_eq!(order_key(r"D:\ΑΣ", "a"), order_key(r"E:\ας", "a"));
+    }
+
+    /// On a real catalog's names (read-only, any layout): `PG_TEST_CATALOG=… cargo test -p pg-core real_names --
+    /// --ignored`.
+    #[test]
+    #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
+    fn real_names_sort_and_scope_as_before() {
+        let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let files: Vec<(String, String)> = conn
+            .prepare("SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let mut by_key = files.clone();
+        by_key.sort_by_cached_key(|(folder, name)| order_key(folder, name));
+        for pair in by_key.windows(2) {
+            let (a, b) = (&pair[0], &pair[1]);
+            assert_ne!(reference_order((&a.0, &a.1), (&b.0, &b.1)), std::cmp::Ordering::Greater, "{a:?}, {b:?}");
+        }
+        // Every folder against every scope, recursive and not: the old match (`in_scope`) and the key range.
+        let folders: Vec<String> = conn
+            .prepare("SELECT path FROM folders")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let in_range = |scope_of: (&str, bool), folder: &str| {
+            let (_, values) = scope(scope_of.0, scope_of.1);
+            let key = order_key(folder, "a");
+            let blob = |v: &Value| match v {
+                Value::Blob(b) => b.clone(),
+                _ => unreachable!(),
+            };
+            key >= blob(&values[0]) && values.get(1).is_none_or(|hi| key < blob(hi))
+        };
+        for scope_folder in &folders {
+            let merged = merged_path(scope_folder).to_lowercase();
+            for folder in &folders {
+                let m = merged_path(folder).to_lowercase();
+                for recursive in [false, true] {
+                    let before = m == merged
+                        || (recursive
+                            && (merged.is_empty()
+                                || m.strip_prefix(&merged).is_some_and(|rest| rest.starts_with('\\'))));
+                    assert_eq!(in_range((&merged, recursive), folder), before, "{folder} in {merged} ({recursive})");
+                }
+            }
+        }
+        eprintln!("{} files, {} folders: same order and scopes", files.len(), folders.len());
+    }
+
+    #[test]
+    fn scopes_are_key_ranges() {
+        let inside = |scope_of: (&str, bool), file: (&str, &str)| {
+            let (sql, values) = scope(scope_of.0, scope_of.1);
+            let key = order_key(file.0, file.1);
+            let bound = |v: &Value| match v {
+                Value::Blob(b) => b.clone(),
+                _ => unreachable!(),
+            };
+            let lo = bound(&values[0]);
+            let hi = values.get(1).map(bound);
+            assert_eq!(sql.matches('?').count(), values.len());
+            key >= lo && hi.is_none_or(|hi| key < hi)
+        };
+        // Recursive: the folder and below it, on every drive, in any case; not `p-x`.
+        assert!(inside(("p", true), (r"D:\p", "a")));
+        assert!(inside(("p", true), (r"E:\P\sub", "a")));
+        assert!(!inside(("p", true), (r"D:\p-x", "a")));
+        assert!(!inside(("p", true), (r"D:\pa", "a")));
+        // Not recursive: the folder's own files only.
+        assert!(inside(("p", false), (r"D:\p", "a")));
+        assert!(!inside(("p", false), (r"D:\p\sub", "a")));
+        // The root: everything, or the drives' own files.
+        assert!(inside(("", true), (r"D:\p\sub", "a")));
+        assert!(inside(("", false), ("D:", "a")));
+        assert!(!inside(("", false), (r"D:\p", "a")));
+        // A UNC folder, named as the tree names it.
+        assert!(inside((r"srv\share\x", false), (r"\\srv\share\x", "a")));
+        // A control byte in a folder name is a different folder.
+        assert!(!inside((r"a\b", true), ("D:\\a\\b\u{1}c", "a")));
+    }
+
+    #[test]
+    fn lists_read_the_order_index() {
+        let c = library();
+        let (scope, values) = scope("p", true);
+        let plan: Vec<String> = c
+            .conn
+            .prepare(&format!(
+                "EXPLAIN QUERY PLAN SELECT {ITEM_COLUMNS} FROM files f {ITEM_JOINS}
+                 WHERE f.missing = 0 AND {scope} AND 1 ORDER BY {}",
+                Sort::default().sql()
+            ))
+            .unwrap()
+            .query_map(params_from_iter(values), |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(plan.contains("USING INDEX files_order"), "{plan}");
+        assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
+        let plan: Vec<String> = c
+            .conn
+            .prepare("EXPLAIN QUERY PLAN SELECT folder_id, count(*) FROM files WHERE missing = 0 GROUP BY folder_id")
+            .unwrap()
+            .query_map([], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(plan.contains("COVERING INDEX files_present") && !plan.contains("TEMP B-TREE"), "{plan}");
     }
 
     /// `library()` plus a video, an animated GIF, a file the import couldn't read and one not imported yet, with
     /// duplicates: 1 and 3 are the same bytes, 2–4 a close tier-1 pair, 2–6 a distant one.
     fn mixed_library() -> crate::catalog::Catalog {
         let c = library();
+        use fixture::File;
+        fixture::insert(
+            &c.conn,
+            &[
+                File { kind: "video", ..File::new(5, 3, "Clip.MP4", 50, 7) },
+                File::new(6, 1, "anim.gif", 15, 2),
+                File::new(7, 2, "broken.jpg", 5, 4),
+                File::new(8, 2, "new.webp", 6, 6),
+            ],
+        );
         c.conn
             .execute_batch(
-                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan) VALUES
-                    (5, 1, 5, 3, 'Clip.MP4', 'mp4', 'video', 50, 7, 1),
-                    (6, 1, 6, 1, 'anim.gif', 'gif', 'image', 15, 2, 1),
-                    (7, 1, 7, 2, 'broken.jpg', 'jpg', 'image', 5, 4, 1),
-                    (8, 1, 8, 2, 'new.webp', 'webp', 'image', 6, 6, 1);
-                 INSERT INTO analysis(file_id, version, size, mtime, analyzed, format, width, height, frames,
+                "INSERT INTO analysis(file_id, version, size, mtime, analyzed, format, width, height, frames,
                                       duration_ms) VALUES
                     (5, 1, 50, 7, 0, NULL, 1920, 1080, 300, 12000),
                     (6, 1, 15, 2, 0, 'gif', 3, 3, 10, NULL);

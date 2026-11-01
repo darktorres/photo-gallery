@@ -54,7 +54,8 @@ pub mod ffi {
 // "gpu device" thread, then handed to the GUI thread, which hands it to the render thread).
 unsafe impl Send for ffi::GpuDevice {}
 
-/// [`ffi::make_gpu_device`] on its own thread: join the handle before the QML loads.
+/// [`ffi::make_gpu_device`] on its own thread, while the catalog opens and the QML loads: join the handle before
+/// the window is shown and before Qt Multimedia is first used (the viewer's media Loader, Viewer.qml).
 pub fn make_in_background() -> std::thread::JoinHandle<cxx::UniquePtr<ffi::GpuDevice>> {
     std::thread::Builder::new()
         .name("gpu device".into())

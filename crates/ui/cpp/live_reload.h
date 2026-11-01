@@ -9,9 +9,11 @@
 
 namespace pg {
 
-// Fetch the QML and JS files in `main`'s qrc: folder from `source_dir` instead, and load `main` again (in place of
-// the window it made) whenever one of them changes; the new window is shown with show_windows. Call before the
-// first load. `gpu` outlives the engine.
-void enable_live_reload(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir, GpuDevice& gpu);
+// Fetch the QML and JS files in `main`'s qrc: folder from `source_dir` instead. Call before the first load.
+void read_qml_from_source(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir);
+
+// Load `main` again (in place of the window it made) whenever a file in `source_dir` changes; the new window is
+// shown with show_windows. `gpu` outlives the engine.
+void reload_on_change(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir, GpuDevice& gpu);
 
 }  // namespace pg

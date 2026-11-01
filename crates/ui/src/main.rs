@@ -47,7 +47,7 @@ fn main() {
 
 fn run_app() {
     trace::pg_stage_main();
-    // Meanwhile the catalog opens and Qt starts.
+    // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
     let mut gpu: cxx::UniquePtr<gpu_device::ffi::GpuDevice>;
@@ -86,23 +86,23 @@ fn run_app() {
                 };
             }
         }
-        gpu = gpu_thread.join().expect("the gpu device thread");
-        // Qt Multimedia reads it when the QML makes the first player.
-        gpu_device::ffi::choose_video_decoding(&gpu);
         let main_qml = QUrl::from("qrc:/qt/qml/pg/gallery/qml/Main.qml");
         #[cfg(debug_assertions)]
-        // SAFETY: `gpu` is dropped after the engine.
-        unsafe {
-            live_reload::ffi::enable_live_reload(
-                engine.as_mut(),
-                &main_qml,
-                &QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml")),
-                gpu.pin_mut(),
-            )
-        };
+        let qml_dir = QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml"));
+        #[cfg(debug_assertions)]
+        live_reload::ffi::read_qml_from_source(engine.as_mut(), &main_qml, &qml_dir);
         trace::pg_stage_qml_load();
         engine.as_mut().load(&main_qml);
         trace::pg_stage_qml_loaded();
+        // Only now: the device is made meanwhile. Qt Multimedia reads the decoding choice when the QML makes the
+        // first player, which the load doesn't (the viewer's media Loader makes them with the first video).
+        gpu = gpu_thread.join().expect("the gpu device thread");
+        gpu_device::ffi::choose_video_decoding(&gpu);
+        #[cfg(debug_assertions)]
+        // SAFETY: `gpu` is dropped after the engine.
+        unsafe {
+            live_reload::ffi::reload_on_change(engine.as_mut(), &main_qml, &qml_dir, gpu.pin_mut())
+        };
         // SAFETY: as above.
         unsafe { gpu_device::ffi::show_windows(engine.as_mut(), gpu.pin_mut()) };
         screenshot::schedule(engine);

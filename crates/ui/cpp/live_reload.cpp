@@ -43,18 +43,24 @@ void quit_on_close(QObject* root) {
     }
 }
 
+// The folder on disk, ending in '/'.
+QString source_folder(const QString& source_dir) { return QDir(source_dir).absolutePath() + u'/'; }
+
 }  // namespace
 
-void enable_live_reload(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir, GpuDevice& gpu) {
-    const QString dir = QDir(source_dir).absolutePath() + u'/';
+void read_qml_from_source(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir) {
     // Never removed: the engine uses it until it is destroyed, at exit.
-    engine.addUrlInterceptor(new SourceInterceptor(main.adjusted(QUrl::RemoveFilename).path(), dir));
+    engine.addUrlInterceptor(new SourceInterceptor(main.adjusted(QUrl::RemoveFilename).path(),
+                                                   source_folder(source_dir)));
 
     QGuiApplication::setQuitOnLastWindowClosed(false);
     QObject::connect(&engine, &QQmlApplicationEngine::objectCreated, &engine, [](QObject* root, const QUrl&) {
         if (root) quit_on_close(root);
     });
+}
 
+void reload_on_change(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir, GpuDevice& gpu) {
+    const QString dir = source_folder(source_dir);
     auto* watcher = new QFileSystemWatcher(&engine);
     // An editor that saves by writing a new file and renaming it over the old one ends the watch on that file: the
     // folder's change brings it back.

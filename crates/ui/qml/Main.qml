@@ -44,6 +44,9 @@ ApplicationWindow {
     // The selected item (-1: none): the gallery's, so it stays with its file when the list is refreshed.
     property alias current: galleryModel.current
     property bool filtersOpen: false
+    // The library panel is shown; made the first time (libraryLoader).
+    property bool libraryOpen: false
+    onLibraryOpenChanged: if (libraryOpen) libraryLoader.active = true
     // The first list is shown and the test hooks have run (the --screenshot hook waits for it).
     property bool ready: false
     // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
@@ -261,6 +264,22 @@ ApplicationWindow {
         grid.positionViewAtIndex(galleryModel.rowOf(i), ListView.Contain)
     }
 
+    // To the panel and dialog made when first needed (their Loaders, below): what they are asked to do comes as a
+    // signal once they are made (a Loader not loading asynchronously makes its item at once).
+    signal similarAsked(path: string)
+    signal saveViewAsked()
+
+    // The viewer's "find similar": search Yandex for the photo's file.
+    function findSimilar(path: string) {
+        yandexLoader.active = true
+        similarAsked(path)
+    }
+
+    function askSaveView() {
+        saveViewLoader.active = true
+        saveViewAsked()
+    }
+
     function gridKey(e: KeyEvent) {
         const c = current < 0 ? 0 : current
         const ctrl = e.modifiers & Qt.ControlModifier
@@ -371,7 +390,7 @@ ApplicationWindow {
                     MenuSeparator {}
                     MenuItem {
                         text: "Save current view…"
-                        onTriggered: saveViewDialog.open()
+                        onTriggered: win.askSaveView()
                     }
                     Menu {
                         id: deleteMenu
@@ -393,7 +412,7 @@ ApplicationWindow {
             Item { Layout.fillWidth: true }
             Button {
                 text: "Library…"
-                onClicked: libraryPanel.visible = true
+                onClicked: win.libraryOpen = true
             }
             Label { text: "Size" }
             Slider {
@@ -676,121 +695,161 @@ ApplicationWindow {
         onRated: (i, r) => galleryModel.setRating(i, r)
         onTurned: (i, d) => galleryModel.rotate(i, d)
         onIndexChanged: sessionTimer.restart()
-        onFindSimilar: (path) => yandexPanel.show(path)
+        onFindSimilar: (path) => win.findSimilar(path)
         onClosed: (i) => win.select(i)
     }
 
     // The library folders, over a dimmed window (an item in the page, like the viewer, so window grabs include it).
-    Rectangle {
-        id: libraryPanel
+    // Made the first time it is opened (libraryOpen), with its folder dialog, then kept.
+    Loader {
+        id: libraryLoader
         anchors.fill: parent
-        visible: false
-        color: "#b0000000"
-        focus: visible
-        onVisibleChanged: if (!visible) grid.forceActiveFocus()
-        Keys.onEscapePressed: visible = false
-        // Clicks outside the panel close it; no click or wheel reaches the grid below.
-        MouseArea {
-            anchors.fill: parent
-            onClicked: libraryPanel.visible = false
-            onWheel: (wheel) => wheel.accepted = true
-        }
-
-        Pane {
-            anchors.centerIn: parent
-            width: 680
-            height: 440
-            padding: 16
-            MouseArea { anchors.fill: parent }
-            ColumnLayout {
-                anchors.fill: parent
-                spacing: 10
-                Label { text: "Library folders"; font.bold: true; font.pixelSize: 16 }
-                Label {
-                    text: "Images in these folders and their subfolders are imported in the background. Removing a "
-                        + "folder only hides its images: adding it back restores them, ratings included."
-                    color: "#999999"
-                    wrapMode: Text.Wrap
-                    Layout.fillWidth: true
+        active: false
+        sourceComponent: Component {
+            Rectangle {
+                id: libraryPanel
+                visible: win.libraryOpen
+                color: "#b0000000"
+                // The Loader is a focus scope: the keys are taken here when it opens, and go back to the grid.
+                Component.onCompleted: forceActiveFocus()
+                onVisibleChanged: visible ? forceActiveFocus() : grid.forceActiveFocus()
+                Keys.onEscapePressed: win.libraryOpen = false
+                // Clicks outside the panel close it; no click or wheel reaches the grid below.
+                MouseArea {
+                    anchors.fill: parent
+                    onClicked: win.libraryOpen = false
+                    onWheel: (wheel) => wheel.accepted = true
                 }
-                WheelListView {
-                    Layout.fillWidth: true
-                    Layout.fillHeight: true
-                    clip: true
-                    model: library.roots
-                    ScrollBar.vertical: ScrollBar {}
-                    delegate: RowLayout {
-                        id: rootRow
-                        required property string modelData
-                        width: ListView.view.width
-                        Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                        Button { text: "Remove"; flat: true; onClicked: library.removeFolder(rootRow.modelData) }
+
+                Pane {
+                    anchors.centerIn: parent
+                    width: 680
+                    height: 440
+                    padding: 16
+                    MouseArea { anchors.fill: parent }
+                    ColumnLayout {
+                        anchors.fill: parent
+                        spacing: 10
+                        Label { text: "Library folders"; font.bold: true; font.pixelSize: 16 }
+                        Label {
+                            text: "Images in these folders and their subfolders are imported in the background. "
+                                + "Removing a folder only hides its images: adding it back restores them, ratings "
+                                + "included."
+                            color: "#999999"
+                            wrapMode: Text.Wrap
+                            Layout.fillWidth: true
+                        }
+                        WheelListView {
+                            Layout.fillWidth: true
+                            Layout.fillHeight: true
+                            clip: true
+                            model: library.roots
+                            ScrollBar.vertical: ScrollBar {}
+                            delegate: RowLayout {
+                                id: rootRow
+                                required property string modelData
+                                width: ListView.view.width
+                                Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                                Button {
+                                    text: "Remove"
+                                    flat: true
+                                    onClicked: library.removeFolder(rootRow.modelData)
+                                }
+                            }
+                            Label {
+                                anchors.centerIn: parent
+                                visible: library.roots.length === 0
+                                text: "No folders yet."
+                                color: "#888888"
+                            }
+                        }
+                        CheckBox {
+                            text: "Write ratings and turns into the files too (where the format allows)"
+                            checked: appSettings.writeBack
+                            onToggled: appSettings.writeBack = checked
+                            ToolTip.visible: hovered
+                            ToolTip.text: "Ratings are always kept in the catalog. With this on, they also go into the "
+                                + "image files (XMP), so other programs see them; turns rotate the files losslessly."
+                        }
+                        RowLayout {
+                            Button { text: "Add folder…"; onClicked: folderDialog.open() }
+                            Button {
+                                text: "Rescan all"
+                                enabled: library.roots.length > 0
+                                onClicked: library.rescan()
+                            }
+                            Item { Layout.fillWidth: true }
+                            Button { text: "Close"; onClicked: win.libraryOpen = false }
+                        }
                     }
+                }
+
+                FolderDialog {
+                    id: folderDialog
+                    title: "Add a folder to the library"
+                    onAccepted: library.addFolder(selectedFolder)
+                }
+            }
+        }
+    }
+
+    // Reverse image search for the viewer's photo (over the viewer, so it comes after it). Made with the first
+    // search (findSimilar), then kept.
+    Loader {
+        id: yandexLoader
+        anchors.fill: parent
+        active: false
+        sourceComponent: Component {
+            YandexPanel {
+                id: yandexPanel
+                // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer
+                // is gone.
+                onClosed: viewer.visible ? viewer.forceActiveFocus() : grid.forceActiveFocus()
+                Connections {
+                    target: win
+                    function onSimilarAsked(path: string) { yandexPanel.show(path) }
+                }
+            }
+        }
+    }
+
+    // Made the first time it is asked for (saveViewAsked), then kept.
+    Loader {
+        id: saveViewLoader
+        active: false
+        sourceComponent: Component {
+            Dialog {
+                id: saveViewDialog
+                // A Loader doesn't parent a popup to an item: centred over the page.
+                parent: page
+                anchors.centerIn: parent
+                title: "Save the current view"
+                modal: true
+                standardButtons: Dialog.Save | Dialog.Cancel
+                onAboutToShow: {
+                    viewName.text = ""
+                    viewName.forceActiveFocus()
+                }
+                onAccepted: view.saveView(viewName.text, filterBar.query)
+                onClosed: grid.forceActiveFocus()
+                Connections {
+                    target: win
+                    function onSaveViewAsked() { saveViewDialog.open() }
+                }
+                ColumnLayout {
                     Label {
-                        anchors.centerIn: parent
-                        visible: library.roots.length === 0
-                        text: "No folders yet."
-                        color: "#888888"
+                        text: (view.folder.length ? view.folder : "All folders")
+                            + (view.recursive ? " and subfolders" : "") + " · " + filterBar.description + " · "
+                            + sortBox.currentText + (view.descending ? " ↓" : " ↑")
+                        color: "#999999"
+                    }
+                    TextField {
+                        id: viewName
+                        placeholderText: "Name (one already saved is replaced)"
+                        Layout.preferredWidth: 400
+                        onAccepted: saveViewDialog.accept()
                     }
                 }
-                CheckBox {
-                    text: "Write ratings and turns into the files too (where the format allows)"
-                    checked: appSettings.writeBack
-                    onToggled: appSettings.writeBack = checked
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Ratings are always kept in the catalog. With this on, they also go into the image "
-                        + "files (XMP), so other programs see them; turns rotate the files losslessly."
-                }
-                RowLayout {
-                    Button { text: "Add folder…"; onClicked: folderDialog.open() }
-                    Button {
-                        text: "Rescan all"
-                        enabled: library.roots.length > 0
-                        onClicked: library.rescan()
-                    }
-                    Item { Layout.fillWidth: true }
-                    Button { text: "Close"; onClicked: libraryPanel.visible = false }
-                }
-            }
-        }
-    }
-
-    // Reverse image search for the viewer's photo (over the viewer, so it comes after it).
-    YandexPanel {
-        id: yandexPanel
-        // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer is gone.
-        onClosed: viewer.visible ? viewer.forceActiveFocus() : grid.forceActiveFocus()
-    }
-
-    FolderDialog {
-        id: folderDialog
-        title: "Add a folder to the library"
-        onAccepted: library.addFolder(selectedFolder)
-    }
-
-    Dialog {
-        id: saveViewDialog
-        title: "Save the current view"
-        anchors.centerIn: parent
-        modal: true
-        standardButtons: Dialog.Save | Dialog.Cancel
-        onAboutToShow: {
-            viewName.text = ""
-            viewName.forceActiveFocus()
-        }
-        onAccepted: view.saveView(viewName.text, filterBar.query)
-        onClosed: grid.forceActiveFocus()
-        ColumnLayout {
-            Label {
-                text: (view.folder.length ? view.folder : "All folders") + (view.recursive ? " and subfolders" : "")
-                    + " · " + filterBar.description + " · " + sortBox.currentText + (view.descending ? " ↓" : " ↑")
-                color: "#999999"
-            }
-            TextField {
-                id: viewName
-                placeholderText: "Name (one already saved is replaced)"
-                Layout.preferredWidth: 400
-                onAccepted: saveViewDialog.accept()
             }
         }
     }
@@ -803,7 +862,9 @@ ApplicationWindow {
     //   --zoom=<factor>  zoom the viewer to this many device px per image px
     //   --menu=views  open the views menu   --apply-view=<name>  open a saved view
     //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
-    //   --library=1  open the library folders
+    //   --library=1  open the library folders   --save-view=1  open the save-view dialog
+    //   --find-similar=<path>  search Yandex for the file (it is uploaded: a path that isn't a still image only shows
+    //                          the panel with its error)
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
     //   --screenshot=<png>  save the window 4 s (or --wait=<s>) after it is ready, and quit (src/screenshot.rs)
     // --query, --sort and --apply-view shape the first list; the others act on it (started()).
@@ -815,8 +876,9 @@ ApplicationWindow {
     // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
     readonly property list<string> viewerKeys: commandLine.keys("viewer-keys")
 
-    // The window is made (it shows right after): ask for where the user was. Nothing here waits for the catalog; the tree and the files
-    // arrive later, in either order (treeLoaded, gridLoaded), and the second of them finishes the start (started).
+    // The window is made (it shows right after): ask for where the user was. Nothing here waits for the catalog;
+    // the tree and the files arrive later, in either order (treeLoaded, gridLoaded), and the second of them
+    // finishes the start (started).
     Component.onCompleted: {
         // The folder, subfolders and sort are the view's (it read them at its start), the filters the bar's.
         filterBar.query = commandLine.has("query") ? commandLine.text("query") : view.sessionQuery()
@@ -863,7 +925,9 @@ ApplicationWindow {
             if (commandLine.has("zoom")) viewer.setZoom(commandLine.number("zoom", 1), viewer.width / 2, viewer.height / 2)
         }
         if (commandLine.text("menu") === "views") menuTimer.start()
-        if (commandLine.has("library")) libraryPanel.visible = true
+        if (commandLine.has("library")) libraryOpen = true
+        if (commandLine.has("save-view")) askSaveView()
+        if (commandLine.has("find-similar")) findSimilar(commandLine.text("find-similar"))
         library.start(thumbHeight)
         if (commandLine.has("add-folder")) library.addFolder(commandLine.url("add-folder"))
     }

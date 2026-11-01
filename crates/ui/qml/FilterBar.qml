@@ -38,6 +38,10 @@ Pane {
 
     padding: 6
 
+    // Shown once: the controls are made then (the window starts with the bar closed), and kept.
+    property bool opened: false
+    onVisibleChanged: if (visible) opened = true
+
     Filters {
         id: filters
         symbols: Ratings.symbols
@@ -87,137 +91,142 @@ Pane {
         Layout.leftMargin: 6
     }
 
-    Flow {
+    Loader {
         anchors.left: parent.left
         anchors.right: parent.right
-        spacing: 14
+        active: bar.opened
+        sourceComponent: Component {
+            Flow {
+                spacing: 14
 
-        RowLayout {
-            spacing: 4
-            Caption { text: "Type" }
-            Repeater {
-                model: bar.types
-                delegate: Chip {
-                    required property string modelData
-                    facet: "types"
-                    value: modelData
-                    text: filters.label(facet, modelData) + "  "
-                        + bar.count(filters.revision >= 0 ? filters.typeCount(modelData) : 0)
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Type" }
+                    Repeater {
+                        model: bar.types
+                        delegate: Chip {
+                            required property string modelData
+                            facet: "types"
+                            value: modelData
+                            text: filters.label(facet, modelData) + "  "
+                                + bar.count(filters.revision >= 0 ? filters.typeCount(modelData) : 0)
+                        }
+                    }
                 }
-            }
-        }
 
-        RowLayout {
-            spacing: 4
-            Caption { text: "Rating" }
-            Repeater {
-                model: 6
-                delegate: Chip {
-                    required property int index
-                    facet: "ratings"
-                    value: "" + index
-                    text: Ratings.symbol(index) + (index === 0 ? " Unrated" : "")
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Rating" }
+                    Repeater {
+                        model: 6
+                        delegate: Chip {
+                            required property int index
+                            facet: "ratings"
+                            value: "" + index
+                            text: Ratings.symbol(index) + (index === 0 ? " Unrated" : "")
+                        }
+                    }
                 }
-            }
-        }
 
-        RowLayout {
-            spacing: 4
-            Caption { text: "Extension" }
-            Repeater {
-                model: filters.extensions
-                delegate: Chip {
-                    required property string modelData
-                    facet: "exts"
-                    value: modelData
-                    text: filters.label(facet, modelData) + "  "
-                        + bar.count(filters.revision >= 0 ? filters.extCount(modelData) : 0)
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Extension" }
+                    Repeater {
+                        model: filters.extensions
+                        delegate: Chip {
+                            required property string modelData
+                            facet: "exts"
+                            value: modelData
+                            text: filters.label(facet, modelData) + "  "
+                                + bar.count(filters.revision >= 0 ? filters.extCount(modelData) : 0)
+                        }
+                    }
                 }
-            }
-        }
 
-        RowLayout {
-            spacing: 4
-            Caption { text: "Shape" }
-            Repeater {
-                model: bar.orientations
-                delegate: Chip {
-                    required property string modelData
-                    facet: "orientations"
-                    value: modelData
-                    text: filters.label(facet, modelData)
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Shape" }
+                    Repeater {
+                        model: bar.orientations
+                        delegate: Chip {
+                            required property string modelData
+                            facet: "orientations"
+                            value: modelData
+                            text: filters.label(facet, modelData)
+                        }
+                    }
                 }
-            }
-        }
 
-        RowLayout {
-            spacing: 4
-            Caption { text: "Size (MB)" }
-            Bound { facet: "size_mb"; end: "min" }
-            Bound { facet: "size_mb"; end: "max" }
-            Caption { text: "Megapixels" }
-            Bound { facet: "megapixels"; end: "min" }
-            Bound { facet: "megapixels"; end: "max" }
-            Caption { text: "Duration (s)" }
-            Bound { facet: "duration_s"; end: "min" }
-            Bound { facet: "duration_s"; end: "max" }
-        }
-
-        RowLayout {
-            spacing: 4
-            Caption { text: "Taken" }
-            Bound { facet: "taken"; end: "from"; isDate: true }
-            Bound { facet: "taken"; end: "to"; isDate: true }
-            Caption { text: "Modified" }
-            Bound { facet: "modified"; end: "from"; isDate: true }
-            Bound { facet: "modified"; end: "to"; isDate: true }
-        }
-
-        RowLayout {
-            spacing: 4
-            Caption { text: "Duplicates" }
-            ComboBox {
-                model: bar.duplicateChoices
-                currentIndex: filters.duplicates < 0 ? 0 : filters.duplicates > 0 ? 1 : 2
-                onActivated: (i) => filters.duplicates = i === 0 ? -1 : i === 1 ? 1 : 0
-                font.pixelSize: 12
-                Layout.preferredWidth: 140
-            }
-            Caption { text: "Import" }
-            Repeater {
-                model: bar.statuses
-                delegate: Chip {
-                    required property string modelData
-                    facet: "status"
-                    value: modelData
-                    text: filters.label(facet, modelData)
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Size (MB)" }
+                    Bound { facet: "size_mb"; end: "min" }
+                    Bound { facet: "size_mb"; end: "max" }
+                    Caption { text: "Megapixels" }
+                    Bound { facet: "megapixels"; end: "min" }
+                    Bound { facet: "megapixels"; end: "max" }
+                    Caption { text: "Duration (s)" }
+                    Bound { facet: "duration_s"; end: "min" }
+                    Bound { facet: "duration_s"; end: "max" }
                 }
-            }
-        }
 
-        RowLayout {
-            spacing: 4
-            Caption { text: "Name" }
-            TextField {
-                id: nameField
-                placeholderText: "contains…"
-                selectByMouse: true
-                font.pixelSize: 12
-                Layout.preferredWidth: 160
-                // Not bound to the query's name, which is trimmed: a space typed between two words would vanish.
-                function reload() { text = filters.name }
-                onTextEdited: filters.name = text
-                Component.onCompleted: reload()
-                Connections {
-                    target: filters
-                    function onLoaded() { nameField.reload() }
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Taken" }
+                    Bound { facet: "taken"; end: "from"; isDate: true }
+                    Bound { facet: "taken"; end: "to"; isDate: true }
+                    Caption { text: "Modified" }
+                    Bound { facet: "modified"; end: "from"; isDate: true }
+                    Bound { facet: "modified"; end: "to"; isDate: true }
                 }
-            }
-            Button {
-                text: "Clear"
-                enabled: filters.active > 0
-                font.pixelSize: 12
-                onClicked: filters.clear()
+
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Duplicates" }
+                    ComboBox {
+                        model: bar.duplicateChoices
+                        currentIndex: filters.duplicates < 0 ? 0 : filters.duplicates > 0 ? 1 : 2
+                        onActivated: (i) => filters.duplicates = i === 0 ? -1 : i === 1 ? 1 : 0
+                        font.pixelSize: 12
+                        Layout.preferredWidth: 140
+                    }
+                    Caption { text: "Import" }
+                    Repeater {
+                        model: bar.statuses
+                        delegate: Chip {
+                            required property string modelData
+                            facet: "status"
+                            value: modelData
+                            text: filters.label(facet, modelData)
+                        }
+                    }
+                }
+
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Name" }
+                    TextField {
+                        id: nameField
+                        placeholderText: "contains…"
+                        selectByMouse: true
+                        font.pixelSize: 12
+                        Layout.preferredWidth: 160
+                        // Not bound to the query's name, which is trimmed: a space typed between two words would vanish.
+                        function reload() { text = filters.name }
+                        onTextEdited: filters.name = text
+                        Component.onCompleted: reload()
+                        Connections {
+                            target: filters
+                            function onLoaded() { nameField.reload() }
+                        }
+                    }
+                    Button {
+                        text: "Clear"
+                        enabled: filters.active > 0
+                        font.pixelSize: 12
+                        onClicked: filters.clear()
+                    }
+                }
             }
         }
     }

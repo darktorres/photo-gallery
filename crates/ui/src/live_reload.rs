@@ -16,15 +16,18 @@ pub mod ffi {
         type GpuDevice = crate::gpu_device::ffi::GpuDevice;
 
         include!("pg-ui/cpp/live_reload.h");
-        /// Fetch the QML files in `main`'s qrc: folder from `source_dir` instead, and load `main` again whenever
-        /// one of them changes; each new window is shown with `gpu_device::ffi::show_windows`. Call before the
-        /// first load.
+        /// Fetch the QML files in `main`'s qrc: folder from `source_dir` instead. Call before the first load.
+        #[namespace = "pg"]
+        fn read_qml_from_source(engine: Pin<&mut QQmlApplicationEngine>, main: &QUrl, source_dir: &QString);
+
+        /// Load `main` again whenever a file in `source_dir` changes; each new window is shown with
+        /// `gpu_device::ffi::show_windows`.
         ///
         /// # Safety
         ///
         /// `gpu` outlives the engine: the reloads use it.
         #[namespace = "pg"]
-        unsafe fn enable_live_reload(
+        unsafe fn reload_on_change(
             engine: Pin<&mut QQmlApplicationEngine>,
             main: &QUrl,
             source_dir: &QString,

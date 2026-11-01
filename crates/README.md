@@ -195,8 +195,10 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   file follows in the background, and its analysis and thumbnails are redone.
 - Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
   --viewer-keys=LBHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
-  --library=1 --add-folder=<path> --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the
-  first list; the others act on it once it is shown, and `--wait` (4 s by default) counts from then. With
+  --library=1 --save-view=1 --find-similar=<path> --add-folder=<path> --screenshot=<png> --wait=<s>`. `--query`,
+  `--sort` and `--apply-view` shape the first list; the others act on it once it is shown, and `--wait` (4 s by
+  default) counts from then. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
+  opens the panel on its error without sending anything. With
   `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`)
   and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages.
   Offscreen draws with Qt's software renderer, which shows no video frames: check playback through the player's

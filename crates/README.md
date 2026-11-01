@@ -89,7 +89,7 @@ $g = '.\target\release\gallery.exe'
 & $g write | Out-Host                                      # write queued ratings and turns into the files
 & $g status | Out-Host                                     # library folders, counts, pending and failing writes
 & $g dups --show 5 | Out-Host                              # what tiers 0-1 found, and the groups they form
-& $g borders --csv 'D:\x\report.csv' 'D:\x\images' | Out-Host # borders of any files, in tools/borders.py's columns
+& $g borders --csv 'D:\x\report.csv' 'D:\x\images' | Out-Host # borders of any files, in the prototype's columns
 & $g borders --import-review 'D:\x\review.json'            # the eval viewer's "not a border" marks, into the catalog
 & $g remove 'D:\PhotoGallery\datasets\pinterest'           # take a folder out (its files are hidden, not deleted)
 ```
@@ -127,8 +127,9 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   - Its layout version stays 1 before the first release, like the catalog's: a layout change edits it in place,
     and an existing cache file is deleted by hand. A file of another version is refused, and one that can't be
     opened only means thumbnails aren't kept.
-- **Borders** (`borders.rs`, a port of `tools/borders.py`, FINDINGS "Border cleaning"): solid borders
-  (black, white or any colour, JPEG noise included) and blurred padding bars, on the stored pixels at full size.
+- **Borders** (`borders.rs`, a port of the Python prototype `tools/borders.py`, now in git history; FINDINGS
+  "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
+  the stored pixels at full size.
   A pass of its own after the import (`gallery borders`, or the background job before the thumbnails) reads and
   decodes each still image the import analyzed at full size: the import's decode is reduced, and the detector
   is calibrated on every pixel. The import marks the file due (`analysis.borders_due`); a re-analysis drops its

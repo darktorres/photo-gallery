@@ -936,7 +936,8 @@ d p50 0, within d ≤ 31 99.7%. The other rows don't change.
 
 ## Border cleaning (`tools/borders.py`, 2026-10-28)
 
-Finds solid (incl. JPEG-noisy colored) and blurred-padding borders and crops them; dry run by
+The Python prototype, since ported to the gallery and removed (in git history): "Border detector in the gallery"
+below. Finds solid (incl. JPEG-noisy colored) and blurred-padding borders and crops them; dry run by
 default, writes cleaned copies only with `--apply`, never touches originals. Default output is a
 lossless `jpegtran` crop (left/top snapped to the 8/16 px JPEG block).
 
@@ -969,6 +970,33 @@ subset's 9,306 images (2.4%), and it also runs on the synthetic edited copies.
 - **A letterboxed copy becomes the same picture to SSCD** (cosine 0.74 → 0.998), and nothing else moves: the labeled
   set barely has borders, so it's neutral there. Trimming stays in the design (design conclusion 3); cost is the
   detector's CPU time (~80 img/s per thread on full-size images, less on the DCT-scaled decode).
+- Measured with the Python prototype. `--trim` now runs the gallery's detector (`gallery borders --stdin`) on the
+  same loaded images, and gives the same box on all 900 checked (below), so the table stands.
+
+## Border detector in the gallery (Rust, `crates/core/src/borders.rs`, 2026-11-01)
+
+A port of `tools/borders.py`, in integer arithmetic where the prototype used float32. It runs in a pass of its own
+after the import, on the stored pixels decoded at full size, and its results are in the catalog (usage in
+`crates/README.md`).
+
+- **Parity with the prototype on all 187,806 Pinterest images:** the same **4,539 borders with the same cut on
+  every file** (31,077 vs 31,084 files with rejected candidates only).
+  - All remaining differences are the prototype's float32 rounding at exact ties of the seam's detail test: 7
+    statuses and about 1,600 printed straightness values (±0.01).
+  - Rerunning the differing files in Python with exact arithmetic makes every one of them match the port.
+- **Not on the import's decode.** The import decodes JPEGs DCT-scaled (≥ 512 × 320), and the detector is
+  calibrated on full-size pixels (3 px minimum, 5–20 px frames, per-row seam tests), so it can't run there. A gate
+  on the scaled decode was tried: decode at full size only when a side's first line is solid, or two opposite
+  sides look blurred.
+  - It lost no border, but sent **24%** of all files to a second full decode (44% before requiring the blurred
+    pair). Only 3,648 of those 45,349 had a border.
+  - Downscaling averages away JPEG noise, so plain backdrops, skies and white product shots look solid at
+    reduced scale.
+  - So detection became a background pass after the import, on full-size decodes (user decision): exact on
+    every file, and the import stays as fast as before. The cost is a second read of each still image.
+- **Speed:** on `dups2`, the pass took 16.4 s for 5,934 files (362 files/s, 12 workers), the import 20.9 s.
+- **Eval:** `imgload.trim_borders` pipes each loaded image to `gallery borders --stdin`. On 900 images (300 with
+  borders, 300 with rejected candidates, 300 random) it gives the prototype's box on all 900 (307 trimmed).
 
 ## M1 import (Rust, `crates/`, 2026-10-30)
 

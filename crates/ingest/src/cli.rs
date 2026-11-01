@@ -2,7 +2,7 @@
 //! for scripts, profiling and checking results. Progress goes to stderr.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
@@ -79,15 +79,21 @@ enum Command {
     /// Borders around images. Without paths: look for those due, in what the import analyzed and after a new
     /// detector (the app does this in the background, after the import).
     Borders {
-        /// Report on these files or folders (searched recursively) instead, into --csv, in tools/borders.py's
-        /// report.csv columns. The catalog isn't touched.
+        /// Report on these files or folders (searched recursively) instead, into --csv, in the Python prototype's
+        /// report.csv columns (tools/borders.py, in git history). The catalog isn't touched.
         paths: Vec<PathBuf>,
         /// Where the report goes.
         #[arg(long, requires = "paths")]
         csv: Option<PathBuf>,
-        /// Mark the files a review.json of the eval viewer's Borders page calls false positives as not a border.
+        /// Mark the files a review.json of the eval viewer's former Borders page calls false positives as not a
+        /// border.
         #[arg(long, conflicts_with = "paths")]
         import_review: Option<PathBuf>,
+        /// Look for borders in images piped in, for the eval (`borders::serve`): each one's width and height (u32,
+        /// little-endian) then its RGB pixels; for each, a line with what is left (left top right bottom). The
+        /// catalog isn't touched.
+        #[arg(long, conflicts_with_all = ["paths", "import_review"])]
+        stdin: bool,
         #[command(flatten)]
         pipeline: PipelineArgs,
     },
@@ -125,6 +131,12 @@ pub fn wants_cli(args: &[OsString]) -> bool {
 /// Run a command. `args` includes the program name.
 pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     let cli = Cli::parse_from(args);
+    // Borders of pixels piped in, or of files outside the library: no catalog.
+    if let Command::Borders { paths, csv, stdin, pipeline, .. } = &cli.command
+        && (*stdin || !paths.is_empty())
+    {
+        return borders_outside(paths, csv.as_deref(), *stdin, pipeline);
+    }
     std::fs::create_dir_all(&cli.catalog_dir)?;
     let catalog_path = cli.catalog_dir.join("catalog.sqlite");
     let mut catalog = Catalog::open(&catalog_path)?;
@@ -196,32 +208,17 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 start.elapsed().as_secs_f64()
             );
         }
-        Command::Borders { paths, csv, import_review, pipeline } => {
-            let opts = pipeline.options(THREAD_PRIORITY_NORMAL);
+        Command::Borders { import_review, pipeline, .. } => {
             if let Some(review) = import_review {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
                 println!("{marked} files marked as not a border; {unknown} not in the catalog");
-            } else if paths.is_empty() {
-                let s = borders::find(&mut catalog, &opts, &ctl)?;
+            } else {
+                let s = borders::find(&mut catalog, &pipeline.options(THREAD_PRIORITY_NORMAL), &ctl)?;
                 println!(
                     "borders looked for in {} files ({} failed), {:.1} s",
                     s.files,
                     s.failed,
                     start.elapsed().as_secs_f64()
-                );
-            } else {
-                let csv = csv.context("--csv: where the report goes")?;
-                let s = borders::report(&paths, &csv, &opts, &ctl)?;
-                println!(
-                    "{} files: {} with borders, {} rejected candidates only, {} skipped, {} errors; {:.1} s \
-                     ({:.0} files/s)",
-                    s.files,
-                    s.borders,
-                    s.rejected,
-                    s.skipped,
-                    s.errors,
-                    s.seconds,
-                    s.files as f64 / s.seconds.max(1e-3)
                 );
             }
         }
@@ -280,5 +277,27 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
         }
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
     }
+    Ok(())
+}
+
+/// `gallery borders --stdin`, or `gallery borders --csv <out> <paths>`.
+fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline: &PipelineArgs) -> Result<()> {
+    if stdin {
+        let n = borders::serve(std::io::stdin().lock(), std::io::stdout().lock())?;
+        eprintln!("borders looked for in {n} images");
+        return Ok(());
+    }
+    let csv = csv.context("--csv: where the report goes")?;
+    let s = borders::report(paths, csv, &pipeline.options(THREAD_PRIORITY_NORMAL), &Control::new(true))?;
+    println!(
+        "{} files: {} with borders, {} rejected candidates only, {} skipped, {} errors; {:.1} s ({:.0} files/s)",
+        s.files,
+        s.borders,
+        s.rejected,
+        s.skipped,
+        s.errors,
+        s.seconds,
+        s.files as f64 / s.seconds.max(1e-3)
+    );
     Ok(())
 }

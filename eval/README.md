@@ -33,7 +33,7 @@ $py = 'D:\PhotoGallery\venv-eval\Scripts\python.exe'
 & $py embed.py --model sscd           # embed all images -> emb_sscd.npy
 & $py evaluate.py --model sscd        # recall, thresholds, flagged pairs, CSVs
 & $py synth.py --model sscd           # robustness to crops, flips, overlays...
-& $py embed.py --model sscd_fp16 --trim   # borders cut first (tools/borders.py) -> emb_sscd_fp16_trim.npy
+& $py embed.py --model sscd_fp16 --trim   # borders cut first (gallery borders --stdin) -> emb_sscd_fp16_trim.npy
 & $py synth.py --model sscd_fp16 --trim   # ... and its synthetic robustness (edited copies trimmed too)
 & $py check_groups.py                 # audit dups2/<NNN> folders for unrelated pictures
 & $py verify.py --model sscd_fp16     # second stage: align pairs, classify match / unrelated

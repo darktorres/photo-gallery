@@ -79,6 +79,9 @@ overhead across 70M files, it is more like **1–3 days**. A second pass costs t
   embeddings, dimensions, ThumbHash placeholder and EXIF.
 - **Thumbnails are not part of the import** (user decision, 2026-10-30): the import stays fast, and a
   background task makes them afterwards (§6).
+- **Neither are borders** (user decision, 2026-11-01): the detector needs full-size pixels and the import's decode
+  is DCT-scaled. A background pass after the import decodes each still image at full size, which reads it a
+  second time (FINDINGS "Border detector in the gallery"). This bears on where embeddings run (§9, decision 6).
 - **Read in on-disk order with a single reader thread per HDD.** Parallel random reads on one spindle thrash
   the head. M0 compared path order, NTFS file-ID (MFT record) order and physical order (first-extent LCN via
   `FSCTL_GET_RETRIEVAL_POINTERS`): MFT order, or 8 reads in flight, reaches the disk's sequential speed, ~3× path
@@ -313,6 +316,17 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   - **Double-click** a result to see it at full size before saving.
   - The folder dialog opens at the photo's folder, or the last folder saved to.
   - Saved files are named after the photo (`IMG_1234 (yandex 1920x1080).jpg`), so they sort next to it.
+- **Borders (user request, 2026-11-01):** the border detector and its review moved from the eval tools into
+  the gallery (`pg_core::borders`, a port of `tools/borders.py` that matches it on all 187,806 Pinterest images;
+  the script and the eval viewer's Borders page are gone, and the eval's `--trim` uses the gallery's detector).
+  - **Detection:** a background pass after the import, on full-size decodes (§4). Results are in the catalog
+    (cut, every side found with why, "not a border" marks), with its own detector version, so a change looks
+    again without a new import.
+  - **Review:** a Borders facet (none, black, white, coloured, blurred bars) with counts, a review facet, a
+    border-depth sort, and a ▭ badge. **B** shows the cut on tiles and in the viewer (rejected candidates as
+    yellow lines, peek under the cut on hover), and **N** marks a file as not a border.
+  - **Save cropped copies…** writes the listed files cropped into a chosen folder, never over the originals:
+    JPEG losslessly, other formats exactly with their metadata.
 - **Schema (user decision, 2026-10-30):** one baseline, at version 1, until the first catalog worth keeping (M4
   at the latest). Pre-release changes edit it in place, with no new version; catalogs made before are deleted
   and re-imported. The migration loop exists, tested with a synthetic step, with no migrations yet; that first
@@ -373,6 +387,11 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
    and HNSW int8 26%, on data that is a worst case for them. Recommended: exact search, which replaces Tier 2's
    in-RAM index and the query-then-insert scheme above with one all-pairs batch job plus brute force for new
    images. Semantic search (one text query against 70M) still needs an index. Not decided yet.
+
+6. **Embeddings and trimming:** design conclusion 3 trims borders before embedding, but the borders now come from
+   a pass after the import (§4), while §4 puts embeddings in the import. Either embeddings move after the borders
+   pass (a background GPU task, as decision 2 already allows for SigLIP 2), or the embedding pass runs the
+   detector itself on a full-size decode. Not decided yet.
 
 ## 10. Key references (in `Research/`)
 

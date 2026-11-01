@@ -1,15 +1,17 @@
 //! Borders (pg_core::borders): the pass after the import that looks for them in the files it analyzed, and in
 //! every file after a new detector (`analysis.borders_due`), each decoded at full size; reports on any files, in
-//! `tools/borders.py`'s columns; and the eval viewer's review marks taken into the catalog.
+//! the Python prototype's columns (`tools/borders.py`, in git history); the detector for images piped in (the eval's
+//! `--trim`); and the review marks of the eval viewer's former Borders page taken into the catalog.
 
+use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, ensure};
 use pg_core::analyze::{FileBorders, borders_of};
-use pg_core::borders::Side;
+use pg_core::borders::{self as detector, Side};
 use pg_core::catalog::Catalog;
-use pg_core::decode::Decoder;
+use pg_core::decode::{Decoder, Rgb};
 use pg_core::media::{self, Kind};
 
 use crate::control::Control;
@@ -114,7 +116,7 @@ fn field(s: &str) -> String {
     if s.contains([',', '"', '\n', '\r']) { format!("\"{}\"", s.replace('"', "\"\"")) } else { s.to_string() }
 }
 
-/// Write `csv` with `tools/borders.py`'s `report.csv` columns for the image files at `paths`, as the borders pass
+/// Write `csv` with the prototype's `report.csv` columns for the image files at `paths`, as the borders pass
 /// finds their borders, so the two can be compared.
 pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> Result<ReportStats> {
     let start = Instant::now();
@@ -180,6 +182,33 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     Ok(stats)
 }
 
+/// Look for borders in images read from `input` until it ends: each one's width and height (u32, little-endian),
+/// then its pixels (RGB, rows top to bottom). For each, a line on `output`: what is left without its borders, as
+/// `left top right bottom` (right and bottom exclusive; the whole image when it has none, or is too small to look
+/// at). Returns how many it read.
+pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
+    let mut n = 0;
+    loop {
+        if input.fill_buf()?.is_empty() {
+            return Ok(n);
+        }
+        let mut size = [0u8; 8];
+        input.read_exact(&mut size).context("reading an image's size")?;
+        let [w, h] = [&size[..4], &size[4..]].map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
+        ensure!(w.checked_mul(h).is_some_and(|p| p <= 1 << 30), "image {n}: {w} × {h} is too large");
+        let mut pixels = vec![0u8; w * h * 3];
+        input.read_exact(&mut pixels).with_context(|| format!("reading image {n}'s pixels"))?;
+        let [l, t, r, b] = if w.min(h) >= detector::MIN_SIDE {
+            detector::detect(&Rgb { width: w, height: h, pixels }, &detector::Params::default()).content
+        } else {
+            [0, 0, w as u32, h as u32]
+        };
+        writeln!(output, "{l} {t} {r} {b}")?;
+        output.flush()?;
+        n += 1;
+    }
+}
+
 /// Take the false positives marked in a `review.json` of the eval viewer's Borders page (`{path: "false_positive"}`)
 /// into the catalog as marks. Returns (marked, not in the catalog).
 pub fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)> {
@@ -200,4 +229,49 @@ pub fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)>
         }
     }
     Ok((marked, unknown))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Photo-like content (blocks of hashed colours with fine noise) between black bars `bar` deep.
+    fn letterboxed(w: u32, h: u32, bar: u32) -> Vec<u8> {
+        let hash =
+            |a: u32, b: u32| (a.wrapping_mul(2_654_435_761) ^ b.wrapping_mul(40_503)).wrapping_mul(2_246_822_519);
+        let mut pixels = Vec::with_capacity((w * h * 3) as usize);
+        for y in 0..h {
+            for x in 0..w {
+                if !(bar..h - bar).contains(&y) {
+                    pixels.extend([0, 0, 0]);
+                    continue;
+                }
+                let (block, noise) = (hash(x / 6, y / 6), hash(x, y) % 24);
+                pixels.extend([0, 8, 16].map(|s| (60 + (block >> s) % 150 + noise) as u8));
+            }
+        }
+        pixels
+    }
+
+    fn frame(w: u32, h: u32, pixels: &[u8]) -> Vec<u8> {
+        [&w.to_le_bytes()[..], &h.to_le_bytes(), pixels].concat()
+    }
+
+    #[test]
+    fn piped_images_get_their_content_boxes() {
+        let input = [frame(320, 240, &letterboxed(320, 240, 40)), frame(32, 32, &[7; 32 * 32 * 3])].concat();
+        let mut output = Vec::new();
+        assert_eq!(serve(&input[..], &mut output).unwrap(), 2);
+        let lines: Vec<Vec<u32>> = String::from_utf8(output)
+            .unwrap()
+            .lines()
+            .map(|l| l.split(' ').map(|v| v.parse().unwrap()).collect())
+            .collect();
+        // The bars and the detector's pixel of margin past the seam; the tiny one isn't looked at.
+        let [l, t, r, b] = lines[0][..] else { panic!("{lines:?}") };
+        assert!(l == 0 && r == 320 && (40..43).contains(&t) && (197..=200).contains(&b), "{lines:?}");
+        assert_eq!(lines[1], [0, 0, 32, 32]);
+        // A stream cut short is an error, not a silent end.
+        assert!(serve(&input[..20], &mut Vec::new()).is_err());
+    }
 }

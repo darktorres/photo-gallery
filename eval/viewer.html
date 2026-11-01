@@ -70,27 +70,6 @@
   .badge.bad { background: hsl(0 60% var(--heat-l)); color: var(--text); }
   .stats { font-size: 11px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
   .diag { width: 100%; margin-top: 8px; border-radius: 6px; display: block; cursor: zoom-in; }
-  /* Borders page: the crop box drawn over the stored image (crops are in stored pixels, so the
-     browser must not apply EXIF rotation). The shadow dims what would be removed. */
-  .bgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 250px), 1fr)); gap: 12px; }
-  .bcard { display: flex; flex-direction: column; gap: 6px; }
-  .bcard.marked { border-color: hsl(0 70% 55%); box-shadow: 0 0 0 2px hsl(0 70% 55%); }
-  .bthumb { display: flex; justify-content: center; align-items: center; height: 320px; background: var(--bg); border-radius: 6px; }
-  .bwrap { position: relative; display: inline-block; line-height: 0; overflow: hidden; max-width: 100%; }
-  .bwrap img { display: block; max-width: 100%; max-height: 320px; image-orientation: none; }
-  .bbox { position: absolute; outline: 2px solid #ff00c8; box-shadow: 0 0 0 9999px rgba(255, 0, 200, .38); pointer-events: none; }
-  .bcap { font-size: 11px; color: var(--muted); overflow-wrap: anywhere; }
-  .bcap b { color: var(--text); font-weight: 500; }
-  .fp { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
-  .fp[aria-pressed="true"] { background: hsl(0 70% 50%); border-color: hsl(0 70% 45%); color: #fff; }
-  .fp:disabled { opacity: .6; cursor: progress; }
-  .modal .bfig { align-items: center; justify-content: center; gap: 8px; }
-  /* Full size: scaled (up or down) to fit the window; --ar is the image's width / height. */
-  .modal .bwrap img { flex: none; max-width: none; max-height: none; height: auto; aspect-ratio: var(--ar); object-fit: fill;
-    width: min(calc(100vw - 32px), calc((100vh - 80px) * var(--ar))); }
-  .modal .bwrap { flex: none; }
-  .modal .bfig figcaption { max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .modal .bwrap.peek .bbox { visibility: hidden; }
   /* Hand marks on verifier pairs. */
   .marks { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
   .mk { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
@@ -119,27 +98,6 @@
   <h1>NDD Bake-off</h1>
   <label id="run-wrap">Run <select id="run"></select></label>
   <nav id="tabs"></nav>
-  <div class="controls" id="border-controls" hidden>
-    <label>Scan <select id="scan"></select></label>
-    <label>Kind <select id="bkind">
-      <option value="all">all</option>
-      <option value="black">black</option>
-      <option value="white">white</option>
-      <option value="color">other color</option>
-      <option value="blur">blurred bar</option>
-    </select></label>
-    <label>Show <select id="bshow">
-      <option value="all">all</option>
-      <option value="unmarked">not marked</option>
-      <option value="fp">false positives</option>
-    </select></label>
-    <label>Sort <select id="bsort">
-      <option value="file">by file</option>
-      <option value="deep">deepest cut first</option>
-      <option value="shallow">thinnest cut first</option>
-    </select></label>
-    <label id="bcount"></label>
-  </div>
   <label id="model-wrap" hidden>Model <select id="model"></select></label>
   <div class="controls" id="group-controls" hidden>
     <label>Show <select id="gshow">
@@ -199,7 +157,6 @@ const TABS = [
   ["verify_knn", "Verifier: k-NN candidates", "verify.py on what the pipeline would really check: each image's 10 nearest neighbors above the floor. Mark pairs “same picture” (incl. edits: retouch, recolor, crop, overlay) or “different picture” (another photo, another frame of the same shoot). Fastest: click a pair, then S / D to mark and move on. Marks are saved per image pair (pair_marks.json), shared by all verifier tabs and kept across reruns. Diagnostic: cyan = changed, green = moved (optical flow)."],
 ];
 TABS.push(["groups", "Groups", "group.py: near-duplicate groups built from the verified k-NN pairs (multicut). Is each group one picture? If so, Save. If not, click the letter on each image (or open the group and press its letter) so each picture gets its own set, then Save: pairs within a set are marked “same picture”, pairs across sets “different” (pair_marks.json, shared with the verifier tabs). Click an image to flip through the group at full size."]);
-TABS.push(["borders", "Borders", "tools/borders.py detections. Magenta = what would be cut. Mark the wrong ones with “Mark false positive” (saved immediately to the scan's review.json; borders.py --apply then leaves those files alone). Click an image for full size."]);
 const VERIFY_TABS = ["verify", "verify_cross", "verify_knn"];
 const PAGE = 60;
 const state = { runs: [], run: null, tab: "summary", model: null, rows: [], view: [], shown: 0, marks: {}, open: -1,
@@ -263,21 +220,17 @@ async function render() {
   buildTabs();
   const [, , hint] = TABS.find(([k]) => k === state.tab);
   $("hint").textContent = hint;
-  const isBorders = state.tab === "borders";
-  $("run-wrap").hidden = isBorders;
-  $("border-controls").hidden = !isBorders;
   const isTables = state.tab === "summary" || state.tab === "benchmarks";
   const isGroups = state.tab === "groups";
-  $("pair-controls").hidden = isTables || isBorders || isGroups;
+  $("pair-controls").hidden = isTables || isGroups;
   $("group-controls").hidden = !isGroups;
-  $("model-wrap").hidden = isTables || isBorders;
+  $("model-wrap").hidden = isTables;
   $("verdict-wrap").hidden = !VERIFY_TABS.includes(state.tab);
   $("label-wrap").hidden = !VERIFY_TABS.includes(state.tab);
   $("content").replaceChildren(el("p", { class: "empty" }, "Loading…"));
   try {
     if (state.tab === "summary") await renderSummary();
     else if (state.tab === "benchmarks") await renderBenchmarks();
-    else if (isBorders) await renderBorders();
     else if (isGroups) await renderGroups();
     else await loadPairs();
   } catch (e) {
@@ -857,114 +810,6 @@ function groupKey(e) {
 }
 
 for (const id of ["gshow", "gmin", "gsort"]) $(id).addEventListener("change", applyGroupFilters);
-
-// ---------- borders ----------
-
-const bstate = { scans: null, scan: null, rows: [], view: [], shown: 0 };
-const FP = "false_positive";
-const borderImgUrl = (i, size) => "/border-img?" + new URLSearchParams({ scan: bstate.scan, i, ...(size ? { size } : {}) });
-
-async function renderBorders() {
-  if (!bstate.scans) {
-    bstate.scans = await api("/api/borders/scans");
-    bstate.scan = bstate.scans.includes("borders_full") ? "borders_full" : bstate.scans.at(-1) ?? null;
-    $("scan").replaceChildren(...bstate.scans.map((s) => el("option", s === bstate.scan ? { selected: "" } : {}, s)));
-  }
-  if (!bstate.scan) { $("content").replaceChildren(el("p", { class: "empty" }, "No border scans found.")); return; }
-  bstate.rows = (await api("/api/borders", { scan: bstate.scan })).rows;
-  applyBorderFilters();
-}
-
-// Largest share of the image removed on any one side.
-const cutDepth = (r) => Math.max(r.crop[0] / r.width, r.crop[2] / r.width, r.crop[1] / r.height, r.crop[3] / r.height);
-
-function applyBorderFilters() {
-  const kind = $("bkind").value, show = $("bshow").value, sort = $("bsort").value;
-  let view = bstate.rows.filter((r) => (kind === "all" || r.kinds.includes(kind)) &&
-    (show === "all" || (show === "fp" ? r.verdict === FP : !r.verdict)));
-  if (sort === "deep") view = [...view].sort((a, b) => cutDepth(b) - cutDepth(a));
-  if (sort === "shallow") view = [...view].sort((a, b) => cutDepth(a) - cutDepth(b));
-  bstate.view = view;
-  bstate.shown = 0;
-  updateBorderCount();
-  if (!view.length) { $("content").replaceChildren(el("p", { class: "empty" }, "Nothing to show.")); return; }
-  $("content").replaceChildren(el("div", { class: "bgrid", id: "bgrid" }));
-  showMoreBorders();
-}
-
-function updateBorderCount() {
-  const fp = bstate.rows.filter((r) => r.verdict === FP).length;
-  $("bcount").textContent = `${bstate.view.length.toLocaleString()} shown · ${bstate.rows.length.toLocaleString()} detections · ${fp.toLocaleString()} marked false positive`;
-}
-
-function borderImage(r, size) {
-  const [l, t, rr, b] = r.crop;
-  const box = el("div", { class: "bbox", style:
-    `left:${100 * l / r.width}%;top:${100 * t / r.height}%;width:${100 * (r.width - l - rr) / r.width}%;height:${100 * (r.height - t - b) / r.height}%` });
-  return el("div", { class: "bwrap" }, el("img", { src: borderImgUrl(r.i, size), loading: "lazy", alt: r.name }), box);
-}
-
-function borderCard(r) {
-  const marked = r.verdict === FP;
-  const btn = el("button", { class: "fp", type: "button", "aria-pressed": String(marked) },
-    marked ? "✓ False positive" : "Mark false positive");
-  const node = el("div", { class: "card bcard" + (marked ? " marked" : "") },
-    el("div", { class: "bthumb", onclick: () => openBorder(r) }, borderImage(r, 480)),
-    el("div", { class: "bcap" }, el("b", {}, r.name), el("br"),
-      `${r.folder} · ${r.width}×${r.height} · cut L${r.crop[0]} T${r.crop[1]} R${r.crop[2]} B${r.crop[3]}`, el("br"),
-      r.sides.replace(/ dev \d+ drift \d+/g, "")),
-    btn);
-  btn.addEventListener("click", () => toggleFalsePositive(r, node, btn));
-  return node;
-}
-
-async function toggleFalsePositive(r, node, btn) {
-  const verdict = r.verdict === FP ? null : FP;
-  btn.disabled = true;
-  try {
-    const res = await fetch("/api/borders/review", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ scan: bstate.scan, i: r.i, verdict }),
-    });
-    if (!res.ok) throw new Error(await res.text());
-    r.verdict = verdict;
-    node.classList.toggle("marked", !!verdict);
-    btn.setAttribute("aria-pressed", String(!!verdict));
-    btn.textContent = verdict ? "✓ False positive" : "Mark false positive";
-    updateBorderCount();  // the card stays until the filters are re-applied
-  } catch (e) {
-    alert("Saving failed: " + e.message);
-  } finally {
-    btn.disabled = false;
-  }
-}
-
-function showMoreBorders() {
-  $("bgrid").append(...bstate.view.slice(bstate.shown, bstate.shown + PAGE).map(borderCard));
-  bstate.shown += PAGE;
-  setSentinel(bstate.shown < bstate.view.length ? showMoreBorders : null);
-}
-
-function openBorder(r) {
-  const m = $("modal");
-  const wrap = borderImage(r, 0);
-  wrap.querySelector("img").style.setProperty("--ar", r.width / r.height);
-  // Hovering the magenta area (what would be cut) hides the overlay to show what is there.
-  const [l, t, rr, b] = r.crop;
-  wrap.addEventListener("mousemove", (e) => {
-    const box = wrap.getBoundingClientRect();
-    const x = (e.clientX - box.left) / box.width * r.width, y = (e.clientY - box.top) / box.height * r.height;
-    wrap.classList.toggle("peek", x < l || x >= r.width - rr || y < t || y >= r.height - b);
-  });
-  wrap.addEventListener("mouseleave", () => wrap.classList.remove("peek"));
-  m.replaceChildren(el("figure", { class: "bfig" }, wrap,
-    el("figcaption", {}, `${r.path} · ${r.width}×${r.height} · ${r.sides.replace(/ dev \d+ drift \d+/g, "")}`)));
-  m.dataset.view = "border";
-  m.classList.add("open", "single");
-}
-
-$("scan").addEventListener("change", () => { bstate.scan = $("scan").value; render(); });
-for (const id of ["bkind", "bshow", "bsort"]) $(id).addEventListener("change", applyBorderFilters);
 
 $("modal").addEventListener("click", () => $("modal").classList.remove("open"));
 document.addEventListener("keydown", async (e) => {

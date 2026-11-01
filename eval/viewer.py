@@ -5,10 +5,8 @@ Usage: python viewer.py [--port 8765] [--no-browser]  ->  http://127.0.0.1:8765
 Shows every run directory under D:\\PhotoGallery that holds a files.txt (eval_smoke,
 eval, ...): a model comparison, and the pair lists written by evaluate.py as
 side-by-side thumbnails, plus verify.py's decisions and diagnostic images, and group.py's groups
-(marking a group writes pair marks: same within a set, different across sets). The Borders page
-reviews tools/borders.py scans (any folder under D:\\PhotoGallery with a report.csv) and saves
-false-positive marks to that folder's review.json. Binds to localhost only and serves only files inside
-DATA_ROOT. Thumbnails are cached under CACHE_DIR/viewer_thumbs.
+(marking a group writes pair marks: same within a set, different across sets). Binds to localhost
+only and serves only files inside DATA_ROOT. Thumbnails are cached under CACHE_DIR/viewer_thumbs.
 """
 
 import argparse
@@ -46,12 +44,6 @@ PAIR_FILES = {
 # verify.py's diagnostic image folders, by pair kind.
 DIAG_PREFIX = {"verify": "verify", "verify_cross": "verify_cross", "verify_knn": "verify_knn"}
 GROUPS_FILE = "groups_{}.json"  # group.py
-
-# tools/borders.py output folders (under RUNS_ROOT, holding report.csv) and the review verdicts
-# saved next to it; borders.py --apply skips false positives. Keep in sync with borders.py.
-BORDER_REVIEW = "review.json"
-FALSE_POSITIVE = "false_positive"
-review_lock = threading.Lock()
 
 
 def list_runs() -> list[dict]:
@@ -174,88 +166,11 @@ def diagnostic_file(run: str, model: str, kind: str, pair_id: str) -> Path:
     return path
 
 
-def border_scans() -> list[str]:
-    return sorted(p.name for p in RUNS_ROOT.iterdir() if p.is_dir() and (p / "report.csv").exists())
-
-
-def border_dir(scan: str) -> Path:
-    d = (RUNS_ROOT / scan).resolve()
-    if d.parent != RUNS_ROOT.resolve() or not (d / "report.csv").exists():
-        raise ValueError(f"unknown border scan: {scan}")
-    return d
-
-
-def side_kind(side: str) -> str:
-    """Side.describe() text -> black / white / color / blur (same buckets as report.md)."""
-    words = side.split()
-    if words[1] == "blur":
-        return "blur"
-    rgb = [int(words[2][i : i + 2], 16) for i in (1, 3, 5)]
-    return "black" if max(rgb) <= 40 else "white" if min(rgb) >= 215 else "color"
-
-
-_border_cache: dict[Path, tuple[int, list[dict]]] = {}
-
-
-def border_rows(scan: str) -> list[dict]:
-    """The scan's detections (status "border"), cached until report.csv changes."""
-    report = border_dir(scan) / "report.csv"
-    mtime = report.stat().st_mtime_ns
-    cached = _border_cache.get(report)
-    if cached and cached[0] == mtime:
-        return cached[1]
-    with open(report, newline="", encoding="utf-8") as f:
-        rows = [r for r in csv.DictReader(f) if r["status"] == "border"]
-    out = []
-    for i, r in enumerate(rows):
-        out.append(
-            {
-                "i": i,
-                "path": r["path"],
-                "name": Path(r["path"]).name,
-                "folder": Path(r["path"]).parent.name,
-                "width": int(r["width"]),
-                "height": int(r["height"]),
-                "crop": [int(r[k]) for k in ("crop_left", "crop_top", "crop_right", "crop_bottom")],
-                "sides": r["sides"],
-                "kinds": sorted({side_kind(s) for s in r["sides"].split("; ")}),
-            }
-        )
-    _border_cache[report] = (mtime, out)
-    return out
-
-
-def load_review(scan: str) -> dict[str, str]:
-    path = border_dir(scan) / BORDER_REVIEW
-    return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
-
-
-def borders(scan: str) -> dict:
-    review = load_review(scan)
-    return {"rows": [{**r, "verdict": review.get(r["path"])} for r in border_rows(scan)]}
-
-
-def set_verdict(scan: str, i: int, verdict: str | None) -> dict:
-    if verdict not in (None, FALSE_POSITIVE):
-        raise ValueError(f"bad verdict: {verdict}")
-    path = border_rows(scan)[i]["path"]
-    target = border_dir(scan) / BORDER_REVIEW
-    with review_lock:
-        review = load_review(scan)
-        if verdict is None:
-            review.pop(path, None)
-        else:
-            review[path] = verdict
-        tmp = target.with_suffix(".tmp")
-        tmp.write_text(json.dumps(review, indent=1, ensure_ascii=False), encoding="utf-8")
-        os.replace(tmp, target)
-    return {"verdict": verdict, "false_positives": sum(v == FALSE_POSITIVE for v in review.values())}
-
-
 # Hand marks on verifier pairs: is it the same picture (incl. edits) or a different one? One file per
 # run, keyed by the unordered pair of image paths, so marks survive reruns that renumber pair ids.
 PAIR_MARKS = "pair_marks.json"
 PAIR_MARK_VALUES = ("same", "different")
+marks_lock = threading.Lock()
 
 
 def pair_key(a: str, b: str) -> str:
@@ -287,7 +202,7 @@ def set_marks(run: str, items: list) -> dict:
         if a not in known or b not in known or a == b:
             raise ValueError("unknown image path")
     target = run_dir(run) / PAIR_MARKS
-    with review_lock:
+    with marks_lock:
         marks = load_marks(run)
         for a, b, mark in items:
             if mark is None:
@@ -307,19 +222,14 @@ def dataset_file(rel: str) -> Path:
     return path
 
 
-def thumbnail(path: Path, size: int, upright: bool = True) -> bytes:
-    """JPEG thumbnail, cached. upright=False keeps the stored orientation (ignores EXIF rotation),
-    for drawing coordinates measured on the stored pixels, like border crops."""
+def thumbnail(path: Path, size: int) -> bytes:
+    """JPEG thumbnail, upright, cached."""
     stat = path.stat()
-    key = hashlib.sha1(f"{path}|{stat.st_mtime_ns}|{stat.st_size}|{size}|{upright}".encode()).hexdigest()
+    key = hashlib.sha1(f"{path}|{stat.st_mtime_ns}|{stat.st_size}|{size}".encode()).hexdigest()
     cached = THUMB_DIR / key[:2] / f"{key}.jpg"
     if cached.exists():
         return cached.read_bytes()
-    if upright:
-        im = load_rgb(path)
-    else:
-        with Image.open(path) as raw:
-            im = raw.convert("RGB")
+    im = load_rgb(path)
     im.thumbnail((size, size), Image.Resampling.LANCZOS)
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=85)
@@ -359,19 +269,6 @@ class Handler(BaseHTTPRequestHandler):
                     mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
                     # The Windows registry maps .jpg to the non-standard image/jpg.
                     self.reply(path.read_bytes(), "image/jpeg" if mime == "image/jpg" else mime, cache=True)
-            elif url.path == "/api/borders/scans":
-                self.reply_json(border_scans())
-            elif url.path == "/api/borders":
-                self.reply_json(borders(q["scan"]))
-            elif url.path == "/border-img":
-                # By row index, so only files listed in the scan's report can be served.
-                path = Path(border_rows(q["scan"])[int(q["i"])]["path"])
-                size = int(q.get("size", "0"))
-                if size:
-                    self.reply(thumbnail(path, size, upright=False), "image/jpeg", cache=True)
-                else:
-                    mime = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
-                    self.reply(path.read_bytes(), "image/jpeg" if mime == "image/jpg" else mime, cache=True)
             elif url.path == "/diag":
                 # Not cached: re-running verify.py rewrites these under the same names.
                 self.reply(diagnostic_file(q["run"], q["model"], q["kind"], q["id"]).read_bytes(), "image/jpeg")
@@ -390,9 +287,7 @@ class Handler(BaseHTTPRequestHandler):
             if self.headers.get("Content-Type", "").split(";")[0].strip() != "application/json":
                 raise ValueError("expected application/json")
             body = json.loads(self.rfile.read(int(self.headers.get("Content-Length", "0"))))
-            if url.path == "/api/borders/review":
-                self.reply_json(set_verdict(body["scan"], int(body["i"]), body.get("verdict")))
-            elif url.path == "/api/marks":
+            if url.path == "/api/marks":
                 self.reply_json(set_mark(body["run"], body["a"], body["b"], body.get("mark")))
             elif url.path == "/api/marks/bulk":
                 self.reply_json(set_marks(body["run"], [(a, b, m) for a, b, m in body["marks"]]))

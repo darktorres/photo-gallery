@@ -1,6 +1,8 @@
 """Batched embedding shared by embed.py, synth.py and check_groups.py."""
 
-import sys
+import os
+import struct
+import subprocess
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Protocol
@@ -36,16 +38,38 @@ class FileSource:
         return load_rgb(self.root / self.files[i])
 
 
-def trim_borders(im: Image.Image) -> Image.Image:
-    """`im` without solid or blurred padding borders: tools/borders.py's detector at its default settings, as the
-    ingest pipeline would run it before embedding."""
-    tools = str(Path(__file__).resolve().parents[1] / "tools")
-    if tools not in sys.path:
-        sys.path.append(tools)
-    import borders
+# The gallery's border detector (crates/core/src/borders.rs), run on piped pixels by `gallery borders --stdin`.
+GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / "gallery.exe"))
 
-    box, accepted, _ = borders.detect(np.asarray(im), borders.Params())
-    return im.crop(box) if accepted else im
+
+class _Detector:
+    """Its process in this worker: started on first use, and again if it ended."""
+
+    process: subprocess.Popen | None = None
+
+
+def content_box(im: Image.Image) -> tuple[int, int, int, int]:
+    """What is left of `im` without its solid or blurred padding borders, as (left, top, right, bottom): the
+    gallery's detector, one process per worker, kept running."""
+    if _Detector.process is None or _Detector.process.poll() is not None:
+        args = [str(GALLERY), "borders", "--stdin"]
+        _Detector.process = subprocess.Popen(args, stdin=subprocess.PIPE, stdout=subprocess.PIPE)
+    process = _Detector.process
+    assert process.stdin is not None and process.stdout is not None
+    rgb = im.convert("RGB")
+    process.stdin.write(struct.pack("<II", *rgb.size) + rgb.tobytes())
+    process.stdin.flush()
+    line = process.stdout.readline()
+    if not line:
+        raise RuntimeError(f"{GALLERY} borders --stdin ended (build it: cargo build --release)")
+    left, top, right, bottom = map(int, line.split())
+    return left, top, right, bottom
+
+
+def trim_borders(im: Image.Image) -> Image.Image:
+    """`im` without solid or blurred padding borders, as the gallery finds them before embedding."""
+    box = content_box(im)
+    return im if box == (0, 0, *im.size) else im.crop(box)
 
 
 class TrimmedSource:

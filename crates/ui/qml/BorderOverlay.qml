@@ -1,6 +1,6 @@
-// What cropping an image's borders would cut, drawn over the image (as the eval viewer's Borders page did): the cut
-// dimmed magenta, what is left outlined, and where rejected candidates would have cut as yellow lines (as
-// tools/borders.py's report did). Grey for borders marked as not a border. It covers the image's painted area;
+// What cropping an image's borders would cut, drawn over the image (as the eval viewer's former Borders page did):
+// the cut dimmed magenta, what is left outlined, and where rejected candidates would have cut as yellow lines (as
+// the Python prototype's report did). Grey for borders marked as not a border. It covers the image's painted area;
 // what is left and the lines are fractions of it (GalleryModel.borderBox, borderRejected).
 pragma ComponentBehavior: Bound
 

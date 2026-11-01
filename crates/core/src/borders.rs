@@ -1,6 +1,7 @@
 //! Borders around images (FINDINGS "Border cleaning"): solid ones (black, white, colored, JPEG-noisy) and blurred
-//! padding bars (a blurred, enlarged copy of the image filling the letterbox). A port of what `tools/borders.py`
-//! measured, run on the stored pixels at full size (no EXIF orientation: a crop of the stored image keeps the tag
+//! padding bars (a blurred, enlarged copy of the image filling the letterbox). A port of the Python prototype that
+//! measured them (`tools/borders.py`, removed once this matched it file for file; in git history), run on the stored
+//! pixels at full size (no EXIF orientation: a crop of the stored image keeps the tag
 //! valid), by a pass of its own after the import (`pg_ingest::borders`).
 //!
 //! Per side (top, bottom, left, right; repeated so nested borders peel off):
@@ -214,7 +215,7 @@ impl Reason {
         Reason::ALL.into_iter().find(|r| r.key() == key)
     }
 
-    /// `tools/borders.py`'s words for it.
+    /// The prototype's words for it.
     pub fn text(self) -> &'static str {
         match self {
             Reason::TooDeep => "too deep",
@@ -256,7 +257,7 @@ impl Side {
         Class::of(self.kind, self.color.unwrap_or([128; 3]))
     }
 
-    /// `tools/borders.py`'s `Side.describe()`, for reports compared with its own.
+    /// The prototype's `Side.describe()`, for reports compared with its own.
     pub fn describe(&self) -> String {
         let kind = match (self.kind, self.color) {
             (Kind::Solid, Some([r, g, b])) => format!(

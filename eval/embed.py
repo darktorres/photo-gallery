@@ -2,7 +2,7 @@
 
 Usage: python embed.py --model sscd [--trim]
 Writes WORK_DIR/emb_<model>.npy (float16, row i = files.txt line i) and ok_<model>.npy. With --trim, each image's
-borders are cut first (tools/borders.py's detector) and the files are named <model>_trim.
+borders are cut first (the gallery's detector) and the files are named <model>_trim.
 """
 
 import argparse

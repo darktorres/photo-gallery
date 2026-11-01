@@ -55,3 +55,44 @@ still helps.
    `FILE_ID_BOTH_DIR_INFO` carries in `EaSize` when the reparse attribute is set, instead of skipping all of
    them. This one matters on NTFS too, for OneDrive folders.
 6. Count entries dropped for `FileId == 0` as errors, so an omission is at least visible.
+
+## Reading the MFT instead of listing folders (proposed, 2026-11-01)
+
+What Everything and WizTree do: read the volume's `$MFT` directly, in large sequential chunks, and rebuild the
+tree from each record's parent reference.
+
+**Admin rights.** It needs a volume handle (`\.\E:`), which only an elevated process gets: unelevated,
+`fsutil fsinfo ntfsinfo E:` is refused ("Acesso negado"). On this machine elevation is silent: the user is an
+administrator, and UAC is on (`EnableLUA = 1`) with `ConsentPromptBehaviorAdmin = 0` (elevate without
+prompting). Processes still start with the filtered token (Administrators deny-only, medium integrity), so the
+app has to ask for elevation (`ShellExecuteExW`, verb `runas`): silent here, a UAC prompt on a machine with the
+default settings.
+
+**What it gains (estimates; the walk hasn't been timed on E:).**
+- An MFT record is 1 KiB: at 70M files, ~70 GB, ~5 min at the HDD's ~230 MB/s (FINDINGS "I/O"). A cold folder
+  walk pays a few seeks per folder: ~20 min per 100k folders, 3–4 h at 1M. Both are small next to the first
+  import (~1.5 days at decode speed). Rescans are where the time matters.
+- An MFT read always covers the whole volume, so a small folder is far cheaper to walk. Use it for drive roots
+  and large roots, and keep the walk for the rest.
+- Size and mtime come from the file's own record (`$STANDARD_INFORMATION`, unnamed `$DATA`). A listing returns
+  the copies duplicated in the parent's index, which can lag (hard links, files still being written).
+- The reparse tag comes with the record (`$REPARSE_POINT`), which fixes the OneDrive omission above.
+- Record number | sequence << 48 *is* the NTFS file ID the catalog already stores: rows don't change, both
+  scanners can coexist, and on the same folder they must agree, which is the test.
+
+**Rescans: the USN journal.** The same volume handle reads the journal (`FSCTL_QUERY_USN_JOURNAL`,
+`FSCTL_READ_USN_JOURNAL`): only what changed since the saved `(journal ID, next USN)`, in seconds. A full read is
+needed again when the journal ID changed or the saved USN fell below `LowestValidUsn` (the journal wrapped). An
+elevated process kept running could also follow it live, as Everything does.
+
+**Shape.** Only the volume reads run elevated: a `gallery` subcommand started with `runas` that streams
+`(file_ref, parent_ref, name, attributes, size, mtime, reparse tag)` over a named pipe the app creates (DACL: the
+user's SID). The app stays unelevated (an elevated UI can't receive drops from Explorer) and so do the catalog
+writes, through the existing `ScanWriter`, so the catalog's files keep their owner.
+
+**Parsing.** Record 0 gives the `$MFT`'s own data runs; read them in order, in chunks of megabytes. Per record:
+apply the update-sequence fixups; skip records not in use and extension records (follow `$ATTRIBUTE_LIST` from
+the base record when `$DATA` lives in one); take the Win32 (or POSIX) `$FILE_NAME`, not the DOS 8.3 one; a hard
+link is one `$FILE_NAME` per parent. Keep the folders (record → parent, name) in memory, rebuild paths, and keep
+the media files under the scanned roots. Crates to evaluate first: `ntfs` (read-only NTFS) and `mft` (record
+parser).

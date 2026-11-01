@@ -205,6 +205,8 @@ cost, but indirect recursion (A → B → A) is still counted twice.
 
 The start after the optimizations, drilled thread by thread: [START_PROFILE.md](START_PROFILE.md) (2026-11-01).
 
+Every heap allocation of a scan and an import, site by site (dhat): [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01).
+
 ### The start, to `ready` (Pin call graph, release `gallery.exe` with the trace stages, scratch copy of the pinterest catalog, 2026-10-31)
 
 Catalog: 189,518 files, 690 folders; the session folder is "All folders", so the grid lists every file.

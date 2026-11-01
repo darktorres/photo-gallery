@@ -555,8 +555,8 @@ mod tests {
             fixture::insert(&c.conn, &[fixture::File::new(id, folder, name, size, mtime)]);
             c.conn
                 .execute(
-                    "INSERT INTO analysis(file_id, version, size, mtime, analyzed, format, width, height)
-                     VALUES (?1, 1, ?2, ?3, 0, ?4, 4, 3)",
+                    "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height)
+                     VALUES (?1, 1, ?2, ?3, 0, 'image', 0, ?4, 4, 3)",
                     params![id, size, mtime, format],
                 )
                 .unwrap();
@@ -824,11 +824,12 @@ mod tests {
         );
         c.conn
             .execute_batch(
-                "INSERT INTO analysis(file_id, version, size, mtime, analyzed, format, width, height, frames,
-                                      duration_ms) VALUES
-                    (5, 1, 50, 7, 0, NULL, 1920, 1080, 300, 12000),
-                    (6, 1, 15, 2, 0, 'gif', 3, 3, 10, NULL);
-                 INSERT INTO analysis(file_id, version, size, mtime, analyzed, error) VALUES (7, 1, 5, 4, 0, 'bad');
+                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height,
+                                      frames, duration_ms) VALUES
+                    (5, 1, 50, 7, 0, 'video', 0, NULL, 1920, 1080, 300, 12000),
+                    (6, 1, 15, 2, 0, 'image', 0, 'gif', 3, 3, 10, NULL);
+                 INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
+                     VALUES (7, 1, 5, 4, 0, 'image', 0, 'bad');
                  UPDATE analysis SET file_hash = x'01' WHERE file_id IN (1, 3);
                  UPDATE analysis SET taken = 1714557600 WHERE file_id = 1; -- 2024-05-01 10:00
                  INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (2, 4, 10, 0), (2, 6, 30, 0);",

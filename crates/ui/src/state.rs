@@ -34,11 +34,12 @@ pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
     std::fs::create_dir_all(&catalog_dir)?;
     let catalog_path = catalog_dir.join("catalog.sqlite");
     let catalog = Catalog::open(&catalog_path)?;
+    let catalog_id = catalog.catalog_id()?;
     // Kept for the GUI thread rather than closed: closing the last connection checkpoints and deletes the WAL,
     // and the first QML object would open it again.
     CATALOG.with(|c| *c.borrow_mut() = Some(catalog));
-    let thumbs =
-        ThumbCache::open(&catalog_dir, thumb_cap_bytes, Box::new(|e| eprintln!("{e:#}"))).unwrap_or_else(|e| {
+    let thumbs = ThumbCache::open(&catalog_dir, &catalog_id, thumb_cap_bytes, Box::new(|e| eprintln!("{e:#}")))
+        .unwrap_or_else(|e| {
             eprintln!("thumbnail cache disabled: {e:#}");
             ThumbCache::disabled()
         });

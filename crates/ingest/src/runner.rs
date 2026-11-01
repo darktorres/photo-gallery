@@ -139,6 +139,8 @@ impl Inner {
     }
 
     fn run(&self) {
+        // One connection for every round; after a round that failed, a new one.
+        let mut catalog: Option<Catalog> = None;
         loop {
             let roots = {
                 let mut q = self.queue.lock().unwrap();
@@ -149,7 +151,12 @@ impl Inner {
                 self.ctl.clear_stop();
                 std::mem::take(&mut q.scans)
             };
-            if let Err(e) = self.round(roots) {
+            let done = catalog.take().map_or_else(|| Catalog::open(&self.catalog_path), Ok).and_then(|mut c| {
+                self.round(&mut c, roots)?;
+                catalog = Some(c);
+                Ok(())
+            });
+            if let Err(e) = done {
                 self.note(format!("{e:#}"));
             }
             (self.on_round_done)();
@@ -164,15 +171,14 @@ impl Inner {
         q.wake = true;
     }
 
-    fn round(&self, roots: Vec<String>) -> Result<()> {
-        let mut catalog = Catalog::open(&self.catalog_path)?;
+    fn round(&self, catalog: &mut Catalog, roots: Vec<String>) -> Result<()> {
         let library = catalog.roots()?;
         for (i, root) in roots.iter().enumerate() {
             // Removed from the library since it was asked for.
             if !library.iter().any(|l| is_under(root, l)) {
                 continue;
             }
-            match scan::scan(&mut catalog, root, &self.ctl) {
+            match scan::scan(catalog, root, &self.ctl) {
                 Ok(s) if !s.complete => {
                     self.requeue(&roots[i..]);
                     return Ok(());
@@ -187,7 +193,7 @@ impl Inner {
             self.scans_done.fetch_add(1, Ordering::Relaxed);
         }
 
-        let s = import::import(&mut catalog, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), false, &self.ctl)?;
+        let s = import::import(catalog, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), false, &self.ctl)?;
         if s.files > 0 {
             self.imports_done.fetch_add(1, Ordering::Relaxed);
         }

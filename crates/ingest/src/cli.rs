@@ -163,7 +163,12 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { THREAD_PRIORITY_NORMAL } else { THREAD_PRIORITY_IDLE });
-            let cache = ThumbCache::open(&cli.catalog_dir, cap_gb.map(|gb| (gb * 1e9) as i64), report())?;
+            let cache = ThumbCache::open(
+                &cli.catalog_dir,
+                &catalog.catalog_id()?,
+                cap_gb.map(|gb| (gb * 1e9) as i64),
+                report(),
+            )?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
             cache.flush();
             println!(
@@ -202,7 +207,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
         }
         Command::Write => {
             // Only retagged here (never filled): the cap stays as it is.
-            let cache: &'static ThumbCache = Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, None, report())?));
+            let cache: &'static ThumbCache =
+                Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, None, report())?));
             let writer = Writer::start(catalog_path.clone(), cache, || {});
             writer.wake();
             // Until nothing writable is left (failures past their retries stay queued and are reported).

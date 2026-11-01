@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 use pg_core::browse::{self, Entry, Facets, FolderTree};
 use pg_core::catalog::{Catalog, WorkItem};
 use pg_core::query::{Query, Sort, SortKey};
-use pg_core::thumbs::ThumbWork;
+use pg_core::thumbs::Pending;
 
 const DATA: &str = match option_env!("PG_BENCH_DATA") {
     Some(path) => path,
@@ -109,7 +109,7 @@ fn pending_import(catalog: Catalog) -> (Catalog, Vec<WorkItem>) {
 // The thumbnail pass's check for work, on its own connection like the job's.
 #[library_benchmark]
 #[bench::at_height(setup = copy_data)]
-fn pending_thumbs(run: PathBuf) -> Vec<ThumbWork> {
+fn pending_thumbs(run: PathBuf) -> Pending {
     black_box(thumbs::pending_in(&run.join("thumbs.sqlite"), &run.join("catalog.sqlite"), THUMB_HEIGHT).unwrap())
 }
 

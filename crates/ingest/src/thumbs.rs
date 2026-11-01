@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use pg_core::decode::Decoder;
-use pg_core::thumbs::{self, Thumb, ThumbCache};
+use pg_core::thumbs::{self, Pending, Thumb, ThumbCache};
 use turbojpeg::Compressor;
 
 use crate::control::Control;
@@ -19,15 +19,18 @@ pub struct ThumbStats {
     pub made: usize,
     pub failed: usize,
     pub cache_full: bool,
+    /// Every file of the work was tried (not stopped, the cache not full): the next pass starts from this one's
+    /// snapshot (`ThumbCache::checked`).
+    pub complete: bool,
 }
 
+/// One pass at `height`: the files changed since the last complete one (or all of them, `ThumbCache::pending`).
 pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options, ctl: &Control) -> Result<ThumbStats> {
-    if let Some((kept, actual)) = cache.heal()? {
-        eprintln!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed");
-    }
-    let items = cache.pending(catalog_path, height)?;
-    let mut stats = ThumbStats { made: 0, failed: 0, cache_full: false };
+    let Pending { work: items, snapshot } = cache.pending(catalog_path, height)?;
+    let mut stats = ThumbStats { made: 0, failed: 0, cache_full: false, complete: false };
     if items.is_empty() {
+        cache.checked(&snapshot, None)?;
+        stats.complete = true;
         cache.shrink()?;
         return Ok(stats);
     }
@@ -38,6 +41,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     );
     let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
     let mut batch = Vec::with_capacity(BATCH);
+    let (mut tried, mut first_failed) = (0, None);
     ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
 
     let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
@@ -71,11 +75,14 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         },
         |i, result, len| {
             ctl.add(len, result.is_err());
+            tried += 1;
             match result {
                 Ok(data) => batch.push(Thumb { file_id: items[i].id, height, source: items[i].source, data }),
-                // The import already decoded these files; a failure here is a file changed or gone since.
+                // The import already decoded these files; a failure here is a file changed or gone since (or its
+                // drive offline): the next pass tries it again.
                 Err(e) => {
                     stats.failed += 1;
+                    first_failed = Some(first_failed.map_or(items[i].seq, |s: i64| s.min(items[i].seq)));
                     eprintln!("  {}: {e:#}", items[i].path);
                 }
             }
@@ -89,6 +96,10 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         flush(&mut batch, &mut stats)?;
     }
     ctl.finish();
+    stats.complete = !stats.cache_full && tried == items.len();
+    if stats.complete {
+        cache.checked(&snapshot, first_failed)?;
+    }
     cache.shrink()?;
     Ok(stats)
 }

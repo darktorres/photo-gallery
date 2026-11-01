@@ -10,7 +10,6 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::analyze::IMPORT_VERSION;
 use crate::metadata::parse_iso_date;
 use crate::pdq::GROUP_DISTANCE;
 
@@ -117,15 +116,16 @@ impl Status {
         Status::ALL.into_iter().find(|s| s.key() == key)
     }
 
-    fn sql(self) -> String {
-        let current = format!("s.version = {IMPORT_VERSION} AND s.size = f.size AND s.mtime = f.mtime");
+    /// Every file is one of the three: pending (`files.pending`, what the import does next), else imported or
+    /// failed by its current analysis.
+    fn sql(self) -> &'static str {
         match self {
             Status::Imported => {
-                format!("EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NULL AND {current})")
+                "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NULL))"
             }
-            Status::Pending => format!("NOT EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND {current})"),
+            Status::Pending => "f.pending = 1",
             Status::Failed => {
-                "EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NOT NULL)".to_string()
+                "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NOT NULL))"
             }
         }
     }
@@ -299,7 +299,7 @@ impl Query {
             None => {}
         }
         if !self.status.is_empty() {
-            parts.push(any(self.status.iter().map(|s| s.sql()).collect()));
+            parts.push(any(self.status.iter().map(|s| s.sql().to_string()).collect()));
         }
         let name = self.name.trim();
         if !name.is_empty() {

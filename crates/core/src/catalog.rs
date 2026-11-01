@@ -1,21 +1,26 @@
 //! The catalog (PLAN §6): SQLite in WAL mode, the source of truth for files, analyses, pairs and ratings.
 //!
 //! File identity is (volume serial, NTFS file ID), so moves and renames need no re-analysis (PLAN §4). An analysis
-//! row records the size, mtime and pipeline version it was computed from; when any differ, the file is pending
-//! again. That is all the resumability there is: every batch is one transaction, and the work list is a query.
+//! row records what it was computed from: the size, mtime, catalog rotation and kind, and the pipeline version.
+//! When any differ, the file is pending again (`files.pending`, kept by triggers). That is all the resumability
+//! there is: every batch is one transaction, and the work list is an index.
+//!
+//! The thumbnails' work is tracked the same way: whatever a thumbnail depends on changing gives the file the next
+//! number of a change sequence (`files.seq`, from `meta.seq`), so the thumbnail pass looks only at files changed
+//! since it last looked (`thumbs::pending_in`).
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::media::{self, Kind};
 use crate::pdq;
 
-/// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
+/// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`baseline`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
 ///
 /// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit
@@ -23,6 +28,21 @@ use crate::pdq;
 /// then on the baseline is frozen and every change is a migration.
 const BASELINE_VERSION: i64 = 1;
 const MIGRATIONS: &[&str] = &[];
+
+/// Whether the `files` row being written needs its analysis (re)done: no analysis made from it as it is now (at
+/// `meta.import_version` or later, from the same size, mtime, catalog rotation and kind). A failure counts as made:
+/// `--retry` redoes those. Inside `UPDATE files … WHERE id = …`.
+const STALE: &str = "NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
+        AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind)";
+
+/// The next number of the change sequence, for `files.seq`: `{NEXT_SEQ}` first, then `seq = {SEQ}`.
+const NEXT_SEQ: &str = "UPDATE meta SET value = value + 1 WHERE key = 'seq'";
+const SEQ: &str = "(SELECT value FROM meta WHERE key = 'seq')";
+
+fn baseline() -> String {
+    BASELINE.replace("{STALE}", STALE).replace("{NEXT_SEQ}", NEXT_SEQ).replace("{SEQ}", SEQ)
+}
 
 const BASELINE: &str = r"
 CREATE TABLE scans(
@@ -50,6 +70,8 @@ CREATE TABLE files(
     rotation  INTEGER NOT NULL DEFAULT 0,  -- quarter turns clockwise kept here, for files that can't be rotated
                                            -- in place (metadata::rotation_method); applied after EXIF orientation
     order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (browse::order_key)
+    pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
+    seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
@@ -57,11 +79,17 @@ CREATE INDEX files_folder ON files(folder_id, name);
 CREATE INDEX files_order ON files(order_key) WHERE missing = 0;
 -- The folder tree's counts, from the index alone.
 CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
+-- The import's work in on-disk order (Catalog::pending_import): a round with nothing to import is one probe.
+CREATE INDEX files_to_import ON files(volume, file_ref & 0xFFFFFFFFFFFF) WHERE missing = 0 AND pending = 1;
+-- The files changed since the thumbnail pass last looked (thumbs::pending_in).
+CREATE INDEX files_seq ON files(seq);
 CREATE TABLE analysis(
     file_id     INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
     version     INTEGER NOT NULL,  -- analyze::IMPORT_VERSION
     size        INTEGER NOT NULL,  -- the file as analyzed
     mtime       INTEGER NOT NULL,
+    rotation    INTEGER NOT NULL,  -- files.rotation it was decoded with
+    kind        TEXT NOT NULL,     -- files.kind it was analyzed as
     analyzed    INTEGER NOT NULL,  -- Unix seconds
     error       TEXT,              -- set when the file couldn't be read or decoded; the rest is then NULL
     file_hash   BLOB,              -- tier 0a: BLAKE3 of the bytes
@@ -80,6 +108,8 @@ CREATE TABLE analysis(
 );
 CREATE INDEX analysis_file_hash ON analysis(file_hash);
 CREATE INDEX analysis_pixel_hash ON analysis(pixel_hash);
+-- The files to retry (`gallery import --retry`) and the failure count.
+CREATE INDEX analysis_failed ON analysis(file_id) WHERE error IS NOT NULL;
 -- Tier 1 candidates: PDQ distance <= pdq::MATCH_DISTANCE between reliable hashes, any of the 8 orientations.
 CREATE TABLE pdq_pairs(
     a        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,  -- a < b
@@ -142,17 +172,59 @@ CREATE TABLE session(
     value TEXT NOT NULL
 );
 -- About the catalog itself. `catalog_id` is made with it: a cache keyed by file ids (the thumbnails) checks it,
--- since a rebuilt catalog numbers its files anew.
+-- since a rebuilt catalog numbers its files anew. `import_version` is the IMPORT_VERSION `files.pending` was
+-- computed for (Catalog::open recomputes it when the build's differs). `seq` is the change sequence's last number.
 CREATE TABLE meta(
     key   TEXT PRIMARY KEY,
     value ANY NOT NULL
 );
-INSERT INTO meta(key, value) VALUES ('catalog_id', lower(hex(randomblob(16))));
+INSERT INTO meta(key, value) VALUES
+    ('catalog_id', lower(hex(randomblob(16)))), ('import_version', 0), ('seq', 0);
+
+-- files.pending and files.seq, kept in the statements that change what they depend on, whoever writes them. The
+-- WHEN clauses keep a rescan that changes nothing from writing anything.
+CREATE TRIGGER files_added AFTER INSERT ON files BEGIN
+    {NEXT_SEQ};
+    UPDATE files SET pending = {STALE}, seq = {SEQ} WHERE id = new.id;
+END;
+CREATE TRIGGER files_changed AFTER UPDATE OF size, mtime, rotation, kind ON files
+WHEN old.size IS NOT new.size OR old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation
+    OR old.kind IS NOT new.kind
+BEGIN
+    UPDATE files SET pending = {STALE} WHERE id = new.id;
+END;
+-- What a thumbnail is made from (thumbs::Source), and whether the file is there to show.
+CREATE TRIGGER files_source_changed AFTER UPDATE OF mtime, rotation, missing ON files
+WHEN old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation OR old.missing IS NOT new.missing
+BEGIN
+    {NEXT_SEQ};
+    UPDATE files SET seq = {SEQ} WHERE id = new.id;
+END;
+-- A REPLACE fires only this one (recursive triggers are off): its delete half fires no trigger.
+CREATE TRIGGER analysis_added AFTER INSERT ON analysis BEGIN
+    {NEXT_SEQ};
+    UPDATE files SET pending = {STALE}, seq = {SEQ} WHERE id = new.file_id;
+END;
+-- Besides what pending depends on: whether it decoded (a thumbnail needs that) and a video's poster frame.
+CREATE TRIGGER analysis_changed AFTER UPDATE OF version, size, mtime, rotation, kind, error, poster_ms ON analysis
+WHEN old.version IS NOT new.version OR old.size IS NOT new.size OR old.mtime IS NOT new.mtime
+    OR old.rotation IS NOT new.rotation OR old.kind IS NOT new.kind OR old.error IS NOT new.error
+    OR old.poster_ms IS NOT new.poster_ms
+BEGIN
+    {NEXT_SEQ};
+    UPDATE files SET pending = {STALE}, seq = {SEQ} WHERE id = new.file_id;
+END;
+CREATE TRIGGER analysis_removed AFTER DELETE ON analysis BEGIN
+    UPDATE files SET pending = 1 WHERE id = old.file_id;
+END;
 ";
 
-/// A catalog made before the current baseline (pre-release, the baseline is edited in place) lacks these.
+/// A catalog made before the current baseline (pre-release, the baseline is edited in place) lacks some of these
+/// `LAYOUT_PARTS`.
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
-     + (SELECT count(*) FROM pragma_table_info('files') WHERE name = 'order_key')";
+     + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
+     + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind'))";
+const LAYOUT_PARTS: i64 = 6;
 
 /// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
 const UNDER_ROOT: &str = "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')";
@@ -162,11 +234,6 @@ pub fn is_under(path: &str, root: &str) -> bool {
     let (p, r) = (path.to_lowercase(), root.to_lowercase());
     p == r || p.strip_prefix(&r).is_some_and(|rest| rest.starts_with('\\'))
 }
-
-/// Files whose analysis is absent or stale (?1 = IMPORT_VERSION, ?2 = also retry failed files).
-const PENDING: &str = "FROM files f LEFT JOIN analysis a ON a.file_id = f.id
-    WHERE f.missing = 0 AND (a.file_id IS NULL OR a.version < ?1 OR a.size != f.size OR a.mtime != f.mtime
-          OR (?2 AND a.error IS NOT NULL))";
 
 pub struct Catalog {
     pub conn: Connection,
@@ -196,6 +263,42 @@ fn migrate(conn: &Connection, baseline: &str, migrations: &[&str]) -> Result<()>
         step(sql, to).with_context(|| format!("migration to schema version {to}"))?;
     }
     Ok(())
+}
+
+/// Make `files.pending` mean this build's IMPORT_VERSION: when the catalog's `meta.import_version` is another
+/// (a new catalog, or a build that analyzes differently), every file's is computed again, and every file's `seq`
+/// moves on, so the thumbnail pass looks at all of them once. Checked and set in one write transaction, so two
+/// processes opening the catalog at once do it once.
+fn set_import_version(conn: &Connection) -> Result<()> {
+    let version = |c: &Connection| -> Result<i64> {
+        Ok(c.query_row("SELECT value FROM meta WHERE key = 'import_version'", [], |r| r.get(0))?)
+    };
+    if version(conn)? == IMPORT_VERSION {
+        return Ok(());
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    if version(&tx)? != IMPORT_VERSION {
+        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'import_version'", [IMPORT_VERSION])?;
+        tx.execute_batch(&format!("UPDATE files SET pending = {STALE}; {NEXT_SEQ}; UPDATE files SET seq = {SEQ};"))?;
+    }
+    Ok(tx.commit()?)
+}
+
+/// `Catalog::pending_import`'s query.
+fn pending_import_sql(retry_errors: bool) -> String {
+    const COLUMNS: &str = "f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size,
+        f.mtime, f.rotation, f.kind, f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record";
+    // `missing = 0 AND pending = 1` written out: the index's condition.
+    let pending = format!("SELECT {COLUMNS} FROM files f WHERE f.missing = 0 AND f.pending = 1");
+    if retry_errors {
+        // A UNION, as an OR would scan every file; the failures are read from their index first.
+        format!(
+            "{pending} UNION SELECT {COLUMNS} FROM analysis a CROSS JOIN files f
+             WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0 ORDER BY volume, record"
+        )
+    } else {
+        format!("{pending} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF")
+    }
 }
 
 /// A file as the scanner saw it.
@@ -253,14 +356,15 @@ impl Catalog {
             "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
              PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
         )?;
-        migrate(&conn, BASELINE, MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
-        if conn.query_row(LAYOUT_CHECK, [], |r| r.get::<_, i64>(0))? != 2 {
+        migrate(&conn, &baseline(), MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
+        if conn.query_row(LAYOUT_CHECK, [], |r| r.get::<_, i64>(0))? != LAYOUT_PARTS {
             bail!(
                 "catalog {}: made before the current layout (pre-release, the layout changes in place): delete \
                  the catalog and import again",
                 path.display()
             );
         }
+        set_import_version(&conn).with_context(|| format!("catalog {}", path.display()))?;
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
     }
@@ -302,6 +406,7 @@ impl Catalog {
 
     /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
     pub fn upsert_file(tx: &Transaction, scan: i64, folder: &Folder, f: &ScannedFile) -> Result<()> {
+        // `pending` and `seq` follow from the triggers.
         let order_key = [folder.key.as_slice(), &crate::browse::name_key(f.name)].concat();
         tx.prepare_cached(
             "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
@@ -370,15 +475,12 @@ impl Catalog {
         Ok(n)
     }
 
-    /// Files whose analysis is absent or stale, in on-disk order (volume, then MFT record number), which reads
-    /// ~3× faster than path order on an HDD (FINDINGS "I/O").
+    /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
+    /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD (FINDINGS
+    /// "I/O"). Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
     pub fn pending_import(&self, retry_errors: bool) -> Result<Vec<WorkItem>> {
-        let mut stmt = self.conn.prepare(&format!(
-            "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
-                    f.rotation, f.kind
-             {PENDING} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
-        ))?;
-        let rows = stmt.query_map(params![IMPORT_VERSION, retry_errors], |r| {
+        let mut stmt = self.conn.prepare(&pending_import_sql(retry_errors))?;
+        let rows = stmt.query_map([], |r| {
             Ok(WorkItem {
                 id: r.get(0)?,
                 path: r.get(1)?,
@@ -395,10 +497,9 @@ impl Catalog {
     pub fn pdq_hashes(&self) -> Result<Vec<(i64, pdq::Hash)>> {
         let mut stmt = self.conn.prepare(
             "SELECT a.file_id, a.pdq FROM analysis a JOIN files f ON f.id = a.file_id
-             WHERE f.missing = 0 AND a.version = ?1 AND a.size = f.size AND a.mtime = f.mtime
-               AND a.pdq IS NOT NULL AND a.pdq_quality >= ?2",
+             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq IS NOT NULL AND a.pdq_quality >= ?1",
         )?;
-        let rows = stmt.query_map(params![IMPORT_VERSION, pdq::MIN_QUALITY], |r| {
+        let rows = stmt.query_map([pdq::MIN_QUALITY], |r| {
             let bytes: Vec<u8> = r.get(1)?;
             Ok((r.get(0)?, pdq::Hash(bytes.try_into().unwrap_or([0; pdq::HASH_BYTES]))))
         })?;
@@ -409,10 +510,10 @@ impl Catalog {
         // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
         tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?.execute([item.id])?;
         tx.prepare_cached(
-            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, analyzed, error, file_hash, pixel_hash,
-                format, orientation, width, height, pdq, pdq_quality, thumbhash, frames, taken, duration_ms,
-                poster_ms)
-             VALUES (?1, ?2, ?3, ?4, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
+                file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
+                taken, duration_ms, poster_ms)
+             VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
                      CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18)",
         )?
         .execute(params![
@@ -434,6 +535,8 @@ impl Catalog {
             a.taken_utc,
             a.duration_ms,
             a.poster_ms,
+            item.rotation,
+            item.kind.key(),
         ])?;
         Self::sync_file_rating(tx, item.id, a.file_rating)
     }
@@ -504,23 +607,28 @@ impl Catalog {
         Ok(())
     }
 
-    /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the file's analysis is redone with it, and
-    /// its thumbnails no longer match (thumbs::Source).
+    /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the analysis, made without it, is stale
+    /// (`files.pending`), and the thumbnails no longer match (thumbs::Source).
     pub fn add_catalog_rotation(conn: &Connection, file_id: i64, turns: u8) -> Result<()> {
-        let tx = conn.unchecked_transaction()?;
-        tx.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id, turns])?;
-        tx.execute("UPDATE analysis SET version = 0 WHERE file_id = ?1", [file_id])?;
-        tx.commit()?;
+        conn.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id, turns])?;
         Ok(())
     }
 
     pub fn store_failure(tx: &Transaction, item: &WorkItem, error: &str) -> Result<()> {
         tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?.execute([item.id])?;
         tx.prepare_cached(
-            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, analyzed, error)
-             VALUES (?1, ?2, ?3, ?4, unixepoch(), ?5)",
+            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7)",
         )?
-        .execute(params![item.id, IMPORT_VERSION, item.size, item.mtime, error])?;
+        .execute(params![
+            item.id,
+            IMPORT_VERSION,
+            item.size,
+            item.mtime,
+            item.rotation,
+            item.kind.key(),
+            error
+        ])?;
         Ok(())
     }
 
@@ -535,21 +643,21 @@ impl Catalog {
         Ok(())
     }
 
+    /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
     pub fn status(&self) -> Result<Status> {
         let one = |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, [], |r| r.get(0))?) };
+        let files = one("SELECT count(*) FROM files WHERE missing = 0")?;
+        let failed = one("SELECT count(*) FROM analysis a CROSS JOIN files f
+             WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0")?;
         Ok(Status {
-            files: one("SELECT count(*) FROM files WHERE missing = 0")?,
-            missing: one("SELECT count(*) FROM files WHERE missing = 1")?,
+            files,
+            missing: one("SELECT count(*) FROM files")? - files,
+            // Present files with an analysis that isn't a failure, current or not: the one count that reads them all.
             analyzed: one(
                 "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.missing = 0 AND a.error IS NULL",
             )?,
-            failed: one("SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
-                 WHERE f.missing = 0 AND a.error IS NOT NULL")?,
-            pending: self.conn.query_row(
-                &format!("SELECT count(*) {PENDING}"),
-                params![IMPORT_VERSION, false],
-                |r| r.get(0),
-            )?,
+            failed,
+            pending: one("SELECT count(*) FROM files WHERE missing = 0 AND pending = 1")?,
             pdq_pairs: one("SELECT count(*) FROM present_pdq_pairs")?,
             queued_writes: one("SELECT count(*) FROM file_writes")?,
             failed_writes: one("SELECT count(*) FROM file_writes WHERE error IS NOT NULL")?,
@@ -672,19 +780,19 @@ mod tests {
     #[test]
     fn migrations_apply_once_in_order() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn, BASELINE, &[]).unwrap();
+        migrate(&conn, &baseline(), &[]).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION);
         // A later build adds two migrations: both run, in order, once.
         let later = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);"];
-        migrate(&conn, BASELINE, &later).unwrap();
-        migrate(&conn, BASELINE, &later).unwrap();
+        migrate(&conn, &baseline(), &later).unwrap();
+        migrate(&conn, &baseline(), &later).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
         assert_eq!(conn.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
         // An older build refuses the newer catalog.
-        assert!(migrate(&conn, BASELINE, &later[..1]).is_err());
+        assert!(migrate(&conn, &baseline(), &later[..1]).is_err());
         // A failed migration leaves the catalog at the last good version.
         let broken = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);", "NOT SQL"];
-        assert!(migrate(&conn, BASELINE, &broken).is_err());
+        assert!(migrate(&conn, &baseline(), &broken).is_err());
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
     }
 
@@ -699,6 +807,138 @@ mod tests {
             .unwrap();
         fixture::insert(&c.conn, &[fixture::File::new(1, 1, "a.jpg", 10, 100)]);
         (c, 1)
+    }
+
+    /// Whether the import would analyze file `id`, and its change number (`files.seq`).
+    fn state(c: &Catalog, id: i64) -> (bool, i64) {
+        c.conn.query_row("SELECT pending, seq FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    }
+
+    /// The scanner finding file 7 on volume 1 in D:\x like this.
+    fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) {
+        let tx = c.conn.transaction().unwrap();
+        let folder = Catalog::folder(&tx, r"D:\x").unwrap();
+        let kind = media::kind_of(name).unwrap();
+        Catalog::upsert_file(&tx, scan, &folder, &ScannedFile { volume: 1, file_ref: 7, name, kind, size, mtime })
+            .unwrap();
+        tx.commit().unwrap();
+    }
+
+    /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
+    fn analyzed(c: &mut Catalog, item: &WorkItem) {
+        let tx = c.conn.transaction().unwrap();
+        Catalog::store_failure(&tx, item, "a stand-in for an analysis").unwrap();
+        tx.commit().unwrap();
+    }
+
+    fn next_work(c: &Catalog) -> WorkItem {
+        let mut work = c.pending_import(false).unwrap();
+        assert_eq!(work.len(), 1);
+        work.remove(0)
+    }
+
+    #[test]
+    fn pending_follows_what_the_analysis_was_made_from() {
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let scan = c.begin_scan(r"D:\x").unwrap();
+        // New: pending.
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let first = next_work(&c);
+        let id = first.id;
+        assert!(state(&c, id).0);
+        // Analyzed as it is: done. A failure counts as done; only --retry redoes it.
+        analyzed(&mut c, &first);
+        assert!(!state(&c, id).0);
+        assert!(c.pending_import(false).unwrap().is_empty());
+        assert_eq!(c.pending_import(true).unwrap().len(), 1);
+        // A rescan that changes nothing changes nothing, for the import or the thumbnails.
+        let seq = state(&c, id).1;
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        assert_eq!(state(&c, id), (false, seq));
+        // Changed while it was being analyzed: what's stored is of the old file.
+        let old = c.pending_import(true).unwrap().remove(0);
+        scanned(&mut c, scan, "a.jpg", 11, 101);
+        analyzed(&mut c, &old);
+        assert!(state(&c, id).0);
+        let current = next_work(&c);
+        analyzed(&mut c, &current);
+        assert!(!state(&c, id).0);
+        // Turned in the catalog: analyzed again with the turn, and the thumbnails' source moved on.
+        Catalog::add_catalog_rotation(&c.conn, id, 1).unwrap();
+        let (pending, after) = state(&c, id);
+        assert!(pending && after > seq);
+        let turned = next_work(&c);
+        assert_eq!(turned.rotation, 1);
+        analyzed(&mut c, &turned);
+        // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
+        Catalog::file_rewritten(&c.conn, id, (11, 101), (12, 102), Some([0; 32])).unwrap();
+        assert!(!state(&c, id).0);
+        Catalog::file_rewritten(&c.conn, id, (12, 102), (13, 103), None).unwrap();
+        assert!(state(&c, id).0);
+        let rewritten = next_work(&c);
+        analyzed(&mut c, &rewritten);
+        // Renamed to another kind: analyzed again as that.
+        scanned(&mut c, scan, "a.mp4", 13, 103);
+        let renamed = next_work(&c);
+        assert_eq!(renamed.kind, Kind::Video);
+        analyzed(&mut c, &renamed);
+        assert!(!state(&c, id).0);
+        // Gone, then back: nothing to import, but the thumbnails look at it both times.
+        let seq = state(&c, id).1;
+        let next = c.begin_scan(r"D:\x").unwrap();
+        c.mark_missing(r"D:\x", next).unwrap();
+        let gone = state(&c, id).1;
+        scanned(&mut c, next, "a.mp4", 13, 103);
+        assert_eq!(c.pending_import(false).unwrap().len(), 0);
+        assert!(seq < gone && gone < state(&c, id).1);
+    }
+
+    #[test]
+    fn a_new_import_version_redoes_everything() {
+        let (mut c, _) = one_file();
+        let item = next_work(&c);
+        analyzed(&mut c, &item);
+        // As an older build left it: its import version, and analyses made by it.
+        c.conn
+            .execute_batch(&format!(
+                "UPDATE meta SET value = {0} WHERE key = 'import_version';
+                 UPDATE analysis SET version = {0};",
+                IMPORT_VERSION - 1
+            ))
+            .unwrap();
+        let (pending, seq) = state(&c, item.id);
+        assert!(!pending, "current for that build");
+        set_import_version(&c.conn).unwrap();
+        let (pending, after) = state(&c, item.id);
+        assert!(pending && after > seq);
+        // Done once.
+        set_import_version(&c.conn).unwrap();
+        assert_eq!(state(&c, item.id).1, after);
+    }
+
+    #[test]
+    fn a_round_with_nothing_to_import_reads_one_index() {
+        let (c, _) = one_file();
+        let plan: Vec<String> = c
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_import_sql(false)))
+            .unwrap()
+            .query_map([], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(plan.contains("USING INDEX files_to_import") && !plan.contains("TEMP B-TREE"), "{plan}");
+        let retry: Vec<String> = c
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_import_sql(true)))
+            .unwrap()
+            .query_map([], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let retry = retry.join("\n");
+        assert!(retry.contains("files_to_import") && retry.contains("analysis_failed"), "{retry}");
     }
 
     fn rating(c: &Catalog, id: i64) -> Option<u8> {

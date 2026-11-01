@@ -16,6 +16,12 @@
 //! Writes go through one writer thread per cache, in IMMEDIATE transactions: an on-demand thumbnail is handed to it
 //! and shown at once, whatever the write does. What fails there has no caller to return to: it goes to the
 //! cache's `Report`.
+//!
+//! The background task doesn't look at every file each round. The catalog numbers its changes (`files.seq`), and
+//! a pass that went through every file at a height stores how far it looked (`checked`): the next pass at that
+//! height reads only the files changed since. Evicting entries at a height forgets that, and so does a cache
+//! started over: the next pass looks at every file again. A cache belongs to one catalog (`meta.catalog_id`, the
+//! catalog's): opened for another one (rebuilt, so its file ids mean other files), it starts over.
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -91,6 +97,24 @@ pub struct ThumbWork {
     pub source: Source,
     /// For a video, the time of its poster frame (`video::poster_ms`).
     pub poster_ms: Option<i64>,
+    /// The catalog's change number for it (`files.seq`).
+    pub seq: i64,
+}
+
+/// The files a pass at `height` has to thumbnail, and what they were read against (`ThumbCache::checked`).
+pub struct Pending {
+    pub work: Vec<ThumbWork>,
+    pub snapshot: Snapshot,
+}
+
+/// Where a pass's work list was read: the catalog's change sequence and the height's evictions at that moment.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct Snapshot {
+    pub height: u32,
+    pub seq: i64,
+    pub evictions: i64,
+    /// Only the files changed since the last complete pass were read (`false`: every file).
+    pub since_checked: bool,
 }
 
 /// The cache's layout version (`PRAGMA user_version`). Before the first release, layout changes edit `SCHEMA` in
@@ -151,6 +175,16 @@ INSERT INTO totals VALUES (1, 0, 0);
 CREATE TABLE limits(
     one INTEGER PRIMARY KEY CHECK (one = 1),
     cap INTEGER NOT NULL);
+-- About the cache: `catalog_id`, the catalog's (its meta.catalog_id) whose file ids the entries use.
+CREATE TABLE meta(
+    key   TEXT PRIMARY KEY,
+    value ANY NOT NULL);
+-- Per height: the catalog's change number (files.seq) up to which every file was checked for a current entry
+-- (NULL: not known), and how many times entries of that height were evicted.
+CREATE TABLE checked(
+    height    INTEGER PRIMARY KEY,
+    seq       INTEGER,
+    evictions INTEGER NOT NULL);
 CREATE TRIGGER entries_added AFTER INSERT ON entries BEGIN
     UPDATE totals SET bytes = bytes + new.bytes, count = count + 1;
 END;
@@ -209,6 +243,12 @@ enum Op {
         new_mtime: i64,
         reply: Sender<Result<()>>,
     },
+    /// A pass read from `snapshot` went through all of its work: every file is checked up to `through`.
+    Checked {
+        snapshot: Snapshot,
+        through: i64,
+        reply: Sender<Result<()>>,
+    },
     /// Check the totals against the entries, and fix them.
     Heal(Sender<Result<Option<Drift>>>),
     Shrink(Sender<Result<()>>),
@@ -217,17 +257,22 @@ enum Op {
 }
 
 impl ThumbCache {
-    /// Open (or create) the cache in the catalog folder `dir` and start its writer. With `cap_bytes`, that is the
-    /// cache's cap from now on, for every process (one far over it comes down at the next write); without, the cap
-    /// stays as it is (`DEFAULT_CAP_BYTES` for a new cache).
-    pub fn open(dir: &Path, cap_bytes: Option<i64>, report: Report) -> Result<ThumbCache> {
+    /// Open (or create) the cache in the catalog folder `dir` for the catalog `catalog_id` (`Catalog::catalog_id`)
+    /// and start its writer. A cache of another catalog is deleted and made anew (its cap kept); one another process
+    /// has open can't be, and fails. With `cap_bytes`, that is the cache's cap from now on, for every process (one
+    /// far over it comes down at the next write); without, the cap stays as it is (`DEFAULT_CAP_BYTES` for a new
+    /// cache). The totals are checked against the entries once here (`heal`), a fix reported.
+    pub fn open(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>, report: Report) -> Result<ThumbCache> {
         if let Some(cap) = cap_bytes
             && cap < 0
         {
             bail!("a thumbnail cache cap of {cap} bytes");
         }
         let path = cache_path(dir);
-        let conn = open_writer(&path, cap_bytes)?;
+        let mut conn = open_writer(&path, catalog_id, cap_bytes)?;
+        if let Some((kept, actual)) = heal(&mut conn)? {
+            report(&anyhow!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed"));
+        }
         let (ops, inbox) = mpsc::channel();
         let writer = std::thread::Builder::new()
             .name("thumbnail cache".into())
@@ -333,15 +378,33 @@ impl ThumbCache {
         })
     }
 
-    /// Analyzed files without a current thumbnail at `height`, in on-disk order like the import. Reads on its own
-    /// connection, with the catalog (`catalog`) attached; it never waits for the writer, nor the writer for it.
-    pub fn pending(&self, catalog: &Path, height: u32) -> Result<Vec<ThumbWork>> {
-        let Some(store) = &self.store else { return Ok(Vec::new()) };
+    /// Analyzed files without a current thumbnail at `height`, in on-disk order like the import: those changed
+    /// since the last complete pass at that height, or every one (`pending_in`). Reads on its own connection, with
+    /// the catalog (`catalog`) attached; it never waits for the writer, nor the writer for it.
+    pub fn pending(&self, catalog: &Path, height: u32) -> Result<Pending> {
+        let Some(store) = &self.store else {
+            let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false };
+            return Ok(Pending { work: Vec::new(), snapshot });
+        };
         pending_in(&store.path, catalog, height)
     }
 
+    /// A pass went through all the work `pending` gave it: files changed after its snapshot are the next pass's
+    /// work. `first_failed`, the smallest `seq` among the files it couldn't thumbnail (a file changed or gone,
+    /// a drive offline), keeps those in it. Not stored if entries of that height were evicted meanwhile (they
+    /// may be among the files counted as done). Waits for it.
+    pub fn checked(&self, snapshot: &Snapshot, first_failed: Option<i64>) -> Result<()> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let through = first_failed.map_or(snapshot.seq, |seq| snapshot.seq.min(seq - 1));
+        let (reply, answer) = mpsc::channel();
+        self.send(Op::Checked { snapshot: *snapshot, through, reply })?;
+        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+    }
+
     /// Check the totals against the entries, and fix them if they differ (only a writer that bypassed the
-    /// triggers could cause that); returns what was fixed. Cheap: the entries are small.
+    /// triggers could cause that); returns what was fixed. Cheap: the entries are small. `open` does it.
     pub fn heal(&self) -> Result<Option<Drift>> {
         if self.store.is_none() {
             return Ok(None);
@@ -389,8 +452,34 @@ fn unix_now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
-/// The writer's connection, with the layout created in a new file, and the cap set if one is given.
-fn open_writer(path: &Path, cap_bytes: Option<i64>) -> Result<Connection> {
+/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given. A file of another
+/// catalog is deleted with its WAL and made anew, keeping its cap; nothing is deleted entry by entry.
+fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
+    let conn = open_file(path, catalog_id, cap_bytes)?;
+    let owner: String = conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0))?;
+    if owner == catalog_id {
+        return Ok(conn);
+    }
+    let cap: i64 = conn.query_row("SELECT cap FROM limits", [], |r| r.get(0))?;
+    // The last connection closing checkpoints and deletes the WAL; another process's would keep the files open.
+    drop(conn);
+    for suffix in ["", "-wal", "-shm"] {
+        let file = PathBuf::from(format!("{}{suffix}", path.display()));
+        match std::fs::remove_file(&file) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => bail!(
+                "{}: made for another catalog, and can't be started over while another program has it open: {e}",
+                file.display()
+            ),
+        }
+    }
+    open_file(path, catalog_id, Some(cap_bytes.unwrap_or(cap)))
+}
+
+/// A connection to the cache file, with the layout created in a new file (for catalog `catalog_id`), and the cap
+/// set if one is given.
+fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
     let mut conn = Connection::open(path)?;
     // auto_vacuum must be set before the first table exists.
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
@@ -402,6 +491,7 @@ fn open_writer(path: &Path, cap_bytes: Option<i64>) -> Result<Connection> {
         if version(&tx)? == 0 {
             tx.execute_batch(&format!("{SCHEMA} PRAGMA user_version = {CACHE_VERSION};"))?;
             tx.execute("INSERT INTO limits VALUES (1, ?1)", [cap_bytes.unwrap_or(DEFAULT_CAP_BYTES)])?;
+            tx.execute("INSERT INTO meta VALUES ('catalog_id', ?1)", [catalog_id])?;
         }
         tx.commit()?;
     }
@@ -416,29 +506,56 @@ fn open_writer(path: &Path, cap_bytes: Option<i64>) -> Result<Connection> {
 }
 
 /// `ThumbCache::pending` on the cache file `cache` (a free function: the bench calls it without a writer).
-pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Vec<ThumbWork>> {
+///
+/// One read transaction over both files: the catalog's change number, the height's `checked` row and the work
+/// list are one moment's. With a `checked` number no later than the catalog's (a catalog restored from a copy
+/// would be behind), only the files changed since are read, through `files_seq`; otherwise every file.
+pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> {
     let conn = Connection::open(cache)?;
     // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
     conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()])?;
-    let mut stmt = conn.prepare(
-        "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
-                f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END
+    let tx = conn.unchecked_transaction()?;
+    let seq: i64 = tx.query_row("SELECT value FROM cat.meta WHERE key = 'seq'", [], |r| r.get(0))?;
+    let (checked, evictions): (Option<i64>, i64) = tx
+        .query_row("SELECT seq, evictions FROM checked WHERE height = ?1", [height], |r| Ok((r.get(0)?, r.get(1)?)))
+        .optional()?
+        .unwrap_or((None, 0));
+    let since = checked.filter(|&c| c <= seq);
+    let values = match since {
+        Some(c) => vec![height as i64, c],
+        None => vec![height as i64],
+    };
+    let work = {
+        let mut stmt = tx.prepare(&pending_sql(since.is_some()))?;
+        let rows = stmt.query_map(rusqlite::params_from_iter(values), |r| {
+            Ok(ThumbWork {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
+                poster_ms: r.get(4)?,
+                seq: r.get(5)?,
+            })
+        })?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()?
+    };
+    tx.commit()?;
+    Ok(Pending { work, snapshot: Snapshot { height, seq, evictions, since_checked: since.is_some() } })
+}
+
+/// `pending_in`'s query, with the catalog attached as `cat`: ?1 the height, and with `since_checked` ?2 the
+/// change number checked up to.
+fn pending_sql(since_checked: bool) -> String {
+    let changed = if since_checked { "f.seq > ?2 AND" } else { "" };
+    format!(
+        "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime, f.rotation,
+                CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END, f.seq
          FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
          LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
-         WHERE f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
+         WHERE {changed} f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
            AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
-         ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
-    )?;
-    let rows = stmt.query_map([height], |r| {
-        Ok(ThumbWork {
-            id: r.get(0)?,
-            path: r.get(1)?,
-            source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
-            poster_ms: r.get(4)?,
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+         ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+    )
 }
 
 thread_local! {
@@ -558,6 +675,19 @@ fn write_loop(mut conn: Connection, inbox: Receiver<Op>, report: &Report) {
                     .map_err(anyhow::Error::from);
                 let _ = reply.send(done);
             }
+            Some(Op::Checked { snapshot, through, reply }) => {
+                // Evicted meanwhile (the counter moved on): not stored.
+                let done = conn
+                    .execute(
+                        "INSERT INTO checked(height, seq, evictions) VALUES (?1, ?2, ?3)
+                         ON CONFLICT(height) DO UPDATE SET seq = excluded.seq
+                         WHERE checked.evictions = excluded.evictions",
+                        params![snapshot.height, through, snapshot.evictions],
+                    )
+                    .map(drop)
+                    .map_err(anyhow::Error::from);
+                let _ = reply.send(done);
+            }
             Some(Op::Heal(reply)) => {
                 let _ = reply.send(heal(&mut conn));
             }
@@ -649,22 +779,33 @@ fn total_and_cap(conn: &Connection) -> Result<(i64, i64)> {
 }
 
 /// Delete the least recently used entries, sparing `keep_height`, until `target` bytes are freed or none is left;
-/// returns the bytes freed.
+/// returns the bytes freed. The heights evicted from forget how far they were checked (`checked`), and count the
+/// eviction, so a pass that read its work before it doesn't store its watermark.
 fn evict(tx: &Transaction, target: i64, keep_height: Option<u32>) -> Result<i64> {
     let mut victims = Vec::new();
+    let mut heights = BTreeSet::new();
     let mut freed = 0;
     {
-        let mut lru = tx.prepare_cached("SELECT id, bytes FROM entries WHERE height != ?1 ORDER BY last_used")?;
+        let mut lru =
+            tx.prepare_cached("SELECT id, bytes, height FROM entries WHERE height != ?1 ORDER BY last_used")?;
         let mut rows = lru.query([keep_height.map_or(-1, i64::from)])?;
         while freed < target {
             let Some(r) = rows.next()? else { break };
             victims.push(r.get::<_, i64>(0)?);
             freed += r.get::<_, i64>(1)?;
+            heights.insert(r.get::<_, i64>(2)?);
         }
     }
     let mut delete = tx.prepare_cached("DELETE FROM entries WHERE id = ?1")?;
     for id in victims {
         delete.execute([id])?;
+    }
+    let mut forget = tx.prepare_cached(
+        "INSERT INTO checked(height, seq, evictions) VALUES (?1, NULL, 1)
+         ON CONFLICT(height) DO UPDATE SET seq = NULL, evictions = evictions + 1",
+    )?;
+    for height in heights {
+        forget.execute([height])?;
     }
     Ok(freed)
 }
@@ -714,9 +855,12 @@ mod tests {
         Thumb { file_id, height, source: Source { mtime, rotation: 0 }, data: vec![file_id as u8; bytes] }
     }
 
+    /// The catalog the test caches belong to.
+    const CATALOG_ID: &str = "test-catalog";
+
     /// A cache whose writer fails the test on any error it can't return.
     fn open(dir: &Path, cap_bytes: i64) -> ThumbCache {
-        ThumbCache::open(dir, Some(cap_bytes), Box::new(|e| panic!("{e:#}"))).unwrap()
+        ThumbCache::open(dir, CATALOG_ID, Some(cap_bytes), Box::new(|e| panic!("{e:#}"))).unwrap()
     }
 
     fn src(mtime: i64) -> Source {
@@ -822,7 +966,7 @@ mod tests {
     fn one_cap_for_every_writer() {
         let dir = scratch("cap");
         assert_eq!(ThumbCache::read_usage(&dir).unwrap(), None);
-        let first = ThumbCache::open(&dir, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        let first = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert_eq!(first.cap().unwrap(), DEFAULT_CAP_BYTES, "a new cache");
         assert!(first.put_batch((0..10).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
         // Another process sets a lower cap: the first one keeps to it at its next write.
@@ -832,10 +976,10 @@ mod tests {
         assert!(first.totals().unwrap().0 <= 500);
         // Opened without one, the cap stays.
         drop(second);
-        drop(ThumbCache::open(&dir, None, Box::new(|e| panic!("{e:#}"))).unwrap());
+        drop(ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap());
         let usage = ThumbCache::read_usage(&dir).unwrap().unwrap();
         assert_eq!((usage.cap, usage.bytes, usage.count), (500, first.totals().unwrap().0, first.totals().unwrap().1));
-        assert!(ThumbCache::open(&dir, Some(-1), Box::new(|_| {})).is_err());
+        assert!(ThumbCache::open(&dir, CATALOG_ID, Some(-1), Box::new(|_| {})).is_err());
     }
 
     #[test]
@@ -906,7 +1050,7 @@ mod tests {
     fn another_layout_is_refused() {
         let dir = scratch("layout");
         Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
-        let e = ThumbCache::open(&dir, None, Box::new(|_| {})).err().expect("refused");
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|_| {})).err().expect("refused");
         assert!(format!("{e:#}").contains("layout version 7"), "{e:#}");
     }
 
@@ -973,9 +1117,8 @@ mod tests {
         assert_eq!(cache.heal().unwrap(), None);
     }
 
-    #[test]
-    fn pending_against_a_catalog() {
-        let dir = scratch("pending");
+    /// A catalog in `dir` with four analyzed files: 1–3 present (3 turned once in the catalog), 4 missing.
+    fn catalog_of_four(dir: &Path) -> (PathBuf, crate::catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
         let c = crate::catalog::Catalog::open(&catalog).unwrap();
         c.conn
@@ -996,16 +1139,123 @@ mod tests {
         );
         c.conn
             .execute_batch(
-                "INSERT INTO analysis(file_id, version, size, mtime, analyzed) SELECT id, 1, 1, 5, 0 FROM files;",
+                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed)
+                 SELECT id, 1, size, mtime, rotation, kind, 0 FROM files;",
             )
             .unwrap();
+        (catalog, c)
+    }
+
+    fn ids(p: &Pending) -> Vec<i64> {
+        p.work.iter().map(|w| w.id).collect()
+    }
+
+    /// Thumbnails of `bytes` bytes for the work `which` picks, as a pass makes them.
+    fn made(p: &Pending, which: impl Fn(&ThumbWork) -> bool, bytes: usize) -> Vec<Thumb> {
+        let height = p.snapshot.height;
+        p.work
+            .iter()
+            .filter(|w| which(w))
+            .map(|w| Thumb { file_id: w.id, height, source: w.source, data: vec![0; bytes] })
+            .collect()
+    }
+
+    #[test]
+    fn pending_against_a_catalog() {
+        let dir = scratch("pending");
+        let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         // File 1 is current at 100 px; file 3 was turned since its thumbnail; file 4 is missing.
         cache.put_batch(vec![thumb(1, 100, 5, 10), thumb(3, 100, 5, 10)], None).unwrap();
-        let ids: Vec<i64> = cache.pending(&catalog, 100).unwrap().iter().map(|w| w.id).collect();
+        let p = cache.pending(&catalog, 100).unwrap();
         // In on-disk order (file_ref).
-        assert_eq!(ids, vec![2, 3]);
-        assert_eq!(cache.pending(&catalog, 200).unwrap().len(), 3);
+        assert_eq!(ids(&p), vec![2, 3]);
+        assert!(!p.snapshot.since_checked);
+        assert_eq!(cache.pending(&catalog, 200).unwrap().work.len(), 3);
+    }
+
+    #[test]
+    fn a_complete_pass_is_where_the_next_one_starts() {
+        let dir = scratch("watermark");
+        let (catalog, c) = catalog_of_four(&dir);
+        let cache = open(&dir, 1 << 30);
+        let first = cache.pending(&catalog, 100).unwrap();
+        assert_eq!(ids(&first), vec![2, 3, 1]);
+        // Done, but file 2 couldn't be made: it stays in the work.
+        assert!(cache.put_batch(made(&first, |w| w.id != 2, 10), Some(100)).unwrap());
+        let failed = first.work.iter().find(|w| w.id == 2).unwrap().seq;
+        cache.checked(&first.snapshot, Some(failed)).unwrap();
+        let second = cache.pending(&catalog, 100).unwrap();
+        assert!(second.snapshot.since_checked);
+        assert_eq!(ids(&second), vec![2]);
+        cache.checked(&second.snapshot, None).unwrap();
+        let third = cache.pending(&catalog, 100).unwrap();
+        assert!(third.snapshot.since_checked && third.work.is_empty(), "{:?}", ids(&third));
+        // A change in the catalog after it: only that file. (The analysis follows, as a metadata write's does.)
+        c.conn
+            .execute_batch("UPDATE files SET mtime = 6 WHERE id = 1; UPDATE analysis SET mtime = 6 WHERE file_id = 1;")
+            .unwrap();
+        assert_eq!(ids(&cache.pending(&catalog, 100).unwrap()), vec![1]);
+        // A catalog behind the cache (restored from a copy): every file again.
+        c.conn.execute("UPDATE meta SET value = 1 WHERE key = 'seq'", []).unwrap();
+        let behind = cache.pending(&catalog, 100).unwrap();
+        assert!(!behind.snapshot.since_checked);
+        assert_eq!(ids(&behind), vec![2, 1]);
+    }
+
+    #[test]
+    fn a_pass_after_a_complete_one_reads_the_changed_files() {
+        let dir = scratch("seq-plan");
+        let (catalog, _c) = catalog_of_four(&dir);
+        drop(open(&dir, 1 << 30));
+        let conn = Connection::open(cache_path(&dir)).unwrap();
+        conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()]).unwrap();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true)))
+            .unwrap()
+            .query_map(params![100, 0], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        let plan = plan.join("\n");
+        assert!(plan.contains("USING INDEX files_seq"), "{plan}");
+    }
+
+    #[test]
+    fn eviction_forgets_how_far_a_height_was_checked() {
+        let dir = scratch("forget");
+        let (catalog, _c) = catalog_of_four(&dir);
+        // Room for three of these.
+        let cache = open(&dir, 300);
+        let pass = cache.pending(&catalog, 100).unwrap();
+        assert!(cache.put_batch(made(&pass, |_| true, 95), Some(100)).unwrap());
+        cache.checked(&pass.snapshot, None).unwrap();
+        assert!(cache.pending(&catalog, 100).unwrap().snapshot.since_checked);
+        // Another height's pass evicts from this one: it is looked at whole again.
+        assert!(cache.put_batch(vec![thumb(1, 200, 5, 95)], Some(200)).unwrap());
+        let after = cache.pending(&catalog, 100).unwrap();
+        assert!(!after.snapshot.since_checked);
+        assert_eq!(after.work.len(), 1, "the evicted file");
+        // Evicted while a pass ran: that pass's watermark isn't stored.
+        let during = cache.pending(&catalog, 100).unwrap();
+        cache.put(thumb(9, 300, 5, 290));
+        cache.flush();
+        cache.checked(&during.snapshot, None).unwrap();
+        assert!(!cache.pending(&catalog, 100).unwrap().snapshot.since_checked);
+    }
+
+    #[test]
+    fn a_cache_of_another_catalog_starts_over() {
+        let dir = scratch("other-catalog");
+        let cache = open(&dir, 12345);
+        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
+        drop(cache);
+        let reopened = ThumbCache::open(&dir, "rebuilt", None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        assert!(reopened.get_nearest(1, 100, src(5)).unwrap().is_none(), "file 1 is another file now");
+        assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
+        // Open elsewhere: it can't be deleted, so it isn't used.
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|_| {})).err().expect("refused");
+        assert!(format!("{e:#}").contains("another catalog"), "{e:#}");
     }
 
     #[test]
@@ -1015,7 +1265,7 @@ mod tests {
         assert!(!cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap());
         assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_none());
         assert_eq!(cache.totals().unwrap(), (0, 0));
-        assert!(cache.pending(Path::new("nowhere"), 100).unwrap().is_empty());
+        assert!(cache.pending(Path::new("nowhere"), 100).unwrap().work.is_empty());
         cache.flush();
         cache.close();
     }

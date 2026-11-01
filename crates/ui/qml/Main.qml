@@ -945,6 +945,7 @@ ApplicationWindow {
     //   --library=1  open the library folders   --save-view=1  open the save-view dialog
     //   --find-similar=<path>  search Yandex for the file (it is uploaded: a path that isn't a still image only shows
     //                          the panel with its error)
+    //   --yandex-preview=<n>  with --find-similar: show result n at full size once the results are in
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
     //   --screenshot=<png>  save the window 4 s (or --wait=<s>) after it is ready, and quit (src/screenshot.rs)
     // --query, --sort and --apply-view shape the first list; the others act on it (started()).
@@ -1009,7 +1010,11 @@ ApplicationWindow {
         if (commandLine.text("menu") === "views") menuTimer.start()
         if (commandLine.has("library")) libraryOpen = true
         if (commandLine.has("save-view")) askSaveView()
-        if (commandLine.has("find-similar")) findSimilar(commandLine.text("find-similar"))
+        if (commandLine.has("find-similar")) {
+            findSimilar(commandLine.text("find-similar"))
+            if (commandLine.has("yandex-preview"))
+                yandexLoader.item.previewWhenFound = commandLine.number("yandex-preview", 0)
+        }
         library.start(thumbHeight)
         if (commandLine.has("add-folder")) library.addFolder(commandLine.url("add-folder"))
         if (commandLine.has("save-crops")) galleryModel.saveCroppedCopies(commandLine.url("save-crops"))

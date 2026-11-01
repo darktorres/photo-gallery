@@ -309,13 +309,13 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
   groups in a panel: the photo's other sizes (to find a better copy) and similar images (to find more), all of
   them, not just the first page (`pg_core::yandex`, ported from the crawlers repo's `search.py`; why the browser
-  sees more is in `docs/FINDINGS.md`). A click picks a result; **Save N images…** downloads the picks into a
-  folder chosen in a dialog, as `size WxH.ext` and `similar N.ext`, with "(2)", "(3)"… added on a clash. Open, for
-  picking and saving:
-  - **Select all** for each group, and **Shift-click** to pick a range.
-  - **Double-click** a result to see it at full size before saving.
-  - The folder dialog opens at the photo's folder, or the last folder saved to.
-  - Saved files are named after the photo (`IMG_1234 (yandex 1920x1080).jpg`), so they sort next to it.
+  sees more is in `docs/FINDINGS.md`). Picking and saving (done 2026-11-01):
+  - A click picks a result, **Shift-click** a range (to the anchor's state), and each group has **Select all**.
+  - **Double-click** shows a result at full size, fitted or 1:1 (←/→ step, Space picks, Escape goes back).
+  - **Save N images…** opens its folder dialog at the folder saved into last (kept in `gallery.json`), or else
+    the photo's folder.
+  - Saved files are named after the photo (`IMG_1234 (yandex 1920x1080).jpg`, `IMG_1234 (yandex similar 3).jpg`),
+    so they sort next to it; "(2)", "(3)"… are added on a clash.
 - **Borders (user request, 2026-11-01):** the border detector and its review moved from the eval tools into
   the gallery (`pg_core::borders`, a port of `tools/borders.py` that matches it on all 187,806 Pinterest images;
   the script and the eval viewer's Borders page are gone, and the eval's `--trim` uses the gallery's detector).

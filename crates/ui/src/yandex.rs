@@ -2,7 +2,8 @@
 //! (`pg_core::yandex`). The search and the downloads run on background threads; QML calls `poll()` while `busy`.
 //! The results are items by index, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
 //! then the similar images (`similarCount`). The picks to save are kept here too. Nothing here touches the catalog:
-//! the files go into the folder the user picks.
+//! the files go into the folder the user picks, named after the photo (`IMG_1234 (yandex 1920x1080).jpg`), and that
+//! folder is remembered (`Prefs::yandex_folder`) for the next save.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -56,10 +57,31 @@ pub mod qobject {
         #[cxx_name = "isPicked"]
         fn is_picked(self: &YandexSearch, item: i32) -> bool;
 
-        /// Pick a result to be saved, or unpick it.
+        /// Pick a result to be saved, or unpick it. It becomes the anchor of the next `pickTo`.
         #[qinvokable]
         #[cxx_name = "togglePick"]
         fn toggle_pick(self: Pin<&mut YandexSearch>, item: i32);
+
+        /// Shift-click: every result from the anchor (the last one toggled) to `item` takes the anchor's state, picked
+        /// or not. Without an anchor, toggles `item`.
+        #[qinvokable]
+        #[cxx_name = "pickTo"]
+        fn pick_to(self: Pin<&mut YandexSearch>, item: i32);
+
+        /// Pick (or unpick) the `count` results from `first`: a group's Select all and Select none.
+        #[qinvokable]
+        #[cxx_name = "setPicked"]
+        fn set_picked(self: Pin<&mut YandexSearch>, first: i32, count: i32, picked: bool);
+
+        /// How many of the `count` results from `first` are picked.
+        #[qinvokable]
+        #[cxx_name = "pickedIn"]
+        fn picked_in(self: &YandexSearch, first: i32, count: i32) -> i32;
+
+        /// Where the save dialog opens: the folder saved into last, while it exists, or else the photo's folder.
+        #[qinvokable]
+        #[cxx_name = "startFolder"]
+        fn start_folder(self: &YandexSearch) -> QUrl;
 
         /// Save the picked results into `folder`, a file URL.
         #[qinvokable]
@@ -76,6 +98,8 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
 use pg_core::yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
 
+use crate::settings;
+
 /// One result as the panel shows and saves it.
 #[derive(Clone)]
 struct Hit {
@@ -83,8 +107,8 @@ struct Hit {
     thumb: String,
     width: i32,
     height: i32,
-    /// The file name it is saved under, before the extension.
-    name: String,
+    /// What follows the photo's name in the saved file's name, inside the brackets: `yandex 1920x1080`.
+    suffix: String,
 }
 
 /// What a finished search found.
@@ -110,14 +134,25 @@ pub struct YandexSearchRust {
     picked_count: i32,
     revision: i32,
     shared: Arc<Mutex<Shared>>,
+    /// The photo searched for, a local path: the saved files are named after it.
+    photo: String,
     /// The other sizes, then the similar images.
     hits: Vec<Hit>,
     picked: Vec<bool>,
+    /// The result toggled last, where a Shift-click range starts.
+    anchor: Option<usize>,
 }
 
 impl YandexSearchRust {
     fn hit(&self, item: i32) -> Option<&Hit> {
         usize::try_from(item).ok().and_then(|i| self.hits.get(i))
+    }
+
+    /// The results `first..first + count` that exist.
+    fn range(&self, first: i32, count: i32) -> std::ops::Range<usize> {
+        let len = self.picked.len();
+        let start = usize::try_from(first).unwrap_or(0).min(len);
+        start..start.saturating_add(usize::try_from(count).unwrap_or(0)).min(len)
     }
 }
 
@@ -174,7 +209,7 @@ fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<(Found, Option<Str
                 url: s.url,
                 width: dimension(s.width),
                 height: dimension(s.height),
-                name: format!("size {}x{}", s.width, s.height),
+                suffix: format!("yandex {}x{}", s.width, s.height),
             })
             .collect(),
         similar: similar
@@ -184,7 +219,7 @@ fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<(Found, Option<Str
                 url: s.image_url,
                 width: dimension(s.width),
                 height: dimension(s.height),
-                name: format!("similar {}", s.pos + 1),
+                suffix: format!("yandex similar {}", s.pos + 1),
             })
             .collect(),
     };
@@ -196,6 +231,22 @@ fn sanitize(name: &str) -> String {
     let clean: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
     let clean = clean.trim();
     if clean.is_empty() { "image".to_string() } else { clean.to_string() }
+}
+
+/// `file:///C:/a/b`: a local path as a URL, for the folder dialog. `%`, `#` and `?` are escaped, or the URL would read
+/// them as an escape, a fragment and a query.
+fn file_url(path: &Path) -> String {
+    let mut url = "file:///".to_string();
+    for c in path.to_string_lossy().chars() {
+        match c {
+            '\\' => url.push('/'),
+            '%' => url.push_str("%25"),
+            '#' => url.push_str("%23"),
+            '?' => url.push_str("%3F"),
+            c => url.push(c),
+        }
+    }
+    url
 }
 
 /// `folder/stem.ext`, or with ` (2)`, ` (3)`… before the extension when that name is taken.
@@ -216,8 +267,9 @@ struct Saved {
     first_error: Option<String>,
 }
 
-/// Downloads every hit into `folder`, one at a time (the client paces nothing here; these are CDN files).
-fn save_all(hits: &[Hit], folder: &Path, shared: &Mutex<Shared>) -> Saved {
+/// Downloads every hit into `folder`, one at a time (the client paces nothing here; these are CDN files), each named
+/// `<stem> (<suffix>)` so they sort next to the photo.
+fn save_all(hits: &[Hit], stem: &str, folder: &Path, shared: &Mutex<Shared>) -> Saved {
     let client = match Client::new() {
         Ok(client) => client,
         Err(e) => return Saved { written: 0, failed: hits.len(), first_error: Some(explain(e)) },
@@ -226,7 +278,7 @@ fn save_all(hits: &[Hit], folder: &Path, shared: &Mutex<Shared>) -> Saved {
     for (i, hit) in hits.iter().enumerate() {
         set_status(shared, format!("Saving {} of {}…", i + 1, hits.len()));
         let result = client.download(&hit.url).map_err(|e| e.to_string()).and_then(|file| {
-            let path = unique_path(folder, &sanitize(&hit.name), file.extension);
+            let path = unique_path(folder, &sanitize(&format!("{stem} ({})", hit.suffix)), file.extension);
             std::fs::write(&path, &file.bytes).map_err(|e| format!("{}: {e}", path.display()))
         });
         match result {
@@ -255,6 +307,7 @@ impl qobject::YandexSearch {
         // QML runs its poll timer while the `busy` property is set, and only poll() sets it: set it here too.
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from("Starting…"));
+        self.as_mut().rust_mut().photo = path.clone();
         self.as_mut().show(Vec::new(), Vec::new());
         thread::spawn(move || {
             let outcome = find_similar(&path, &shared);
@@ -278,10 +331,17 @@ impl qobject::YandexSearch {
             let mut this = self.as_mut().rust_mut();
             this.hits = other.into_iter().chain(similar).collect();
             this.picked = vec![false; this.hits.len()];
+            this.anchor = None;
         }
         self.as_mut().set_other_count(other_count);
         self.as_mut().set_similar_count(similar_count);
-        self.as_mut().set_picked_count(0);
+        self.picks_changed();
+    }
+
+    /// After the picks change: their count, and a new revision for the bindings.
+    fn picks_changed(mut self: Pin<&mut Self>) {
+        let picked_count = self.picked.iter().filter(|&&p| p).count() as i32;
+        self.as_mut().set_picked_count(picked_count);
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
@@ -291,13 +351,14 @@ impl qobject::YandexSearch {
             let mut s = lock(&self.shared);
             (s.busy, s.status.clone(), s.found.take())
         };
-        self.as_mut().set_busy(busy);
+        // The results first: whatever watches `busy` going off finds them in place.
+        if let Some(found) = found {
+            self.as_mut().show(found.other, found.similar);
+        }
         if self.status.to_string() != status {
             self.as_mut().set_status(QString::from(&status));
         }
-        if let Some(found) = found {
-            self.show(found.other, found.similar);
-        }
+        self.set_busy(busy);
     }
 
     fn url(&self, item: i32) -> QString {
@@ -322,14 +383,43 @@ impl qobject::YandexSearch {
 
     fn toggle_pick(mut self: Pin<&mut Self>, item: i32) {
         let Some(i) = usize::try_from(item).ok().filter(|&i| i < self.picked.len()) else { return };
-        let picked_count = {
+        {
             let mut this = self.as_mut().rust_mut();
             this.picked[i] = !this.picked[i];
-            this.picked.iter().filter(|&&p| p).count() as i32
+            this.anchor = Some(i);
+        }
+        self.picks_changed();
+    }
+
+    fn pick_to(mut self: Pin<&mut Self>, item: i32) {
+        let Some(i) = usize::try_from(item).ok().filter(|&i| i < self.picked.len()) else { return };
+        let Some(anchor) = self.anchor.filter(|&a| a < self.picked.len()) else { return self.toggle_pick(item) };
+        {
+            let mut this = self.as_mut().rust_mut();
+            let value = this.picked[anchor];
+            this.picked[anchor.min(i)..=anchor.max(i)].fill(value);
+        }
+        self.picks_changed();
+    }
+
+    fn set_picked(mut self: Pin<&mut Self>, first: i32, count: i32, picked: bool) {
+        let range = self.range(first, count);
+        self.as_mut().rust_mut().picked[range].fill(picked);
+        self.picks_changed();
+    }
+
+    fn picked_in(&self, first: i32, count: i32) -> i32 {
+        self.picked[self.range(first, count)].iter().filter(|&&p| p).count() as i32
+    }
+
+    fn start_folder(&self) -> QUrl {
+        let last = PathBuf::from(settings::prefs().yandex_folder);
+        let folder = if !last.as_os_str().is_empty() && last.is_dir() {
+            Some(last)
+        } else {
+            Path::new(&self.photo).parent().map(Path::to_path_buf)
         };
-        self.as_mut().set_picked_count(picked_count);
-        let revision = self.revision + 1;
-        self.set_revision(revision);
+        folder.map_or_else(QUrl::default, |f| QUrl::from(&file_url(&f)))
     }
 
     fn download(mut self: Pin<&mut Self>, folder: &QUrl) {
@@ -339,6 +429,8 @@ impl qobject::YandexSearch {
         if hits.is_empty() {
             return;
         }
+        let stem =
+            Path::new(&self.photo).file_stem().map_or_else(|| "image".into(), |s| s.to_string_lossy().into_owned());
         let shared = self.shared.clone();
         let starting = format!("Saving {} files…", hits.len());
         {
@@ -351,8 +443,11 @@ impl qobject::YandexSearch {
         }
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from(&starting));
+        // Remembered once chosen: the user went there, whether or not every download works.
+        let chosen = folder.clone();
+        settings::update(|p| p.yandex_folder = chosen);
         thread::spawn(move || {
-            let saved = save_all(&hits, Path::new(&folder), &shared);
+            let saved = save_all(&hits, &stem, Path::new(&folder), &shared);
             let mut s = lock(&shared);
             s.status = match saved.first_error {
                 None => {
@@ -362,5 +457,23 @@ impl qobject::YandexSearch {
             };
             s.busy = false;
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_url_escapes_what_a_url_would_misread() {
+        assert_eq!(file_url(Path::new(r"C:\a b\c")), "file:///C:/a b/c");
+        assert_eq!(file_url(Path::new(r"D:\100% #1?\x")), "file:///D:/100%25 %231%3F/x");
+    }
+
+    #[test]
+    fn saved_names_follow_the_photo() {
+        let folder = std::env::temp_dir();
+        let name = sanitize(&format!("{} ({})", "IMG_1234", "yandex 1920x1080"));
+        assert_eq!(unique_path(&folder, &name, "jpg"), folder.join("IMG_1234 (yandex 1920x1080).jpg"));
     }
 }

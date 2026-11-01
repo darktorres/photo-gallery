@@ -197,6 +197,13 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   - **Animated** GIF, APNG and WebP play the same way: our FFmpeg decodes all three. Qt's `AnimatedImage` has no
     APNG, and has WebP only with Qt's Image Formats add-on. They loop silently, without the transport bar; **K**
     pauses.
+  - **≈** (the rating bar) finds similar images on Yandex (`yandex.rs`, `YandexPanel.qml`): the photo is uploaded,
+    and a panel shows its other sizes and the similar images. A click picks a result, Shift-click picks or unpicks
+    a range (to the state of the result clicked last), and each group has Select all. A double-click shows a
+    result at full size, fitted or 1:1 (a click or the button); ←/→ step through the results, Space picks,
+    Escape goes back. **Save N images…** saves the picks into a folder; the dialog opens at the folder saved into
+    last (in `gallery.json`), or else the photo's. Files are named after the photo, `IMG_1234 (yandex
+    1920x1080).jpg` and `IMG_1234 (yandex similar 3).jpg`, with " (2)" on a clash.
 - **Ratings**: the catalog (`ratings` table) is the source of truth for every format. With "Write ratings and
   turns into the files too" (Library…, on by default) they also go into the file as `XMP:Rating` wherever the
   format holds XMP (JPEG, PNG, WebP, TIFF, GIF), by a background writer (ExifTool), 2 s after the last change so
@@ -222,10 +229,10 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   larger), TIFF re-encoded with its metadata copied by ExifTool.
 - Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
   --viewer-keys=LBNHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
-  --borders=1 --library=1 --save-view=1 --find-similar=<path> --add-folder=<path> --save-crops=<folder>
+  --borders=1 --library=1 --save-view=1 --find-similar=<path> --yandex-preview=<n> --add-folder=<path> --save-crops=<folder>
   --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the first list; the others act on it
   once it is shown, and `--wait` (4 s by default) counts from then. `--borders` shows the borders (B) for the run. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
-  opens the panel on its error without sending anything. With
+  opens the panel on its error without sending anything; `--yandex-preview` then shows result n at full size. With
   `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`)
   and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages.
   Offscreen draws with Qt's software renderer, which shows no video frames: check playback through the player's

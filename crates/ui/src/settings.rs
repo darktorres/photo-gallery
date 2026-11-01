@@ -1,6 +1,6 @@
-//! What the app remembers. Preferences (write-back, Real Size, borders shown, row height) are the user's, not the catalog's: they
-//! go in `gallery.json` beside the catalog folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` overrides), so they
-//! outlive a catalog rebuild. Saved views and where the user was refer to the catalog's folders and files, so they
+//! What the app remembers. Preferences (write-back, Real Size, borders shown, row height, the folder Yandex results
+//! were last saved into) are the user's, not the catalog's: they go in `gallery.json` beside the catalog folder
+//! (`D:\PhotoGallery\gallery.json`; `PG_PREFS` overrides), so they outlive a catalog rebuild. Saved views and where the user was refer to the catalog's folders and files, so they
 //! live in it (`views`, `session`): the views and the session's folder, query and sort are `view::View`'s, the
 //! selected file is here. Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
 
@@ -49,11 +49,19 @@ pub struct Prefs {
     pub real_size: bool,
     pub show_borders: bool,
     pub row_height: f64,
+    /// The folder Yandex results were last saved into, empty before the first save.
+    pub yandex_folder: String,
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { write_back: true, real_size: false, show_borders: false, row_height: 220.0 }
+        Prefs {
+            write_back: true,
+            real_size: false,
+            show_borders: false,
+            row_height: 220.0,
+            yandex_folder: String::new(),
+        }
     }
 }
 
@@ -86,7 +94,7 @@ pub fn prefs() -> Prefs {
 }
 
 /// Change the preferences and save them. Written to a temp file and renamed, so a crash never leaves half a file.
-fn update(change: impl FnOnce(&mut Prefs)) {
+pub fn update(change: impl FnOnce(&mut Prefs)) {
     let mut p = prefs();
     change(&mut p);
     let path = prefs_path();

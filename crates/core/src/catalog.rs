@@ -21,6 +21,7 @@ use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
 use crate::media::{self, Kind};
 use crate::pdq;
+use crate::pdq_index::PdqIndex;
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`baseline`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -717,17 +718,22 @@ impl Catalog {
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     }
 
-    /// Reliable PDQ hashes of current analyses, to rebuild the tier-1 index at startup (PLAN §6).
-    pub fn pdq_hashes(&self) -> Result<Vec<(i64, pdq::Hash)>> {
+    /// The tier-1 index of the reliable PDQ hashes of current analyses (PLAN §6), rebuilt for each import.
+    pub fn pdq_index(&self) -> Result<PdqIndex> {
+        // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the
+        // join below costs a quarter of reading it.
+        let present: usize = self.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0))?;
+        let (mut ids, mut hashes) = (Vec::with_capacity(present), Vec::with_capacity(present));
         let mut stmt = self.conn.prepare(
             "SELECT a.file_id, a.pdq FROM analysis a JOIN files f ON f.id = a.file_id
              WHERE f.missing = 0 AND f.pending = 0 AND a.pdq IS NOT NULL AND a.pdq_quality >= ?1",
         )?;
-        let rows = stmt.query_map([pdq::MIN_QUALITY], |r| {
-            let bytes: Vec<u8> = r.get(1)?;
-            Ok((r.get(0)?, pdq::Hash(bytes.try_into().unwrap_or([0; pdq::HASH_BYTES]))))
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let mut rows = stmt.query([pdq::MIN_QUALITY])?;
+        while let Some(r) = rows.next()? {
+            ids.push(r.get(0)?);
+            hashes.push(pdq::Hash(r.get::<_, [u8; pdq::HASH_BYTES]>(1)?).words());
+        }
+        Ok(PdqIndex::build(ids, hashes))
     }
 
     pub fn store_analysis(tx: &Transaction, item: &WorkItem, a: &Analysis) -> Result<()> {

@@ -11,7 +11,6 @@ use pg_core::catalog::Catalog;
 use pg_core::media::Kind;
 use pg_core::paths::verbatim;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
-use pg_core::pdq_index::PdqIndex;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -31,13 +30,13 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     if items.is_empty() {
         return Ok(stats);
     }
-    let mut index = PdqIndex::default();
-    for (id, hash) in catalog.pdq_hashes()? {
-        index.insert(id, &hash);
-    }
+    let mut index = catalog.pdq_index()?;
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
 
     let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);
+    // Kept across files: one orientation's neighbours, and each neighbour's best (distance, orientation).
+    let mut found: Vec<(i64, u32)> = Vec::new();
+    let mut best: Vec<(i64, u32, usize)> = Vec::new();
     ctl.begin("import", String::new(), items.len() as u64);
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
@@ -49,9 +48,10 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                     Catalog::store_analysis(&tx, item, &a)?;
                     if let Some(px) = a.pixels.as_ref().filter(|px| px.pdq.quality >= MIN_QUALITY) {
                         // Best distance per neighbour over the 8 orientations of the new image.
-                        let mut best: Vec<(i64, u32, usize)> = Vec::new();
+                        best.clear();
                         for (v, h) in px.pdq_dihedral.iter().enumerate() {
-                            for (other, d) in index.query(h, MATCH_DISTANCE) {
+                            index.query(h, MATCH_DISTANCE, &mut found);
+                            for &(other, d) in &found {
                                 match best.iter_mut().find(|b| b.0 == other) {
                                     Some(b) if d < b.1 => *b = (other, d, v),
                                     Some(_) => {}
@@ -59,7 +59,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                                 }
                             }
                         }
-                        for (other, d, v) in best {
+                        for &(other, d, v) in &best {
                             if other != item.id {
                                 Catalog::store_pdq_pair(&tx, item.id, other, d, v)?;
                                 stats.pairs += 1;

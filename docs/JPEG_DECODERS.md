@@ -516,6 +516,14 @@ Not measured:
   BIOS): not available on this machine.
 - **Not useful here:** epeg (libjpeg's DCT scaling, which we use), jpegn (Go), Fulim13/jpeg (writes a custom
   format, can't read JFIF).
+- **The Python libraries in Iglovikov, "Need for Speed: A Comprehensive Benchmark of JPEG Decoders in Python"**
+  ([arXiv 2501.13131](https://arxiv.org/html/2501.13131v1), 2025) are wrappers around decoders measured above:
+  OpenCV `imdecode` (its bundled libjpeg-turbo; `IMREAD_REDUCED_*` is the same DCT scaling), TensorFlow
+  `decode_jpeg` (bundled libjpeg-turbo), torchvision's CPU `decode_jpeg` (libjpeg-turbo), jpeg4py (ctypes over the
+  system libjpeg-turbo), Pillow-SIMD (SIMD in resize and filters, not in the decoder), imageio and scikit-image
+  (both read through Pillow), and kornia-rs (`kornia-io`: zune-jpeg by default, the `turbojpeg` crate as a feature).
+  The paper's gaps between them are binding overhead and disk I/O (it times cold-cache file reads). It says Pillow
+  uses the original libjpeg; its wheels ship libjpeg-turbo.
 
 ## Next
 

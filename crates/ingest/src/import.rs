@@ -6,9 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use pg_core::analyze::{Analysis, analyze};
+use pg_core::analyze::{Analysis, Analyzer};
 use pg_core::catalog::Catalog;
-use pg_core::decode::Decoder;
 use pg_core::media::Kind;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
 use pg_core::pdq_index::PdqIndex;
@@ -86,12 +85,12 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         |i| !video(i),
         opts,
         ctl,
-        Decoder::new,
-        |decoder, i, bytes| {
+        Analyzer::new,
+        |analyzer, i, bytes| {
             if video(i) {
-                pg_core::video::analyze(Path::new(&pipeline::long_path(&items[i].path)), items[i].rotation)
+                pg_core::video::analyze(Path::new(&pipeline::long_path(&items[i].path)), items[i].rotation, analyzer)
             } else {
-                analyze(bytes, items[i].rotation, decoder)
+                analyzer.analyze(bytes, items[i].rotation)
             }
         },
         |i, result, len| {

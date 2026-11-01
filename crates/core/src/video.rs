@@ -14,8 +14,8 @@ use ffmpeg::media::Type;
 use ffmpeg::util::frame;
 use ffmpeg_next as ffmpeg;
 
-use crate::analyze::{Analysis, thumbhash};
-use crate::decode::{Rgb, orient};
+use crate::analyze::{Analysis, Analyzer};
+use crate::decode::{Rgb, orient_into};
 use crate::metadata::{compose_orientation, orientation_from, parse_iso_date};
 
 /// The poster frame is this far into the video…
@@ -40,7 +40,7 @@ pub struct Probe {
     pub height: u32,
     pub duration_ms: i64,
     /// The video codec's short name (`h264`, `hevc`, `vp9`, `av1`…).
-    pub codec: String,
+    pub codec: &'static str,
     /// Frames in the stream (counted by the container, else estimated from the duration and frame rate).
     pub frames: u32,
     /// When it was recorded: `(seconds, is_utc)`. Phones' local-time tag gives wall-clock time; the standard
@@ -91,7 +91,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
     let stream = input.streams().best(Type::Video).context("no video stream")?;
     let params = stream.parameters();
     let decoder = ffmpeg::codec::context::Context::from_parameters(params.clone())?.decoder().video()?;
-    let codec = params.id().name().to_string();
+    let codec = params.id().name();
     let (mut w, h) = (decoder.width(), decoder.height());
     if w == 0 || h == 0 {
         bail!("no picture size");
@@ -139,8 +139,17 @@ pub fn poster_ms(duration_ms: i64) -> i64 {
 }
 
 /// The frame shown at `at_ms` (the first at or after it; the last one if the video is shorter), upright and
-/// turned `turns` quarter turns clockwise further (the catalog rotation), as RGB at its display size.
+/// turned `turns` quarter turns clockwise further (the catalog rotation), as RGB at its display size, in a new
+/// buffer: for a one-off frame (the viewer).
 pub fn frame(path: &Path, at_ms: i64, turns: u8) -> Result<Rgb> {
+    let mut out = Rgb::default();
+    frame_into(path, at_ms, turns, &mut out, &mut Vec::new())?;
+    Ok(out)
+}
+
+/// [`frame`] into a worker's buffers, which keep their capacity from file to file: the pixels go into `out`, and
+/// are oriented through `spare` (swapped with `out`'s).
+pub fn frame_into(path: &Path, at_ms: i64, turns: u8, out: &mut Rgb, spare: &mut Vec<u8>) -> Result<()> {
     let mut input = open(path)?;
     let stream = input.streams().best(Type::Video).context("no video stream")?;
     let index = stream.index();
@@ -183,12 +192,14 @@ pub fn frame(path: &Path, at_ms: i64, turns: u8) -> Result<Rgb> {
         }
     }
     let f = found.or(last).context("no frame decoded")?;
-    Ok(orient(to_rgb(f)?, orientation))
+    to_rgb(f, out)?;
+    orient_into(out, orientation, spare);
+    Ok(())
 }
 
-/// RGB at the display size (non-square pixels made square), converted with the frame's own color matrix and
-/// range. HD video that doesn't say is taken as BT.709, as players do.
-fn to_rgb(mut src: frame::Video) -> Result<Rgb> {
+/// RGB at the display size (non-square pixels made square) into `out`, converted with the frame's own color matrix
+/// and range. HD video that doesn't say is taken as BT.709, as players do.
+fn to_rgb(mut src: frame::Video, out: &mut Rgb) -> Result<()> {
     use ffmpeg::util::color::{Range, Space};
     let (w, h) = (src.width(), src.height());
     let sar = src.aspect_ratio();
@@ -221,8 +232,13 @@ fn to_rgb(mut src: frame::Video) -> Result<Rgb> {
     }
     let (stride, data) = (dst.stride(0), dst.data(0));
     let row = dw as usize * 3;
-    let pixels = (0..h as usize).flat_map(|y| &data[y * stride..y * stride + row]).copied().collect();
-    Ok(Rgb { width: dw as usize, height: h as usize, pixels })
+    out.pixels.clear();
+    out.pixels.reserve(row * h as usize);
+    for y in 0..h as usize {
+        out.pixels.extend_from_slice(&data[y * stride..y * stride + row]);
+    }
+    (out.width, out.height) = (dw as usize, h as usize);
+    Ok(())
 }
 
 /// BLAKE3 of a file, streamed (videos aren't read into memory whole).
@@ -241,12 +257,18 @@ pub fn file_hash(path: &Path) -> Result<[u8; 32]> {
 }
 
 /// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
-/// of the poster frame. `turns` is the catalog rotation.
-pub fn analyze(path: &Path, turns: u8) -> Result<Analysis> {
+/// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
+pub fn analyze(path: &Path, turns: u8, analyzer: &mut Analyzer) -> Result<Analysis> {
+    let result = analyze_video(path, turns, analyzer);
+    analyzer.trim();
+    result
+}
+
+fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
     let file_hash = file_hash(path)?;
     let p = probe(path)?;
     let poster = poster_ms(p.duration_ms);
-    let img = frame(path, poster, turns)?;
+    frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
     let (width, height) = if turns % 2 == 1 { (p.height, p.width) } else { (p.width, p.height) };
     Ok(Analysis {
         file_hash,
@@ -254,7 +276,7 @@ pub fn analyze(path: &Path, turns: u8) -> Result<Analysis> {
         orientation: p.orientation,
         width,
         height,
-        thumbhash: thumbhash(&img),
+        thumbhash: a.thumbhash_of_image(),
         file_rating: None,
         frames: p.frames,
         taken: p.taken.map(|t| t.0),

@@ -6,9 +6,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use pg_core::decode::Decoder;
-use pg_core::thumbs::{self, Pending, Thumb, ThumbCache};
-use turbojpeg::Compressor;
+use pg_core::thumbs::{Maker, Pending, Thumb, ThumbCache};
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -60,17 +58,17 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         |i| items[i].poster_ms.is_none(),
         opts,
         ctl,
-        || Ok((Decoder::new()?, Compressor::new()?)),
-        |(decoder, encoder), i, bytes| {
+        Maker::new,
+        |maker, i, bytes| {
             let item = &items[i];
             match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
                     let path = pipeline::long_path(&item.path);
-                    let frame = pg_core::video::frame(Path::new(&path), at, item.source.rotation)?;
-                    thumbs::encode(&frame, height as usize, encoder)
+                    maker.load_frame(Path::new(&path), at, item.source.rotation)?;
+                    maker.encode_frame(height as usize)
                 }
-                None => thumbs::make(bytes, height as usize, item.source.rotation, decoder, encoder),
+                None => maker.make(bytes, height as usize, item.source.rotation),
             }
         },
         |i, result, len| {

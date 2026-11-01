@@ -1,14 +1,12 @@
 // The benches of ../ir.rs, included there on Linux only: the per-file work here, the catalog's in catalog.rs. Setup
-// (reading the file, creating the decoder and the encoder, copying and opening the catalog) runs outside the
-// measured function.
+// (reading the file, creating the analyzer and the thumbnail maker, copying and opening the catalog) runs outside the
+// measured function. Their buffers start empty, so each bench measures a worker's first file.
 
 use std::hint::black_box;
 
 use gungraun::prelude::*;
-use pg_core::analyze::{self, Analysis};
-use pg_core::decode::Decoder;
-use pg_core::thumbs;
-use turbojpeg::Compressor;
+use pg_core::analyze::{Analysis, Analyzer};
+use pg_core::thumbs::Maker;
 
 /// A median-size file of the test set: a 126 KB mozjpeg re-encode, 1280×1017 baseline. It's one of the library's
 /// photos, so it stays out of the repo and is read from D: through WSL. `PG_BENCH_JPEG` at build time picks
@@ -22,24 +20,24 @@ fn read_sample() -> Vec<u8> {
     std::fs::read(SAMPLE).unwrap_or_else(|e| panic!("{SAMPLE}: {e}"))
 }
 
-fn for_analyze() -> (Vec<u8>, Decoder) {
-    (read_sample(), Decoder::new().unwrap())
+fn for_analyze() -> (Vec<u8>, Analyzer) {
+    (read_sample(), Analyzer::new().unwrap())
 }
 
-fn for_thumb() -> (Vec<u8>, Decoder, Compressor) {
-    (read_sample(), Decoder::new().unwrap(), Compressor::new().unwrap())
+fn for_thumb() -> (Vec<u8>, Maker) {
+    (read_sample(), Maker::new().unwrap())
 }
 
 #[library_benchmark]
 #[bench::sample(setup = for_analyze)]
-fn analyze_jpeg((bytes, mut decoder): (Vec<u8>, Decoder)) -> Analysis {
-    black_box(analyze::analyze(black_box(&bytes), 0, &mut decoder).unwrap())
+fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analysis {
+    black_box(analyzer.analyze(black_box(&bytes), 0).unwrap())
 }
 
 #[library_benchmark]
 #[bench::h256(setup = for_thumb)]
-fn thumb_jpeg((bytes, mut decoder, mut encoder): (Vec<u8>, Decoder, Compressor)) -> Vec<u8> {
-    black_box(thumbs::make(black_box(&bytes), 256, 0, &mut decoder, &mut encoder).unwrap())
+fn thumb_jpeg((bytes, mut maker): (Vec<u8>, Maker)) -> Vec<u8> {
+    black_box(maker.make(black_box(&bytes), 256, 0).unwrap())
 }
 
 library_benchmark_group!(name = per_file, benchmarks = [analyze_jpeg, thumb_jpeg]);

@@ -1350,7 +1350,7 @@ mod tests {
         };
         let analysis = Analysis {
             file_hash: [1; 32],
-            format: "jpeg".into(),
+            format: "jpeg",
             orientation: 1,
             width: 400,
             height: 300,
@@ -1458,7 +1458,7 @@ mod tests {
             let (width, height) = if orientation >= 5 { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
                 file_hash: [n as u8; 32],
-                format: "jpeg".into(),
+                format: "jpeg",
                 orientation,
                 width,
                 height,

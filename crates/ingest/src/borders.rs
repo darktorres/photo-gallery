@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, ensure};
-use pg_core::analyze::{FileBorders, borders_of};
+use pg_core::analyze::{Analyzer, FileBorders};
 use pg_core::borders::{self as detector, Detector, Side};
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Decoder, Rgb};
+use pg_core::decode::Rgb;
 use pg_core::media::{self, Kind};
 
 use crate::control::Control;
@@ -56,8 +56,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         |_| true,
         opts,
         ctl,
-        || Ok((Decoder::new()?, Detector::default())),
-        |(decoder, detector), i, bytes| borders_of(bytes, items[i].rotation, decoder, detector),
+        Analyzer::new,
+        |analyzer, i, bytes| analyzer.borders(bytes, items[i].rotation),
         |i, result, len| {
             ctl.add(len, result.is_err());
             batch.push((i, result));
@@ -129,8 +129,8 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
         |_| true,
         opts,
         ctl,
-        || Ok((Decoder::new()?, Detector::default())),
-        |(decoder, detector), _, bytes| borders_of(bytes, 0, decoder, detector),
+        Analyzer::new,
+        |analyzer, _, bytes| analyzer.borders(bytes, 0),
         |i, result, len| {
             ctl.add(len, result.is_err());
             let path = field(&files[i]);

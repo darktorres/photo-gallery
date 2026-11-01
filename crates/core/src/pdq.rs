@@ -48,21 +48,68 @@ pub struct Pdq {
     pub quality: u8,
 }
 
-/// The hash of the image as is, plus its quality.
-pub fn hash_rgb(rgb: &[u8], width: usize, height: usize) -> Pdq {
-    let (dct, quality) = dct16(rgb, width, height);
-    Pdq { hash: to_bits(&dct), quality }
+/// The hasher's buffers (a luma plane, the filter's pass between, its column sums), kept by a worker from image to
+/// image. The input is at most 512 px on a side (see the module comment), so they stay small.
+#[derive(Default)]
+pub struct Hasher {
+    luma: Vec<f32>,
+    temp: Vec<f32>,
+    sum: Vec<f32>,
 }
 
-/// The 8 dihedral hashes: index 0 is the image as is; the others are the hashes of its rotations and mirrors,
-/// derived from the DCT coefficients (as Meta's `dihedral` hasher does) rather than by re-hashing pixels.
-pub fn hash_rgb_dihedral(rgb: &[u8], width: usize, height: usize) -> (Pdq, [Hash; 8]) {
-    let (dct, quality) = dct16(rgb, width, height);
-    let mut variants = [Hash([0; HASH_BYTES]); 8];
-    for (v, out) in variants.iter_mut().enumerate() {
-        *out = to_bits(&dihedral(&dct, v));
+impl Hasher {
+    /// The hash of the image as is, plus its quality.
+    pub fn hash_rgb(&mut self, rgb: &[u8], width: usize, height: usize) -> Pdq {
+        let (dct, quality) = self.dct16(rgb, width, height);
+        Pdq { hash: to_bits(&dct), quality }
     }
-    (Pdq { hash: variants[0], quality }, variants)
+
+    /// The 8 dihedral hashes: index 0 is the image as is; the others are the hashes of its rotations and mirrors,
+    /// derived from the DCT coefficients (as Meta's `dihedral` hasher does) rather than by re-hashing pixels.
+    pub fn hash_rgb_dihedral(&mut self, rgb: &[u8], width: usize, height: usize) -> (Pdq, [Hash; 8]) {
+        let (dct, quality) = self.dct16(rgb, width, height);
+        let mut variants = [Hash([0; HASH_BYTES]); 8];
+        for (v, out) in variants.iter_mut().enumerate() {
+            *out = to_bits(&dihedral(&dct, v));
+        }
+        (Pdq { hash: variants[0], quality }, variants)
+    }
+
+    /// Luma, then a two-pass Jarosz tent filter, a 64×64 decimation and a 16×16 DCT, plus the quality metric.
+    fn dct16(&mut self, rgb: &[u8], width: usize, height: usize) -> ([f32; DCT_OUT * DCT_OUT], u8) {
+        assert!(width > 0 && height > 0 && rgb.len() == width * height * 3);
+        let Hasher { luma, temp, sum } = self;
+        luma.clear();
+        luma.extend(
+            rgb.as_chunks::<3>().0.iter().map(|p| p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114),
+        );
+
+        let window_cols = width.div_ceil(2 * BUFFER);
+        let window_rows = height.div_ceil(2 * BUFFER);
+        // Zeroed as a new buffer would be, so nothing of the image before can show through.
+        temp.clear();
+        temp.resize(luma.len(), 0.0);
+        for _ in 0..2 {
+            for r in 0..height {
+                box_1d(luma, r * width, temp, width, 1, window_cols);
+            }
+            box_columns(temp, luma, width, height, window_rows, sum);
+        }
+        decimate(luma, width, height)
+    }
+}
+
+/// The filtered luma sampled at the centers of a 64×64 grid: its 16×16 DCT and its quality.
+fn decimate(luma: &[f32], width: usize, height: usize) -> ([f32; DCT_OUT * DCT_OUT], u8) {
+    let mut buf = [[0.0f32; BUFFER]; BUFFER];
+    for (i, row) in buf.iter_mut().enumerate() {
+        let y = ((i * 2 + 1) * height) / (BUFFER * 2);
+        for (j, v) in row.iter_mut().enumerate() {
+            let x = ((j * 2 + 1) * width) / (BUFFER * 2);
+            *v = luma[y * width + x];
+        }
+    }
+    (dct_64_to_16(&buf), quality(&buf))
 }
 
 /// Variant `v` of the 16×16 DCT block: bit 0 mirrors left-right, bit 1 mirrors top-bottom, bit 2 transposes.
@@ -100,39 +147,6 @@ fn dct_matrix() -> &'static [[f32; BUFFER]; DCT_OUT] {
             })
         })
     })
-}
-
-/// Luma → two-pass Jarosz tent filter → 64×64 decimation → 16×16 DCT, plus the quality metric.
-fn dct16(rgb: &[u8], width: usize, height: usize) -> ([f32; DCT_OUT * DCT_OUT], u8) {
-    assert!(width > 0 && height > 0 && rgb.len() == width * height * 3);
-    let mut luma: Vec<f32> = rgb
-        .as_chunks::<3>()
-        .0
-        .iter()
-        .map(|p| p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114)
-        .collect();
-
-    let window_cols = width.div_ceil(2 * BUFFER);
-    let window_rows = height.div_ceil(2 * BUFFER);
-    let mut temp = vec![0.0f32; luma.len()];
-    for _ in 0..2 {
-        for r in 0..height {
-            box_1d(&luma, r * width, &mut temp, width, 1, window_cols);
-        }
-        box_columns(&temp, &mut luma, width, height, window_rows);
-    }
-
-    // Sample at the centers of a 64×64 grid.
-    let mut buf = [[0.0f32; BUFFER]; BUFFER];
-    for (i, row) in buf.iter_mut().enumerate() {
-        let y = ((i * 2 + 1) * height) / (BUFFER * 2);
-        for (j, v) in row.iter_mut().enumerate() {
-            let x = ((j * 2 + 1) * width) / (BUFFER * 2);
-            *v = luma[y * width + x];
-        }
-    }
-
-    (dct_64_to_16(&buf), quality(&buf))
 }
 
 /// One pass of the box filter along a row or column (`stride` 1 or the row length), shrinking the window at
@@ -173,13 +187,15 @@ fn box_1d(input: &[f32], start: usize, output: &mut [f32], len: usize, stride: u
 
 /// `box_1d` down every column of a `width` × `height` image at once: a running sum per column, a row at a time,
 /// so memory is read in order and the columns vectorize (one column at a time strides by the row length). Each
-/// column gets `box_1d`'s operations in the same order, so the results are the same bits.
-fn box_columns(input: &[f32], output: &mut [f32], width: usize, height: usize, window: usize) {
+/// column gets `box_1d`'s operations in the same order, so the results are the same bits. `sum` holds the running
+/// sums; its buffer is kept between calls.
+fn box_columns(input: &[f32], output: &mut [f32], width: usize, height: usize, window: usize, sum: &mut Vec<f32>) {
     let half = (window + 2) / 2;
     let phase1 = half - 1;
     let phase2 = window - half + 1;
     let row = |r: usize| &input[r * width..(r + 1) * width];
-    let mut sum = vec![0.0f32; width];
+    sum.clear();
+    sum.resize(width, 0.0);
     let mut count = 0.0f32;
     for r in 0..phase1 {
         for (s, &x) in sum.iter_mut().zip(row(r)) {
@@ -309,14 +325,7 @@ mod tests {
                 box_1d(&temp, c, &mut luma, height, width, window_rows);
             }
         }
-        let mut buf = [[0.0f32; BUFFER]; BUFFER];
-        for (i, row) in buf.iter_mut().enumerate() {
-            let y = ((i * 2 + 1) * height) / (BUFFER * 2);
-            for (j, v) in row.iter_mut().enumerate() {
-                *v = luma[y * width + ((j * 2 + 1) * width) / (BUFFER * 2)];
-            }
-        }
-        (dct_64_to_16(&buf), quality(&buf))
+        decimate(&luma, width, height)
     }
 
     /// The same bits as before, every coefficient and the quality, on noise (every pixel different) at the sizes
@@ -332,9 +341,12 @@ mod tests {
         };
         let mut sizes = vec![(1, 1), (1, 300), (300, 1), (127, 128), (128, 129), (129, 127), (512, 407), (97, 211)];
         sizes.extend((0..40).map(|_| (1 + (next() % 900) as usize, 1 + (next() % 900) as usize)));
+        // One hasher for every size, as a worker keeps it: what an image leaves in its buffers changes no bit of
+        // the next one's.
+        let mut hasher = Hasher::default();
         for (w, h) in sizes {
             let rgb: Vec<u8> = (0..w * h * 3).map(|_| next() as u8).collect();
-            let (ours, q) = dct16(&rgb, w, h);
+            let (ours, q) = hasher.dct16(&rgb, w, h);
             let (before, q_before) = dct16_one_column_at_a_time(&rgb, w, h);
             assert_eq!(ours.map(f32::to_bits), before.map(f32::to_bits), "{w}x{h}");
             assert_eq!(q, q_before, "{w}x{h}");
@@ -345,7 +357,7 @@ mod tests {
     fn matches_reference_crate() {
         for (w, h) in [(512, 384), (300, 512), (64, 64), (97, 211)] {
             let rgb = test_image(w, h);
-            let ours = hash_rgb(&rgb, w, h);
+            let ours = Hasher::default().hash_rgb(&rgb, w, h);
             let (theirs, _) = reference(&rgb, w, h);
             assert_eq!(ours.hash.0, theirs, "{w}x{h}");
         }
@@ -357,7 +369,8 @@ mod tests {
     fn dihedral_matches_transformed_pixels() {
         let (w, h) = (320, 240);
         let rgb = test_image(w, h);
-        let (_, variants) = hash_rgb_dihedral(&rgb, w, h);
+        let mut hasher = Hasher::default();
+        let (_, variants) = hasher.hash_rgb_dihedral(&rgb, w, h);
         for (v, variant) in variants.iter().enumerate() {
             let transpose = v & 4 != 0;
             let (ow, oh) = if transpose { (h, w) } else { (w, h) };
@@ -376,7 +389,7 @@ mod tests {
                     out[d..d + 3].copy_from_slice(&rgb[s..s + 3]);
                 }
             }
-            let direct = hash_rgb(&out, ow, oh).hash;
+            let direct = hasher.hash_rgb(&out, ow, oh).hash;
             let d = direct.distance(variant);
             assert!(d <= 12, "variant {v}: distance {d}");
         }

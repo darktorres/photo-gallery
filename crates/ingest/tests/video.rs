@@ -123,7 +123,7 @@ fn videos() {
     for (name, codec) in [("h264.mp4", "h264"), ("vp9.webm", "vp9"), ("av1.mp4", "av1"), ("prores.mov", "prores")] {
         let path = media.join(name);
         let p = probe(&path).unwrap();
-        assert_eq!((p.width, p.height, p.codec.as_str(), p.orientation), (160, 80, codec, 1), "{name}");
+        assert_eq!((p.width, p.height, p.codec, p.orientation), (160, 80, codec, 1), "{name}");
         assert!((2900..=3100).contains(&p.duration_ms), "{name}: {} ms", p.duration_ms);
         assert!((70..=80).contains(&p.frames), "{name}: {} frames", p.frames);
         let early = frame(&path, 500, 0).unwrap();

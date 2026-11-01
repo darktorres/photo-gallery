@@ -1,6 +1,12 @@
 //! Shared state and the image work behind the QML image providers. Provider requests run on Qt thread-pool
-//! threads; each thread keeps its own catalog connection and decoder (thread-locals), and reads the thumbnail
-//! cache through its own connection too (`ThumbCache` takes no lock to read).
+//! threads; each thread keeps its own catalog connection and thumbnail maker (thread-locals), and reads the
+//! thumbnail cache through its own connection too (`ThumbCache` takes no lock to read).
+//!
+//! What a thread keeps lives as long as the thread: the providers' pools (`cpp/providers.cpp`: 8 thumbnail
+//! threads, 2 full-image and 2 placeholder ones) end a thread after 30 s idle, and its thread-locals with it. A
+//! `Maker` holds what one thumbnail needs (at most `thumbs::KEEP_BYTES` a buffer), so the thumbnail threads keep
+//! what the requests in flight need while the grid scrolls, and for 30 s after. The viewer's decodes and resizes go
+//! to new buffers (`Decoder::decode`, a `Resizer` per request), so a full-image thread keeps no full-size image.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -9,11 +15,10 @@ use std::sync::{Arc, Mutex, OnceLock};
 use anyhow::{Context, Result};
 use pg_core::browse;
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Decoder, MinSize, Rgb, transform};
+use pg_core::decode::{MinSize, Rgb, orient_pixels};
 use pg_core::metadata::compose_orientation;
-use pg_core::resize::{fit_box, resize_region};
-use pg_core::thumbs::{self, ThumbCache};
-use turbojpeg::Compressor;
+use pg_core::resize::Resizer;
+use pg_core::thumbs::{self, Maker, ThumbCache};
 
 pub struct AppState {
     pub catalog_dir: PathBuf,
@@ -25,7 +30,7 @@ static STATE: OnceLock<AppState> = OnceLock::new();
 
 thread_local! {
     static CATALOG: RefCell<Option<Catalog>> = const { RefCell::new(None) };
-    static CODECS: RefCell<Option<(Decoder, Compressor)>> = const { RefCell::new(None) };
+    static MAKER: RefCell<Option<Maker>> = const { RefCell::new(None) };
 }
 
 /// Opens (and migrates) the catalog, as this thread's connection, and the thumbnail cache. Call once, on the GUI
@@ -73,14 +78,14 @@ pub fn with_catalog<R>(f: impl FnOnce(&Catalog) -> Result<R>) -> Result<R> {
     })
 }
 
-fn with_codecs<R>(f: impl FnOnce(&mut Decoder, &mut Compressor) -> Result<R>) -> Result<R> {
-    CODECS.with(|c| {
-        let mut c = c.borrow_mut();
-        if c.is_none() {
-            *c = Some((Decoder::new()?, Compressor::new()?));
+/// Run `f` with this thread's thumbnail maker (and its decoder).
+fn with_maker<R>(f: impl FnOnce(&mut Maker) -> Result<R>) -> Result<R> {
+    MAKER.with(|m| {
+        let mut m = m.borrow_mut();
+        if m.is_none() {
+            *m = Some(Maker::new()?);
         }
-        let (d, e) = c.as_mut().unwrap();
-        f(d, e)
+        f(m.as_mut().unwrap())
     })
 }
 
@@ -109,8 +114,8 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
     }
     let data = if let Some(at) = poster_ms {
         // A video: its poster frame.
-        match pg_core::video::frame(Path::new(&long_path(&path)), at, rotation) {
-            Ok(frame) => with_codecs(|_, e| thumbs::encode(&frame, height as usize, e))?,
+        match with_maker(|m| Ok(m.load_frame(Path::new(&long_path(&path)), at, rotation)))? {
+            Ok(()) => with_maker(|m| m.encode_frame(height as usize))?,
             Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
         }
     } else {
@@ -118,7 +123,7 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
             Ok(b) => b,
             Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
         };
-        with_codecs(|d, e| thumbs::make(&bytes, height as usize, rotation, d, e))?
+        with_maker(|m| m.make(&bytes, height as usize, rotation))?
     };
     // Kept in the background: shown now, whatever the write does.
     thumbs().put(thumbs::Thumb { file_id, height, source: current, data: data.clone() });
@@ -127,14 +132,14 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
 
 /// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
 pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Rgb> {
-    with_codecs(|d, _| Ok(d.decode(jpeg, MinSize::Full, turns)?.image))
+    with_maker(|m| Ok(m.decoder().decode(jpeg, MinSize::Full, turns)?.image))
 }
 
 /// The ThumbHash placeholder as a tiny RGBA image, turned by `turns`.
 pub fn thumbhash(file_id: i64, turns: u8) -> Result<(usize, usize, Vec<u8>)> {
     let hash = source(file_id)?.thumbhash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(&hash).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
-    let (rgba, w, h) = transform(&rgba, w, h, 4, compose_orientation(1, turns));
+    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, compose_orientation(1, turns));
     Ok((w, h, rgba))
 }
 
@@ -172,7 +177,8 @@ pub fn full_image(file_id: i64, view: View, turns: u8) -> Result<Rgb> {
     match view {
         View::Fit(w, h) => {
             let img = decode(file_id, &src, MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN))?;
-            Ok(fit_box(&img, w, h).unwrap_or_else(|| (*img).clone()))
+            let mut fitted = Rgb::default();
+            Ok(if Resizer::new().fit_box(&img, w, h, &mut fitted) { fitted } else { (*img).clone() })
         }
         View::Full => Ok((*decode(file_id, &src, MinSize::Full)?).clone()),
         View::Region((x, y, rw, rh), w, h) => {
@@ -181,7 +187,9 @@ pub fn full_image(file_id: i64, view: View, turns: u8) -> Result<Rgb> {
             let box_h = (h as f64 * DECODE_MARGIN as f64 / rh.max(1e-6)).ceil() as usize;
             let img = decode(file_id, &src, MinSize::Fit(box_w, box_h))?;
             let (iw, ih) = (img.width as f64, img.height as f64);
-            Ok(resize_region(&img, (x * iw, y * ih, rw * iw, rh * ih), w, h))
+            let mut out = Rgb::default();
+            Resizer::new().resize_region(&img, (x * iw, y * ih, rw * iw, rh * ih), w, h, &mut out);
+            Ok(out)
         }
     }
 }
@@ -205,8 +213,8 @@ fn decode(file_id: i64, src: &browse::FileSource, min: MinSize) -> Result<Arc<Rg
         ((frame.width, frame.height), Arc::new(frame))
     } else {
         let bytes = read_original(&src.path).context("original unavailable")?;
-        let decoded = with_codecs(|d, _| d.decode(&bytes, min, src.rotation))?;
-        ((decoded.full_width as usize, decoded.full_height as usize), Arc::new(decoded.image))
+        let decoded = with_maker(|m| m.decoder().decode(&bytes, min, src.rotation))?;
+        ((decoded.info.full_width as usize, decoded.info.full_height as usize), Arc::new(decoded.image))
     };
     *LAST_DECODE.lock().unwrap() =
         Some(Decoded { file_id, mtime: src.mtime, rotation: src.rotation, full, image: image.clone() });

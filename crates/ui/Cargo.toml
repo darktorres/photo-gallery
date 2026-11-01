@@ -28,7 +28,6 @@ cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
 serde.workspace = true
 serde_json.workspace = true
 thumbhash.workspace = true
-turbojpeg.workspace = true
 windows-sys.workspace = true
 # The heap profiler (docs/PROFILING.md "Tool: dhat"): a patched dhat-rs that takes whole backtraces quickly
 # (vendor/README.md).

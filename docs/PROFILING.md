@@ -136,11 +136,11 @@ the same vendored source, but with GCC instead of MSVC.
 
 **The bench** is `crates/core/benches/ir.rs` (gungraun 0.20, a Linux-only dev-dependency of `pg-core`). On other
 systems the target is an empty `main`, so `cargo clippy --all-targets` still builds it on Windows. It measures
-`analyze::analyze` and `thumbs::make(height 256)` on one file from the test set,
+`Analyzer::analyze` and `Maker::make` (height 256) on one file from the test set,
 `dups2/amateur-alice-von-v-mbDfqe.jpg.mozjpeg.jpg` (126 KB, 1280×1017 baseline JPEG). The file is read from D:
 through `/mnt/d` and stays out of the repo, since it's one of the library's photos. `PG_BENCH_JPEG` at build time
-picks another file. Reading it and creating the decoder and encoder happen in gungraun's `setup`, outside the
-measured function.
+picks another file. Reading it and creating the `Analyzer` and the `Maker` happen in gungraun's `setup`, outside
+the measured function. Their buffers start empty, so each run measures a worker's first file.
 
 ```powershell
 wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-setup.sh   # once, and after a gungraun update

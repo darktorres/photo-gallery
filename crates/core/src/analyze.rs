@@ -1,12 +1,12 @@
 //! Everything the import computes from one file's bytes (PLAN §4): tiers 0a/0b/1 and what the grid needs to lay
 //! out before any thumbnail exists. No thumbnails here: they are a background task after the import (PLAN §6).
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 
 use crate::borders::{self, Detection, Detector};
-use crate::decode::{Decoder, MinSize, Rgb};
+use crate::decode::{Decoder, Format, MinSize, Rgb, exif_orientation, release_over};
 use crate::pdq;
-use crate::resize::fit_within;
+use crate::resize::Resizer;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
 /// in place. Not a schema version: bump it when a change below alters what is stored, before the first release too,
@@ -27,7 +27,7 @@ pub struct Analysis {
     /// BLAKE3 of the file bytes (tier 0a).
     pub file_hash: [u8; 32],
     /// The image format (`decode::Format::name`), or a video's codec (`video::Probe::codec`).
-    pub format: String,
+    pub format: &'static str,
     /// EXIF orientation (1–8) the file asks for (a video's display matrix).
     pub orientation: u8,
     /// Upright full-size dimensions.
@@ -61,45 +61,113 @@ pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
     *blake3::hash(bytes).as_bytes()
 }
 
-/// `turns`: the file's catalog rotation (quarter turns clockwise), part of what "upright" means.
-pub fn analyze(bytes: &[u8], turns: u8, decoder: &mut Decoder) -> Result<Analysis> {
-    let file_hash = file_hash(bytes);
-    let decoded = decoder.decode(bytes, MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT), turns)?;
-    let img = &decoded.image;
-
-    let pdq_in = fit_within(img, PDQ_SIDE);
-    let pdq_img = pdq_in.as_ref().unwrap_or(img);
-    let (pdq, pdq_dihedral) = pdq::hash_rgb_dihedral(&pdq_img.pixels, pdq_img.width, pdq_img.height);
-
-    Ok(Analysis {
-        file_hash,
-        format: decoded.format.name().to_string(),
-        orientation: decoded.orientation,
-        width: decoded.full_width,
-        height: decoded.full_height,
-        thumbhash: thumbhash(img),
-        file_rating: crate::metadata::read_rating(bytes, decoded.format),
-        frames: crate::metadata::frame_count(bytes, decoded.format),
-        taken: crate::metadata::read_taken(bytes, decoded.format),
-        taken_utc: false,
-        pixels: Some(PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral }),
-        duration_ms: None,
-        poster_ms: None,
-    })
+/// A worker's buffers for one file's decode, scaled copies and hashes, kept from file to file (a file larger than
+/// [`KEEP_BYTES`] frees them after it). Its methods are the import's analysis and the borders pass.
+pub struct Analyzer {
+    decoder: Decoder,
+    resizer: Resizer,
+    hasher: pdq::Hasher,
+    detector: Detector,
+    /// The decoded image (also a video's frame)…
+    pub(crate) image: Rgb,
+    /// …and the buffer it is oriented through.
+    pub(crate) spare: Vec<u8>,
+    /// The image fitted for PDQ.
+    pdq_in: Rgb,
+    /// The ThumbHash input, and the same as RGBA.
+    small: Rgb,
+    rgba: Vec<u8>,
 }
 
-/// The borders of a file ([`borders::detect`] on its stored pixels, at full size), looked for after the import, in
-/// a pass of their own. `None` for animated images and images too small to look at.
-pub fn borders_of(bytes: &[u8], turns: u8, decoder: &mut Decoder, detector: &mut Detector) -> Result<FileBorders> {
-    let stored = decoder.decode_stored(bytes, MinSize::Full, turns)?;
-    let frames = crate::metadata::frame_count(bytes, stored.format);
-    let (width, height) = (stored.full_width, stored.full_height);
-    let borders = (frames <= 1 && (width.min(height) as usize) >= borders::MIN_SIDE)
-        .then(|| detector.detect(&stored.image, &borders::Params::default()));
-    Ok(FileBorders { width, height, borders })
+/// What a worker keeps of each buffer: a 32 MP RGB image's pixels. A larger file's are freed once it is done.
+pub const KEEP_BYTES: usize = 32_000_000 * 3;
+
+impl Analyzer {
+    pub fn new() -> Result<Analyzer> {
+        Ok(Analyzer {
+            decoder: Decoder::new()?,
+            resizer: Resizer::new(),
+            hasher: pdq::Hasher::default(),
+            detector: Detector::default(),
+            image: Rgb::default(),
+            spare: Vec::new(),
+            pdq_in: Rgb::default(),
+            small: Rgb::default(),
+            rgba: Vec::new(),
+        })
+    }
+
+    /// The import's analysis of an image. `turns`: the file's catalog rotation (quarter turns clockwise), part of
+    /// what "upright" means.
+    pub fn analyze(&mut self, bytes: &[u8], turns: u8) -> Result<Analysis> {
+        let result = self.analyze_image(bytes, turns);
+        self.trim();
+        result
+    }
+
+    fn analyze_image(&mut self, bytes: &[u8], turns: u8) -> Result<Analysis> {
+        let file_hash = file_hash(bytes);
+        let format = Format::sniff(bytes).context("unknown image format")?;
+        let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
+        let exif = exif_orientation(bytes);
+        let info = self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
+        let img = &self.image;
+
+        let pdq_img = if self.resizer.fit_within(img, PDQ_SIDE, &mut self.pdq_in) { &self.pdq_in } else { img };
+        let (pdq, pdq_dihedral) = self.hasher.hash_rgb_dihedral(&pdq_img.pixels, pdq_img.width, pdq_img.height);
+
+        Ok(Analysis {
+            file_hash,
+            format: info.format.name(),
+            orientation: info.orientation,
+            width: info.full_width,
+            height: info.full_height,
+            thumbhash: thumbhash(img, &mut self.resizer, &mut self.small, &mut self.rgba),
+            file_rating: crate::metadata::read_rating(bytes, format),
+            frames: crate::metadata::frame_count(bytes, format),
+            taken: crate::metadata::read_taken(bytes, format),
+            taken_utc: false,
+            pixels: Some(PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral }),
+            duration_ms: None,
+            poster_ms: None,
+        })
+    }
+
+    /// The ThumbHash of the image in [`Analyzer::image`] (a video's frame).
+    pub(crate) fn thumbhash_of_image(&mut self) -> Vec<u8> {
+        thumbhash(&self.image, &mut self.resizer, &mut self.small, &mut self.rgba)
+    }
+
+    /// The borders of a file ([`borders::detect`] on its stored pixels, at full size), looked for after the
+    /// import, in a pass of their own. `None` for animated images and images too small to look at.
+    pub fn borders(&mut self, bytes: &[u8], turns: u8) -> Result<FileBorders> {
+        let result = self.find_borders(bytes, turns);
+        self.trim();
+        result
+    }
+
+    fn find_borders(&mut self, bytes: &[u8], turns: u8) -> Result<FileBorders> {
+        let format = Format::sniff(bytes).context("unknown image format")?;
+        let exif = exif_orientation(bytes);
+        let info = self.decoder.decode_stored_into(bytes, format, exif, MinSize::Full, turns, &mut self.image)?;
+        let frames = crate::metadata::frame_count(bytes, format);
+        let (width, height) = (info.full_width, info.full_height);
+        let borders = (frames <= 1 && (width.min(height) as usize) >= borders::MIN_SIDE)
+            .then(|| self.detector.detect(&self.image, &borders::Params::default()));
+        Ok(FileBorders { width, height, borders })
+    }
+
+    /// Free what one oversize file grew (see [`KEEP_BYTES`]).
+    pub(crate) fn trim(&mut self) {
+        for buf in [&mut self.image.pixels, &mut self.spare, &mut self.pdq_in.pixels, &mut self.small.pixels] {
+            release_over(buf, KEEP_BYTES);
+        }
+        release_over(&mut self.rgba, KEEP_BYTES);
+        self.detector.trim(KEEP_BYTES);
+    }
 }
 
-/// What [`borders_of`] found.
+/// What [`Analyzer::borders`] found.
 pub struct FileBorders {
     /// The stored size.
     pub width: u32,
@@ -120,9 +188,77 @@ pub fn pixel_hash(img: &Rgb) -> [u8; 16] {
     h.digest128().to_le_bytes()
 }
 
-pub(crate) fn thumbhash(img: &Rgb) -> Vec<u8> {
-    let small = fit_within(img, THUMBHASH_SIDE);
-    let small = small.as_ref().unwrap_or(img);
-    let rgba: Vec<u8> = small.pixels.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]).collect();
-    thumbhash::rgba_to_thumb_hash(small.width, small.height, &rgba)
+/// The ThumbHash of `img`, fitted into the format's 100 px through `small`, as RGBA in `rgba`.
+fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, rgba: &mut Vec<u8>) -> Vec<u8> {
+    let small = if resizer.fit_within(img, THUMBHASH_SIDE, small) { &*small } else { img };
+    rgba.clear();
+    rgba.extend(small.pixels.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]));
+    thumbhash::rgba_to_thumb_hash(small.width, small.height, rgba)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::thumbs::Maker;
+
+    fn pattern(w: usize, h: usize, seed: usize) -> Vec<u8> {
+        (0..w * h * 3).map(|i| ((i / 3 % w) * 7 + (i / 3 / w) * 3 + (i % 3) * 50 + seed * 31) as u8).collect()
+    }
+
+    fn jpeg(w: usize, h: usize, seed: usize) -> Vec<u8> {
+        let pixels = pattern(w, h, seed);
+        let image = turbojpeg::Image {
+            pixels: &pixels[..],
+            width: w,
+            pitch: w * 3,
+            height: h,
+            format: turbojpeg::PixelFormat::RGB,
+        };
+        turbojpeg::compress(image, 90, turbojpeg::Subsamp::Sub2x2).unwrap().to_vec()
+    }
+
+    /// A PNG with transparency, flattened onto white when decoded.
+    fn png_rgba(w: usize, h: usize, seed: usize) -> Vec<u8> {
+        let rgb = pattern(w, h, seed);
+        let rgba: Vec<u8> =
+            rgb.as_chunks::<3>().0.iter().enumerate().flat_map(|(i, p)| [p[0], p[1], p[2], (i * 13) as u8]).collect();
+        let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba).unwrap();
+        let mut file = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut file, image::ImageFormat::Png).unwrap();
+        file.into_inner()
+    }
+
+    fn summary(a: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
+        let px = a.pixels.as_ref().unwrap();
+        let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, px.pdq_dihedral);
+        (a.file_hash, a.format, a.orientation, a.width, a.height, a.thumbhash.clone(), a.frames, hashes)
+    }
+
+    /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a
+    /// file leaves in their buffers changes nothing of the next one's results.
+    #[test]
+    fn kept_buffers_give_what_new_ones_do() {
+        let files = [
+            (jpeg(1200, 800, 1), 0),
+            (png_rgba(300, 200, 2), 1),
+            (jpeg(640, 480, 3), 3),
+            (jpeg(90, 60, 4), 2),
+            (png_rgba(40, 700, 5), 0),
+        ];
+        let mut kept = Analyzer::new().unwrap();
+        let mut maker = Maker::new().unwrap();
+        for _ in 0..2 {
+            for (bytes, turns) in &files {
+                let new = || Analyzer::new().unwrap();
+                assert_eq!(
+                    summary(&kept.analyze(bytes, *turns).unwrap()),
+                    summary(&new().analyze(bytes, *turns).unwrap())
+                );
+                let (a, b) = (kept.borders(bytes, *turns).unwrap(), new().borders(bytes, *turns).unwrap());
+                assert_eq!((a.width, a.height, a.borders), (b.width, b.height, b.borders));
+                let thumb = maker.make(bytes, 64, *turns).unwrap();
+                assert_eq!(thumb, Maker::new().unwrap().make(bytes, 64, *turns).unwrap());
+            }
+        }
+    }
 }

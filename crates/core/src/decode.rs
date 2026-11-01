@@ -52,53 +52,49 @@ impl Format {
 }
 
 /// An upright RGB image.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 pub struct Rgb {
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u8>,
 }
 
+/// What a decode found, besides its pixels.
+#[derive(Clone, Copy, Debug)]
+pub struct Info {
+    pub format: Format,
+    /// Orientation (1–8) that shows the image upright: the EXIF one, combined with the catalog rotation. Applied by
+    /// [`Decoder::decode_into`], not by [`Decoder::decode_stored_into`].
+    pub orientation: u8,
+    /// Dimensions of the full-size image, as the pixels are: upright after an oriented decode, stored otherwise.
+    pub full_width: u32,
+    pub full_height: u32,
+    /// The DCT scale denominator used (1, 2, 4 or 8; always 1 for non-JPEG).
+    pub scale_denom: u8,
+}
+
+impl Info {
+    /// The same, for the image once oriented.
+    fn upright(self) -> Info {
+        let (full_width, full_height) = if matches!(self.orientation, 5..=8) {
+            (self.full_height, self.full_width)
+        } else {
+            (self.full_width, self.full_height)
+        };
+        Info { full_width, full_height, ..self }
+    }
+}
+
+/// An image decoded upright ([`Decoder::decode`]).
 pub struct Decoded {
     pub image: Rgb,
-    pub format: Format,
-    /// Orientation (1–8) that was applied: the EXIF one, combined with the catalog rotation.
-    pub orientation: u8,
-    /// Upright dimensions of the full-size image.
-    pub full_width: u32,
-    pub full_height: u32,
-    /// The DCT scale denominator used (1, 2, 4 or 8; always 1 for non-JPEG).
-    pub scale_denom: u8,
+    pub info: Info,
 }
 
-/// An image as it is stored: decoded, not yet oriented.
+/// An image as it is stored: decoded, not oriented ([`Decoder::decode_stored`]).
 pub struct Stored {
     pub image: Rgb,
-    pub format: Format,
-    /// Orientation (1–8) to apply to show it upright: the EXIF one, combined with the catalog rotation.
-    pub orientation: u8,
-    /// Stored dimensions of the full-size image.
-    pub full_width: u32,
-    pub full_height: u32,
-    /// The DCT scale denominator used (1, 2, 4 or 8; always 1 for non-JPEG).
-    pub scale_denom: u8,
-}
-
-impl Stored {
-    /// The upright image ([`Decoder::decode`]'s result).
-    pub fn orient(self) -> Decoded {
-        let quarter_turn = matches!(self.orientation, 5..=8);
-        let (full_width, full_height) =
-            if quarter_turn { (self.full_height, self.full_width) } else { (self.full_width, self.full_height) };
-        Decoded {
-            image: orient(self.image, self.orientation),
-            format: self.format,
-            orientation: self.orientation,
-            full_width,
-            full_height,
-            scale_denom: self.scale_denom,
-        }
-    }
+    pub info: Info,
 }
 
 /// The least a JPEG may be DCT-scaled down to.
@@ -114,7 +110,8 @@ pub enum MinSize {
     Fit(usize, usize),
 }
 
-/// Per-thread decoder state (libjpeg-turbo handles are reused across images).
+/// Per-thread decoder state (libjpeg-turbo handles are reused across images). It keeps no pixels: those go into the
+/// caller's buffers ([`Decoder::decode_into`]), or into new ones ([`Decoder::decode`]).
 pub struct Decoder {
     jpeg: Decompressor,
 }
@@ -124,37 +121,79 @@ impl Decoder {
         Ok(Decoder { jpeg: Decompressor::new()? })
     }
 
-    /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller). `turns` is
-    /// the catalog rotation (`files.rotation`, quarter turns clockwise), applied after the EXIF orientation.
+    /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller), into new
+    /// buffers: for a one-off decode (the viewer). `turns` is the catalog rotation (`files.rotation`, quarter turns
+    /// clockwise), applied after the EXIF orientation.
     pub fn decode(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
-        Ok(self.decode_stored(bytes, min, turns)?.orient())
+        let format = Format::sniff(bytes).context("unknown image format")?;
+        let mut image = Rgb::default();
+        let info = self.decode_into(bytes, format, exif_orientation(bytes), min, turns, &mut image, &mut Vec::new())?;
+        Ok(Decoded { image, info })
     }
 
-    /// [`Decoder::decode`] without the orientation: the pixels as stored, which is what a lossless crop of the file
-    /// cuts (borders). `min` still means the upright size; `turns` is used for that and for `orientation`.
+    /// [`Decoder::decode`] without the orientation, into new buffers.
     pub fn decode_stored(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
         let format = Format::sniff(bytes).context("unknown image format")?;
-        let orientation = crate::metadata::compose_orientation(exif_orientation(bytes), turns);
-        let quarter_turn = matches!(orientation, 5..=8);
+        let mut image = Rgb::default();
+        let info = self.decode_stored_into(bytes, format, exif_orientation(bytes), min, turns, &mut image)?;
+        Ok(Stored { image, info })
+    }
 
+    /// [`Decoder::decode`] into a worker's buffers, which keep their capacity from file to file: the pixels go into
+    /// `out`, and are oriented through `spare` (swapped with `out`'s). `format` is the file's (`Format::sniff`),
+    /// `exif` its EXIF orientation (1 without one).
+    #[allow(clippy::too_many_arguments)]
+    pub fn decode_into(
+        &mut self,
+        bytes: &[u8],
+        format: Format,
+        exif: u8,
+        min: MinSize,
+        turns: u8,
+        out: &mut Rgb,
+        spare: &mut Vec<u8>,
+    ) -> Result<Info> {
+        let info = self.decode_stored_into(bytes, format, exif, min, turns, out)?;
+        orient_into(out, info.orientation, spare);
+        Ok(info.upright())
+    }
+
+    /// [`Decoder::decode_into`] without the orientation: the pixels as stored, which is what a lossless crop of the
+    /// file cuts (borders). `min` still means the upright size; `turns` is used for that and for `orientation`.
+    pub fn decode_stored_into(
+        &mut self,
+        bytes: &[u8],
+        format: Format,
+        exif: u8,
+        min: MinSize,
+        turns: u8,
+        out: &mut Rgb,
+    ) -> Result<Info> {
+        let orientation = crate::metadata::compose_orientation(exif, turns);
+        let quarter_turn = matches!(orientation, 5..=8);
         let jpeg = match format {
-            Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn).ok(),
+            Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
             _ => None,
         };
         // Non-JPEG, and JPEGs libjpeg-turbo rejects (CMYK, some damaged files): the `image` crate, at full size.
-        let (image, scale_denom, (full_width, full_height)) = match jpeg {
+        let (scale_denom, (full_width, full_height)) = match jpeg {
             Some(r) => r,
             None => {
-                let rgb = decode_other(bytes, format)?;
-                let size = (rgb.width as u32, rgb.height as u32);
-                (rgb, 1, size)
+                decode_other(bytes, format, out)?;
+                (1, (out.width as u32, out.height as u32))
             }
         };
-        Ok(Stored { image, format, orientation, full_width, full_height, scale_denom })
+        Ok(Info { format, orientation, full_width, full_height, scale_denom })
     }
 
-    /// The stored (not yet oriented) image, the scale denominator and the full stored size.
-    fn decode_jpeg(&mut self, bytes: &[u8], min: MinSize, quarter_turn: bool) -> Result<(Rgb, u8, (u32, u32))> {
+    /// The stored (not yet oriented) image into `out`; the scale denominator and the full stored size.
+    fn decode_jpeg(
+        &mut self,
+        bytes: &[u8],
+        min: MinSize,
+        quarter_turn: bool,
+        out: &mut Rgb,
+    ) -> Result<(u8, (u32, u32))> {
         let header = self.jpeg.read_header(bytes)?;
         let (w, h) = (header.width, header.height);
         // The decode happens before rotation, so an upright minimum turns with the image.
@@ -174,23 +213,26 @@ impl Decoder {
         let denom = [8, 4, 2].into_iter().find(|&d| w.div_ceil(d) >= min_w && h.div_ceil(d) >= min_h).unwrap_or(1);
         self.jpeg.set_scaling_factor(ScalingFactor::new(1, denom))?;
         let scaled = header.scaled(self.jpeg.scaling_factor());
-        let mut pixels = vec![0u8; scaled.width * scaled.height * 3];
+        // Every byte is written by the decode: a grown buffer only zeroes what it grew by.
+        out.pixels.resize(scaled.width * scaled.height * 3, 0);
+        (out.width, out.height) = (scaled.width, scaled.height);
         self.jpeg.decompress(
             bytes,
             Image {
-                pixels: pixels.as_mut_slice(),
+                pixels: out.pixels.as_mut_slice(),
                 width: scaled.width,
                 pitch: scaled.width * 3,
                 height: scaled.height,
                 format: PixelFormat::RGB,
             },
         )?;
-        let rgb = Rgb { width: scaled.width, height: scaled.height, pixels };
-        Ok((rgb, denom as u8, (header.width as u32, header.height as u32)))
+        Ok((denom as u8, (header.width as u32, header.height as u32)))
     }
 }
 
-fn decode_other(bytes: &[u8], format: Format) -> Result<Rgb> {
+/// Decode with the `image` crate into `out`, whose buffer is replaced by the decoder's own (moved, not copied, when
+/// the image is already 8-bit RGB or RGBA).
+fn decode_other(bytes: &[u8], format: Format, out: &mut Rgb) -> Result<()> {
     let fmt = match format {
         Format::Jpeg => image::ImageFormat::Jpeg,
         Format::Png => image::ImageFormat::Png,
@@ -201,19 +243,23 @@ fn decode_other(bytes: &[u8], format: Format) -> Result<Rgb> {
     };
     let img = image::load_from_memory_with_format(bytes, fmt)?;
     let (width, height) = (img.width() as usize, img.height() as usize);
-    let pixels = if img.color().has_alpha() {
-        // Flatten onto white, like the evaluation.
-        img.to_rgba8()
-            .pixels()
-            .flat_map(|p| {
-                let a = p[3] as u32;
-                [0, 1, 2].map(|c| ((p[c] as u32 * a + 255 * (255 - a) + 127) / 255) as u8)
-            })
-            .collect()
+    out.pixels = if img.color().has_alpha() {
+        // Flatten onto white, like the evaluation, in place: pixel i's RGB is written at 3i, which is below its RGBA
+        // at 4i, so nothing not yet read is overwritten.
+        let mut px = img.into_rgba8().into_raw();
+        for i in 0..width * height {
+            let [r, g, b, a] = [px[4 * i], px[4 * i + 1], px[4 * i + 2], px[4 * i + 3]].map(u32::from);
+            for (c, v) in [r, g, b].into_iter().enumerate() {
+                px[3 * i + c] = ((v * a + 255 * (255 - a) + 127) / 255) as u8;
+            }
+        }
+        px.truncate(width * height * 3);
+        px
     } else {
-        img.to_rgb8().into_raw()
+        img.into_rgb8().into_raw()
     };
-    Ok(Rgb { width, height, pixels })
+    (out.width, out.height) = (width, height);
+    Ok(())
 }
 
 /// EXIF orientation 1–8; 1 when absent or unreadable.
@@ -229,18 +275,47 @@ pub fn exif_orientation(bytes: &[u8]) -> u8 {
 
 /// Apply an EXIF orientation, giving the upright image.
 pub fn orient(img: Rgb, orientation: u8) -> Rgb {
-    if !(2..=8).contains(&orientation) {
-        return img;
-    }
-    let (pixels, width, height) = transform(&img.pixels, img.width, img.height, 3, orientation);
+    let (pixels, width, height) = orient_pixels(img.pixels, img.width, img.height, 3, orientation);
     Rgb { width, height, pixels }
+}
+
+/// Apply an EXIF orientation to `img` in place, through `spare` (which gets `img`'s old buffer).
+pub fn orient_into(img: &mut Rgb, orientation: u8, spare: &mut Vec<u8>) {
+    if !(2..=8).contains(&orientation) {
+        return;
+    }
+    (img.width, img.height) = transform_into(&img.pixels, img.width, img.height, 3, orientation, spare);
+    std::mem::swap(&mut img.pixels, spare);
+}
+
+/// [`transform`], which leaves `pixels` as they are at orientation 1 (or none).
+pub fn orient_pixels(pixels: Vec<u8>, w: usize, h: usize, unit: usize, orientation: u8) -> (Vec<u8>, usize, usize) {
+    if !(2..=8).contains(&orientation) {
+        return (pixels, w, h);
+    }
+    transform(&pixels, w, h, unit, orientation)
 }
 
 /// Apply an EXIF orientation (1–8) to a packed `w` × `h` raster of `unit`-byte pixels: the raster as it is shown.
 /// Returns it with its new width and height.
 pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: u8) -> (Vec<u8>, usize, usize) {
+    let mut out = Vec::new();
+    let (ow, oh) = transform_into(pixels, w, h, unit, orientation, &mut out);
+    (out, ow, oh)
+}
+
+/// [`transform`] into `out`, whose capacity is kept. Returns the new width and height.
+pub fn transform_into(
+    pixels: &[u8],
+    w: usize,
+    h: usize,
+    unit: usize,
+    orientation: u8,
+    out: &mut Vec<u8>,
+) -> (usize, usize) {
     let (ow, oh) = if orientation >= 5 { (h, w) } else { (w, h) };
-    let mut out = vec![0u8; w * h * unit];
+    // Every pixel is written below: a grown buffer only zeroes what it grew by.
+    out.resize(w * h * unit, 0);
     for y in 0..oh {
         for x in 0..ow {
             // Source pixel for output (x, y).
@@ -258,12 +333,41 @@ pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: u8
             out[d..d + unit].copy_from_slice(&pixels[s..s + unit]);
         }
     }
-    (out, ow, oh)
+    (ow, oh)
+}
+
+/// Free `buf` if it holds more than `bytes` (after one image far larger than the rest), so a worker's buffers don't
+/// keep the largest image's size for the rest of a pass.
+pub fn release_over(buf: &mut Vec<u8>, bytes: usize) {
+    if buf.capacity() > bytes {
+        *buf = Vec::new();
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn transparency_is_flattened_onto_white() {
+        let (w, h) = (17, 5);
+        let rgba: Vec<u8> = (0..w * h * 4).map(|i| (i * 37 % 256) as u8).collect();
+        let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba.clone()).unwrap();
+        let mut file = std::io::Cursor::new(Vec::new());
+        img.write_to(&mut file, image::ImageFormat::Png).unwrap();
+        let decoded = Decoder::new().unwrap().decode(file.get_ref(), MinSize::Full, 0).unwrap().image;
+        let want: Vec<u8> = rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .flat_map(|p| {
+                let a = p[3] as u32;
+                [0, 1, 2].map(|c| ((p[c] as u32 * a + 255 * (255 - a) + 127) / 255) as u8)
+            })
+            .collect();
+        assert_eq!((decoded.width, decoded.height), (w, h));
+        assert_eq!(decoded.pixels, want);
+    }
 
     #[test]
     fn orientations_map_corners() {

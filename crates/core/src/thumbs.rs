@@ -31,12 +31,12 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoder, MinSize, Rgb};
-use crate::resize::to_height;
+use crate::decode::{Decoder, Format, MinSize, Rgb, exif_orientation, release_over};
+use crate::resize::Resizer;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
 const DECODE_MARGIN: usize = 4;
@@ -45,33 +45,102 @@ const DECODE_MARGIN: usize = 4;
 const JPEG_QUALITY: i32 = 85;
 pub const FORMAT_JPEG: &str = "jpeg";
 
-/// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
-/// file's catalog rotation.
-pub fn make(
-    bytes: &[u8],
-    height: usize,
-    turns: u8,
-    decoder: &mut Decoder,
-    encoder: &mut Compressor,
-) -> Result<Vec<u8>> {
-    let decoded = decoder.decode(bytes, MinSize::Upright(0, height * DECODE_MARGIN), turns)?;
-    encode(&decoded.image, height, encoder)
+/// What a worker keeps of each buffer: a thumbnail decode is DCT-scaled to 4× its height, so this holds a 2048 px
+/// high one of a 3:2 photo. A larger image (a PNG, decoded at full size) frees its buffers once it is done.
+pub const KEEP_BYTES: usize = 3072 * 2048 * 3;
+
+/// A worker's codecs and buffers for thumbnails, kept from file to file: the import's background pass keeps one
+/// per worker, and the app one per image-provider thread.
+pub struct Maker {
+    decoder: Decoder,
+    resizer: Resizer,
+    compressor: Compressor,
+    /// The decoded image (or a video's frame), the buffer it is oriented through, and its scaled copy.
+    image: Rgb,
+    spare: Vec<u8>,
+    small: Rgb,
+    /// libjpeg-turbo's output, at its worst-case size.
+    jpeg: Vec<u8>,
 }
 
-/// A thumbnail `height` px high (or the image's own height) of pixels decoded elsewhere (a video's frame).
-pub fn encode(img: &Rgb, height: usize, encoder: &mut Compressor) -> Result<Vec<u8>> {
-    let small = to_height(img, height);
-    let img = small.as_ref().unwrap_or(img);
-    encoder.set_quality(JPEG_QUALITY)?;
-    encoder.set_subsamp(Subsamp::Sub2x2)?;
-    let out = encoder.compress_to_owned(Image {
-        pixels: img.pixels.as_slice(),
-        width: img.width,
-        pitch: img.width * 3,
-        height: img.height,
-        format: PixelFormat::RGB,
-    })?;
-    Ok(out.to_vec())
+impl Maker {
+    pub fn new() -> Result<Maker> {
+        let mut compressor = Compressor::new()?;
+        compressor.set_quality(JPEG_QUALITY)?;
+        compressor.set_subsamp(Subsamp::Sub2x2)?;
+        Ok(Maker {
+            decoder: Decoder::new()?,
+            resizer: Resizer::new(),
+            compressor,
+            image: Rgb::default(),
+            spare: Vec::new(),
+            small: Rgb::default(),
+            jpeg: Vec::new(),
+        })
+    }
+
+    /// The decoder, for a one-off decode on this thread (the viewer's: its pixels go to new buffers).
+    pub fn decoder(&mut self) -> &mut Decoder {
+        &mut self.decoder
+    }
+
+    /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
+    /// file's catalog rotation.
+    pub fn make(&mut self, bytes: &[u8], height: usize, turns: u8) -> Result<Vec<u8>> {
+        let result = self.make_image(bytes, height, turns);
+        self.trim();
+        result
+    }
+
+    fn make_image(&mut self, bytes: &[u8], height: usize, turns: u8) -> Result<Vec<u8>> {
+        let format = Format::sniff(bytes).context("unknown image format")?;
+        let min = MinSize::Upright(0, height * DECODE_MARGIN);
+        let exif = exif_orientation(bytes);
+        self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
+        self.encode_image(height)
+    }
+
+    /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
+    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: u8) -> Result<()> {
+        let result = crate::video::frame_into(path, at_ms, turns, &mut self.image, &mut self.spare);
+        if result.is_err() {
+            self.trim();
+        }
+        result
+    }
+
+    /// A thumbnail `height` px high (or the frame's own height) of the frame [`Maker::load_frame`] decoded.
+    pub fn encode_frame(&mut self, height: usize) -> Result<Vec<u8>> {
+        let result = self.encode_image(height);
+        self.trim();
+        result
+    }
+
+    /// The thumbnail of `image`: scaled to `height`, then compressed into `jpeg`, sized for the worst case, and
+    /// copied out at its length.
+    fn encode_image(&mut self, height: usize) -> Result<Vec<u8>> {
+        let img = if self.resizer.to_height(&self.image, height, &mut self.small) { &self.small } else { &self.image };
+        // Every byte libjpeg-turbo returns is written by it: a grown buffer only zeroes what it grew by.
+        self.jpeg.resize(self.compressor.buf_len(img.width, img.height)?, 0);
+        let n = self.compressor.compress_to_slice(
+            Image {
+                pixels: img.pixels.as_slice(),
+                width: img.width,
+                pitch: img.width * 3,
+                height: img.height,
+                format: PixelFormat::RGB,
+            },
+            &mut self.jpeg,
+        )?;
+        Ok(self.jpeg[..n].to_vec())
+    }
+
+    /// Free what one oversize image grew (see [`KEEP_BYTES`]).
+    fn trim(&mut self) {
+        for buf in [&mut self.image.pixels, &mut self.spare, &mut self.small.pixels, &mut self.jpeg] {
+            release_over(buf, KEEP_BYTES);
+        }
+    }
 }
 
 /// What a thumbnail was made from: the file's mtime and its catalog rotation (`files.rotation`). A thumbnail is

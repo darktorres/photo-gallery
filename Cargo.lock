@@ -1465,7 +1465,6 @@ dependencies = [
  "pg-core",
  "rusqlite",
  "serde_json",
- "turbojpeg",
  "windows-sys",
 ]
 
@@ -1484,7 +1483,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thumbhash",
- "turbojpeg",
  "windows-sys",
  "winres",
 ]

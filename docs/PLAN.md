@@ -346,6 +346,9 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 - Video near-duplicates (frame sampling, re-encodes, trims), and ratings written into video files without
   rewriting gigabytes.
 - HDR video posters: tone mapping (PQ/HLG) instead of a plain conversion to RGB.
+- Browsing any folder, not only the catalog's (user idea, 2026-11-01): open an arbitrary path in the grid and
+  viewer, listed from the disk as it is. Such a folder has no catalog rows, so no thumbnail cache, ThumbHash
+  placeholders or catalog facets; that is expected.
 
 ---
 

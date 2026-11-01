@@ -255,8 +255,8 @@ Rectangle {
         }
     }
 
-    // One result at full size (a tile's double-click), loaded from its URL: fitted to the panel, never enlarged, or
-    // 1:1 (one file pixel per screen pixel) by a click on it or the button. ←/→ step through all the results, Space
+    // One result at full size (a tile's double-click), loaded from its URL: fitted to the window, enlarged when it is
+    // smaller, or 1:1 (one file pixel per screen pixel) by a click on it or the button. ←/→ step through all the results, Space
     // picks or unpicks, Escape goes back to the list.
     Rectangle {
         id: preview
@@ -342,7 +342,7 @@ Rectangle {
             }
             Button {
                 text: preview.actual ? "Fit" : "1:1"
-                enabled: full.fit < 1
+                enabled: full.zoomable
                 focusPolicy: Qt.NoFocus
                 onClicked: preview.actual = !preview.actual
             }
@@ -364,11 +364,13 @@ Rectangle {
 
             Image {
                 id: full
-                // Its size in logical pixels at 1:1, and the scale that fits it in the view without enlarging it.
+                // Its size in logical pixels at 1:1, and the scale that fits it to the view, up or down.
                 readonly property real naturalWidth: sourceSize.width / Screen.devicePixelRatio
                 readonly property real naturalHeight: sourceSize.height / Screen.devicePixelRatio
                 readonly property real fit: naturalWidth > 0
-                    ? Math.min(1, previewView.width / naturalWidth, previewView.height / naturalHeight) : 1
+                    ? Math.min(previewView.width / naturalWidth, previewView.height / naturalHeight) : 1
+                // 1:1 differs from the fit: it is worth a button and a click.
+                readonly property bool zoomable: Math.abs(fit - 1) > 0.01
                 readonly property real zoom: preview.actual ? 1 : fit
 
                 source: yandex.revision >= 0 && preview.visible && preview.item >= 0 ? yandex.url(preview.item) : ""
@@ -381,7 +383,7 @@ Rectangle {
                 y: Math.max(0, (previewView.height - height) / 2)
 
                 TapHandler {
-                    onTapped: if (full.fit < 1) preview.actual = !preview.actual
+                    onTapped: if (full.zoomable) preview.actual = !preview.actual
                 }
             }
         }

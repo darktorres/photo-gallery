@@ -452,15 +452,15 @@ fn unix_now() -> i64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map_or(0, |d| d.as_secs() as i64)
 }
 
-/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given. A file of another
-/// catalog is deleted with its WAL and made anew, keeping its cap; nothing is deleted entry by entry.
+/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given. A file it can't use,
+/// another catalog's or another layout's (pre-release the layout changes in place), is deleted with its WAL and made
+/// anew, keeping its cap where it has one; nothing is deleted entry by entry.
 fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
     let conn = open_file(path, catalog_id, cap_bytes)?;
-    let owner: String = conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0))?;
-    if owner == catalog_id {
+    if usable_for(&conn, catalog_id) {
         return Ok(conn);
     }
-    let cap: i64 = conn.query_row("SELECT cap FROM limits", [], |r| r.get(0))?;
+    let cap: Option<i64> = conn.query_row("SELECT cap FROM limits", [], |r| r.get(0)).ok();
     // The last connection closing checkpoints and deletes the WAL; another process's would keep the files open.
     drop(conn);
     for suffix in ["", "-wal", "-shm"] {
@@ -469,16 +469,36 @@ fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
             Err(e) => bail!(
-                "{}: made for another catalog, and can't be started over while another program has it open: {e}",
+                "{}: made for another catalog or layout, and can't be started over while another program has it \
+                 open: {e}",
                 file.display()
             ),
         }
     }
-    open_file(path, catalog_id, Some(cap_bytes.unwrap_or(cap)))
+    let conn = open_file(path, catalog_id, cap_bytes.or(cap))?;
+    if !usable_for(&conn, catalog_id) {
+        bail!("{}: not usable even when made anew", path.display());
+    }
+    Ok(conn)
+}
+
+/// Whether the cache file has the current layout and holds catalog `catalog_id`'s thumbnails.
+fn usable_for(conn: &Connection, catalog_id: &str) -> bool {
+    let layout = conn.query_row("PRAGMA user_version", [], |r| r.get::<_, i64>(0)).is_ok_and(|v| v == CACHE_VERSION)
+        && ["entries", "data", "totals", "limits", "meta", "checked"].iter().all(|t| {
+            conn.query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = ?1", [t], |r| {
+                r.get::<_, i64>(0)
+            })
+            .is_ok_and(|n| n == 1)
+        });
+    layout
+        && conn
+            .query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get::<_, String>(0))
+            .is_ok_and(|owner| owner == catalog_id)
 }
 
 /// A connection to the cache file, with the layout created in a new file (for catalog `catalog_id`), and the cap
-/// set if one is given.
+/// set if one is given and the file has the table for it.
 fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
     let mut conn = Connection::open(path)?;
     // auto_vacuum must be set before the first table exists.
@@ -495,12 +515,9 @@ fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Co
         }
         tx.commit()?;
     }
-    let v = version(&conn)?;
-    if v != CACHE_VERSION {
-        bail!("{}: layout version {v}, expected {CACHE_VERSION}; it is only a cache: delete it", path.display());
-    }
     if let Some(cap) = cap_bytes {
-        conn.execute("UPDATE limits SET cap = ?1", [cap])?;
+        // A file of another layout may lack it: open_writer starts that one over.
+        let _ = conn.execute("UPDATE limits SET cap = ?1", [cap]);
     }
     Ok(conn)
 }
@@ -1047,11 +1064,11 @@ mod tests {
     }
 
     #[test]
-    fn another_layout_is_refused() {
+    fn another_layout_version_starts_over() {
         let dir = scratch("layout");
         Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|_| {})).err().expect("refused");
-        assert!(format!("{e:#}").contains("layout version 7"), "{e:#}");
+        let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), DEFAULT_CAP_BYTES));
     }
 
     #[test]
@@ -1256,6 +1273,24 @@ mod tests {
         // Open elsewhere: it can't be deleted, so it isn't used.
         let e = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|_| {})).err().expect("refused");
         assert!(format!("{e:#}").contains("another catalog"), "{e:#}");
+    }
+
+    #[test]
+    fn a_cache_of_an_earlier_layout_starts_over() {
+        let dir = scratch("earlier-layout");
+        // Before the catalog id and the watermarks: no `meta`, no `checked`.
+        let old = Connection::open(dir.join("thumbs.sqlite")).unwrap();
+        old.execute_batch(
+            "CREATE TABLE entries(file_id INTEGER, height INTEGER); INSERT INTO entries VALUES (1, 100);
+             CREATE TABLE limits(id INTEGER PRIMARY KEY, cap INTEGER NOT NULL); INSERT INTO limits VALUES (1, 777);
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        drop(old);
+        let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 777), "empty, its cap kept");
+        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
+        assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_some());
     }
 
     #[test]

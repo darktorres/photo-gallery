@@ -14,6 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
+use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
@@ -24,8 +25,8 @@ use crate::pdq;
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
 ///
 /// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit
-/// the baseline in place, without a new version, and catalogs made before the edit are deleted and rebuilt. From
-/// then on the baseline is frozen and every change is a migration.
+/// the baseline in place, without a new version, and a catalog made before the edit is copied into a new one when
+/// it is opened ([`rebuild`]). From then on the baseline is frozen and every change is a migration.
 const BASELINE_VERSION: i64 = 1;
 const MIGRATIONS: &[&str] = &[];
 
@@ -226,6 +227,30 @@ const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE typ
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind'))";
 const LAYOUT_PARTS: i64 = 6;
 
+/// The tables [`rebuild`] copies, each after those it refers to.
+const CARRIED: &[&str] = &[
+    "meta",
+    "scans",
+    "folders",
+    "files",
+    "analysis",
+    "pdq_pairs",
+    "roots",
+    "ratings",
+    "file_ratings",
+    "file_writes",
+    "views",
+    "session",
+];
+
+/// Columns an earlier layout may lack, and what [`rebuild`] makes them from (`o` is the old row). An analysis of
+/// the current version was made with the file's rotation as it is: a turn used to zero the version.
+const FILLED: &[(&str, &str, &str)] = &[
+    ("files", "order_key", "pg_order_key((SELECT path FROM old.folders WHERE id = o.folder_id), o.name)"),
+    ("analysis", "rotation", "(SELECT rotation FROM old.files WHERE id = o.file_id)"),
+    ("analysis", "kind", "(SELECT kind FROM old.files WHERE id = o.file_id)"),
+];
+
 /// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
 const UNDER_ROOT: &str = "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')";
 
@@ -261,6 +286,133 @@ fn migrate(conn: &Connection, baseline: &str, migrations: &[&str]) -> Result<()>
     for (i, sql) in migrations.iter().enumerate().skip((version - BASELINE_VERSION) as usize) {
         let to = BASELINE_VERSION + i as i64 + 1;
         step(sql, to).with_context(|| format!("migration to schema version {to}"))?;
+    }
+    Ok(())
+}
+
+/// A connection to the catalog at `path`, created with the baseline when new.
+fn connect(path: &Path) -> Result<Connection> {
+    let conn = Connection::open(path)?;
+    conn.execute_batch(
+        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
+         PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
+    )?;
+    migrate(&conn, &baseline(), MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
+    Ok(conn)
+}
+
+/// Whether the catalog has every part of the current layout (a catalog of an earlier one lacks some).
+fn current_layout(conn: &Connection) -> Result<bool> {
+    Ok(conn.query_row(LAYOUT_CHECK, [], |r| r.get::<_, i64>(0))? == LAYOUT_PARTS)
+}
+
+/// Replace the catalog at `path`, made with an earlier layout, by a copy in the current one: every row of every
+/// table, with the same ids (so the thumbnail cache still matches), and the columns it lacks made from the others
+/// ([`FILLED`]). The triggers and the import version check then mark what the import has to do again. Built
+/// beside it and moved over it once complete, so a failure leaves the old catalog's rows as they were (it is left
+/// out of WAL mode). No connection to it may be open, here or in another process.
+fn rebuild(path: &Path) -> Result<()> {
+    let with_suffix = |suffix: &str| {
+        let mut p = path.as_os_str().to_owned();
+        p.push(suffix);
+        std::path::PathBuf::from(p)
+    };
+    const IN_USE: &str = "another program has it open: close it and start again";
+    // Out of WAL mode, which takes every other connection being closed, and leaves it one file.
+    {
+        let old = Connection::open(path)?;
+        old.busy_timeout(std::time::Duration::from_secs(1))?;
+        let mode: String = old.query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0)).context(IN_USE)?;
+        if !mode.eq_ignore_ascii_case("delete") {
+            bail!(IN_USE);
+        }
+    }
+    let new_path = with_suffix(".rebuild");
+    for leftover in [new_path.clone(), with_suffix(".rebuild-journal")] {
+        if leftover.exists() {
+            std::fs::remove_file(&leftover).with_context(|| format!("deleting {}", leftover.display()))?;
+        }
+    }
+    let built = build_copy(path, &new_path);
+    if built.is_err() {
+        let _ = std::fs::remove_file(&new_path);
+    }
+    built?;
+    // A WAL beside the new file would be read into it. Any is the old catalog's, left behind when it was closed.
+    for side in [with_suffix("-wal"), with_suffix("-shm")] {
+        match std::fs::remove_file(&side) {
+            Ok(()) => {}
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(anyhow::Error::from(e).context(format!("deleting {}: {IN_USE}", side.display()))),
+        }
+    }
+    // Windows refuses to move over a file another program has open.
+    std::fs::rename(&new_path, path).with_context(|| format!("moving {} over it; {IN_USE}", new_path.display()))?;
+    Ok(())
+}
+
+/// [`rebuild`]'s copy of the catalog at `path`, made at `new_path`.
+fn build_copy(path: &Path, new_path: &Path) -> Result<()> {
+    let new = Connection::open(new_path)?;
+    migrate(&new, &baseline(), MIGRATIONS)?;
+    new.create_scalar_function(
+        "pg_order_key",
+        2,
+        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
+        |ctx| {
+            let text = |i| ctx.get_raw(i).as_str().map_err(|e| rusqlite::Error::UserFunctionError(e.into()));
+            Ok(crate::browse::order_key(text(0)?, text(1)?))
+        },
+    )?;
+    new.execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
+    let tx = new.unchecked_transaction()?;
+    for table in CARRIED {
+        copy_table(&tx, table)?;
+    }
+    tx.commit()?;
+    new.execute("DETACH DATABASE old", [])?;
+    Ok(())
+}
+
+/// Copy the attached `old` catalog's `table` into the same table of this one, if it has it, and check that every
+/// row came.
+fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
+    // (name, NOT NULL without a default) of each column.
+    let columns = |schema: &str| -> Result<Vec<(String, bool)>> {
+        let mut stmt = tx.prepare(r#"SELECT name, "notnull" AND dflt_value IS NULL FROM pragma_table_info(?1, ?2)"#)?;
+        let rows = stmt.query_map([table, schema], |r| Ok((r.get(0)?, r.get(1)?)))?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    };
+    let old = columns("old")?;
+    if old.is_empty() {
+        return Ok(());
+    }
+    let (mut into, mut from) = (Vec::new(), Vec::new());
+    for (column, required) in columns("main")? {
+        let source = if old.iter().any(|(c, _)| *c == column) {
+            format!(r#"o."{column}""#)
+        } else if let Some((_, _, made)) = FILLED.iter().find(|(t, c, _)| *t == table && *c == column) {
+            (*made).to_string()
+        } else if required {
+            bail!("{table}.{column}: not in this catalog, and nothing to make it from");
+        } else {
+            continue;
+        };
+        into.push(format!(r#""{column}""#));
+        from.push(source);
+    }
+    // The baseline's own meta rows give way to the catalog's (its id first of all).
+    let verb = if table == "meta" { "INSERT OR REPLACE" } else { "INSERT" };
+    tx.execute(
+        &format!(r#"{verb} INTO main."{table}" ({}) SELECT {} FROM old."{table}" o"#, into.join(", "), from.join(", ")),
+        [],
+    )
+    .with_context(|| format!("copying {table}"))?;
+    let count = |schema: &str| -> Result<i64> {
+        Ok(tx.query_row(&format!(r#"SELECT count(*) FROM {schema}."{table}""#), [], |r| r.get(0))?)
+    };
+    if table != "meta" && count("main")? != count("old")? {
+        bail!("copying {table}: {} rows of {}", count("main")?, count("old")?);
     }
     Ok(())
 }
@@ -350,19 +502,17 @@ pub struct Status {
 }
 
 impl Catalog {
+    /// Open the catalog at `path`, creating it when new. One made with an earlier layout is copied into the current
+    /// one first ([`rebuild`]): seconds for 190k files.
     pub fn open(path: &Path) -> Result<Catalog> {
-        let conn = Connection::open(path)?;
-        conn.execute_batch(
-            "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
-             PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
-        )?;
-        migrate(&conn, &baseline(), MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
-        if conn.query_row(LAYOUT_CHECK, [], |r| r.get::<_, i64>(0))? != LAYOUT_PARTS {
-            bail!(
-                "catalog {}: made before the current layout (pre-release, the layout changes in place): delete \
-                 the catalog and import again",
-                path.display()
-            );
+        let mut conn = connect(path)?;
+        if !current_layout(&conn)? {
+            drop(conn);
+            rebuild(path).with_context(|| format!("catalog {}: copying it into the current layout", path.display()))?;
+            conn = connect(path)?;
+            if !current_layout(&conn)? {
+                bail!("catalog {}: still not in the current layout after copying it", path.display());
+            }
         }
         set_import_version(&conn).with_context(|| format!("catalog {}", path.display()))?;
         crate::query::register_functions(&conn)?;
@@ -722,18 +872,133 @@ pub(crate) mod fixture {
 mod tests {
     use super::*;
 
-    #[test]
-    fn old_layouts_are_refused() {
-        let dir = std::env::temp_dir().join(format!("pg-layout-{}", std::process::id()));
+    /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
+    const BEFORE_ORDER_KEY: &str = r"
+        PRAGMA journal_mode = WAL;
+        CREATE TABLE scans(id INTEGER PRIMARY KEY, root TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER);
+        CREATE TABLE folders(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE);
+        CREATE TABLE files(id INTEGER PRIMARY KEY, volume INTEGER NOT NULL, file_ref INTEGER NOT NULL,
+            folder_id INTEGER NOT NULL, name TEXT NOT NULL, ext TEXT NOT NULL, kind TEXT NOT NULL,
+            size INTEGER NOT NULL, mtime INTEGER NOT NULL, last_scan INTEGER NOT NULL,
+            missing INTEGER NOT NULL DEFAULT 0, rotation INTEGER NOT NULL DEFAULT 0, UNIQUE(volume, file_ref));
+        CREATE TABLE analysis(file_id INTEGER PRIMARY KEY, version INTEGER NOT NULL, size INTEGER NOT NULL,
+            mtime INTEGER NOT NULL, analyzed INTEGER NOT NULL, error TEXT, file_hash BLOB, pixel_hash BLOB,
+            format TEXT, orientation INTEGER, width INTEGER, height INTEGER, pdq BLOB, pdq_quality INTEGER,
+            thumbhash BLOB, frames INTEGER, taken INTEGER, duration_ms INTEGER, poster_ms INTEGER);
+        CREATE TABLE pdq_pairs(a INTEGER NOT NULL, b INTEGER NOT NULL, distance INTEGER NOT NULL,
+            variant INTEGER NOT NULL, PRIMARY KEY(a, b)) WITHOUT ROWID;
+        CREATE TABLE roots(path TEXT PRIMARY KEY, added INTEGER NOT NULL);
+        CREATE TABLE ratings(file_id INTEGER PRIMARY KEY, rating INTEGER NOT NULL, updated INTEGER NOT NULL);
+        CREATE TABLE file_ratings(file_id INTEGER PRIMARY KEY, value INTEGER NOT NULL);
+        CREATE TABLE file_writes(file_id INTEGER NOT NULL, kind TEXT NOT NULL, value INTEGER NOT NULL,
+            queued INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, error TEXT, temp TEXT, temp_value INTEGER,
+            PRIMARY KEY(file_id, kind));
+        CREATE TABLE views(name TEXT PRIMARY KEY, folder TEXT NOT NULL, recursive INTEGER NOT NULL,
+            query TEXT NOT NULL, sort TEXT NOT NULL);
+        CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
+        PRAGMA user_version = 1;";
+
+    /// A fresh folder for one test's catalog file.
+    fn test_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("pg-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn an_earlier_layout_is_copied_into_the_current_one() {
+        let dir = test_dir("rebuild");
         let path = dir.join("catalog.sqlite");
-        let _ = std::fs::remove_file(&path);
-        // A catalog from before the order key: version 1, without `meta` or `files.order_key`.
+        let old = Connection::open(&path).unwrap();
+        old.execute_batch(BEFORE_ORDER_KEY).unwrap();
+        old.execute_batch(&format!(
+            r"INSERT INTO scans VALUES (1, 'D:\p', 10, 20);
+              INSERT INTO folders VALUES (1, 'D:\p'), (2, 'D:\p\Sub');
+              INSERT INTO files VALUES (11, 7, 101, 1, 'B.jpg', 'jpg', 'image', 100, 5, 1, 0, 0),
+                                       (12, 7, 102, 2, 'a.png', 'png', 'image', 200, 6, 1, 0, 1),
+                                       (13, 7, 103, 1, 'new.jpg', 'jpg', 'image', 300, 7, 1, 0, 0),
+                                       (14, 7, 104, 1, 'changed.jpg', 'jpg', 'image', 400, 8, 1, 0, 0);
+              INSERT INTO analysis(file_id, version, size, mtime, analyzed, width, height)
+                  VALUES (11, {IMPORT_VERSION}, 100, 5, 30, 640, 480), (12, {IMPORT_VERSION}, 200, 6, 30, 10, 20),
+                         (14, {IMPORT_VERSION}, 399, 8, 30, 1, 1);
+              INSERT INTO pdq_pairs VALUES (11, 12, 3, 0);
+              INSERT INTO roots VALUES ('D:\p', 1);
+              INSERT INTO ratings VALUES (11, 4, 40), (13, 1, 41);
+              INSERT INTO file_ratings VALUES (11, 4);
+              INSERT INTO file_writes(file_id, kind, value, queued) VALUES (12, 'rotation', 1, 50);
+              INSERT INTO views VALUES ('best', 'p', 1, '{{}}', '{{}}');
+              INSERT INTO session VALUES ('folder', 'p');"
+        ))
+        .unwrap();
+        drop(old);
+
+        let c = Catalog::open(&path).unwrap();
+        assert!(current_layout(&c.conn).unwrap());
+        assert!(!dir.join("catalog.sqlite.rebuild").exists());
+        let rows = |sql: &str| -> Vec<String> {
+            let mut stmt = c.conn.prepare(sql).unwrap();
+            stmt.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+        };
+        // The user's own: the library, ratings, the queued turn, views and session, with the same file ids.
+        assert_eq!(rows("SELECT path FROM roots"), [r"D:\p"]);
+        assert_eq!(rows("SELECT file_id || ':' || rating FROM ratings ORDER BY 1"), ["11:4", "13:1"]);
+        assert_eq!(rows("SELECT file_id || ':' || value FROM file_ratings"), ["11:4"]);
+        assert_eq!(rows("SELECT file_id || kind || value FROM file_writes"), ["12rotation1"]);
+        assert_eq!(rows("SELECT name FROM views"), ["best"]);
+        assert_eq!(rows("SELECT value FROM session"), ["p"]);
+        assert_eq!(rows("SELECT a || '-' || b FROM pdq_pairs"), ["11-12"]);
+        // What the layout added: the order keys as the scanner writes them, and each analysis's rotation and kind.
+        let keys: Vec<(Vec<u8>, String, String)> = {
+            let mut stmt = c
+                .conn
+                .prepare("SELECT f.order_key, fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")
+                .unwrap();
+            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
+        };
+        for (key, folder, name) in keys {
+            assert_eq!(key, crate::browse::order_key(&folder, &name), "{name}");
+        }
+        assert_eq!(
+            rows("SELECT file_id || ':' || rotation || kind FROM analysis ORDER BY 1"),
+            ["11:0image", "12:1image", "14:0image"]
+        );
+        // Analyses made from the file as it is stand; the file without one and the one changed since are pending.
+        assert_eq!(rows("SELECT id || ':' || pending FROM files ORDER BY id"), ["11:0", "12:0", "13:1", "14:1"]);
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_catalog_that_cant_be_copied_is_left_as_it_was() {
+        let dir = test_dir("rebuild-fails");
+        let path = dir.join("catalog.sqlite");
+        // Files without the columns the current layout needs, and no way to make them.
         let conn = Connection::open(&path).unwrap();
-        conn.execute_batch("CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); PRAGMA user_version = 1;").unwrap();
+        conn.execute_batch(
+            "CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
         drop(conn);
         let e = Catalog::open(&path).err().expect("refused");
-        assert!(format!("{e:#}").contains("import again"), "{e:#}");
+        assert!(format!("{e:#}").contains("files.volume"), "{e:#}");
+        let conn = Connection::open(&path).unwrap();
+        assert_eq!(conn.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
+        drop(conn);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_catalog_open_elsewhere_isnt_copied() {
+        let dir = test_dir("rebuild-open");
+        let path = dir.join("catalog.sqlite");
+        let other = Connection::open(&path).unwrap();
+        other.execute_batch(BEFORE_ORDER_KEY).unwrap();
+        let e = Catalog::open(&path).err().expect("refused");
+        assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
+        drop(other);
+        assert!(Catalog::open(&path).is_ok(), "copied once nothing else has it open");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

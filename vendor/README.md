@@ -30,3 +30,19 @@ link the static runtime too and the linker warns `LNK4098` (two C runtimes in on
 
 To update: copy the new version from the cargo registry over this directory, then add the `WITH_CRT_DLL` line back
 to `build_vendor` in `build.rs`.
+
+## dhat
+
+dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap
+profiles with whole backtraces (`trim_backtraces(None)`) take minutes rather than hours. Upstream unwinds while it
+holds its spinlock, so every thread queues behind one unwind, and each new global peak sweeps every program point. The
+patch takes backtraces before the lock, keeps them as return addresses resolved once at exit, records the peak lazily
+and locks a `std::sync::Mutex`. Its README lists the changes; the output (`dhat-heap.json`) is upstream's.
+
+It also walks frame pointers instead of unwind tables, but only on Linux and macOS (`build.rs`). On Windows it
+unwinds with `backtrace` (`RtlVirtualUnwind`), still outside the lock. Only `gallery`'s `dhat-heap` feature uses it
+(docs/PROFILING.md "Tool: dhat"). It keeps its own `Cargo.lock`, and its dependencies are pinned exactly, at the
+versions the workspace's `Cargo.lock` has. Being a path dependency, it is formatted by `cargo fmt --all`: its
+`rustfmt.toml` keeps it at rustfmt's defaults, as upstream's.
+
+To update: copy phpstan-rs's `patches/dhat` over this directory (without `target/`).

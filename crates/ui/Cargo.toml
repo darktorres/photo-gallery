@@ -30,6 +30,13 @@ serde_json.workspace = true
 thumbhash.workspace = true
 turbojpeg.workspace = true
 windows-sys.workspace = true
+# The heap profiler (docs/PROFILING.md "Tool: dhat"): a patched dhat-rs that takes whole backtraces quickly
+# (vendor/README.md).
+dhat = { path = "../../vendor/dhat", optional = true }
+
+[features]
+# `gallery` with dhat as its allocator, writing dhat-heap.json when it ends. Built with the `dhat` profile.
+dhat-heap = ["dep:dhat"]
 
 [build-dependencies]
 cxx-qt-build = "0.10"

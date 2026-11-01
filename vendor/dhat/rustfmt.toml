@@ -1,0 +1,2 @@
+# rustfmt's defaults, as upstream's: `cargo fmt --all` formats this crate (a path dependency of pg-ui), and without
+# this file it would take the workspace's rustfmt.toml.

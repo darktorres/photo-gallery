@@ -1,0 +1,19 @@
+[package]
+name = "dhat"
+version = "0.3.3"
+authors = ["Nicholas Nethercote <n.nethercote@gmail.com>"]
+license = "MIT OR Apache-2.0"
+edition = "2021"
+description = "dhat-rs 0.3.3 with faster whole-backtrace heap profiling; see README.md."
+readme = "README.md"
+repository = "https://github.com/nnethercote/dhat-rs"
+publish = false
+
+[dependencies]
+backtrace = "=0.3.76"
+libc = "=0.2.191"
+rustc-hash = "=2.1.3"
+lazy_static = "=1.5.1"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+thousands = "=0.2.0"

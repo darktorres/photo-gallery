@@ -8,6 +8,39 @@ measured on.
 
 ---
 
+## Tool: dhat heap profiles, `--features dhat-heap` (2026-11-01)
+
+Every Rust heap allocation of a `gallery` run, by the backtrace that made it: how many, how big, how long they live,
+what was live at the global peak and what is left at exit. `dhat` is a patched dhat-rs 0.3.3 (vendor/README.md
+"dhat") that takes whole backtraces in seconds where upstream takes minutes. Qt's, FFmpeg's and libjpeg-turbo's
+allocations go to the C runtime's heap, so they are not in it.
+
+```powershell
+cargo build --profile dhat --features dhat-heap -p pg-ui --bin gallery   # target/dhat/gallery.exe; ~9 min clean
+$env:PATH = "C:\Qt\6.12.0\msvc2022_64\bin;$env:PATH"   # Qt's DLLs: target/dhat has only FFmpeg's
+$env:PG_CATALOG_DIR = 'D:\…\scratch_dhat\catalog'; $env:PG_DHAT_UNTRIMMED = 1
+target/dhat/gallery.exe import --workers 1        # writes dhat-heap.json in the current directory
+```
+
+- **Backtraces:** cut to 10 frames, plus dhat's and `alloc`'s own at the top, unless `PG_DHAT_UNTRIMMED` is set.
+  Untrimmed, each stack starts with dhat's frames (`backtrace::trace`, `dhat::new_backtrace_inner`, `__rust_alloc`),
+  as upstream's does, and ends at the thread's start. On Windows the patch's frame-pointer walk doesn't apply
+  (Linux and macOS only), so `-C force-frame-pointers=yes` is not needed: it unwinds with `RtlVirtualUnwind`, outside
+  the lock.
+- **The profile is written when `main` returns.** Runs that end in `process::exit` (a command's error, the app's
+  `fatal`) write none. The app writes it when its window is closed.
+- **One worker** (`--workers 1`) makes an import's or a thumbnail pass's counts the same from run to run.
+- **Reading:** `pps` are the program points: `tb`/`tbk` total bytes and blocks, `gb`/`gbk` at the global peak,
+  `eb`/`ebk` at exit, `fs` indices into `ftbl`. The viewer (`dh_view.html`,
+  <https://nnethercote.github.io/dh_view/dh_view.html>) opens small ones; parse big ones in a script. dhat counts a
+  `realloc` as a new block of the new size, charged to the site that first allocated it. Identical code folding can
+  name the wrong type in a frame (`RawVec<Unrelated>::grow_one`): go by the calling frame. Charge an allocation to
+  the innermost frame of ours that isn't a container or conversion helper: that is the code that decides to allocate.
+- **Checked** on `gallery import` of 305 small JPEGs (`D:\PhotoGallery\borders_sample\_preview`, 5.3 MB), 1.3 s:
+  425.6 MB in 167,454 blocks, 33.2 MB at the peak, 1 kB at exit. Trimmed and untrimmed give the same totals.
+  Untrimmed, the stacks are up to 55 frames deep and reach the thread's start; the largest site is `pdq::dct16`'s
+  zeroed buffer (105.7 MB in 305 blocks, `pdq.rs:117`).
+
 ## Tool: Pin call graph, `tools/profiling/callgraph` (2026-10-31)
 
 Callgrind's view of the **Windows app**: instructions per function, self and inclusive, with call counts and the call

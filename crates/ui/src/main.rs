@@ -32,7 +32,20 @@ use cxx_qt::casting::Upcast;
 use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 use pg_ingest::cli;
 
+// The heap profiler's build (docs/PROFILING.md "Tool: dhat"). It sees Rust's allocations only: Qt's and FFmpeg's go
+// to the C runtime's heap.
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn main() {
+    // Dropping it writes dhat-heap.json, so it lives until `main` returns: runs that end in `process::exit` (an
+    // error, `fatal`) write none. Backtraces are cut to 10 frames unless PG_DHAT_UNTRIMMED is set.
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = {
+        let frames = std::env::var_os("PG_DHAT_UNTRIMMED").is_none().then_some(10);
+        dhat::Profiler::builder().trim_backtraces(frames).build()
+    };
     let args: Vec<OsString> = std::env::args_os().collect();
     if cli::wants_cli(&args[1..]) {
         attach_console();

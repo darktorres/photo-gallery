@@ -71,6 +71,36 @@ pub struct Decoded {
     pub scale_denom: u8,
 }
 
+/// An image as it is stored: decoded, not yet oriented.
+pub struct Stored {
+    pub image: Rgb,
+    pub format: Format,
+    /// Orientation (1–8) to apply to show it upright: the EXIF one, combined with the catalog rotation.
+    pub orientation: u8,
+    /// Stored dimensions of the full-size image.
+    pub full_width: u32,
+    pub full_height: u32,
+    /// The DCT scale denominator used (1, 2, 4 or 8; always 1 for non-JPEG).
+    pub scale_denom: u8,
+}
+
+impl Stored {
+    /// The upright image ([`Decoder::decode`]'s result).
+    pub fn orient(self) -> Decoded {
+        let quarter_turn = matches!(self.orientation, 5..=8);
+        let (full_width, full_height) =
+            if quarter_turn { (self.full_height, self.full_width) } else { (self.full_width, self.full_height) };
+        Decoded {
+            image: orient(self.image, self.orientation),
+            format: self.format,
+            orientation: self.orientation,
+            full_width,
+            full_height,
+            scale_denom: self.scale_denom,
+        }
+    }
+}
+
 /// The least a JPEG may be DCT-scaled down to.
 #[derive(Clone, Copy, Debug)]
 pub enum MinSize {
@@ -97,6 +127,12 @@ impl Decoder {
     /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller). `turns` is
     /// the catalog rotation (`files.rotation`, quarter turns clockwise), applied after the EXIF orientation.
     pub fn decode(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
+        Ok(self.decode_stored(bytes, min, turns)?.orient())
+    }
+
+    /// [`Decoder::decode`] without the orientation: the pixels as stored, which is what a lossless crop of the file
+    /// cuts (borders). `min` still means the upright size; `turns` is used for that and for `orientation`.
+    pub fn decode_stored(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let orientation = crate::metadata::compose_orientation(exif_orientation(bytes), turns);
         let quarter_turn = matches!(orientation, 5..=8);
@@ -106,7 +142,7 @@ impl Decoder {
             _ => None,
         };
         // Non-JPEG, and JPEGs libjpeg-turbo rejects (CMYK, some damaged files): the `image` crate, at full size.
-        let (stored, scale_denom, (full_w, full_h)) = match jpeg {
+        let (image, scale_denom, (full_width, full_height)) = match jpeg {
             Some(r) => r,
             None => {
                 let rgb = decode_other(bytes, format)?;
@@ -114,9 +150,7 @@ impl Decoder {
                 (rgb, 1, size)
             }
         };
-        let image = orient(stored, orientation);
-        let (full_width, full_height) = if quarter_turn { (full_h, full_w) } else { (full_w, full_h) };
-        Ok(Decoded { image, format, orientation, full_width, full_height, scale_denom })
+        Ok(Stored { image, format, orientation, full_width, full_height, scale_denom })
     }
 
     /// The stored (not yet oriented) image, the scale denominator and the full stored size.

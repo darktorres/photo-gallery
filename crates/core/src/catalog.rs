@@ -18,6 +18,7 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
+use crate::borders::{BORDERS_VERSION, Detection};
 use crate::media::{self, Kind};
 use crate::pdq;
 
@@ -105,12 +106,45 @@ CREATE TABLE analysis(
     frames      INTEGER,           -- frames in the file: > 1 is an animated image (or a video)
     taken       INTEGER,           -- when it was taken, as wall-clock time (no time zone) in Unix seconds
     duration_ms INTEGER,           -- videos
-    poster_ms   INTEGER            -- videos: where the frame for the ThumbHash and the thumbnails is
+    poster_ms   INTEGER,           -- videos: where the frame for the ThumbHash and the thumbnails is
+    -- Borders (borders::detect) on the stored pixels, found after the import by a pass of their own: what a crop
+    -- cuts from the left, top, right and bottom (borders::Detection::cut), all 0 for none. NULL until looked for,
+    -- and where they aren't (videos, animated and tiny images, failures). `borders_due`: to be looked for, by this
+    -- build's detector (the import sets it; Catalog::open too when meta.borders_version differs).
+    cut_left    INTEGER,
+    cut_top     INTEGER,
+    cut_right   INTEGER,
+    cut_bottom  INTEGER,
+    borders_due INTEGER NOT NULL DEFAULT 1
 );
 CREATE INDEX analysis_file_hash ON analysis(file_hash);
 CREATE INDEX analysis_pixel_hash ON analysis(pixel_hash);
 -- The files to retry (`gallery import --retry`) and the failure count.
 CREATE INDEX analysis_failed ON analysis(file_id) WHERE error IS NOT NULL;
+-- The borders to look for (Catalog::pending_borders).
+CREATE INDEX analysis_borders_due ON analysis(file_id) WHERE borders_due = 1;
+-- Every side borders::detect found: the accepted ones (which make the cut) and the rejected candidates.
+CREATE TABLE border_sides(
+    file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    pass     INTEGER NOT NULL,  -- the peeling round (nested borders come later)
+    edge     TEXT NOT NULL CHECK (edge IN ('top', 'bottom', 'left', 'right')),
+    kind     TEXT NOT NULL CHECK (kind IN ('solid', 'blur')),
+    class    TEXT NOT NULL CHECK (class IN ('black', 'white', 'color', 'blur')),
+    depth    INTEGER NOT NULL,  -- stored pixels from the edge of what earlier rounds left
+    color    INTEGER,           -- solid: 0xRRGGBB at the edge
+    straight REAL NOT NULL,
+    dev      REAL,              -- solid and measured: flatness
+    drift    REAL,
+    rejected TEXT,              -- borders::Reason key; NULL: accepted
+    PRIMARY KEY(file_id, pass, edge)
+) WITHOUT ROWID;
+-- The class facet (query::BorderClass).
+CREATE INDEX border_sides_class ON border_sides(class, file_id) WHERE rejected IS NULL;
+-- Files whose borders the user marked as not a border (the review). Kept when the borders are looked for again.
+CREATE TABLE border_marks(
+    file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
+    marked  INTEGER NOT NULL  -- Unix seconds
+);
 -- Tier 1 candidates: PDQ distance <= pdq::MATCH_DISTANCE between reliable hashes, any of the 8 orientations.
 CREATE TABLE pdq_pairs(
     a        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,  -- a < b
@@ -175,12 +209,13 @@ CREATE TABLE session(
 -- About the catalog itself. `catalog_id` is made with it: a cache keyed by file ids (the thumbnails) checks it,
 -- since a rebuilt catalog numbers its files anew. `import_version` is the IMPORT_VERSION `files.pending` was
 -- computed for (Catalog::open recomputes it when the build's differs). `seq` is the change sequence's last number.
+-- `borders_version` is the BORDERS_VERSION `analysis.borders_due` was computed for.
 CREATE TABLE meta(
     key   TEXT PRIMARY KEY,
     value ANY NOT NULL
 );
 INSERT INTO meta(key, value) VALUES
-    ('catalog_id', lower(hex(randomblob(16)))), ('import_version', 0), ('seq', 0);
+    ('catalog_id', lower(hex(randomblob(16)))), ('import_version', 0), ('seq', 0), ('borders_version', 0);
 
 -- files.pending and files.seq, kept in the statements that change what they depend on, whoever writes them. The
 -- WHEN clauses keep a rescan that changes nothing from writing anything.
@@ -224,8 +259,9 @@ END;
 /// `LAYOUT_PARTS`.
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
-     + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind'))";
-const LAYOUT_PARTS: i64 = 6;
+     + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due'))
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))";
+const LAYOUT_PARTS: i64 = 9;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[
@@ -234,6 +270,8 @@ const CARRIED: &[&str] = &[
     "folders",
     "files",
     "analysis",
+    "border_sides",
+    "border_marks",
     "pdq_pairs",
     "roots",
     "ratings",
@@ -436,6 +474,26 @@ fn set_import_version(conn: &Connection) -> Result<()> {
     Ok(tx.commit()?)
 }
 
+/// The analyses borders are looked for in: still images that decoded and are big enough (borders::MIN_SIDE).
+const HAS_BORDERS: &str = "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= 64";
+
+/// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
+/// every analysis that can have borders is due. Like [`set_import_version`], in one write transaction.
+fn set_borders_version(conn: &Connection) -> Result<()> {
+    let version = |c: &Connection| -> Result<i64> {
+        Ok(c.query_row("SELECT value FROM meta WHERE key = 'borders_version'", [], |r| r.get(0))?)
+    };
+    if version(conn)? == BORDERS_VERSION {
+        return Ok(());
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    if version(&tx)? != BORDERS_VERSION {
+        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [BORDERS_VERSION])?;
+        tx.execute_batch(&format!("UPDATE analysis SET borders_due = coalesce({HAS_BORDERS}, 0)"))?;
+    }
+    Ok(tx.commit()?)
+}
+
 /// `Catalog::pending_import`'s query.
 fn pending_import_sql(retry_errors: bool) -> String {
     const COLUMNS: &str = "f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size,
@@ -480,6 +538,21 @@ pub struct WorkItem {
     pub kind: Kind,
 }
 
+/// A file with borders to crop off ([`Catalog::crop_source`]).
+pub struct CropSource {
+    pub path: String,
+    /// The file as analyzed.
+    pub size: i64,
+    pub mtime: i64,
+    /// `decode::Format::name`.
+    pub format: String,
+    /// The stored size.
+    pub width: u32,
+    pub height: u32,
+    /// Left, top, right, bottom, stored pixels.
+    pub cut: [u32; 4],
+}
+
 /// Whether an error is a statement stopped by [`Catalog::cancel_when`]'s flag.
 pub fn interrupted(e: &anyhow::Error) -> bool {
     e.chain().any(|c| {
@@ -515,6 +588,7 @@ impl Catalog {
             }
         }
         set_import_version(&conn).with_context(|| format!("catalog {}", path.display()))?;
+        set_borders_version(&conn).with_context(|| format!("catalog {}", path.display()))?;
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
     }
@@ -662,9 +736,9 @@ impl Catalog {
         tx.prepare_cached(
             "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                 file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
-                taken, duration_ms, poster_ms)
+                taken, duration_ms, poster_ms, borders_due)
              VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                     CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18)",
+                     CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18, 0)",
         )?
         .execute(params![
             item.id,
@@ -688,7 +762,139 @@ impl Catalog {
             item.rotation,
             item.kind.key(),
         ])?;
+        // The borders of what was there before are gone; the borders pass finds the new ones.
+        tx.prepare_cached(&format!("UPDATE analysis SET borders_due = coalesce({HAS_BORDERS}, 0) WHERE file_id = ?1"))?
+            .execute([item.id])?;
+        tx.prepare_cached("DELETE FROM border_sides WHERE file_id = ?1")?.execute([item.id])?;
         Self::sync_file_rating(tx, item.id, a.file_rating)
+    }
+
+    /// Record the borders found in a file (`None`: not looked for), replacing what was there.
+    fn write_borders(tx: &Transaction, file_id: i64, borders: Option<&Detection>) -> Result<()> {
+        let cut = borders.map(Detection::cut);
+        tx.prepare_cached(
+            "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
+             WHERE file_id = ?1",
+        )?
+        .execute(params![
+            file_id,
+            cut.map(|c| c[0]),
+            cut.map(|c| c[1]),
+            cut.map(|c| c[2]),
+            cut.map(|c| c[3])
+        ])?;
+        tx.prepare_cached("DELETE FROM border_sides WHERE file_id = ?1")?.execute([file_id])?;
+        let mut insert = tx.prepare_cached(
+            "INSERT INTO border_sides(file_id, pass, edge, kind, class, depth, color, straight, dev, drift, rejected)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+        )?;
+        for s in borders.map_or(&[][..], |b| &b.sides) {
+            let color = s.color.map(|[r, g, b]| ((r as i64) << 16) | ((g as i64) << 8) | b as i64);
+            insert.execute(params![
+                file_id,
+                s.pass,
+                s.edge.key(),
+                s.kind.key(),
+                s.class().key(),
+                s.depth,
+                color,
+                s.straight,
+                s.dev,
+                s.drift,
+                s.rejected.map(|r| r.key()),
+            ])?;
+        }
+        Ok(())
+    }
+
+    /// Analyses whose borders are due (new ones, and all after a new detector: [`set_borders_version`]), of
+    /// files the import has nothing to do for, in on-disk order.
+    pub fn pending_borders(&self) -> Result<Vec<WorkItem>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
+                    f.rotation, f.kind
+             FROM analysis a CROSS JOIN files f
+             WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok(WorkItem {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                size: r.get(2)?,
+                mtime: r.get(3)?,
+                rotation: r.get(4)?,
+                kind: Kind::from_key(&r.get::<_, String>(5)?).unwrap_or(Kind::Image),
+            })
+        })?;
+        Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// Record borders looked for ([`Catalog::pending_borders`]), unless the file changed meanwhile (the import
+    /// then analyzes it again, and the borders are due again).
+    pub fn store_borders(tx: &Transaction, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
+        let current: bool = tx
+            .prepare_cached("SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3)")?
+            .query_row(params![item.id, item.size, item.mtime], |r| r.get(0))?;
+        if current {
+            Self::write_borders(tx, item.id, borders)?;
+        }
+        Ok(())
+    }
+
+    /// The present file at an absolute path (Windows paths: any case).
+    pub fn file_by_path(&self, path: &str) -> Result<Option<i64>> {
+        let Some((folder, name)) = path.rsplit_once('\\') else { return Ok(None) };
+        Ok(self
+            .conn
+            .prepare_cached(
+                "SELECT f.id FROM files f JOIN folders d ON d.id = f.folder_id
+                 WHERE lower(d.path) = lower(?1) AND lower(f.name) = lower(?2) AND f.missing = 0",
+            )?
+            .query_row([folder, name], |r| r.get(0))
+            .optional()?)
+    }
+
+    /// What cropping a file's borders off needs: its borders as found in the file as it was analyzed (`size`,
+    /// `mtime`: the caller checks the file is still that one). `None` when it has none to crop: none found, marked
+    /// as not a border, or not looked for in the file as it is.
+    pub fn crop_source(&self, file_id: i64) -> Result<Option<CropSource>> {
+        Ok(self
+            .conn
+            .prepare_cached(
+                "SELECT (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
+                        a.format, a.orientation, a.width, a.height, a.cut_left, a.cut_top, a.cut_right, a.cut_bottom
+                 FROM files f JOIN analysis a ON a.file_id = f.id
+                 WHERE f.id = ?1 AND f.missing = 0 AND f.pending = 0 AND a.borders_due = 0
+                   AND a.size = f.size AND a.mtime = f.mtime
+                   AND a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0
+                   AND NOT EXISTS(SELECT 1 FROM border_marks WHERE file_id = f.id)",
+            )?
+            .query_row([file_id], |r| {
+                let (orientation, w, h): (u8, u32, u32) = (r.get(4)?, r.get(5)?, r.get(6)?);
+                let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
+                Ok(CropSource {
+                    path: r.get(0)?,
+                    size: r.get(1)?,
+                    mtime: r.get(2)?,
+                    format: r.get(3)?,
+                    width,
+                    height,
+                    cut: [r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?],
+                })
+            })
+            .optional()?)
+    }
+
+    /// Mark a file's borders as not a border, or take the mark back (the review).
+    pub fn set_border_mark(conn: &Connection, file_id: i64, marked: bool) -> Result<()> {
+        if marked {
+            conn.prepare_cached("INSERT OR REPLACE INTO border_marks(file_id, marked) VALUES (?1, unixepoch())")?
+                .execute([file_id])?;
+        } else {
+            conn.prepare_cached("DELETE FROM border_marks WHERE file_id = ?1")?.execute([file_id])?;
+        }
+        Ok(())
     }
 
     /// Three-way rating sync. `file_ratings` holds what the file was last known to hold; a file rating that
@@ -767,8 +973,8 @@ impl Catalog {
     pub fn store_failure(tx: &Transaction, item: &WorkItem, error: &str) -> Result<()> {
         tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?.execute([item.id])?;
         tx.prepare_cached(
-            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7)",
+            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error, borders_due)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7, 0)",
         )?
         .execute(params![
             item.id,
@@ -779,6 +985,7 @@ impl Catalog {
             item.kind.key(),
             error
         ])?;
+        tx.prepare_cached("DELETE FROM border_sides WHERE file_id = ?1")?.execute([item.id])?;
         Ok(())
     }
 
@@ -1100,6 +1307,187 @@ mod tests {
         let mut work = c.pending_import(false).unwrap();
         assert_eq!(work.len(), 1);
         work.remove(0)
+    }
+
+    #[test]
+    fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector() {
+        use crate::borders::{Edge, Kind as SideKind, Reason, Side};
+        use crate::browse;
+        use crate::query::{BorderFacet, Query, Sort};
+
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.add_root(r"D:\x").unwrap();
+        let scan = c.begin_scan(r"D:\x").unwrap();
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let item = next_work(&c);
+        let solid = |edge| Side {
+            pass: 0,
+            edge,
+            kind: SideKind::Solid,
+            depth: 41,
+            color: Some([0, 0, 0]),
+            straight: 1.0,
+            dev: Some(0.0),
+            drift: Some(0.5),
+            rejected: None,
+        };
+        let sky = Side {
+            pass: 0,
+            edge: Edge::Left,
+            kind: SideKind::Blur,
+            depth: 30,
+            color: None,
+            straight: 0.75,
+            dev: None,
+            drift: None,
+            rejected: Some(Reason::UnpairedBlur),
+        };
+        let found = Detection {
+            width: 400,
+            height: 300,
+            content: [0, 41, 400, 259],
+            sides: vec![solid(Edge::Top), solid(Edge::Bottom), sky],
+        };
+        let analysis = Analysis {
+            file_hash: [1; 32],
+            format: "jpeg".into(),
+            orientation: 1,
+            width: 400,
+            height: 300,
+            thumbhash: Vec::new(),
+            file_rating: None,
+            frames: 1,
+            taken: None,
+            taken_utc: false,
+            pixels: None,
+            duration_ms: None,
+            poster_ms: None,
+        };
+        let tx = c.conn.transaction().unwrap();
+        Catalog::store_analysis(&tx, &item, &analysis).unwrap();
+        tx.commit().unwrap();
+        let cut = |c: &Catalog| -> [Option<i64>; 4] {
+            c.conn
+                .query_row("SELECT cut_left, cut_top, cut_right, cut_bottom FROM analysis", [], |r| {
+                    Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?])
+                })
+                .unwrap()
+        };
+        // The import leaves them to the borders pass.
+        assert_eq!(cut(&c), [None; 4]);
+        let due = c.pending_borders().unwrap();
+        assert_eq!(due.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
+        let tx = c.conn.transaction().unwrap();
+        Catalog::store_borders(&tx, &due[0], Some(&found)).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(cut(&c), [Some(0), Some(41), Some(0), Some(41)]);
+        assert_eq!(browse::border_sides(&c.conn, item.id).unwrap(), found.sides);
+        assert!(c.pending_borders().unwrap().is_empty());
+
+        // The grid's entry, the filters and the sort.
+        let list = |c: &Catalog, q: Query| -> Vec<browse::Entry> {
+            browse::list_grid(&c.conn, "", true, &q, Sort::default()).unwrap()
+        };
+        let entry = list(&c, Query::default()).remove(0);
+        assert_eq!(entry.borders, browse::Borders::Found);
+        let [x, y, w, h] = entry.content().unwrap();
+        assert!(x == 0.0 && w == 1.0 && (y - 41.0 / 300.0).abs() < 1e-9 && (h - 218.0 / 300.0).abs() < 1e-9);
+        let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
+        assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
+        assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
+        let counts = browse::facets(&c.conn, "", true, &Query::default()).unwrap().borders;
+        assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
+        assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
+
+        // Marked as not a border: no border to the filters, the mark to the review.
+        Catalog::set_border_mark(&c.conn, item.id, true).unwrap();
+        assert_eq!(list(&c, Query::default())[0].borders, browse::Borders::Marked);
+        assert!(list(&c, only(vec![BorderFacet::Black])).is_empty());
+        assert_eq!(list(&c, only(vec![BorderFacet::None])).len(), 1);
+        assert_eq!(list(&c, Query { border_marked: Some(true), ..Query::default() }).len(), 1);
+
+        // A new detector: due again, without a new import; the mark stays.
+        c.conn.execute("UPDATE meta SET value = 0 WHERE key = 'borders_version'", []).unwrap();
+        set_borders_version(&c.conn).unwrap();
+        assert!(c.pending_import(false).unwrap().is_empty());
+        let due = c.pending_borders().unwrap();
+        assert_eq!(due.len(), 1);
+        let tx = c.conn.transaction().unwrap();
+        Catalog::store_borders(&tx, &due[0], Some(&Detection::none(400, 300))).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(cut(&c), [Some(0); 4]);
+        assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
+        assert!(c.pending_borders().unwrap().is_empty());
+        assert_eq!(list(&c, Query::default())[0].borders, browse::Borders::None);
+        let marks: i64 = c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap();
+        assert_eq!(marks, 1);
+
+        // Analyzed again (the file changed): the old borders go, the new ones are due.
+        let tx = c.conn.transaction().unwrap();
+        Catalog::store_borders(&tx, &due[0], Some(&found)).unwrap();
+        Catalog::store_analysis(&tx, &item, &analysis).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(cut(&c), [None; 4]);
+        assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
+        assert_eq!(c.pending_borders().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn border_depth_sorts_by_the_largest_share_of_a_side_cut() {
+        use crate::browse;
+        use crate::query::{Query, Sort, SortKey};
+
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.add_root(r"D:\x").unwrap();
+        let scan = c.begin_scan(r"D:\x").unwrap();
+        // 400 × 300 stored. b: none; c: 30 of 300 at the top (10%); d: 60 of 400 at the left (15%), but turned a
+        // quarter (orientation 6), so 60 of the 400 upright rows; e: 90 at the top (30%), marked not a border.
+        let files = [("b.jpg", 1, None), ("c.jpg", 1, Some([0, 30, 0, 0])), ("d.jpg", 6, Some([60, 0, 0, 0]))];
+        let files = files.into_iter().chain([("e.jpg", 1, Some([0, 90, 0, 0]))]);
+        for (n, (name, orientation, cut)) in files.enumerate() {
+            let tx = c.conn.transaction().unwrap();
+            let folder = Catalog::folder(&tx, r"D:\x").unwrap();
+            let kind = media::kind_of(name).unwrap();
+            let file = ScannedFile { volume: 1, file_ref: 10 + n as u64, name, kind, size: 10, mtime: 100 };
+            Catalog::upsert_file(&tx, scan, &folder, &file).unwrap();
+            tx.commit().unwrap();
+            let item = c.pending_import(false).unwrap().remove(0);
+            let [l, t, r, b] = cut.unwrap_or([0; 4]);
+            let mut borders = Detection::none(400, 300);
+            borders.content = [l, t, 400 - r, 300 - b];
+            let (width, height) = if orientation >= 5 { (300, 400) } else { (400, 300) };
+            let analysis = Analysis {
+                file_hash: [n as u8; 32],
+                format: "jpeg".into(),
+                orientation,
+                width,
+                height,
+                thumbhash: Vec::new(),
+                file_rating: None,
+                frames: 1,
+                taken: None,
+                taken_utc: false,
+                pixels: None,
+                duration_ms: None,
+                poster_ms: None,
+            };
+            let tx = c.conn.transaction().unwrap();
+            Catalog::store_analysis(&tx, &item, &analysis).unwrap();
+            Catalog::store_borders(&tx, &item, Some(&borders)).unwrap();
+            tx.commit().unwrap();
+            if name == "e.jpg" {
+                Catalog::set_border_mark(&c.conn, item.id, true).unwrap();
+            }
+        }
+        let names = |descending: bool| -> Vec<String> {
+            let sort = Sort { key: SortKey::Borders, descending };
+            let entries = browse::list_grid(&c.conn, "", true, &Query::default(), sort).unwrap();
+            let path = |id| browse::details(&c.conn, id).unwrap().unwrap().path;
+            entries.iter().map(|e| path(e.id).rsplit('\\').next().unwrap().to_string()).collect()
+        };
+        // Without a border (none found, or marked) last, by name, either way.
+        assert_eq!(names(false), ["c.jpg", "d.jpg", "b.jpg", "e.jpg"]);
+        assert_eq!(names(true), ["d.jpg", "c.jpg", "b.jpg", "e.jpg"]);
     }
 
     #[test]

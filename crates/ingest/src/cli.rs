@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 use std::time::Instant;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{CommandFactory, Parser, Subcommand};
 use pg_core::catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
@@ -13,7 +13,7 @@ use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_IDLE, THREAD_PRIORIT
 
 use crate::control::Control;
 use crate::writeback::Writer;
-use crate::{dups, import, pipeline, scan, thumbs};
+use crate::{borders, dups, import, pipeline, scan, thumbs};
 
 pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
 
@@ -75,6 +75,21 @@ enum Command {
         /// Run at normal CPU priority instead of idle.
         #[arg(long)]
         foreground: bool,
+    },
+    /// Borders around images. Without paths: look for those due, in what the import analyzed and after a new
+    /// detector (the app does this in the background, after the import).
+    Borders {
+        /// Report on these files or folders (searched recursively) instead, into --csv, in tools/borders.py's
+        /// report.csv columns. The catalog isn't touched.
+        paths: Vec<PathBuf>,
+        /// Where the report goes.
+        #[arg(long, requires = "paths")]
+        csv: Option<PathBuf>,
+        /// Mark the files a review.json of the eval viewer's Borders page calls false positives as not a border.
+        #[arg(long, conflicts_with = "paths")]
+        import_review: Option<PathBuf>,
+        #[command(flatten)]
+        pipeline: PipelineArgs,
     },
     /// Write the ratings and turns made in the app into the files, until none is left (the app does this in the
     /// background).
@@ -180,6 +195,35 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 cache.cap()? as f64 / 1e9,
                 start.elapsed().as_secs_f64()
             );
+        }
+        Command::Borders { paths, csv, import_review, pipeline } => {
+            let opts = pipeline.options(THREAD_PRIORITY_NORMAL);
+            if let Some(review) = import_review {
+                let (marked, unknown) = borders::import_review(&catalog, &review)?;
+                println!("{marked} files marked as not a border; {unknown} not in the catalog");
+            } else if paths.is_empty() {
+                let s = borders::find(&mut catalog, &opts, &ctl)?;
+                println!(
+                    "borders looked for in {} files ({} failed), {:.1} s",
+                    s.files,
+                    s.failed,
+                    start.elapsed().as_secs_f64()
+                );
+            } else {
+                let csv = csv.context("--csv: where the report goes")?;
+                let s = borders::report(&paths, &csv, &opts, &ctl)?;
+                println!(
+                    "{} files: {} with borders, {} rejected candidates only, {} skipped, {} errors; {:.1} s \
+                     ({:.0} files/s)",
+                    s.files,
+                    s.borders,
+                    s.rejected,
+                    s.skipped,
+                    s.errors,
+                    s.seconds,
+                    s.files as f64 / s.seconds.max(1e-3)
+                );
+            }
         }
         Command::Status => {
             for root in catalog.roots()? {

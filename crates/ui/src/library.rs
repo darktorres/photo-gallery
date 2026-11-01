@@ -1,8 +1,8 @@
 //! The library (the folders the user added) and the background work that keeps the catalog and the files in step:
-//! the job that scans, imports and makes thumbnails (`pg_ingest::runner`), and the writer that puts ratings and
-//! turns into the files (`pg_ingest::writeback`). QML polls `poll()` for progress, and reloads its views on
-//! `scanned` (the folder tree changed), `imported` (sizes and placeholders changed) and `filesChanged` (files were
-//! turned).
+//! the job that saves cropped copies, scans, imports and makes thumbnails (`pg_ingest::runner`), and the writer
+//! that puts ratings and turns into the files (`pg_ingest::writeback`). QML polls `poll()` for progress, and
+//! reloads its views on `scanned` (the folder tree changed), `imported` (sizes and placeholders changed) and
+//! `filesChanged` (files were turned).
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -26,6 +26,8 @@ pub mod qobject {
         #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
         /// The latest error or note from the job, until the next one.
         #[qproperty(QString, message, READ, WRITE, NOTIFY, FINAL)]
+        /// Whether `message` is an error or a warning (otherwise news: a job done).
+        #[qproperty(bool, message_warning, cxx_name = "messageWarning", READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).
@@ -96,6 +98,13 @@ pub fn wake_writer() {
     }
 }
 
+/// Save cropped copies of these files' borders into `folder`, first thing in the background job.
+pub fn save_crops(ids: Vec<i64>, folder: std::path::PathBuf) {
+    if let Some(r) = RUNNER.get() {
+        r.save_crops(ids, folder);
+    }
+}
+
 /// After the event loop, before the thumbnail cache closes: let the file write in progress finish, with its
 /// thumbnails retagged. The background job is left to end with the process: what it stops in the middle (a batch
 /// of thumbnails, an analysis) is redone at the next start, and waiting for it could keep the process alive for
@@ -114,6 +123,7 @@ pub struct LibraryRust {
     status: QString,
     progress: f64,
     message: QString,
+    message_warning: bool,
     writes: QString,
     write_failed: bool,
     seen: Generation,
@@ -128,6 +138,11 @@ fn library_roots() -> Vec<String> {
 }
 
 impl qobject::Library {
+    fn show(mut self: Pin<&mut Self>, text: String, warning: bool) {
+        self.as_mut().set_message_warning(warning);
+        self.set_message(QString::from(&text));
+    }
+
     fn load_roots(self: Pin<&mut Self>) {
         self.set_roots(library_roots().iter().map(QString::from).collect());
     }
@@ -154,17 +169,16 @@ impl qobject::Library {
         let path = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
         let root = match normalize_root(&path) {
             Ok(r) => r,
-            Err(e) => return self.set_message(QString::from(&format!("{e:#}"))),
+            Err(e) => return self.show(format!("{e:#}"), true),
         };
         match state::with_catalog(|c| c.add_root(&root)) {
             // A folder inside the library is just rescanned.
             Ok(added) => {
                 if !added {
-                    self.as_mut()
-                        .set_message(QString::from(&format!("{root} is already in the library: rescanning it")));
+                    self.as_mut().show(format!("{root} is already in the library: rescanning it"), false);
                 }
             }
-            Err(e) => return self.set_message(QString::from(&format!("{e:#}"))),
+            Err(e) => return self.show(format!("{e:#}"), true),
         }
         self.as_mut().load_roots();
         if let Some(r) = RUNNER.get() {
@@ -174,7 +188,7 @@ impl qobject::Library {
 
     fn remove_folder(mut self: Pin<&mut Self>, path: &QString) {
         if let Err(e) = state::with_catalog(|c| c.remove_root(&path.to_string())) {
-            return self.set_message(QString::from(&format!("{e:#}")));
+            return self.show(format!("{e:#}"), true);
         }
         // A scan of it in progress stops; the job skips folders no longer in the library.
         if let Some(r) = RUNNER.get() {
@@ -216,7 +230,7 @@ impl qobject::Library {
         self.as_mut().set_status(QString::from(&status));
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
         if let Some(last) = r.take_messages().pop() {
-            self.as_mut().set_message(QString::from(&last));
+            self.as_mut().show(last.text, last.warning);
         }
         if let Some(w) = WRITER.get() {
             let s = w.status();

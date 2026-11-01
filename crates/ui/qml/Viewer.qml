@@ -1,13 +1,14 @@
 // Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window with an antialiased (Lanczos3)
 // downscale made in Rust; zoom from fit to 32× around the cursor (wheel, pinch, + −) and pan by dragging. Between
 // fit and 1:1 the GPU scales the fitted image at once, and Rust renders the visible part with Lanczos after a
-// pause; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe, a bright frame
-// around the image to reveal black bars. Rating a picture moves on to the next one. Videos play with Qt Multimedia
+// pause; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe; borders (B): a
+// bright frame around the image to reveal black bars, and over it what cropping the borders found would cut, with
+// N to mark them as not a border. Rating a picture moves on to the next one. Videos play with Qt Multimedia
 // on our FFmpeg; animated GIF, APNG and WebP with our AnimationPlayer (src/animation.rs), into the same
 // VideoOutput. Both are fitted and never enlarged; the poster or first frame shows until the first frame played.
 //
 // The gallery's items are the window's (Main.qml): it gives the one shown, by the properties below, and does the
-// ratings and turns asked for (rated(), turned()). The QML compiler compiles a call into the gallery model to C++
+// ratings, turns and border marks asked for (rated(), turned(), borderMarkToggled()). The QML compiler compiles a call into the gallery model to C++
 // only where the model is named by its id, in the window. (Reading and writing a final property through another
 // object compiles: Settings.realSize.)
 //
@@ -50,15 +51,25 @@ Rectangle {
     required property url fileUrl
     required property string filePath
     required property string info
+    // Its borders: what is left without them, as fractions of the image as shown (empty: none found); where a
+    // rejected candidate would have cut at each edge (a fraction from that edge, -1: none); whether they are marked as
+    // not a border. Whether to show them (B, the window's).
+    required property rect borderBox
+    required property real rejectedTop
+    required property real rejectedBottom
+    required property real rejectedLeft
+    required property real rejectedRight
+    required property bool borderMarked
+    required property bool showBorders
     // Real Size (Z): open images at 1:1 instead of fitted.
     required property Settings settings
 
     property bool loupe: false    // L: 10× loupe under the cursor
-    property bool frame: false    // B: bright frame around the image
     property bool zen: false      // H or a tap: nothing over the picture
     readonly property real dpr: Screen.devicePixelRatio
 
     readonly property bool still: kind === "image"
+    readonly property bool hasBorders: still && borderBox.width > 0
     readonly property bool zoomable: fw > 0 && fh > 0 && still
     readonly property bool playsVideo: visible && kind === "video"
     readonly property bool playsAnimation: visible && kind === "animated"
@@ -86,6 +97,9 @@ Rectangle {
     signal moved(int index)
     signal rated(int index, int rating)
     signal turned(int index, int turns)
+    // B: show or hide the borders (the window keeps the setting); N: mark the shown item's as not a border, or not.
+    signal bordersToggled()
+    signal borderMarkToggled(int index, bool marked)
     // The bar's "find similar" button: the photo's file, for the Yandex panel (Main.qml).
     signal findSimilar(string path)
 
@@ -222,7 +236,8 @@ Rectangle {
         else if (e.key === Qt.Key_Plus || e.key === Qt.Key_Equal) setZoom(zoom * 1.25, width / 2, height / 2)
         else if (e.key === Qt.Key_Minus) setZoom(zoom / 1.25, width / 2, height / 2)
         else if (e.key === Qt.Key_L) loupe = !loupe
-        else if (e.key === Qt.Key_B) frame = !frame
+        else if (e.key === Qt.Key_B) bordersToggled()
+        else if (e.key === Qt.Key_N && hasBorders) borderMarkToggled(index, !borderMarked)
         else if (e.key === Qt.Key_H) zen = !zen
         else if (e.key === Qt.Key_K && !still) togglePlay()
         else if (e.key === Qt.Key_M && kind === "video") muted = !muted
@@ -511,7 +526,7 @@ Rectangle {
 
                 // Frame: a 1 px magenta line just outside the image, so black bars inside it stand out.
                 Rectangle {
-                    visible: viewer.frame && fit.status === Image.Ready
+                    visible: viewer.showBorders && fit.status === Image.Ready
                     x: (viewer.zoomed ? viewer.ox : fit.x) - 1
                     y: (viewer.zoomed ? viewer.oy : fit.y) - 1
                     width: (viewer.zoomed ? viewer.dw : fit.width) + 2
@@ -519,6 +534,28 @@ Rectangle {
                     color: "transparent"
                     border.color: "#ff00ff"
                     border.width: 1
+                }
+
+                // The borders found, over the image wherever it is (fitted or zoomed). Hovering over the cut hides
+                // them, to see what is there.
+                BorderOverlay {
+                    id: borders
+                    // The cursor's place in the image, as fractions.
+                    readonly property real u: (hover.point.position.x - x) / Math.max(1, width)
+                    readonly property real v: (hover.point.position.y - y) / Math.max(1, height)
+                    readonly property bool peek: hover.hovered && u >= 0 && u <= 1 && v >= 0 && v <= 1
+                        && !(u >= kept.x && u < kept.x + kept.width && v >= kept.y && v < kept.y + kept.height)
+                    visible: viewer.showBorders && viewer.hasBorders && fit.status === Image.Ready && !peek
+                    x: viewer.zoomed ? viewer.ox : fit.x
+                    y: viewer.zoomed ? viewer.oy : fit.y
+                    width: viewer.zoomed ? viewer.dw : fit.width
+                    height: viewer.zoomed ? viewer.dh : fit.height
+                    kept: viewer.borderBox
+                    rejectedTop: viewer.rejectedTop
+                    rejectedBottom: viewer.rejectedBottom
+                    rejectedLeft: viewer.rejectedLeft
+                    rejectedRight: viewer.rejectedRight
+                    marked: viewer.borderMarked
                 }
 
                 HoverHandler { id: hover }
@@ -580,7 +617,8 @@ Rectangle {
                             : viewer.kind === "animated"
                             ? "← → step · K play/pause · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
                             : "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1"
-                              + " · Z real size · L loupe · B frame · H hide · Esc close"
+                              + " · Z real size · L loupe · B borders" + (viewer.hasBorders ? " · N not a border" : "")
+                              + " · H hide · Esc close"
                     }
                     ToolButton {
                         id: closeButton
@@ -631,6 +669,18 @@ Rectangle {
                                 ToolTip.visible: hovered
                                 ToolTip.text: "Find similar images on Yandex"
                                 onClicked: viewer.findSimilar(viewer.filePath)
+                            }
+                            // Borders found: marked as not a border while checked.
+                            ToolButton {
+                                text: "▭"
+                                visible: viewer.hasBorders
+                                checkable: true
+                                checked: viewer.borderMarked
+                                font.pixelSize: 22
+                                font.strikeout: viewer.borderMarked
+                                ToolTip.visible: hovered
+                                ToolTip.text: viewer.borderMarked ? "Marked not a border: unmark (N)" : "Not a border (N)"
+                                onClicked: viewer.borderMarkToggled(viewer.index, !viewer.borderMarked)
                             }
                             ToolButton {
                                 text: "⟲"

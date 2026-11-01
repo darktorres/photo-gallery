@@ -1406,6 +1406,7 @@ dependencies = [
  "image 0.25.10",
  "pg-core",
  "rusqlite",
+ "serde_json",
  "turbojpeg",
  "windows-sys",
 ]

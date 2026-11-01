@@ -5,8 +5,10 @@
 
 pub mod analyze;
 pub mod animation;
+pub mod borders;
 pub mod browse;
 pub mod catalog;
+pub mod crop;
 pub mod decode;
 pub mod layout;
 pub mod media;
@@ -15,6 +17,7 @@ pub mod pdq;
 pub mod pdq_index;
 pub mod query;
 pub mod resize;
+mod rewrite;
 pub mod rotate;
 pub mod thumbs;
 pub mod video;

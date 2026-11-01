@@ -1,4 +1,4 @@
-//! What the app remembers. Preferences (write-back, Real Size, row height) are the user's, not the catalog's: they
+//! What the app remembers. Preferences (write-back, Real Size, borders shown, row height) are the user's, not the catalog's: they
 //! go in `gallery.json` beside the catalog folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` overrides), so they
 //! outlive a catalog rebuild. Saved views and where the user was refer to the catalog's folders and files, so they
 //! live in it (`views`, `session`): the views and the session's folder, query and sort are `view::View`'s, the
@@ -13,6 +13,8 @@ pub mod qobject {
         #[qproperty(bool, write_back, cxx_name = "writeBack", READ, WRITE = set_write_back_saved, NOTIFY, FINAL)]
         /// The viewer opens images at 1:1 instead of fitted (ImageRater's Real Size), across images and runs.
         #[qproperty(bool, real_size, cxx_name = "realSize", READ, WRITE = set_real_size_saved, NOTIFY, FINAL)]
+        /// The grid and the viewer show what cropping the borders would cut (B).
+        #[qproperty(bool, show_borders, cxx_name = "showBorders", READ, WRITE = set_show_borders_saved, NOTIFY, FINAL)]
         /// The grid's row height in logical pixels.
         #[qproperty(f64, row_height, cxx_name = "rowHeight", READ, WRITE = set_row_height_saved, NOTIFY, FINAL)]
         /// The id of the file selected (or open in the viewer) last, -1 for none: the session's `file`.
@@ -23,6 +25,7 @@ pub mod qobject {
     unsafe extern "RustQt" {
         fn set_write_back_saved(self: Pin<&mut Settings>, value: bool);
         fn set_real_size_saved(self: Pin<&mut Settings>, value: bool);
+        fn set_show_borders_saved(self: Pin<&mut Settings>, value: bool);
         fn set_row_height_saved(self: Pin<&mut Settings>, value: f64);
         fn set_last_file_saved(self: Pin<&mut Settings>, value: i64);
     }
@@ -44,12 +47,13 @@ use crate::state;
 pub struct Prefs {
     pub write_back: bool,
     pub real_size: bool,
+    pub show_borders: bool,
     pub row_height: f64,
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { write_back: true, real_size: false, row_height: 220.0 }
+        Prefs { write_back: true, real_size: false, show_borders: false, row_height: 220.0 }
     }
 }
 
@@ -100,6 +104,7 @@ fn update(change: impl FnOnce(&mut Prefs)) {
 pub struct SettingsRust {
     write_back: bool,
     real_size: bool,
+    show_borders: bool,
     row_height: f64,
     last_file: i64,
 }
@@ -112,7 +117,13 @@ impl Default for SettingsRust {
             .flatten()
             .and_then(|id| id.parse().ok())
             .unwrap_or(-1);
-        SettingsRust { write_back: p.write_back, real_size: p.real_size, row_height: p.row_height, last_file }
+        SettingsRust {
+            write_back: p.write_back,
+            real_size: p.real_size,
+            show_borders: p.show_borders,
+            row_height: p.row_height,
+            last_file,
+        }
     }
 }
 
@@ -130,6 +141,14 @@ impl qobject::Settings {
             update(|p| p.real_size = value);
             self.as_mut().rust_mut().real_size = value;
             self.real_size_changed();
+        }
+    }
+
+    fn set_show_borders_saved(mut self: Pin<&mut Self>, value: bool) {
+        if self.show_borders != value {
+            update(|p| p.show_borders = value);
+            self.as_mut().rust_mut().show_borders = value;
+            self.show_borders_changed();
         }
     }
 

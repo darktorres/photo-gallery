@@ -7,9 +7,9 @@ use std::time::{Duration, Instant};
 
 #[derive(Clone)]
 pub struct Progress {
-    /// "scan", "import", "thumbs"; empty when idle.
+    /// "crop", "scan", "import", "borders", "thumbs"; empty when idle.
     pub phase: &'static str,
-    /// The folder being scanned, or the thumbnail height.
+    /// The folder being scanned or saved into, or the thumbnail height.
     pub detail: String,
     pub done: u64,
     /// 0 when unknown (scanning).
@@ -65,8 +65,12 @@ impl Progress {
             "" => String::new(),
             "scan" => format!("Scanning {} · {} images found", self.detail, n(self.done)),
             phase => {
-                let what =
-                    if phase == "import" { "Importing".to_string() } else { format!("Thumbnails at {}", self.detail) };
+                let what = match phase {
+                    "import" => "Importing".to_string(),
+                    "borders" => "Finding borders".to_string(),
+                    "crop" => "Saving cropped copies".to_string(),
+                    _ => format!("Thumbnails at {}", self.detail),
+                };
                 let failed = if self.failed > 0 { format!(" · {} failed", n(self.failed)) } else { String::new() };
                 format!(
                     "{what} {} of {} · {:.0}/s · {}{failed}",

@@ -4,10 +4,12 @@ See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.
 
 - `core` (`pg-core`): catalog (SQLite), decoding, the import analysis (tiers 0a/0b/1, dimensions, ThumbHash,
   the rating stored in the file), the PDQ index, the thumbnail cache, folder browsing (merged drives, filters,
-  sorts, saved views), the justified layout, ratings, reading XMP/EXIF ratings (`metadata`) and lossless
-  rotation (`rotate`). No UI dependency.
-- `ingest` (`pg-ingest`): the passes over the originals (scan, import, thumbnails), the app's background job
-  that runs them, the writer that puts ratings and turns into the files (`writeback`), and the command line.
+  sorts, saved views), the justified layout, ratings, reading XMP/EXIF ratings (`metadata`), lossless
+  rotation (`rotate`), the border detector (`borders`) and cropping (`crop`; both rewrite a file's pixels in its
+  own format through `rewrite`). No UI dependency.
+- `ingest` (`pg-ingest`): the passes over the originals (scan, import, borders, thumbnails, cropped copies), the
+  app's background job that runs them, the writer that puts ratings and turns into the files (`writeback`), and
+  the command line.
 - `ui` (`pg-ui`, binary `gallery`): the one program. Without arguments it opens the desktop app (Qt 6 Quick
   over CXX-Qt); with a command it runs that pass on the command line.
 
@@ -82,10 +84,13 @@ $g = '.\target\release\gallery.exe'
 & $g scan 'D:\PhotoGallery\datasets\pinterest' | Out-Host  # add to the library and record its media files
 & $g scan | Out-Host                                       # rescan the whole library
 & $g import | Out-Host                                     # analyze new/changed files; resumable
+& $g borders | Out-Host                                    # find the borders of what was imported; resumable
 & $g thumbs --height 256 | Out-Host                        # thumbnails at one grid height
 & $g write | Out-Host                                      # write queued ratings and turns into the files
 & $g status | Out-Host                                     # library folders, counts, pending and failing writes
 & $g dups --show 5 | Out-Host                              # what tiers 0-1 found, and the groups they form
+& $g borders --csv 'D:\x\report.csv' 'D:\x\images' | Out-Host # borders of any files, in tools/borders.py's columns
+& $g borders --import-review 'D:\x\review.json'            # the eval viewer's "not a border" marks, into the catalog
 & $g remove 'D:\PhotoGallery\datasets\pinterest'           # take a folder out (its files are hidden, not deleted)
 ```
 
@@ -122,6 +127,14 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   - Its layout version stays 1 before the first release, like the catalog's: a layout change edits it in place,
     and an existing cache file is deleted by hand. A file of another version is refused, and one that can't be
     opened only means thumbnails aren't kept.
+- **Borders** (`borders.rs`, a port of `tools/borders.py`, FINDINGS "Border cleaning"): solid borders
+  (black, white or any colour, JPEG noise included) and blurred padding bars, on the stored pixels at full size.
+  A pass of its own after the import (`gallery borders`, or the background job before the thumbnails) reads and
+  decodes each still image the import analyzed at full size: the import's decode is reduced, and the detector
+  is calibrated on every pixel. The import marks the file due (`analysis.borders_due`); a re-analysis drops its
+  old borders. Every side found is kept (`border_sides`), the rejected candidates too with why; the cut is in
+  `analysis.cut_*`. The detector has its own version (`BORDERS_VERSION`): a new one makes every file due again,
+  without importing the files again. `gallery borders --csv` reports on any files, outside the catalog.
 - **Library**: the folders added (`roots` table). None is inside another: adding a parent replaces
   its children, and adding a subfolder only rescans it. Removing one marks its files missing; adding it back
   restores them with their analysis and ratings.
@@ -141,20 +154,23 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
 - **Folder tree** (left): folders with the same path on different drives are one node (their drives are shown
   in green). "All folders" lists everything; "Include subfolders" toggles recursion.
 - **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file size, date
-  modified, date taken, megapixels, duration) and its direction (↑ / ↓). **Views ▾** saves the current folder,
+  modified, date taken, megapixels, duration, border depth) and its direction (↑ / ↓). **Views ▾** saves the current folder,
   subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
 - **Filter bar** (`FilterBar.qml`, `query.rs`): type (image, animated, video), extension, rating (unrated,
   1–5), shape (landscape, portrait, square), file size, megapixels, duration, date taken, date modified,
   duplicates (has / has none, from tiers 0a, 0b and tier-1 pairs within PDQ 22), import status (imported, not
-  yet, unreadable) and part of the name. Facets combine with AND, the choices inside one with OR. Each type and
-  extension shows how many files choosing it would show, given the other facets. Filtering and sorting are
+  yet, unreadable), borders (none, black, white, coloured, blurred bars), their review (not marked, marked not a
+  border) and part of the name. Facets combine with AND, the choices inside one with OR. Each type, extension
+  and borders choice shows how many files choosing it would show, given the other facets. Filtering and sorting are
   SQL (values bound, not spliced); a change applies 0.3 s after the last edit. The list re-filters when it is
   reopened or the filters change, not under you: a picture rated out of "Unrated" stays until then.
 - **Grid**: justified rows. The **size slider**, Ctrl+wheel or Ctrl +/− change the row height at runtime; the
   layout follows at once, thumbnails at the new size follow a moment later (the old ones are scaled meanwhile,
   and the ThumbHash placeholder shows until the first one arrives). Arrows move, 0–5 rates, **R** / **Shift+R**
   turn left / right, Enter or double-click opens the viewer. A badge shows each rating's symbol, another a
-  video's length (▶ 1:23) or the format of an animated image (GIF, APNG, WEBP).
+  video's length (▶ 1:23) or the format of an animated image (GIF, APNG, WEBP), and ▭ borders found (struck out
+  when marked not a border). **B** shows on every thumbnail what cropping the borders would cut (remembered,
+  shared with the viewer), **N** marks the selected file's borders as not a border, or takes the mark back.
 - **Viewer**:
   - ← → (or Backspace / Space) step; 4 pictures each way are preloaded.
   - **0–5**, **↑** (4) and **↓** (1) rate and move to the next picture, showing the rating's symbol for half a
@@ -166,8 +182,10 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
     again with Lanczos3 when zooming stops; from 1:1 up it is the original with nearest neighbour, to judge
     pixels.
   - **Z** Real Size: pictures open at 1:1 instead of fitted, remembered across pictures and runs.
-  - **L** a 10× nearest-neighbour loupe under the cursor, **B** a magenta frame around the image to reveal black
-    bars, **H** or a click hides everything over the picture (zen). Touch: swipe left / right to step, up / down
+  - **L** a 10× nearest-neighbour loupe under the cursor; **B** a magenta frame around the image to reveal black
+    bars, and what cropping its borders would cut, dimmed (grey when marked not a border), with rejected
+    candidates as yellow lines; hovering over the cut shows the picture under it. **N** (or ▭ in the rating bar)
+    marks the borders as not a border. **H** or a click hides everything over the picture (zen). Touch: swipe left / right to step, up / down
     to rate 4 / 1. Esc, Enter or ✕ close.
   - **Videos** play with Qt Multimedia, fitted and never enlarged. They start with sound and loop, and the poster
     shows until the first frame. The transport bar has play / pause (**K**), the time, a seek bar, mute (**M**)
@@ -193,11 +211,18 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   animated GIF, videos…) is turned in the catalog and at display. A video's own rotation matrix is applied by
   the player and by the import; the catalog's turns go on top. The grid and viewer show a turn at once; the
   file follows in the background, and its analysis and thumbnails are redone.
+- **Save cropped copies (N)…** (the filter bar's borders row) writes the listed files with their borders cut
+  off into a folder of your choice, as `<folder>\<library folder name>\<path inside it>`, with the original's
+  modification time, in the background (`ingest::crop`). The originals are never written: a folder whose copies
+  would land in the library is refused, and a file changed since its borders were found is skipped. JPEGs are
+  cropped losslessly; their left and top cuts move inward to the 8 or 16 px block grid. PNG, BMP, GIF and WebP
+  are cropped exactly and re-encoded losslessly with every other chunk kept (a lossy WebP comes out lossless,
+  larger), TIFF re-encoded with its metadata copied by ExifTool.
 - Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
-  --viewer-keys=LBHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
-  --library=1 --save-view=1 --find-similar=<path> --add-folder=<path> --screenshot=<png> --wait=<s>`. `--query`,
-  `--sort` and `--apply-view` shape the first list; the others act on it once it is shown, and `--wait` (4 s by
-  default) counts from then. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
+  --viewer-keys=LBNHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
+  --borders=1 --library=1 --save-view=1 --find-similar=<path> --add-folder=<path> --save-crops=<folder>
+  --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the first list; the others act on it
+  once it is shown, and `--wait` (4 s by default) counts from then. `--borders` shows the borders (B) for the run. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
   opens the panel on its error without sending anything. With
   `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`)
   and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages.

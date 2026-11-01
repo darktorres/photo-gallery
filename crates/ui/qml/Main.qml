@@ -44,6 +44,13 @@ ApplicationWindow {
     // The selected item (-1: none): the gallery's, so it stays with its file when the list is refreshed.
     property alias current: galleryModel.current
     property bool filtersOpen: false
+    // B: the grid and the viewer show what cropping the borders would cut. Remembered across runs (the test hook
+    // sets it for its run only).
+    property bool showBorders: appSettings.showBorders
+    function toggleBorders() {
+        showBorders = !showBorders
+        appSettings.showBorders = showBorders
+    }
     // The library panel is shown; made the first time (libraryLoader).
     property bool libraryOpen: false
     onLibraryOpenChanged: if (libraryOpen) libraryLoader.active = true
@@ -53,9 +60,10 @@ ApplicationWindow {
     property int loadedIndex: -2
     readonly property real gap: 4
     // query::SortKey names, and the sort box's names for them.
-    readonly property list<string> sortKeys: ["name", "size", "modified", "taken", "megapixels", "duration"]
+    readonly property list<string> sortKeys: ["name", "size", "modified", "taken", "megapixels", "duration",
+        "borders"]
     readonly property list<string> sortNames: ["By name", "By file size", "By date modified", "By date taken",
-        "By megapixels", "By duration"]
+        "By megapixels", "By duration", "By border depth"]
     // The test hook's rating keys (--viewer-keys): "r3" rates 3.
     readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
@@ -143,6 +151,23 @@ ApplicationWindow {
         onTriggered: win.openPath(view.folder)
     }
     onFiltersOpenChanged: updateFacets()
+
+    // Where the filter bar's "Save cropped copies" puts them: made when asked for, and opened as it is made.
+    Loader {
+        id: cropDialog
+        active: false
+        sourceComponent: Component {
+            FolderDialog {
+                title: "Save cropped copies into"
+                onAccepted: galleryModel.saveCroppedCopies(selectedFolder)
+                Component.onCompleted: open()
+            }
+        }
+    }
+    function askSaveCrops() {
+        cropDialog.active = false
+        cropDialog.active = true
+    }
 
     // The first item of the topmost visible row, to keep the view anchored across relayouts.
     function topItem(): int {
@@ -296,6 +321,8 @@ ApplicationWindow {
         else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5 && current >= 0) galleryModel.setRating(current, e.key - Qt.Key_0)
         else if (e.key === Qt.Key_R && current >= 0) galleryModel.rotate(current, e.modifiers & Qt.ShiftModifier ? 1 : -1)
         else if (e.key === Qt.Key_F && !ctrl) filtersOpen = !filtersOpen
+        else if (e.key === Qt.Key_B) toggleBorders()
+        else if (e.key === Qt.Key_N && current >= 0) galleryModel.setBorderMarked(current, !galleryModel.borderMarked(current))
         else return
         e.accepted = true
     }
@@ -443,7 +470,7 @@ ApplicationWindow {
                 text: galleryModel.revision >= 0 && win.current >= 0
                     ? galleryModel.info(win.current) + "   " + (galleryModel.rating(win.current) > 0 ? Ratings.symbol(galleryModel.rating(win.current)) : "")
                     : "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move"
-                      + " · F filters · Ctrl+wheel or Ctrl +/− resize"
+                      + " · F filters · B borders · N not a border · Ctrl+wheel or Ctrl +/− resize"
             }
             // Ratings and turns on their way into the files, or why they aren't.
             Label {
@@ -456,8 +483,8 @@ ApplicationWindow {
             // The latest error or note from the background job; click to dismiss.
             Label {
                 visible: library.message.length > 0
-                text: "⚠ " + library.message
-                color: "#e0a050"
+                text: (library.messageWarning ? "⚠ " : "") + library.message
+                color: library.messageWarning ? "#e0a050" : "#aaaaaa"
                 elide: Text.ElideMiddle
                 Layout.maximumWidth: 500
                 TapHandler { onTapped: library.message = "" }
@@ -485,6 +512,8 @@ ApplicationWindow {
     FilterBar {
         id: filterBar
         onEdited: applyTimer.restart()
+        croppable: galleryModel.revision >= 0 && galleryModel.count >= 0 ? galleryModel.borderedCount() : 0
+        onSaveCropsRequested: win.askSaveCrops()
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.top: topBar.bottom
@@ -586,6 +615,14 @@ ApplicationWindow {
                                 readonly property string key: galleryModel.revision >= 0 ? galleryModel.imageKey(item) : ""
                                 readonly property int rating: galleryModel.revision >= 0 ? galleryModel.rating(item) : 0
                                 readonly property string badge: galleryModel.revision >= 0 ? galleryModel.badge(item) : ""
+                                // What is left without the borders (an empty rectangle: none found).
+                                readonly property rect content: galleryModel.revision >= 0 ? galleryModel.borderBox(item)
+                                                                                         : Qt.rect(0, 0, 0, 0)
+                                readonly property bool bordersMarked: galleryModel.revision >= 0 && galleryModel.borderMarked(item)
+                                // The image's aspect as shown; the tile's may be narrower (clamped panoramas), and the
+                                // thumbnail is then cropped to it.
+                                readonly property real imageAspect: galleryModel.revision >= 0 && galleryModel.fullHeight(item) > 0
+                                    ? galleryModel.fullWidth(item) / galleryModel.fullHeight(item) : 1
                                 width: galleryModel.aspect(item) * rowItem.rowHeight
                                 height: rowItem.rowHeight
 
@@ -611,12 +648,44 @@ ApplicationWindow {
                                     opacity: status === Image.Ready ? 1 : 0
                                     Behavior on opacity { NumberAnimation { duration: 120 } }
                                 }
+                                // B: the borders over the thumbnail, placed as PreserveAspectCrop paints it.
+                                Item {
+                                    anchors.fill: parent
+                                    clip: true
+                                    visible: win.showBorders && cell.content.width > 0
+                                    BorderOverlay {
+                                        readonly property bool wider: cell.imageAspect > cell.width / cell.height
+                                        width: wider ? cell.height * cell.imageAspect : cell.width
+                                        height: wider ? cell.height : cell.width / cell.imageAspect
+                                        x: (cell.width - width) / 2
+                                        y: (cell.height - height) / 2
+                                        kept: cell.content
+                                        marked: cell.bordersMarked
+                                        lineWidth: 1
+                                    }
+                                }
                                 Rectangle {
                                     anchors.fill: parent
                                     color: "transparent"
                                     border.color: "#4aa3ff"
                                     border.width: 3
                                     visible: cell.item === win.current
+                                }
+                                // Borders found (grey: marked as not a border).
+                                Label {
+                                    anchors.left: parent.left
+                                    anchors.top: parent.top
+                                    anchors.margins: 4
+                                    visible: cell.content.width > 0
+                                    text: "▭"
+                                    font.pixelSize: 12
+                                    font.bold: true
+                                    font.strikeout: cell.bordersMarked
+                                    color: cell.bordersMarked ? "#a0a0a0" : "#ff4ad8"
+                                    padding: 1
+                                    leftPadding: 4
+                                    rightPadding: 4
+                                    background: Rectangle { color: "#a0000000"; radius: 3 }
                                 }
                                 Text {
                                     anchors.left: parent.left
@@ -688,12 +757,23 @@ ApplicationWindow {
         fileUrl: galleryModel.revision >= 0 ? galleryModel.fileUrl(viewer.index) : Qt.url("")
         filePath: galleryModel.revision >= 0 ? galleryModel.filePath(viewer.index) : ""
         info: galleryModel.revision >= 0 ? galleryModel.info(viewer.index) : ""
+        borderBox: galleryModel.revision >= 0 ? galleryModel.borderBox(viewer.index) : Qt.rect(0, 0, 0, 0)
+        rejectedTop: galleryModel.revision >= 0 && viewer.visible ? galleryModel.borderRejected(viewer.index, "top") : -1
+        rejectedBottom: galleryModel.revision >= 0 && viewer.visible
+            ? galleryModel.borderRejected(viewer.index, "bottom") : -1
+        rejectedLeft: galleryModel.revision >= 0 && viewer.visible ? galleryModel.borderRejected(viewer.index, "left") : -1
+        rejectedRight: galleryModel.revision >= 0 && viewer.visible
+            ? galleryModel.borderRejected(viewer.index, "right") : -1
+        borderMarked: galleryModel.revision >= 0 && galleryModel.borderMarked(viewer.index)
+        showBorders: win.showBorders
         settings: appSettings
         onMoved: (i) => galleryModel.viewing = i
         // Closed: the keys go back to the grid.
         onVisibleChanged: if (!visible) grid.forceActiveFocus()
         onRated: (i, r) => galleryModel.setRating(i, r)
         onTurned: (i, d) => galleryModel.rotate(i, d)
+        onBordersToggled: win.toggleBorders()
+        onBorderMarkToggled: (i, m) => galleryModel.setBorderMarked(i, m)
         onIndexChanged: sessionTimer.restart()
         onFindSimilar: (path) => win.findSimilar(path)
         onClosed: (i) => win.select(i)
@@ -857,8 +937,8 @@ ApplicationWindow {
 
     // Test hooks, for checking the UI without a person at the screen:
     //   --size=<px>  row height   --select=<n>  select item n   --view=<n>  open item n in the viewer
-    //   --viewer-keys=<keys>  e.g. "LB" (loupe, frame); also H (zen), K (play/pause), + (zoom in), 1 (1:1), < > (turn left,
-    //                         right), digits after "r" rate
+    //   --viewer-keys=<keys>  e.g. "LB" (loupe, borders); also H (zen), K (play/pause), + (zoom in), 1 (1:1), < > (turn
+    //                         left, right), N (not a border), digits after "r" rate
     //   --zoom=<factor>  zoom the viewer to this many device px per image px
     //   --menu=views  open the views menu   --apply-view=<name>  open a saved view
     //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
@@ -889,6 +969,7 @@ ApplicationWindow {
                 filterBar.query = query
         }
         if (commandLine.has("filters")) filtersOpen = true
+        if (commandLine.has("borders")) showBorders = true
         sortBox.currentIndex = sortKeys.indexOf(view.sortKey)
         relayout()
         folders.reload()
@@ -913,7 +994,8 @@ ApplicationWindow {
             for (let k = 0; k < viewerKeys.length; k++) {
                 const c = viewerKeys[k]
                 if (c === "L") viewer.loupe = true
-                else if (c === "B") viewer.frame = true
+                else if (c === "B") showBorders = true
+                else if (c === "N") galleryModel.setBorderMarked(viewer.index, !galleryModel.borderMarked(viewer.index))
                 else if (c === "H") viewer.zen = true
                 else if (c === "K") viewer.togglePlay()
                 else if (c === "+") viewer.setZoom(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2)
@@ -930,5 +1012,6 @@ ApplicationWindow {
         if (commandLine.has("find-similar")) findSimilar(commandLine.text("find-similar"))
         library.start(thumbHeight)
         if (commandLine.has("add-folder")) library.addFolder(commandLine.url("add-folder"))
+        if (commandLine.has("save-crops")) galleryModel.saveCroppedCopies(commandLine.url("save-crops"))
     }
 }

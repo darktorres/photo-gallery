@@ -367,7 +367,7 @@ impl Inner {
 }
 
 /// Size and mtime (FILETIME, as the scanner records it).
-fn stat(path: &str) -> Result<(i64, i64)> {
+pub(crate) fn stat(path: &str) -> Result<(i64, i64)> {
     let m = std::fs::metadata(long_path(path)).with_context(|| format!("reading {path}"))?;
     Ok((m.len() as i64, m.last_write_time() as i64))
 }
@@ -477,6 +477,16 @@ impl ExifTool {
             return Ok(());
         }
         bail!("ExifTool couldn't write the rating into {path}: {} {}", stderr.trim(), stderr2.trim())
+    }
+
+    /// Copy every tag `from` holds that `to` can carry (EXIF, XMP, IPTC, ICC profile) into `to`, in place.
+    pub fn copy_tags(&mut self, from: &str, to: &str) -> Result<()> {
+        let (stdout, stderr) =
+            self.run(&["-tagsfromfile", from, "-all:all", "-unsafe", "-icc_profile", "-overwrite_original", to])?;
+        if stdout.contains("1 image files updated") || stdout.contains("1 image files unchanged") {
+            return Ok(());
+        }
+        bail!("ExifTool couldn't copy the metadata of {from}: {}", stderr.trim())
     }
 
     /// Write an EXIF orientation into a copy of `path` at `out` (adding EXIF if the file has none).

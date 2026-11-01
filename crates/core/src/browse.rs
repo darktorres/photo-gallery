@@ -8,10 +8,12 @@ use anyhow::Result;
 use rusqlite::types::{Type, Value};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
+use crate::borders;
+use crate::catalog::Catalog;
 use crate::decode::Format;
 use crate::media::{Ext, Kind};
 use crate::metadata;
-use crate::query::{Facet, MediaType, Query, Sort};
+use crate::query::{BorderFacet, Facet, MediaType, Query, Sort};
 
 /// A folder's path without its drive: `E:\pinterest\a` and `D:\pinterest\a` are both `pinterest\a`; a drive
 /// root is the empty path. Other paths (UNC) are kept whole.
@@ -174,7 +176,7 @@ pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
 /// The rest is read when the file is shown (`details`). Small and without a `String`, so a list of 190,000 is
-/// 7.6 MB and quick to build.
+/// 10.6 MB and quick to build.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Entry {
     pub id: i64,
@@ -193,6 +195,24 @@ pub struct Entry {
     pub rating: u8,
     /// More than one frame (known after the import).
     pub animated: bool,
+    /// Orientation (1–8) of the analysis: what turns the stored pixels upright, the catalog rotation included.
+    pub orientation: u8,
+    /// Borders found: stored pixels cut from the left, top, right and bottom (`analysis.cut_*`), all 0 for none.
+    pub cut: [u32; 4],
+    pub borders: Borders,
+}
+
+const _: () = assert!(size_of::<Entry>() == 56, "Entry's size, in its doc");
+
+/// Whether a file's borders were looked for, and what came of it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Borders {
+    /// Not looked for: not imported yet, a video, an animated or a tiny image.
+    Unknown,
+    None,
+    Found,
+    /// Found, and marked as not a border (the review).
+    Marked,
 }
 
 impl Entry {
@@ -224,18 +244,74 @@ impl Entry {
         let (w, h) = self.shown_size();
         if w > 0 && h > 0 { w as f64 / h as f64 } else { 1.0 }
     }
+
+    /// What is left without the borders, as fractions of the image as shown (pending turns included): x, y, width,
+    /// height. `None` without borders found (marked ones included).
+    pub fn content(&self) -> Option<[f64; 4]> {
+        if !matches!(self.borders, Borders::Found | Borders::Marked) {
+            return None;
+        }
+        let [l, t, r, b] = self.cut.map(f64::from);
+        let (w, h) = self.stored_size()?;
+        Some(self.shown([l, t, w - r, h - b]))
+    }
+
+    /// What cropping the borders cuts from the left, top, right and bottom of the image as shown, in pixels. `None`
+    /// without borders found (marked ones included).
+    pub fn shown_cut(&self) -> Option<[u32; 4]> {
+        let [x, y, w, h] = self.content()?;
+        let (sw, sh) = self.shown_size();
+        let px = |f: f64, side: u32| (f * f64::from(side)).round() as u32;
+        Some([px(x, sw), px(y, sh), px(1.0 - x - w, sw), px(1.0 - y - h, sh)])
+    }
+
+    /// Where a border detector's side would cut, `depth` stored pixels from its edge of the stored image, as a line
+    /// across the image as shown: x, y, width, height in fractions, one of them 0.
+    pub fn side_line(&self, edge: borders::Edge, depth: u32) -> Option<[f64; 4]> {
+        let (w, h) = self.stored_size()?;
+        let d = f64::from(depth);
+        Some(self.shown(match edge {
+            borders::Edge::Top => [0.0, d, w, d],
+            borders::Edge::Bottom => [0.0, h - d, w, h - d],
+            borders::Edge::Left => [d, 0.0, d, h],
+            borders::Edge::Right => [w - d, 0.0, w - d, h],
+        }))
+    }
+
+    /// The stored image's size; the analysis' is upright, its transpose when the orientation turns it. `None`
+    /// before the import.
+    fn stored_size(&self) -> Option<(f64, f64)> {
+        let (w, h) = (f64::from(self.width), f64::from(self.height));
+        (w > 0.0 && h > 0.0).then_some(if self.orientation >= 5 { (h, w) } else { (w, h) })
+    }
+
+    /// A rectangle of the stored image in pixels (left, top, right, bottom) as fractions of the image as shown:
+    /// x, y, width, height.
+    fn shown(&self, rect: [f64; 4]) -> [f64; 4] {
+        let Some((w, h)) = self.stored_size() else { return [0.0; 4] };
+        let [l, t, r, b] = rect;
+        let [x0, y0, x1, y1] = borders::upright([l / w, t / h, r / w, b / h], self.orientation, self.pending_turns);
+        [x0, y0, x1 - x0, y1 - y0]
+    }
 }
 
 /// What an `Entry` is read from (`entry_from_row`), with `f` the file.
 const ENTRY_COLUMNS: &str = "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
-    f.rotation, coalesce(w.value, 0), coalesce(r.rating, 0), coalesce(a.frames, 1)";
+    f.rotation, coalesce(w.value, 0), coalesce(r.rating, 0), coalesce(a.frames, 1), coalesce(a.orientation, 1),
+    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL";
+/// The column after `ENTRY_COLUMNS`: a sort key (`list_grid`).
+const SORT_COLUMN: usize = 16;
 /// What the entries and the filters read besides the file.
 const FILE_JOINS: &str = "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
-    LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = 'rotation'";
+    LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = 'rotation'
+    LEFT JOIN border_marks m ON m.file_id = f.id";
 
 fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let ext = r.get_ref(5)?.as_str()?;
+    let sides: [Option<u32>; 4] = [r.get(11)?, r.get(12)?, r.get(13)?, r.get(14)?];
+    let cut = sides.map(Option::unwrap_or_default);
+    let cut_found = sides[0].map(|_| cut.iter().any(|&c| c > 0));
     Ok(Entry {
         id: r.get(0)?,
         mtime: r.get(1)?,
@@ -250,6 +326,14 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         pending_turns: r.get(7)?,
         rating: r.get(8)?,
         animated: r.get::<_, i64>(9)? > 1,
+        orientation: r.get(10)?,
+        cut,
+        borders: match cut_found {
+            None => Borders::Unknown,
+            Some(false) => Borders::None,
+            Some(true) if r.get(15)? => Borders::Marked,
+            Some(true) => Borders::Found,
+        },
     })
 }
 
@@ -288,7 +372,8 @@ pub fn list_grid(conn: &Connection, merged: &str, recursive: bool, query: &Query
         let entries = stmt.query_map(params_from_iter(values), entry_from_row)?;
         return Ok(entries.collect::<rusqlite::Result<Vec<_>>>()?);
     }
-    let keyed = stmt.query_map(params_from_iter(values), |r| Ok((r.get::<_, Option<i64>>(10)?, entry_from_row(r)?)))?;
+    let keyed =
+        stmt.query_map(params_from_iter(values), |r| Ok((r.get::<_, Option<i64>>(SORT_COLUMN)?, entry_from_row(r)?)))?;
     let mut keyed = keyed.collect::<rusqlite::Result<Vec<_>>>()?;
     keyed.sort_by(|(a, _), (b, _)| match (a, b) {
         (Some(a), Some(b)) if sort.descending => b.cmp(a),
@@ -305,10 +390,12 @@ pub struct Details {
     pub size: i64,
     /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
     pub rating_in_file: bool,
+    /// Every side the border detector found, accepted and rejected (`borders::detect`).
+    pub border_sides: Vec<borders::Side>,
 }
 
 pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
-    Ok(conn
+    let found = conn
         .prepare_cached(
             "SELECT fo.path || '\\' || f.name, f.size, f.kind, a.format FROM files f
              JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
@@ -322,9 +409,50 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
                 // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
                 rating_in_file: r.get_ref(2)?.as_str()? == Kind::Image.key()
                     && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
+                border_sides: Vec::new(),
             })
         })
-        .optional()?)
+        .optional()?;
+    match found {
+        Some(d) => Ok(Some(Details { border_sides: border_sides(conn, file_id)?, ..d })),
+        None => Ok(None),
+    }
+}
+
+/// The sides the border detector found in a file, in the order found.
+pub fn border_sides(conn: &Connection, file_id: i64) -> Result<Vec<borders::Side>> {
+    let mut stmt = conn.prepare_cached(
+        "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
+         ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",
+    )?;
+    let rows = stmt.query_map([file_id], |r| {
+        let text = |i: usize| -> rusqlite::Result<String> { r.get(i) };
+        let unknown = |i: usize, v: String| rusqlite::Error::InvalidColumnType(i, v, Type::Text);
+        let edge = text(1)?;
+        let kind = text(2)?;
+        let rejected: Option<String> = r.get(8)?;
+        let color: Option<i64> = r.get(4)?;
+        Ok(borders::Side {
+            pass: r.get(0)?,
+            edge: borders::Edge::from_key(&edge).ok_or_else(|| unknown(1, edge.clone()))?,
+            kind: borders::Kind::from_key(&kind).ok_or_else(|| unknown(2, kind.clone()))?,
+            depth: r.get(3)?,
+            color: color.map(|c| [(c >> 16) as u8, (c >> 8) as u8, c as u8]),
+            straight: r.get(5)?,
+            dev: r.get(6)?,
+            drift: r.get(7)?,
+            rejected: match rejected {
+                Some(key) => Some(borders::Reason::from_key(&key).ok_or_else(|| unknown(8, key.clone()))?),
+                None => None,
+            },
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<_>>()?)
+}
+
+/// Mark a file's borders as not a border, or take the mark back (the review).
+pub fn set_border_mark(conn: &Connection, file_id: i64, marked: bool) -> Result<()> {
+    Catalog::set_border_mark(conn, file_id, marked)
 }
 
 /// What the filter bar shows next to its choices, for a view's folder.
@@ -338,6 +466,8 @@ pub struct Facets {
     /// facets.
     pub types: Vec<(MediaType, i64)>,
     pub exts: Vec<(String, i64)>,
+    /// Per border value (`BorderFacet::ALL`'s order), the same way.
+    pub borders: Vec<(BorderFacet, i64)>,
 }
 
 pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
@@ -365,7 +495,19 @@ pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -
         .collect();
     types.sort();
     let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
-    Ok(Facets { total, matching, types, exts })
+    // In one pass: each value's condition summed (a file can have sides of two classes).
+    let sums: Vec<String> = BorderFacet::ALL.iter().map(|b| format!("coalesce(sum({}), 0)", b.sql())).collect();
+    let cond = query.condition_without(Some(Facet::Borders));
+    let sql = format!(
+        "SELECT {} FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {}",
+        sums.join(", "),
+        cond.sql
+    );
+    let values = scope_values.iter().cloned().chain(cond.params);
+    let borders = conn.query_row(&sql, params_from_iter(values), |r| {
+        BorderFacet::ALL.iter().enumerate().map(|(i, &b)| Ok((b, r.get(i)?))).collect::<rusqlite::Result<Vec<_>>>()
+    })?;
+    Ok(Facets { total, matching, types, exts, borders })
 }
 
 /// Rate a file: 1–5, or 0 to clear. The catalog changes at once. With `write_back`, the rating is also queued
@@ -530,6 +672,33 @@ mod tests {
     use crate::query::{DateRange, Orientation, Range, SortKey, Status};
 
     #[test]
+    fn the_cut_is_described_as_shown() {
+        // Stored 736 × 1593 with bars of 163 at the top and 131 at the bottom, shown turned a quarter clockwise
+        // (orientation 6: upright 1593 × 736): the top bar is on the right.
+        let mut e = Entry {
+            id: 1,
+            mtime: 0,
+            width: 1593,
+            height: 736,
+            duration_ms: Entry::NO_DURATION,
+            ext: Ext::of("jpg").unwrap(),
+            rotation: 0,
+            pending_turns: 0,
+            rating: 0,
+            animated: false,
+            orientation: 6,
+            cut: [0, 163, 0, 131],
+            borders: Borders::Found,
+        };
+        assert_eq!(e.shown_cut(), Some([131, 0, 163, 0]));
+        // A quarter turn more, not yet written: upside down from stored, the top bar at the bottom.
+        e.pending_turns = 1;
+        assert_eq!(e.shown_cut(), Some([0, 131, 0, 163]));
+        e.borders = Borders::None;
+        assert_eq!(e.shown_cut(), None);
+    }
+
+    #[test]
     fn merged_paths() {
         assert_eq!(merged_path(r"E:\pinterest\a"), r"pinterest\a");
         assert_eq!(merged_path("D:"), "");
@@ -593,7 +762,7 @@ mod tests {
         assert!(details(&c.conn, 1).unwrap().unwrap().rating_in_file);
         assert_eq!(
             details(&c.conn, 2).unwrap(),
-            Some(Details { path: r"E:\p\a.png".into(), size: 10, rating_in_file: true })
+            Some(Details { path: r"E:\p\a.png".into(), size: 10, rating_in_file: true, border_sides: Vec::new() })
         );
         assert_eq!(details(&c.conn, 99).unwrap(), None);
     }

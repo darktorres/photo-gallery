@@ -1,6 +1,7 @@
 // The filter bar, under the top bar: one control per facet of the query (Filters, src/filters.rs, editing a
 // query::Query). Facets combine with AND, the choices inside one with OR, and an empty facet doesn't filter. Each
-// type and extension shows how many files choosing it would show given the other facets (countFacets()). Edits go
+// type, extension and borders choice shows how many files choosing it would show given the other facets
+// (countFacets()). Edits go
 // straight to the query, and edited() fires; the window applies them after a short pause.
 //
 // The window sees the query only through this bar's properties, signal and functions: the QML compiler compiles a
@@ -26,6 +27,9 @@ Pane {
 
     // The user changed the query.
     signal edited()
+    // Listed files with borders to crop off (GalleryModel.borderedCount), and the user asking to save them cropped.
+    property int croppable: 0
+    signal saveCropsRequested()
 
     // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
     function countFacets(folder: string, recursive: bool) { filters.countFacets(folder, recursive) }
@@ -35,6 +39,9 @@ Pane {
     readonly property list<string> statuses: ["imported", "pending", "failed"]
     // Filters.duplicates: -1 either way, 1 with a duplicate, 0 without; in the duplicates box's order.
     readonly property list<string> duplicateChoices: ["Any", "Has duplicates", "No duplicates"]
+    // query::BorderFacet; Filters.borderMarked in the review box's order (-1, 0, 1).
+    readonly property list<string> borderValues: ["none", "black", "white", "color", "blur"]
+    readonly property list<string> reviewChoices: ["Any", "Not marked", "Marked not a border"]
 
     padding: 6
 
@@ -199,6 +206,40 @@ Pane {
                             value: modelData
                             text: filters.label(facet, modelData)
                         }
+                    }
+                }
+
+                RowLayout {
+                    spacing: 4
+                    Caption { text: "Borders" }
+                    Repeater {
+                        model: bar.borderValues
+                        delegate: Chip {
+                            required property string modelData
+                            facet: "borders"
+                            value: modelData
+                            text: filters.label(facet, modelData) + "  "
+                                + bar.count(filters.revision >= 0 ? filters.borderCount(modelData) : 0)
+                        }
+                    }
+                    Caption { text: "Review" }
+                    ComboBox {
+                        model: bar.reviewChoices
+                        currentIndex: filters.borderMarked + 1
+                        onActivated: (i) => filters.borderMarked = i - 1
+                        font.pixelSize: 12
+                        Layout.preferredWidth: 170
+                    }
+                    Button {
+                        text: "Save cropped copies (" + bar.count(bar.croppable) + ")…"
+                        enabled: bar.croppable > 0
+                        font.pixelSize: 12
+                        onClicked: bar.saveCropsRequested()
+                        ToolTip.visible: hovered
+                        ToolTip.delay: 500
+                        ToolTip.text: "Copies of the listed files with their borders cut off, in a folder you choose "
+                            + "(the originals stay as they are). JPEGs are cropped losslessly; their left and top "
+                            + "cuts move inward to the next 8 or 16 px block."
                     }
                 }
 

@@ -10,6 +10,7 @@ fn main() {
             .depend("QtQml.Models")
             .qml_files([
                 "qml/Main.qml",
+                "qml/BorderOverlay.qml",
                 "qml/FilterBar.qml",
                 "qml/Viewer.qml",
                 "qml/WheelListView.qml",

@@ -26,6 +26,10 @@ pub mod qobject {
         #[qproperty(QString, name, READ, WRITE = set_name_edited, NOTIFY, FINAL)]
         /// -1 either way; 1 files with a duplicate; 0 imported files without one.
         #[qproperty(i32, duplicates, READ, WRITE = set_duplicates_edited, NOTIFY, FINAL)]
+        /// The borders review: -1 either way; 1 borders marked as not a border; 0 borders found and not marked.
+        #[qproperty(
+            i32, border_marked, cxx_name = "borderMarked", READ, WRITE = set_border_marked_edited, NOTIFY, FINAL
+        )]
         /// Files in the folder, unfiltered, and those the query keeps (`countFacets()`).
         #[qproperty(i32, total, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, matching, READ, WRITE, NOTIFY, FINAL)]
@@ -49,6 +53,7 @@ pub mod qobject {
         fn set_query_loaded(self: Pin<&mut Filters>, value: &QString);
         fn set_name_edited(self: Pin<&mut Filters>, value: &QString);
         fn set_duplicates_edited(self: Pin<&mut Filters>, value: i32);
+        fn set_border_marked_edited(self: Pin<&mut Filters>, value: i32);
         fn set_symbols_described(self: Pin<&mut Filters>, value: &QStringList);
 
         /// The user changed the query.
@@ -59,7 +64,8 @@ pub mod qobject {
         #[qsignal]
         fn loaded(self: Pin<&mut Filters>);
 
-        /// Whether a value of a list facet is chosen (`types`, `exts`, `ratings`, `orientations`, `status`).
+        /// Whether a value of a list facet is chosen (`types`, `exts`, `ratings`, `orientations`, `status`,
+        /// `borders`).
         #[qinvokable]
         fn has(self: &Filters, facet: &QString, value: &QString) -> bool;
 
@@ -100,8 +106,13 @@ pub mod qobject {
         #[cxx_name = "extCount"]
         fn ext_count(self: &Filters, ext: &QString) -> i32;
 
+        /// The same for a borders value (`query::BorderFacet`: `none`, `black`, `white`, `color`, `blur`).
+        #[qinvokable]
+        #[cxx_name = "borderCount"]
+        fn border_count(self: &Filters, value: &QString) -> i32;
+
         /// Count a merged folder's files (`""` = all folders), with or without its subfolders: `total`, `matching`,
-        /// the types' and extensions' counts. Counted off the GUI thread; they change when the counts are in
+        /// the types', extensions' and borders' counts. Counted off the GUI thread; they change when the counts are in
         /// (`counted`).
         #[qinvokable]
         #[cxx_name = "countFacets"]
@@ -114,7 +125,7 @@ use core::pin::Pin;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_core::browse::{self, Facets};
-use pg_core::query::{DateRange, MediaType, Query, Range};
+use pg_core::query::{BorderFacet, DateRange, MediaType, Query, Range};
 
 use crate::loader::{self, Kind};
 
@@ -124,6 +135,7 @@ pub struct FiltersRust {
     revision: i32,
     name: QString,
     duplicates: i32,
+    border_marked: i32,
     total: i32,
     matching: i32,
     extensions: QStringList,
@@ -145,6 +157,7 @@ impl Default for FiltersRust {
             revision: 0,
             name: QString::default(),
             duplicates: duplicates_number(parsed.duplicates),
+            border_marked: duplicates_number(parsed.border_marked),
             total: 0,
             matching: 0,
             extensions: QStringList::default(),
@@ -157,8 +170,17 @@ impl Default for FiltersRust {
     }
 }
 
+/// A three-way choice as the properties hold it: -1 either way, 1 yes, 0 no.
 fn duplicates_number(d: Option<bool>) -> i32 {
     d.map_or(-1, i32::from)
+}
+
+fn from_number(value: i32) -> Option<bool> {
+    match value {
+        1 => Some(true),
+        0 => Some(false),
+        _ => None,
+    }
 }
 
 /// Counts saturate: the properties are ints, as QML's are.
@@ -178,6 +200,11 @@ fn label(facet: &str, value: &str) -> String {
         ("status", "imported") => "Imported",
         ("status", "pending") => "Not imported yet",
         ("status", "failed") => "Unreadable",
+        ("borders", "none") => "None",
+        ("borders", "black") => "Black",
+        ("borders", "white") => "White",
+        ("borders", "color") => "Colored",
+        ("borders", "blur") => "Blurred bars",
         ("exts", "") => "(none)",
         (_, other) => other,
     }
@@ -226,6 +253,13 @@ fn describe(q: &Query, symbols: &QStringList) -> String {
     if !q.status.is_empty() {
         parts.push(q.status.iter().map(|s| label("status", s.key()).to_lowercase()).collect::<Vec<_>>().join(", "));
     }
+    if !q.borders.is_empty() {
+        let values: Vec<String> = q.borders.iter().map(|b| label("borders", b.key()).to_lowercase()).collect();
+        parts.push(format!("borders: {}", values.join(", ")));
+    }
+    if let Some(m) = q.border_marked {
+        parts.push(if m { "borders marked not a border" } else { "borders not marked" }.to_string());
+    }
     if !q.name.is_empty() {
         parts.push(format!("name has “{}”", q.name));
     }
@@ -236,11 +270,12 @@ impl qobject::Filters {
     /// After the query changed: the properties that show it, and a new revision.
     fn sync(mut self: Pin<&mut Self>) {
         let q = &self.parsed;
-        let (json, active, name, duplicates, description) = (
+        let (json, active, name, duplicates, border_marked, description) = (
             QString::from(&q.to_json()),
             q.active() as i32,
             QString::from(&q.name),
             duplicates_number(q.duplicates),
+            duplicates_number(q.border_marked),
             QString::from(&describe(q, &self.symbols)),
         );
         let mut exts: Vec<String> = self.facets.exts.iter().map(|(e, _)| e.clone()).collect();
@@ -256,6 +291,10 @@ impl qobject::Filters {
         if self.duplicates != duplicates {
             self.as_mut().rust_mut().duplicates = duplicates;
             self.as_mut().duplicates_changed();
+        }
+        if self.border_marked != border_marked {
+            self.as_mut().rust_mut().border_marked = border_marked;
+            self.as_mut().border_marked_changed();
         }
         self.as_mut().set_active(active);
         self.as_mut().set_description(description);
@@ -290,13 +329,16 @@ impl qobject::Filters {
     }
 
     fn set_duplicates_edited(self: Pin<&mut Self>, value: i32) {
-        let duplicates = match value {
-            1 => Some(true),
-            0 => Some(false),
-            _ => None,
-        };
+        let duplicates = from_number(value);
         if duplicates != self.parsed.duplicates {
             self.edit(|q| q.duplicates = duplicates);
+        }
+    }
+
+    fn set_border_marked_edited(self: Pin<&mut Self>, value: i32) {
+        let marked = from_number(value);
+        if marked != self.parsed.border_marked {
+            self.edit(|q| q.border_marked = marked);
         }
     }
 
@@ -346,6 +388,11 @@ impl qobject::Filters {
     fn ext_count(&self, ext: &QString) -> i32 {
         let ext = ext.to_string();
         count(self.facets.exts.iter().find(|(x, _)| *x == ext).map_or(0, |(_, n)| *n))
+    }
+
+    fn border_count(&self, value: &QString) -> i32 {
+        let b = BorderFacet::from_key(&value.to_string());
+        count(self.facets.borders.iter().find(|(x, _)| Some(*x) == b).map_or(0, |(_, n)| *n))
     }
 
     fn count_facets(mut self: Pin<&mut Self>, folder: &QString, recursive: bool) {

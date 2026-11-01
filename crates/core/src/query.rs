@@ -3,7 +3,7 @@
 //! the user typed bound as a parameter, and both travel as JSON (saved views, the session, the QML side).
 //!
 //! The SQL expects the browse query's aliases: `f` the file, `a` its analysis (joined only without an error), `r`
-//! its rating (`f.order_key` is the name order).
+//! its rating, `m` its border mark (`f.order_key` is the name order).
 
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
@@ -131,6 +131,56 @@ impl Status {
     }
 }
 
+/// Borders, as the filter sees them: none found, or a side found of a class (`borders::Class`). Borders the user
+/// marked as not a border count as none.
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[serde(rename_all = "lowercase")]
+pub enum BorderFacet {
+    None,
+    Black,
+    White,
+    Color,
+    Blur,
+}
+
+impl BorderFacet {
+    pub const ALL: [BorderFacet; 5] =
+        [BorderFacet::None, BorderFacet::Black, BorderFacet::White, BorderFacet::Color, BorderFacet::Blur];
+
+    /// The name in JSON (a class's, `borders::Class::key`).
+    pub fn key(self) -> &'static str {
+        match self {
+            BorderFacet::None => "none",
+            BorderFacet::Black => "black",
+            BorderFacet::White => "white",
+            BorderFacet::Color => "color",
+            BorderFacet::Blur => "blur",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<BorderFacet> {
+        BorderFacet::ALL.into_iter().find(|b| b.key() == key)
+    }
+
+    /// Also what the counts sum (`browse::facets`): a file with a black and a blurred side counts for both.
+    pub(crate) fn sql(self) -> String {
+        match self {
+            // Looked for (a still image), and nothing that counts.
+            BorderFacet::None => format!("(a.cut_left IS NOT NULL AND NOT {BORDERED})"),
+            class => format!(
+                "({BORDERED} AND EXISTS (SELECT 1 FROM border_sides s
+                     WHERE s.class = '{}' AND s.file_id = f.id AND s.rejected IS NULL))",
+                class.key()
+            ),
+        }
+    }
+}
+
+/// A file with borders found that the user didn't mark as not a border.
+pub(crate) const BORDERED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NULL)";
+/// One the user marked.
+const MARKED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NOT NULL)";
+
 /// A numeric range; either end may be open. Both ends are included.
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Debug)]
 #[serde(default)]
@@ -193,6 +243,12 @@ pub struct Query {
     pub duplicates: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub status: Vec<Status>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub borders: Vec<BorderFacet>,
+    /// The review: Some(true), files whose borders the user marked as not a border; Some(false), files with borders
+    /// found and not marked.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub border_marked: Option<bool>,
     /// Part of the file name, any case.
     #[serde(skip_serializing_if = "String::is_empty")]
     pub name: String,
@@ -204,6 +260,7 @@ pub struct Query {
 pub enum Facet {
     Types,
     Exts,
+    Borders,
 }
 
 /// A WHERE condition and the values it binds, in order.
@@ -301,6 +358,14 @@ impl Query {
         if !self.status.is_empty() {
             parts.push(any(self.status.iter().map(|s| s.sql().to_string()).collect()));
         }
+        if !self.borders.is_empty() && skip != Some(Facet::Borders) {
+            parts.push(any(self.borders.iter().map(|b| b.sql()).collect()));
+        }
+        match self.border_marked {
+            Some(true) => parts.push(MARKED.into()),
+            Some(false) => parts.push(BORDERED.into()),
+            None => {}
+        }
         let name = self.name.trim();
         if !name.is_empty() {
             parts.push("pg_contains(f.name, ?)".into());
@@ -312,7 +377,7 @@ impl Query {
 }
 
 /// Editing a query from a filter bar. Facets and values go by their JSON names: list facets `types`, `exts`,
-/// `ratings` (`"0"`–`"5"`), `orientations` and `status`; range facets `size_mb`, `megapixels` and `duration_s`
+/// `ratings` (`"0"`–`"5"`), `orientations`, `status` and `borders`; range facets `size_mb`, `megapixels` and `duration_s`
 /// (ends `min`, `max`) and `taken` and `modified` (ends `from`, `to`, as `YYYY-MM-DD`). A name or value it doesn't
 /// know changes nothing.
 impl Query {
@@ -330,6 +395,8 @@ impl Query {
             !self.duration_s.is_empty(),
             self.duplicates.is_some(),
             !self.status.is_empty(),
+            !self.borders.is_empty(),
+            self.border_marked.is_some(),
             !self.name.is_empty(),
         ]
         .into_iter()
@@ -345,6 +412,7 @@ impl Query {
             "ratings" => self.ratings.iter().map(u8::to_string).collect(),
             "orientations" => self.orientations.iter().map(|o| o.key().to_string()).collect(),
             "status" => self.status.iter().map(|s| s.key().to_string()).collect(),
+            "borders" => self.borders.iter().map(|b| b.key().to_string()).collect(),
             _ => Vec::new(),
         }
     }
@@ -371,6 +439,7 @@ impl Query {
             }
             "orientations" => Orientation::from_key(value).into_iter().for_each(|o| flip(&mut self.orientations, o)),
             "status" => Status::from_key(value).into_iter().for_each(|s| flip(&mut self.status, s)),
+            "borders" => BorderFacet::from_key(value).into_iter().for_each(|b| flip(&mut self.borders, b)),
             _ => {}
         }
     }
@@ -502,6 +571,8 @@ pub enum SortKey {
     Taken,
     Megapixels,
     Duration,
+    /// The largest share of the image borders take on any one side; files without borders last.
+    Borders,
 }
 
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -512,8 +583,15 @@ pub struct Sort {
 }
 
 impl SortKey {
-    const ALL: [SortKey; 6] =
-        [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Taken, SortKey::Megapixels, SortKey::Duration];
+    const ALL: [SortKey; 7] = [
+        SortKey::Name,
+        SortKey::Size,
+        SortKey::Modified,
+        SortKey::Taken,
+        SortKey::Megapixels,
+        SortKey::Duration,
+        SortKey::Borders,
+    ];
 
     /// The name in JSON.
     pub fn key(self) -> &'static str {
@@ -524,6 +602,7 @@ impl SortKey {
             SortKey::Taken => "taken",
             SortKey::Megapixels => "megapixels",
             SortKey::Duration => "duration",
+            SortKey::Borders => "borders",
         }
     }
 
@@ -559,6 +638,13 @@ impl Sort {
             SortKey::Taken => Some(format!("coalesce(a.taken, {mtime_local})")),
             SortKey::Megapixels => Some("a.width * a.height".into()),
             SortKey::Duration => Some("a.duration_ms".into()),
+            // In millionths. Cuts are in stored pixels: a quarter turn (orientation 5–8) swaps the upright sides.
+            SortKey::Borders => Some(format!(
+                "CASE WHEN {BORDERED} THEN CAST(1e6 * max(
+                    1.0 * max(a.cut_left, a.cut_right) / CASE WHEN a.orientation >= 5 THEN a.height ELSE a.width END,
+                    1.0 * max(a.cut_top, a.cut_bottom) / CASE WHEN a.orientation >= 5 THEN a.width ELSE a.height END)
+                    AS INTEGER) END"
+            )),
         }
     }
 }
@@ -604,6 +690,8 @@ mod tests {
             taken: DateRange { from: Some("2024-01-01".into()), to: None },
             duplicates: Some(false),
             status: vec![Status::Failed],
+            borders: vec![BorderFacet::None, BorderFacet::White],
+            border_marked: Some(true),
             name: "cat".into(),
             ..Query::default()
         };
@@ -633,6 +721,13 @@ mod tests {
             assert_eq!(json(&s), format!("\"{}\"", s.key()));
             assert_eq!(Status::from_key(s.key()), Some(s));
         }
+        for b in BorderFacet::ALL {
+            assert_eq!(json(&b), format!("\"{}\"", b.key()));
+            assert_eq!(BorderFacet::from_key(b.key()), Some(b));
+        }
+        for c in crate::borders::Class::ALL {
+            assert_eq!(BorderFacet::from_key(c.key()).map(BorderFacet::key), Some(c.key()));
+        }
         for k in SortKey::ALL {
             assert_eq!(json(&k), format!("\"{}\"", k.key()));
             assert_eq!(SortKey::from_key(k.key()), Some(k));
@@ -649,6 +744,9 @@ mod tests {
         q.toggle("exts", "jpg");
         q.toggle("orientations", "square");
         q.toggle("status", "failed");
+        q.toggle("borders", "blur");
+        assert_eq!(q.borders, vec![BorderFacet::Blur]);
+        q.toggle("borders", "blur");
         assert_eq!(q.types, vec![MediaType::Video]);
         assert_eq!(q.ratings, vec![0, 5]);
         assert!(q.has("ratings", "5") && q.has("exts", "jpg") && !q.has("types", "image"));

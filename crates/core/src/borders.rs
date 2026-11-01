@@ -1,0 +1,1046 @@
+//! Borders around images (FINDINGS "Border cleaning"): solid ones (black, white, colored, JPEG-noisy) and blurred
+//! padding bars (a blurred, enlarged copy of the image filling the letterbox). A port of what `tools/borders.py`
+//! measured, run on the stored pixels at full size (no EXIF orientation: a crop of the stored image keeps the tag
+//! valid), by a pass of its own after the import (`pg_ingest::borders`).
+//!
+//! Per side (top, bottom, left, right; repeated so nested borders peel off):
+//! - A line is *solid* if nearly all its pixels lie within `tol` of the line's median colour, and that colour changes
+//!   only gradually from line to line (absorbs JPEG noise and ringing).
+//! - A line is *blurred* if its detail (mean gradient) is far below the image's central detail.
+//! - The border is the run of such lines from the edge; the seam is the first strong line-to-line change near its end.
+//! - Accepted only if the seam is a straight edge across most of the line (a dark sky or a bokeh background ends
+//!   irregularly), and, for a blurred bar, if the content past the seam is clearly sharper.
+//! - Then the rules that need the opposite side ([`judge`]): solid padding is digitally flat, and blurred bars come
+//!   in equal pairs.
+//!
+//! The arithmetic is exact where Python's was float32: grays are kept as sums of the three channels (×3), medians of
+//! 8-bit values doubled (×2), deviations from a median of medians ×4. Line statistics read every other pixel.
+
+use crate::decode::Rgb;
+
+/// Bump when anything here changes what is detected; detections of an older version are redone.
+pub const BORDERS_VERSION: i64 = 1;
+
+/// Images with a side shorter than this aren't looked at.
+pub const MIN_SIDE: usize = 64;
+
+#[derive(Clone, Copy, Debug)]
+pub struct Params {
+    /// Max per-channel distance from the line colour that still counts as border.
+    pub tol: i32,
+    /// Max fraction of a solid line's pixels beyond `tol`.
+    pub solid_off: f64,
+    /// A blurred line has less detail than this fraction of the image's central detail…
+    pub blur_rel: f64,
+    /// …or than this mean gradient (gray levels per pixel).
+    pub blur_abs: f64,
+    /// Below this central detail, an image is smooth overall and blurred bars aren't looked for.
+    pub min_content_act: f64,
+    /// Thinner borders are ignored.
+    pub min_px: usize,
+    /// A border covers at most this fraction of a side.
+    pub max_frac: f64,
+    /// The content keeps at least this fraction of each dimension.
+    pub min_keep: f64,
+    /// Min fraction of the seam that must be a sharp straight edge…
+    pub straight: f64,
+    /// …for blurred bars, which have no colour edge to rely on.
+    pub blur_straight: f64,
+    /// Blurred bars on opposite sides may differ in depth by this fraction.
+    pub blur_sym: f64,
+    /// Per-pixel change that marks a column as crossing the seam.
+    pub seam_step: i32,
+    /// Real padding is digitally flat away from the seam; a wall or sky has shading. Max median pixel deviation of
+    /// a one-sided solid border…
+    pub flat_dev: f64,
+    /// …of solid borders on both sides…
+    pub flat_dev_paired: f64,
+    /// …and max drift of the line colour across the border's depth (JPEG noise moves pixels, not line medians).
+    pub max_drift: f64,
+    /// Extra pixels removed past each seam (JPEG chroma blending at the edge).
+    pub margin: usize,
+}
+
+impl Default for Params {
+    fn default() -> Params {
+        Params {
+            tol: 24,
+            solid_off: 0.02,
+            blur_rel: 0.15,
+            blur_abs: 1.0,
+            min_content_act: 3.0,
+            min_px: 3,
+            max_frac: 0.45,
+            min_keep: 0.3,
+            straight: 0.5,
+            blur_straight: 0.7,
+            blur_sym: 0.1,
+            seam_step: 12,
+            flat_dev: 4.0,
+            flat_dev_paired: 8.0,
+            max_drift: 8.0,
+            margin: 1,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Edge {
+    Top,
+    Bottom,
+    Left,
+    Right,
+}
+
+impl Edge {
+    pub const ALL: [Edge; 4] = [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Edge::Top => "top",
+            Edge::Bottom => "bottom",
+            Edge::Left => "left",
+            Edge::Right => "right",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Edge> {
+        Edge::ALL.into_iter().find(|e| e.key() == key)
+    }
+
+    fn opposite(self) -> Edge {
+        match self {
+            Edge::Top => Edge::Bottom,
+            Edge::Bottom => Edge::Top,
+            Edge::Left => Edge::Right,
+            Edge::Right => Edge::Left,
+        }
+    }
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Kind {
+    Solid,
+    Blur,
+}
+
+impl Kind {
+    pub fn key(self) -> &'static str {
+        match self {
+            Kind::Solid => "solid",
+            Kind::Blur => "blur",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Kind> {
+        [Kind::Solid, Kind::Blur].into_iter().find(|k| k.key() == key)
+    }
+}
+
+/// What a side looks like, for the filters: a solid border by its colour, or a blurred bar.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Class {
+    Black,
+    White,
+    Color,
+    Blur,
+}
+
+impl Class {
+    pub const ALL: [Class; 4] = [Class::Black, Class::White, Class::Color, Class::Blur];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Class::Black => "black",
+            Class::White => "white",
+            Class::Color => "color",
+            Class::Blur => "blur",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Class> {
+        Class::ALL.into_iter().find(|c| c.key() == key)
+    }
+
+    /// The eval viewer's buckets: black / near-black up to 40, white / near-white from 215.
+    fn of(kind: Kind, color: [u8; 3]) -> Class {
+        match kind {
+            Kind::Blur => Class::Blur,
+            Kind::Solid if color.iter().all(|&c| c <= 40) => Class::Black,
+            Kind::Solid if color.iter().all(|&c| c >= 215) => Class::White,
+            Kind::Solid => Class::Color,
+        }
+    }
+}
+
+/// Why a candidate was rejected.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum Reason {
+    /// The run of border lines reaches the deepest a border may be.
+    TooDeep,
+    /// Too thin a run to measure the seam.
+    NoSeam,
+    SeamNotStraight,
+    /// A smooth sky above a horizon, a plain wall beside a door frame: padding tools centre the content.
+    UnpairedBlur,
+    /// Shading: a wall or a sky.
+    NotFlat,
+    /// The accepted sides together would leave less than `min_keep` of the image.
+    TooLittleLeft,
+}
+
+impl Reason {
+    const ALL: [Reason; 6] = [
+        Reason::TooDeep,
+        Reason::NoSeam,
+        Reason::SeamNotStraight,
+        Reason::UnpairedBlur,
+        Reason::NotFlat,
+        Reason::TooLittleLeft,
+    ];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            Reason::TooDeep => "too_deep",
+            Reason::NoSeam => "no_seam",
+            Reason::SeamNotStraight => "seam_not_straight",
+            Reason::UnpairedBlur => "unpaired_blur",
+            Reason::NotFlat => "not_flat",
+            Reason::TooLittleLeft => "too_little_left",
+        }
+    }
+
+    pub fn from_key(key: &str) -> Option<Reason> {
+        Reason::ALL.into_iter().find(|r| r.key() == key)
+    }
+
+    /// `tools/borders.py`'s words for it.
+    pub fn text(self) -> &'static str {
+        match self {
+            Reason::TooDeep => "too deep",
+            Reason::NoSeam => "no seam",
+            Reason::SeamNotStraight => "seam not straight",
+            Reason::UnpairedBlur => "blurred bar without an equal opposite bar",
+            Reason::NotFlat => "not flat (shading: wall or sky?)",
+            Reason::TooLittleLeft => "too little content left",
+        }
+    }
+}
+
+/// A border found on one side, accepted or not.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Side {
+    /// The peeling round it was found in (0 first; nested borders come later).
+    pub pass: u8,
+    pub edge: Edge,
+    pub kind: Kind,
+    /// The content starts this many pixels from the edge (of what was left by earlier rounds).
+    pub depth: u32,
+    /// Solid: the line colour at the edge.
+    pub color: Option<[u8; 3]>,
+    /// Fraction of the seam that is a sharp straight edge.
+    pub straight: f64,
+    /// Solid and measured: median pixel deviation from the border colour, and how far the line colour wanders.
+    pub dev: Option<f64>,
+    pub drift: Option<f64>,
+    /// `None`: accepted.
+    pub rejected: Option<Reason>,
+}
+
+impl Side {
+    pub fn accepted(&self) -> bool {
+        self.rejected.is_none()
+    }
+
+    pub fn class(&self) -> Class {
+        Class::of(self.kind, self.color.unwrap_or([128; 3]))
+    }
+
+    /// `tools/borders.py`'s `Side.describe()`, for reports compared with its own.
+    pub fn describe(&self) -> String {
+        let kind = match (self.kind, self.color) {
+            (Kind::Solid, Some([r, g, b])) => format!(
+                "solid #{r:02x}{g:02x}{b:02x} dev {:.0} drift {:.0}",
+                self.dev.unwrap_or(0.0),
+                self.drift.unwrap_or(0.0)
+            ),
+            _ => "blur".to_string(),
+        };
+        let verdict = self.rejected.map(|r| format!(" [{}]", r.text())).unwrap_or_default();
+        format!("{}: {kind} {}px straight {:.2}{verdict}", self.edge.key(), self.depth, self.straight)
+    }
+}
+
+/// What [`detect`] found in an image of `width` × `height` (stored pixels).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Detection {
+    pub width: u32,
+    pub height: u32,
+    /// The content box: left, top, right, bottom (right and bottom exclusive). The whole image when nothing was
+    /// accepted.
+    pub content: [u32; 4],
+    /// Every side found, in the order found: accepted ones, and rejected candidates.
+    pub sides: Vec<Side>,
+}
+
+impl Detection {
+    /// Nothing found in an image of `width` × `height`.
+    pub fn none(width: u32, height: u32) -> Detection {
+        Detection { width, height, content: [0, 0, width, height], sides: Vec::new() }
+    }
+
+    pub fn found(&self) -> bool {
+        self.sides.iter().any(Side::accepted)
+    }
+
+    /// Pixels cut from the left, top, right and bottom.
+    pub fn cut(&self) -> [u32; 4] {
+        let [l, t, r, b] = self.content;
+        [l, t, self.width - r, self.height - b]
+    }
+
+    /// The largest share of the image cut on any one side (the sort for "deepest cut first").
+    pub fn depth(&self) -> f64 {
+        let [l, t, r, b] = self.cut();
+        let (w, h) = (self.width.max(1) as f64, self.height.max(1) as f64);
+        (l as f64 / w).max(r as f64 / w).max(t as f64 / h).max(b as f64 / h)
+    }
+}
+
+/// A rectangle of the stored image (fractions: left, top, right, bottom) in the image as shown: turned upright by
+/// `orientation` (1–8, as `decode::orient` applies it), then `turns` quarter turns clockwise.
+pub fn upright(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
+    // Where a stored point (u, v) is shown, as decode::transform moves pixels.
+    let shown = |(u, v): (f64, f64)| match orientation {
+        2 => (1.0 - u, v),
+        3 => (1.0 - u, 1.0 - v),
+        4 => (u, 1.0 - v),
+        5 => (v, u),
+        6 => (1.0 - v, u),
+        7 => (1.0 - v, 1.0 - u),
+        8 => (v, 1.0 - u),
+        _ => (u, v),
+    };
+    let turned = |p: (f64, f64)| (0..turns % 4).fold(p, |(x, y), _| (1.0 - y, x));
+    let [l, t, r, b] = rect;
+    let (a, c) = (turned(shown((l, t))), turned(shown((r, b))));
+    [a.0.min(c.0), a.1.min(c.1), a.0.max(c.0), a.1.max(c.1)]
+}
+
+/// Find the borders of a stored image.
+pub fn detect(img: &Rgb, p: &Params) -> Detection {
+    let (w, h) = (img.width, img.height);
+    let blur_thr = blur_threshold(img, p);
+    let mut content = [0, 0, w, h];
+    let mut sides: Vec<Side> = Vec::new();
+    // Nested borders, e.g. a thin line inside a blurred bar.
+    for pass in 0..3u8 {
+        let mut changed = false;
+        // Top/bottom first, then left/right on what is left, so corners never mix two borders.
+        for pair in [[Edge::Top, Edge::Bottom], [Edge::Left, Edge::Right]] {
+            let found = pair.map(|edge| {
+                detect_side(&View::new(img, content, edge), p, blur_thr).map(|mut s| {
+                    s.pass = pass;
+                    s
+                })
+            });
+            // The opposite side's accepted detection, captured before either is judged, so the outcome doesn't
+            // depend on which is judged first.
+            let detected = found.clone().map(|s| s.filter(Side::accepted));
+            let mut found = found;
+            for i in 0..2 {
+                if let Some(side) = found[i].as_mut().filter(|s| s.accepted()) {
+                    judge(side, detected[1 - i].as_ref(), p);
+                }
+            }
+            for side in found.into_iter().flatten() {
+                if !side.accepted() {
+                    if !sides.iter().any(|s| !s.accepted() && s.edge == side.edge && s.depth == side.depth) {
+                        sides.push(side);
+                    }
+                    continue;
+                }
+                let d = side.depth as usize;
+                match side.edge {
+                    Edge::Top => content[1] += d,
+                    Edge::Bottom => content[3] -= d,
+                    Edge::Left => content[0] += d,
+                    Edge::Right => content[2] -= d,
+                }
+                sides.push(side);
+                changed = true;
+            }
+        }
+        if !changed {
+            break;
+        }
+    }
+    let [l, t, r, b] = content;
+    let any = sides.iter().any(Side::accepted);
+    if any && (((r - l) as f64) < p.min_keep * w as f64 || ((b - t) as f64) < p.min_keep * h as f64) {
+        for s in sides.iter_mut().filter(|s| s.accepted()) {
+            s.rejected = Some(Reason::TooLittleLeft);
+        }
+        content = [0, 0, w, h];
+    }
+    Detection { width: w as u32, height: h as u32, content: content.map(|v| v as u32), sides }
+}
+
+/// The detail below which a line is blurred: a fraction of the image's central detail. `None` for images that are
+/// smooth overall, where blurred bars aren't looked for.
+fn blur_threshold(img: &Rgb, p: &Params) -> Option<f64> {
+    let (w, h) = (img.width, img.height);
+    // Every 4th line of the middle third, every other pixel of the middle three quarters.
+    let (x0, x1) = (w / 8, 7 * w / 8);
+    let xs: Vec<usize> = (x0..x1).step_by(2).collect();
+    let mut details: Vec<f64> = (h / 3..2 * h / 3)
+        .step_by(4)
+        .filter(|_| xs.len() > 1)
+        .map(|y| {
+            let sum = |x: usize| {
+                let i = (y * w + x) * 3;
+                img.pixels[i] as i32 + img.pixels[i + 1] as i32 + img.pixels[i + 2] as i32
+            };
+            let total: i64 = xs.windows(2).map(|x| (sum(x[1]) - sum(x[0])).abs() as i64).sum();
+            total as f64 / (3.0 * (xs.len() - 1) as f64)
+        })
+        .collect();
+    let content_act = median_f64(&mut details).unwrap_or(0.0);
+    (content_act >= p.min_content_act).then(|| p.blur_abs.max(p.blur_rel * content_act))
+}
+
+/// One side of the image's current content box, seen as if it were the top edge: `line` counts from the edge
+/// inwards, `pos` along the edge.
+struct View<'a> {
+    img: &'a Rgb,
+    edge: Edge,
+    box_: [usize; 4],
+    /// Lines from the edge to the opposite one.
+    depth: usize,
+    /// The positions of a line read (every other one).
+    positions: usize,
+}
+
+impl<'a> View<'a> {
+    fn new(img: &'a Rgb, box_: [usize; 4], edge: Edge) -> View<'a> {
+        let [l, t, r, b] = box_;
+        let (depth, len) = match edge {
+            Edge::Top | Edge::Bottom => (b - t, r - l),
+            Edge::Left | Edge::Right => (r - l, b - t),
+        };
+        View { img, edge, box_, depth, positions: len.div_ceil(2) }
+    }
+
+    /// The pixel at a line and a read position (`k`-th of every other one).
+    #[inline]
+    fn at(&self, line: usize, k: usize) -> [i32; 3] {
+        let [l, t, r, b] = self.box_;
+        let pos = 2 * k;
+        let (x, y) = match self.edge {
+            Edge::Top => (l + pos, t + line),
+            Edge::Bottom => (l + pos, b - 1 - line),
+            Edge::Left => (l + line, t + pos),
+            Edge::Right => (r - 1 - line, t + pos),
+        };
+        let i = (y * self.img.width + x) * 3;
+        let px = &self.img.pixels[i..i + 3];
+        [px[0] as i32, px[1] as i32, px[2] as i32]
+    }
+
+    /// A line's pixels as the sums of their channels (3 × gray).
+    fn gray3(&self, line: usize) -> Vec<i32> {
+        (0..self.positions).map(|k| self.at(line, k).iter().sum()).collect()
+    }
+
+    /// A line's detail: 3 × |gray step| between neighbouring read pixels, summed.
+    fn detail3(&self, line: usize) -> i64 {
+        let g = self.gray3(line);
+        g.windows(2).map(|w| (w[1] - w[0]).abs() as i64).sum()
+    }
+
+    /// Mean gray step of a line (`borders.py`'s `detail`).
+    fn detail(&self, line: usize) -> f64 {
+        self.detail3(line) as f64 / (3.0 * (self.positions.max(2) - 1) as f64)
+    }
+}
+
+/// Per line: twice its median colour, and whether it is solid (see the module comment). Each line depends only on
+/// itself and the line before, so the lines are measured as far as they are asked for.
+struct SolidLines {
+    medians2: Vec<[i32; 3]>,
+    solid: Vec<bool>,
+}
+
+impl SolidLines {
+    fn new() -> SolidLines {
+        SolidLines { medians2: Vec::new(), solid: Vec::new() }
+    }
+
+    fn measure_to(&mut self, v: &View, n: usize, p: &Params) {
+        while self.solid.len() < n {
+            let line = self.solid.len();
+            let pixels: Vec<[i32; 3]> = (0..v.positions).map(|k| v.at(line, k)).collect();
+            let m2 = median2(&pixels);
+            let off = pixels.iter().filter(|px| (0..3).any(|c| (2 * px[c] - m2[c]).abs() > 2 * p.tol)).count();
+            let off_ok = (off as f64 / pixels.len() as f64) < p.solid_off;
+            // The colour may change from line to line by tol / 3 at most.
+            let jump_ok =
+                self.medians2.last().is_none_or(|prev| (0..3).all(|c| 3 * (m2[c] - prev[c]).abs() <= 2 * p.tol));
+            self.medians2.push(m2);
+            self.solid.push(off_ok && jump_ok);
+        }
+    }
+}
+
+/// Twice the per-channel median (numpy's: the mean of the middle two of an even count), from histograms.
+fn median2(pixels: &[[i32; 3]]) -> [i32; 3] {
+    let mut out = [0; 3];
+    for (c, o) in out.iter_mut().enumerate() {
+        let mut hist = [0u32; 256];
+        for px in pixels {
+            hist[px[c] as usize] += 1;
+        }
+        *o = hist_median2(&hist, pixels.len());
+    }
+    out
+}
+
+/// Twice the median of `n` values counted in `hist` (value = index).
+fn hist_median2(hist: &[u32], n: usize) -> i32 {
+    let nth = |k: usize| {
+        let mut seen = 0usize;
+        hist.iter()
+            .position(|&count| {
+                seen += count as usize;
+                seen > k
+            })
+            .unwrap_or(0) as i32
+    };
+    if n == 0 {
+        0
+    } else if n % 2 == 1 {
+        2 * nth(n / 2)
+    } else {
+        nth(n / 2 - 1) + nth(n / 2)
+    }
+}
+
+fn median_f64(values: &mut [f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    values.sort_by(f64::total_cmp);
+    let n = values.len();
+    Some(if n % 2 == 1 { values[n / 2] } else { (values[n / 2 - 1] + values[n / 2]) / 2.0 })
+}
+
+/// Length of the leading run of `true`, bridging gaps of up to `max_gap` if the run then resumes for `resume`.
+fn run_length(mask: &[bool]) -> usize {
+    const MAX_GAP: usize = 2;
+    const RESUME: usize = 3;
+    let n = mask.len();
+    let mut i = 0;
+    while i < n {
+        if mask[i] {
+            i += 1;
+            continue;
+        }
+        let next = (i..(i + MAX_GAP + 1).min(n)).find(|&j| mask[j]);
+        match next {
+            Some(j) if j + RESUME <= n && mask[j..j + RESUME].iter().all(|&m| m) => i = j,
+            _ => break,
+        }
+    }
+    i
+}
+
+/// The first strong line-to-line change in `[guess - before, guess + after]`.
+fn refine_seam(v: &View, guess: usize, before: usize, after: usize) -> usize {
+    let lo = guess.saturating_sub(before).max(1);
+    let hi = (guess + after).min(v.depth - 1);
+    if hi < lo {
+        return guess;
+    }
+    // step[k]: the mean (over read positions) of the largest channel change into line lo + k.
+    let steps: Vec<f64> = (lo..=hi)
+        .map(|line| {
+            let total: i64 = (0..v.positions)
+                .map(|k| {
+                    let (a, b) = (v.at(line - 1, k), v.at(line, k));
+                    (0..3).map(|c| (b[c] - a[c]).abs()).max().unwrap_or(0) as i64
+                })
+                .sum();
+            total as f64 / v.positions as f64
+        })
+        .collect();
+    let max = steps.iter().copied().fold(0.0, f64::max);
+    let strong = 3.0f64.max(0.5 * max);
+    steps.iter().position(|&s| s >= strong).map_or(guess, |k| lo + k)
+}
+
+/// Per-line horizontal detail per column, 3 × |gray step|, summed down the lines: `cum[i][j]` is the sum over lines
+/// `first..first + i` at column step `j`.
+struct DetailSums {
+    first: usize,
+    cum: Vec<Vec<u32>>,
+}
+
+impl DetailSums {
+    fn new(v: &View, lines: std::ops::Range<usize>) -> DetailSums {
+        let cols = v.positions.saturating_sub(1);
+        let mut cum = vec![vec![0u32; cols]];
+        for line in lines.clone() {
+            let g = v.gray3(line);
+            let prev = cum.last().unwrap();
+            let next: Vec<u32> = (0..cols).map(|j| prev[j] + (g[j + 1] - g[j]).unsigned_abs()).collect();
+            cum.push(next);
+        }
+        DetailSums { first: lines.start, cum }
+    }
+
+    /// The sum over lines `a..b` at column step `j`.
+    fn sum(&self, a: usize, b: usize, j: usize) -> u32 {
+        self.cum[b - self.first][j] - self.cum[a - self.first][j]
+    }
+}
+
+/// For a candidate first content line `row`: the fraction of columns where it is a sharp edge. A column counts if
+/// its colour jumps across `row`, or its detail does (sharp content below a smooth border), comparing the `k` lines
+/// above with the `k` below. Real borders end in a straight edge; skies and bokeh don't.
+fn seam_straightness(v: &View, sums: &DetailSums, row: usize, k: usize, p: &Params) -> f64 {
+    let cols = v.positions.saturating_sub(1);
+    if cols == 0 {
+        return 0.0;
+    }
+    let sharp = (0..cols)
+        .filter(|&j| {
+            let (below, above) = (v.at(row + 1, j), v.at(row - 2, j));
+            let color = (0..3).any(|c| (below[c] - above[c]).abs() > p.seam_step);
+            // Detail below > 2 × detail above + 2, in sums of 3 × gray over k lines.
+            let a = sums.sum(row - 1 - k, row - 1, j) as i64;
+            let b = sums.sum(row + 1, row + 1 + k, j) as i64;
+            color || b > 2 * a + 6 * k as i64
+        })
+        .count();
+    sharp as f64 / cols as f64
+}
+
+/// What starts a side's detection: its first lines solid, or blurred. `blur_thr`: see [`blur_threshold`].
+fn starts(v: &View, p: &Params, blur_thr: Option<f64>) -> Option<(Kind, SolidLines)> {
+    if v.depth < 4 || v.positions < 2 {
+        return None;
+    }
+    let mut lines = SolidLines::new();
+    lines.measure_to(v, 4, p);
+    if lines.solid.iter().all(|&s| s) {
+        return Some((Kind::Solid, lines));
+    }
+    blurred(v, blur_thr).then_some((Kind::Blur, lines))
+}
+
+/// Whether the first four lines have less detail than `blur_thr`.
+fn blurred(v: &View, blur_thr: Option<f64>) -> bool {
+    blur_thr.is_some_and(|thr| (0..4).map(|line| v.detail(line)).sum::<f64>() / 4.0 < thr)
+}
+
+/// A border at the edge of `v`, if any (accepted, or a rejected candidate).
+fn detect_side(v: &View, p: &Params, blur_thr: Option<f64>) -> Option<Side> {
+    let depth_max = (v.depth as f64 * p.max_frac) as usize;
+    if depth_max < p.min_px + 8 {
+        return None;
+    }
+    let (kind, lines) = starts(v, p, blur_thr)?;
+    match kind {
+        Kind::Solid => solid_side(v, p, depth_max, lines),
+        Kind::Blur => blur_side(v, p, depth_max),
+    }
+}
+
+fn solid_side(v: &View, p: &Params, depth_max: usize, mut lines: SolidLines) -> Option<Side> {
+    let m0 = lines.medians2[0];
+    let color = [0, 1, 2].map(|c| (m0[c] / 2) as u8);
+    let side = |depth: usize, straight: f64, rejected| Side {
+        pass: 0,
+        edge: v.edge,
+        kind: Kind::Solid,
+        depth: depth as u32,
+        color: Some(color),
+        straight,
+        dev: None,
+        drift: None,
+        rejected,
+    };
+    // Look at a few lines first and widen only while the run continues.
+    let mut n = 64;
+    let end = loop {
+        let n_eff = n.min(depth_max);
+        lines.measure_to(v, n_eff, p);
+        let end = run_length(&lines.solid[..n_eff]);
+        if end + 3 < n_eff || n_eff == depth_max {
+            break end;
+        }
+        n *= 4;
+    };
+    if end < p.min_px {
+        return None;
+    }
+    if end + 3 >= depth_max {
+        return Some(side(end, 0.0, Some(Reason::TooDeep)));
+    }
+    // JPEG ringing next to the content makes the run stop a few lines early.
+    let seam = refine_seam(v, end, 3, 12);
+    let s0 = seam.saturating_sub(8);
+    let s1 = (seam + 9).min(v.depth);
+    let off = seam - s0;
+    // Thin borders: compare detail over as many lines as the border has.
+    let k = 6.min(off.saturating_sub(1));
+    if k < 1 || s1 - s0 < off + 1 + k {
+        return Some(side(seam, 0.0, Some(Reason::NoSeam)));
+    }
+    let sums = DetailSums::new(v, s0..s1);
+    let straight = seam_straightness(v, &sums, seam, k, p);
+    if straight < p.straight {
+        return Some(side(seam, straight, Some(Reason::SeamNotStraight)));
+    }
+    // Flatness, away from the seam's JPEG ringing: the lines' median colours, their median, and how far pixels and
+    // line colours stray from it.
+    let core = seam.saturating_sub(10).max(1);
+    lines.measure_to(v, core, p);
+    let meds = &lines.medians2[..core];
+    let mut center4 = [0i32; 3];
+    let mut drift2 = 0;
+    for c in 0..3 {
+        let mut hist = [0u32; 511];
+        for m in meds {
+            hist[m[c] as usize] += 1;
+        }
+        // Twice the median of doubled values: 4 × the median colour.
+        center4[c] = hist_median2(&hist, meds.len());
+        let (lo, hi) = meds.iter().fold((i32::MAX, i32::MIN), |(lo, hi), m| (lo.min(m[c]), hi.max(m[c])));
+        drift2 = drift2.max(hi - lo);
+    }
+    let mut hist = [0u32; 1021];
+    let mut count = 0;
+    for line in 0..core {
+        for kpos in 0..v.positions {
+            let px = v.at(line, kpos);
+            let dev4 = (0..3).map(|c| (4 * px[c] - center4[c]).abs()).max().unwrap_or(0);
+            hist[dev4 as usize] += 1;
+            count += 1;
+        }
+    }
+    let dev = hist_median2(&hist, count) as f64 / 8.0;
+    let drift = drift2 as f64 / 2.0;
+    Some(Side { dev: Some(dev), drift: Some(drift), ..side((seam + p.margin).min(depth_max), straight, None) })
+}
+
+/// A blurred bar has no fixed colour and may hold a blurred copy of the content, so instead of following a run of
+/// similar lines, find the first straight sharp seam below a smooth region.
+fn blur_side(v: &View, p: &Params, depth_max: usize) -> Option<Side> {
+    const K: usize = 6;
+    const CONTENT: usize = 64;
+    let lines = (depth_max + 72).min(v.depth);
+    let first = p.min_px.max(7);
+    let last = depth_max.min(lines.saturating_sub(72));
+    if first >= last {
+        return None;
+    }
+    let sums = DetailSums::new(v, 0..lines);
+    // Each line's detail (as the sum over its columns: only ratios of them are compared), summed down the lines.
+    let mut act_cum = vec![0.0f64];
+    for line in 0..lines {
+        let act: u64 = (0..v.positions - 1).map(|j| sums.sum(line, line + 1, j) as u64).sum();
+        act_cum.push(act_cum[line] + act as f64);
+    }
+    let found = (first..last).find_map(|row| {
+        let straight = seam_straightness(v, &sums, row, K, p);
+        // The mean detail of the bar above the row, and of the content below it.
+        let bar = act_cum[row] / row as f64;
+        let content = (act_cum[row + CONTENT] - act_cum[row]) / CONTENT as f64;
+        (straight >= p.blur_straight && bar < 0.35 * content).then_some((row, straight))
+    });
+    let (row, straight) = found?;
+    let seam = refine_seam(v, row, 1, 3);
+    Some(Side {
+        pass: 0,
+        edge: v.edge,
+        kind: Kind::Blur,
+        depth: (seam + p.margin).min(depth_max) as u32,
+        color: None,
+        straight,
+        dev: None,
+        drift: None,
+        rejected: None,
+    })
+}
+
+/// The rules that need the opposite side (`other`: its accepted detection); rejects `side` in place.
+fn judge(side: &mut Side, other: Option<&Side>, p: &Params) {
+    match side.kind {
+        Kind::Blur => {
+            let paired = other.is_some_and(|o| {
+                let (a, b) = (side.depth as f64, o.depth as f64);
+                o.kind == Kind::Blur && (a - b).abs() <= 4f64.max(p.blur_sym * a.max(b))
+            });
+            if !paired {
+                side.rejected = Some(Reason::UnpairedBlur);
+            }
+        }
+        Kind::Solid => {
+            let max_dev = if other.is_some() { p.flat_dev_paired } else { p.flat_dev };
+            if side.drift.unwrap_or(0.0) > p.max_drift || side.dev.unwrap_or(0.0) > max_dev {
+                side.rejected = Some(Reason::NotFlat);
+            }
+        }
+    }
+    debug_assert!(other.is_none_or(|o| o.edge == side.edge.opposite()));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Detailed content: deterministic noise in 6 px blocks, a little per pixel, over a gradient (a hash, so the
+    /// tests need no crate).
+    fn content(w: usize, h: usize, seed: u32) -> Rgb {
+        let hash = |a: usize, b: usize, c: usize| {
+            let mut v =
+                seed ^ (a as u32).wrapping_mul(0x9E37_79B9) ^ (b as u32).wrapping_mul(0x85EB_CA6B) ^ (c as u32) << 28;
+            v ^= v >> 15;
+            v = v.wrapping_mul(0x2C1B_3C6D);
+            v ^= v >> 12;
+            v = v.wrapping_mul(0x297A_2D39);
+            (v ^ (v >> 15)) as usize
+        };
+        let mut pixels = Vec::with_capacity(w * h * 3);
+        for y in 0..h {
+            for x in 0..w {
+                for c in 0..3 {
+                    let block = hash(x / 6, y / 6, c) % 110;
+                    let fine = hash(x + 7919, y, c) % 16;
+                    pixels.push((40 + block + fine + (x + y + 30 * c) % 60) as u8);
+                }
+            }
+        }
+        Rgb { width: w, height: h, pixels }
+    }
+
+    fn set(img: &mut Rgb, x: usize, y: usize, px: [u8; 3]) {
+        let i = (y * img.width + x) * 3;
+        img.pixels[i..i + 3].copy_from_slice(&px);
+    }
+
+    fn fill(img: &mut Rgb, x0: usize, y0: usize, x1: usize, y1: usize, px: impl Fn(usize, usize) -> [u8; 3]) {
+        for y in y0..y1 {
+            for x in x0..x1 {
+                set(img, x, y, px(x, y));
+            }
+        }
+    }
+
+    fn accepted(d: &Detection) -> Vec<(Edge, Kind, u32)> {
+        d.sides.iter().filter(|s| s.accepted()).map(|s| (s.edge, s.kind, s.depth)).collect()
+    }
+
+    fn rejected(d: &Detection) -> Vec<(Edge, Reason)> {
+        d.sides.iter().filter_map(|s| s.rejected.map(|r| (s.edge, r))).collect()
+    }
+
+    #[test]
+    fn black_letterbox() {
+        let (w, h) = (400, 300);
+        let mut img = content(w, h, 1);
+        fill(&mut img, 0, 0, w, 40, |_, _| [0, 0, 0]);
+        fill(&mut img, 0, h - 40, w, h, |_, _| [2, 1, 0]);
+        let d = detect(&img, &Params::default());
+        // The seam is at 40, plus one pixel of margin.
+        assert_eq!(accepted(&d), vec![(Edge::Top, Kind::Solid, 41), (Edge::Bottom, Kind::Solid, 41)]);
+        assert_eq!(d.content, [0, 41, 400, 259]);
+        assert_eq!(d.sides[0].class(), Class::Black);
+    }
+
+    #[test]
+    fn white_side_padding() {
+        let (w, h) = (500, 300);
+        let mut img = content(w, h, 2);
+        fill(&mut img, 0, 0, 90, h, |_, _| [255, 255, 255]);
+        fill(&mut img, w - 90, 0, w, h, |_, _| [253, 254, 255]);
+        let d = detect(&img, &Params::default());
+        assert_eq!(accepted(&d), vec![(Edge::Left, Kind::Solid, 91), (Edge::Right, Kind::Solid, 91)]);
+        assert_eq!(d.sides[0].class(), Class::White);
+    }
+
+    #[test]
+    fn thin_dark_frame() {
+        let (w, h) = (320, 240);
+        let mut img = content(w, h, 3);
+        let frame = |x: usize, y: usize| x < 5 || y < 5 || x >= w - 5 || y >= h - 5;
+        fill(&mut img, 0, 0, w, h, |x, y| if frame(x, y) { [20, 18, 22] } else { [0; 3] });
+        let inner = content(w, h, 3);
+        for y in 5..h - 5 {
+            for x in 5..w - 5 {
+                let i = (y * w + x) * 3;
+                let px = [inner.pixels[i], inner.pixels[i + 1], inner.pixels[i + 2]];
+                set(&mut img, x, y, px);
+            }
+        }
+        let d = detect(&img, &Params::default());
+        let found = accepted(&d);
+        assert_eq!(found.len(), 4, "{:?}", d.sides);
+        assert!(found.iter().all(|&(_, k, depth)| k == Kind::Solid && (5..=7).contains(&depth)), "{found:?}");
+    }
+
+    /// A smooth bar: colour varying slowly along the line, so it is no solid line, and almost no detail.
+    fn bar(x: usize, y: usize) -> [u8; 3] {
+        let t = (x as f64 / 120.0).sin() * 60.0 + (y as f64 / 50.0).cos() * 10.0;
+        [(110.0 + t) as u8, (100.0 + t * 0.8) as u8, (90.0 + t * 0.5) as u8]
+    }
+
+    #[test]
+    fn blurred_bars_in_pairs() {
+        let (w, h) = (300, 520);
+        let mut img = content(w, h, 4);
+        fill(&mut img, 0, 0, w, 110, bar);
+        fill(&mut img, 0, h - 110, w, h, bar);
+        let d = detect(&img, &Params::default());
+        let found = accepted(&d);
+        assert_eq!(found.len(), 2, "{:?}", d.sides);
+        // The seam is found where the detail below the row jumps, which a few lines of content already make; the
+        // exact depth is pinned by the parity check against borders.py (FINDINGS), not here.
+        assert!(found.iter().all(|&(_, k, depth)| k == Kind::Blur && (100..=113).contains(&depth)), "{found:?}");
+        assert_eq!(found[0].2, found[1].2);
+    }
+
+    #[test]
+    fn one_blurred_bar_is_a_sky() {
+        let (w, h) = (300, 520);
+        let mut img = content(w, h, 5);
+        fill(&mut img, 0, 0, w, 110, bar);
+        let d = detect(&img, &Params::default());
+        assert!(!d.found(), "{:?}", d.sides);
+        assert_eq!(rejected(&d), vec![(Edge::Top, Reason::UnpairedBlur)]);
+        assert_eq!(d.content, [0, 0, w as u32, h as u32]);
+    }
+
+    #[test]
+    fn shaded_wall_is_not_flat() {
+        let (w, h) = (400, 300);
+        let mut img = content(w, h, 6);
+        // Each line uniform, the colour drifting down: a wall lit from above.
+        fill(&mut img, 0, 0, w, 70, |_, y| [(100 + y) as u8, (110 + y) as u8, (120 + y) as u8]);
+        let d = detect(&img, &Params::default());
+        assert!(!d.found(), "{:?}", d.sides);
+        assert_eq!(rejected(&d), vec![(Edge::Top, Reason::NotFlat)]);
+    }
+
+    #[test]
+    fn too_deep() {
+        let (w, h) = (400, 300);
+        let mut img = content(w, h, 7);
+        fill(&mut img, 0, 0, w, 150, |_, _| [0, 0, 0]);
+        let d = detect(&img, &Params::default());
+        assert!(!d.found());
+        assert_eq!(rejected(&d), vec![(Edge::Top, Reason::TooDeep)]);
+    }
+
+    #[test]
+    fn no_border() {
+        let img = content(400, 300, 8);
+        let d = detect(&img, &Params::default());
+        assert!(d.sides.is_empty(), "{:?}", d.sides);
+    }
+
+    #[test]
+    fn nested_borders_peel_off() {
+        // Black letterbox bars, and inside them a white frame around the content. Above and below, the run of
+        // border lines bridges the colour change (as borders.py's run_length does): one side each.
+        let (w, h) = (400, 400);
+        let mut img = content(w, h, 9);
+        fill(&mut img, 0, 0, w, h, |x, y| {
+            if y < 30 || y >= h - 30 {
+                [0, 0, 0]
+            } else if y < 36 || y >= h - 36 || x < 6 || x >= w - 6 {
+                [250, 250, 250]
+            } else {
+                [0; 3]
+            }
+        });
+        let inner = content(w, h, 9);
+        for y in 36..h - 36 {
+            for x in 6..w - 6 {
+                let i = (y * w + x) * 3;
+                set(&mut img, x, y, [inner.pixels[i], inner.pixels[i + 1], inner.pixels[i + 2]]);
+            }
+        }
+        let d = detect(&img, &Params::default());
+        let [l, t, r, b] = d.content;
+        assert!((6..=8).contains(&l) && (w as u32 - 8..=w as u32 - 6).contains(&r), "{:?} {:?}", d.content, d.sides);
+        assert!(
+            (36..=39).contains(&t) && (h as u32 - 39..=h as u32 - 36).contains(&b),
+            "{:?} {:?}",
+            d.content,
+            d.sides
+        );
+    }
+
+    #[test]
+    fn too_little_content_left() {
+        // Letterbox bars of 36% each: each within the 45% a side may cut, together leaving 28% of the height.
+        let (w, h) = (400, 400);
+        let mut img = content(w, h, 10);
+        fill(&mut img, 0, 0, w, 144, |_, _| [0, 0, 0]);
+        fill(&mut img, 0, h - 144, w, h, |_, _| [0, 0, 0]);
+        let d = detect(&img, &Params::default());
+        assert!(!d.found(), "{:?}", d.sides);
+        assert!(d.sides.iter().any(|s| s.rejected == Some(Reason::TooLittleLeft)));
+        assert_eq!(d.content, [0, 0, w as u32, h as u32]);
+    }
+
+    #[test]
+    fn upright_follows_the_decoders_transform() {
+        // A 4×2 stored image whose only lit pixel block is the rectangle x 1..3, y 0..1; every orientation and turn
+        // must put the rectangle where decode::orient (and then quarter turns) puts the pixels.
+        let (w, h) = (4usize, 2usize);
+        let lit = |x: usize, y: usize| (1..3).contains(&x) && y < 1;
+        let pixels: Vec<u8> = (0..h).flat_map(|y| (0..w).map(move |x| u8::from(lit(x, y)))).collect();
+        let rect = [1.0 / 4.0, 0.0, 3.0 / 4.0, 1.0 / 2.0];
+        for orientation in 1..=8u8 {
+            for turns in 0..4u8 {
+                let (mut px, mut pw, mut ph) = crate::decode::transform(&pixels, w, h, 1, orientation);
+                for _ in 0..turns {
+                    (px, pw, ph) = crate::decode::transform(&px, pw, ph, 1, 6);
+                }
+                let [x0, y0, x1, y1] = upright(rect, orientation, turns);
+                for y in 0..ph {
+                    for x in 0..pw {
+                        let (cx, cy) = ((x as f64 + 0.5) / pw as f64, (y as f64 + 0.5) / ph as f64);
+                        let inside = (x0..x1).contains(&cx) && (y0..y1).contains(&cy);
+                        assert_eq!(px[y * pw + x] == 1, inside, "orientation {orientation}, {turns} turns, ({x}, {y})");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn run_length_bridges_short_gaps() {
+        let t = true;
+        let f = false;
+        assert_eq!(run_length(&[t, t, f, t, t, t, f]), 6);
+        assert_eq!(run_length(&[t, t, f, f, f, t, t, t]), 2);
+        assert_eq!(run_length(&[t, t, f, t, t]), 2);
+        assert_eq!(run_length(&[f, t, t, t]), 4);
+    }
+
+    #[test]
+    fn medians_match_numpy() {
+        let mut hist = [0u32; 256];
+        for v in [3, 1, 2, 10] {
+            hist[v] += 1;
+        }
+        // numpy.median([1, 2, 3, 10]) = 2.5
+        assert_eq!(hist_median2(&hist, 4), 5);
+        hist[7] += 1;
+        assert_eq!(hist_median2(&hist, 5), 6);
+    }
+}

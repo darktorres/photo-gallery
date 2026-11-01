@@ -26,6 +26,8 @@ pub mod qobject {
         type QStringList = cxx_qt_lib::QStringList;
         include!("cxx-qt-lib/qurl.h");
         type QUrl = cxx_qt_lib::QUrl;
+        include!("cxx-qt-lib/qrectf.h");
+        type QRectF = cxx_qt_lib::QRectF;
     }
 
     extern "RustQt" {
@@ -166,6 +168,39 @@ pub mod qobject {
         #[qinvokable]
         fn badge(self: &GalleryModel, item: i32) -> QString;
 
+        /// What is left of the image without its borders, as fractions of the image as shown (pending turns
+        /// included); an empty rectangle without borders found. Marked ones (`borderMarked`) have theirs.
+        #[qinvokable]
+        #[cxx_name = "borderBox"]
+        fn border_box(self: &GalleryModel, item: i32) -> QRectF;
+
+        /// Whether the item's borders are marked as not a border (the review).
+        #[qinvokable]
+        #[cxx_name = "borderMarked"]
+        fn border_marked(self: &GalleryModel, item: i32) -> bool;
+
+        /// Mark the item's borders as not a border, or take the mark back. Only items with borders found.
+        #[qinvokable]
+        #[cxx_name = "setBorderMarked"]
+        fn set_border_marked(self: Pin<&mut GalleryModel>, item: i32, marked: bool);
+
+        /// Where the border detector's first rejected candidate at an edge of the image as shown (`top`,
+        /// `bottom`, `left`, `right`) would have cut, as a fraction of the image from that edge; -1 for none.
+        #[qinvokable]
+        #[cxx_name = "borderRejected"]
+        fn border_rejected(self: &GalleryModel, item: i32, edge: &QString) -> f64;
+
+        /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder at
+        /// `url`, in the background (`pg_ingest::crop`). Returns how many it asked for.
+        #[qinvokable]
+        #[cxx_name = "saveCroppedCopies"]
+        fn save_cropped_copies(self: &GalleryModel, url: &QUrl) -> i32;
+
+        /// How many of the listed files have borders found (and not marked): what `saveCroppedCopies` crops.
+        #[qinvokable]
+        #[cxx_name = "borderedCount"]
+        fn bordered_count(self: &GalleryModel) -> i32;
+
         /// `image`, `animated` or `video` (`query::MediaType`): what the viewer shows it with.
         #[qinvokable]
         #[cxx_name = "mediaType"]
@@ -187,8 +222,8 @@ pub mod qobject {
         #[cxx_name = "playerTurns"]
         fn player_turns(self: &GalleryModel, item: i32) -> i32;
 
-        /// One line for the status bar: path, dimensions, file size, and where the rating is kept if not in the
-        /// file (the QML adds the rating's symbol).
+        /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file
+        /// (the QML adds the rating's symbol), and the borders found.
         #[qinvokable]
         fn info(self: &GalleryModel, item: i32) -> QString;
 
@@ -206,8 +241,11 @@ use core::pin::Pin;
 use std::cell::RefCell;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QStringList, QUrl, QVariant};
-use pg_core::browse::{self, Details, Entry};
+use cxx_qt_lib::{
+    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QRectF, QString, QStringList, QUrl, QVariant,
+};
+use pg_core::borders::Class;
+use pg_core::browse::{self, Borders, Details, Entry};
 use pg_core::layout::{self, Row};
 use pg_core::query::{MediaType, Query, Sort};
 
@@ -613,6 +651,71 @@ impl qobject::GalleryModel {
         QString::from(&text)
     }
 
+    fn border_box(&self, item: i32) -> QRectF {
+        match self.item(item).and_then(Entry::content) {
+            Some([x, y, w, h]) => QRectF::new(x, y, w, h),
+            None => QRectF::default(),
+        }
+    }
+
+    fn border_marked(&self, item: i32) -> bool {
+        self.item(item).is_some_and(|e| e.borders == Borders::Marked)
+    }
+
+    fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
+        let Some(e) = self.item(item).copied() else { return };
+        if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
+            return;
+        }
+        if let Err(err) = state::with_catalog(|c| browse::set_border_mark(&c.conn, e.id, marked)) {
+            eprintln!("marking borders: {err:#}");
+            return;
+        }
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.entries[item as usize].borders = if marked { Borders::Marked } else { Borders::Found };
+            if this.loading {
+                this.edited.push(e.id);
+            }
+        }
+        let revision = self.revision + 1;
+        self.set_revision(revision);
+    }
+
+    fn border_rejected(&self, item: i32, edge: &QString) -> f64 {
+        let edge = edge.to_string();
+        self.with_details(item, |e, d| {
+            // A side's line, as the shown edge it is nearest (borders cut less than half a side) and the distance.
+            let shown = |[x, y, w, _]: [f64; 4]| match (w == 0.0, x < 0.5, y < 0.5) {
+                (true, true, _) => ("left", x),
+                (true, false, _) => ("right", 1.0 - x),
+                (false, _, true) => ("top", y),
+                (false, _, false) => ("bottom", 1.0 - y),
+            };
+            d.border_sides
+                .iter()
+                .filter(|s| !s.accepted())
+                .filter_map(|s| e.side_line(s.edge, s.depth).map(shown))
+                .find(|(at, _)| *at == edge)
+                .map_or(-1.0, |(_, d)| d)
+        })
+        .unwrap_or(-1.0)
+    }
+
+    fn save_cropped_copies(&self, url: &QUrl) -> i32 {
+        let ids: Vec<i64> = self.entries.iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
+        let folder = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
+        let n = ids.len() as i32;
+        if n > 0 {
+            library::save_crops(ids, std::path::PathBuf::from(folder.replace('/', "\\")));
+        }
+        n
+    }
+
+    fn bordered_count(&self) -> i32 {
+        self.entries.iter().filter(|e| e.borders == Borders::Found).count() as i32
+    }
+
     fn media_type(&self, item: i32) -> QString {
         QString::from(self.item(item).map_or("image", |e| e.media_type().key()))
     }
@@ -638,7 +741,7 @@ impl qobject::GalleryModel {
             let bytes = d.size as f64;
             let size = if bytes >= 1e6 { format!("{:.1} MB", bytes / 1e6) } else { format!("{:.0} KB", bytes / 1e3) };
             let kept = if e.rating > 0 && !d.rating_in_file { "   rating kept in the catalog" } else { "" };
-            QString::from(&format!("{}   {dims}   {size}{kept}", d.path))
+            QString::from(&format!("{}   {dims}   {size}{kept}{}", d.path, borders_info(e, d)))
         })
         .unwrap_or_default()
     }
@@ -674,4 +777,26 @@ impl qobject::GalleryModel {
             })
             .unwrap_or(r.first + r.count - 1) as i32
     }
+}
+
+/// The status line's part about borders: what a crop would cut, in stored pixels, and their classes.
+fn borders_info(e: &Entry, d: &Details) -> String {
+    if !matches!(e.borders, Borders::Found | Borders::Marked) {
+        return String::new();
+    }
+    let Some([l, t, r, b]) = e.shown_cut() else { return String::new() };
+    let mut classes: Vec<&str> = Vec::new();
+    for c in d.border_sides.iter().filter(|s| s.accepted()).map(|s| s.class()) {
+        let name = match c {
+            Class::Black => "black",
+            Class::White => "white",
+            Class::Color => "colored",
+            Class::Blur => "blurred",
+        };
+        if !classes.contains(&name) {
+            classes.push(name);
+        }
+    }
+    let marked = if e.borders == Borders::Marked { " — marked not a border" } else { "" };
+    format!("   borders {} (L {l} T {t} R {r} B {b} px){marked}", classes.join(", "))
 }

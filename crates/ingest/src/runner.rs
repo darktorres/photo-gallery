@@ -1,11 +1,13 @@
-//! The app's background job (PLAN §4, §6): one thread that scans the folders asked for, imports whatever is
-//! pending, then makes thumbnails at the grid's current height, and sleeps until there is something new to do.
+//! The app's background job (PLAN §4, §6): one thread that saves the cropped copies asked for, scans the folders
+//! asked for, imports whatever is pending, looks for the borders of what it imported (and of everything after a
+//! new detector), then makes thumbnails at the grid's current height, and sleeps until there is something new to
+//! do.
 //!
 //! A new request (a folder added, a rescan, a new thumbnail height) stops the pass in progress at the next file;
 //! it commits what it has and the next round starts with the new work. Every pass is resumable from the catalog,
 //! so stopping costs nothing but the batch in flight.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 
@@ -16,12 +18,14 @@ use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_BELOW_NORMAL, THREAD
 
 use crate::control::{Control, Progress};
 use crate::pipeline::Options;
-use crate::{import, scan, thumbs};
+use crate::{borders, crop, import, scan, thumbs};
 
 #[derive(Default)]
 struct Queue {
     /// Folders to scan, normalized.
     scans: Vec<String>,
+    /// Cropped copies to save: the files, and the folder.
+    crops: Vec<(Vec<i64>, PathBuf)>,
     /// Something to do: start a round.
     wake: bool,
 }
@@ -35,8 +39,14 @@ struct Inner {
     thumb_height: AtomicU32,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
-    messages: Mutex<Vec<String>>,
+    messages: Mutex<Vec<Message>>,
     on_round_done: Box<dyn Fn() + Send + Sync>,
+}
+
+/// Something the job tells the user: an error or a warning, or how a job asked for went.
+pub struct Message {
+    pub text: String,
+    pub warning: bool,
 }
 
 /// What the job has done so far, for the app to refresh its views.
@@ -66,7 +76,7 @@ impl Runner {
             catalog_path,
             thumbs,
             ctl: Control::new(false),
-            queue: Mutex::new(Queue { scans: Vec::new(), wake: true }),
+            queue: Mutex::new(Queue { scans: Vec::new(), crops: Vec::new(), wake: true }),
             wake: Condvar::new(),
             thumb_height: AtomicU32::new(thumb_height),
             scans_done: AtomicU64::new(0),
@@ -87,6 +97,13 @@ impl Runner {
                 q.scans.push(r);
             }
         }
+        self.inner.wake_up(q);
+    }
+
+    /// Save cropped copies of these files' borders into `folder` (`crop::save`), before anything else.
+    pub fn save_crops(&self, ids: Vec<i64>, folder: PathBuf) {
+        let mut q = self.inner.queue.lock().unwrap();
+        q.crops.push((ids, folder));
         self.inner.wake_up(q);
     }
 
@@ -122,7 +139,7 @@ impl Runner {
     }
 
     /// Errors and notes since the last call (a folder that couldn't be scanned, a full cache).
-    pub fn take_messages(&self) -> Vec<String> {
+    pub fn take_messages(&self) -> Vec<Message> {
         std::mem::take(&mut self.inner.messages.lock().unwrap())
     }
 }
@@ -134,8 +151,12 @@ impl Inner {
         self.wake.notify_one();
     }
 
-    fn note(&self, message: String) {
-        self.messages.lock().unwrap().push(message);
+    fn note(&self, text: String) {
+        self.messages.lock().unwrap().push(Message { text, warning: false });
+    }
+
+    fn warn(&self, text: String) {
+        self.messages.lock().unwrap().push(Message { text, warning: true });
     }
 
     fn run(&self) {
@@ -149,15 +170,15 @@ impl Inner {
                 }
                 q.wake = false;
                 self.ctl.clear_stop();
-                std::mem::take(&mut q.scans)
+                (std::mem::take(&mut q.scans), std::mem::take(&mut q.crops))
             };
             let done = catalog.take().map_or_else(|| Catalog::open(&self.catalog_path), Ok).and_then(|mut c| {
-                self.round(&mut c, roots)?;
+                self.round(&mut c, roots.0, roots.1)?;
                 catalog = Some(c);
                 Ok(())
             });
             if let Err(e) = done {
-                self.note(format!("{e:#}"));
+                self.warn(format!("{e:#}"));
             }
             (self.on_round_done)();
         }
@@ -171,7 +192,22 @@ impl Inner {
         q.wake = true;
     }
 
-    fn round(&self, catalog: &mut Catalog, roots: Vec<String>) -> Result<()> {
+    fn round(&self, catalog: &mut Catalog, roots: Vec<String>, crops: Vec<(Vec<i64>, PathBuf)>) -> Result<()> {
+        for (i, (ids, folder)) in crops.iter().enumerate() {
+            match crop::save(catalog, ids, folder, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), &self.ctl) {
+                Ok(s) if !s.remaining.is_empty() => {
+                    // Stopped: what is left of it, and of the round, goes first in the next one.
+                    let rest = std::iter::once((s.remaining, folder.clone())).chain(crops[i + 1..].iter().cloned());
+                    self.queue.lock().unwrap().crops.splice(0..0, rest);
+                    self.requeue(&roots);
+                    return Ok(());
+                }
+                Ok(s) if s.failed > 0 => self.warn(crop_note(&s, folder)),
+                Ok(s) => self.note(crop_note(&s, folder)),
+                Err(e) => self.warn(format!("{e:#}")),
+            }
+        }
+
         let library = catalog.roots()?;
         for (i, root) in roots.iter().enumerate() {
             // Removed from the library since it was asked for.
@@ -185,10 +221,10 @@ impl Inner {
                 }
                 Ok(s) => {
                     if s.errors > 0 {
-                        self.note(format!("{root}: {} folders couldn't be read", s.errors));
+                        self.warn(format!("{root}: {} folders couldn't be read", s.errors));
                     }
                 }
-                Err(e) => self.note(format!("{root}: {e:#}")),
+                Err(e) => self.warn(format!("{root}: {e:#}")),
             }
             self.scans_done.fetch_add(1, Ordering::Relaxed);
         }
@@ -201,12 +237,35 @@ impl Inner {
             return Ok(());
         }
 
+        // Its own pass, after the import: the import's decode is reduced, the detector wants full size.
+        let s = borders::find(catalog, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), &self.ctl)?;
+        if s.files > 0 {
+            self.imports_done.fetch_add(1, Ordering::Relaxed);
+        }
+        if self.ctl.stop_requested() {
+            return Ok(());
+        }
+
         let height = self.thumb_height.load(Ordering::Relaxed);
         let opts = Options::new(THREAD_PRIORITY_IDLE);
         let s = thumbs::run(self.thumbs, &self.catalog_path, height, &opts, &self.ctl)?;
         if s.cache_full {
-            self.note(format!("The thumbnail cache is full: {} thumbnails at {height} px weren't made", s.made));
+            self.warn(format!("The thumbnail cache is full: {} thumbnails at {height} px weren't made", s.made));
         }
         Ok(())
     }
+}
+
+/// What a crop job did, for the status line.
+fn crop_note(s: &crop::Stats, folder: &Path) -> String {
+    let plural = |n: usize| if n == 1 { "" } else { "s" };
+    let mut note =
+        format!("Saved {} cropped cop{} in {}", s.saved, if s.saved == 1 { "y" } else { "ies" }, folder.display());
+    if s.skipped > 0 {
+        note += &format!("; {} file{} had nothing to crop any more", s.skipped, plural(s.skipped));
+    }
+    if let Some(e) = &s.error {
+        note += &format!("; {} failed, the first: {e}", s.failed);
+    }
+    note
 }

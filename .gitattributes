@@ -1,3 +1,5 @@
 # Shell scripts run under WSL straight from the Windows checkout (tools/profiling), where core.autocrlf would give
 # them CRLF line ends and bash would fail on the \r.
 *.sh text eol=lf
+# cmd misparses batch files with LF-only line ends (it drops characters at line starts).
+*.cmd text eol=crlf

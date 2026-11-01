@@ -36,6 +36,7 @@ struct Inner {
     scans_done: AtomicU64,
     imports_done: AtomicU64,
     messages: Mutex<Vec<String>>,
+    on_round_done: Box<dyn Fn() + Send + Sync>,
 }
 
 /// What the job has done so far, for the app to refresh its views.
@@ -53,8 +54,14 @@ pub struct Runner {
 
 impl Runner {
     /// Start the job thread. It begins by importing whatever is pending and making the thumbnails still missing
-    /// at `thumb_height`.
-    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, thumb_height: u32) -> Runner {
+    /// at `thumb_height`. `on_round_done` runs on the job's thread after every round, however it ended (the app
+    /// marks it as a stage for measuring, docs/PROFILING.md).
+    pub fn start(
+        catalog_path: PathBuf,
+        thumbs: &'static ThumbCache,
+        thumb_height: u32,
+        on_round_done: impl Fn() + Send + Sync + 'static,
+    ) -> Runner {
         let inner = Arc::new(Inner {
             catalog_path,
             thumbs,
@@ -65,6 +72,7 @@ impl Runner {
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
             messages: Mutex::new(Vec::new()),
+            on_round_done: Box::new(on_round_done),
         });
         let job = inner.clone();
         std::thread::Builder::new().name("background job".into()).spawn(move || job.run()).expect("spawn job");
@@ -144,6 +152,7 @@ impl Inner {
             if let Err(e) = self.round(roots) {
                 self.note(format!("{e:#}"));
             }
+            (self.on_round_done)();
         }
     }
 

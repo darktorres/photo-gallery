@@ -337,28 +337,7 @@ impl ThumbCache {
     /// connection, with the catalog (`catalog`) attached; it never waits for the writer, nor the writer for it.
     pub fn pending(&self, catalog: &Path, height: u32) -> Result<Vec<ThumbWork>> {
         let Some(store) = &self.store else { return Ok(Vec::new()) };
-        let conn = Connection::open(&store.path)?;
-        // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
-        conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
-        conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()])?;
-        let mut stmt = conn.prepare(
-            "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
-                    f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END
-             FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
-             LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
-             WHERE f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
-               AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
-             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
-        )?;
-        let rows = stmt.query_map([height], |r| {
-            Ok(ThumbWork {
-                id: r.get(0)?,
-                path: r.get(1)?,
-                source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
-                poster_ms: r.get(4)?,
-            })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
+        pending_in(&store.path, catalog, height)
     }
 
     /// Check the totals against the entries, and fix them if they differ (only a writer that bypassed the
@@ -434,6 +413,32 @@ fn open_writer(path: &Path, cap_bytes: Option<i64>) -> Result<Connection> {
         conn.execute("UPDATE limits SET cap = ?1", [cap])?;
     }
     Ok(conn)
+}
+
+/// `ThumbCache::pending` on the cache file `cache` (a free function: the bench calls it without a writer).
+pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Vec<ThumbWork>> {
+    let conn = Connection::open(cache)?;
+    // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
+    conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
+    conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()])?;
+    let mut stmt = conn.prepare(
+        "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
+                f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END
+         FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
+         LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
+         WHERE f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
+           AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
+         ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
+    )?;
+    let rows = stmt.query_map([height], |r| {
+        Ok(ThumbWork {
+            id: r.get(0)?,
+            path: r.get(1)?,
+            source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
+            poster_ms: r.get(4)?,
+        })
+    })?;
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()?)
 }
 
 thread_local! {

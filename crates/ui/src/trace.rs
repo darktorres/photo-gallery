@@ -83,6 +83,9 @@ stages! {
     pg_stage_list_shown,
     /// The start is done.
     pg_stage_ready,
+    /// The library's background job finished a round (on its thread; the first is the start's import check and
+    /// thumbnail pass).
+    pg_stage_round_done,
 }
 
 fn reached(stage: &str) {

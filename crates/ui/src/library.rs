@@ -135,7 +135,11 @@ impl qobject::Library {
     fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
         self.as_mut().load_roots();
         let height = thumb_height.max(1) as u32;
-        RUNNER.get_or_init(|| Runner::start(state::get().catalog_path.clone(), state::thumbs(), height));
+        RUNNER.get_or_init(|| {
+            Runner::start(state::get().catalog_path.clone(), state::thumbs(), height, || {
+                crate::trace::pg_stage_round_done()
+            })
+        });
         // A turned file needs its analysis and thumbnails redone: the job's work.
         WRITER.get_or_init(|| {
             Writer::start(state::get().catalog_path.clone(), state::thumbs(), || {

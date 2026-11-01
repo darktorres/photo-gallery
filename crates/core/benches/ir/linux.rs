@@ -1,5 +1,6 @@
-// The benches of ../ir.rs, included there on Linux only. Setup (reading the file, creating the decoder and the
-// encoder) runs outside the measured function.
+// The benches of ../ir.rs, included there on Linux only: the per-file work here, the catalog's in catalog.rs. Setup
+// (reading the file, creating the decoder and the encoder, copying and opening the catalog) runs outside the
+// measured function.
 
 use std::hint::black_box;
 
@@ -43,4 +44,6 @@ fn thumb_jpeg((bytes, mut decoder, mut encoder): (Vec<u8>, Decoder, Compressor))
 
 library_benchmark_group!(name = per_file, benchmarks = [analyze_jpeg, thumb_jpeg]);
 
-main!(library_benchmark_groups = per_file);
+include!("catalog.rs");
+
+main!(library_benchmark_groups = per_file, catalog);

@@ -45,16 +45,19 @@ libraries; they differ in who owns the playback core. Both were checked against 
     that on for a device it is given (FFmpeg does only for devices it creates itself).
   - We hand it to Qt Quick with `QQuickWindow::setGraphicsApi(Direct3D11)` and
     `setGraphicsDevice(QQuickGraphicsDevice::fromDeviceAndContext(...))`, both public API. It must happen
-    before the scene graph initialises (it has no effect afterwards), so from
-    `QQmlApplicationEngine::objectCreated`, before the window is first shown. Check it worked through
+    before the scene graph initialises (it has no effect afterwards), so the window is declared hidden and
+    shown after the load, once it has the device. Check it worked through
     `rendererInterface()` (or the `qt.scenegraph.general` log line "Using existing native D3D11 device").
   - Qt borrows the device and context without taking a reference. Our owner object keeps them alive until
     the window and every decoder are gone.
   - No copies between devices, but one copy on the same device per decoded frame: the decoder reuses its
     texture slots, so each frame is copied out into a texture of ours.
-  - The AV1 check (`video_decoding.cpp`) moves onto this device; it runs on the default adapter today.
-  - Device loss: Qt logs one warning, then keeps retrying with the dead device. Recovery means a new device
-    and a new window, in our code.
+  - **Qt's half is done** (`crates/ui/cpp/gpu_device.cpp`, 2026-10-31): the device is made on the first
+    adapter, the AV1 check runs on it, and the window, declared hidden, is handed it before it's shown.
+    Multithread protection isn't on yet: nothing but Qt's render thread uses the device so far.
+  - Device loss: with the device left set, Qt would keep retrying with the dead one. So the hand-over is
+    forgotten once the scene graph is up (`sceneGraphInitialized`, on the render thread), and after a loss Qt
+    makes a device of its own. The decoder will need the same: follow Qt's device, or get a new one of ours.
   - Qt's own FFmpeg backend works differently: a device of its own per file, and three copies per frame
     through a shared texture with a keyed mutex. That design is the fallback if one shared device stalls.
 - **A `QQuickRhiItem` (public since Qt 6.7)** that draws the video into the scene.
@@ -67,7 +70,8 @@ libraries; they differ in who owns the playback core. Both were checked against 
   - It also draws our animation frames, replacing `QVideoSink` + `VideoOutput`.
   - Offscreen (software scene graph) it draws nothing, so its tests need a real window.
 - **Qt Multimedia goes away, in stages.** With it go Qt's FFmpeg plugin, the environment-variable stopgap
-  (`crates/ui/cpp/video_decoding.*` and its call in `main.rs`), `windeployqt --no-ffmpeg` and `frame_sink.*`.
+  (`choose_video_decoding` in `crates/ui/cpp/gpu_device.*` and its call in `main.rs`), `windeployqt --no-ffmpeg`
+  and `frame_sink.*`.
   Until the new player has sound, Qt Multimedia stays: it is today's only audio path.
 - **The transport bar and keys stay in QML** and drive the item through properties and invokables. The seek
   bar sends a seek on every drag move, so the player coalesces seeks.

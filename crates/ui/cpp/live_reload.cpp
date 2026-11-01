@@ -45,7 +45,7 @@ void quit_on_close(QObject* root) {
 
 }  // namespace
 
-void enable_live_reload(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir) {
+void enable_live_reload(QQmlApplicationEngine& engine, const QUrl& main, const QString& source_dir, GpuDevice& gpu) {
     const QString dir = QDir(source_dir).absolutePath() + u'/';
     // Never removed: the engine uses it until it is destroyed, at exit.
     engine.addUrlInterceptor(new SourceInterceptor(main.adjusted(QUrl::RemoveFilename).path(), dir));
@@ -73,7 +73,7 @@ void enable_live_reload(QQmlApplicationEngine& engine, const QUrl& main, const Q
     QObject::connect(watcher, &QFileSystemWatcher::fileChanged, settle, qOverload<>(&QTimer::start));
     QObject::connect(watcher, &QFileSystemWatcher::directoryChanged, settle, qOverload<>(&QTimer::start));
 
-    QObject::connect(settle, &QTimer::timeout, &engine, [&engine, main, watch_files] {
+    QObject::connect(settle, &QTimer::timeout, &engine, [&engine, &gpu, main, watch_files] {
         watch_files();
         QVariantMap geometry;
         bool maximized = false;
@@ -92,11 +92,13 @@ void enable_live_reload(QQmlApplicationEngine& engine, const QUrl& main, const Q
         engine.clearComponentCache();
         engine.setInitialProperties(geometry);
         engine.load(main);
+        // The window is declared hidden: it opens maximized, or where the old one was, when shown.
         if (maximized) {
             for (QObject* root : engine.rootObjects()) {
-                if (auto* window = qobject_cast<QWindow*>(root)) window->showMaximized();
+                if (auto* window = qobject_cast<QWindow*>(root)) window->setWindowStates(Qt::WindowMaximized);
             }
         }
+        show_windows(engine, gpu);
     });
 }
 

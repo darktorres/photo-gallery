@@ -11,6 +11,7 @@ mod command_line;
 mod filters;
 mod folders;
 mod gallery;
+mod gpu_device;
 mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
@@ -21,7 +22,6 @@ mod screenshot;
 mod settings;
 mod state;
 mod trace;
-mod video_decoding;
 mod view;
 mod yandex;
 
@@ -47,8 +47,10 @@ fn main() {
 
 fn run_app() {
     trace::pg_stage_main();
-    // Meanwhile the catalog opens and Qt starts; Qt Multimedia reads the result when the QML makes the player.
-    let video_decoding = video_decoding::choose_in_background();
+    // Meanwhile the catalog opens and Qt starts.
+    let gpu_thread = gpu_device::make_in_background();
+    // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
+    let mut gpu: cxx::UniquePtr<gpu_device::ffi::GpuDevice>;
     let catalog_dir =
         std::env::var_os("PG_CATALOG_DIR").map_or_else(|| PathBuf::from(cli::DEFAULT_CATALOG_DIR), PathBuf::from);
     panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
@@ -84,19 +86,25 @@ fn run_app() {
                 };
             }
         }
+        gpu = gpu_thread.join().expect("the gpu device thread");
+        // Qt Multimedia reads it when the QML makes the first player.
+        gpu_device::ffi::choose_video_decoding(&gpu);
         let main_qml = QUrl::from("qrc:/qt/qml/pg/gallery/qml/Main.qml");
         #[cfg(debug_assertions)]
-        live_reload::ffi::enable_live_reload(
-            engine.as_mut(),
-            &main_qml,
-            &QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml")),
-        );
-        if video_decoding.join().is_err() {
-            eprintln!("the video decoding probe failed: Qt Multimedia picks its own decoders");
-        }
+        // SAFETY: `gpu` is dropped after the engine.
+        unsafe {
+            live_reload::ffi::enable_live_reload(
+                engine.as_mut(),
+                &main_qml,
+                &QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml")),
+                gpu.pin_mut(),
+            )
+        };
         trace::pg_stage_qml_load();
         engine.as_mut().load(&main_qml);
         trace::pg_stage_qml_loaded();
+        // SAFETY: as above.
+        unsafe { gpu_device::ffi::show_windows(engine.as_mut(), gpu.pin_mut()) };
         screenshot::schedule(engine);
     }
     if let Some(app) = app.as_mut() {

@@ -26,20 +26,20 @@ fn main() {
         "src/filters.rs",
         "src/folders.rs",
         "src/gallery.rs",
+        "src/gpu_device.rs",
         "src/library.rs",
         "src/providers.rs",
         "src/screenshot.rs",
         "src/settings.rs",
         "src/trace.rs",
-        "src/video_decoding.rs",
         "src/view.rs",
         "src/yandex.rs",
     ])
     .cpp_file("cpp/app_icon.cpp")
     .cpp_file("cpp/frame_sink.cpp")
+    .cpp_file("cpp/gpu_device.cpp")
     .cpp_file("cpp/providers.cpp")
     .cpp_file("cpp/screenshot.cpp")
-    .cpp_file("cpp/video_decoding.cpp")
     // The window icon, set in app_icon.cpp (drawn by tools/make_icon.py).
     .qrc_resources(["resources/app-icon.png"]);
     // Debug builds read the QML from the source folder and reload it when it changes (src/live_reload.rs).

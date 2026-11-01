@@ -301,7 +301,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   a key and a direction. To make "video" a type, videos are now scanned, imported (streamed hash, probe, poster
   frame), thumbnailed and played (Qt Multimedia). Animated GIF/APNG/WebP play too. Decoding uses our own
   FFmpeg 9 (BtbN `lgpl-shared`, which has dav1d), shared with Qt's player in place of Qt's copy. On a GPU
-  without AV1 decoding the player decodes on the CPU (`crates/ui/src/video_decoding.rs`). Videos get no
+  without AV1 decoding the player decodes on the CPU (`crates/ui/src/gpu_device.rs`). Videos get no
   near-duplicate detection, and their ratings and turns stay in the catalog (see Later).
 - **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
   groups in a panel: the photo's other sizes (to find a better copy) and similar images (to find more), all of

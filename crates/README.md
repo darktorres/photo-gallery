@@ -173,7 +173,7 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
     shows until the first frame. The transport bar has play / pause (**K**), the time, a seek bar, mute (**M**)
     and volume. Rating, turning and stepping work as on pictures; zoom, the loupe and Real Size are for stills.
     The player decodes on the GPU, except on a GPU without AV1 decoding (this machine's RTX 2060). There every
-    video decodes on the CPU (AV1 through dav1d) (`video_decoding.rs` explains why).
+    video decodes on the CPU (AV1 through dav1d) (`gpu_device.rs` explains why).
   - **Animated** GIF, APNG and WebP play the same way: our FFmpeg decodes all three. Qt's `AnimatedImage` has no
     APNG, and has WebP only with Qt's Image Formats add-on. They loop silently, without the transport bar; **K**
     pauses.

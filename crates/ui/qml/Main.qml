@@ -14,7 +14,8 @@ ApplicationWindow {
     id: win
     width: 1600
     height: 1000
-    visible: true
+    // Shown after the load, once it can be handed the app's D3D11 device (src/gpu_device.rs).
+    visible: false
     title: "Photo Gallery" + (view.folder.length ? " — " + view.folder : "")
     color: "#181818"
     palette {
@@ -814,7 +815,7 @@ ApplicationWindow {
     // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
     readonly property list<string> viewerKeys: commandLine.keys("viewer-keys")
 
-    // The window is up: ask for where the user was. Nothing here waits for the catalog; the tree and the files
+    // The window is made (it shows right after): ask for where the user was. Nothing here waits for the catalog; the tree and the files
     // arrive later, in either order (treeLoaded, gridLoaded), and the second of them finishes the start (started).
     Component.onCompleted: {
         // The folder, subfolders and sort are the view's (it read them at its start), the filters the bar's.

@@ -1023,7 +1023,7 @@ Our FFmpeg is BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`
     `qffmpeghwaccel.cpp`, v6.12.0 and the dev branch alike), so the result is 0 frames and no error shown.
   - The only switch is `QT_FFMPEG_DECODING_HW_DEVICE_TYPES`. It's private API, global for every codec, and
     read once per process.
-  - Our stopgap (`crates/ui/src/video_decoding.rs`): ask D3D11 for the AV1 profile at startup and, without
+  - Our stopgap (`crates/ui/src/gpu_device.rs`): ask D3D11 for the AV1 profile at startup and, without
     it, turn hardware decoding off. Then AV1 plays through libdav1d (61 frames in 2.4 s), but every codec
     decodes on the CPU on this machine.
   - Rust's `std::env::set_var` doesn't reach Qt here. Qt reads the C runtime's copy of the environment,

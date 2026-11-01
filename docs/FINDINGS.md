@@ -74,6 +74,31 @@ or deleted. Finding it needs a full-set run.
     and 8 in flight gives ~245. When files are far apart, each read pays a seek whatever the order;
     only queue depth helps.
   - At ~1,600 files/s the disk is no longer the bottleneck for a 70M pass; decoding is.
+- **Read buffers (`pipeline::Options::budget`, 2026-11-01): the pass's file buffers must cover a file per
+  read in flight and per worker, since a worker holds its file while it decodes it.** `gallery import`,
+  8 readers, 12 workers, on the first 1,000 files (6.3 GB, 24 MP Sony A6000 JPEGs, 6 MB average) of
+  `E:\Cameras\Fotos A6000` in on-disk order, purged from the file cache before each run (an unbuffered
+  open drops a file's cached pages), three runs each in rotating order, medians:
+
+  | Buffers | MB/s |
+  |---|---|
+  | no pool (HEAD 2e1b6ca: a channel of 32 files, a `Vec` per file) | 255 |
+  | 64 MB | 221 |
+  | 128 MB | 250 |
+  | 240 MB (12 MiB × (8 + 12), the default) | 268 (HEAD in the same rounds: 270) |
+  | 256 MB | 268 |
+  | 512 MB | 266 |
+
+  - The disk, not the CPU, sets the pace: ~40 files/s. Below a file per slot, readers wait for workers to
+    hand buffers back.
+  - Without a pool, the channel bounded files, not bytes: 52 camera files in flight is 300–600 MB, and a
+    folder of 100 MB panoramas held 5 GB.
+  - One pass per block of files read once (no purge) was useless: the same build read 175–248 MB/s on
+    different blocks of the folder, more than the budgets differ.
+- **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and FFmpeg and the
+  scanner's `CreateFileW` are handed the verbatim form (`pg_core::paths`, `\\?\UNC\` for a share). ExifTool
+  gets the plain path, as `\\?\` isn't a path it reads, and its own long-name support (the `WindowsLongPath`
+  API option) isn't turned on: whether its writes reach such a file is untested.
 - **HDD read, path order (robocopy E:→D:): 70 MB/s, ~410 files/s** (consistent with the 557 files/s
   above, as robocopy also writes).
 - **The harness embeds at only 80–117 img/s against 410 img/s of GPU capacity**, so decoding

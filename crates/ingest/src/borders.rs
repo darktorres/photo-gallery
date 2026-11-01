@@ -31,7 +31,6 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     if items.is_empty() {
         return Ok(stats);
     }
-    let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
     ctl.begin("borders", String::new(), items.len() as u64);
     let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
     let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
@@ -52,8 +51,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         Ok(())
     };
     pipeline::run(
-        &paths,
-        |_| true,
+        &items,
+        |item| Some(&item.path),
         opts,
         ctl,
         Analyzer::new,
@@ -126,7 +125,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     ctl.begin("borders", String::new(), files.len() as u64);
     pipeline::run(
         &files,
-        |_| true,
+        |file| Some(file),
         opts,
         ctl,
         Analyzer::new,

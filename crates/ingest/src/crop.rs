@@ -11,7 +11,7 @@ use pg_core::crop::crop;
 use pg_core::decode::Format;
 
 use crate::control::Control;
-use crate::pipeline::{self, Options, long_path};
+use crate::pipeline::{self, Options};
 use crate::writeback::{ExifTool, stat};
 
 pub struct Stats {
@@ -57,12 +57,11 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
     }
 
     ctl.begin("crop", folder.clone(), jobs.len() as u64);
-    let paths: Vec<String> = jobs.iter().map(|j| j.source.path.clone()).collect();
     let mut done = vec![false; jobs.len()];
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
-        &paths,
-        |_| true,
+        &jobs,
+        |job| Some(&job.source.path),
         opts,
         ctl,
         || Ok(()),
@@ -79,7 +78,7 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
                         exiftool = Some(ExifTool::start()?);
                     }
                     exiftool.as_mut().unwrap().copy_tags(&job.source.path, &job.out)?;
-                    keep_time(&job.source.path, &long_path(&job.out))?;
+                    keep_time(&job.source.path, &job.out)?;
                     Ok(true)
                 }
             });
@@ -121,21 +120,21 @@ fn write_copy(job: &Job, bytes: &[u8]) -> Result<Written> {
     }
     let format = Format::from_name(&s.format).with_context(|| format!("unknown format {}", s.format))?;
     let cropped = crop(bytes, format, s.width, s.height, s.cut)?;
-    let out = long_path(&job.out);
-    if let Some(dir) = Path::new(&out).parent() {
+    let out = &job.out;
+    if let Some(dir) = Path::new(out).parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
     let temp = format!("{out}.pg-crop");
     std::fs::write(&temp, &cropped.bytes).with_context(|| format!("writing {}", job.out))?;
     keep_time(&s.path, &temp)?;
-    std::fs::rename(&temp, &out).with_context(|| format!("writing {}", job.out))?;
+    std::fs::rename(&temp, out).with_context(|| format!("writing {}", job.out))?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
 
-/// Give the copy at `copy` (long-path form) the original's modification time.
+/// Give the copy at `copy` the original's modification time.
 fn keep_time(original: &str, copy: &str) -> Result<()> {
-    let modified = std::fs::metadata(long_path(original))?.modified()?;
+    let modified = std::fs::metadata(original)?.modified()?;
     std::fs::File::options().write(true).open(copy)?.set_modified(modified)?;
     Ok(())
 }

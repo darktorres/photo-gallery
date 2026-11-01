@@ -30,8 +30,6 @@ use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
 use rusqlite::{OptionalExtension, params};
 
-use crate::pipeline::long_path;
-
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
 const SETTLE_SECS: i64 = 2;
 /// Failed writes are retried at most this many times (offline drives retry without counting).
@@ -246,7 +244,7 @@ impl Inner {
             return Ok(());
         }
 
-        let bytes = std::fs::read(long_path(&path)).with_context(|| format!("reading {path}"))?;
+        let bytes = std::fs::read(&path).with_context(|| format!("reading {path}"))?;
         let format = format
             .as_deref()
             .and_then(Format::from_name)
@@ -254,16 +252,16 @@ impl Inner {
             .context("unknown format")?;
         let before = stat(&path)?;
         let temp = temp_path(&path);
-        let _ = std::fs::remove_file(long_path(&temp));
+        let _ = std::fs::remove_file(&temp);
 
         let pixels_changed = match job.kind.as_str() {
             "rating" => {
                 let rating = job.value as u8;
                 let tool = exiftool_for(exiftool)?;
                 tool.write_rating(&path, &temp, rating)?;
-                let written = std::fs::read(long_path(&temp))?;
+                let written = std::fs::read(&temp)?;
                 if Meta::read(&written, format).rating != Some(rating) {
-                    let _ = std::fs::remove_file(long_path(&temp));
+                    let _ = std::fs::remove_file(&temp);
                     bail!("{path}: the rating didn't read back after writing it");
                 }
                 false
@@ -279,9 +277,9 @@ impl Inner {
                             // the catalog.
                             let tool = exiftool_for(exiftool)?;
                             match tool.write_orientation(&path, &temp, o) {
-                                Ok(()) if metadata::orientation(&std::fs::read(long_path(&temp))?, format) == o => None,
+                                Ok(()) if metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
                                 _ => {
-                                    let _ = std::fs::remove_file(long_path(&temp));
+                                    let _ = std::fs::remove_file(&temp);
                                     Catalog::add_catalog_rotation(conn, job.file_id, turns)?;
                                     self.done(conn, job, job.value)?;
                                     self.pixels_changed();
@@ -298,7 +296,7 @@ impl Inner {
                     }
                 };
                 if let Some(new) = new {
-                    std::fs::write(long_path(&temp), new).with_context(|| format!("writing {temp}"))?;
+                    std::fs::write(&temp, new).with_context(|| format!("writing {temp}"))?;
                 }
                 true
             }
@@ -310,7 +308,7 @@ impl Inner {
             "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
             params![job.file_id, job.kind, temp, job.value],
         )?;
-        let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(long_path(&temp))?)) };
+        let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
         let after = stat(&path)?;
         Catalog::file_rewritten(conn, job.file_id, before, after, new_hash)?;
@@ -368,7 +366,7 @@ impl Inner {
 
 /// Size and mtime (FILETIME, as the scanner records it).
 pub(crate) fn stat(path: &str) -> Result<(i64, i64)> {
-    let m = std::fs::metadata(long_path(path)).with_context(|| format!("reading {path}"))?;
+    let m = std::fs::metadata(path).with_context(|| format!("reading {path}"))?;
     Ok((m.len() as i64, m.last_write_time() as i64))
 }
 
@@ -380,17 +378,14 @@ fn temp_path(path: &str) -> String {
 
 /// Copy `temp` into the original in place (same file, same NTFS identity), then delete `temp`.
 fn copy_into(temp: &Path, path: &str) -> Result<()> {
-    let data =
-        std::fs::read(long_path(&temp.to_string_lossy())).with_context(|| format!("reading {}", temp.display()))?;
-    let mut file = std::fs::OpenOptions::new()
-        .write(true)
-        .open(long_path(path))
-        .with_context(|| format!("opening {path} for writing"))?;
+    let data = std::fs::read(temp).with_context(|| format!("reading {}", temp.display()))?;
+    let mut file =
+        std::fs::OpenOptions::new().write(true).open(path).with_context(|| format!("opening {path} for writing"))?;
     file.write_all(&data)?;
     file.set_len(data.len() as u64)?;
     file.sync_all()?;
     drop(file);
-    std::fs::remove_file(long_path(&temp.to_string_lossy()))?;
+    std::fs::remove_file(temp)?;
     Ok(())
 }
 
@@ -470,7 +465,7 @@ impl ExifTool {
         if created(&stdout) {
             return Ok(());
         }
-        let _ = std::fs::remove_file(long_path(out));
+        let _ = std::fs::remove_file(out);
         let (stdout2, stderr2) =
             self.run(&["-all=", "-tagsfromfile", "@", "-all:all", "-unsafe", "-icc_profile", &tag, "-o", out, path])?;
         if created(&stdout2) {

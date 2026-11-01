@@ -6,6 +6,7 @@
 use std::path::Path;
 
 use anyhow::Result;
+use pg_core::paths::verbatim;
 use pg_core::thumbs::{Maker, Pending, Thumb, ThumbCache};
 
 use crate::control::Control;
@@ -37,7 +38,6 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         items.len(),
         cache.totals()?.0 as f64 / 1e9
     );
-    let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
     let mut batch = Vec::with_capacity(BATCH);
     let (mut tried, mut first_failed) = (0, None);
     ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
@@ -54,8 +54,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     };
 
     pipeline::run(
-        &paths,
-        |i| items[i].poster_ms.is_none(),
+        &items,
+        |item| item.poster_ms.is_none().then_some(item.path.as_str()),
         opts,
         ctl,
         Maker::new,
@@ -64,8 +64,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
-                    let path = pipeline::long_path(&item.path);
-                    maker.load_frame(Path::new(&path), at, item.source.rotation)?;
+                    maker.load_frame(Path::new(&*verbatim(&item.path)), at, item.source.rotation)?;
                     maker.encode_frame(height as usize)
                 }
                 None => maker.make(bytes, height as usize, item.source.rotation),

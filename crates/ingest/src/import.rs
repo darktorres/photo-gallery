@@ -9,6 +9,7 @@ use anyhow::Result;
 use pg_core::analyze::{Analysis, Analyzer};
 use pg_core::catalog::Catalog;
 use pg_core::media::Kind;
+use pg_core::paths::verbatim;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
 use pg_core::pdq_index::PdqIndex;
 
@@ -35,7 +36,6 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         index.insert(id, &hash);
     }
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
-    let paths: Vec<String> = items.iter().map(|i| i.path.clone()).collect();
 
     let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);
     ctl.begin("import", String::new(), items.len() as u64);
@@ -81,14 +81,15 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
 
     let video = |i: usize| items[i].kind == Kind::Video;
     pipeline::run(
-        &paths,
-        |i| !video(i),
+        &items,
+        |item| (item.kind != Kind::Video).then_some(item.path.as_str()),
         opts,
         ctl,
         Analyzer::new,
         |analyzer, i, bytes| {
             if video(i) {
-                pg_core::video::analyze(Path::new(&pipeline::long_path(&items[i].path)), items[i].rotation, analyzer)
+                let path = verbatim(&items[i].path);
+                pg_core::video::analyze(Path::new(&*path), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)
             }

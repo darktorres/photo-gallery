@@ -13,6 +13,7 @@ pub mod decode;
 pub mod layout;
 pub mod media;
 pub mod metadata;
+pub mod paths;
 pub mod pdq;
 pub mod pdq_index;
 pub mod query;

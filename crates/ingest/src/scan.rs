@@ -15,6 +15,7 @@ use std::os::windows::ffi::OsStrExt;
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, ScannedFile};
 use pg_core::media;
+use pg_core::paths::verbatim;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
@@ -49,9 +50,10 @@ impl Drop for Dir {
 
 impl Dir {
     fn open(path: &str) -> Result<Dir> {
-        // The \\?\ prefix lifts the 260-character limit.
-        let long = if path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}\") };
-        let wide: Vec<u16> = OsStr::new(&long).encode_wide().chain([0]).collect();
+        // With its trailing backslash (a drive root is `D:`, which alone means the drive's current folder), and
+        // in its verbatim form when long, which lifts the 260-character limit.
+        let dir = format!(r"{path}\");
+        let wide: Vec<u16> = OsStr::new(&*verbatim(&dir)).encode_wide().chain([0]).collect();
         // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.
         let h = unsafe {
             CreateFileW(

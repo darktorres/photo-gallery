@@ -61,8 +61,6 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use pg_core::animation;
 
-use crate::state;
-
 pub struct AnimationPlayerRust {
     source: QString,
     playing: bool,
@@ -184,7 +182,7 @@ impl Drop for Worker {
 /// (decoding the next counts toward it). An unreadable file, or one whose first frame fails, shows nothing: the
 /// viewer keeps the poster.
 fn play(path: &str, frames: &Frames, control: &Shared) {
-    let Ok(bytes) = std::fs::read(state::long_path(path)) else { return };
+    let Ok(bytes) = std::fs::read(path) else { return };
     let bytes: Arc<[u8]> = bytes.into();
     let mut due = Instant::now();
     loop {

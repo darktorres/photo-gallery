@@ -17,6 +17,7 @@ use pg_core::browse;
 use pg_core::catalog::Catalog;
 use pg_core::decode::{MinSize, Rgb, orient_pixels};
 use pg_core::metadata::compose_orientation;
+use pg_core::paths::verbatim;
 use pg_core::resize::Resizer;
 use pg_core::thumbs::{self, Maker, ThumbCache};
 
@@ -93,14 +94,6 @@ fn source(file_id: i64) -> Result<browse::FileSource> {
     with_catalog(|c| browse::file_source(&c.conn, file_id))?.context("unknown file")
 }
 
-pub(crate) fn long_path(path: &str) -> String {
-    if path.len() < 240 || path.starts_with(r"\\") { path.to_string() } else { format!(r"\\?\{path}") }
-}
-
-fn read_original(path: &str) -> std::io::Result<Vec<u8>> {
-    std::fs::read(long_path(path))
-}
-
 /// A JPEG thumbnail `height` px high: from the cache when one at least that high exists (the UI scales it down),
 /// otherwise made now from the original and cached. With the original offline, the best smaller one.
 pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
@@ -114,12 +107,12 @@ pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
     }
     let data = if let Some(at) = poster_ms {
         // A video: its poster frame.
-        match with_maker(|m| Ok(m.load_frame(Path::new(&long_path(&path)), at, rotation)))? {
+        match with_maker(|m| Ok(m.load_frame(Path::new(&*verbatim(&path)), at, rotation)))? {
             Ok(()) => with_maker(|m| m.encode_frame(height as usize))?,
             Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
         }
     } else {
-        let bytes = match read_original(&path) {
+        let bytes = match std::fs::read(&path) {
             Ok(b) => b,
             Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
         };
@@ -209,10 +202,10 @@ fn decode(file_id: i64, src: &browse::FileSource, min: MinSize) -> Result<Arc<Rg
     }
     let (full, image) = if let Some(at) = src.poster_ms {
         // A video: its poster frame stands for it until it plays.
-        let frame = pg_core::video::frame(Path::new(&long_path(&src.path)), at, src.rotation)?;
+        let frame = pg_core::video::frame(Path::new(&*verbatim(&src.path)), at, src.rotation)?;
         ((frame.width, frame.height), Arc::new(frame))
     } else {
-        let bytes = read_original(&src.path).context("original unavailable")?;
+        let bytes = std::fs::read(&src.path).context("original unavailable")?;
         let decoded = with_maker(|m| m.decoder().decode(&bytes, min, src.rotation))?;
         ((decoded.info.full_width as usize, decoded.info.full_height as usize), Arc::new(decoded.image))
     };

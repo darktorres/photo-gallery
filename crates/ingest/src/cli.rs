@@ -35,6 +35,9 @@ struct PipelineArgs {
     /// Decode threads (default: all logical CPUs).
     #[arg(long)]
     workers: Option<usize>,
+    /// Megabytes of file buffers the pass holds at most (default: 12 per reader and per worker).
+    #[arg(long)]
+    buffer_mb: Option<usize>,
 }
 
 impl PipelineArgs {
@@ -42,6 +45,8 @@ impl PipelineArgs {
         let mut opts = pipeline::Options::new(priority);
         opts.readers = self.readers.max(1);
         opts.workers = self.workers.unwrap_or(opts.workers).max(1);
+        let budget = pipeline::Options::budget(opts.readers, opts.workers);
+        opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1) << 20);
         opts
     }
 }

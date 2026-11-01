@@ -6,6 +6,7 @@
 //! only reads the packet the container declares as the image's own. EXIF Rating/RatingPercent (what Windows
 //! writes) are the fallback.
 
+use std::borrow::Cow;
 use std::collections::BTreeMap;
 
 use quick_xml::NsReader;
@@ -47,14 +48,15 @@ pub fn read_rating(bytes: &[u8], format: Format) -> Option<u8> {
     microsoft.or_else(|| exif_rating(bytes))
 }
 
-/// The XMP packets a file declares, main one first.
-fn xmp_packets(bytes: &[u8], format: Format) -> Vec<Vec<u8>> {
+/// The XMP packets a file declares, main one first: borrowed from the file, but for a reassembled extended packet
+/// and a compressed PNG one.
+fn xmp_packets(bytes: &[u8], format: Format) -> Vec<Cow<'_, [u8]>> {
     match format {
         Format::Jpeg => jpeg_xmp(bytes),
         Format::Png => png_chunks(bytes).filter(|c| &c.kind == b"iTXt").filter_map(|c| png_itxt_xmp(c.data)).collect(),
-        Format::Webp => webp_chunks(bytes).filter(|c| &c.kind == b"XMP ").map(|c| c.data.to_vec()).collect(),
-        Format::Tiff => tiff_xmp(bytes).into_iter().collect(),
-        Format::Gif => gif_xmp(bytes).into_iter().collect(),
+        Format::Webp => webp_chunks(bytes).filter(|c| &c.kind == b"XMP ").map(|c| Cow::Borrowed(c.data)).collect(),
+        Format::Tiff => tiff_xmp(bytes).map(Cow::Owned).into_iter().collect(),
+        Format::Gif => gif_xmp(bytes).map(Cow::Borrowed).into_iter().collect(),
         Format::Bmp => Vec::new(),
     }
 }
@@ -221,7 +223,9 @@ pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Op
 pub fn frame_count(bytes: &[u8], format: Format) -> u32 {
     let n = match format {
         Format::Gif => {
-            gif_blocks(bytes).map(|b| b.iter().filter(|b| matches!(b, GifBlock::Image { .. })).count() as u32)
+            let mut blocks = gif_blocks(bytes);
+            let images = blocks.by_ref().filter(|b| matches!(b, GifBlock::Image { .. })).count() as u32;
+            blocks.complete().then_some(images)
         }
         // acTL comes before the first IDAT.
         Format::Png => png_chunks(bytes)
@@ -250,51 +254,52 @@ struct Segment<'a> {
 
 /// The marker segments up to the start of scan. Embedded JPEGs (EXIF thumbnails, MPF images) are inside these
 /// or after the image, so they are never visited.
-fn jpeg_segments(bytes: &[u8]) -> Vec<Segment<'_>> {
-    let mut out = Vec::new();
+fn jpeg_segments(bytes: &[u8]) -> impl Iterator<Item = Segment<'_>> {
     let mut i = 2;
-    while i + 4 <= bytes.len() {
-        if bytes[i] != 0xFF {
-            break;
+    std::iter::from_fn(move || {
+        while i + 4 <= bytes.len() {
+            if bytes[i] != 0xFF {
+                return None;
+            }
+            let marker = bytes[i + 1];
+            if marker == 0xFF {
+                i += 1; // fill byte
+                continue;
+            }
+            if marker == 0xDA || marker == 0xD9 {
+                return None;
+            }
+            if (0xD0..=0xD7).contains(&marker) || marker == 0x01 {
+                i += 2;
+                continue;
+            }
+            let len = u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
+            let (start, end) = (i + 4, i + 2 + len);
+            if len < 2 || end > bytes.len() {
+                return None;
+            }
+            i = end;
+            return Some(Segment { marker, start, data: &bytes[start..end] });
         }
-        let marker = bytes[i + 1];
-        if marker == 0xFF {
-            i += 1; // fill byte
-            continue;
-        }
-        if marker == 0xDA || marker == 0xD9 {
-            break;
-        }
-        if (0xD0..=0xD7).contains(&marker) || marker == 0x01 {
-            i += 2;
-            continue;
-        }
-        let len = u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
-        let (start, end) = (i + 4, i + 2 + len);
-        if len < 2 || end > bytes.len() {
-            break;
-        }
-        out.push(Segment { marker, start, data: &bytes[start..end] });
-        i = end;
-    }
-    out
+        None
+    })
 }
 
 /// Extended XMP being reassembled: its full length, and the chunks received by offset.
 type ExtendedXmp<'a> = (usize, BTreeMap<usize, &'a [u8]>);
 
 /// The standard XMP packet, then the extended one reassembled (Adobe XMP Part 3, 1.1.3.1), if complete.
-fn jpeg_xmp(bytes: &[u8]) -> Vec<Vec<u8>> {
+fn jpeg_xmp(bytes: &[u8]) -> Vec<Cow<'_, [u8]>> {
     let mut out = Vec::new();
     // By GUID.
-    let mut extended: BTreeMap<Vec<u8>, ExtendedXmp> = BTreeMap::new();
-    for s in jpeg_segments(bytes).into_iter().filter(|s| s.marker == 0xE1) {
+    let mut extended: BTreeMap<&[u8], ExtendedXmp> = BTreeMap::new();
+    for s in jpeg_segments(bytes).filter(|s| s.marker == 0xE1) {
         if let Some(packet) = s.data.strip_prefix(JPEG_XMP) {
-            out.insert(0, packet.to_vec());
+            out.insert(0, Cow::Borrowed(packet));
         } else if let Some(rest) = s.data.strip_prefix(JPEG_XMP_EXTENSION)
             && rest.len() >= 40
         {
-            let guid = rest[..32].to_vec();
+            let guid = &rest[..32];
             let full = u32::from_be_bytes(rest[32..36].try_into().unwrap()) as usize;
             let offset = u32::from_be_bytes(rest[36..40].try_into().unwrap()) as usize;
             extended.entry(guid).or_insert((full, BTreeMap::new())).1.insert(offset, &rest[40..]);
@@ -309,7 +314,7 @@ fn jpeg_xmp(bytes: &[u8]) -> Vec<Vec<u8>> {
             packet.extend_from_slice(data);
         }
         if packet.len() == full {
-            out.push(packet);
+            out.push(Cow::Owned(packet));
         }
     }
     out
@@ -344,7 +349,7 @@ pub(crate) fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
 }
 
 /// The text of an `XML:com.adobe.xmp` iTXt chunk (possibly zlib-compressed).
-fn png_itxt_xmp(data: &[u8]) -> Option<Vec<u8>> {
+fn png_itxt_xmp(data: &[u8]) -> Option<Cow<'_, [u8]>> {
     let rest = data.strip_prefix(b"XML:com.adobe.xmp\0")?;
     let (&compressed, rest) = rest.split_first()?;
     let rest = rest.get(1..)?; // compression method
@@ -352,7 +357,11 @@ fn png_itxt_xmp(data: &[u8]) -> Option<Vec<u8>> {
     let rest = &rest[lang_end + 1..];
     let translated_end = rest.iter().position(|&b| b == 0)?;
     let text = &rest[translated_end + 1..];
-    if compressed == 1 { miniz_oxide::inflate::decompress_to_vec_zlib(text).ok() } else { Some(text.to_vec()) }
+    if compressed == 1 {
+        miniz_oxide::inflate::decompress_to_vec_zlib(text).ok().map(Cow::Owned)
+    } else {
+        Some(Cow::Borrowed(text))
+    }
 }
 
 /// WebP (RIFF) chunks after the `WEBP` form type.
@@ -412,12 +421,41 @@ fn skip_sub_blocks(bytes: &[u8], mut i: usize) -> Option<usize> {
     }
 }
 
-/// The blocks between the header and the trailer.
-pub(crate) fn gif_blocks(bytes: &[u8]) -> Option<Vec<GifBlock>> {
-    let mut i = gif_header_len(bytes)?;
-    let mut out = Vec::new();
-    loop {
-        match *bytes.get(i)? {
+/// The blocks between the header and the trailer, walked as they are read. A GIF is only read as a whole: what
+/// the blocks say counts once [`GifBlocks::complete`] says the walk reached the trailer (a truncated download
+/// doesn't).
+pub(crate) fn gif_blocks(bytes: &[u8]) -> GifBlocks<'_> {
+    match gif_header_len(bytes) {
+        Some(i) => GifBlocks { bytes, i, walk: GifWalk::Blocks },
+        None => GifBlocks { bytes, i: 0, walk: GifWalk::Broken },
+    }
+}
+
+pub(crate) struct GifBlocks<'a> {
+    bytes: &'a [u8],
+    /// The next block's offset.
+    i: usize,
+    walk: GifWalk,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum GifWalk {
+    Blocks,
+    /// The trailer was reached.
+    Complete,
+    /// The structure ends before it (truncated) or breaks (an unknown block).
+    Broken,
+}
+
+impl GifBlocks<'_> {
+    /// Whether the walk reached the trailer. Only then do the blocks seen describe the file.
+    pub(crate) fn complete(&self) -> bool {
+        self.walk == GifWalk::Complete
+    }
+
+    fn block(&mut self) -> Option<GifBlock> {
+        let (bytes, i) = (self.bytes, self.i);
+        let (block, end) = match *bytes.get(i)? {
             0x21 => {
                 let label = *bytes.get(i + 1)?;
                 let end = if label == 0xFF && bytes.get(i + 3..i + 14) == Some(b"XMP DataXMP") {
@@ -428,35 +466,56 @@ pub(crate) fn gif_blocks(bytes: &[u8]) -> Option<Vec<GifBlock>> {
                 } else {
                     skip_sub_blocks(bytes, i + 2)?
                 };
-                out.push(GifBlock::Extension { label, range: i..end });
-                i = end;
+                (GifBlock::Extension { label, range: i..end }, end)
             }
             0x2C => {
                 let packed = *bytes.get(i + 9)?;
                 let table = if packed & 0x80 != 0 { 3 << ((packed & 7) + 1) } else { 0 };
                 let data = i + 10 + table + 1; // LZW minimum code size
                 let end = skip_sub_blocks(bytes, data)?;
-                out.push(GifBlock::Image { range: i..end });
-                i = end;
+                (GifBlock::Image { range: i..end }, end)
             }
-            0x3B => return Some(out),
+            0x3B => {
+                self.walk = GifWalk::Complete;
+                return None;
+            }
             _ => return None,
-        }
+        };
+        self.i = end;
+        Some(block)
     }
 }
 
-fn gif_xmp(bytes: &[u8]) -> Option<Vec<u8>> {
-    gif_blocks(bytes)?.into_iter().find_map(|b| match b {
-        GifBlock::Extension { label: 0xFF, range }
-            if bytes.get(range.start + 3..range.start + 14) == Some(b"XMP DataXMP") =>
+impl Iterator for GifBlocks<'_> {
+    type Item = GifBlock;
+
+    fn next(&mut self) -> Option<GifBlock> {
+        if self.walk != GifWalk::Blocks {
+            return None;
+        }
+        let block = self.block();
+        if block.is_none() && self.walk == GifWalk::Blocks {
+            self.walk = GifWalk::Broken;
+        }
+        block
+    }
+}
+
+/// The XMP packet of a GIF that reads to its trailer.
+fn gif_xmp(bytes: &[u8]) -> Option<&[u8]> {
+    let mut blocks = gif_blocks(bytes);
+    let mut packet = None;
+    for b in blocks.by_ref() {
+        if let GifBlock::Extension { label: 0xFF, range } = b
+            && packet.is_none()
+            && bytes.get(range.start + 3..range.start + 14) == Some(b"XMP DataXMP")
         {
             let data = &bytes[range.start + 14..range.end];
-            let end = find(data, b"<?xpacket end=")?;
-            let close = find(&data[end..], b"?>")?;
-            Some(data[..end + close + 2].to_vec())
+            packet = find(data, b"<?xpacket end=")
+                .and_then(|end| find(&data[end..], b"?>").map(|close| &data[..end + close + 2]));
         }
-        _ => None,
-    })
+    }
+    packet.filter(|_| blocks.complete())
 }
 
 fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
@@ -503,7 +562,6 @@ pub fn compose_orientation(o: u8, turns: u8) -> u8 {
 fn exif_block(bytes: &[u8], format: Format) -> Option<std::ops::Range<usize>> {
     match format {
         Format::Jpeg => jpeg_segments(bytes)
-            .into_iter()
             .find(|s| s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0"))
             .map(|s| s.start + 6..s.start + s.data.len()),
         Format::Png => png_chunks(bytes).find(|c| &c.kind == b"eXIf").map(|c| c.at + 8..c.at + 8 + c.data.len()),
@@ -665,19 +723,68 @@ mod tests {
         assert_eq!(wall_clock_seconds(1601, 1, 1, 0, 0, 0), Some(-11_644_473_600));
     }
 
+    fn gif(frames: usize) -> Vec<u8> {
+        let mut out = Vec::new();
+        let mut enc = image::codecs::gif::GifEncoder::new(&mut out);
+        for i in 0..frames {
+            let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([i as u8 * 60, 0, 0, 255]));
+            enc.encode_frame(image::Frame::new(img)).unwrap();
+        }
+        drop(enc);
+        out
+    }
+
+    fn rating_packet(rating: u8) -> Vec<u8> {
+        format!(
+            r#"<?xpacket begin=""?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
+            xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+            xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="{rating}"/></rdf:RDF></x:xmpmeta><?xpacket end="w"?>"#
+        )
+        .into_bytes()
+    }
+
+    #[test]
+    fn a_gif_is_read_only_whole() {
+        // An XMP application extension after the header: the packet raw, then the 258-byte magic trailer.
+        let with_xmp = |gif: &[u8]| {
+            let header = gif_header_len(gif).unwrap();
+            let mut ext = [&[0x21, 0xFF, 11][..], b"XMP DataXMP", &rating_packet(3), &[0x01]].concat();
+            ext.extend((0..=255u8).rev());
+            ext.push(0);
+            [&gif[..header], &ext, &gif[header..]].concat()
+        };
+        let still = with_xmp(&gif(1));
+        assert_eq!((read_rating(&still, Format::Gif), frame_count(&still, Format::Gif)), (Some(3), 1));
+        let animated = with_xmp(&gif(3));
+        assert_eq!((read_rating(&animated, Format::Gif), frame_count(&animated, Format::Gif)), (Some(3), 3));
+        // Without its trailer (a truncated download), nothing it holds is taken: one frame, no rating.
+        let truncated = &animated[..animated.len() - 1];
+        assert_eq!((read_rating(truncated, Format::Gif), frame_count(truncated, Format::Gif)), (None, 1));
+    }
+
+    #[test]
+    fn jpeg_xmp_standard_packet_first() {
+        let segment = |data: &[u8]| [&[0xFF, 0xE1][..], &((data.len() + 2) as u16).to_be_bytes(), data].concat();
+        // The extended packet (one chunk) comes first in the file, the standard one after it: the standard one is
+        // read first.
+        let extended = rating_packet(4);
+        let ext_chunk =
+            [JPEG_XMP_EXTENSION, &[b'A'; 32], &(extended.len() as u32).to_be_bytes(), &0u32.to_be_bytes(), &extended]
+                .concat();
+        let jpeg = [
+            &[0xFF, 0xD8][..],
+            &segment(&ext_chunk),
+            &segment(&[JPEG_XMP, &rating_packet(2)[..]].concat()),
+            &[0xFF, 0xDA, 0, 2],
+        ]
+        .concat();
+        let packets = xmp_packets(&jpeg, Format::Jpeg);
+        assert!(matches!(packets[..], [Cow::Borrowed(_), Cow::Owned(_)]));
+        assert_eq!(read_rating(&jpeg, Format::Jpeg), Some(2));
+    }
+
     #[test]
     fn frames_of_animations() {
-        use image::codecs::gif::GifEncoder;
-        let gif = |frames: usize| {
-            let mut out = Vec::new();
-            let mut enc = GifEncoder::new(&mut out);
-            for i in 0..frames {
-                let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([i as u8 * 60, 0, 0, 255]));
-                enc.encode_frame(image::Frame::new(img)).unwrap();
-            }
-            drop(enc);
-            out
-        };
         assert_eq!(frame_count(&gif(1), Format::Gif), 1);
         assert_eq!(frame_count(&gif(3), Format::Gif), 3);
 

@@ -328,9 +328,18 @@ fn sub_blocks(data: &[u8]) -> Vec<u8> {
 
 /// A still GIF; `None` for an animation (more than one image).
 pub(crate) fn gif(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
-    let blocks = gif_blocks(bytes).context("damaged GIF")?;
-    let images: Vec<_> = blocks.iter().filter(|b| matches!(b, GifBlock::Image { .. })).collect();
-    let [GifBlock::Image { range }] = images[..] else { return Ok(None) };
+    let mut blocks = gif_blocks(bytes);
+    let (mut images, mut image) = (0, None);
+    for b in blocks.by_ref() {
+        if let GifBlock::Image { range } = b {
+            images += 1;
+            image = Some(range);
+        }
+    }
+    if !blocks.complete() {
+        bail!("damaged GIF");
+    }
+    let (1, Some(range)) = (images, image) else { return Ok(None) };
     let header = gif_header_len(bytes).context("damaged GIF")?;
     let u16_at = |i: usize| u16::from_le_bytes([bytes[i], bytes[i + 1]]) as usize;
     let (sw, sh) = (u16_at(6), u16_at(8));

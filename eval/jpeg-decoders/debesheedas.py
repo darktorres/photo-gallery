@@ -68,8 +68,11 @@ def main():
             d = np.abs(rgb - ref.astype(np.int16))
             mse = float((d.astype(np.float64) ** 2).mean())
             psnr = float("inf") if mse == 0 else 10 * np.log10(255**2 / mse)
-            print(f"{f.name:34} {wall * 1e3:9.0f} ms whole run, {(wall - base) * 1e3:9.0f} ms past the fixed cost   "
-                  f"{d.mean():.3f} / {d.max()} / {psnr:.1f} dB", flush=True)
+            print(
+                f"{f.name:34} {wall * 1e3:9.0f} ms whole run, {(wall - base) * 1e3:9.0f} ms past the fixed cost   "
+                f"{d.mean():.3f} / {d.max()} / {psnr:.1f} dB",
+                flush=True,
+            )
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

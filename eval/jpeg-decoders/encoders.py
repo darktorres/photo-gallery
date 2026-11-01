@@ -15,6 +15,7 @@ in score) and reported as a ratio to the reference's bytes.
 """
 
 import csv
+import itertools
 import math
 import os
 import statistics
@@ -27,8 +28,15 @@ from pathlib import Path
 BIN = Path.home() / "jpeg-eval/bin"
 W = Path.home() / "jpeg-enc"
 INPUTS = Path.home() / "jpeg-inputs"
-NAMES = ["pin-base444-1mp", "pin-base444-3mp", "pin-prog420-1mp", "pin-base420-1mp", "phone-base420-4mp",
-         "sony-base422-7mp", "a6000-base422-24mp"]
+NAMES = [
+    "pin-base444-1mp",
+    "pin-base444-3mp",
+    "pin-prog420-1mp",
+    "pin-base420-1mp",
+    "phone-base420-4mp",
+    "sony-base422-7mp",
+    "a6000-base422-24mp",
+]
 QUALITIES = [50, 60, 70, 75, 80, 85, 90, 95]
 GUETZLI_Q = [84, 88, 92, 95]  # guetzli refuses quality below 84
 GUETZLI_MAX_MP = 3.5  # minutes per megapixel and ~300 MB per megapixel: Pinterest-sized inputs only
@@ -51,17 +59,18 @@ def png_of(ppm):  # guetzli reads PNG only
 
 # name -> (command for quality q, qualities); {i} input PPM, {o} output JPEG. All 4:4:4, as ImageReduce encodes.
 ENCODERS = {
-    "turbo": (lambda q: [BIN / "cjpeg-turbo", "-quality", q, "-sample", "1x1", "-optimize", "-outfile", "{o}", "{i}"],
-              QUALITIES),
-    "turbo-prog": (lambda q: [BIN / "cjpeg-turbo", "-quality", q, "-sample", "1x1", "-progressive", "-outfile", "{o}",
-                              "{i}"], QUALITIES),
-    "mozjpeg": (lambda q: [BIN / "cjpeg-mozjpeg", "-quality", q, "-sample", "1x1", "-outfile", "{o}", "{i}"],
-                QUALITIES),
-    "mozjpeg-base": (lambda q: [BIN / "cjpeg-mozjpeg", "-quality", q, "-sample", "1x1", "-baseline", "-outfile", "{o}",
-                                "{i}"], QUALITIES),
+    "turbo": (lambda q: [BIN / "cjpeg-turbo", "-quality", q, "-sample", "1x1", "-optimize", "-outfile", "{o}", "{i}"], QUALITIES),
+    "turbo-prog": (
+        lambda q: [BIN / "cjpeg-turbo", "-quality", q, "-sample", "1x1", "-progressive", "-outfile", "{o}", "{i}"],
+        QUALITIES,
+    ),
+    "mozjpeg": (lambda q: [BIN / "cjpeg-mozjpeg", "-quality", q, "-sample", "1x1", "-outfile", "{o}", "{i}"], QUALITIES),
+    "mozjpeg-base": (
+        lambda q: [BIN / "cjpeg-mozjpeg", "-quality", q, "-sample", "1x1", "-baseline", "-outfile", "{o}", "{i}"],
+        QUALITIES,
+    ),
     "jpegli": (lambda q: [BIN / "cjpegli", "{i}", "{o}", "-q", q, "--chroma_subsampling=444"], QUALITIES),
-    "jpegli-base": (lambda q: [BIN / "cjpegli", "{i}", "{o}", "-q", q, "--chroma_subsampling=444", "-p", "0"],
-                    QUALITIES),
+    "jpegli-base": (lambda q: [BIN / "cjpegli", "{i}", "{o}", "-q", q, "--chroma_subsampling=444", "-p", "0"], QUALITIES),
     "guetzli": (lambda q: [BIN / "guetzli", "--quality", q, "{png}", "{o}"], GUETZLI_Q),
 }
 
@@ -157,7 +166,7 @@ def score():
     outs = sorted(p for p in (W / "out").glob("*.jpg"))
     todo = [p for p in outs if p.name not in known]
     with ThreadPoolExecutor(os.cpu_count()) as ex:
-        for p, s in zip(todo, ex.map(score_one, todo)):
+        for p, s in zip(todo, ex.map(score_one, todo), strict=True):
             known[p.name] = s
     with open(cache, "w", newline="") as f:
         wr = csv.writer(f)
@@ -170,8 +179,10 @@ def score():
         name, enc, q = p.name.split(".")[:3]
         data.setdefault(name, {}).setdefault(enc, []).append((int(q[1:]), p.stat().st_size, known[p.name]))
     encs = sorted({e for d in data.values() for e in d}, key=lambda e: (e != REFERENCE, e))
-    print(f"Bytes to reach the score of {REFERENCE} Q{REF_Q} (4:4:4, optimized Huffman), as a ratio of its bytes; "
-          "'<' = even the lowest quality tried scores higher, '>' = the highest scores lower")
+    print(
+        f"Bytes to reach the score of {REFERENCE} Q{REF_Q} (4:4:4, optimized Huffman), as a ratio of its bytes; "
+        "'<' = even the lowest quality tried scores higher, '>' = the highest scores lower"
+    )
     print("image".ljust(22), "ref score".rjust(9), "ref bpp".rjust(8), *[e.rjust(13) for e in encs[1:]])
     ratios = {e: [] for e in encs}
     for name in NAMES:
@@ -191,7 +202,7 @@ def score():
             if ref[2] > pts[-1][2]:
                 cells.append(">" + f"{pts[-1][1] / ref[1]:.3f}")
                 continue
-            for a, b in zip(pts, pts[1:]):
+            for a, b in itertools.pairwise(pts):
                 if a[2] <= ref[2] <= b[2]:
                     t = 0 if b[2] == a[2] else (ref[2] - a[2]) / (b[2] - a[2])
                     by = math.exp(math.log(a[1]) + t * (math.log(b[1]) - math.log(a[1])))
@@ -199,8 +210,7 @@ def score():
                     cells.append(f"{by / ref[1]:.3f}")
                     break
         print(name.ljust(22), f"{ref[2]:9.2f}", f"{ref[1] * 8 / (w * h):8.3f}", *[c.rjust(13) for c in cells])
-    print("median".ljust(40), *[(f"{statistics.median(ratios[e]):.3f}" if ratios[e] else "—").rjust(13)
-                                for e in encs[1:]])
+    print("median".ljust(40), *[(f"{statistics.median(ratios[e]):.3f}" if ratios[e] else "—").rjust(13) for e in encs[1:]])
     print("\nEvery point: image encoder quality bytes bpp ssimulacra2")
     for name in NAMES:
         if name not in data:

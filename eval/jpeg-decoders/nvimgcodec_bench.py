@@ -63,11 +63,12 @@ def main():
     args = ap.parse_args()
     batches = [int(b) for b in args.batches.split(",")]
     decoders = {
-        name: nv.Decoder() if kind is None else nv.Decoder(backends=[nv.Backend(kind)])
-        for name, kind in BACKENDS.items()
+        name: nv.Decoder() if kind is None else nv.Decoder(backends=[nv.Backend(kind)]) for name, kind in BACKENDS.items()
     }
-    print(f"nvImageCodec {nv.__version__}: median wall ms per image (pixels on the host), CPU ms per image, "
-          "output vs libjpeg-turbo (mean |diff| / max / PSNR)")
+    print(
+        f"nvImageCodec {nv.__version__}: median wall ms per image (pixels on the host), CPU ms per image, "
+        "output vs libjpeg-turbo (mean |diff| / max / PSNR)"
+    )
     for f in args.files:
         data = f.read_bytes()
         ref = read_ppm(args.ref_dir / (f.stem + ".ppm"))
@@ -76,19 +77,19 @@ def main():
         for name, dec in decoders.items():
             try:
                 out = np.asarray(dec.decode(data).cpu())
-            except Exception as e:  # noqa: BLE001 (report and go on)
+            except Exception as e:  # report and go on
                 print(f"{f.name:34} {name:15} error: {e}")
                 continue
             quality = diff(out, ref)
             for b in [b for b in batches if b <= cap]:
                 if b == 1:
-                    fn = lambda: dec.decode(data).cpu()  # noqa: E731
+                    fn = lambda dec=dec, data=data: dec.decode(data).cpu()  # noqa: E731
                 else:
                     batch = [data] * b
-                    fn = lambda: [i.cpu() for i in dec.decode(batch)]  # noqa: E731
+                    fn = lambda dec=dec, batch=batch: [i.cpu() for i in dec.decode(batch)]  # noqa: E731
                 try:
                     wall, cpu = timed(fn, b, args.secs)
-                except Exception as e:  # noqa: BLE001
+                except Exception as e:
                     print(f"{f.name:34} {name:15} batch {b:3}: error: {e}")
                     continue
                 print(f"{f.name:34} {name:15} batch {b:3}: {wall:9.3f} ms {cpu:9.3f} cpu ms   {quality}", flush=True)

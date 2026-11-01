@@ -119,7 +119,7 @@ iteration excluded, also including the copies to and from the GPU.
 
 In WSL, after `eval/jpeg-decoders/wsl-build.sh` (which builds every encoder and `ssimulacra2`), from the repo:
 
-```
+```sh
 python3 eval/jpeg-decoders/encoders.py prepare   # PPMs in ~/jpeg-enc/src
 python3 eval/jpeg-decoders/encoders.py encode    # CPU encoders into ~/jpeg-enc/out
 python3 eval/jpeg-decoders/encoders.py speed

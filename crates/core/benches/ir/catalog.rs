@@ -19,14 +19,14 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
     None => "/root/pg-bench",
 };
 const LAYOUT: &str = "v1-collation";
-/// The thumbnail height the cache was filled at.
+// The thumbnail height the cache was filled at.
 const THUMB_HEIGHT: u32 = 220;
 
 fn run_dir() -> PathBuf {
     Path::new(DATA).join("run")
 }
 
-/// Fresh copies of the layout's files in run/, in WAL mode like the app's.
+// Fresh copies of the layout's files in run/, in WAL mode like the app's.
 fn copy_data() -> PathBuf {
     let (from, run) = (Path::new(DATA).join(LAYOUT), run_dir());
     std::fs::create_dir_all(&run).unwrap();
@@ -60,8 +60,8 @@ fn for_list(which: List) -> (Catalog, List) {
     (open_catalog(), which)
 }
 
-/// The grid's list: "All folders" (the session at startup), by name, by date taken and filtered to the unrated
-/// files; one folder with subfolders, recursive; one large folder alone.
+// The grid's list: "All folders" (the session at startup), by name, by date taken and filtered to the unrated
+// files; one folder with subfolders, recursive; one large folder alone.
 #[library_benchmark]
 #[bench::all_name(args = (List::AllName), setup = for_list)]
 #[bench::all_taken(args = (List::AllTaken), setup = for_list)]
@@ -82,7 +82,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Item>) {
     (catalog, black_box(items))
 }
 
-/// The folder tree with its counts.
+// The folder tree with its counts.
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
@@ -90,7 +90,7 @@ fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
     (catalog, black_box(tree))
 }
 
-/// The filter bar's counts for "All folders".
+// The filter bar's counts for "All folders".
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn facets(catalog: Catalog) -> (Catalog, Facets) {
@@ -98,7 +98,7 @@ fn facets(catalog: Catalog) -> (Catalog, Facets) {
     (catalog, black_box(facets))
 }
 
-/// The import's check for work, every round of the background job (nothing is pending in this catalog).
+// The import's check for work, every round of the background job (nothing is pending in this catalog).
 #[library_benchmark]
 #[bench::empty(setup = open_catalog)]
 fn pending_import(catalog: Catalog) -> (Catalog, Vec<WorkItem>) {
@@ -106,7 +106,7 @@ fn pending_import(catalog: Catalog) -> (Catalog, Vec<WorkItem>) {
     (catalog, black_box(work))
 }
 
-/// The thumbnail pass's check for work, on its own connection like the job's.
+// The thumbnail pass's check for work, on its own connection like the job's.
 #[library_benchmark]
 #[bench::at_height(setup = copy_data)]
 fn pending_thumbs(run: PathBuf) -> Vec<ThumbWork> {

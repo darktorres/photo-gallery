@@ -584,24 +584,50 @@ fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
 ///
 /// They are read in name order from the `files_order` index, so SQLite never sorts. Another order is a stable
 /// sort here on that key alone, files without it last: files with the same key stay in name order.
+///
+/// The list is sized by a count of the scope's files, read from the `files_order` index alone in the same read
+/// transaction (the background job writes meanwhile): exact without filters, an upper bound with them.
 pub fn list_grid(conn: &Connection, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
     let (scope, mut values) = scope(merged, recursive);
+    let tx = conn.unchecked_transaction()?;
+    let bound: usize = tx.query_row(
+        &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+        params_from_iter(&values),
+        |r| r.get(0),
+    )?;
     let cond = query.condition();
     values.extend(cond.params);
-    let mut stmt = conn.prepare(&grid_sql(&scope, &cond.sql, sort))?;
-    if sort.key_sql().is_none() {
-        let entries = stmt.query_map(params_from_iter(values), entry_from_row)?;
-        return Ok(entries.collect::<rusqlite::Result<Vec<_>>>()?);
-    }
-    let keyed =
-        stmt.query_map(params_from_iter(values), |r| Ok((r.get::<_, Option<i64>>(SORT_COLUMN)?, entry_from_row(r)?)))?;
-    let mut keyed = keyed.collect::<rusqlite::Result<Vec<_>>>()?;
-    keyed.sort_by(|(a, _), (b, _)| match (a, b) {
-        (Some(a), Some(b)) if sort.descending => b.cmp(a),
-        (Some(a), Some(b)) => a.cmp(b),
-        (a, b) => b.is_some().cmp(&a.is_some()),
-    });
-    Ok(keyed.into_iter().map(|(_, e)| e).collect())
+    let mut stmt = tx.prepare(&grid_sql(&scope, &cond.sql, sort))?;
+    let mut rows = stmt.query(params_from_iter(values))?;
+    let entries = if sort.key_sql().is_none() {
+        let mut entries = Vec::with_capacity(bound);
+        while let Some(r) = rows.next()? {
+            entries.push(entry_from_row(r)?);
+        }
+        // What the filters left out.
+        if entries.len() < entries.capacity() / 4 * 3 {
+            entries.shrink_to_fit();
+        }
+        entries
+    } else {
+        let mut keyed = Vec::with_capacity(bound);
+        while let Some(r) = rows.next()? {
+            keyed.push((r.get::<_, Option<i64>>(SORT_COLUMN)?, entry_from_row(r)?));
+        }
+        keyed.sort_by(|(a, _), (b, _)| match (a, b) {
+            (Some(a), Some(b)) if sort.descending => b.cmp(a),
+            (Some(a), Some(b)) => a.cmp(b),
+            (a, b) => b.is_some().cmp(&a.is_some()),
+        });
+        // Collected in place, into the keyed list's allocation, which is a fifth larger than the entries need.
+        let mut entries: Vec<Entry> = keyed.into_iter().map(|(_, e)| e).collect();
+        entries.shrink_to_fit();
+        entries
+    };
+    drop(rows);
+    drop(stmt);
+    tx.commit()?;
+    Ok(entries)
 }
 
 /// What a file's grid entry leaves out, for the file shown (the selection, the viewer's).
@@ -1361,6 +1387,19 @@ mod tests {
         assert!(!inside((r"a\b", true), ("D:\\a\\b\u{1}c", "a")));
     }
 
+    /// Sized by the count: an unfiltered list exactly, a filtered or sorted one without much slack.
+    #[test]
+    fn lists_are_made_at_their_size() {
+        let c = mixed_library();
+        let all = list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
+        assert_eq!(all.capacity(), all.len());
+        let sorted = list_grid(&c.conn, "", true, &Query::default(), by(SortKey::Size, true)).unwrap();
+        assert_eq!(sorted.capacity(), sorted.len());
+        let one =
+            list_grid(&c.conn, "", true, &Query { ratings: vec![5], ..Query::default() }, Sort::default()).unwrap();
+        assert!(one.capacity() < all.len() * 3 / 4 || one.capacity() == one.len());
+    }
+
     #[test]
     fn lists_read_the_order_index() {
         let c = library();
@@ -1380,6 +1419,17 @@ mod tests {
                 assert!(plan.contains("USING INDEX files_order"), "{plan}");
                 assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
             }
+            // The list's size, from the index alone.
+            let (scope, values) = scope(folder, recursive);
+            let plan: String = c
+                .conn
+                .query_row(
+                    &format!("EXPLAIN QUERY PLAN SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+                    params_from_iter(values),
+                    |r| r.get(3),
+                )
+                .unwrap();
+            assert!(plan.contains("COVERING INDEX files_order"), "{plan}");
         }
         let plan: Vec<String> = c
             .conn

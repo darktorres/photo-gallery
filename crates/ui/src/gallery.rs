@@ -28,6 +28,8 @@ pub mod qobject {
         type QUrl = cxx_qt_lib::QUrl;
         include!("cxx-qt-lib/qrectf.h");
         type QRectF = cxx_qt_lib::QRectF;
+        include!("cxx-qt-lib/qlist.h");
+        type QList_i32 = cxx_qt_lib::QList<i32>;
     }
 
     extern "RustQt" {
@@ -82,6 +84,18 @@ pub mod qobject {
         #[inherit]
         #[cxx_name = "endResetModel"]
         fn end_reset_model(self: Pin<&mut GalleryModel>);
+
+        #[inherit]
+        #[cxx_name = "dataChanged"]
+        fn data_changed(
+            self: Pin<&mut GalleryModel>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QList_i32,
+        );
+
+        #[inherit]
+        fn index(self: &GalleryModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
         /// Show the files of a merged folder (`""` = everything), with or without its subfolders, that pass the
         /// filters (`query::Query` as JSON), in an order (`query::Sort` as JSON): `view::View`'s and
@@ -239,10 +253,11 @@ pub mod qobject {
 
 use core::pin::Pin;
 use std::cell::RefCell;
+use std::io::Write;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QRectF, QString, QStringList, QUrl, QVariant,
+    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QRectF, QString, QStringList, QUrl, QVariant,
 };
 use pg_core::borders::Class;
 use pg_core::browse::{self, Borders, Details, Entry};
@@ -255,6 +270,9 @@ use crate::{library, settings, state, trace};
 const ROLE_FIRST: i32 = 256;
 const ROLE_COUNT: i32 = 257;
 const ROLE_HEIGHT: i32 = 258;
+/// A row's own change counter: an item of it was rated, turned or marked. Its cells read their items again on it,
+/// not on every change anywhere (`revision`, which the viewer and the toolbar follow).
+const ROLE_VERSION: i32 = 259;
 
 pub struct GalleryRust {
     count: i32,
@@ -268,6 +286,10 @@ pub struct GalleryRust {
     /// whenever a list is shown or a file changes.
     details: RefCell<Vec<(i64, Details)>>,
     rows: Vec<Row>,
+    /// The last layout's rows, kept for their capacity: a relayout is made into it, then swapped in.
+    spare_rows: Vec<Row>,
+    /// Per row (`ROLE_VERSION`).
+    versions: Vec<u32>,
     spacing: f64,
     width: f64,
     row_height: f64,
@@ -295,6 +317,8 @@ impl Default for GalleryRust {
             entries: Vec::new(),
             details: RefCell::new(Vec::new()),
             rows: Vec::new(),
+            spare_rows: Vec::new(),
+            versions: Vec::new(),
             spacing: 0.0,
             width: 0.0,
             row_height: 0.0,
@@ -358,6 +382,7 @@ impl qobject::GalleryModel {
             ROLE_FIRST => QVariant::from(&(row.first as i32)),
             ROLE_COUNT => QVariant::from(&(row.count as i32)),
             ROLE_HEIGHT => QVariant::from(&row.height),
+            ROLE_VERSION => QVariant::from(&(self.versions[index.row() as usize] as i32)),
             _ => QVariant::default(),
         }
     }
@@ -367,6 +392,7 @@ impl qobject::GalleryModel {
         roles.insert(ROLE_FIRST, QByteArray::from("firstItem"));
         roles.insert(ROLE_COUNT, QByteArray::from("itemCount"));
         roles.insert(ROLE_HEIGHT, QByteArray::from("rowHeight"));
+        roles.insert(ROLE_VERSION, QByteArray::from("version"));
         roles
     }
 
@@ -456,8 +482,8 @@ impl qobject::GalleryModel {
             this.forget_details();
         }
         self.as_mut().set_count(count);
-        let (w, h, s) = (self.width, self.row_height, self.spacing);
-        self.as_mut().relayout(w, h, s);
+        // New items: every row is made again, whatever its shape.
+        self.as_mut().lay_out(true);
         // Before the turns are read again: they aren't on their way any more.
         self.as_mut().set_loading(false);
         if std::mem::take(&mut self.as_mut().rust_mut().turned) {
@@ -481,20 +507,63 @@ impl qobject::GalleryModel {
     }
 
     fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
+        {
+            let mut this = self.as_mut().rust_mut();
+            (this.width, this.row_height, this.spacing) = (width, row_height, spacing);
+        }
+        self.lay_out(false);
+    }
+
+    /// Lay the items out again at the current size. Rows holding the items they held keep their delegates (only
+    /// their heights change, if they do); other rows, or all with `new_items`, are made again (a reset).
+    fn lay_out(mut self: Pin<&mut Self>, new_items: bool) {
+        let same_items = {
+            let mut this = self.as_mut().rust_mut();
+            let this = &mut *this;
+            let (width, height, spacing) = (this.width, this.row_height, this.spacing);
+            let mut rows = std::mem::take(&mut this.spare_rows);
+            if width > 0.0 && height > 0.0 {
+                layout::justify_into(&mut rows, this.entries.iter().map(Entry::aspect), width, height, spacing);
+            } else {
+                rows.clear();
+            }
+            let same_items = !new_items
+                && rows.len() == this.rows.len()
+                && rows.iter().zip(&this.rows).all(|(a, b)| (a.first, a.count) == (b.first, b.count));
+            let same_heights = same_items && rows.iter().zip(&this.rows).all(|(a, b)| a.height == b.height);
+            this.spare_rows = std::mem::replace(&mut this.rows, rows);
+            if same_heights {
+                return;
+            }
+            same_items
+        };
+        if same_items {
+            let roles = QList::from(&[ROLE_HEIGHT][..]);
+            let root = QModelIndex::default();
+            let last = self.rows.len() as i32 - 1;
+            let (top, bottom) = (self.index(0, 0, &root), self.index(last, 0, &root));
+            self.as_mut().data_changed(&top, &bottom, &roles);
+            return;
+        }
         self.as_mut().begin_reset_model();
         {
             let mut this = self.as_mut().rust_mut();
-            this.width = width;
-            this.row_height = row_height;
-            this.spacing = spacing;
-            let aspects: Vec<f64> = this.entries.iter().map(Entry::aspect).collect();
-            this.rows = if width > 0.0 && row_height > 0.0 {
-                layout::justify(&aspects, width, row_height, spacing)
-            } else {
-                Vec::new()
-            };
+            let rows = this.rows.len();
+            this.versions.clear();
+            this.versions.resize(rows, 0);
         }
         self.end_reset_model();
+    }
+
+    /// An item changed (rated, turned, marked): its row's cells read it again (`ROLE_VERSION`).
+    fn item_changed(mut self: Pin<&mut Self>, item: usize) {
+        if self.rows.is_empty() {
+            return;
+        }
+        let row = self.row_index(item).min(self.rows.len() - 1);
+        self.as_mut().rust_mut().versions[row] += 1;
+        let index = self.index(row as i32, 0, &QModelIndex::default());
+        self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
     }
 
     fn file_id(&self, item: i32) -> i64 {
@@ -510,8 +579,13 @@ impl qobject::GalleryModel {
     }
 
     fn image_key(&self, item: i32) -> QString {
-        self.item(item).map_or_else(QString::default, |i| {
-            QString::from(&format!("{}@{}.{}.{}", i.id, i.mtime, i.rotation, i.pending_turns))
+        self.item(item).map_or_else(QString::default, |e| {
+            // Formatted on the stack: at most 20 + 1 + 20 + 1 + 3 + 1 + 3 bytes.
+            let mut buf = [0u8; 64];
+            let mut rest = &mut buf[..];
+            write!(rest, "{}@{}.{}.{}", e.id, e.mtime, e.rotation, e.pending_turns).expect("64 bytes hold a key");
+            let len = 64 - rest.len();
+            QString::from(std::str::from_utf8(&buf[..len]).expect("ASCII"))
         })
     }
 
@@ -560,9 +634,9 @@ impl qobject::GalleryModel {
         }
         // An odd turn changes the item's shape, and so the rows.
         if turns % 2 == 1 {
-            let (w, h, s) = (self.width, self.row_height, self.spacing);
-            self.as_mut().relayout(w, h, s);
+            self.as_mut().lay_out(false);
         }
+        self.as_mut().item_changed(item as usize);
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
@@ -581,7 +655,7 @@ impl qobject::GalleryModel {
         // A written turn changes the file's size too.
         self.as_mut().rust_mut().forget_details();
         let mut reshaped = false;
-        for i in waiting {
+        for &i in &waiting {
             let id = self.entries[i].id;
             match state::with_catalog(|c| browse::entry(&c.conn, id)) {
                 Ok(Some(fresh)) => {
@@ -593,8 +667,10 @@ impl qobject::GalleryModel {
             }
         }
         if reshaped {
-            let (w, h, s) = (self.width, self.row_height, self.spacing);
-            self.as_mut().relayout(w, h, s);
+            self.as_mut().lay_out(false);
+        }
+        for i in waiting {
+            self.as_mut().item_changed(i);
         }
         let revision = self.revision + 1;
         self.set_revision(revision);
@@ -627,6 +703,7 @@ impl qobject::GalleryModel {
                 this.edited.push(id);
             }
         }
+        self.as_mut().item_changed(item as usize);
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
@@ -678,6 +755,7 @@ impl qobject::GalleryModel {
                 this.edited.push(e.id);
             }
         }
+        self.as_mut().item_changed(item as usize);
         let revision = self.revision + 1;
         self.set_revision(revision);
     }

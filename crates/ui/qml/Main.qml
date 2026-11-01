@@ -600,30 +600,56 @@ ApplicationWindow {
                     required final property int firstItem
                     required property int itemCount
                     required property real rowHeight
+                    // Bumped when one of the row's items is rated, turned or marked (galleryModel's ROLE_VERSION).
+                    required property int version
                     width: grid.width
                     height: rowHeight
+
+                    // The items the cells show, set once the row's data is complete: when it is made, and when the
+                    // view reuses it for another row. Reuse sets firstItem and itemCount one after the other, and
+                    // cells bound to them would read (and ask for the images of) their items once for each, then
+                    // again when the Repeater, whose count changed, makes them anew.
+                    property int cellsFirst: 0
+                    property int cellsCount: 0
+                    // Changes with `version`, but not when a reuse sets it.
+                    property int cellsVersion: 0
+                    property bool pooled: false
+                    function showCells() {
+                        if (cellsCount !== itemCount)
+                            cellsCount = 0
+                        cellsFirst = firstItem
+                        cellsCount = itemCount
+                    }
+                    Component.onCompleted: showCells()
+                    ListView.onPooled: pooled = true
+                    ListView.onReused: {
+                        pooled = false
+                        showCells()
+                    }
+                    onVersionChanged: if (!pooled) cellsVersion++
 
                     Row {
                         spacing: win.gap
                         Repeater {
-                            model: rowItem.itemCount
+                            model: rowItem.cellsCount
                             delegate: Item {
                                 id: cell
                                 required property int index
-                                readonly property int item: rowItem.firstItem + index
+                                readonly property int item: rowItem.cellsFirst + index
                                 // Changes when the file is rewritten or turned (galleryModel.imageKey).
-                                readonly property string key: galleryModel.revision >= 0 ? galleryModel.imageKey(item) : ""
-                                readonly property int rating: galleryModel.revision >= 0 ? galleryModel.rating(item) : 0
-                                readonly property string badge: galleryModel.revision >= 0 ? galleryModel.badge(item) : ""
+                                readonly property string key: rowItem.cellsVersion >= 0 ? galleryModel.imageKey(item) : ""
+                                readonly property int rating: rowItem.cellsVersion >= 0 ? galleryModel.rating(item) : 0
+                                readonly property string badge: rowItem.cellsVersion >= 0 ? galleryModel.badge(item) : ""
                                 // What is left without the borders (an empty rectangle: none found).
-                                readonly property rect content: galleryModel.revision >= 0 ? galleryModel.borderBox(item)
-                                                                                         : Qt.rect(0, 0, 0, 0)
-                                readonly property bool bordersMarked: galleryModel.revision >= 0 && galleryModel.borderMarked(item)
+                                readonly property rect content: rowItem.cellsVersion >= 0 ? galleryModel.borderBox(item)
+                                                                                          : Qt.rect(0, 0, 0, 0)
+                                readonly property bool bordersMarked: rowItem.cellsVersion >= 0 && galleryModel.borderMarked(item)
                                 // The image's aspect as shown; the tile's may be narrower (clamped panoramas), and the
                                 // thumbnail is then cropped to it.
-                                readonly property real imageAspect: galleryModel.revision >= 0 && galleryModel.fullHeight(item) > 0
+                                readonly property real imageAspect: rowItem.cellsVersion >= 0 && galleryModel.fullHeight(item) > 0
                                     ? galleryModel.fullWidth(item) / galleryModel.fullHeight(item) : 1
-                                width: galleryModel.aspect(item) * rowItem.rowHeight
+                                // A turn changes the item's shape.
+                                width: rowItem.cellsVersion >= 0 ? galleryModel.aspect(item) * rowItem.rowHeight : 0
                                 height: rowItem.rowHeight
 
                                 // ThumbHash placeholder (from the import) until the thumbnail arrives.

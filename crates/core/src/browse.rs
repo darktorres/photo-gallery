@@ -13,7 +13,7 @@ use crate::catalog::Catalog;
 use crate::decode::Format;
 use crate::media::{Ext, Kind};
 use crate::metadata;
-use crate::query::{BorderFacet, Facet, MediaType, Query, Sort};
+use crate::query::{BORDER_SUMS, BorderFacet, Facet, MediaType, Query, Sort};
 
 /// A folder's path without its drive: `E:\pinterest\a` and `D:\pinterest\a` are both `pinterest\a`; a drive
 /// root is the empty path. Other paths (UNC) are kept whole.
@@ -295,17 +295,28 @@ impl Entry {
     }
 }
 
-/// What an `Entry` is read from (`entry_from_row`), with `f` the file.
-const ENTRY_COLUMNS: &str = "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
+/// What an `Entry` is read from (`entry_from_row`), with `f` the file. Macros for the statements that are constants,
+/// constants for those made at run time.
+macro_rules! entry_columns {
+    () => {
+        "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
     f.rotation, coalesce(w.value, 0), coalesce(r.rating, 0), coalesce(a.frames, 1), coalesce(a.orientation, 1),
-    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL";
+    a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL"
+    };
+}
+const ENTRY_COLUMNS: &str = entry_columns!();
 /// The column after `ENTRY_COLUMNS`: a sort key (`list_grid`).
 const SORT_COLUMN: usize = 16;
 /// What the entries and the filters read besides the file.
-const FILE_JOINS: &str = "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
+macro_rules! file_joins {
+    () => {
+        "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
     LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = 'rotation'
-    LEFT JOIN border_marks m ON m.file_id = f.id";
+    LEFT JOIN border_marks m ON m.file_id = f.id"
+    };
+}
+const FILE_JOINS: &str = file_joins!();
 
 fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let ext = r.get_ref(5)?.as_str()?;
@@ -340,7 +351,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
 /// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
 pub fn entry(conn: &Connection, file_id: i64) -> Result<Option<Entry>> {
     Ok(conn
-        .prepare_cached(&format!("SELECT {ENTRY_COLUMNS} FROM files f {FILE_JOINS} WHERE f.id = ?1"))?
+        .prepare_cached(concat!("SELECT ", entry_columns!(), " FROM files f ", file_joins!(), " WHERE f.id = ?1"))?
         .query_row([file_id], entry_from_row)
         .optional()?)
 }
@@ -351,11 +362,11 @@ fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
     // Name order backwards for "by name, descending"; the other keys take their ties in name order.
     let dir = if key.is_none() && sort.descending { "DESC" } else { "ASC" };
     // `missing = 0` is written out, not bound: it's the `files_order` index's condition.
+    let (comma, key) = key.map_or(("", ""), |k| (", ", k));
     format!(
-        "SELECT {ENTRY_COLUMNS}{} FROM files f {FILE_JOINS}
+        "SELECT {ENTRY_COLUMNS}{comma}{key} FROM files f {FILE_JOINS}
          WHERE f.missing = 0 AND {scope} AND {cond}
-         ORDER BY f.order_key {dir}, f.id {dir}",
-        key.map_or(String::new(), |k| format!(", {k}")),
+         ORDER BY f.order_key {dir}, f.id {dir}"
     )
 }
 
@@ -496,13 +507,9 @@ pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -
     types.sort();
     let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
     // In one pass: each value's condition summed (a file can have sides of two classes).
-    let sums: Vec<String> = BorderFacet::ALL.iter().map(|b| format!("coalesce(sum({}), 0)", b.sql())).collect();
     let cond = query.condition_without(Some(Facet::Borders));
-    let sql = format!(
-        "SELECT {} FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {}",
-        sums.join(", "),
-        cond.sql
-    );
+    let sql =
+        format!("SELECT {BORDER_SUMS} FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {}", cond.sql);
     let values = scope_values.iter().cloned().chain(cond.params);
     let borders = conn.query_row(&sql, params_from_iter(values), |r| {
         BorderFacet::ALL.iter().enumerate().map(|(i, &b)| Ok((b, r.get(i)?))).collect::<rusqlite::Result<Vec<_>>>()
@@ -591,7 +598,7 @@ pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>
              WHERE f.id = ?1",
         )?
         .query_row([file_id], |r| {
-            let video = r.get::<_, String>(4)? == Kind::Video.key();
+            let video = r.get_ref(4)?.as_str()? == Kind::Video.key();
             Ok(FileSource {
                 path: r.get(0)?,
                 mtime: r.get(1)?,

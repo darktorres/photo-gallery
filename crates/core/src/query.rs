@@ -11,10 +11,66 @@ use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
 
 use crate::metadata::parse_iso_date;
-use crate::pdq::GROUP_DISTANCE;
+use crate::pdq::group_distance;
 
-/// FILETIME (100 ns since 1601) of the Unix epoch, in seconds.
-const FILETIME_UNIX_OFFSET: i64 = 11_644_473_600;
+/// FILETIME (100 ns since 1601) of the Unix epoch, in seconds. A macro, for SQL made at compile time.
+macro_rules! filetime_unix_offset {
+    () => {
+        11_644_473_600
+    };
+}
+
+// SQL used in more than one place is a macro, so every piece is a constant (`concat!`).
+
+/// A file with borders found that the user didn't mark as not a border.
+macro_rules! bordered {
+    () => {
+        "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NULL)"
+    };
+}
+
+/// `BorderFacet::None`: looked for (a still image), and nothing that counts.
+macro_rules! border_none {
+    () => {
+        concat!("(a.cut_left IS NOT NULL AND NOT ", bordered!(), ")")
+    };
+}
+
+/// A border class's facet (its `BorderFacet::key`).
+macro_rules! border_class {
+    ($class:literal) => {
+        concat!(
+            "(",
+            bordered!(),
+            " AND EXISTS (SELECT 1 FROM border_sides s
+                     WHERE s.class = '",
+            $class,
+            "' AND s.file_id = f.id AND s.rejected IS NULL))"
+        )
+    };
+}
+
+macro_rules! present_analysis {
+    () => {
+        "SELECT 1 FROM analysis d JOIN files df ON df.id = d.file_id
+        WHERE d.file_id != f.id AND d.error IS NULL AND df.missing = 0"
+    };
+}
+
+macro_rules! pair {
+    ($this:literal, $other:literal) => {
+        concat!(
+            "EXISTS (SELECT 1 FROM pdq_pairs p JOIN files o ON o.id = p.",
+            $other,
+            "
+                     WHERE p.",
+            $this,
+            " = f.id AND p.distance <= ",
+            group_distance!(),
+            " AND o.missing = 0)"
+        )
+    };
+}
 /// File sizes are in MB as Explorer counts them (MiB).
 const MB: f64 = 1_048_576.0;
 
@@ -162,22 +218,33 @@ impl BorderFacet {
         BorderFacet::ALL.into_iter().find(|b| b.key() == key)
     }
 
-    /// Also what the counts sum (`browse::facets`): a file with a black and a blurred side counts for both.
-    pub(crate) fn sql(self) -> String {
+    fn sql(self) -> &'static str {
         match self {
-            // Looked for (a still image), and nothing that counts.
-            BorderFacet::None => format!("(a.cut_left IS NOT NULL AND NOT {BORDERED})"),
-            class => format!(
-                "({BORDERED} AND EXISTS (SELECT 1 FROM border_sides s
-                     WHERE s.class = '{}' AND s.file_id = f.id AND s.rejected IS NULL))",
-                class.key()
-            ),
+            BorderFacet::None => border_none!(),
+            BorderFacet::Black => border_class!("black"),
+            BorderFacet::White => border_class!("white"),
+            BorderFacet::Color => border_class!("color"),
+            BorderFacet::Blur => border_class!("blur"),
         }
     }
 }
 
-/// A file with borders found that the user didn't mark as not a border.
-pub(crate) const BORDERED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NULL)";
+/// What `browse::facets` counts for borders: each value's condition summed, in `BorderFacet::ALL`'s order. A file
+/// with a black and a blurred side counts for both.
+pub(crate) const BORDER_SUMS: &str = concat!(
+    "coalesce(sum(",
+    border_none!(),
+    "), 0), coalesce(sum(",
+    border_class!("black"),
+    "), 0), coalesce(sum(",
+    border_class!("white"),
+    "), 0), coalesce(sum(",
+    border_class!("color"),
+    "), 0), coalesce(sum(",
+    border_class!("blur"),
+    "), 0)"
+);
+
 /// One the user marked.
 const MARKED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NOT NULL)";
 
@@ -290,89 +357,122 @@ impl Query {
 
     /// The condition, leaving one facet out.
     pub fn condition_without(&self, skip: Option<Facet>) -> Condition {
-        let mut parts: Vec<String> = Vec::new();
+        // Written into one string: each part ANDed on, a facet's values ORed in parentheses.
+        let mut sql = String::new();
         let mut params: Vec<Value> = Vec::new();
-        let any = |items: Vec<String>| format!("({})", items.join(" OR "));
+        fn and(sql: &mut String) -> &mut String {
+            if !sql.is_empty() {
+                sql.push_str(" AND ");
+            }
+            sql
+        }
+        fn any<'a>(sql: &mut String, items: impl IntoIterator<Item = &'a str>) {
+            let sql = and(sql);
+            sql.push('(');
+            for (i, item) in items.into_iter().enumerate() {
+                if i > 0 {
+                    sql.push_str(" OR ");
+                }
+                sql.push_str(item);
+            }
+            sql.push(')');
+        }
+        /// `column IN (?, …)` for `n` values.
+        fn among(sql: &mut String, column: &str, n: usize) {
+            sql.push_str(column);
+            sql.push_str(" IN (");
+            for i in 0..n {
+                sql.push_str(if i > 0 { ", ?" } else { "?" });
+            }
+            sql.push(')');
+        }
 
         if !self.types.is_empty() && skip != Some(Facet::Types) {
-            parts.push(any(self.types.iter().map(|t| t.sql().to_string()).collect()));
+            any(&mut sql, self.types.iter().map(|t| t.sql()));
         }
         if !self.exts.is_empty() && skip != Some(Facet::Exts) {
-            parts.push(format!("f.ext IN ({})", vec!["?"; self.exts.len()].join(", ")));
+            among(and(&mut sql), "f.ext", self.exts.len());
             params.extend(self.exts.iter().map(|e| Value::Text(e.trim_start_matches('.').to_lowercase())));
         }
-        if !self.ratings.is_empty() {
-            let mut either = Vec::new();
-            if self.ratings.contains(&0) {
-                either.push("r.rating IS NULL".to_string());
+        let unrated = self.ratings.contains(&0);
+        let stars = self.ratings.iter().filter(|&&n| (1..=5).contains(&n));
+        let starred = stars.clone().count();
+        if unrated || starred > 0 {
+            let sql = and(&mut sql);
+            sql.push('(');
+            if unrated {
+                sql.push_str("r.rating IS NULL");
             }
-            let stars: Vec<&u8> = self.ratings.iter().filter(|&&n| (1..=5).contains(&n)).collect();
-            if !stars.is_empty() {
-                either.push(format!("r.rating IN ({})", vec!["?"; stars.len()].join(", ")));
-                params.extend(stars.into_iter().map(|&n| Value::Integer(n.into())));
+            if starred > 0 {
+                if unrated {
+                    sql.push_str(" OR ");
+                }
+                among(sql, "r.rating", starred);
+                params.extend(stars.map(|&n| Value::Integer(n.into())));
             }
-            if !either.is_empty() {
-                parts.push(any(either));
-            }
+            sql.push(')');
         }
         let mut range = |column: &str, r: &Range, scale: f64| {
-            if let Some(min) = r.min {
-                parts.push(format!("{column} >= ?"));
-                params.push(Value::Real(min * scale));
-            }
-            if let Some(max) = r.max {
-                parts.push(format!("{column} <= ?"));
-                params.push(Value::Real(max * scale));
+            for (end, op) in [(r.min, " >= ?"), (r.max, " <= ?")] {
+                if let Some(v) = end {
+                    let sql = and(&mut sql);
+                    sql.push_str(column);
+                    sql.push_str(op);
+                    params.push(Value::Real(v * scale));
+                }
             }
         };
         range("f.size", &self.size_mb, MB);
         range("a.width * a.height", &self.megapixels, 1e6);
         range("a.duration_ms", &self.duration_s, 1e3);
         if !self.orientations.is_empty() {
-            parts.push(any(self.orientations.iter().map(|o| o.sql().to_string()).collect()));
+            any(&mut sql, self.orientations.iter().map(|o| o.sql()));
         }
         // Taken is wall-clock time: compared as is. Modified is a UTC FILETIME: the local day's bounds are converted.
         let day = |d: &Option<String>| d.as_deref().and_then(parse_iso_date).map(|s| s - s.rem_euclid(86_400));
-        if let Some(from) = day(&self.taken.from) {
-            parts.push("a.taken >= ?".into());
-            params.push(Value::Integer(from));
+        macro_rules! local_day_start {
+            () => {
+                concat!("(unixepoch(?, 'unixepoch', 'utc') + ", filetime_unix_offset!(), ") * 10000000")
+            };
         }
-        if let Some(to) = day(&self.taken.to) {
-            parts.push("a.taken < ?".into());
-            params.push(Value::Integer(to + 86_400));
-        }
-        let local_day_start = format!("(unixepoch(?, 'unixepoch', 'utc') + {FILETIME_UNIX_OFFSET}) * 10000000");
-        if let Some(from) = day(&self.modified.from) {
-            parts.push(format!("f.mtime >= {local_day_start}"));
-            params.push(Value::Integer(from));
-        }
-        if let Some(to) = day(&self.modified.to) {
-            parts.push(format!("f.mtime < {local_day_start}"));
-            params.push(Value::Integer(to + 86_400));
+        let bounds = [
+            (day(&self.taken.from), "a.taken >= ?", 0),
+            (day(&self.taken.to), "a.taken < ?", 86_400),
+            (day(&self.modified.from), concat!("f.mtime >= ", local_day_start!()), 0),
+            (day(&self.modified.to), concat!("f.mtime < ", local_day_start!()), 86_400),
+        ];
+        for (bound, condition, add) in bounds {
+            if let Some(d) = bound {
+                and(&mut sql).push_str(condition);
+                params.push(Value::Integer(d + add));
+            }
         }
         match self.duplicates {
-            Some(true) => parts.push(duplicates()),
-            Some(false) => parts.push(format!("a.file_id IS NOT NULL AND NOT {}", duplicates())),
+            Some(true) => and(&mut sql).push_str(DUPLICATES),
+            Some(false) => and(&mut sql).push_str(NOT_DUPLICATES),
             None => {}
         }
         if !self.status.is_empty() {
-            parts.push(any(self.status.iter().map(|s| s.sql().to_string()).collect()));
+            any(&mut sql, self.status.iter().map(|s| s.sql()));
         }
         if !self.borders.is_empty() && skip != Some(Facet::Borders) {
-            parts.push(any(self.borders.iter().map(|b| b.sql()).collect()));
+            any(&mut sql, self.borders.iter().map(|b| b.sql()));
         }
         match self.border_marked {
-            Some(true) => parts.push(MARKED.into()),
-            Some(false) => parts.push(BORDERED.into()),
+            Some(true) => and(&mut sql).push_str(MARKED),
+            Some(false) => and(&mut sql).push_str(bordered!()),
             None => {}
         }
         let name = self.name.trim();
         if !name.is_empty() {
-            parts.push("pg_contains(f.name, ?)".into());
+            and(&mut sql).push_str("pg_contains(f.name, ?)");
             params.push(Value::Text(name.to_string()));
         }
 
-        Condition { sql: if parts.is_empty() { "1".into() } else { parts.join(" AND ") }, params }
+        if sql.is_empty() {
+            sql.push('1');
+        }
+        Condition { sql, params }
     }
 }
 
@@ -542,22 +642,25 @@ fn parse_day(text: &str) -> Option<String> {
 
 /// A duplicate among the present files: identical bytes (tier 0a), identical pixels (0b) or a tier-1 pair within
 /// `GROUP_DISTANCE`. The pair table's primary key is (a, b) and it has an index on b, hence one EXISTS per side.
-fn duplicates() -> String {
-    let present_analysis = "SELECT 1 FROM analysis d JOIN files df ON df.id = d.file_id
-        WHERE d.file_id != f.id AND d.error IS NULL AND df.missing = 0";
-    let pair = |this: &str, other: &str| {
-        format!(
-            "EXISTS (SELECT 1 FROM pdq_pairs p JOIN files o ON o.id = p.{other}
-                     WHERE p.{this} = f.id AND p.distance <= {GROUP_DISTANCE} AND o.missing = 0)"
+macro_rules! duplicates {
+    () => {
+        concat!(
+            "(EXISTS (",
+            present_analysis!(),
+            " AND d.file_hash = a.file_hash)
+          OR EXISTS (",
+            present_analysis!(),
+            " AND d.pixel_hash = a.pixel_hash) OR ",
+            pair!("a", "b"),
+            " OR ",
+            pair!("b", "a"),
+            ")"
         )
     };
-    format!(
-        "(EXISTS ({present_analysis} AND d.file_hash = a.file_hash)
-          OR EXISTS ({present_analysis} AND d.pixel_hash = a.pixel_hash) OR {} OR {})",
-        pair("a", "b"),
-        pair("b", "a")
-    )
 }
+const DUPLICATES: &str = duplicates!();
+/// An imported file without one.
+const NOT_DUPLICATES: &str = concat!("a.file_id IS NOT NULL AND NOT ", duplicates!());
 
 /// What a view is ordered by.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
@@ -629,18 +732,23 @@ impl Sort {
     /// The value sorted on, as an integer expression over the file `f` and its analysis `a` (NULL: none, which
     /// comes last either way); `None` for name order (`files.order_key`, then the id for files of the same name in
     /// the same folder on two drives), which is also every other key's order for ties (`browse::list_grid`).
-    pub fn key_sql(self) -> Option<String> {
-        let mtime_local = format!("unixepoch(f.mtime / 10000000 - {FILETIME_UNIX_OFFSET}, 'unixepoch', 'localtime')");
+    pub fn key_sql(self) -> Option<&'static str> {
         match self.key {
             SortKey::Name => None,
-            SortKey::Size => Some("f.size".into()),
-            SortKey::Modified => Some("f.mtime".into()),
-            SortKey::Taken => Some(format!("coalesce(a.taken, {mtime_local})")),
-            SortKey::Megapixels => Some("a.width * a.height".into()),
-            SortKey::Duration => Some("a.duration_ms".into()),
+            SortKey::Size => Some("f.size"),
+            SortKey::Modified => Some("f.mtime"),
+            SortKey::Taken => Some(concat!(
+                "coalesce(a.taken, unixepoch(f.mtime / 10000000 - ",
+                filetime_unix_offset!(),
+                ", 'unixepoch', 'localtime'))"
+            )),
+            SortKey::Megapixels => Some("a.width * a.height"),
+            SortKey::Duration => Some("a.duration_ms"),
             // In millionths. Cuts are in stored pixels: a quarter turn (orientation 5–8) swaps the upright sides.
-            SortKey::Borders => Some(format!(
-                "CASE WHEN {BORDERED} THEN CAST(1e6 * max(
+            SortKey::Borders => Some(concat!(
+                "CASE WHEN ",
+                bordered!(),
+                " THEN CAST(1e6 * max(
                     1.0 * max(a.cut_left, a.cut_right) / CASE WHEN a.orientation >= 5 THEN a.height ELSE a.width END,
                     1.0 * max(a.cut_top, a.cut_bottom) / CASE WHEN a.orientation >= 5 THEN a.width ELSE a.height END)
                     AS INTEGER) END"
@@ -799,5 +907,14 @@ mod tests {
         let c = q.condition();
         assert!(!c.sql.contains("DROP") && !c.sql.contains("a'b"));
         assert_eq!(c.params.len(), 2);
+    }
+
+    #[test]
+    fn border_sums_follow_all_and_each_facet_sql() {
+        let sums: Vec<String> = BorderFacet::ALL.iter().map(|b| format!("coalesce(sum({}), 0)", b.sql())).collect();
+        assert_eq!(BORDER_SUMS, sums.join(", "));
+        for b in BorderFacet::ALL.into_iter().skip(1) {
+            assert!(b.sql().contains(&format!("s.class = '{}'", b.key())), "{b:?}");
+        }
     }
 }

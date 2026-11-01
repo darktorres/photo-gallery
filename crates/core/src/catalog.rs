@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
@@ -32,22 +32,48 @@ use crate::pdq_index::PdqIndex;
 const BASELINE_VERSION: i64 = 1;
 const MIGRATIONS: &[&str] = &[];
 
+// SQL used in more than one statement is a macro, so every statement is a constant (`concat!`), none made at run
+// time.
+
 /// Whether the `files` row being written needs its analysis (re)done: no analysis made from it as it is now (at
 /// `meta.import_version` or later, from the same size, mtime, catalog rotation and kind). A failure counts as made:
 /// `--retry` redoes those. Inside `UPDATE files … WHERE id = …`.
-const STALE: &str = "NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
+macro_rules! stale {
+    () => {
+        "NOT EXISTS (SELECT 1 FROM analysis a WHERE a.file_id = files.id
         AND a.version >= (SELECT value FROM meta WHERE key = 'import_version')
-        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind)";
-
-/// The next number of the change sequence, for `files.seq`: `{NEXT_SEQ}` first, then `seq = {SEQ}`.
-const NEXT_SEQ: &str = "UPDATE meta SET value = value + 1 WHERE key = 'seq'";
-const SEQ: &str = "(SELECT value FROM meta WHERE key = 'seq')";
-
-fn baseline() -> String {
-    BASELINE.replace("{STALE}", STALE).replace("{NEXT_SEQ}", NEXT_SEQ).replace("{SEQ}", SEQ)
+        AND a.size = files.size AND a.mtime = files.mtime AND a.rotation = files.rotation AND a.kind = files.kind)"
+    };
 }
 
-const BASELINE: &str = r"
+/// The next number of the change sequence, for `files.seq`: `next_seq!()` first, then `seq = seq!()`.
+macro_rules! next_seq {
+    () => {
+        "UPDATE meta SET value = value + 1 WHERE key = 'seq'"
+    };
+}
+macro_rules! seq {
+    () => {
+        "(SELECT value FROM meta WHERE key = 'seq')"
+    };
+}
+
+/// The analyses borders are looked for in: still images that decoded and are big enough (borders::MIN_SIDE).
+macro_rules! has_borders {
+    () => {
+        "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= 64"
+    };
+}
+
+/// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
+macro_rules! under_root {
+    () => {
+        "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')"
+    };
+}
+
+const BASELINE: &str = concat!(
+    r"
 CREATE TABLE scans(
     id       INTEGER PRIMARY KEY,
     root     TEXT NOT NULL,
@@ -221,26 +247,44 @@ INSERT INTO meta(key, value) VALUES
 -- files.pending and files.seq, kept in the statements that change what they depend on, whoever writes them. The
 -- WHEN clauses keep a rescan that changes nothing from writing anything.
 CREATE TRIGGER files_added AFTER INSERT ON files BEGIN
-    {NEXT_SEQ};
-    UPDATE files SET pending = {STALE}, seq = {SEQ} WHERE id = new.id;
+    ",
+    next_seq!(),
+    ";
+    UPDATE files SET pending = ",
+    stale!(),
+    ", seq = ",
+    seq!(),
+    r" WHERE id = new.id;
 END;
 CREATE TRIGGER files_changed AFTER UPDATE OF size, mtime, rotation, kind ON files
 WHEN old.size IS NOT new.size OR old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation
     OR old.kind IS NOT new.kind
 BEGIN
-    UPDATE files SET pending = {STALE} WHERE id = new.id;
+    UPDATE files SET pending = ",
+    stale!(),
+    r" WHERE id = new.id;
 END;
 -- What a thumbnail is made from (thumbs::Source), and whether the file is there to show.
 CREATE TRIGGER files_source_changed AFTER UPDATE OF mtime, rotation, missing ON files
 WHEN old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation OR old.missing IS NOT new.missing
 BEGIN
-    {NEXT_SEQ};
-    UPDATE files SET seq = {SEQ} WHERE id = new.id;
+    ",
+    next_seq!(),
+    ";
+    UPDATE files SET seq = ",
+    seq!(),
+    r" WHERE id = new.id;
 END;
 -- A REPLACE fires only this one (recursive triggers are off): its delete half fires no trigger.
 CREATE TRIGGER analysis_added AFTER INSERT ON analysis BEGIN
-    {NEXT_SEQ};
-    UPDATE files SET pending = {STALE}, seq = {SEQ} WHERE id = new.file_id;
+    ",
+    next_seq!(),
+    ";
+    UPDATE files SET pending = ",
+    stale!(),
+    ", seq = ",
+    seq!(),
+    r" WHERE id = new.file_id;
 END;
 -- Besides what pending depends on: whether it decoded (a thumbnail needs that) and a video's poster frame.
 CREATE TRIGGER analysis_changed AFTER UPDATE OF version, size, mtime, rotation, kind, error, poster_ms ON analysis
@@ -248,13 +292,20 @@ WHEN old.version IS NOT new.version OR old.size IS NOT new.size OR old.mtime IS 
     OR old.rotation IS NOT new.rotation OR old.kind IS NOT new.kind OR old.error IS NOT new.error
     OR old.poster_ms IS NOT new.poster_ms
 BEGIN
-    {NEXT_SEQ};
-    UPDATE files SET pending = {STALE}, seq = {SEQ} WHERE id = new.file_id;
+    ",
+    next_seq!(),
+    ";
+    UPDATE files SET pending = ",
+    stale!(),
+    ", seq = ",
+    seq!(),
+    r" WHERE id = new.file_id;
 END;
 CREATE TRIGGER analysis_removed AFTER DELETE ON analysis BEGIN
     UPDATE files SET pending = 1 WHERE id = old.file_id;
 END;
-";
+"
+);
 
 /// A catalog made before the current baseline (pre-release, the baseline is edited in place) lacks some of these
 /// `LAYOUT_PARTS`.
@@ -289,9 +340,6 @@ const FILLED: &[(&str, &str, &str)] = &[
     ("analysis", "rotation", "(SELECT rotation FROM old.files WHERE id = o.file_id)"),
     ("analysis", "kind", "(SELECT kind FROM old.files WHERE id = o.file_id)"),
 ];
-
-/// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
-const UNDER_ROOT: &str = "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')";
 
 /// Whether `path` is `root` or inside it (Windows paths: case-insensitive).
 pub fn is_under(path: &str, root: &str) -> bool {
@@ -336,7 +384,7 @@ fn connect(path: &Path) -> Result<Connection> {
         "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
          PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
     )?;
-    migrate(&conn, &baseline(), MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
+    migrate(&conn, BASELINE, MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
     Ok(conn)
 }
 
@@ -393,7 +441,7 @@ fn rebuild(path: &Path) -> Result<()> {
 /// [`rebuild`]'s copy of the catalog at `path`, made at `new_path`.
 fn build_copy(path: &Path, new_path: &Path) -> Result<()> {
     let new = Connection::open(new_path)?;
-    migrate(&new, &baseline(), MIGRATIONS)?;
+    migrate(&new, BASELINE, MIGRATIONS)?;
     new.create_scalar_function(
         "pg_order_key",
         2,
@@ -470,13 +518,18 @@ fn set_import_version(conn: &Connection) -> Result<()> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     if version(&tx)? != IMPORT_VERSION {
         tx.execute("UPDATE meta SET value = ?1 WHERE key = 'import_version'", [IMPORT_VERSION])?;
-        tx.execute_batch(&format!("UPDATE files SET pending = {STALE}; {NEXT_SEQ}; UPDATE files SET seq = {SEQ};"))?;
+        tx.execute_batch(concat!(
+            "UPDATE files SET pending = ",
+            stale!(),
+            "; ",
+            next_seq!(),
+            "; UPDATE files SET seq = ",
+            seq!(),
+            ";"
+        ))?;
     }
     Ok(tx.commit()?)
 }
-
-/// The analyses borders are looked for in: still images that decoded and are big enough (borders::MIN_SIDE).
-const HAS_BORDERS: &str = "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= 64";
 
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
 /// every analysis that can have borders is due. Like [`set_import_version`], in one write transaction.
@@ -490,26 +543,72 @@ fn set_borders_version(conn: &Connection) -> Result<()> {
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
     if version(&tx)? != BORDERS_VERSION {
         tx.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [BORDERS_VERSION])?;
-        tx.execute_batch(&format!("UPDATE analysis SET borders_due = coalesce({HAS_BORDERS}, 0)"))?;
+        tx.execute_batch(concat!("UPDATE analysis SET borders_due = coalesce(", has_borders!(), ", 0)"))?;
     }
     Ok(tx.commit()?)
 }
 
+/// What a [`WorkItem`] is read from, with `f` the file.
+macro_rules! work_columns {
+    () => {
+        "f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime, f.rotation,
+        f.kind"
+    };
+}
+
+/// `Catalog::pending_import`'s query, with the volume and the record number for its order.
+macro_rules! pending_files {
+    () => {
+        // `missing = 0 AND pending = 1` written out: the index's condition.
+        concat!(
+            "SELECT ",
+            work_columns!(),
+            ", f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record
+             FROM files f WHERE f.missing = 0 AND f.pending = 1"
+        )
+    };
+}
+
 /// `Catalog::pending_import`'s query.
-fn pending_import_sql(retry_errors: bool) -> String {
-    const COLUMNS: &str = "f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size,
-        f.mtime, f.rotation, f.kind, f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record";
-    // `missing = 0 AND pending = 1` written out: the index's condition.
-    let pending = format!("SELECT {COLUMNS} FROM files f WHERE f.missing = 0 AND f.pending = 1");
+fn pending_import_sql(retry_errors: bool) -> &'static str {
     if retry_errors {
         // A UNION, as an OR would scan every file; the failures are read from their index first.
-        format!(
-            "{pending} UNION SELECT {COLUMNS} FROM analysis a CROSS JOIN files f
+        concat!(
+            pending_files!(),
+            " UNION SELECT ",
+            work_columns!(),
+            ", f.volume AS volume, f.file_ref & 0xFFFFFFFFFFFF AS record
+             FROM analysis a CROSS JOIN files f
              WHERE a.error IS NOT NULL AND f.id = a.file_id AND f.missing = 0 ORDER BY volume, record"
         )
     } else {
-        format!("{pending} ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF")
+        concat!(pending_files!(), " ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF")
     }
+}
+
+/// A [`WorkItem`] from a row starting with `work_columns!()`.
+fn work_item(r: &rusqlite::Row) -> rusqlite::Result<WorkItem> {
+    Ok(WorkItem {
+        id: r.get(0)?,
+        path: r.get(1)?,
+        size: r.get(2)?,
+        mtime: r.get(3)?,
+        rotation: r.get(4)?,
+        kind: Kind::from_key(r.get_ref(5)?.as_str()?).unwrap_or(Kind::Image),
+    })
+}
+
+/// The rows of a statement whose count is at most `bound`, read into a `Vec` of that capacity.
+fn collect_rows<T>(
+    stmt: &mut rusqlite::Statement,
+    bound: usize,
+    row: impl FnMut(&rusqlite::Row) -> rusqlite::Result<T>,
+) -> Result<Vec<T>> {
+    let mut out = Vec::with_capacity(bound);
+    for item in stmt.query_map([], row)? {
+        out.push(item?);
+    }
+    Ok(out)
 }
 
 /// A file as the scanner saw it.
@@ -618,49 +717,13 @@ impl Catalog {
         Ok(())
     }
 
-    /// The folder's row, made if it's new.
-    pub fn folder(tx: &Transaction, path: &str) -> Result<Folder> {
-        let key = crate::browse::folder_key(crate::browse::merged_path(path));
-        let mut get = tx.prepare_cached("SELECT id FROM folders WHERE path = ?1")?;
-        if let Some(id) = get.query_row([path], |r| r.get(0)).optional()? {
-            return Ok(Folder { id, key });
-        }
-        tx.prepare_cached("INSERT INTO folders(path) VALUES (?1)")?.execute([path])?;
-        Ok(Folder { id: tx.last_insert_rowid(), key })
-    }
-
-    /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
-    pub fn upsert_file(tx: &Transaction, scan: i64, folder: &Folder, f: &ScannedFile) -> Result<()> {
-        // `pending` and `seq` follow from the triggers.
-        let order_key = [folder.key.as_slice(), &crate::browse::name_key(f.name)].concat();
-        tx.prepare_cached(
-            "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
-             ON CONFLICT(volume, file_ref) DO UPDATE SET
-                folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
-                size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
-                order_key = excluded.order_key",
-        )?
-        .execute(params![
-            f.volume,
-            f.file_ref as i64,
-            folder.id,
-            f.name,
-            media::extension(f.name),
-            f.kind.key(),
-            f.size as i64,
-            f.mtime,
-            scan,
-            order_key
-        ])?;
-        Ok(())
-    }
-
     /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions).
     pub fn mark_missing(&self, root: &str, scan: i64) -> Result<usize> {
         Ok(self.conn.execute(
-            &format!(
-                "UPDATE files SET missing = 1 WHERE missing = 0 AND last_scan < ?2 AND folder_id IN ({UNDER_ROOT})"
+            concat!(
+                "UPDATE files SET missing = 1 WHERE missing = 0 AND last_scan < ?2 AND folder_id IN (",
+                under_root!(),
+                ")"
             ),
             params![root, scan],
         )?)
@@ -693,7 +756,7 @@ impl Catalog {
         let tx = self.conn.unchecked_transaction()?;
         tx.execute("DELETE FROM roots WHERE path = ?1", [root])?;
         let n = tx.execute(
-            &format!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN ({UNDER_ROOT})"),
+            concat!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN (", under_root!(), ")"),
             [root],
         )?;
         tx.commit()?;
@@ -704,18 +767,17 @@ impl Catalog {
     /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD (FINDINGS
     /// "I/O"). Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
     pub fn pending_import(&self, retry_errors: bool) -> Result<Vec<WorkItem>> {
-        let mut stmt = self.conn.prepare(&pending_import_sql(retry_errors))?;
-        let rows = stmt.query_map([], |r| {
-            Ok(WorkItem {
-                id: r.get(0)?,
-                path: r.get(1)?,
-                size: r.get(2)?,
-                mtime: r.get(3)?,
-                rotation: r.get(4)?,
-                kind: Kind::from_key(&r.get::<_, String>(5)?).unwrap_or(Kind::Image),
-            })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        // Counted in the same snapshot: an upper bound (a failure may also be pending), each count read from its
+        // index alone.
+        let tx = self.conn.unchecked_transaction()?;
+        let count = |sql: &str| -> Result<usize> { Ok(tx.query_row(sql, [], |r| r.get(0))?) };
+        let mut bound = count("SELECT count(*) FROM files WHERE missing = 0 AND pending = 1")?;
+        if retry_errors {
+            bound += count("SELECT count(*) FROM analysis WHERE error IS NOT NULL")?;
+        }
+        let items = collect_rows(&mut tx.prepare(pending_import_sql(retry_errors))?, bound, work_item)?;
+        tx.commit()?;
+        Ok(items)
     }
 
     /// The tier-1 index of the reliable PDQ hashes of current analyses (PLAN §6), rebuilt for each import.
@@ -736,116 +798,23 @@ impl Catalog {
         Ok(PdqIndex::build(ids, hashes))
     }
 
-    pub fn store_analysis(tx: &Transaction, item: &WorkItem, a: &Analysis) -> Result<()> {
-        // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
-        tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?.execute([item.id])?;
-        tx.prepare_cached(
-            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
-                file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
-                taken, duration_ms, poster_ms, borders_due)
-             VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                     CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18, 0)",
-        )?
-        .execute(params![
-            item.id,
-            IMPORT_VERSION,
-            item.size,
-            item.mtime,
-            &a.file_hash[..],
-            a.pixels.as_ref().map(|p| p.pixel_hash.to_vec()),
-            a.format,
-            a.orientation,
-            a.width,
-            a.height,
-            a.pixels.as_ref().map(|p| p.pdq.hash.0.to_vec()),
-            a.pixels.as_ref().map(|p| p.pdq.quality),
-            &a.thumbhash,
-            a.frames,
-            a.taken,
-            a.taken_utc,
-            a.duration_ms,
-            a.poster_ms,
-            item.rotation,
-            item.kind.key(),
-        ])?;
-        // The borders of what was there before are gone; the borders pass finds the new ones.
-        tx.prepare_cached(&format!("UPDATE analysis SET borders_due = coalesce({HAS_BORDERS}, 0) WHERE file_id = ?1"))?
-            .execute([item.id])?;
-        tx.prepare_cached("DELETE FROM border_sides WHERE file_id = ?1")?.execute([item.id])?;
-        Self::sync_file_rating(tx, item.id, a.file_rating)
-    }
-
-    /// Record the borders found in a file (`None`: not looked for), replacing what was there.
-    fn write_borders(tx: &Transaction, file_id: i64, borders: Option<&Detection>) -> Result<()> {
-        let cut = borders.map(Detection::cut);
-        tx.prepare_cached(
-            "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
-             WHERE file_id = ?1",
-        )?
-        .execute(params![
-            file_id,
-            cut.map(|c| c[0]),
-            cut.map(|c| c[1]),
-            cut.map(|c| c[2]),
-            cut.map(|c| c[3])
-        ])?;
-        tx.prepare_cached("DELETE FROM border_sides WHERE file_id = ?1")?.execute([file_id])?;
-        let mut insert = tx.prepare_cached(
-            "INSERT INTO border_sides(file_id, pass, edge, kind, class, depth, color, straight, dev, drift, rejected)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
-        )?;
-        for s in borders.map_or(&[][..], |b| &b.sides) {
-            let color = s.color.map(|[r, g, b]| ((r as i64) << 16) | ((g as i64) << 8) | b as i64);
-            insert.execute(params![
-                file_id,
-                s.pass,
-                s.edge.key(),
-                s.kind.key(),
-                s.class().key(),
-                s.depth,
-                color,
-                s.straight,
-                s.dev,
-                s.drift,
-                s.rejected.map(|r| r.key()),
-            ])?;
-        }
-        Ok(())
-    }
-
     /// Analyses whose borders are due (new ones, and all after a new detector: [`set_borders_version`]), of
     /// files the import has nothing to do for, in on-disk order.
     pub fn pending_borders(&self) -> Result<Vec<WorkItem>> {
-        let mut stmt = self.conn.prepare(
-            "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
-                    f.rotation, f.kind
-             FROM analysis a CROSS JOIN files f
+        // An upper bound, from `analysis_borders_due` alone.
+        let tx = self.conn.unchecked_transaction()?;
+        let bound: usize = tx.query_row("SELECT count(*) FROM analysis WHERE borders_due = 1", [], |r| r.get(0))?;
+        let mut stmt = tx.prepare(concat!(
+            "SELECT ",
+            work_columns!(),
+            " FROM analysis a CROSS JOIN files f
              WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
-             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF",
-        )?;
-        let rows = stmt.query_map([], |r| {
-            Ok(WorkItem {
-                id: r.get(0)?,
-                path: r.get(1)?,
-                size: r.get(2)?,
-                mtime: r.get(3)?,
-                rotation: r.get(4)?,
-                kind: Kind::from_key(&r.get::<_, String>(5)?).unwrap_or(Kind::Image),
-            })
-        })?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    }
-
-    /// Record borders looked for ([`Catalog::pending_borders`]), unless the file changed meanwhile (the import
-    /// then analyzes it again, and the borders are due again).
-    pub fn store_borders(tx: &Transaction, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
-        let current: bool = tx
-            .prepare_cached("SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3)")?
-            .query_row(params![item.id, item.size, item.mtime], |r| r.get(0))?;
-        if current {
-            Self::write_borders(tx, item.id, borders)?;
-        }
-        Ok(())
+             ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+        ))?;
+        let items = collect_rows(&mut stmt, bound, work_item)?;
+        drop(stmt);
+        tx.commit()?;
+        Ok(items)
     }
 
     /// The present file at an absolute path (Windows paths: any case).
@@ -903,43 +872,11 @@ impl Catalog {
         Ok(())
     }
 
-    /// Three-way rating sync. `file_ratings` holds what the file was last known to hold; a file rating that
-    /// differs from it was set by another program after that, so it becomes the catalog rating. Otherwise the
-    /// catalog's stands (it may be newer and not written back yet, or the file can't hold one). A write of our own
-    /// still queued is newer than anything in the file: nothing is adopted then.
-    fn sync_file_rating(tx: &Transaction, file_id: i64, in_file: Option<u8>) -> Result<()> {
-        let known: Option<u8> = tx
-            .prepare_cached("SELECT value FROM file_ratings WHERE file_id = ?1")?
-            .query_row([file_id], |r| r.get(0))
-            .optional()?;
-        let queued: bool = tx
-            .prepare_cached("SELECT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND kind = 'rating')")?
-            .query_row([file_id], |r| r.get(0))?;
-        if in_file == known || queued {
-            return Ok(());
-        }
-        match in_file {
-            Some(n @ 1..=5) => tx
-                .prepare_cached(
-                    "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
-                     ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated",
-                )?
-                .execute(params![file_id, n])?,
-            _ => tx.prepare_cached("DELETE FROM ratings WHERE file_id = ?1")?.execute([file_id])?,
-        };
-        Self::set_file_rating(tx, file_id, in_file)
-    }
-
-    /// Record what the file holds now (read by the import, or just written by the app).
+    /// Record what the file holds now, just written by the app (the import's reads: [`AnalysisWriter`]).
     pub fn set_file_rating(conn: &Connection, file_id: i64, value: Option<u8>) -> Result<()> {
         match value {
-            Some(v) => conn
-                .prepare_cached(
-                    "INSERT INTO file_ratings(file_id, value) VALUES (?1, ?2)
-                     ON CONFLICT(file_id) DO UPDATE SET value = excluded.value",
-                )?
-                .execute(params![file_id, v.min(5)])?,
-            None => conn.prepare_cached("DELETE FROM file_ratings WHERE file_id = ?1")?.execute([file_id])?,
+            Some(v) => conn.prepare_cached(SET_FILE_RATING)?.execute(params![file_id, v.min(5)])?,
+            None => conn.prepare_cached(DELETE_FILE_RATING)?.execute([file_id])?,
         };
         Ok(())
     }
@@ -976,36 +913,6 @@ impl Catalog {
         Ok(())
     }
 
-    pub fn store_failure(tx: &Transaction, item: &WorkItem, error: &str) -> Result<()> {
-        tx.prepare_cached("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?.execute([item.id])?;
-        tx.prepare_cached(
-            "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error, borders_due)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7, 0)",
-        )?
-        .execute(params![
-            item.id,
-            IMPORT_VERSION,
-            item.size,
-            item.mtime,
-            item.rotation,
-            item.kind.key(),
-            error
-        ])?;
-        tx.prepare_cached("DELETE FROM border_sides WHERE file_id = ?1")?.execute([item.id])?;
-        Ok(())
-    }
-
-    pub fn store_pdq_pair(tx: &Transaction, a: i64, b: i64, distance: u32, variant: usize) -> Result<()> {
-        let (a, b) = if a < b { (a, b) } else { (b, a) };
-        tx.prepare_cached(
-            "INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance, variant = excluded.variant
-             WHERE excluded.distance < pdq_pairs.distance",
-        )?
-        .execute(params![a, b, distance, variant])?;
-        Ok(())
-    }
-
     /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
     pub fn status(&self) -> Result<Status> {
         let one = |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, [], |r| r.get(0))?) };
@@ -1025,6 +932,262 @@ impl Catalog {
             queued_writes: one("SELECT count(*) FROM file_writes")?,
             failed_writes: one("SELECT count(*) FROM file_writes WHERE error IS NOT NULL")?,
         })
+    }
+}
+
+// The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
+// rusqlite's statement cache per row (16 entries, which the import's statements alone would crowd). A writer
+// borrows its transaction, so it is dropped before the transaction commits.
+
+const DELETE_SIDES: &str = "DELETE FROM border_sides WHERE file_id = ?1";
+const SET_FILE_RATING: &str = "INSERT INTO file_ratings(file_id, value) VALUES (?1, ?2)
+     ON CONFLICT(file_id) DO UPDATE SET value = excluded.value";
+const DELETE_FILE_RATING: &str = "DELETE FROM file_ratings WHERE file_id = ?1";
+
+/// The scan's writes.
+pub struct ScanWriter<'tx> {
+    scan: i64,
+    folder_id: Statement<'tx>,
+    new_folder: Statement<'tx>,
+    file: Statement<'tx>,
+}
+
+impl<'tx> ScanWriter<'tx> {
+    pub fn new(tx: &'tx Transaction, scan: i64) -> Result<ScanWriter<'tx>> {
+        Ok(ScanWriter {
+            scan,
+            folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
+            new_folder: tx.prepare("INSERT INTO folders(path) VALUES (?1) RETURNING id")?,
+            file: tx.prepare(
+                "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                 ON CONFLICT(volume, file_ref) DO UPDATE SET
+                    folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
+                    size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
+                    order_key = excluded.order_key",
+            )?,
+        })
+    }
+
+    /// The folder's row, made if it's new.
+    pub fn folder(&mut self, path: &str) -> Result<Folder> {
+        let key = crate::browse::folder_key(crate::browse::merged_path(path));
+        let id = match self.folder_id.query_row([path], |r| r.get(0)).optional()? {
+            Some(id) => id,
+            None => self.new_folder.query_row([path], |r| r.get(0))?,
+        };
+        Ok(Folder { id, key })
+    }
+
+    /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
+    pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<()> {
+        // `pending` and `seq` follow from the triggers.
+        let order_key = [folder.key.as_slice(), &crate::browse::name_key(f.name)].concat();
+        self.file.execute(params![
+            f.volume,
+            f.file_ref as i64,
+            folder.id,
+            f.name,
+            media::extension(f.name),
+            f.kind.key(),
+            f.size as i64,
+            f.mtime,
+            self.scan,
+            order_key
+        ])?;
+        Ok(())
+    }
+}
+
+/// The import's writes: analyses, failures, the file ratings they carry, and tier-1 pairs.
+pub struct AnalysisWriter<'tx> {
+    delete_pairs: Statement<'tx>,
+    analysis: Statement<'tx>,
+    failure: Statement<'tx>,
+    borders_due: Statement<'tx>,
+    delete_sides: Statement<'tx>,
+    known_rating: Statement<'tx>,
+    queued_rating: Statement<'tx>,
+    set_rating: Statement<'tx>,
+    delete_rating: Statement<'tx>,
+    set_file_rating: Statement<'tx>,
+    delete_file_rating: Statement<'tx>,
+    pair: Statement<'tx>,
+}
+
+impl<'tx> AnalysisWriter<'tx> {
+    pub fn new(tx: &'tx Transaction) -> Result<AnalysisWriter<'tx>> {
+        Ok(AnalysisWriter {
+            delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
+            analysis: tx.prepare(
+                "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
+                    file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
+                    taken, duration_ms, poster_ms, borders_due)
+                 VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
+                         CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18, 0)",
+            )?,
+            failure: tx.prepare(
+                "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
+                    borders_due)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, unixepoch(), ?7, 0)",
+            )?,
+            borders_due: tx.prepare(concat!(
+                "UPDATE analysis SET borders_due = coalesce(",
+                has_borders!(),
+                ", 0) WHERE file_id = ?1"
+            ))?,
+            delete_sides: tx.prepare(DELETE_SIDES)?,
+            known_rating: tx.prepare("SELECT value FROM file_ratings WHERE file_id = ?1")?,
+            queued_rating: tx
+                .prepare("SELECT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND kind = 'rating')")?,
+            set_rating: tx.prepare(
+                "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
+                 ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated",
+            )?,
+            delete_rating: tx.prepare("DELETE FROM ratings WHERE file_id = ?1")?,
+            set_file_rating: tx.prepare(SET_FILE_RATING)?,
+            delete_file_rating: tx.prepare(DELETE_FILE_RATING)?,
+            pair: tx.prepare(
+                "INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(a, b) DO UPDATE SET distance = excluded.distance, variant = excluded.variant
+                 WHERE excluded.distance < pdq_pairs.distance",
+            )?,
+        })
+    }
+
+    pub fn store_analysis(&mut self, item: &WorkItem, a: &Analysis) -> Result<()> {
+        // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
+        self.delete_pairs.execute([item.id])?;
+        self.analysis.execute(params![
+            item.id,
+            IMPORT_VERSION,
+            item.size,
+            item.mtime,
+            &a.file_hash[..],
+            a.pixels.as_ref().map(|p| &p.pixel_hash[..]),
+            a.format,
+            a.orientation,
+            a.width,
+            a.height,
+            a.pixels.as_ref().map(|p| &p.pdq.hash.0[..]),
+            a.pixels.as_ref().map(|p| p.pdq.quality),
+            &a.thumbhash,
+            a.frames,
+            a.taken,
+            a.taken_utc,
+            a.duration_ms,
+            a.poster_ms,
+            item.rotation,
+            item.kind.key(),
+        ])?;
+        // The borders of what was there before are gone; the borders pass finds the new ones.
+        self.borders_due.execute([item.id])?;
+        self.delete_sides.execute([item.id])?;
+        self.sync_file_rating(item.id, a.file_rating)
+    }
+
+    pub fn store_failure(&mut self, item: &WorkItem, error: &str) -> Result<()> {
+        self.delete_pairs.execute([item.id])?;
+        self.failure.execute(params![
+            item.id,
+            IMPORT_VERSION,
+            item.size,
+            item.mtime,
+            item.rotation,
+            item.kind.key(),
+            error
+        ])?;
+        self.delete_sides.execute([item.id])?;
+        Ok(())
+    }
+
+    pub fn store_pdq_pair(&mut self, a: i64, b: i64, distance: u32, variant: usize) -> Result<()> {
+        let (a, b) = if a < b { (a, b) } else { (b, a) };
+        self.pair.execute(params![a, b, distance, variant])?;
+        Ok(())
+    }
+
+    /// Three-way rating sync. `file_ratings` holds what the file was last known to hold; a file rating that
+    /// differs from it was set by another program after that, so it becomes the catalog rating. Otherwise the
+    /// catalog's stands (it may be newer and not written back yet, or the file can't hold one). A write of our own
+    /// still queued is newer than anything in the file: nothing is adopted then.
+    fn sync_file_rating(&mut self, file_id: i64, in_file: Option<u8>) -> Result<()> {
+        let known: Option<u8> = self.known_rating.query_row([file_id], |r| r.get(0)).optional()?;
+        let queued: bool = self.queued_rating.query_row([file_id], |r| r.get(0))?;
+        if in_file == known || queued {
+            return Ok(());
+        }
+        match in_file {
+            Some(n @ 1..=5) => self.set_rating.execute(params![file_id, n])?,
+            _ => self.delete_rating.execute([file_id])?,
+        };
+        match in_file {
+            Some(v) => self.set_file_rating.execute(params![file_id, v.min(5)])?,
+            None => self.delete_file_rating.execute([file_id])?,
+        };
+        Ok(())
+    }
+}
+
+/// The borders pass's writes.
+pub struct BordersWriter<'tx> {
+    current: Statement<'tx>,
+    cut: Statement<'tx>,
+    delete_sides: Statement<'tx>,
+    side: Statement<'tx>,
+}
+
+impl<'tx> BordersWriter<'tx> {
+    pub fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
+        Ok(BordersWriter {
+            current: tx
+                .prepare("SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3)")?,
+            cut: tx.prepare(
+                "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
+                 WHERE file_id = ?1",
+            )?,
+            delete_sides: tx.prepare(DELETE_SIDES)?,
+            side: tx.prepare(
+                "INSERT INTO border_sides(file_id, pass, edge, kind, class, depth, color, straight, dev, drift,
+                    rejected)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+            )?,
+        })
+    }
+
+    /// Record borders looked for ([`Catalog::pending_borders`]; `None`: not looked for), replacing what was there,
+    /// unless the file changed meanwhile (the import then analyzes it again, and the borders are due again).
+    pub fn store_borders(&mut self, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
+        let current: bool = self.current.query_row(params![item.id, item.size, item.mtime], |r| r.get(0))?;
+        if !current {
+            return Ok(());
+        }
+        let cut = borders.map(Detection::cut);
+        self.cut.execute(params![
+            item.id,
+            cut.map(|c| c[0]),
+            cut.map(|c| c[1]),
+            cut.map(|c| c[2]),
+            cut.map(|c| c[3])
+        ])?;
+        self.delete_sides.execute([item.id])?;
+        for s in borders.map_or(&[][..], |b| &b.sides) {
+            let color = s.color.map(|[r, g, b]| ((r as i64) << 16) | ((g as i64) << 8) | b as i64);
+            self.side.execute(params![
+                item.id,
+                s.pass,
+                s.edge.key(),
+                s.kind.key(),
+                s.class().key(),
+                s.depth,
+                color,
+                s.straight,
+                s.dev,
+                s.drift,
+                s.rejected.map(|r| r.key()),
+            ])?;
+        }
+        Ok(())
     }
 }
 
@@ -1258,19 +1421,19 @@ mod tests {
     #[test]
     fn migrations_apply_once_in_order() {
         let conn = Connection::open_in_memory().unwrap();
-        migrate(&conn, &baseline(), &[]).unwrap();
+        migrate(&conn, BASELINE, &[]).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION);
         // A later build adds two migrations: both run, in order, once.
         let later = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);"];
-        migrate(&conn, &baseline(), &later).unwrap();
-        migrate(&conn, &baseline(), &later).unwrap();
+        migrate(&conn, BASELINE, &later).unwrap();
+        migrate(&conn, BASELINE, &later).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
         assert_eq!(conn.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
         // An older build refuses the newer catalog.
-        assert!(migrate(&conn, &baseline(), &later[..1]).is_err());
+        assert!(migrate(&conn, BASELINE, &later[..1]).is_err());
         // A failed migration leaves the catalog at the last good version.
         let broken = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);", "NOT SQL"];
-        assert!(migrate(&conn, &baseline(), &broken).is_err());
+        assert!(migrate(&conn, BASELINE, &broken).is_err());
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
     }
 
@@ -1295,17 +1458,18 @@ mod tests {
     /// The scanner finding file 7 on volume 1 in D:\x like this.
     fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) {
         let tx = c.conn.transaction().unwrap();
-        let folder = Catalog::folder(&tx, r"D:\x").unwrap();
+        let mut writer = ScanWriter::new(&tx, scan).unwrap();
+        let folder = writer.folder(r"D:\x").unwrap();
         let kind = media::kind_of(name).unwrap();
-        Catalog::upsert_file(&tx, scan, &folder, &ScannedFile { volume: 1, file_ref: 7, name, kind, size, mtime })
-            .unwrap();
+        writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref: 7, name, kind, size, mtime }).unwrap();
+        drop(writer);
         tx.commit().unwrap();
     }
 
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
     fn analyzed(c: &mut Catalog, item: &WorkItem) {
         let tx = c.conn.transaction().unwrap();
-        Catalog::store_failure(&tx, item, "a stand-in for an analysis").unwrap();
+        AnalysisWriter::new(&tx).unwrap().store_failure(item, "a stand-in for an analysis").unwrap();
         tx.commit().unwrap();
     }
 
@@ -1370,7 +1534,7 @@ mod tests {
             poster_ms: None,
         };
         let tx = c.conn.transaction().unwrap();
-        Catalog::store_analysis(&tx, &item, &analysis).unwrap();
+        AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         let cut = |c: &Catalog| -> [Option<i64>; 4] {
             c.conn
@@ -1384,7 +1548,7 @@ mod tests {
         let due = c.pending_borders().unwrap();
         assert_eq!(due.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
         let tx = c.conn.transaction().unwrap();
-        Catalog::store_borders(&tx, &due[0], Some(&found)).unwrap();
+        BordersWriter::new(&tx).unwrap().store_borders(&due[0], Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0), Some(41), Some(0), Some(41)]);
         assert_eq!(browse::border_sides(&c.conn, item.id).unwrap(), found.sides);
@@ -1419,7 +1583,7 @@ mod tests {
         let due = c.pending_borders().unwrap();
         assert_eq!(due.len(), 1);
         let tx = c.conn.transaction().unwrap();
-        Catalog::store_borders(&tx, &due[0], Some(&Detection::none(400, 300))).unwrap();
+        BordersWriter::new(&tx).unwrap().store_borders(&due[0], Some(&Detection::none(400, 300))).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0); 4]);
         assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
@@ -1430,8 +1594,8 @@ mod tests {
 
         // Analyzed again (the file changed): the old borders go, the new ones are due.
         let tx = c.conn.transaction().unwrap();
-        Catalog::store_borders(&tx, &due[0], Some(&found)).unwrap();
-        Catalog::store_analysis(&tx, &item, &analysis).unwrap();
+        BordersWriter::new(&tx).unwrap().store_borders(&due[0], Some(&found)).unwrap();
+        AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [None; 4]);
         assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
@@ -1452,10 +1616,12 @@ mod tests {
         let files = files.into_iter().chain([("e.jpg", 1, Some([0, 90, 0, 0]))]);
         for (n, (name, orientation, cut)) in files.enumerate() {
             let tx = c.conn.transaction().unwrap();
-            let folder = Catalog::folder(&tx, r"D:\x").unwrap();
+            let mut writer = ScanWriter::new(&tx, scan).unwrap();
+            let folder = writer.folder(r"D:\x").unwrap();
             let kind = media::kind_of(name).unwrap();
             let file = ScannedFile { volume: 1, file_ref: 10 + n as u64, name, kind, size: 10, mtime: 100 };
-            Catalog::upsert_file(&tx, scan, &folder, &file).unwrap();
+            writer.upsert_file(&folder, &file).unwrap();
+            drop(writer);
             tx.commit().unwrap();
             let item = c.pending_import(false).unwrap().remove(0);
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
@@ -1478,8 +1644,8 @@ mod tests {
                 poster_ms: None,
             };
             let tx = c.conn.transaction().unwrap();
-            Catalog::store_analysis(&tx, &item, &analysis).unwrap();
-            Catalog::store_borders(&tx, &item, Some(&borders)).unwrap();
+            AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
+            BordersWriter::new(&tx).unwrap().store_borders(&item, Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {
                 Catalog::set_border_mark(&c.conn, item.id, true).unwrap();
@@ -1613,7 +1779,7 @@ mod tests {
         let (c, id) = one_file();
         let sync = |in_file| {
             let tx = c.conn.unchecked_transaction().unwrap();
-            Catalog::sync_file_rating(&tx, id, in_file).unwrap();
+            AnalysisWriter::new(&tx).unwrap().sync_file_rating(id, in_file).unwrap();
             tx.commit().unwrap();
         };
         // First import of a file rated elsewhere (ImageRater, Explorer): adopted.

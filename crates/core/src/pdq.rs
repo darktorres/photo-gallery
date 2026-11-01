@@ -15,9 +15,16 @@ pub const HASH_BYTES: usize = 32;
 pub const MATCH_DISTANCE: u32 = 31;
 /// Below this quality the hash is unreliable (flat or near-flat images); Meta's recommendation.
 pub const MIN_QUALITY: u8 = 50;
+/// [`GROUP_DISTANCE`] as a literal, for SQL made at compile time.
+macro_rules! group_distance {
+    () => {
+        22
+    };
+}
+pub(crate) use group_distance;
 /// Distance up to which a tier-1 pair counts as the same picture when grouping and filtering (FINDINGS "Shortcut and
 /// grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked).
-pub const GROUP_DISTANCE: u32 = 22;
+pub const GROUP_DISTANCE: u32 = group_distance!();
 
 const BUFFER: usize = 64;
 const DCT_OUT: usize = 16;

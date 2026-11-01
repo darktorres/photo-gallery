@@ -10,7 +10,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, ensure};
 use pg_core::analyze::{Analyzer, FileBorders};
 use pg_core::borders::{self as detector, Detector, Side};
-use pg_core::catalog::Catalog;
+use pg_core::catalog::{BordersWriter, Catalog};
 use pg_core::decode::Rgb;
 use pg_core::media::{self, Kind};
 
@@ -35,6 +35,7 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
     let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
         let tx = catalog.conn.transaction()?;
+        let mut writer = BordersWriter::new(&tx)?;
         for (i, result) in batch.drain(..) {
             // A file that no longer decodes keeps no borders; if it changed, the import records the failure.
             let found = match result {
@@ -44,9 +45,10 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
                     None
                 }
             };
-            Catalog::store_borders(&tx, &items[i], found.as_ref())?;
+            writer.store_borders(&items[i], found.as_ref())?;
             stats.files += 1;
         }
+        drop(writer);
         tx.commit()?;
         Ok(())
     };

@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use pg_core::analyze::{Analysis, Analyzer};
-use pg_core::catalog::Catalog;
+use pg_core::catalog::{AnalysisWriter, Catalog};
 use pg_core::media::Kind;
 use pg_core::paths::verbatim;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
@@ -41,11 +41,12 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.conn.transaction()?;
+        let mut writer = AnalysisWriter::new(&tx)?;
         for (i, result) in batch.drain(..) {
             let item = &items[i];
             match result {
                 Ok(a) => {
-                    Catalog::store_analysis(&tx, item, &a)?;
+                    writer.store_analysis(item, &a)?;
                     if let Some(px) = a.pixels.as_ref().filter(|px| px.pdq.quality >= MIN_QUALITY) {
                         // Best distance per neighbour over the 8 orientations of the new image.
                         best.clear();
@@ -61,7 +62,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                         }
                         for &(other, d, v) in &best {
                             if other != item.id {
-                                Catalog::store_pdq_pair(&tx, item.id, other, d, v)?;
+                                writer.store_pdq_pair(item.id, other, d, v)?;
                                 stats.pairs += 1;
                             }
                         }
@@ -69,12 +70,13 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                     }
                 }
                 Err(e) => {
-                    Catalog::store_failure(&tx, item, &format!("{e:#}"))?;
+                    writer.store_failure(item, &format!("{e:#}"))?;
                     stats.failed += 1;
                 }
             }
             stats.files += 1;
         }
+        drop(writer);
         tx.commit()?;
         Ok(())
     };

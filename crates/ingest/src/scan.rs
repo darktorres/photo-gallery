@@ -13,7 +13,7 @@ use std::ffi::OsStr;
 use std::os::windows::ffi::OsStrExt;
 
 use anyhow::{Context, Result, bail};
-use pg_core::catalog::{Catalog, ScannedFile};
+use pg_core::catalog::{Catalog, ScanWriter, ScannedFile};
 use pg_core::media;
 use pg_core::paths::verbatim;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
@@ -165,11 +165,13 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     let mut stats = ScanStats { folders: 0, files: 0, missing: 0, errors: 0, complete: false };
     let mut stack = vec![root.to_string()];
     let mut tx = catalog.conn.transaction()?;
+    let mut writer = ScanWriter::new(&tx, scan_id)?;
     let mut in_tx = 0;
     ctl.begin("scan", root.to_string(), 0);
 
     while let Some(dir) = stack.pop() {
         if !ctl.checkpoint() {
+            drop(writer);
             tx.commit()?;
             ctl.finish();
             return Ok(stats);
@@ -198,12 +200,10 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
                 continue;
             };
             if folder.is_none() {
-                folder = Some(Catalog::folder(&tx, &dir)?);
+                folder = Some(writer.folder(&dir)?);
             }
             let Some(folder) = &folder else { unreachable!("set above") };
-            Catalog::upsert_file(
-                &tx,
-                scan_id,
+            writer.upsert_file(
                 folder,
                 &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, kind, size: e.size, mtime: e.mtime },
             )?;
@@ -211,12 +211,15 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             in_tx += 1;
         }
         if in_tx >= BATCH {
+            drop(writer);
             tx.commit()?;
             tx = catalog.conn.transaction()?;
+            writer = ScanWriter::new(&tx, scan_id)?;
             in_tx = 0;
         }
         ctl.set_done(stats.files);
     }
+    drop(writer);
     tx.commit()?;
     stats.missing = catalog.mark_missing(root, scan_id)?;
     catalog.finish_scan(scan_id)?;

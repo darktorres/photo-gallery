@@ -188,8 +188,13 @@ pub struct Snapshot {
 
 /// The cache's layout version (`PRAGMA user_version`). Before the first release, layout changes edit `SCHEMA` in
 /// place and it stays 1: an existing cache file is deleted by hand, like the catalog. A file of another version is
-/// refused (the cache is then disabled), never migrated.
-pub const CACHE_VERSION: i64 = 1;
+/// refused (the cache is then disabled), never migrated. A macro, so `SCHEMA` sets it as a constant.
+macro_rules! cache_version {
+    () => {
+        1
+    };
+}
+pub const CACHE_VERSION: i64 = cache_version!();
 
 /// The cap of a new cache, until one is set (`ThumbCache::open`).
 pub const DEFAULT_CAP_BYTES: i64 = 50_000_000_000;
@@ -214,10 +219,16 @@ const EVICT_SLICE: i64 = if cfg!(test) { 1000 } else { 256 << 20 };
 /// Shrinking (after a pass, at idle) starts when this many pages are free, and frees this many per step, for at
 /// most this many steps; freed pages are otherwise reused by later writes.
 const SHRINK_ABOVE_PAGES: i64 = if cfg!(test) { 16 } else { 16_384 };
-const SHRINK_STEP_PAGES: i64 = 4_096;
+macro_rules! shrink_step_pages {
+    () => {
+        4096
+    };
+}
 const SHRINK_STEPS: usize = 16;
 
-const SCHEMA: &str = "
+/// A new cache file's tables, at [`CACHE_VERSION`].
+const SCHEMA: &str = concat!(
+    "
 CREATE TABLE entries(
     id        INTEGER PRIMARY KEY,
     file_id   INTEGER NOT NULL,  -- catalog files.id
@@ -263,7 +274,10 @@ CREATE TRIGGER entries_removed AFTER DELETE ON entries BEGIN
 END;
 CREATE TRIGGER entries_resized AFTER UPDATE OF bytes ON entries BEGIN
     UPDATE totals SET bytes = bytes - old.bytes + new.bytes;
-END;";
+END; PRAGMA user_version = ",
+    cache_version!(),
+    ";"
+);
 
 /// Settings for every connection to a cache file. Recursive triggers make a REPLACE fire the delete trigger
 /// (this code never replaces entries; anything else writing the file might).
@@ -578,7 +592,7 @@ fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Co
         // Another process may be creating it too: decide inside the write lock.
         let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
         if version(&tx)? == 0 {
-            tx.execute_batch(&format!("{SCHEMA} PRAGMA user_version = {CACHE_VERSION};"))?;
+            tx.execute_batch(SCHEMA)?;
             tx.execute("INSERT INTO limits VALUES (1, ?1)", [cap_bytes.unwrap_or(DEFAULT_CAP_BYTES)])?;
             tx.execute("INSERT INTO meta VALUES ('catalog_id', ?1)", [catalog_id])?;
         }
@@ -613,7 +627,7 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
         None => vec![height as i64],
     };
     let work = {
-        let mut stmt = tx.prepare(&pending_sql(since.is_some()))?;
+        let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let rows = stmt.query_map(rusqlite::params_from_iter(values), |r| {
             Ok(ThumbWork {
                 id: r.get(0)?,
@@ -631,17 +645,23 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
 
 /// `pending_in`'s query, with the catalog attached as `cat`: ?1 the height, and with `since_checked` ?2 the
 /// change number checked up to.
-fn pending_sql(since_checked: bool) -> String {
-    let changed = if since_checked { "f.seq > ?2 AND" } else { "" };
-    format!(
-        "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime, f.rotation,
-                CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END, f.seq
-         FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
-         LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
-         WHERE {changed} f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
-           AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
-         ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
-    )
+fn pending_sql(since_checked: bool) -> &'static str {
+    macro_rules! pending {
+        ($changed:literal) => {
+            concat!(
+                "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
+                        f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END, f.seq
+                 FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
+                 LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
+                 WHERE ",
+                $changed,
+                "f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
+                   AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
+                 ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
+            )
+        };
+    }
+    if since_checked { pending!("f.seq > ?2 AND ") } else { pending!("") }
 }
 
 thread_local! {
@@ -916,7 +936,7 @@ fn shrink(conn: &Connection) -> Result<()> {
             break;
         }
         // It frees one page per step (a row each), so it is stepped to the end: `execute_batch` would free one.
-        let mut step = conn.prepare(&format!("PRAGMA incremental_vacuum({SHRINK_STEP_PAGES})"))?;
+        let mut step = conn.prepare(concat!("PRAGMA incremental_vacuum(", shrink_step_pages!(), ")"))?;
         let mut rows = step.query([])?;
         while rows.next()?.is_some() {}
     }

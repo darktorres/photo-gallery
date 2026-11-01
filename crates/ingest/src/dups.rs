@@ -30,18 +30,54 @@ impl UnionFind {
     }
 }
 
+/// The present files' current analyses.
+macro_rules! current {
+    () => {
+        "FROM analysis a JOIN files f ON f.id = a.file_id WHERE a.error IS NULL AND f.missing = 0"
+    };
+}
+
+/// The groups of a hash column (`file_hash`, tier 0a; `pixel_hash`, 0b): (how many, how many files in them).
+macro_rules! groups {
+    ($column:literal) => {
+        concat!(
+            "SELECT count(*), coalesce(sum(n), 0) FROM
+             (SELECT count(*) AS n ",
+            current!(),
+            " GROUP BY a.",
+            $column,
+            " HAVING n > 1)"
+        )
+    };
+}
+
+/// The files of those groups, as (hash, file id), by hash.
+macro_rules! grouped {
+    ($column:literal) => {
+        concat!(
+            "SELECT a.",
+            $column,
+            ", a.file_id ",
+            current!(),
+            " AND a.",
+            $column,
+            " IN
+             (SELECT a.",
+            $column,
+            " ",
+            current!(),
+            " GROUP BY a.",
+            $column,
+            " HAVING count(*) > 1) ORDER BY a.",
+            $column
+        )
+    };
+}
+
 pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()> {
     let conn = &catalog.conn;
-    let current = "FROM analysis a JOIN files f ON f.id = a.file_id WHERE a.error IS NULL AND f.missing = 0";
-    for (tier, column) in [("0a identical files", "file_hash"), ("0b identical pixels", "pixel_hash")] {
-        let (groups, files): (i64, i64) = conn.query_row(
-            &format!(
-                "SELECT count(*), coalesce(sum(n), 0) FROM
-                 (SELECT count(*) AS n {current} GROUP BY a.{column} HAVING n > 1)"
-            ),
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
+    for (tier, sql) in [("0a identical files", groups!("file_hash")), ("0b identical pixels", groups!("pixel_hash"))] {
+        let (groups, files): (i64, i64) = conn.query_row(sql, [], |r| Ok((r.get(0)?, r.get(1)?)))?;
         println!("tier {tier}: {groups} groups, {files} files");
     }
     println!("tier 1 PDQ pairs by distance:");
@@ -55,21 +91,22 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
 
     // Groups: tiers 0a and 0b, plus PDQ pairs up to `group_distance`.
     let mut uf = UnionFind(BTreeMap::new());
-    for column in ["file_hash", "pixel_hash"] {
-        let mut stmt = conn.prepare(&format!(
-            "SELECT a.{column}, a.file_id {current} AND a.{column} IN
-             (SELECT a.{column} {current} GROUP BY a.{column} HAVING count(*) > 1) ORDER BY a.{column}"
-        ))?;
+    // The previous row's hash and file: each file is joined to the one before it with the same hash.
+    let mut prev = Vec::new();
+    for sql in [grouped!("file_hash"), grouped!("pixel_hash")] {
+        let mut stmt = conn.prepare(sql)?;
         let mut rows = stmt.query([])?;
-        let mut prev: Option<(Vec<u8>, i64)> = None;
+        let mut prev_id = None;
         while let Some(r) = rows.next()? {
-            let (h, id): (Vec<u8>, i64) = (r.get(0)?, r.get(1)?);
-            if let Some((ph, pid)) = &prev
-                && *ph == h
+            let (h, id) = (r.get_ref(0)?.as_blob()?, r.get(1)?);
+            if let Some(p) = prev_id
+                && prev == h
             {
-                uf.union(*pid, id);
+                uf.union(p, id);
             }
-            prev = Some((h, id));
+            prev.clear();
+            prev.extend_from_slice(h);
+            prev_id = Some(id);
         }
     }
     let mut stmt = conn.prepare("SELECT a, b FROM present_pdq_pairs WHERE distance <= ?1")?;

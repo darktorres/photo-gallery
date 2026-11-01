@@ -150,6 +150,11 @@ bundles them, and triggers, partial indexes, keyset paging and two writers all w
 (`nmake /F Makefile.win`); VectorChord builds with MSVC per its maintainer but ships no Windows package. The cost: a
 server process to start, find and stop from both the app and `gallery`, a port of `query.rs`'s SQL, and slower writes
 (PL/pgSQL row triggers took the 1M insert from 16 s to 110 s). Immich runs Postgres + VectorChord, but as a server app.
+"Embedded" means the crate unpacks the binaries and runs `postgres.exe` as a child process, not a library in ours.
+Measured with 18.6.1 here: about 60 MB to ship for the server (126 MB unpacked, 36 MB of it ICU) against SQLite's ~1.5 MB
+linked into the exe; `initdb` 2.6 s and a 40 MB empty cluster; start 0.3 s, stop 0.17 s; 9 processes using 28 MB
+private memory when idle (with `shared_buffers` 128 MB on top); a single-row lookup over localhost takes 72 µs prepared
+and 115 µs unprepared (pgbench `-S`), against 11 µs in-process for SQLite, so queries issued one per row cost 6–10×.
 Worth it only if the catalog needed many concurrent writers or server-side vectors; it doesn't.
 
 ### SurrealDB

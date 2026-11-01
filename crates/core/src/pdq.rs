@@ -119,9 +119,7 @@ fn dct16(rgb: &[u8], width: usize, height: usize) -> ([f32; DCT_OUT * DCT_OUT], 
         for r in 0..height {
             box_1d(&luma, r * width, &mut temp, width, 1, window_cols);
         }
-        for c in 0..width {
-            box_1d(&temp, c, &mut luma, height, width, window_rows);
-        }
+        box_columns(&temp, &mut luma, width, height, window_rows);
     }
 
     // Sample at the centers of a 64×64 grid.
@@ -170,6 +168,49 @@ fn box_1d(input: &[f32], start: usize, output: &mut [f32], len: usize, stride: u
         sum -= input[oi - lag_off];
         count -= 1.0;
         output[oi] = sum / count;
+    }
+}
+
+/// `box_1d` down every column of a `width` × `height` image at once: a running sum per column, a row at a time,
+/// so memory is read in order and the columns vectorize (one column at a time strides by the row length). Each
+/// column gets `box_1d`'s operations in the same order, so the results are the same bits.
+fn box_columns(input: &[f32], output: &mut [f32], width: usize, height: usize, window: usize) {
+    let half = (window + 2) / 2;
+    let phase1 = half - 1;
+    let phase2 = window - half + 1;
+    let row = |r: usize| &input[r * width..(r + 1) * width];
+    let mut sum = vec![0.0f32; width];
+    let mut count = 0.0f32;
+    for r in 0..phase1 {
+        for (s, &x) in sum.iter_mut().zip(row(r)) {
+            *s += x;
+        }
+        count += 1.0;
+    }
+    for r in phase1..window {
+        count += 1.0;
+        let out = &mut output[(r - phase1) * width..][..width];
+        for ((s, &x), o) in sum.iter_mut().zip(row(r)).zip(out) {
+            *s += x;
+            *o = *s / count;
+        }
+    }
+    for r in window..height {
+        let oi = r - phase1;
+        let out = &mut output[oi * width..][..width];
+        for (((s, &x), &lag), o) in sum.iter_mut().zip(row(r)).zip(row(oi - phase2)).zip(out) {
+            *s += x;
+            *s -= lag;
+            *o = *s / count;
+        }
+    }
+    for oi in height - half + 1..height {
+        count -= 1.0;
+        let out = &mut output[oi * width..][..width];
+        for ((s, &lag), o) in sum.iter_mut().zip(row(oi - phase2)).zip(out) {
+            *s -= lag;
+            *o = *s / count;
+        }
     }
 }
 
@@ -247,6 +288,57 @@ mod tests {
     fn reference(rgb: &[u8], w: usize, h: usize) -> ([u8; 32], f32) {
         let img = pdqhash::image::RgbImage::from_raw(w as u32, h as u32, rgb.to_vec()).unwrap();
         pdqhash::generate_pdq_full_size(&pdqhash::image::DynamicImage::ImageRgb8(img))
+    }
+
+    /// `dct16` as it was before the column pass went across every column at once: `box_1d` one column at a time.
+    fn dct16_one_column_at_a_time(rgb: &[u8], width: usize, height: usize) -> ([f32; DCT_OUT * DCT_OUT], u8) {
+        let mut luma: Vec<f32> = rgb
+            .as_chunks::<3>()
+            .0
+            .iter()
+            .map(|p| p[0] as f32 * 0.299 + p[1] as f32 * 0.587 + p[2] as f32 * 0.114)
+            .collect();
+        let window_cols = width.div_ceil(2 * BUFFER);
+        let window_rows = height.div_ceil(2 * BUFFER);
+        let mut temp = vec![0.0f32; luma.len()];
+        for _ in 0..2 {
+            for r in 0..height {
+                box_1d(&luma, r * width, &mut temp, width, 1, window_cols);
+            }
+            for c in 0..width {
+                box_1d(&temp, c, &mut luma, height, width, window_rows);
+            }
+        }
+        let mut buf = [[0.0f32; BUFFER]; BUFFER];
+        for (i, row) in buf.iter_mut().enumerate() {
+            let y = ((i * 2 + 1) * height) / (BUFFER * 2);
+            for (j, v) in row.iter_mut().enumerate() {
+                *v = luma[y * width + ((j * 2 + 1) * width) / (BUFFER * 2)];
+            }
+        }
+        (dct_64_to_16(&buf), quality(&buf))
+    }
+
+    /// The same bits as before, every coefficient and the quality, on noise (every pixel different) at the sizes
+    /// where the windows' phases meet the edges, and at random sizes.
+    #[test]
+    fn columns_at_once_change_no_bit() {
+        let mut x: u64 = 0x2545_F491_4F6C_DD1D;
+        let mut next = move || {
+            x ^= x << 13;
+            x ^= x >> 7;
+            x ^= x << 17;
+            x
+        };
+        let mut sizes = vec![(1, 1), (1, 300), (300, 1), (127, 128), (128, 129), (129, 127), (512, 407), (97, 211)];
+        sizes.extend((0..40).map(|_| (1 + (next() % 900) as usize, 1 + (next() % 900) as usize)));
+        for (w, h) in sizes {
+            let rgb: Vec<u8> = (0..w * h * 3).map(|_| next() as u8).collect();
+            let (ours, q) = dct16(&rgb, w, h);
+            let (before, q_before) = dct16_one_column_at_a_time(&rgb, w, h);
+            assert_eq!(ours.map(f32::to_bits), before.map(f32::to_bits), "{w}x{h}");
+            assert_eq!(q, q_before, "{w}x{h}");
+        }
     }
 
     #[test]

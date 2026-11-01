@@ -2,8 +2,6 @@
 //! node ("merged drives"), the files of a node filtered and sorted, ratings and turns (queued for the files),
 //! saved views and where the user was.
 
-use std::collections::BTreeMap;
-
 use anyhow::Result;
 use rusqlite::types::{Type, Value};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
@@ -34,6 +32,13 @@ fn components(merged: &str) -> impl Iterator<Item = &str> {
 /// 0x02 0x02 and 0x02 0x03, which keeps the order. Compared as bytes, these keys order folders component by
 /// component, as the tree does: `p`, `p\sub`, `p-x`; the same folder on every drive is one key.
 pub fn folder_key(merged: &str) -> Vec<u8> {
+    let mut key = Vec::with_capacity(merged.len() + 4);
+    push_folder_key(&mut key, merged);
+    key
+}
+
+/// [`folder_key`] appended to `key`.
+pub fn push_folder_key(key: &mut Vec<u8>, merged: &str) {
     fn escaped(key: &mut Vec<u8>, bytes: &[u8]) {
         for &b in bytes {
             match b {
@@ -43,21 +48,19 @@ pub fn folder_key(merged: &str) -> Vec<u8> {
             }
         }
     }
-    let mut key = Vec::with_capacity(merged.len() + 4);
     let mut buf = [0; 4];
     for part in components(merged) {
         // Character by character, which is `str::to_lowercase` for every character but Σ: its lower case depends
         // on where it stands (a final one is ς), so a component with one is lowercased whole.
         if part.contains('Σ') {
-            escaped(&mut key, part.to_lowercase().as_bytes());
+            escaped(key, part.to_lowercase().as_bytes());
         } else {
             for c in part.chars().flat_map(char::to_lowercase) {
-                escaped(&mut key, c.encode_utf8(&mut buf).as_bytes());
+                escaped(key, c.encode_utf8(&mut buf).as_bytes());
             }
         }
         key.push(0x01);
     }
-    key
 }
 
 /// The order key's part for a file name: 0x00, the name in lower case character by character, 0x00, the name
@@ -120,87 +123,265 @@ fn scope(merged: &str, recursive: bool) -> (String, Vec<Value>) {
     (sql, values)
 }
 
+/// A folder of the merged tree. Its strings are in its [`FolderTree`].
+#[derive(Clone, Debug)]
 pub struct FolderNode {
-    pub name: String,
-    pub merged_path: String,
-    pub depth: usize,
-    pub children: Vec<usize>,
+    /// Its merged path, `tree.paths[path_start..path_end]`, whose last component (its name) starts at `name_start`.
+    path_start: u32,
+    path_end: u32,
+    name_start: u32,
+    /// Its `folder_key`, `tree.keys[key_start..key_end]`.
+    key_start: u32,
+    key_end: u32,
+    /// `u32::MAX` for a top-level folder.
+    parent: u32,
+    /// The node after its last descendant: its subtree is `n..end`.
+    end: u32,
+    /// The folder ids its spelling comes from: the smallest of its subtree (the first that reached it).
+    first: i64,
+    /// One bit per drive letter it is on (A is bit 0).
+    drives: u32,
+    pub depth: u32,
     /// Present files directly in this folder, and in it plus everything below.
     pub direct: i64,
     pub total: i64,
-    /// The drives this folder exists on, e.g. `D: E:`.
-    pub drives: String,
 }
 
+/// The merged tree of every folder holding present files, with their ancestors: nodes in pre-order, a node's
+/// children in `folder_key` order (the grid's), so the nodes are also in key order. Merged paths and keys are ranges
+/// of two strings, which makes the whole tree a handful of allocations.
+#[derive(Clone, Debug, Default)]
 pub struct FolderTree {
-    pub nodes: Vec<FolderNode>,
-    pub roots: Vec<usize>,
+    nodes: Vec<FolderNode>,
+    /// Each folder's merged path, its components joined by `\`, one after the other.
+    paths: String,
+    /// Each folder's `folder_key`, one after the other.
+    keys: Vec<u8>,
 }
+
+/// The present files of each folder, counted from the `files_present` index alone (no sort, no table), and each
+/// folder's path.
+const FOLDER_COUNTS: &str = "SELECT c.folder_id, (SELECT path FROM folders WHERE id = c.folder_id), c.n
+    FROM (SELECT folder_id, count(*) AS n FROM files WHERE missing = 0 GROUP BY folder_id) c";
 
 /// The merged tree of every folder holding present files, with their ancestors.
 pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
-    // Counted from the `files_present` index alone (no sort, no table), joined to the folders here.
-    let counts: Vec<(i64, i64)> = conn
-        .prepare("SELECT folder_id, count(*) FROM files WHERE missing = 0 GROUP BY folder_id")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let paths: BTreeMap<i64, String> = conn
-        .prepare("SELECT id, path FROM folders")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let folders = counts.iter().filter_map(|(id, n)| Some((paths.get(id)?, *n)));
+    let mut stmt = conn.prepare(FOLDER_COUNTS)?;
+    let mut rows = stmt.query([])?;
+    let mut builder = TreeBuilder::default();
+    while let Some(r) = rows.next()? {
+        if let Some(path) = r.get_ref(1)?.as_str_or_null()? {
+            builder.add(r.get(0)?, path, r.get(2)?);
+        }
+    }
+    Ok(builder.build())
+}
 
-    let mut tree = FolderTree { nodes: Vec::new(), roots: Vec::new() };
-    let mut by_key: BTreeMap<String, usize> = BTreeMap::new();
-    for (path, count) in folders {
-        let drive = if merged_path(path).len() < path.len() { &path[..2] } else { "" };
-        let mut parent: Option<usize> = None;
-        let mut merged = String::new();
-        let parts: Vec<&str> = components(merged_path(path)).collect();
-        for (depth, part) in parts.iter().enumerate() {
-            if !merged.is_empty() {
-                merged.push('\\');
+/// The folders a tree is made from: each one's merged path and key written once, into the tree's strings.
+#[derive(Default)]
+struct TreeBuilder {
+    tree: FolderTree,
+    rows: Vec<TreeRow>,
+}
+
+struct TreeRow {
+    id: i64,
+    count: i64,
+    drive: u32,
+    /// Its merged path's range in `paths`, and its key's in `keys`.
+    path: (u32, u32),
+    key: (u32, u32),
+}
+
+impl TreeBuilder {
+    /// A folder (`folders.id`, `folders.path`) holding `count` present files. A drive root (no components) is in no
+    /// node.
+    fn add(&mut self, id: i64, path: &str, count: i64) {
+        let merged = merged_path(path);
+        let drive = match path.as_bytes() {
+            [d, b':', ..] if merged.len() < path.len() => 1 << (d.to_ascii_uppercase() - b'A'),
+            _ => 0,
+        };
+        let FolderTree { paths, keys, .. } = &mut self.tree;
+        let path_start = paths.len() as u32;
+        for (i, part) in components(merged).enumerate() {
+            if i > 0 {
+                paths.push('\\');
             }
-            merged.push_str(part);
-            let key = merged.to_lowercase();
-            let id = *by_key.entry(key).or_insert_with(|| {
-                tree.nodes.push(FolderNode {
-                    name: part.to_string(),
-                    merged_path: merged.clone(),
-                    depth,
-                    children: Vec::new(),
-                    direct: 0,
-                    total: 0,
-                    drives: String::new(),
-                });
-                let id = tree.nodes.len() - 1;
-                match parent {
-                    Some(p) => tree.nodes[p].children.push(id),
-                    None => tree.roots.push(id),
+            paths.push_str(part);
+        }
+        if paths.len() as u32 == path_start {
+            return;
+        }
+        let key_start = keys.len() as u32;
+        push_folder_key(keys, merged);
+        let row =
+            TreeRow { id, count, drive, path: (path_start, paths.len() as u32), key: (key_start, keys.len() as u32) };
+        self.rows.push(row);
+    }
+
+    /// The tree: the rows sorted by key once, then the nodes made in that order with a stack of the open ones. A
+    /// parent's key is a prefix of its descendants', and a component's end (0x01) sorts below every other byte, so
+    /// sorted keys are the tree's pre-order with children in key order: `p`, `p\sub`, `p-x`.
+    fn build(self) -> FolderTree {
+        let TreeBuilder { mut tree, mut rows } = self;
+        let key = |k: (u32, u32)| k.0 as usize..k.1 as usize;
+        rows.sort_unstable_by(|a, b| tree.keys[key(a.key)].cmp(&tree.keys[key(b.key)]));
+        let mut open: Vec<usize> = Vec::new();
+        for row in &rows {
+            let row_key = &tree.keys[key(row.key)];
+            // Close the nodes the row isn't under.
+            while let Some(&top) = open.last() {
+                let n = &tree.nodes[top];
+                if row_key.starts_with(&tree.keys[n.key_start as usize..n.key_end as usize]) {
+                    break;
                 }
-                id
-            });
-            let node = &mut tree.nodes[id];
-            node.total += count;
-            if !drive.is_empty() && !node.drives.split(' ').any(|d| d.eq_ignore_ascii_case(drive)) {
-                if !node.drives.is_empty() {
-                    node.drives.push(' ');
-                }
-                node.drives.push_str(drive);
+                tree.nodes[top].end = tree.nodes.len() as u32;
+                open.pop();
             }
-            parent = Some(id);
+            // The row's components, with where each ends in its path and its key.
+            let path = &tree.paths[row.path.0 as usize..row.path.1 as usize];
+            let mut path_end = row.path.0;
+            let mut key_end = row.key.0;
+            let mut key_rest = row_key;
+            for (depth, part) in path.split('\\').enumerate() {
+                let name_start = path_end + u32::from(depth > 0);
+                path_end = name_start + part.len() as u32;
+                let part_key = key_rest.iter().position(|&b| b == 0x01).map_or(key_rest.len(), |i| i + 1);
+                key_end += part_key as u32;
+                key_rest = &key_rest[part_key..];
+                let n = match open.get(depth) {
+                    Some(&n) => n,
+                    None => {
+                        tree.nodes.push(FolderNode {
+                            path_start: row.path.0,
+                            path_end,
+                            name_start,
+                            key_start: row.key.0,
+                            key_end,
+                            parent: open.last().map_or(u32::MAX, |&p| p as u32),
+                            end: 0,
+                            first: row.id,
+                            drives: 0,
+                            depth: depth as u32,
+                            direct: 0,
+                            total: 0,
+                        });
+                        open.push(tree.nodes.len() - 1);
+                        tree.nodes.len() - 1
+                    }
+                };
+                let node = &mut tree.nodes[n];
+                node.total += row.count;
+                node.drives |= row.drive;
+                // Spelled as the first folder that reached it (the old tree's order: by folder id).
+                if row.id < node.first {
+                    (node.first, node.path_start, node.path_end, node.name_start) =
+                        (row.id, row.path.0, path_end, name_start);
+                    (node.key_start, node.key_end) = (row.key.0, key_end);
+                }
+            }
+            if let Some(&n) = open.last() {
+                tree.nodes[n].direct += row.count;
+            }
         }
-        if let Some(p) = parent {
-            tree.nodes[p].direct += count;
+        for n in open {
+            tree.nodes[n].end = tree.nodes.len() as u32;
         }
+        tree
     }
-    // The grid's order: by `folder_key`, component by component.
-    let names: Vec<Vec<u8>> = tree.nodes.iter().map(|n| folder_key(&n.name)).collect();
-    tree.roots.sort_by(|&a, &b| names[a].cmp(&names[b]));
-    for node in &mut tree.nodes {
-        node.children.sort_by(|&a, &b| names[a].cmp(&names[b]));
+}
+
+impl FolderTree {
+    pub fn len(&self) -> usize {
+        self.nodes.len()
     }
-    Ok(tree)
+
+    pub fn is_empty(&self) -> bool {
+        self.nodes.is_empty()
+    }
+
+    pub fn node(&self, n: usize) -> &FolderNode {
+        &self.nodes[n]
+    }
+
+    /// Its merged path, as one of its drives spells it.
+    pub fn merged_path(&self, n: usize) -> &str {
+        let node = &self.nodes[n];
+        &self.paths[node.path_start as usize..node.path_end as usize]
+    }
+
+    /// Its path's last component.
+    pub fn name(&self, n: usize) -> &str {
+        let node = &self.nodes[n];
+        &self.paths[node.name_start as usize..node.path_end as usize]
+    }
+
+    /// Its `folder_key`.
+    pub fn key(&self, n: usize) -> &[u8] {
+        let node = &self.nodes[n];
+        &self.keys[node.key_start as usize..node.key_end as usize]
+    }
+
+    pub fn parent(&self, n: usize) -> Option<usize> {
+        let p = self.nodes[n].parent;
+        (p != u32::MAX).then_some(p as usize)
+    }
+
+    /// The node after its last descendant.
+    pub fn subtree_end(&self, n: usize) -> usize {
+        self.nodes[n].end as usize
+    }
+
+    pub fn has_children(&self, n: usize) -> bool {
+        self.subtree_end(n) > n + 1
+    }
+
+    /// Its children (`None`: the top-level folders), in order.
+    pub fn children(&self, n: Option<usize>) -> impl Iterator<Item = usize> + '_ {
+        let (mut next, end) = n.map_or((0, self.nodes.len()), |n| (n + 1, self.subtree_end(n)));
+        std::iter::from_fn(move || {
+            let child = (next < end).then_some(next)?;
+            next = self.subtree_end(child);
+            Some(child)
+        })
+    }
+
+    /// The drives it is on, by letter: `D: E:`.
+    pub fn drives(&self, n: usize) -> String {
+        let bits = self.nodes[n].drives;
+        let mut text = String::new();
+        for letter in (0..26).filter(|i| bits & (1 << i) != 0) {
+            if !text.is_empty() {
+                text.push(' ');
+            }
+            text.push(char::from(b'A' + letter as u8));
+            text.push(':');
+        }
+        text
+    }
+
+    /// Whether it is on more than one drive.
+    pub fn merged(&self, n: usize) -> bool {
+        self.nodes[n].drives.count_ones() > 1
+    }
+
+    /// Present files in every folder of the tree.
+    pub fn total(&self) -> i64 {
+        self.children(None).map(|n| self.nodes[n].total).sum()
+    }
+
+    /// The node of a merged path, in any case (`key` holds its key meanwhile).
+    pub fn find(&self, merged: &str, key: &mut Vec<u8>) -> Option<usize> {
+        key.clear();
+        push_folder_key(key, merged);
+        self.find_key(key)
+    }
+
+    /// The node whose `folder_key` is `key`.
+    pub fn find_key(&self, key: &[u8]) -> Option<usize> {
+        self.nodes.binary_search_by(|n| self.keys[n.key_start as usize..n.key_end as usize].cmp(key)).ok()
+    }
 }
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
@@ -811,8 +992,169 @@ mod tests {
         fixture::insert(&c.conn, &[fixture::File::new(9, 4, "z.jpg", 1, 1)]);
         assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
         let tree = folder_tree(&c.conn).unwrap();
-        let roots: Vec<&str> = tree.roots.iter().map(|&n| tree.nodes[n].name.as_str()).collect();
+        let roots: Vec<&str> = tree.children(None).map(|n| tree.name(n)).collect();
         assert_eq!(roots, ["p", "p-x"]);
+    }
+
+    /// A node as compared: merged path, name, depth, direct and total counts, drives (upper case, by letter), and
+    /// how many children, in pre-order.
+    type Flat = (String, String, usize, i64, i64, Vec<String>, usize);
+
+    /// The tree as it was built before (kept as the reference): rows (folder id, path, present files) taken in
+    /// folder id order, nodes found by their lowercased merged path, children sorted by their name's key.
+    fn reference_tree(rows: &[(i64, String, i64)]) -> Vec<Flat> {
+        struct Node {
+            name: String,
+            merged_path: String,
+            depth: usize,
+            children: Vec<usize>,
+            direct: i64,
+            total: i64,
+            drives: String,
+        }
+        let mut rows = rows.to_vec();
+        rows.sort_by_key(|r| r.0);
+        let (mut nodes, mut roots) = (Vec::<Node>::new(), Vec::<usize>::new());
+        let mut by_key: std::collections::BTreeMap<String, usize> = Default::default();
+        for (_, path, count) in &rows {
+            let drive = if merged_path(path).len() < path.len() { &path[..2] } else { "" };
+            let mut parent: Option<usize> = None;
+            let mut merged = String::new();
+            for (depth, part) in components(merged_path(path)).enumerate() {
+                if !merged.is_empty() {
+                    merged.push('\\');
+                }
+                merged.push_str(part);
+                let id = *by_key.entry(merged.to_lowercase()).or_insert_with(|| {
+                    nodes.push(Node {
+                        name: part.to_string(),
+                        merged_path: merged.clone(),
+                        depth,
+                        children: Vec::new(),
+                        direct: 0,
+                        total: 0,
+                        drives: String::new(),
+                    });
+                    let id = nodes.len() - 1;
+                    match parent {
+                        Some(p) => nodes[p].children.push(id),
+                        None => roots.push(id),
+                    }
+                    id
+                });
+                let node = &mut nodes[id];
+                node.total += count;
+                if !drive.is_empty() && !node.drives.split(' ').any(|d| d.eq_ignore_ascii_case(drive)) {
+                    if !node.drives.is_empty() {
+                        node.drives.push(' ');
+                    }
+                    node.drives.push_str(drive);
+                }
+                parent = Some(id);
+            }
+            if let Some(p) = parent {
+                nodes[p].direct += count;
+            }
+        }
+        let names: Vec<Vec<u8>> = nodes.iter().map(|n| folder_key(&n.name)).collect();
+        roots.sort_by(|&a, &b| names[a].cmp(&names[b]));
+        for node in &mut nodes {
+            node.children.sort_by(|&a, &b| names[a].cmp(&names[b]));
+        }
+        fn walk(nodes: &[Node], level: &[usize], out: &mut Vec<Flat>) {
+            for &n in level {
+                let node = &nodes[n];
+                let mut drives: Vec<String> =
+                    node.drives.split(' ').filter(|d| !d.is_empty()).map(str::to_ascii_uppercase).collect();
+                drives.sort();
+                let (name, path) = (node.name.clone(), node.merged_path.clone());
+                out.push((path, name, node.depth, node.direct, node.total, drives, node.children.len()));
+                walk(nodes, &node.children, out);
+            }
+        }
+        let mut out = Vec::new();
+        walk(&nodes, &roots, &mut out);
+        out
+    }
+
+    fn flat(tree: &FolderTree) -> Vec<Flat> {
+        (0..tree.len())
+            .map(|n| {
+                let node = tree.node(n);
+                let drives = tree.drives(n).split(' ').filter(|d| !d.is_empty()).map(String::from).collect();
+                let children = tree.children(Some(n)).count();
+                let (path, name) = (tree.merged_path(n).to_string(), tree.name(n).to_string());
+                (path, name, node.depth as usize, node.direct, node.total, drives, children)
+            })
+            .collect()
+    }
+
+    /// Builds a tree of these rows, and checks it against the reference and its own structure.
+    fn check_tree(rows: &[(i64, String, i64)]) {
+        let mut builder = TreeBuilder::default();
+        for (id, path, count) in rows {
+            builder.add(*id, path, *count);
+        }
+        let tree = builder.build();
+        assert_eq!(flat(&tree), reference_tree(rows));
+        let mut key = Vec::new();
+        for n in 0..tree.len() {
+            assert_eq!(tree.find(tree.merged_path(n), &mut key), Some(n));
+            assert_eq!(
+                tree.find(&tree.merged_path(n).to_ascii_uppercase(), &mut key),
+                Some(n),
+                "{}",
+                tree.merged_path(n)
+            );
+            assert_eq!(tree.key(n), folder_key(tree.merged_path(n)));
+            assert_eq!(tree.merged(n), tree.drives(n).contains(' '));
+            if let Some(p) = tree.parent(n) {
+                assert!(p < n && n < tree.subtree_end(p) && tree.children(Some(p)).any(|c| c == n));
+            }
+        }
+        assert_eq!(tree.find("no such folder", &mut key), None);
+    }
+
+    #[test]
+    fn the_tree_is_built_as_before() {
+        let named = [r"D:\p\Sub", r"E:\P\sub\x", r"E:\p", r"D:\p-x", r"d:\P", r"\\srv\share\a", r"D:\ΑΣ\b", r"E:\ας"];
+        let named = named.into_iter().chain([r"D:\a\b", "D:\\a\\b\u{1}c", "D:", r"D:\İ", r"E:\i\u{307}"]);
+        // A deeper folder first: its spelling of `p` wins over `E:\P`'s.
+        check_tree(&named.enumerate().map(|(i, p)| (i as i64 + 1, p.to_string(), i as i64 + 1)).collect::<Vec<_>>());
+        let mut rng = Rng(0x5851_F42D_4C95_7F2D);
+        for _ in 0..30 {
+            // Distinct paths and ids, as `folders` has them.
+            let (mut paths, mut ids) = (std::collections::BTreeSet::new(), std::collections::BTreeSet::new());
+            let mut rows: Vec<(i64, String, i64)> = Vec::new();
+            for _ in 0..rng.next() % 200 {
+                let (path, id, count) =
+                    (random_file(&mut rng).0, (rng.next() % 1000) as i64, 1 + (rng.next() % 5) as i64);
+                if paths.insert(path.clone()) && ids.insert(id) {
+                    rows.push((id, path, count));
+                }
+            }
+            check_tree(&rows);
+        }
+        check_tree(&[]);
+    }
+
+    /// On a real catalog (read-only): `PG_TEST_CATALOG=… cargo test -p pg-core real_tree -- --ignored`.
+    #[test]
+    #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
+    fn real_tree_is_built_as_before() {
+        let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+        let rows: Vec<(i64, String, i64)> = conn
+            .prepare(FOLDER_COUNTS)
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        check_tree(&rows);
+        let tree = folder_tree(&conn).unwrap();
+        assert_eq!(flat(&tree), reference_tree(&rows));
+        eprintln!("{} folders, {} nodes, {} files", rows.len(), tree.len(), tree.total());
     }
 
     #[test]
@@ -1041,7 +1383,7 @@ mod tests {
         }
         let plan: Vec<String> = c
             .conn
-            .prepare("EXPLAIN QUERY PLAN SELECT folder_id, count(*) FROM files WHERE missing = 0 GROUP BY folder_id")
+            .prepare(&format!("EXPLAIN QUERY PLAN {FOLDER_COUNTS}"))
             .unwrap()
             .query_map([], |r| r.get(3))
             .unwrap()

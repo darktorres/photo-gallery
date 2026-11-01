@@ -111,7 +111,8 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
-use std::collections::BTreeSet;
+use std::cell::RefCell;
+use std::ops::Range;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
@@ -127,26 +128,31 @@ const ROLE_TOTAL: i32 = 260;
 const ROLE_DRIVES: i32 = 261;
 const ROLE_MERGED: i32 = 262;
 
-/// A visible row: `None` is the "All" row.
+/// A visible row: `None` is the "All" row. The rows are in the tree's pre-order, so in node order.
 type Visible = Option<usize>;
 
 pub struct FolderRust {
     ready: bool,
     tree: FolderTree,
+    /// Only "All" until the first tree.
     visible: Vec<Visible>,
-    expanded: BTreeSet<usize>,
+    /// Per node.
+    expanded: Vec<bool>,
     /// The latest tree asked for; older ones arriving are dropped.
     generation: u64,
+    /// A folder key being looked up, kept from one lookup to the next.
+    key: RefCell<Vec<u8>>,
 }
 
 impl Default for FolderRust {
     fn default() -> Self {
         FolderRust {
             ready: false,
-            tree: FolderTree { nodes: Vec::new(), roots: Vec::new() },
+            tree: FolderTree::default(),
             visible: vec![None],
-            expanded: BTreeSet::new(),
+            expanded: Vec::new(),
             generation: 0,
+            key: RefCell::default(),
         }
     }
 }
@@ -155,45 +161,63 @@ impl FolderRust {
     /// Show a new tree. Expanded folders stay expanded (the background job reloads after every scan), as they are
     /// now: the user may have opened some while it was read.
     fn replace(&mut self, tree: FolderTree) {
-        let keep: BTreeSet<String> =
-            self.expanded.iter().map(|&n| self.tree.nodes[n].merged_path.to_lowercase()).collect();
-        self.tree = tree;
-        self.expanded = (0..self.tree.nodes.len())
-            .filter(|&n| keep.contains(&self.tree.nodes[n].merged_path.to_lowercase()))
-            .collect();
+        let mut expanded = vec![false; tree.len()];
+        let mut any = false;
+        for n in (0..self.tree.len()).filter(|&n| self.expanded[n]) {
+            if let Some(m) = tree.find_key(self.tree.key(n)) {
+                expanded[m] = true;
+                any = true;
+            }
+        }
+        (self.tree, self.expanded) = (tree, expanded);
         // Otherwise open single-child chains from the top (D:\PhotoGallery\datasets\pinterest shows its contents
         // at once).
-        if self.expanded.is_empty() {
-            let mut level = self.tree.roots.clone();
-            while level.len() == 1 {
-                self.expanded.insert(level[0]);
-                level = self.tree.nodes[level[0]].children.clone();
+        if !any {
+            let mut parent = None;
+            loop {
+                let mut children = self.tree.children(parent);
+                let (Some(only), None) = (children.next(), children.next()) else { break };
+                self.expanded[only] = true;
+                parent = Some(only);
             }
         }
-        let roots = self.tree.roots.clone();
-        self.visible = std::iter::once(None).chain(self.visible_below(&roots)).collect();
+        self.show_all();
     }
 
-    /// `nodes` and, for the expanded ones, their visible descendants, in display order.
-    fn visible_below(&self, nodes: &[usize]) -> Vec<Visible> {
-        let mut out = Vec::new();
-        for &n in nodes {
+    /// The visible rows from the expansion: "All", then the tree.
+    fn show_all(&mut self) {
+        let mut visible = std::mem::take(&mut self.visible);
+        visible.clear();
+        visible.push(None);
+        self.visible_in(0..self.tree.len(), &mut visible);
+        self.visible = visible;
+    }
+
+    /// The nodes of a range of whole subtrees that show, in order: each one, and below the expanded ones their
+    /// visible descendants.
+    fn visible_in(&self, nodes: Range<usize>, out: &mut Vec<Visible>) {
+        let mut n = nodes.start;
+        while n < nodes.end {
             out.push(Some(n));
-            if self.expanded.contains(&n) {
-                out.extend(self.visible_below(&self.tree.nodes[n].children));
-            }
+            n = if self.expanded[n] { n + 1 } else { self.tree.subtree_end(n) };
         }
-        out
     }
 
     /// The node of a merged path, in any case.
     fn find(&self, merged: &str) -> Option<usize> {
-        let merged = merged.to_lowercase();
-        (0..self.tree.nodes.len()).find(|&n| self.tree.nodes[n].merged_path.to_lowercase() == merged)
+        self.tree.find(merged, &mut self.key.borrow_mut())
     }
 
     fn node(&self, row: i32) -> Option<Visible> {
         usize::try_from(row).ok().and_then(|r| self.visible.get(r)).copied()
+    }
+
+    /// The row a merged path shows on (`""` = "All"), if it shows.
+    fn row_of_path(&self, merged: &str) -> Option<usize> {
+        if merged.is_empty() {
+            return Some(0);
+        }
+        self.visible.binary_search(&Some(self.find(merged)?)).ok()
     }
 }
 
@@ -201,27 +225,25 @@ impl qobject::FolderModel {
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Some(v) = self.node(index.row()) else { return QVariant::default() };
         let Some(n) = v else {
-            let total: i64 = self.tree.roots.iter().map(|&r| self.tree.nodes[r].total).sum();
             return match role {
                 ROLE_NAME => QVariant::from(&QString::from("All folders")),
                 ROLE_DEPTH => QVariant::from(&0i32),
                 ROLE_EXPANDABLE | ROLE_EXPANDED => QVariant::from(&false),
-                ROLE_TOTAL => QVariant::from(&total),
+                ROLE_TOTAL => QVariant::from(&self.tree.total()),
                 ROLE_DRIVES => QVariant::from(&QString::default()),
                 ROLE_MERGED => QVariant::from(&false),
                 _ => QVariant::default(),
             };
         };
-        let node = &self.tree.nodes[n];
+        let node = self.tree.node(n);
         match role {
-            ROLE_NAME => QVariant::from(&QString::from(&node.name)),
+            ROLE_NAME => QVariant::from(&QString::from(self.tree.name(n))),
             ROLE_DEPTH => QVariant::from(&(node.depth as i32)),
-            ROLE_EXPANDABLE => QVariant::from(&!node.children.is_empty()),
-            ROLE_EXPANDED => QVariant::from(&self.expanded.contains(&n)),
+            ROLE_EXPANDABLE => QVariant::from(&self.tree.has_children(n)),
+            ROLE_EXPANDED => QVariant::from(&self.expanded[n]),
             ROLE_TOTAL => QVariant::from(&node.total),
-            ROLE_DRIVES => QVariant::from(&QString::from(&node.drives)),
-            // On more than one drive.
-            ROLE_MERGED => QVariant::from(&node.drives.contains(' ')),
+            ROLE_DRIVES => QVariant::from(&QString::from(&self.tree.drives(n))),
+            ROLE_MERGED => QVariant::from(&self.tree.merged(n)),
             _ => QVariant::default(),
         }
     }
@@ -259,7 +281,7 @@ impl qobject::FolderModel {
             move |tree| {
                 let tree = tree.unwrap_or_else(|e| {
                     eprintln!("folder tree: {e:#}");
-                    FolderTree { nodes: Vec::new(), roots: Vec::new() }
+                    FolderTree::default()
                 });
                 // Fails only when the model is gone (the window closing).
                 let _ = model.queue(move |model| model.apply(generation, tree));
@@ -281,18 +303,19 @@ impl qobject::FolderModel {
 
     fn toggle(mut self: Pin<&mut Self>, row: i32) {
         let Some(Some(n)) = self.node(row) else { return };
-        if self.tree.nodes[n].children.is_empty() {
+        if !self.tree.has_children(n) {
             return;
         }
         // The rows shown under `n` when it is expanded (its children's own expansion is remembered).
-        let below = self.visible_below(&self.tree.nodes[n].children);
+        let mut below = Vec::new();
+        self.visible_in(n + 1..self.tree.subtree_end(n), &mut below);
         let count = below.len() as i32;
         let root = QModelIndex::default();
-        if self.expanded.contains(&n) {
+        if self.expanded[n] {
             self.as_mut().begin_remove_rows(&root, row + 1, row + count);
             {
                 let mut this = self.as_mut().rust_mut();
-                this.expanded.remove(&n);
+                this.expanded[n] = false;
                 this.visible.drain(row as usize + 1..(row + 1 + count) as usize);
             }
             self.as_mut().end_remove_rows();
@@ -300,7 +323,7 @@ impl qobject::FolderModel {
             self.as_mut().begin_insert_rows(&root, row + 1, row + count);
             {
                 let mut this = self.as_mut().rust_mut();
-                this.expanded.insert(n);
+                this.expanded[n] = true;
                 let at = row as usize + 1;
                 this.visible.splice(at..at, below);
             }
@@ -312,35 +335,29 @@ impl qobject::FolderModel {
 
     fn merged_path(&self, row: i32) -> QString {
         match self.node(row) {
-            Some(Some(n)) => QString::from(&self.tree.nodes[n].merged_path),
+            Some(Some(n)) => QString::from(self.tree.merged_path(n)),
             _ => QString::default(),
         }
     }
 
     fn reveal(mut self: Pin<&mut Self>, merged: &QString) -> i32 {
-        let row = self.row_of(merged);
-        if row >= 0 || self.find(&merged.to_string()).is_none() {
-            return row;
+        let merged = merged.to_string();
+        if let Some(row) = self.row_of_path(&merged) {
+            return row as i32;
         }
-        let target = merged.to_string().to_lowercase();
-        let above: Vec<usize> = (0..self.tree.nodes.len())
-            .filter(|&n| {
-                let path = self.tree.nodes[n].merged_path.to_lowercase();
-                target.strip_prefix(&path).is_some_and(|rest| rest.starts_with('\\'))
-            })
-            .collect();
-        if above.is_empty() {
-            return -1;
-        }
+        let Some(n) = self.find(&merged) else { return -1 };
         self.as_mut().begin_reset_model();
         {
             let mut this = self.as_mut().rust_mut();
-            this.expanded.extend(above);
-            let roots = this.tree.roots.clone();
-            this.visible = std::iter::once(None).chain(this.visible_below(&roots)).collect();
+            let mut above = this.tree.parent(n);
+            while let Some(p) = above {
+                this.expanded[p] = true;
+                above = this.tree.parent(p);
+            }
+            this.show_all();
         }
         self.as_mut().end_reset_model();
-        self.row_of(merged)
+        self.row_of_path(&merged).map_or(-1, |r| r as i32)
     }
 
     fn contains(&self, merged: &QString) -> bool {
@@ -349,10 +366,6 @@ impl qobject::FolderModel {
     }
 
     fn row_of(&self, merged: &QString) -> i32 {
-        let merged = merged.to_string().to_lowercase();
-        self.visible
-            .iter()
-            .position(|v| v.map_or(merged.is_empty(), |n| self.tree.nodes[n].merged_path.to_lowercase() == merged))
-            .map_or(-1, |r| r as i32)
+        self.row_of_path(&merged.to_string()).map_or(-1, |r| r as i32)
     }
 }

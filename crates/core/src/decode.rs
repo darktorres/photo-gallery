@@ -6,7 +6,7 @@
 //! decodes to the same pixels. Index and query images must go through the same decode (FINDINGS: "The rule that
 //! matters").
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
 use crate::codecs::Codecs;
@@ -88,26 +88,6 @@ impl Decoder {
     /// Free what one oversize file grew: buffers over `bytes` (see [`release_over`]).
     pub fn trim(&mut self, bytes: usize) {
         self.codecs.trim(bytes);
-    }
-
-    /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller), into new
-    /// buffers: for a one-off decode (the viewer). `turns` is the catalog rotation (`files.rotation`, quarter turns
-    /// clockwise), applied after the EXIF orientation.
-    pub fn decode(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
-        let format = Format::sniff(bytes).context("unknown image format")?;
-        let exif = crate::metadata::orientation(bytes, format);
-        let mut image = Rgb::default();
-        let info = self.decode_into(bytes, format, exif, min, turns, &mut image, &mut Vec::new())?;
-        Ok(Decoded { image, info })
-    }
-
-    /// [`Decoder::decode`] without the orientation, into new buffers.
-    pub fn decode_stored(&mut self, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
-        let format = Format::sniff(bytes).context("unknown image format")?;
-        let exif = crate::metadata::orientation(bytes, format);
-        let mut image = Rgb::default();
-        let info = self.decode_stored_into(bytes, format, exif, min, turns, &mut image)?;
-        Ok(Stored { image, info })
     }
 
     /// [`Decoder::decode`] into a worker's buffers, which keep their capacity from file to file: the pixels go into
@@ -309,7 +289,8 @@ mod tests {
         let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba.clone()).unwrap();
         let mut file = std::io::Cursor::new(Vec::new());
         img.write_to(&mut file, image::ImageFormat::Png).unwrap();
-        let decoded = Decoder::new().unwrap().decode(file.get_ref(), MinSize::Full, 0).unwrap().image;
+        let decoded =
+            crate::display::decode(&mut Decoder::new().unwrap(), file.get_ref(), MinSize::Full, 0).unwrap().image;
         let want: Vec<u8> = rgba
             .as_chunks::<4>()
             .0

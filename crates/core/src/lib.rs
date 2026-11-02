@@ -11,6 +11,7 @@ pub mod catalog;
 mod codecs;
 pub mod crop;
 pub mod decode;
+pub mod display;
 pub mod format;
 pub mod layout;
 pub mod media;

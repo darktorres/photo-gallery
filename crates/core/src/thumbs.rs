@@ -115,7 +115,7 @@ impl Maker {
 
     /// A one-off decode of the file [`Maker::read_file`] read (the viewer's): its pixels go to new buffers.
     pub fn decode_file(&mut self, min: MinSize, turns: u8) -> Result<Decoded> {
-        let result = self.decoder.decode(&self.file, min, turns);
+        let result = crate::display::decode(&mut self.decoder, &self.file, min, turns);
         release_over(&mut self.file, KEEP_BYTES);
         result
     }
@@ -1121,7 +1121,7 @@ mod tests {
                 assert_eq!(made, expected, "{}", path.display());
                 maker.read_file(path).unwrap();
                 let decoded = maker.decode_file(MinSize::Fit(300, 300), 3).map(|d| (d.image.width, d.image.pixels));
-                let expected = Decoder::new().unwrap().decode(bytes, MinSize::Fit(300, 300), 3);
+                let expected = crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Fit(300, 300), 3);
                 let expected = expected.map(|d| (d.image.width, d.image.pixels));
                 assert_eq!(decoded.map_err(|e| format!("{e:#}")), expected.map_err(|e| format!("{e:#}")));
             }

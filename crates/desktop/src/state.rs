@@ -248,7 +248,7 @@ pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>, jpeg: &mut Vec
 
 /// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
 pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Upload> {
-    with_maker(|m| Ok(Upload::opaque(&m.decoder().decode(jpeg, MinSize::Full, turns)?.image)))
+    with_maker(|m| Ok(Upload::opaque(&pg_core::display::decode(m.decoder(), jpeg, MinSize::Full, turns)?.image)))
 }
 
 /// An image in a format Qt's scene graph uploads as it is (`QSGPlainTexture`): 4 bytes a pixel, RGBX8888 or

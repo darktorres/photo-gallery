@@ -92,7 +92,7 @@ mod tests {
 
     /// Decoded stored pixels, full size.
     fn stored(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
-        let d = Decoder::new().unwrap().decode_stored(bytes, MinSize::Full, 0).unwrap();
+        let d = crate::display::decode_stored(&mut Decoder::new().unwrap(), bytes, MinSize::Full, 0).unwrap();
         (d.image.width, d.image.height, d.image.pixels)
     }
 

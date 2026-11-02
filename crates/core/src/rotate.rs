@@ -87,7 +87,7 @@ mod tests {
 
     /// Decode as shown, full size.
     fn shown(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
-        let d = Decoder::new().unwrap().decode(bytes, MinSize::Full, 0).unwrap();
+        let d = crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Full, 0).unwrap();
         (d.image.width, d.image.height, d.image.pixels)
     }
 

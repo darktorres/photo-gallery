@@ -53,7 +53,9 @@ fn make_files(dir: &Path) -> Vec<(String, Format)> {
 }
 
 fn shown(path: &str) -> Rgb {
-    Decoder::new().unwrap().decode(&std::fs::read(path).unwrap(), MinSize::Full, 0).unwrap().image
+    pg_core::display::decode(&mut Decoder::new().unwrap(), &std::fs::read(path).unwrap(), MinSize::Full, 0)
+        .unwrap()
+        .image
 }
 
 fn ids(c: &Catalog) -> Vec<(i64, String)> {
@@ -137,7 +139,8 @@ fn ratings_and_turns_reach_the_files() {
             )
             .unwrap();
         let bytes = std::fs::read(path).unwrap();
-        let now = Decoder::new().unwrap().decode(&bytes, MinSize::Full, rotation).unwrap().image;
+        let now =
+            pg_core::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, rotation).unwrap().image;
         assert_eq!((now.width, now.height), (turned.width, turned.height), "{path}");
         if matches!(format, Format::Png | Format::Gif | Format::Bmp | Format::Tiff) {
             assert_eq!(now.pixels, turned.pixels, "{path}: lossless");

@@ -1,4 +1,4 @@
-# Heap profile: the app's start on the default catalog (dhat, 2026-11-01, after two rounds of fixes 2026-11-02)
+# Heap profile: the app's start on the default catalog (dhat, 2026-11-01, after three rounds of fixes 2026-11-02)
 
 Every Rust heap allocation from process start until the window has loaded and settled, charged to the code of ours
 that decides to make it, each site read at its source lines. How the profiles are made and read: PROFILING.md
@@ -16,6 +16,49 @@ window (1600 × 1000) showed 151 thumbnails. Stages under dhat: `qml_loaded` 853
 import, no borders, no thumbnails). The process ended at 6.6 s.
 
 **Not in it:** Qt's allocations (C++, the C runtime's heap) and SQLite's page caches (C). This is the Rust side only.
+
+## After the third fixes (2026-11-02)
+
+The same run at commit 5951f06, offscreen, on the same library (189,518 files, all analyzed, the cache complete) with
+the default preferences. `row_height` is 220, the code's default: an earlier test run with `--size=150` had saved 150
+in `gallery.json`, and the profile made with it is discarded. The earlier test runs (view, zoom and size hooks) used
+the default catalog too, so the window's placeholders are not an exact repeat: 101 this run, 118 before. Profile:
+`D:\PhotoGallery\scratch_dhat\third\start\dhat-heap.json`. `ready` came at 852 ms under dhat (977 ms in the second
+round's run).
+
+| | Before (d2205ba) | After the first fixes (4e1ad4d) | After the second (1d3685b) | After the third (5951f06) |
+|---|---:|---:|---:|---:|
+| Allocated | 38.9 MB in 16,523 blocks | 13.1 MB in 686 blocks | 12.9 MB in 521 blocks | 11.9 MB in 354 blocks |
+| Peak | 17.2 MB in 2,125 blocks | 11.4 MB in 131 blocks | 11.4 MB in 131 blocks | 11.5 MB in 118 blocks |
+| At exit | 1.9 KB in 26 blocks | 2.1 KB in 26 blocks | 2.1 KB in 26 blocks | 1.2 KB in 15 blocks |
+
+- **The thumbnails' JPEGs are no longer copied per thumbnail.** A cache hit is read into the provider thread's kept
+  buffer (`thumbs.rs:775`): 13 blocks, 208 KB, grown to the largest thumbnail that thread read. The second round's 118
+  blocks (1.18 MB) are gone. dhat names clap's `StyledStr::push_str` for those 13 blocks, but the stack goes through
+  rusqlite's `query_row` under `with_reader`: the name is most likely a folded copy of the generic growth code, which
+  the linker merged with clap's function.
+- **The placeholders:** 101 blocks, 290 KB, one RGBA image per visible placeholder, handed to Qt without a copy (by
+  design).
+- **The list is the start's cost:** 10.6 MB in one block (`browse.rs:635`, 89% of all the bytes). That is 56 bytes for
+  each of the 189,518 files, made at its exact count. It is the peak as well.
+- **The folder tree:** 4 blocks, 137 KB (`browse.rs:211`, `:212`, `:214`, `:261`), each made once at its size.
+- **The arguments** are read once: `main` (`main.rs:50`), parsed once (`command_line.rs:68`), 19 blocks, 1.3 KB.
+
+### What is left after the third fixes
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 1 | 10.6 MB | `browse.rs:635` `list_grid` | The list: 56 bytes for each file in the library, at its exact count |
+| 1 | 537 KB | `layout.rs:34` | The rows at their exact count |
+| 1 | 90 KB | `gallery.rs:595` `lay_out` | The rows' versions |
+| 101 | 290 KB | `state.rs:296` → `thumbhash` `thumb_hash_to_rgba` | Each visible placeholder's RGBA, handed to Qt: by design |
+| 13 | 208 KB | `thumbs.rs:775` `with_reader` → `query_row` | Each provider thread's kept JPEG buffer for cache hits (the clap name above) |
+| 4 | 137 KB | `browse.rs:211`, `:212`, `:214`, `:261` | The folder tree, each made once at its size |
+| 10 | 4.7 KB | `thumbs.rs:771` | Each provider thread's connection to the cache |
+| 223 | 24 KB | everything else | Threads and channels, the connections and their statement caches, the arguments (19 blocks), the drive letters (12 blocks, 96 bytes), the catalog's opens and the background job |
+
+What is left is the list and the placeholders' images, both by design. The thumbnails' buffers are kept per provider
+thread, so each thumbnail shown adds no allocation of its own.
 
 ## After the second fixes (2026-11-02)
 

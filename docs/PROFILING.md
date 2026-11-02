@@ -206,7 +206,7 @@ cost, but indirect recursion (A → B → A) is still counted twice.
 The start after the optimizations, drilled thread by thread: [START_PROFILE.md](START_PROFILE.md) (2026-11-01).
 
 Every heap allocation of a scan, an import and the borders and thumbnail passes, site by site (dhat), before and
-after two rounds of fixes: [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01, 2026-11-02).
+after three rounds of fixes: [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01, 2026-11-02).
 
 Every heap allocation of the app's start on the default catalog (dhat), before and after:
 [HEAP_PROFILE_START.md](HEAP_PROFILE_START.md) (2026-11-01, 2026-11-02).

@@ -1,4 +1,4 @@
-# Heap profile: `gallery scan`, `gallery import` and the passes (dhat, 2026-11-01, after two rounds of fixes 2026-11-02)
+# Heap profile: `gallery scan`, `gallery import` and the passes (dhat, 2026-11-01, after three rounds of fixes 2026-11-02)
 
 Every Rust heap allocation of a scan and an import, charged to the code of ours that decides to make it (the
 innermost frame in `pg_core`, `pg_ingest` or `gallery` that isn't a container or conversion helper), and each site
@@ -16,6 +16,109 @@ read at its source lines. How the profiles are made and read: PROFILING.md "Tool
 tier-1 index rebuilt from existing hashes, files bigger than the decode's 512 × 320 floor, DCT-scaled decodes,
 non-JPEG decodes (full size, `decode::decode_other`), EXIF that parses, videos. Where a finding depends on scale, it
 says what it would be at scale, worked out from the code; those are estimates, not measurements.
+
+## After the third fixes (2026-11-02)
+
+The same runs at commit 5951f06, after the third plan (1d3685b..5951f06), which acted on what the second round's
+after profiles left. Its steps:
+
+- the read pool bounded by the files in flight as well as by bytes; its buffers reused and grown in place; the raw
+  channel bounded (step 1);
+- the work lists hold their folders once and their names; the readers open files without std's UTF-16 copy
+  (step 2);
+- the import's ThumbHash, the thumbnail pass's JPEGs and the app's cache hits are made without an allocation each
+  (step 2b);
+- border sides held inline; `median_f64` without a sort; gif without its XMP unless asked; zune-jpeg and tiff keep
+  their state per decoder (steps 3 to 7);
+- BigTIFF is recognized (step 8, the one deliberate behaviour change: see that commit);
+- the png and metadata sites are tested and named (step 9); every connection closes before exit (step 10); the
+  command line is read once (step 11b). Step 11 changed no code: its zoomed screenshots did not vary.
+
+Profiles in `D:\PhotoGallery\scratch_dhat\third`, made by the same commands as `final`.
+
+| Run | Allocated: 1d3685b → 5951f06 | Peak: 1d3685b → 5951f06 | At exit |
+|---|---|---|---|
+| Scan, 305 files | 201 KB in 535 → 201 KB in 543 | 101 KB in 321 → 101 KB in 321 | 1.0 KB in 4, unchanged |
+| Import, 1 worker | 8.4 MB in 1,275 → 5.8 MB in 440 | 7.2 MB in 662 → 3.6 MB in 128 | 1.1 KB in 5, unchanged |
+| Import, 12 workers | 46.4 MB in 1,500 → 43.2 MB in 841 | 31.0 MB in 728 → 28.5 MB in 359 | 1.1 KB in 5, unchanged |
+| Borders, 898 files | 830 MB in 2,637 → 658 MB in 513 | 496.3 MB in 89 → 496.5 MB in 52 | 1.1 KB in 5, unchanged |
+| Thumbnails, 898 files | 879 MB in 3,443 → 698 MB in 1,165 | 502.5 MB in 160 → 505.6 MB in 280 | 2.1 KB in 9 → 2.0 KB in 7 |
+
+- **The read buffers: 43 for 305 files, from 300.** With the pool bounded by count, the one-worker import's blocks
+  fall from 1,275 to 440, and the buffers alive at its peak take 263 KB (4.7 MB before). With 12 workers there are 98
+  buffers (1.8 MB in all, 0.75 MB at the peak, from 172 blocks and 2.4 MB at the peak).
+- **Import, per file:** 19 KB in 1.4 blocks, from 27 KB in 4.2. The ThumbHash is inline now, and the path copy that
+  `File::open` made (305 blocks at `pipeline.rs:153`) is gone.
+- **The one-worker import's peak** (3.6 MB, from 7.2 MB) is the PDQ planes (1.75 MB, at two sites), the decode
+  (0.66 MB), the ThumbHash planes (0.27 MB), the read buffers (0.26 MB), the resizer (0.23 MB) and the tier-1 index
+  (0.07 MB). With 12 workers (28.5 MB) it is the workspaces: PDQ planes 16.0 MB, decodes 6.0 MB, resizers 2.8 MB,
+  ThumbHash planes 2.5 MB, and the read buffers (0.75 MB).
+- **The passes:** the borders pass makes 513 blocks (2,637 before) and the thumbnail pass 1,165 (3,443). Their read
+  buffers are 47 blocks each (728 and 749 before). The 142 MB corpus file is still read whole (141.9 MB) and decoded to
+  348.4 MB, and that is the peak of both passes.
+- **The thumbnail pass's JPEG buffers:** 401 blocks at `thumbs.rs:183` (896 at `thumbs.rs:168` before). The writer
+  returns each batch's buffers for reuse, so the count is about two batches of 200 (`BATCH`), not one per file. They
+  hold 4.3 MB at the peak instant, which is why the thumbnail pass's peak is 3.1 MB higher than before, and has 280
+  blocks where it had 160. The peak's bytes are still the one file's.
+- **The scan:** 543 blocks (535 before): 8 more small blocks (369 bytes) in the command line, not investigated.
+- **Not changed:** the codecs stay in `Decoder` (plan step 9: the per-worker workspace is where they were meant to be).
+  gif's `GlobalPalette` is as `vendor/README.md` describes.
+
+### What is left after the third fixes
+
+**Import, one worker (440 blocks, 5.8 MB):**
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 43 | 852 KB | `pipeline.rs:309` `Pool::take` | The read buffers, reused and grown in place: by design |
+| 202 | 70 KB | `clap_builder` | The command line, built by clap at every start: 182 to 227 blocks in each run |
+| 48 | 118 KB | `pdq_index.rs:124`, `:125`, `:173` | The tier-1 index's keys, links and chain reserve, sized once for the import: 16 blocks at each site |
+| 4 | 2.6 MB | `pdq.rs:90`, `:98` | The PDQ planes, 1.3 MB at each site: the workspace |
+| 2 | 985 KB | `decode.rs:189` `decode_stored_into` | The decode buffer: the workspace |
+| 11 | 357 KB | `resize.rs:92` | The resizer's output: the workspace |
+| 8 | 403 KB | `thumbhash` `lib.rs:120` | The ThumbHash planes: the workspace |
+| 2 | 274 KB | `fast_image_resize` `resizer.rs:608` | The resizer's temporary image: the workspace |
+| 1 | 228 KB | `import.rs:41` | The batch of 500: by design |
+| 11 | 20 KB | `paths.rs:73` `PathArena::push_parts` | The names arena doubling: by design (step 2) |
+| 32 | 3 KB | `paths.rs:30` `verbatim_wide` | Each reader's kept wide path, grown about four times per reader: by design |
+| 25 | 2 KB | `pipeline.rs:114` | The reader threads |
+
+**Borders (513 blocks, 658 MB):**
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 47 | 183 MB | `pipeline.rs:309` `Pool::take` | The read buffers: the 142 MB file is read whole |
+| 7 | 382 MB | `decode.rs:189` `decode_stored_into` | The decode of that file (348.4 MB at the peak): the workspace, trimmed after an oversize file |
+| 3 | 52 MB | `codecs.rs:104` `Codecs::png` | A large PNG's output, grown and trimmed after: the workspace |
+| 6 | 20 MB | `borders.rs:688` `DetailSums::measure` | The cumulative sums: the workspace |
+| 35 | 19.5 MB | `image-webp` `vp8.rs:2087`, `:1147` | The planes and partitions of lossy WebP, kept and grown: the workspace |
+| 32 | 121 KB | `zune-jpeg` `components.rs:246` `refill` | The kept component buffers, grown to the largest fallback JPEG (step 6) |
+| 16 | 82 KB | `paths.rs:73` | The names arena: by design |
+| 212 | 82 KB | `clap_builder` | The command line |
+
+**Thumbnails (1,165 blocks, 698 MB):**
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 47 | 183 MB | `pipeline.rs:309` `Pool::take` | The read buffers: as above |
+| 7 | 382 MB | `decode.rs:189` `decode_stored_into` | The decode of the 142 MB file: as above |
+| 6 | 85 MB | `codecs.rs:104` `Codecs::png` | PNG output: as above |
+| 401 | 6.6 MB | `thumbs.rs:183` `encode_image` | The JPEG copies into the recycled buffers: about two batches of 200 |
+| 31 | 19.0 MB | `image-webp` `vp8.rs:2087` | As above |
+| 10 | 5.5 MB | `fast_image_resize` `mod.rs:237` (and 10 blocks, 1.4 MB, at `optimisations.rs:75`) | The resizer's filter tables, grown as the sizes change |
+| 5 | 5.7 MB | `fast_image_resize` `resizer.rs:608` | The resizer's temporary image |
+| 3 | 3.9 MB | `image-webp` `decoder.rs:360` `zeroed` | The WebP frame buffer, taken from the decoder's kept buffer and grown (three growths) |
+| 96 | 146 KB | `image-webp` `huffman.rs:55`, `:47` | The kept Huffman pools: the workspace |
+| 9 | 163 KB | `thumbs.rs:724` | The pending work list's items, grown |
+| 10 | 0.7 KB | `paths.rs:146` `WorkList::path` | The paths of the 10 videos, which FFmpeg takes as text |
+| 32 | 121 KB | `zune-jpeg` `components.rs:246` `refill` | As above |
+| 227 | 74 KB | `clap_builder` | The command line |
+
+Left as it is: the fax (Group 4) decoder's per-chunk line state, and the zstd and WebP readers kept upstream's boxed
+form (`vendor/README.md`, the tiff section). The read buffers, the names arena, the batch and the JPEG buffers are
+bounded by the files in flight, the names, the batch size, and the workers; none grows with the library. The
+workspaces are one set per worker, grown once. The workload is still the 305-file sample and the 898-file corpus:
+the costs at 189,518 files are what the code implies, not measurements.
 
 ## After the second fixes (2026-11-02)
 

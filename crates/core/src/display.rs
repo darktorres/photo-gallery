@@ -15,7 +15,7 @@ use crate::orientation;
 pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
     let format = Format::sniff(bytes).context("unknown image format")?;
     let exif = metadata::orientation(bytes, format);
-    let mut image = crate::decode::Rgb::default();
+    let mut image = crate::pixels::Rgb::default();
     let info = decoder.decode_into(bytes, format, exif, min, turns, &mut image, &mut Vec::new())?;
     Ok(Decoded { image, info })
 }
@@ -24,7 +24,7 @@ pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> R
 pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
     let format = Format::sniff(bytes).context("unknown image format")?;
     let exif = metadata::orientation(bytes, format);
-    let mut image = crate::decode::Rgb::default();
+    let mut image = crate::pixels::Rgb::default();
     let info = decoder.decode_stored_into(bytes, format, exif, min, turns, &mut image)?;
     Ok(Stored { image, info })
 }

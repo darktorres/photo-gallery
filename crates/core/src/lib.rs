@@ -26,6 +26,7 @@ pub mod path;
 pub mod paths;
 pub mod pdq;
 pub mod pdq_index;
+pub mod pixels;
 pub mod query;
 pub mod resize;
 mod rewrite;

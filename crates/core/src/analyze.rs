@@ -6,12 +6,13 @@ use std::path::Path;
 
 use crate::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
 use crate::borders::{self, Detector};
-use crate::decode::{Decoder, MinSize, Rgb, release_over};
+use crate::decode::{Decoder, MinSize};
 use crate::detection::{self, Detection};
 use crate::format::Format;
 use crate::metadata::{Meta, MetaScratch};
 use crate::orientation;
 use crate::pdq;
+use crate::pixels::{Rgb, release_over};
 use crate::resize::Resizer;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,

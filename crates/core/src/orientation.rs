@@ -80,7 +80,8 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::{Rgb, orient};
+    use crate::decode::orient;
+    use crate::pixels::Rgb;
 
     #[test]
     fn composes_orientations() {

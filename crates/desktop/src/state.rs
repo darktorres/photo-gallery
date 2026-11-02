@@ -27,10 +27,11 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result, bail};
 use pg_core::browse::{self, read::FileSource};
 use pg_core::catalog::Catalog;
-use pg_core::decode::{MinSize, Rgb, orient_pixels};
+use pg_core::decode::{MinSize, orient_pixels};
 use pg_core::maker::Maker;
 use pg_core::orientation;
 use pg_core::paths::verbatim;
+use pg_core::pixels::Rgb;
 use pg_core::resize::Resizer;
 use pg_core::thumbs::{self, ThumbCache};
 

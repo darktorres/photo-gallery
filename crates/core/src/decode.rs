@@ -12,14 +12,7 @@ use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 use crate::codecs::Codecs;
 use crate::format::Format;
 use crate::orientation;
-
-/// An upright RGB image.
-#[derive(Clone, Default)]
-pub struct Rgb {
-    pub width: usize,
-    pub height: usize,
-    pub pixels: Vec<u8>,
-}
+use crate::pixels::Rgb;
 
 /// What a decode found, besides its pixels.
 #[derive(Clone, Copy, Debug)]
@@ -243,27 +236,6 @@ pub fn transform_into(
         }
     }
     (ow, oh)
-}
-
-/// Free `buf` if it holds more than `bytes` (after one image far larger than the rest), so a worker's buffers don't
-/// keep the largest image's size for the rest of a pass.
-pub fn release_over(buf: &mut Vec<u8>, bytes: usize) {
-    if buf.capacity() > bytes {
-        *buf = Vec::new();
-    }
-}
-
-/// Test helper: an RGB8 TIFF written by the tiff crate's encoder, classic or BigTIFF (`image` writes only classic).
-#[cfg(test)]
-pub(crate) fn tiff_rgb8(w: u32, h: u32, pixels: &[u8], big: bool) -> Vec<u8> {
-    use tiff::encoder::{TiffEncoder, colortype::RGB8};
-    let mut out = std::io::Cursor::new(Vec::new());
-    if big {
-        TiffEncoder::new_big(&mut out).unwrap().write_image::<RGB8>(w, h, pixels).unwrap();
-    } else {
-        TiffEncoder::new(&mut out).unwrap().write_image::<RGB8>(w, h, pixels).unwrap();
-    }
-    out.into_inner()
 }
 
 #[cfg(test)]

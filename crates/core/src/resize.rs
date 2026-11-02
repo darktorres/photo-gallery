@@ -4,7 +4,7 @@
 use fast_image_resize::images::{Image, ImageRef};
 use fast_image_resize::{FilterType, PixelType, ResizeAlg, ResizeOptions};
 
-use crate::decode::Rgb;
+use crate::pixels::Rgb;
 
 /// A resizer and its buffers, kept by a worker from image to image. Each method writes into a caller's image,
 /// whose buffer keeps its capacity.

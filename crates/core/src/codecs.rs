@@ -21,7 +21,7 @@ use image::{ColorType, ExtendedColorType, ImageDecoder, ImageError, ImageFormat,
 
 use crate::format::Format;
 
-use crate::decode::{Rgb, release_over};
+use crate::pixels::{Rgb, release_over};
 /// What the decoders keep from one file to the next, per worker (inside its [`crate::decode::Decoder`]).
 #[derive(Default)]
 pub(crate) struct Codecs {
@@ -737,13 +737,26 @@ fn tiff_error(err: tiff::TiffError) -> ImageError {
     }
 }
 
+/// Test helper: an RGB8 TIFF written by the tiff crate's encoder, classic or BigTIFF (`image` writes only classic).
+#[cfg(test)]
+#[cfg(test)]
+pub(crate) fn tiff_rgb8(w: u32, h: u32, pixels: &[u8], big: bool) -> Vec<u8> {
+    use tiff::encoder::{TiffEncoder, colortype::RGB8};
+    let mut out = std::io::Cursor::new(Vec::new());
+    if big {
+        TiffEncoder::new_big(&mut out).unwrap().write_image::<RGB8>(w, h, pixels).unwrap();
+    } else {
+        TiffEncoder::new(&mut out).unwrap().write_image::<RGB8>(w, h, pixels).unwrap();
+    }
+    out.into_inner()
+}
+
 #[cfg(test)]
 mod tests {
     use image::codecs::gif::GifEncoder;
     use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
 
     use super::*;
-    use crate::decode::tiff_rgb8;
 
     /// How the decode was done before this module: `image::load_from_memory_with_format`, then `into_rgba8` and
     /// the flattening onto white, or `into_rgb8`.

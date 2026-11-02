@@ -7,8 +7,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoded, Decoder, MinSize, Rgb, release_over};
+use crate::decode::{Decoded, Decoder, MinSize};
 use crate::format::Format;
+use crate::pixels::{Rgb, release_over};
 use crate::resize::Resizer;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").

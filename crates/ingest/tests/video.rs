@@ -14,7 +14,7 @@ use pg_core::analyze;
 use pg_core::animation;
 use pg_core::catalog::Catalog;
 use pg_core::date::wall_clock_seconds;
-use pg_core::decode::Rgb;
+use pg_core::pixels::Rgb;
 use pg_core::thumbs::ThumbCache;
 use pg_core::video::{frame, poster_ms, probe};
 use pg_ingest::control::Control;

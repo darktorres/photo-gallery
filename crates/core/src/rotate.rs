@@ -95,7 +95,7 @@ mod tests {
     /// Expected: the original as shown, turned clockwise `turns` times.
     fn expect_turned(original: &[u8], turns: u8) -> (usize, usize, Vec<u8>) {
         let (w, h, pixels) = shown(original);
-        let img = orient(crate::decode::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
+        let img = orient(crate::pixels::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
         (img.width, img.height, img.pixels)
     }
 

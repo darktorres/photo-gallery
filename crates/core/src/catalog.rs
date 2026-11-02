@@ -1741,7 +1741,7 @@ mod tests {
             width: 400,
             height: 300,
             content: [0, 41, 400, 259],
-            sides: vec![solid(Edge::Top), solid(Edge::Bottom), sky],
+            sides: [solid(Edge::Top), solid(Edge::Bottom), sky].into_iter().collect(),
         };
         let analysis = Analysis {
             file_hash: [1; 32],

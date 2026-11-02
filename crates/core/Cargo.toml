@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 anyhow.workspace = true
+arrayvec.workspace = true
 fast_image_resize.workspace = true
 ffmpeg-next.workspace = true
 gif.workspace = true

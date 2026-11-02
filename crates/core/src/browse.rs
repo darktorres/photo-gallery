@@ -670,7 +670,7 @@ pub struct Details {
     /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
     pub rating_in_file: bool,
     /// Every side the border detector found, accepted and rejected (`borders::detect`).
-    pub border_sides: Vec<borders::Side>,
+    pub border_sides: borders::Sides,
 }
 
 pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
@@ -688,7 +688,7 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
                 // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
                 rating_in_file: r.get_ref(2)?.as_str()? == Kind::Image.key()
                     && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
-                border_sides: Vec::new(),
+                border_sides: borders::Sides::new(),
             })
         })
         .optional()?;
@@ -699,34 +699,38 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
 }
 
 /// The sides the border detector found in a file, in the order found.
-pub fn border_sides(conn: &Connection, file_id: i64) -> Result<Vec<borders::Side>> {
+/// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
+/// than detection finds (`borders::MAX_SIDES`) can only be in a damaged catalog: an error.
+pub fn border_sides(conn: &Connection, file_id: i64) -> Result<borders::Sides> {
     let mut stmt = conn.prepare_cached(
         "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
          ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",
     )?;
-    let rows = stmt.query_map([file_id], |r| {
-        let text = |i: usize| -> rusqlite::Result<String> { r.get(i) };
-        let unknown = |i: usize, v: String| rusqlite::Error::InvalidColumnType(i, v, Type::Text);
-        let edge = text(1)?;
-        let kind = text(2)?;
-        let rejected: Option<String> = r.get(8)?;
+    let mut rows = stmt.query([file_id])?;
+    let mut sides = borders::Sides::new();
+    while let Some(r) = rows.next()? {
+        let unknown = |i: usize, v: &str| rusqlite::Error::InvalidColumnType(i, v.to_string(), Type::Text);
+        let (edge, kind) = (r.get_ref(1)?.as_str()?, r.get_ref(2)?.as_str()?);
         let color: Option<i64> = r.get(4)?;
-        Ok(borders::Side {
+        let side = borders::Side {
             pass: r.get(0)?,
-            edge: borders::Edge::from_key(&edge).ok_or_else(|| unknown(1, edge.clone()))?,
-            kind: borders::Kind::from_key(&kind).ok_or_else(|| unknown(2, kind.clone()))?,
+            edge: borders::Edge::from_key(edge).ok_or_else(|| unknown(1, edge))?,
+            kind: borders::Kind::from_key(kind).ok_or_else(|| unknown(2, kind))?,
             depth: r.get(3)?,
             color: color.map(|c| [(c >> 16) as u8, (c >> 8) as u8, c as u8]),
             straight: r.get(5)?,
             dev: r.get(6)?,
             drift: r.get(7)?,
-            rejected: match rejected {
-                Some(key) => Some(borders::Reason::from_key(&key).ok_or_else(|| unknown(8, key.clone()))?),
+            rejected: match r.get_ref(8)?.as_str_or_null()? {
+                Some(k) => Some(borders::Reason::from_key(k).ok_or_else(|| unknown(8, k))?),
                 None => None,
             },
-        })
-    })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+        };
+        sides
+            .try_push(side)
+            .map_err(|_| anyhow::anyhow!("file {file_id}: more than {} border sides kept", borders::MAX_SIDES))?;
+    }
+    Ok(sides)
 }
 
 /// Mark a file's borders as not a border, or take the mark back (the review).
@@ -1157,7 +1161,12 @@ mod tests {
         assert!(details(&c.conn, 1).unwrap().unwrap().rating_in_file);
         assert_eq!(
             details(&c.conn, 2).unwrap(),
-            Some(Details { path: r"E:\p\a.png".into(), size: 10, rating_in_file: true, border_sides: Vec::new() })
+            Some(Details {
+                path: r"E:\p\a.png".into(),
+                size: 10,
+                rating_in_file: true,
+                border_sides: borders::Sides::new()
+            })
         );
         assert_eq!(details(&c.conn, 99).unwrap(), None);
     }

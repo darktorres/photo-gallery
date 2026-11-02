@@ -281,13 +281,20 @@ pub struct Detection {
     /// accepted.
     pub content: [u32; 4],
     /// Every side found, in the order found: accepted ones, and rejected candidates.
-    pub sides: Vec<Side>,
+    pub sides: Sides,
 }
+
+/// The most sides a detection finds: [`detect`] peels at most 3 rounds of the 4 edges, and finds at most one side
+/// of an edge in a round.
+pub const MAX_SIDES: usize = 12;
+
+/// A file's sides, held inline: what detection finds, and what the catalog keeps of it.
+pub type Sides = arrayvec::ArrayVec<Side, MAX_SIDES>;
 
 impl Detection {
     /// Nothing found in an image of `width` × `height`.
     pub fn none(width: u32, height: u32) -> Detection {
-        Detection { width, height, content: [0, 0, width, height], sides: Vec::new() }
+        Detection { width, height, content: [0, 0, width, height], sides: Sides::new() }
     }
 
     pub fn found(&self) -> bool {
@@ -366,13 +373,18 @@ impl Detector {
     }
 }
 
+/// The rounds of peeling ([`MAX_SIDES`] counts them).
+const PASSES: u8 = 3;
+const _: () = assert!(MAX_SIDES == PASSES as usize * 4);
+
 fn detect_with(d: &mut Detector, img: &Rgb, p: &Params) -> Detection {
     let (w, h) = (img.width, img.height);
     let blur_thr = blur_threshold(img, p, &mut d.details);
     let mut content = [0, 0, w, h];
-    let mut sides: Vec<Side> = Vec::new();
-    // Nested borders, e.g. a thin line inside a blurred bar.
-    for pass in 0..3u8 {
+    let mut sides = Sides::new();
+    // Nested borders, e.g. a thin line inside a blurred bar. Each round finds at most one side of each edge, so
+    // `sides` never holds more than `MAX_SIDES`.
+    for pass in 0..PASSES {
         let mut changed = false;
         // Top/bottom first, then left/right on what is left, so corners never mix two borders.
         for pair in [[Edge::Top, Edge::Bottom], [Edge::Left, Edge::Right]] {

@@ -10,6 +10,7 @@ use crate::decode::{Decoder, MinSize, Rgb, release_over};
 use crate::detection::{self, Detection};
 use crate::format::Format;
 use crate::metadata::{Meta, MetaScratch};
+use crate::orientation;
 use crate::pdq;
 use crate::resize::Resizer;
 
@@ -189,7 +190,9 @@ fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
     Ok(Analysis {
         version: IMPORT_VERSION,
         file_hash,
-        orientation: p.orientation,
+        // The stills' orientation includes the catalog turn (`decode_into`); the video's must too, or its stored
+        // size and its shown orientation disagree (R-02). `width`/`height` above already carry the display matrix.
+        orientation: orientation::compose(p.orientation, turns),
         width,
         height,
         thumbhash: a.thumbhash_of_image(),

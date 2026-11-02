@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use pg_core::analyze;
 use pg_core::animation;
 use pg_core::catalog::Catalog;
 use pg_core::date::wall_clock_seconds;
@@ -151,6 +152,14 @@ fn videos() {
     let f = frame(&mirrored, 500, 1).unwrap();
     assert_eq!((f.width, f.height), (80, 160));
     assert!(near(pixel(&f, 40, 20), BLUE) && near(pixel(&f, 40, 140), RED), "{:?}", pixel(&f, 40, 20));
+
+    // The stored orientation includes the catalog turn, as a still's does: the display matrix (8, and 2 mirrored)
+    // composed with the turn. With a turn, the orientation is the one that shows the stored pixels turned.
+    let mut analyzer = analyze::Analyzer::new().unwrap();
+    for (path, turns, want) in [(&rotated, 0, 8), (&rotated, 1, 1), (&mirrored, 0, 2), (&mirrored, 1, 7)] {
+        let a = analyze::video(path, turns, &mut analyzer).unwrap();
+        assert_eq!(a.orientation, want, "{} with {turns} turn(s)", path.display());
+    }
 
     assert_eq!(poster_ms(3000), 300);
     assert_eq!(poster_ms(3_600_000), 10_000);

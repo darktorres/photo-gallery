@@ -41,27 +41,42 @@ pub mod qobject {
     }
 }
 
-use std::sync::LazyLock;
+use std::ffi::OsString;
+use std::sync::OnceLock;
 
 use cxx_qt_lib::{QString, QStringList, QUrl};
 
 #[derive(Default)]
 pub struct CommandLineRust;
 
-/// The `--name=value` arguments, read once: (name, value), in order. Other arguments are left out.
-static ARGS: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
-    std::env::args()
+/// The `--name=value` arguments, as `init` read them: (name, value), in order. Other arguments are left out.
+static ARGS: OnceLock<Vec<(String, String)>> = OnceLock::new();
+
+/// Read the command line's `--name=value` arguments: once, at start, from the arguments `main` read (the program's
+/// name first). The application is made from the same arguments (gui_app.rs).
+pub fn init(args: &[OsString]) {
+    ARGS.set(parse(args)).expect("the command line is read once");
+}
+
+/// The `--name=value` arguments among `args`, the program's name first. Windows: lossy UTF-8, as Qt reads them.
+fn parse(args: &[OsString]) -> Vec<(String, String)> {
+    args.iter()
         .skip(1)
         .filter_map(|a| {
+            let a = a.to_string_lossy();
             let (name, value) = a.strip_prefix("--")?.split_once('=')?;
             Some((name.to_string(), value.to_string()))
         })
         .collect()
-});
+}
+
+fn args() -> &'static [(String, String)] {
+    ARGS.get().map_or(&[], Vec::as_slice)
+}
 
 /// The value of `--name=…` (the first, if given twice).
 pub fn value(name: &str) -> Option<&'static str> {
-    ARGS.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+    args().iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
 }
 
 /// `keys` split as `CommandLine.keys` does.
@@ -81,7 +96,7 @@ fn split_keys(keys: &str) -> Vec<String> {
 /// The value of `--name=…`, the name as QML gives it (compared as UTF-16, not converted).
 fn named(name: &QString) -> Option<&'static str> {
     let name = name.as_slice();
-    ARGS.iter().find(|(n, _)| n.encode_utf16().eq(name.iter().copied())).map(|(_, v)| v.as_str())
+    args().iter().find(|(n, _)| n.encode_utf16().eq(name.iter().copied())).map(|(_, v)| v.as_str())
 }
 
 impl qobject::CommandLine {
@@ -103,5 +118,24 @@ impl qobject::CommandLine {
 
     fn keys(&self, name: &QString) -> QStringList {
         split_keys(named(name).unwrap_or_default()).iter().map(QString::from).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_the_named_arguments_after_the_program_name() {
+        let args: Vec<OsString> =
+            ["--not-first=1", "--view=3", "--zoom=0.5", "scan", "-x", "--a=b=c", "--flag", "--empty="]
+                .map(OsString::from)
+                .into();
+        assert_eq!(
+            parse(&args),
+            [("view", "3"), ("zoom", "0.5"), ("a", "b=c"), ("empty", "")]
+                .map(|(n, v)| (n.to_string(), v.to_string()))
+                .to_vec()
+        );
     }
 }

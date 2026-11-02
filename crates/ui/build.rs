@@ -28,6 +28,7 @@ fn main() {
         "src/folders.rs",
         "src/gallery.rs",
         "src/gpu_device.rs",
+        "src/gui_app.rs",
         "src/library.rs",
         "src/providers.rs",
         "src/screenshot.rs",
@@ -39,6 +40,7 @@ fn main() {
     .cpp_file("cpp/app_icon.cpp")
     .cpp_file("cpp/frame_sink.cpp")
     .cpp_file("cpp/gpu_device.cpp")
+    .cpp_file("cpp/gui_app.cpp")
     .cpp_file("cpp/providers.cpp")
     .cpp_file("cpp/screenshot.cpp")
     // The window icon, set in app_icon.cpp (drawn by tools/make_icon.py).

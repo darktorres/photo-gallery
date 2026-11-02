@@ -12,6 +12,7 @@ mod filters;
 mod folders;
 mod gallery;
 mod gpu_device;
+mod gui_app;
 mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
@@ -29,7 +30,7 @@ use std::ffi::OsString;
 use std::path::PathBuf;
 
 use cxx_qt::casting::Upcast;
-use cxx_qt_lib::{QGuiApplication, QQmlApplicationEngine, QQmlEngine, QString, QUrl};
+use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 use pg_ingest::cli;
 
 // The heap profiler's build (docs/PROFILING.md "Tool: dhat"). It sees Rust's allocations only: Qt's and FFmpeg's go
@@ -55,11 +56,12 @@ fn main() {
         }
         return;
     }
-    run_app();
+    run_app(&args);
 }
 
-fn run_app() {
+fn run_app(args: &[OsString]) {
     trace::pg_stage_main();
+    command_line::init(args);
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
@@ -82,7 +84,7 @@ fn run_app() {
 
     // The controls style is Fusion, imported by name in the QML (`QtQuick.Controls.Fusion`): it follows the
     // window's dark palette. The default on Windows, the native style, draws light system buttons regardless.
-    let mut app = QGuiApplication::new();
+    let mut app = gui_app::new(args);
     app_icon::ffi::set_app_icon();
     let mut engine = QQmlApplicationEngine::new();
     if let Some(mut engine) = engine.as_mut() {

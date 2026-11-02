@@ -62,7 +62,14 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
 
     pipeline::run(
         items,
-        |item| item.poster_ms.is_none().then_some(work.path(item.path)),
+        |item, wide| {
+            // A video's poster frame is read by FFmpeg, from its path.
+            let whole = item.poster_ms.is_none();
+            if whole {
+                work.wide(item.path, wide);
+            }
+            whole
+        },
         opts,
         ctl,
         Maker::new,
@@ -71,7 +78,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
-                    maker.load_frame(Path::new(&*verbatim(work.path(item.path))), at, item.source.rotation)?;
+                    let path = work.path(item.path);
+                    maker.load_frame(Path::new(&*verbatim(&path)), at, item.source.rotation)?;
                     maker.encode_frame(height as usize)
                 }
                 None => maker.make(bytes, height as usize, item.source.rotation),

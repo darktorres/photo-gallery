@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, CropSource, is_under};
 use pg_core::crop::crop;
-use pg_core::paths::{PathArena, PathRef};
+use pg_core::paths::{PathArena, PathRef, verbatim_wide};
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -71,7 +71,10 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
         &jobs,
-        |job| Some(paths.get(job.source.path)),
+        |job, wide| {
+            verbatim_wide(&[paths.get(job.source.path)], wide);
+            true
+        },
         opts,
         ctl,
         || Ok(String::new()),

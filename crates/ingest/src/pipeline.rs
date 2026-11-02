@@ -13,11 +13,16 @@
 
 use std::fs::File;
 use std::io::Read;
+use std::os::windows::io::{FromRawHandle, RawHandle};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
+use windows_sys::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
+use windows_sys::Win32::Storage::FileSystem::{
+    CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
+};
 use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY};
 
 use crate::control::Control;
@@ -73,14 +78,16 @@ fn set_priority(priority: THREAD_PRIORITY) {
     unsafe { SetThreadPriority(GetCurrentThread(), priority) };
 }
 
-/// Read each item's file (`read(item)`, its path), run `process(state, i, bytes)` (with per-worker state from
-/// `init`), and call `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so
-/// does a stop request on `ctl`, and reading waits while `ctl` is paused. An item `read` gives no path for isn't
-/// read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded). The paths may
-/// live beside the items (a work list's arena) rather than in them.
-pub fn run<'a, T, S, R>(
-    items: &'a [T],
-    read: impl Fn(&'a T) -> Option<&'a str> + Sync,
+/// Read each item's file, run `process(state, i, bytes)` (with per-worker state from `init`), and call
+/// `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on
+/// `ctl`, and reading waits while `ctl` is paused.
+///
+/// `read(item, wide)` writes the file's path into `wide`, as [`pg_core::paths::verbatim_wide`] does, and returns
+/// true; the reader's buffer is reused from file to file, so no path is made per file. An item it returns false
+/// for isn't read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded).
+pub fn run<T, S, R>(
+    items: &[T],
+    read: impl Fn(&T, &mut Vec<u16>) -> bool + Sync,
     opts: &Options,
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
@@ -106,18 +113,18 @@ where
             let (next, stop, read, pool) = (&next, &stop, &read, &pool);
             s.spawn(move || {
                 set_priority(opts.priority);
+                let mut wide = Vec::new();
                 while !stop.load(Ordering::Relaxed) && ctl.checkpoint() {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { break };
-                    let bytes = match read(item) {
-                        Some(path) => match read_whole(pool, i, path) {
+                    let bytes = if read(item, &mut wide) {
+                        match read_whole(pool, i, &wide) {
                             Some(bytes) => bytes,
                             None => break, // stopped
-                        },
-                        None => {
-                            pool.pass(i);
-                            Ok(Lease::empty())
                         }
+                    } else {
+                        pool.pass(i);
+                        Ok(Lease::empty())
                     };
                     if raw_tx.send((i, bytes)).is_err() {
                         break;
@@ -166,10 +173,10 @@ where
     })
 }
 
-/// Read the file at `path` (item `i`) into a buffer from the pool, its size reserved in list order. `None` once the
-/// pass stops.
-fn read_whole<'p>(pool: &'p Pool, i: usize, path: &str) -> Option<std::io::Result<Lease<'p>>> {
-    let mut file = match File::open(path).and_then(|f| Ok((f.metadata()?.len(), f))) {
+/// Read the file at `path` (item `i`; NUL-terminated UTF-16) into a buffer from the pool, its size reserved in list
+/// order. `None` once the pass stops.
+fn read_whole<'p>(pool: &'p Pool, i: usize, path: &[u16]) -> Option<std::io::Result<Lease<'p>>> {
+    let mut file = match open(path).and_then(|f| Ok((f.metadata()?.len(), f))) {
         Ok((size, file)) => (file, size as usize),
         Err(e) => {
             pool.pass(i);
@@ -178,6 +185,29 @@ fn read_whole<'p>(pool: &'p Pool, i: usize, path: &str) -> Option<std::io::Resul
     };
     let mut lease = pool.take(i, file.1)?;
     Some(file.0.read_to_end(&mut lease.bytes).map(|_| lease))
+}
+
+/// `File::open` of a NUL-terminated UTF-16 path, which std would otherwise make from a `&str` into a new buffer for
+/// each file. The same call as std's: read access, every sharing mode, an existing file, no flags.
+fn open(path: &[u16]) -> std::io::Result<File> {
+    debug_assert_eq!(path.last(), Some(&0));
+    // SAFETY: `path` is NUL-terminated and outlives the call; the null pointers are optional arguments.
+    let h = unsafe {
+        CreateFileW(
+            path.as_ptr(),
+            GENERIC_READ,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            0,
+            std::ptr::null_mut(),
+        )
+    };
+    if h == INVALID_HANDLE_VALUE {
+        return Err(std::io::Error::last_os_error());
+    }
+    // SAFETY: a handle just opened, owned by nothing else; the `File` closes it.
+    Ok(unsafe { File::from_raw_handle(h as RawHandle) })
 }
 
 /// Ends the pass: tells the readers and the pool.
@@ -323,6 +353,8 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
+    use pg_core::paths::verbatim_wide;
+
     use super::*;
 
     /// What the pool holds: its bytes are the sum of its buffers' capacities, and there are no more buffers than
@@ -452,7 +484,10 @@ mod tests {
         let mut seen = vec![false; paths.len()];
         run(
             &paths,
-            |p| Some(p.as_str()),
+            |p, wide| {
+                verbatim_wide(&[p], wide);
+                true
+            },
             &opts,
             &Control::new(false),
             || Ok(()),
@@ -471,5 +506,30 @@ mod tests {
         .unwrap();
         assert!(seen.iter().all(|&s| s));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
+    #[test]
+    fn files_open_as_std_opens_them() {
+        let root = std::env::temp_dir().join(format!("pg-open-{}", std::process::id()));
+        let mut dir = root.clone();
+        while dir.as_os_str().len() < 300 {
+            dir.push("a-folder-name-of-forty-characters-long--");
+        }
+        std::fs::create_dir_all(&dir).unwrap();
+        let mut wide = Vec::new();
+        for name in ["f.bin", "fotografía ñandú 写真.jpg"] {
+            let path = dir.join(name);
+            std::fs::write(&path, name.as_bytes()).unwrap();
+            verbatim_wide(&[path.to_str().unwrap()], &mut wide);
+            let mut bytes = Vec::new();
+            open(&wide).unwrap().read_to_end(&mut bytes).unwrap();
+            assert_eq!(bytes, name.as_bytes());
+        }
+        verbatim_wide(&[dir.join("missing.jpg").to_str().unwrap()], &mut wide);
+        let ours = open(&wide).unwrap_err();
+        let std = File::open(dir.join("missing.jpg")).unwrap_err();
+        assert_eq!((ours.kind(), ours.raw_os_error()), (std.kind(), std.raw_os_error()));
+        std::fs::remove_dir_all(&root).unwrap();
     }
 }

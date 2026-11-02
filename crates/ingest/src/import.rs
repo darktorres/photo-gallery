@@ -95,14 +95,21 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     let video = |i: usize| items[i].kind == Kind::Video;
     pipeline::run(
         items,
-        |item| (item.kind != Kind::Video).then_some(work.path(item.path)),
+        |item, wide| {
+            // A video is read by FFmpeg, from its path.
+            let whole = item.kind != Kind::Video;
+            if whole {
+                work.wide(item.path, wide);
+            }
+            whole
+        },
         opts,
         ctl,
         Analyzer::new,
         |analyzer, i, bytes| {
             if video(i) {
-                let path = verbatim(work.path(items[i].path));
-                pg_core::video::analyze(Path::new(&*path), items[i].rotation, analyzer)
+                let path = work.path(items[i].path);
+                pg_core::video::analyze(Path::new(&*verbatim(&path)), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)
             }

@@ -4,8 +4,9 @@
 //! ExifTool takes the plain path, as a `\\?\` path isn't one it reads (its own long-name support is a separate
 //! option, FINDINGS "I/O").
 //!
-//! A pass's paths are kept end to end in one string ([`PathArena`], [`WorkList`]): a list of 189k files is a few
-//! allocations, not one per path.
+//! A pass's paths are kept end to end in strings ([`PathArena`]): a [`WorkList`] holds each folder's path once and
+//! each file's name, so a list of 189k files is a few allocations, not one per path. A file is opened from them
+//! through a reader's wide buffer ([`WorkList::wide`]), without a path of its own.
 
 use std::borrow::Cow;
 
@@ -20,12 +21,17 @@ pub fn verbatim(path: &str) -> Cow<'_, str> {
     }
 }
 
-/// [`verbatim`] of `path` followed by `tail` (which counts towards the length), as NUL-terminated UTF-16 for a
-/// Win32 call, written into `out`.
-pub fn verbatim_wide(path: &str, tail: &str, out: &mut Vec<u16>) {
-    let (prefix, rest) = split(path, path.len() + tail.len());
+/// [`verbatim`] of the concatenation of `parts` (the first starts the path), as NUL-terminated UTF-16 for a Win32
+/// call, written into `out`.
+pub fn verbatim_wide(parts: &[&str], out: &mut Vec<u16>) {
+    let (first, tail) = parts.split_first().map_or(("", &[][..]), |(f, t)| (*f, t));
+    let (prefix, rest) = split(first, parts.iter().map(|p| p.len()).sum());
     out.clear();
-    out.extend(prefix.encode_utf16().chain(rest.encode_utf16()).chain(tail.encode_utf16()).chain([0]));
+    out.extend(prefix.encode_utf16().chain(rest.encode_utf16()));
+    for part in tail {
+        out.extend(part.encode_utf16());
+    }
+    out.push(0);
 }
 
 /// What the verbatim form of a path `len` bytes long that starts with `path` puts first, and the part of `path`
@@ -74,15 +80,76 @@ impl PathArena {
     }
 }
 
-/// A pass's work: its items, each holding its path as a [`PathRef`] into `paths`.
+/// A file of a [`WorkList`]: its folder's path and its name, in the list's arenas.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FilePath {
+    folder: PathRef,
+    name: PathRef,
+}
+
+/// A pass's work: its items, each holding its path as a [`FilePath`]. Each folder's path is held once, read the
+/// first time one of its files is added ([`WorkList::file`]).
 pub struct WorkList<T> {
     pub items: Vec<T>,
-    pub paths: PathArena,
+    folders: PathArena,
+    /// Each folder id's path in `folders`, once read.
+    folder_paths: Vec<Option<PathRef>>,
+    names: PathArena,
 }
 
 impl<T> WorkList<T> {
-    pub fn path(&self, path: PathRef) -> &str {
-        self.paths.get(path)
+    /// Room for `items` items, and folder ids up to `max_folder_id`.
+    pub fn with_capacity(items: usize, max_folder_id: i64) -> Self {
+        let folder_paths = vec![None; usize::try_from(max_folder_id).map_or(0, |n| n + 1)];
+        WorkList {
+            items: Vec::with_capacity(items),
+            folders: PathArena::default(),
+            folder_paths,
+            names: PathArena::default(),
+        }
+    }
+
+    /// The path of the file `name` in folder `folder_id`. The folder's path is read by `read_folder` (into the
+    /// arena it is given) the first time it is asked for.
+    pub fn file<E>(
+        &mut self,
+        folder_id: i64,
+        name: &str,
+        read_folder: impl FnOnce(&mut PathArena) -> Result<PathRef, E>,
+    ) -> Result<FilePath, E> {
+        let k = usize::try_from(folder_id).unwrap_or(usize::MAX);
+        let folder = match self.folder_paths.get(k).copied().flatten() {
+            Some(folder) => folder,
+            None => {
+                let folder = read_folder(&mut self.folders)?;
+                if k >= self.folder_paths.len() && k != usize::MAX {
+                    // A folder made after the list was sized (not within one read).
+                    self.folder_paths.resize(k + 1, None);
+                }
+                if let Some(slot) = self.folder_paths.get_mut(k) {
+                    *slot = Some(folder);
+                }
+                folder
+            }
+        };
+        Ok(FilePath { folder, name: self.names.push(name) })
+    }
+
+    /// The file's folder and name.
+    pub fn parts(&self, path: FilePath) -> [&str; 2] {
+        [self.folders.get(path.folder), self.names.get(path.name)]
+    }
+
+    /// Its path, for messages and for the programs it is handed to (FFmpeg).
+    pub fn path(&self, path: FilePath) -> String {
+        let [folder, name] = self.parts(path);
+        [folder, "\\", name].concat()
+    }
+
+    /// Its path as [`verbatim_wide`] gives it, for opening it.
+    pub fn wide(&self, path: FilePath, out: &mut Vec<u16>) {
+        let [folder, name] = self.parts(path);
+        verbatim_wide(&[folder, "\\", name], out);
     }
 
     pub fn len(&self) -> usize {
@@ -96,7 +163,7 @@ impl<T> WorkList<T> {
 
 impl<T> Default for WorkList<T> {
     fn default() -> Self {
-        WorkList { items: Vec::new(), paths: PathArena::default() }
+        WorkList::with_capacity(0, -1)
     }
 }
 
@@ -127,15 +194,47 @@ mod tests {
         assert_eq!(verbatim(&already), already);
         let mut wide = Vec::new();
         for (path, tail) in [(r"D:\a", r"\"), (&*format!(r"D:\{dir}"), r"\"), (&*format!(r"\\nas\{dir}"), r"\")] {
-            verbatim_wide(path, tail, &mut wide);
+            verbatim_wide(&[path, tail], &mut wide);
             let whole = verbatim(&format!("{path}{tail}")).encode_utf16().chain([0]).collect::<Vec<_>>();
             assert_eq!(wide, whole, "{path}");
         }
         // The tail counts: a folder just short of the limit is long with its backslash.
         let edge = format!(r"D:\{}", "x".repeat(SHORT - 4));
         assert_eq!(edge.len(), SHORT - 1);
-        verbatim_wide(&edge, r"\", &mut wide);
+        verbatim_wide(&[&edge, r"\"], &mut wide);
         assert!(String::from_utf16(&wide).unwrap().starts_with(r"\\?\D:"));
+    }
+
+    /// A work list gives each file's path from its folder, read once, and its name.
+    #[test]
+    fn a_work_list_reads_each_folder_once() {
+        let mut list = WorkList::<()>::with_capacity(4, 3);
+        let mut reads = 0;
+        let mut add = |list: &mut WorkList<()>, folder: i64, name: &str| {
+            list.file(folder, name, |arena| {
+                reads += 1;
+                Ok::<_, ()>(arena.push(&format!(r"D:\f{folder}")))
+            })
+            .unwrap()
+        };
+        let a = add(&mut list, 2, "a.jpg");
+        let b = add(&mut list, 0, "b.jpg");
+        let c = add(&mut list, 2, "c.jpg");
+        // Past the size it was given.
+        let d = add(&mut list, 9, "d.jpg");
+        assert_eq!(reads, 3);
+        assert_eq!(
+            [a, b, c, d].map(|p| list.path(p)),
+            [r"D:\f2\a.jpg", r"D:\f0\b.jpg", r"D:\f2\c.jpg", r"D:\f9\d.jpg"]
+        );
+        let mut wide = Vec::new();
+        list.wide(c, &mut wide);
+        assert_eq!(wide, r"D:\f2\c.jpg".encode_utf16().chain([0]).collect::<Vec<_>>());
+        // A long one is verbatim, its name counted.
+        let dir = "x".repeat(SHORT);
+        let long = list.file(5, "e.jpg", |arena| Ok::<_, ()>(arena.push(&format!(r"D:\{dir}")))).unwrap();
+        list.wide(long, &mut wide);
+        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), format!(r"\\?\D:\{dir}\e.jpg"));
     }
 
     /// std reads a file through a path past the limit as it is (it makes the verbatim form itself).

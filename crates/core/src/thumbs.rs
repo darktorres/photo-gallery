@@ -36,7 +36,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, Transactio
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
 use crate::decode::{Decoded, Decoder, Format, MinSize, Rgb, release_over};
-use crate::paths::{PathRef, WorkList};
+use crate::paths::{FilePath, WorkList};
 use crate::resize::Resizer;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
@@ -196,8 +196,8 @@ pub struct Thumb {
 /// A file the background task still has to thumbnail at the current height.
 pub struct ThumbWork {
     pub id: i64,
-    /// In its list's [`WorkList::paths`].
-    pub path: PathRef,
+    /// In its list.
+    pub path: FilePath,
     pub source: Source,
     /// For a video, the time of its poster frame (`video::poster_ms`).
     pub poster_ms: Option<i64>,
@@ -665,14 +665,22 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
     {
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
+        let mut folder = None;
         while let Some(r) = rows.next()? {
-            let path = work.paths.push(r.get_ref(1)?.as_str()?);
+            if folder.is_none() {
+                // Only once there is work: a pass with nothing to do reads nothing more.
+                work = WorkList::with_capacity(0, crate::catalog::max_folder_id(&tx, "cat.")?);
+                folder = Some(tx.prepare("SELECT path FROM cat.folders WHERE id = ?1")?);
+            }
+            let Some(folder) = folder.as_mut() else { unreachable!("made above") };
+            let name = r.get_ref(2)?.as_str()?;
+            let path = work.file(r.get(1)?, name, |arena| crate::catalog::folder_path(folder, r, arena))?;
             work.items.push(ThumbWork {
                 id: r.get(0)?,
                 path,
-                source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
-                poster_ms: r.get(4)?,
-                seq: r.get(5)?,
+                source: Source { mtime: r.get(3)?, rotation: r.get(4)? },
+                poster_ms: r.get(5)?,
+                seq: r.get(6)?,
             });
         }
     }
@@ -686,8 +694,7 @@ fn pending_sql(since_checked: bool) -> &'static str {
     macro_rules! pending {
         ($changed:literal) => {
             concat!(
-                "SELECT f.id, (SELECT path FROM cat.folders WHERE id = f.folder_id) || '\\' || f.name, f.mtime,
-                        f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END, f.seq
+                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END, f.seq
                  FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
                  LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
                  WHERE ",

@@ -22,7 +22,7 @@ use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
 use crate::decode::Format;
 use crate::media::{Ext, Kind};
-use crate::paths::{PathArena, PathRef, WorkList};
+use crate::paths::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;
 use crate::pdq_index::PdqIndex;
 
@@ -552,11 +552,11 @@ fn set_borders_version(conn: &Connection) -> Result<()> {
     Ok(tx.commit()?)
 }
 
-/// What a [`WorkItem`] is read from, with `f` the file.
+/// What a [`WorkItem`] is read from, with `f` the file: its folder's id and its name, which [`work_list`] makes
+/// its path from.
 macro_rules! work_columns {
     () => {
-        "f.id, (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime, f.rotation,
-        f.kind"
+        "f.id, f.folder_id, f.name, f.size, f.mtime, f.rotation, f.kind"
     };
 }
 
@@ -590,23 +590,49 @@ fn pending_import_sql(retry_errors: bool) -> &'static str {
     }
 }
 
-/// The work list of a statement whose rows start with `work_columns!()` and number at most `bound`: the items in
-/// a `Vec` of that capacity, their paths in one arena.
-fn work_list(stmt: &mut rusqlite::Statement, bound: usize) -> Result<WorkList<WorkItem>> {
-    let mut list = WorkList { items: Vec::with_capacity(bound), paths: PathArena::default() };
+/// The work list of a statement whose rows start with `work_columns!()` and number at most `bound`, read in
+/// `conn`'s transaction: the items in a `Vec` of that capacity, each folder's path read once.
+fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound: usize) -> Result<WorkList<WorkItem>> {
     let mut rows = stmt.query([])?;
+    let (mut list, mut folder) = (WorkList::default(), None);
     while let Some(r) = rows.next()? {
-        let path = list.paths.push(r.get_ref(1)?.as_str()?);
+        if folder.is_none() {
+            // Only once there is work: a round with nothing to do reads nothing more.
+            list = WorkList::with_capacity(bound, max_folder_id(conn, "")?);
+            folder = Some(conn.prepare_cached(FOLDER_PATH)?);
+        }
+        let Some(folder) = folder.as_mut() else { unreachable!("made above") };
+        let path = list.file(r.get(1)?, r.get_ref(2)?.as_str()?, |arena| folder_path(folder, r, arena))?;
         list.items.push(WorkItem {
             id: r.get(0)?,
             path,
-            size: r.get(2)?,
-            mtime: r.get(3)?,
-            rotation: r.get(4)?,
-            kind: Kind::from_key(r.get_ref(5)?.as_str()?).unwrap_or(Kind::Image),
+            size: r.get(3)?,
+            mtime: r.get(4)?,
+            rotation: r.get(5)?,
+            kind: Kind::from_key(r.get_ref(6)?.as_str()?).unwrap_or(Kind::Image),
         });
     }
     Ok(list)
+}
+
+/// A folder's path by its id.
+const FOLDER_PATH: &str = "SELECT path FROM folders WHERE id = ?1";
+
+/// The largest folder id of the catalog (`schema`: `""`, or `"cat."` where it is attached under that name): an
+/// O(1) read of the table's last row.
+pub(crate) fn max_folder_id(conn: &Connection, schema: &str) -> Result<i64> {
+    let sql = format!("SELECT coalesce(max(id), -1) FROM {schema}folders");
+    Ok(conn.query_row(&sql, [], |r| r.get(0))?)
+}
+
+/// The path of the folder of row `r` (its column 1), read with `folder` ([`FOLDER_PATH`]) into `arena`.
+pub(crate) fn folder_path(
+    folder: &mut rusqlite::Statement,
+    r: &rusqlite::Row,
+    arena: &mut PathArena,
+) -> rusqlite::Result<PathRef> {
+    let id: i64 = r.get(1)?;
+    folder.query_row([id], |f| Ok(arena.push(f.get_ref(0)?.as_str()?)))
 }
 
 /// A file as the scanner saw it.
@@ -630,8 +656,8 @@ pub struct Folder {
 #[derive(Clone, Copy, Debug)]
 pub struct WorkItem {
     pub id: i64,
-    /// In its list's [`WorkList::paths`].
-    pub path: PathRef,
+    /// In its list.
+    pub path: FilePath,
     pub size: i64,
     pub mtime: i64,
     /// Catalog rotation (`files.rotation`), applied when decoding.
@@ -794,7 +820,7 @@ impl Catalog {
         if retry_errors {
             bound += count("SELECT count(*) FROM analysis WHERE error IS NOT NULL")?;
         }
-        let list = work_list(&mut tx.prepare(pending_import_sql(retry_errors))?, bound)?;
+        let list = work_list(&tx, &mut tx.prepare(pending_import_sql(retry_errors))?, bound)?;
         tx.commit()?;
         Ok(list)
     }
@@ -830,7 +856,7 @@ impl Catalog {
              WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
              ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
         ))?;
-        let list = work_list(&mut stmt, bound)?;
+        let list = work_list(&tx, &mut stmt, bound)?;
         drop(stmt);
         tx.commit()?;
         Ok(list)

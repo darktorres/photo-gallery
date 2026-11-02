@@ -13,6 +13,7 @@ use pg_core::borders::{self as detector, Detector, Side};
 use pg_core::catalog::{BordersWriter, Catalog};
 use pg_core::decode::Rgb;
 use pg_core::media::{Ext, Kind};
+use pg_core::paths::verbatim_wide;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -55,7 +56,10 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     };
     pipeline::run(
         items,
-        |item| Some(work.path(item.path)),
+        |item, wide| {
+            work.wide(item.path, wide);
+            true
+        },
         opts,
         ctl,
         Analyzer::new,
@@ -128,7 +132,10 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     ctl.begin("borders", String::new(), files.len() as u64);
     pipeline::run(
         &files,
-        |file| Some(file),
+        |file, wide| {
+            verbatim_wide(&[file], wide);
+            true
+        },
         opts,
         ctl,
         Analyzer::new,

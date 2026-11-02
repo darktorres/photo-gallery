@@ -62,7 +62,7 @@ impl Dir {
     fn open(path: &str, wide: &mut Vec<u16>) -> Result<Dir> {
         // With its trailing backslash (a drive root is `D:`, which alone means the drive's current folder), and
         // in its verbatim form when long, which lifts the 260-character limit.
-        verbatim_wide(path, "\\", wide);
+        verbatim_wide(&[path, "\\"], wide);
         // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.
         let h = unsafe {
             CreateFileW(

@@ -580,7 +580,7 @@ fn gif_xmp(bytes: &[u8], range: std::ops::Range<usize>) -> Option<&[u8]> {
     if bytes.get(range.start + 3..range.start + 14) != Some(b"XMP DataXMP") {
         return None;
     }
-    let data = &bytes[range.start + 14..range.end];
+    let data = bytes.get(range.start + 14..range.end)?;
     let end = find(data, b"<?xpacket end=")?;
     let close = find(&data[end..], b"?>")?;
     Some(&data[..end + close + 2])
@@ -962,6 +962,20 @@ mod tests {
         // Without its trailer (a truncated download), nothing it holds is taken: one frame, no rating.
         let truncated = &animated[..animated.len() - 1];
         assert_eq!((rating(truncated, Format::Gif), frames(truncated, Format::Gif)), (None, 1));
+    }
+
+    #[test]
+    fn a_gif_truncated_anywhere_in_its_xmp_block_reads_without_panicking() {
+        // Every cut through the packet and its magic trailer (R-01): the block must fit in the file to be read.
+        let mut ext = [&[0x21, 0xFF, 11][..], b"XMP DataXMP", &rating_packet(3), &[0x01]].concat();
+        ext.extend((0..=255u8).rev());
+        ext.push(0);
+        let header = gif_header_len(&gif(1)).unwrap();
+        let whole = [&gif(1)[..header], &ext, &gif(1)[header..]].concat();
+        for cut in 1..=ext.len() {
+            let truncated = &whole[..whole.len() - cut];
+            assert_eq!(rating(truncated, Format::Gif), None, "cut {cut}");
+        }
     }
 
     #[test]

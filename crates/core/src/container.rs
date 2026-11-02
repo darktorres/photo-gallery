@@ -213,7 +213,13 @@ impl GifBlocks<'_> {
                     // The XMP packet is stored raw (its bytes double as sub-block lengths), closed by a 258-byte
                     // "magic trailer" ending in 0x00 0x00.
                     let packet_end = find(&bytes[i + 14..], b"<?xpacket end=").map(|p| i + 14 + p)?;
-                    find(&bytes[packet_end..], &[0x01, 0xFF]).map(|p| packet_end + p + 258)?
+                    let end = find(&bytes[packet_end..], &[0x01, 0xFF]).map(|p| packet_end + p + 258)?;
+                    // A block cut short by the end of the file is not a block (the walk ends there, as a truncated
+                    // file does): its trailer must be in the file.
+                    if end > bytes.len() {
+                        return None;
+                    }
+                    end
                 } else {
                     skip_sub_blocks(bytes, i + 2)?
                 };

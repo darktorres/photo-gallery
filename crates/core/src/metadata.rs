@@ -9,12 +9,14 @@
 //! EXIF is read in place by a reader of its own: IFD0 and the Exif IFD, only the tags used here, every offset
 //! checked. A broken field elsewhere in the block (a thumbnail's IFD, GPS) doesn't lose the ones read.
 
-use std::borrow::Cow;
-use std::collections::BTreeMap;
+use std::ops::Range;
 
+use miniz_oxide::inflate::TINFLStatus;
+use miniz_oxide::inflate::core::{DecompressorOxide, decompress, inflate_flags};
 use quick_xml::NsReader;
 use quick_xml::events::Event;
 use quick_xml::name::{Namespace, ResolveResult};
+use quick_xml::reader::ReaderBuffers;
 
 use crate::decode::Format;
 
@@ -63,23 +65,61 @@ const XMP_WANTED: [(&str, &str); 5] = [
     (NS_XMP, "CreateDate"),
 ];
 
+/// What reading a file's metadata works in besides the file, kept from one file to the next (a worker keeps one,
+/// `analyze::Analyzer`): once its buffers have grown, reading a file's metadata allocates nothing.
+#[derive(Default)]
+pub struct MetaScratch {
+    /// The container's XMP packets, main one first ([`Container::walk`]).
+    packets: Vec<Packet>,
+    /// The packets that aren't in the file as they are: reassembled extended JPEG packets, inflated PNG ones.
+    assembled: Vec<u8>,
+    /// An extended JPEG packet's chunks, as found.
+    chunks: Vec<ExtendedChunk>,
+    /// The inflater of compressed PNG packets, made when one is first met.
+    inflater: Option<Box<DecompressorOxide>>,
+    /// The XML reader's.
+    xml: ReaderBuffers,
+    /// The wanted values of the packet being read, one after another.
+    values: String,
+}
+
+/// An XMP packet: a range of the file, or of [`MetaScratch::assembled`].
+#[derive(Clone)]
+enum Packet {
+    InFile(Range<usize>),
+    Assembled(Range<usize>),
+}
+
+/// Where `part`, a slice of `bytes`, is in it.
+fn range_in(bytes: &[u8], part: &[u8]) -> Range<usize> {
+    let start = part.as_ptr() as usize - bytes.as_ptr() as usize;
+    debug_assert!(start + part.len() <= bytes.len());
+    start..start + part.len()
+}
+
 impl Meta {
-    pub fn read(bytes: &[u8], format: Format) -> Meta {
-        let mut container = Container::walk(bytes, format);
+    pub fn read(bytes: &[u8], format: Format, scratch: &mut MetaScratch) -> Meta {
+        let container = Container::walk(bytes, format, scratch);
         let exif = container.exif.clone().and_then(|block| Exif::read(&bytes[block])).unwrap_or_default();
         if format == Format::Tiff {
             // A TIFF file keeps its packet in IFD0.
-            container.xmp.extend(exif.xmp.map(Cow::Borrowed));
+            scratch.packets.extend(exif.xmp.map(|x| Packet::InFile(range_in(bytes, x))));
         }
         // In packet order: the first packet's value of each, but MicrosoftPhoto's only counts without an XMP one.
         let (mut xmp_rating, mut microsoft, mut xmp_taken) = (None, None, None);
-        let number = |v: Option<String>| v.and_then(|v| v.parse::<f64>().ok());
-        for packet in &container.xmp {
-            let [rating, ms, original, created, create] = xmp_properties(packet, XMP_WANTED);
+        let MetaScratch { packets, assembled, xml, values, .. } = scratch;
+        for packet in packets.iter() {
+            let packet = match packet {
+                Packet::InFile(r) => &bytes[r.clone()],
+                Packet::Assembled(r) => &assembled[r.clone()],
+            };
+            let found = xmp_properties(packet, XMP_WANTED, xml, values);
+            let [rating, ms, original, created, create] = found.map(|v| v.map(|r| &values[r]));
+            let number = |v: Option<&str>| v.and_then(|v| v.parse::<f64>().ok());
             xmp_rating = xmp_rating.or_else(|| number(rating).and_then(xmp_value));
             microsoft = microsoft.or_else(|| number(ms).map(percent));
-            xmp_taken = xmp_taken
-                .or_else(|| [original, created, create].into_iter().flatten().find_map(|d| parse_iso_date(&d)));
+            xmp_taken =
+                xmp_taken.or_else(|| [original, created, create].into_iter().flatten().find_map(parse_iso_date));
         }
         let exif_rating =
             || exif.rating.map(|v| v.min(5) as u8).or_else(|| exif.rating_percent.map(|v| percent(v as f64)));
@@ -98,12 +138,19 @@ pub fn orientation(bytes: &[u8], format: Format) -> u8 {
 }
 
 /// The first value of each wanted property (namespace URI, local name) in one packet, as an attribute of an
-/// `rdf:Description` or as an element's text, trimmed; empty values are skipped.
-fn xmp_properties<const N: usize>(packet: &[u8], wanted: [(&str, &str); N]) -> [Option<String>; N] {
+/// `rdf:Description` or as an element's text, trimmed; empty values are skipped. Each is a range of `values`
+/// (emptied first), read with the XML reader in `buffers` (given back after).
+fn xmp_properties<const N: usize>(
+    packet: &[u8],
+    wanted: [(&str, &str); N],
+    buffers: &mut ReaderBuffers,
+    values: &mut String,
+) -> [Option<Range<usize>>; N] {
+    values.clear();
     let text = String::from_utf8_lossy(packet);
     // The packet wrapper (<?xpacket ...?>) is a processing instruction, which the parser skips.
-    let mut reader = NsReader::from_str(&text);
-    let mut found: [Option<String>; N] = std::array::from_fn(|_| None);
+    let mut reader = NsReader::from_str_with(&text, std::mem::take(buffers));
+    let mut found: [Option<Range<usize>>; N] = std::array::from_fn(|_| None);
     // Set while inside a wanted element, to read its text.
     let mut inside: Option<usize> = None;
     let which = |ns: &ResolveResult, local: &str| {
@@ -111,10 +158,12 @@ fn xmp_properties<const N: usize>(packet: &[u8], wanted: [(&str, &str); N]) -> [
             .iter()
             .position(|(uri, name)| matches!(ns, ResolveResult::Bound(Namespace(n)) if n == uri) && local == *name)
     };
-    let keep = |found: &mut [Option<String>; N], i: usize, value: &str| {
+    let mut keep = |found: &mut [Option<Range<usize>>; N], i: usize, value: &str| {
         let value = value.trim();
         if found[i].is_none() && !value.is_empty() {
-            found[i] = Some(value.to_string());
+            let start = values.len();
+            values.push_str(value);
+            found[i] = Some(start..values.len());
         }
     };
     while let Ok((ns, event)) = reader.read_resolved_event() {
@@ -142,6 +191,7 @@ fn xmp_properties<const N: usize>(packet: &[u8], wanted: [(&str, &str); N]) -> [
             _ => {}
         }
     }
+    *buffers = reader.into_buffers();
     found
 }
 
@@ -380,33 +430,37 @@ pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Op
 
 // --- Containers -------------------------------------------------------------------------------------------------
 
-/// Where a file's container keeps the metadata the import reads, found in one walk of it.
-struct Container<'a> {
+/// Where a file's container keeps the metadata the import reads, found in one walk of it. Its XMP packets, main one
+/// first, are in [`MetaScratch::packets`]: in the file, but for a reassembled extended JPEG packet and a compressed
+/// PNG one, in [`MetaScratch::assembled`]. (A TIFF file's is in its IFD0, read with the EXIF block.)
+struct Container {
     /// The EXIF block (a TIFF structure).
-    exif: Option<std::ops::Range<usize>>,
-    /// The XMP packets the container declares, main one first: borrowed from the file, but for a reassembled
-    /// extended JPEG packet and a compressed PNG one. (A TIFF file's is in its IFD0, read with the EXIF block.)
-    xmp: Vec<Cow<'a, [u8]>>,
+    exif: Option<Range<usize>>,
     frames: u32,
 }
 
-impl<'a> Container<'a> {
-    fn walk(bytes: &'a [u8], format: Format) -> Container<'a> {
-        let mut c = Container { exif: None, xmp: Vec::new(), frames: 1 };
+impl Container {
+    fn walk(bytes: &[u8], format: Format, scratch: &mut MetaScratch) -> Container {
+        let mut c = Container { exif: None, frames: 1 };
+        let MetaScratch { packets, assembled, chunks, inflater, .. } = scratch;
+        packets.clear();
+        assembled.clear();
         match format {
             Format::Jpeg => {
-                let mut extended = ExtendedXmps::default();
+                chunks.clear();
                 for s in jpeg_segments(bytes).filter(|s| s.marker == 0xE1) {
                     if c.exif.is_none() {
                         c.exif = jpeg_exif(&s);
                     }
                     if let Some(packet) = s.data.strip_prefix(JPEG_XMP) {
-                        c.xmp.insert(0, Cow::Borrowed(packet));
+                        packets.push(Packet::InFile(range_in(bytes, packet)));
                     } else {
-                        extended.add(s.data);
+                        add_extended_chunk(bytes, s.data, chunks);
                     }
                 }
-                c.xmp.extend(extended.packets().map(Cow::Owned));
+                // The last standard packet first, then the one before it.
+                packets.reverse();
+                extended_packets(bytes, chunks, assembled, packets);
             }
             Format::Png => {
                 // acTL counts before the first IDAT.
@@ -414,7 +468,14 @@ impl<'a> Container<'a> {
                 for chunk in png_chunks(bytes) {
                     match &chunk.kind {
                         b"eXIf" if c.exif.is_none() => c.exif = Some(chunk_data(&chunk)),
-                        b"iTXt" => c.xmp.extend(png_itxt_xmp(chunk.data)),
+                        b"iTXt" => match png_itxt_xmp(chunk.data) {
+                            Some(ItxtXmp::Plain(text)) => packets.push(Packet::InFile(range_in(bytes, text))),
+                            Some(ItxtXmp::Compressed(text)) => {
+                                let inflater = inflater.get_or_insert_with(Box::default);
+                                packets.extend(inflate_zlib(text, inflater, assembled).map(Packet::Assembled));
+                            }
+                            None => {}
+                        },
                         b"IDAT" => image_data = true,
                         b"acTL" if !image_data && animation.is_none() => {
                             animation = Some(chunk.data.get(..4).map(|n| u32::from_be_bytes(n.try_into().unwrap())));
@@ -431,7 +492,7 @@ impl<'a> Container<'a> {
                         b"VP8X" => animated |= chunk.data.first().is_some_and(|f| f & 0x02 != 0),
                         b"ANMF" => frames += 1,
                         b"EXIF" if c.exif.is_none() => c.exif = Some(webp_exif(&chunk)),
-                        b"XMP " => c.xmp.push(Cow::Borrowed(chunk.data)),
+                        b"XMP " => packets.push(Packet::InFile(chunk_data(&chunk))),
                         _ => {}
                     }
                 }
@@ -452,7 +513,7 @@ impl<'a> Container<'a> {
                 // Only a GIF read to its trailer.
                 if blocks.complete() {
                     c.frames = images.max(1);
-                    c.xmp.extend(packet.map(Cow::Borrowed));
+                    packets.extend(packet.map(|x| Packet::InFile(range_in(bytes, x))));
                 }
             }
             Format::Tiff => c.exif = Some(0..bytes.len()),
@@ -508,38 +569,82 @@ fn jpeg_exif(s: &Segment) -> Option<std::ops::Range<usize>> {
     (s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0")).then(|| s.start + 6..s.start + s.data.len())
 }
 
-/// An extended XMP packet being reassembled: its full length, and the chunks received by offset.
-type ExtendedXmp<'a> = (usize, BTreeMap<usize, &'a [u8]>);
+/// A chunk of an extended XMP packet (Adobe XMP Part 3, 1.1.3.1), as found in a JPEG.
+struct ExtendedChunk {
+    /// Its packet's GUID, in the file.
+    guid: Range<usize>,
+    /// Its packet's length, as this chunk says.
+    full: usize,
+    offset: usize,
+    data: Range<usize>,
+    /// The order it was found in.
+    seq: usize,
+}
 
-/// Extended XMP packets being reassembled (Adobe XMP Part 3, 1.1.3.1), by GUID.
-#[derive(Default)]
-struct ExtendedXmps<'a>(BTreeMap<&'a [u8], ExtendedXmp<'a>>);
+/// An APP1 segment's data, if it is a chunk of an extended packet.
+fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<ExtendedChunk>) {
+    if let Some(rest) = data.strip_prefix(JPEG_XMP_EXTENSION)
+        && rest.len() >= 40
+    {
+        let full = u32::from_be_bytes(rest[32..36].try_into().unwrap()) as usize;
+        let offset = u32::from_be_bytes(rest[36..40].try_into().unwrap()) as usize;
+        let (guid, data) = (range_in(bytes, &rest[..32]), range_in(bytes, &rest[40..]));
+        chunks.push(ExtendedChunk { guid, full, offset, data, seq: chunks.len() });
+    }
+}
 
-impl<'a> ExtendedXmps<'a> {
-    /// An APP1 segment's data, if it is a chunk of one.
-    fn add(&mut self, data: &'a [u8]) {
-        if let Some(rest) = data.strip_prefix(JPEG_XMP_EXTENSION)
-            && rest.len() >= 40
-        {
-            let guid = &rest[..32];
-            let full = u32::from_be_bytes(rest[32..36].try_into().unwrap()) as usize;
-            let offset = u32::from_be_bytes(rest[36..40].try_into().unwrap()) as usize;
-            self.0.entry(guid).or_insert((full, BTreeMap::new())).1.insert(offset, &rest[40..]);
+/// The extended packets whose chunks are all there, by GUID, each reassembled into `assembled`. A packet's length
+/// is what its first chunk found says; of chunks at the same offset, the last found counts; the chunks must follow
+/// each other from offset 0 up to that length.
+fn extended_packets(bytes: &[u8], chunks: &mut [ExtendedChunk], assembled: &mut Vec<u8>, packets: &mut Vec<Packet>) {
+    chunks.sort_unstable_by(|a, b| {
+        (&bytes[a.guid.clone()], a.offset, a.seq).cmp(&(&bytes[b.guid.clone()], b.offset, b.seq))
+    });
+    for packet in chunks.chunk_by(|a, b| bytes[a.guid.clone()] == bytes[b.guid.clone()]) {
+        let full = packet.iter().min_by_key(|c| c.seq).unwrap().full;
+        let start = assembled.len();
+        for at_offset in packet.chunk_by(|a, b| a.offset == b.offset) {
+            let last = at_offset.last().unwrap();
+            if last.offset != assembled.len() - start {
+                break;
+            }
+            assembled.extend_from_slice(&bytes[last.data.clone()]);
+        }
+        if assembled.len() - start == full {
+            packets.push(Packet::Assembled(start..assembled.len()));
+        } else {
+            assembled.truncate(start);
         }
     }
+}
 
-    /// The packets whose chunks are all there.
-    fn packets(self) -> impl Iterator<Item = Vec<u8>> {
-        self.0.into_values().filter_map(|(full, chunks)| {
-            let mut packet = Vec::with_capacity(full);
-            for (offset, data) in chunks {
-                if offset != packet.len() {
-                    break;
-                }
-                packet.extend_from_slice(data);
+/// zlib data inflated onto the end of `out`, as `miniz_oxide::inflate::decompress_to_vec_zlib` would give it (the
+/// same output, the same failures), with a kept decompressor. Its range in `out`; `None`, and `out` as it was, if it
+/// doesn't inflate.
+fn inflate_zlib(mut input: &[u8], decompressor: &mut DecompressorOxide, out: &mut Vec<u8>) -> Option<Range<usize>> {
+    let flags = inflate_flags::TINFL_FLAG_PARSE_ZLIB_HEADER | inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
+    decompressor.init();
+    let start = out.len();
+    out.resize(start + input.len().saturating_mul(2), 0);
+    let mut at = 0;
+    loop {
+        let (status, read, written) = decompress(decompressor, input, &mut out[start..], at, flags);
+        at += written;
+        match status {
+            TINFLStatus::Done => {
+                out.truncate(start + at);
+                return Some(start..out.len());
             }
-            (packet.len() == full).then_some(packet)
-        })
+            TINFLStatus::HasMoreOutput if read <= input.len() => {
+                input = &input[read..];
+                let len = out.len() - start;
+                out.resize(start + len.saturating_mul(2), 0);
+            }
+            _ => {
+                out.truncate(start);
+                return None;
+            }
+        }
     }
 }
 
@@ -571,8 +676,14 @@ pub(crate) fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
     })
 }
 
-/// The text of an `XML:com.adobe.xmp` iTXt chunk (possibly zlib-compressed).
-fn png_itxt_xmp(data: &[u8]) -> Option<Cow<'_, [u8]>> {
+/// The text of an `XML:com.adobe.xmp` iTXt chunk.
+enum ItxtXmp<'a> {
+    Plain(&'a [u8]),
+    /// zlib data.
+    Compressed(&'a [u8]),
+}
+
+fn png_itxt_xmp(data: &[u8]) -> Option<ItxtXmp<'_>> {
     let rest = data.strip_prefix(b"XML:com.adobe.xmp\0")?;
     let (&compressed, rest) = rest.split_first()?;
     let rest = rest.get(1..)?; // compression method
@@ -580,11 +691,7 @@ fn png_itxt_xmp(data: &[u8]) -> Option<Cow<'_, [u8]>> {
     let rest = &rest[lang_end + 1..];
     let translated_end = rest.iter().position(|&b| b == 0)?;
     let text = &rest[translated_end + 1..];
-    if compressed == 1 {
-        miniz_oxide::inflate::decompress_to_vec_zlib(text).ok().map(Cow::Owned)
-    } else {
-        Some(Cow::Borrowed(text))
-    }
+    Some(if compressed == 1 { ItxtXmp::Compressed(text) } else { ItxtXmp::Plain(text) })
 }
 
 /// WebP (RIFF) chunks after the `WEBP` form type.
@@ -818,16 +925,20 @@ pub fn patch_orientation(bytes: &[u8], format: Format, o: u8) -> Option<Vec<u8>>
 mod tests {
     use super::*;
 
+    fn meta_of(bytes: &[u8], format: Format) -> Meta {
+        Meta::read(bytes, format, &mut MetaScratch::default())
+    }
+
     fn rating(bytes: &[u8], format: Format) -> Option<u8> {
-        Meta::read(bytes, format).rating
+        meta_of(bytes, format).rating
     }
 
     fn taken(bytes: &[u8], format: Format) -> Option<i64> {
-        Meta::read(bytes, format).taken
+        meta_of(bytes, format).taken
     }
 
     fn frames(bytes: &[u8], format: Format) -> u32 {
-        Meta::read(bytes, format).frames
+        meta_of(bytes, format).frames
     }
 
     /// A WebP container holding only these chunks (enough for the metadata read, which decodes nothing).
@@ -978,7 +1089,7 @@ mod tests {
                 |v: &[u16]| v.iter().flat_map(|&v| if le { v.to_le_bytes() } else { v.to_be_bytes() }).collect();
             let long = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() }.to_vec();
             let date = |d: &[u8]| (EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, [d, b"\0"].concat());
-            let read = |ifd0: &[TestEntry], exif: &[TestEntry]| Meta::read(&tiff_block(le, ifd0, exif), Format::Tiff);
+            let read = |ifd0: &[TestEntry], exif: &[TestEntry]| meta_of(&tiff_block(le, ifd0, exif), Format::Tiff);
 
             let m = read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6]))], &[date(b"2023:07:15 18:30:05")]);
             assert_eq!((m.orientation, m.taken), (6, Some(1_689_445_805)));
@@ -1013,7 +1124,7 @@ mod tests {
             // DateTimeOriginal's offset, in the Exif IFD's first entry: past the end.
             let exif_at = 8 + 2 + 12 * 2 + 4;
             block[exif_at + 2 + 8..exif_at + 2 + 12].copy_from_slice(&long(len as u32));
-            let m = Meta::read(&block, Format::Tiff);
+            let m = meta_of(&block, Format::Tiff);
             assert_eq!((m.rating, m.taken), (Some(2), wall_clock_seconds(2020, 1, 2, 3, 4, 5)));
         }
         // The library's case (6 files, which kamadak-exif read no rating from): a block that ends 4 bytes early,
@@ -1022,7 +1133,7 @@ mod tests {
         let mut block =
             tiff_block(false, &[(EXIF_TAG_RATING, TIFF_SHORT, 1, 4u16.to_be_bytes().to_vec())], &[exif_version]);
         block.truncate(block.len() - 4);
-        assert_eq!(Meta::read(&block, Format::Tiff).rating, Some(4));
+        assert_eq!(meta_of(&block, Format::Tiff).rating, Some(4));
         // Not a TIFF structure without its 42.
         let mut block = tiff_block(true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
         assert_eq!(orientation(&block, Format::Tiff), 6);
@@ -1127,8 +1238,9 @@ mod tests {
             &[0xFF, 0xDA, 0, 2],
         ]
         .concat();
-        let packets = Container::walk(&jpeg, Format::Jpeg).xmp;
-        assert!(matches!(packets[..], [Cow::Borrowed(_), Cow::Owned(_)]));
+        let mut scratch = MetaScratch::default();
+        Container::walk(&jpeg, Format::Jpeg, &mut scratch);
+        assert!(matches!(scratch.packets[..], [Packet::InFile(_), Packet::Assembled(_)]));
         assert_eq!(rating(&jpeg, Format::Jpeg), Some(2));
     }
 
@@ -1163,5 +1275,151 @@ mod tests {
         };
         assert_eq!(frames(&animation(0x02, 5), Format::Webp), 5);
         assert_eq!(frames(&animation(0x00, 0), Format::Webp), 1);
+    }
+
+    fn xorshift(state: &mut u64) -> u64 {
+        *state ^= *state << 13;
+        *state ^= *state >> 7;
+        *state ^= *state << 17;
+        *state
+    }
+
+    /// Extended packets are reassembled as the map of maps did it (the first chunk's length, the last chunk at an
+    /// offset, contiguous from 0, by GUID): random chunk lists of up to 3 packets, chunks shuffled, repeated with other
+    /// data, missing, or with another length.
+    #[test]
+    fn extended_packets_as_the_maps_made_them() {
+        use std::collections::BTreeMap;
+        let mut st = 0x853C49E6748FEA9Bu64;
+        let mut scratch = MetaScratch::default();
+        for _ in 0..3000 {
+            let mut file = Vec::new();
+            let mut segments: Vec<Vec<u8>> = Vec::new();
+            for g in 0..1 + xorshift(&mut st) % 3 {
+                let guid = [b'A' + (g as u8 + (xorshift(&mut st) % 2) as u8); 32];
+                let full = 1 + (xorshift(&mut st) % 40) as usize;
+                let packet: Vec<u8> = (0..full).map(|_| xorshift(&mut st) as u8).collect();
+                let mut at = 0;
+                while at < full {
+                    let len = (1 + xorshift(&mut st) % 12).min((full - at) as u64) as usize;
+                    let r = xorshift(&mut st) % 10;
+                    let (offset, said, data) = match r {
+                        0 => (at + 1, full, packet[at..at + len].to_vec()),
+                        1 => (at, full + 1, packet[at..at + len].to_vec()),
+                        2 => (at, full, vec![0xEE; len]),
+                        _ => (at, full, packet[at..at + len].to_vec()),
+                    };
+                    if r != 3 || !xorshift(&mut st).is_multiple_of(4) {
+                        segments.push(
+                            [
+                                JPEG_XMP_EXTENSION,
+                                &guid,
+                                &(said as u32).to_be_bytes(),
+                                &(offset as u32).to_be_bytes(),
+                                &data,
+                            ]
+                            .concat(),
+                        );
+                    }
+                    if r == 2 {
+                        // The right data after the wrong: the last at an offset counts.
+                        segments.push(
+                            [
+                                JPEG_XMP_EXTENSION,
+                                &guid,
+                                &(full as u32).to_be_bytes(),
+                                &(at as u32).to_be_bytes(),
+                                &packet[at..at + len],
+                            ]
+                            .concat(),
+                        );
+                    }
+                    at += len;
+                }
+            }
+            for i in (1..segments.len()).rev() {
+                segments.swap(i, xorshift(&mut st) as usize % (i + 1));
+            }
+            for seg in &segments {
+                file.extend_from_slice(seg);
+            }
+            // The old way.
+            // GUID → (length, chunks by offset).
+            type Chunks<'a> = (usize, BTreeMap<usize, &'a [u8]>);
+            let mut maps: BTreeMap<&[u8], Chunks> = BTreeMap::new();
+            let mut pos = 0;
+            let mut ranges = Vec::new();
+            for seg in &segments {
+                ranges.push(pos..pos + seg.len());
+                pos += seg.len();
+            }
+            for r in &ranges {
+                let rest = &file[r.clone()][JPEG_XMP_EXTENSION.len()..];
+                let full = u32::from_be_bytes(rest[32..36].try_into().unwrap()) as usize;
+                let offset = u32::from_be_bytes(rest[36..40].try_into().unwrap()) as usize;
+                maps.entry(&rest[..32]).or_insert((full, BTreeMap::new())).1.insert(offset, &rest[40..]);
+            }
+            let want: Vec<Vec<u8>> = maps
+                .into_values()
+                .filter_map(|(full, chunks)| {
+                    let mut packet = Vec::new();
+                    for (offset, data) in chunks {
+                        if offset != packet.len() {
+                            break;
+                        }
+                        packet.extend_from_slice(data);
+                    }
+                    (packet.len() == full).then_some(packet)
+                })
+                .collect();
+            // The new.
+            scratch.chunks.clear();
+            scratch.assembled.clear();
+            scratch.packets.clear();
+            for r in &ranges {
+                add_extended_chunk(&file, &file[r.clone()], &mut scratch.chunks);
+            }
+            extended_packets(&file, &mut scratch.chunks, &mut scratch.assembled, &mut scratch.packets);
+            let got: Vec<Vec<u8>> = (scratch.packets.iter())
+                .map(|p| match p {
+                    Packet::Assembled(r) => scratch.assembled[r.clone()].to_vec(),
+                    Packet::InFile(_) => panic!("an extended packet in the file"),
+                })
+                .collect();
+            assert_eq!(got, want);
+        }
+    }
+
+    /// A kept decompressor inflates as `decompress_to_vec_zlib` does: the same bytes, the same failures (truncated,
+    /// corrupted, empty), each onto what `out` already holds.
+    #[test]
+    fn inflate_as_decompress_to_vec_zlib() {
+        let mut st = 0x2545F4914F6CDD1Du64;
+        let mut decompressor = Box::<DecompressorOxide>::default();
+        let mut out = b"before".to_vec();
+        for i in 0..2000 {
+            let len = (xorshift(&mut st) % 5000) as usize;
+            let repetitive = i % 2 == 0;
+            let data: Vec<u8> =
+                (0..len).map(|k| if repetitive { (k % 7) as u8 } else { xorshift(&mut st) as u8 }).collect();
+            let mut zlib = miniz_oxide::deflate::compress_to_vec_zlib(&data, (i % 10) as u8);
+            match i % 5 {
+                1 if !zlib.is_empty() => zlib.truncate(xorshift(&mut st) as usize % zlib.len()),
+                2 if !zlib.is_empty() => {
+                    let at = xorshift(&mut st) as usize % zlib.len();
+                    zlib[at] ^= 1 << (xorshift(&mut st) % 8);
+                }
+                3 => zlib.clear(),
+                _ => {}
+            }
+            let want = miniz_oxide::inflate::decompress_to_vec_zlib(&zlib).ok();
+            let before = out.len();
+            let got = inflate_zlib(&zlib, &mut decompressor, &mut out).map(|r| out[r].to_vec());
+            assert_eq!(got, want, "case {i}");
+            if got.is_none() {
+                assert_eq!(out.len(), before);
+            }
+            assert!(out.starts_with(b"before"));
+        }
     }
 }

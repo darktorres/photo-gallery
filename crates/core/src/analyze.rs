@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 
 use crate::borders::{self, Detection, Detector};
 use crate::decode::{Decoder, Format, MinSize, Rgb, release_over};
-use crate::metadata::Meta;
+use crate::metadata::{Meta, MetaScratch};
 use crate::pdq;
 use crate::resize::Resizer;
 
@@ -78,6 +78,8 @@ pub struct Analyzer {
     /// The ThumbHash input, and the encoder's planes (at most 100 × 100 values each, so never trimmed).
     small: Rgb,
     thumbhasher: thumbhash::Encoder,
+    /// What reading each file's metadata works in.
+    meta: MetaScratch,
 }
 
 /// What a worker keeps of each buffer: a 32 MP RGB image's pixels. A larger file's are freed once it is done.
@@ -95,6 +97,7 @@ impl Analyzer {
             pdq_in: Rgb::default(),
             small: Rgb::default(),
             thumbhasher: thumbhash::Encoder::default(),
+            meta: MetaScratch::default(),
         })
     }
 
@@ -109,7 +112,7 @@ impl Analyzer {
     fn analyze_image(&mut self, bytes: &[u8], turns: u8) -> Result<Analysis> {
         let file_hash = file_hash(bytes);
         let format = Format::sniff(bytes).context("unknown image format")?;
-        let meta = Meta::read(bytes, format);
+        let meta = Meta::read(bytes, format, &mut self.meta);
         let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
         let (image, spare) = (&mut self.image, &mut self.spare);
         let info = self.decoder.decode_into(bytes, format, meta.orientation, min, turns, image, spare)?;
@@ -150,7 +153,7 @@ impl Analyzer {
 
     fn find_borders(&mut self, bytes: &[u8], turns: u8) -> Result<FileBorders> {
         let format = Format::sniff(bytes).context("unknown image format")?;
-        let meta = Meta::read(bytes, format);
+        let meta = Meta::read(bytes, format, &mut self.meta);
         let info =
             self.decoder.decode_stored_into(bytes, format, meta.orientation, MinSize::Full, turns, &mut self.image)?;
         let frames = meta.frames;

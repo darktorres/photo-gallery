@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, Format, MinSize, Rgb, orient};
-use pg_core::metadata::Meta;
+use pg_core::metadata::{Meta, MetaScratch};
 use pg_core::thumbs::ThumbCache;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
@@ -112,7 +112,11 @@ fn ratings_and_turns_reach_the_files() {
     assert_eq!(writer.status().error, None);
     for (n, (path, format)) in files.iter().enumerate() {
         let expected = if *format == Format::Bmp { None } else { Some((n % 5 + 1) as u8) };
-        assert_eq!(Meta::read(&std::fs::read(path).unwrap(), *format).rating, expected, "{path}");
+        assert_eq!(
+            Meta::read(&std::fs::read(path).unwrap(), *format, &mut MetaScratch::default()).rating,
+            expected,
+            "{path}"
+        );
     }
     assert_eq!(c.status().unwrap().pending, 0, "a metadata write must not trigger a re-import");
     // Same files, same identities (written in place).
@@ -146,7 +150,7 @@ fn ratings_and_turns_reach_the_files() {
         }
         // Ratings survive turning.
         if *format != Format::Bmp {
-            assert!(Meta::read(&bytes, *format).rating.is_some(), "{path}: rating kept");
+            assert!(Meta::read(&bytes, *format, &mut MetaScratch::default()).rating.is_some(), "{path}: rating kept");
         }
     }
     let dims = |c: &Catalog| -> Vec<(u32, u32)> {

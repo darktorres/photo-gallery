@@ -25,7 +25,7 @@ use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
 use pg_core::decode::Format;
 use pg_core::media::Kind;
-use pg_core::metadata::{self, Meta, patch_orientation};
+use pg_core::metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
 use rusqlite::{OptionalExtension, params};
@@ -266,7 +266,7 @@ impl Inner {
                 let tool = exiftool_for(exiftool)?;
                 tool.write_rating(&path, &temp, rating)?;
                 let written = std::fs::read(&temp)?;
-                if Meta::read(&written, format).rating != Some(rating) {
+                if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
                     let _ = std::fs::remove_file(&temp);
                     bail!("{path}: the rating didn't read back after writing it");
                 }

@@ -1,7 +1,10 @@
 //! Windows paths as the catalog and the tree compare them (model-shaped: pure string and byte work, no catalog or
 //! Windows calls): the merged path of a folder (its drive dropped, so every drive's copy is one folder), the byte
 //! keys that order folders and files by name (case-insensitive, exact after that, so the order is total), and
-//! whether a path is inside another.
+//! whether a path is inside another. The pass's work lists (paths kept end to end in arenas, [`WorkList`]) are here
+//! too: the paths they hold are what the catalog hands out.
+
+use crate::paths::verbatim_wide;
 
 /// A folder's path without its drive: `E:\pinterest\a` and `D:\pinterest\a` are both `pinterest\a`; a drive
 /// root is the empty path. Other paths (UNC) are kept whole.
@@ -96,4 +99,175 @@ pub fn order_key_of(folder_path: &str, name: &str) -> Vec<u8> {
 pub fn is_under(path: &str, root: &str) -> bool {
     let (p, r) = (path.to_lowercase(), root.to_lowercase());
     p == r || p.strip_prefix(&r).is_some_and(|rest| rest.starts_with('\\'))
+}
+
+/// Paths kept end to end in one `String`, each named by its range ([`PathRef`]). It grows by doubling, so a list
+/// of n paths makes about log₂ n allocations.
+#[derive(Default, Debug)]
+pub struct PathArena {
+    text: String,
+}
+
+/// A path in a [`PathArena`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PathRef {
+    start: usize,
+    end: usize,
+}
+
+impl PathArena {
+    /// `path` added at the end.
+    pub fn push(&mut self, path: &str) -> PathRef {
+        self.push_parts(&[path])
+    }
+
+    /// The concatenation of `parts`, added at the end.
+    pub fn push_parts(&mut self, parts: &[&str]) -> PathRef {
+        let start = self.text.len();
+        for part in parts {
+            self.text.push_str(part);
+        }
+        PathRef { start, end: self.text.len() }
+    }
+
+    pub fn get(&self, path: PathRef) -> &str {
+        &self.text[path.start..path.end]
+    }
+}
+
+/// A file of a [`WorkList`]: its folder's path and its name, in the list's arenas.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FilePath {
+    folder: PathRef,
+    name: PathRef,
+}
+
+/// A pass's work: its items, each holding its path as a [`FilePath`]. Each folder's path is held once, read the
+/// first time one of its files is added ([`WorkList::file`]).
+pub struct WorkList<T> {
+    pub items: Vec<T>,
+    folders: PathArena,
+    /// Each folder id's path in `folders`, once read.
+    folder_paths: Vec<Option<PathRef>>,
+    names: PathArena,
+}
+
+impl<T> WorkList<T> {
+    /// Room for `items` items, and folder ids up to `max_folder_id`.
+    pub fn with_capacity(items: usize, max_folder_id: i64) -> Self {
+        let folder_paths = vec![None; usize::try_from(max_folder_id).map_or(0, |n| n + 1)];
+        WorkList {
+            items: Vec::with_capacity(items),
+            folders: PathArena::default(),
+            folder_paths,
+            names: PathArena::default(),
+        }
+    }
+
+    /// The path of the file `name` in folder `folder_id`. The folder's path is read by `read_folder` (into the
+    /// arena it is given) the first time it is asked for.
+    pub fn file<E>(
+        &mut self,
+        folder_id: i64,
+        name: &str,
+        read_folder: impl FnOnce(&mut PathArena) -> Result<PathRef, E>,
+    ) -> Result<FilePath, E> {
+        let k = usize::try_from(folder_id).unwrap_or(usize::MAX);
+        let folder = match self.folder_paths.get(k).copied().flatten() {
+            Some(folder) => folder,
+            None => {
+                let folder = read_folder(&mut self.folders)?;
+                if k >= self.folder_paths.len() && k != usize::MAX {
+                    // A folder made after the list was sized (not within one read).
+                    self.folder_paths.resize(k + 1, None);
+                }
+                if let Some(slot) = self.folder_paths.get_mut(k) {
+                    *slot = Some(folder);
+                }
+                folder
+            }
+        };
+        Ok(FilePath { folder, name: self.names.push(name) })
+    }
+
+    /// The file's folder and name.
+    pub fn parts(&self, path: FilePath) -> [&str; 2] {
+        [self.folders.get(path.folder), self.names.get(path.name)]
+    }
+
+    /// Its path, for messages and for the programs it is handed to (FFmpeg).
+    pub fn path(&self, path: FilePath) -> String {
+        let [folder, name] = self.parts(path);
+        [folder, "\\", name].concat()
+    }
+
+    /// Its path as [`verbatim_wide`] gives it, for opening it.
+    pub fn wide(&self, path: FilePath, out: &mut Vec<u16>) {
+        let [folder, name] = self.parts(path);
+        verbatim_wide(&[folder, "\\", name], out);
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+impl<T> Default for WorkList<T> {
+    fn default() -> Self {
+        WorkList::with_capacity(0, -1)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::paths::SHORT;
+
+    #[test]
+    fn an_arena_gives_back_each_path() {
+        let mut arena = PathArena::default();
+        let refs: Vec<PathRef> = (0..1000).map(|i| arena.push(&format!(r"D:\folder {i}\file {i}.jpg"))).collect();
+        let joined = arena.push_parts(&[r"E:\copies", r"\a.jpg"]);
+        for (i, r) in refs.iter().enumerate() {
+            assert_eq!(arena.get(*r), format!(r"D:\folder {i}\file {i}.jpg"));
+        }
+        assert_eq!(arena.get(joined), r"E:\copies\a.jpg");
+        let empty = arena.push("");
+        assert_eq!(arena.get(empty), "");
+    }
+
+    #[test]
+    fn a_work_list_reads_each_folder_once() {
+        let mut list = WorkList::<()>::with_capacity(4, 3);
+        let mut reads = 0;
+        let mut add = |list: &mut WorkList<()>, folder: i64, name: &str| {
+            list.file(folder, name, |arena| {
+                reads += 1;
+                Ok::<_, ()>(arena.push(&format!(r"D:\f{folder}")))
+            })
+            .unwrap()
+        };
+        let a = add(&mut list, 2, "a.jpg");
+        let b = add(&mut list, 0, "b.jpg");
+        let c = add(&mut list, 2, "c.jpg");
+        // Past the size it was given.
+        let d = add(&mut list, 9, "d.jpg");
+        assert_eq!(reads, 3);
+        assert_eq!(
+            [a, b, c, d].map(|p| list.path(p)),
+            [r"D:\f2\a.jpg", r"D:\f0\b.jpg", r"D:\f2\c.jpg", r"D:\f9\d.jpg"]
+        );
+        let mut wide = Vec::new();
+        list.wide(c, &mut wide);
+        assert_eq!(wide, r"D:\f2\c.jpg".encode_utf16().chain([0]).collect::<Vec<_>>());
+        // A long one is verbatim, its name counted.
+        let dir = "x".repeat(SHORT);
+        let long = list.file(5, "e.jpg", |arena| Ok::<_, ()>(arena.push(&format!(r"D:\{dir}")))).unwrap();
+        list.wide(long, &mut wide);
+        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), format!(r"\\?\D:\{dir}\e.jpg"));
+    }
 }

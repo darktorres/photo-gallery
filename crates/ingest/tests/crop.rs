@@ -11,7 +11,7 @@ use std::path::{Path, PathBuf};
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, MinSize};
 use pg_core::format::Format;
-use pg_core::paths::PathArena;
+use pg_core::path::PathArena;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};

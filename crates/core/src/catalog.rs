@@ -23,7 +23,7 @@ use crate::borders::{BORDERS_VERSION, Detection};
 use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::path::is_under;
-use crate::paths::{FilePath, PathArena, PathRef, WorkList};
+use crate::path::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;
 use crate::pdq_index::PdqIndex;
 

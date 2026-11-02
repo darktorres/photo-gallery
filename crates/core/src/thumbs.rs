@@ -38,7 +38,7 @@ use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 use crate::format::Format;
 
 use crate::decode::{Decoded, Decoder, MinSize, Rgb, release_over};
-use crate::paths::{FilePath, WorkList};
+use crate::path::{FilePath, WorkList};
 use crate::resize::Resizer;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").

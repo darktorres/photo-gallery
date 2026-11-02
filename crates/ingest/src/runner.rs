@@ -52,7 +52,9 @@ pub struct Message {
 /// What the job has done so far, for the app to refresh its views.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Generation {
-    /// Completed folder scans (the folder tree changed).
+    /// Folder scans that changed the catalog: files new, moved, renamed, rewritten, back or gone (the folder tree
+    /// and the lists changed). A scan that found the files as they were counts for nothing: the app would read its
+    /// tree and its list again for no change.
     pub scans: u64,
     /// Import passes that analyzed something (sizes and placeholders changed).
     pub imports: u64,
@@ -215,18 +217,25 @@ impl Inner {
                 continue;
             }
             match scan::scan(catalog, root, &self.ctl) {
-                Ok(s) if !s.complete => {
-                    self.requeue(&roots[i..]);
-                    return Ok(());
-                }
                 Ok(s) => {
+                    // A scan stopped early has committed what it recorded so far.
+                    if s.changed > 0 || s.missing > 0 {
+                        self.scans_done.fetch_add(1, Ordering::Relaxed);
+                    }
+                    if !s.complete {
+                        self.requeue(&roots[i..]);
+                        return Ok(());
+                    }
                     if s.errors > 0 {
                         self.warn(format!("{root}: {} folders couldn't be read", s.errors));
                     }
                 }
-                Err(e) => self.warn(format!("{root}: {e:#}")),
+                Err(e) => {
+                    self.warn(format!("{root}: {e:#}"));
+                    // Its batches before the error are in.
+                    self.scans_done.fetch_add(1, Ordering::Relaxed);
+                }
             }
-            self.scans_done.fetch_add(1, Ordering::Relaxed);
         }
 
         let s = import::import(catalog, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), false, &self.ctl)?;

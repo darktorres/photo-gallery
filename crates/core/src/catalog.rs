@@ -950,7 +950,11 @@ pub struct ScanWriter<'tx> {
     scan: i64,
     folder_id: Statement<'tx>,
     new_folder: Statement<'tx>,
+    known: Statement<'tx>,
+    seen: Statement<'tx>,
     file: Statement<'tx>,
+    /// The order key of the file being recorded.
+    key: Vec<u8>,
 }
 
 impl<'tx> ScanWriter<'tx> {
@@ -959,6 +963,11 @@ impl<'tx> ScanWriter<'tx> {
             scan,
             folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
             new_folder: tx.prepare("INSERT INTO folders(path) VALUES (?1) RETURNING id")?,
+            known: tx.prepare(
+                "SELECT id, folder_id, name, ext, kind, size, mtime, missing, order_key FROM files
+                 WHERE volume = ?1 AND file_ref = ?2",
+            )?,
+            seen: tx.prepare("UPDATE files SET last_scan = ?2 WHERE id = ?1")?,
             file: tx.prepare(
                 "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
@@ -967,6 +976,7 @@ impl<'tx> ScanWriter<'tx> {
                     size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
                     order_key = excluded.order_key",
             )?,
+            key: Vec::new(),
         })
     }
 
@@ -980,23 +990,36 @@ impl<'tx> ScanWriter<'tx> {
         Ok(Folder { id, key })
     }
 
-    /// Insert or update by file identity; a moved or renamed file keeps its row (and its analysis).
-    pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<()> {
+    /// Record a file the scan found, by identity: a moved or renamed file keeps its row (and its analysis).
+    /// Whether the catalog changed: a new file, or one moved, renamed, rewritten or back from missing. A file
+    /// recorded as it is is only marked seen by this scan.
+    pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<bool> {
+        let ScanWriter { scan, known, seen, file, key, .. } = self;
+        key.clear();
+        key.extend_from_slice(&folder.key);
+        crate::browse::push_name_key(key, f.name);
+        let (volume, file_ref, size) = (f.volume, f.file_ref as i64, f.size as i64);
+        let (ext, kind) = (f.ext.name(), f.ext.kind().key());
+        let row = known
+            .query_row(params![volume, file_ref], |r| {
+                let same = r.get::<_, i64>(1)? == folder.id
+                    && r.get_ref(2)?.as_str()? == f.name
+                    && r.get_ref(3)?.as_str()? == ext
+                    && r.get_ref(4)?.as_str()? == kind
+                    && r.get::<_, i64>(5)? == size
+                    && r.get::<_, i64>(6)? == f.mtime
+                    && r.get::<_, i64>(7)? == 0
+                    && r.get_ref(8)?.as_blob()? == &key[..];
+                Ok((r.get::<_, i64>(0)?, same))
+            })
+            .optional()?;
+        if let Some((id, true)) = row {
+            seen.execute(params![id, *scan])?;
+            return Ok(false);
+        }
         // `pending` and `seq` follow from the triggers.
-        let order_key = crate::browse::order_key(&folder.key, f.name);
-        self.file.execute(params![
-            f.volume,
-            f.file_ref as i64,
-            folder.id,
-            f.name,
-            f.ext.name(),
-            f.ext.kind().key(),
-            f.size as i64,
-            f.mtime,
-            self.scan,
-            order_key
-        ])?;
-        Ok(())
+        file.execute(params![volume, file_ref, folder.id, f.name, ext, kind, size, f.mtime, *scan, &key[..]])?;
+        Ok(true)
     }
 }
 
@@ -1456,15 +1479,54 @@ mod tests {
         c.conn.query_row("SELECT pending, seq FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
     }
 
-    /// The scanner finding file 7 on volume 1 in D:\x like this.
-    fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) {
+    /// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
+    fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) -> bool {
         let tx = c.conn.transaction().unwrap();
         let mut writer = ScanWriter::new(&tx, scan).unwrap();
         let folder = writer.folder(r"D:\x").unwrap();
         let ext = Ext::of_name(name).unwrap();
-        writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref: 7, name, ext, size, mtime }).unwrap();
+        let changed =
+            writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref: 7, name, ext, size, mtime }).unwrap();
         drop(writer);
         tx.commit().unwrap();
+        changed
+    }
+
+    #[test]
+    fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed() {
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.add_root(r"D:\x").unwrap();
+        let row = |c: &Catalog| -> (i64, String, i64, i64, i64, Vec<u8>) {
+            c.conn
+                .query_row("SELECT last_scan, name, size, mtime, missing, order_key FROM files", [], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+                })
+                .unwrap()
+        };
+        let key = |name| crate::browse::order_key_of(r"D:\x", name);
+        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(r"D:\x").unwrap()).collect();
+        assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
+        // As it was: only marked seen by the scan.
+        assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
+        assert_eq!(row(&c), (scans[1], "a.jpg".into(), 10, 100, 0, key("a.jpg")));
+        for (scan, name, size, mtime) in [
+            (scans[2], "A.jpg", 10, 100),
+            (scans[3], "b.jpg", 10, 100),
+            (scans[4], "b.jpg", 11, 100),
+            (scans[5], "b.jpg", 11, 101),
+        ] {
+            assert!(scanned(&mut c, scan, name, size, mtime), "{name} {size} {mtime}");
+            assert_eq!(row(&c), (scan, name.into(), size as i64, mtime, 0, key(name)));
+        }
+        // Back from missing.
+        c.conn.execute("UPDATE files SET missing = 1", []).unwrap();
+        assert!(scanned(&mut c, scans[6], "b.jpg", 11, 101));
+        assert_eq!(row(&c).4, 0);
+        // An order key made by an earlier rule is made again.
+        c.conn.execute("UPDATE files SET order_key = x'00'", []).unwrap();
+        assert!(scanned(&mut c, scans[7], "b.jpg", 11, 101));
+        assert_eq!(row(&c).5, key("b.jpg"));
+        assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
     }
 
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).

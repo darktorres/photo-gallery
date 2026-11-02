@@ -163,6 +163,9 @@ pub fn normalize_root(root: &str) -> Result<String> {
 pub struct ScanStats {
     pub folders: u64,
     pub files: u64,
+    /// Files new, moved, renamed, rewritten or back from missing.
+    pub changed: u64,
+    /// Files marked missing.
     pub missing: usize,
     pub errors: u64,
     /// False when stopped early; nothing is marked missing then.
@@ -177,7 +180,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     let volume = root_dir.volume_serial()?;
     let mut root_dir = Some(root_dir);
     let scan_id = catalog.begin_scan(root)?;
-    let mut stats = ScanStats { folders: 0, files: 0, missing: 0, errors: 0, complete: false };
+    let mut stats = ScanStats { folders: 0, files: 0, changed: 0, missing: 0, errors: 0, complete: false };
     let mut stack = vec![root.to_string()];
     let mut tx = catalog.conn.transaction()?;
     let mut writer = ScanWriter::new(&tx, scan_id)?;
@@ -214,11 +217,12 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
                 folder = Some(writer.folder(&dir)?);
             }
             let Some(folder) = &folder else { unreachable!("set above") };
-            writer.upsert_file(
+            let changed = writer.upsert_file(
                 folder,
                 &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, ext, size: e.size, mtime: e.mtime },
             )?;
             stats.files += 1;
+            stats.changed += u64::from(changed);
             in_tx += 1;
         }
         if in_tx >= BATCH {

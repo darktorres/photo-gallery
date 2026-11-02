@@ -74,8 +74,12 @@ ApplicationWindow {
     }
     GalleryModel {
         id: galleryModel
-        // Without a selection, a refreshed list keeps the top row's file in view.
-        onAboutToLoad: galleryModel.anchor = win.current >= 0 ? -1 : win.topItem()
+        // Without a selection, a refreshed list keeps the top row's file in view. The rows change (all of them for
+        // another list), then gridLoaded moves the view to where it belongs.
+        onAboutToLoad: {
+            galleryModel.anchor = win.current >= 0 ? -1 : win.topItem()
+            grid.settling = true
+        }
         onLoaded: (index) => win.gridLoaded(index)
     }
     // Where the grid looks, with or without subfolders, in what order; with the filter bar's query, a view.
@@ -178,28 +182,39 @@ ApplicationWindow {
 
     function relayout() {
         const anchor = current >= 0 ? current : topItem()
+        grid.settling = true
         galleryModel.relayout(grid.width, rowHeight, gap)
-        if (loadedIndex > -2)
+        if (loadedIndex > -2) {
             gridLoaded(loadedIndex)
-        else if (anchor >= 0)
+            return
+        }
+        if (anchor >= 0)
             grid.positionViewAtIndex(galleryModel.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
+        grid.settling = false
     }
 
     // A list asked for is shown: keep the selection in view, else the file that was at the top (`index`), else
-    // start at the top. The first one with the tree in finishes the start.
+    // start at the top. Until the start is over, the selection is the file the user was on, if the list has it.
+    // The first list with the tree in finishes the start.
     function gridLoaded(index: int) {
-        // Laid out only once the grid has a width (relayout() comes back here).
+        // Laid out only once the grid has a width (relayout() comes back here). The grid has no rows meanwhile.
         if (galleryModel.count > 0 && galleryModel.rowOf(0) < 0) {
             loadedIndex = index
             return
         }
         loadedIndex = -2
+        if (!ready) {
+            const last = galleryModel.indexOf(appSettings.lastFile)
+            if (last >= 0)
+                current = last
+        }
         if (current >= 0)
             grid.positionViewAtIndex(galleryModel.rowOf(current), ListView.Contain)
         else if (index >= 0)
             grid.positionViewAtIndex(galleryModel.rowOf(index), ListView.Beginning)
         else
             grid.positionViewAtBeginning()
+        grid.settling = false
         // The tree says whether the folder is still there: without it this may be a list of a folder gone.
         if (!ready && treeShown)
             started()
@@ -583,6 +598,11 @@ ApplicationWindow {
                 spacing: win.gap
                 cacheBuffer: 1500
                 reuseItems: true
+                // The view is about to be moved: rows are made, reused or changed without their cells until it is
+                // where it is going. Another list is a model reset, which takes the view to the top and fills it
+                // there (and 1500 px beyond) before it can be moved to the list's selection; a list read again or a
+                // relayout changes the rows in view before the view moves to its selection or its anchor.
+                property bool settling: false
                 boundsBehavior: Flickable.StopAtBounds
                 ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOn }
                 onWidthChanged: layoutTimer.restart()
@@ -597,36 +617,51 @@ ApplicationWindow {
                 // so the QML compiler can trust it through the cast).
                 component GridRow: Item {
                     id: rowItem
-                    required final property int firstItem
-                    required property int itemCount
+                    // The row's items: (first, count), one property (galleryModel's ROLE_SPAN), so that a row
+                    // changed in place or reused sees its new items at once, not its first item before its count.
+                    required property point span
+                    readonly final property int firstItem: span.x
                     required property real rowHeight
-                    // Bumped when one of the row's items is rated, turned or marked (galleryModel's ROLE_VERSION).
+                    // New whenever the row's items change in place: rated, turned, marked, rewritten, or another
+                    // list (galleryModel's ROLE_VERSION, never given twice).
                     required property int version
                     width: grid.width
                     height: rowHeight
 
-                    // The items the cells show, set once the row's data is complete: when it is made, and when the
-                    // view reuses it for another row. Reuse sets firstItem and itemCount one after the other, and
-                    // cells bound to them would read (and ask for the images of) their items once for each, then
-                    // again when the Repeater, whose count changed, makes them anew.
+                    // What the cells show, made to match the row once it is in use (not in the view's pool) and the
+                    // view is where it is going (grid.settling): its span's items, at its version. A reuse sets the
+                    // span and the version one after the other, before the row is in use; the model changes one or
+                    // the other, never both. So the cells read their items (and ask for their images) once.
                     property int cellsFirst: 0
                     property int cellsCount: 0
-                    // Changes with `version`, but not when a reuse sets it.
+                    // Bumped to read the same items again.
                     property int cellsVersion: 0
+                    property int shownVersion: -1
                     property bool pooled: false
-                    function showCells() {
-                        if (cellsCount !== itemCount)
-                            cellsCount = 0
-                        cellsFirst = firstItem
-                        cellsCount = itemCount
+                    readonly property bool live: !pooled && !grid.settling
+                    function update() {
+                        if (!live)
+                            return
+                        const first = span.x
+                        const count = span.y
+                        if (cellsFirst !== first || cellsCount !== count) {
+                            // The Repeater (an integer model) makes all its cells anew when its count changes: they
+                            // are made once, for the new items.
+                            if (cellsCount !== count)
+                                cellsCount = 0
+                            cellsFirst = first
+                            cellsCount = count
+                        } else if (shownVersion !== version) {
+                            cellsVersion++
+                        }
+                        shownVersion = version
                     }
-                    Component.onCompleted: showCells()
+                    Component.onCompleted: update()
+                    onLiveChanged: update()
+                    onSpanChanged: update()
+                    onVersionChanged: update()
                     ListView.onPooled: pooled = true
-                    ListView.onReused: {
-                        pooled = false
-                        showCells()
-                    }
-                    onVersionChanged: if (!pooled) cellsVersion++
+                    ListView.onReused: pooled = false
 
                     Row {
                         spacing: win.gap
@@ -1005,13 +1040,11 @@ ApplicationWindow {
         updateFacets()
     }
 
-    // The first list is shown: select the file the user was on, run the test hooks, then start the background job
-    // (after the first reads, which it would compete with for the disk).
+    // The first list is shown (with the file the user was on selected, gridLoaded): run the test hooks, then start
+    // the background job (after the first reads, which it would compete with for the disk).
     function started() {
         ready = true
         stages.ready()
-        const last = galleryModel.indexOf(appSettings.lastFile)
-        if (last >= 0) select(last)
         if (commandLine.has("apply-view")) view.saveSession(filterBar.query)
 
         if (commandLine.has("size")) setSize(commandLine.number("size", rowHeight))

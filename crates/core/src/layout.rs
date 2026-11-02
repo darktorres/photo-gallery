@@ -1,6 +1,8 @@
 //! Justified grid layout (PLAN §7): rows of images at their aspect ratio, each row scaled to fill the width.
 //! Computed in Rust for any row height, so the grid can change size at runtime; the UI only positions delegates.
 
+use std::ops::Range;
+
 /// One row: items `first..first + count`, all `height` px high.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Row {
@@ -54,9 +56,144 @@ fn greedy(aspects: impl Iterator<Item = f64>, width: f64, target_height: f64, sp
     }
 }
 
+/// How a new layout changes the rows shown, so that a view keeps the delegates of the rows that stay: the rows
+/// before and after those whose items differ are kept, the ones between are changed in place, then rows are
+/// inserted or removed after them. Rows are told apart by their items' range: a row is kept when it holds the same
+/// range, whatever the items in it are now ([`RowChange::updates`] says which to read again).
+#[derive(Debug, PartialEq)]
+pub struct RowChange {
+    /// Rows changed in place, numbered alike in both layouts.
+    pub changed: Range<usize>,
+    /// Rows inserted, or removed, at `changed.end`.
+    pub inserted: usize,
+    pub removed: usize,
+}
+
+/// What a row kept or changed in place needs to show the new layout.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RowUpdate {
+    /// It holds other items: its range changed.
+    pub span: bool,
+    /// The same range, but its items changed.
+    pub items: bool,
+    pub height: bool,
+}
+
+impl RowChange {
+    pub fn between(old: &[Row], new: &[Row]) -> RowChange {
+        let same = |(a, b): &(&Row, &Row)| (a.first, a.count) == (b.first, b.count);
+        let before = old.iter().zip(new).take_while(same).count();
+        let after = old[before..].iter().rev().zip(new[before..].iter().rev()).take_while(same).count();
+        let (old_end, new_end) = (old.len() - after, new.len() - after);
+        RowChange {
+            changed: before..before + (old_end - before).min(new_end - before),
+            inserted: new_end.saturating_sub(old_end),
+            removed: old_end.saturating_sub(new_end),
+        }
+    }
+
+    /// What the rows of `new` that aren't inserted need, in runs of rows that need the same (rows that need nothing
+    /// left out). `items_changed(range)`: whether the items in a range both layouts have a row for changed.
+    pub fn updates(
+        &self,
+        old: &[Row],
+        new: &[Row],
+        items_changed: impl Fn(Range<usize>) -> bool,
+    ) -> Vec<(Range<usize>, RowUpdate)> {
+        let mut runs: Vec<(Range<usize>, RowUpdate)> = Vec::new();
+        let inserted = self.changed.end..self.changed.end + self.inserted;
+        for (n, row) in new.iter().enumerate() {
+            if inserted.contains(&n) {
+                continue;
+            }
+            // The rows after the inserted or removed ones are numbered apart by as many.
+            let o = if n < inserted.start { n } else { n + self.removed - self.inserted };
+            let was = &old[o];
+            let span = (was.first, was.count) != (row.first, row.count);
+            let update = RowUpdate {
+                span,
+                items: !span && items_changed(row.first..row.first + row.count),
+                height: was.height != row.height,
+            };
+            if update == (RowUpdate { span: false, items: false, height: false }) {
+                continue;
+            }
+            match runs.last_mut() {
+                Some((range, last)) if range.end == n && *last == update => range.end += 1,
+                _ => runs.push((n..n + 1, update)),
+            }
+        }
+        runs
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn rows(spans: &[(usize, usize, f64)]) -> Vec<Row> {
+        spans.iter().map(|&(first, count, height)| Row { first, count, height }).collect()
+    }
+
+    /// The rows the change leaves, applied as a view applies it to the old ones; and the rows read again.
+    fn apply(old: &[Row], new: &[Row], c: &RowChange, items: &[usize]) -> (Vec<Row>, Vec<usize>) {
+        let mut out = old.to_vec();
+        let at = c.changed.end;
+        out.splice(at..at + c.removed, new[at..at + c.inserted].iter().copied());
+        let mut read = Vec::new();
+        for (range, u) in c.updates(old, new, |span| items.iter().any(|i| span.contains(i))) {
+            for i in range {
+                if u.span {
+                    (out[i].first, out[i].count) = (new[i].first, new[i].count);
+                }
+                if u.height {
+                    out[i].height = new[i].height;
+                }
+                if u.span || u.items {
+                    read.push(i);
+                }
+            }
+        }
+        (out, read)
+    }
+
+    #[test]
+    fn row_changes_turn_the_old_rows_into_the_new() {
+        let a = rows(&[(0, 3, 100.0), (3, 2, 90.0), (5, 4, 80.0), (9, 3, 100.0)]);
+        // The change from `a` to `new` with `items` changed: (changed, inserted, removed), and the rows read again.
+        let check = |new: Vec<Row>, items: &[usize], (changed, inserted, removed), read: &[usize]| {
+            let c = RowChange::between(&a, &new);
+            assert_eq!(c, RowChange { changed, inserted, removed }, "{new:?}");
+            assert_eq!(apply(&a, &new, &c, items), (new.clone(), read.to_vec()), "{new:?}");
+        };
+        // The same rows.
+        check(a.clone(), &[], (4..4, 0, 0), &[]);
+        // An item rewritten: its row reads its items again.
+        check(a.clone(), &[6], (4..4, 0, 0), &[2]);
+        // A turn in the second row: it splits (the second half is a row inserted, made anew), the rows after it are
+        // kept.
+        check(
+            rows(&[(0, 3, 100.0), (3, 1, 95.0), (4, 1, 95.0), (5, 4, 80.0), (9, 3, 100.0)]),
+            &[3],
+            (1..2, 1, 0),
+            &[1],
+        );
+        // Two rows merge, one after them changes height.
+        check(rows(&[(0, 3, 100.0), (3, 6, 70.0), (9, 3, 110.0)]), &[], (1..2, 0, 1), &[1]);
+        // A resize: every row differs.
+        check(rows(&[(0, 4, 90.0), (4, 4, 90.0), (8, 4, 90.0)]), &[], (0..3, 0, 1), &[0, 1, 2]);
+        // Heights alone.
+        check(rows(&[(0, 3, 101.0), (3, 2, 90.0), (5, 4, 81.0), (9, 3, 100.0)]), &[], (4..4, 0, 0), &[]);
+        // A row between changed ones that keeps its range is read again only if its items changed.
+        let between = rows(&[(0, 2, 100.0), (2, 3, 90.0), (5, 4, 80.0), (9, 2, 100.0), (11, 1, 50.0)]);
+        check(between.clone(), &[], (0..4, 1, 0), &[0, 1, 3]);
+        check(between, &[5], (0..4, 1, 0), &[0, 1, 2, 3]);
+        // To no rows (no width).
+        check(Vec::new(), &[], (0..0, 0, 4), &[]);
+        let c = RowChange::between(&[], &a);
+        assert_eq!(c, RowChange { changed: 0..0, inserted: 4, removed: 0 });
+        assert_eq!(apply(&[], &a, &c, &[]), (a.clone(), Vec::new()));
+    }
 
     #[test]
     fn rows_fill_the_width() {

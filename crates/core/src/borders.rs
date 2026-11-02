@@ -18,6 +18,7 @@
 //! 8-bit values doubled (×2), deviations from a median of medians ×4. Line statistics read every other pixel.
 
 use crate::decode::Rgb;
+use crate::orientation;
 
 /// Bump when anything here changes what is detected; detections of an older version are redone.
 pub const BORDERS_VERSION: i64 = 1;
@@ -319,16 +320,7 @@ impl Detection {
 /// `orientation` (1–8, as `decode::orient` applies it), then `turns` quarter turns clockwise.
 pub fn upright(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
     // Where a stored point (u, v) is shown, as decode::transform moves pixels.
-    let shown = |(u, v): (f64, f64)| match orientation {
-        2 => (1.0 - u, v),
-        3 => (1.0 - u, 1.0 - v),
-        4 => (u, 1.0 - v),
-        5 => (v, u),
-        6 => (1.0 - v, u),
-        7 => (1.0 - v, 1.0 - u),
-        8 => (v, 1.0 - u),
-        _ => (u, v),
-    };
+    let shown = |(u, v): (f64, f64)| orientation::shown_edge(orientation, u, v);
     let turned = |p: (f64, f64)| (0..turns % 4).fold(p, |(x, y), _| (1.0 - y, x));
     let [l, t, r, b] = rect;
     let (a, c) = (turned(shown((l, t))), turned(shown((r, b))));

@@ -10,6 +10,7 @@ use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
 use crate::decode::transform;
 use crate::metadata::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
+use crate::orientation;
 
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]
@@ -61,7 +62,10 @@ impl Op {
     ) -> Option<((usize, usize), [usize; 4], (usize, usize))> {
         match self {
             Op::Orient(o) => {
-                let (a, b) = (map_point(o, left, top, sw, sh), map_point(o, left + w - 1, top + h - 1, sw, sh));
+                let (a, b) = (
+                    orientation::shown_pixel(o, left, top, sw, sh),
+                    orientation::shown_pixel(o, left + w - 1, top + h - 1, sw, sh),
+                );
                 Some(((a.0.min(b.0), a.1.min(b.1)), [0, 0, w, h], self.size(sw, sh)))
             }
             Op::Crop([cx, cy, cw, ch]) => {
@@ -70,20 +74,6 @@ impl Op {
                 (x0 < x1 && y0 < y1).then_some(((x0 - cx, y0 - cy), [x0 - left, y0 - top, x1 - x0, y1 - y0], (cw, ch)))
             }
         }
-    }
-}
-
-/// Where a pixel of a `w` × `h` raster lands under orientation `o` (the inverse of `decode::transform`'s lookup).
-fn map_point(o: u8, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
-    match o {
-        2 => (w - 1 - x, y),
-        3 => (w - 1 - x, h - 1 - y),
-        4 => (x, h - 1 - y),
-        5 => (y, x),
-        6 => (h - 1 - y, x),
-        7 => (h - 1 - y, w - 1 - x),
-        8 => (y, w - 1 - x),
-        _ => (x, y),
     }
 }
 

@@ -16,7 +16,8 @@ use ffmpeg_next as ffmpeg;
 
 use crate::analyze::{Analysis, Analyzer};
 use crate::decode::{Rgb, orient_into};
-use crate::metadata::{compose_orientation, orientation_from, parse_iso_date};
+use crate::metadata::parse_iso_date;
+use crate::orientation;
 
 /// The poster frame is this far into the video…
 const POSTER_FRACTION: f64 = 0.1;
@@ -83,7 +84,7 @@ fn matrix_orientation(m: [i32; 9]) -> u8 {
     let clockwise = (b / s1).atan2(a / s0).to_degrees();
     let turns = ((clockwise / 90.0).round() as i64).rem_euclid(4) as u8;
     // EXIF mirrors the stored picture before the rotation: the same picture with the turn reversed.
-    orientation_from(mirrored, if mirrored { (4 - turns) % 4 } else { turns })
+    orientation::from_parts(mirrored, if mirrored { (4 - turns) % 4 } else { turns })
 }
 
 pub fn probe(path: &Path) -> Result<Probe> {
@@ -101,7 +102,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
         w = (w as f64 * sar.numerator() as f64 / sar.denominator() as f64).round() as u32;
     }
     let orientation = display_orientation(&stream);
-    let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
+    let (width, height) = if orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
 
     let tb = stream.time_base();
     let in_ms = |t: i64| t as f64 * tb.numerator() as f64 * 1000.0 / tb.denominator().max(1) as f64;
@@ -153,7 +154,7 @@ pub fn frame_into(path: &Path, at_ms: i64, turns: u8, out: &mut Rgb, spare: &mut
     let mut input = open(path)?;
     let stream = input.streams().best(Type::Video).context("no video stream")?;
     let index = stream.index();
-    let orientation = compose_orientation(display_orientation(&stream), turns);
+    let orientation = orientation::compose(display_orientation(&stream), turns);
     let tb = stream.time_base();
     let start = if stream.start_time() == ffmpeg::ffi::AV_NOPTS_VALUE { 0 } else { stream.start_time() };
     let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?.decoder().video()?;

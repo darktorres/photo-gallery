@@ -893,42 +893,6 @@ fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 
-// --- Orientation ------------------------------------------------------------------------------------------------
-
-/// EXIF orientation (1–8) as (mirrored, quarter turns clockwise): the upright image is the stored one mirrored
-/// left-right (if so), then turned.
-fn orientation_parts(o: u8) -> (bool, u8) {
-    match o {
-        2 => (true, 0),
-        3 => (false, 2),
-        4 => (true, 2),
-        5 => (true, 3),
-        6 => (false, 1),
-        7 => (true, 1),
-        8 => (false, 3),
-        _ => (false, 0),
-    }
-}
-
-pub(crate) fn orientation_from(mirrored: bool, turns: u8) -> u8 {
-    match (mirrored, turns % 4) {
-        (false, 0) => 1,
-        (true, 0) => 2,
-        (false, 2) => 3,
-        (true, 2) => 4,
-        (true, 3) => 5,
-        (false, 1) => 6,
-        (true, 1) => 7,
-        _ => 8,
-    }
-}
-
-/// The orientation that shows the image `turns` quarter turns further clockwise than `o` does.
-pub fn compose_orientation(o: u8, turns: u8) -> u8 {
-    let (mirrored, t) = orientation_parts(o);
-    orientation_from(mirrored, t + turns)
-}
-
 /// Where the EXIF block (a TIFF structure) of a file is, if it has one.
 fn exif_block(bytes: &[u8], format: Format) -> Option<std::ops::Range<usize>> {
     match format {
@@ -996,35 +960,6 @@ mod tests {
             }
         }
         [&b"RIFF"[..], &(body.len() as u32).to_le_bytes(), &body].concat()
-    }
-
-    #[test]
-    fn composes_orientations() {
-        // Four quarter turns are the identity; one turn of the identity is EXIF 6 (90° clockwise).
-        for o in 1..=8 {
-            assert_eq!(compose_orientation(o, 4), o);
-            assert_eq!(compose_orientation(o, 0), o);
-        }
-        assert_eq!(compose_orientation(1, 1), 6);
-        assert_eq!(compose_orientation(6, 1), 3);
-        assert_eq!(compose_orientation(1, 3), 8);
-        assert_eq!(compose_orientation(2, 1), 7);
-    }
-
-    #[test]
-    fn composition_matches_turning_the_upright_image() {
-        use crate::decode::{Rgb, orient};
-        let img = || Rgb { width: 3, height: 2, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
-        for o in 1..=8 {
-            // Turning the upright image clockwise is EXIF 6 applied to it.
-            let expected = orient(orient(img(), o), 6);
-            let got = orient(img(), compose_orientation(o, 1));
-            assert_eq!(
-                (got.width, got.height, &got.pixels),
-                (expected.width, expected.height, &expected.pixels),
-                "o = {o}"
-            );
-        }
     }
 
     #[test]

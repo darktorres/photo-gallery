@@ -944,7 +944,7 @@ impl Catalog {
             )?
             .query_row([file_id], |r| {
                 let (orientation, w, h): (u8, u32, u32) = (r.get(4)?, r.get(5)?, r.get(6)?);
-                let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
+                let (width, height) = if crate::orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
                 let format = r.get_ref(3)?.as_str()?;
                 let format = Format::from_name(format).ok_or_else(|| {
                     rusqlite::Error::FromSqlConversionFailure(3, Type::Text, format!("unknown format {format}").into())
@@ -1873,7 +1873,7 @@ mod tests {
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
             let mut borders = Detection::none(400, 300);
             borders.content = [l, t, 400 - r, 300 - b];
-            let (width, height) = if orientation >= 5 { (300, 400) } else { (400, 300) };
+            let (width, height) = if crate::orientation::swaps_axes(orientation) { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
                 file_hash: [n as u8; 32],
                 format: "jpeg",

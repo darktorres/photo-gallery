@@ -524,7 +524,7 @@ impl Entry {
     /// before the import.
     fn stored_size(&self) -> Option<(f64, f64)> {
         let (w, h) = (f64::from(self.width), f64::from(self.height));
-        (w > 0.0 && h > 0.0).then_some(if self.orientation >= 5 { (h, w) } else { (w, h) })
+        (w > 0.0 && h > 0.0).then_some(if crate::orientation::swaps_axes(self.orientation) { (h, w) } else { (w, h) })
     }
 
     /// A rectangle of the stored image in pixels (left, top, right, bottom) as fractions of the image as shown:

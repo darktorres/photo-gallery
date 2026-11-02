@@ -11,6 +11,7 @@ use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
 use crate::codecs::Codecs;
 use crate::format::Format;
+use crate::orientation;
 
 /// An upright RGB image.
 #[derive(Clone, Default)]
@@ -139,7 +140,7 @@ impl Decoder {
         turns: u8,
         out: &mut Rgb,
     ) -> Result<Info> {
-        let orientation = crate::metadata::compose_orientation(exif, turns);
+        let orientation = crate::orientation::compose(exif, turns);
         let quarter_turn = matches!(orientation, 5..=8);
         let jpeg = match format {
             Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
@@ -241,7 +242,7 @@ pub fn transform_into(
     orientation: u8,
     out: &mut Vec<u8>,
 ) -> (usize, usize) {
-    let (ow, oh) = if orientation >= 5 { (h, w) } else { (w, h) };
+    let (ow, oh) = if orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
     // Every pixel is written below: a grown buffer only zeroes what it grew by.
     out.resize(w * h * unit, 0);
     for y in 0..oh {

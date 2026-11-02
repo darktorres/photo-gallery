@@ -18,7 +18,8 @@
 use anyhow::Result;
 
 use crate::format::Format;
-use crate::metadata::{self, compose_orientation, png_chunks, webp_chunks};
+use crate::metadata::{self, png_chunks, webp_chunks};
+use crate::orientation;
 use crate::rewrite::{self, Op};
 
 /// What turning a file comes to.
@@ -36,7 +37,7 @@ pub enum Outcome {
 pub fn rotate(bytes: &[u8], format: Format, turns: u8) -> Result<Outcome> {
     let shown = metadata::orientation(bytes, format);
     // The transform that takes the stored pixels to the new upright image.
-    let total = compose_orientation(shown, turns % 4);
+    let total = orientation::compose(shown, turns % 4);
     let tag = || Outcome::Orientation(total);
     let rewritten = |out: Vec<u8>| -> Outcome {
         // Pixels now upright: the tag (if any) goes back to 1.
@@ -93,7 +94,7 @@ mod tests {
     /// Expected: the original as shown, turned clockwise `turns` times.
     fn expect_turned(original: &[u8], turns: u8) -> (usize, usize, Vec<u8>) {
         let (w, h, pixels) = shown(original);
-        let img = orient(crate::decode::Rgb { width: w, height: h, pixels }, compose_orientation(1, turns));
+        let img = orient(crate::decode::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
         (img.width, img.height, img.pixels)
     }
 

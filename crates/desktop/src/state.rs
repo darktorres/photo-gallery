@@ -28,7 +28,7 @@ use anyhow::{Context, Result, bail};
 use pg_core::browse::{self, FileSource};
 use pg_core::catalog::Catalog;
 use pg_core::decode::{MinSize, Rgb, orient_pixels};
-use pg_core::metadata::compose_orientation;
+use pg_core::orientation;
 use pg_core::paths::verbatim;
 use pg_core::resize::Resizer;
 use pg_core::thumbs::{self, Maker, ThumbCache};
@@ -294,7 +294,7 @@ pub fn placeholder(file_id: i64) -> Result<Upload> {
     let p = with_catalog(|c| browse::placeholder(&c.conn, file_id))?.context("unknown file")?;
     let hash = p.hash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
-    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, compose_orientation(1, p.turns));
+    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, orientation::compose(1, p.turns));
     Ok(Upload::straight(w, h, rgba))
 }
 

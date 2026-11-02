@@ -189,3 +189,85 @@ fn ratings_and_turns_reach_the_files() {
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));
 }
+
+/// A finishing copy whose original is locked (another program has it open without sharing) fails at every try. The
+/// queue waits longer between the tries, gives up at MAX_ATTEMPTS, and discards the temp: the file then isn't shown as
+/// being written, and the failure stays in the queue. Without the give-up, the job was retried at once, forever.
+#[cfg(windows)]
+#[test]
+fn a_finishing_copy_that_keeps_failing_is_given_up() {
+    use std::os::windows::fs::OpenOptionsExt;
+
+    // Its own folder: run_folder keeps one folder per prefix, and this test runs beside the others in the binary.
+    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "giveup");
+    std::fs::create_dir_all(dir.join("images")).unwrap();
+    let files = make_files(&dir);
+    let catalog_path = dir.join("catalog.sqlite");
+    let mut c = Catalog::open(&catalog_path).unwrap();
+    let ctl = Control::new(false);
+    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
+    scan::scan(&mut c, &root, &ctl).unwrap();
+    import::import(&mut c, &Options::new(0), false, &ctl).unwrap();
+
+    // The file as the database has it, and the temp a write would have left beside it (writeback's temp_path).
+    let (id, db_path): (i64, String) = c
+        .conn
+        .query_row(
+            "SELECT f.id, fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id
+             WHERE f.name = 'b.png'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let (folder, name) = db_path.rsplit_once('\\').unwrap();
+    let temp = format!("{folder}\\.{name}.pg-write");
+    std::fs::copy(&files[1].0, &temp).unwrap();
+    c.conn
+        .execute(
+            "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rating', 3, 0, ?2, 3)",
+            rusqlite::params![id, temp],
+        )
+        .unwrap();
+
+    // Locked: the copy into the original can't open it.
+    let _lock = std::fs::OpenOptions::new().read(true).write(true).share_mode(0).open(&files[1].0).unwrap();
+
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
+    ));
+    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    writer.wake();
+
+    // Given up: the temp is gone from the queue and from disk.
+    let start = Instant::now();
+    loop {
+        let (attempts, temp_left): (i64, Option<String>) = c
+            .conn
+            .query_row("SELECT attempts, temp FROM file_writes WHERE file_id = ?1", [id], |r| {
+                Ok((r.get(0)?, r.get(1)?))
+            })
+            .unwrap();
+        if attempts >= 5 && temp_left.is_none() {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(120), "not given up at {attempts} attempts");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(!Path::new(&temp).exists(), "the temp is still on disk");
+    assert!(writer.status().error.is_some());
+    let error: Option<String> =
+        c.conn.query_row("SELECT error FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0)).unwrap();
+    assert!(error.is_some(), "the failure is gone from the queue");
+    assert!(!pg_core::browse::read::file_state(&c.conn, id).unwrap().unwrap().writing);
+
+    // And it stays given up: no more tries.
+    std::thread::sleep(Duration::from_secs(3));
+    let attempts: i64 =
+        c.conn.query_row("SELECT attempts FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0)).unwrap();
+    assert_eq!(attempts, 5);
+
+    drop(_lock);
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
+}

@@ -45,6 +45,8 @@ struct Job {
     value: i64,
     /// Set when the new content is complete: its path, and the value it carries.
     temp: Option<(String, i64)>,
+    /// Failed attempts so far.
+    attempts: i64,
 }
 
 /// What the app shows about the queue.
@@ -163,17 +165,25 @@ impl Inner {
             let queued: usize = catalog.conn.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0))?;
             self.status.lock().unwrap().queued = queued;
             // Finishing interrupted copies first; then the oldest settled change.
+            // A job is tried again once its last attempt is older than the settle time times the attempts so far: a
+            // failure waits longer each time, and at MAX_ATTEMPTS it is no longer picked (see give_up for a temp).
             let job = catalog
                 .conn
                 .query_row(
-                    "SELECT file_id, kind, value, temp, temp_value FROM file_writes
-                     WHERE temp IS NOT NULL OR (attempts < ?1 AND queued <= unixepoch() - ?2)
+                    "SELECT file_id, kind, value, temp, temp_value, attempts FROM file_writes
+                     WHERE attempts < ?1 AND queued <= unixepoch() - ?2 * (attempts + 1)
                      ORDER BY temp IS NULL, queued LIMIT 1",
                     params![MAX_ATTEMPTS, SETTLE_SECS],
                     |r| {
                         let temp: Option<String> = r.get(3)?;
                         let temp_value: Option<i64> = r.get(4)?;
-                        Ok(Job { file_id: r.get(0)?, kind: r.get(1)?, value: r.get(2)?, temp: temp.zip(temp_value) })
+                        Ok(Job {
+                            file_id: r.get(0)?,
+                            kind: r.get(1)?,
+                            value: r.get(2)?,
+                            temp: temp.zip(temp_value),
+                            attempts: r.get(5)?,
+                        })
                     },
                 )
                 .optional()?;
@@ -207,9 +217,35 @@ impl Inner {
                         // Leave it for the next idle check rather than spinning on it.
                         return Ok(());
                     }
+                    if job.temp.is_some() && job.attempts + 1 >= MAX_ATTEMPTS {
+                        self.give_up(catalog, &job)?;
+                    }
                 }
             }
         }
+    }
+
+    /// A finishing copy that failed at the cap: its temp is discarded, and the file's content counts as unknown, as
+    /// after an interrupted copy (`file_rewritten` with no hash, so the import redoes the analysis). The file then no
+    /// longer shows as being written. The row stays, with its attempts and error, so the failure is still in the queue.
+    fn give_up(&self, catalog: &Catalog, job: &Job) -> Result<()> {
+        let Some((temp, _)) = &job.temp else { return Ok(()) };
+        let path: String = catalog.conn.query_row(
+            "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+            [job.file_id],
+            |r| r.get(0),
+        )?;
+        let _ = std::fs::remove_file(temp);
+        let tx = catalog.conn.unchecked_transaction()?;
+        if let Ok(after) = stat(&path) {
+            Catalog::file_rewritten(&tx, job.file_id, (-1, -1), after, None)?;
+        }
+        tx.execute(
+            "UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = ?2",
+            params![job.file_id, job.kind],
+        )?;
+        tx.commit()?;
+        Ok(())
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {

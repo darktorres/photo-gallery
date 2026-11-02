@@ -12,7 +12,7 @@ pub mod qobject {
         include!(<QtMultimedia/QVideoSink>);
         type QVideoSink;
 
-        include!("pg-ui/cpp/frame_sink.h");
+        include!("pg-desktop/cpp/frame_sink.h");
         #[namespace = "pg"]
         type FrameSink;
         #[namespace = "pg"]

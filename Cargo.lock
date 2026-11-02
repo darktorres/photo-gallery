@@ -1445,6 +1445,34 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-desktop"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "cxx",
+ "cxx-qt",
+ "cxx-qt-build",
+ "cxx-qt-lib",
+ "pg-core",
+ "pg-ingest",
+ "serde",
+ "serde_json",
+ "thumbhash",
+ "windows-sys",
+]
+
+[[package]]
+name = "pg-gallery"
+version = "0.1.0"
+dependencies = [
+ "dhat",
+ "pg-desktop",
+ "pg-ingest",
+ "windows-sys",
+ "winres",
+]
+
+[[package]]
 name = "pg-ingest"
 version = "0.1.0"
 dependencies = [
@@ -1462,25 +1490,6 @@ dependencies = [
 [[package]]
 name = "pg-testkit"
 version = "0.1.0"
-
-[[package]]
-name = "pg-ui"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "cxx",
- "cxx-qt",
- "cxx-qt-build",
- "cxx-qt-lib",
- "dhat",
- "pg-core",
- "pg-ingest",
- "serde",
- "serde_json",
- "thumbhash",
- "windows-sys",
- "winres",
-]
 
 [[package]]
 name = "pkg-config"

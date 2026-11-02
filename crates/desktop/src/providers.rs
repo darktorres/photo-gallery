@@ -41,7 +41,7 @@ pub mod ffi {
         include!("cxx-qt-lib/qqmlimageproviderbase.h");
         type QQmlImageProviderBase = cxx_qt_lib::QQmlImageProviderBase;
 
-        include!("pg-ui/cpp/providers.h");
+        include!("pg-desktop/cpp/providers.h");
         /// A new provider of `kind` (`KIND_*`); the engine takes ownership.
         #[namespace = "pg"]
         fn new_image_provider(kind: i32) -> *mut QQmlImageProviderBase;

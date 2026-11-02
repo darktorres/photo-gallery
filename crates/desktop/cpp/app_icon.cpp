@@ -1,5 +1,5 @@
 // The window icon. Windows shows the exe's icon in Explorer only: a window's title bar and taskbar button take the icon
-// the application gives them, so the PNG (crates/ui/resources/app-icon.png) is set here as the application's icon.
+// the application gives them, so the PNG (crates/desktop/resources/app-icon.png) is set here as the application's icon.
 
 #include "app_icon.h"
 

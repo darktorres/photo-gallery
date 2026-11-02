@@ -280,7 +280,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 - QML grid with lazy model and thumbnail provider, viewer and loupe, ratings in the catalog, merged-drives
   tree.
-- **Status (2026-10-30):** first version built (`gallery.exe`, `crates/ui`). Justified rows from Rust in a
+- **Status (2026-10-30):** first version built (`gallery.exe`, `crates/desktop`). Justified rows from Rust in a
   virtualized ListView. The row height is adjustable at runtime, with thumbnails made on demand at that size
   (newest request first) and ThumbHash placeholders. Viewer with Lanczos fit, 1:1, 10× loupe and a frame to
   reveal black bars. Ratings 0–5 in the catalog (schema v2). The tree merges folders by their path below the
@@ -304,7 +304,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   a key and a direction. To make "video" a type, videos are now scanned, imported (streamed hash, probe, poster
   frame), thumbnailed and played (Qt Multimedia). Animated GIF/APNG/WebP play too. Decoding uses our own
   FFmpeg 9 (BtbN `lgpl-shared`, which has dav1d), shared with Qt's player in place of Qt's copy. On a GPU
-  without AV1 decoding the player decodes on the CPU (`crates/ui/src/gpu_device.rs`). Videos get no
+  without AV1 decoding the player decodes on the CPU (`crates/desktop/src/gpu_device.rs`). Videos get no
   near-duplicate detection, and their ratings and turns stay in the catalog (see Later).
 - **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
   groups in a panel: the photo's other sizes (to find a better copy) and similar images (to find more), all of

@@ -52,7 +52,7 @@ libraries; they differ in who owns the playback core. Both were checked against 
     the window and every decoder are gone.
   - No copies between devices, but one copy on the same device per decoded frame: the decoder reuses its
     texture slots, so each frame is copied out into a texture of ours.
-  - **Qt's half is done** (`crates/ui/cpp/gpu_device.cpp`, 2026-10-31): the device is made on the first
+  - **Qt's half is done** (`crates/desktop/cpp/gpu_device.cpp`, 2026-10-31): the device is made on the first
     adapter, the AV1 check runs on it, and the window, declared hidden, is handed it before it's shown.
     Multithread protection isn't on yet: nothing but Qt's render thread uses the device so far.
   - Device loss: with the device left set, Qt would keep retrying with the dead one. So the hand-over is
@@ -70,7 +70,7 @@ libraries; they differ in who owns the playback core. Both were checked against 
   - It also draws our animation frames, replacing `QVideoSink` + `VideoOutput`.
   - Offscreen (software scene graph) it draws nothing, so its tests need a real window.
 - **Qt Multimedia goes away, in stages.** With it go Qt's FFmpeg plugin, the environment-variable stopgap
-  (`choose_video_decoding` in `crates/ui/cpp/gpu_device.*` and its call in `main.rs`), `windeployqt --no-ffmpeg`
+  (`choose_video_decoding` in `crates/desktop/cpp/gpu_device.*` and its call in `main.rs`), `windeployqt --no-ffmpeg`
   and `frame_sink.*`.
   Until the new player has sound, Qt Multimedia stays: it is today's only audio path.
 - **The transport bar and keys stay in QML** and drive the item through properties and invokables. The seek

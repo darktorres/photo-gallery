@@ -25,7 +25,7 @@ pub mod ffi {
         include!("cxx-qt-lib/qqmlapplicationengine.h");
         type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
 
-        include!("pg-ui/cpp/gpu_device.h");
+        include!("pg-desktop/cpp/gpu_device.h");
         /// The device and what was learned on it.
         #[namespace = "pg"]
         type GpuDevice;

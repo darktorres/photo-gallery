@@ -9,7 +9,7 @@ qt := "C:/Qt/6.12.0/msvc2022_64"
 default:
     @just --list
 
-# Build the app: `release` (default) or `debug` (reads the QML from crates/ui/qml and reloads it on change).
+# Build the app: `release` (default) or `debug` (reads the QML from crates/desktop/qml and reloads it on change).
 build profile="release":
     cargo build {{ if profile == "release" { "--release" } else { "" } }}
 
@@ -18,7 +18,7 @@ build profile="release":
 # Qt's PDBs there (Qt's "Debug Information Files", when installed): Pin reads a DLL's PDB only from beside it, for
 # the instruction profiles (tools/profiling/callgraph).
 deploy profile="release" pdb="": (build profile)
-    {{ qt }}/bin/windeployqt.exe --release {{ if pdb == "pdb" { "--pdb" } else { "" } }} --qmldir crates/ui/qml --no-translations --no-ffmpeg target/{{ profile }}/gallery.exe
+    {{ qt }}/bin/windeployqt.exe --release {{ if pdb == "pdb" { "--pdb" } else { "" } }} --qmldir crates/desktop/qml --no-translations --no-ffmpeg target/{{ profile }}/gallery.exe
 
 # Run the release build: the app, or a command (`just run scan D:\Photos`, `just run status`).
 run *args:

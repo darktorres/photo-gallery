@@ -19,7 +19,7 @@
 #include <cstdint>
 #include <memory>
 
-#include "pg-ui/src/providers.cxx.h"
+#include "pg-desktop/src/providers.cxx.h"
 
 namespace pg {
 namespace {

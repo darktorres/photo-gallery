@@ -1,0 +1,33 @@
+[package]
+name = "pg-desktop"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The code cxx-qt's bridges expand to names `cxx` directly.
+[package.metadata.cargo-machete]
+ignored = ["cxx"]
+
+[lib]
+# No unit tests here (the UI is checked through its test hooks, crates/README.md). A test binary would still link Qt
+# and run from target/<profile>/deps, where the Qt DLLs aren't, and fail with STATUS_DLL_NOT_FOUND.
+test = false
+doctest = false
+
+[dependencies]
+pg-core = { path = "../core" }
+pg-ingest = { path = "../ingest" }
+anyhow.workspace = true
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
+serde.workspace = true
+serde_json.workspace = true
+thumbhash.workspace = true
+windows-sys.workspace = true
+
+[build-dependencies]
+cxx-qt-build = "0.10"

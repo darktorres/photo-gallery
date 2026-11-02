@@ -1,4 +1,4 @@
-//! Debug builds read the QML from `crates/ui/qml` instead of the copy compiled into the program, and reload the
+//! Debug builds read the QML from `crates/desktop/qml` instead of the copy compiled into the program, and reload the
 //! window whenever a file there changes (cpp/live_reload.cpp): QML edits show in the running app without a
 //! rebuild. Release builds leave this out (build.rs).
 
@@ -11,11 +11,11 @@ pub mod ffi {
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qurl.h");
         type QUrl = cxx_qt_lib::QUrl;
-        include!("pg-ui/cpp/gpu_device.h");
+        include!("pg-desktop/cpp/gpu_device.h");
         #[namespace = "pg"]
         type GpuDevice = crate::gpu_device::ffi::GpuDevice;
 
-        include!("pg-ui/cpp/live_reload.h");
+        include!("pg-desktop/cpp/live_reload.h");
         /// Fetch the QML files in `main`'s qrc: folder from `source_dir` instead. Call before the first load.
         #[namespace = "pg"]
         fn read_qml_from_source(engine: Pin<&mut QQmlApplicationEngine>, main: &QUrl, source_dir: &QString);

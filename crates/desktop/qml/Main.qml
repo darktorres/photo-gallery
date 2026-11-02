@@ -309,6 +309,10 @@ ApplicationWindow {
     signal similarAsked(path: string)
     signal saveViewAsked()
 
+    // The test hook --yandex-preview: the result the Yandex panel shows at full size once its search has results. Set
+    // before the panel is made (findSimilar), which takes it as its own property.
+    property int yandexPreviewHook: -1
+
     // The viewer's "find similar": search Yandex for the photo's file.
     function findSimilar(path: string) {
         yandexLoader.active = true
@@ -943,6 +947,7 @@ ApplicationWindow {
         sourceComponent: Component {
             YandexPanel {
                 id: yandexPanel
+                previewWhenFound: win.yandexPreviewHook
                 // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer
                 // is gone.
                 onClosed: viewer.visible ? viewer.forceActiveFocus() : grid.forceActiveFocus()
@@ -1070,9 +1075,8 @@ ApplicationWindow {
         if (commandLine.has("library")) libraryOpen = true
         if (commandLine.has("save-view")) askSaveView()
         if (commandLine.has("find-similar")) {
+            if (commandLine.has("yandex-preview")) yandexPreviewHook = commandLine.number("yandex-preview", 0)
             findSimilar(commandLine.text("find-similar"))
-            if (commandLine.has("yandex-preview"))
-                yandexLoader.item.previewWhenFound = commandLine.number("yandex-preview", 0)
         }
         library.start(thumbHeight)
         if (commandLine.has("add-folder")) library.addFolder(commandLine.url("add-folder"))

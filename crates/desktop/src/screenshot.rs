@@ -10,7 +10,7 @@ pub mod ffi {
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
 
-        include!("pg-ui/cpp/screenshot.h");
+        include!("pg-desktop/cpp/screenshot.h");
         /// `delay_ms` after the window the engine shows is `ready`, save it to `path`, then quit.
         #[namespace = "pg"]
         fn save_screenshot_later(engine: Pin<&mut QQmlApplicationEngine>, path: &QString, delay_ms: i32);

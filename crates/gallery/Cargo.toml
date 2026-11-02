@@ -1,5 +1,5 @@
 [package]
-name = "pg-ui"
+name = "pg-gallery"
 edition.workspace = true
 version.workspace = true
 publish.workspace = true
@@ -7,36 +7,27 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The code cxx-qt's bridges expand to names `cxx` directly.
-[package.metadata.cargo-machete]
-ignored = ["cxx"]
-
 [[bin]]
 name = "gallery"
 path = "src/main.rs"
-# No unit tests here (the UI is checked through its test hooks, crates/README.md). The empty test binary would
-# still link Qt and run from target/<profile>/deps, where the Qt DLLs aren't, and fail with STATUS_DLL_NOT_FOUND.
+# No unit tests here: a test binary would link Qt through the app and run from target/<profile>/deps, where the Qt DLLs
+# aren't, and fail with STATUS_DLL_NOT_FOUND.
 test = false
 
 [dependencies]
-pg-core = { path = "../core" }
 pg-ingest = { path = "../ingest" }
-anyhow.workspace = true
-cxx = "1"
-cxx-qt = "0.10"
-cxx-qt-lib = { version = "0.10", features = ["qt_gui", "qt_qml"] }
-serde.workspace = true
-serde_json.workspace = true
-thumbhash.workspace = true
+# The app window. Without it `gallery` runs only its commands, and builds without Qt.
+pg-desktop = { path = "../desktop", optional = true }
 windows-sys.workspace = true
 # The heap profiler (docs/PROFILING.md "Tool: dhat"): a patched dhat-rs that takes whole backtraces quickly
 # (vendor/README.md).
 dhat = { path = "../../vendor/dhat", optional = true }
 
 [features]
+default = ["desktop"]
+desktop = ["dep:pg-desktop"]
 # `gallery` with dhat as its allocator, writing dhat-heap.json when it ends. Built with the `dhat` profile.
 dhat-heap = ["dep:dhat"]
 
 [build-dependencies]
-cxx-qt-build = "0.10"
 winres = "0.1"

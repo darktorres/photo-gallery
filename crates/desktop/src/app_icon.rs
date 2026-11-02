@@ -4,7 +4,7 @@
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
-        include!("pg-ui/cpp/app_icon.h");
+        include!("pg-desktop/cpp/app_icon.h");
 
         /// Set the application's window icon. Call after the QGuiApplication is created.
         #[namespace = "pg"]

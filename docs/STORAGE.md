@@ -69,6 +69,7 @@ app has to ask for elevation (`ShellExecuteExW`, verb `runas`): silent here, a U
 default settings.
 
 **What it gains (estimates; the walk hasn't been timed on E:).**
+
 - An MFT record is 1 KiB: at 70M files, ~70 GB, ~5 min at the HDD's ~230 MB/s (FINDINGS "I/O"). A cold folder
   walk pays a few seeks per folder: ~20 min per 100k folders, 3–4 h at 1M. Both are small next to the first
   import (~1.5 days at decode speed). Rescans are where the time matters.

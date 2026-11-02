@@ -10,8 +10,11 @@ See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.
 - `ingest` (`pg-ingest`): the passes over the originals (scan, import, borders, thumbnails, cropped copies), the
   app's background job that runs them, the writer that puts ratings and turns into the files (`writeback`), and
   the command line.
-- `ui` (`pg-ui`, binary `gallery`): the one program. Without arguments it opens the desktop app (Qt 6 Quick
-  over CXX-Qt); with a command it runs that pass on the command line.
+- `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
+  flat folder), the image providers and the GPU device.
+- `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
+  command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
+  the program runs commands only, and builds without Qt.
 
 ## Build
 

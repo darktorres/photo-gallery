@@ -10,13 +10,13 @@
 # copies are of the sources as they are now, so the QML can be linted again without a rebuild. qmllint matches a file
 # to its qmldir entry (Ratings is a singleton only through it) by the path it was given, so the copies are linted.
 # With absolute paths qmllint 6.12 prints no text, only its JSON report, so the warnings are printed from that. All
-# are printed as crates/ui/qml paths (the line numbers are the same).
+# are printed as crates/desktop/qml paths (the line numbers are the same).
 param([string]$Qt = "C:/Qt/6.12.0/msvc2022_64")
 
 $ErrorActionPreference = "Stop"
 $root = (Split-Path $PSScriptRoot -Parent).Replace('\', '/')
 
-$types = Get-ChildItem "$root/target/*/build/pg-ui-*/out/qt-build-utils/qml_modules/pg/gallery/plugin.qmltypes" `
+$types = Get-ChildItem "$root/target/*/build/pg-desktop-*/out/qt-build-utils/qml_modules/pg/gallery/plugin.qmltypes" `
     -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $types) { throw "No pg.gallery module in target/: build the app first (just build)." }
 
@@ -25,7 +25,7 @@ $module = "$imports/pg/gallery"
 if (Test-Path $imports) { Remove-Item -Recurse -Force $imports }
 New-Item -ItemType Directory -Force "$module/qml" | Out-Null
 Copy-Item $types.FullName, "$($types.DirectoryName)/qmldir" $module
-Copy-Item "$root/crates/ui/qml/*.qml" "$module/qml"
+Copy-Item "$root/crates/desktop/qml/*.qml" "$module/qml"
 $names = (Get-ChildItem "$module/qml/*.qml").Name
 $entries = @("<file alias=`"qmldir`">$module/qmldir</file>") + ($names | ForEach-Object { "<file alias=`"qml/$_`">$module/qml/$_</file>" })
 $qrc = "$module/module.qrc"
@@ -33,7 +33,7 @@ $qrc = "$module/module.qrc"
 
 $warnings = [System.Collections.Generic.List[string]]::new()
 function Add-Warning([string]$path, [string]$line, [string]$column, [string]$message) {
-    $name = $path.Replace('\', '/').Replace("$module/qml/", "crates/ui/qml/")
+    $name = $path.Replace('\', '/').Replace("$module/qml/", "crates/desktop/qml/")
     $warnings.Add("${name}:${line}:${column}: $message")
 }
 

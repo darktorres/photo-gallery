@@ -285,11 +285,17 @@ Rectangle {
             }
         }
 
-        // 1:1 opens on the image's middle; fitted, the content is the view, scrolled to its start.
-        onActualChanged: Qt.callLater(() => {
-            previewView.contentX = Math.max(0, (previewView.contentWidth - previewView.width) / 2)
-            previewView.contentY = Math.max(0, (previewView.contentHeight - previewView.height) / 2)
-        })
+        // 1:1 opens on the image's middle; fitted, the content is the view, scrolled to its start. Done once the
+        // content has its new size, on the next event-loop pass.
+        Timer {
+            id: centre
+            interval: 0
+            onTriggered: {
+                previewView.contentX = Math.max(0, (previewView.contentWidth - previewView.width) / 2)
+                previewView.contentY = Math.max(0, (previewView.contentHeight - previewView.height) / 2)
+            }
+        }
+        onActualChanged: centre.restart()
 
         anchors.fill: parent
         visible: false

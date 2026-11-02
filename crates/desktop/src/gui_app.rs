@@ -8,7 +8,7 @@ mod ffi {
         include!("cxx-qt-lib/qguiapplication.h");
         type QGuiApplication = cxx_qt_lib::QGuiApplication;
 
-        include!("pg-ui/cpp/gui_app.h");
+        include!("pg-desktop/cpp/gui_app.h");
 
         /// A QGuiApplication whose argc and argv are these arguments: NUL-terminated, one after another.
         #[namespace = "pg"]

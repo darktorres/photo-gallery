@@ -4,7 +4,8 @@ Writes OUT/LAYOUT/catalog.sqlite (VACUUM INTO: compact, consistent with the WAL)
 cache's schema, entries, totals and limits, without the JPEGs). An existing LAYOUT folder is never overwritten, so
 the data a baseline was measured on stays. The sources are opened read-only.
 
-    python tools/profiling/bench_data.py v1-orderkey-synthetic D:\\PhotoGallery\\baseline_2026-11-02\\synthetic_catalog D:\\PhotoGallery\\bench-data
+    python tools/profiling/bench_data.py v1-orderkey-synthetic \\
+        D:\\PhotoGallery\\baseline_2026-11-02\\synthetic_catalog D:\\PhotoGallery\\bench-data
 
 wsl-bench.sh copies OUT/* to WSL's disk (/root/pg-bench) before running the benches.
 """

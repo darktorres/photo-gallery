@@ -1,12 +1,12 @@
 """Draw the app icon: two photos on a dark tile, written as a multi-size Windows icon.
 
 Usage:
-  python make_icon.py                    # writes crates/ui/resources/app.ico and app-icon.png
+  python make_icon.py                    # writes crates/gallery/resources/app.ico and crates/desktop/resources/app-icon.png
   python make_icon.py --preview PNG      # also writes a PNG of the 256 px version, to look at
 
 Needs Pillow. The icon is drawn at 1024 px and scaled down by Pillow for each size in the .ico, so the small sizes
 stay clean. Rerun after changing the colours or shapes below. The .ico is embedded in gallery.exe for Explorer
-(crates/ui/build.rs); the PNG is a Qt resource that sets the window and taskbar icon (crates/ui/cpp/app_icon.cpp).
+(crates/gallery/build.rs); the PNG is a Qt resource that sets the window and taskbar icon (crates/desktop/cpp/app_icon.cpp).
 """
 
 import argparse
@@ -14,9 +14,9 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFilter
 
-RESOURCES = Path(__file__).resolve().parents[1] / "crates" / "ui" / "resources"
-OUT = RESOURCES / "app.ico"
-PNG_OUT = RESOURCES / "app-icon.png"
+CRATES = Path(__file__).resolve().parents[1] / "crates"
+OUT = CRATES / "gallery" / "resources" / "app.ico"
+PNG_OUT = CRATES / "desktop" / "resources" / "app-icon.png"
 SIZE = 1024
 SIZES = [(16, 16), (24, 24), (32, 32), (48, 48), (64, 64), (128, 128), (256, 256)]
 
@@ -130,7 +130,8 @@ def main():
     args = parser.parse_args()
 
     icon = make_icon()
-    RESOURCES.mkdir(parents=True, exist_ok=True)
+    OUT.parent.mkdir(parents=True, exist_ok=True)
+    PNG_OUT.parent.mkdir(parents=True, exist_ok=True)
     icon.save(OUT, format="ICO", sizes=SIZES)
     print(f"wrote {OUT}")
     icon.resize((256, 256), Image.Resampling.LANCZOS).save(PNG_OUT)

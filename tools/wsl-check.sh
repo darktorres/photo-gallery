@@ -23,5 +23,5 @@ export LIBCLANG_PATH
 cd "$CLONE"
 # pg-ingest is out until the platform crate (plan step 4) moves its Windows-only code (CreateFileW, the job object,
 # file times, CREATE_NO_WINDOW) behind cfg(windows): it doesn't build here yet. Remove the exclusion then.
-cargo clippy --workspace --exclude pg-ui --exclude pg-ingest --all-targets -- -D warnings
+cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --exclude pg-ingest --all-targets -- -D warnings
 echo "wsl-check: clean"

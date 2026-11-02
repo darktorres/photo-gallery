@@ -42,10 +42,10 @@ ignore = true
 multiple-versions = "warn"
 wildcards = "deny"
 allow-wildcard-paths = true
-# pg-core has no UI dependency (PLAN §7): Qt and its bindings come in through pg-ui only.
+# pg-core has no UI dependency (PLAN §7): Qt and its bindings come in through pg-desktop only.
 deny = [
-    { crate = "cxx-qt", wrappers = ["pg-ui", "cxx-qt-lib"] },
-    { crate = "cxx-qt-lib", wrappers = ["pg-ui"] },
+    { crate = "cxx-qt", wrappers = ["pg-desktop", "cxx-qt-lib"] },
+    { crate = "cxx-qt-lib", wrappers = ["pg-desktop"] },
 ]
 
 [sources]

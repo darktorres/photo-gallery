@@ -219,11 +219,9 @@ impl Inner {
         // never queued (browse::set_rating).
         if kind == Kind::Video.key() && job.temp.is_none() {
             if job.kind == "rotation" {
-                Catalog::add_catalog_rotation(conn, job.file_id, job.value.rem_euclid(4) as u8)?;
-                self.done(conn, job, job.value)?;
-                self.pixels_changed();
+                self.keep_turn_in_catalog(conn, job)?;
             } else {
-                self.done(conn, job, job.value)?;
+                self.done(conn, job, job.value, |_| Ok(()))?;
             }
             return Ok(());
         }
@@ -233,11 +231,13 @@ impl Inner {
             // unknown now, so its analysis is redone rather than carried over.
             copy_into(Path::new(temp), &path)?;
             let after = stat(&path)?;
-            Catalog::file_rewritten(conn, job.file_id, (-1, -1), after, None)?;
-            if job.kind == "rating" {
-                Catalog::set_file_rating(conn, job.file_id, Some(*written as u8))?;
-            }
-            self.done(conn, job, *written)?;
+            self.done(conn, job, *written, |tx| {
+                Catalog::file_rewritten(tx, job.file_id, (-1, -1), after, None)?;
+                if job.kind == "rating" {
+                    Catalog::set_file_rating(tx, job.file_id, Some(*written as u8))?;
+                }
+                Ok(())
+            })?;
             if job.kind == "rotation" {
                 self.pixels_changed();
             }
@@ -280,20 +280,12 @@ impl Inner {
                                 Ok(()) if metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
                                 _ => {
                                     let _ = std::fs::remove_file(&temp);
-                                    Catalog::add_catalog_rotation(conn, job.file_id, turns)?;
-                                    self.done(conn, job, job.value)?;
-                                    self.pixels_changed();
-                                    return Ok(());
+                                    return self.keep_turn_in_catalog(conn, job);
                                 }
                             }
                         }
                     },
-                    Outcome::Catalog => {
-                        Catalog::add_catalog_rotation(conn, job.file_id, turns)?;
-                        self.done(conn, job, job.value)?;
-                        self.pixels_changed();
-                        return Ok(());
-                    }
+                    Outcome::Catalog => return self.keep_turn_in_catalog(conn, job),
                 };
                 if let Some(new) = new {
                     std::fs::write(&temp, new).with_context(|| format!("writing {temp}"))?;
@@ -303,7 +295,8 @@ impl Inner {
             other => bail!("unknown write kind {other}"),
         };
 
-        // Step 2: the new content is complete; record it, then copy it in.
+        // Step 2: the new content is complete; record it, then copy it in. From here until `done` records the write,
+        // readers know the file may be part-written (browse::FileState::writing).
         conn.execute(
             "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
             params![job.file_id, job.kind, temp, job.value],
@@ -311,27 +304,48 @@ impl Inner {
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
         let after = stat(&path)?;
-        Catalog::file_rewritten(conn, job.file_id, before, after, new_hash)?;
+        self.done(conn, job, job.value, |tx| {
+            Catalog::file_rewritten(tx, job.file_id, before, after, new_hash)?;
+            if job.kind == "rating" {
+                Catalog::set_file_rating(tx, job.file_id, Some(job.value as u8))?;
+            }
+            Ok(())
+        })?;
         if job.kind == "rating" {
-            Catalog::set_file_rating(conn, job.file_id, Some(job.value as u8))?;
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
                 eprintln!("thumbnails of file {}: {e:#}", job.file_id);
             }
         }
-        self.done(conn, job, job.value)?;
         if pixels_changed {
             self.pixels_changed();
         }
         Ok(())
     }
 
-    /// `written` (a rating, or a number of turns) is now in the file. A rating changed again meanwhile, or more
-    /// turns added, stays queued for the rest.
-    fn done(&self, conn: &rusqlite::Connection, job: &Job, written: i64) -> Result<()> {
+    /// A turn the file can't hold is kept in the catalog instead.
+    fn keep_turn_in_catalog(&self, conn: &rusqlite::Connection, job: &Job) -> Result<()> {
+        let turns = job.value.rem_euclid(4) as u8;
+        self.done(conn, job, job.value, |tx| Catalog::add_catalog_rotation(tx, job.file_id, turns))?;
+        self.pixels_changed();
+        Ok(())
+    }
+
+    /// `written` (a rating, or a number of turns) is now in the file, or the catalog: `record` records what the
+    /// write changed, in the same transaction, so that no reader sees the write both done and still queued (a turn
+    /// shown twice), or the file rewritten and the catalog not yet saying so. A rating changed again meanwhile, or
+    /// more turns added, stays queued for the rest.
+    fn done(
+        &self,
+        conn: &rusqlite::Connection,
+        job: &Job,
+        written: i64,
+        record: impl FnOnce(&rusqlite::Transaction) -> Result<()>,
+    ) -> Result<()> {
         let (file_id, kind) = (job.file_id, job.kind.as_str());
         let tx = conn.unchecked_transaction()?;
+        record(&tx)?;
         if kind == "rotation" {
             tx.execute(
                 "UPDATE file_writes SET value = (value - ?2 + 4) % 4 WHERE file_id = ?1 AND kind = 'rotation'",

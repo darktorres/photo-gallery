@@ -15,7 +15,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{Connection, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
@@ -377,13 +377,14 @@ fn migrate(conn: &Connection, baseline: &str, migrations: &[&str]) -> Result<()>
     Ok(())
 }
 
+/// Every connection's settings.
+const SETTINGS: &str = "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
+     PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;";
+
 /// A connection to the catalog at `path`, created with the baseline when new.
 fn connect(path: &Path) -> Result<Connection> {
     let conn = Connection::open(path)?;
-    conn.execute_batch(
-        "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON;
-         PRAGMA cache_size = -262144; PRAGMA temp_store = MEMORY;",
-    )?;
+    conn.execute_batch(SETTINGS)?;
     migrate(&conn, BASELINE, MIGRATIONS).with_context(|| format!("catalog {}", path.display()))?;
     Ok(conn)
 }
@@ -694,6 +695,24 @@ impl Catalog {
         Ok(Catalog { conn })
     }
 
+    /// Another connection to a catalog this process has opened ([`Catalog::open`], which makes it, brings it to the
+    /// current layout and sets the build's version marks): the settings and the SQL functions only. For every
+    /// connection after the first (the app's threads, the background job, the writer), which would otherwise
+    /// check the layout and the marks again each time. An error if the catalog isn't there, or its schema isn't
+    /// this build's (another program changed it since).
+    pub fn open_current(path: &Path) -> Result<Catalog> {
+        let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
+        let conn = Connection::open_with_flags(path, flags).with_context(|| format!("catalog {}", path.display()))?;
+        conn.execute_batch(SETTINGS)?;
+        let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
+        let current = BASELINE_VERSION + MIGRATIONS.len() as i64;
+        if version != current {
+            bail!("catalog {}: schema version {version}, not this build's {current}", path.display());
+        }
+        crate::query::register_functions(&conn)?;
+        Ok(Catalog { conn })
+    }
+
     /// The id made with the catalog (`meta.catalog_id`).
     pub fn catalog_id(&self) -> Result<String> {
         Ok(self.conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0))?)
@@ -886,15 +905,15 @@ impl Catalog {
     /// import see it as the file it is. `before` is the (size, mtime) the file had on disk just before the write.
     /// After a metadata-only change (`metadata_only` = the new BLAKE3) an analysis made from exactly those bytes
     /// stays valid and follows the file: nothing is re-imported. After a pixel change it is left stale, so the
-    /// import redoes it (new upright size, hashes, PDQ).
+    /// import redoes it (new upright size, hashes, PDQ). In the transaction that ends the write (clears
+    /// `file_writes.temp`), so that a reader sees the file as it was, or as it is now with the write done.
     pub fn file_rewritten(
-        conn: &Connection,
+        tx: &Transaction,
         file_id: i64,
         before: (i64, i64),
         after: (i64, i64),
         metadata_only: Option<[u8; 32]>,
     ) -> Result<()> {
-        let tx = conn.unchecked_transaction()?;
         tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id, after.0, after.1])?;
         if let Some(file_hash) = metadata_only {
             tx.execute(
@@ -903,14 +922,14 @@ impl Catalog {
                 params![file_id, after.0, after.1, &file_hash[..], before.0, before.1],
             )?;
         }
-        tx.commit()?;
         Ok(())
     }
 
     /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the analysis, made without it, is stale
-    /// (`files.pending`), and the thumbnails no longer match (thumbs::Source).
-    pub fn add_catalog_rotation(conn: &Connection, file_id: i64, turns: u8) -> Result<()> {
-        conn.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id, turns])?;
+    /// (`files.pending`), and the thumbnails no longer match (thumbs::Source). In the transaction that takes the
+    /// turn off the queue, so that no reader sees it both kept and queued.
+    pub fn add_catalog_rotation(tx: &Transaction, file_id: i64, turns: u8) -> Result<()> {
+        tx.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id, turns])?;
         Ok(())
     }
 
@@ -934,6 +953,15 @@ impl Catalog {
             failed_writes: one("SELECT count(*) FROM file_writes WHERE error IS NOT NULL")?,
         })
     }
+}
+
+/// No write of the app's into file `?1` is in progress (`file_writes.temp`, set before the file is rewritten in
+/// place and cleared in the transaction that records the result): what was read from it is what the catalog
+/// says, not a part-written file.
+macro_rules! not_being_written {
+    () => {
+        "NOT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL)"
+    };
 }
 
 // The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
@@ -1025,6 +1053,7 @@ impl<'tx> ScanWriter<'tx> {
 
 /// The import's writes: analyses, failures, the file ratings they carry, and tier-1 pairs.
 pub struct AnalysisWriter<'tx> {
+    current: Statement<'tx>,
     delete_pairs: Statement<'tx>,
     analysis: Statement<'tx>,
     failure: Statement<'tx>,
@@ -1042,6 +1071,10 @@ pub struct AnalysisWriter<'tx> {
 impl<'tx> AnalysisWriter<'tx> {
     pub fn new(tx: &'tx Transaction) -> Result<AnalysisWriter<'tx>> {
         Ok(AnalysisWriter {
+            current: tx.prepare(concat!(
+                "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND size = ?2 AND mtime = ?3 AND rotation = ?4) AND ",
+                not_being_written!()
+            ))?,
             delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
@@ -1079,7 +1112,18 @@ impl<'tx> AnalysisWriter<'tx> {
         })
     }
 
-    pub fn store_analysis(&mut self, item: &WorkItem, a: &Analysis) -> Result<()> {
+    /// Whether the file is still as it was listed (`item`), with no write of the app's into it in progress: only
+    /// then is what was read from it stored. Otherwise it is left as it is, due again (a changed file is stale; a
+    /// file whose metadata was rewritten keeps the analysis made before, which the writer carried over).
+    fn current(&mut self, item: &WorkItem) -> Result<bool> {
+        Ok(self.current.query_row(params![item.id, item.size, item.mtime, item.rotation], |r| r.get(0))?)
+    }
+
+    /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
+    pub fn store_analysis(&mut self, item: &WorkItem, a: &Analysis) -> Result<bool> {
+        if !self.current(item)? {
+            return Ok(false);
+        }
         // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
         self.delete_pairs.execute([item.id])?;
         self.analysis.execute(params![
@@ -1107,10 +1151,15 @@ impl<'tx> AnalysisWriter<'tx> {
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id])?;
         self.delete_sides.execute([item.id])?;
-        self.sync_file_rating(item.id, a.file_rating)
+        self.sync_file_rating(item.id, a.file_rating)?;
+        Ok(true)
     }
 
-    pub fn store_failure(&mut self, item: &WorkItem, error: &str) -> Result<()> {
+    /// Store a failure, unless the file changed since it was listed (see `current`). Whether it was stored.
+    pub fn store_failure(&mut self, item: &WorkItem, error: &str) -> Result<bool> {
+        if !self.current(item)? {
+            return Ok(false);
+        }
         self.delete_pairs.execute([item.id])?;
         self.failure.execute(params![
             item.id,
@@ -1122,7 +1171,7 @@ impl<'tx> AnalysisWriter<'tx> {
             error
         ])?;
         self.delete_sides.execute([item.id])?;
-        Ok(())
+        Ok(true)
     }
 
     pub fn store_pdq_pair(&mut self, a: i64, b: i64, distance: u32, variant: usize) -> Result<()> {
@@ -1164,8 +1213,10 @@ pub struct BordersWriter<'tx> {
 impl<'tx> BordersWriter<'tx> {
     pub fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
         Ok(BordersWriter {
-            current: tx
-                .prepare("SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3)")?,
+            current: tx.prepare(concat!(
+                "SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3) AND ",
+                not_being_written!()
+            ))?,
             cut: tx.prepare(
                 "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
                  WHERE file_id = ?1",
@@ -1180,7 +1231,8 @@ impl<'tx> BordersWriter<'tx> {
     }
 
     /// Record borders looked for ([`Catalog::pending_borders`]; `None`: not looked for), replacing what was there,
-    /// unless the file changed meanwhile (the import then analyzes it again, and the borders are due again).
+    /// unless the file changed meanwhile (the import then analyzes it again, and the borders are due again) or a
+    /// write of the app's into it is in progress (they stay due).
     pub fn store_borders(&mut self, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
         let current: bool = self.current.query_row(params![item.id, item.size, item.mtime], |r| r.get(0))?;
         if !current {
@@ -1529,6 +1581,46 @@ mod tests {
         assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
     }
 
+    #[test]
+    fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed() {
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.add_root(r"D:\x").unwrap();
+        let scan = c.begin_scan(r"D:\x").unwrap();
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let stored = |c: &mut Catalog, item: &WorkItem| {
+            let tx = c.conn.transaction().unwrap();
+            let stored = AnalysisWriter::new(&tx).unwrap().store_failure(item, "a stand-in").unwrap();
+            tx.commit().unwrap();
+            stored
+        };
+        let item = next_work(&c);
+        // A write of the app's into it in progress: it may have been read part-written.
+        c.conn
+            .execute(
+                r"INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
+                  VALUES (?1, 'rating', 3, 0, 'D:\x\a.jpg.tmp', 3)",
+                [item.id],
+            )
+            .unwrap();
+        assert!(!stored(&mut c, &item));
+        assert!(state(&c, item.id).0, "still due");
+        c.conn.execute("DELETE FROM file_writes", []).unwrap();
+        // Changed since it was listed.
+        scanned(&mut c, scan, "a.jpg", 11, 101);
+        assert!(!stored(&mut c, &item));
+        // Turned in the catalog since.
+        let tx = c.conn.unchecked_transaction().unwrap();
+        Catalog::add_catalog_rotation(&tx, item.id, 1).unwrap();
+        tx.commit().unwrap();
+        let listed = next_work(&c);
+        assert_eq!(listed.rotation, 1);
+        let unturned = WorkItem { path: listed.path.clone(), rotation: 0, ..listed };
+        assert!(!stored(&mut c, &unturned));
+        // As listed.
+        assert!(stored(&mut c, &listed));
+        assert!(!state(&c, item.id).0);
+    }
+
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
     fn analyzed(c: &mut Catalog, item: &WorkItem) {
         let tx = c.conn.transaction().unwrap();
@@ -1752,16 +1844,23 @@ mod tests {
         analyzed(&mut c, &current);
         assert!(!state(&c, id).0);
         // Turned in the catalog: analyzed again with the turn, and the thumbnails' source moved on.
-        Catalog::add_catalog_rotation(&c.conn, id, 1).unwrap();
+        let tx = c.conn.unchecked_transaction().unwrap();
+        Catalog::add_catalog_rotation(&tx, id, 1).unwrap();
+        tx.commit().unwrap();
         let (pending, after) = state(&c, id);
         assert!(pending && after > seq);
         let turned = next_work(&c);
         assert_eq!(turned.rotation, 1);
         analyzed(&mut c, &turned);
         // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
-        Catalog::file_rewritten(&c.conn, id, (11, 101), (12, 102), Some([0; 32])).unwrap();
+        let rewritten = |c: &Catalog, before, after, metadata_only| {
+            let tx = c.conn.unchecked_transaction().unwrap();
+            Catalog::file_rewritten(&tx, id, before, after, metadata_only).unwrap();
+            tx.commit().unwrap();
+        };
+        rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
         assert!(!state(&c, id).0);
-        Catalog::file_rewritten(&c.conn, id, (12, 102), (13, 103), None).unwrap();
+        rewritten(&c, (12, 102), (13, 103), None);
         assert!(state(&c, id).0);
         let rewritten = next_work(&c);
         analyzed(&mut c, &rewritten);

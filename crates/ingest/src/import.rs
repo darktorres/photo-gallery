@@ -21,11 +21,13 @@ pub struct ImportStats {
     pub files: usize,
     pub failed: usize,
     pub pairs: usize,
+    /// Files changed while they were read (or being rewritten by the app): nothing stored, due again.
+    pub changed: usize,
 }
 
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
     let items = catalog.pending_import(retry_errors)?;
-    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0 };
+    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0, changed: 0 };
     // Most rounds (a new thumbnail height, a turn) have nothing to import: don't load every hash for them.
     if items.is_empty() {
         return Ok(stats);
@@ -46,7 +48,10 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
             let item = &items[i];
             match result {
                 Ok(a) => {
-                    writer.store_analysis(item, &a)?;
+                    if !writer.store_analysis(item, &a)? {
+                        stats.changed += 1;
+                        continue;
+                    }
                     if let Some(px) = a.pixels.as_ref().filter(|px| px.pdq.quality >= MIN_QUALITY) {
                         // Best distance per neighbour over the 8 orientations of the new image.
                         best.clear();
@@ -70,7 +75,10 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                     }
                 }
                 Err(e) => {
-                    writer.store_failure(item, &format!("{e:#}"))?;
+                    if !writer.store_failure(item, &format!("{e:#}"))? {
+                        stats.changed += 1;
+                        continue;
+                    }
                     stats.failed += 1;
                 }
             }

@@ -815,33 +815,94 @@ pub fn queue_rotation(conn: &Connection, file_id: i64, turns: u8) -> Result<()> 
     Ok(())
 }
 
-/// What the image providers need to find a file.
-pub struct FileSource {
-    pub path: String,
-    /// With `rotation`, the thumbnail cache's validity key.
+/// What a file's images are made from, as the catalog has it now. What is made from the file (a thumbnail, a
+/// decode, an analysis) is kept under the state it was read in, checked before and after the read
+/// ([`FileState::writing`]).
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FileState {
+    /// With `rotation`, what the thumbnail cache keeps a file's thumbnails under (`thumbs::Source`).
     pub mtime: i64,
     pub rotation: u8,
-    pub thumbhash: Option<Vec<u8>>,
+    /// Quarter turns clockwise asked for and not yet written (`queue_rotation`): what is made from the file is shown
+    /// turned by them.
+    pub turns: u8,
+    /// A write of the app's into the file is in progress (`file_writes.temp`, until the transaction that records
+    /// it): the file may be part-written, or hold a write the catalog doesn't show yet.
+    pub writing: bool,
+}
+
+/// [`FileState`]'s columns, `f` the file.
+macro_rules! file_state_columns {
+    () => {
+        "f.mtime, f.rotation,
+        coalesce((SELECT value FROM file_writes WHERE file_id = f.id AND kind = 'rotation'), 0),
+        EXISTS(SELECT 1 FROM file_writes WHERE file_id = f.id AND temp IS NOT NULL)"
+    };
+}
+
+fn file_state_at(r: &rusqlite::Row, first: usize) -> rusqlite::Result<FileState> {
+    Ok(FileState {
+        mtime: r.get(first)?,
+        rotation: r.get(first + 1)?,
+        turns: r.get(first + 2)?,
+        writing: r.get(first + 3)?,
+    })
+}
+
+/// The file's state now (`None`: no such file).
+pub fn file_state(conn: &Connection, file_id: i64) -> Result<Option<FileState>> {
+    Ok(conn
+        .prepare_cached(concat!("SELECT ", file_state_columns!(), " FROM files f WHERE f.id = ?1"))?
+        .query_row([file_id], |r| file_state_at(r, 0))
+        .optional()?)
+}
+
+/// What the image providers need to make a file's images.
+#[derive(Clone, PartialEq, Debug)]
+pub struct FileSource {
+    pub path: String,
+    pub state: FileState,
     /// For a video, the time of the frame that stands for it (`video::poster_ms`; 0 before the import).
     pub poster_ms: Option<i64>,
 }
 
 pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>> {
     Ok(conn
-        .prepare_cached(
-            "SELECT fo.path || '\\' || f.name, f.mtime, f.rotation, a.thumbhash, f.kind, a.poster_ms FROM files f
-             JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id
-             WHERE f.id = ?1",
-        )?
+        .prepare_cached(concat!(
+            "SELECT fo.path || '\\' || f.name, f.kind, a.poster_ms, ",
+            file_state_columns!(),
+            " FROM files f JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id
+             WHERE f.id = ?1"
+        ))?
         .query_row([file_id], |r| {
-            let video = r.get_ref(4)?.as_str()? == Kind::Video.key();
+            let video = r.get_ref(1)?.as_str()? == Kind::Video.key();
             Ok(FileSource {
                 path: r.get(0)?,
-                mtime: r.get(1)?,
-                rotation: r.get(2)?,
-                thumbhash: r.get(3)?,
-                poster_ms: if video { Some(r.get::<_, Option<i64>>(5)?.unwrap_or(0)) } else { None },
+                state: file_state_at(r, 3)?,
+                poster_ms: if video { Some(r.get::<_, Option<i64>>(2)?.unwrap_or(0)) } else { None },
             })
+        })
+        .optional()?)
+}
+
+/// A file's ThumbHash placeholder, and the quarter turns clockwise that show it as the file is shown now: the
+/// turns asked for and not yet written, and those kept in the catalog since the analysis that made the hash.
+pub struct Placeholder {
+    /// `None` before the import.
+    pub hash: Option<Vec<u8>>,
+    pub turns: u8,
+}
+
+pub fn placeholder(conn: &Connection, file_id: i64) -> Result<Option<Placeholder>> {
+    Ok(conn
+        .prepare_cached(concat!(
+            "SELECT a.thumbhash, (f.rotation - coalesce(a.rotation, f.rotation) + 4) % 4, ",
+            file_state_columns!(),
+            " FROM files f LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1"
+        ))?
+        .query_row([file_id], |r| {
+            let kept: u8 = r.get(1)?;
+            Ok(Placeholder { hash: r.get(0)?, turns: (kept + file_state_at(r, 2)?.turns) % 4 })
         })
         .optional()?)
 }
@@ -975,6 +1036,32 @@ mod tests {
             set_rating(&c.conn, id, rating, false).unwrap();
         }
         c
+    }
+
+    #[test]
+    fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
+        let c = library();
+        c.conn.execute("UPDATE analysis SET thumbhash = x'01' WHERE file_id = 1", []).unwrap();
+        let state = || file_state(&c.conn, 1).unwrap().unwrap();
+        let turns = || placeholder(&c.conn, 1).unwrap().unwrap().turns;
+        assert_eq!(state(), FileState { mtime: 3, rotation: 0, turns: 0, writing: false });
+        assert_eq!(file_source(&c.conn, 1).unwrap().unwrap().state, state());
+        assert_eq!((turns(), placeholder(&c.conn, 1).unwrap().unwrap().hash), (0, Some(vec![1])));
+        // A turn asked for, not yet written.
+        queue_rotation(&c.conn, 1, 3).unwrap();
+        assert_eq!((state().turns, turns()), (3, 3));
+        // One kept in the catalog since the analysis, and one more asked for.
+        c.conn.execute("UPDATE files SET rotation = 1 WHERE id = 1", []).unwrap();
+        queue_rotation(&c.conn, 1, 2).unwrap();
+        assert_eq!((state().rotation, state().turns, turns()), (1, 1, 2));
+        // Being written into the file.
+        assert!(!state().writing);
+        c.conn
+            .execute(r"UPDATE file_writes SET temp = 'D:\p\b.jpg.tmp', temp_value = 1 WHERE file_id = 1", [])
+            .unwrap();
+        assert!(state().writing);
+        assert_eq!(file_state(&c.conn, 99).unwrap(), None);
+        assert!(placeholder(&c.conn, 99).unwrap().is_none());
     }
 
     fn ids(c: &crate::catalog::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {

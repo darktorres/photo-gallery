@@ -2,6 +2,12 @@
 //! threads; each thread keeps its own catalog connection and thumbnail maker (thread-locals), and reads the
 //! thumbnail cache through its own connection too (`ThumbCache` takes no lock to read).
 //!
+//! Every image is made from one consistent view of its file, never a mix (`providers` names them): a thumbnail
+//! the cache keeps for the file as its key names it is served from the key alone, turned by the key's turns;
+//! anything else is made from the file as the catalog has it now, turned by the catalog's turns, and checked
+//! against the catalog before and after the file is read (`consistent`), so that a write of the app's into the
+//! file at that moment is neither shown twice nor kept under the state before it.
+//!
 //! What a thread keeps lives as long as the thread: the providers' pools (`cpp/providers.cpp`: 8 thumbnail
 //! threads, 2 full-image and 2 placeholder ones) end a thread after 30 s idle, and its thread-locals with it. A
 //! `Maker` holds what one thumbnail needs (at most `thumbs::KEEP_BYTES` a buffer), so the thumbnail threads keep
@@ -11,9 +17,10 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
+use std::time::{Duration, Instant};
 
-use anyhow::{Context, Result};
-use pg_core::browse;
+use anyhow::{Context, Result, bail};
+use pg_core::browse::{self, FileSource};
 use pg_core::catalog::Catalog;
 use pg_core::decode::{MinSize, Rgb, orient_pixels};
 use pg_core::metadata::compose_orientation;
@@ -90,37 +97,103 @@ fn with_maker<R>(f: impl FnOnce(&mut Maker) -> Result<R>) -> Result<R> {
     })
 }
 
-fn source(file_id: i64) -> Result<browse::FileSource> {
+fn source(file_id: i64) -> Result<FileSource> {
     with_catalog(|c| browse::file_source(&c.conn, file_id))?.context("unknown file")
 }
 
-/// A JPEG thumbnail `height` px high: from the cache when one at least that high exists (the UI scales it down),
-/// otherwise made now from the original and cached. With the original offline, the best smaller one.
-pub fn thumbnail(file_id: i64, height: u32) -> Result<Vec<u8>> {
-    let browse::FileSource { path, mtime, rotation, poster_ms, .. } = source(file_id)?;
-    let current = thumbs::Source { mtime, rotation };
-    let cached = thumbs().get_nearest(file_id, height, current)?;
-    if let Some((h, data)) = &cached
-        && *h >= height
-    {
-        return Ok(data.clone());
-    }
-    let data = if let Some(at) = poster_ms {
-        // A video: its poster frame.
-        match with_maker(|m| Ok(m.load_frame(Path::new(&*verbatim(&path)), at, rotation)))? {
-            Ok(()) => with_maker(|m| m.encode_frame(height as usize))?,
-            Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
+/// How long a request waits for a write of the app's into its file to end before it fails.
+const WRITE_WAIT: Duration = Duration::from_secs(10);
+
+/// `read` of the file, consistent with the catalog: the file's state is read before and after it, and the result
+/// counts only when no write of the app's into the file was in progress and the state stayed the same. The writer
+/// marks a write before it rewrites the file and records it in the transaction that ends the mark, so a write
+/// that overlapped the read shows in one state or the other. Otherwise it is read again once the write is done.
+fn consistent<T>(file_id: i64, mut read: impl FnMut(&FileSource) -> Result<T>) -> Result<(FileSource, T)> {
+    let start = Instant::now();
+    loop {
+        let src = source(file_id)?;
+        if !src.state.writing {
+            let result = read(&src);
+            if with_catalog(|c| browse::file_state(&c.conn, file_id))? == Some(src.state) {
+                return result.map(|r| (src, r));
+            }
         }
-    } else {
-        let bytes = match std::fs::read(&path) {
-            Ok(b) => b,
-            Err(e) => return cached.map(|(_, d)| d).ok_or(e).context("original unavailable"),
+        if start.elapsed() > WRITE_WAIT {
+            bail!("file {file_id} is being rewritten");
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+}
+
+/// What an image key names (`GalleryModel::imageKey`): the file as the grid showed it when the key was made.
+#[derive(Clone, Copy, Debug)]
+pub struct Named {
+    pub source: thumbs::Source,
+    /// Quarter turns clockwise asked for and not yet written then.
+    pub turns: u8,
+}
+
+/// What a thumbnail request found, as the catalog has the file.
+enum Found {
+    /// In the cache.
+    Kept(Vec<u8>),
+    /// Made from the original.
+    Made(Vec<u8>),
+    /// The original can't be read (offline): the best smaller thumbnail kept, if any.
+    Offline(anyhow::Error, Option<Vec<u8>>),
+}
+
+/// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps
+/// one at least that high for the file as `named` names it, that one, turned by the name's turns: nothing else is
+/// read. Otherwise as the catalog has the file now: kept, or made from the original and kept, and turned by the
+/// catalog's turns. With the original offline, the best smaller one.
+pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<(Vec<u8>, u8)> {
+    let mut smaller = None;
+    if let Some(n) = named {
+        match thumbs().get_nearest(file_id, height, n.source)? {
+            Some((h, data)) if h >= height => return Ok((data, n.turns)),
+            Some((_, data)) => smaller = Some((data, n.turns)),
+            None => {}
+        }
+    }
+    let (src, found) = consistent(file_id, |src| {
+        let current = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
+        let kept = if named.is_some_and(|n| n.source == current) {
+            // Looked for already.
+            None
+        } else {
+            match thumbs().get_nearest(file_id, height, current)? {
+                Some((h, data)) if h >= height => return Ok(Found::Kept(data)),
+                kept => kept.map(|(_, data)| data),
+            }
         };
-        with_maker(|m| m.make(&bytes, height as usize, rotation))?
-    };
-    // Kept in the background: shown now, whatever the write does.
-    thumbs().put(thumbs::Thumb { file_id, height, source: current, data: data.clone() });
-    Ok(data)
+        let made = if let Some(at) = src.poster_ms {
+            // A video: its poster frame.
+            match with_maker(|m| Ok(m.load_frame(Path::new(&*verbatim(&src.path)), at, current.rotation)))? {
+                Ok(()) => with_maker(|m| m.encode_frame(height as usize))?,
+                Err(e) => return Ok(Found::Offline(e, kept)),
+            }
+        } else {
+            let bytes = match std::fs::read(&src.path) {
+                Ok(b) => b,
+                Err(e) => return Ok(Found::Offline(e.into(), kept)),
+            };
+            with_maker(|m| m.make(&bytes, height as usize, current.rotation))?
+        };
+        Ok(Found::Made(made))
+    })?;
+    let turns = src.state.turns;
+    match found {
+        Found::Kept(data) => Ok((data, turns)),
+        Found::Made(data) => {
+            // Kept in the background: shown now, whatever the write does.
+            let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
+            thumbs().put(thumbs::Thumb { file_id, height, source, data: data.clone() });
+            Ok((data, turns))
+        }
+        Found::Offline(_, Some(data)) => Ok((data, turns)),
+        Found::Offline(e, None) => smaller.ok_or(e).context("original unavailable"),
+    }
 }
 
 /// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
@@ -128,11 +201,12 @@ pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Rgb> {
     with_maker(|m| Ok(m.decoder().decode(jpeg, MinSize::Full, turns)?.image))
 }
 
-/// The ThumbHash placeholder as a tiny RGBA image, turned by `turns`.
-pub fn thumbhash(file_id: i64, turns: u8) -> Result<(usize, usize, Vec<u8>)> {
-    let hash = source(file_id)?.thumbhash.context("not imported yet")?;
+/// The ThumbHash placeholder as a tiny RGBA image, shown as the catalog has the file now (`browse::placeholder`).
+pub fn placeholder(file_id: i64) -> Result<(usize, usize, Vec<u8>)> {
+    let p = with_catalog(|c| browse::placeholder(&c.conn, file_id))?.context("unknown file")?;
+    let hash = p.hash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(&hash).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
-    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, compose_orientation(1, turns));
+    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, compose_orientation(1, p.turns));
     Ok((w, h, rgba))
 }
 
@@ -155,6 +229,7 @@ pub enum View {
 struct Decoded {
     file_id: i64,
     mtime: i64,
+    /// With the turns not yet written.
     rotation: u8,
     /// Upright full size, and the decode (possibly DCT-scaled).
     full: (usize, usize),
@@ -163,22 +238,30 @@ struct Decoded {
 
 static LAST_DECODE: Mutex<Option<Decoded>> = Mutex::new(None);
 
-/// The original, upright (EXIF and catalog rotation, then `turns` not yet written), as the viewer asks for it.
-pub fn full_image(file_id: i64, view: View, turns: u8) -> Result<Rgb> {
-    let mut src = source(file_id)?;
-    src.rotation = (src.rotation + turns) % 4;
+/// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as
+/// the viewer asks for it.
+pub fn full_image(file_id: i64, view: View) -> Result<Rgb> {
+    let min = match view {
+        View::Fit(w, h) => MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN),
+        View::Full => MinSize::Full,
+        // The whole image at a scale where the region keeps ≥ DECODE_MARGIN× the output pixels.
+        View::Region((_, _, rw, rh), w, h) => MinSize::Fit(
+            (w as f64 * DECODE_MARGIN as f64 / rw.max(1e-6)).ceil() as usize,
+            (h as f64 * DECODE_MARGIN as f64 / rh.max(1e-6)).ceil() as usize,
+        ),
+    };
+    let (_, (img, fresh)) = consistent(file_id, |src| decode(file_id, src, min))?;
+    // Kept once it is known to be of the file as the catalog has it.
+    if let Some(fresh) = fresh {
+        *LAST_DECODE.lock().unwrap() = Some(fresh);
+    }
     match view {
         View::Fit(w, h) => {
-            let img = decode(file_id, &src, MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN))?;
             let mut fitted = Rgb::default();
             Ok(if Resizer::new().fit_box(&img, w, h, &mut fitted) { fitted } else { (*img).clone() })
         }
-        View::Full => Ok((*decode(file_id, &src, MinSize::Full)?).clone()),
+        View::Full => Ok((*img).clone()),
         View::Region((x, y, rw, rh), w, h) => {
-            // The whole image at a scale where the region keeps ≥ DECODE_MARGIN× the output pixels.
-            let box_w = (w as f64 * DECODE_MARGIN as f64 / rw.max(1e-6)).ceil() as usize;
-            let box_h = (h as f64 * DECODE_MARGIN as f64 / rh.max(1e-6)).ceil() as usize;
-            let img = decode(file_id, &src, MinSize::Fit(box_w, box_h))?;
             let (iw, ih) = (img.width as f64, img.height as f64);
             let mut out = Rgb::default();
             Resizer::new().resize_region(&img, (x * iw, y * ih, rw * iw, rh * ih), w, h, &mut out);
@@ -187,31 +270,31 @@ pub fn full_image(file_id: i64, view: View, turns: u8) -> Result<Rgb> {
     }
 }
 
-/// Decode at least `min`, reusing the last decode of the same file when it is big enough.
-fn decode(file_id: i64, src: &browse::FileSource, min: MinSize) -> Result<Arc<Rgb>> {
+/// Decode at least `min`, turned as the catalog says, reusing the last decode of the file in that state when it
+/// is big enough; a new decode comes with what to keep of it.
+fn decode(file_id: i64, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Option<Decoded>)> {
+    let rotation = (src.state.rotation + src.state.turns) % 4;
     {
         let last = LAST_DECODE.lock().unwrap();
         if let Some(d) = last.as_ref()
             && d.file_id == file_id
-            && d.mtime == src.mtime
-            && d.rotation == src.rotation
+            && d.mtime == src.state.mtime
+            && d.rotation == rotation
             && big_enough(d.image.width, d.image.height, d.full, min)
         {
-            return Ok(d.image.clone());
+            return Ok((d.image.clone(), None));
         }
     }
     let (full, image) = if let Some(at) = src.poster_ms {
         // A video: its poster frame stands for it until it plays.
-        let frame = pg_core::video::frame(Path::new(&*verbatim(&src.path)), at, src.rotation)?;
+        let frame = pg_core::video::frame(Path::new(&*verbatim(&src.path)), at, rotation)?;
         ((frame.width, frame.height), Arc::new(frame))
     } else {
         let bytes = std::fs::read(&src.path).context("original unavailable")?;
-        let decoded = with_maker(|m| m.decoder().decode(&bytes, min, src.rotation))?;
+        let decoded = with_maker(|m| m.decoder().decode(&bytes, min, rotation))?;
         ((decoded.info.full_width as usize, decoded.info.full_height as usize), Arc::new(decoded.image))
     };
-    *LAST_DECODE.lock().unwrap() =
-        Some(Decoded { file_id, mtime: src.mtime, rotation: src.rotation, full, image: image.clone() });
-    Ok(image)
+    Ok((image.clone(), Some(Decoded { file_id, mtime: src.state.mtime, rotation, full, image })))
 }
 
 /// Whether a decode of `w × h` (of an upright full size `full`) satisfies `min`.

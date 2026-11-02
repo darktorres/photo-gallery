@@ -123,6 +123,11 @@ fn report() -> pg_core::thumbs::Report {
     Box::new(|e| eprintln!("{e:#}"))
 }
 
+/// Files left for the next pass because they changed while they were read, when there are any.
+fn changed_while_read(n: usize) -> String {
+    if n == 0 { String::new() } else { format!(", {n} changed while read, left for the next pass") }
+}
+
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
 pub fn wants_cli(args: &[OsString]) -> bool {
     let cmd = Cli::command();
@@ -185,9 +190,10 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             let opts = pipeline.options(THREAD_PRIORITY_NORMAL);
             let s = import::import(&mut catalog, &opts, retry_errors, &ctl)?;
             println!(
-                "imported {} files ({} failed), {} PDQ pairs, {:.1} s",
+                "imported {} files ({} failed{}), {} PDQ pairs, {:.1} s",
                 s.files,
                 s.failed,
+                changed_while_read(s.changed),
                 s.pairs,
                 start.elapsed().as_secs_f64()
             );
@@ -205,9 +211,10 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
             cache.flush();
             println!(
-                "{} thumbnails at {height} px ({} failed){}; cache {:.2} of {:.2} GB, {:.1} s",
+                "{} thumbnails at {height} px ({} failed{}){}; cache {:.2} of {:.2} GB, {:.1} s",
                 s.made,
                 s.failed,
+                changed_while_read(s.changed),
                 if s.cache_full { ", stopped: cache full" } else { "" },
                 cache.totals()?.0 as f64 / 1e9,
                 cache.cap()? as f64 / 1e9,

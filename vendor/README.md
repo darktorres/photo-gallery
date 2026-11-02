@@ -44,6 +44,27 @@ To update: copy the new version from the cargo registry over this directory (exc
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the change again, or drop the copy once upstream does it. Its
 tests run from this directory: `cargo test --features bundled --target-dir ../../target/vendor-test`.
 
+## thumbhash
+
+Copy of `thumbhash` 0.1.0 (MIT). The local changes, marked `photo-gallery` in `src/lib.rs`, are in how it holds its
+working data; every hash and every decoded image is upstream's, bit for bit:
+
+- `Encoder` keeps the encoder's four planes (luminance, the two colour differences and alpha, at most 100 × 100 `f32`
+  each) from one image to the next. `rgba_to_thumb_hash` is upstream's function on a new `Encoder`.
+- `Encoder::rgb_to_thumb_hash` reads RGB as it is, alpha 1.0. That is what upstream computes for RGBA with every alpha
+  255 (`255 as f32 / 255.0` is 1.0 exactly), so the import no longer copies each image into RGBA for it.
+- A channel's AC terms (at most 49: both sides are at most 7) and the cosine rows are arrays on the stack, in the
+  encoder and the decoder. Upstream allocated a `Vec` for each, 9 per encode and 6 per decode. Decoding now
+  allocates only the image it returns.
+
+Checked against the registry's 0.1.0, once, with a throwaway harness: 20,000 random images (1–100 px a side, opaque
+and with alpha, noise and gradients) hash identically through the free function, a reused `Encoder` and, opaque, its
+RGB entry point; their hashes and 200,000 random byte strings of 0–40 bytes decode identically, errors included. A
+test in `src/lib.rs` keeps the RGB and reuse cases.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok` and
+`.cargo_vcs_info.json`), then make the changes again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

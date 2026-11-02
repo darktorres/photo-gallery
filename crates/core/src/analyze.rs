@@ -75,9 +75,9 @@ pub struct Analyzer {
     pub(crate) spare: Vec<u8>,
     /// The image fitted for PDQ.
     pdq_in: Rgb,
-    /// The ThumbHash input, and the same as RGBA.
+    /// The ThumbHash input, and the encoder's planes (at most 100 × 100 values each, so never trimmed).
     small: Rgb,
-    rgba: Vec<u8>,
+    thumbhasher: thumbhash::Encoder,
 }
 
 /// What a worker keeps of each buffer: a 32 MP RGB image's pixels. A larger file's are freed once it is done.
@@ -94,7 +94,7 @@ impl Analyzer {
             spare: Vec::new(),
             pdq_in: Rgb::default(),
             small: Rgb::default(),
-            rgba: Vec::new(),
+            thumbhasher: thumbhash::Encoder::default(),
         })
     }
 
@@ -124,7 +124,7 @@ impl Analyzer {
             orientation: info.orientation,
             width: info.full_width,
             height: info.full_height,
-            thumbhash: thumbhash(img, &mut self.resizer, &mut self.small, &mut self.rgba),
+            thumbhash: thumbhash(img, &mut self.resizer, &mut self.small, &mut self.thumbhasher),
             file_rating: meta.rating,
             frames: meta.frames,
             taken: meta.taken,
@@ -137,7 +137,7 @@ impl Analyzer {
 
     /// The ThumbHash of the image in [`Analyzer::image`] (a video's frame).
     pub(crate) fn thumbhash_of_image(&mut self) -> Vec<u8> {
-        thumbhash(&self.image, &mut self.resizer, &mut self.small, &mut self.rgba)
+        thumbhash(&self.image, &mut self.resizer, &mut self.small, &mut self.thumbhasher)
     }
 
     /// The borders of a file ([`borders::detect`] on its stored pixels, at full size), looked for after the
@@ -165,7 +165,6 @@ impl Analyzer {
         for buf in [&mut self.image.pixels, &mut self.spare, &mut self.pdq_in.pixels, &mut self.small.pixels] {
             release_over(buf, KEEP_BYTES);
         }
-        release_over(&mut self.rgba, KEEP_BYTES);
         self.detector.trim(KEEP_BYTES);
     }
 }
@@ -191,12 +190,11 @@ pub fn pixel_hash(img: &Rgb) -> [u8; 16] {
     h.digest128().to_le_bytes()
 }
 
-/// The ThumbHash of `img`, fitted into the format's 100 px through `small`, as RGBA in `rgba`.
-fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, rgba: &mut Vec<u8>) -> Vec<u8> {
+/// The ThumbHash of `img`, fitted into the format's 100 px through `small`. The encoder reads RGB as it is
+/// (vendor/README.md "thumbhash"): the hash of the same pixels as opaque RGBA.
+fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut thumbhash::Encoder) -> Vec<u8> {
     let small = if resizer.fit_within(img, THUMBHASH_SIDE, small) { &*small } else { img };
-    rgba.clear();
-    rgba.extend(small.pixels.as_chunks::<3>().0.iter().flat_map(|p| [p[0], p[1], p[2], 255]));
-    thumbhash::rgba_to_thumb_hash(small.width, small.height, rgba)
+    encoder.rgb_to_thumb_hash(small.width, small.height, &small.pixels)
 }
 
 #[cfg(test)]

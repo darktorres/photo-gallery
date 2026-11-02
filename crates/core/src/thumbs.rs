@@ -556,16 +556,10 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
     {
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
-        let mut folder = None;
         while let Some(r) = rows.next()? {
-            if folder.is_none() {
-                // Only once there is work: a pass with nothing to do reads nothing more.
-                work = WorkList::with_capacity(0, crate::catalog::max_folder_id(&tx, "cat.")?);
-                folder = Some(tx.prepare("SELECT path FROM cat.folders WHERE id = ?1")?);
-            }
-            let Some(folder) = folder.as_mut() else { unreachable!("made above") };
             let name = r.get_ref(2)?.as_str()?;
-            let path = work.file(r.get(1)?, name, |arena| crate::catalog::folder_path(folder, r, arena))?;
+            let path =
+                work.file(r.get(1)?, name, |arena| Ok::<_, rusqlite::Error>(arena.push(r.get_ref(7)?.as_str()?)))?;
             work.items.push(ThumbWork {
                 id: r.get(0)?,
                 path,
@@ -585,12 +579,12 @@ fn pending_sql(since_checked: bool) -> &'static str {
     macro_rules! pending {
         ($changed:literal) => {
             concat!(
-                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(a.poster_ms, 0) END, f.seq
-                 FROM cat.files f JOIN cat.analysis a ON a.file_id = f.id
+                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(f.poster_ms, 0) END, f.seq, f.folder
+                 FROM cat.thumb_sources f
                  LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
                  WHERE ",
                 $changed,
-                "f.missing = 0 AND a.error IS NULL AND a.mtime = f.mtime
+                "f.missing = 0 AND f.error IS NULL AND f.analyzed_mtime = f.mtime
                    AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
                  ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
             )

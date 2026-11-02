@@ -189,6 +189,17 @@ CREATE INDEX pdq_pairs_b ON pdq_pairs(b);
 CREATE VIEW present_pdq_pairs AS
     SELECT p.* FROM pdq_pairs p JOIN files fa ON fa.id = p.a JOIN files fb ON fb.id = p.b
     WHERE fa.missing = 0 AND fb.missing = 0;
+-- What the thumbnail cache's pass reads (its own file, so it knows the catalog only through this): the files with an
+-- analysis, and their folder's path. One table and no join, with the analysis and the folder as lookups by key: SQLite
+-- flattens it into the pass's query only then (two joins never flatten together), which keeps the files_seq index.
+CREATE VIEW thumb_sources AS
+    SELECT f.id, f.volume, f.file_ref, f.folder_id,
+           (SELECT path FROM folders WHERE id = f.folder_id) AS folder,
+           f.name, f.kind, f.mtime, f.rotation, f.missing, f.seq,
+           (SELECT error FROM analysis WHERE file_id = f.id) AS error,
+           (SELECT mtime FROM analysis WHERE file_id = f.id) AS analyzed_mtime,
+           (SELECT poster_ms FROM analysis WHERE file_id = f.id) AS poster_ms
+    FROM files f WHERE EXISTS (SELECT 1 FROM analysis WHERE file_id = f.id);
 
 -- The library: folders the user added, which a rescan walks again. None is inside another.
 CREATE TABLE roots(
@@ -316,8 +327,9 @@ END;
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
-     + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))";
-const LAYOUT_PARTS: i64 = 10;
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name = 'thumb_sources')";
+const LAYOUT_PARTS: i64 = 11;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[
@@ -1705,6 +1717,61 @@ mod tests {
         // As listed.
         assert!(stored(&mut c, &listed));
         assert!(!state(&c, item.id).0);
+    }
+
+    #[test]
+    fn thumb_sources_is_the_analysed_files_with_their_folders() {
+        use fixture::{File, insert};
+        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.conn
+            .execute_batch(
+                "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0);
+                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x'), (2, 'D:\\x\\sub');",
+            )
+            .unwrap();
+        insert(
+            &c.conn,
+            &[File::new(1, 1, "a.jpg", 10, 100), File::new(2, 2, "b.jpg", 10, 100), File::new(3, 1, "c.jpg", 10, 100)],
+        );
+        // File 1 analyzed, file 2 failed (still a source: the pass leaves it out), file 3 not analyzed (not a source).
+        c.conn
+            .execute_batch(
+                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error) VALUES
+                    (1, 1, 10, 100, 0, 'image', 0, NULL), (2, 1, 10, 100, 0, 'image', 0, 'unreadable');",
+            )
+            .unwrap();
+        let rows: Vec<(i64, String)> = c
+            .conn
+            .prepare("SELECT id, folder FROM thumb_sources ORDER BY id")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows, [(1, r"D:\x".to_string()), (2, r"D:\x\sub".to_string())]);
+        // The pass's shape over it, with a TEMP stub of the thumbnail cache's entries: a change number's range still
+        // reads files_seq, and a file with no thumbnail yet is the one listed.
+        c.conn
+            .execute_batch(
+                "CREATE TEMP TABLE entries(file_id INTEGER, height INTEGER, mtime INTEGER, rotation INTEGER, UNIQUE(file_id, height));",
+            )
+            .unwrap();
+        let sql = "SELECT f.id FROM thumb_sources f LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
+                   WHERE f.seq > ?2 AND f.missing = 0 AND f.error IS NULL AND f.analyzed_mtime = f.mtime
+                     AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
+                   ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF";
+        let plan: Vec<String> = c
+            .conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([100, -1], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(plan.join("\n").contains("files_seq"), "{plan:?}");
+        let listed: Vec<i64> =
+            c.conn.prepare(sql).unwrap().query_map([100, -1], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        assert_eq!(listed, [1]);
     }
 
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).

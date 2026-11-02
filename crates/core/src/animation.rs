@@ -11,8 +11,7 @@ use image::codecs::gif::GifDecoder;
 use image::codecs::png::PngDecoder;
 use image::codecs::webp::WebPDecoder;
 
-use crate::decode::Format;
-
+use crate::format::Format;
 /// A whole frame, RGBA (not premultiplied), shown for `delay_ms`.
 pub struct Frame {
     pub width: u32,

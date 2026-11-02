@@ -18,8 +18,7 @@ use quick_xml::events::Event;
 use quick_xml::name::{Namespace, ResolveResult};
 use quick_xml::reader::ReaderBuffers;
 
-use crate::decode::Format;
-
+use crate::format::Format;
 const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
 const NS_MICROSOFT_PHOTO: &str = "http://ns.microsoft.com/photo/1.0/";
 const NS_EXIF: &str = "http://ns.adobe.com/exif/1.0/";

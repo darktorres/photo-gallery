@@ -35,7 +35,9 @@ use anyhow::{Context, Result, anyhow, bail};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoded, Decoder, Format, MinSize, Rgb, release_over};
+use crate::format::Format;
+
+use crate::decode::{Decoded, Decoder, MinSize, Rgb, release_over};
 use crate::paths::{FilePath, WorkList};
 use crate::resize::Resizer;
 

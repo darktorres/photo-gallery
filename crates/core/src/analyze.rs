@@ -4,7 +4,8 @@
 use anyhow::{Context, Result};
 
 use crate::borders::{self, Detection, Detector};
-use crate::decode::{Decoder, Format, MinSize, Rgb, release_over};
+use crate::decode::{Decoder, MinSize, Rgb, release_over};
+use crate::format::Format;
 use crate::metadata::{Meta, MetaScratch};
 use crate::pdq;
 use crate::resize::Resizer;

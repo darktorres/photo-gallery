@@ -19,8 +19,9 @@ use image::error::{
 };
 use image::{ColorType, ExtendedColorType, ImageDecoder, ImageError, ImageFormat, ImageResult, Limits};
 
-use crate::decode::{Format, Rgb, release_over};
+use crate::format::Format;
 
+use crate::decode::{Rgb, release_over};
 /// What the decoders keep from one file to the next, per worker (inside its [`crate::decode::Decoder`]).
 #[derive(Default)]
 pub(crate) struct Codecs {

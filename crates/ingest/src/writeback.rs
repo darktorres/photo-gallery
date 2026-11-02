@@ -23,7 +23,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
-use pg_core::decode::Format;
+use pg_core::format::Format;
 use pg_core::media::Kind;
 use pg_core::metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_core::rotate::{Outcome, rotate};

@@ -9,7 +9,8 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Decoder, Format, MinSize, Rgb, orient};
+use pg_core::decode::{Decoder, MinSize, Rgb, orient};
+use pg_core::format::Format;
 use pg_core::metadata::{Meta, MetaScratch};
 use pg_core::thumbs::ThumbCache;
 use pg_ingest::control::Control;

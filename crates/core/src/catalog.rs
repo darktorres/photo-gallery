@@ -20,7 +20,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction,
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
-use crate::decode::Format;
+use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::paths::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;

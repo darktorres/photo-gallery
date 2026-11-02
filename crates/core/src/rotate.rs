@@ -17,7 +17,7 @@
 
 use anyhow::Result;
 
-use crate::decode::Format;
+use crate::format::Format;
 use crate::metadata::{self, compose_orientation, png_chunks, webp_chunks};
 use crate::rewrite::{self, Op};
 

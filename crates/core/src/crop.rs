@@ -13,7 +13,7 @@ use std::io::Cursor;
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::decode::Format;
+use crate::format::Format;
 use crate::metadata::{png_chunks, webp_chunks};
 use crate::rewrite::{self, Op};
 

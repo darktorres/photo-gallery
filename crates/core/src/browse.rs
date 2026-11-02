@@ -9,7 +9,7 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 use crate::analyze::ThumbHash;
 use crate::borders;
 use crate::catalog::Catalog;
-use crate::decode::Format;
+use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::metadata;
 use crate::query::{BORDER_SUMS, BorderFacet, Facet, MediaType, Query, Sort};

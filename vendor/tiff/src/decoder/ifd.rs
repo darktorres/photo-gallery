@@ -304,16 +304,118 @@ impl Value {
         }
     }
 
-    /// photo-gallery: [`Self::into_u64_vec`], a single value held inline instead of in a `Vec` of one.
-    pub(crate) fn into_u64s(self) -> TiffResult<U64s> {
-        match self {
+    /// photo-gallery: [`Self::into_u64_vec`] by reference, a single value held inline instead of in
+    /// a `Vec` of one (upstream's chunk offsets and byte counts were such a `Vec` for the single strip
+    /// of most images), a list read into `kept` (emptied first), which holds it again if the
+    /// conversion fails.
+    pub(crate) fn u64s_in(&self, kept: &mut Vec<u64>) -> TiffResult<U64s> {
+        match *self {
             Byte(val) => Ok(U64s::One(val.into())),
             Short(val) => Ok(U64s::One(val.into())),
             Unsigned(val) => Ok(U64s::One(val.into())),
             UnsignedBig(val) => Ok(U64s::One(val)),
             Ifd(val) => Ok(U64s::One(val.into())),
             IfdBig(val) => Ok(U64s::One(val)),
-            value => value.into_u64_vec().map(U64s::Many),
+            _ => {
+                let mut v = core::mem::take(kept);
+                v.clear();
+                match self.u64s_into(&mut v) {
+                    Ok(()) => Ok(U64s::Many(v)),
+                    Err(e) => {
+                        *kept = v;
+                        Err(e)
+                    }
+                }
+            }
+        }
+    }
+
+    /// photo-gallery: [`Self::into_u64_vec`] by reference, appended to `out`.
+    pub(crate) fn u64s_into(&self, out: &mut Vec<u64>) -> TiffResult<()> {
+        match self {
+            List(vec) => {
+                out.reserve_exact(vec.len());
+                for v in vec {
+                    out.push(v.as_u64()?)
+                }
+            }
+            Byte(val) => out.push((*val).into()),
+            Short(val) => out.push((*val).into()),
+            Unsigned(val) => out.push((*val).into()),
+            UnsignedBig(val) => out.push(*val),
+            Rational(numerator, denominator) => {
+                out.extend([u64::from(*numerator), u64::from(*denominator)])
+            }
+            #[expect(deprecated)]
+            Value::RationalBig(numerator, denominator) => out.extend([*numerator, *denominator]),
+            Ifd(val) => out.push((*val).into()),
+            IfdBig(val) => out.push(*val),
+            Ascii(val) => out.extend(val.chars().map(u32::from).map(u64::from)),
+            _ => return Err(TiffError::FormatError(TiffFormatError::InvalidTypeForTag)),
+        }
+        Ok(())
+    }
+
+    /// photo-gallery: [`Self::into_u16_vec`] by reference, appended to `out`.
+    pub(crate) fn u16s_into(&self, out: &mut Vec<u16>) -> TiffResult<()> {
+        match self {
+            List(vec) => {
+                out.reserve_exact(vec.len());
+                for v in vec {
+                    out.push(v.as_u16()?)
+                }
+            }
+            Byte(val) => out.push((*val).into()),
+            Short(val) => out.push(*val),
+            _ => return Err(TiffError::FormatError(TiffFormatError::InvalidTypeForTag)),
+        }
+        Ok(())
+    }
+
+    /// photo-gallery: [`Self::into_u8_vec`] by reference, appended to `out`.
+    pub(crate) fn u8s_into(&self, out: &mut Vec<u8>) -> TiffResult<()> {
+        match self {
+            List(vec) => {
+                out.reserve_exact(vec.len());
+                for v in vec {
+                    out.push(v.as_u8()?)
+                }
+            }
+            Byte(val) => out.push(*val),
+            _ => return Err(TiffError::FormatError(TiffFormatError::InvalidTypeForTag)),
+        }
+        Ok(())
+    }
+
+    /// photo-gallery: [`Self::into_u64`] by reference.
+    fn as_u64(&self) -> TiffResult<u64> {
+        match *self {
+            Byte(val) => Ok(val.into()),
+            Short(val) => Ok(val.into()),
+            Unsigned(val) => Ok(val.into()),
+            UnsignedBig(val) => Ok(val),
+            Ifd(val) => Ok(val.into()),
+            IfdBig(val) => Ok(val),
+            _ => Err(TiffError::FormatError(TiffFormatError::InvalidTypeForTag)),
+        }
+    }
+
+    /// photo-gallery: [`Self::into_u16`] by reference.
+    fn as_u16(&self) -> TiffResult<u16> {
+        match *self {
+            Byte(val) => Ok(val.into()),
+            Short(val) => Ok(val),
+            Unsigned(val) => Ok(u16::try_from(val)?),
+            UnsignedBig(val) => Ok(u16::try_from(val)?),
+            _ => Err(TiffError::FormatError(TiffFormatError::InvalidTypeForTag)),
+        }
+    }
+
+    /// photo-gallery: [`Self::into_u8`] by reference.
+    fn as_u8(&self) -> TiffResult<u8> {
+        match *self {
+            Byte(val) => Ok(val),
+            _ => Err(TiffError::FormatError(TiffFormatError::InvalidTypeForTag)),
         }
     }
 
@@ -422,11 +524,15 @@ impl Entry {
         EndianReader::new(io::Cursor::new(self.offset), byte_order)
     }
 
-    pub(crate) fn val<R: Read + Seek>(
+    /// photo-gallery: upstream's `val`, a list made in `list`'s allocation (emptied first;
+    /// upstream: a new `Vec`), which the caller can give back for the next
+    /// (`EntryDecoder::recycle`).
+    pub(crate) fn val_in<R: Read + Seek>(
         &self,
         limits: &super::Limits,
         bigtiff: bool,
         reader: &mut EndianReader<R>,
+        list: &mut Vec<Value>,
     ) -> TiffResult<Value> {
         // Case 1: there are no values so we can return immediately.
         if self.count == 0 {
@@ -514,8 +620,8 @@ impl Entry {
         // Case 3: There is more than one value, but it fits in the offset field.
         if value_bytes <= 4 || bigtiff && value_bytes <= 8 {
             match self.type_ {
-                Type::BYTE => return offset_to_bytes(self.count as usize, self),
-                Type::SBYTE => return offset_to_sbytes(self.count as usize, self),
+                Type::BYTE => return offset_to_bytes(self.count as usize, self, list),
+                Type::SBYTE => return offset_to_sbytes(self.count as usize, self, list),
                 Type::ASCII => {
                     let mut buf = vec![0; self.count as usize];
                     buf.copy_from_slice(&self.offset[..self.count as usize]);
@@ -528,16 +634,13 @@ impl Entry {
                     }
                 }
                 Type::UNDEFINED => {
-                    return Ok(List(
-                        self.offset[0..self.count as usize]
-                            .iter()
-                            .map(|&b| Byte(b))
-                            .collect(),
-                    ));
+                    let mut v = kept(list);
+                    v.extend(self.offset[0..self.count as usize].iter().map(|&b| Byte(b)));
+                    return Ok(List(v));
                 }
                 Type::SHORT => {
                     let mut r = self.offset_field_reader(bo);
-                    let mut v = Vec::new();
+                    let mut v = kept(list);
                     for _ in 0..self.count {
                         v.push(Short(r.read_u16()?));
                     }
@@ -545,7 +648,7 @@ impl Entry {
                 }
                 Type::SSHORT => {
                     let mut r = self.offset_field_reader(bo);
-                    let mut v = Vec::new();
+                    let mut v = kept(list);
                     for _ in 0..self.count {
                         v.push(SignedShort(r.read_i16()?));
                     }
@@ -553,7 +656,7 @@ impl Entry {
                 }
                 Type::LONG => {
                     let mut r = self.offset_field_reader(bo);
-                    let mut v = Vec::new();
+                    let mut v = kept(list);
                     for _ in 0..self.count {
                         v.push(Unsigned(r.read_u32()?));
                     }
@@ -561,7 +664,7 @@ impl Entry {
                 }
                 Type::SLONG => {
                     let mut r = self.offset_field_reader(bo);
-                    let mut v = Vec::new();
+                    let mut v = kept(list);
                     for _ in 0..self.count {
                         v.push(Signed(r.read_i32()?));
                     }
@@ -569,7 +672,7 @@ impl Entry {
                 }
                 Type::FLOAT => {
                     let mut r = self.offset_field_reader(bo);
-                    let mut v = Vec::new();
+                    let mut v = kept(list);
                     for _ in 0..self.count {
                         v.push(Float(r.read_f32()?));
                     }
@@ -577,7 +680,7 @@ impl Entry {
                 }
                 Type::IFD => {
                     let mut r = self.offset_field_reader(bo);
-                    let mut v = Vec::new();
+                    let mut v = kept(list);
                     for _ in 0..self.count {
                         v.push(Ifd(r.read_u32()?));
                     }
@@ -600,19 +703,19 @@ impl Entry {
 
         match self.type_ {
             Type::BYTE | Type::UNDEFINED => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(bytes.iter().copied().map(Byte))
                 })
             }
             Type::SBYTE => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(bytes.iter().copied().map(|v| SignedByte(v as i8)))
                 })
             }
             Type::SHORT => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -622,7 +725,7 @@ impl Entry {
                 })
             }
             Type::SSHORT => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -632,7 +735,7 @@ impl Entry {
                 })
             }
             Type::LONG => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -642,7 +745,7 @@ impl Entry {
                 })
             }
             Type::SLONG => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -652,7 +755,7 @@ impl Entry {
                 })
             }
             Type::FLOAT => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -662,7 +765,7 @@ impl Entry {
                 })
             }
             Type::DOUBLE => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -672,7 +775,7 @@ impl Entry {
                 })
             }
             Type::RATIONAL => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(bytes.chunks_exact(8).map(|ch| {
                         Rational(
@@ -683,7 +786,7 @@ impl Entry {
                 })
             }
             Type::SRATIONAL => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(bytes.chunks_exact(8).map(|ch| {
                         SRational(
@@ -694,7 +797,7 @@ impl Entry {
                 })
             }
             Type::LONG8 => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -704,7 +807,7 @@ impl Entry {
                 })
             }
             Type::SLONG8 => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -714,7 +817,7 @@ impl Entry {
                 })
             }
             Type::IFD => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -724,7 +827,7 @@ impl Entry {
                 })
             }
             Type::IFD8 => {
-                v = Self::vec_with_capacity(self.count, limits)?;
+                v = Self::vec_with_capacity_in(self.count, limits, list)?;
                 self.decode_values(self.count, self.type_, reader, |bytes| {
                     v.extend(
                         bytes
@@ -861,9 +964,12 @@ impl Entry {
         Ok(allowed_length)
     }
 
-    fn vec_with_capacity(
+    /// photo-gallery: upstream's `vec_with_capacity` (the same limit) in `list`'s allocation,
+    /// emptied first.
+    fn vec_with_capacity_in(
         value_count: u64,
         limits: &super::Limits,
+        list: &mut Vec<Value>,
     ) -> Result<Vec<Value>, TiffError> {
         let value_count = usize::try_from(value_count)?;
 
@@ -871,7 +977,9 @@ impl Entry {
             return Err(TiffError::LimitsExceeded);
         }
 
-        Ok(Vec::with_capacity(value_count))
+        let mut v = kept(list);
+        v.reserve_exact(value_count);
+        Ok(v)
     }
 
     /// Seek to an offset within a value stored in the offset defined by this entry.
@@ -944,24 +1052,27 @@ impl Entry {
 
 /// Extracts a list of BYTE tags stored in an offset
 #[inline]
-fn offset_to_bytes(n: usize, entry: &Entry) -> TiffResult<Value> {
-    Ok(List(
-        entry.offset[0..n]
-            .iter()
-            .map(|&e| Unsigned(u32::from(e)))
-            .collect(),
-    ))
+// photo-gallery: in `list`'s allocation.
+fn offset_to_bytes(n: usize, entry: &Entry, list: &mut Vec<Value>) -> TiffResult<Value> {
+    let mut v = kept(list);
+    v.extend(entry.offset[0..n].iter().map(|&e| Unsigned(u32::from(e))));
+    Ok(List(v))
+}
+
+/// photo-gallery: `list`'s allocation, emptied, for a list value.
+fn kept(list: &mut Vec<Value>) -> Vec<Value> {
+    let mut v = core::mem::take(list);
+    v.clear();
+    v
 }
 
 /// Extracts a list of SBYTE tags stored in an offset
 #[inline]
-fn offset_to_sbytes(n: usize, entry: &Entry) -> TiffResult<Value> {
-    Ok(List(
-        entry.offset[0..n]
-            .iter()
-            .map(|&e| Signed(i32::from(e as i8)))
-            .collect(),
-    ))
+// photo-gallery: in `list`'s allocation.
+fn offset_to_sbytes(n: usize, entry: &Entry, list: &mut Vec<Value>) -> TiffResult<Value> {
+    let mut v = kept(list);
+    v.extend(entry.offset[0..n].iter().map(|&e| Signed(i32::from(e as i8))));
+    Ok(List(v))
 }
 
 /// Type representing an Image File Directory

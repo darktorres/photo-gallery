@@ -6,6 +6,7 @@ use crate::{
 };
 
 use super::ifd::{Entry, Value};
+use super::image::U64s;
 use super::ValueReader;
 
 pub(crate) struct TagReader<'lt, R: EntryDecoder + ?Sized> {
@@ -21,11 +22,14 @@ pub(crate) trait EntryDecoder {
     /// Fill the prefix of the buffer and return the actual bytes. Start interpreting the inner
     /// value at `offset`.
     fn entry_raw(&mut self, entry: &Entry, _: &mut [u8], offset: u64) -> TiffResult<usize>;
+    /// photo-gallery: a value done with, whose list's allocation the next can use.
+    fn recycle(&mut self, value: Value);
 }
 
 impl<R: Seek + Read> EntryDecoder for ValueReader<R> {
+    // photo-gallery: a list in the kept allocation (`recycle`).
     fn entry_val(&mut self, entry: &Entry) -> TiffResult<Value> {
-        entry.val(&self.limits, self.bigtiff, &mut self.reader)
+        entry.val_in(&self.limits, self.bigtiff, &mut self.reader, &mut self.values)
     }
 
     fn entry_buf(&mut self, entry: &Entry, buf: &mut ValueBuffer) -> TiffResult<()> {
@@ -34,6 +38,14 @@ impl<R: Seek + Read> EntryDecoder for ValueReader<R> {
 
     fn entry_raw(&mut self, entry: &Entry, buf: &mut [u8], offset: u64) -> TiffResult<usize> {
         entry.raw_value_at(buf, self.bigtiff, &mut self.reader, offset)
+    }
+
+    fn recycle(&mut self, value: Value) {
+        if let Value::List(v) = value {
+            if v.capacity() > self.values.capacity() {
+                self.values = v;
+            }
+        }
     }
 }
 
@@ -89,17 +101,42 @@ impl<'a, R: EntryDecoder + ?Sized> TagReader<'a, R> {
         }
     }
 
-    pub fn find_tag_uint_vec<T: TryFrom<u64>>(&mut self, tag: Tag) -> TiffResult<Option<Vec<T>>> {
-        self.find_tag(tag)?
-            .map(|v| v.into_u64_vec())
-            .transpose()?
-            .map(|v| {
-                v.into_iter()
-                    .map(|u| {
-                        T::try_from(u).map_err(|_| TiffFormatError::InvalidTagValueType(tag).into())
-                    })
-                    .collect()
-            })
-            .transpose()
+    /// photo-gallery: upstream's `find_tag_uint_vec` (`find_tag`, `into_u64_vec`, then each value
+    /// converted, the first failure an `InvalidTagValueType` error) into `out` (emptied first), the
+    /// values read through `u64s`, and the value's list given back; whether the tag is there.
+    pub(crate) fn find_tag_uint_vec_in<T: TryFrom<u64>>(
+        &mut self,
+        tag: Tag,
+        out: &mut Vec<T>,
+        u64s: &mut Vec<u64>,
+    ) -> TiffResult<bool> {
+        let Some(value) = self.find_tag(tag)? else {
+            return Ok(false);
+        };
+        u64s.clear();
+        let read = value.u64s_into(u64s);
+        self.decoder.recycle(value);
+        read?;
+        out.clear();
+        out.reserve_exact(u64s.len());
+        for &u in u64s.iter() {
+            out.push(T::try_from(u).map_err(|_| TiffFormatError::InvalidTagValueType(tag))?);
+        }
+        Ok(true)
+    }
+
+    /// photo-gallery: `find_tag(tag)` and `Value::into_u64s`, a list read into `kept` and the
+    /// value's list given back.
+    pub(crate) fn find_tag_u64s_in(
+        &mut self,
+        tag: Tag,
+        kept: &mut Vec<u64>,
+    ) -> TiffResult<Option<U64s>> {
+        let Some(value) = self.find_tag(tag)? else {
+            return Ok(None);
+        };
+        let read = value.u64s_in(kept);
+        self.decoder.recycle(value);
+        read.map(Some)
     }
 }

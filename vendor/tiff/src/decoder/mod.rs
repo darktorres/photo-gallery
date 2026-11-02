@@ -1,5 +1,4 @@
 use std::alloc::{Layout, LayoutError};
-use std::collections::BTreeMap;
 use std::io::{self, Read, Seek};
 use std::num::NonZeroUsize;
 
@@ -524,22 +523,33 @@ where
     image: Image,
     /// photo-gallery: what reading chunks keeps (`Scratch`).
     chunks: image::ChunkScratch,
+    /// photo-gallery: spare vectors for the next image's tags (`Scratch`).
+    kept: image::ImageScratch,
 }
 
 /// photo-gallery: what a decoder allocates to read an image, kept to read the next one in:
 /// [`Decoder::new_with_scratch`] and [`Decoder::into_scratch`]. It holds the chunk readers'
 /// decompressors (LZW, Deflate), reset for each chunk, their input buffers, the JPEG chunks' data and
-/// zune-jpeg's scratch, and the rows read before they are unpacked or predicted. Upstream made them
-/// anew for each chunk.
+/// zune-jpeg's scratch, and the rows read before they are unpacked or predicted, which upstream made
+/// anew for each chunk; and the directory's entries, the tag values' lists, the image's vectors, the
+/// IFD offsets and the cycle check's maps, which upstream made anew for each image.
 #[derive(Debug, Default)]
 pub struct Scratch {
     chunks: image::ChunkScratch,
+    image: image::ImageScratch,
+    values: Vec<ifd::Value>,
+    ifd_offsets: Vec<IfdPointer>,
+    seen_ifds: cycles::IfdCycles,
 }
 
 impl Scratch {
     /// Frees the buffers that hold more than `bytes` each (after an image far larger than the rest).
     pub fn trim(&mut self, bytes: usize) {
         self.chunks.trim(bytes);
+        self.image.trim(bytes);
+        image::trim(&mut self.values, bytes);
+        image::trim(&mut self.ifd_offsets, bytes);
+        self.seen_ifds.trim(bytes);
     }
 }
 
@@ -551,6 +561,8 @@ struct ValueReader<R> {
     reader: EndianReader<R>,
     bigtiff: bool,
     limits: Limits,
+    /// photo-gallery: the allocation lists of tag values are read into (`Entry::val_in`), kept.
+    values: Vec<ifd::Value>,
 }
 
 /// Reads a directory's tag values from an underlying stream.
@@ -819,18 +831,29 @@ impl<R: Read + Seek> Decoder<R> {
             Err(e) => return Err((e, scratch)),
         };
         let current_ifd = *next_ifd.as_ref().unwrap();
-        let ifd_offsets = vec![current_ifd];
+        // photo-gallery: the kept list and maps (upstream: new ones).
+        let Scratch {
+            chunks,
+            image: kept,
+            values,
+            mut ifd_offsets,
+            mut seen_ifds,
+        } = scratch;
+        ifd_offsets.clear();
+        ifd_offsets.push(current_ifd);
+        seen_ifds.clear();
 
         let mut decoder = Decoder {
             value_reader: ValueReader {
                 reader,
                 bigtiff,
                 limits: Default::default(),
+                values,
             },
             next_ifd,
             ifd_offsets,
             current_ifd: None,
-            seen_ifds: cycles::IfdCycles::new(),
+            seen_ifds,
             image: Image {
                 ifd: None,
                 width: 0,
@@ -852,7 +875,8 @@ impl<R: Read + Seek> Decoder<R> {
                 chunk_bytes: Default::default(),
                 chroma_subsampling: (2, 2),
             },
-            chunks: scratch.chunks,
+            chunks,
+            kept,
         };
         match decoder.next_image() {
             Ok(()) => Ok(decoder),
@@ -862,17 +886,42 @@ impl<R: Read + Seek> Decoder<R> {
 
     /// photo-gallery: the decoder's buffers, for [`Self::new_with_scratch`].
     pub fn into_scratch(self) -> Scratch {
+        let Decoder {
+            value_reader,
+            ifd_offsets,
+            seen_ifds,
+            image,
+            chunks,
+            mut kept,
+            ..
+        } = self;
+        image.recycle(&mut kept);
         Scratch {
-            chunks: self.chunks,
+            chunks,
+            image: kept,
+            values: value_reader.values,
+            ifd_offsets,
+            seen_ifds,
         }
     }
 
     /// photo-gallery: `new`'s reading of the header (byte order, version and the first IFD's
     /// offset), as it was there.
     fn read_header(mut r: R) -> TiffResult<(EndianReader<R>, bool, Option<IfdPointer>)> {
-        let mut endianess = Vec::with_capacity(2);
-        (&mut r).take(2).read_to_end(&mut endianess)?;
-        let byte_order = match &*endianess {
+        // photo-gallery: up to two bytes read as `read_to_end` reads them, into an array (upstream:
+        // a `Vec`).
+        let mut endianess = [0u8; 2];
+        let mut len = 0;
+        let mut first = (&mut r).take(2);
+        loop {
+            match first.read(&mut endianess[len..]) {
+                Ok(0) => break,
+                Ok(n) => len += n,
+                Err(e) if e.kind() == io::ErrorKind::Interrupted => {}
+                Err(e) => return Err(e.into()),
+            }
+        }
+        let byte_order = match &endianess[..len] {
             b"II" => ByteOrder::LittleEndian,
             b"MM" => ByteOrder::BigEndian,
             _ => {
@@ -955,8 +1004,11 @@ impl<R: Read + Seek> Decoder<R> {
             loop {
                 // Follow the list until we find the one we want, or we reach the end, whichever happens first
                 let ifd = self.next_ifd()?;
+                let last = ifd.next().is_none();
+                // photo-gallery: its entries kept for the next directory.
+                image::keep(&mut self.kept.entries, ifd.entries);
 
-                if ifd.next().is_none() {
+                if last {
                     break;
                 }
 
@@ -968,10 +1020,14 @@ impl<R: Read + Seek> Decoder<R> {
 
         // If the index is within the list of ifds then we can load the selected image/IFD
         if let Some(ifd_offset) = self.ifd_offsets.get(ifd_index) {
-            let ifd = self.value_reader.read_directory(*ifd_offset)?;
+            // photo-gallery: in the kept vectors; the image before goes back to them once this one
+            // is read.
+            let entries = core::mem::take(&mut self.kept.entries);
+            let ifd = self.value_reader.read_directory_in(*ifd_offset, entries)?;
             self.next_ifd = ifd.next();
             self.current_ifd = Some(*ifd_offset);
-            self.image = Image::from_reader(&mut self.value_reader, ifd)?;
+            let image = Image::from_reader(&mut self.value_reader, ifd, &mut self.kept)?;
+            core::mem::replace(&mut self.image, image).recycle(&mut self.kept);
 
             Ok(())
         } else {
@@ -988,7 +1044,9 @@ impl<R: Read + Seek> Decoder<R> {
             ));
         };
 
-        let ifd = self.value_reader.read_directory(next_ifd)?;
+        // photo-gallery: in the kept entries.
+        let entries = core::mem::take(&mut self.kept.entries);
+        let ifd = self.value_reader.read_directory_in(next_ifd, entries)?;
 
         // Ensure this walk does not get us into a cycle.
         self.seen_ifds.insert_next(next_ifd, ifd.next())?;
@@ -1009,7 +1067,10 @@ impl<R: Read + Seek> Decoder<R> {
     /// To determine whether there are more images call `TIFFDecoder::more_images` instead.
     pub fn next_image(&mut self) -> TiffResult<()> {
         let ifd = self.next_ifd()?;
-        self.image = Image::from_reader(&mut self.value_reader, ifd)?;
+        // photo-gallery: in the kept vectors; the image before goes back to them once this one is
+        // read (if it can't be, the decoder stays on the image before, as upstream's does).
+        let image = Image::from_reader(&mut self.value_reader, ifd, &mut self.kept)?;
+        core::mem::replace(&mut self.image, image).recycle(&mut self.kept);
         Ok(())
     }
 
@@ -1658,6 +1719,20 @@ impl<R: Read + Seek> Decoder<R> {
         self.image_ifd().find_tag_unsigned_vec(tag)
     }
 
+    /// photo-gallery: [`Self::find_tag_unsigned_vec`] into `out` (emptied first), read in the
+    /// decoder's kept buffers; whether the tag is there. The values and errors are the same.
+    pub fn find_tag_unsigned_vec_into<T: TryFrom<u64>>(
+        &mut self,
+        tag: Tag,
+        out: &mut Vec<T>,
+    ) -> TiffResult<bool> {
+        tag_reader::TagReader {
+            decoder: &mut self.value_reader,
+            ifd: self.image.ifd.as_ref().unwrap(),
+        }
+        .find_tag_uint_vec_in(tag, out, &mut self.kept.u64s)
+    }
+
     /// Tries to retrieve a tag from the current image directory and convert it to the desired
     /// unsigned type. Returns an error if the tag is not present.
     pub fn get_tag_unsigned<T: TryFrom<u64>>(&mut self, tag: Tag) -> TiffResult<T> {
@@ -1728,7 +1803,16 @@ impl<R: Read + Seek> Decoder<R> {
 
 impl<R: Seek + Read> ValueReader<R> {
     pub(crate) fn read_directory(&mut self, ptr: IfdPointer) -> Result<Directory, TiffError> {
-        Self::read_ifd(&mut self.reader, self.bigtiff, ptr)
+        Self::read_ifd(&mut self.reader, self.bigtiff, ptr, Vec::new())
+    }
+
+    /// photo-gallery: [`Self::read_directory`] into `entries`' allocation.
+    pub(crate) fn read_directory_in(
+        &mut self,
+        ptr: IfdPointer,
+        entries: Vec<(u16, ifd::Entry)>,
+    ) -> Result<Directory, TiffError> {
+        Self::read_ifd(&mut self.reader, self.bigtiff, ptr, entries)
     }
 
     /// Reads a IFD entry.
@@ -1769,14 +1853,17 @@ impl<R: Seek + Read> ValueReader<R> {
     }
 
     /// Reads the IFD starting at the indicated location.
+    // photo-gallery: `entries` added, the allocation the entries are read into (emptied first;
+    // upstream: a new map), sorted by tag with the last of each tag kept, as the map held them.
     fn read_ifd(
         reader: &mut EndianReader<R>,
         bigtiff: bool,
         ifd_location: IfdPointer,
+        mut entries: Vec<(u16, ifd::Entry)>,
     ) -> TiffResult<Directory> {
         reader.goto_offset(ifd_location.0)?;
 
-        let mut entries: BTreeMap<_, _> = BTreeMap::new();
+        entries.clear();
 
         let num_tags = if bigtiff {
             reader.read_u64()?
@@ -1792,7 +1879,7 @@ impl<R: Seek + Read> ValueReader<R> {
                 } // Unknown data type in tag, skip
             };
 
-            entries.insert(tag.to_u16(), entry);
+            entries.push((tag.to_u16(), entry));
         }
 
         let next_ifd = if bigtiff {
@@ -1803,7 +1890,9 @@ impl<R: Seek + Read> ValueReader<R> {
 
         let next_ifd = core::num::NonZeroU64::new(next_ifd);
 
-        Ok(Directory { entries, next_ifd })
+        let mut directory = Directory { entries, next_ifd };
+        directory.normalize();
+        Ok(directory)
     }
 }
 

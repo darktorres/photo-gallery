@@ -23,8 +23,25 @@ pub struct IfdCycles {
 struct ComponentId(u64);
 
 impl IfdCycles {
+    // photo-gallery: for the tests only; decoders take theirs from `decoder::Scratch`.
+    #[cfg(test)]
     pub fn new() -> Self {
         IfdCycles::default()
+    }
+
+    /// photo-gallery: as `new` makes it, its maps freed if their tables hold more than `bytes`.
+    pub fn trim(&mut self, bytes: usize) {
+        let entries = self.component_union.capacity() + self.links.capacity() + self.chains.capacity();
+        if entries.saturating_mul(2 * core::mem::size_of::<u64>()) > bytes {
+            *self = IfdCycles::default();
+        }
+    }
+
+    /// photo-gallery: as `new` makes it, its maps' tables kept (`decoder::Scratch`).
+    pub fn clear(&mut self) {
+        self.component_union.clear();
+        self.links.clear();
+        self.chains.clear();
     }
 
     pub fn insert_next(

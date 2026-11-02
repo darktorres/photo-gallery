@@ -37,6 +37,8 @@ pub(crate) struct Codecs {
     jpeg: zune_jpeg::Scratch,
     /// The TIFF decoder's decompressors and buffers (vendored tiff's `Scratch`).
     tiff: tiff::decoder::Scratch,
+    /// A TIFF's sample formats.
+    tiff_formats: Vec<u16>,
 }
 
 impl Codecs {
@@ -283,11 +285,10 @@ impl Codecs {
         let decoder = slot.as_mut().expect("the decoder is in its slot");
         let (w, h) = decoder.dimensions().map_err(tiff_error)?;
         let tiff_color = decoder.colortype().map_err(tiff_error)?;
-        match decoder.find_tag_unsigned_vec::<u16>(tiff::tags::Tag::SampleFormat) {
-            Ok(Some(formats)) => formats.into_iter().try_for_each(|f| check_sample_format(f, tiff_color))?,
-            // Unsigned integers.
-            Ok(None) => {}
-            Err(e) => return Err(tiff_error(e)),
+        // `find_tag_unsigned_vec`, into a kept vector; without the tag, unsigned integers.
+        let formats = &mut self.tiff_formats;
+        if decoder.find_tag_unsigned_vec_into(tiff::tags::Tag::SampleFormat, formats).map_err(tiff_error)? {
+            formats.iter().try_for_each(|&f| check_sample_format(f, tiff_color))?;
         }
         let (color, stored) = match tiff_color {
             Tiff::Gray(1) => (ColorType::L8, Stored::Gray1),

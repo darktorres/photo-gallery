@@ -264,18 +264,31 @@ values and for each chunk; every value, pixel and error is upstream's:
   (`set_skip_metadata`). The features the app doesn't build, zstd and WebP, keep upstream's boxed readers. Left as
   they are: the fax crate's Group 4 decoder, made for each chunk, allocates its own line state (a few blocks per
   chunk).
+- The scratch also holds what reading an image's tags allocated anew for each image: spare vectors for the
+  directory's entries, the extra samples, the chunk offsets and byte counts, the JPEG tables (and their `Arc`, when no
+  other image holds it), the list tag values are read into (`Entry::val_in`, given back once converted), the IFD
+  offsets and the cycle check's maps (cleared). An image's vectors go back to the scratch once the next image is read,
+  so a decoder that fails to read the next image stays on the one before, as upstream's does. The tags are converted
+  by reference (`Value::u64s_in`, `u16s_into`, `u8s_into`, which give what `into_u64_vec`, `into_u16_vec` and
+  `into_u8_vec` give), and `Decoder::find_tag_unsigned_vec_into` is `find_tag_unsigned_vec` into the caller's
+  vector. The header's byte order is read into an array, as `read_to_end` read it into a `Vec`.
+- `Directory` holds its entries in a vector sorted by tag, one per tag, the last given (upstream: a `BTreeMap`, whose
+  nodes can't be kept): appended, then stably sorted and the last of each tag kept, so it holds and iterates what the
+  map did.
 - Its `Cargo.toml` patches in the vendored zune-jpeg and zune-core when its tests run from this directory (as png's
   does), for zune-jpeg's `Scratch`.
 
 Its tests give the same results as the registry's copy (45 passed, and the same 106 failing: the published crate
-lacks the `tests/images` they read). Four tests of its own (`src/decoder/image.rs`, `photo_gallery`): `into_u64s`
-gives what `into_u64_vec` gives for every kind of value, errors included; the counted plane offsets are upstream's
+lacks the `tests/images` they read). Four tests of its own (`src/decoder/image.rs`, `photo_gallery`): `u64s_in`,
+`u16s_into` and `u8s_into` give what `into_u64_vec`, `into_u16_vec` and `into_u8_vec` give for every kind of value,
+errors included, into kept vectors; the counted plane offsets are upstream's
 collected ones, for strides up to `usize::MAX` and the past-the-end check; classic and BigTIFF files in one strip
 and many, of 8-bit, 16-bit and float samples, uncompressed, LZW, Deflate and PackBits, decode to the pixels they were
 made from; and decoders in one kept scratch read 50 files (`tests/photo_gallery`, made by ImageMagick: every
 compression the crate decodes, including JPEG with tables and Group 4, in strips of one row and many, tiles, planes
 and BigTIFF, with both predictors, and damaged copies) exactly as new decoders do, forwards and backwards, kept
-whole, trimmed to nothing and to 600 bytes. Without weezl's reset that test fails. Its tests run from this directory:
+whole, trimmed to nothing and to 600 bytes. Without weezl's reset, or with the kept extra samples not emptied, that
+test fails. Its tests run from this directory:
 `cargo test --no-fail-fast --target-dir ../../target/vendor-test`.
 
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,

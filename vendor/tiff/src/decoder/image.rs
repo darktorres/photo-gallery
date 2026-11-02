@@ -1,6 +1,6 @@
-use super::ifd::Value;
+use super::ifd::{Entry, Value};
 use super::stream::{PackBitsReader, ReaderScratch};
-use super::tag_reader::TagReader;
+use super::tag_reader::{EntryDecoder, TagReader};
 use super::ChunkType;
 use super::{predict_f16, predict_f32, predict_f64, ValueReader};
 use crate::tags::{
@@ -164,6 +164,51 @@ pub(crate) struct ReadoutLayout {
     pub chunks_per_plane: u32,
 }
 
+/// photo-gallery: what reading an image's tags allocated (upstream: anew for each image), kept
+/// through [`super::Scratch`] from one image to the next: spare vectors for the directory's entries,
+/// the extra samples, the chunk offsets and byte counts, the JPEG tables (its `Arc` too, when no
+/// other image holds it), and the tag values read before they are checked.
+#[derive(Debug, Default)]
+pub(crate) struct ImageScratch {
+    pub(crate) entries: Vec<(u16, Entry)>,
+    extra_samples: Vec<ExtraSamples>,
+    chunk_offsets: Vec<u64>,
+    chunk_bytes: Vec<u64>,
+    jpeg_tables: Option<Arc<Vec<u8>>>,
+    bits: Vec<u8>,
+    u16s: Vec<u16>,
+    pub(crate) u64s: Vec<u64>,
+}
+
+impl ImageScratch {
+    pub(crate) fn trim(&mut self, bytes: usize) {
+        trim(&mut self.entries, bytes);
+        trim(&mut self.extra_samples, bytes);
+        trim(&mut self.chunk_offsets, bytes);
+        trim(&mut self.chunk_bytes, bytes);
+        if self.jpeg_tables.as_ref().is_some_and(|t| t.capacity() > bytes) {
+            self.jpeg_tables = None;
+        }
+        trim(&mut self.bits, bytes);
+        trim(&mut self.u16s, bytes);
+        trim(&mut self.u64s, bytes);
+    }
+}
+
+/// photo-gallery: frees `v` if it holds more than `bytes`.
+pub(crate) fn trim<T>(v: &mut Vec<T>, bytes: usize) {
+    if v.capacity().saturating_mul(core::mem::size_of::<T>()) > bytes {
+        *v = Vec::new();
+    }
+}
+
+/// photo-gallery: `v` kept as the spare if it holds more than the spare does.
+pub(crate) fn keep<T>(spare: &mut Vec<T>, v: Vec<T>) {
+    if v.capacity() > spare.capacity() {
+        *spare = v;
+    }
+}
+
 /// photo-gallery: what `Image::expand_chunk` keeps from one chunk to the next, and through
 /// [`super::Scratch`] from one image to the next: the readers' state, and the row a chunk is read into
 /// before its extra samples are dropped or it is predicted (upstream: a new `Vec` for each chunk), and
@@ -185,8 +230,8 @@ impl std::fmt::Debug for ChunkScratch {
 impl ChunkScratch {
     pub(crate) fn trim(&mut self, bytes: usize) {
         self.readers.trim(bytes);
-        super::stream::trim(&mut self.row, bytes);
-        super::stream::trim(&mut self.predict, bytes);
+        trim(&mut self.row, bytes);
+        trim(&mut self.predict, bytes);
     }
 }
 
@@ -250,9 +295,28 @@ impl<R: Read> Read for ChunkReader<'_, R> {
 }
 
 impl Image {
+    /// photo-gallery: the image's vectors back into `kept`, as spares for the next image.
+    pub(crate) fn recycle(self, kept: &mut ImageScratch) {
+        if let Some(ifd) = self.ifd {
+            keep(&mut kept.entries, ifd.entries);
+        }
+        keep(&mut kept.extra_samples, self.extra_samples);
+        if let U64s::Many(v) = self.chunk_offsets {
+            keep(&mut kept.chunk_offsets, v);
+        }
+        if let U64s::Many(v) = self.chunk_bytes {
+            keep(&mut kept.chunk_bytes, v);
+        }
+        if kept.jpeg_tables.is_none() {
+            kept.jpeg_tables = self.jpeg_tables;
+        }
+    }
+
+    // photo-gallery: `kept` added, the vectors its values are read into.
     pub fn from_reader<R: Read + Seek>(
         decoder: &mut ValueReader<R>,
         ifd: Directory,
+        kept: &mut ImageScratch,
     ) -> TiffResult<Image> {
         let mut tag_reader = TagReader { decoder, ifd: &ifd };
 
@@ -281,17 +345,26 @@ impl Image {
         let jpeg_tables = if compression_method == CompressionMethod::ModernJPEG
             && ifd.contains(Tag::JPEGTables)
         {
-            let vec = tag_reader
-                .find_tag(Tag::JPEGTables)?
-                .unwrap()
-                .into_u8_vec()?;
+            // photo-gallery: into the kept tables, when no other image holds them (upstream: a new
+            // `Vec` and `Arc`).
+            let value = tag_reader.find_tag(Tag::JPEGTables)?.unwrap();
+            let mut tables = match kept.jpeg_tables.take() {
+                // What `Arc::get_mut` checks.
+                Some(t) if Arc::strong_count(&t) == 1 && Arc::weak_count(&t) == 0 => t,
+                _ => Arc::new(Vec::new()),
+            };
+            let vec = Arc::get_mut(&mut tables).expect("the tables are held here only");
+            vec.clear();
+            let read = value.u8s_into(vec);
+            tag_reader.decoder.recycle(value);
+            read?;
             if vec.len() < 2 {
                 return Err(TiffError::FormatError(
                     TiffFormatError::InvalidTagValueType(Tag::JPEGTables),
                 ));
             }
 
-            Some(Arc::new(vec))
+            Some(tables)
         } else {
             None
         };
@@ -306,15 +379,20 @@ impl Image {
             return Err(TiffFormatError::SamplesPerPixelIsZero.into());
         }
 
-        let extra_samples = match tag_reader.find_tag(Tag::ExtraSamples)? {
-            Some(n) => n.into_u16_vec()?,
-            None => vec![],
-        };
-
-        let extra_samples = extra_samples
-            .into_iter()
-            .map(|x| ExtraSamples::from_u16(x).unwrap_or(ExtraSamples::Unspecified))
-            .collect::<Vec<_>>();
+        // photo-gallery: read into kept vectors (upstream: two new ones).
+        let mut extra_samples = core::mem::take(&mut kept.extra_samples);
+        extra_samples.clear();
+        if let Some(n) = tag_reader.find_tag(Tag::ExtraSamples)? {
+            kept.u16s.clear();
+            let read = n.u16s_into(&mut kept.u16s);
+            tag_reader.decoder.recycle(n);
+            read?;
+            extra_samples.extend(
+                kept.u16s
+                    .iter()
+                    .map(|&x| ExtraSamples::from_u16(x).unwrap_or(ExtraSamples::Unspecified)),
+            );
+        }
 
         let photometric_samples = match usize::from(samples).checked_sub(extra_samples.len()) {
             None => {
@@ -325,29 +403,40 @@ impl Image {
             Some(n) => n as u16,
         };
 
-        let sample_format = match tag_reader.find_tag_uint_vec(Tag::SampleFormat)? {
-            Some(vals) => {
-                let sample_format: Vec<_> = vals
-                    .into_iter()
-                    .map(SampleFormat::from_u16_exhaustive)
+        // photo-gallery: the formats in a kept vector, mapped as they are compared (upstream: two new
+        // vectors, the second of them mapped).
+        let sample_format = if tag_reader.find_tag_uint_vec_in(
+            Tag::SampleFormat,
+            &mut kept.u16s,
+            &mut kept.u64s,
+        )? {
+            let vals = &kept.u16s;
+            let Some(format) = vals.first().copied().map(SampleFormat::from_u16_exhaustive) else {
+                // Reject empty sample formats
+                return Err(TiffFormatError::InvalidTagValueType(Tag::SampleFormat).into());
+            };
+            // TODO: for now, only homogenous formats across samples are supported.
+            if !vals
+                .iter()
+                .all(|&s| SampleFormat::from_u16_exhaustive(s) == format)
+            {
+                let sample_format = vals
+                    .iter()
+                    .map(|&s| SampleFormat::from_u16_exhaustive(s))
                     .collect();
-
-                let Some(format) = sample_format.first().copied() else {
-                    // Reject empty sample formats
-                    return Err(TiffFormatError::InvalidTagValueType(Tag::SampleFormat).into());
-                };
-                // TODO: for now, only homogenous formats across samples are supported.
-                if !sample_format.iter().all(|&s| s == format) {
-                    return Err(TiffUnsupportedError::UnsupportedSampleFormat(sample_format).into());
-                }
-                format
+                return Err(TiffUnsupportedError::UnsupportedSampleFormat(sample_format).into());
             }
-            None => SampleFormat::Uint,
+            format
+        } else {
+            SampleFormat::Uint
         };
 
-        let bits_per_sample: Vec<u8> = tag_reader
-            .find_tag_uint_vec(Tag::BitsPerSample)?
-            .unwrap_or_else(|| vec![1]);
+        // photo-gallery: in a kept vector (upstream: a new one).
+        if !tag_reader.find_tag_uint_vec_in(Tag::BitsPerSample, &mut kept.bits, &mut kept.u64s)? {
+            kept.bits.clear();
+            kept.bits.push(1);
+        }
+        let bits_per_sample = &kept.bits;
 
         // Technically bits_per_sample.len() should be *equal* to samples, but libtiff also allows
         // it to be a single value that applies to all samples.
@@ -360,7 +449,9 @@ impl Image {
         // This library (and libtiff) do not support mixed sample formats and zero bits per sample
         // doesn't make sense.
         if bits_per_sample.iter().any(|&b| b != bits_per_sample[0]) || bits_per_sample[0] == 0 {
-            return Err(TiffUnsupportedError::InconsistentBitsPerSample(bits_per_sample).into());
+            return Err(
+                TiffUnsupportedError::InconsistentBitsPerSample(bits_per_sample.clone()).into(),
+            );
         }
 
         let predictor = tag_reader
@@ -386,9 +477,15 @@ impl Image {
             .transpose()?
             .unwrap_or(PlanarConfiguration::Chunky);
 
-        let ycbcr_subsampling = tag_reader.find_tag_uint_vec::<u16>(Tag::ChromaSubsampling)?;
+        // photo-gallery: in a kept vector (upstream: a new one).
+        let ycbcr_subsampling = tag_reader.find_tag_uint_vec_in(
+            Tag::ChromaSubsampling,
+            &mut kept.u16s,
+            &mut kept.u64s,
+        )?;
 
-        let chroma_subsampling = if let Some(subsamples) = &ycbcr_subsampling {
+        let chroma_subsampling = if ycbcr_subsampling {
+            let subsamples = &kept.u16s;
             let [a, b] = subsamples.as_slice() else {
                 return Err(TiffError::FormatError(TiffFormatError::InvalidCountForTag(
                     Tag::ChromaSubsampling,
@@ -425,13 +522,11 @@ impl Image {
                 chunk_type = ChunkType::Strip;
 
                 chunk_offsets = tag_reader
-                    .find_tag(Tag::StripOffsets)?
-                    .unwrap()
-                    .into_u64s()?;
+                    .find_tag_u64s_in(Tag::StripOffsets, &mut kept.chunk_offsets)?
+                    .unwrap();
                 chunk_bytes = tag_reader
-                    .find_tag(Tag::StripByteCounts)?
-                    .unwrap()
-                    .into_u64s()?;
+                    .find_tag_u64s_in(Tag::StripByteCounts, &mut kept.chunk_bytes)?
+                    .unwrap();
                 let rows_per_strip = tag_reader
                     .find_tag(Tag::RowsPerStrip)?
                     .map(Value::into_u32)
@@ -472,13 +567,11 @@ impl Image {
                     tile_length,
                 });
                 chunk_offsets = tag_reader
-                    .find_tag(Tag::TileOffsets)?
-                    .unwrap()
-                    .into_u64s()?;
+                    .find_tag_u64s_in(Tag::TileOffsets, &mut kept.chunk_offsets)?
+                    .unwrap();
                 chunk_bytes = tag_reader
-                    .find_tag(Tag::TileByteCounts)?
-                    .unwrap()
-                    .into_u64s()?;
+                    .find_tag_u64s_in(Tag::TileByteCounts, &mut kept.chunk_bytes)?
+                    .unwrap();
 
                 let tile = tile_attributes.as_ref().unwrap();
                 if chunk_offsets.len() != chunk_bytes.len()
@@ -501,7 +594,7 @@ impl Image {
             ifd: Some(ifd),
             width,
             height,
-            bits_per_sample: bits_per_sample[0],
+            bits_per_sample: kept.bits[0],
             samples,
             extra_samples,
             photometric_samples,
@@ -965,6 +1058,7 @@ impl Image {
             reader,
             bigtiff: _,
             limits,
+            values: _,
         } = reader;
 
         let byte_order = reader.byte_order;
@@ -1378,6 +1472,9 @@ mod photo_gallery {
                     Value::UnsignedBig(3),
                 ]),
                 Value::List(vec![Value::Short(1), Value::Signed(2)]),
+                Value::List(vec![Value::Byte(1), Value::Byte(255)]),
+                Value::List(vec![Value::Unsigned(65535), Value::UnsignedBig(65536)]),
+                Value::List(vec![Value::Short(7), Value::Byte(8)]),
                 Value::SignedByte(-1),
                 Value::SignedShort(-1),
                 Value::Signed(-1),
@@ -1388,13 +1485,32 @@ mod photo_gallery {
                 Value::SRationalBig(1, 2),
             ]
         };
-        for (value, same) in values().into_iter().zip(values()) {
-            let name = format!("{value:?}");
-            match (value.into_u64s(), same.into_u64_vec()) {
-                (Ok(list), Ok(vec)) => assert_eq!(&*list, &vec[..], "{name}"),
-                (Err(a), Err(b)) => assert_eq!(format!("{a:?}"), format!("{b:?}"), "{name}"),
+        fn same<T: PartialEq + core::fmt::Debug>(
+            name: &str,
+            got: Result<&[T], String>,
+            want: TiffResult<Vec<T>>,
+        ) {
+            match (got, want) {
+                (Ok(got), Ok(want)) => assert_eq!(got, &want[..], "{name}"),
+                (Err(a), Err(b)) => assert_eq!(a, format!("{b:?}"), "{name}"),
                 (a, b) => panic!("{name}: {a:?} against {b:?}"),
             }
+        }
+        // One kept vector each, holding the values before, as in the decoder.
+        let (mut kept, mut u16s, mut u8s) = (vec![9u64; 5], vec![9u16; 5], vec![9u8; 5]);
+        for (value, owned) in values().into_iter().zip(values()) {
+            let name = format!("{value:?}");
+            let got = value.u64s_in(&mut kept);
+            same(&name, got.as_deref().map_err(|e| format!("{e:?}")), owned.clone().into_u64_vec());
+            if let Ok(U64s::Many(v)) = got {
+                kept = v;
+            }
+            u16s.clear();
+            let got = value.u16s_into(&mut u16s).map(|()| &u16s[..]).map_err(|e| format!("{e:?}"));
+            same(&name, got, owned.clone().into_u16_vec());
+            u8s.clear();
+            let got = value.u8s_into(&mut u8s).map(|()| &u8s[..]).map_err(|e| format!("{e:?}"));
+            same(&name, got, owned.into_u8_vec());
         }
     }
 

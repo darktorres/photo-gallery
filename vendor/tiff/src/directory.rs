@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, num::NonZeroU64};
+use std::num::NonZeroU64;
 
 use crate::{
     decoder::ifd::Entry,
@@ -22,7 +22,11 @@ pub struct Directory {
     /// There are at most `u16::MAX` entries in any single directory, the count is stored as a
     /// 2-byte value. The order in the file is implied to be ascending by tag value (the decoder
     /// does not mind unordered entries).
-    pub(crate) entries: BTreeMap<u16, Entry>,
+    ///
+    /// photo-gallery: sorted by tag, one entry per tag (the last given), so it holds what
+    /// upstream's `BTreeMap<u16, Entry>` held, in its order; a vector can be kept from one
+    /// directory to the next (`decoder::Scratch`), where a map's nodes are freed and made anew.
+    pub(crate) entries: Vec<(u16, Entry)>,
     pub(crate) next_ifd: Option<NonZeroU64>,
 }
 
@@ -31,19 +35,40 @@ impl Directory {
     /// not be encoded in a file, it must contain at least one entry.
     pub fn empty() -> Self {
         Directory {
-            entries: BTreeMap::new(),
+            entries: Vec::new(),
             next_ifd: None,
         }
     }
 
     /// Retrieve the value associated with a tag.
     pub fn get(&self, tag: Tag) -> Option<&Entry> {
-        self.entries.get(&tag.to_u16())
+        self.position(tag).ok().map(|i| &self.entries[i].1)
+    }
+
+    /// photo-gallery: where `tag` is in the sorted entries, or would be.
+    fn position(&self, tag: Tag) -> Result<usize, usize> {
+        let tag = tag.to_u16();
+        self.entries.binary_search_by_key(&tag, |(t, _)| *t)
+    }
+
+    /// photo-gallery: sorts the entries by tag and keeps the last of each tag, which is what
+    /// inserting them in turn into upstream's map left (a stable sort keeps the order they were
+    /// given in among equal tags).
+    pub(crate) fn normalize(&mut self) {
+        self.entries.sort_by_key(|(t, _)| *t);
+        self.entries.dedup_by(|later, earlier| {
+            if later.0 == earlier.0 {
+                core::mem::swap(later, earlier);
+                true
+            } else {
+                false
+            }
+        });
     }
 
     /// Check if the directory contains a specified tag.
     pub fn contains(&self, tag: Tag) -> bool {
-        self.entries.contains_key(&tag.to_u16())
+        self.position(tag).is_ok()
     }
 
     /// Iterate over all known and unknown tags in this directory.
@@ -90,19 +115,12 @@ impl Directory {
     }
 
     fn extend_inner(&mut self, iter: &mut dyn Iterator<Item = (Tag, Entry)>) {
+        // If the tag is already present, it will be overwritten.
+        // photo-gallery: appended, then sorted with the last of each tag kept (`normalize`).
         for (tag, entry) in iter {
-            // If the tag is already present, it will be overwritten.
-            let map_entry = self.entries.entry(tag.to_u16());
-
-            match map_entry {
-                std::collections::btree_map::Entry::Vacant(vacant_entry) => {
-                    vacant_entry.insert(entry);
-                }
-                std::collections::btree_map::Entry::Occupied(mut occupied_entry) => {
-                    occupied_entry.insert(entry);
-                }
-            }
+            self.entries.push((tag.to_u16(), entry));
         }
+        self.normalize();
     }
 
     pub(crate) fn encoded_len<K: crate::encoder::TiffKind>(&self) -> u64 {

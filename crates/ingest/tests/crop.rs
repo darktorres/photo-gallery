@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, Format, MinSize};
+use pg_core::paths::PathArena;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
@@ -88,7 +89,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let opts = Options::new(0);
     import::import(&mut c, &opts, false, &ctl).unwrap();
     for (id, _) in ids(&c) {
-        assert!(c.crop_source(id).unwrap().is_none(), "the import doesn't look for borders");
+        assert!(c.crop_source(id, &mut PathArena::default()).unwrap().is_none(), "the import doesn't look for borders");
     }
     borders::find(&mut c, &opts, &ctl).unwrap();
     let files_ids = ids(&c);
@@ -96,7 +97,10 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The bars, and the safety margin past the seam.
     let mut cuts = std::collections::BTreeMap::new();
     for (id, name) in &files_ids {
-        let source = c.crop_source(*id).unwrap().unwrap_or_else(|| panic!("{name}: no borders found"));
+        let source = c
+            .crop_source(*id, &mut PathArena::default())
+            .unwrap()
+            .unwrap_or_else(|| panic!("{name}: no borders found"));
         let [l, t, r, b] = source.cut;
         assert!(
             l == 0 && r == 0 && (BAR..BAR + 3).contains(&t) && (BAR..BAR + 3).contains(&b),

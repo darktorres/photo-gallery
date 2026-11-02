@@ -26,7 +26,8 @@ pub struct ImportStats {
 }
 
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
-    let items = catalog.pending_import(retry_errors)?;
+    let work = catalog.pending_import(retry_errors)?;
+    let items = &work.items;
     let mut stats = ImportStats { files: 0, failed: 0, pairs: 0, changed: 0 };
     // Most rounds (a new thumbnail height, a turn) have nothing to import: don't load every hash for them.
     if items.is_empty() {
@@ -91,14 +92,14 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
 
     let video = |i: usize| items[i].kind == Kind::Video;
     pipeline::run(
-        &items,
-        |item| (item.kind != Kind::Video).then_some(item.path.as_str()),
+        items,
+        |item| (item.kind != Kind::Video).then_some(work.path(item.path)),
         opts,
         ctl,
         Analyzer::new,
         |analyzer, i, bytes| {
             if video(i) {
-                let path = verbatim(&items[i].path);
+                let path = verbatim(work.path(items[i].path));
                 pg_core::video::analyze(Path::new(&*path), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)

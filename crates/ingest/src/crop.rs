@@ -8,7 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, CropSource, is_under};
 use pg_core::crop::crop;
-use pg_core::decode::Format;
+use pg_core::paths::{PathArena, PathRef};
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -28,7 +28,8 @@ pub struct Stats {
 struct Job {
     id: i64,
     source: CropSource,
-    out: String,
+    /// Where its copy goes. Both paths are in the jobs' arena.
+    out: PathRef,
 }
 
 /// Save cropped copies of `ids` under `folder`.
@@ -37,19 +38,28 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
     let roots = catalog.roots()?;
     let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
+    let mut paths = PathArena::default();
+    // Each job's copies' folder and its copy's path, made in these and then kept in the arena.
+    let (mut tree, mut out) = (String::new(), String::new());
     for &id in ids {
-        let source = catalog.crop_source(id)?;
+        let source = catalog.crop_source(id, &mut paths)?;
         // The deepest library folder holding it (library folders don't nest; a removed one can be inside another).
-        let root = source.as_ref().and_then(|s| roots.iter().filter(|r| is_under(&s.path, r)).max_by_key(|r| r.len()));
+        let root = source.as_ref().and_then(|s| {
+            let path = paths.get(s.path);
+            roots.iter().filter(|r| is_under(path, r)).max_by_key(|r| r.len())
+        });
         let (Some(source), Some(root)) = (source, root) else {
             stats.skipped += 1;
             continue;
         };
-        let tree = format!("{folder}\\{}", root_name(root));
+        tree.clear();
+        tree.extend([&*folder, "\\", root_name(root)]);
         if let Some(r) = roots.iter().find(|r| is_under(&tree, r) || is_under(r, &tree)) {
             bail!("The copies of {root} would go into {tree}, in the library folder {r}: choose a folder outside it");
         }
-        let out = format!("{tree}{}", &source.path[root.len()..]);
+        out.clear();
+        out.extend([&*tree, &paths.get(source.path)[root.len()..]]);
+        let out = paths.push(&out);
         jobs.push(Job { id, source, out });
     }
     if jobs.is_empty() {
@@ -61,11 +71,11 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
         &jobs,
-        |job| Some(&job.source.path),
+        |job| Some(paths.get(job.source.path)),
         opts,
         ctl,
-        || Ok(()),
-        |_, i, bytes| write_copy(&jobs[i], bytes),
+        || Ok(String::new()),
+        |temp, i, bytes| write_copy(&jobs[i], &paths, bytes, temp),
         |i, result, len| {
             done[i] = true;
             let job = &jobs[i];
@@ -77,8 +87,9 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
                     if exiftool.is_none() {
                         exiftool = Some(ExifTool::start()?);
                     }
-                    exiftool.as_mut().unwrap().copy_tags(&job.source.path, &job.out)?;
-                    keep_time(&job.source.path, &job.out)?;
+                    let (source, out) = (paths.get(job.source.path), paths.get(job.out));
+                    exiftool.as_mut().unwrap().copy_tags(source, out)?;
+                    keep_time(source, out)?;
                     Ok(true)
                 }
             });
@@ -88,7 +99,7 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    stats.error.get_or_insert_with(|| format!("{}: {e:#}", job.source.path));
+                    stats.error.get_or_insert_with(|| format!("{}: {e:#}", paths.get(job.source.path)));
                 }
             }
             Ok(true)
@@ -113,22 +124,23 @@ enum Written {
     Skipped,
 }
 
-fn write_copy(job: &Job, bytes: &[u8]) -> Result<Written> {
+/// Write `job`'s copy of the file read as `bytes`, through `temp` (a worker's buffer for the temporary path).
+fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut String) -> Result<Written> {
     let s = &job.source;
-    if stat(&s.path)? != (s.size, s.mtime) || bytes.len() as i64 != s.size {
+    let (source, out) = (paths.get(s.path), paths.get(job.out));
+    if stat(source)? != (s.size, s.mtime) || bytes.len() as i64 != s.size {
         return Ok(Written::Skipped);
     }
-    let format = Format::from_name(&s.format).with_context(|| format!("unknown format {}", s.format))?;
-    let cropped = crop(bytes, format, s.width, s.height, s.cut)?;
-    let out = &job.out;
+    let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
     if let Some(dir) = Path::new(out).parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
-    let temp = format!("{out}.pg-crop");
-    std::fs::write(&temp, &cropped.bytes).with_context(|| format!("writing {}", job.out))?;
-    keep_time(&s.path, &temp)?;
-    std::fs::rename(&temp, out).with_context(|| format!("writing {}", job.out))?;
+    temp.clear();
+    temp.extend([out, ".pg-crop"]);
+    std::fs::write(&*temp, &cropped.bytes).with_context(|| format!("writing {out}"))?;
+    keep_time(source, temp)?;
+    std::fs::rename(&*temp, out).with_context(|| format!("writing {out}"))?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
 

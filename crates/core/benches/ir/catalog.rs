@@ -11,6 +11,7 @@ use std::path::{Path, PathBuf};
 
 use pg_core::browse::{self, Entry, Facets, FolderTree};
 use pg_core::catalog::{Catalog, WorkItem};
+use pg_core::paths::WorkList;
 use pg_core::query::{Query, Sort, SortKey};
 use pg_core::thumbs::Pending;
 
@@ -101,7 +102,7 @@ fn facets(catalog: Catalog) -> (Catalog, Facets) {
 // The import's check for work, every round of the background job (nothing is pending in this catalog).
 #[library_benchmark]
 #[bench::empty(setup = open_catalog)]
-fn pending_import(catalog: Catalog) -> (Catalog, Vec<WorkItem>) {
+fn pending_import(catalog: Catalog) -> (Catalog, WorkList<WorkItem>) {
     let work = catalog.pending_import(false).unwrap();
     (catalog, black_box(work))
 }

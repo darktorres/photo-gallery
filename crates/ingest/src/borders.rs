@@ -26,7 +26,8 @@ pub struct Stats {
 
 /// Look for the borders that are due, committing in batches (stopping loses at most the batch).
 pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stats> {
-    let items = catalog.pending_borders()?;
+    let work = catalog.pending_borders()?;
+    let items = &work.items;
     let mut stats = Stats { files: 0, failed: 0 };
     if items.is_empty() {
         return Ok(stats);
@@ -53,8 +54,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         Ok(())
     };
     pipeline::run(
-        &items,
-        |item| Some(&item.path),
+        items,
+        |item| Some(work.path(item.path)),
         opts,
         ctl,
         Analyzer::new,

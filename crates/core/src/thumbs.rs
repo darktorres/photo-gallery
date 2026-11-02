@@ -36,6 +36,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, Transactio
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
 use crate::decode::{Decoder, Format, MinSize, Rgb, release_over};
+use crate::paths::{PathRef, WorkList};
 use crate::resize::Resizer;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
@@ -162,7 +163,8 @@ pub struct Thumb {
 /// A file the background task still has to thumbnail at the current height.
 pub struct ThumbWork {
     pub id: i64,
-    pub path: String,
+    /// In its list's [`WorkList::paths`].
+    pub path: PathRef,
     pub source: Source,
     /// For a video, the time of its poster frame (`video::poster_ms`).
     pub poster_ms: Option<i64>,
@@ -172,7 +174,7 @@ pub struct ThumbWork {
 
 /// The files a pass at `height` has to thumbnail, and what they were read against (`ThumbCache::checked`).
 pub struct Pending {
-    pub work: Vec<ThumbWork>,
+    pub work: WorkList<ThumbWork>,
     pub snapshot: Snapshot,
 }
 
@@ -467,7 +469,7 @@ impl ThumbCache {
     pub fn pending(&self, catalog: &Path, height: u32) -> Result<Pending> {
         let Some(store) = &self.store else {
             let snapshot = Snapshot { height, seq: 0, evictions: 0, since_checked: false };
-            return Ok(Pending { work: Vec::new(), snapshot });
+            return Ok(Pending { work: WorkList::default(), snapshot });
         };
         pending_in(&store.path, catalog, height)
     }
@@ -626,19 +628,21 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
         Some(c) => vec![height as i64, c],
         None => vec![height as i64],
     };
-    let work = {
+    let mut work = WorkList::default();
+    {
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
-        let rows = stmt.query_map(rusqlite::params_from_iter(values), |r| {
-            Ok(ThumbWork {
+        let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
+        while let Some(r) = rows.next()? {
+            let path = work.paths.push(r.get_ref(1)?.as_str()?);
+            work.items.push(ThumbWork {
                 id: r.get(0)?,
-                path: r.get(1)?,
+                path,
                 source: Source { mtime: r.get(2)?, rotation: r.get(3)? },
                 poster_ms: r.get(4)?,
                 seq: r.get(5)?,
-            })
-        })?;
-        rows.collect::<rusqlite::Result<Vec<_>>>()?
-    };
+            });
+        }
+    }
     tx.commit()?;
     Ok(Pending { work, snapshot: Snapshot { height, seq, evictions, since_checked: since.is_some() } })
 }
@@ -1253,13 +1257,14 @@ mod tests {
     }
 
     fn ids(p: &Pending) -> Vec<i64> {
-        p.work.iter().map(|w| w.id).collect()
+        p.work.items.iter().map(|w| w.id).collect()
     }
 
     /// Thumbnails of `bytes` bytes for the work `which` picks, as a pass makes them.
     fn made(p: &Pending, which: impl Fn(&ThumbWork) -> bool, bytes: usize) -> Vec<Thumb> {
         let height = p.snapshot.height;
         p.work
+            .items
             .iter()
             .filter(|w| which(w))
             .map(|w| Thumb { file_id: w.id, height, source: w.source, data: vec![0; bytes] })
@@ -1289,7 +1294,7 @@ mod tests {
         assert_eq!(ids(&first), vec![2, 3, 1]);
         // Done, but file 2 couldn't be made: it stays in the work.
         assert!(cache.put_batch(made(&first, |w| w.id != 2, 10), Some(100)).unwrap());
-        let failed = first.work.iter().find(|w| w.id == 2).unwrap().seq;
+        let failed = first.work.items.iter().find(|w| w.id == 2).unwrap().seq;
         cache.checked(&first.snapshot, Some(failed)).unwrap();
         let second = cache.pending(&catalog, 100).unwrap();
         assert!(second.snapshot.since_checked);

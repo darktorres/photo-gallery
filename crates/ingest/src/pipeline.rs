@@ -57,10 +57,11 @@ fn set_priority(priority: THREAD_PRIORITY) {
 /// Read each item's file (`read(item)`, its path), run `process(state, i, bytes)` (with per-worker state from
 /// `init`), and call `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so
 /// does a stop request on `ctl`, and reading waits while `ctl` is paused. An item `read` gives no path for isn't
-/// read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded).
-pub fn run<T, S, R>(
-    items: &[T],
-    read: impl Fn(&T) -> Option<&str> + Sync,
+/// read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded). The paths may
+/// live beside the items (a work list's arena) rather than in them.
+pub fn run<'a, T, S, R>(
+    items: &'a [T],
+    read: impl Fn(&'a T) -> Option<&'a str> + Sync,
     opts: &Options,
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,

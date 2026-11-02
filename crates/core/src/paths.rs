@@ -3,6 +3,9 @@
 //! `CreateFileW`) don't: a path past the 260-character limit reaches them in its verbatim form, made here.
 //! ExifTool takes the plain path, as a `\\?\` path isn't one it reads (its own long-name support is a separate
 //! option, FINDINGS "I/O").
+//!
+//! A pass's paths are kept end to end in one string ([`PathArena`], [`WorkList`]): a list of 189k files is a few
+//! allocations, not one per path.
 
 use std::borrow::Cow;
 
@@ -37,9 +40,82 @@ fn split(path: &str, len: usize) -> (&'static str, &str) {
     }
 }
 
+/// Paths kept end to end in one `String`, each named by its range ([`PathRef`]). It grows by doubling, so a list
+/// of n paths makes about log₂ n allocations.
+#[derive(Default, Debug)]
+pub struct PathArena {
+    text: String,
+}
+
+/// A path in a [`PathArena`].
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct PathRef {
+    start: usize,
+    end: usize,
+}
+
+impl PathArena {
+    /// `path` added at the end.
+    pub fn push(&mut self, path: &str) -> PathRef {
+        self.push_parts(&[path])
+    }
+
+    /// The concatenation of `parts`, added at the end.
+    pub fn push_parts(&mut self, parts: &[&str]) -> PathRef {
+        let start = self.text.len();
+        for part in parts {
+            self.text.push_str(part);
+        }
+        PathRef { start, end: self.text.len() }
+    }
+
+    pub fn get(&self, path: PathRef) -> &str {
+        &self.text[path.start..path.end]
+    }
+}
+
+/// A pass's work: its items, each holding its path as a [`PathRef`] into `paths`.
+pub struct WorkList<T> {
+    pub items: Vec<T>,
+    pub paths: PathArena,
+}
+
+impl<T> WorkList<T> {
+    pub fn path(&self, path: PathRef) -> &str {
+        self.paths.get(path)
+    }
+
+    pub fn len(&self) -> usize {
+        self.items.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+}
+
+impl<T> Default for WorkList<T> {
+    fn default() -> Self {
+        WorkList { items: Vec::new(), paths: PathArena::default() }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn an_arena_gives_back_each_path() {
+        let mut arena = PathArena::default();
+        let refs: Vec<PathRef> = (0..1000).map(|i| arena.push(&format!(r"D:\folder {i}\file {i}.jpg"))).collect();
+        let joined = arena.push_parts(&[r"E:\copies", r"\a.jpg"]);
+        for (i, r) in refs.iter().enumerate() {
+            assert_eq!(arena.get(*r), format!(r"D:\folder {i}\file {i}.jpg"));
+        }
+        assert_eq!(arena.get(joined), r"E:\copies\a.jpg");
+        let empty = arena.push("");
+        assert_eq!(arena.get(empty), "");
+    }
 
     #[test]
     fn long_paths_are_verbatim_unc_too() {

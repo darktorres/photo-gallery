@@ -29,7 +29,8 @@ pub struct ThumbStats {
 
 /// One pass at `height`: the files changed since the last complete one (or all of them, `ThumbCache::pending`).
 pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options, ctl: &Control) -> Result<ThumbStats> {
-    let Pending { work: items, snapshot } = cache.pending(catalog_path, height)?;
+    let Pending { work, snapshot } = cache.pending(catalog_path, height)?;
+    let items = &work.items;
     let mut stats = ThumbStats { made: 0, failed: 0, changed: 0, cache_full: false, complete: false };
     if items.is_empty() {
         cache.checked(&snapshot, None)?;
@@ -60,8 +61,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     };
 
     pipeline::run(
-        &items,
-        |item| item.poster_ms.is_none().then_some(item.path.as_str()),
+        items,
+        |item| item.poster_ms.is_none().then_some(work.path(item.path)),
         opts,
         ctl,
         Maker::new,
@@ -70,7 +71,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
-                    maker.load_frame(Path::new(&*verbatim(&item.path)), at, item.source.rotation)?;
+                    maker.load_frame(Path::new(&*verbatim(work.path(item.path))), at, item.source.rotation)?;
                     maker.encode_frame(height as usize)
                 }
                 None => maker.make(bytes, height as usize, item.source.rotation),
@@ -97,7 +98,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 Err(e) => {
                     stats.failed += 1;
                     first_failed = Some(first_failed.map_or(items[i].seq, |s: i64| s.min(items[i].seq)));
-                    eprintln!("  {}: {e:#}", items[i].path);
+                    eprintln!("  {}: {e:#}", work.path(items[i].path));
                 }
             }
             if batch.len() >= BATCH {

@@ -15,11 +15,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, Result, bail};
 use rusqlite::functions::FunctionFlags;
+use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
 use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
+use crate::decode::Format;
 use crate::media::{Ext, Kind};
+use crate::paths::{PathArena, PathRef, WorkList};
 use crate::pdq;
 use crate::pdq_index::PdqIndex;
 
@@ -587,29 +590,23 @@ fn pending_import_sql(retry_errors: bool) -> &'static str {
     }
 }
 
-/// A [`WorkItem`] from a row starting with `work_columns!()`.
-fn work_item(r: &rusqlite::Row) -> rusqlite::Result<WorkItem> {
-    Ok(WorkItem {
-        id: r.get(0)?,
-        path: r.get(1)?,
-        size: r.get(2)?,
-        mtime: r.get(3)?,
-        rotation: r.get(4)?,
-        kind: Kind::from_key(r.get_ref(5)?.as_str()?).unwrap_or(Kind::Image),
-    })
-}
-
-/// The rows of a statement whose count is at most `bound`, read into a `Vec` of that capacity.
-fn collect_rows<T>(
-    stmt: &mut rusqlite::Statement,
-    bound: usize,
-    row: impl FnMut(&rusqlite::Row) -> rusqlite::Result<T>,
-) -> Result<Vec<T>> {
-    let mut out = Vec::with_capacity(bound);
-    for item in stmt.query_map([], row)? {
-        out.push(item?);
+/// The work list of a statement whose rows start with `work_columns!()` and number at most `bound`: the items in
+/// a `Vec` of that capacity, their paths in one arena.
+fn work_list(stmt: &mut rusqlite::Statement, bound: usize) -> Result<WorkList<WorkItem>> {
+    let mut list = WorkList { items: Vec::with_capacity(bound), paths: PathArena::default() };
+    let mut rows = stmt.query([])?;
+    while let Some(r) = rows.next()? {
+        let path = list.paths.push(r.get_ref(1)?.as_str()?);
+        list.items.push(WorkItem {
+            id: r.get(0)?,
+            path,
+            size: r.get(2)?,
+            mtime: r.get(3)?,
+            rotation: r.get(4)?,
+            kind: Kind::from_key(r.get_ref(5)?.as_str()?).unwrap_or(Kind::Image),
+        });
     }
-    Ok(out)
+    Ok(list)
 }
 
 /// A file as the scanner saw it.
@@ -629,10 +626,12 @@ pub struct Folder {
     pub key: Vec<u8>,
 }
 
-/// A file the import still has to analyze.
+/// A file the import (or the borders pass) still has to analyze.
+#[derive(Clone, Copy, Debug)]
 pub struct WorkItem {
     pub id: i64,
-    pub path: String,
+    /// In its list's [`WorkList::paths`].
+    pub path: PathRef,
     pub size: i64,
     pub mtime: i64,
     /// Catalog rotation (`files.rotation`), applied when decoding.
@@ -642,12 +641,12 @@ pub struct WorkItem {
 
 /// A file with borders to crop off ([`Catalog::crop_source`]).
 pub struct CropSource {
-    pub path: String,
+    /// In the arena `crop_source` was given.
+    pub path: PathRef,
     /// The file as analyzed.
     pub size: i64,
     pub mtime: i64,
-    /// `decode::Format::name`.
-    pub format: String,
+    pub format: Format,
     /// The stored size.
     pub width: u32,
     pub height: u32,
@@ -786,7 +785,7 @@ impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
     /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD (FINDINGS
     /// "I/O"). Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
-    pub fn pending_import(&self, retry_errors: bool) -> Result<Vec<WorkItem>> {
+    pub fn pending_import(&self, retry_errors: bool) -> Result<WorkList<WorkItem>> {
         // Counted in the same snapshot: an upper bound (a failure may also be pending), each count read from its
         // index alone.
         let tx = self.conn.unchecked_transaction()?;
@@ -795,9 +794,9 @@ impl Catalog {
         if retry_errors {
             bound += count("SELECT count(*) FROM analysis WHERE error IS NOT NULL")?;
         }
-        let items = collect_rows(&mut tx.prepare(pending_import_sql(retry_errors))?, bound, work_item)?;
+        let list = work_list(&mut tx.prepare(pending_import_sql(retry_errors))?, bound)?;
         tx.commit()?;
-        Ok(items)
+        Ok(list)
     }
 
     /// The tier-1 index of the reliable PDQ hashes of current analyses (PLAN §6), rebuilt for each import.
@@ -820,7 +819,7 @@ impl Catalog {
 
     /// Analyses whose borders are due (new ones, and all after a new detector: [`set_borders_version`]), of
     /// files the import has nothing to do for, in on-disk order.
-    pub fn pending_borders(&self) -> Result<Vec<WorkItem>> {
+    pub fn pending_borders(&self) -> Result<WorkList<WorkItem>> {
         // An upper bound, from `analysis_borders_due` alone.
         let tx = self.conn.unchecked_transaction()?;
         let bound: usize = tx.query_row("SELECT count(*) FROM analysis WHERE borders_due = 1", [], |r| r.get(0))?;
@@ -831,10 +830,10 @@ impl Catalog {
              WHERE a.borders_due = 1 AND f.id = a.file_id AND f.missing = 0 AND f.pending = 0
              ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
         ))?;
-        let items = collect_rows(&mut stmt, bound, work_item)?;
+        let list = work_list(&mut stmt, bound)?;
         drop(stmt);
         tx.commit()?;
-        Ok(items)
+        Ok(list)
     }
 
     /// The present file at an absolute path (Windows paths: any case).
@@ -851,9 +850,9 @@ impl Catalog {
     }
 
     /// What cropping a file's borders off needs: its borders as found in the file as it was analyzed (`size`,
-    /// `mtime`: the caller checks the file is still that one). `None` when it has none to crop: none found, marked
-    /// as not a border, or not looked for in the file as it is.
-    pub fn crop_source(&self, file_id: i64) -> Result<Option<CropSource>> {
+    /// `mtime`: the caller checks the file is still that one), its path added to `paths`. `None` when it has none to
+    /// crop: none found, marked as not a border, or not looked for in the file as it is.
+    pub fn crop_source(&self, file_id: i64, paths: &mut PathArena) -> Result<Option<CropSource>> {
         Ok(self
             .conn
             .prepare_cached(
@@ -868,11 +867,15 @@ impl Catalog {
             .query_row([file_id], |r| {
                 let (orientation, w, h): (u8, u32, u32) = (r.get(4)?, r.get(5)?, r.get(6)?);
                 let (width, height) = if orientation >= 5 { (h, w) } else { (w, h) };
+                let format = r.get_ref(3)?.as_str()?;
+                let format = Format::from_name(format).ok_or_else(|| {
+                    rusqlite::Error::FromSqlConversionFailure(3, Type::Text, format!("unknown format {format}").into())
+                })?;
                 Ok(CropSource {
-                    path: r.get(0)?,
+                    path: paths.push(r.get_ref(0)?.as_str()?),
                     size: r.get(1)?,
                     mtime: r.get(2)?,
-                    format: r.get(3)?,
+                    format,
                     width,
                     height,
                     cut: [r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?],
@@ -1626,7 +1629,7 @@ mod tests {
         tx.commit().unwrap();
         let listed = next_work(&c);
         assert_eq!(listed.rotation, 1);
-        let unturned = WorkItem { path: listed.path.clone(), rotation: 0, ..listed };
+        let unturned = WorkItem { rotation: 0, ..listed };
         assert!(!stored(&mut c, &unturned));
         // As listed.
         assert!(stored(&mut c, &listed));
@@ -1643,7 +1646,7 @@ mod tests {
     fn next_work(c: &Catalog) -> WorkItem {
         let mut work = c.pending_import(false).unwrap();
         assert_eq!(work.len(), 1);
-        work.remove(0)
+        work.items.remove(0)
     }
 
     #[test]
@@ -1713,9 +1716,9 @@ mod tests {
         // The import leaves them to the borders pass.
         assert_eq!(cut(&c), [None; 4]);
         let due = c.pending_borders().unwrap();
-        assert_eq!(due.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
+        assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
         let tx = c.conn.transaction().unwrap();
-        BordersWriter::new(&tx).unwrap().store_borders(&due[0], Some(&found)).unwrap();
+        BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0), Some(41), Some(0), Some(41)]);
         assert_eq!(browse::border_sides(&c.conn, item.id).unwrap(), found.sides);
@@ -1750,7 +1753,7 @@ mod tests {
         let due = c.pending_borders().unwrap();
         assert_eq!(due.len(), 1);
         let tx = c.conn.transaction().unwrap();
-        BordersWriter::new(&tx).unwrap().store_borders(&due[0], Some(&Detection::none(400, 300))).unwrap();
+        BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0); 4]);
         assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
@@ -1761,7 +1764,7 @@ mod tests {
 
         // Analyzed again (the file changed): the old borders go, the new ones are due.
         let tx = c.conn.transaction().unwrap();
-        BordersWriter::new(&tx).unwrap().store_borders(&due[0], Some(&found)).unwrap();
+        BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [None; 4]);
@@ -1790,7 +1793,7 @@ mod tests {
             writer.upsert_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
-            let item = c.pending_import(false).unwrap().remove(0);
+            let item = c.pending_import(false).unwrap().items.remove(0);
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
             let mut borders = Detection::none(400, 300);
             borders.content = [l, t, 400 - r, 300 - b];
@@ -1848,7 +1851,7 @@ mod tests {
         scanned(&mut c, scan, "a.jpg", 10, 100);
         assert_eq!(state(&c, id), (false, seq));
         // Changed while it was being analyzed: what's stored is of the old file.
-        let old = c.pending_import(true).unwrap().remove(0);
+        let old = c.pending_import(true).unwrap().items.remove(0);
         scanned(&mut c, scan, "a.jpg", 11, 101);
         analyzed(&mut c, &old);
         assert!(state(&c, id).0);

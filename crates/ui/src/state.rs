@@ -141,21 +141,22 @@ pub struct Named {
 
 /// What a thumbnail request found, as the catalog has the file.
 enum Found {
-    /// In the cache.
-    Kept(Vec<u8>),
+    /// In the cache: read into the caller's buffer.
+    Kept,
     /// Made from the original.
     Made(Vec<u8>),
-    /// The original can't be read (offline): the best smaller thumbnail kept, if any.
-    Offline(anyhow::Error, Option<Vec<u8>>),
+    /// The original can't be read (offline). Whether the best smaller thumbnail the cache keeps of the file as it
+    /// is was read into the caller's buffer.
+    Offline(anyhow::Error, bool),
 }
 
 /// A thumbnail, as [`thumbnail`] finds it.
 pub struct Thumbnail {
-    pub jpeg: Vec<u8>,
     /// Quarter turns clockwise to show it turned by.
     pub turns: u8,
-    /// For one made from the original: where the cache keeps it, once it is shown.
-    pub keep: Option<Keep>,
+    /// One made from the original: its bytes, and where the cache keeps it once it is shown. Otherwise the bytes
+    /// are the cache's, in the buffer [`thumbnail`] was given.
+    pub made: Option<(Vec<u8>, Keep)>,
 }
 
 /// Where the cache keeps a thumbnail made on a miss. The caller puts it there once it is done with the bytes
@@ -176,39 +177,47 @@ impl Keep {
 
 /// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps
 /// one at least that high for the file as `named` names it, that one, turned by the name's turns: nothing else is
-/// read. Otherwise as the catalog has the file now: kept, or made from the original (and to be kept: `keep`), and
-/// turned by the catalog's turns. With the original offline, the best smaller one.
-pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<Thumbnail> {
-    let unmade = |jpeg, turns| Thumbnail { jpeg, turns, keep: None };
-    let mut smaller = None;
+/// read. Otherwise as the catalog has the file now: kept, or made from the original (and to be kept), and turned by
+/// the catalog's turns. With the original offline, the best smaller one.
+///
+/// A kept one is read into `jpeg`, a buffer the caller keeps from one thumbnail to the next (the provider thread's),
+/// so that showing a cached thumbnail makes no buffer for its bytes.
+pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
+    let kept = |turns| Thumbnail { turns, made: None };
+    // A smaller one of the file as named, read into `jpeg`.
+    let mut smaller = false;
     if let Some(n) = named {
-        match thumbs().get_nearest(file_id, height, n.source)? {
-            Some((h, data)) if h >= height => return Ok(unmade(data, n.turns)),
-            Some((_, data)) => smaller = Some(unmade(data, n.turns)),
+        match thumbs().get_nearest_into(file_id, height, n.source, jpeg)? {
+            Some(h) if h >= height => return Ok(kept(n.turns)),
+            Some(_) => smaller = true,
             None => {}
         }
     }
     let (src, found) = consistent(file_id, |src| {
         let current = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
-        let kept = if named.is_some_and(|n| n.source == current) {
+        let kept_smaller = if named.is_some_and(|n| n.source == current) {
             // Looked for already.
-            None
+            false
         } else {
-            match thumbs().get_nearest(file_id, height, current)? {
-                Some((h, data)) if h >= height => return Ok(Found::Kept(data)),
-                kept => kept.map(|(_, data)| data),
+            match thumbs().get_nearest_into(file_id, height, current, jpeg)? {
+                Some(h) if h >= height => return Ok(Found::Kept),
+                found => {
+                    // A read overwrote the named one's bytes.
+                    smaller &= found.is_none();
+                    found.is_some()
+                }
             }
         };
         let made = if let Some(at) = src.poster_ms {
             // A video: its poster frame.
             match with_maker(|m| Ok(m.load_frame(Path::new(&*verbatim(&src.path)), at, current.rotation)))? {
                 Ok(()) => with_maker(|m| m.encode_frame(height as usize))?,
-                Err(e) => return Ok(Found::Offline(e, kept)),
+                Err(e) => return Ok(Found::Offline(e, kept_smaller)),
             }
         } else {
             // Read into the thread's maker, which keeps the buffer for the next file.
             if let Err(e) = with_maker(|m| Ok(m.read_file(Path::new(&src.path))))? {
-                return Ok(Found::Offline(e.into(), kept));
+                return Ok(Found::Offline(e.into(), kept_smaller));
             }
             with_maker(|m| m.make_from_file(height as usize, current.rotation))?
         };
@@ -216,13 +225,17 @@ pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<Thum
     })?;
     let turns = src.state.turns;
     match found {
-        Found::Kept(data) => Ok(unmade(data, turns)),
-        Found::Made(jpeg) => {
+        Found::Kept | Found::Offline(_, true) => Ok(kept(turns)),
+        Found::Made(made) => {
             let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
-            Ok(Thumbnail { jpeg, turns, keep: Some(Keep { file_id, height, source }) })
+            Ok(Thumbnail { turns, made: Some((made, Keep { file_id, height, source })) })
         }
-        Found::Offline(_, Some(data)) => Ok(unmade(data, turns)),
-        Found::Offline(e, None) => smaller.ok_or(e).context("original unavailable"),
+        Found::Offline(e, false) => match named {
+            Some(n) if smaller => Ok(kept(n.turns)),
+            // A read of the file as it is (an earlier try of `consistent`) overwrote it: read again.
+            Some(n) if thumbs().get_nearest_into(file_id, height, n.source, jpeg)?.is_some() => Ok(kept(n.turns)),
+            _ => Err(e).context("original unavailable"),
+        },
     }
 }
 

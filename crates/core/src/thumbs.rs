@@ -104,10 +104,11 @@ impl Maker {
     /// [`Maker::make`] of the file [`Maker::read_file`] read.
     pub fn make_from_file(&mut self, height: usize, turns: u8) -> Result<Vec<u8>> {
         let file = std::mem::take(&mut self.file);
-        let result = self.make_image(&file, height, turns);
+        let mut out = Vec::new();
+        let result = self.make_image(&file, height, turns, &mut out);
         self.file = file;
         self.trim();
-        result
+        result.map(|()| out)
     }
 
     /// A one-off decode of the file [`Maker::read_file`] read (the viewer's): its pixels go to new buffers.
@@ -120,17 +121,24 @@ impl Maker {
     /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
     /// file's catalog rotation.
     pub fn make(&mut self, bytes: &[u8], height: usize, turns: u8) -> Result<Vec<u8>> {
-        let result = self.make_image(bytes, height, turns);
+        let mut out = Vec::new();
+        self.make_into(bytes, height, turns, &mut out).map(|()| out)
+    }
+
+    /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
+    /// given back by the cache's writer ([`ThumbCache::put_batch`]).
+    pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
+        let result = self.make_image(bytes, height, turns, out);
         self.trim();
         result
     }
 
-    fn make_image(&mut self, bytes: &[u8], height: usize, turns: u8) -> Result<Vec<u8>> {
+    fn make_image(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
         let exif = crate::metadata::orientation(bytes, format);
         self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
-        self.encode_image(height)
+        self.encode_image(height, out)
     }
 
     /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
@@ -144,14 +152,20 @@ impl Maker {
 
     /// A thumbnail `height` px high (or the frame's own height) of the frame [`Maker::load_frame`] decoded.
     pub fn encode_frame(&mut self, height: usize) -> Result<Vec<u8>> {
-        let result = self.encode_image(height);
+        let mut out = Vec::new();
+        self.encode_frame_into(height, &mut out).map(|()| out)
+    }
+
+    /// [`Maker::encode_frame`] into `out`, as [`Maker::make_into`].
+    pub fn encode_frame_into(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
+        let result = self.encode_image(height, out);
         self.trim();
         result
     }
 
     /// The thumbnail of `image`: scaled to `height`, then compressed into `jpeg`, sized for the worst case, and
-    /// copied out at its length.
-    fn encode_image(&mut self, height: usize) -> Result<Vec<u8>> {
+    /// copied into `out` at its length.
+    fn encode_image(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
         let img = if self.resizer.to_height(&self.image, height, &mut self.small) { &self.small } else { &self.image };
         // Every byte libjpeg-turbo returns is written by it: a grown buffer only zeroes what it grew by.
         self.jpeg.resize(self.compressor.buf_len(img.width, img.height)?, 0);
@@ -165,7 +179,9 @@ impl Maker {
             },
             &mut self.jpeg,
         )?;
-        Ok(self.jpeg[..n].to_vec())
+        out.clear();
+        out.extend_from_slice(&self.jpeg[..n]);
+        Ok(())
     }
 
     /// Free what one oversize image grew (see [`KEEP_BYTES`]).
@@ -348,11 +364,14 @@ struct Store {
 
 /// The writer's work, in order.
 enum Op {
+    /// A batch, given back with the answer: its buffers are the caller's to reuse.
     Put {
         thumbs: Vec<Thumb>,
         keep_height: Option<u32>,
-        reply: Option<Sender<Result<bool>>>,
+        reply: Sender<(Result<bool>, Vec<Thumb>)>,
     },
+    /// One made on demand, stored in the background.
+    PutOne(Thumb),
     /// An entry was shown (its id).
     Touch(i64),
     Retag {
@@ -414,8 +433,15 @@ impl ThumbCache {
     }
 
     /// The cached thumbnail closest to `height` that was made from the file as it is now (`source`): the smallest
-    /// one at least that high, else the largest below it. Returns its height and bytes.
-    pub fn get_nearest(&self, file_id: i64, height: u32, source: Source) -> Result<Option<(u32, Vec<u8>)>> {
+    /// one at least that high, else the largest below it. Its bytes are read into `jpeg` (replacing what it held),
+    /// a buffer the caller keeps from one thumbnail to the next; returns its height.
+    pub fn get_nearest_into(
+        &self,
+        file_id: i64,
+        height: u32,
+        source: Source,
+        jpeg: &mut Vec<u8>,
+    ) -> Result<Option<u32>> {
         let Some(store) = &self.store else { return Ok(None) };
         let found = with_reader(&store.path, |conn| {
             Ok(conn
@@ -425,37 +451,51 @@ impl ThumbCache {
                      ORDER BY e.height < ?2, abs(e.height - ?2) LIMIT 1",
                 )?
                 .query_row(params![file_id, height, source.mtime, source.rotation], |r| {
-                    Ok((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?, r.get::<_, i64>(2)?, r.get::<_, Option<Vec<u8>>>(3)?))
+                    // An entry without its JPEG (another process deleting it now) is a miss.
+                    let Some(bytes) = r.get_ref(3)?.as_blob_or_null()? else { return Ok(None) };
+                    jpeg.clear();
+                    jpeg.extend_from_slice(bytes);
+                    Ok(Some((r.get::<_, i64>(0)?, r.get::<_, u32>(1)?, r.get::<_, i64>(2)?)))
                 })
-                .optional()?)
+                .optional()?
+                .flatten())
         })?;
-        // An entry without its JPEG (another process deleting it now) is a miss.
-        let Some((id, h, last_used, Some(jpeg))) = found else { return Ok(None) };
+        let Some((id, h, last_used)) = found else { return Ok(None) };
         if last_used < unix_now() - TOUCH_AGE_S {
             // Best-effort: a cache closing doesn't fail the read.
             let _ = self.send(Op::Touch(id));
         }
-        Ok(Some((h, jpeg)))
+        Ok(Some(h))
+    }
+
+    /// [`ThumbCache::get_nearest_into`] into a new buffer: its height and bytes.
+    #[cfg(test)]
+    pub fn get_nearest(&self, file_id: i64, height: u32, source: Source) -> Result<Option<(u32, Vec<u8>)>> {
+        let mut jpeg = Vec::new();
+        Ok(self.get_nearest_into(file_id, height, source, &mut jpeg)?.map(|h| (h, jpeg)))
     }
 
     /// Store a thumbnail made on demand, in the background, evicting the least recently used entries of any
     /// height if needed. A failure goes to the `Report`: the thumbnail was shown anyway.
     pub fn put(&self, thumb: Thumb) {
         if self.store.is_some() {
-            let _ = self.send(Op::Put { thumbs: vec![thumb], keep_height: None, reply: None });
+            let _ = self.send(Op::PutOne(thumb));
         }
     }
 
-    /// Store a batch in one transaction, waiting for it. With `keep_height`, eviction spares that height (the
+    /// Store `thumbs` in one transaction, waiting for it. With `keep_height`, eviction spares that height (the
     /// background task filling the cache for the current grid); returns false, storing nothing, once it can't make
-    /// room. A disabled cache stores nothing either (false: the task stops).
-    pub fn put_batch(&self, thumbs: Vec<Thumb>, keep_height: Option<u32>) -> Result<bool> {
+    /// room. A disabled cache stores nothing either (false: the task stops). The batch comes back as it went, so
+    /// that its `Vec` and its thumbnails' buffers are reused rather than made anew for the next one.
+    pub fn put_batch(&self, thumbs: &mut Vec<Thumb>, keep_height: Option<u32>) -> Result<bool> {
         if self.store.is_none() {
             return Ok(false);
         }
         let (reply, answer) = mpsc::channel();
-        self.send(Op::Put { thumbs, keep_height, reply: Some(reply) })?;
-        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+        self.send(Op::Put { thumbs: std::mem::take(thumbs), keep_height, reply })?;
+        let (stored, back) = answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?;
+        *thumbs = back;
+        stored
     }
 
     /// The file was rewritten without changing its pixels (a rating written into it): its thumbnails still
@@ -804,15 +844,11 @@ fn write_loop(mut conn: Connection, inbox: Receiver<Op>, report: &Report) {
             }
             Some(Op::Put { thumbs, keep_height, reply }) => {
                 let stored = put(&mut conn, &thumbs, keep_height, &mut touches);
-                match reply {
-                    Some(reply) => {
-                        let _ = reply.send(stored);
-                    }
-                    None => {
-                        if let Err(e) = stored {
-                            report(&e.context("thumbnail cache: a thumbnail not stored"));
-                        }
-                    }
+                let _ = reply.send((stored, thumbs));
+            }
+            Some(Op::PutOne(thumb)) => {
+                if let Err(e) = put(&mut conn, std::slice::from_ref(&thumb), None, &mut touches) {
+                    report(&e.context("thumbnail cache: a thumbnail not stored"));
                 }
             }
             Some(Op::Retag { file_id, old_mtime, new_mtime, reply }) => {
@@ -1077,7 +1113,7 @@ mod tests {
     fn nearest_height_and_staleness() {
         let dir = scratch("nearest");
         let cache = open(&dir, 1 << 30);
-        assert!(cache.put_batch(vec![thumb(1, 100, 5, 10), thumb(1, 300, 5, 30)], None).unwrap());
+        assert!(cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 300, 5, 30)], None).unwrap());
         // The smallest at least as high, else the largest below.
         assert_eq!(cache.get_nearest(1, 200, src(5)).unwrap().unwrap().0, 300);
         assert_eq!(cache.get_nearest(1, 90, src(5)).unwrap().unwrap().0, 100);
@@ -1093,15 +1129,35 @@ mod tests {
         assert_eq!(cache.get_nearest(1, 300, src(5)).unwrap().unwrap().0, 300);
     }
 
+    /// A batch comes back as it went, its thumbnails' buffers with it, for the next batch; one put alone is stored
+    /// as a batch of one is. A hit is read into the caller's buffer, replacing what it held.
+    #[test]
+    fn batches_come_back_and_hits_are_read_into_the_callers_buffer() {
+        let dir = scratch("back");
+        let cache = open(&dir, 1 << 30);
+        let mut batch = vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)];
+        assert!(cache.put_batch(&mut batch, None).unwrap());
+        assert_eq!(batch.iter().map(|t| (t.file_id, t.data.len())).collect::<Vec<_>>(), [(1, 10), (2, 20)]);
+        cache.put(thumb(3, 100, 5, 30));
+        cache.flush();
+        let mut jpeg = vec![9; 100];
+        assert_eq!(cache.get_nearest_into(3, 100, src(5), &mut jpeg).unwrap(), Some(100));
+        assert_eq!(jpeg, vec![3u8; 30]);
+        // A miss leaves it as it was.
+        assert_eq!(cache.get_nearest_into(4, 100, src(5), &mut jpeg).unwrap(), None);
+        assert_eq!(jpeg, vec![3u8; 30]);
+        assert_eq!(cache.totals().unwrap(), (60, 3));
+    }
+
     #[test]
     fn replacing_keeps_each_jpeg_with_its_file() {
         let dir = scratch("replace");
         let cache = open(&dir, 1 << 30);
-        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
-        cache.put_batch(vec![thumb(2, 100, 5, 20)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(2, 100, 5, 20)], None).unwrap();
         // Re-put file 1 after file 2 was inserted: an upsert that updates. With last_insert_rowid() this put file 1's
         // JPEG under file 2.
-        cache.put_batch(vec![thumb(1, 100, 6, 15)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 6, 15)], None).unwrap();
         assert_eq!(cache.get_nearest(1, 100, src(6)).unwrap().unwrap().1, vec![1u8; 15]);
         assert_eq!(cache.get_nearest(2, 100, src(5)).unwrap().unwrap().1, vec![2u8; 20]);
         assert_eq!(cache.totals().unwrap(), (35, 2));
@@ -1115,15 +1171,15 @@ mod tests {
         // Room for 10 thumbnails of 100 bytes (the slack is 1% of the cap: 10 bytes).
         let cache = open(&dir, 1000);
         for i in 0..10 {
-            assert!(cache.put_batch(vec![thumb(i, 50, 1, 100)], Some(50)).unwrap());
+            assert!(cache.put_batch(&mut vec![thumb(i, 50, 1, 100)], Some(50)).unwrap());
         }
         // The task can't evict its own height: full.
-        assert!(!cache.put_batch(vec![thumb(10, 50, 1, 100)], Some(50)).unwrap());
+        assert!(!cache.put_batch(&mut vec![thumb(10, 50, 1, 100)], Some(50)).unwrap());
         assert_eq!(cache.totals().unwrap(), (1000, 10));
         // At another height it may evict the 50 px ones, the least recently used first.
         let c = Connection::open(cache_path(&dir)).unwrap();
         c.execute("UPDATE entries SET last_used = last_used - 100 + file_id", []).unwrap();
-        assert!(cache.put_batch(vec![thumb(20, 80, 1, 150)], Some(80)).unwrap());
+        assert!(cache.put_batch(&mut vec![thumb(20, 80, 1, 150)], Some(80)).unwrap());
         assert!(cache.get_nearest(0, 50, src(1)).unwrap().is_none());
         assert!(cache.get_nearest(1, 50, src(1)).unwrap().is_none());
         assert!(cache.get_nearest(2, 50, src(1)).unwrap().is_some());
@@ -1131,7 +1187,7 @@ mod tests {
         cache.put(thumb(21, 80, 1, 100));
         cache.flush();
         assert!(cache.get_nearest(21, 80, src(1)).unwrap().is_some());
-        assert!(!cache.put_batch(vec![thumb(30, 80, 1, 2000)], None).unwrap());
+        assert!(!cache.put_batch(&mut vec![thumb(30, 80, 1, 2000)], None).unwrap());
         let (kept, actual) = totals_and_sum(&dir);
         assert_eq!(kept, actual);
         assert!(kept.0 <= 1000);
@@ -1141,7 +1197,7 @@ mod tests {
     fn far_over_a_lowered_cap_comes_down() {
         let dir = scratch("lowered");
         let cache = open(&dir, 1 << 30);
-        assert!(cache.put_batch((0..40).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
+        assert!(cache.put_batch(&mut (0..40).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
         drop(cache);
         // 4000 bytes against a cap of 500: brought down in slices (1000 bytes in tests), then the put.
         let cache = open(&dir, 500);
@@ -1152,7 +1208,7 @@ mod tests {
         assert_eq!(kept, actual);
         assert!(kept.0 <= 500, "{kept:?}");
         // The task's own height is spared: nothing else to evict, so no room.
-        assert!(!cache.put_batch(vec![thumb(200, 80, 1, 2000)], Some(80)).unwrap());
+        assert!(!cache.put_batch(&mut vec![thumb(200, 80, 1, 2000)], Some(80)).unwrap());
     }
 
     #[test]
@@ -1161,11 +1217,11 @@ mod tests {
         assert_eq!(ThumbCache::read_usage(&dir).unwrap(), None);
         let first = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert_eq!(first.cap().unwrap(), DEFAULT_CAP_BYTES, "a new cache");
-        assert!(first.put_batch((0..10).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
+        assert!(first.put_batch(&mut (0..10).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
         // Another process sets a lower cap: the first one keeps to it at its next write.
         let second = open(&dir, 500);
         assert_eq!(first.cap().unwrap(), 500);
-        assert!(first.put_batch(vec![thumb(20, 80, 1, 100)], Some(80)).unwrap());
+        assert!(first.put_batch(&mut vec![thumb(20, 80, 1, 100)], Some(80)).unwrap());
         assert!(first.totals().unwrap().0 <= 500);
         // Opened without one, the cap stays.
         drop(second);
@@ -1179,7 +1235,7 @@ mod tests {
     fn shrink_gives_pages_back() {
         let dir = scratch("shrink");
         let cache = open(&dir, 1 << 30);
-        assert!(cache.put_batch((0..200).map(|i| thumb(i, 50, 1, 8000)).collect(), None).unwrap());
+        assert!(cache.put_batch(&mut (0..200).map(|i| thumb(i, 50, 1, 8000)).collect(), None).unwrap());
         let c = Connection::open(cache_path(&dir)).unwrap();
         c.execute("DELETE FROM entries", []).unwrap();
         let free = || -> i64 { c.query_row("PRAGMA freelist_count", [], |r| r.get(0)).unwrap() };
@@ -1193,7 +1249,7 @@ mod tests {
     fn touches_are_written_together() {
         let dir = scratch("touch");
         let cache = open(&dir, 1 << 30);
-        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         let c = Connection::open(cache_path(&dir)).unwrap();
         let last_used = || -> i64 { c.query_row("SELECT last_used FROM entries", [], |r| r.get(0)).unwrap() };
         // Shown an hour ago or more: touched (when the writer flushes); recently: left alone.
@@ -1218,7 +1274,7 @@ mod tests {
     fn retag_follows_the_file() {
         let dir = scratch("retag");
         let cache = open(&dir, 1 << 30);
-        cache.put_batch(vec![thumb(1, 100, 5, 10), thumb(1, 200, 5, 10), thumb(2, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 200, 5, 10), thumb(2, 100, 5, 10)], None).unwrap();
         cache.retag(1, 5, 9).unwrap();
         assert!(cache.get_nearest(1, 100, src(9)).unwrap().is_some());
         assert!(cache.get_nearest(1, 200, src(9)).unwrap().is_some());
@@ -1232,7 +1288,7 @@ mod tests {
     fn reopened_it_keeps_what_it_held() {
         let dir = scratch("reopen");
         let cache = open(&dir, 1 << 30);
-        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
         let cache = open(&dir, 1 << 30);
         assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_some());
@@ -1256,7 +1312,9 @@ mod tests {
             for (cache, base) in [(&a, 0), (&b, 1000)] {
                 s.spawn(move || {
                     for i in 0..200 {
-                        assert!(cache.put_batch(vec![thumb(base + i, 100, 1, 10 + (i as usize % 7))], None).unwrap());
+                        assert!(
+                            cache.put_batch(&mut vec![thumb(base + i, 100, 1, 10 + (i as usize % 7))], None).unwrap()
+                        );
                     }
                 });
             }
@@ -1283,11 +1341,11 @@ mod tests {
             match next(4) {
                 0 => {
                     cache
-                        .put_batch(vec![thumb(file, height, 1, size), thumb(file + 1, height, 1, size)], None)
+                        .put_batch(&mut vec![thumb(file, height, 1, size), thumb(file + 1, height, 1, size)], None)
                         .unwrap();
                 }
                 1 => {
-                    cache.put_batch(vec![thumb(file, height, 1, size)], Some(height)).unwrap();
+                    cache.put_batch(&mut vec![thumb(file, height, 1, size)], Some(height)).unwrap();
                 }
                 2 => cache.put(thumb(file, height, 1, size)),
                 _ => cache.retag(file, 1, 1).unwrap(),
@@ -1303,7 +1361,7 @@ mod tests {
     fn heal_fixes_drifted_totals() {
         let dir = scratch("heal");
         let cache = open(&dir, 1 << 30);
-        cache.put_batch(vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
         assert_eq!(cache.heal().unwrap(), Some(((999, 7), (30, 2))));
         assert_eq!(cache.totals().unwrap(), (30, 2));
@@ -1360,7 +1418,7 @@ mod tests {
         let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         // File 1 is current at 100 px; file 3 was turned since its thumbnail; file 4 is missing.
-        cache.put_batch(vec![thumb(1, 100, 5, 10), thumb(3, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(3, 100, 5, 10)], None).unwrap();
         let p = cache.pending(&catalog, 100).unwrap();
         // In on-disk order (file_ref).
         assert_eq!(ids(&p), vec![2, 3]);
@@ -1376,7 +1434,7 @@ mod tests {
         let first = cache.pending(&catalog, 100).unwrap();
         assert_eq!(ids(&first), vec![2, 3, 1]);
         // Done, but file 2 couldn't be made: it stays in the work.
-        assert!(cache.put_batch(made(&first, |w| w.id != 2, 10), Some(100)).unwrap());
+        assert!(cache.put_batch(&mut made(&first, |w| w.id != 2, 10), Some(100)).unwrap());
         let failed = first.work.items.iter().find(|w| w.id == 2).unwrap().seq;
         cache.checked(&first.snapshot, Some(failed)).unwrap();
         let second = cache.pending(&catalog, 100).unwrap();
@@ -1422,11 +1480,11 @@ mod tests {
         // Room for three of these.
         let cache = open(&dir, 300);
         let pass = cache.pending(&catalog, 100).unwrap();
-        assert!(cache.put_batch(made(&pass, |_| true, 95), Some(100)).unwrap());
+        assert!(cache.put_batch(&mut made(&pass, |_| true, 95), Some(100)).unwrap());
         cache.checked(&pass.snapshot, None).unwrap();
         assert!(cache.pending(&catalog, 100).unwrap().snapshot.since_checked);
         // Another height's pass evicts from this one: it is looked at whole again.
-        assert!(cache.put_batch(vec![thumb(1, 200, 5, 95)], Some(200)).unwrap());
+        assert!(cache.put_batch(&mut vec![thumb(1, 200, 5, 95)], Some(200)).unwrap());
         let after = cache.pending(&catalog, 100).unwrap();
         assert!(!after.snapshot.since_checked);
         assert_eq!(after.work.len(), 1, "the evicted file");
@@ -1442,7 +1500,7 @@ mod tests {
     fn a_cache_of_another_catalog_starts_over() {
         let dir = scratch("other-catalog");
         let cache = open(&dir, 12345);
-        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
         let reopened = ThumbCache::open(&dir, "rebuilt", None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert!(reopened.get_nearest(1, 100, src(5)).unwrap().is_none(), "file 1 is another file now");
@@ -1466,7 +1524,7 @@ mod tests {
         drop(old);
         let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 777), "empty, its cap kept");
-        cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap();
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_some());
     }
 
@@ -1474,7 +1532,7 @@ mod tests {
     fn disabled_keeps_nothing() {
         let cache = ThumbCache::disabled();
         cache.put(thumb(1, 100, 5, 10));
-        assert!(!cache.put_batch(vec![thumb(1, 100, 5, 10)], None).unwrap());
+        assert!(!cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap());
         assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_none());
         assert_eq!(cache.totals().unwrap(), (0, 0));
         assert!(cache.pending(Path::new("nowhere"), 100).unwrap().work.is_empty());

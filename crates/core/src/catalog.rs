@@ -1208,7 +1208,7 @@ impl<'tx> AnalysisWriter<'tx> {
             a.height,
             a.pixels.as_ref().map(|p| &p.pdq.hash.0[..]),
             a.pixels.as_ref().map(|p| p.pdq.quality),
-            &a.thumbhash,
+            a.thumbhash.as_slice(),
             a.frames,
             a.taken,
             a.taken_utc,
@@ -1392,6 +1392,7 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyze::ThumbHash;
 
     /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
     const BEFORE_ORDER_KEY: &str = r"
@@ -1748,7 +1749,7 @@ mod tests {
             orientation: 1,
             width: 400,
             height: 300,
-            thumbhash: Vec::new(),
+            thumbhash: ThumbHash::default(),
             file_rating: None,
             frames: 1,
             taken: None,
@@ -1858,7 +1859,7 @@ mod tests {
                 orientation,
                 width,
                 height,
-                thumbhash: Vec::new(),
+                thumbhash: ThumbHash::default(),
                 file_rating: None,
                 frames: 1,
                 taken: None,

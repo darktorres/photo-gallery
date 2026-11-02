@@ -11,44 +11,33 @@
 //!   part of the image on screen while zoomed between fit and 1:1, `x`…`h` as fractions of the upright image).
 //!
 //! A thin C++ `QQuickAsyncImageProvider` (cpp/providers.cpp) queues each request on a thread pool and calls
-//! `load_image` here. A thumbnail made on a miss comes with where the cache keeps it (`Keep`): once Qt decoded it,
-//! the C++ side hands the bytes back to `keep_thumbnail`, which moves them to the cache's writer; one turned here is
-//! put once turned. Either way they aren't copied for the writer.
+//! `load_image` here. A thumbnail is decoded here, by Qt (`QImage::fromData`, as an `Image` would), from the
+//! bytes where they are: a cached one in the thread's buffer (`JPEG`), kept for the next one; one made on a miss in
+//! its own, which then moves to the cache's writer. Neither is copied.
 
 #[cxx_qt::bridge]
 pub mod ffi {
-    /// Where the cache keeps a thumbnail made on a miss (`state::Keep`); `put` is false for any other image.
-    #[namespace = "pg"]
-    struct Keep {
-        put: bool,
-        file_id: i64,
-        height: u32,
-        mtime: i64,
-        rotation: u8,
-    }
-
-    /// An image for the C++ side: `format` 0 = encoded file bytes (JPEG), 1 = RGBX8888, 2 = RGBA8888
-    /// premultiplied (`state::Upload`). Qt takes `data` as it is, without a copy. Empty `data` means it failed.
-    /// JPEG bytes with `keep.put` go to `keep_thumbnail` once decoded.
+    /// An image for the C++ side: `format` 0 = `image`, already a `QImage` (a decoded thumbnail); 1 = RGBX8888,
+    /// 2 = RGBA8888 premultiplied (`state::Upload`) in `data`, which Qt takes as it is, without a copy. A null
+    /// `image` or an empty `data` means it failed.
     #[namespace = "pg"]
     struct Pixels {
         width: i32,
         height: i32,
         format: i32,
         data: Vec<u8>,
-        keep: Keep,
+        image: QImage,
     }
 
     extern "Rust" {
         #[namespace = "pg"]
         fn load_image(kind: i32, id: &str) -> Pixels;
-
-        /// Keep a thumbnail `load_image` made, its bytes moved to the cache's writer.
-        #[namespace = "pg"]
-        fn keep_thumbnail(keep: &Keep, data: Vec<u8>);
     }
 
     unsafe extern "C++" {
+        include!("cxx-qt-lib/qimage.h");
+        type QImage = cxx_qt_lib::QImage;
+
         include!("cxx-qt-lib/qqmlimageproviderbase.h");
         type QQmlImageProviderBase = cxx_qt_lib::QQmlImageProviderBase;
 
@@ -59,8 +48,11 @@ pub mod ffi {
     }
 }
 
+use std::cell::RefCell;
+
 use anyhow::Context;
-use ffi::{Keep, Pixels};
+use cxx_qt_lib::QImage;
+use ffi::Pixels;
 
 use crate::state;
 
@@ -68,18 +60,41 @@ pub const KIND_THUMB: i32 = 0;
 pub const KIND_THUMBHASH: i32 = 1;
 pub const KIND_FULL: i32 = 2;
 
+thread_local! {
+    /// The provider thread's buffer for cached thumbnails' bytes, kept from one to the next.
+    static JPEG: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
 fn failed() -> Pixels {
-    Pixels { width: 0, height: 0, format: 0, data: Vec::new(), keep: no_keep() }
+    Pixels { width: 0, height: 0, format: 0, data: Vec::new(), image: QImage::default() }
 }
 
-fn no_keep() -> Keep {
-    Keep { put: false, file_id: 0, height: 0, mtime: 0, rotation: 0 }
+/// A thumbnail `height` px high of `file_id` (`state::thumbnail`), decoded, or turned by its turns. One made on a
+/// miss moves to the cache's writer once decoded.
+fn thumbnail(file_id: i64, height: u32, named: Option<state::Named>) -> anyhow::Result<Pixels> {
+    JPEG.with_borrow_mut(|jpeg| {
+        let thumb = state::thumbnail(file_id, height, named, jpeg)?;
+        let bytes = thumb.made.as_ref().map_or(&jpeg[..], |(made, _)| made);
+        let pixels = if thumb.turns == 0 {
+            let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
+            Ok(Pixels { width: 0, height: 0, format: 0, data: Vec::new(), image })
+        } else {
+            state::turn_jpeg(bytes, thumb.turns).map(upload)
+        };
+        if let Some((made, keep)) = thumb.made {
+            keep.put(made);
+        }
+        pixels
+    })
 }
 
-fn keep_thumbnail(keep: &Keep, data: Vec<u8>) {
-    if keep.put {
-        let source = pg_core::thumbs::Source { mtime: keep.mtime, rotation: keep.rotation };
-        state::Keep { file_id: keep.file_id, height: keep.height, source }.put(data);
+fn upload(img: state::Upload) -> Pixels {
+    Pixels {
+        width: img.width as i32,
+        height: img.height as i32,
+        format: if img.premultiplied { 2 } else { 1 },
+        data: img.pixels,
+        image: QImage::default(),
     }
 }
 
@@ -121,36 +136,10 @@ fn parse_key(key: &str) -> Option<(i64, Option<state::Named>)> {
 fn load_image(kind: i32, id: &str) -> Pixels {
     let (key, rest) = id.split_once('/').unwrap_or((id, ""));
     let Some((file_id, named)) = parse_key(key) else { return failed() };
-    let upload = |img: state::Upload| Pixels {
-        width: img.width as i32,
-        height: img.height as i32,
-        format: if img.premultiplied { 2 } else { 1 },
-        data: img.pixels,
-        keep: no_keep(),
-    };
     let result = match kind {
-        KIND_THUMB => rest
-            .parse::<u32>()
-            .context("bad height")
-            .and_then(|h| state::thumbnail(file_id, h.clamp(16, 2048), named))
-            .and_then(|thumb| {
-                if thumb.turns == 0 {
-                    let keep = thumb.keep.map_or_else(no_keep, |k| Keep {
-                        put: true,
-                        file_id: k.file_id,
-                        height: k.height,
-                        mtime: k.source.mtime,
-                        rotation: k.source.rotation,
-                    });
-                    Ok(Pixels { width: 0, height: 0, format: 0, data: thumb.jpeg, keep })
-                } else {
-                    let turned = state::turn_jpeg(&thumb.jpeg, thumb.turns);
-                    if let Some(keep) = thumb.keep {
-                        keep.put(thumb.jpeg);
-                    }
-                    turned.map(upload)
-                }
-            }),
+        KIND_THUMB => {
+            rest.parse::<u32>().context("bad height").and_then(|h| thumbnail(file_id, h.clamp(16, 2048), named))
+        }
         KIND_THUMBHASH => state::placeholder(file_id).map(upload),
         KIND_FULL => match full_view(rest) {
             Some(view) => state::full_image(file_id, view).map(upload),

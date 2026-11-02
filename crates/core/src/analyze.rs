@@ -34,7 +34,7 @@ pub struct Analysis {
     /// Upright full-size dimensions.
     pub width: u32,
     pub height: u32,
-    pub thumbhash: Vec<u8>,
+    pub thumbhash: ThumbHash,
     /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
     pub file_rating: Option<u8>,
     /// Frames in the file (more than one: animated); an image's analysis is of the first.
@@ -48,6 +48,29 @@ pub struct Analysis {
     /// Videos: length, and where the frame for the ThumbHash and thumbnails is.
     pub duration_ms: Option<i64>,
     pub poster_ms: Option<i64>,
+}
+
+/// The longest ThumbHash (vendor/thumbhash `MAX_LEN`: 25 bytes with alpha, 24 opaque).
+pub const THUMBHASH_MAX: usize = thumbhash::MAX_LEN;
+
+/// A ThumbHash (`analysis.thumbhash`), held inline: the import's result, and the grid's placeholder.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
+pub struct ThumbHash {
+    bytes: [u8; THUMBHASH_MAX],
+    len: u8,
+}
+
+impl ThumbHash {
+    /// `None` for one longer than any ThumbHash, which only a damaged catalog holds.
+    pub fn new(hash: &[u8]) -> Option<ThumbHash> {
+        let mut bytes = [0; THUMBHASH_MAX];
+        bytes.get_mut(..hash.len())?.copy_from_slice(hash);
+        Some(ThumbHash { bytes, len: hash.len() as u8 })
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes[..self.len as usize]
+    }
 }
 
 pub struct PixelHashes {
@@ -139,7 +162,7 @@ impl Analyzer {
     }
 
     /// The ThumbHash of the image in [`Analyzer::image`] (a video's frame).
-    pub(crate) fn thumbhash_of_image(&mut self) -> Vec<u8> {
+    pub(crate) fn thumbhash_of_image(&mut self) -> ThumbHash {
         thumbhash(&self.image, &mut self.resizer, &mut self.small, &mut self.thumbhasher)
     }
 
@@ -196,9 +219,11 @@ pub fn pixel_hash(img: &Rgb) -> [u8; 16] {
 
 /// The ThumbHash of `img`, fitted into the format's 100 px through `small`. The encoder reads RGB as it is
 /// (vendor/README.md "thumbhash"): the hash of the same pixels as opaque RGBA.
-fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut thumbhash::Encoder) -> Vec<u8> {
+fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut thumbhash::Encoder) -> ThumbHash {
     let small = if resizer.fit_within(img, THUMBHASH_SIDE, small) { &*small } else { img };
-    encoder.rgb_to_thumb_hash(small.width, small.height, &small.pixels)
+    let mut bytes = [0; THUMBHASH_MAX];
+    let len = encoder.rgb_to_thumb_hash_into(small.width, small.height, &small.pixels, &mut bytes);
+    ThumbHash { bytes, len: len as u8 }
 }
 
 #[cfg(test)]
@@ -236,7 +261,7 @@ mod tests {
     fn summary(a: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
         let px = a.pixels.as_ref().unwrap();
         let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, px.pdq_dihedral);
-        (a.file_hash, a.format, a.orientation, a.width, a.height, a.thumbhash.clone(), a.frames, hashes)
+        (a.file_hash, a.format, a.orientation, a.width, a.height, a.thumbhash, a.frames, hashes)
     }
 
     /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a

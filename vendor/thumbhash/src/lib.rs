@@ -10,7 +10,14 @@ pub fn rgba_to_thumb_hash(w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
     Encoder::default().rgba_to_thumb_hash(w, h, rgba)
 }
 
-// photo-gallery: the encoder's buffers, kept across calls. Encoding allocates only the hash.
+// photo-gallery: the longest hash, for encoding into an array (`Encoder::rgb_to_thumb_hash_into`): a 6-byte header
+// (an image with alpha) and 38 AC nibbles in 19 bytes (luminance and alpha at most 5x5, 14 terms each; the two
+// colour differences 3x3, 5 each). Opaque, it is at most 24 (luminance 7x7, 27 terms).
+/// The longest ThumbHash, in bytes.
+pub const MAX_LEN: usize = 25;
+
+// photo-gallery: the encoder's buffers, kept across calls. Encoding allocates only the hash, or nothing when it is
+// written into an array.
 /// Encodes images to ThumbHashes, keeping its buffers (four planes of at most 100x100 values)
 /// from one image to the next.
 #[derive(Debug, Default)]
@@ -24,7 +31,9 @@ pub struct Encoder {
 impl Encoder {
     /// [`rgba_to_thumb_hash`], with this encoder's buffers.
     pub fn rgba_to_thumb_hash(&mut self, w: usize, h: usize, rgba: &[u8]) -> Vec<u8> {
-        self.encode::<4>(w, h, rgba)
+        let mut hash = [0; MAX_LEN];
+        let len = self.encode::<4>(w, h, rgba, &mut hash);
+        hash[..len].to_vec()
     }
 
     /// Encodes an RGB image (opaque) to a ThumbHash: the hash of the same image as RGBA with
@@ -34,16 +43,36 @@ impl Encoder {
     /// * `h`: The height of the input image. Must be ≤100px.
     /// * `rgb`: The pixels in the input image, row-by-row. Must have `w*h*3` elements.
     pub fn rgb_to_thumb_hash(&mut self, w: usize, h: usize, rgb: &[u8]) -> Vec<u8> {
-        self.encode::<3>(w, h, rgb)
+        let mut hash = [0; MAX_LEN];
+        let len = self.rgb_to_thumb_hash_into(w, h, rgb, &mut hash);
+        hash[..len].to_vec()
+    }
+
+    // photo-gallery: into an array, without allocating.
+    /// [`Self::rgb_to_thumb_hash`] written into `hash`; returns its length.
+    pub fn rgb_to_thumb_hash_into(
+        &mut self,
+        w: usize,
+        h: usize,
+        rgb: &[u8],
+        hash: &mut [u8; MAX_LEN],
+    ) -> usize {
+        self.encode::<3>(w, h, rgb, hash)
     }
 
     /// `N` is 4 (RGBA) or 3 (RGB, every alpha 1.0, as `255 as f32 / 255.0` is).
-    fn encode<const N: usize>(&mut self, w: usize, h: usize, pixels: &[u8]) -> Vec<u8> {
+    fn encode<const N: usize>(
+        &mut self,
+        w: usize,
+        h: usize,
+        pixels: &[u8],
+        hash: &mut [u8; MAX_LEN],
+    ) -> usize {
         // Encoding an image larger than 100x100 is slow with no benefit
         assert!(w <= 100 && h <= 100);
         assert_eq!(pixels.len(), w * h * N);
         let alpha_of = |px: &[u8]| if N == 4 { px[3] as f32 / 255.0 } else { 1.0 };
-        encode(w, h, pixels.chunks_exact(N), alpha_of, self)
+        encode(w, h, pixels.chunks_exact(N), alpha_of, self, hash)
     }
 }
 
@@ -56,7 +85,9 @@ fn encode<'a>(
     pixels: std::slice::ChunksExact<'a, u8>,
     alpha_of: impl Fn(&[u8]) -> f32,
     planes: &mut Encoder,
-) -> Vec<u8> {
+    // photo-gallery: written here (upstream: a `Vec` returned).
+    out: &mut [u8; MAX_LEN],
+) -> usize {
     // Determine the average color
     let mut avg_r = 0.0;
     let mut avg_g = 0.0;
@@ -157,7 +188,7 @@ fn encode<'a>(
         | (((63.0 * p_scale).round() as u16) << 3)
         | (((63.0 * q_scale).round() as u16) << 9)
         | if is_landscape { 1 << 15 } else { 0 };
-    let mut hash = Vec::with_capacity(25);
+    let mut hash = Hash { bytes: out, len: 0 };
     hash.extend_from_slice(&[
         (header24 & 255) as u8,
         ((header24 >> 8) & 255) as u8,
@@ -193,7 +224,30 @@ fn encode<'a>(
             is_odd = !is_odd;
         }
     }
-    hash
+    hash.len
+}
+
+// photo-gallery: the hash as it is written, in the caller's array (upstream: a `Vec`).
+struct Hash<'a> {
+    bytes: &'a mut [u8; MAX_LEN],
+    len: usize,
+}
+
+impl Hash<'_> {
+    fn push(&mut self, byte: u8) {
+        self.bytes[self.len] = byte;
+        self.len += 1;
+    }
+
+    fn extend_from_slice(&mut self, bytes: &[u8]) {
+        for &b in bytes {
+            self.push(b);
+        }
+    }
+
+    fn last_mut(&mut self) -> Option<&mut u8> {
+        self.len.checked_sub(1).map(|i| &mut self.bytes[i])
+    }
 }
 
 // photo-gallery: a channel's AC terms, on the stack.

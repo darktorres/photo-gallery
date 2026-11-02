@@ -6,6 +6,7 @@ use anyhow::Result;
 use rusqlite::types::{Type, Value, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
+use crate::analyze::ThumbHash;
 use crate::borders;
 use crate::catalog::Catalog;
 use crate::decode::Format;
@@ -924,30 +925,6 @@ pub struct Placeholder {
     pub turns: u8,
 }
 
-/// The longest ThumbHash: a 6-byte header (an image with alpha) and 38 AC nibbles in 19 bytes (luminance and alpha
-/// at most 5 × 5, 14 terms each; the two colour differences 3 × 3, 5 each). Opaque, it is at most 24.
-pub const THUMBHASH_MAX: usize = 25;
-
-/// A ThumbHash (`analysis.thumbhash`), held inline.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub struct ThumbHash {
-    bytes: [u8; THUMBHASH_MAX],
-    len: u8,
-}
-
-impl ThumbHash {
-    /// `None` for one longer than any ThumbHash, which only a damaged catalog holds.
-    pub fn new(hash: &[u8]) -> Option<ThumbHash> {
-        let mut bytes = [0; THUMBHASH_MAX];
-        bytes.get_mut(..hash.len())?.copy_from_slice(hash);
-        Some(ThumbHash { bytes, len: hash.len() as u8 })
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        &self.bytes[..self.len as usize]
-    }
-}
-
 pub fn placeholder(conn: &Connection, file_id: i64) -> Result<Option<Placeholder>> {
     Ok(conn
         .prepare_cached(concat!(
@@ -1032,6 +1009,7 @@ pub fn session_set_many(conn: &Connection, values: &[(&str, &str)]) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analyze::THUMBHASH_MAX;
 
     /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
     /// and without.

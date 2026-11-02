@@ -57,6 +57,9 @@ working data; every hash and every decoded image is upstream's, bit for bit:
 - A channel's AC terms (at most 49: both sides are at most 7) and the cosine rows are arrays on the stack, in the
   encoder and the decoder. Upstream allocated a `Vec` for each, 9 per encode and 6 per decode. Decoding now
   allocates only the image it returns.
+- `Encoder::rgb_to_thumb_hash_into` writes the hash into an array of `MAX_LEN` (25) bytes and returns its length,
+  so the import's hash of each file is held inline and allocates nothing. The encoder writes every hash that way;
+  the `Vec` functions copy it out at its length.
 
 Checked against the registry's 0.1.0, once, with a throwaway harness: 20,000 random images (1–100 px a side, opaque
 and with alpha, noise and gradients) hash identically through the free function, a reused `Encoder` and, opaque, its

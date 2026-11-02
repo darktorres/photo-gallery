@@ -4,6 +4,7 @@
 //! thumbnails; neither waits for the other but in the cache's writer, one batch at a time.
 
 use std::path::Path;
+use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_core::browse;
@@ -46,12 +47,16 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     // To check each file against before its thumbnail is kept.
     let catalog = Catalog::open_current(catalog_path)?;
     let mut batch = Vec::with_capacity(BATCH);
+    // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
+    // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
+    let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
     let (mut tried, mut first_failed) = (0, None);
     ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
 
     let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
         let n = batch.len();
-        let stored = cache.put_batch(std::mem::replace(batch, Vec::with_capacity(BATCH)), Some(height))?;
+        let stored = cache.put_batch(batch, Some(height))?;
+        spare.lock().unwrap().extend(batch.drain(..).map(|t| t.data));
         if stored {
             stats.made += n;
         } else {
@@ -75,14 +80,23 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         Maker::new,
         |maker, i, bytes| {
             let item = &items[i];
-            match item.poster_ms {
+            let mut out = spare.lock().unwrap().pop().unwrap_or_default();
+            let made = match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
                     let path = work.path(item.path);
-                    maker.load_frame(Path::new(&*verbatim(&path)), at, item.source.rotation)?;
-                    maker.encode_frame(height as usize)
+                    maker
+                        .load_frame(Path::new(&*verbatim(&path)), at, item.source.rotation)
+                        .and_then(|()| maker.encode_frame_into(height as usize, &mut out))
                 }
-                None => maker.make(bytes, height as usize, item.source.rotation),
+                None => maker.make_into(bytes, height as usize, item.source.rotation, &mut out),
+            };
+            match made {
+                Ok(()) => Ok(out),
+                Err(e) => {
+                    spare.lock().unwrap().push(out);
+                    Err(e)
+                }
             }
         },
         |i, result, len| {
@@ -97,6 +111,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                         batch.push(Thumb { file_id: item.id, height, source: item.source, data });
                     }
                     _ => {
+                        spare.lock().unwrap().push(data);
                         stats.changed += 1;
                         first_failed = Some(first_failed.map_or(item.seq, |s: i64| s.min(item.seq)));
                     }

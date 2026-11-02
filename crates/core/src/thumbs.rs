@@ -542,7 +542,7 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
     conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()])?;
     let tx = conn.unchecked_transaction()?;
-    let seq: i64 = tx.query_row("SELECT value FROM cat.meta WHERE key = 'seq'", [], |r| r.get(0))?;
+    let seq: i64 = tx.query_row("SELECT seq FROM cat.thumb_clock", [], |r| r.get(0))?;
     let (checked, evictions): (Option<i64>, i64) = tx
         .query_row("SELECT seq, evictions FROM checked WHERE height = ?1", [height], |r| Ok((r.get(0)?, r.get(1)?)))
         .optional()?

@@ -206,6 +206,9 @@ CREATE VIEW thumb_sources AS
            (SELECT poster_ms FROM analysis WHERE file_id = f.id) AS poster_ms
     FROM files f WHERE EXISTS (SELECT 1 FROM analysis WHERE file_id = f.id);
 
+-- The change number now, which the thumbnail pass takes its snapshot at: one row, the view the pass reads it through.
+CREATE VIEW thumb_clock AS SELECT value AS seq FROM meta WHERE key = 'seq';
+
 -- The library: folders the user added, which a rescan walks again. None is inside another.
 CREATE TABLE roots(
     path  TEXT PRIMARY KEY,  -- absolute, no trailing backslash
@@ -333,8 +336,8 @@ const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE typ
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))
-     + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name = 'thumb_sources')";
-const LAYOUT_PARTS: i64 = 11;
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name IN ('thumb_sources', 'thumb_clock'))";
+const LAYOUT_PARTS: i64 = 12;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[
@@ -1759,6 +1762,10 @@ mod tests {
             .collect::<rusqlite::Result<_>>()
             .unwrap();
         assert_eq!(rows, [(1, r"D:\x".to_string()), (2, r"D:\x\sub".to_string())]);
+        // The clock is the catalog's change number, as the pass reads it.
+        let clock: i64 = c.conn.query_row("SELECT seq FROM thumb_clock", [], |r| r.get(0)).unwrap();
+        let meta: i64 = c.conn.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0)).unwrap();
+        assert_eq!(clock, meta);
         // The pass's shape over it, with a TEMP stub of the thumbnail cache's entries: a change number's range still
         // reads files_seq, and a file with no thumbnail yet is the one listed.
         c.conn

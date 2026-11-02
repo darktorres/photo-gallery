@@ -18,7 +18,8 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
-use crate::analyze::{Analysis, IMPORT_VERSION};
+use crate::analysis::Analysis;
+use crate::analyze::IMPORT_VERSION;
 use crate::borders::{BORDERS_VERSION, Detection};
 use crate::format::Format;
 use crate::media::{Ext, Kind};
@@ -1229,33 +1230,38 @@ impl<'tx> AnalysisWriter<'tx> {
         }
         // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
         self.delete_pairs.execute([item.id])?;
+        let (taken, taken_utc) = a.taken.map_or((None, false), |t| {
+            let (seconds, utc) = t.parts();
+            (Some(seconds), utc)
+        });
+        let (image, video) = (a.image(), a.video());
         self.analysis.execute(params![
             item.id,
-            IMPORT_VERSION,
+            a.version,
             item.size,
             item.mtime,
             &a.file_hash[..],
-            a.pixels.as_ref().map(|p| &p.pixel_hash[..]),
-            a.format,
+            image.map(|i| &i.pixels.pixel_hash[..]),
+            a.format(),
             a.orientation,
             a.width,
             a.height,
-            a.pixels.as_ref().map(|p| &p.pdq.hash.0[..]),
-            a.pixels.as_ref().map(|p| p.pdq.quality),
+            image.map(|i| &i.pixels.pdq.hash.0[..]),
+            image.map(|i| i.pixels.pdq.quality),
             a.thumbhash.as_slice(),
             a.frames,
-            a.taken,
-            a.taken_utc,
-            a.duration_ms,
-            a.poster_ms,
+            taken,
+            taken_utc,
+            video.map(|v| v.duration_ms),
+            video.map(|v| v.poster_ms),
             item.rotation,
             item.kind.key(),
-            a.pixels.as_ref().map(|p| p.pdq_dihedral.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
+            image.map(|i| i.pixels.pdq_dihedral.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
         ])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id])?;
         self.delete_sides.execute([item.id])?;
-        self.sync_file_rating(item.id, a.file_rating)?;
+        self.sync_file_rating(item.id, image.and_then(|i| i.file_rating))?;
         Ok(true)
     }
 
@@ -1431,7 +1437,7 @@ mod tests {
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = r"D:\PhotoGallery\scratch_catalog";
-    use crate::analyze::ThumbHash;
+    use crate::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
 
     /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
     const BEFORE_ORDER_KEY: &str = r"
@@ -1777,6 +1783,13 @@ mod tests {
         assert_eq!(listed, [1]);
     }
 
+    /// The facts of a JPEG with no rating and stand-in hashes, for the analyses the tests store.
+    fn a_jpeg() -> Media {
+        let pdq = pdq::Pdq { hash: pdq::Hash([0; 32]), quality: 0 };
+        let pixels = PixelHashes { pixel_hash: [0; 16], pdq, pdq_dihedral: [pdq::Hash([0; 32]); 8] };
+        Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels })
+    }
+
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
     fn analyzed(c: &mut Catalog, item: &WorkItem) {
         let tx = c.conn.transaction().unwrap();
@@ -1830,19 +1843,15 @@ mod tests {
             sides: [solid(Edge::Top), solid(Edge::Bottom), sky].into_iter().collect(),
         };
         let analysis = Analysis {
+            version: IMPORT_VERSION,
             file_hash: [1; 32],
-            format: "jpeg",
             orientation: 1,
             width: 400,
             height: 300,
             thumbhash: ThumbHash::default(),
-            file_rating: None,
             frames: 1,
             taken: None,
-            taken_utc: false,
-            pixels: None,
-            duration_ms: None,
-            poster_ms: None,
+            media: a_jpeg(),
         };
         let tx = c.conn.transaction().unwrap();
         AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
@@ -1940,19 +1949,15 @@ mod tests {
             borders.content = [l, t, 400 - r, 300 - b];
             let (width, height) = if crate::orientation::swaps_axes(orientation) { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
+                version: IMPORT_VERSION,
                 file_hash: [n as u8; 32],
-                format: "jpeg",
                 orientation,
                 width,
                 height,
                 thumbhash: ThumbHash::default(),
-                file_rating: None,
                 frames: 1,
                 taken: None,
-                taken_utc: false,
-                pixels: None,
-                duration_ms: None,
-                poster_ms: None,
+                media: a_jpeg(),
             };
             let tx = c.conn.transaction().unwrap();
             AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();

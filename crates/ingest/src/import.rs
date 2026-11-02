@@ -6,7 +6,8 @@
 use std::path::Path;
 
 use anyhow::Result;
-use pg_core::analyze::{Analysis, Analyzer};
+use pg_core::analysis::Analysis;
+use pg_core::analyze::Analyzer;
 use pg_core::catalog::{AnalysisWriter, Catalog};
 use pg_core::media::Kind;
 use pg_core::paths::verbatim;
@@ -57,7 +58,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                         stats.changed += 1;
                         continue;
                     }
-                    if let Some(px) = a.pixels.as_ref().filter(|px| px.pdq.quality >= MIN_QUALITY) {
+                    if let Some(px) = a.image().map(|i| &i.pixels).filter(|px| px.pdq.quality >= MIN_QUALITY) {
                         // The new image's 8 orientations against every stored orientation of the earlier ones:
                         // the pair is found the same whichever image comes first. The best per neighbour.
                         index.best_matches(&px.pdq_dihedral, MATCH_DISTANCE, &mut found, &mut best);

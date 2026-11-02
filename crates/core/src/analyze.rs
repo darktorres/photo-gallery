@@ -4,6 +4,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use crate::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
 use crate::borders::{self, Detection, Detector};
 use crate::decode::{Decoder, MinSize, Rgb, release_over};
 use crate::format::Format;
@@ -25,63 +26,6 @@ const DECODE_MIN_SHORT: usize = 320;
 const PDQ_SIDE: usize = 512;
 /// ThumbHash input limit (the format's own maximum).
 const THUMBHASH_SIDE: usize = 100;
-
-pub struct Analysis {
-    /// BLAKE3 of the file bytes (tier 0a).
-    pub file_hash: [u8; 32],
-    /// The image format (`decode::Format::name`), or a video's codec (`video::Probe::codec`).
-    pub format: &'static str,
-    /// EXIF orientation (1–8) the file asks for (a video's display matrix).
-    pub orientation: u8,
-    /// Upright full-size dimensions.
-    pub width: u32,
-    pub height: u32,
-    pub thumbhash: ThumbHash,
-    /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
-    pub file_rating: Option<u8>,
-    /// Frames in the file (more than one: animated); an image's analysis is of the first.
-    pub frames: u32,
-    /// When it was taken (`Meta::taken`): wall-clock time, or a UTC instant when `taken_utc` (the catalog
-    /// stores it as this computer's wall-clock time).
-    pub taken: Option<i64>,
-    pub taken_utc: bool,
-    /// Tiers 0b and 1, for images. Videos have none (their near-duplicates are later work).
-    pub pixels: Option<PixelHashes>,
-    /// Videos: length, and where the frame for the ThumbHash and thumbnails is.
-    pub duration_ms: Option<i64>,
-    pub poster_ms: Option<i64>,
-}
-
-/// The longest ThumbHash (vendor/thumbhash `MAX_LEN`: 25 bytes with alpha, 24 opaque).
-pub const THUMBHASH_MAX: usize = thumbhash::MAX_LEN;
-
-/// A ThumbHash (`analysis.thumbhash`), held inline: the import's result, and the grid's placeholder.
-#[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
-pub struct ThumbHash {
-    bytes: [u8; THUMBHASH_MAX],
-    len: u8,
-}
-
-impl ThumbHash {
-    /// `None` for one longer than any ThumbHash, which only a damaged catalog holds.
-    pub fn new(hash: &[u8]) -> Option<ThumbHash> {
-        let mut bytes = [0; THUMBHASH_MAX];
-        bytes.get_mut(..hash.len())?.copy_from_slice(hash);
-        Some(ThumbHash { bytes, len: hash.len() as u8 })
-    }
-
-    pub fn as_slice(&self) -> &[u8] {
-        &self.bytes[..self.len as usize]
-    }
-}
-
-pub struct PixelHashes {
-    /// XXH3-128 of the upright decoded pixels (tier 0b), see [`pixel_hash`].
-    pub pixel_hash: [u8; 16],
-    pub pdq: pdq::Pdq,
-    /// The 8 dihedral PDQ hashes, for the query side of tier 1. Not stored.
-    pub pdq_dihedral: [pdq::Hash; 8],
-}
 
 pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
     *blake3::hash(bytes).as_bytes()
@@ -147,19 +91,19 @@ impl Analyzer {
         let (pdq, pdq_dihedral) = self.hasher.hash_rgb_dihedral(&pdq_img.pixels, pdq_img.width, pdq_img.height);
 
         Ok(Analysis {
+            version: IMPORT_VERSION,
             file_hash,
-            format: info.format.name(),
             orientation: info.orientation,
             width: info.full_width,
             height: info.full_height,
             thumbhash: thumbhash(img, &mut self.resizer, &mut self.small, &mut self.thumbhasher),
-            file_rating: meta.rating,
             frames: meta.frames,
-            taken: meta.taken,
-            taken_utc: false,
-            pixels: Some(PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral }),
-            duration_ms: None,
-            poster_ms: None,
+            taken: meta.taken.map(Taken::Wall),
+            media: Media::Image(ImageFacts {
+                format: info.format,
+                file_rating: meta.rating,
+                pixels: PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral },
+            }),
         })
     }
 
@@ -225,7 +169,7 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
     let small = if resizer.fit_within(img, THUMBHASH_SIDE, small) { &*small } else { img };
     let mut bytes = [0; THUMBHASH_MAX];
     let len = encoder.rgb_to_thumb_hash_into(small.width, small.height, &small.pixels, &mut bytes);
-    ThumbHash { bytes, len: len as u8 }
+    ThumbHash::encoded(bytes, len)
 }
 
 /// A video's analysis (the file's hash, its probe, and its poster frame's ThumbHash): what the import stores.
@@ -242,19 +186,15 @@ fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
     crate::video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
     let (width, height) = if turns % 2 == 1 { (p.height, p.width) } else { (p.width, p.height) };
     Ok(Analysis {
+        version: IMPORT_VERSION,
         file_hash,
-        format: p.codec,
         orientation: p.orientation,
         width,
         height,
         thumbhash: a.thumbhash_of_image(),
-        file_rating: None,
         frames: p.frames,
-        taken: p.taken.map(|t| t.0),
-        taken_utc: p.taken.is_some_and(|t| t.1),
-        pixels: None,
-        duration_ms: Some(p.duration_ms),
-        poster_ms: Some(poster),
+        taken: p.taken.map(|(t, utc)| if utc { Taken::Utc(t) } else { Taken::Wall(t) }),
+        media: Media::Video(VideoFacts { codec: p.codec, duration_ms: p.duration_ms, poster_ms: poster }),
     })
 }
 
@@ -291,9 +231,9 @@ mod tests {
     }
 
     fn summary(a: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
-        let px = a.pixels.as_ref().unwrap();
+        let px = &a.image().unwrap().pixels;
         let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, px.pdq_dihedral);
-        (a.file_hash, a.format, a.orientation, a.width, a.height, a.thumbhash, a.frames, hashes)
+        (a.file_hash, a.format(), a.orientation, a.width, a.height, a.thumbhash, a.frames, hashes)
     }
 
     /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a

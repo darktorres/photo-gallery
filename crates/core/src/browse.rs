@@ -6,7 +6,7 @@ use anyhow::Result;
 use rusqlite::types::{Type, Value, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
-use crate::analyze::ThumbHash;
+use crate::analysis::ThumbHash;
 use crate::borders;
 use crate::format::Format;
 use crate::media::{Ext, Kind};
@@ -919,7 +919,7 @@ pub fn session_set_many(conn: &Connection, values: &[(&str, &str)]) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analyze::THUMBHASH_MAX;
+    use crate::analysis::THUMBHASH_MAX;
     use crate::path::{order_key, order_key_of};
 
     /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha

@@ -766,27 +766,104 @@ pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
             // Borrowed from SQLite: a NULL (or a blob) contains nothing.
-            let (Ok(name), Ok(text)) = (ctx.get_raw(0).as_str(), ctx.get_raw(1).as_str()) else {
+            let (Ok(name), Ok(_)) = (ctx.get_raw(0).as_str(), ctx.get_raw(1).as_str()) else {
                 return Ok(false);
             };
-            Ok(contains_ignoring_case(name, text))
+            // The text is the statement's parameter: lowercased at the first row, and kept by SQLite with it for
+            // the rest (auxiliary data).
+            let needle = ctx.get_or_create_aux(1, |text| {
+                text.as_str().map(Needle::new).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
+            })?;
+            Ok(needle.found_in(name))
         },
     )
 }
 
-/// Whether `name` contains `text`, both in lower case (Unicode). ASCII, the usual case, without allocating.
+/// Whether `name` contains `text`, both in lower case (Unicode): `name.to_lowercase().contains(&text.to_lowercase())`.
 pub fn contains_ignoring_case(name: &str, text: &str) -> bool {
-    if name.is_ascii() && text.is_ascii() {
-        let (name, text) = (name.as_bytes(), text.as_bytes());
-        text.is_empty() || name.windows(text.len()).any(|w| w.eq_ignore_ascii_case(text))
-    } else {
-        name.to_lowercase().contains(&text.to_lowercase())
+    Needle::new(text).found_in(name)
+}
+
+/// A text looked for in names, in lower case.
+struct Needle {
+    lower: String,
+    ascii: bool,
+}
+
+impl Needle {
+    fn new(text: &str) -> Needle {
+        let lower = text.to_lowercase();
+        let ascii = lower.is_ascii();
+        Needle { lower, ascii }
+    }
+
+    /// Whether `name` in lower case (`str::to_lowercase`) contains it, without allocating. Character by
+    /// character, the lower case is `str::to_lowercase`'s for every character but Σ, whose lower case depends on
+    /// where it stands (a final one is ς), so a name with one is lowercased whole.
+    fn found_in(&self, name: &str) -> bool {
+        let needle = self.lower.as_str();
+        if self.ascii && name.is_ascii() {
+            let (name, needle) = (name.as_bytes(), needle.as_bytes());
+            return needle.is_empty() || name.windows(needle.len()).any(|w| w.eq_ignore_ascii_case(needle));
+        }
+        if name.contains('Σ') {
+            return name.to_lowercase().contains(needle);
+        }
+        let mut rest = name.chars().flat_map(char::to_lowercase);
+        loop {
+            let mut at = rest.clone();
+            if needle.chars().all(|c| at.next() == Some(c)) {
+                return true;
+            }
+            if rest.next().is_none() {
+                return false;
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Every name of up to 3 and text of up to 2 characters from a set chosen for their lower cases: ASCII,
+    /// İ (2 characters in lower case), Σ σ ς (the final sigma), Kelvin K (lower case ASCII), ß ẞ, a combining dot,
+    /// a space and a digit; and some longer ones. The function, and the same through SQL with the text as a
+    /// parameter, against `str::to_lowercase` on both.
+    #[test]
+    fn a_name_contains_a_text_as_their_lower_cases_do() {
+        let set = ['a', 'B', 'i', 'I', 'İ', 'Σ', 'σ', 'ς', '\u{212A}', 'k', 'ß', 'ẞ', '\u{307}', ' ', '1'];
+        let strings = |max: usize| {
+            let mut all = vec![String::new()];
+            let mut last = vec![String::new()];
+            for _ in 0..max {
+                last = last.iter().flat_map(|s| set.iter().map(move |c| format!("{s}{c}"))).collect();
+                all.extend(last.iter().cloned());
+            }
+            all
+        };
+        let mut names = strings(3);
+        names
+            .extend(["ὈΔΥΣΣΕΎΣ", "ΣΊΣΥΦΟΣ.jpg", "İSTANBUL 2019", "Straße_STRASSE", "x\u{212A}elvin"].map(String::from));
+        let mut texts = strings(2);
+        texts.extend(["σσ", "ΣΣΕ", "ος", "i\u{307}st", "STRASS", "ße_s", "kelvin"].map(String::from));
+        let conn = Connection::open_in_memory().unwrap();
+        register_functions(&conn).unwrap();
+        let mut stmt = conn.prepare("SELECT pg_contains(value, ?1) FROM json_each(?2)").unwrap();
+        let names_json = serde_json::to_string(&names).unwrap();
+        for text in &texts {
+            let want: Vec<bool> = names.iter().map(|n| n.to_lowercase().contains(&text.to_lowercase())).collect();
+            let got: Vec<bool> = names.iter().map(|n| contains_ignoring_case(n, text)).collect();
+            assert_eq!(got, want, "{text:?}");
+            let sql: Vec<bool> =
+                stmt.query_map((text, &names_json), |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+            assert_eq!(sql, want, "{text:?} through SQL");
+        }
+        // A NULL or a blob contains nothing, and is found in nothing.
+        let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, bool>(0)).unwrap();
+        assert!(!one("SELECT pg_contains(NULL, 'a')") && !one("SELECT pg_contains('a', NULL)"));
+        assert!(!one("SELECT pg_contains(x'61', 'a')") && one("SELECT pg_contains('Ab', 'a')"));
+    }
 
     #[test]
     fn json_round_trips() {

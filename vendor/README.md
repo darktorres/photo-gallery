@@ -96,6 +96,27 @@ on this machine. Their images aren't in the published crate (`data/` in the repo
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
 
+## quick-xml
+
+Copy of `quick-xml` 0.42.0 (MIT), for the XMP packets the import reads (`pg_core::metadata`). The local changes,
+marked `photo-gallery`, are in what a reader allocates; every event it gives, and every error, is upstream's:
+
+- `NsReader::from_str_with(text, ReaderBuffers)` reads as `NsReader::from_str` does, in the buffers an earlier
+  reader gave back (`NsReader::into_buffers`): the open elements' names (`src/reader/state.rs`) and the namespace
+  bindings in scope (`src/name.rs`). A worker reading packet after packet allocates only when one needs more than
+  any before it; upstream made both anew for each reader.
+- The duplicate-attribute check (`src/events/attributes.rs`, `Keys`) keeps the first 32 names of a tag inline, the
+  rest in a `Vec` as before, and so allocates nothing for a tag with at most 32 attributes. Upstream pushed every
+  name into a `Vec`: one allocation per tag with attributes, more as it grew.
+
+Its unit and doc tests give the same results as the registry's copy (245 and 62 passed, 4 and 2 ignored). Two tests
+of its own (`src/reader/ns_reader.rs`, `photo_gallery`): readers in kept buffers read as new ones, document after
+document, malformed ones included; and duplicates are found on both sides of the inline names, at the positions
+upstream reports. Its tests run from this directory: `cargo test --target-dir ../../target/vendor-test`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

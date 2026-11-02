@@ -69,6 +69,7 @@ incremental = true
 [patch.crates-io]
 fast_image_resize = { path = "vendor/fast_image_resize" }
 qt-build-utils = { path = "vendor/qt-build-utils" }
+quick-xml = { path = "vendor/quick-xml" }
 rusqlite = { path = "vendor/rusqlite" }
 thumbhash = { path = "vendor/thumbhash" }
 turbojpeg-sys = { path = "vendor/turbojpeg-sys" }

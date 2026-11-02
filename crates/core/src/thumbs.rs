@@ -35,7 +35,7 @@ use anyhow::{Context, Result, anyhow, bail};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoder, Format, MinSize, Rgb, release_over};
+use crate::decode::{Decoded, Decoder, Format, MinSize, Rgb, release_over};
 use crate::paths::{PathRef, WorkList};
 use crate::resize::Resizer;
 
@@ -62,6 +62,8 @@ pub struct Maker {
     small: Rgb,
     /// libjpeg-turbo's output, at its worst-case size.
     jpeg: Vec<u8>,
+    /// The file a request read (the app's: a thumbnail made on a miss, the viewer's decode).
+    file: Vec<u8>,
 }
 
 impl Maker {
@@ -77,12 +79,42 @@ impl Maker {
             spare: Vec::new(),
             small: Rgb::default(),
             jpeg: Vec::new(),
+            file: Vec::new(),
         })
     }
 
-    /// The decoder, for a one-off decode on this thread (the viewer's: its pixels go to new buffers).
+    /// The decoder, for a one-off decode on this thread.
     pub fn decoder(&mut self) -> &mut Decoder {
         &mut self.decoder
+    }
+
+    /// Read the file at `path` whole into the maker's buffer, as `std::fs::read` reads it (the same errors), for
+    /// [`Maker::make_from_file`] or [`Maker::decode_file`]. The buffer is kept for the next file, up to
+    /// [`KEEP_BYTES`].
+    pub fn read_file(&mut self, path: &Path) -> std::io::Result<()> {
+        use std::io::Read;
+        self.file.clear();
+        let result = std::fs::File::open(path).and_then(|mut f| f.read_to_end(&mut self.file)).map(drop);
+        if result.is_err() {
+            release_over(&mut self.file, KEEP_BYTES);
+        }
+        result
+    }
+
+    /// [`Maker::make`] of the file [`Maker::read_file`] read.
+    pub fn make_from_file(&mut self, height: usize, turns: u8) -> Result<Vec<u8>> {
+        let file = std::mem::take(&mut self.file);
+        let result = self.make_image(&file, height, turns);
+        self.file = file;
+        self.trim();
+        result
+    }
+
+    /// A one-off decode of the file [`Maker::read_file`] read (the viewer's): its pixels go to new buffers.
+    pub fn decode_file(&mut self, min: MinSize, turns: u8) -> Result<Decoded> {
+        let result = self.decoder.decode(&self.file, min, turns);
+        release_over(&mut self.file, KEEP_BYTES);
+        result
     }
 
     /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
@@ -138,7 +170,7 @@ impl Maker {
 
     /// Free what one oversize image grew (see [`KEEP_BYTES`]).
     fn trim(&mut self) {
-        for buf in [&mut self.image.pixels, &mut self.spare, &mut self.small.pixels, &mut self.jpeg] {
+        for buf in [&mut self.image.pixels, &mut self.spare, &mut self.small.pixels, &mut self.jpeg, &mut self.file] {
             release_over(buf, KEEP_BYTES);
         }
         self.decoder.trim(KEEP_BYTES);
@@ -989,6 +1021,49 @@ mod tests {
             .unwrap();
         assert_eq!(orphans, 0, "JPEGs without an entry");
         (kept, actual.unwrap())
+    }
+
+    /// A JPEG of a pattern, `w` × `h`.
+    fn jpeg(w: usize, h: usize, seed: usize) -> Vec<u8> {
+        let pixels: Vec<u8> =
+            (0..w * h * 3).map(|i| ((i / 3 % w) * 7 + (i / 3 / w) * 3 + (i % 3) * 50 + seed) as u8).collect();
+        let image =
+            turbojpeg::Image { pixels: &pixels[..], width: w, pitch: w * 3, height: h, format: PixelFormat::RGB };
+        turbojpeg::compress(image, 90, Subsamp::Sub2x2).unwrap().to_vec()
+    }
+
+    /// Files read into the maker make the thumbnails and decodes their bytes make, file after file (larger, smaller,
+    /// missing, not an image), and a missing file fails as `std::fs::read` does.
+    #[test]
+    fn files_read_into_the_maker_are_their_bytes() {
+        let dir = scratch("read-file");
+        let files: Vec<(PathBuf, Vec<u8>)> = [(640, 480, 1), (64, 48, 2), (1200, 800, 3), (33, 77, 4)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (w, h, seed))| (dir.join(format!("{i}.jpg")), jpeg(w, h, seed)))
+            .chain([(dir.join("text.jpg"), b"not an image".to_vec())])
+            .collect();
+        for (path, bytes) in &files {
+            std::fs::write(path, bytes).unwrap();
+        }
+        let missing = dir.join("missing.jpg");
+        let mut maker = Maker::new().unwrap();
+        for _ in 0..2 {
+            for (path, bytes) in &files {
+                maker.read_file(path).unwrap();
+                let made = maker.make_from_file(120, 1).map_err(|e| format!("{e:#}"));
+                let expected = Maker::new().unwrap().make(bytes, 120, 1).map_err(|e| format!("{e:#}"));
+                assert_eq!(made, expected, "{}", path.display());
+                maker.read_file(path).unwrap();
+                let decoded = maker.decode_file(MinSize::Fit(300, 300), 3).map(|d| (d.image.width, d.image.pixels));
+                let expected = Decoder::new().unwrap().decode(bytes, MinSize::Fit(300, 300), 3);
+                let expected = expected.map(|d| (d.image.width, d.image.pixels));
+                assert_eq!(decoded.map_err(|e| format!("{e:#}")), expected.map_err(|e| format!("{e:#}")));
+            }
+            let err = maker.read_file(&missing).unwrap_err();
+            assert_eq!(err.to_string(), std::fs::read(&missing).unwrap_err().to_string());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

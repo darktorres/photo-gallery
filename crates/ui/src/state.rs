@@ -10,9 +10,14 @@
 //!
 //! What a thread keeps lives as long as the thread: the providers' pools (`cpp/providers.cpp`: 8 thumbnail
 //! threads, 2 full-image and 2 placeholder ones) end a thread after 30 s idle, and its thread-locals with it. A
-//! `Maker` holds what one thumbnail needs (at most `thumbs::KEEP_BYTES` a buffer), so the thumbnail threads keep
-//! what the requests in flight need while the grid scrolls, and for 30 s after. The viewer's decodes and resizes go
-//! to new buffers (`Decoder::decode`, a `Resizer` per request), so a full-image thread keeps no full-size image.
+//! `Maker` holds what one thumbnail needs (at most `thumbs::KEEP_BYTES` a buffer), the file read for it included, so
+//! the thumbnail threads keep what the requests in flight need while the grid scrolls, and for 30 s after. The
+//! viewer reads the original into its thread's `Maker` too (kept likewise, up to `KEEP_BYTES`), but its decodes and
+//! resizes go to new buffers (`Maker::decode_file`, a `Resizer` per request), so a full-image thread keeps no
+//! full-size image.
+//!
+//! A thumbnail made on a miss goes to the cache's writer once it is shown, moved there rather than copied
+//! ([`Keep`]): Qt decodes it, then hands it back (`providers::keep_thumbnail`), or it is turned here first.
 
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
@@ -144,16 +149,42 @@ enum Found {
     Offline(anyhow::Error, Option<Vec<u8>>),
 }
 
+/// A thumbnail, as [`thumbnail`] finds it.
+pub struct Thumbnail {
+    pub jpeg: Vec<u8>,
+    /// Quarter turns clockwise to show it turned by.
+    pub turns: u8,
+    /// For one made from the original: where the cache keeps it, once it is shown.
+    pub keep: Option<Keep>,
+}
+
+/// Where the cache keeps a thumbnail made on a miss. The caller puts it there once it is done with the bytes
+/// ([`Keep::put`]), so that they move to the cache's writer instead of being copied for it.
+#[derive(Clone, Copy, Debug)]
+pub struct Keep {
+    pub file_id: i64,
+    pub height: u32,
+    pub source: thumbs::Source,
+}
+
+impl Keep {
+    /// Hand the thumbnail to the cache's writer, in the background: it is shown whatever the write does.
+    pub fn put(self, data: Vec<u8>) {
+        thumbs().put(thumbs::Thumb { file_id: self.file_id, height: self.height, source: self.source, data });
+    }
+}
+
 /// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps
 /// one at least that high for the file as `named` names it, that one, turned by the name's turns: nothing else is
-/// read. Otherwise as the catalog has the file now: kept, or made from the original and kept, and turned by the
-/// catalog's turns. With the original offline, the best smaller one.
-pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<(Vec<u8>, u8)> {
+/// read. Otherwise as the catalog has the file now: kept, or made from the original (and to be kept: `keep`), and
+/// turned by the catalog's turns. With the original offline, the best smaller one.
+pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<Thumbnail> {
+    let unmade = |jpeg, turns| Thumbnail { jpeg, turns, keep: None };
     let mut smaller = None;
     if let Some(n) = named {
         match thumbs().get_nearest(file_id, height, n.source)? {
-            Some((h, data)) if h >= height => return Ok((data, n.turns)),
-            Some((_, data)) => smaller = Some((data, n.turns)),
+            Some((h, data)) if h >= height => return Ok(unmade(data, n.turns)),
+            Some((_, data)) => smaller = Some(unmade(data, n.turns)),
             None => {}
         }
     }
@@ -175,24 +206,22 @@ pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<(Vec
                 Err(e) => return Ok(Found::Offline(e, kept)),
             }
         } else {
-            let bytes = match std::fs::read(&src.path) {
-                Ok(b) => b,
-                Err(e) => return Ok(Found::Offline(e.into(), kept)),
-            };
-            with_maker(|m| m.make(&bytes, height as usize, current.rotation))?
+            // Read into the thread's maker, which keeps the buffer for the next file.
+            if let Err(e) = with_maker(|m| Ok(m.read_file(Path::new(&src.path))))? {
+                return Ok(Found::Offline(e.into(), kept));
+            }
+            with_maker(|m| m.make_from_file(height as usize, current.rotation))?
         };
         Ok(Found::Made(made))
     })?;
     let turns = src.state.turns;
     match found {
-        Found::Kept(data) => Ok((data, turns)),
-        Found::Made(data) => {
-            // Kept in the background: shown now, whatever the write does.
+        Found::Kept(data) => Ok(unmade(data, turns)),
+        Found::Made(jpeg) => {
             let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
-            thumbs().put(thumbs::Thumb { file_id, height, source, data: data.clone() });
-            Ok((data, turns))
+            Ok(Thumbnail { jpeg, turns, keep: Some(Keep { file_id, height, source }) })
         }
-        Found::Offline(_, Some(data)) => Ok((data, turns)),
+        Found::Offline(_, Some(data)) => Ok(unmade(data, turns)),
         Found::Offline(e, None) => smaller.ok_or(e).context("original unavailable"),
     }
 }
@@ -330,8 +359,10 @@ fn decode(file_id: i64, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Opt
         let frame = pg_core::video::frame(Path::new(&*verbatim(&src.path)), at, rotation)?;
         ((frame.width, frame.height), Arc::new(frame))
     } else {
-        let bytes = std::fs::read(&src.path).context("original unavailable")?;
-        let decoded = with_maker(|m| m.decoder().decode(&bytes, min, rotation))?;
+        let decoded = with_maker(|m| {
+            m.read_file(Path::new(&src.path)).context("original unavailable")?;
+            m.decode_file(min, rotation)
+        })?;
         ((decoded.info.full_width as usize, decoded.info.full_height as usize), Arc::new(decoded.image))
     };
     Ok((image.clone(), Some(Decoded { file_id, mtime: src.state.mtime, rotation, full, image })))

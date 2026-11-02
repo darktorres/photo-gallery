@@ -35,13 +35,17 @@ struct Link {
 };
 
 // Rust's pixels become the QImage's own: the QImage keeps the buffer and frees it with its last copy. Their
-// formats are ones the scene graph uploads as they are (state::Upload), so neither side copies the image.
+// formats are ones the scene graph uploads as they are (state::Upload), so neither side copies the image. A JPEG is
+// decoded, which doesn't keep its bytes; one made on a miss then goes to the thumbnail cache's writer, moved.
 QImage to_qimage(Pixels px) {
     if (px.data.empty()) return {};
     QImage::Format format;
     switch (px.format) {
-        case 0:
-            return QImage::fromData(reinterpret_cast<const uchar*>(px.data.data()), int(px.data.size()));
+        case 0: {
+            QImage image = QImage::fromData(reinterpret_cast<const uchar*>(px.data.data()), int(px.data.size()));
+            if (px.keep.put) keep_thumbnail(px.keep, std::move(px.data));
+            return image;
+        }
         case 1:
             format = QImage::Format_RGBX8888;
             break;

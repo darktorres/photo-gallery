@@ -308,6 +308,8 @@ impl Inner {
             Catalog::file_rewritten(tx, job.file_id, before, after, new_hash)?;
             if job.kind == "rating" {
                 Catalog::set_file_rating(tx, job.file_id, Some(job.value as u8))?;
+            } else {
+                Catalog::analysis_turned_back(tx, job.file_id, job.value.rem_euclid(4) as u8)?;
             }
             Ok(())
         })?;

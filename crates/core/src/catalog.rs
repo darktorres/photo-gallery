@@ -925,6 +925,18 @@ impl Catalog {
         Ok(())
     }
 
+    /// A turn of `turns` written into the file (its pixels or its orientation tag): the analysis made before is of
+    /// the file as it is now turned back by them, so it is recorded as made at the catalog rotation that many turns
+    /// back. It is stale anyway (the mtime changed); until the import redoes it, the placeholder made from it shows
+    /// the file as it is now (`browse::placeholder`). With the file's rewrite, in its transaction.
+    pub fn analysis_turned_back(tx: &Transaction, file_id: i64, turns: u8) -> Result<()> {
+        tx.execute(
+            "UPDATE analysis SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
+            params![file_id, turns],
+        )?;
+        Ok(())
+    }
+
     /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the analysis, made without it, is stale
     /// (`files.pending`), and the thumbnails no longer match (thumbs::Source). In the transaction that takes the
     /// turn off the queue, so that no reader sees it both kept and queued.

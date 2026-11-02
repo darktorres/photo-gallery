@@ -158,12 +158,18 @@ fn ratings_and_turns_reach_the_files() {
             .map(Result::unwrap)
             .collect()
     };
-    // The grid lays them out turned at once, before the analysis is redone.
+    // The grid lays them out turned at once, before the analysis is redone, and shows their placeholders turned:
+    // the turn is in the file, or kept in the catalog.
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "sizes right after the turn: {:?}", dims(&c));
+    let placeholder_turns = |c: &Catalog| -> Vec<u8> {
+        before.iter().map(|(id, _)| pg_core::browse::placeholder(&c.conn, *id).unwrap().unwrap().turns).collect()
+    };
+    assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
     scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c), before);
     import::import(&mut c, &opts, false, &ctl).unwrap();
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "re-imported upright sizes: {:?}", dims(&c));
+    assert!(placeholder_turns(&c).iter().all(|&t| t == 0), "re-imported placeholders: {:?}", placeholder_turns(&c));
 
     // Another program rates the JPEG: the next scan and import adopt it.
     let jpg = &files[0].0;

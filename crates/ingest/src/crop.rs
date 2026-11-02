@@ -55,7 +55,7 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
             continue;
         };
         tree.clear();
-        tree.extend([&*folder, "\\", root_name(root)]);
+        tree.extend([&*folder, "\\", &root_place(root)]);
         if let Some(r) = roots.iter().find(|r| is_under(&tree, r) || is_under(r, &tree)) {
             bail!("The copies of {root} would go into {tree}, in the library folder {r}: choose a folder outside it");
         }
@@ -112,10 +112,10 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
     Ok(stats)
 }
 
-/// A library folder's name in the copies' folder (a drive's letter for a drive).
-fn root_name(root: &str) -> &str {
-    let name = root.rsplit('\\').next().unwrap_or(root);
-    name.trim_end_matches(':')
+/// A library folder's place in the copies' folder: its whole path, without the colon (`D:\Photos\2019` is
+/// `D\Photos\2019`). Two library folders can't share a place, whatever their last names (R-48).
+fn root_place(root: &str) -> String {
+    root.trim_start_matches('\\').replace(':', "")
 }
 
 enum Written {

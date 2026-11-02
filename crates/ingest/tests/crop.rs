@@ -108,7 +108,9 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
 
     // Into the library: refused, nothing written.
     assert!(crop::save(&c, &all, &dir.join("images"), &opts, &ctl).is_err());
-    assert!(crop::save(&c, &all, &dir, &opts, &ctl).is_err(), "copies of images\\ would go into images\\");
+    // Copies go into a folder named by their library folder's whole path, so saving into the parent doesn't reach the
+    // library any more; a folder inside a library folder still does.
+    assert!(crop::save(&c, &all, &dir.join("images").join("sub"), &opts, &ctl).is_err(), "copies into the library");
 
     // One marked as not a border, one changed since: both skipped.
     let id_of = |name: &str| files_ids.iter().find(|(_, n)| n == name).unwrap().0;
@@ -119,6 +121,9 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     std::fs::write(webp, &changed).unwrap();
 
     let out = dir.join("out");
+    // The copies of the library folder `images`: under the copies' folder, in the library folder's place (its path,
+    // without the colon).
+    let copies = out.join(dir.join("images").to_string_lossy().replace(':', ""));
     let s = crop::save(&c, &all, &out, &opts, &ctl).unwrap();
     assert_eq!((s.saved, s.skipped, s.failed), (3, 2, 0), "{:?}", s.error);
     assert!(s.remaining.is_empty());
@@ -128,7 +133,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
         }
     }
     for name in ["a.jpg", "d.tif", r"sub\e.bmp"] {
-        let copy = out.join("images").join(name);
+        let copy = copies.join(name);
         let bytes = std::fs::read(&copy).unwrap_or_else(|e| panic!("{}: {e}", copy.display()));
         let d = pg_core::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, 0).unwrap();
         // JPEG: the top cut moves inward to the 8 or 16 px grid, the bottom is exact.
@@ -151,5 +156,5 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
         );
         assert_eq!(Format::sniff(&bytes), Format::sniff(&std::fs::read(&original).unwrap()));
     }
-    assert!(!out.join("images").join("b.png").exists() && !out.join("images").join("c.webp").exists());
+    assert!(!copies.join("b.png").exists() && !copies.join("c.webp").exists());
 }

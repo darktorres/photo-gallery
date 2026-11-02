@@ -12,14 +12,14 @@ The review of the workspace refactor (phases 0–3): every finding with its stat
 
 | Status | Count |
 |---|---|
-| `open` | 53 |
-| `needs decision` | 11 |
+| `open` | 54 |
+| `needs decision` | 10 |
 | `verified` (checked, no defect) | 4 |
 | `fixed` | 1 (R-02) |
 | `wontfix` | 0 |
 
 Of the 64 findings that are open or need a decision, by severity: high 2, medium 10, low 31, judgement 7, cosmetic 14.
-The eleven `needs decision` rows are in the Decisions list below. R-66 is open until it is measured.
+The ten `needs decision` rows are in the Decisions list below. R-66 is open until it is measured.
 
 ## How to read this file
 
@@ -41,13 +41,12 @@ Each item is a call for the owner. The recommendation is the most proper option,
 | R-15 | `IMPORT_VERSION`'s doc says to bump before release. Which rule stands? | The no-bump rule, as decided for R-02. Rewrite the doc to say so: pre-release, a change that alters stored values means the owner recreates the catalogs. |
 | R-30 | Rename `paths` to `verbatim` now, or leave it for the platform step? | Rename now. The module holds the verbatim conversions, the plan already calls them `verbatim`, and two near-identical names are a standing mistake. |
 | R-33 | Should a Yandex `similar` list that stopped early say so? | Return the partial list with a typed stop reason (captcha, network error, malformed page), not a bool. A bare flag loses the reason, and the UI can then say "stopped after N results: captcha". |
-| R-34 | Is the solid rule in `judge` meant to need both sides solid? | Check `borders.py` in history. Then make the code match the rule the prototype validated and the doc states. A change of detections means recreating the catalogs, as with R-02. |
 | R-40 | A queued write for a file the catalog has lost, or a `NotFound` error, keeps its job forever. How should it end? | A job for a file the catalog marks missing is dropped, and the cause stays in the status line. A `NotFound` for a file the catalog still lists counts as a failure, with the normal attempt cap. It is not "offline". |
 | R-41 | Should the resume path and the normal path record a rotation the same way? | Yes, through one function. Both paths should call the shared effect (the plan's `WriteEffect::Rewritten`), so they cannot drift apart again. |
 | R-55 | `library.rs`'s `poll` shows only the latest message and drops the others. What should happen to the rest? | Keep every message. Warnings go into a bounded list: the UI shows the latest and a count, and nothing is dropped silently. The plan's `Bus` is the proper form. |
 | R-59 | Should every panic show the modal box? | No. Only a panic that ends the process shows it. Caught panics (the loader's `catch_unwind`, worker threads) go to the log and the status line. |
-| R-63 | Keep the `revision >= 0` guards, or replace them? | Replace them with the model roles of the facades (plan step 12): a cell reads its own values, and the role carries the change signal. Until then, keep the guards with one comment that says why. |
-| R-66 | Are the neighbour preloads worth their cost? | Measure at the end, as the plan requires. Whatever the result, a 4× margin is not justified: preload at the size the viewer shows (margin 1), and cancel the preloads when the index moves. |
+| R-63 | Keep the `revision >= 0` guards, or replace them? | Replace them with the model roles of the facades (plan step 12): a cell reads its own values, and the role carries the change signal. That is the proper end state, not a workaround. The guards stay only until the roles exist, because the QML step comes later; keep one comment on them that says so. |
+| R-66 | Are the neighbour preloads worth their cost? | Measure first, as the plan requires. Keep them only if they make the shown image appear sooner. If they stay, size them to the image the viewer shows, not a 4× margin (no measurement justifies the 4×), and cancel them when the index moves. |
 
 ## Findings
 
@@ -91,7 +90,7 @@ Each item is a call for the owner. The recommendation is the most proper option,
 | R-22 | open | `query.rs:752–753` (confirmed), `writeback.rs:365` (confirmed: `?2 % 2 = 1`), `Viewer.qml:404–405` (confirmed: `playerTurns % 2`) | The swap rule's SQL and QML copies. The border-sort SQL writes `a.orientation >= 5` by hand, the write-back's `done` swaps width and height with `?2 % 2 = 1`, and the viewer's fitted player swaps with `playerTurns % 2`. The sort's axis choice agrees with `browse::read::shown_cut`, because `Info.orientation` already includes the catalog rotation. | Replace the SQL copies with `swaps_axes` as a macro literal, as the plan says. The QML copy goes with the viewport facade. |
 | R-29 | open | `crates/core/src/rotate.rs:48–51` | The comment says a JPEG the transform can't do perfectly gets the orientation tag. The code maps every error to the tag (`Err(_) => tag()`), including a damaged file and an allocation failure, so those are hidden rather than reported. | Match only the "not a perfect transform" error and return the others. |
 | R-31 | open | `crates/core/src/pdq.rs:47` (`Hash::to_hex`) | Dead code: no callers in the workspace. The plan said it was already gone. | Delete it. |
-| R-34 | needs decision | `crates/core/src/borders.rs:639–640` (`judge`, solid side) | The solid rule uses `flat_dev_paired` (8.0) whenever the opposite side is any accepted side, including a blurred one. The doc of `flat_dev_paired` says "solid borders on both sides". | See Decisions. |
+| R-34 | open | `crates/core/src/borders.rs:639–640` (`judge`, solid side), `borders.rs:55` (doc) | The solid rule uses `flat_dev_paired` (8.0) whenever the opposite side is accepted, blurred or solid. This is not a port defect: the retired prototype (`tools/borders.py` at `ed09d0d^`, `judge`) does the same, and the Rust `judge` matches it line for line. Its parity run on 187,806 Pinterest images (`ed09d0d`) depends on that rule, so the behaviour stays. The doc at `borders.rs:55` says "solid borders on both sides", which is wrong. | Fix the doc to say "when the opposite side is accepted". No behaviour change. |
 | R-39 | open | `crates/ingest/src/writeback.rs:477–478` (`ExifTool::run`) | Stdout is read to its `{ready}` marker before stderr is read to `{done}`. If ExifTool fills the stderr pipe during a command, it blocks and never reaches the stdout marker: a deadlock. Ratings write little to stderr, so this is unlikely in practice. The plan records it too. | Drain stderr on its own thread (the plan's `pg-exiftool` design), or read both markers from one reader thread. |
 | R-40 | needs decision | `crates/ingest/src/writeback.rs:196–198`, `:206–209` | A `NotFound` error counts as "offline": retried without counting, at every idle check (30 s). A photo deleted outside the app while a write is queued keeps its job and its error (shown in the status) without end. Not checked: whether the scanner's `mark_missing` or a cascade removes the queue row. | Check the scan path first. If the row stays, count `NotFound` as a real failure after a while, or drop the row when the file is missing from the catalog. |
 | R-41 | needs decision | `crates/ingest/src/writeback.rs:236–246` (resume path, rotation) | The path that finishes an interrupted copy records a rotation with `file_rewritten` only. The normal path (`:318`) also calls `Catalog::analysis_turned_back`. The analysis is redone after a pixel change, so this may be harmless, but it is not shown. | Check whether the redo sets `analysis.rotation`. If not, call `analysis_turned_back` on the resume path too. |

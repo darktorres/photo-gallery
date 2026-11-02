@@ -92,7 +92,7 @@ impl MediaType {
         }
     }
 
-    /// The type of a row, for the counts (`browse::facets`).
+    /// The type of a row, for the counts (`browse::read::facets`).
     pub(crate) const CASE: &'static str =
         "CASE WHEN f.kind = 'video' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END";
 
@@ -229,7 +229,7 @@ impl BorderFacet {
     }
 }
 
-/// What `browse::facets` counts for borders: each value's condition summed, in `BorderFacet::ALL`'s order. A file
+/// What `browse::read::facets` counts for borders: each value's condition summed, in `BorderFacet::ALL`'s order. A file
 /// with a black and a blurred side counts for both.
 pub(crate) const BORDER_SUMS: &str = concat!(
     "coalesce(sum(",
@@ -321,7 +321,7 @@ pub struct Query {
     pub name: String,
 }
 
-/// A facet whose own values are left out when counting it (`browse::facets`): each value's count is what choosing
+/// A facet whose own values are left out when counting it (`browse::read::facets`): each value's count is what choosing
 /// it would show, given the other facets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Facet {
@@ -731,7 +731,7 @@ impl Sort {
 
     /// The value sorted on, as an integer expression over the file `f` and its analysis `a` (NULL: none, which
     /// comes last either way); `None` for name order (`files.order_key`, then the id for files of the same name in
-    /// the same folder on two drives), which is also every other key's order for ties (`browse::list_grid`).
+    /// the same folder on two drives), which is also every other key's order for ties (`browse::read::list_grid`).
     pub fn key_sql(self) -> Option<&'static str> {
         match self.key {
             SortKey::Name => None,

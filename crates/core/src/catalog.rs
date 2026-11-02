@@ -111,7 +111,7 @@ CREATE TABLE files(
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
--- The grid's name order and every folder's files (a range of keys: browse::scope).
+-- The grid's name order and every folder's files (a range of keys: browse::read::scope).
 CREATE INDEX files_order ON files(order_key) WHERE missing = 0;
 -- The folder tree's counts, from the index alone.
 CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
@@ -1020,7 +1020,7 @@ impl Catalog {
     /// A turn of `turns` written into the file (its pixels or its orientation tag): the analysis made before is of
     /// the file as it is now turned back by them, so it is recorded as made at the catalog rotation that many turns
     /// back. It is stale anyway (the mtime changed); until the import redoes it, the placeholder made from it shows
-    /// the file as it is now (`browse::placeholder`). With the file's rewrite, in its transaction.
+    /// the file as it is now (`browse::read::placeholder`). With the file's rewrite, in its transaction.
     pub fn analysis_turned_back(tx: &Transaction, file_id: i64, turns: u8) -> Result<()> {
         tx.execute(
             "UPDATE analysis SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
@@ -1871,27 +1871,27 @@ mod tests {
         BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0), Some(41), Some(0), Some(41)]);
-        assert_eq!(browse::border_sides(&c.conn, item.id).unwrap(), found.sides);
+        assert_eq!(browse::read::border_sides(&c.conn, item.id).unwrap(), found.sides);
         assert!(c.pending_borders().unwrap().is_empty());
 
         // The grid's entry, the filters and the sort.
-        let list = |c: &Catalog, q: Query| -> Vec<browse::Entry> {
-            browse::list_grid(&c.conn, "", true, &q, Sort::default()).unwrap()
+        let list = |c: &Catalog, q: Query| -> Vec<browse::read::Entry> {
+            browse::read::list_grid(&c.conn, "", true, &q, Sort::default()).unwrap()
         };
         let entry = list(&c, Query::default()).remove(0);
-        assert_eq!(entry.borders, browse::Borders::Found);
+        assert_eq!(entry.borders, browse::read::Borders::Found);
         let [x, y, w, h] = entry.content().unwrap();
         assert!(x == 0.0 && w == 1.0 && (y - 41.0 / 300.0).abs() < 1e-9 && (h - 218.0 / 300.0).abs() < 1e-9);
         let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
         assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
         assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
-        let counts = browse::facets(&c.conn, "", true, &Query::default()).unwrap().borders;
+        let counts = browse::read::facets(&c.conn, "", true, &Query::default()).unwrap().borders;
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
 
         // Marked as not a border: no border to the filters, the mark to the review.
         Catalog::set_border_mark(&c.conn, item.id, true).unwrap();
-        assert_eq!(list(&c, Query::default())[0].borders, browse::Borders::Marked);
+        assert_eq!(list(&c, Query::default())[0].borders, browse::read::Borders::Marked);
         assert!(list(&c, only(vec![BorderFacet::Black])).is_empty());
         assert_eq!(list(&c, only(vec![BorderFacet::None])).len(), 1);
         assert_eq!(list(&c, Query { border_marked: Some(true), ..Query::default() }).len(), 1);
@@ -1906,9 +1906,9 @@ mod tests {
         BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0); 4]);
-        assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
+        assert!(browse::read::border_sides(&c.conn, item.id).unwrap().is_empty());
         assert!(c.pending_borders().unwrap().is_empty());
-        assert_eq!(list(&c, Query::default())[0].borders, browse::Borders::None);
+        assert_eq!(list(&c, Query::default())[0].borders, browse::read::Borders::None);
         let marks: i64 = c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap();
         assert_eq!(marks, 1);
 
@@ -1918,7 +1918,7 @@ mod tests {
         AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [None; 4]);
-        assert!(browse::border_sides(&c.conn, item.id).unwrap().is_empty());
+        assert!(browse::read::border_sides(&c.conn, item.id).unwrap().is_empty());
         assert_eq!(c.pending_borders().unwrap().len(), 1);
     }
 
@@ -1969,8 +1969,8 @@ mod tests {
         }
         let names = |descending: bool| -> Vec<String> {
             let sort = Sort { key: SortKey::Borders, descending };
-            let entries = browse::list_grid(&c.conn, "", true, &Query::default(), sort).unwrap();
-            let path = |id| browse::details(&c.conn, id).unwrap().unwrap().path;
+            let entries = browse::read::list_grid(&c.conn, "", true, &Query::default(), sort).unwrap();
+            let path = |id| browse::read::details(&c.conn, id).unwrap().unwrap().path;
             entries.iter().map(|e| path(e.id).rsplit('\\').next().unwrap().to_string()).collect()
         };
         // Without a border (none found, or marked) last, by name, either way.
@@ -2134,7 +2134,7 @@ mod tests {
     }
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
-        crate::browse::set_rating(&c.conn, id, n, false).unwrap();
+        crate::browse::writes::set_rating(&c.conn, id, n, false).unwrap();
     }
 
     #[test]

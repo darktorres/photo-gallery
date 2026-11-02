@@ -222,7 +222,7 @@ impl Inner {
         )?;
 
         // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog, and their ratings are
-        // never queued (browse::set_rating).
+        // never queued (browse::writes::set_rating).
         if kind == Kind::Video.key() && job.temp.is_none() {
             if job.kind == "rotation" {
                 self.keep_turn_in_catalog(conn, job)?;
@@ -302,7 +302,7 @@ impl Inner {
         };
 
         // Step 2: the new content is complete; record it, then copy it in. From here until `done` records the write,
-        // readers know the file may be part-written (browse::FileState::writing).
+        // readers know the file may be part-written (browse::read::FileState::writing).
         conn.execute(
             "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
             params![job.file_id, job.kind, temp, job.value],

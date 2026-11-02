@@ -10,7 +10,7 @@
 
 use std::path::{Path, PathBuf};
 
-use pg_core::browse::{self, Entry, Facets, FolderTree};
+use pg_core::browse::{self, read::{Entry, Facets, FolderTree}};
 use pg_core::catalog::{Catalog, WorkItem};
 use pg_core::path::WorkList;
 use pg_core::query::{Query, Sort, SortKey};
@@ -81,7 +81,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
         List::FolderRecursive => (r"PhotoGallery\synthetic\library", true, Query::default(), name),
         List::FolderFlat => (r"PhotoGallery\synthetic\library\folder-00", false, Query::default(), name),
     };
-    let entries = browse::list_grid(&catalog.conn, folder, recursive, &query, sort).unwrap();
+    let entries = browse::read::list_grid(&catalog.conn, folder, recursive, &query, sort).unwrap();
     (catalog, black_box(entries))
 }
 
@@ -89,7 +89,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
-    let tree = browse::folder_tree(&catalog.conn).unwrap();
+    let tree = browse::read::folder_tree(&catalog.conn).unwrap();
     (catalog, black_box(tree))
 }
 
@@ -97,7 +97,7 @@ fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn facets(catalog: Catalog) -> (Catalog, Facets) {
-    let facets = browse::facets(&catalog.conn, "", true, &Query::default()).unwrap();
+    let facets = browse::read::facets(&catalog.conn, "", true, &Query::default()).unwrap();
     (catalog, black_box(facets))
 }
 

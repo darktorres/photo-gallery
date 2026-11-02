@@ -120,7 +120,7 @@ pub struct SettingsRust {
 impl Default for SettingsRust {
     fn default() -> SettingsRust {
         let p = prefs();
-        let last_file = state::with_catalog(|c| browse::session_get(&c.conn, "file"))
+        let last_file = state::with_catalog(|c| browse::read::session_get(&c.conn, "file"))
             .ok()
             .flatten()
             .and_then(|id| id.parse().ok())
@@ -170,7 +170,7 @@ impl qobject::Settings {
 
     fn set_last_file_saved(mut self: Pin<&mut Self>, value: i64) {
         if self.last_file != value {
-            if let Err(e) = state::with_catalog(|c| browse::session_set(&c.conn, "file", &value.to_string())) {
+            if let Err(e) = state::with_catalog(|c| browse::writes::session_set(&c.conn, "file", &value.to_string())) {
                 eprintln!("session: {e:#}");
             }
             self.as_mut().rust_mut().last_file = value;

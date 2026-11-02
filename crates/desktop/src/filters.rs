@@ -1,6 +1,6 @@
 //! The filter bar's query (PLAN §7): the files a `query::Query` keeps, edited through typed calls
 //! (`pg_core::query`'s editing API), so the QML never builds or reads it, and the counts next to the choices
-//! (`browse::facets`). FilterBar.qml makes one and is the only QML that calls into it: the window reads the query as
+//! (`browse::read::facets`). FilterBar.qml makes one and is the only QML that calls into it: the window reads the query as
 //! JSON (`query`, for the grid's model and the saved views) and sets it (a saved view, the session) through the
 //! filter bar's properties.
 
@@ -124,7 +124,7 @@ use core::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use pg_core::browse::{self, Facets};
+use pg_core::browse::{self, read::Facets};
 use pg_core::query::{BorderFacet, DateRange, MediaType, Query, Range};
 
 use crate::loader::{self, Kind};
@@ -406,7 +406,7 @@ impl qobject::Filters {
         let shown = path.clone();
         loader::submit(
             Kind::Facets,
-            move |c| browse::facets(&c.conn, &path, recursive, &query),
+            move |c| browse::read::facets(&c.conn, &path, recursive, &query),
             move |facets| {
                 let facets = facets.unwrap_or_else(|e| {
                     eprintln!("facets of {shown}: {e:#}");

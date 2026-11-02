@@ -101,7 +101,7 @@ fn ratings_and_turns_reach_the_files() {
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
-        pg_core::browse::set_rating(&c.conn, *id, (n % 5 + 1) as u8, true).unwrap();
+        pg_core::browse::writes::set_rating(&c.conn, *id, (n % 5 + 1) as u8, true).unwrap();
     }
     writer.wake();
     wait_for_queue(&c);
@@ -123,7 +123,7 @@ fn ratings_and_turns_reach_the_files() {
     // A turn: the files show turned; the analysis is redone with the new size.
     let originals: Vec<Rgb> = files.iter().map(|(p, _)| shown(p)).collect();
     for (id, _) in &before {
-        pg_core::browse::queue_rotation(&c.conn, *id, 1).unwrap();
+        pg_core::browse::writes::queue_rotation(&c.conn, *id, 1).unwrap();
     }
     writer.wake();
     wait_for_queue(&c);
@@ -163,7 +163,7 @@ fn ratings_and_turns_reach_the_files() {
     // the turn is in the file, or kept in the catalog.
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "sizes right after the turn: {:?}", dims(&c));
     let placeholder_turns = |c: &Catalog| -> Vec<u8> {
-        before.iter().map(|(id, _)| pg_core::browse::placeholder(&c.conn, *id).unwrap().unwrap().turns).collect()
+        before.iter().map(|(id, _)| pg_core::browse::read::placeholder(&c.conn, *id).unwrap().unwrap().turns).collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
     scan::scan(&mut c, &root, &ctl).unwrap();

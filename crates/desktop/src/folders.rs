@@ -1,4 +1,4 @@
-//! The folder tree (merged across drives, `pg_core::browse::folder_tree`) as a flat list model: each visible
+//! The folder tree (merged across drives, `pg_core::browse::read::folder_tree`) as a flat list model: each visible
 //! node is a row with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All".
 //!
 //! The tree is read off the GUI thread (`loader`): `reload` asks, `loaded` says it's shown. Until the first one,
@@ -116,7 +116,7 @@ use std::ops::Range;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_core::browse::{self, FolderTree};
+use pg_core::browse::{self, read::FolderTree};
 
 use crate::loader::{self, Kind};
 
@@ -277,7 +277,7 @@ impl qobject::FolderModel {
         let model = self.qt_thread();
         loader::submit(
             Kind::Tree,
-            |c| browse::folder_tree(&c.conn),
+            |c| browse::read::folder_tree(&c.conn),
             move |tree| {
                 let tree = tree.unwrap_or_else(|e| {
                     eprintln!("folder tree: {e:#}");

@@ -1,7 +1,7 @@
 //! The grid model: the files of the open folder, laid out in justified rows (`pg_core::layout`). QML sees one
 //! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index. The
-//! model holds a compact entry per file (`browse::Entry`); a file's path and size are read when it is shown
-//! (`browse::details`), for the selection and the viewer's file.
+//! model holds a compact entry per file (`browse::read::Entry`); a file's path and size are read when it is shown
+//! (`browse::read::details`), for the selection and the viewer's file.
 //!
 //! The files are listed off the GUI thread (`loader`): `openFolder` asks, and the list arrives later (`loaded`).
 //! So that nothing is renumbered under the user, the model keeps the items QML holds: the selection (`current`)
@@ -277,7 +277,10 @@ use cxx_qt_lib::{
     QVariant,
 };
 use pg_core::borders::Class;
-use pg_core::browse::{self, Borders, Details, Entry};
+use pg_core::browse::{
+    self,
+    read::{Borders, Details, Entry},
+};
 use pg_core::layout::{self, Row, RowChange};
 use pg_core::query::{MediaType, Query, Sort};
 
@@ -378,7 +381,7 @@ impl GalleryRust {
             let found = memo.remove(at);
             memo.insert(0, found);
         } else {
-            let details = match state::with_catalog(|c| browse::details(&c.conn, e.id)) {
+            let details = match state::with_catalog(|c| browse::read::details(&c.conn, e.id)) {
                 Ok(d) => d?,
                 Err(err) => {
                     eprintln!("reading {}: {err:#}", e.id);
@@ -462,7 +465,7 @@ impl qobject::GalleryModel {
         let shown = path.clone();
         loader::submit(
             Load::Grid,
-            move |c| browse::list_grid(&c.conn, &path, recursive, &query, sort),
+            move |c| browse::read::list_grid(&c.conn, &path, recursive, &query, sort),
             move |entries| {
                 let entries = entries.unwrap_or_else(|e| {
                     eprintln!("listing {shown}: {e:#}");
@@ -505,7 +508,7 @@ impl qobject::GalleryModel {
         let edited = std::mem::take(&mut self.as_mut().rust_mut().edited);
         for id in edited {
             if let Some(slot) = entries.iter_mut().find(|e| e.id == id) {
-                match state::with_catalog(|c| browse::entry(&c.conn, id)) {
+                match state::with_catalog(|c| browse::read::entry(&c.conn, id)) {
                     Ok(Some(fresh)) => *slot = fresh,
                     Ok(None) => {}
                     Err(e) => eprintln!("reloading {id}: {e:#}"),
@@ -689,7 +692,7 @@ impl qobject::GalleryModel {
         if turns == 0 {
             return;
         }
-        if let Err(e) = state::with_catalog(|c| browse::queue_rotation(&c.conn, id, turns)) {
+        if let Err(e) = state::with_catalog(|c| browse::writes::queue_rotation(&c.conn, id, turns)) {
             eprintln!("rotating: {e:#}");
             return;
         }
@@ -730,7 +733,7 @@ impl qobject::GalleryModel {
         let mut reshaped = false;
         for i in waiting {
             let id = self.entries[i].id;
-            match state::with_catalog(|c| browse::entry(&c.conn, id)) {
+            match state::with_catalog(|c| browse::read::entry(&c.conn, id)) {
                 Ok(Some(fresh)) if fresh != self.entries[i] => {
                     reshaped |= fresh.aspect() != self.entries[i].aspect();
                     self.as_mut().rust_mut().entries[i] = fresh;
@@ -764,7 +767,7 @@ impl qobject::GalleryModel {
         let Some(id) = self.item(item).map(|i| i.id) else { return };
         let rating = rating.clamp(0, 5) as u8;
         let write_back = settings::prefs().write_back;
-        if let Err(e) = state::with_catalog(|c| browse::set_rating(&c.conn, id, rating, write_back)) {
+        if let Err(e) = state::with_catalog(|c| browse::writes::set_rating(&c.conn, id, rating, write_back)) {
             eprintln!("rating: {e:#}");
             return;
         }

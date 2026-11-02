@@ -164,11 +164,20 @@ pub struct FolderTree {
 const FOLDER_COUNTS: &str = "SELECT c.folder_id, (SELECT path FROM folders WHERE id = c.folder_id), c.n
     FROM (SELECT folder_id, count(*) AS n FROM files WHERE missing = 0 GROUP BY folder_id) c";
 
+/// What the tree's strings take at most: every folder's row, path bytes and components (backslashes + 1), from the
+/// `folders` table (a few thousand rows, read in a millisecond). The tree has the folders with present files: no
+/// more rows, and no more path bytes than their paths (a key adds a byte per component, and lower case rarely
+/// lengthens one). `char(92)` is `\`.
+const FOLDER_SIZES: &str = "SELECT count(*), coalesce(sum(length(CAST(path AS BLOB))), 0),
+    coalesce(sum(length(path) - length(replace(path, char(92), '')) + 1), 0) FROM folders";
+
 /// The merged tree of every folder holding present files, with their ancestors.
 pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
+    let (folders, bytes, components): (usize, usize, usize) =
+        conn.query_row(FOLDER_SIZES, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut stmt = conn.prepare(FOLDER_COUNTS)?;
     let mut rows = stmt.query([])?;
-    let mut builder = TreeBuilder::default();
+    let mut builder = TreeBuilder::with_capacity(folders, bytes, components);
     while let Some(r) = rows.next()? {
         if let Some(path) = r.get_ref(1)?.as_str_or_null()? {
             builder.add(r.get(0)?, path, r.get(2)?);
@@ -194,6 +203,16 @@ struct TreeRow {
 }
 
 impl TreeBuilder {
+    /// Room for `rows` folders whose paths are `bytes` long with `components` components in all.
+    fn with_capacity(rows: usize, bytes: usize, components: usize) -> TreeBuilder {
+        let tree = FolderTree {
+            nodes: Vec::new(),
+            paths: String::with_capacity(bytes),
+            keys: Vec::with_capacity(bytes + components),
+        };
+        TreeBuilder { tree, rows: Vec::with_capacity(rows) }
+    }
+
     /// A folder (`folders.id`, `folders.path`) holding `count` present files. A drive root (no components) is in no
     /// node.
     fn add(&mut self, id: i64, path: &str, count: i64) {
@@ -227,6 +246,18 @@ impl TreeBuilder {
         let TreeBuilder { mut tree, mut rows } = self;
         let key = |k: (u32, u32)| k.0 as usize..k.1 as usize;
         rows.sort_unstable_by(|a, b| tree.keys[key(a.key)].cmp(&tree.keys[key(b.key)]));
+        // The nodes, counted: in this order each row adds the components past those it shares with the row before
+        // it (whole components, each ending with 0x01, which none holds), as the stack below finds them open.
+        let components = |k: &[u8]| k.iter().filter(|&&b| b == 0x01).count();
+        let mut before: &[u8] = &[];
+        let mut nodes = 0;
+        for row in &rows {
+            let k = &tree.keys[key(row.key)];
+            let shared = k.iter().zip(before).take_while(|(a, b)| a == b).count();
+            nodes += components(k) - components(&k[..shared]);
+            before = k;
+        }
+        tree.nodes.reserve_exact(nodes);
         let mut open: Vec<usize> = Vec::new();
         for row in &rows {
             let row_key = &tree.keys[key(row.key)];
@@ -1163,6 +1194,11 @@ mod tests {
         let tree = folder_tree(&c.conn).unwrap();
         let roots: Vec<&str> = tree.children(None).map(|n| tree.name(n)).collect();
         assert_eq!(roots, ["p", "p-x"]);
+        // Its strings were made at the size reserved for them, not grown.
+        let (_, bytes, components): (usize, usize, usize) =
+            c.conn.query_row(FOLDER_SIZES, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
+        assert_eq!((tree.paths.capacity(), tree.keys.capacity()), (bytes, bytes + components));
+        assert_eq!(tree.nodes.capacity(), tree.nodes.len());
     }
 
     /// A node as compared: merged path, name, depth, direct and total counts, drives (upper case, by letter), and
@@ -1266,6 +1302,8 @@ mod tests {
         }
         let tree = builder.build();
         assert_eq!(flat(&tree), reference_tree(rows));
+        // The nodes were counted exactly before they were made.
+        assert_eq!(tree.nodes.capacity(), tree.nodes.len());
         let mut key = Vec::new();
         for n in 0..tree.len() {
             assert_eq!(tree.find(tree.merged_path(n), &mut key), Some(n));
@@ -1323,7 +1361,15 @@ mod tests {
         check_tree(&rows);
         let tree = folder_tree(&conn).unwrap();
         assert_eq!(flat(&tree), reference_tree(&rows));
+        assert_eq!(tree.nodes.capacity(), tree.nodes.len());
         eprintln!("{} folders, {} nodes, {} files", rows.len(), tree.len(), tree.total());
+        let sizes = |len: usize, cap: usize| format!("{len} of {cap}");
+        eprintln!(
+            "paths {}, keys {}, nodes {}",
+            sizes(tree.paths.len(), tree.paths.capacity()),
+            sizes(tree.keys.len(), tree.keys.capacity()),
+            sizes(tree.nodes.len(), tree.nodes.capacity())
+        );
     }
 
     #[test]

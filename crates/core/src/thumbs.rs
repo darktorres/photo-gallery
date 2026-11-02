@@ -516,7 +516,9 @@ impl ThumbCache {
         if !path.exists() {
             return Ok(None);
         }
-        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        // Read-write, as the other connections are: a read-only one can't merge the WAL when it closes last, and
+        // would leave the WAL and its index behind.
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         Ok(Some(conn.query_row("SELECT t.bytes, t.count, l.cap FROM totals t, limits l", [], |r| {
             Ok(Usage { bytes: r.get(0)?, count: r.get(1)?, cap: r.get(2)? })
         })?))
@@ -591,12 +593,16 @@ impl ThumbCache {
     }
 
     /// Write what is waiting and stop the writer; later writes are dropped and reads keep working. Idempotent.
+    /// The calling thread's read connections close too: the last connection to a file to close merges its WAL, and
+    /// a read after this one opens a new connection.
     pub fn close(&self) {
-        let Some(store) = &self.store else { return };
-        drop(store.ops.lock().unwrap().take());
-        if let Some(writer) = store.writer.lock().unwrap().take() {
-            let _ = writer.join();
+        if let Some(store) = &self.store {
+            drop(store.ops.lock().unwrap().take());
+            if let Some(writer) = store.writer.lock().unwrap().take() {
+                let _ = writer.join();
+            }
         }
+        READERS.with(|readers| readers.borrow_mut().clear());
     }
 }
 
@@ -887,6 +893,11 @@ fn write_loop(mut conn: Connection, inbox: Receiver<Op>, report: &Report) {
         }
     }
     report_touches(touches.flush(&mut conn));
+    // The writer's last act: the WAL merged into the file, so the file is whole even if the process ends before the
+    // readers close (the last connection to close deletes the WAL, and a reader may still be open).
+    if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)") {
+        report(&anyhow::Error::from(e).context("thumbnail cache: the WAL was not merged at close"));
+    }
 }
 
 /// Store `thumbs` in one IMMEDIATE transaction: drop the entries they replace, read the total and the cap, evict
@@ -1035,6 +1046,21 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         dir
+    }
+
+    /// Closing the cache leaves no WAL or index file: the writer merges the WAL, and this thread's reader (opened by
+    /// the read before) closes with it, so the last connection deletes the files. A reader left open keeps them.
+    #[test]
+    fn close_merges_the_wal_and_leaves_no_files() {
+        let dir = scratch("close-wal");
+        let cache = open(&dir, 1 << 20);
+        cache.put(thumb(3, 100, 5, 30));
+        cache.flush();
+        assert_eq!(cache.totals().unwrap(), (30, 1));
+        cache.close();
+        assert!(!dir.join("thumbs.sqlite-wal").exists(), "the WAL is left");
+        assert!(!dir.join("thumbs.sqlite-shm").exists(), "the index is left");
+        assert_eq!(totals_and_sum(&dir).0, (30, 1));
     }
 
     fn thumb(file_id: i64, height: u32, mtime: i64, bytes: usize) -> Thumb {

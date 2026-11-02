@@ -125,6 +125,9 @@ fn run_app() {
     }
     loader::stop();
     library::stop();
+    // The engine ends the image providers, and Qt joins their thread pools as they end: the connections those threads
+    // hold close with them, before the state closes its own.
+    drop(engine);
     state::shutdown();
 }
 

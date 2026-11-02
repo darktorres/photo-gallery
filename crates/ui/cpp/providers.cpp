@@ -128,6 +128,8 @@ public:
 
     ~Provider() override {
         m_pool.clear();
+        // The idle threads end now, not after their expiry: each one's thread-local connections close as it ends.
+        m_pool.setExpiryTimeout(0);
         m_pool.waitForDone();
     }
 

@@ -106,14 +106,21 @@ pub fn save_crops(ids: Vec<i64>, folder: std::path::PathBuf) {
 }
 
 /// After the event loop, before the thumbnail cache closes: let the file write in progress finish, with its
-/// thumbnails retagged. The background job is left to end with the process: what it stops in the middle (a batch
-/// of thumbnails, an analysis) is redone at the next start, and waiting for it could keep the process alive for
-/// as long as reading a large file takes.
+/// thumbnails retagged. Then the background job stops after the file (or batch) it has, and its thread ends, so its
+/// connections close. What it stops in the middle is redone at the next start. The wait is bounded: a file that
+/// takes longer to read than `JOB_STOP_WAIT` is left to end with the process, as before.
 pub fn stop() {
     if let Some(w) = WRITER.get() {
         w.stop();
     }
+    if let Some(r) = RUNNER.get()
+        && !r.stop(JOB_STOP_WAIT)
+    {
+        eprintln!("background job still running at exit: its last changes are merged at the next open");
+    }
 }
+
+const JOB_STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Default)]
 pub struct LibraryRust {

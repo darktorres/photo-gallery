@@ -704,6 +704,13 @@ pub struct Status {
 impl Catalog {
     /// Open the catalog at `path`, creating it when new. One made with an earlier layout is copied into the current
     /// one first ([`rebuild`]): seconds for 190k files.
+    /// Merge the WAL into the file, then close the connection (on drop, too, without the merge). The last connection
+    /// to a file to close deletes its WAL; the merge keeps the file whole if the process ends before the others close.
+    pub fn close(self) -> Result<()> {
+        self.conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+        Ok(())
+    }
+
     pub fn open(path: &Path) -> Result<Catalog> {
         let mut conn = connect(path)?;
         if !current_layout(&conn)? {

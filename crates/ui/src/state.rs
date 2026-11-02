@@ -53,8 +53,8 @@ pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
     let catalog_path = catalog_dir.join("catalog.sqlite");
     let catalog = Catalog::open(&catalog_path)?;
     let catalog_id = catalog.catalog_id()?;
-    // Kept for the GUI thread rather than closed: closing the last connection checkpoints and deletes the WAL,
-    // and the first QML object would open it again.
+    // Kept for the GUI thread until `shutdown`: closing the last connection deletes the WAL, and the first QML object
+    // would open it again.
     CATALOG.with(|c| *c.borrow_mut() = Some(catalog));
     let thumbs = ThumbCache::open(&catalog_dir, &catalog_id, thumb_cap_bytes, Box::new(|e| eprintln!("{e:#}")))
         .unwrap_or_else(|e| {
@@ -73,10 +73,17 @@ pub fn thumbs() -> &'static ThumbCache {
     &get().thumbs
 }
 
-/// After the event loop: write what the thumbnail cache's writer still holds (the `static` is never dropped).
+/// After the event loop, and after the engine (with the image providers and their threads) is gone: the cache's writer
+/// writes what it holds and merges its WAL; then this thread's connections close, the catalog's last, so the last
+/// connection to each file deletes its WAL. The `static`s are never dropped, so this is the only place they close.
 pub fn shutdown() {
     if let Some(state) = STATE.get() {
         state.thumbs.close();
+    }
+    if let Some(catalog) = CATALOG.with(|c| c.borrow_mut().take())
+        && let Err(e) = catalog.close()
+    {
+        eprintln!("catalog: the WAL was not merged at close: {e:#}");
     }
 }
 

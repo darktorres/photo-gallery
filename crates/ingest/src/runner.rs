@@ -8,8 +8,11 @@
 //! so stopping costs nothing but the batch in flight.
 
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Condvar, Mutex};
+use std::thread::JoinHandle;
+use std::time::Duration;
 
 use anyhow::Result;
 use pg_core::catalog::{Catalog, is_under};
@@ -33,6 +36,8 @@ struct Queue {
 struct Inner {
     catalog_path: PathBuf,
     thumbs: &'static ThumbCache,
+    /// Set by `stop`: the job ends at its next wait.
+    quit: AtomicBool,
     ctl: Control,
     queue: Mutex<Queue>,
     wake: Condvar,
@@ -62,6 +67,9 @@ pub struct Generation {
 
 pub struct Runner {
     inner: Arc<Inner>,
+    /// The job thread, and the signal it sends as it ends (`stop` waits for that, within a bound).
+    thread: Mutex<Option<JoinHandle<()>>>,
+    exited: Mutex<Option<mpsc::Receiver<()>>>,
 }
 
 impl Runner {
@@ -77,6 +85,7 @@ impl Runner {
         let inner = Arc::new(Inner {
             catalog_path,
             thumbs,
+            quit: AtomicBool::new(false),
             ctl: Control::new(false),
             queue: Mutex::new(Queue { scans: Vec::new(), crops: Vec::new(), wake: true }),
             wake: Condvar::new(),
@@ -87,8 +96,38 @@ impl Runner {
             on_round_done: Box::new(on_round_done),
         });
         let job = inner.clone();
-        std::thread::Builder::new().name("background job".into()).spawn(move || job.run()).expect("spawn job");
-        Runner { inner }
+        let (exit, exited) = mpsc::channel();
+        let thread = std::thread::Builder::new()
+            .name("background job".into())
+            .spawn(move || {
+                job.run();
+                let _ = exit.send(());
+            })
+            .expect("spawn job");
+        Runner { inner, thread: Mutex::new(Some(thread)), exited: Mutex::new(Some(exited)) }
+    }
+
+    /// Stop the job after the file (or the batch) in progress, as a new request does, and wait for its thread to end,
+    /// for at most `timeout`: its connections close with it. `false` if it is still running then; it ends with the
+    /// process, and the WAL it left is merged at the next open.
+    pub fn stop(&self, timeout: Duration) -> bool {
+        {
+            let mut q = self.inner.queue.lock().unwrap();
+            self.inner.quit.store(true, Ordering::Relaxed);
+            q.wake = true;
+        }
+        self.inner.ctl.request_stop();
+        self.inner.wake.notify_all();
+        let Some(exited) = self.exited.lock().unwrap().take() else { return true };
+        match exited.recv_timeout(timeout) {
+            Ok(()) | Err(RecvTimeoutError::Disconnected) => {
+                if let Some(thread) = self.thread.lock().unwrap().take() {
+                    let _ = thread.join();
+                }
+                true
+            }
+            Err(RecvTimeoutError::Timeout) => false,
+        }
     }
 
     /// Scan these folders (normalized), then import and thumbnail what they hold.
@@ -169,6 +208,9 @@ impl Inner {
                 let mut q = self.queue.lock().unwrap();
                 while !q.wake {
                     q = self.wake.wait(q).unwrap();
+                }
+                if self.quit.load(Ordering::Relaxed) {
+                    return;
                 }
                 q.wake = false;
                 self.ctl.clear_stop();

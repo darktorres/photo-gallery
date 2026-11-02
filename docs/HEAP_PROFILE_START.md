@@ -1,4 +1,4 @@
-# Heap profile: the app's start on the default catalog (dhat, 2026-11-01)
+# Heap profile: the app's start on the default catalog (dhat, 2026-11-01, after the fixes 2026-11-02)
 
 Every Rust heap allocation from process start until the window has loaded and settled, charged to the code of ours
 that decides to make it, each site read at its source lines. How the profiles are made and read: PROFILING.md
@@ -17,7 +17,64 @@ import, no borders, no thumbnails). The process ended at 6.6 s.
 
 **Not in it:** Qt's allocations (C++, the C runtime's heap) and SQLite's page caches (C). This is the Rust side only.
 
-## Totals
+## After the fixes (2026-11-02)
+
+The same run at commit 4e1ad4d, offscreen (`QT_QPA_PLATFORM=offscreen`, which changes Qt's allocations but not
+ours), on the same catalog and session. Profile: `D:\PhotoGallery\scratch_dhat\after\start\dhat-heap.json`.
+
+- **Session restored before the run.** Name searches run on this catalog the day before had left it with no
+  selected file (`session.file` = -1). It was set back to file 8838, the one selected in the first run. The window
+  then showed the same rows, with the same file selected.
+- **Stage times aren't comparable.** Under dhat and offscreen, `ready` came at 695 ms, against 1,317 ms on screen
+  before. The start's times are measured on release builds instead (PROFILING.md).
+
+| | Before | After |
+|---|---:|---:|
+| Allocated | 38.9 MB in 16,523 blocks | 13.1 MB in 686 blocks |
+| Peak | 17.2 MB in 2,125 blocks | 11.4 MB in 131 blocks |
+| At exit | 1.9 KB in 26 blocks | 2.1 KB in 26 blocks |
+
+| Area | Before | After |
+|---|---:|---:|
+| The folder tree | 11,979 blocks, 864 KB | 68 blocks, 378 KB |
+| The thumbnails and placeholders | 3,106 blocks for 151 thumbnails | 457 blocks for 118 |
+| The list and the grid | 762 blocks, 32.5 MB | 37 blocks, 11.2 MB |
+| The command line | 427 blocks, 63 KB | 51 blocks, 3.5 KB |
+| Catalog opens | 114 blocks, 1.5 MB | 12 blocks, 426 B |
+| The background job, the writer, the rest | 135 blocks, 23 KB | 61 blocks, 3.1 KB |
+
+- **118 thumbnails, not 151.** The view is now placed on the selected file before any cell is made, so the rows at
+  the top are no longer made and dropped.
+- **The peak is the list:** 189,518 entries of 56 B, 10,613,008 B, made at its exact size (`browse.rs:603`). Beside
+  it are the layout's rows at their exact count (`layout.rs:34`, 537 KB) and the rows' versions as the model
+  inserted them (`gallery.rs:595`, 90 KB). Before, the peak was the list at 14.7 MB with 4.1 MB unused, plus the
+  aspects' `Vec` (1.5 MB) and the doubled rows.
+- **At exit:** threads still running and statics, as before (`runner.rs:77`, `:90`, `writeback.rs:82`,
+  `library.rs:154`, `:160`, the selected file's details and border sides, `browse.rs:646`, `:662`, `:671`, `:698`),
+  plus the command line's arguments, parsed once into a static (`command_line.rs:57`, `:59`). Nothing leaks.
+
+### What is left
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 118 | 1.18 MB | `thumbs.rs:392` | Each thumbnail's JPEG read from the cache: the bytes Qt decodes. By design |
+| 118 | 312 KB | `state.rs:247` → `thumb_hash_to_rgba` | Each placeholder's image: handed to Qt without a copy. By design |
+| 118 | 2.4 KB | `browse.rs:903` | Each placeholder's hash (20 B) read into a `Vec`. **Lead:** read it in place (`get_ref`) into the decoder |
+| 18 + 6 + 12 + 12 | 9 KB | `thumbs.rs:387`, `:395`, `:678`, `:681` | Each provider thread's first use of the cache: its connection and statements |
+| 16 + 4 + 3 + 3 | 12 KB | `thumbs.rs:758`, `:377`, `:362`, `:708` | The cache's writer: its batches, channel and touches |
+| 13 + 13 + 9 + 9 | 376 KB | `browse.rs:211`, `:47`, `:256`, `:220` | The folder tree's four arenas (paths, keys, rows, nodes) growing by doubling. **Lead:** reserve them from the folder count the query returns |
+| 1 | 10.6 MB | `browse.rs:603` | The list |
+| 1 + 1 | 627 KB | `layout.rs:34`, `gallery.rs:595` | The rows at their exact count, and their versions |
+| ~50 | ~3.5 KB | `command_line.rs`, `main.rs:49`, `:85` | The arguments, read once |
+| 12 | 426 B | `catalog.rs:705`, `:386` | Catalog opens: paths only |
+| ~60 | ~3 KB | `runner.rs`, `writeback.rs`, `library.rs`, `loader.rs`, `gpu_device.rs`, `settings.rs` | Threads, channels and paths |
+
+All six leads at the end were fixed (plan steps 6, 8, 9, 10). The old lead 6, the page caches, was measured in step 10:
+the loader releases its cache after each job.
+
+## Before the fixes (2026-11-01, d2205ba)
+
+### Totals
 
 38.9 MB in 16,523 blocks. Peak 17.2 MB in 2,125 blocks at 1.16 s (while the list was laid out). 1.9 KB in 26 blocks
 at exit.
@@ -31,7 +88,7 @@ at exit.
 | Catalog opens (14) | 114 (0.7%) | 1.5 MB (3.9%) | 72 B |
 | The thumbnail cache's writer, the background job, the rest | 135 (0.8%) | 23 KB | 2.1 KB |
 
-## The peak: 17.2 MB
+### The peak: 17.2 MB
 
 | Live | Bytes | Why |
 |---|---:|---|
@@ -41,7 +98,7 @@ at exit.
 | The folder tree | 168,170 (1.0%) | 693 nodes, their names, paths and drives, and the tree's `Vec`s |
 | The rest | 2,628 | QObjects' Rust halves, channels, the thumbnail cache |
 
-## At exit: 1.9 KB
+### At exit: 1.9 KB
 
 Held by threads that are still running or by statics, by design: the background job's and the writer's thread
 state (`runner.rs:75`, `:88`, `writeback.rs:84`, `library.rs:154`, `:160`; they are left to end with the process,
@@ -50,11 +107,11 @@ the open view), the catalog reader (`loader.rs:52`, `:66`), connections' paths (
 cache's paths (`state.rs:35`, `thumbs.rs:130`, `thumbs.rs:403`), the panic log's path (`panic_log.rs:17`), the
 catalog folder (`main.rs:68`, `:69`), clap's default-value strings (`cli.rs:33`, `:108`, `:111`). Nothing leaks.
 
-## Every site
+### Every site
 
 Sorted by blocks within each area.
 
-### The folder tree: 11,979 blocks for 693 nodes
+#### The folder tree: 11,979 blocks for 693 nodes
 
 `folder_tree` (`browse.rs:112`–`175`) reads the 690 folders and builds the merged tree. For each folder it rebuilds
 the merged path one component at a time from empty, and lowercases each prefix whole as the key for `by_key`: about
@@ -79,7 +136,7 @@ five components per folder, each with its own `String`s.
 | 1 | 16.6 KB | 0 | `browse.rs:169` the names' keys `Vec` | |
 | 1 | 5.4 KB | 0 | `browse.rs:172` `sort_by` | The stable sort's scratch buffer. A parent's children have distinct keys, so `sort_unstable_by` gives the same order without one. |
 
-### The thumbnails and placeholders: 3,106 blocks for 151 thumbnails
+#### The thumbnails and placeholders: 3,106 blocks for 151 thumbnails
 
 Each visible image asks for its ThumbHash placeholder and its thumbnail, on Qt's image-provider threads (10 of them
 opened a catalog connection).
@@ -98,7 +155,7 @@ opened a catalog connection).
 | 151 | 39.9 KB | 0 | `thumbs.rs:304` `get_nearest`'s `prepare_cached` | rusqlite's cache key. |
 | 30 + 24 + 16 + 16 | 12.3 KB | 0 | `browse.rs:603`, `thumbs.rs:312`, `thumbs.rs:592`, `:589` | Each provider thread's first use: its catalog and cache connections and their statement caches. |
 
-### The list and the grid: 762 blocks, 32.5 MB
+#### The list and the grid: 762 blocks, 32.5 MB
 
 | Blocks | Bytes | Peak | Site | What, and what it would take |
 |---:|---:|---:|---|---|
@@ -113,7 +170,7 @@ opened a catalog connection).
 | 2 + 2 + 1 | 284 B | 0 | `gallery.rs:744`, `:740`, `:742`, `:331` | The status line of the selected file (`info`). |
 | 3 + 1 + 1 + 1 | 760 B | 0 | `browse.rs:399`, `:415`, `:424`, `:451` | The selected file's details and border sides. |
 
-### Catalog opens: 14, 114 blocks
+#### Catalog opens: 14, 114 blocks
 
 `Catalog::open` (`catalog.rs:580`) runs on each new connection: the GUI thread's (`state.rs:36`), the catalog
 reader's (`loader.rs:144`), the background job's (`runner.rs:175`), the writer's (`writeback.rs:154`), and one per
@@ -127,7 +184,7 @@ Not in this profile: `connect` sets `PRAGMA cache_size = -262144` (256 MB) on ev
 could each grow to 256 MB in SQLite's heap. The provider threads only read a few rows each; they are where a smaller
 cache would cost nothing.
 
-### The command line: 427 blocks
+#### The command line: 427 blocks
 
 | Blocks | Bytes | Site | What, and what it would take |
 |---:|---:|---|---|
@@ -135,7 +192,7 @@ cache would cost nothing.
 | 93 | 43.2 KB | `cli.rs:20`–`112` (29 sites) | `cli::wants_cli` (`cli.rs:123`) builds clap's whole `Command` to compare the arguments with the subcommands' names, also when there are no arguments (the normal start). Checking `args.is_empty()` first, or a list of the names, skips it. |
 | 15 | 1.1 KB | `main.rs:49` | `args_os().collect()`. |
 
-### The rest: 135 blocks
+#### The rest: 135 blocks
 
 The thumbnail cache's writer and its channel (`thumbs.rs:276`–`279`, `:294`, `:661`, `:669` the touched entries'
 `BTreeSet`, `:706`, `:712`), the background job's first round checking for work (`catalog.rs:502`, `:510` the
@@ -145,7 +202,7 @@ import's query, `thumbs.rs:531`, `:543`, `:567` the thumbnails' query, `thumbs.r
 (`create_rs_*`), the settings and session (`settings.rs:71`–`85`, `browse.rs:650`), `state::init` and `run_app`'s
 paths. All once per start.
 
-## Leads, by what they would save
+### Leads, by what they would save
 
 1. **The list's capacity** (`browse.rs:373`): 29.4 MB allocated and copied to build a 10.6 MB list, and 4.1 MB
    unused for as long as it is shown. Every folder change and filter builds a list.

@@ -1,4 +1,4 @@
-# Heap profile: `gallery scan` and `gallery import` (dhat, 2026-11-01)
+# Heap profile: `gallery scan`, `gallery import` and the passes (dhat, 2026-11-01, after the fixes 2026-11-02)
 
 Every Rust heap allocation of a scan and an import, charged to the code of ours that decides to make it (the
 innermost frame in `pg_core`, `pg_ingest` or `gallery` that isn't a container or conversion helper), and each site
@@ -17,7 +17,118 @@ tier-1 index rebuilt from existing hashes, files bigger than the decode's 512 ×
 non-JPEG decodes (full size, `decode::decode_other`), EXIF that parses, videos. Where a finding depends on scale, it
 says what it would be at scale, worked out from the code; those are estimates, not measurements.
 
-## Totals
+## After the fixes (2026-11-02)
+
+The same runs at commit 4e1ad4d, after the twelve steps the drill below led to: per-worker workspaces, metadata
+walks without allocations, our own EXIF reader, a read pool bounded in bytes, a flat tier-1 index, writers with
+statements prepared once, the scan, the folder tree, the grid, requests and connections, the vendored
+rusqlite / thumbhash / fast_image_resize, and the viewer's images. Profiles in `D:\PhotoGallery\scratch_dhat\after`.
+
+The borders and thumbnail passes were profiled before the fixes too (d2205ba, `scratch_dhat\passes`), but not written
+up here: `gallery borders --readers 1 --workers 1` and `gallery thumbs --height 256 --readers 1 --workers 1
+--foreground` on the 898-file corpus `D:\PhotoGallery\equiv\src` (474 MB: camera JPEGs of 6000 × 4000, PNG, WebP, GIF
+and TIFF files, a 142 MB file, videos). The new profiles run them the same way, on the same corpus.
+
+| Run | Allocated, before → after | Peak, before → after | At exit |
+|---|---|---|---|
+| Scan, 305 files | 544 KB in 2,472 blocks → 198 KB in 836 | 101 KB in 318 → 101 KB in 321 | 1.0 KB in 4, unchanged |
+| Import, 1 worker | 425.6 MB in 167,437 → 12.8 MB in 1,718 | 27.6 MB in 1,041 → 7.2 MB in 924 | 1.1 KB in 5, unchanged |
+| Import, 12 workers | 425.6 MB in 167,454 → 53.2 MB in 2,400 | 33.2 MB in 1,380 → 32.1 MB in 995 | 1.1 KB in 5, unchanged |
+| Borders, 898 files | 5,946 MB in 559,711 → 1,972 MB in 26,861 | 845.6 MB in 1,807 → 500.4 MB in 942 | 1.1 KB in 5, unchanged |
+| Thumbnails, 898 files | 5,413 MB in 479,146 → 1,998 MB in 24,032 | 846.7 MB in 1,932 → 502.2 MB in 1,046 | 2.1 KB in 9, unchanged |
+
+- **Import, per file:** 1.40 MB in 549 blocks before, 42 KB in 5.6 blocks after. The one-worker import took 1.05 s
+  under dhat, now 0.52–0.56 s. A first run of the new binary took 2.44 s, but that was its first launch, and two
+  more runs gave 0.56 and 0.52 s with the same allocations. Release builds, three runs each: 0.7–0.8 s before,
+  0.5 s after.
+- **Import peaks.** With one worker, 7.2 MB, at the end of the run: the read pool's 302 idle buffers (4.8 MB, a
+  defect, below), the batch (228 KB), and the workspace's buffers (decode, PDQ planes, ThumbHash planes, resizer:
+  2.1 MB). The empty index (25.2 MB) is gone. With 12 workers, 32.1 MB at 0.22 s: the workers' workspaces at this
+  sample's sizes, about 2.5 MB each. That is the PDQ planes (16.9 MB, two per worker), the decodes (6.3 MB),
+  ThumbHash planes and hashes (3.0 MB), the resizers (3.0 MB), plus the pool (2.6 MB).
+- **The passes' peaks** are one file: the corpus's 142 MB file read whole (141.9 MB) and decoded by the `image` crate
+  (348–353 MB). Before, `decode_stored` held two blocks of 696.9 MB at the peak, and the queue's files 148.5 MB.
+- **Before, in the passes:** `borders::View::gray3` (189,667 blocks), `DetailSums::new` (183,054), `SolidLines`
+  (63,038), and kamadak-exif twice per file (84,054). The thumbnail pass had fast_image_resize's per-call
+  coefficients (366,631 blocks), kamadak-exif (84,304), and decodes and their oriented copies. Every one of these is
+  gone.
+
+### What is left
+
+Every remaining site, read at its lines. Sizes are the after profiles'.
+
+**Import, one worker (1,718 blocks):**
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 305 | 7.6 KB | `analyze.rs:127` → `thumbhash` `lib.rs:156` | Each file's 25-byte ThumbHash: the result, kept |
+| 52 | 524 KB | `analyze.rs:127` → `thumbhash` `lib.rs:94`–`97` | The encoder's four planes growing by `push` to 64 KB: 13 steps each, once per worker. **Lead:** `reserve(w * h)` first |
+| 305 | 37 KB | `pipeline.rs:152` → `File::open` | std's UTF-16 copy of each path. Stays, by design |
+| 305 | 18 KB | `catalog.rs:594` | Each work item's path: the work list |
+| 302 | 4.8 MB | `pipeline.rs:246` `Pool::take` | **A defect.** A new buffer for nearly every file, all kept idle. Below |
+| 16 | 4.2 MB | `pdq_index.rs:77` | Each chunk's chain heads, 65,536 `u32`s (256 KB), made at the first insert. **Lead:** 4 MB per import even for a few hashes |
+| 136 | 69 KB | `pdq_index.rs:80`, `:85` | The chains and ids growing by `push` |
+| 4 | 1.75 MB | `pdq.rs:90`, `:98` | `dct16`'s two planes, grown twice: the workspace |
+| 2 | 658 KB | `decode.rs:177` | The decode buffer, grown twice: the workspace |
+| 13 | 297 KB | `resize.rs:88`, `:92` | The resizer's buffers growing: the workspace |
+| 1 | 228 KB | `import.rs:38` | The batch of 500 |
+| 2 | 12 KB | `catalog.rs:808` | The index's tables |
+| ~175 | ~40 KB | `cli.rs`, `main.rs:49` | clap building the command line, and `args_os` |
+| ~60 | ~30 KB | `pipeline.rs:79`–`137` | Threads and channels |
+
+**Scan (836 blocks):**
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 610 | 9.2 KB | `scan.rs:135` | **Two blocks per name**, not one: `String::extend` from `decode_utf16` reserves only half the UTF-16 length (its lower bound), then grows. **Lead:** reserve the exact UTF-8 length first |
+| 8 | 57 KB | `scan.rs:130` | The entries `Vec` growing to 305: kept across folders |
+| 1 | 64 KB | `scan.rs:177` | The listing buffer: one per scan |
+| ~210 | ~10 KB | `cli.rs`, `main.rs`, `catalog.rs`, `paths.rs` | The command line, opening the catalog, the root's paths |
+
+**Borders and thumbnails (26,861 and 24,032 blocks):**
+
+| Blocks (borders / thumbs) | Bytes | Site | What |
+|---:|---:|---|---|
+| 19,155 / 20,165 | 1.56 / 1.58 GB | `decode.rs:246` → `image::load_from_memory_with_format` | The `image` crate decoding the non-JPEG files. Split below |
+| 715 / 742 | 354 / 360 MB | `pipeline.rs:246` `Pool::take` | The pool's defect again. The 142 MB file's buffer is freed after use (over an eighth of the budget), as designed |
+| 4,305 / – | 367 KB | `metadata.rs:105`, `:117`, `:120`, `:124` | XMP read with quick-xml: a reader per packet, its namespace buffers, and the wanted values copied out (`to_string`). **Lead:** keep a reader per worker, and parse the values in place |
+| 237 / – | 23 KB | `metadata.rs:404`, `:417` | `Container::walk`'s packet list growing (`insert(0, …)`) |
+| 389 / – | 87 KB | `borders.rs:397`, `:408` | Each file's detected sides: the result |
+| 861 / 886 | 115 KB | `pipeline.rs:152` | std's UTF-16 path copy |
+| 861 / 905 | 57 / 206 KB | `catalog.rs:594`, `thumbs.rs:640` | The work lists |
+| – / 896 | 10.3 MB | `thumbs.rs:135` | Each thumbnail's JPEG, one exact copy for the cache's writer: by design |
+| 16 / 16 | 33 MB | `decode.rs:177` | The decode buffer growing, and trimmed after oversize files: the workspace |
+| 6 / – | 20 MB | `borders.rs:667` | The detector's sums growing: the workspace |
+| – / 32 | 13.5 MB | `resize.rs:88`, `:92` | The resizer's buffers: the workspace |
+| – / 20 | 1.7 KB | `video.rs:55` | FFmpeg's verbatim path per video |
+
+The `image` crate's allocations (thumbnail pass, by the innermost library frame):
+
+| Blocks | Bytes | Where | What |
+|---:|---:|---|---|
+| 275 | 1.33 GB | `image` `free_functions.rs:316` `decoder_to_vec` | The decoded image, a new `Vec` per file, which `decode_other` then converts or moves into the workspace. **Lead:** `ImageDecoder::read_image` into the workspace's buffer (RGB8 straight in, others through the spare buffer) |
+| 13,830 | 161 KB | `image-webp` `vp8.rs:1981`–`1983` | Three small vectors per macroblock row of each lossy WebP frame |
+| 2,348 | 178 MB | `image-webp` `vp8.rs:1048`, `:1050`, `:1951`, `:1978`, `huffman.rs:83`, `vp8.rs:990`, `:2061` | The VP8 decoder's planes, partitions and tables, per file |
+| 2,392 | 59.5 MB | `png` `unfiltering_buffer.rs:93`, `stream.rs:603`, `zlib.rs:75`, `fdeflate` | The PNG decoder's row buffers, inflater and Huffman tables, per file |
+| ~580 | ~350 KB | `tiff`, `gif`, `zune-core`, `ImageReader::decode` | Their readers' state |
+
+The WebP and PNG decoders' own allocations would need changes in those crates (decoders that keep their buffers),
+as with fast_image_resize. They are per file, not per pixel. The 275 output buffers are ours to avoid.
+
+### The read pool reuses almost nothing
+
+`Pool::take` (`pipeline.rs:220`) reuses an idle buffer only if one is already large enough. Otherwise it makes a
+new one while the budget has room, even when smaller idle buffers sit unused. Files of mixed sizes then keep making
+buffers until the idle ones fill the budget (240 MB by default). That is 302 buffers for 305 files here, and
+715 for 861 in the borders pass. Memory stays within the budget, but nearly every file still costs an allocation,
+and an import holds up to the whole budget in idle buffers for its whole length. The plan said "takes a pooled
+buffer of at least that capacity *or grows one*", and the second half wasn't done. The fix: when no idle buffer is
+large enough, replace the smallest idle one with one of the needed size. Then the pool holds about one buffer per
+file in flight.
+
+## Before the fixes (2026-11-01, d2205ba)
+
+### Totals
 
 | | Import, 1 worker | Import, 12 workers | Scan |
 |---|---:|---:|---:|
@@ -41,7 +152,7 @@ By what the import does, of the one-worker totals:
 | The catalog's statements (`store_analysis`, `sync_file_rating`) | 0.4 MB | 3,059 (1.8%) |
 | The work list, the batch, the pipeline, the command line | 0.6 MB | 1,584 (0.9%) |
 
-## The peak
+### The peak
 
 **Import, one worker: 27.6 MB.** 91% of it is the tier-1 index's empty tables.
 
@@ -65,7 +176,7 @@ By what the import does, of the one-worker totals:
 **Scan: 101 KB,** at 14 ms of 32 ms: `Dir::entries`' 64 KB listing buffer (`scan.rs:84`), its `Vec<DirEntry>` at
 28.7 KB (`scan.rs:116`) and the 305 names (`scan.rs:114`, 6.1 KB).
 
-## At exit
+### At exit
 
 Nothing leaks. What is live when the profile is written is held by design:
 
@@ -75,7 +186,7 @@ Nothing leaks. What is live when the profile is written is held by design:
 | 48 | `pipeline.rs:107` → crossbeam-channel | The main thread's thread-local waiting `Context`, freed when the thread ends (after the profile is written) |
 | 2, 1, 1 | `cli.rs:108`, `cli.rs:33`, `cli.rs:111` | clap derive's `default_value_t` strings (`dups --distance`'s, `--readers`' `"8"`, `dups --show`'s `"0"`), kept in statics to be `&'static str` |
 
-## Every site of the import (one worker)
+### Every site of the import (one worker)
 
 Sorted by blocks. "Peak" is what was live at the global peak. clap's 30 sites of `Command` building are one row at
 the end.
@@ -135,7 +246,7 @@ the end.
 | 51 | 3 | 4 B | 4 B | `cli.rs:108`, `:33`, `:111` | clap's default-value strings (the exit's). |
 | 52 | 274 | 107 KB | 0 | `cli.rs:20`–`112` (30 sites: `augment_args`, `augment_subcommands`) | clap derive building the `Command` from the attributes in `cli.rs`: each argument's name, help, value parser and default (`Arg::help`, `value_name`, `default_value`, `conflicts_with`, `Command::arg`, `subcommand`). Read at each attribute line; all of it is startup, once per run. |
 
-### EXIF
+#### EXIF
 
 `exif_orientation` (`decode.rs:221`) and `exif_rating` (`metadata.rs:135`) each call kamadak-exif's
 `Reader::read_from_container` on the file's bytes: 157 blocks per call, 57% of the import's blocks. For a JPEG, it
@@ -155,7 +266,7 @@ per 118 bytes of scan data), a 5 MB JPEG has about 44,000, so about 88,000 block
 (`exif_block` → `Reader::read_raw`), and parse it once per file for the orientation, the rating and the time taken.
 The three `jpeg_segments` walks (row 6) and the second parse go with it.
 
-### The tier-1 index
+#### The tier-1 index
 
 `PdqIndex::default` (`pdq_index.rs:25`–`34`) makes 16 tables of 65,536 buckets each, every bucket an empty
 `Vec<u32>`: 24 B × 1,048,576 = 25.2 MB, before any hash. It is 91% of this import's peak, and it is made by every
@@ -170,7 +281,7 @@ built.
 rebuilt hashes), with the inserts made during the import kept in a small overflow map. Worth a profile of an import
 into a copy of the pinterest catalog first, to measure it rather than estimate it.
 
-### The read pipeline
+#### The read pipeline
 
 Each reader holds a whole file (`std::fs::read`). The read channel holds `readers * 4` of them (`pipeline.rs:60`),
 on top of the one each blocked reader holds and the one each worker analyzes: 8 × 4 + 8 + 12 = 52 files with the
@@ -179,7 +290,7 @@ JPEGs of 5–10 MB it would be 260–520 MB, far above everything else, and it w
 "I/O" asks for 8 reads in flight to reach the HDD's sequential speed; the four-deep queue per reader on top of them
 is what to question, or a bound in bytes rather than files.
 
-### The per-file scratch buffers
+#### The per-file scratch buffers
 
 Per file, the import allocates and frees: `dct16`'s two planes (2 × 4 B × pixels), the decoded image, the resizer's
 temp image and coefficients, ThumbHash's RGBA copy and the crate's four planes. That is 1.4 MB and 549 blocks per
@@ -188,7 +299,7 @@ Kept per worker (the `Decoder` is already per-worker state), `dct16`'s planes, `
 temp image would remove 55% of the bytes of this profile (234 MB), though only 1,525 of its blocks. The rest are outputs (the decoded image, the resized images, the
 hashes) or inside crates whose API allocates.
 
-## Every site of the scan
+### Every site of the scan
 
 | # | Blocks | Bytes | Peak | Site | What, and what it would take |
 |---:|---:|---:|---:|---|---|
@@ -233,7 +344,9 @@ Per file, a scan allocates 7 blocks: the name (2), the extension twice (2), the 
 name part (3). The scan is already near what it needs; rows 1, 2 and 5 are the only ones it repeats per file that
 can go.
 
-## Leads, by what they would save at scale
+### Leads, by what they would save at scale
+
+All five were fixed (plan steps 1–7, 11). The "After the fixes" section above measures them, and lists what is left.
 
 1. **The read pipeline's queue** (`pipeline.rs:60`): up to 52 whole files in memory, about 260–520 MB with camera
    JPEGs. Estimated, not measured: profile an import of large files to confirm.

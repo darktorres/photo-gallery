@@ -13,12 +13,13 @@ The review of the workspace refactor (phases 0–3): every finding with its stat
 | Status | Count |
 |---|---|
 | `open` | 53 |
-| `needs decision` | 12 |
+| `needs decision` | 11 |
 | `verified` (checked, no defect) | 4 |
-| `fixed` / `wontfix` | 0 / 0 |
+| `fixed` | 1 (R-02) |
+| `wontfix` | 0 |
 
-Of the 65 findings that are not verified, by severity: high 2, medium 11, low 31, judgement 7, cosmetic 14.
-The twelve `needs decision` rows are the Decisions list below. R-66 is open until it is measured, not decided.
+Of the 64 findings that are open or need a decision, by severity: high 2, medium 10, low 31, judgement 7, cosmetic 14.
+The eleven `needs decision` rows are in the Decisions list below. R-66 is open until it is measured.
 
 ## How to read this file
 
@@ -31,23 +32,22 @@ The twelve `needs decision` rows are the Decisions list below. R-66 is open unti
 
 ## Decisions needed
 
-Each item is a call only the owner can make. The suggestion is a starting point, not a decision.
+Each item is a call for the owner. The recommendation is the most proper option, not the cheapest one.
 
-| ID | Question | Suggested |
+| ID | Question | Recommendation |
 |---|---|---|
-| R-02 | A turned video's stored size includes the turn, but its stored orientation does not. Fix on the read side, or store the composed orientation? | Read-side fix. Storing it needs an `IMPORT_VERSION` bump, which the no-bump rule forbids. |
-| R-03 | On a damaged JPEG, should the lossless rewriter stop at a bad segment (as now) or keep walking (as the old code did)? | Keep walking, as the old code did: import already reads these files. |
-| R-09 | Split `browse/read.rs` by job now, or in plan step 3? | Plan step 3, which already covers it. |
-| R-15 | `IMPORT_VERSION`'s doc says to bump before release. Which rule stands: that doc, or the no-bump rule? | The no-bump rule. Rewrite the doc. |
-| R-30 | Rename `paths` to `verbatim` now, or leave it for the platform step? | Rename now: it is a small change and the names invite mistakes. |
-| R-33 | Should a Yandex `similar` list that stopped early say so (a `truncated` flag), or keep returning `Ok` and document it? | A `truncated` flag. |
-| R-34 | Is the solid-side rule in `judge` meant to need both sides solid? Check `borders.py` in history first. | Decide after the history check. A change alters detections, so `BORDERS_VERSION` handling is part of it. |
-| R-40 | A queued write whose file was deleted outside the app keeps its job forever. Count `NotFound` as a failure, or drop the job? | Check the scan path first (see R-40). |
-| R-41 | Does the redo after an interrupted rotation set `analysis.rotation`? If not, should the resume path call `analysis_turned_back`? | Check the redo first. |
-| R-55 | `library.rs`'s `poll` shows only the latest message. Keep that, or show the first warning and count the rest? | Show the first warning and count the rest. |
-| R-59 | Should every panic show the modal box, or once per session? | Once per session. |
-| R-63 | Keep the `revision >= 0` guards with a comment, or replace them with the change signals from the facades? | Keep them with one comment until the facades exist (plan step 12). |
-| R-66 | Are the neighbour preloads worth their cost? | Measure at the end (memory: measure at the end), then decide. |
+| R-03 | On a damaged JPEG, the rewriter's walk stops before SOS, so the progressive check reads "baseline" and the file is re-encoded as baseline (`rewrite.rs:106–108`). Refuse the rewrite, or keep the walk's guess? | Refuse. A walk that stops early means the structure is damaged, so the rewriter should return an error and leave the file alone. It should not re-encode it. (This corrects the earlier suggestion to keep walking.) |
+| R-09 | Split `browse/read.rs` by job now, or in plan step 3? | Now, as its own commit, before the catalog moves that depend on it. The split is needed anyway, so doing it earlier avoids moving the same code twice. |
+| R-15 | `IMPORT_VERSION`'s doc says to bump before release. Which rule stands? | The no-bump rule, as decided for R-02. Rewrite the doc to say so: pre-release, a change that alters stored values means the owner recreates the catalogs. |
+| R-30 | Rename `paths` to `verbatim` now, or leave it for the platform step? | Rename now. The module holds the verbatim conversions, the plan already calls them `verbatim`, and two near-identical names are a standing mistake. |
+| R-33 | Should a Yandex `similar` list that stopped early say so? | Return the partial list with a typed stop reason (captcha, network error, malformed page), not a bool. A bare flag loses the reason, and the UI can then say "stopped after N results: captcha". |
+| R-34 | Is the solid rule in `judge` meant to need both sides solid? | Check `borders.py` in history. Then make the code match the rule the prototype validated and the doc states. A change of detections means recreating the catalogs, as with R-02. |
+| R-40 | A queued write for a file the catalog has lost, or a `NotFound` error, keeps its job forever. How should it end? | A job for a file the catalog marks missing is dropped, and the cause stays in the status line. A `NotFound` for a file the catalog still lists counts as a failure, with the normal attempt cap. It is not "offline". |
+| R-41 | Should the resume path and the normal path record a rotation the same way? | Yes, through one function. Both paths should call the shared effect (the plan's `WriteEffect::Rewritten`), so they cannot drift apart again. |
+| R-55 | `library.rs`'s `poll` shows only the latest message and drops the others. What should happen to the rest? | Keep every message. Warnings go into a bounded list: the UI shows the latest and a count, and nothing is dropped silently. The plan's `Bus` is the proper form. |
+| R-59 | Should every panic show the modal box? | No. Only a panic that ends the process shows it. Caught panics (the loader's `catch_unwind`, worker threads) go to the log and the status line. |
+| R-63 | Keep the `revision >= 0` guards, or replace them? | Replace them with the model roles of the facades (plan step 12): a cell reads its own values, and the role carries the change signal. Until then, keep the guards with one comment that says why. |
+| R-66 | Are the neighbour preloads worth their cost? | Measure at the end, as the plan requires. Whatever the result, a 4× margin is not justified: preload at the size the viewer shows (margin 1), and cancel the preloads when the index moves. |
 
 ## Findings
 
@@ -62,8 +62,8 @@ Each item is a call only the owner can make. The suggestion is a starting point,
 
 | ID | Status | Where | Finding | Next step |
 |---|---|---|---|---|
-| R-02 | needs decision | `analyze.rs:188`, `analyze.rs:192`, `browse/read.rs:352` | For a video turned by the catalog, the stored width and height include the turn (`analyze.rs:188`), but the stored `orientation` is the display matrix without it (`analyze.rs:192`). `Entry.orientation` is documented as including the turn, so `stored_size` swaps the wrong way for those videos. Only stills use the stored size today, so nothing shows yet. | See Decisions. |
-| R-03 | needs decision | `container.rs:256`, `rewrite.rs:127–141` (old) | `jpeg_is_progressive` stops at a bad segment length before SOF2/SOS; the old walk continued. The lossless rewriter now behaves differently on damaged JPEGs. Well-formed files give the same result. | See Decisions; then match the chosen behaviour and add a damaged-JPEG test. |
+| R-02 | fixed b83ef8b | `analyze.rs:188`, `analyze.rs:192`, `browse/read.rs:352` | For a video turned by the catalog, the stored width and height included the turn, but the stored `orientation` did not, so `stored_size` swapped the wrong way for those videos. Fixed: the video's orientation is `compose(display, turns)`, as a still's is. The test in `ingest/tests/video.rs` fails on the old code (8 vs 1). No version bump. A check of all 485 catalogs found no turned video, so no stored value changes and no catalog needed recreating. | The stored size already had the turn; `Entry.orientation` now matches it. |
+| R-03 | needs decision | `container.rs:256`, `rewrite.rs:127–141` (old) | `jpeg_is_progressive` stops at a bad segment length before SOF2/SOS; the old walk continued. The lossless rewriter now behaves differently on damaged JPEGs. Well-formed files give the same result. | See Decisions; then make the rewriter refuse a damaged JPEG, with a test. |
 | R-04 | open | `crates/desktop/qml/YandexPanel.qml` (`centre` Timer), `Main.qml` (`yandexPreviewHook`) | Commit `d4c484b` is described as a pure split, but it also changes two QML behaviours: `Qt.callLater` becomes a zero-interval `Timer`, and the `--yandex-preview` hook is applied at creation, not afterwards. Neither change is in the commit message, and neither has been run. | Run the app offscreen with `--find-similar` and `--yandex-preview`, compare with the old behaviour, and say so in the commit or revert it. |
 | R-05 | open | `codecs.rs:24`, `decode.rs:12` | The one module cycle left in `pg-core`: `codecs` imports `Rgb` and `release_over` from `decode`, and `decode` imports `Codecs`. Phase 3's goal was an acyclic core. | Move `Rgb` and `release_over` to a module both use. No data change. |
 | R-06 | open | `decode.rs:41`, `decode.rs:124`, `rewrite.rs:28`, `analyze.rs:188` (`turns % 2`), `display.rs:37`, `crates/desktop/src/gallery.rs:710` (`turns % 2 == 1`), `crates/desktop/qml/Viewer.qml:404–405` (`playerTurns % 2`) | The quarter-turn swap rule is still written by hand in Rust and QML. Commit `b5235c8` says only the `>= 5` forms were replaced, but its message reads as if all were. The SQL copies are in R-22. | Replace the Rust sites with `Orientation::swaps_axes` / `Turns`. The QML copy moves to the facades (plan step 12). |

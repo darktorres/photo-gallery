@@ -220,17 +220,7 @@ pub fn transform_into(
     out.resize(w * h * unit, 0);
     for y in 0..oh {
         for x in 0..ow {
-            // Source pixel for output (x, y).
-            let (sx, sy) = match orientation {
-                2 => (w - 1 - x, y),
-                3 => (w - 1 - x, h - 1 - y),
-                4 => (x, h - 1 - y),
-                5 => (y, x),
-                6 => (y, h - 1 - x),
-                7 => (w - 1 - y, h - 1 - x),
-                8 => (w - 1 - y, x),
-                _ => (x, y),
-            };
+            let (sx, sy) = orientation::source_pixel(orientation, x, y, w, h);
             let (s, d) = ((sy * w + sx) * unit, (y * ow + x) * unit);
             out[d..d + unit].copy_from_slice(&pixels[s..s + unit]);
         }

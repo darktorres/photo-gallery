@@ -60,6 +60,21 @@ pub fn shown_pixel(o: u8, x: usize, y: usize, w: usize, h: usize) -> (usize, usi
     shown(o, (x, y), (w, h), 1)
 }
 
+/// The stored pixel of a `w` × `h` stored picture that is shown at (`x`, `y`) of the upright picture: the inverse
+/// of `shown_pixel`, which the decoder reads its pixels by.
+pub fn source_pixel(o: u8, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
+    match o {
+        2 => (w - 1 - x, y),
+        3 => (w - 1 - x, h - 1 - y),
+        4 => (x, h - 1 - y),
+        5 => (y, x),
+        6 => (y, h - 1 - x),
+        7 => (w - 1 - y, h - 1 - x),
+        8 => (w - 1 - y, x),
+        _ => (x, y),
+    }
+}
+
 /// Where the point (`u`, `v`), as fractions of the stored picture's width and height, is shown.
 pub fn shown_edge(o: u8, u: f64, v: f64) -> (f64, f64) {
     shown(o, (u, v), (1.0, 1.0), 0.0)
@@ -149,6 +164,21 @@ mod tests {
                     let (nx, ny) = shown_pixel(o, x, y, w, h);
                     let at = (ny * out.width + nx) * 3;
                     assert_eq!(out.pixels[at], (y * w + x) as u8, "o = {o}, pixel ({x}, {y})");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn the_source_map_is_the_inverse_of_the_pixel_map() {
+        // The decoder reads each upright pixel from `source_pixel`; each must be where `shown_pixel` puts it.
+        let (w, h) = (3, 2);
+        for o in 1..=8 {
+            let (ow, oh) = if swaps_axes(o) { (h, w) } else { (w, h) };
+            for y in 0..oh {
+                for x in 0..ow {
+                    let (sx, sy) = source_pixel(o, x, y, w, h);
+                    assert_eq!(shown_pixel(o, sx, sy, w, h), (x, y), "o = {o}, upright ({x}, {y})");
                 }
             }
         }

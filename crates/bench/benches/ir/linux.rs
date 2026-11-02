@@ -5,7 +5,8 @@
 use std::hint::black_box;
 
 use gungraun::prelude::*;
-use pg_core::analyze::{Analysis, Analyzer};
+use pg_core::analysis::Analysis;
+use pg_core::analyze::Analyzer;
 use pg_core::maker::Maker;
 
 /// A median-size file of the test set: a 126 KB mozjpeg re-encode, 1280×1017 baseline. It's one of the library's

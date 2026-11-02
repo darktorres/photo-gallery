@@ -15,7 +15,8 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use anyhow::Result;
-use pg_core::catalog::{Catalog, is_under};
+use pg_core::catalog::Catalog;
+use pg_core::path::is_under;
 use pg_core::thumbs::ThumbCache;
 use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_IDLE};
 

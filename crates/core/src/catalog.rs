@@ -22,6 +22,7 @@ use crate::analyze::{Analysis, IMPORT_VERSION};
 use crate::borders::{BORDERS_VERSION, Detection};
 use crate::format::Format;
 use crate::media::{Ext, Kind};
+use crate::path::is_under;
 use crate::paths::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;
 use crate::pdq_index::PdqIndex;
@@ -101,7 +102,7 @@ CREATE TABLE files(
     missing   INTEGER NOT NULL DEFAULT 0,
     rotation  INTEGER NOT NULL DEFAULT 0,  -- quarter turns clockwise kept here, for files that can't be rotated
                                            -- in place (metadata::rotation_method); applied after EXIF orientation
-    order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (browse::order_key)
+    order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (path::order_key)
     pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
     seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers
     UNIQUE(volume, file_ref)
@@ -227,7 +228,7 @@ CREATE TABLE file_writes(
 -- Saved views (ImageRater's bookmarks): a folder, the filters and an order.
 CREATE TABLE views(
     name      TEXT PRIMARY KEY,
-    folder    TEXT NOT NULL,     -- merged path (browse::merged_path); '' = all folders
+    folder    TEXT NOT NULL,     -- merged path (path::merged_path); '' = all folders
     recursive INTEGER NOT NULL,
     query     TEXT NOT NULL,     -- query::Query as JSON
     sort      TEXT NOT NULL      -- query::Sort as JSON
@@ -345,12 +346,6 @@ const FILLED: &[(&str, &str, &str)] = &[
     ("analysis", "kind", "(SELECT kind FROM old.files WHERE id = o.file_id)"),
 ];
 
-/// Whether `path` is `root` or inside it (Windows paths: case-insensitive).
-pub fn is_under(path: &str, root: &str) -> bool {
-    let (p, r) = (path.to_lowercase(), root.to_lowercase());
-    p == r || p.strip_prefix(&r).is_some_and(|rest| rest.starts_with('\\'))
-}
-
 pub struct Catalog {
     pub conn: Connection,
 }
@@ -453,7 +448,7 @@ fn build_copy(path: &Path, new_path: &Path) -> Result<()> {
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
             let text = |i| ctx.get_raw(i).as_str().map_err(|e| rusqlite::Error::UserFunctionError(e.into()));
-            Ok(crate::browse::order_key_of(text(0)?, text(1)?))
+            Ok(crate::path::order_key_of(text(0)?, text(1)?))
         },
     )?;
     new.execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
@@ -647,7 +642,7 @@ pub struct ScannedFile<'a> {
     pub mtime: i64,
 }
 
-/// A folder's row, with its part of its files' order key (`browse::folder_key`).
+/// A folder's row, with its part of its files' order key (`path::folder_key`).
 pub struct Folder {
     pub id: i64,
     pub key: Vec<u8>,
@@ -1103,7 +1098,7 @@ impl<'tx> ScanWriter<'tx> {
 
     /// The folder's row, made if it's new.
     pub fn folder(&mut self, path: &str) -> Result<Folder> {
-        let key = crate::browse::folder_key(crate::browse::merged_path(path));
+        let key = crate::path::folder_key(crate::path::merged_path(path));
         let id = match self.folder_id.query_row([path], |r| r.get(0)).optional()? {
             Some(id) => id,
             None => self.new_folder.query_row([path], |r| r.get(0))?,
@@ -1118,7 +1113,7 @@ impl<'tx> ScanWriter<'tx> {
         let ScanWriter { scan, known, seen, file, key, .. } = self;
         key.clear();
         key.extend_from_slice(&folder.key);
-        crate::browse::push_name_key(key, f.name);
+        crate::path::push_name_key(key, f.name);
         let (volume, file_ref, size) = (f.volume, f.file_ref as i64, f.size as i64);
         let (ext, kind) = (f.ext.name(), f.ext.kind().key());
         let row = known
@@ -1406,7 +1401,7 @@ pub(crate) mod fixture {
                     f.mtime,
                     f.missing,
                     f.rotation,
-                    crate::browse::order_key_of(&folder, f.name)
+                    crate::path::order_key_of(&folder, f.name)
                 ],
             )
             .unwrap();
@@ -1500,7 +1495,7 @@ mod tests {
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
         };
         for (key, folder, name) in keys {
-            assert_eq!(key, crate::browse::order_key_of(&folder, &name), "{name}");
+            assert_eq!(key, crate::path::order_key_of(&folder, &name), "{name}");
         }
         assert_eq!(
             rows("SELECT file_id || ':' || rotation || kind FROM analysis ORDER BY 1"),
@@ -1646,7 +1641,7 @@ mod tests {
                 })
                 .unwrap()
         };
-        let key = |name| crate::browse::order_key_of(r"D:\x", name);
+        let key = |name| crate::path::order_key_of(r"D:\x", name);
         let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(r"D:\x").unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.

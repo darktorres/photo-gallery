@@ -16,6 +16,7 @@ pub mod layout;
 pub mod media;
 pub mod metadata;
 pub mod orientation;
+pub mod path;
 pub mod paths;
 pub mod pdq;
 pub mod pdq_index;

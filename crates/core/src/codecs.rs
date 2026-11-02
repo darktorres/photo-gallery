@@ -31,6 +31,8 @@ pub(crate) struct Codecs {
     png: png::Scratch,
     /// The WebP decoder's buffers.
     webp: image_webp::Scratch,
+    /// The GIF decoder's buffers.
+    gif: gif::Scratch,
 }
 
 impl Codecs {
@@ -51,6 +53,7 @@ impl Codecs {
         release_over(&mut self.raw, bytes);
         self.png.trim(bytes);
         self.webp.trim(bytes);
+        self.gif.trim(bytes);
     }
 
     /// Any of `image`'s decoders, the way `ImageReader::decode` and `decoder_to_image` use it (BMP's: `image` is
@@ -111,11 +114,26 @@ impl Codecs {
         finish(color, w, h, out, &self.raw)
     }
 
-    /// `image`'s `GifDecoder::new` and `read_image`: the first frame, as RGBA.
+    /// `image`'s `GifDecoder::new` and `read_image`: the first frame, as RGBA. In the buffers of the GIF before
+    /// (vendored gif's `Scratch`), which go back to `self.gif` whatever happens, and read straight from `bytes`, where
+    /// `image` reads them through a `BufReader`.
     fn gif(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
-        let mut reader = options.read_info(Cursor::new(bytes)).map_err(gif_error)?;
+        let mut reader = match options.read_info_with(Cursor::new(bytes), std::mem::take(&mut self.gif)) {
+            Ok(reader) => reader,
+            Err((err, scratch)) => {
+                self.gif = scratch;
+                return Err(gif_error(err));
+            }
+        };
+        let result = self.gif_image(&mut reader, out);
+        self.gif = reader.into_scratch();
+        result
+    }
+
+    /// [`Codecs::gif`]'s image, once the headers are read.
+    fn gif_image(&mut self, reader: &mut gif::Decoder<Cursor<&[u8]>, Cursor<&[u8]>>, out: &mut Rgb) -> ImageResult<()> {
         let (w, h) = (u32::from(reader.width()), u32::from(reader.height()));
         let mut limits = reserve(ColorType::Rgba8, w, h)?;
         let buf = zeroed(&mut out.pixels, w as usize * h as usize * 4);

@@ -195,6 +195,44 @@ headers; and damaged copies of each, cut short or with bytes changed. Its tests 
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
 
+## gif
+
+Copy of `gif` 0.14.2 (MIT OR Apache-2.0). The local changes, marked `photo-gallery`, let a decoder keep what it
+allocates from one image to the next and read a buffered source as it is; every frame, every pixel and every error is
+upstream's:
+
+- `Scratch` (`src/reader/mod.rs`) holds the LZW decoders (weezl's, tables included), one per minimum code size, the
+  extension buffer, the global and local palettes, the indices a frame is decoded to before they become RGBA, a
+  frame's buffer (`read_next_frame`), and the XMP and ICC vectors. `DecodeOptions::read_info_with` decodes in them and
+  gives them back with the error if the headers can't be read; `Decoder::into_scratch` gives them back;
+  `Scratch::trim` frees those over a size. Upstream made all of them anew for each image, and an LZW decoder anew
+  whenever a frame's code size differed from the frame before's. The buffers are emptied before use, so they read as
+  new ones, and a decoder of a code size is reset (weezl's `reset`, which gives a decoder as `new` makes it).
+- `read_info_with` reads its source as it is, where `read_info` wraps it in a `BufReader` of 8 KB, allocated per
+  decoder, through which the file was copied. `Decoder` and `DecoderIter` have a second type parameter, the buffered
+  reader, `BufReader<R>` by default, so `Decoder<R>` is still upstream's type and `image` builds against it unchanged.
+- `Decoded::GlobalPalette` carries a `Vec` (upstream: a boxed slice, made with `into_boxed_slice`, which would
+  reallocate a kept buffer to its length). This changes `StreamingDecoder`'s public API, which nothing here uses.
+  The converter holds the global palette as a `Vec`, empty for none (upstream: an `Option`), so that an empty one
+  keeps its allocation.
+
+Its unit tests give the same results as the registry's copy (6 passed, and the same 6 doctests failing: the published
+crate lacks the `tests/samples` images they read). A test of its own (`src/reader/mod.rs`, `photo_gallery`) writes 150
+GIFs: global and local palettes, transparency, interlaced frames, frames at offsets and past the screen, every LZW code
+size from 2 to 11, application extensions (loop count, XMP, ICC, unknown), comments, an unknown extension, GIF87a,
+indices past the palette, and damaged copies of each, cut short or with bytes changed. It reads each one five ways
+(RGBA into a buffer as the app does, `read_next_frame` as RGBA, as indices and as LZW data, and with every check on
+and a small memory limit), logging every frame, buffer, palette, error and piece of metadata. Over the file as it is,
+a new decoder reads as upstream's over its `BufReader`, exactly. In 5-byte pieces, it reads the same except for two
+things, as upstream's decoder does when its input is cut there: how much of a buffer a failing read fills, and whether
+a missing LZW end code is found when the end code is checked. A decoder in one kept scratch, forwards then backwards,
+kept whole, trimmed to nothing and trimmed at 600 bytes after each file, reads exactly as a new one over the same
+reader, whether over the file or in 5-byte pieces. Its tests run from this directory:
+`cargo test --target-dir ../../target/vendor-test`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

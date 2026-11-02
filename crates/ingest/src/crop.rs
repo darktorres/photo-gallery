@@ -89,11 +89,8 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
                 Written::Skipped => Ok(false),
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
-                    if exiftool.is_none() {
-                        exiftool = Some(ExifTool::start()?);
-                    }
                     let (source, out) = (paths.get(job.source.path), paths.get(job.out));
-                    exiftool.as_mut().unwrap().copy_tags(source, out)?;
+                    ExifTool::running(&mut exiftool)?.copy_tags(source, out)?;
                     keep_time(source, out)?;
                     Ok(true)
                 }

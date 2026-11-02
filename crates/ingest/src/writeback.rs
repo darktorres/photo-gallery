@@ -299,7 +299,7 @@ impl Inner {
         let pixels_changed = match job.kind.as_str() {
             "rating" => {
                 let rating = job.value as u8;
-                let tool = exiftool_for(exiftool)?;
+                let tool = ExifTool::running(exiftool)?;
                 tool.write_rating(&path, &temp, rating)?;
                 let written = std::fs::read(&temp)?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
@@ -317,7 +317,7 @@ impl Inner {
                         None => {
                             // No tag to change: ExifTool adds one. A format it can't add EXIF to keeps the turn in
                             // the catalog.
-                            let tool = exiftool_for(exiftool)?;
+                            let tool = ExifTool::running(exiftool)?;
                             match tool.write_orientation(&path, &temp, o) {
                                 Ok(()) if metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
                                 _ => {
@@ -447,13 +447,6 @@ fn copy_into(temp: &Path, path: &str) -> Result<()> {
     Ok(())
 }
 
-fn exiftool_for(slot: &mut Option<ExifTool>) -> Result<&mut ExifTool> {
-    if slot.is_none() {
-        *slot = Some(ExifTool::start()?);
-    }
-    Ok(slot.as_mut().unwrap())
-}
-
 /// One ExifTool kept running (`-stay_open`), as starting it costs ~0.3 s per call.
 pub struct ExifTool {
     child: Child,
@@ -461,9 +454,20 @@ pub struct ExifTool {
     stdout: BufReader<ChildStdout>,
     stderr: BufReader<ChildStderr>,
     next: u64,
+    /// A command's pipe failed (the process exited or its pipes broke): this one can't be used again.
+    broken: bool,
 }
 
 impl ExifTool {
+    /// The running ExifTool in `slot`, starting one if the slot is empty or its process has failed (R-38). A failed
+    /// command is an error for that write only: the next one gets a new process.
+    pub fn running(slot: &mut Option<ExifTool>) -> Result<&mut ExifTool> {
+        if slot.as_ref().is_none_or(|t| t.broken) {
+            *slot = Some(ExifTool::start()?);
+        }
+        Ok(slot.as_mut().unwrap())
+    }
+
     /// `PG_EXIFTOOL`, or `exiftool` on PATH.
     pub fn start() -> Result<ExifTool> {
         let program = std::env::var_os("PG_EXIFTOOL").unwrap_or_else(|| "exiftool".into());
@@ -481,11 +485,19 @@ impl ExifTool {
         let stdin = child.stdin.take().unwrap();
         let stdout = BufReader::new(child.stdout.take().unwrap());
         let stderr = BufReader::new(child.stderr.take().unwrap());
-        Ok(ExifTool { child, stdin, stdout, stderr, next: 1 })
+        Ok(ExifTool { child, stdin, stdout, stderr, next: 1, broken: false })
     }
 
-    /// Run one command; returns (stdout, stderr).
+    /// Run one command; returns (stdout, stderr). A pipe failure marks the process broken.
     fn run(&mut self, args: &[&str]) -> Result<(String, String)> {
+        let result = self.exchange(args);
+        if result.is_err() {
+            self.broken = true;
+        }
+        result
+    }
+
+    fn exchange(&mut self, args: &[&str]) -> Result<(String, String)> {
         let n = self.next;
         self.next += 1;
         // UTF-8 file names (non-ASCII paths), one argument per line.
@@ -593,5 +605,34 @@ impl Drop for ExifTool {
         let _ = self.stdin.write_all(b"-stay_open\nFalse\n");
         let _ = self.stdin.flush();
         let _ = self.child.wait();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A process that died is replaced by the next command, instead of failing every later write (R-38). Needs
+    /// ExifTool; skipped without it.
+    #[test]
+    fn a_dead_exiftool_is_replaced() {
+        let mut slot = match ExifTool::start() {
+            Ok(tool) => Some(tool),
+            Err(_) => {
+                eprintln!("ExifTool not found: skipped");
+                return;
+            }
+        };
+        ExifTool::running(&mut slot).unwrap();
+        let tool = slot.as_mut().unwrap();
+        tool.child.kill().unwrap();
+        tool.child.wait().unwrap();
+        assert!(tool.run(&["-ver"]).is_err());
+        assert!(slot.as_ref().unwrap().broken);
+
+        ExifTool::running(&mut slot).unwrap();
+        let tool = slot.as_mut().unwrap();
+        assert!(!tool.broken);
+        assert!(tool.run(&["-ver"]).is_ok());
     }
 }

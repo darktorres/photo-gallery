@@ -1,4 +1,4 @@
-"""Prepare the catalog benches' data (crates/core/benches/ir/catalog.rs) from a catalog folder.
+"""Prepare the catalog benches' data (crates/bench/benches/ir/catalog.rs) from a catalog folder.
 
 Writes OUT/LAYOUT/catalog.sqlite (VACUUM INTO: compact, consistent with the WAL) and OUT/LAYOUT/thumbs.sqlite (the
 cache's schema, entries, totals and limits, without the JPEGs). An existing LAYOUT folder is never overwritten, so

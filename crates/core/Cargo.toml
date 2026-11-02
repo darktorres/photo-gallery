@@ -34,11 +34,3 @@ zune-jpeg.workspace = true
 
 [dev-dependencies]
 pdqhash.workspace = true
-
-# The callgrind benches (benches/ir.rs) run under WSL2; Valgrind is Linux-only (docs/PROFILING.md).
-[target.'cfg(target_os = "linux")'.dev-dependencies]
-gungraun.workspace = true
-
-[[bench]]
-name = "ir"
-harness = false

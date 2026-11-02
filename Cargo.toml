@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["crates/core", "crates/ingest", "crates/ui"]
+members = ["crates/*"]
 # Vendored crates (see vendor/README.md) keep their own lints and formatting, so they stay out of the workspace.
 exclude = ["vendor"]
 

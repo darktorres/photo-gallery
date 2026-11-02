@@ -40,16 +40,22 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         let tx = catalog.conn.transaction()?;
         let mut writer = BordersWriter::new(&tx)?;
         for (i, result) in batch.drain(..) {
-            // A file that no longer decodes keeps no borders; if it changed, the import records the failure.
+            stats.files += 1;
             let found = match result {
                 Ok(b) => b.borders,
+                // Couldn't be read (a locked file, an offline drive): nothing is stored, so the file stays due and the
+                // next pass tries it again. Storing "no borders" here would hide it until BORDERS_VERSION changed (R-47).
+                Err(e) if e.downcast_ref::<std::io::Error>().is_some() => {
+                    stats.failed += 1;
+                    continue;
+                }
+                // It doesn't decode: no borders, for the file as it is; the import records the failure.
                 Err(_) => {
                     stats.failed += 1;
                     None
                 }
             };
             writer.store_borders(&items[i], found.as_ref())?;
-            stats.files += 1;
         }
         drop(writer);
         tx.commit()?;

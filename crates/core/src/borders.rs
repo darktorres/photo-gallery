@@ -18,20 +18,10 @@
 //! 8-bit values doubled (×2), deviations from a median of medians ×4. Line statistics read every other pixel.
 
 use crate::decode::Rgb;
-use crate::orientation;
+use crate::detection::{Detection, Edge, Kind, MAX_SIDES, Reason, Side, Sides};
 
 /// Bump when anything here changes what is detected; detections of an older version are redone.
 pub const BORDERS_VERSION: i64 = 1;
-
-/// [`MIN_SIDE`] as a literal, for SQL made at compile time (`catalog`'s `has_borders!`).
-macro_rules! min_side {
-    () => {
-        64
-    };
-}
-pub(crate) use min_side;
-/// Images with a side shorter than this aren't looked at.
-pub const MIN_SIDE: usize = min_side!();
 
 #[derive(Clone, Copy, Debug)]
 pub struct Params {
@@ -91,240 +81,6 @@ impl Default for Params {
             margin: 1,
         }
     }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Edge {
-    Top,
-    Bottom,
-    Left,
-    Right,
-}
-
-impl Edge {
-    pub const ALL: [Edge; 4] = [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right];
-
-    pub fn key(self) -> &'static str {
-        match self {
-            Edge::Top => "top",
-            Edge::Bottom => "bottom",
-            Edge::Left => "left",
-            Edge::Right => "right",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Edge> {
-        Edge::ALL.into_iter().find(|e| e.key() == key)
-    }
-
-    fn opposite(self) -> Edge {
-        match self {
-            Edge::Top => Edge::Bottom,
-            Edge::Bottom => Edge::Top,
-            Edge::Left => Edge::Right,
-            Edge::Right => Edge::Left,
-        }
-    }
-}
-
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Kind {
-    Solid,
-    Blur,
-}
-
-impl Kind {
-    pub fn key(self) -> &'static str {
-        match self {
-            Kind::Solid => "solid",
-            Kind::Blur => "blur",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Kind> {
-        [Kind::Solid, Kind::Blur].into_iter().find(|k| k.key() == key)
-    }
-}
-
-/// What a side looks like, for the filters: a solid border by its colour, or a blurred bar.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Class {
-    Black,
-    White,
-    Color,
-    Blur,
-}
-
-impl Class {
-    pub const ALL: [Class; 4] = [Class::Black, Class::White, Class::Color, Class::Blur];
-
-    pub fn key(self) -> &'static str {
-        match self {
-            Class::Black => "black",
-            Class::White => "white",
-            Class::Color => "color",
-            Class::Blur => "blur",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Class> {
-        Class::ALL.into_iter().find(|c| c.key() == key)
-    }
-
-    /// The eval viewer's buckets: black / near-black up to 40, white / near-white from 215.
-    fn of(kind: Kind, color: [u8; 3]) -> Class {
-        match kind {
-            Kind::Blur => Class::Blur,
-            Kind::Solid if color.iter().all(|&c| c <= 40) => Class::Black,
-            Kind::Solid if color.iter().all(|&c| c >= 215) => Class::White,
-            Kind::Solid => Class::Color,
-        }
-    }
-}
-
-/// Why a candidate was rejected.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Reason {
-    /// The run of border lines reaches the deepest a border may be.
-    TooDeep,
-    /// Too thin a run to measure the seam.
-    NoSeam,
-    SeamNotStraight,
-    /// A smooth sky above a horizon, a plain wall beside a door frame: padding tools centre the content.
-    UnpairedBlur,
-    /// Shading: a wall or a sky.
-    NotFlat,
-    /// The accepted sides together would leave less than `min_keep` of the image.
-    TooLittleLeft,
-}
-
-impl Reason {
-    const ALL: [Reason; 6] = [
-        Reason::TooDeep,
-        Reason::NoSeam,
-        Reason::SeamNotStraight,
-        Reason::UnpairedBlur,
-        Reason::NotFlat,
-        Reason::TooLittleLeft,
-    ];
-
-    pub fn key(self) -> &'static str {
-        match self {
-            Reason::TooDeep => "too_deep",
-            Reason::NoSeam => "no_seam",
-            Reason::SeamNotStraight => "seam_not_straight",
-            Reason::UnpairedBlur => "unpaired_blur",
-            Reason::NotFlat => "not_flat",
-            Reason::TooLittleLeft => "too_little_left",
-        }
-    }
-
-    pub fn from_key(key: &str) -> Option<Reason> {
-        Reason::ALL.into_iter().find(|r| r.key() == key)
-    }
-
-    /// The prototype's words for it.
-    pub fn text(self) -> &'static str {
-        match self {
-            Reason::TooDeep => "too deep",
-            Reason::NoSeam => "no seam",
-            Reason::SeamNotStraight => "seam not straight",
-            Reason::UnpairedBlur => "blurred bar without an equal opposite bar",
-            Reason::NotFlat => "not flat (shading: wall or sky?)",
-            Reason::TooLittleLeft => "too little content left",
-        }
-    }
-}
-
-/// A border found on one side, accepted or not.
-#[derive(Clone, Debug, PartialEq)]
-pub struct Side {
-    /// The peeling round it was found in (0 first; nested borders come later).
-    pub pass: u8,
-    pub edge: Edge,
-    pub kind: Kind,
-    /// The content starts this many pixels from the edge (of what was left by earlier rounds).
-    pub depth: u32,
-    /// Solid: the line colour at the edge.
-    pub color: Option<[u8; 3]>,
-    /// Fraction of the seam that is a sharp straight edge.
-    pub straight: f64,
-    /// Solid and measured: median pixel deviation from the border colour, and how far the line colour wanders.
-    pub dev: Option<f64>,
-    pub drift: Option<f64>,
-    /// `None`: accepted.
-    pub rejected: Option<Reason>,
-}
-
-impl Side {
-    pub fn accepted(&self) -> bool {
-        self.rejected.is_none()
-    }
-
-    pub fn class(&self) -> Class {
-        Class::of(self.kind, self.color.unwrap_or([128; 3]))
-    }
-
-    /// The prototype's `Side.describe()`, for reports compared with its own.
-    pub fn describe(&self) -> String {
-        let kind = match (self.kind, self.color) {
-            (Kind::Solid, Some([r, g, b])) => format!(
-                "solid #{r:02x}{g:02x}{b:02x} dev {:.0} drift {:.0}",
-                self.dev.unwrap_or(0.0),
-                self.drift.unwrap_or(0.0)
-            ),
-            _ => "blur".to_string(),
-        };
-        let verdict = self.rejected.map(|r| format!(" [{}]", r.text())).unwrap_or_default();
-        format!("{}: {kind} {}px straight {:.2}{verdict}", self.edge.key(), self.depth, self.straight)
-    }
-}
-
-/// What [`detect`] found in an image of `width` × `height` (stored pixels).
-#[derive(Clone, Debug, PartialEq)]
-pub struct Detection {
-    pub width: u32,
-    pub height: u32,
-    /// The content box: left, top, right, bottom (right and bottom exclusive). The whole image when nothing was
-    /// accepted.
-    pub content: [u32; 4],
-    /// Every side found, in the order found: accepted ones, and rejected candidates.
-    pub sides: Sides,
-}
-
-/// The most sides a detection finds: [`detect`] peels at most 3 rounds of the 4 edges, and finds at most one side
-/// of an edge in a round.
-pub const MAX_SIDES: usize = 12;
-
-/// A file's sides, held inline: what detection finds, and what the catalog keeps of it.
-pub type Sides = arrayvec::ArrayVec<Side, MAX_SIDES>;
-
-impl Detection {
-    /// Nothing found in an image of `width` × `height`.
-    pub fn none(width: u32, height: u32) -> Detection {
-        Detection { width, height, content: [0, 0, width, height], sides: Sides::new() }
-    }
-
-    pub fn found(&self) -> bool {
-        self.sides.iter().any(Side::accepted)
-    }
-
-    /// Pixels cut from the left, top, right and bottom.
-    pub fn cut(&self) -> [u32; 4] {
-        let [l, t, r, b] = self.content;
-        [l, t, self.width - r, self.height - b]
-    }
-}
-
-/// A rectangle of the stored image (fractions: left, top, right, bottom) in the image as shown: turned upright by
-/// `orientation` (1–8, as `decode::orient` applies it), then `turns` quarter turns clockwise.
-pub fn upright(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
-    // Where a stored point (u, v) is shown, as decode::transform moves pixels.
-    let shown = |(u, v): (f64, f64)| orientation::shown_edge(orientation, u, v);
-    let turned = |p: (f64, f64)| (0..turns % 4).fold(p, |(x, y), _| (1.0 - y, x));
-    let [l, t, r, b] = rect;
-    let (a, c) = (turned(shown((l, t))), turned(shown((r, b))));
-    [a.0.min(c.0), a.1.min(c.1), a.0.max(c.0), a.1.max(c.1)]
 }
 
 /// Find the borders of a stored image, once. A pass over many images keeps a [`Detector`] instead.
@@ -892,6 +648,7 @@ fn judge(side: &mut Side, other: Option<&Side>, p: &Params) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::detection::Class;
 
     /// Detailed content: deterministic noise in 6 px blocks, a little per pixel, over a gradient (a hash, so the
     /// tests need no crate).
@@ -1120,32 +877,6 @@ mod tests {
         assert!(!d.found(), "{:?}", d.sides);
         assert!(d.sides.iter().any(|s| s.rejected == Some(Reason::TooLittleLeft)));
         assert_eq!(d.content, [0, 0, w as u32, h as u32]);
-    }
-
-    #[test]
-    fn upright_follows_the_decoders_transform() {
-        // A 4×2 stored image whose only lit pixel block is the rectangle x 1..3, y 0..1; every orientation and turn
-        // must put the rectangle where decode::orient (and then quarter turns) puts the pixels.
-        let (w, h) = (4usize, 2usize);
-        let lit = |x: usize, y: usize| (1..3).contains(&x) && y < 1;
-        let pixels: Vec<u8> = (0..h).flat_map(|y| (0..w).map(move |x| u8::from(lit(x, y)))).collect();
-        let rect = [1.0 / 4.0, 0.0, 3.0 / 4.0, 1.0 / 2.0];
-        for orientation in 1..=8u8 {
-            for turns in 0..4u8 {
-                let (mut px, mut pw, mut ph) = crate::decode::transform(&pixels, w, h, 1, orientation);
-                for _ in 0..turns {
-                    (px, pw, ph) = crate::decode::transform(&px, pw, ph, 1, 6);
-                }
-                let [x0, y0, x1, y1] = upright(rect, orientation, turns);
-                for y in 0..ph {
-                    for x in 0..pw {
-                        let (cx, cy) = ((x as f64 + 0.5) / pw as f64, (y as f64 + 0.5) / ph as f64);
-                        let inside = (x0..x1).contains(&cx) && (y0..y1).contains(&cy);
-                        assert_eq!(px[y * pw + x] == 1, inside, "orientation {orientation}, {turns} turns, ({x}, {y})");
-                    }
-                }
-            }
-        }
     }
 
     #[test]

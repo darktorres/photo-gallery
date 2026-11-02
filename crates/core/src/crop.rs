@@ -1,4 +1,4 @@
-//! Cropping a file's borders off (`borders::Detection`'s cut, on the stored pixels), into new bytes in the file's
+//! Cropping a file's borders off (`detection::Detection`'s cut, on the stored pixels), into new bytes in the file's
 //! own format; the caller writes them to a copy, never over the original. Cropping the stored pixels keeps the EXIF
 //! orientation valid.
 //!

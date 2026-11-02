@@ -5,8 +5,9 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
-use crate::borders::{self, Detection, Detector};
+use crate::borders::{self, Detector};
 use crate::decode::{Decoder, MinSize, Rgb, release_over};
+use crate::detection::{self, Detection};
 use crate::format::Format;
 use crate::metadata::{Meta, MetaScratch};
 use crate::pdq;
@@ -127,7 +128,7 @@ impl Analyzer {
             self.decoder.decode_stored_into(bytes, format, meta.orientation, MinSize::Full, turns, &mut self.image)?;
         let frames = meta.frames;
         let (width, height) = (info.full_width, info.full_height);
-        let borders = (frames <= 1 && (width.min(height) as usize) >= borders::MIN_SIDE)
+        let borders = (frames <= 1 && (width.min(height) as usize) >= detection::MIN_SIDE)
             .then(|| self.detector.detect(&self.image, &borders::Params::default()));
         Ok(FileBorders { width, height, borders })
     }

@@ -7,7 +7,8 @@ use rusqlite::types::{Type, Value, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
 use crate::analysis::ThumbHash;
-use crate::borders;
+use crate::detection;
+use crate::display;
 use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::metadata;
@@ -420,14 +421,14 @@ impl Entry {
 
     /// Where a border detector's side would cut, `depth` stored pixels from its edge of the stored image, as a line
     /// across the image as shown: x, y, width, height in fractions, one of them 0.
-    pub fn side_line(&self, edge: borders::Edge, depth: u32) -> Option<[f64; 4]> {
+    pub fn side_line(&self, edge: detection::Edge, depth: u32) -> Option<[f64; 4]> {
         let (w, h) = self.stored_size()?;
         let d = f64::from(depth);
         Some(self.shown(match edge {
-            borders::Edge::Top => [0.0, d, w, d],
-            borders::Edge::Bottom => [0.0, h - d, w, h - d],
-            borders::Edge::Left => [d, 0.0, d, h],
-            borders::Edge::Right => [w - d, 0.0, w - d, h],
+            detection::Edge::Top => [0.0, d, w, d],
+            detection::Edge::Bottom => [0.0, h - d, w, h - d],
+            detection::Edge::Left => [d, 0.0, d, h],
+            detection::Edge::Right => [w - d, 0.0, w - d, h],
         }))
     }
 
@@ -443,7 +444,7 @@ impl Entry {
     fn shown(&self, rect: [f64; 4]) -> [f64; 4] {
         let Some((w, h)) = self.stored_size() else { return [0.0; 4] };
         let [l, t, r, b] = rect;
-        let [x0, y0, x1, y1] = borders::upright([l / w, t / h, r / w, b / h], self.orientation, self.pending_turns);
+        let [x0, y0, x1, y1] = display::upright([l / w, t / h, r / w, b / h], self.orientation, self.pending_turns);
         [x0, y0, x1 - x0, y1 - y0]
     }
 }
@@ -581,7 +582,7 @@ pub struct Details {
     /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
     pub rating_in_file: bool,
     /// Every side the border detector found, accepted and rejected (`borders::detect`).
-    pub border_sides: borders::Sides,
+    pub border_sides: detection::Sides,
 }
 
 pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
@@ -599,7 +600,7 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
                 // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
                 rating_in_file: r.get_ref(2)?.as_str()? == Kind::Image.key()
                     && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
-                border_sides: borders::Sides::new(),
+                border_sides: detection::Sides::new(),
             })
         })
         .optional()?;
@@ -611,35 +612,35 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
 
 /// The sides the border detector found in a file, in the order found.
 /// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
-/// than detection finds (`borders::MAX_SIDES`) can only be in a damaged catalog: an error.
-pub fn border_sides(conn: &Connection, file_id: i64) -> Result<borders::Sides> {
+/// than detection finds (`detection::MAX_SIDES`) can only be in a damaged catalog: an error.
+pub fn border_sides(conn: &Connection, file_id: i64) -> Result<detection::Sides> {
     let mut stmt = conn.prepare_cached(
         "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
          ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",
     )?;
     let mut rows = stmt.query([file_id])?;
-    let mut sides = borders::Sides::new();
+    let mut sides = detection::Sides::new();
     while let Some(r) = rows.next()? {
         let unknown = |i: usize, v: &str| rusqlite::Error::InvalidColumnType(i, v.to_string(), Type::Text);
         let (edge, kind) = (r.get_ref(1)?.as_str()?, r.get_ref(2)?.as_str()?);
         let color: Option<i64> = r.get(4)?;
-        let side = borders::Side {
+        let side = detection::Side {
             pass: r.get(0)?,
-            edge: borders::Edge::from_key(edge).ok_or_else(|| unknown(1, edge))?,
-            kind: borders::Kind::from_key(kind).ok_or_else(|| unknown(2, kind))?,
+            edge: detection::Edge::from_key(edge).ok_or_else(|| unknown(1, edge))?,
+            kind: detection::Kind::from_key(kind).ok_or_else(|| unknown(2, kind))?,
             depth: r.get(3)?,
             color: color.map(|c| [(c >> 16) as u8, (c >> 8) as u8, c as u8]),
             straight: r.get(5)?,
             dev: r.get(6)?,
             drift: r.get(7)?,
             rejected: match r.get_ref(8)?.as_str_or_null()? {
-                Some(k) => Some(borders::Reason::from_key(k).ok_or_else(|| unknown(8, k))?),
+                Some(k) => Some(detection::Reason::from_key(k).ok_or_else(|| unknown(8, k))?),
                 None => None,
             },
         };
         sides
             .try_push(side)
-            .map_err(|_| anyhow::anyhow!("file {file_id}: more than {} border sides kept", borders::MAX_SIDES))?;
+            .map_err(|_| anyhow::anyhow!("file {file_id}: more than {} border sides kept", detection::MAX_SIDES))?;
     }
     Ok(sides)
 }
@@ -946,7 +947,7 @@ mod tests {
                 path: r"E:\p\a.png".into(),
                 size: 10,
                 rating_in_file: true,
-                border_sides: borders::Sides::new()
+                border_sides: detection::Sides::new()
             })
         );
         assert_eq!(details(&c.conn, 99).unwrap(), None);

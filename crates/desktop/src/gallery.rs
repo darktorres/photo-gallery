@@ -276,11 +276,11 @@ use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QUrl,
     QVariant,
 };
-use pg_core::borders::Class;
 use pg_core::browse::{
     self,
     read::{Borders, Details, Entry},
 };
+use pg_core::detection::Class;
 use pg_core::layout::{self, Row, RowChange};
 use pg_core::query::{MediaType, Query, Sort};
 

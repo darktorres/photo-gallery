@@ -187,7 +187,7 @@ impl Status {
     }
 }
 
-/// Borders, as the filter sees them: none found, or a side found of a class (`borders::Class`). Borders the user
+/// Borders, as the filter sees them: none found, or a side found of a class (`detection::Class`). Borders the user
 /// marked as not a border count as none.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "lowercase")]
@@ -203,7 +203,7 @@ impl BorderFacet {
     pub const ALL: [BorderFacet; 5] =
         [BorderFacet::None, BorderFacet::Black, BorderFacet::White, BorderFacet::Color, BorderFacet::Blur];
 
-    /// The name in JSON (a class's, `borders::Class::key`).
+    /// The name in JSON (a class's, `detection::Class::key`).
     pub fn key(self) -> &'static str {
         match self {
             BorderFacet::None => "none",
@@ -910,7 +910,7 @@ mod tests {
             assert_eq!(json(&b), format!("\"{}\"", b.key()));
             assert_eq!(BorderFacet::from_key(b.key()), Some(b));
         }
-        for c in crate::borders::Class::ALL {
+        for c in crate::detection::Class::ALL {
             assert_eq!(BorderFacet::from_key(c.key()).map(BorderFacet::key), Some(c.key()));
         }
         for k in SortKey::ALL {

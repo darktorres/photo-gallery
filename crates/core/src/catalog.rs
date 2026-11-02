@@ -20,7 +20,8 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction,
 
 use crate::analysis::Analysis;
 use crate::analyze::IMPORT_VERSION;
-use crate::borders::{BORDERS_VERSION, Detection};
+use crate::borders::BORDERS_VERSION;
+use crate::detection::Detection;
 use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::path::is_under;
@@ -62,12 +63,12 @@ macro_rules! seq {
     };
 }
 
-/// The analyses borders are looked for in: still images that decoded and are big enough (borders::MIN_SIDE).
+/// The analyses borders are looked for in: still images that decoded and are big enough (detection::MIN_SIDE).
 macro_rules! has_borders {
     () => {
         concat!(
             "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= ",
-            crate::borders::min_side!()
+            crate::detection::min_side!()
         )
     };
 }
@@ -143,7 +144,7 @@ CREATE TABLE analysis(
     duration_ms INTEGER,           -- videos
     poster_ms   INTEGER,           -- videos: where the frame for the ThumbHash and the thumbnails is
     -- Borders (borders::detect) on the stored pixels, found after the import by a pass of their own: what a crop
-    -- cuts from the left, top, right and bottom (borders::Detection::cut), all 0 for none. NULL until looked for,
+    -- cuts from the left, top, right and bottom (detection::Detection::cut), all 0 for none. NULL until looked for,
     -- and where they aren't (videos, animated and tiny images, failures). `borders_due`: to be looked for, by this
     -- build's detector (the import sets it; Catalog::open too when meta.borders_version differs).
     cut_left    INTEGER,
@@ -170,7 +171,7 @@ CREATE TABLE border_sides(
     straight REAL NOT NULL,
     dev      REAL,              -- solid and measured: flatness
     drift    REAL,
-    rejected TEXT,              -- borders::Reason key; NULL: accepted
+    rejected TEXT,              -- detection::Reason key; NULL: accepted
     PRIMARY KEY(file_id, pass, edge)
 ) WITHOUT ROWID;
 -- The class facet (query::BorderClass).
@@ -1805,8 +1806,8 @@ mod tests {
 
     #[test]
     fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector() {
-        use crate::borders::{Edge, Kind as SideKind, Reason, Side};
         use crate::browse;
+        use crate::detection::{Edge, Kind as SideKind, Reason, Side};
         use crate::query::{BorderFacet, Query, Sort};
 
         let mut c = Catalog::open(Path::new(":memory:")).unwrap();

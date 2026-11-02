@@ -9,9 +9,10 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, ensure};
 use pg_core::analyze::{Analyzer, FileBorders};
-use pg_core::borders::{self as detector, Detector, Side};
+use pg_core::borders::{self as detector, Detector};
 use pg_core::catalog::{BordersWriter, Catalog};
 use pg_core::decode::Rgb;
+use pg_core::detection::{self, Side};
 use pg_core::media::{Ext, Kind};
 use pg_core::paths::verbatim_wide;
 
@@ -210,7 +211,7 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
         (img.width, img.height) = (w, h);
         img.pixels.resize(w * h * 3, 0);
         input.read_exact(&mut img.pixels).with_context(|| format!("reading image {n}'s pixels"))?;
-        let [l, t, r, b] = if w.min(h) >= detector::MIN_SIDE {
+        let [l, t, r, b] = if w.min(h) >= detection::MIN_SIDE {
             finder.detect(&img, &detector::Params::default()).content
         } else {
             [0, 0, w as u32, h as u32]

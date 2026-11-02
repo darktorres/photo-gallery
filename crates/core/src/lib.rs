@@ -14,6 +14,7 @@ pub mod container;
 pub mod crop;
 pub mod date;
 pub mod decode;
+pub mod detection;
 pub mod display;
 pub mod format;
 pub mod layout;

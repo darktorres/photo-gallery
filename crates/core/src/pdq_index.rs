@@ -7,11 +7,11 @@
 //! new-vs-old pattern), so there is never a separate all-pairs job.
 //!
 //! Each chunk's table is flat: the entries' positions grouped by chunk value, with each value's range in
-//! `offsets`, built by a counting sort. Entries inserted since are chained per value (a head per value, a link per
-//! entry), so an insert is O(1). Once the chains hold an eighth as many entries as the flat tables (at least
-//! [`MIN_REINDEX`]), the flat tables are rebuilt over every entry: each entry is placed a bounded number of times
-//! (amortized O(1)) however large the index grows, and an empty catalog's first import stays fast. An index without
-//! entries holds no table.
+//! `offsets`, built by a counting sort. Entries inserted since are chained per value (a link per entry, and the
+//! newest of each value in [`Heads`], whose size follows the values chained, not the 65,536 there are), so an insert
+//! is O(1). Once the chains hold an eighth as many entries as the flat tables (at least [`MIN_REINDEX`]), the flat
+//! tables are rebuilt over every entry: each entry is placed a bounded number of times (amortized O(1)) however
+//! large the index grows, and an empty catalog's first import stays fast. An index without entries holds no table.
 
 use crate::pdq::Hash;
 
@@ -23,6 +23,8 @@ const VALUES: usize = 1 << 16;
 const MIN_REINDEX: usize = 4096;
 /// The end of a chain. Heads and links hold an entry's position + 1.
 const END: u32 = 0;
+/// The most slots [`Heads`] keeps as a map: past that, a table of every value (`VALUES` heads) is smaller.
+const MAP_MAX_SLOTS: usize = 1 << 15;
 
 #[derive(Default)]
 pub struct PdqIndex {
@@ -41,11 +43,102 @@ struct Chunk {
     /// `positions[offsets[v]..offsets[v + 1]]`: the indexed entries whose chunk value is `v`, in insertion order.
     offsets: Vec<u32>,
     positions: Vec<u32>,
-    /// The entries inserted since: `head[v]` links to the newest whose value is `v`, and `next[i]` from entry
-    /// `indexed + i` to the one before it. Allocated (zeroed, so only its touched pages are committed) by the
-    /// first insert.
-    head: Vec<u32>,
+    /// The entries inserted since: `heads` links each value to the newest whose value it is, and `next[i]` entry
+    /// `indexed + i` to the one before it.
+    heads: Heads,
     next: Vec<u32>,
+}
+
+/// The newest chained entry of each chunk value (its link: position + 1). A map while few values are chained: open
+/// addressing, at most half full, so it holds about two slots per value; once it would outgrow [`MAP_MAX_SLOTS`],
+/// a table of every value, which is then smaller.
+enum Heads {
+    Map { keys: Vec<u16>, links: Vec<u32>, len: usize },
+    Table(Vec<u32>),
+}
+
+impl Default for Heads {
+    fn default() -> Self {
+        Heads::Map { keys: Vec::new(), links: Vec::new(), len: 0 }
+    }
+}
+
+/// Where `v` is, or would go, in a map of `keys`/`links` (a power of two long, never full).
+fn map_slot(keys: &[u16], links: &[u32], v: u16) -> usize {
+    let mask = keys.len() - 1;
+    let mut i = (u32::from(v).wrapping_mul(0x9E37_79B1) >> 16) as usize & mask;
+    while links[i] != END && keys[i] != v {
+        i = (i + 1) & mask;
+    }
+    i
+}
+
+impl Heads {
+    fn get(&self, v: u16) -> u32 {
+        match self {
+            Heads::Map { keys, .. } if keys.is_empty() => END,
+            Heads::Map { keys, links, .. } => links[map_slot(keys, links, v)],
+            Heads::Table(heads) => heads[v as usize],
+        }
+    }
+
+    fn set(&mut self, v: u16, link: u32) {
+        if let Heads::Map { keys, links, .. } = self
+            && !keys.is_empty()
+        {
+            let i = map_slot(keys, links, v);
+            if links[i] != END {
+                links[i] = link;
+                return;
+            }
+        }
+        // A value not chained yet: room for it first (which may make the table).
+        self.reserve(1);
+        match self {
+            Heads::Map { keys, links, len } => {
+                let i = map_slot(keys, links, v);
+                (keys[i], links[i]) = (v, link);
+                *len += 1;
+            }
+            Heads::Table(heads) => heads[v as usize] = link,
+        }
+    }
+
+    /// Room for `additional` more values without growing.
+    fn reserve(&mut self, additional: usize) {
+        let Heads::Map { keys, links, len } = self else { return };
+        let want = ((*len + additional) * 2).next_power_of_two().max(16);
+        if want <= keys.len() {
+            return;
+        }
+        let old: Vec<(u16, u32)> =
+            (keys.iter().zip(links.iter())).filter(|(_, l)| **l != END).map(|(k, l)| (*k, *l)).collect();
+        if want > MAP_MAX_SLOTS {
+            let mut table = vec![END; VALUES];
+            for (k, l) in old {
+                table[k as usize] = l;
+            }
+            *self = Heads::Table(table);
+            return;
+        }
+        *keys = vec![0; want];
+        *links = vec![END; want];
+        for (k, l) in old {
+            let i = map_slot(keys, links, k);
+            (keys[i], links[i]) = (k, l);
+        }
+    }
+
+    /// No value chained; the room is kept.
+    fn clear(&mut self) {
+        match self {
+            Heads::Map { links, len, .. } => {
+                links.fill(END);
+                *len = 0;
+            }
+            Heads::Table(heads) => heads.fill(END),
+        }
+    }
 }
 
 fn value(words: &[u64; 4], c: usize) -> u16 {
@@ -69,16 +162,26 @@ impl PdqIndex {
         self.ids.is_empty()
     }
 
+    /// Room for `additional` more entries: the import reserves its whole work list once, so neither the entries
+    /// nor the chains grow per insert (the chains only up to the next reindex).
+    pub fn reserve(&mut self, additional: usize) {
+        self.ids.reserve(additional);
+        self.hashes.reserve(additional);
+        self.seen.reserve(additional);
+        let chained = additional.min(MIN_REINDEX.max(self.indexed / 8));
+        for chunk in &mut self.chunks {
+            chunk.next.reserve(chained);
+            chunk.heads.reserve(chained.min(VALUES));
+        }
+    }
+
     pub fn insert(&mut self, id: i64, hash: &Hash) {
         let words = hash.words();
         let link = u32::try_from(self.ids.len() + 1).expect("PDQ index of 2³² entries");
         for (c, chunk) in self.chunks.iter_mut().enumerate() {
-            if chunk.head.is_empty() {
-                chunk.head = vec![END; VALUES];
-            }
-            let v = value(&words, c) as usize;
-            chunk.next.push(chunk.head[v]);
-            chunk.head[v] = link;
+            let v = value(&words, c);
+            chunk.next.push(chunk.heads.get(v));
+            chunk.heads.set(v, link);
         }
         self.ids.push(id);
         self.hashes.push(words);
@@ -115,7 +218,7 @@ impl PdqIndex {
                 offsets[v] -= 1;
                 chunk.positions[offsets[v] as usize] = p as u32;
             }
-            chunk.head.fill(END);
+            chunk.heads.clear();
             chunk.next.clear();
         }
         self.indexed = n;
@@ -151,7 +254,7 @@ impl PdqIndex {
                 if let Some(&[start, end]) = chunk.offsets.get(probe..probe + 2) {
                     chunk.positions[start as usize..end as usize].iter().for_each(|&p| check(p as usize));
                 }
-                let mut link = chunk.head.get(probe).copied().unwrap_or(END);
+                let mut link = chunk.heads.get(probe as u16);
                 while link != END {
                     let p = link as usize - 1;
                     check(p);
@@ -234,6 +337,50 @@ mod tests {
         }
         // One reindex, at MIN_REINDEX: the rest are chained.
         assert_eq!(index.indexed, MIN_REINDEX);
+    }
+
+    /// The heads, as a map and once a table, give the newest link of each value, as a table of every value would.
+    #[test]
+    fn heads_give_each_values_newest_link_as_map_and_table() {
+        let mut heads = Heads::default();
+        let mut want = vec![END; VALUES];
+        let mut s = 0x2545F4914F6CDD1Du64;
+        for link in 1..=200_000u32 {
+            s ^= s << 13;
+            s ^= s >> 7;
+            s ^= s << 17;
+            // Few values at first (the map), then all of them (the table).
+            let v = if link < 5000 { (s % 3000) as u16 } else { s as u16 };
+            heads.set(v, link);
+            want[v as usize] = link;
+            if link == 4999 {
+                assert!(matches!(&heads, Heads::Map { keys, .. } if keys.len() == 8192));
+                assert!((0..=u16::MAX).all(|v| heads.get(v) == want[v as usize]));
+            }
+        }
+        assert!(matches!(heads, Heads::Table(_)));
+        assert!((0..=u16::MAX).all(|v| heads.get(v) == want[v as usize]));
+        heads.clear();
+        assert!((0..=u16::MAX).all(|v| heads.get(v) == END));
+        // Reserved, a map takes its values without growing.
+        let mut heads = Heads::default();
+        heads.reserve(1000);
+        let Heads::Map { keys, .. } = &heads else { panic!() };
+        let slots = keys.len();
+        (0..1000).for_each(|v| heads.set(v, u32::from(v) + 1));
+        assert!(matches!(&heads, Heads::Map { keys, len: 1000, .. } if keys.len() == slots));
+        assert!((0..1000).all(|v| heads.get(v) == u32::from(v) + 1) && heads.get(1000) == END);
+    }
+
+    #[test]
+    fn a_reserved_index_finds_its_inserts() {
+        let (all, queries) = sample(700);
+        let mut index = PdqIndex::default();
+        index.reserve(all.len());
+        for (id, h) in all.iter().enumerate() {
+            index.insert(id as i64, h);
+        }
+        check(&mut index, &all, &queries, &mut Vec::new());
     }
 
     #[test]

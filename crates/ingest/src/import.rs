@@ -34,6 +34,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         return Ok(stats);
     }
     let mut index = catalog.pdq_index()?;
+    // Every file of the list may add its hash.
+    index.reserve(items.len());
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
 
     let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);

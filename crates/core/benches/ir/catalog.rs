@@ -1,11 +1,12 @@
-// The catalog's work for the grid, the tree and the background job, on a copy of a real catalog (189,518 files,
-// 690 folders, the pinterest dataset; included from linux.rs). The data is prepared once by
-// tools/profiling/bench_data.py into PG_BENCH_DATA/<LAYOUT>/: the catalog and a cache without its JPEGs, each
-// compacted with VACUUM INTO. Setup copies both to PG_BENCH_DATA/run/ and opens the catalog, so the measured
-// function starts with the schema parsed and every page cold, like the app's first list.
+// The catalog's work for the grid, the tree and the background job, on a copy of a synthetic catalog (4,000 files,
+// 81 folders: tools/profiling/synthetic_library.py, scanned, imported and thumbnailed at 256 px; included from
+// linux.rs). The data is prepared once by tools/profiling/bench_data.py into PG_BENCH_DATA/<LAYOUT>/: the catalog and
+// a cache without its JPEGs, each compacted with VACUUM INTO. Setup copies both to PG_BENCH_DATA/run/ and opens the
+// catalog, so the measured function starts with the schema parsed and every page cold, like the app's first list.
 //
 // The bench ids stay the same across commits; the bodies follow the API. LAYOUT names the catalog layout the code
-// expects, and changes in the same commit as the schema.
+// expects, and changes in the same commit as the schema. It also names the dataset, because bench_data.py never
+// overwrites a layout's folder.
 
 use std::path::{Path, PathBuf};
 
@@ -19,9 +20,9 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
     Some(path) => path,
     None => "/root/pg-bench",
 };
-const LAYOUT: &str = "v1-orderkey";
+const LAYOUT: &str = "v1-orderkey-synthetic";
 // The thumbnail height the cache was filled at.
-const THUMB_HEIGHT: u32 = 220;
+const THUMB_HEIGHT: u32 = 256;
 
 fn run_dir() -> PathBuf {
     Path::new(DATA).join("run")
@@ -62,7 +63,8 @@ fn for_list(which: List) -> (Catalog, List) {
 }
 
 // The grid's list: "All folders" (the session at startup), by name, by date taken and filtered to the unrated
-// files; one folder with subfolders, recursive; one large folder alone.
+// files; the library folder with its subfolders, recursive; one subfolder alone (50 files: the synthetic library has
+// no large flat folder).
 #[library_benchmark]
 #[bench::all_name(args = (List::AllName), setup = for_list)]
 #[bench::all_taken(args = (List::AllTaken), setup = for_list)]
@@ -76,8 +78,8 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
         List::AllName => ("", true, Query::default(), name),
         List::AllTaken => ("", true, Query::default(), Sort { key: SortKey::Taken, descending: true }),
         List::AllUnrated => ("", true, unrated, name),
-        List::FolderRecursive => (r"PhotoGallery\datasets\pinterest\_todo", true, Query::default(), name),
-        List::FolderFlat => (r"PhotoGallery\datasets\pinterest\_incoming", false, Query::default(), name),
+        List::FolderRecursive => (r"PhotoGallery\synthetic\library", true, Query::default(), name),
+        List::FolderFlat => (r"PhotoGallery\synthetic\library\folder-00", false, Query::default(), name),
     };
     let entries = browse::list_grid(&catalog.conn, folder, recursive, &query, sort).unwrap();
     (catalog, black_box(entries))

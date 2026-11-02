@@ -10,7 +10,7 @@
 //!
 //! What a thread keeps lives as long as the thread: the providers' pools (`cpp/providers.cpp`: 8 thumbnail
 //! threads, 2 full-image and 2 placeholder ones) end a thread after 30 s idle, and its thread-locals with it. A
-//! `Maker` holds what one thumbnail needs (at most `thumbs::KEEP_BYTES` a buffer), the file read for it included, so
+//! `Maker` holds what one thumbnail needs (at most `maker::KEEP_BYTES` a buffer), the file read for it included, so
 //! the thumbnail threads keep what the requests in flight need while the grid scrolls, and for 30 s after. The
 //! viewer reads the original into its thread's `Maker` too (kept likewise, up to `KEEP_BYTES`), but its decodes and
 //! resizes go to new buffers (`Maker::decode_file`, a `Resizer` per request), so a full-image thread keeps no
@@ -28,10 +28,11 @@ use anyhow::{Context, Result, bail};
 use pg_core::browse::{self, FileSource};
 use pg_core::catalog::Catalog;
 use pg_core::decode::{MinSize, Rgb, orient_pixels};
+use pg_core::maker::Maker;
 use pg_core::orientation;
 use pg_core::paths::verbatim;
 use pg_core::resize::Resizer;
-use pg_core::thumbs::{self, Maker, ThumbCache};
+use pg_core::thumbs::{self, ThumbCache};
 
 pub struct AppState {
     pub catalog_dir: PathBuf,

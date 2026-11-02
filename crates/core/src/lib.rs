@@ -15,6 +15,7 @@ pub mod decode;
 pub mod display;
 pub mod format;
 pub mod layout;
+pub mod maker;
 pub mod media;
 pub mod metadata;
 pub mod orientation;

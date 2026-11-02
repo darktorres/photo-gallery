@@ -261,7 +261,7 @@ fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::thumbs::Maker;
+    use crate::maker::Maker;
 
     fn pattern(w: usize, h: usize, seed: usize) -> Vec<u8> {
         (0..w * h * 3).map(|i| ((i / 3 % w) * 7 + (i / 3 / w) * 3 + (i % 3) * 50 + seed * 31) as u8).collect()

@@ -6,7 +6,7 @@ use std::hint::black_box;
 
 use gungraun::prelude::*;
 use pg_core::analyze::{Analysis, Analyzer};
-use pg_core::thumbs::Maker;
+use pg_core::maker::Maker;
 
 /// A median-size file of the test set: a 126 KB mozjpeg re-encode, 1280×1017 baseline. It's one of the library's
 /// photos, so it stays out of the repo and is read from D: through WSL. `PG_BENCH_JPEG` at build time picks

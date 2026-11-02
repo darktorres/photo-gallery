@@ -16,6 +16,7 @@
 #include <QtQuick/QQuickTextureFactory>
 
 #include <atomic>
+#include <cstdint>
 #include <memory>
 
 #include "pg-ui/src/providers.cxx.h"
@@ -33,19 +34,35 @@ struct Link {
     std::atomic<bool> cancelled{false};
 };
 
-QImage to_qimage(const Pixels& px) {
+// Rust's pixels become the QImage's own: the QImage keeps the buffer and frees it with its last copy. Their
+// formats are ones the scene graph uploads as they are (state::Upload), so neither side copies the image.
+QImage to_qimage(Pixels px) {
     if (px.data.empty()) return {};
-    const auto* bytes = reinterpret_cast<const uchar*>(px.data.data());
+    QImage::Format format;
     switch (px.format) {
         case 0:
-            return QImage::fromData(bytes, int(px.data.size()));
+            return QImage::fromData(reinterpret_cast<const uchar*>(px.data.data()), int(px.data.size()));
         case 1:
-            return QImage(bytes, px.width, px.height, px.width * 3, QImage::Format_RGB888).copy();
+            format = QImage::Format_RGBX8888;
+            break;
         case 2:
-            return QImage(bytes, px.width, px.height, px.width * 4, QImage::Format_RGBA8888).copy();
+            format = QImage::Format_RGBA8888_Premultiplied;
+            break;
         default:
             return {};
     }
+    const qsizetype stride = qsizetype(px.width) * 4;
+    if (px.width <= 0 || px.height <= 0 || qsizetype(px.data.size()) < stride * px.height) return {};
+    auto* owned = new rust::Vec<std::uint8_t>(std::move(px.data));
+    auto* bytes = reinterpret_cast<uchar*>(owned->data());
+    const auto free = [](void* vec) { delete static_cast<rust::Vec<std::uint8_t>*>(vec); };
+    // 32-bit pixels want 4-byte alignment, which Rust's allocator gives (16 on x64); a copy if it ever didn't.
+    if (reinterpret_cast<quintptr>(bytes) % 4 != 0) {
+        QImage copy = QImage(bytes, px.width, px.height, stride, format).copy();
+        free(owned);
+        return copy;
+    }
+    return QImage(bytes, px.width, px.height, stride, format, free, owned);
 }
 
 class Response : public QQuickImageResponse {

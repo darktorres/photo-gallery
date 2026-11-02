@@ -15,8 +15,8 @@
 
 #[cxx_qt::bridge]
 pub mod ffi {
-    /// An image for the C++ side: `format` 0 = encoded file bytes (JPEG), 1 = RGB888, 2 = RGBA8888. Empty `data`
-    /// means it failed.
+    /// An image for the C++ side: `format` 0 = encoded file bytes (JPEG), 1 = RGBX8888, 2 = RGBA8888
+    /// premultiplied (`state::Upload`). Qt takes `data` as it is, without a copy. Empty `data` means it failed.
     #[namespace = "pg"]
     struct Pixels {
         width: i32,
@@ -92,10 +92,10 @@ fn parse_key(key: &str) -> Option<(i64, Option<state::Named>)> {
 fn load_image(kind: i32, id: &str) -> Pixels {
     let (key, rest) = id.split_once('/').unwrap_or((id, ""));
     let Some((file_id, named)) = parse_key(key) else { return failed() };
-    let rgb = |img: pg_core::decode::Rgb| Pixels {
+    let upload = |img: state::Upload| Pixels {
         width: img.width as i32,
         height: img.height as i32,
-        format: 1,
+        format: if img.premultiplied { 2 } else { 1 },
         data: img.pixels,
     };
     let result = match kind {
@@ -107,17 +107,12 @@ fn load_image(kind: i32, id: &str) -> Pixels {
                 if turns == 0 {
                     Ok(Pixels { width: 0, height: 0, format: 0, data: jpeg })
                 } else {
-                    state::turn_jpeg(&jpeg, turns).map(rgb)
+                    state::turn_jpeg(&jpeg, turns).map(upload)
                 }
             }),
-        KIND_THUMBHASH => state::placeholder(file_id).map(|(w, h, data)| Pixels {
-            width: w as i32,
-            height: h as i32,
-            format: 2,
-            data,
-        }),
+        KIND_THUMBHASH => state::placeholder(file_id).map(upload),
         KIND_FULL => match full_view(rest) {
-            Some(view) => state::full_image(file_id, view).map(rgb),
+            Some(view) => state::full_image(file_id, view).map(upload),
             None => return failed(),
         },
         _ => return failed(),

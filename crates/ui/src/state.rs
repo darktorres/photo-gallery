@@ -198,17 +198,55 @@ pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>) -> Result<(Vec
 }
 
 /// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
-pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Rgb> {
-    with_maker(|m| Ok(m.decoder().decode(jpeg, MinSize::Full, turns)?.image))
+pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Upload> {
+    with_maker(|m| Ok(Upload::opaque(&m.decoder().decode(jpeg, MinSize::Full, turns)?.image)))
 }
 
-/// The ThumbHash placeholder as a tiny RGBA image, shown as the catalog has the file now (`browse::placeholder`).
-pub fn placeholder(file_id: i64) -> Result<(usize, usize, Vec<u8>)> {
+/// An image in a format Qt's scene graph uploads as it is (`QSGPlainTexture`): 4 bytes a pixel, RGBX8888 or
+/// RGBA8888 premultiplied. Any other format (RGB888, straight RGBA8888) it converts to RGBA8888 premultiplied on
+/// the render thread, a copy of the whole image there at every upload. Made on the provider's thread instead, and
+/// handed to Qt without a copy (cpp/providers.cpp `to_qimage`).
+pub struct Upload {
+    pub width: usize,
+    pub height: usize,
+    pub pixels: Vec<u8>,
+    /// RGBA8888 premultiplied; else RGBX8888 (X = 255).
+    pub premultiplied: bool,
+}
+
+impl Upload {
+    /// `img` as RGBX8888.
+    pub fn opaque(img: &Rgb) -> Upload {
+        let mut pixels = vec![255u8; img.width * img.height * 4];
+        for (out, rgb) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(img.pixels.as_chunks::<3>().0) {
+            out[..3].copy_from_slice(rgb);
+        }
+        Upload { width: img.width, height: img.height, pixels, premultiplied: false }
+    }
+
+    /// Straight RGBA as RGBA8888 premultiplied, in place, rounded as Qt premultiplies (`qPremultiply`), so the
+    /// texture is the one Qt's own conversion made.
+    pub fn straight(width: usize, height: usize, mut pixels: Vec<u8>) -> Upload {
+        for px in pixels.as_chunks_mut::<4>().0 {
+            let a = px[3] as u32;
+            if a != 255 {
+                for c in &mut px[..3] {
+                    let t = *c as u32 * a;
+                    *c = ((t + (t >> 8) + 0x80) >> 8) as u8;
+                }
+            }
+        }
+        Upload { width, height, pixels, premultiplied: true }
+    }
+}
+
+/// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now (`browse::placeholder`).
+pub fn placeholder(file_id: i64) -> Result<Upload> {
     let p = with_catalog(|c| browse::placeholder(&c.conn, file_id))?.context("unknown file")?;
     let hash = p.hash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(&hash).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
     let (rgba, w, h) = orient_pixels(rgba, w, h, 4, compose_orientation(1, p.turns));
-    Ok((w, h, rgba))
+    Ok(Upload::straight(w, h, rgba))
 }
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
@@ -241,7 +279,7 @@ static LAST_DECODE: Mutex<Option<Decoded>> = Mutex::new(None);
 
 /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as
 /// the viewer asks for it.
-pub fn full_image(file_id: i64, view: View) -> Result<Rgb> {
+pub fn full_image(file_id: i64, view: View) -> Result<Upload> {
     let min = match view {
         View::Fit(w, h) => MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN),
         View::Full => MinSize::Full,
@@ -256,17 +294,18 @@ pub fn full_image(file_id: i64, view: View) -> Result<Rgb> {
     if let Some(fresh) = fresh {
         *LAST_DECODE.lock().unwrap() = Some(fresh);
     }
+    // The decode stays shared (`LAST_DECODE`); what is shown is made from it in the upload format.
     match view {
         View::Fit(w, h) => {
             let mut fitted = Rgb::default();
-            Ok(if Resizer::new().fit_box(&img, w, h, &mut fitted) { fitted } else { (*img).clone() })
+            Ok(Upload::opaque(if Resizer::new().fit_box(&img, w, h, &mut fitted) { &fitted } else { &img }))
         }
-        View::Full => Ok((*img).clone()),
+        View::Full => Ok(Upload::opaque(&img)),
         View::Region((x, y, rw, rh), w, h) => {
             let (iw, ih) = (img.width as f64, img.height as f64);
             let mut out = Rgb::default();
             Resizer::new().resize_region(&img, (x * iw, y * ih, rw * iw, rh * ih), w, h, &mut out);
-            Ok(out)
+            Ok(Upload::opaque(&out))
         }
     }
 }

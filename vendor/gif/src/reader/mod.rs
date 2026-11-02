@@ -149,6 +149,8 @@ pub struct DecodeOptions {
     skip_frame_decoding: bool,
     check_for_end_code: bool,
     allow_unknown_blocks: bool,
+    // photo-gallery: see `Self::skip_metadata`.
+    skip_metadata: bool,
 }
 
 impl Default for DecodeOptions {
@@ -169,6 +171,7 @@ impl DecodeOptions {
             skip_frame_decoding: false,
             check_for_end_code: false,
             allow_unknown_blocks: false,
+            skip_metadata: false,
         }
     }
 
@@ -207,6 +210,17 @@ impl DecodeOptions {
     /// This is useful to count frames without incurring the overhead of decoding.
     pub fn skip_frame_decoding(&mut self, skip: bool) {
         self.skip_frame_decoding = skip;
+    }
+
+    /// photo-gallery: configure whether to skip the XMP and ICC application extensions.
+    ///
+    /// The default is false.
+    ///
+    /// When turned on, they are skipped like unknown application extensions: [`Decoder::xmp_metadata`] and
+    /// [`Decoder::icc_profile`] are `None`, and their bytes are neither collected nor counted against the memory
+    /// limit. For callers that read a file's metadata themselves.
+    pub fn skip_metadata(&mut self, skip: bool) {
+        self.skip_metadata = skip;
     }
 
     /// Configure if LZW encoded blocks must end with a marker end code.
@@ -350,6 +364,8 @@ pub struct Decoder<R: Read, B: BufRead = io::BufReader<R>> {
     spare_frame: Vec<u8>,
     spare_xmp: Vec<u8>,
     spare_icc: Vec<u8>,
+    /// photo-gallery: `DecodeOptions::skip_metadata`.
+    skip_metadata: bool,
     source: PhantomData<R>,
 }
 
@@ -398,6 +414,7 @@ where
             current_frame: Frame::default(),
             current_frame_data_type: FrameDataType::Pixels,
             app_extension_state: AppExtensionState::None,
+            skip_metadata: options.skip_metadata,
             xmp_metadata: None,
             icc_profile: None,
             spare_frame: frame,
@@ -479,14 +496,15 @@ where
                 self.app_extension_state = match data {
                     EXT_NAME_NETSCAPE => AppExtensionState::Netscape,
                     // photo-gallery: in a kept vector, emptied (upstream: `Vec::new`).
-                    EXT_NAME_XMP => {
+                    // photo-gallery: unless asked not to (`DecodeOptions::skip_metadata`).
+                    EXT_NAME_XMP if !self.skip_metadata => {
                         let mut xmp = (self.xmp_metadata.take())
                             .unwrap_or_else(|| mem::take(&mut self.spare_xmp));
                         xmp.clear();
                         self.xmp_metadata = Some(xmp);
                         AppExtensionState::Xmp
                     }
-                    EXT_NAME_ICC => {
+                    EXT_NAME_ICC if !self.skip_metadata => {
                         let mut icc = (self.icc_profile.take())
                             .unwrap_or_else(|| mem::take(&mut self.spare_icc));
                         icc.clear();

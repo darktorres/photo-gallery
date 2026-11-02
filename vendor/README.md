@@ -218,6 +218,9 @@ upstream's:
   reallocate a kept buffer to its length). This changes `StreamingDecoder`'s public API, which nothing here uses.
   The converter holds the global palette as a `Vec`, empty for none (upstream: an `Option`), so that an empty one
   keeps its allocation.
+- `DecodeOptions::skip_metadata` skips the XMP and ICC application extensions as unknown ones are skipped: neither
+  is collected nor counted against the memory limit, and `xmp_metadata` and `icc_profile` are `None`. Off by default.
+  The app's decoder sets it (`pg_core::codecs`), as its metadata reader finds a file's XMP itself.
 
 Its unit tests give the same results as the registry's copy (6 passed, and the same 6 doctests failing: the published
 crate lacks the `tests/samples` images they read). A test of its own (`src/reader/mod.rs`, `photo_gallery`) writes 150

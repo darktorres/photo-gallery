@@ -120,6 +120,11 @@ impl Codecs {
     fn gif(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
         let mut options = gif::DecodeOptions::new();
         options.set_color_output(gif::ColorOutput::RGBA);
+        // The XMP and ICC extensions are skipped, where `image`'s decoder collects them for its metadata getters,
+        // which a decode doesn't call: the metadata reader finds the XMP itself, and colours aren't managed. That
+        // changes no pixel and no error, except for a file whose XMP or ICC alone is over gif's 50 MB memory limit,
+        // which `image` fails and this decodes.
+        options.skip_metadata(true);
         let mut reader = match options.read_info_with(Cursor::new(bytes), std::mem::take(&mut self.gif)) {
             Ok(reader) => reader,
             Err((err, scratch)) => {
@@ -965,6 +970,7 @@ mod tests {
         // And through `image`'s encoder.
         let mut out = Vec::new();
         GifEncoder::new(&mut out).encode_frame(image::Frame::new(pattern(w, h, 4))).unwrap();
+        files.push(("gif xmp icc".into(), Format::Gif, ImageFormat::Gif, with_app_extensions(&out, 3000)));
         files.push(("gif image".into(), Format::Gif, ImageFormat::Gif, out));
         let rgba = DynamicImage::ImageRgba8(pattern(w, h, 7));
         for (name, img) in [
@@ -1028,6 +1034,37 @@ mod tests {
 
     /// Every kind of file decodes to what `image` gave, or fails with its error, with one `Codecs` reused across
     /// them all, forwards and backwards, so that state left by one file would show in another.
+    /// A GIF with XMP and ICC application extensions of `len` bytes each, placed before the first frame (after the
+    /// header and the global palette).
+    fn with_app_extensions(gif: &[u8], len: usize) -> Vec<u8> {
+        let palette = if gif[10] & 0x80 != 0 { 3 << ((gif[10] & 7) + 1) } else { 0 };
+        let at = 13 + palette;
+        let mut out = gif[..at].to_vec();
+        for (name, byte) in [(b"XMP DataXMP", b'x'), (b"ICCRGBG1012", b'c')] {
+            out.extend([0x21, 0xFF, 11]);
+            out.extend(name);
+            for chunk in vec![byte; len].chunks(255) {
+                out.push(chunk.len() as u8);
+                out.extend(chunk);
+            }
+            out.push(0);
+        }
+        out.extend(&gif[at..]);
+        out
+    }
+
+    /// The one difference skipping a GIF's metadata makes: XMP over gif's 50 MB memory limit fails `image`'s decode,
+    /// and this one decodes the pixels as `image` decodes the same file without it.
+    #[test]
+    fn gif_metadata_over_the_memory_limit_is_skipped() {
+        let mut gif = Vec::new();
+        GifEncoder::new(&mut gif).encode_frame(image::Frame::new(pattern(40, 30, 4))).unwrap();
+        let huge = with_app_extensions(&gif, 51_000_000);
+        assert!(reference(&huge, ImageFormat::Gif).is_err());
+        let ours = decoded(&mut Codecs::default(), &huge, Format::Gif);
+        assert_eq!(ours, reference(&gif, ImageFormat::Gif));
+    }
+
     #[test]
     fn files_decode_as_image_did() {
         let files = files();
@@ -1045,7 +1082,7 @@ mod tests {
         }
         // Every kind made it. What fails fails as it did: gray with alpha, which the tiff crate reads as two bands
         // (`Multiband`, a colour type `image` doesn't take), and planar CMYK.
-        assert_eq!(files.len(), 69);
+        assert_eq!(files.len(), 70);
         let tiff = |kind: &str| [false, true].map(|planar| format!("tiff {kind} planar {planar}"));
         let mut expected = [tiff("1 8x2"), tiff("1 16x2")].concat();
         expected.extend(["tiff 5 8x4 planar true".to_string(), "tiff 5 16x4 planar true".to_string()]);

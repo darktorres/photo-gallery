@@ -397,10 +397,9 @@ impl Inner {
             )?;
             tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation' AND value = 0", [file_id])?;
             // The upright size at once: the grid lays the file out turned before its analysis is redone.
-            tx.execute(
-                "UPDATE analysis SET width = height, height = width WHERE file_id = ?1 AND ?2 % 2 = 1",
-                params![file_id, written],
-            )?;
+            if pg_core::orientation::turns_swap(written.rem_euclid(4) as u8) {
+                tx.execute("UPDATE analysis SET width = height, height = width WHERE file_id = ?1", [file_id])?;
+            }
         } else {
             tx.execute(
                 "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2 AND value = ?3",

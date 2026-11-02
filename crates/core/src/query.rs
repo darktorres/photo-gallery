@@ -29,6 +29,14 @@ macro_rules! bordered {
     };
 }
 
+/// The orientations that swap the picture's sides (`orientation::swaps_axes`), as an SQL list. The test beside
+/// `key_sql` checks that it is that rule.
+macro_rules! swapping_orientations {
+    () => {
+        "5, 6, 7, 8"
+    };
+}
+
 /// `BorderFacet::None`: looked for (a still image), and nothing that counts.
 macro_rules! border_none {
     () => {
@@ -749,8 +757,12 @@ impl Sort {
                 "CASE WHEN ",
                 bordered!(),
                 " THEN CAST(1e6 * max(
-                    1.0 * max(a.cut_left, a.cut_right) / CASE WHEN a.orientation >= 5 THEN a.height ELSE a.width END,
-                    1.0 * max(a.cut_top, a.cut_bottom) / CASE WHEN a.orientation >= 5 THEN a.width ELSE a.height END)
+                    1.0 * max(a.cut_left, a.cut_right) / CASE WHEN a.orientation IN (",
+                swapping_orientations!(),
+                ") THEN a.height ELSE a.width END,
+                    1.0 * max(a.cut_top, a.cut_bottom) / CASE WHEN a.orientation IN (",
+                swapping_orientations!(),
+                ") THEN a.width ELSE a.height END)
                     AS INTEGER) END"
             )),
         }
@@ -825,6 +837,15 @@ impl Needle {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_sql_swap_list_is_the_swap_rule() {
+        // The borders sort reads the swap from SQL; the list must be exactly the orientations that swap the sides.
+        let listed: Vec<u8> = swapping_orientations!().split(", ").map(|o| o.parse().unwrap()).collect();
+        assert_eq!(listed, (1..=8).filter(|&o| crate::orientation::swaps_axes(o)).collect::<Vec<_>>());
+        let borders = Sort { key: SortKey::Borders, descending: false };
+        assert!(borders.key_sql().unwrap().contains(concat!("IN (", swapping_orientations!(), ")")));
+    }
 
     /// Every name of up to 3 and text of up to 2 characters from a set chosen for their lower cases: ASCII,
     /// İ (2 characters in lower case), Σ σ ς (the final sigma), Kelvin K (lower case ASCII), ß ẞ, a combining dot,

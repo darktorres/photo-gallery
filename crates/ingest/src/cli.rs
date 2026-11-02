@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result};
-use clap::{CommandFactory, Parser, Subcommand};
+use clap::{Parser, Subcommand};
 use pg_core::catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
 use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_IDLE, THREAD_PRIORITY_NORMAL};
@@ -129,12 +129,13 @@ fn changed_while_read(n: usize) -> String {
 }
 
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
+/// Asked from the derive's list of commands (`Subcommand::has_subcommand`): clap's `Command` isn't built at an
+/// ordinary start.
 pub fn wants_cli(args: &[OsString]) -> bool {
-    let cmd = Cli::command();
     args.iter().any(|a| {
-        let a = a.to_string_lossy();
-        matches!(a.as_ref(), "help" | "--help" | "-h" | "--version" | "-V")
-            || cmd.get_subcommands().any(|s| s.get_name() == a)
+        a.to_str().is_some_and(|a| {
+            matches!(a, "help" | "--help" | "-h" | "--version" | "-V") || <Command as Subcommand>::has_subcommand(a)
+        })
     })
 }
 
@@ -313,4 +314,25 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
         s.files as f64 / s.seconds.max(1e-3)
     );
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::CommandFactory;
+
+    use super::*;
+
+    #[test]
+    fn the_command_line_is_told_from_the_app_without_building_clap() {
+        let wants = |args: &[&str]| wants_cli(&args.iter().map(OsString::from).collect::<Vec<_>>());
+        for command in Cli::command().get_subcommands() {
+            assert!(wants(&[command.get_name()]), "{}", command.get_name());
+        }
+        for words in [&["help"][..], &["--help"], &["-h"], &["--version"], &["-V"], &["--catalog-dir", "x", "scan"]] {
+            assert!(wants(words), "{words:?}");
+        }
+        for words in [&[][..], &["--screenshot=D:/x.png"], &["--view=3", "--viewer-keys=r3"], &["scanner"]] {
+            assert!(!wants(words), "{words:?}");
+        }
+    }
 }

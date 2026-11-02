@@ -141,9 +141,20 @@ impl Reader {
             // Opened by the first request, and again by the next one if that failed.
             let opened = match catalog.take() {
                 Some(c) => Ok(c),
-                None => Catalog::open(&state::get().catalog_path).inspect(|c| c.cancel_when(self.cancel.clone())),
+                None => {
+                    Catalog::open_current(&state::get().catalog_path).inspect(|c| c.cancel_when(self.cancel.clone()))
+                }
             };
             job(opened.as_ref());
+            // The pages a job read aren't kept for the next: listing the whole library (189,518 files) fills the
+            // page cache with 120 MB, which the connection would otherwise hold for as long as the app runs, a
+            // second copy of what the file cache holds. Listing it again then takes ~100 ms more (360-430 ms
+            // against 210-310 ms, measured on the pinterest catalog).
+            if let Ok(c) = &opened
+                && let Err(e) = c.conn.release_memory()
+            {
+                eprintln!("loader: {e:#}");
+            }
             catalog = opened.ok();
             let mut slots = self.slots.lock().unwrap();
             if slots.running == Some(kind) {

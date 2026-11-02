@@ -41,15 +41,27 @@ pub mod qobject {
     }
 }
 
+use std::sync::LazyLock;
+
 use cxx_qt_lib::{QString, QStringList, QUrl};
 
 #[derive(Default)]
 pub struct CommandLineRust;
 
-/// The value of `--name=…`.
-pub fn value(name: &str) -> Option<String> {
-    let prefix = format!("--{name}=");
-    std::env::args().skip(1).find_map(|a| a.strip_prefix(&prefix).map(str::to_string))
+/// The `--name=value` arguments, read once: (name, value), in order. Other arguments are left out.
+static ARGS: LazyLock<Vec<(String, String)>> = LazyLock::new(|| {
+    std::env::args()
+        .skip(1)
+        .filter_map(|a| {
+            let (name, value) = a.strip_prefix("--")?.split_once('=')?;
+            Some((name.to_string(), value.to_string()))
+        })
+        .collect()
+});
+
+/// The value of `--name=…` (the first, if given twice).
+pub fn value(name: &str) -> Option<&'static str> {
+    ARGS.iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
 }
 
 /// `keys` split as `CommandLine.keys` does.
@@ -66,17 +78,23 @@ fn split_keys(keys: &str) -> Vec<String> {
     out
 }
 
+/// The value of `--name=…`, the name as QML gives it (compared as UTF-16, not converted).
+fn named(name: &QString) -> Option<&'static str> {
+    let name = name.as_slice();
+    ARGS.iter().find(|(n, _)| n.encode_utf16().eq(name.iter().copied())).map(|(_, v)| v.as_str())
+}
+
 impl qobject::CommandLine {
     fn has(&self, name: &QString) -> bool {
-        value(&name.to_string()).is_some()
+        named(name).is_some()
     }
 
     fn text(&self, name: &QString) -> QString {
-        QString::from(&value(&name.to_string()).unwrap_or_default())
+        QString::from(named(name).unwrap_or_default())
     }
 
     fn number(&self, name: &QString, fallback: f64) -> f64 {
-        value(&name.to_string()).and_then(|v| v.trim().parse().ok()).unwrap_or(fallback)
+        named(name).and_then(|v| v.trim().parse().ok()).unwrap_or(fallback)
     }
 
     fn url(&self, name: &QString) -> QUrl {
@@ -84,6 +102,6 @@ impl qobject::CommandLine {
     }
 
     fn keys(&self, name: &QString) -> QStringList {
-        split_keys(&value(&name.to_string()).unwrap_or_default()).iter().map(QString::from).collect()
+        split_keys(named(name).unwrap_or_default()).iter().map(QString::from).collect()
     }
 }

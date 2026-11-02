@@ -27,5 +27,5 @@ use crate::command_line;
 pub fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     let Some(path) = command_line::value("screenshot") else { return };
     let wait: f64 = command_line::value("wait").and_then(|w| w.trim().parse().ok()).unwrap_or(4.0);
-    ffi::save_screenshot_later(engine, &QString::from(&path), (wait * 1000.0) as i32);
+    ffi::save_screenshot_later(engine, &QString::from(path), (wait * 1000.0) as i32);
 }

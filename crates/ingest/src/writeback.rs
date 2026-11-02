@@ -129,6 +129,8 @@ impl Drop for Writer {
 impl Inner {
     fn run(&self) {
         let mut exiftool: Option<ExifTool> = None;
+        // One connection for every drain; after a drain that failed, a new one.
+        let mut catalog: Option<Catalog> = None;
         loop {
             {
                 let (lock, cvar) = &self.wake;
@@ -141,15 +143,19 @@ impl Inner {
             if self.stop.load(Ordering::Relaxed) {
                 return;
             }
-            if let Err(e) = self.drain(&mut exiftool) {
+            let drained = catalog.take().map_or_else(|| Catalog::open_current(&self.catalog_path), Ok).and_then(|c| {
+                self.drain(&c, &mut exiftool)?;
+                catalog = Some(c);
+                Ok(())
+            });
+            if let Err(e) = drained {
                 self.status.lock().unwrap().error = Some(format!("{e:#}"));
             }
         }
     }
 
     /// Work through the queue until nothing is ready; then wait for what is still settling.
-    fn drain(&self, exiftool: &mut Option<ExifTool>) -> Result<()> {
-        let catalog = Catalog::open(&self.catalog_path)?;
+    fn drain(&self, catalog: &Catalog, exiftool: &mut Option<ExifTool>) -> Result<()> {
         loop {
             if self.stop.load(Ordering::Relaxed) {
                 return Ok(());
@@ -184,7 +190,7 @@ impl Inner {
                 }
                 return Ok(());
             };
-            match self.process(&catalog, &job, exiftool) {
+            match self.process(catalog, &job, exiftool) {
                 Ok(()) => self.status.lock().unwrap().error = None,
                 Err(e) => {
                     let offline = e.downcast_ref::<std::io::Error>().is_some_and(|io| {

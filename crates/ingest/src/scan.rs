@@ -188,6 +188,8 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     let scan_id = catalog.begin_scan(root)?;
     let mut stats = ScanStats { folders: 0, files: 0, changed: 0, missing: 0, errors: 0, complete: false };
     let mut stack = vec![root.to_string()];
+    // The folders this scan couldn't list: the files under them weren't seen, so they aren't marked missing (R-45).
+    let mut unreadable: Vec<String> = Vec::new();
     let mut tx = catalog.conn.transaction()?;
     let mut writer = ScanWriter::new(&tx, scan_id)?;
     let mut in_tx = 0;
@@ -207,6 +209,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
                 Err(e) => {
                     eprintln!("skipped: {e:#}");
                     stats.errors += 1;
+                    unreadable.push(dir);
                     continue;
                 }
             };
@@ -242,7 +245,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     }
     drop(writer);
     tx.commit()?;
-    stats.missing = catalog.mark_missing(root, scan_id)?;
+    stats.missing = catalog.mark_missing(root, scan_id, &unreadable)?;
     catalog.finish_scan(scan_id)?;
     stats.complete = true;
     ctl.finish();

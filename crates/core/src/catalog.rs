@@ -784,16 +784,28 @@ impl Catalog {
         Ok(())
     }
 
-    /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions).
-    pub fn mark_missing(&self, root: &str, scan: i64) -> Result<usize> {
-        Ok(self.conn.execute(
-            concat!(
-                "UPDATE files SET missing = 1 WHERE missing = 0 AND last_scan < ?2 AND folder_id IN (",
-                under_root!(),
-                ")"
-            ),
-            params![root, scan],
-        )?)
+    /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions). Files in
+    /// `unreadable` folders (and their subfolders) are left as they are: the scan couldn't list them, so it saw
+    /// nothing there to compare with (R-45).
+    pub fn mark_missing(&self, root: &str, scan: i64, unreadable: &[String]) -> Result<usize> {
+        let under = |path: &str| -> Result<Vec<i64>> {
+            let mut stmt = self.conn.prepare(under_root!())?;
+            Ok(stmt.query_map([path], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+        };
+        let mut skipped = std::collections::BTreeSet::new();
+        for path in unreadable {
+            skipped.extend(under(path)?);
+        }
+        let mut mark = self
+            .conn
+            .prepare("UPDATE files SET missing = 1 WHERE folder_id = ?1 AND missing = 0 AND last_scan < ?2")?;
+        let mut marked = 0;
+        for folder in under(root)? {
+            if !skipped.contains(&folder) {
+                marked += mark.execute(params![folder, scan])?;
+            }
+        }
+        Ok(marked)
     }
 
     /// The library folders, by path.
@@ -2042,11 +2054,44 @@ mod tests {
         // Gone, then back: nothing to import, but the thumbnails look at it both times.
         let seq = state(&c, id).1;
         let next = c.begin_scan(r"D:\x").unwrap();
-        c.mark_missing(r"D:\x", next).unwrap();
+        c.mark_missing(r"D:\x", next, &[]).unwrap();
         let gone = state(&c, id).1;
         scanned(&mut c, next, "a.mp4", 13, 103);
         assert_eq!(c.pending_import(false).unwrap().len(), 0);
         assert!(seq < gone && gone < state(&c, id).1);
+    }
+
+    #[test]
+    fn a_folder_the_scan_could_not_list_keeps_its_files() {
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
+            let tx = c.conn.transaction().unwrap();
+            let mut writer = ScanWriter::new(&tx, scan).unwrap();
+            let folder = writer.folder(folder).unwrap();
+            let ext = Ext::of_name(name).unwrap();
+            writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref, name, ext, size: 1, mtime: 1 }).unwrap();
+            drop(writer);
+            tx.commit().unwrap();
+        };
+        let missing = |c: &Catalog| -> i64 {
+            c.conn.query_row("SELECT count(*) FROM files WHERE missing = 1", [], |r| r.get(0)).unwrap()
+        };
+        let first = c.begin_scan(r"D:\x").unwrap();
+        put(&mut c, first, r"D:\x\ok", "a.jpg", 1);
+        put(&mut c, first, r"D:\x\locked", "b.jpg", 2);
+        put(&mut c, first, r"D:\x\locked\deep", "c.jpg", 3);
+
+        // The next scan lists only D:\x\ok: D:\x\locked couldn't be read, so its files weren't seen, and aren't missing.
+        let next = c.begin_scan(r"D:\x").unwrap();
+        put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
+        assert_eq!(c.mark_missing(r"D:\x", next, &[r"D:\x\locked".to_string()]).unwrap(), 0);
+        assert_eq!(missing(&c), 0);
+
+        // Once it can be listed again, a scan that doesn't see its files marks them.
+        let later = c.begin_scan(r"D:\x").unwrap();
+        put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
+        assert_eq!(c.mark_missing(r"D:\x", later, &[]).unwrap(), 2);
+        assert_eq!(missing(&c), 2);
     }
 
     #[test]

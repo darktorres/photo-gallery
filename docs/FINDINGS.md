@@ -1069,7 +1069,9 @@ the speeds are lower bounds. The full 190k-image run was stopped by the user bef
 
 ## Videos and animations (M2, 2026-10-30)
 
-Our FFmpeg is BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`), shared with Qt 6.12's player.
+Our FFmpeg was BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`), shared with Qt 6.12's player.
+From 2026-11-02 it is BtbN's `gpl-shared` build of the same 9.0.2 commit, the only FFmpeg on this machine's tools path:
+the app and the video test use one copy, and the test's x264 clips need the GPL encoders.
 
 ### Measured here
 

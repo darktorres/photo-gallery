@@ -22,15 +22,16 @@ shows remote previews through Qt's decoders, and without its `qwebp` plugin WebP
 says why. Its test (`crates/ingest/tests/writeback.rs`) works on generated files in
 `D:\PhotoGallery\scratch_rate` (`PG_TEST_DIR`), and skips itself without ExifTool.
 
-Videos go through FFmpeg 9, our own copy rather than the one Qt bundles: BtbN's prebuilt `lgpl-shared` package
+Videos go through FFmpeg 9, our own copy rather than the one Qt bundles: BtbN's prebuilt `gpl-shared` package
 (`D:\PhotoGallery\tools\ffmpeg-9.0`, `FFMPEG_DIR` in `.cargo/config.toml`; the exact build is in its
-`SOURCE.txt`). It has dav1d for AV1, which Qt's copy lacks. Its bindings are generated with libclang (LLVM,
+`SOURCE.txt`). It has dav1d for AV1, which Qt's copy lacks, and the x264, libvpx, libaom and libwebp encoders the
+video test needs. The app is linked against this GPL build, so a distributed build would be under the GPL; the app
+is not distributed. Its bindings are generated with libclang (LLVM,
 `LIBCLANG_PATH`). `pg-core`'s build script copies its DLLs next to the binaries. Qt Multimedia plays videos with
 the same DLLs: Qt 6.12 is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
---no-ffmpeg`. The video test (`crates/ingest/tests/video.rs`) makes its clips and animations with an `ffmpeg`
-command line that has the GPL encoders (libx264, libvpx, libaom, libwebp), such as gyan.dev's "essentials" build
-(`choco install ffmpeg`). It looks on `PATH`, or at `PG_FFMPEG`; our LGPL package lacks libx264. The clips go in
-`D:\PhotoGallery\scratch_video`, and the test skips itself without that ffmpeg.
+--no-ffmpeg`. The video test (`crates/ingest/tests/video.rs`) makes its clips and animations with the same `ffmpeg` command line,
+found on `PATH` (the tools folder's `bin` is on it), or at `PG_FFMPEG` if that is set. The clips go in
+`D:\PhotoGallery\scratch_video`, and the test skips itself without an ffmpeg.
 
 The commands are in the `Justfile` ([just](https://just.systems); `just` lists them):
 

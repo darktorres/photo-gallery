@@ -159,6 +159,42 @@ from this directory: `cargo test --target-dir ../../target/vendor-test`.
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the change again.
 
+## image-webp
+
+Copy of `image-webp` 0.2.4 (MIT OR Apache-2.0). The local changes, marked `photo-gallery`, let a decoder keep what it
+allocates from one image to the next; every pixel, every frame and every error is upstream's:
+
+- `Scratch` (`src/decoder.rs`) holds the chunk map, the VP8 decoder's buffers (`Vp8Scratch`, `src/vp8.rs`: the
+  three planes, the macroblocks, the top macroblocks and the borders, the partitions' buffers, the token
+  probabilities), the lossless decoder's (`LosslessScratch`, `src/lossless.rs`: Huffman trees and their tables
+  (`HuffmanPools`, `src/huffman.rs`), the code lengths, the entropy image, the transforms' data, the colour caches,
+  a row of packed palette indices), the alpha plane and the RGBA it's decoded in, an animation's frame and its
+  canvas. `WebPDecoder::new_with_scratch` decodes in them and gives them back with the error if the headers can't
+  be read; `WebPDecoder::into_scratch` gives them back; `Scratch::trim` frees those over a size. Upstream made all of
+  them anew for each image, the VP8 decoder its left borders anew for every macroblock row.
+- The buffers are emptied or refilled before use, as `vec!` would make them, so they read as new ones; a decoder
+  gives them back on its errors too.
+- The VP8 decoder reads the last partition straight into its kept buffer, as `read_to_end` reads, instead of into a
+  new `Vec` that was then copied into another (`init_partitions`). The partition sizes, the code length code
+  lengths, the palette and its expanded lookup table are on the stack instead of in `Vec`s.
+- `ArithmeticDecoder` holds its data in a `Vec` (upstream: a boxed slice, made with `into_boxed_slice`, which
+  reallocated it), so that the buffer can be kept.
+- `Vp8Decoder::new` and `LosslessDecoder::new`, left without callers, are gone (`with_scratch` instead).
+
+Its unit tests give the same results as the registry's copy (23 passed, 1 ignored). A test of its own
+(`src/decoder.rs`, `photo_gallery`) decodes 297 files in one kept scratch, forwards then backwards, with the scratch
+kept whole, trimmed to nothing and trimmed at 4 KB after each file, and checks each decodes exactly as in new buffers
+(dimensions, the image, every frame and its duration, errors and panics). The files: lossy ones with one and eight
+partitions and both loop filters, lossy with an alpha plane compressed and raw, lossless photos and palettes of 2,
+4, 16 and 200 colours, animations, all made by ImageMagick (`tests/photo-gallery/make.sh` makes them); animations the
+test builds from those stills with frames of every kind (VP8, VP8L, ALPH with VP8) at offsets, blended or not,
+disposed or not, with and without alpha and a background colour; a raw alpha plane with each filter and invalid
+headers; and damaged copies of each, cut short or with bytes changed. Its tests run from this directory:
+`cargo test --target-dir ../../target/vendor-test`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

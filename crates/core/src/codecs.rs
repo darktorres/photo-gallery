@@ -29,6 +29,8 @@ pub(crate) struct Codecs {
     raw: Vec<u8>,
     /// The PNG decoder's buffers.
     png: png::Scratch,
+    /// The WebP decoder's buffers.
+    webp: image_webp::Scratch,
 }
 
 impl Codecs {
@@ -48,6 +50,7 @@ impl Codecs {
     pub(crate) fn trim(&mut self, bytes: usize) {
         release_over(&mut self.raw, bytes);
         self.png.trim(bytes);
+        self.webp.trim(bytes);
     }
 
     /// Any of `image`'s decoders, the way `ImageReader::decode` and `decoder_to_image` use it (BMP's: `image` is
@@ -152,9 +155,24 @@ impl Codecs {
         finish(ColorType::Rgba8, w, h, out, &self.raw)
     }
 
-    /// `image`'s `WebPDecoder`: RGBA if the image has alpha, RGB otherwise.
+    /// `image`'s `WebPDecoder`, in the buffers of the WebP before (vendored image-webp's `Scratch`), which go back
+    /// to `self.webp` whatever happens.
     fn webp(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
-        let mut decoder = image_webp::WebPDecoder::new(Cursor::new(bytes)).map_err(webp_error)?;
+        let mut decoder =
+            match image_webp::WebPDecoder::new_with_scratch(Cursor::new(bytes), std::mem::take(&mut self.webp)) {
+                Ok(decoder) => decoder,
+                Err((err, scratch)) => {
+                    self.webp = scratch;
+                    return Err(webp_error(err));
+                }
+            };
+        let result = self.webp_image(&mut decoder, out);
+        self.webp = decoder.into_scratch();
+        result
+    }
+
+    /// [`Codecs::webp`]'s image, once the headers are read: RGBA if it has alpha, RGB otherwise.
+    fn webp_image(&mut self, decoder: &mut image_webp::WebPDecoder<Cursor<&[u8]>>, out: &mut Rgb) -> ImageResult<()> {
         let (w, h) = decoder.dimensions();
         let color = if decoder.has_alpha() { ColorType::Rgba8 } else { ColorType::Rgb8 };
         reserve(color, w, h)?;

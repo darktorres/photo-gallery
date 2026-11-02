@@ -130,11 +130,7 @@ impl Dir {
                         entries.push(DirEntry { name: String::new(), ext: None, file_ref: 0, size: 0, mtime: 0 });
                     }
                     let e = &mut entries[n];
-                    // As `String::from_utf16_lossy`, into the entry's buffer.
-                    e.name.clear();
-                    e.name.extend(
-                        char::decode_utf16(name.iter().copied()).map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER)),
-                    );
+                    decode_name(name, &mut e.name);
                     (e.ext, e.file_ref, e.size, e.mtime) =
                         (ext, info.FileId as u64, info.EndOfFile as u64, info.LastWriteTime);
                     n += 1;
@@ -146,6 +142,15 @@ impl Dir {
             }
         }
     }
+}
+
+/// A UTF-16 name as `String::from_utf16_lossy` gives it, into `out` (its buffer kept), sized first: `extend` would
+/// reserve only the iterator's lower bound (half the UTF-16 length) and grow again.
+fn decode_name(name: &[u16], out: &mut String) {
+    let decoded = || char::decode_utf16(name.iter().copied());
+    out.clear();
+    out.reserve(decoded().map(|c| c.map_or(char::REPLACEMENT_CHARACTER.len_utf8(), char::len_utf8)).sum());
+    out.extend(decoded().map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER)));
 }
 
 /// An absolute folder path without a trailing backslash (a drive root is `D:`).
@@ -241,4 +246,33 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     stats.complete = true;
     ctl.finish();
     Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// As `String::from_utf16_lossy`, in a buffer of exactly its size (one allocation), reused as it is when large
+    /// enough.
+    #[test]
+    fn names_decode_lossily_at_their_size() {
+        let names: [&[u16]; 6] = [
+            &[],
+            &[0x61, 0x2E, 0x6A, 0x70, 0x67],
+            &[0x00E9, 0x4E2D, 0x0041],
+            &[0xD83D, 0xDE00, 0x2E, 0x6A],
+            &[0x61, 0xD800, 0x62, 0xDC00],
+            &[0xDBFF, 0xD800, 0xDFFF],
+        ];
+        for name in names {
+            let mut out = String::new();
+            decode_name(name, &mut out);
+            assert_eq!(out, String::from_utf16_lossy(name));
+            assert_eq!(out.capacity(), if out.is_empty() { 0 } else { out.len().max(8) }, "{name:?}");
+        }
+        let mut out = String::with_capacity(64);
+        let ptr = out.as_ptr();
+        decode_name(&[0x61; 30], &mut out);
+        assert_eq!((out.len(), out.as_ptr()), (30, ptr));
+    }
 }

@@ -218,6 +218,10 @@ impl Pool {
 
     /// A buffer that holds `size` bytes for item `i`, once the items before it have theirs and the budget has
     /// room (or nothing else is held, for a file larger than the budget). `None` once the pass stops.
+    ///
+    /// An idle buffer is reused: the smallest that is large enough, or else the smallest there is, replaced by
+    /// one of `size` (the larger ones stay for the files that need them). A new buffer is made only when none is
+    /// idle, so the pool holds about one buffer per file in flight, not as many as the budget would take.
     fn take(&self, i: usize, size: usize) -> Option<Lease<'_>> {
         let mut st = self.state.lock().unwrap();
         loop {
@@ -225,23 +229,23 @@ impl Pool {
                 return None;
             }
             if st.serving == i {
-                // The smallest idle buffer that is large enough.
-                let fit = (st.idle.iter().enumerate())
-                    .filter(|(_, b)| b.capacity() >= size)
-                    .min_by_key(|(_, b)| b.capacity())
-                    .map(|(k, _)| k);
-                if let Some(k) = fit {
-                    let mut bytes = st.idle.swap_remove(k);
+                // Smallest first.
+                st.idle.sort_unstable_by_key(|b| std::cmp::Reverse(b.capacity()));
+                if let Some(k) = st.idle.iter().rposition(|b| b.capacity() >= size) {
+                    let mut bytes = st.idle.remove(k);
                     bytes.clear();
                     return Some(self.grant(&mut st, bytes));
                 }
-                // None is: make room by freeing idle buffers, largest first.
-                st.idle.sort_unstable_by_key(Vec::capacity);
-                while st.held + size > self.budget
-                    && let Some(b) = st.idle.pop()
-                {
-                    st.held -= b.capacity();
+                // None is large enough: the smallest is replaced, and others are freed, largest first, while
+                // the new one doesn't fit the budget.
+                let replaced = st.idle.pop().map_or(0, |b| b.capacity());
+                st.held -= replaced;
+                let mut freed = 0;
+                while st.held + size > self.budget && freed < st.idle.len() {
+                    st.held -= st.idle[freed].capacity();
+                    freed += 1;
                 }
+                st.idle.drain(..freed);
                 if st.held + size <= self.budget || st.held == 0 {
                     let bytes = Vec::with_capacity(size);
                     st.held += bytes.capacity();
@@ -319,6 +323,29 @@ mod tests {
         let cap = small.bytes.capacity();
         drop(small);
         assert_eq!(pool.take(5, 8).unwrap().bytes.capacity(), cap);
+    }
+
+    /// Files of growing sizes read one after another: one buffer, replaced as they grow, not one per file.
+    #[test]
+    fn a_pool_reuses_its_buffers_whatever_the_sizes() {
+        let pool = Pool::new(1 << 20);
+        for (i, size) in [100, 300, 200, 1000, 50, 4000, 4000, 10].into_iter().enumerate() {
+            let lease = pool.take(i, size).unwrap();
+            assert!(lease.bytes.capacity() >= size);
+            drop(lease);
+            let st = pool.state.lock().unwrap();
+            assert_eq!(st.idle.len(), 1, "item {i}");
+            assert_eq!(st.held, st.idle[0].capacity());
+        }
+        // Two in flight: two buffers; the larger one is kept for a large file, the smaller replaced.
+        let a = pool.take(8, 5000).unwrap();
+        let b = pool.take(9, 20).unwrap();
+        drop((a, b));
+        let c = pool.take(10, 6000).unwrap();
+        let st = pool.state.lock().unwrap();
+        assert_eq!(st.idle.len(), 1);
+        assert!(st.idle[0].capacity() >= 5000 && c.bytes.capacity() >= 6000);
+        assert_eq!(st.held, st.idle[0].capacity() + c.bytes.capacity());
     }
 
     #[test]

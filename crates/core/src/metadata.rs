@@ -527,14 +527,18 @@ fn extended_packets(bytes: &[u8], chunks: &mut [ExtendedChunk], assembled: &mut 
     }
 }
 
+/// The most an inflated XMP packet may be. A packet is a few kilobytes; a larger one (a compressed bomb in a small
+/// file) is treated as absent, so the import doesn't grow to gigabytes for it (R-25).
+const MAX_INFLATED: usize = 16 << 20;
+
 /// zlib data inflated onto the end of `out`, as `miniz_oxide::inflate::decompress_to_vec_zlib` would give it (the
 /// same output, the same failures), with a kept decompressor. Its range in `out`; `None`, and `out` as it was, if it
-/// doesn't inflate.
+/// doesn't inflate or inflates to more than [`MAX_INFLATED`].
 fn inflate_zlib(mut input: &[u8], decompressor: &mut DecompressorOxide, out: &mut Vec<u8>) -> Option<Range<usize>> {
     let flags = inflate_flags::TINFL_FLAG_PARSE_ZLIB_HEADER | inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     decompressor.init();
     let start = out.len();
-    out.resize(start + input.len().saturating_mul(2), 0);
+    out.resize(start + input.len().saturating_mul(2).min(MAX_INFLATED), 0);
     let mut at = 0;
     loop {
         let (status, read, written) = decompress(decompressor, input, &mut out[start..], at, flags);
@@ -544,10 +548,10 @@ fn inflate_zlib(mut input: &[u8], decompressor: &mut DecompressorOxide, out: &mu
                 out.truncate(start + at);
                 return Some(start..out.len());
             }
-            TINFLStatus::HasMoreOutput if read <= input.len() => {
+            TINFLStatus::HasMoreOutput if read <= input.len() && out.len() - start < MAX_INFLATED => {
                 input = &input[read..];
                 let len = out.len() - start;
-                out.resize(start + len.saturating_mul(2), 0);
+                out.resize(start + len.saturating_mul(2).min(MAX_INFLATED), 0);
             }
             _ => {
                 out.truncate(start);
@@ -1148,6 +1152,19 @@ mod tests {
 
     /// A kept decompressor inflates as `decompress_to_vec_zlib` does: the same bytes, the same failures (truncated,
     /// corrupted, empty), each onto what `out` already holds.
+    #[test]
+    fn an_inflated_packet_over_the_limit_is_absent() {
+        // A bomb: 16 MB of zeros packs to a few kilobytes, and inflates past the limit.
+        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; MAX_INFLATED + 1], 6);
+        assert!(zlib.len() < 1 << 20, "{}", zlib.len());
+        let mut out = b"before".to_vec();
+        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out).is_none());
+        assert_eq!(out, b"before");
+        // Just within the limit: taken.
+        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; MAX_INFLATED], 6);
+        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out).is_some());
+    }
+
     #[test]
     fn inflate_as_decompress_to_vec_zlib() {
         let mut st = 0x2545F4914F6CDD1Du64;

@@ -11,6 +11,7 @@ use pg_core::catalog::{AnalysisWriter, Catalog};
 use pg_core::media::Kind;
 use pg_core::paths::verbatim;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
+use pg_core::pdq_index::PdqIndex;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -33,7 +34,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     if items.is_empty() {
         return Ok(stats);
     }
-    let mut index = catalog.pdq_index()?;
+    let (ids, hashes) = catalog.pdq_hashes()?;
+    let mut index = PdqIndex::build(ids, hashes);
     // Every file of the list may add its 8 orientations.
     index.reserve(items.len() * 8);
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());

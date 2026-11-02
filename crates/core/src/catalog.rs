@@ -25,7 +25,6 @@ use crate::media::{Ext, Kind};
 use crate::path::is_under;
 use crate::path::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;
-use crate::pdq_index::PdqIndex;
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`baseline`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -828,8 +827,9 @@ impl Catalog {
         Ok(list)
     }
 
-    /// The tier-1 index of the reliable PDQ hashes of current analyses (PLAN §6), rebuilt for each import.
-    pub fn pdq_index(&self) -> Result<PdqIndex> {
+    /// The reliable PDQ hashes of current analyses (PLAN §6), as ids and hash words: `ids[i]`'s hash is `hashes[i]`, and
+    /// a file contributes its 8 orientations. The tier-1 index (`pdq_index::PdqIndex::build`) is made from them for each import.
+    pub fn pdq_hashes(&self) -> Result<(Vec<i64>, Vec<[u64; 4]>)> {
         // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the
         // join below costs a quarter of reading it.
         let present: usize = self.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0))?;
@@ -859,7 +859,7 @@ impl Catalog {
                 hashes.push(pdq::Hash(*orientation).words());
             }
         }
-        Ok(PdqIndex::build(ids, hashes))
+        Ok((ids, hashes))
     }
 
     /// Analyses whose borders are due (new ones, and all after a new detector: [`set_borders_version`]), of

@@ -16,14 +16,7 @@ use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
 
 fn scratch() -> PathBuf {
-    let base =
-        std::env::var_os("PG_TEST_DIR").map_or_else(|| PathBuf::from(r"D:\PhotoGallery\scratch_rate"), PathBuf::from);
-    for old in std::fs::read_dir(&base).into_iter().flatten().flatten() {
-        if old.file_name().to_string_lossy().starts_with("crop-") {
-            let _ = std::fs::remove_dir_all(old.path());
-        }
-    }
-    let dir = base.join(format!("crop-{}", std::process::id()));
+    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop");
     std::fs::create_dir_all(dir.join("images").join("sub")).unwrap();
     dir
 }

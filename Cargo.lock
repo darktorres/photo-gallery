@@ -1428,6 +1428,7 @@ dependencies = [
  "image-webp",
  "miniz_oxide 0.8.9",
  "pdqhash",
+ "pg-testkit",
  "png 0.18.1",
  "quick-xml",
  "rusqlite",
@@ -1452,10 +1453,15 @@ dependencies = [
  "crossbeam-channel",
  "image 0.25.10",
  "pg-core",
+ "pg-testkit",
  "rusqlite",
  "serde_json",
  "windows-sys",
 ]
+
+[[package]]
+name = "pg-testkit"
+version = "0.1.0"
 
 [[package]]
 name = "pg-ui"

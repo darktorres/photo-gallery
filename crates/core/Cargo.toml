@@ -34,3 +34,4 @@ zune-jpeg.workspace = true
 
 [dev-dependencies]
 pdqhash.workspace = true
+pg-testkit = { path = "../testkit" }

@@ -1417,6 +1417,10 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_testkit::test_folder;
+
+    /// Where this module's tests write (`PG_TEST_DIR` when it is set).
+    const SCRATCH: &str = r"D:\PhotoGallery\scratch_catalog";
     use crate::analyze::ThumbHash;
 
     /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
@@ -1445,17 +1449,9 @@ mod tests {
         CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         PRAGMA user_version = 1;";
 
-    /// A fresh folder for one test's catalog file.
-    fn test_dir(name: &str) -> std::path::PathBuf {
-        let dir = std::env::temp_dir().join(format!("pg-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
-
     #[test]
     fn an_earlier_layout_is_copied_into_the_current_one() {
-        let dir = test_dir("rebuild");
+        let dir = test_folder(SCRATCH, "rebuild");
         let path = dir.join("catalog.sqlite");
         let old = Connection::open(&path).unwrap();
         old.execute_batch(BEFORE_ORDER_KEY).unwrap();
@@ -1518,7 +1514,7 @@ mod tests {
 
     #[test]
     fn a_catalog_that_cant_be_copied_is_left_as_it_was() {
-        let dir = test_dir("rebuild-fails");
+        let dir = test_folder(SCRATCH, "rebuild-fails");
         let path = dir.join("catalog.sqlite");
         // Files without the columns the current layout needs, and no way to make them.
         let conn = Connection::open(&path).unwrap();
@@ -1538,7 +1534,7 @@ mod tests {
 
     #[test]
     fn a_catalog_open_elsewhere_isnt_copied() {
-        let dir = test_dir("rebuild-open");
+        let dir = test_folder(SCRATCH, "rebuild-open");
         let path = dir.join("catalog.sqlite");
         let other = Connection::open(&path).unwrap();
         other.execute_batch(BEFORE_ORDER_KEY).unwrap();

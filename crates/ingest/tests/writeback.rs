@@ -18,15 +18,8 @@ use pg_ingest::writeback::Writer;
 use pg_ingest::{import, scan};
 
 fn scratch() -> PathBuf {
-    let base =
-        std::env::var_os("PG_TEST_DIR").map_or_else(|| PathBuf::from(r"D:\PhotoGallery\scratch_rate"), PathBuf::from);
-    // Earlier runs' folders (this run's thumbnail cache stays open to the end, so it can't remove its own).
-    for old in std::fs::read_dir(&base).into_iter().flatten().flatten() {
-        if old.file_name().to_string_lossy().starts_with("writeback-") {
-            let _ = std::fs::remove_dir_all(old.path());
-        }
-    }
-    let dir = base.join(format!("writeback-{}", std::process::id()));
+    // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
+    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "writeback");
     std::fs::create_dir_all(dir.join("images")).unwrap();
     dir
 }

@@ -1,0 +1,11 @@
+[package]
+name = "pg-testkit"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# Test helpers only (a dev-dependency of the crates that have tests). No dependencies of its own.
+[dependencies]

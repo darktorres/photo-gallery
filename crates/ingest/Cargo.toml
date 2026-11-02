@@ -18,3 +18,4 @@ windows-sys.workspace = true
 
 [dev-dependencies]
 image.workspace = true
+pg-testkit = { path = "../testkit" }

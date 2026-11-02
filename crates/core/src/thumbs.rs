@@ -1037,22 +1037,16 @@ fn shrink(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_testkit::test_folder;
 
-    /// A fresh folder for one test, in `PG_TEST_DIR` (default `D:\PhotoGallery\scratch_thumbs`, never C:).
-    fn scratch(name: &str) -> PathBuf {
-        let base = std::env::var_os("PG_TEST_DIR")
-            .map_or_else(|| PathBuf::from(r"D:\PhotoGallery\scratch_thumbs"), PathBuf::from);
-        let dir = base.join(format!("{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        dir
-    }
+    /// Where this module's tests write (`PG_TEST_DIR` when it is set).
+    const SCRATCH: &str = r"D:\PhotoGallery\scratch_thumbs";
 
     /// Closing the cache leaves no WAL or index file: the writer merges the WAL, and this thread's reader (opened by
     /// the read before) closes with it, so the last connection deletes the files. A reader left open keeps them.
     #[test]
     fn close_merges_the_wal_and_leaves_no_files() {
-        let dir = scratch("close-wal");
+        let dir = test_folder(SCRATCH, "close-wal");
         let cache = open(&dir, 1 << 20);
         cache.put(thumb(3, 100, 5, 30));
         cache.flush();
@@ -1105,7 +1099,7 @@ mod tests {
     /// missing, not an image), and a missing file fails as `std::fs::read` does.
     #[test]
     fn files_read_into_the_maker_are_their_bytes() {
-        let dir = scratch("read-file");
+        let dir = test_folder(SCRATCH, "read-file");
         let files: Vec<(PathBuf, Vec<u8>)> = [(640, 480, 1), (64, 48, 2), (1200, 800, 3), (33, 77, 4)]
             .into_iter()
             .enumerate()
@@ -1137,7 +1131,7 @@ mod tests {
 
     #[test]
     fn nearest_height_and_staleness() {
-        let dir = scratch("nearest");
+        let dir = test_folder(SCRATCH, "nearest");
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 300, 5, 30)], None).unwrap());
         // The smallest at least as high, else the largest below.
@@ -1159,7 +1153,7 @@ mod tests {
     /// as a batch of one is. A hit is read into the caller's buffer, replacing what it held.
     #[test]
     fn batches_come_back_and_hits_are_read_into_the_callers_buffer() {
-        let dir = scratch("back");
+        let dir = test_folder(SCRATCH, "back");
         let cache = open(&dir, 1 << 30);
         let mut batch = vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)];
         assert!(cache.put_batch(&mut batch, None).unwrap());
@@ -1177,7 +1171,7 @@ mod tests {
 
     #[test]
     fn replacing_keeps_each_jpeg_with_its_file() {
-        let dir = scratch("replace");
+        let dir = test_folder(SCRATCH, "replace");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         cache.put_batch(&mut vec![thumb(2, 100, 5, 20)], None).unwrap();
@@ -1193,7 +1187,7 @@ mod tests {
 
     #[test]
     fn eviction() {
-        let dir = scratch("evict");
+        let dir = test_folder(SCRATCH, "evict");
         // Room for 10 thumbnails of 100 bytes (the slack is 1% of the cap: 10 bytes).
         let cache = open(&dir, 1000);
         for i in 0..10 {
@@ -1221,7 +1215,7 @@ mod tests {
 
     #[test]
     fn far_over_a_lowered_cap_comes_down() {
-        let dir = scratch("lowered");
+        let dir = test_folder(SCRATCH, "lowered");
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut (0..40).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
         drop(cache);
@@ -1239,7 +1233,7 @@ mod tests {
 
     #[test]
     fn one_cap_for_every_writer() {
-        let dir = scratch("cap");
+        let dir = test_folder(SCRATCH, "cap");
         assert_eq!(ThumbCache::read_usage(&dir).unwrap(), None);
         let first = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert_eq!(first.cap().unwrap(), DEFAULT_CAP_BYTES, "a new cache");
@@ -1259,7 +1253,7 @@ mod tests {
 
     #[test]
     fn shrink_gives_pages_back() {
-        let dir = scratch("shrink");
+        let dir = test_folder(SCRATCH, "shrink");
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut (0..200).map(|i| thumb(i, 50, 1, 8000)).collect(), None).unwrap());
         let c = Connection::open(cache_path(&dir)).unwrap();
@@ -1273,7 +1267,7 @@ mod tests {
 
     #[test]
     fn touches_are_written_together() {
-        let dir = scratch("touch");
+        let dir = test_folder(SCRATCH, "touch");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         let c = Connection::open(cache_path(&dir)).unwrap();
@@ -1298,7 +1292,7 @@ mod tests {
 
     #[test]
     fn retag_follows_the_file() {
-        let dir = scratch("retag");
+        let dir = test_folder(SCRATCH, "retag");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 200, 5, 10), thumb(2, 100, 5, 10)], None).unwrap();
         cache.retag(1, 5, 9).unwrap();
@@ -1312,7 +1306,7 @@ mod tests {
 
     #[test]
     fn reopened_it_keeps_what_it_held() {
-        let dir = scratch("reopen");
+        let dir = test_folder(SCRATCH, "reopen");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
@@ -1323,7 +1317,7 @@ mod tests {
 
     #[test]
     fn another_layout_version_starts_over() {
-        let dir = scratch("layout");
+        let dir = test_folder(SCRATCH, "layout");
         Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
         let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), DEFAULT_CAP_BYTES));
@@ -1331,7 +1325,7 @@ mod tests {
 
     #[test]
     fn two_writers_share_one_file() {
-        let dir = scratch("two");
+        let dir = test_folder(SCRATCH, "two");
         let a = open(&dir, 1 << 30);
         let b = open(&dir, 1 << 30);
         std::thread::scope(|s| {
@@ -1352,7 +1346,7 @@ mod tests {
 
     #[test]
     fn totals_survive_any_sequence() {
-        let dir = scratch("sequence");
+        let dir = test_folder(SCRATCH, "sequence");
         let cache = open(&dir, 5_000);
         // A fixed pseudo-random walk over puts (new and replacing), on-demand puts, evictions and retags.
         let mut x: u64 = 0x9E37_79B9_7F4A_7C15;
@@ -1385,7 +1379,7 @@ mod tests {
 
     #[test]
     fn heal_fixes_drifted_totals() {
-        let dir = scratch("heal");
+        let dir = test_folder(SCRATCH, "heal");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
@@ -1440,7 +1434,7 @@ mod tests {
 
     #[test]
     fn pending_against_a_catalog() {
-        let dir = scratch("pending");
+        let dir = test_folder(SCRATCH, "pending");
         let (catalog, _c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         // File 1 is current at 100 px; file 3 was turned since its thumbnail; file 4 is missing.
@@ -1454,7 +1448,7 @@ mod tests {
 
     #[test]
     fn a_complete_pass_is_where_the_next_one_starts() {
-        let dir = scratch("watermark");
+        let dir = test_folder(SCRATCH, "watermark");
         let (catalog, c) = catalog_of_four(&dir);
         let cache = open(&dir, 1 << 30);
         let first = cache.pending(&catalog, 100).unwrap();
@@ -1483,7 +1477,7 @@ mod tests {
 
     #[test]
     fn a_pass_after_a_complete_one_reads_the_changed_files() {
-        let dir = scratch("seq-plan");
+        let dir = test_folder(SCRATCH, "seq-plan");
         let (catalog, _c) = catalog_of_four(&dir);
         drop(open(&dir, 1 << 30));
         let conn = Connection::open(cache_path(&dir)).unwrap();
@@ -1501,7 +1495,7 @@ mod tests {
 
     #[test]
     fn eviction_forgets_how_far_a_height_was_checked() {
-        let dir = scratch("forget");
+        let dir = test_folder(SCRATCH, "forget");
         let (catalog, _c) = catalog_of_four(&dir);
         // Room for three of these.
         let cache = open(&dir, 300);
@@ -1524,7 +1518,7 @@ mod tests {
 
     #[test]
     fn a_cache_of_another_catalog_starts_over() {
-        let dir = scratch("other-catalog");
+        let dir = test_folder(SCRATCH, "other-catalog");
         let cache = open(&dir, 12345);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
@@ -1538,7 +1532,7 @@ mod tests {
 
     #[test]
     fn a_cache_of_an_earlier_layout_starts_over() {
-        let dir = scratch("earlier-layout");
+        let dir = test_folder(SCRATCH, "earlier-layout");
         // Before the catalog id and the watermarks: no `meta`, no `checked`.
         let old = Connection::open(dir.join("thumbs.sqlite")).unwrap();
         old.execute_batch(

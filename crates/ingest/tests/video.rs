@@ -35,14 +35,7 @@ fn run(exe: &Path, args: &[&str]) {
 
 /// The clips, made once per run.
 fn clips(exe: &Path) -> PathBuf {
-    let base =
-        std::env::var_os("PG_TEST_DIR").map_or_else(|| PathBuf::from(r"D:\PhotoGallery\scratch_video"), PathBuf::from);
-    for old in std::fs::read_dir(&base).into_iter().flatten().flatten() {
-        if old.file_name().to_string_lossy().starts_with("video-") {
-            let _ = std::fs::remove_dir_all(old.path());
-        }
-    }
-    let dir = base.join(format!("video-{}", std::process::id()));
+    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_video", "video");
     let media = dir.join("media");
     std::fs::create_dir_all(&media).unwrap();
     let out = |name: &str| media.join(name).to_string_lossy().into_owned();

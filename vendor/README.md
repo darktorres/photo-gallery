@@ -117,6 +117,48 @@ upstream reports. Its tests run from this directory: `cargo test --target-dir ..
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
 
+## png
+
+Copy of `png` 0.18.1 (MIT OR Apache-2.0). The local changes, marked `photo-gallery`, let a decoder keep what it
+allocates from one image to the next; every pixel, every `Info` and every error is upstream's:
+
+- `Scratch` (`src/decoder/mod.rs`) holds the chunk buffer, the inflater (its `fdeflate` decompressor, tables
+  included), the buffers rows are unfiltered and returned in, and the vectors of the chunks `Info` keeps a copy of
+  (palette, transparency, significant bits, background, EXIF, ICC profile). `Decoder::new_with_scratch` decodes in
+  them, `Reader::into_scratch` gives them back, and `Decoder::into_scratch` and `Decoder::read_info_or_scratch` do so
+  when no reader is made or `read_info` fails. `Scratch::trim` frees those over a size. Upstream made all of them
+  anew for each image, the inflater's 18 KB of tables among them.
+- The buffers are emptied before use, so they read as new ones. The chunk buffer's growth is counted from upstream's
+  128 bytes (`ChunkState::capacity`), not from the kept buffer's capacity: how much each call reads, and what is
+  reserved from the limits, are upstream's, so the same files exceed the same limits.
+- `ZlibStream::reset` resets the decompressor in place (`fdeflate`'s `Decompressor::reset`, below) instead of making
+  a new one, which an APNG did for every frame.
+- Its own `Cargo.toml` patches `fdeflate` to `../fdeflate` for its own build and tests; as a dependency, the app gets
+  it through the root's patch.
+
+Its unit tests give the same results as the registry's copy (73 passed, 1 ignored, and the same 8 failures: the
+published crate lacks the `tests/` images they read). Two tests of its own (`src/decoder/mod.rs`, `photo_gallery`):
+PNGs of every colour type and depth, interlaced or not, with every filter, palettes, transparency and the other kept
+chunks, an APNG, and damaged copies, decode in one kept scratch exactly as in new buffers (pixels, `Info`, errors),
+with every transformation and under limits; and the limits count a kept chunk buffer as a new one. Its tests run from
+this directory: `cargo test --target-dir ../../target/vendor-test`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
+## fdeflate
+
+Copy of `fdeflate` 0.3.7 (MIT OR Apache-2.0). One local change, marked `photo-gallery` in `src/decompress.rs`:
+`Decompressor::reset` puts a decompressor back in the state `Decompressor::new` gives (the primary Huffman tables
+zeroed, the secondary ones emptied, every other field as `new` sets it), keeping the tables' allocations, so that png
+can reuse one decompressor for every image. A test of its own (`photo_gallery`) checks that a reset decompressor is in
+a new one's state, field by field, and decodes streams of every kind, damaged and cut short ones included, exactly as
+a new one, whatever it decoded before. Its tests give the registry copy's results plus that one (15 passed). They run
+from this directory: `cargo test --target-dir ../../target/vendor-test`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the change again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

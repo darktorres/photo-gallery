@@ -27,6 +27,8 @@ pub(crate) struct Codecs {
     /// Samples that aren't 8-bit RGB or RGBA (gray, 16-bit, float, CMYK, planar TIFF), and a GIF's frame when it
     /// doesn't span the image's width: read here, then converted or composed into the output.
     raw: Vec<u8>,
+    /// The PNG decoder's buffers.
+    png: png::Scratch,
 }
 
 impl Codecs {
@@ -45,6 +47,7 @@ impl Codecs {
     /// Free what one oversize file grew.
     pub(crate) fn trim(&mut self, bytes: usize) {
         release_over(&mut self.raw, bytes);
+        self.png.trim(bytes);
     }
 
     /// Any of `image`'s decoders, the way `ImageReader::decode` and `decoder_to_image` use it (BMP's: `image` is
@@ -58,16 +61,39 @@ impl Codecs {
         finish(color, w, h, out, &self.raw)
     }
 
-    /// `image`'s `PngDecoder::with_limits` and `read_image`.
+    /// `image`'s `PngDecoder::with_limits` and `read_image`, in the buffers of the PNG before (vendored png's
+    /// `Scratch`), which go back to `self.png` whatever happens.
     fn png(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
         // The PNG decoder is given `ImageReader`'s limits as they are before the image's size is reserved.
         let max_bytes = usize::try_from(Limits::default().max_alloc.unwrap_or(u64::MAX)).unwrap_or(usize::MAX);
-        let mut decoder = png::Decoder::new_with_limits(Cursor::new(bytes), png::Limits { bytes: max_bytes });
-        decoder.set_ignore_text_chunk(false);
-        decoder.read_header_info().map_err(png_error)?;
+        let limits = png::Limits { bytes: max_bytes };
+        let mut decoder = png::Decoder::new_with_scratch(Cursor::new(bytes), limits, std::mem::take(&mut self.png));
+        // Text and ICC profiles are skipped, where `image` reads them for its metadata getters, which a decode
+        // doesn't call: the metadata reader finds the XMP itself, and colours aren't managed. The png crate
+        // ignores what is wrong in them, so skipping them changes no pixel and no error, except for a file whose
+        // text alone exceeds the 512 MiB limit; it spares a copy of each.
+        decoder.set_ignore_text_chunk(true);
+        decoder.set_ignore_iccp_chunk(true);
+        if let Err(err) = decoder.read_header_info() {
+            self.png = decoder.into_scratch();
+            return Err(png_error(err));
+        }
         // 16-bit samples kept, samples of fewer bits expanded to 8, palettes to RGB(A), tRNS to alpha.
         decoder.set_transformations(png::Transformations::EXPAND);
-        let mut reader = decoder.read_info().map_err(png_error)?;
+        let mut reader = match decoder.read_info_or_scratch() {
+            Ok(reader) => reader,
+            Err((err, scratch)) => {
+                self.png = scratch;
+                return Err(png_error(err));
+            }
+        };
+        let result = self.png_image(&mut reader, out);
+        self.png = reader.into_scratch();
+        result
+    }
+
+    /// [`Codecs::png`]'s image, once the headers are read.
+    fn png_image(&mut self, reader: &mut png::Reader<Cursor<&[u8]>>, out: &mut Rgb) -> ImageResult<()> {
         let color = png_color(reader.output_color_type())?;
         let (w, h) = reader.info().size();
         reserve(color, w, h)?;

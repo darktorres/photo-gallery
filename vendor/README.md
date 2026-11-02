@@ -50,7 +50,8 @@ Copy of `thumbhash` 0.1.0 (MIT). The local changes, marked `photo-gallery` in `s
 working data; every hash and every decoded image is upstream's, bit for bit:
 
 - `Encoder` keeps the encoder's four planes (luminance, the two colour differences and alpha, at most 100 × 100 `f32`
-  each) from one image to the next. `rgba_to_thumb_hash` is upstream's function on a new `Encoder`.
+  each) from one image to the next, each sized for the image before it is filled rather than grown by `push`.
+  `rgba_to_thumb_hash` is upstream's function on a new `Encoder`.
 - `Encoder::rgb_to_thumb_hash` reads RGB as it is, alpha 1.0. That is what upstream computes for RGBA with every alpha
   255 (`255 as f32 / 255.0` is 1.0 exactly), so the import no longer copies each image into RGBA for it.
 - A channel's AC terms (at most 49: both sides are at most 7) and the cosine rows are arrays on the stack, in the

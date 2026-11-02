@@ -84,6 +84,10 @@ fn encode<'a>(
     p.clear(); // yellow - blue
     q.clear(); // red - green
     a.clear(); // alpha
+    // photo-gallery: each plane sized once, not grown by `push` (13 steps to a 100 × 100 image the first time).
+    for plane in [&mut *l, &mut *p, &mut *q, &mut *a] {
+        plane.reserve(w * h);
+    }
 
     // Convert the image from RGBA to LPQA (composite atop the average color)
     for rgba in pixels {

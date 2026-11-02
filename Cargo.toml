@@ -64,7 +64,8 @@ lto = false
 incremental = true
 
 # turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app; qt-build-utils that gives the QML
-# compiler the module's types (vendor/README.md).
+# compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit (vendor/README.md).
 [patch.crates-io]
 qt-build-utils = { path = "vendor/qt-build-utils" }
+rusqlite = { path = "vendor/rusqlite" }
 turbojpeg-sys = { path = "vendor/turbojpeg-sys" }

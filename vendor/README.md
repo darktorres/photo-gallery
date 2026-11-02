@@ -31,6 +31,19 @@ link the static runtime too and the linker warns `LNK4098` (two C runtimes in on
 To update: copy the new version from the cargo registry over this directory, then add the `WITH_CRT_DLL` line back
 to `build_vendor` in `build.rs`.
 
+## rusqlite
+
+Copy of `rusqlite` 0.37.0. One local change, marked `photo-gallery` in `src/cache.rs`: `StatementCache::get` sets a
+statement's cache key only when it prepares the statement. A statement taken from the cache still carries the key it
+was cached under, yet `get` set a new one on every call, copying the SQL into a new `Arc<str>` for each
+`prepare_cached` hit: one allocation per query, hit or miss (docs/HEAP_PROFILE.md, site 11). A test there
+(`test_cache_hit_keeps_key`) checks that a hit keeps the key; it fails without the change. Upstream still has it, in
+0.41.1 and on master.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the change again, or drop the copy once upstream does it. Its
+tests run from this directory: `cargo test --features bundled --target-dir ../../target/vendor-test`.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

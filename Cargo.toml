@@ -72,8 +72,8 @@ incremental = true
 # turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app; qt-build-utils that gives the QML
 # compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit; thumbhash with a
 # reusable encoder that reads RGB; fast_image_resize whose resizer keeps its coefficients; quick-xml whose reader
-# reuses its buffers; png, fdeflate, image-webp and gif whose decoders keep their buffers and tables; tiff and
-# zune-core that read small values without allocating (vendor/README.md).
+# reuses its buffers; png, fdeflate, image-webp, gif and zune-jpeg whose decoders keep their buffers and tables; tiff
+# and zune-core that read small values without allocating (vendor/README.md).
 [patch.crates-io]
 fast_image_resize = { path = "vendor/fast_image_resize" }
 fdeflate = { path = "vendor/fdeflate" }
@@ -87,3 +87,4 @@ thumbhash = { path = "vendor/thumbhash" }
 tiff = { path = "vendor/tiff" }
 turbojpeg-sys = { path = "vendor/turbojpeg-sys" }
 zune-core = { path = "vendor/zune-core" }
+zune-jpeg = { path = "vendor/zune-jpeg" }

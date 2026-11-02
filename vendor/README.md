@@ -284,6 +284,49 @@ run from this directory: `cargo test --target-dir ../../target/vendor-test`, and
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
 
+## zune-jpeg
+
+Copy of `zune-jpeg` 0.5.15 (MIT OR Apache-2.0 OR Zlib), the decoder of the JPEGs libjpeg-turbo rejects
+(`pg_core::codecs`, which `image`'s JPEG decoder also wraps). The local changes, marked `photo-gallery`, let a decoder
+keep what it allocates from one image to the next and leave the metadata it isn't asked for; every pixel and every
+error is upstream's:
+
+- `Scratch` (`src/decoder.rs`) holds the components and their rows (`src/components.rs`: the coefficients of an MCU
+  row, the upsampling rows, the rows above and the first row), the coefficients of each component (an MCU row's in a
+  baseline image, the whole image's in a progressive one) and the upsampler's row. `JpegDecoder::new_with_scratch`
+  decodes in them and `into_scratch` gives them back, however the decode ended; `Scratch::trim` frees those over a
+  size. Upstream made all of them anew for each decoder, and pg-core uses two per image (one reads the headers, the
+  other decodes into the colour space chosen from them). The buffers are filled as upstream's new ones were
+  (`vec![value; len]` became a clear and a resize in place), so they decode as new ones.
+- `JpegDecoder::set_skip_metadata` reads the EXIF, XMP, extended XMP, ICC, IPTC, gain map and MPF segments as upstream
+  does, with the same checks and errors, but doesn't copy them: their getters give `None`. Off by default. The app's
+  decoder sets it, as its metadata reader reads the file itself.
+- A crate-level `#![macro_use]` is removed, as in zune-core.
+- `rustfmt.toml` turns formatting off. `cargo fmt --all` formats this crate (a path dependency), and upstream lays its
+  sources out with zune-image's own `rustfmt.toml` of nightly-only options, which the package doesn't carry: rustfmt's
+  defaults would rewrite every file, and the local changes could no longer be told from upstream's.
+
+Its tests give the same results as the registry's copy (7 unit tests, and 10 integration tests with 1 ignored). A
+test of its own (`src/photo_gallery.rs`) decodes 48 small JPEGs (`tests/photo_gallery`, made by libjpeg through
+Pillow, ImageMagick and jpegtran): RGB at every subsampling, gray, CMYK and YCCK, baseline and progressive, restart
+markers, arithmetic coding, EXIF, a two-segment ICC profile and XMP, sizes from 1×1 to 160×96, and copies cut short or
+with bits changed. Each is decoded as pg-core decodes it, into four colour spaces, strict and not. Decoders in one kept
+scratch, forwards then backwards, kept whole, trimmed to nothing and trimmed to 600 bytes after each file, give
+exactly what a new decoder gives: dimensions, pixels, errors and metadata, and no metadata with the skip. A copy whose
+row buffers kept their old contents fails it. Its tests run from this directory:
+`cargo test --target-dir ../../target/vendor-test`.
+
+Checked once against the registry's copy, linked side by side in a harness outside the repository: the 5 JPEGs
+libjpeg-turbo rejects at any scale (1 in the library, and the test corpus's 4 cut short), 569 synthetic files (the
+kinds above at sizes up to 1023×769, and 300 damaged copies) and 150 library JPEGs, through pg-core's front end, three
+passes in shuffled orders through one kept scratch, against a new registry decoder per file. No difference in 2,172
+decodes: dimensions, colour spaces, pixels, errors, and the metadata without the skip. Decoded by pg-core itself, the
+fallback and synthetic files give the same pixels and errors as before the change.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again and keep `rustfmt.toml` and
+`tests/photo_gallery`.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

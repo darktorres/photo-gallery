@@ -33,6 +33,8 @@ pub(crate) struct Codecs {
     webp: image_webp::Scratch,
     /// The GIF decoder's buffers.
     gif: gif::Scratch,
+    /// The JPEG fallback's buffers (vendored zune-jpeg's `Scratch`).
+    jpeg: zune_jpeg::Scratch,
 }
 
 impl Codecs {
@@ -54,6 +56,7 @@ impl Codecs {
         self.png.trim(bytes);
         self.webp.trim(bytes);
         self.gif.trim(bytes);
+        self.jpeg.trim(bytes);
     }
 
     /// Any of `image`'s decoders, the way `ImageReader::decode` and `decoder_to_image` use it (BMP's: `image` is
@@ -205,16 +208,27 @@ impl Codecs {
 
     /// `image`'s `JpegDecoder` (zune-jpeg), for the JPEGs libjpeg-turbo rejects. As there, one decoder reads the
     /// headers and another, set up from them, decodes: the colour conversion zune-jpeg uses is chosen as it reads
-    /// the headers, from the output colour space it was given.
+    /// the headers, from the output colour space it was given. Both decode in the buffers of the JPEG before
+    /// (vendored zune-jpeg's `Scratch`), which go back to `self.jpeg` whatever happens.
+    ///
+    /// The metadata segments (EXIF, XMP, ICC, IPTC…) are checked as `image`'s decoder checks them, with the same
+    /// errors, but not copied (`set_skip_metadata`): `image` keeps them for its metadata getters, which a decode
+    /// doesn't call.
     fn jpeg(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
         use zune_core::bytestream::ZCursor;
         use zune_core::colorspace::ColorSpace;
         use zune_core::options::DecoderOptions;
+        use zune_jpeg::JpegDecoder;
 
         let options =
             || DecoderOptions::default().set_strict_mode(false).set_max_width(usize::MAX).set_max_height(usize::MAX);
-        let mut headers = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), options());
-        headers.decode_headers().map_err(jpeg_error)?;
+        let mut headers = JpegDecoder::new_with_scratch(ZCursor::new(bytes), options(), std::mem::take(&mut self.jpeg));
+        headers.set_skip_metadata(true);
+        let read = headers.decode_headers();
+        if let Err(e) = read {
+            self.jpeg = headers.into_scratch();
+            return Err(jpeg_error(e));
+        }
         // Known once the headers are read; a JPEG's sides fit 16 bits.
         let (w, h) = headers.dimensions().expect("headers were decoded");
         let (w, h) = (u32::from(u16::try_from(w).unwrap()), u32::from(u16::try_from(h).unwrap()));
@@ -226,10 +240,17 @@ impl Codecs {
             ColorSpace::LumaA => (ColorSpace::LumaA, ColorType::La8),
             _ => (ColorSpace::RGB, ColorType::Rgb8),
         };
-        reserve(color, w, h)?;
+        let scratch = headers.into_scratch();
+        if let Err(e) = reserve(color, w, h) {
+            self.jpeg = scratch;
+            return Err(e);
+        }
         let mut decoder =
-            zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(bytes), options().jpeg_set_out_colorspace(space));
-        decoder.decode_into(target(color, w, h, out, &mut self.raw)).map_err(jpeg_error)?;
+            JpegDecoder::new_with_scratch(ZCursor::new(bytes), options().jpeg_set_out_colorspace(space), scratch);
+        decoder.set_skip_metadata(true);
+        let decoded = decoder.decode_into(target(color, w, h, out, &mut self.raw)).map_err(jpeg_error);
+        self.jpeg = decoder.into_scratch();
+        decoded?;
         finish(color, w, h, out, &self.raw)
     }
 

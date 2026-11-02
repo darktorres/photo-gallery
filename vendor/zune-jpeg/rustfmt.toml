@@ -1,0 +1,4 @@
+# photo-gallery: not formatted. `cargo fmt --all` formats this crate (a path dependency of pg-core), and upstream's
+# sources are laid out by its own rustfmt.toml, of nightly-only options (zune-image's root, not in the package):
+# formatting them here would rewrite every file, and the local changes could no longer be told from upstream's.
+disable_all_formatting = true

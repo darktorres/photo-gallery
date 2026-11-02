@@ -95,6 +95,21 @@ pub fn order_key_of(folder_path: &str, name: &str) -> Vec<u8> {
     order_key(&folder_key(merged_path(folder_path)), name)
 }
 
+/// The order keys of a merged folder's files, as a range `lo..hi` (`hi` is `None` when nothing sorts above it):
+/// the folder's own files, or with `recursive` everything below the folder too.
+pub fn scope_keys(merged: &str, recursive: bool) -> (Vec<u8>, Option<Vec<u8>>) {
+    let mut lo = folder_key(merged);
+    let hi = if recursive {
+        // Below the folder, nothing sorts at or after 0xFF (no UTF-8 byte is 0xFF).
+        if lo.is_empty() { None } else { Some([lo.as_slice(), &[0xFF]].concat()) }
+    } else {
+        let hi = [lo.as_slice(), &[0x01]].concat();
+        lo.push(0x00);
+        Some(hi)
+    };
+    (lo, hi)
+}
+
 /// Whether `path` is `root` or inside it (Windows paths: case-insensitive).
 pub fn is_under(path: &str, root: &str) -> bool {
     let (p, r) = (path.to_lowercase(), root.to_lowercase());
@@ -226,6 +241,20 @@ impl<T> Default for WorkList<T> {
 mod tests {
     use super::*;
     use crate::paths::SHORT;
+
+    #[test]
+    fn a_folder_scope_is_its_own_files_or_those_and_its_subfolders() {
+        let within = |key: &[u8], (lo, hi): &(Vec<u8>, Option<Vec<u8>>)| {
+            key >= lo.as_slice() && hi.as_ref().is_none_or(|hi| key < hi.as_slice())
+        };
+        let direct = order_key_of("E:\\pinterest", "a.jpg");
+        let sub = order_key_of("D:\\pinterest\\sub", "a.jpg");
+        let sibling = order_key_of("D:\\pinterest-x", "a.jpg");
+        let own = scope_keys("pinterest", false);
+        assert!(within(&direct, &own) && !within(&sub, &own) && !within(&sibling, &own));
+        let tree = scope_keys("pinterest", true);
+        assert!(within(&direct, &tree) && within(&sub, &tree) && !within(&sibling, &tree));
+    }
 
     #[test]
     fn an_arena_gives_back_each_path() {

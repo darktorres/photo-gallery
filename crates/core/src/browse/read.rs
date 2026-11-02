@@ -12,21 +12,13 @@ use crate::display;
 use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::metadata;
-use crate::path::{components, folder_key, merged_path, name_key, push_folder_key};
+use crate::path::{components, merged_path, name_key, push_folder_key, scope_keys};
 use crate::query::{BORDER_SUMS, BorderFacet, Facet, MediaType, Query, Sort};
 
 /// The files of a merged folder (optionally with everything below it), as a range of order keys: a condition
 /// on `f` and the values it binds, which the `files_order` index answers.
 fn scope(merged: &str, recursive: bool) -> (String, Vec<Value>) {
-    let mut lo = folder_key(merged);
-    let hi = if recursive {
-        // Below the folder, nothing sorts at or after 0xFF (no UTF-8 byte is 0xFF).
-        if lo.is_empty() { None } else { Some([lo.as_slice(), &[0xFF]].concat()) }
-    } else {
-        let hi = [lo.as_slice(), &[0x01]].concat();
-        lo.push(0x00);
-        Some(hi)
-    };
+    let (lo, hi) = scope_keys(merged, recursive);
     let mut values = vec![Value::Blob(lo)];
     let mut sql = "f.order_key >= ?".to_string();
     if let Some(hi) = hi {
@@ -836,6 +828,7 @@ mod tests {
     use crate::analysis::THUMBHASH_MAX;
     use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
     use crate::browse::writes::queue_rotation;
+    use crate::path::folder_key;
     use crate::path::{order_key, order_key_of};
 
     /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha

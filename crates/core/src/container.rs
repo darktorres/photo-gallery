@@ -24,36 +24,60 @@ pub(crate) struct Segment<'a> {
 }
 
 /// The marker segments up to the start of scan. Embedded JPEGs (EXIF thumbnails, MPF images) are inside these
-/// or after the image, so they are never visited.
-pub(crate) fn jpeg_segments(bytes: &[u8]) -> impl Iterator<Item = Segment<'_>> {
-    let mut i = 2;
-    std::iter::from_fn(move || {
-        while i + 4 <= bytes.len() {
-            if bytes[i] != 0xFF {
+/// or after the image, so they are never visited. The walk ends at the scan or the end marker, or at damage (see
+/// `JpegSegments::damaged`).
+pub(crate) struct JpegSegments<'a> {
+    bytes: &'a [u8],
+    i: usize,
+    damaged: bool,
+}
+
+pub(crate) fn jpeg_segments(bytes: &[u8]) -> JpegSegments<'_> {
+    JpegSegments { bytes, i: 2, damaged: false }
+}
+
+impl JpegSegments<'_> {
+    /// Whether the walk stopped at damage (a marker byte that isn't 0xFF, a length that runs past the file, or the
+    /// file ending before the scan), rather than at the scan or the end marker.
+    pub(crate) fn damaged(&self) -> bool {
+        self.damaged
+    }
+}
+
+impl<'a> Iterator for JpegSegments<'a> {
+    type Item = Segment<'a>;
+
+    fn next(&mut self) -> Option<Segment<'a>> {
+        let bytes = self.bytes;
+        while self.i + 4 <= bytes.len() {
+            if bytes[self.i] != 0xFF {
+                self.damaged = true;
                 return None;
             }
-            let marker = bytes[i + 1];
+            let marker = bytes[self.i + 1];
             if marker == 0xFF {
-                i += 1; // fill byte
+                self.i += 1; // fill byte
                 continue;
             }
             if marker == 0xDA || marker == 0xD9 {
                 return None;
             }
             if (0xD0..=0xD7).contains(&marker) || marker == 0x01 {
-                i += 2;
+                self.i += 2;
                 continue;
             }
-            let len = u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
-            let (start, end) = (i + 4, i + 2 + len);
+            let len = u16::from_be_bytes([bytes[self.i + 2], bytes[self.i + 3]]) as usize;
+            let (start, end) = (self.i + 4, self.i + 2 + len);
             if len < 2 || end > bytes.len() {
+                self.damaged = true;
                 return None;
             }
-            i = end;
+            self.i = end;
             return Some(Segment { marker, start, data: &bytes[start..end] });
         }
+        self.damaged = true;
         None
-    })
+    }
 }
 
 /// A JPEG segment's EXIF block, if it is one.
@@ -258,12 +282,52 @@ impl Iterator for GifBlocks<'_> {
     }
 }
 
-/// Whether a JPEG is progressive: its frame header (SOF2) is among the segments before the scan.
-pub(crate) fn jpeg_is_progressive(bytes: &[u8]) -> bool {
-    jpeg_segments(bytes).any(|s| s.marker == 0xC2)
+/// Whether a JPEG is progressive: its frame header (SOF2) is among the segments before the scan. `None` when those
+/// segments are damaged, so the file's structure can't be trusted (the lossless rewriter refuses such a file rather
+/// than re-encode it).
+pub(crate) fn jpeg_is_progressive(bytes: &[u8]) -> Option<bool> {
+    let mut segments = jpeg_segments(bytes);
+    if segments.by_ref().any(|s| s.marker == 0xC2) {
+        return Some(true);
+    }
+    (!segments.damaged()).then_some(false)
 }
 
 /// Where `needle` first is in `haystack`.
 pub(crate) fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A JPEG's start, then each segment (marker and payload) with its length, then a scan and the end marker.
+    fn jpeg(segments: &[(u8, &[u8])]) -> Vec<u8> {
+        let mut out = vec![0xFF, 0xD8];
+        for &(marker, payload) in segments {
+            out.extend([0xFF, marker]);
+            out.extend(((payload.len() + 2) as u16).to_be_bytes());
+            out.extend(payload);
+        }
+        out.extend([0xFF, 0xDA, 0x00, 0x02, 0xFF, 0xD9]);
+        out
+    }
+
+    #[test]
+    fn a_jpeg_is_progressive_when_its_frame_header_is_sof2() {
+        let frame = [8, 0, 8, 0, 8, 3];
+        assert_eq!(jpeg_is_progressive(&jpeg(&[(0xC0, &frame)])), Some(false));
+        assert_eq!(jpeg_is_progressive(&jpeg(&[(0xE0, &[0; 4]), (0xC2, &frame)])), Some(true));
+    }
+
+    #[test]
+    fn a_damaged_jpeg_is_not_classified() {
+        // A segment whose length runs past the file.
+        assert_eq!(jpeg_is_progressive(&[0xFF, 0xD8, 0xFF, 0xE1, 0xFF, 0xFF, 1, 2, 3]), None);
+        // A marker byte where a marker must be.
+        assert_eq!(jpeg_is_progressive(&[0xFF, 0xD8, 0x00, 0x00, 0x00, 0x02]), None);
+        // The file ends before the scan.
+        assert_eq!(jpeg_is_progressive(&[0xFF, 0xD8, 0xFF, 0xC0, 0x00, 0x02]), None);
+    }
 }

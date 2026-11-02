@@ -103,7 +103,10 @@ pub(crate) fn jpeg(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     }
     // Keep the entropy coding kind: progressive stays progressive; baseline gets optimized Huffman tables (the
     // transform can't reuse the original ones).
-    let progressive = container::jpeg_is_progressive(bytes);
+    // A JPEG whose structure is damaged before its scan is refused: the transform would re-encode what is left.
+    let Some(progressive) = container::jpeg_is_progressive(bytes) else {
+        bail!("the JPEG's structure is damaged before its scan; it is left as it is");
+    };
     t.progressive = progressive;
     t.optimize = !progressive;
     Ok(Transformer::new()?.transform_to_vec(&t, bytes)?)

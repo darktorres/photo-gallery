@@ -233,6 +233,51 @@ reader, whether over the file or in 5-byte pieces. Its tests run from this direc
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
 
+## tiff
+
+Copy of `tiff` 0.11.3 (MIT). The local changes, marked `photo-gallery`, are in what a decoder allocates for small
+values; every value, pixel and error is upstream's:
+
+- `Entry::offset_field_reader` (`src/decoder/ifd.rs`) reads a tag's inline value (4 or 8 bytes) through a cursor over
+  the entry's own array, where upstream copied it into a `Vec` first: one allocation per value read, for most tags.
+- The chunk offsets and byte counts of an image (`Image::chunk_offsets`, `chunk_bytes`, `src/decoder/image.rs`) hold a
+  single value inline (`U64s`), where upstream made a `Vec` of one for the single strip of most images. They are read
+  by `Value::into_u64s`, which gives what `into_u64_vec` gives, and the same errors.
+- A plane layout's offsets (`PlaneOffsets`) are worked out from their count and stride, where upstream collected them
+  into a `Vec` for every chunk read; they are the multiples of the stride, and the count is checked as before.
+
+Its tests give the same results as the registry's copy (45 passed, and the same 106 failing: the published crate
+lacks the `tests/images` they read). Three tests of its own (`src/decoder/image.rs`, `photo_gallery`): `into_u64s`
+gives what `into_u64_vec` gives for every kind of value, errors included; the counted plane offsets are upstream's
+collected ones, for strides up to `usize::MAX` and the past-the-end check; and classic and BigTIFF files in one strip
+and many, of 8-bit, 16-bit and float samples, uncompressed, LZW, Deflate and PackBits, decode to the pixels they were
+made from. Its tests run from this directory: `cargo test --no-fail-fast --target-dir ../../target/vendor-test`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
+## zune-core
+
+Copy of `zune-core` 0.5.3 (MIT OR Apache-2.0 OR Zlib), the byte readers of zune-jpeg (the JPEGs libjpeg-turbo
+rejects). The local changes, marked `photo-gallery`:
+
+- `ZReader::peek_at` (`src/bytestream/reader.rs`) lends the bytes from the source when it holds them in memory
+  (`ZByteReaderTrait::peek_buffered`: a buffered reader's buffer, which for `ZCursor` is the whole source), where
+  upstream copied them into a buffer of its own that grew to the largest peek, on each reader: zune-jpeg peeks at
+  every EXIF, XMP, ICC and IPTC segment. The bytes, and the position after, are those of upstream's copy, which would
+  succeed whenever they are lent; otherwise, and past its 20 MiB check, it runs as upstream.
+- A crate-level `#![macro_use]` is removed: rustc ignores it, with a warning that a patched crate shows in every
+  build of the workspace.
+
+Its tests give the same results as the registry's copy, with and without `std` (4 and 6 passed, and 7 doctests).
+Two tests of its own (`src/bytestream/reader.rs`, `photo_gallery`) compare `peek_at` with upstream's code for every
+start, offset and length around the ends of the source, the bytes or the error and the position after: over a
+`ZCursor`, which lends every peek, and over a 4-byte `BufReader`, which lends some and copies the others. Its tests
+run from this directory: `cargo test --target-dir ../../target/vendor-test`, and again with `--features std`.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

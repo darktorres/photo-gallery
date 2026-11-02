@@ -3,7 +3,7 @@
 //! saved views and where the user was.
 
 use anyhow::Result;
-use rusqlite::types::{Type, Value};
+use rusqlite::types::{Type, Value, ValueRef};
 use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
 use crate::borders;
@@ -889,8 +889,32 @@ pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>
 /// turns asked for and not yet written, and those kept in the catalog since the analysis that made the hash.
 pub struct Placeholder {
     /// `None` before the import.
-    pub hash: Option<Vec<u8>>,
+    pub hash: Option<ThumbHash>,
     pub turns: u8,
+}
+
+/// The longest ThumbHash: a 6-byte header (an image with alpha) and 38 AC nibbles in 19 bytes (luminance and alpha
+/// at most 5 × 5, 14 terms each; the two colour differences 3 × 3, 5 each). Opaque, it is at most 24.
+pub const THUMBHASH_MAX: usize = 25;
+
+/// A ThumbHash (`analysis.thumbhash`), held inline.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct ThumbHash {
+    bytes: [u8; THUMBHASH_MAX],
+    len: u8,
+}
+
+impl ThumbHash {
+    /// `None` for one longer than any ThumbHash, which only a damaged catalog holds.
+    pub fn new(hash: &[u8]) -> Option<ThumbHash> {
+        let mut bytes = [0; THUMBHASH_MAX];
+        bytes.get_mut(..hash.len())?.copy_from_slice(hash);
+        Some(ThumbHash { bytes, len: hash.len() as u8 })
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.bytes[..self.len as usize]
+    }
 }
 
 pub fn placeholder(conn: &Connection, file_id: i64) -> Result<Option<Placeholder>> {
@@ -902,7 +926,12 @@ pub fn placeholder(conn: &Connection, file_id: i64) -> Result<Option<Placeholder
         ))?
         .query_row([file_id], |r| {
             let kept: u8 = r.get(1)?;
-            Ok(Placeholder { hash: r.get(0)?, turns: (kept + file_state_at(r, 2)?.turns) % 4 })
+            // Read in place: the blob isn't copied into a `Vec` first.
+            let hash = match r.get_ref(0)? {
+                ValueRef::Null => None,
+                v => ThumbHash::new(v.as_blob()?),
+            };
+            Ok(Placeholder { hash, turns: (kept + file_state_at(r, 2)?.turns) % 4 })
         })
         .optional()?)
 }
@@ -972,6 +1001,33 @@ pub fn session_set_many(conn: &Connection, values: &[(&str, &str)]) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
+    /// and without.
+    #[test]
+    fn thumbhashes_fit_inline() {
+        let mut longest = [0, 0];
+        for k in 1..=100 {
+            for (w, h) in [(100, k), (k, 100)] {
+                for alpha in [false, true] {
+                    let rgba: Vec<u8> = (0..w * h)
+                        .flat_map(|i| {
+                            let (x, y) = (i % w, i / w);
+                            let a = if alpha { ((x * 7 + y * 3) % 256) as u8 } else { 255 };
+                            [(x * 255 / w) as u8, (y * 255 / h) as u8, ((x ^ y) * 9 % 256) as u8, a]
+                        })
+                        .collect();
+                    let hash = thumbhash::rgba_to_thumb_hash(w, h, &rgba);
+                    assert!(hash.len() <= THUMBHASH_MAX, "{w} × {h}, alpha {alpha}: {}", hash.len());
+                    let kept = ThumbHash::new(&hash).unwrap();
+                    assert_eq!(kept.as_slice(), &hash[..]);
+                    longest[alpha as usize] = longest[alpha as usize].max(hash.len());
+                }
+            }
+        }
+        assert_eq!(longest, [THUMBHASH_MAX - 1, THUMBHASH_MAX]);
+        assert!(ThumbHash::new(&[0; THUMBHASH_MAX + 1]).is_none());
+    }
     use crate::catalog::fixture;
     use crate::query::{DateRange, Orientation, Range, SortKey, Status};
 
@@ -1046,7 +1102,7 @@ mod tests {
         let turns = || placeholder(&c.conn, 1).unwrap().unwrap().turns;
         assert_eq!(state(), FileState { mtime: 3, rotation: 0, turns: 0, writing: false });
         assert_eq!(file_source(&c.conn, 1).unwrap().unwrap().state, state());
-        assert_eq!((turns(), placeholder(&c.conn, 1).unwrap().unwrap().hash), (0, Some(vec![1])));
+        assert_eq!((turns(), placeholder(&c.conn, 1).unwrap().unwrap().hash), (0, ThumbHash::new(&[1])));
         // A turn asked for, not yet written.
         queue_rotation(&c.conn, 1, 3).unwrap();
         assert_eq!((state().turns, turns()), (3, 3));

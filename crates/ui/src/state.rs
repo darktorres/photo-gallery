@@ -244,7 +244,7 @@ impl Upload {
 pub fn placeholder(file_id: i64) -> Result<Upload> {
     let p = with_catalog(|c| browse::placeholder(&c.conn, file_id))?.context("unknown file")?;
     let hash = p.hash.context("not imported yet")?;
-    let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(&hash).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
+    let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
     let (rgba, w, h) = orient_pixels(rgba, w, h, 4, compose_orientation(1, p.turns));
     Ok(Upload::straight(w, h, rgba))
 }

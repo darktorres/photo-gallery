@@ -100,7 +100,11 @@ fn range_in(bytes: &[u8], part: &[u8]) -> Range<usize> {
 impl Meta {
     pub fn read(bytes: &[u8], format: Format, scratch: &mut MetaScratch) -> Meta {
         let container = Container::walk(bytes, format, scratch);
-        let exif = container.exif.clone().and_then(|block| Exif::read(&bytes[block])).unwrap_or_default();
+        let exif = container
+            .exif
+            .clone()
+            .and_then(|block| Exif::read(&bytes[block], format == Format::Tiff))
+            .unwrap_or_default();
         if format == Format::Tiff {
             // A TIFF file keeps its packet in IFD0.
             scratch.packets.extend(exif.xmp.map(|x| Packet::InFile(range_in(bytes, x))));
@@ -134,7 +138,10 @@ impl Meta {
 
 /// The EXIF orientation (1–8) of a file, alone; 1 when absent or unreadable.
 pub fn orientation(bytes: &[u8], format: Format) -> u8 {
-    exif_block(bytes, format).and_then(|block| Exif::read(&bytes[block])).unwrap_or_default().orientation()
+    exif_block(bytes, format)
+        .and_then(|block| Exif::read(&bytes[block], format == Format::Tiff))
+        .unwrap_or_default()
+        .orientation()
 }
 
 /// The first value of each wanted property (namespace URI, local name) in one packet, as an attribute of an
@@ -218,13 +225,15 @@ fn percent(v: f64) -> u8 {
 struct Tiff<'a> {
     data: &'a [u8],
     little_endian: bool,
+    /// BigTIFF: 8-byte counts and offsets, 20-byte entries, an 8-byte value field.
+    big: bool,
 }
 
-/// An IFD entry: its tag, type, count, and where it is (its 12 bytes).
+/// An IFD entry: its tag, type, count, and where it is (its 12 bytes, or 20 in BigTIFF).
 struct Entry {
     tag: u16,
     kind: u16,
-    count: u32,
+    count: u64,
     at: usize,
 }
 
@@ -233,17 +242,25 @@ const TIFF_ASCII: u16 = 2;
 const TIFF_SHORT: u16 = 3;
 const TIFF_LONG: u16 = 4;
 const TIFF_UNDEFINED: u16 = 7;
+const TIFF_LONG8: u16 = 16;
+const TIFF_IFD8: u16 = 18;
 
 impl<'a> Tiff<'a> {
-    /// The byte order, then 42.
-    fn new(data: &'a [u8]) -> Option<Tiff<'a>> {
+    /// The byte order, then 42. A TIFF file (`bigtiff`) may be BigTIFF instead: 43, then 8 (the offset size) and 0.
+    /// An EXIF block is always classic.
+    fn new(data: &'a [u8], bigtiff: bool) -> Option<Tiff<'a>> {
         let little_endian = match data.get(..2)? {
             b"II" => true,
             b"MM" => false,
             _ => return None,
         };
-        let tiff = Tiff { data, little_endian };
-        (tiff.u16_at(2)? == 42).then_some(tiff)
+        let mut tiff = Tiff { data, little_endian, big: false };
+        tiff.big = match tiff.u16_at(2)? {
+            42 => false,
+            43 if bigtiff && tiff.u16_at(4)? == 8 && tiff.u16_at(6)? == 0 => true,
+            _ => return None,
+        };
+        Some(tiff)
     }
 
     fn u16_at(&self, i: usize) -> Option<u16> {
@@ -266,18 +283,42 @@ impl<'a> Tiff<'a> {
         Some(if self.little_endian { u32::from_le_bytes(b) } else { u32::from_be_bytes(b) })
     }
 
+    /// The LONG8 at `i` (BigTIFF), in the block's byte order.
+    fn u64_at(&self, i: usize) -> Option<u64> {
+        self.u64_of(self.data.get(i..i.checked_add(8)?)?)
+    }
+
+    /// The LONG8 at the start of `b`, in the block's byte order.
+    fn u64_of(&self, b: &[u8]) -> Option<u64> {
+        let b: [u8; 8] = b.get(..8)?.try_into().ok()?;
+        Some(if self.little_endian { u64::from_le_bytes(b) } else { u64::from_be_bytes(b) })
+    }
+
+    /// An offset at `i`: a LONG, or a LONG8 in BigTIFF.
+    fn offset_at(&self, i: usize) -> Option<usize> {
+        if self.big { usize::try_from(self.u64_at(i)?).ok() } else { Some(self.u32_at(i)? as usize) }
+    }
+
     /// IFD0's offset.
     fn ifd0(&self) -> Option<usize> {
-        Some(self.u32_at(4)? as usize)
+        self.offset_at(if self.big { 8 } else { 4 })
     }
 
     /// The entries of the IFD at `offset`, as far as they are in the block.
     fn entries(&self, offset: usize) -> impl Iterator<Item = Entry> + '_ {
-        let count = self.u16_at(offset).unwrap_or(0) as usize;
+        let (head, size): (usize, usize) = if self.big { (8, 20) } else { (2, 12) };
+        let count = if self.big { self.u64_at(offset) } else { self.u16_at(offset).map(u64::from) };
+        let count = usize::try_from(count.unwrap_or(0)).unwrap_or(usize::MAX);
         (0..count).map_while(move |k| {
-            let at = offset.checked_add(2 + 12 * k)?;
-            Some(Entry { tag: self.u16_at(at)?, kind: self.u16_at(at + 2)?, count: self.u32_at(at + 4)?, at })
+            let at = offset.checked_add(head)?.checked_add(size.checked_mul(k)?)?;
+            let count = if self.big { self.u64_at(at + 4)? } else { u64::from(self.u32_at(at + 4)?) };
+            Some(Entry { tag: self.u16_at(at)?, kind: self.u16_at(at + 2)?, count, at })
         })
+    }
+
+    /// Where an entry's value field starts: 8 bytes into a classic entry, 12 into a BigTIFF one.
+    fn value_at(&self, e: &Entry) -> usize {
+        e.at + if self.big { 12 } else { 8 }
     }
 
     /// An entry's value bytes: in the entry when they fit in 4 bytes, else where it points. `None` for a type
@@ -288,20 +329,25 @@ impl<'a> Tiff<'a> {
             3 | 8 => 2,
             4 | 9 | 11 => 4,
             5 | 10 | 12 => 8,
+            // LONG8, SLONG8 and IFD8: BigTIFF only.
+            16..=18 if self.big => 8,
             _ => return None,
         };
-        let len = unit.checked_mul(e.count as usize)?;
-        let start = if len <= 4 { e.at + 8 } else { self.u32_at(e.at + 8)? as usize };
+        let len = unit.checked_mul(usize::try_from(e.count).ok()?)?;
+        let inline = if self.big { 8 } else { 4 };
+        let at = self.value_at(e);
+        let start = if len <= inline { at } else { self.offset_at(at)? };
         self.data.get(start..start.checked_add(len)?)
     }
 
-    /// An entry's first value as an unsigned integer (BYTE, SHORT or LONG).
+    /// An entry's first value as an unsigned integer (BYTE, SHORT or LONG; a LONG8 or IFD8 that fits a LONG).
     fn uint(&self, e: &Entry) -> Option<u32> {
         let v = self.value(e)?;
         match e.kind {
             TIFF_BYTE => v.first().map(|&b| u32::from(b)),
             TIFF_SHORT => self.u16_of(v).map(u32::from),
             TIFF_LONG => self.u32_of(v),
+            TIFF_LONG8 | TIFF_IFD8 => self.u64_of(v).and_then(|n| u32::try_from(n).ok()),
             _ => None,
         }
     }
@@ -336,8 +382,8 @@ const EXIF_TAG_DATE_TIME_ORIGINAL: u16 = 0x9003;
 const EXIF_TAG_DATE_TIME_DIGITIZED: u16 = 0x9004;
 
 impl<'a> Exif<'a> {
-    fn read(block: &'a [u8]) -> Option<Exif<'a>> {
-        let tiff = Tiff::new(block)?;
+    fn read(block: &'a [u8], bigtiff: bool) -> Option<Exif<'a>> {
+        let tiff = Tiff::new(block, bigtiff)?;
         let mut exif = Exif::default();
         let mut exif_ifd = None;
         for e in tiff.entries(tiff.ifd0()?) {
@@ -896,18 +942,18 @@ fn exif_block(bytes: &[u8], format: Format) -> Option<std::ops::Range<usize>> {
 }
 
 /// Offset of the orientation value in a TIFF block's IFD0, if the tag is there as one SHORT.
-fn tiff_orientation_offset(block: &[u8]) -> Option<usize> {
-    let tiff = Tiff::new(block)?;
+fn tiff_orientation_offset(block: &[u8], bigtiff: bool) -> Option<usize> {
+    let tiff = Tiff::new(block, bigtiff)?;
     tiff.entries(tiff.ifd0()?)
         .find(|e| e.tag == EXIF_TAG_ORIENTATION && e.kind == TIFF_SHORT && e.count == 1)
-        .map(|e| e.at + 8)
+        .map(|e| tiff.value_at(&e))
 }
 
 /// The file with its EXIF orientation set to `o`, changed in place (same size, nothing moves), or `None` when
 /// the file has no orientation tag to change (adding one is a job for ExifTool).
 pub fn patch_orientation(bytes: &[u8], format: Format, o: u8) -> Option<Vec<u8>> {
     let block = exif_block(bytes, format)?;
-    let at = block.start + tiff_orientation_offset(&bytes[block.clone()])?;
+    let at = block.start + tiff_orientation_offset(&bytes[block.clone()], format == Format::Tiff)?;
     let le = bytes.get(block.start..block.start + 2)? == b"II";
     let mut out = bytes.to_vec();
     out[at..at + 2].copy_from_slice(&if le { (o as u16).to_le_bytes() } else { (o as u16).to_be_bytes() });
@@ -1041,38 +1087,63 @@ mod tests {
     type TestEntry = (u16, u16, u32, Vec<u8>);
 
     /// A TIFF block with these IFD0 entries and, if any, an Exif IFD with those (its pointer added to IFD0). Values
-    /// over 4 bytes go after the IFDs.
+    /// over the entry's value field go after the IFDs.
     fn tiff_block(le: bool, ifd0: &[TestEntry], exif: &[TestEntry]) -> Vec<u8> {
+        tiff_block_as(false, le, ifd0, exif)
+    }
+
+    /// [`tiff_block`], or a BigTIFF block (`big`): 43, 8-byte counts and offsets, 20-byte entries, 8-byte value fields.
+    fn tiff_block_as(big: bool, le: bool, ifd0: &[TestEntry], exif: &[TestEntry]) -> Vec<u8> {
         let u16b = |v: u16| if le { v.to_le_bytes() } else { v.to_be_bytes() };
         let u32b = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() };
-        let ifd_len = |n: usize| 2 + 12 * n + 4;
+        let u64b = |v: u64| if le { v.to_le_bytes() } else { v.to_be_bytes() };
+        // An offset, or a value's count, as the layout's width: 4 bytes, or 8 in BigTIFF.
+        let width: usize = if big { 8 } else { 4 };
+        let offset = |v: usize| if big { u64b(v as u64).to_vec() } else { u32b(v as u32).to_vec() };
+        // The IFD's entry count is 2 bytes, or 8 in BigTIFF; an entry is 12, or 20.
+        let (count_w, entry) = if big { (8, 20) } else { (2, 12) };
+        let head = if big { 16 } else { 8 };
+        let ifd_len = |n: usize| count_w + entry * n + width;
         let n0 = ifd0.len() + usize::from(!exif.is_empty());
-        let exif_at = 8 + ifd_len(n0);
+        let exif_at = head + ifd_len(n0);
         let mut data_at = exif_at + if exif.is_empty() { 0 } else { ifd_len(exif.len()) };
         let mut data: Vec<u8> = Vec::new();
         let mut ifd = |entries: &[TestEntry], out: &mut Vec<u8>| {
-            out.extend(u16b(entries.len() as u16));
+            out.extend(if big { u64b(entries.len() as u64).to_vec() } else { u16b(entries.len() as u16).to_vec() });
             for (tag, kind, count, value) in entries {
                 out.extend(u16b(*tag));
                 out.extend(u16b(*kind));
-                out.extend(u32b(*count));
-                if value.len() <= 4 {
+                out.extend(if big { u64b(u64::from(*count)).to_vec() } else { u32b(*count).to_vec() });
+                if value.len() <= width {
                     out.extend(value);
-                    out.extend(std::iter::repeat_n(0, 4 - value.len()));
+                    out.extend(std::iter::repeat_n(0, width - value.len()));
                 } else {
-                    out.extend(u32b(data_at as u32));
+                    out.extend(offset(data_at));
                     data.extend(value);
                     data_at += value.len();
                 }
             }
-            out.extend(u32b(0));
+            out.extend(offset(0));
         };
         let mut block = if le { b"II".to_vec() } else { b"MM".to_vec() };
-        block.extend(u16b(42));
-        block.extend(u32b(8));
+        if big {
+            block.extend(u16b(43));
+            block.extend(u16b(8));
+            block.extend(u16b(0));
+            block.extend(u64b(16));
+        } else {
+            block.extend(u16b(42));
+            block.extend(u32b(8));
+        }
         let mut entries = ifd0.to_vec();
         if !exif.is_empty() {
-            entries.push((EXIF_TAG_EXIF_IFD, TIFF_LONG, 1, u32b(exif_at as u32).to_vec()));
+            // The Exif IFD's pointer: an IFD8 in BigTIFF, a LONG otherwise.
+            let pointer = if big {
+                (TIFF_IFD8, u64b(exif_at as u64).to_vec())
+            } else {
+                (TIFF_LONG, u32b(exif_at as u32).to_vec())
+            };
+            entries.push((EXIF_TAG_EXIF_IFD, pointer.0, 1, pointer.1));
         }
         ifd(&entries, &mut block);
         if !exif.is_empty() {
@@ -1082,14 +1153,25 @@ mod tests {
         block
     }
 
+    /// An offset in a TIFF block: a LONG, or a LONG8 in BigTIFF.
+    fn offset_bytes(big: bool, le: bool, v: usize) -> Vec<u8> {
+        match (big, le) {
+            (false, true) => (v as u32).to_le_bytes().to_vec(),
+            (false, false) => (v as u32).to_be_bytes().to_vec(),
+            (true, true) => (v as u64).to_le_bytes().to_vec(),
+            (true, false) => (v as u64).to_be_bytes().to_vec(),
+        }
+    }
+
     #[test]
     fn exif_reads_what_fits_and_the_last_of_a_tag() {
-        for le in [true, false] {
+        for (big, le) in [(false, true), (false, false), (true, true), (true, false)] {
             let short =
                 |v: &[u16]| v.iter().flat_map(|&v| if le { v.to_le_bytes() } else { v.to_be_bytes() }).collect();
             let long = |v: u32| if le { v.to_le_bytes() } else { v.to_be_bytes() }.to_vec();
             let date = |d: &[u8]| (EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, [d, b"\0"].concat());
-            let read = |ifd0: &[TestEntry], exif: &[TestEntry]| meta_of(&tiff_block(le, ifd0, exif), Format::Tiff);
+            let read =
+                |ifd0: &[TestEntry], exif: &[TestEntry]| meta_of(&tiff_block_as(big, le, ifd0, exif), Format::Tiff);
 
             let m = read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6]))], &[date(b"2023:07:15 18:30:05")]);
             assert_eq!((m.orientation, m.taken), (6, Some(1_689_445_805)));
@@ -1112,7 +1194,8 @@ mod tests {
             assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating, Some(1));
 
             // A value pointing outside the block reads as absent; the rest is still read.
-            let mut block = tiff_block(
+            let mut block = tiff_block_as(
+                big,
                 le,
                 &[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[2]))],
                 &[
@@ -1121,9 +1204,12 @@ mod tests {
                 ],
             );
             let len = block.len();
-            // DateTimeOriginal's offset, in the Exif IFD's first entry: past the end.
-            let exif_at = 8 + 2 + 12 * 2 + 4;
-            block[exif_at + 2 + 8..exif_at + 2 + 12].copy_from_slice(&long(len as u32));
+            // DateTimeOriginal's offset, in the Exif IFD's first entry: past the end. The IFD0 has two entries.
+            let width = if big { 8 } else { 4 };
+            let exif_at = if big { 16 + 8 + 20 * 2 + 8 } else { 8 + 2 + 12 * 2 + 4 };
+            let count_w = if big { 8 } else { 2 };
+            let value = exif_at + count_w + 4 + width;
+            block[value..value + width].copy_from_slice(&offset_bytes(big, le, len));
             let m = meta_of(&block, Format::Tiff);
             assert_eq!((m.rating, m.taken), (Some(2), wall_clock_seconds(2020, 1, 2, 3, 4, 5)));
         }
@@ -1134,11 +1220,38 @@ mod tests {
             tiff_block(false, &[(EXIF_TAG_RATING, TIFF_SHORT, 1, 4u16.to_be_bytes().to_vec())], &[exif_version]);
         block.truncate(block.len() - 4);
         assert_eq!(meta_of(&block, Format::Tiff).rating, Some(4));
-        // Not a TIFF structure without its 42.
+        // Not a TIFF structure without its 42. A 43 is BigTIFF only with its offset size (8) after it.
         let mut block = tiff_block(true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
         assert_eq!(orientation(&block, Format::Tiff), 6);
         block[2] = 43;
+        block[4] = 4;
         assert_eq!(orientation(&block, Format::Tiff), 1);
+        // BigTIFF is for a TIFF file: an EXIF block (JPEG, PNG, WebP) with one is not read.
+        let big = tiff_block_as(true, true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
+        assert!(Exif::read(&big, false).is_none());
+        assert_eq!(Exif::read(&big, true).map(|e| e.orientation()), Some(6));
+    }
+
+    #[test]
+    fn bigtiff_reads_as_its_classic_twin() {
+        for le in [true, false] {
+            let short = |v: u16| (if le { v.to_le_bytes() } else { v.to_be_bytes() }).to_vec();
+            let xmp = br#"<rdf:Description xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="3"/>"#.to_vec();
+            let ifd0 = [
+                (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(6)),
+                (EXIF_TAG_RATING, TIFF_SHORT, 1, short(4)),
+                (TIFF_TAG_XMP, TIFF_BYTE, xmp.len() as u32, xmp),
+            ];
+            let exif = [(EXIF_TAG_DATE_TIME_ORIGINAL, TIFF_ASCII, 20, b"2023:07:15 18:30:05\0".to_vec())];
+            let classic = meta_of(&tiff_block(le, &ifd0, &exif), Format::Tiff);
+            let big = meta_of(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff);
+            assert_eq!(big, classic);
+            // XMP's rating first (3), then the date.
+            assert_eq!((big.orientation, big.rating, big.taken), (6, Some(3), Some(1_689_445_805)));
+            // The orientation is patched in place, as in a classic file.
+            let patched = patch_orientation(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff, 3).unwrap();
+            assert_eq!(orientation(&patched, Format::Tiff), 3);
+        }
     }
 
     #[test]

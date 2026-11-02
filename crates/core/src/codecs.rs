@@ -737,6 +737,7 @@ mod tests {
     use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
 
     use super::*;
+    use crate::decode::tiff_rgb8;
 
     /// How the decode was done before this module: `image::load_from_memory_with_format`, then `into_rgba8` and
     /// the flattening onto white, or `into_rgb8`.
@@ -1063,6 +1064,10 @@ mod tests {
         let gray1 = TiffKind { photometric: 1, bits: 1, count: 1, alpha: false, float: false, planar: false };
         let samples = noise((w as usize).div_ceil(8) * h as usize, 1);
         files.push(("tiff gray 1".into(), Format::Tiff, ImageFormat::Tiff, tiff_file(w, h, &gray1, &samples)));
+        // One RGB8 image, classic and BigTIFF, as the tiff crate's encoder writes them.
+        let rgb = noise(pixels * 3, 8);
+        files.push(("tiff rgb8 encoder".into(), Format::Tiff, ImageFormat::Tiff, tiff_rgb8(w, h, &rgb, false)));
+        files.push(("tiff rgb8 BigTIFF".into(), Format::Tiff, ImageFormat::Tiff, tiff_rgb8(w, h, &rgb, true)));
         let cmyk: Vec<u8> = pattern(w, h, 9).as_raw().iter().map(|v| 255 - v).collect();
         for (name, format, pixels, sub) in [
             ("rgb", turbojpeg::PixelFormat::RGBA, pattern(w, h, 3).into_raw(), turbojpeg::Subsamp::Sub2x2),
@@ -1127,7 +1132,7 @@ mod tests {
         }
         // Every kind made it. What fails fails as it did: gray with alpha, which the tiff crate reads as two bands
         // (`Multiband`, a colour type `image` doesn't take), and planar CMYK.
-        assert_eq!(files.len(), 70);
+        assert_eq!(files.len(), 72);
         let tiff = |kind: &str| [false, true].map(|planar| format!("tiff {kind} planar {planar}"));
         let mut expected = [tiff("1 8x2"), tiff("1 16x2")].concat();
         expected.extend(["tiff 5 8x4 planar true".to_string(), "tiff 5 16x4 planar true".to_string()]);

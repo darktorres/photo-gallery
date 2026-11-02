@@ -117,6 +117,8 @@ mod tests {
         e.set_exif_metadata(b"II*\0\x08\0\0\0\0\0\0\0\0\0".to_vec());
         e.encode(&rgb, w as u32, h as u32, image_webp::ColorType::Rgb8).unwrap();
         files.push(webp);
+        // BigTIFF, which `image` doesn't write: the tiff crate's encoder does.
+        files.push(crate::decode::tiff_rgb8(w as u32, h as u32, &rgb, true));
         for file in files {
             let format = Format::sniff(&file).unwrap();
             let out = crop(&file, format, w as u32, h as u32, cut).unwrap();

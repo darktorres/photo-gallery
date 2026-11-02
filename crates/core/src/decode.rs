@@ -30,6 +30,9 @@ impl Format {
             [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Format::Webp,
             [b'B', b'M', ..] => Format::Bmp,
             [b'I', b'I', 0x2A, 0x00, ..] | [b'M', b'M', 0x00, 0x2A, ..] => Format::Tiff,
+            // BigTIFF: 43, then 8 (the offset size) and 0.
+            [b'I', b'I', 0x2B, 0x00, 0x08, 0x00, 0x00, 0x00, ..]
+            | [b'M', b'M', 0x00, 0x2B, 0x00, 0x08, 0x00, 0x00, ..] => Format::Tiff,
             _ => return None,
         })
     }
@@ -313,9 +316,34 @@ pub fn release_over(buf: &mut Vec<u8>, bytes: usize) {
     }
 }
 
+/// Test helper: an RGB8 TIFF written by the tiff crate's encoder, classic or BigTIFF (`image` writes only classic).
+#[cfg(test)]
+pub(crate) fn tiff_rgb8(w: u32, h: u32, pixels: &[u8], big: bool) -> Vec<u8> {
+    use tiff::encoder::{TiffEncoder, colortype::RGB8};
+    let mut out = std::io::Cursor::new(Vec::new());
+    if big {
+        TiffEncoder::new_big(&mut out).unwrap().write_image::<RGB8>(w, h, pixels).unwrap();
+    } else {
+        TiffEncoder::new(&mut out).unwrap().write_image::<RGB8>(w, h, pixels).unwrap();
+    }
+    out.into_inner()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sniffs_classic_tiff_and_bigtiff() {
+        assert_eq!(Format::sniff(b"II*\0\x08\0\0\0"), Some(Format::Tiff));
+        assert_eq!(Format::sniff(b"MM\0*\0\0\0\x08"), Some(Format::Tiff));
+        assert_eq!(Format::sniff(b"II+\0\x08\0\0\0\x10\0\0\0\0\0\0\0"), Some(Format::Tiff));
+        assert_eq!(Format::sniff(b"MM\0+\0\x08\0\0\0\0\0\0\0\x10"), Some(Format::Tiff));
+        // A 43 whose offset size isn't 8, or a 43 cut short, isn't a BigTIFF header.
+        assert_eq!(Format::sniff(b"II+\0\x04\0\0\0"), None);
+        assert_eq!(Format::sniff(b"MM\0+\0\x08\0\x01"), None);
+        assert_eq!(Format::sniff(b"II+\0\x08"), None);
+    }
 
     #[test]
     fn transparency_is_flattened_onto_white() {

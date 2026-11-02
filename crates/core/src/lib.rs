@@ -8,6 +8,7 @@ pub mod animation;
 pub mod borders;
 pub mod browse;
 pub mod catalog;
+mod codecs;
 pub mod crop;
 pub mod decode;
 pub mod layout;

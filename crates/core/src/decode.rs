@@ -9,6 +9,8 @@
 use anyhow::{Context, Result};
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
+use crate::codecs::Codecs;
+
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Format {
     Jpeg,
@@ -110,15 +112,22 @@ pub enum MinSize {
     Fit(usize, usize),
 }
 
-/// Per-thread decoder state (libjpeg-turbo handles are reused across images). It keeps no pixels: those go into the
-/// caller's buffers ([`Decoder::decode_into`]), or into new ones ([`Decoder::decode`]).
+/// Per-thread decoder state, reused across images: libjpeg-turbo's handle, and the other formats' decoders' buffers
+/// ([`Codecs`]). The pixels go into the caller's buffers ([`Decoder::decode_into`]), or into new ones
+/// ([`Decoder::decode`]).
 pub struct Decoder {
     jpeg: Decompressor,
+    codecs: Codecs,
 }
 
 impl Decoder {
     pub fn new() -> Result<Decoder> {
-        Ok(Decoder { jpeg: Decompressor::new()? })
+        Ok(Decoder { jpeg: Decompressor::new()?, codecs: Codecs::default() })
+    }
+
+    /// Free what one oversize file grew: buffers over `bytes` (see [`release_over`]).
+    pub fn trim(&mut self, bytes: usize) {
+        self.codecs.trim(bytes);
     }
 
     /// Decode at the smallest DCT scale that still keeps `min` (full size if the image is smaller), into new
@@ -177,11 +186,12 @@ impl Decoder {
             Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
             _ => None,
         };
-        // Non-JPEG, and JPEGs libjpeg-turbo rejects (CMYK, some damaged files): the `image` crate, at full size.
+        // Non-JPEG, and JPEGs libjpeg-turbo rejects (CMYK, some damaged files): at full size, as the `image` crate
+        // decodes them.
         let (scale_denom, (full_width, full_height)) = match jpeg {
             Some(r) => r,
             None => {
-                decode_other(bytes, format, out)?;
+                self.codecs.decode(bytes, format, out)?;
                 (1, (out.width as u32, out.height as u32))
             }
         };
@@ -230,38 +240,6 @@ impl Decoder {
         )?;
         Ok((denom as u8, (header.width as u32, header.height as u32)))
     }
-}
-
-/// Decode with the `image` crate into `out`, whose buffer is replaced by the decoder's own (moved, not copied, when
-/// the image is already 8-bit RGB or RGBA).
-fn decode_other(bytes: &[u8], format: Format, out: &mut Rgb) -> Result<()> {
-    let fmt = match format {
-        Format::Jpeg => image::ImageFormat::Jpeg,
-        Format::Png => image::ImageFormat::Png,
-        Format::Gif => image::ImageFormat::Gif,
-        Format::Webp => image::ImageFormat::WebP,
-        Format::Bmp => image::ImageFormat::Bmp,
-        Format::Tiff => image::ImageFormat::Tiff,
-    };
-    let img = image::load_from_memory_with_format(bytes, fmt)?;
-    let (width, height) = (img.width() as usize, img.height() as usize);
-    out.pixels = if img.color().has_alpha() {
-        // Flatten onto white, like the evaluation, in place: pixel i's RGB is written at 3i, which is below its RGBA
-        // at 4i, so nothing not yet read is overwritten.
-        let mut px = img.into_rgba8().into_raw();
-        for i in 0..width * height {
-            let [r, g, b, a] = [px[4 * i], px[4 * i + 1], px[4 * i + 2], px[4 * i + 3]].map(u32::from);
-            for (c, v) in [r, g, b].into_iter().enumerate() {
-                px[3 * i + c] = ((v * a + 255 * (255 - a) + 127) / 255) as u8;
-            }
-        }
-        px.truncate(width * height * 3);
-        px
-    } else {
-        img.into_rgb8().into_raw()
-    };
-    (out.width, out.height) = (width, height);
-    Ok(())
 }
 
 /// Apply an EXIF orientation, giving the upright image.

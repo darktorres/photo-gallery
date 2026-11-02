@@ -141,6 +141,7 @@ impl Maker {
         for buf in [&mut self.image.pixels, &mut self.spare, &mut self.small.pixels, &mut self.jpeg] {
             release_over(buf, KEEP_BYTES);
         }
+        self.decoder.trim(KEEP_BYTES);
     }
 }
 

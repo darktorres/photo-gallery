@@ -168,6 +168,7 @@ impl Analyzer {
         for buf in [&mut self.image.pixels, &mut self.spare, &mut self.pdq_in.pixels, &mut self.small.pixels] {
             release_over(buf, KEEP_BYTES);
         }
+        self.decoder.trim(KEEP_BYTES);
         self.detector.trim(KEEP_BYTES);
     }
 }

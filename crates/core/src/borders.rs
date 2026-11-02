@@ -603,13 +603,22 @@ fn hist_median2(hist: &[u32], n: usize) -> i32 {
     }
 }
 
+/// The median of `values` (numpy's: the mean of the middle two of an even count), which it reorders. The middle
+/// values are selected rather than sorted (`total_cmp`'s order, as a sort by it gives: values it calls equal are
+/// the same bits), so it takes linear time and allocates nothing.
 fn median_f64(values: &mut [f64]) -> Option<f64> {
-    if values.is_empty() {
+    let n = values.len();
+    if n == 0 {
         return None;
     }
-    values.sort_by(f64::total_cmp);
-    let n = values.len();
-    Some(if n % 2 == 1 { values[n / 2] } else { (values[n / 2 - 1] + values[n / 2]) / 2.0 })
+    let (below, &mut upper, _) = values.select_nth_unstable_by(n / 2, f64::total_cmp);
+    Some(if n % 2 == 1 {
+        upper
+    } else {
+        // The lower middle value is the largest of those before the upper one.
+        let lower = below.iter().copied().max_by(f64::total_cmp).expect("n is even and not 0");
+        (lower + upper) / 2.0
+    })
 }
 
 /// Length of the leading run of `true`, bridging gaps of up to `max_gap` if the run then resumes for `resume`.
@@ -1040,6 +1049,39 @@ mod tests {
         let img = content(400, 300, 8);
         let d = detect(&img, &Params::default());
         assert!(d.sides.is_empty(), "{:?}", d.sides);
+    }
+
+    /// The median as a sort by `total_cmp` gives it, for every length up to 9 and random values, with ties, both
+    /// zeros, infinities and NaNs among them.
+    #[test]
+    fn median_is_the_sorted_one() {
+        fn sorted_median(values: &[f64]) -> Option<f64> {
+            let mut v = values.to_vec();
+            v.sort_by(f64::total_cmp);
+            let n = v.len();
+            (n > 0).then(|| if n % 2 == 1 { v[n / 2] } else { (v[n / 2 - 1] + v[n / 2]) / 2.0 })
+        }
+        let specials = [0.0, -0.0, 1.0, 1.0, f64::INFINITY, f64::NEG_INFINITY, f64::NAN, -f64::NAN, 0.5, 1e-300];
+        let mut seed = 0x9E37_79B9_7F4A_7C15u64;
+        let mut next = || {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            seed
+        };
+        for _ in 0..20_000 {
+            let n = (next() % 10) as usize;
+            let values: Vec<f64> = (0..n)
+                .map(|_| match next() % 3 {
+                    0 => specials[(next() % specials.len() as u64) as usize],
+                    1 => (next() % 7) as f64,
+                    _ => f64::from_bits(next()),
+                })
+                .collect();
+            let want = sorted_median(&values);
+            let got = median_f64(&mut values.clone());
+            assert_eq!(got.map(f64::to_bits), want.map(f64::to_bits), "{values:?}");
+        }
     }
 
     #[test]

@@ -849,6 +849,34 @@ impl Catalog {
             .optional()?)
     }
 
+    /// The present files in a folder and its subfolders (an absolute path in the catalog's case, without a
+    /// trailing backslash).
+    pub fn files_under(&self, folder: &str) -> Result<Vec<i64>> {
+        let mut stmt = self.conn.prepare(concat!(
+            "SELECT id FROM files WHERE missing = 0 AND folder_id IN (",
+            under_root!(),
+            ")"
+        ))?;
+        let ids = stmt.query_map([folder], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(ids)
+    }
+
+    /// Make these files due for the import again (`files.pending`), whatever their analysis: after a fix to what
+    /// the import reads, which comes without a new IMPORT_VERSION before the first release. Their next analysis
+    /// clears it, as any does (`analysis_added`). Missing files are left as they are. Returns how many it marked.
+    pub fn mark_pending(&self, ids: &[i64]) -> Result<usize> {
+        let tx = self.conn.unchecked_transaction()?;
+        let mut marked = 0;
+        {
+            let mut mark = tx.prepare("UPDATE files SET pending = 1 WHERE id = ?1 AND missing = 0")?;
+            for id in ids {
+                marked += mark.execute([id])?;
+            }
+        }
+        tx.commit()?;
+        Ok(marked)
+    }
+
     /// What cropping a file's borders off needs: its borders as found in the file as it was analyzed (`size`,
     /// `mtime`: the caller checks the file is still that one), its path added to `paths`. `None` when it has none to
     /// crop: none found, marked as not a border, or not looked for in the file as it is.
@@ -1893,6 +1921,46 @@ mod tests {
         scanned(&mut c, next, "a.mp4", 13, 103);
         assert_eq!(c.pending_import(false).unwrap().len(), 0);
         assert!(seq < gone && gone < state(&c, id).1);
+    }
+
+    #[test]
+    fn files_marked_are_imported_again_once() {
+        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.conn
+            .execute_batch(
+                "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
+                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x'), (2, 'D:\\x\\y'), (3, 'D:\\xy'), (4, 'D:\\x\\y\\z');",
+            )
+            .unwrap();
+        let files = [(1, 1, "a.jpg"), (2, 2, "b.jpg"), (3, 3, "c.jpg"), (4, 4, "d.jpg"), (5, 4, "e.jpg")];
+        let files = files.map(|(id, folder, name)| fixture::File::new(id, folder, name, 10, 100));
+        fixture::insert(&c.conn, &files);
+        for item in c.pending_import(false).unwrap().items {
+            analyzed(&mut c, &item);
+        }
+        // Analyzed, then gone.
+        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 5", []).unwrap();
+        assert!(c.pending_import(false).unwrap().is_empty());
+
+        // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
+        let mut under = c.files_under(r"D:\x\y").unwrap();
+        under.sort();
+        assert_eq!(under, [2, 4]);
+        assert_eq!(c.files_under(r"D:\x").unwrap().len(), 3);
+        assert!(c.files_under(r"D:\q").unwrap().is_empty());
+
+        // Marked: due, whatever their analysis, the missing one left; the change number doesn't move.
+        let seq = state(&c, 2).1;
+        assert_eq!(c.mark_pending(&[2, 4, 5]).unwrap(), 2);
+        assert_eq!(state(&c, 2), (true, seq));
+        assert!(state(&c, 4).0 && !state(&c, 5).0 && !state(&c, 1).0);
+        let work = c.pending_import(false).unwrap();
+        assert_eq!(work.items.iter().map(|i| i.id).collect::<Vec<_>>(), [2, 4]);
+        // Analyzed again, as they are: done.
+        for item in work.items {
+            analyzed(&mut c, &item);
+        }
+        assert!(c.pending_import(false).unwrap().is_empty());
     }
 
     #[test]

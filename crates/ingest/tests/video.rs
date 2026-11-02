@@ -165,7 +165,7 @@ fn videos() {
     // The library passes: scan, import, thumbnails.
     let mut catalog = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
     let ctl = Control::new(false);
-    let root = scan::normalize_root(&media.to_string_lossy()).unwrap();
+    let root = scan::normalize_path(&media.to_string_lossy()).unwrap();
     catalog.add_root(&root).unwrap();
     scan::scan(&mut catalog, &root, &ctl).unwrap();
     let opts = Options::new(0);

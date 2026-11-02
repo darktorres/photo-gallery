@@ -91,7 +91,7 @@ fn ratings_and_turns_reach_the_files() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::open(&catalog_path).unwrap();
     let ctl = Control::new(false);
-    let root = scan::normalize_root(&dir.join("images").to_string_lossy()).unwrap();
+    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(0);
     import::import(&mut c, &opts, false, &ctl).unwrap();

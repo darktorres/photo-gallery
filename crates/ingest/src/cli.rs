@@ -5,7 +5,7 @@ use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use pg_core::catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
@@ -65,6 +65,10 @@ enum Command {
         /// Also retry files that failed before.
         #[arg(long)]
         retry_errors: bool,
+        /// Analyze these files, and the files under these folders, again, whatever their analysis: after a fix to
+        /// what the import reads, which comes without a new IMPORT_VERSION before the first release.
+        #[arg(long, num_args = 1.., value_name = "PATH")]
+        again: Vec<String>,
     },
     /// Thumbnails at the given grid height for every imported file (the app does this in the background).
     Thumbs {
@@ -161,7 +165,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             } else {
                 let mut normalized = Vec::new();
                 for root in roots {
-                    let root = scan::normalize_root(&root)?;
+                    let root = scan::normalize_path(&root)?;
                     if !catalog.add_root(&root)? {
                         println!("{root} is already in the library");
                     }
@@ -183,11 +187,15 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             }
         }
         Command::Remove { root } => {
-            let root = scan::normalize_root(&root).unwrap_or(root);
+            let root = scan::normalize_path(&root).unwrap_or(root);
             let n = catalog.remove_root(&root)?;
             println!("{root}: removed from the library, {n} files hidden");
         }
-        Command::Import { pipeline, retry_errors } => {
+        Command::Import { pipeline, retry_errors, again } => {
+            if !again.is_empty() {
+                let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
+                println!("{marked} files to analyze again");
+            }
             let opts = pipeline.options(THREAD_PRIORITY_NORMAL);
             let s = import::import(&mut catalog, &opts, retry_errors, &ctl)?;
             println!(
@@ -292,6 +300,27 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
     }
     Ok(())
+}
+
+/// The present files of the catalog at these paths, each a file or a folder (its files and its subfolders'), each
+/// once. Fails, before anything is done, on a path that holds none.
+fn files_named(catalog: &Catalog, paths: &[String]) -> Result<Vec<i64>> {
+    let mut ids = Vec::new();
+    for path in paths {
+        let real = scan::normalize_path(path)?;
+        let before = ids.len();
+        if Path::new(&real).is_dir() {
+            ids.extend(catalog.files_under(&real)?);
+        } else {
+            ids.extend(catalog.file_by_path(&real)?);
+        }
+        if ids.len() == before {
+            bail!("{path}: no file of the library there");
+        }
+    }
+    ids.sort_unstable();
+    ids.dedup();
+    Ok(ids)
 }
 
 /// `gallery borders --stdin`, or `gallery borders --csv <out> <paths>`.

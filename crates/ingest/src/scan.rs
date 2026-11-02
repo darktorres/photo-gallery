@@ -153,8 +153,9 @@ fn decode_name(name: &[u16], out: &mut String) {
     out.extend(decoded().map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER)));
 }
 
-/// An absolute folder path without a trailing backslash (a drive root is `D:`).
-pub fn normalize_root(root: &str) -> Result<String> {
+/// The absolute path of a folder or file as the catalog has it: in its real case, without a trailing backslash (a
+/// drive root is `D:`).
+pub fn normalize_path(root: &str) -> Result<String> {
     // canonicalize gives the real case (a folder typed in lower case still matches the catalog's paths).
     let real = std::fs::canonicalize(root).with_context(|| format!("can't open {root}"))?;
     let s = real.to_string_lossy();
@@ -177,7 +178,7 @@ pub struct ScanStats {
     pub complete: bool,
 }
 
-/// Record the media files under `root` (from `normalize_root`); files it no longer holds are marked missing.
+/// Record the media files under `root` (a folder, from `normalize_path`); files it no longer holds are marked missing.
 pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStats> {
     let mut lister = Lister { wide: Vec::new(), buf: vec![0; 8192], entries: Vec::new() };
     // Opened once, for its volume and its listing.

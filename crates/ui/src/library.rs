@@ -83,7 +83,7 @@ use std::sync::OnceLock;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use pg_ingest::runner::{Generation, Runner};
-use pg_ingest::scan::normalize_root;
+use pg_ingest::scan::normalize_path;
 use pg_ingest::writeback::Writer;
 
 use crate::state;
@@ -167,7 +167,7 @@ impl qobject::Library {
 
     fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
         let path = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
-        let root = match normalize_root(&path) {
+        let root = match normalize_path(&path) {
             Ok(r) => r,
             Err(e) => return self.show(format!("{e:#}"), true),
         };

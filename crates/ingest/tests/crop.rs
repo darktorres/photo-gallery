@@ -83,7 +83,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let files = make_files(&dir);
     let mut c = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
     let ctl = Control::new(false);
-    let root = scan::normalize_root(&dir.join("images").to_string_lossy()).unwrap();
+    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     c.add_root(&root).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(0);

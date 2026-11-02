@@ -8,8 +8,9 @@ use std::io::Cursor;
 use anyhow::{Context, Result, bail};
 use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
+use crate::container;
+use crate::container::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
 use crate::decode::transform;
-use crate::metadata::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
 use crate::orientation;
 
 /// What happens to the stored pixels.
@@ -102,7 +103,7 @@ pub(crate) fn jpeg(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     }
     // Keep the entropy coding kind: progressive stays progressive; baseline gets optimized Huffman tables (the
     // transform can't reuse the original ones).
-    let progressive = jpeg_is_progressive(bytes);
+    let progressive = container::jpeg_is_progressive(bytes);
     t.progressive = progressive;
     t.optimize = !progressive;
     Ok(Transformer::new()?.transform_to_vec(&t, bytes)?)
@@ -112,22 +113,6 @@ pub(crate) fn jpeg(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
 pub(crate) fn jpeg_mcu(bytes: &[u8]) -> Result<(usize, usize)> {
     let header = turbojpeg::read_header(bytes)?;
     Ok((header.subsamp.mcu_width(), header.subsamp.mcu_height()))
-}
-
-fn jpeg_is_progressive(bytes: &[u8]) -> bool {
-    // SOF2 (progressive Huffman) among the markers before the scan.
-    let mut i = 2;
-    while i + 4 <= bytes.len() && bytes[i] == 0xFF {
-        let marker = bytes[i + 1];
-        if marker == 0xC2 {
-            return true;
-        }
-        if marker == 0xDA {
-            return false;
-        }
-        i += 2 + u16::from_be_bytes([bytes[i + 2], bytes[i + 3]]) as usize;
-    }
-    false
 }
 
 // --- Packed rasters ---------------------------------------------------------------------------------------------

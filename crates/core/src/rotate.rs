@@ -17,8 +17,9 @@
 
 use anyhow::Result;
 
+use crate::container::{png_chunks, webp_chunks};
 use crate::format::Format;
-use crate::metadata::{self, png_chunks, webp_chunks};
+use crate::metadata;
 use crate::orientation;
 use crate::rewrite::{self, Op};
 

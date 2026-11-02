@@ -13,8 +13,8 @@ use std::io::Cursor;
 
 use anyhow::{Context, Result, bail, ensure};
 
+use crate::container::{png_chunks, webp_chunks};
 use crate::format::Format;
-use crate::metadata::{png_chunks, webp_chunks};
 use crate::rewrite::{self, Op};
 
 pub struct Cropped {

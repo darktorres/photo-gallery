@@ -101,9 +101,23 @@ or deleted. Finding it needs a full-set run.
     128 MB 267, 240 MB 277, 256 MB 278, 512 MB 277. The knee is where it was, so the default stays at 240 MB. The same
     build without a pool read 278 MB/s here and 255 MB/s in the first session, so only rounds of one session
     compare.
-  - The pool still makes a buffer for nearly every file: only bytes bound the files in flight, so readers read
-    ahead until the budget is full (HEAP_PROFILE.md "The read pool still makes a buffer per file"). A bound by
-    count would change the read-ahead, and these numbers would have to be measured again.
+  - That pool still made a buffer for nearly every file: only bytes bound the files in flight, so readers read
+    ahead until the budget was full (HEAP_PROFILE.md "The read pool still makes a buffer per file").
+  - **Again with the files in flight bounded by count too** (`Options::slots`; the pool then holds at most that
+    many buffers, reused and grown in place, and the readers' channel has that many places), 2026-11-02. The
+    first 400 of the same files (2.6 GB), the same method, three rounds of slots × budget, medians in MB/s:
+
+    | Slots \ budget | 128 MB | 240 MB | 512 MB |
+    |---|---:|---:|---:|
+    | 20 (readers + workers) | 249 | 271 | 272 |
+    | 32 (readers + 2 × workers, the default) | 261 | 273 | 273 |
+    | 56 (readers + 4 × workers) | 265 | 274 | 273 |
+    | no bound by count | 261 | 273 | 273 |
+
+    The runs of a configuration were within 0.4 s of each other (9.6–10.1 s, but for 20 at 128 MB). The bound by
+    count costs nothing from 32 slots on, and 240 MB is still the knee, so both defaults are those. A first try
+    on the 1,000 files was dropped: its third round ran 30% slower in every configuration, from some other load
+    on the machine.
 - **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and FFmpeg and the
   scanner's `CreateFileW` are handed the verbatim form (`pg_core::paths`, `\\?\UNC\` for a share). ExifTool
   gets the plain path, as `\\?\` isn't a path it reads, and its own long-name support (the `WindowsLongPath`

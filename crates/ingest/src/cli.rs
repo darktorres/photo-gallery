@@ -38,6 +38,10 @@ struct PipelineArgs {
     /// Megabytes of file buffers the pass holds at most (default: 12 per reader and per worker).
     #[arg(long)]
     buffer_mb: Option<usize>,
+    /// Files in flight at most: being read, waiting, or being processed (default: one per reader and two per
+    /// worker).
+    #[arg(long)]
+    slots: Option<usize>,
 }
 
 impl PipelineArgs {
@@ -47,6 +51,7 @@ impl PipelineArgs {
         opts.workers = self.workers.unwrap_or(opts.workers).max(1);
         let budget = pipeline::Options::budget(opts.readers, opts.workers);
         opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1) << 20);
+        opts.slots = self.slots.unwrap_or(pipeline::Options::slots(opts.readers, opts.workers)).max(1);
         opts
     }
 }

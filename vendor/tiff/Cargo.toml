@@ -143,3 +143,11 @@ version = "1.5"
 
 [dev-dependencies.criterion]
 version = "0.3.1"
+
+# photo-gallery: zune-jpeg's `Scratch` is the vendored copy's, which the root Cargo.toml patches in.
+# These apply when this crate's own tests run from its directory; a dependency's patches are ignored.
+[patch.crates-io.zune-jpeg]
+path = "../zune-jpeg"
+
+[patch.crates-io.zune-core]
+path = "../zune-core"

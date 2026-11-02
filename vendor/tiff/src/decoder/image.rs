@@ -1,5 +1,5 @@
 use super::ifd::Value;
-use super::stream::PackBitsReader;
+use super::stream::{PackBitsReader, ReaderScratch};
 use super::tag_reader::TagReader;
 use super::ChunkType;
 use super::{predict_f16, predict_f32, predict_f64, ValueReader};
@@ -162,6 +162,91 @@ pub(crate) struct ReadoutLayout {
     pub chunks_across: u32,
     /// Chunks to advance to get to the next plane of chunks.
     pub chunks_per_plane: u32,
+}
+
+/// photo-gallery: what `Image::expand_chunk` keeps from one chunk to the next, and through
+/// [`super::Scratch`] from one image to the next: the readers' state, and the row a chunk is read into
+/// before its extra samples are dropped or it is predicted (upstream: a new `Vec` for each chunk), and
+/// the floating point predictor's copy of a row (upstream: a new `Vec` for each row).
+#[derive(Default)]
+pub(crate) struct ChunkScratch {
+    pub(crate) readers: ReaderScratch,
+    pub(crate) row: Vec<u8>,
+    pub(crate) predict: Vec<u8>,
+}
+
+// photo-gallery: the decoders it holds don't implement `Debug`; its buffers are not worth listing.
+impl std::fmt::Debug for ChunkScratch {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ChunkScratch").finish_non_exhaustive()
+    }
+}
+
+impl ChunkScratch {
+    pub(crate) fn trim(&mut self, bytes: usize) {
+        self.readers.trim(bytes);
+        super::stream::trim(&mut self.row, bytes);
+        super::stream::trim(&mut self.predict, bytes);
+    }
+}
+
+/// photo-gallery: a chunk's reader, one of upstream's (upstream: a `Box<dyn Read>`). The features
+/// the app doesn't build (zstd and WebP) keep upstream's box. Every method of `Read` that the readers
+/// themselves implement is passed to them, as the box passed them.
+pub(crate) enum ChunkReader<'r, R: Read> {
+    None(R),
+    #[cfg(feature = "lzw")]
+    Lzw(super::stream::LZWReader<'r, R>),
+    PackBits(PackBitsReader<R>),
+    #[cfg(feature = "deflate")]
+    Deflate(super::stream::DeflateReader<'r, R>),
+    #[cfg(feature = "jpeg")]
+    Jpeg(Cursor<&'r [u8]>),
+    #[cfg(feature = "fax")]
+    Fax4(super::stream::Group4Reader<'r, R>),
+    #[cfg(any(feature = "zstd", feature = "webp"))]
+    Boxed(Box<dyn Read + 'r>),
+}
+
+macro_rules! each_reader {
+    ($self:ident, $r:ident => $e:expr) => {
+        match $self {
+            ChunkReader::None($r) => $e,
+            #[cfg(feature = "lzw")]
+            ChunkReader::Lzw($r) => $e,
+            ChunkReader::PackBits($r) => $e,
+            #[cfg(feature = "deflate")]
+            ChunkReader::Deflate($r) => $e,
+            #[cfg(feature = "jpeg")]
+            ChunkReader::Jpeg($r) => $e,
+            #[cfg(feature = "fax")]
+            ChunkReader::Fax4($r) => $e,
+            #[cfg(any(feature = "zstd", feature = "webp"))]
+            ChunkReader::Boxed($r) => $e,
+        }
+    };
+}
+
+impl<R: Read> Read for ChunkReader<'_, R> {
+    fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+        each_reader!(self, r => r.read(buf))
+    }
+
+    fn read_vectored(&mut self, bufs: &mut [io::IoSliceMut<'_>]) -> io::Result<usize> {
+        each_reader!(self, r => r.read_vectored(bufs))
+    }
+
+    fn read_to_end(&mut self, buf: &mut Vec<u8>) -> io::Result<usize> {
+        each_reader!(self, r => r.read_to_end(buf))
+    }
+
+    fn read_to_string(&mut self, buf: &mut String) -> io::Result<usize> {
+        each_reader!(self, r => r.read_to_string(buf))
+    }
+
+    fn read_exact(&mut self, buf: &mut [u8]) -> io::Result<()> {
+        each_reader!(self, r => r.read_exact(buf))
+    }
 }
 
 impl Image {
@@ -551,6 +636,8 @@ impl Image {
         }
     }
 
+    // photo-gallery: the readers in `scratch`, and returned as a `ChunkReader` (upstream: new ones,
+    // boxed).
     fn create_reader<'r, R: 'r + Read + Seek>(
         reader: R,
         compression_method: CompressionMethod,
@@ -559,20 +646,28 @@ impl Image {
         #[cfg_attr(not(feature = "jpeg"), allow(unused_variables))] jpeg_tables: Option<&[u8]>,
         #[cfg_attr(not(feature = "fax"), allow(unused_variables))] dimensions: (u32, u32),
         #[cfg_attr(not(feature = "webp"), allow(unused_variables))] samples: u16,
-    ) -> TiffResult<Box<dyn Read + 'r>> {
+        #[cfg_attr(
+            not(any(feature = "lzw", feature = "deflate", feature = "jpeg", feature = "fax")),
+            allow(unused_variables)
+        )]
+        scratch: &'r mut ReaderScratch,
+    ) -> TiffResult<ChunkReader<'r, R>> {
         Ok(match compression_method {
-            CompressionMethod::None => Box::new(reader),
+            CompressionMethod::None => ChunkReader::None(reader),
             #[cfg(feature = "lzw")]
-            CompressionMethod::LZW => Box::new(super::stream::LZWReader::new(
+            CompressionMethod::LZW => ChunkReader::Lzw(super::stream::LZWReader::new(
                 reader,
                 usize::try_from(compressed_length)?,
+                scratch,
             )),
             #[cfg(feature = "zstd")]
-            CompressionMethod::ZSTD => Box::new(zstd::Decoder::new(reader)?),
-            CompressionMethod::PackBits => Box::new(PackBitsReader::new(reader, compressed_length)),
+            CompressionMethod::ZSTD => ChunkReader::Boxed(Box::new(zstd::Decoder::new(reader)?)),
+            CompressionMethod::PackBits => {
+                ChunkReader::PackBits(PackBitsReader::new(reader, compressed_length))
+            }
             #[cfg(feature = "deflate")]
             CompressionMethod::Deflate | CompressionMethod::OldDeflate => {
-                Box::new(super::stream::DeflateReader::new(reader))
+                ChunkReader::Deflate(super::stream::DeflateReader::new(reader, scratch))
             }
             #[cfg(feature = "jpeg")]
             CompressionMethod::ModernJPEG => {
@@ -584,8 +679,6 @@ impl Image {
                     ));
                 }
 
-                // Construct new jpeg_reader wrapping a SmartReader.
-                //
                 // JPEG compression in TIFF allows saving quantization and/or huffman tables in one
                 // central location. These `jpeg_tables` are simply prepended to the remaining jpeg image data.
                 // Because these `jpeg_tables` start with a `SOI` (HEX: `0xFFD8`) or __start of image__ marker
@@ -594,52 +687,70 @@ impl Image {
                 // bytes of the remaining JPEG data is removed because it follows `jpeg_tables`.
                 // Similary, `jpeg_tables` ends with a `EOI` (HEX: `0xFFD9`) or __end of image__ marker,
                 // this has to be removed as well (last two bytes of `jpeg_tables`).
-                let mut jpeg_reader = match jpeg_tables {
+                //
+                // photo-gallery: the tables, then the chunk, read into the kept `jpeg_data` (upstream:
+                // a new `Vec`, through a boxed chain of the two).
+                let jpeg_data = &mut scratch.jpeg_data;
+                jpeg_data.clear();
+                match jpeg_tables {
                     Some(jpeg_tables) => {
                         let mut reader = reader.take(compressed_length);
                         reader.read_exact(&mut [0; 2])?;
 
-                        Box::new(
-                            Cursor::new(&jpeg_tables[..jpeg_tables.len() - 2])
-                                .chain(reader.take(compressed_length)),
-                        ) as Box<dyn Read>
+                        jpeg_data.extend_from_slice(&jpeg_tables[..jpeg_tables.len() - 2]);
+                        reader.take(compressed_length).read_to_end(jpeg_data)?;
                     }
-                    None => Box::new(reader.take(compressed_length)),
+                    None => {
+                        reader.take(compressed_length).read_to_end(jpeg_data)?;
+                    }
                 };
 
-                let mut jpeg_data = Vec::new();
-                jpeg_reader.read_to_end(&mut jpeg_data)?;
+                // photo-gallery: decoded in the kept zune-jpeg `Scratch` into the kept `jpeg_samples`,
+                // the metadata segments checked but not copied (upstream: a new decoder, keeping them, and
+                // `decode`, which makes the samples' `Vec`). `decode` is `decode_headers`, a buffer of
+                // `output_buffer_size` zeros and `decode_into`.
+                let mut decoder = zune_jpeg::JpegDecoder::new_with_scratch(
+                    zune_core::bytestream::ZCursor::new(&jpeg_data[..]),
+                    Default::default(),
+                    core::mem::take(&mut scratch.jpeg),
+                );
+                decoder.set_skip_metadata(true);
+                let samples = &mut scratch.jpeg_samples;
+                let decoded = (|| {
+                    let mut options: zune_core::options::DecoderOptions = Default::default();
 
-                let mut decoder =
-                    zune_jpeg::JpegDecoder::new(zune_core::bytestream::ZCursor::new(jpeg_data));
-                let mut options: zune_core::options::DecoderOptions = Default::default();
+                    // Disable color conversion by setting the output colorspace to the input
+                    // colorspace.
+                    decoder.decode_headers()?;
+                    if let Some(colorspace) = decoder.input_colorspace() {
+                        options = options.jpeg_set_out_colorspace(colorspace);
+                    }
 
-                // Disable color conversion by setting the output colorspace to the input
-                // colorspace.
-                decoder.decode_headers()?;
-                if let Some(colorspace) = decoder.input_colorspace() {
-                    options = options.jpeg_set_out_colorspace(colorspace);
-                }
+                    decoder.set_options(options);
 
-                decoder.set_options(options);
+                    decoder.decode_headers()?;
+                    samples.clear();
+                    samples.resize(decoder.output_buffer_size().unwrap(), 0);
+                    decoder.decode_into(samples)
+                })();
+                scratch.jpeg = decoder.into_scratch();
+                decoded?;
 
-                let data = decoder.decode()?;
-
-                Box::new(Cursor::new(data))
+                ChunkReader::Jpeg(Cursor::new(&scratch.jpeg_samples[..]))
             }
             #[cfg(feature = "fax")]
-            CompressionMethod::Fax4 => Box::new(super::stream::Group4Reader::new(
+            CompressionMethod::Fax4 => ChunkReader::Fax4(super::stream::Group4Reader::new(
                 dimensions,
                 reader,
                 compressed_length,
+                scratch,
             )?),
             #[cfg(feature = "webp")]
-            CompressionMethod::WebP => Box::new(super::stream::WebPReader::new(
+            CompressionMethod::WebP => ChunkReader::Boxed(Box::new(super::stream::WebPReader::new(
                 reader,
                 compressed_length,
                 samples,
-            )?),
-
+            )?)),
             method => {
                 return Err(TiffError::UnsupportedError(
                     TiffUnsupportedError::UnsupportedCompressionMethod(method),
@@ -836,13 +947,20 @@ impl Image {
         }
     }
 
+    // photo-gallery: `scratch` added.
     pub(crate) fn expand_chunk(
         &self,
         reader: &mut ValueReader<impl Read + Seek>,
         buf: &mut [u8],
         layout: &ReadoutLayout,
         chunk_index: u32,
+        scratch: &mut ChunkScratch,
     ) -> TiffResult<()> {
+        let ChunkScratch {
+            readers,
+            row: encoded_row,
+            predict,
+        } = scratch;
         let ValueReader {
             reader,
             bigtiff: _,
@@ -953,6 +1071,7 @@ impl Image {
             self.jpeg_tables.as_deref().map(|a| &**a),
             chunk_dims,
             self.samples,
+            readers,
         )?;
 
         if is_output_chunk_rows && is_all_bits {
@@ -967,6 +1086,7 @@ impl Image {
                     samples,
                     byte_order,
                     predictor,
+                    predict,
                 );
             }
 
@@ -976,15 +1096,18 @@ impl Image {
         } else if chunk_row_bytes > data_row_bytes && self.predictor == Predictor::FloatingPoint {
             // The floating point predictor shuffles the padding bytes into the encoded output, so
             // this case is handled specially when needed.
-            let mut encoded = vec![0u8; chunk_row_bytes];
+            // photo-gallery: kept (upstream: a new `Vec`).
+            encoded_row.clear();
+            encoded_row.resize(chunk_row_bytes, 0);
+            let encoded = &mut encoded_row[..];
             for row in buf.chunks_mut(layout.row_stride).take(data_dims.1 as usize) {
-                reader.read_exact(&mut encoded)?;
+                reader.read_exact(encoded)?;
 
                 let row = &mut row[..data_row_bytes];
                 match color_type.bit_depth() {
-                    16 => predict_f16(&mut encoded, row, samples),
-                    32 => predict_f32(&mut encoded, row, samples),
-                    64 => predict_f64(&mut encoded, row, samples),
+                    16 => predict_f16(encoded, row, samples),
+                    32 => predict_f32(encoded, row, samples),
+                    64 => predict_f64(encoded, row, samples),
                     _ => unreachable!(),
                 }
                 if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
@@ -1013,6 +1136,7 @@ impl Image {
                     samples,
                     byte_order,
                     predictor,
+                    predict,
                 );
 
                 if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
@@ -1042,11 +1166,14 @@ impl Image {
             }
 
             let photo_range = photometric_bit_end / 8..bits_per_pixel / 8;
-            let mut encoded = vec![0u8; chunk_row_bytes];
+            // photo-gallery: kept (upstream: a new `Vec`).
+            encoded_row.clear();
+            encoded_row.resize(chunk_row_bytes, 0);
+            let encoded = &mut encoded_row[..];
             for row in buf.chunks_mut(layout.row_stride).take(data_dims.1 as usize) {
-                reader.read_exact(&mut encoded)?;
+                reader.read_exact(encoded)?;
 
-                Self::compact_photometric_bytes(&mut encoded, row, &photo_range);
+                Self::compact_photometric_bytes(encoded, row, &photo_range);
 
                 super::fix_endianness_and_predict(
                     row,
@@ -1054,6 +1181,7 @@ impl Image {
                     samples,
                     byte_order,
                     predictor,
+                    predict,
                 );
 
                 if photometric_interpretation == PhotometricInterpretation::WhiteIsZero {
@@ -1397,5 +1525,93 @@ mod photo_gallery {
             }
         }
         assert_eq!(files, 72);
+    }
+
+    /// Decoders in one kept `Scratch` read as new ones. The fixtures (`tests/photo_gallery`, made by
+    /// ImageMagick) are 37×23 images of every compression the crate decodes (none, LZW, Deflate,
+    /// PackBits, JPEG with tables, Group 4) in strips of one row and of eight, tiles, planes and
+    /// BigTIFF; gray, RGB, RGBA, CMYK, palette and 16-bit and float samples, with the horizontal and
+    /// floating point predictors; and damaged copies, their image data half zeroed or with bits
+    /// changed. Forwards then backwards, the scratch kept whole, trimmed to nothing and trimmed to 600
+    /// bytes after each file, every file gives exactly what a new decoder gives: the dimensions, the
+    /// colour type and the samples, or the error.
+    #[test]
+    fn kept_scratch_reads_as_new_decoders() {
+        use crate::decoder::{Decoder, Scratch};
+        use std::io::Cursor;
+
+        fn read(decoder: &mut Decoder<Cursor<&[u8]>>) -> String {
+            let result = (|| {
+                let dimensions = decoder.dimensions()?;
+                let color = decoder.colortype()?;
+                Ok::<_, TiffError>((dimensions, color, decoder.read_image()?))
+            })();
+            format!("{result:?}")
+        }
+
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/photo_gallery");
+        let mut files: Vec<(String, Vec<u8>)> = std::fs::read_dir(&dir)
+            .unwrap()
+            .map(|e| {
+                let path = e.unwrap().path();
+                let name = path.file_name().unwrap().to_string_lossy().into_owned();
+                (name, std::fs::read(&path).unwrap())
+            })
+            .collect();
+        files.sort();
+        assert_eq!(files.len(), 50);
+
+        let reference: Vec<String> = files
+            .iter()
+            .map(|(_, bytes)| match Decoder::new(Cursor::new(&bytes[..])) {
+                Ok(mut decoder) => read(&mut decoder),
+                Err(e) => format!("{e:?}"),
+            })
+            .collect();
+        // The fixtures decode, but for 8 of the 12 damaged ones and a palette, which the crate
+        // doesn't expand.
+        let failed: Vec<&str> = files
+            .iter()
+            .zip(&reference)
+            .filter(|(_, r)| !r.starts_with("Ok("))
+            .map(|((name, _), _)| name.as_str())
+            .collect();
+        assert_eq!(
+            failed,
+            [
+                "bilevel_Group4_rows8_flipped.tif",
+                "bilevel_Group4_rows8_zeroed.tif",
+                "float_Zip_predictor3_rows8_flipped.tif",
+                "float_Zip_predictor3_rows8_zeroed.tif",
+                "palette_RLE_rows8.tif",
+                "rgb8_JPEG_rows8_zeroed.tif",
+                "rgb8_LZW_rows8_zeroed.tif",
+                "rgb8_Zip_tiles_flipped.tif",
+                "rgb8_Zip_tiles_zeroed.tif",
+            ]
+        );
+
+        for trim in [None, Some(0), Some(600)] {
+            let mut scratch = Scratch::default();
+            let order = (0..files.len()).chain((0..files.len()).rev());
+            for i in order {
+                let (name, bytes) = &files[i];
+                let got = match Decoder::new_with_scratch(Cursor::new(&bytes[..]), scratch) {
+                    Ok(mut decoder) => {
+                        let got = read(&mut decoder);
+                        scratch = decoder.into_scratch();
+                        got
+                    }
+                    Err((e, back)) => {
+                        scratch = back;
+                        format!("{e:?}")
+                    }
+                };
+                assert_eq!(got, reference[i], "{name}, trim {trim:?}");
+                if let Some(bytes) = trim {
+                    scratch.trim(bytes);
+                }
+            }
+        }
     }
 }

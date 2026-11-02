@@ -35,6 +35,8 @@ pub(crate) struct Codecs {
     gif: gif::Scratch,
     /// The JPEG fallback's buffers (vendored zune-jpeg's `Scratch`).
     jpeg: zune_jpeg::Scratch,
+    /// The TIFF decoder's decompressors and buffers (vendored tiff's `Scratch`).
+    tiff: tiff::decoder::Scratch,
 }
 
 impl Codecs {
@@ -57,6 +59,7 @@ impl Codecs {
         self.webp.trim(bytes);
         self.gif.trim(bytes);
         self.jpeg.trim(bytes);
+        self.tiff.trim(bytes);
     }
 
     /// Any of `image`'s decoders, the way `ImageReader::decode` and `decoder_to_image` use it (BMP's: `image` is
@@ -258,10 +261,26 @@ impl Codecs {
     /// decoder's own buffers, and its conversions (CMYK to RGB, 1-bit gray to 8, planes interleaved), here done as
     /// the samples are converted into `out` rather than into a second full-size buffer first.
     fn tiff(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
+        let decoder = match tiff::decoder::Decoder::new_with_scratch(Cursor::new(bytes), std::mem::take(&mut self.tiff))
+        {
+            Ok(decoder) => decoder,
+            Err((e, scratch)) => {
+                self.tiff = scratch;
+                return Err(tiff_error(e));
+            }
+        };
+        let mut slot = Some(decoder);
+        let decoded = self.tiff_from(&mut slot, out);
+        self.tiff = slot.expect("the decoder is back in its slot").into_scratch();
+        decoded
+    }
+
+    /// [`Codecs::tiff`] from the decoder in `slot`, which `with_limits` takes out and puts back.
+    fn tiff_from(&mut self, slot: &mut Option<TiffDecoder<'_>>, out: &mut Rgb) -> ImageResult<()> {
         use tiff::ColorType as Tiff;
         use tiff::decoder::DecodingSampleType as Sample;
 
-        let mut decoder = tiff::decoder::Decoder::new(Cursor::new(bytes)).map_err(tiff_error)?;
+        let decoder = slot.as_mut().expect("the decoder is in its slot");
         let (w, h) = decoder.dimensions().map_err(tiff_error)?;
         let tiff_color = decoder.colortype().map_err(tiff_error)?;
         match decoder.find_tag_unsigned_vec::<u16>(tiff::tags::Tag::SampleFormat) {
@@ -310,7 +329,8 @@ impl Codecs {
         tiff_limits.intermediate_buffer_size = usize::try_from(intermediate).unwrap_or(usize::MAX);
         tiff_limits.ifd_value_size = tiff_limits.intermediate_buffer_size;
         let decoding_size = tiff_limits.decoding_buffer_size;
-        let mut decoder = decoder.with_limits(tiff_limits);
+        let limited = slot.take().expect("the decoder is in its slot").with_limits(tiff_limits);
+        let decoder = slot.insert(limited);
 
         // `Decoder::read_image_to_buffer`: all planes if they fit the decoding limit, else the first (and `image`
         // then fails); the buffer in whole samples, within the limit.
@@ -677,6 +697,9 @@ fn webp_error(err: image_webp::DecodingError) -> ImageError {
         _ => ImageError::Decoding(DecodingError::new(ImageFormat::WebP.into(), err)),
     }
 }
+
+/// The TIFF decoder over a file in memory.
+type TiffDecoder<'a> = tiff::decoder::Decoder<Cursor<&'a [u8]>>;
 
 /// `ImageError::from_jpeg` (zune-jpeg).
 fn jpeg_error(err: zune_jpeg::errors::DecodeErrors) -> ImageError {

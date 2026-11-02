@@ -1,7 +1,9 @@
 //! All IO functionality needed for TIFF decoding
 #[cfg(feature = "webp")]
 use std::io::Cursor;
-use std::io::{self, BufRead, BufReader, Read, Seek, Take};
+#[cfg(feature = "webp")]
+use std::io::BufReader;
+use std::io::{self, BufRead, Read, Seek, Take};
 
 pub use crate::tags::ByteOrder;
 
@@ -122,40 +124,223 @@ impl<R: Read> EndianReader<R> {
 // # READERS
 //
 
-/// Type alias for the deflate Reader
+/// photo-gallery: what the chunk readers keep from one chunk to the next, and through
+/// [`super::Scratch`] from one image to the next: the decompressors, reset for each chunk, and the
+/// buffers the chunks are read through. Upstream made all of them anew for each chunk.
+#[derive(Default)]
+pub(crate) struct ReaderScratch {
+    /// The buffer of the LZW, Deflate and Group 4 readers' input (upstream: a `BufReader` each).
+    pub(crate) input: Vec<u8>,
+    #[cfg(feature = "lzw")]
+    pub(crate) lzw: Option<weezl::decode::Decoder>,
+    #[cfg(feature = "deflate")]
+    pub(crate) deflate: Option<flate2::Decompress>,
+    /// A Group 4 reader's line.
+    #[cfg(feature = "fax")]
+    pub(crate) line: Vec<u8>,
+    /// A JPEG chunk's data, with the tables before it.
+    #[cfg(feature = "jpeg")]
+    pub(crate) jpeg_data: Vec<u8>,
+    /// A JPEG chunk's samples.
+    #[cfg(feature = "jpeg")]
+    pub(crate) jpeg_samples: Vec<u8>,
+    #[cfg(feature = "jpeg")]
+    pub(crate) jpeg: zune_jpeg::Scratch,
+}
+
+impl ReaderScratch {
+    pub(crate) fn trim(&mut self, bytes: usize) {
+        trim(&mut self.input, bytes);
+        #[cfg(feature = "fax")]
+        trim(&mut self.line, bytes);
+        #[cfg(feature = "jpeg")]
+        {
+            trim(&mut self.jpeg_data, bytes);
+            trim(&mut self.jpeg_samples, bytes);
+            self.jpeg.trim(bytes);
+        }
+    }
+}
+
+/// photo-gallery: frees `v` if it holds more than `bytes`.
+pub(crate) fn trim(v: &mut Vec<u8>, bytes: usize) {
+    if v.capacity() > bytes {
+        *v = Vec::new();
+    }
+}
+
+/// photo-gallery: `BufReader::with_capacity(capacity, inner)` in a kept buffer: it reads as std's does (a read at
+/// least as large as the buffer, when the buffer is empty, goes past it; otherwise the buffer is filled with one
+/// read of the inner reader when it is empty).
+pub(crate) struct KeptBufReader<'s, R> {
+    inner: R,
+    buf: &'s mut Vec<u8>,
+    pos: usize,
+    filled: usize,
+}
+
+impl<'s, R: Read> KeptBufReader<'s, R> {
+    pub(crate) fn new(inner: R, buf: &'s mut Vec<u8>, capacity: usize) -> Self {
+        buf.clear();
+        buf.resize(capacity, 0);
+        KeptBufReader {
+            inner,
+            buf,
+            pos: 0,
+            filled: 0,
+        }
+    }
+}
+
+impl<R: Read> Read for KeptBufReader<'_, R> {
+    fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+        if self.pos == self.filled && out.len() >= self.buf.len() {
+            self.pos = 0;
+            self.filled = 0;
+            return self.inner.read(out);
+        }
+        let mut rem = self.fill_buf()?;
+        let n = rem.read(out)?;
+        self.consume(n);
+        Ok(n)
+    }
+}
+
+impl<R: Read> BufRead for KeptBufReader<'_, R> {
+    fn fill_buf(&mut self) -> io::Result<&[u8]> {
+        if self.pos >= self.filled {
+            self.pos = 0;
+            self.filled = 0;
+            self.filled = self.inner.read(&mut self.buf[..])?;
+        }
+        Ok(&self.buf[self.pos..self.filled])
+    }
+
+    fn consume(&mut self, amt: usize) {
+        self.pos = (self.pos + amt).min(self.filled);
+    }
+}
+
+//
+// ## Deflate Reader
+//
+
+/// Reader that decompresses zlib streams.
+///
+/// photo-gallery: `flate2::read::ZlibDecoder` (upstream's reader, a type alias of it) over a kept
+/// [`flate2::Decompress`], reset for each chunk (a full reset, which is what `Decompress::new`
+/// makes), and a kept 32 KiB input buffer, its size there. `read` is flate2 1.1.10's.
 #[cfg(feature = "deflate")]
-pub type DeflateReader<R> = flate2::read::ZlibDecoder<R>;
+pub struct DeflateReader<'s, R: Read> {
+    reader: KeptBufReader<'s, R>,
+    decompress: &'s mut flate2::Decompress,
+}
+
+#[cfg(feature = "deflate")]
+impl<'s, R: Read> DeflateReader<'s, R> {
+    pub(crate) fn new(reader: R, scratch: &'s mut ReaderScratch) -> Self {
+        let decompress = match &mut scratch.deflate {
+            Some(d) => {
+                d.reset(true);
+                d
+            }
+            none => none.insert(flate2::Decompress::new(true)),
+        };
+        DeflateReader {
+            reader: KeptBufReader::new(reader, &mut scratch.input, 32 * 1024),
+            decompress,
+        }
+    }
+}
+
+#[cfg(feature = "deflate")]
+impl<R: Read> Read for DeflateReader<'_, R> {
+    fn read(&mut self, dst: &mut [u8]) -> io::Result<usize> {
+        use flate2::{FlushDecompress, Status};
+        loop {
+            let (read, consumed, ret, eof);
+            {
+                let input = self.reader.fill_buf()?;
+                eof = input.is_empty();
+                let before_out = self.decompress.total_out();
+                let before_in = self.decompress.total_in();
+                let flush = if eof {
+                    FlushDecompress::Finish
+                } else {
+                    FlushDecompress::None
+                };
+                ret = self.decompress.decompress(input, dst, flush);
+                read = (self.decompress.total_out() - before_out) as usize;
+                consumed = (self.decompress.total_in() - before_in) as usize;
+            }
+            self.reader.consume(consumed);
+
+            match ret {
+                Ok(Status::Ok | Status::BufError) if read == 0 && !eof && !dst.is_empty() => continue,
+                Ok(Status::Ok | Status::BufError) if read == 0 && eof && !dst.is_empty() => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "incomplete deflate stream",
+                    ));
+                }
+                Ok(Status::Ok | Status::BufError | Status::StreamEnd) => return Ok(read),
+                Err(..) => {
+                    return Err(io::Error::new(
+                        io::ErrorKind::InvalidInput,
+                        "corrupt deflate stream",
+                    ))
+                }
+            }
+        }
+    }
+}
 
 //
 // ## LZW Reader
 //
 
 /// Reader that decompresses LZW streams
+///
+/// photo-gallery: in a kept decoder, reset for each chunk (weezl's `reset`, which gives a decoder as
+/// `build` makes it), and a kept input buffer of the size upstream's `BufReader` had.
 #[cfg(feature = "lzw")]
-pub struct LZWReader<R: Read> {
-    reader: BufReader<Take<R>>,
-    decoder: weezl::decode::Decoder,
+pub struct LZWReader<'s, R: Read> {
+    reader: KeptBufReader<'s, Take<R>>,
+    decoder: &'s mut weezl::decode::Decoder,
 }
 
 #[cfg(feature = "lzw")]
-impl<R: Read> LZWReader<R> {
+impl<'s, R: Read> LZWReader<'s, R> {
     /// Wraps a reader
-    pub fn new(reader: R, compressed_length: usize) -> LZWReader<R> {
-        let configuration =
-            weezl::decode::Configuration::with_tiff_size_switch(weezl::BitOrder::Msb, 8)
-                .with_yield_on_full_buffer(true);
-        Self {
-            reader: BufReader::with_capacity(
-                (32 * 1024).min(compressed_length),
-                reader.take(u64::try_from(compressed_length).unwrap()),
+    pub(crate) fn new(
+        reader: R,
+        compressed_length: usize,
+        scratch: &'s mut ReaderScratch,
+    ) -> LZWReader<'s, R> {
+        let decoder = match &mut scratch.lzw {
+            Some(d) => {
+                d.reset();
+                d
+            }
+            none => none.insert(
+                weezl::decode::Configuration::with_tiff_size_switch(weezl::BitOrder::Msb, 8)
+                    .with_yield_on_full_buffer(true)
+                    .build(),
             ),
-            decoder: configuration.build(),
+        };
+        Self {
+            reader: KeptBufReader::new(
+                reader.take(u64::try_from(compressed_length).unwrap()),
+                &mut scratch.input,
+                (32 * 1024).min(compressed_length),
+            ),
+            decoder,
         }
     }
 }
 
 #[cfg(feature = "lzw")]
-impl<R: Read> Read for LZWReader<R> {
+impl<R: Read> Read for LZWReader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         loop {
             let result = self.decoder.decode_bytes(self.reader.fill_buf()?, buf);
@@ -256,31 +441,36 @@ impl<R: Read> Read for PackBitsReader<R> {
     }
 }
 
+/// photo-gallery: its input buffer (8 KiB, `BufReader::new`'s) and its line kept (upstream: new ones
+/// for each chunk).
 #[cfg(feature = "fax")]
-pub struct Group4Reader<R: Read> {
-    decoder: fax34::decoder::Group4Decoder<io::Bytes<io::BufReader<io::Take<R>>>>,
-    line_buf: io::Cursor<Vec<u8>>,
+pub struct Group4Reader<'s, R: Read> {
+    decoder: fax34::decoder::Group4Decoder<io::Bytes<KeptBufReader<'s, io::Take<R>>>>,
+    line_buf: io::Cursor<&'s mut Vec<u8>>,
     height: u16,
     width: u16,
     y: u16,
 }
 
 #[cfg(feature = "fax")]
-impl<R: Read> Group4Reader<R> {
-    pub fn new(
+impl<'s, R: Read> Group4Reader<'s, R> {
+    pub(crate) fn new(
         dimensions: (u32, u32),
         reader: R,
         compressed_length: u64,
+        scratch: &'s mut ReaderScratch,
     ) -> crate::TiffResult<Self> {
         let width = u16::try_from(dimensions.0)?;
         let height = u16::try_from(dimensions.1)?;
+        scratch.line.clear();
 
         Ok(Self {
             decoder: fax34::decoder::Group4Decoder::new(
-                io::BufReader::new(reader.take(compressed_length)).bytes(),
+                KeptBufReader::new(reader.take(compressed_length), &mut scratch.input, 8 * 1024)
+                    .bytes(),
                 width,
             )?,
-            line_buf: io::Cursor::new(Vec::with_capacity(width.into())),
+            line_buf: io::Cursor::new(&mut scratch.line),
             width,
             height,
             y: 0,
@@ -289,7 +479,7 @@ impl<R: Read> Group4Reader<R> {
 }
 
 #[cfg(feature = "fax")]
-impl<R: Read> Read for Group4Reader<R> {
+impl<R: Read> Read for Group4Reader<'_, R> {
     fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
         // Either we have not read any line or we are at the end of a line.
         if self.line_buf.position() as usize == self.line_buf.get_ref().len()

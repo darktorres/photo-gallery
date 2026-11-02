@@ -522,6 +522,25 @@ where
     /// Map from the ifd into the `ifd_offsets` ordered list.
     seen_ifds: cycles::IfdCycles,
     image: Image,
+    /// photo-gallery: what reading chunks keeps (`Scratch`).
+    chunks: image::ChunkScratch,
+}
+
+/// photo-gallery: what a decoder allocates to read an image, kept to read the next one in:
+/// [`Decoder::new_with_scratch`] and [`Decoder::into_scratch`]. It holds the chunk readers'
+/// decompressors (LZW, Deflate), reset for each chunk, their input buffers, the JPEG chunks' data and
+/// zune-jpeg's scratch, and the rows read before they are unpacked or predicted. Upstream made them
+/// anew for each chunk.
+#[derive(Debug, Default)]
+pub struct Scratch {
+    chunks: image::ChunkScratch,
+}
+
+impl Scratch {
+    /// Frees the buffers that hold more than `bytes` each (after an image far larger than the rest).
+    pub fn trim(&mut self, bytes: usize) {
+        self.chunks.trim(bytes);
+    }
 }
 
 /// All the information needed to read and interpret byte slices from the underlying file, i.e. to
@@ -683,12 +702,15 @@ fn predict_f64(input: &mut [u8], output: &mut [u8], samples: u16) {
     }
 }
 
+// photo-gallery: `copy` added, the kept buffer of the floating point predictor's copy of `buf`
+// (upstream: a new `Vec` for each call).
 fn fix_endianness_and_predict(
     buf: &mut [u8],
     bit_depth: u8,
     samples: u16,
     byte_order: ByteOrder,
     predictor: Predictor,
+    copy: &mut Vec<u8>,
 ) {
     match predictor {
         Predictor::None => {
@@ -699,11 +721,12 @@ fn fix_endianness_and_predict(
             rev_hpredict_nsamp(buf, bit_depth, samples);
         }
         Predictor::FloatingPoint => {
-            let mut buffer_copy = buf.to_vec();
+            copy.clear();
+            copy.extend_from_slice(buf);
             match bit_depth {
-                16 => predict_f16(&mut buffer_copy, buf, samples),
-                32 => predict_f32(&mut buffer_copy, buf, samples),
-                64 => predict_f64(&mut buffer_copy, buf, samples),
+                16 => predict_f16(copy, buf, samples),
+                32 => predict_f32(copy, buf, samples),
+                64 => predict_f64(copy, buf, samples),
                 _ => unreachable!("Caller should have validated arguments. Please file a bug."),
             }
         }
@@ -783,7 +806,70 @@ fn fix_endianness(buf: &mut [u8], byte_order: ByteOrder, bit_depth: u8) {
 }
 
 impl<R: Read + Seek> Decoder<R> {
-    pub fn new(mut r: R) -> TiffResult<Decoder<R>> {
+    pub fn new(r: R) -> TiffResult<Decoder<R>> {
+        Self::new_with_scratch(r, Scratch::default()).map_err(|(e, _)| e)
+    }
+
+    /// photo-gallery: [`Self::new`], reading in the buffers of an earlier decoder
+    /// ([`Self::into_scratch`]). They are given back with the error if the file's header or first
+    /// image can't be read.
+    pub fn new_with_scratch(r: R, scratch: Scratch) -> Result<Decoder<R>, (TiffError, Scratch)> {
+        let (reader, bigtiff, next_ifd) = match Self::read_header(r) {
+            Ok(header) => header,
+            Err(e) => return Err((e, scratch)),
+        };
+        let current_ifd = *next_ifd.as_ref().unwrap();
+        let ifd_offsets = vec![current_ifd];
+
+        let mut decoder = Decoder {
+            value_reader: ValueReader {
+                reader,
+                bigtiff,
+                limits: Default::default(),
+            },
+            next_ifd,
+            ifd_offsets,
+            current_ifd: None,
+            seen_ifds: cycles::IfdCycles::new(),
+            image: Image {
+                ifd: None,
+                width: 0,
+                height: 0,
+                bits_per_sample: 1,
+                samples: 1,
+                extra_samples: vec![],
+                photometric_samples: 1,
+                sample_format: SampleFormat::Uint,
+                photometric_interpretation: PhotometricInterpretation::BlackIsZero,
+                compression_method: CompressionMethod::None,
+                jpeg_tables: None,
+                predictor: Predictor::None,
+                chunk_type: ChunkType::Strip,
+                planar_config: PlanarConfiguration::Chunky,
+                strip_decoder: None,
+                tile_attributes: None,
+                chunk_offsets: Default::default(),
+                chunk_bytes: Default::default(),
+                chroma_subsampling: (2, 2),
+            },
+            chunks: scratch.chunks,
+        };
+        match decoder.next_image() {
+            Ok(()) => Ok(decoder),
+            Err(e) => Err((e, decoder.into_scratch())),
+        }
+    }
+
+    /// photo-gallery: the decoder's buffers, for [`Self::new_with_scratch`].
+    pub fn into_scratch(self) -> Scratch {
+        Scratch {
+            chunks: self.chunks,
+        }
+    }
+
+    /// photo-gallery: `new`'s reading of the header (byte order, version and the first IFD's
+    /// offset), as it was there.
+    fn read_header(mut r: R) -> TiffResult<(EndianReader<R>, bool, Option<IfdPointer>)> {
         let mut endianess = Vec::with_capacity(2);
         (&mut r).take(2).read_to_end(&mut endianess)?;
         let byte_order = match &*endianess {
@@ -828,43 +914,7 @@ impl<R: Read + Seek> Decoder<R> {
         }
         .map(IfdPointer);
 
-        let current_ifd = *next_ifd.as_ref().unwrap();
-        let ifd_offsets = vec![current_ifd];
-
-        let mut decoder = Decoder {
-            value_reader: ValueReader {
-                reader,
-                bigtiff,
-                limits: Default::default(),
-            },
-            next_ifd,
-            ifd_offsets,
-            current_ifd: None,
-            seen_ifds: cycles::IfdCycles::new(),
-            image: Image {
-                ifd: None,
-                width: 0,
-                height: 0,
-                bits_per_sample: 1,
-                samples: 1,
-                extra_samples: vec![],
-                photometric_samples: 1,
-                sample_format: SampleFormat::Uint,
-                photometric_interpretation: PhotometricInterpretation::BlackIsZero,
-                compression_method: CompressionMethod::None,
-                jpeg_tables: None,
-                predictor: Predictor::None,
-                chunk_type: ChunkType::Strip,
-                planar_config: PlanarConfiguration::Chunky,
-                strip_decoder: None,
-                tile_attributes: None,
-                chunk_offsets: Default::default(),
-                chunk_bytes: Default::default(),
-                chroma_subsampling: (2, 2),
-            },
-        };
-        decoder.next_image()?;
-        Ok(decoder)
+        Ok((reader, bigtiff, next_ifd))
     }
 
     pub fn with_limits(mut self, limits: Limits) -> Decoder<R> {
@@ -1167,8 +1217,13 @@ impl<R: Read + Seek> Decoder<R> {
         let offset = self.image.chunk_file_range(chunk_index)?.0;
         self.goto_offset_u64(offset)?;
 
-        self.image
-            .expand_chunk(&mut self.value_reader, buffer, layout, chunk_index)?;
+        self.image.expand_chunk(
+            &mut self.value_reader,
+            buffer,
+            layout,
+            chunk_index,
+            &mut self.chunks,
+        )?;
 
         Ok(())
     }
@@ -1349,6 +1404,7 @@ impl<R: Read + Seek> Decoder<R> {
                 &mut buffer[plane_offset..],
                 readout,
                 chunk,
+                &mut self.chunks,
             )?;
         }
 
@@ -1530,6 +1586,7 @@ impl<R: Read + Seek> Decoder<R> {
                     &mut buffer[plane_offset..][buffer_offset..],
                     readout,
                     chunk,
+                    &mut self.chunks,
                 )?;
             }
         }

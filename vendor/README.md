@@ -242,7 +242,7 @@ To update: copy the new version from the cargo registry over this directory (exc
 ## tiff
 
 Copy of `tiff` 0.11.3 (MIT). The local changes, marked `photo-gallery`, are in what a decoder allocates for small
-values; every value, pixel and error is upstream's:
+values and for each chunk; every value, pixel and error is upstream's:
 
 - `Entry::offset_field_reader` (`src/decoder/ifd.rs`) reads a tag's inline value (4 or 8 bytes) through a cursor over
   the entry's own array, where upstream copied it into a `Vec` first: one allocation per value read, for most tags.
@@ -251,13 +251,32 @@ values; every value, pixel and error is upstream's:
   by `Value::into_u64s`, which gives what `into_u64_vec` gives, and the same errors.
 - A plane layout's offsets (`PlaneOffsets`) are worked out from their count and stride, where upstream collected them
   into a `Vec` for every chunk read; they are the multiples of the stride, and the count is checked as before.
+- `decoder::Scratch` holds what reading chunks allocated anew for each chunk: the LZW decoder (weezl's, reset with
+  `reset`, which gives one as `build` makes it) and the Deflate one (`flate2::Decompress`, reset with a full reset,
+  which is what `new` makes), their input buffers (upstream: a `BufReader` each, 32 KiB for Deflate, up to 32 KiB for
+  LZW), Group 4's input buffer and line, a JPEG chunk's data and samples and zune-jpeg's `Scratch` (the vendored
+  copy's), the row a chunk is read into before its extra samples are dropped, and the floating point predictor's copy
+  of each row (upstream: one per row). `Decoder::new_with_scratch` reads in it, giving it back with the error if the
+  header or first image can't be read, and `into_scratch` gives it back; `Scratch::trim` frees buffers over a size.
+  A chunk's reader is an enum of upstream's readers (`ChunkReader`), where upstream boxed it: every `Read` method the
+  readers implement goes to them, as through the box. The Deflate reader's `read` is flate2 1.1.10's (what upstream's
+  `ZlibDecoder` ran), over the kept `Decompress`. A JPEG chunk's metadata segments are checked but not copied
+  (`set_skip_metadata`). The features the app doesn't build, zstd and WebP, keep upstream's boxed readers. Left as
+  they are: the fax crate's Group 4 decoder, made for each chunk, allocates its own line state (a few blocks per
+  chunk).
+- Its `Cargo.toml` patches in the vendored zune-jpeg and zune-core when its tests run from this directory (as png's
+  does), for zune-jpeg's `Scratch`.
 
 Its tests give the same results as the registry's copy (45 passed, and the same 106 failing: the published crate
-lacks the `tests/images` they read). Three tests of its own (`src/decoder/image.rs`, `photo_gallery`): `into_u64s`
+lacks the `tests/images` they read). Four tests of its own (`src/decoder/image.rs`, `photo_gallery`): `into_u64s`
 gives what `into_u64_vec` gives for every kind of value, errors included; the counted plane offsets are upstream's
-collected ones, for strides up to `usize::MAX` and the past-the-end check; and classic and BigTIFF files in one strip
+collected ones, for strides up to `usize::MAX` and the past-the-end check; classic and BigTIFF files in one strip
 and many, of 8-bit, 16-bit and float samples, uncompressed, LZW, Deflate and PackBits, decode to the pixels they were
-made from. Its tests run from this directory: `cargo test --no-fail-fast --target-dir ../../target/vendor-test`.
+made from; and decoders in one kept scratch read 50 files (`tests/photo_gallery`, made by ImageMagick: every
+compression the crate decodes, including JPEG with tables and Group 4, in strips of one row and many, tiles, planes
+and BigTIFF, with both predictors, and damaged copies) exactly as new decoders do, forwards and backwards, kept
+whole, trimmed to nothing and to 600 bytes. Without weezl's reset that test fails. Its tests run from this directory:
+`cargo test --no-fail-fast --target-dir ../../target/vendor-test`.
 
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
 `.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.

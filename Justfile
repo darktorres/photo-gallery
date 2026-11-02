@@ -48,6 +48,10 @@ lint: && lint-qml
     ruff check .
     markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
 
+# Clippy (-D warnings) for every crate but the desktop, in WSL, where the Linux-only code compiles (tools/wsl-check.sh).
+wsl-check:
+    wsl -d Ubuntu-26.04 -u root -- bash tools/wsl-check.sh
+
 # qmllint and the QML compiler on the QML, failing on any warning or anything not compiled to C++. Uses the
 # pg.gallery types of the last build, so build first.
 lint-qml:

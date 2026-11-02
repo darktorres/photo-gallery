@@ -205,10 +205,41 @@ cost, but indirect recursion (A → B → A) is still counted twice.
 
 The start after the optimizations, drilled thread by thread: [START_PROFILE.md](START_PROFILE.md) (2026-11-01).
 
-Every heap allocation of a scan and an import, site by site (dhat): [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01).
+Every heap allocation of a scan, an import and the borders and thumbnail passes, site by site (dhat), before and
+after two rounds of fixes: [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01, 2026-11-02).
 
-Every heap allocation of the app's start on the default catalog (dhat): [HEAP_PROFILE_START.md](HEAP_PROFILE_START.md)
-(2026-11-01).
+Every heap allocation of the app's start on the default catalog (dhat), before and after:
+[HEAP_PROFILE_START.md](HEAP_PROFILE_START.md) (2026-11-01, 2026-11-02).
+
+### The start's stages before and after the two heap plans (release, `PG_TRACE=1`, offscreen, 2026-11-02)
+
+`gallery-prev.exe` (2e1b6ca, before both plans) against `gallery.exe` (1d3685b), on the default catalog: 189,518 files,
+"All folders" by name, file 8838 selected, nothing to do. Each run was `--wait=2 --screenshot=…`, with
+`QT_QPA_PLATFORM=offscreen`. The two builds alternated, one warm-up round and then five measured. The medians are in
+ms from `pg_stage_main`. The previous build's process start to `main` was bimodal: 19–20 ms in 2 runs, 122–126 ms
+in 3. That is before any of our code runs, and the new build's was 18–19 ms in all 5. So the stages are measured from
+`main`.
+
+| Stage, from `main` | 2e1b6ca | 1d3685b |
+|---|---:|---:|
+| `init_done` | 17.3 | 16.9 |
+| `qml_load` | 32.6 | 32.1 |
+| `qml_loaded` | 205.8 | 206.0 |
+| `tree_shown` | 273.3 | 273.6 |
+| `first_frame` | 289.6 | 289.2 |
+| `list_shown` | 601.1 (587–672) | 559.5 (548–571) |
+| `ready` | 601.2 (587–672) | 642.0 (635–668) |
+| `round_done` (the background job's first round) | 651.5 (636–722) | 645.3 (638–671) |
+
+- **The list is shown 42 ms sooner.** Reading and laying out 189,518 entries no longer grows the list's `Vec`
+  (29.4 MB copied before) or builds an aspects `Vec`. The reset no longer makes the top rows' cells, which the view
+  then left (54714b1).
+- **`ready` is 41 ms later, but it now marks more.** Since 54714b1 the view is placed on the selected file before
+  any cell is made, so that file's rows are made between `list_shown` and `ready` (`gridLoaded`,
+  `positionViewAtIndex`). Before, `ready` came with the list, while the top rows' cells were made, and the selected
+  file's rows were made after it. The end of the first round, which follows both, is the same (651 → 645 ms).
+- **The heap work doesn't show in the start's time.** What it removed (16,000 blocks, 26 MB) cost a few ms. The
+  start is Qt's QML loading (174 ms) and the list's read (270 ms): the call graph below.
 
 ### The start, to `ready` (Pin call graph, release `gallery.exe` with the trace stages, scratch copy of the pinterest catalog, 2026-10-31)
 

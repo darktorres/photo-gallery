@@ -1,4 +1,4 @@
-# Heap profile: the app's start on the default catalog (dhat, 2026-11-01, after the fixes 2026-11-02)
+# Heap profile: the app's start on the default catalog (dhat, 2026-11-01, after two rounds of fixes 2026-11-02)
 
 Every Rust heap allocation from process start until the window has loaded and settled, charged to the code of ours
 that decides to make it, each site read at its source lines. How the profiles are made and read: PROFILING.md
@@ -17,7 +17,58 @@ import, no borders, no thumbnails). The process ended at 6.6 s.
 
 **Not in it:** Qt's allocations (C++, the C runtime's heap) and SQLite's page caches (C). This is the Rust side only.
 
-## After the fixes (2026-11-02)
+## After the second fixes (2026-11-02)
+
+The same run at commit 1d3685b, offscreen, on the same catalog and session (`session.file` 8838). Profile:
+`D:\PhotoGallery\scratch_dhat\final\start\dhat-heap.json`. A release build was started once on the catalog
+beforehand, so that the background job had already looked at the six files `import --again` had just re-analyzed.
+The run then found nothing to do, as before. Under dhat, `ready` came at 977 ms. The release builds' stage times are
+in PROFILING.md.
+
+| | Before (d2205ba) | After the first fixes (4e1ad4d) | After the second (1d3685b) |
+|---|---:|---:|---:|
+| Allocated | 38.9 MB in 16,523 blocks | 13.1 MB in 686 blocks | 12.9 MB in 521 blocks |
+| Peak | 17.2 MB in 2,125 blocks | 11.4 MB in 131 blocks | 11.4 MB in 131 blocks |
+| At exit | 1.9 KB in 26 blocks | 2.1 KB in 26 blocks | 2.1 KB in 26 blocks |
+
+| Area | After the first fixes | After the second |
+|---|---:|---:|
+| The thumbnails and placeholders (118) | 457 blocks, 1.52 MB | 332 blocks, 1.51 MB |
+| The folder tree | 68 blocks, 378 KB | 28 blocks, 139 KB |
+| The list and the grid | 37 blocks, 11.2 MB | 37 blocks, 11.2 MB |
+| The command line | 51 blocks, 3.5 KB | 51 blocks, 3.5 KB |
+| Catalog opens, the background job, the writer, the rest | 73 blocks, 3.6 KB | 73 blocks, 3.6 KB |
+
+- **Placeholders:** each hash is read in place into an inline value (`browse.rs:953`–`967`), so the 118 blocks of
+  `browse.rs:903` are gone.
+- **The folder tree:** its paths, keys and rows are made once at their sizes, read with the rows
+  (`browse.rs:210`–`213`). The nodes are reserved at their exact count (`browse.rs:260`). That is 4 blocks, from 44
+  for the four arenas growing.
+- **The peak** is still the list (10.6 MB, `browse.rs:634`), with the rows at their exact count (`layout.rs:34`) and
+  their versions (`gallery.rs:595`).
+
+### What is left after the second fixes
+
+| Blocks | Bytes | Site | What |
+|---:|---:|---|---|
+| 118 | 1.18 MB | `thumbs.rs:427` | Each thumbnail's JPEG read from the cache: the bytes Qt decodes. By design |
+| 118 | 312 KB | `state.rs:276` | Each placeholder's image: handed to Qt without a copy. By design |
+| 24 + 8 + 16 + 16 | 12 KB | `thumbs.rs:430`, `:422`, `:718`, `:715` | Each provider thread's first use of the cache: its connection and statements |
+| 6 + 2 | 1.2 KB | `browse.rs:967`, `:953` | The placeholder statement on each provider thread |
+| 1 + 1 + 1 + 1 | 137 KB | `browse.rs:210`, `:211`, `:213`, `:260` | The folder tree's paths, keys, rows and nodes, each made once at its size |
+| 12 | 96 B | `browse.rs:389` | A visible folder's drives (`D:`) as text for its QML role, per call. Qt needs a `QString` made from it anyway |
+| 4 + 1 | 1.2 KB | `folders.rs:152`, `:164` | The folder model's visible and expanded lists |
+| 1 | 10.6 MB | `browse.rs:634` | The list |
+| 1 + 1 | 627 KB | `layout.rs:34`, `gallery.rs:595` | The rows at their exact count, and their versions |
+| 14 + 14 + 15 + 3 | 3.2 KB | `command_line.rs:53`, `:57`, `:59`, `main.rs:85`, `:49` | The arguments, read once each by the test hooks, by Qt's application and by `main` |
+| 10 + 2 | 426 B | `catalog.rs:704`, `:389` | Catalog opens: paths only |
+| ~60 | ~4 KB | `runner.rs`, `writeback.rs`, `library.rs`, `loader.rs`, `gpu_device.rs`, `settings.rs`, `thumbs.rs:394`–`:542`, `:787`–`:838` | Threads, channels, paths, the cache's writer and its first replies |
+
+What is left is what the start shows (the list, the thumbnails' bytes, the placeholders' images), each thread's
+setup, and the arguments, read three times (by `main`, by Qt's application and by the test hooks: about 45
+blocks, 3 KB, once).
+
+## After the first fixes (2026-11-02)
 
 The same run at commit 4e1ad4d, offscreen (`QT_QPA_PLATFORM=offscreen`, which changes Qt's allocations but not
 ours), on the same catalog and session. Profile: `D:\PhotoGallery\scratch_dhat\after\start\dhat-heap.json`.
@@ -53,7 +104,7 @@ ours), on the same catalog and session. Profile: `D:\PhotoGallery\scratch_dhat\a
   `library.rs:154`, `:160`, the selected file's details and border sides, `browse.rs:646`, `:662`, `:671`, `:698`),
   plus the command line's arguments, parsed once into a static (`command_line.rs:57`, `:59`). Nothing leaks.
 
-### What is left
+### What was left after the first fixes
 
 | Blocks | Bytes | Site | What |
 |---:|---:|---|---|

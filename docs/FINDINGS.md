@@ -95,6 +95,15 @@ or deleted. Finding it needs a full-set run.
     folder of 100 MB panoramas held 5 GB.
   - One pass per block of files read once (no purge) was useless: the same build read 175–248 MB/s on
     different blocks of the folder, more than the budgets differ.
+  - **Again with the pool that replaces a too-small idle buffer** (145ec5b; the runs above were of a pool that
+    only reused a buffer already large enough, and otherwise made a new one while the budget had room), at
+    1d3685b, the same files and method, 2026-11-02. Medians: no pool (2e1b6ca) 278 MB/s, 64 MB 222,
+    128 MB 267, 240 MB 277, 256 MB 278, 512 MB 277. The knee is where it was, so the default stays at 240 MB. The same
+    build without a pool read 278 MB/s here and 255 MB/s in the first session, so only rounds of one session
+    compare.
+  - The pool still makes a buffer for nearly every file: only bytes bound the files in flight, so readers read
+    ahead until the budget is full (HEAP_PROFILE.md "The read pool still makes a buffer per file"). A bound by
+    count would change the read-ahead, and these numbers would have to be measured again.
 - **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and FFmpeg and the
   scanner's `CreateFileW` are handed the verbatim form (`pg_core::paths`, `\\?\UNC\` for a share). ExifTool
   gets the plain path, as `\\?\` isn't a path it reads, and its own long-name support (the `WindowsLongPath`

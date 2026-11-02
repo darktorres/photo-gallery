@@ -313,7 +313,8 @@ markers, arithmetic coding, EXIF, a two-segment ICC profile and XMP, sizes from 
 with bits changed. Each is decoded as pg-core decodes it, into four colour spaces, strict and not. Decoders in one kept
 scratch, forwards then backwards, kept whole, trimmed to nothing and trimmed to 600 bytes after each file, give
 exactly what a new decoder gives: dimensions, pixels, errors and metadata, and no metadata with the skip. A copy whose
-row buffers kept their old contents fails it. Its tests run from this directory:
+row buffers kept their old contents fails it. A second checks that the components' vector stays in the scratch from
+one decode to the next. Its tests run from this directory:
 `cargo test --target-dir ../../target/vendor-test`.
 
 Checked once against the registry's copy, linked side by side in a harness outside the repository: the 5 JPEGs

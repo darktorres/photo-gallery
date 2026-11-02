@@ -258,7 +258,9 @@ where
         self.skip_metadata = skip;
     }
 
-    /// photo-gallery: the components' buffers back into the scratch, the components gone.
+    /// photo-gallery: the components' buffers back into the scratch, the components gone. Their
+    /// vector is kept if it holds more than the scratch's (a new decoder's holds nothing, and would
+    /// otherwise replace the kept one).
     pub(crate) fn recycle_components(&mut self) {
         let mut components = core::mem::take(&mut self.components);
         for (i, c) in components.drain(..).enumerate() {
@@ -266,7 +268,9 @@ where
                 *b = c.into_buffers();
             }
         }
-        self.scratch.components = components;
+        if components.capacity() > self.scratch.components.capacity() {
+            self.scratch.components = components;
+        }
     }
     /// Decode a buffer already in memory
     ///

@@ -141,3 +141,22 @@ fn kept_scratch_decodes_as_new_decoders() {
         }
     }
 }
+
+/// The components' vector stays in the scratch: a new decoder's empty one doesn't replace it when the
+/// headers are read, so the next image's components go in the same allocation.
+#[test]
+fn kept_scratch_keeps_the_components_vector() {
+    let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/photo_gallery");
+    let bytes = std::fs::read(dir.join("rgb_37x23_420_baseline.jpg")).unwrap();
+    let mut scratch = Scratch::default();
+    let decode = |scratch: &mut Scratch| {
+        let mut d = JpegDecoder::new_with_scratch(ZCursor::new(&bytes[..]), options(false), core::mem::take(scratch));
+        d.decode().unwrap();
+        *scratch = d.into_scratch();
+    };
+    decode(&mut scratch);
+    assert!(scratch.components.capacity() >= 3);
+    let kept = scratch.components.as_ptr();
+    decode(&mut scratch);
+    assert_eq!(scratch.components.as_ptr(), kept);
+}

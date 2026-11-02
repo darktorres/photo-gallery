@@ -11,6 +11,7 @@ pub mod catalog;
 mod codecs;
 pub mod container;
 pub mod crop;
+pub mod date;
 pub mod decode;
 pub mod display;
 pub mod format;

@@ -10,7 +10,7 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::metadata::parse_iso_date;
+use crate::date::parse_iso_date;
 use crate::pdq::group_distance;
 
 /// FILETIME (100 ns since 1601) of the Unix epoch, in seconds. A macro, for SQL made at compile time.

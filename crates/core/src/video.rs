@@ -14,8 +14,8 @@ use ffmpeg::media::Type;
 use ffmpeg::util::frame;
 use ffmpeg_next as ffmpeg;
 
+use crate::date::parse_iso_date;
 use crate::decode::{Rgb, orient_into};
-use crate::metadata::parse_iso_date;
 use crate::orientation;
 
 /// The poster frame is this far into the video…

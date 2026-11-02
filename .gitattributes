@@ -1,3 +1,6 @@
+# Text is stored and checked out with LF line ends, whatever core.autocrlf says on this machine. Later lines override
+# this one for the files they name.
+* text=auto eol=lf
 # Shell scripts run under WSL straight from the Windows checkout (tools/profiling), where core.autocrlf would give
 # them CRLF line ends and bash would fail on the \r.
 *.sh text eol=lf

@@ -378,7 +378,7 @@ impl Codecs {
                     ),
                 )));
             }
-            // (An empty image has no planes to read: `image` panics there.)
+            // (An empty image has no planes to read: `image` panics there, at its tiff.rs:163, `chunks_exact(0)`.)
             if self.raw.len().checked_div(plane_stride).unwrap_or(0) < usize::from(color.channel_count()) {
                 return Err(ImageError::Decoding(DecodingError::new(
                     ImageFormat::Tiff.into(),
@@ -392,6 +392,8 @@ impl Codecs {
         match stored {
             Stored::Same => convert(&self.raw, color, None, pixels, out)?,
             Stored::Cmyk8 => {
+                // `image` writes each pixel with `write_all` (its tiff.rs:396): short data leaves the rest of the
+                // pixels as they were, with no error.
                 check_len(self.raw.len(), pixels * 4)?;
                 let px = zeroed(&mut out.pixels, pixels * 3);
                 for (cmyk, rgb) in self.raw.as_chunks::<4>().0.iter().zip(px.as_chunks_mut::<3>().0) {
@@ -399,6 +401,7 @@ impl Codecs {
                 }
             }
             Stored::Cmyk16 => {
+                // As Cmyk8: `image`'s tiff.rs:402 `write_all` leaves the rest of the pixels as they were.
                 check_len(self.raw.len(), pixels * 8)?;
                 let px = zeroed(&mut out.pixels, pixels * 3);
                 for (cmyk, rgb) in self.raw.as_chunks::<8>().0.iter().zip(px.as_chunks_mut::<3>().0) {
@@ -409,6 +412,7 @@ impl Codecs {
             Stored::Gray1 => {
                 // `expand_bits(1, …)` per row (0 or 255), then L8 to RGB.
                 let row_bytes = (w as usize).div_ceil(8);
+                // `image`'s tiff.rs:410 `chunks_exact` drops a short last row: its rows past the data are left unwritten.
                 check_len(self.raw.len(), row_bytes * h as usize)?;
                 let px = zeroed(&mut out.pixels, pixels * 3);
                 for (row, out_row) in self.raw.chunks_exact(row_bytes.max(1)).zip(px.chunks_exact_mut(w as usize * 3)) {
@@ -542,8 +546,9 @@ fn to_rgb<const CH: usize, const N: usize>(
     Ok(())
 }
 
-/// The decoders give exactly the size the image takes: anything else is a decoder's bug, where `image` would have
-/// panicked (`copy_from_slice`) or left pixels zero.
+/// The decoders give exactly the size the image takes: anything else is a decoder's bug. `image` would panic where
+/// the lengths differ at its `copy_from_slice` (tiff.rs:417–444), or leave pixels unwritten (tiff.rs:396, 402, 410).
+/// The sites stay errors: a panic would end a worker.
 fn check_len(len: usize, expected: usize) -> ImageResult<()> {
     if len >= expected {
         return Ok(());
@@ -1113,6 +1118,58 @@ mod tests {
         assert!(reference(&huge, ImageFormat::Gif).is_err());
         let ours = decoded(&mut Codecs::default(), &huge, Format::Gif);
         assert_eq!(ours, reference(&gif, ImageFormat::Gif));
+    }
+
+    /// A PNG with one chunk inserted before its first IDAT, its CRC right: the damage is in the chunk's data.
+    fn png_with_chunk(png: &[u8], kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
+        let mut chunk = (data.len() as u32).to_be_bytes().to_vec();
+        chunk.extend(kind);
+        chunk.extend(data);
+        chunk.extend(crc32fast::hash(&[&kind[..], data].concat()).to_be_bytes());
+        let idat = png.windows(4).position(|w| w == b"IDAT").unwrap() - 4;
+        [&png[..idat], &chunk, &png[idat..]].concat()
+    }
+
+    /// The text and ICC chunks are skipped, where `image` reads them. The damaged ones here (bad zlib, a truncated
+    /// stream, an empty or over-long keyword or name, a missing terminator, a bad compression method or flag, text
+    /// that isn't UTF-8) must decode as `image` decodes them: the same pixels, or the same error.
+    #[test]
+    fn png_damaged_text_and_icc_chunks_decode_as_image_does() {
+        let mut file = Cursor::new(Vec::new());
+        pattern(37, 23, 5).write_to(&mut file, ImageFormat::Png).unwrap();
+        let png = file.into_inner();
+        let zlib = |data: &[u8]| miniz_oxide::deflate::compress_to_vec_zlib(data, 6);
+        let text = zlib(b"a text chunk's payload");
+        let long = [b"a".repeat(80), b"\0\0".to_vec()].concat();
+        let cases: Vec<(&str, &[u8; 4], Vec<u8>)> = vec![
+            ("zTXt valid", b"zTXt", [b"Comment\0\0".to_vec(), text.clone()].concat()),
+            ("zTXt bad zlib", b"zTXt", b"Comment\0\0not zlib".to_vec()),
+            ("zTXt truncated", b"zTXt", [b"Comment\0\0".to_vec(), text[..text.len() / 2].to_vec()].concat()),
+            ("zTXt empty keyword", b"zTXt", [b"\0\0".to_vec(), text.clone()].concat()),
+            ("zTXt 80-byte keyword", b"zTXt", [long.clone(), text.clone()].concat()),
+            ("zTXt no keyword end", b"zTXt", b"Comment".to_vec()),
+            ("zTXt method 1", b"zTXt", [b"Comment\0\x01".to_vec(), text.clone()].concat()),
+            ("iTXt valid", b"iTXt", [b"XML:com.adobe.xmp\0\0\0\0\0".to_vec(), b"<x/>".to_vec()].concat()),
+            ("iTXt valid compressed", b"iTXt", [b"Comment\0\x01\0\0\0".to_vec(), text.clone()].concat()),
+            ("iTXt bad zlib", b"iTXt", b"Comment\0\x01\0\0\0junk".to_vec()),
+            ("iTXt flag 2", b"iTXt", b"Comment\0\x02\0\0\0x".to_vec()),
+            ("iTXt empty keyword", b"iTXt", b"\0\0\0\0\0".to_vec()),
+            ("iTXt truncated", b"iTXt", b"Comment\0".to_vec()),
+            ("iTXt not UTF-8", b"iTXt", [b"Comment\0\0\0\0\0".to_vec(), vec![0xFF, 0xFE]].concat()),
+            ("iCCP valid", b"iCCP", [b"icc\0\0".to_vec(), zlib(b"not a profile")].concat()),
+            ("iCCP bad zlib", b"iCCP", b"icc\0\0junk".to_vec()),
+            ("iCCP empty name", b"iCCP", [b"\0\0".to_vec(), zlib(b"x")].concat()),
+            ("iCCP no name end", b"iCCP", b"icc".to_vec()),
+            ("iCCP 80-byte name", b"iCCP", [long.clone(), zlib(b"x")].concat()),
+        ];
+        for (name, kind, data) in cases {
+            let bytes = png_with_chunk(&png, kind, &data);
+            let ours = decoded(&mut Codecs::default(), &bytes, Format::Png);
+            if name.ends_with("valid") || name.ends_with("compressed") {
+                assert!(ours.is_ok(), "{name}: {ours:?}");
+            }
+            assert_eq!(ours, reference(&bytes, ImageFormat::Png), "{name}");
+        }
     }
 
     #[test]

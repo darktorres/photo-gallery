@@ -2,6 +2,7 @@
 //! out before any thumbnail exists. No thumbnails here: they are a background task after the import (PLAN §6).
 
 use anyhow::{Context, Result};
+use std::path::Path;
 
 use crate::borders::{self, Detection, Detector};
 use crate::decode::{Decoder, MinSize, Rgb, release_over};
@@ -225,6 +226,36 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
     let mut bytes = [0; THUMBHASH_MAX];
     let len = encoder.rgb_to_thumb_hash_into(small.width, small.height, &small.pixels, &mut bytes);
     ThumbHash { bytes, len: len as u8 }
+}
+
+/// A video's analysis (the file's hash, its probe, and its poster frame's ThumbHash): what the import stores.
+pub fn video(path: &Path, turns: u8, analyzer: &mut Analyzer) -> Result<Analysis> {
+    let result = analyze_video(path, turns, analyzer);
+    analyzer.trim();
+    result
+}
+
+fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
+    let file_hash = crate::video::file_hash(path)?;
+    let p = crate::video::probe(path)?;
+    let poster = crate::video::poster_ms(p.duration_ms);
+    crate::video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
+    let (width, height) = if turns % 2 == 1 { (p.height, p.width) } else { (p.width, p.height) };
+    Ok(Analysis {
+        file_hash,
+        format: p.codec,
+        orientation: p.orientation,
+        width,
+        height,
+        thumbhash: a.thumbhash_of_image(),
+        file_rating: None,
+        frames: p.frames,
+        taken: p.taken.map(|t| t.0),
+        taken_utc: p.taken.is_some_and(|t| t.1),
+        pixels: None,
+        duration_ms: Some(p.duration_ms),
+        poster_ms: Some(poster),
+    })
 }
 
 #[cfg(test)]

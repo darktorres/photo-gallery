@@ -102,7 +102,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         |analyzer, i, bytes| {
             if video(i) {
                 let path = work.path(items[i].path);
-                pg_core::video::analyze(Path::new(&*verbatim(&path)), items[i].rotation, analyzer)
+                pg_core::analyze::video(Path::new(&*verbatim(&path)), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)
             }

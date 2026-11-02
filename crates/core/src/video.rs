@@ -14,7 +14,6 @@ use ffmpeg::media::Type;
 use ffmpeg::util::frame;
 use ffmpeg_next as ffmpeg;
 
-use crate::analyze::{Analysis, Analyzer};
 use crate::decode::{Rgb, orient_into};
 use crate::metadata::parse_iso_date;
 use crate::orientation;
@@ -259,35 +258,6 @@ pub fn file_hash(path: &Path) -> Result<[u8; 32]> {
 
 /// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
 /// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
-pub fn analyze(path: &Path, turns: u8, analyzer: &mut Analyzer) -> Result<Analysis> {
-    let result = analyze_video(path, turns, analyzer);
-    analyzer.trim();
-    result
-}
-
-fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
-    let file_hash = file_hash(path)?;
-    let p = probe(path)?;
-    let poster = poster_ms(p.duration_ms);
-    frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
-    let (width, height) = if turns % 2 == 1 { (p.height, p.width) } else { (p.width, p.height) };
-    Ok(Analysis {
-        file_hash,
-        format: p.codec,
-        orientation: p.orientation,
-        width,
-        height,
-        thumbhash: a.thumbhash_of_image(),
-        file_rating: None,
-        frames: p.frames,
-        taken: p.taken.map(|t| t.0),
-        taken_utc: p.taken.is_some_and(|t| t.1),
-        pixels: None,
-        duration_ms: Some(p.duration_ms),
-        poster_ms: Some(poster),
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

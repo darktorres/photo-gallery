@@ -23,8 +23,15 @@ use crate::orientation;
 /// Bump when anything here changes what is detected; detections of an older version are redone.
 pub const BORDERS_VERSION: i64 = 1;
 
+/// [`MIN_SIDE`] as a literal, for SQL made at compile time (`catalog`'s `has_borders!`).
+macro_rules! min_side {
+    () => {
+        64
+    };
+}
+pub(crate) use min_side;
 /// Images with a side shorter than this aren't looked at.
-pub const MIN_SIDE: usize = 64;
+pub const MIN_SIDE: usize = min_side!();
 
 #[derive(Clone, Copy, Debug)]
 pub struct Params {

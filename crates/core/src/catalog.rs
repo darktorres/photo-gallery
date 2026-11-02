@@ -64,7 +64,10 @@ macro_rules! seq {
 /// The analyses borders are looked for in: still images that decoded and are big enough (borders::MIN_SIDE).
 macro_rules! has_borders {
     () => {
-        "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= 64"
+        concat!(
+            "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= ",
+            crate::borders::min_side!()
+        )
     };
 }
 

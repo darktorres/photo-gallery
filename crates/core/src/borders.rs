@@ -307,13 +307,6 @@ impl Detection {
         let [l, t, r, b] = self.content;
         [l, t, self.width - r, self.height - b]
     }
-
-    /// The largest share of the image cut on any one side (the sort for "deepest cut first").
-    pub fn depth(&self) -> f64 {
-        let [l, t, r, b] = self.cut();
-        let (w, h) = (self.width.max(1) as f64, self.height.max(1) as f64);
-        (l as f64 / w).max(r as f64 / w).max(t as f64 / h).max(b as f64 / h)
-    }
 }
 
 /// A rectangle of the stored image (fractions: left, top, right, bottom) in the image as shown: turned upright by

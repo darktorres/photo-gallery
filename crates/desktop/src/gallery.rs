@@ -820,7 +820,7 @@ impl qobject::GalleryModel {
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
-        if let Err(err) = state::with_catalog(|c| browse::set_border_mark(&c.conn, e.id, marked)) {
+        if let Err(err) = state::with_catalog(|c| pg_core::catalog::Catalog::set_border_mark(&c.conn, e.id, marked)) {
             eprintln!("marking borders: {err:#}");
             return;
         }

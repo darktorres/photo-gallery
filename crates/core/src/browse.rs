@@ -8,7 +8,6 @@ use rusqlite::{Connection, OptionalExtension, params, params_from_iter};
 
 use crate::analyze::ThumbHash;
 use crate::borders;
-use crate::catalog::Catalog;
 use crate::format::Format;
 use crate::media::{Ext, Kind};
 use crate::metadata;
@@ -643,11 +642,6 @@ pub fn border_sides(conn: &Connection, file_id: i64) -> Result<borders::Sides> {
             .map_err(|_| anyhow::anyhow!("file {file_id}: more than {} border sides kept", borders::MAX_SIDES))?;
     }
     Ok(sides)
-}
-
-/// Mark a file's borders as not a border, or take the mark back (the review).
-pub fn set_border_mark(conn: &Connection, file_id: i64, marked: bool) -> Result<()> {
-    Catalog::set_border_mark(conn, file_id, marked)
 }
 
 /// What the filter bar shows next to its choices, for a view's folder.

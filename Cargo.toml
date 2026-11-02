@@ -65,8 +65,9 @@ incremental = true
 
 # turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app; qt-build-utils that gives the QML
 # compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit; thumbhash with a
-# reusable encoder that reads RGB (vendor/README.md).
+# reusable encoder that reads RGB; fast_image_resize whose resizer keeps its coefficients (vendor/README.md).
 [patch.crates-io]
+fast_image_resize = { path = "vendor/fast_image_resize" }
 qt-build-utils = { path = "vendor/qt-build-utils" }
 rusqlite = { path = "vendor/rusqlite" }
 thumbhash = { path = "vendor/thumbhash" }

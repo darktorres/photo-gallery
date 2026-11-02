@@ -65,6 +65,36 @@ test in `src/lib.rs` keeps the RGB and reuse cases.
 To update: copy the new version from the cargo registry over this directory (except `.cargo-ok` and
 `.cargo_vcs_info.json`), then make the changes again.
 
+## fast_image_resize
+
+Copy of `fast_image_resize` 6.1.0 (MIT OR Apache-2.0). The local changes, marked `photo-gallery`, are in how the
+convolution holds its coefficients; the arithmetic, and so every resized pixel, is upstream's:
+
+- `Resizer` keeps the last coefficients of each axis (`AxisCoefficients` in `src/resizer.rs`), with what they were
+  computed for: the source size, crop, output size, filter and kernel mode. A resize that matches on an axis reuses
+  them, as runs of same-size camera files do; any other computes them again into the same buffers. Upstream computed
+  them per call into new vectors.
+- `Coefficients` (`src/convolution/mod.rs`) keeps its normalized forms beside the weights, made when first asked for:
+  i16 for 8-bit images (`Normalizer16`) and i32 for 16-bit ones (`Normalizer32`), each one buffer laid out like the
+  weights. Upstream made a `Vec` per output pixel each call, 169 of them for a 100 × 67 thumbnail-hash fit.
+- The chunks a convolution reads (`Chunks`, `Chunk`) are views over those buffers. `get_chunks` no longer collects a
+  `Vec`. The second pass of a two-pass resize reads its bounds through a `shift`, where upstream rewrote them.
+- The `Convolution` trait borrows the coefficients mutably instead of taking them by value. The SIMD backends changed
+  only in the types they pass chunks by. The NEON (aarch64) and WebAssembly backends compile (`cargo check --target
+  aarch64-pc-windows-msvc`, `wasm32-unknown-unknown`) but don't run here.
+
+Checked, once, against the registry's 6.1.0 with a throwaway harness: 18,000 resizes (6,000 random cases on each of
+the native, SSE4.1 and AVX2 paths) over every pixel type, filter and algorithm, with random sizes up to 900 px, crops
+and alpha. One `Resizer` was reused throughout, a third of the cases repeating the last sizes, so the kept coefficients
+were hit, missed and shared across pixel types and pass orders. Every output was identical byte for byte, with
+debug assertions on. With the shift's reset removed, the harness failed at case 58. The crate's own tests give the
+same results as the registry copy's, including the same 14 checksum mismatches, which upstream's copy also has
+on this machine. Their images aren't in the published crate (`data/` in the repository at tag `v6.1.0`). A test in
+`src/resizer.rs` keeps the reuse case.
+
+To update: copy the new version from the cargo registry over this directory (except `.cargo-ok`,
+`.cargo_vcs_info.json` and `Cargo.lock`), then make the changes again.
+
 ## dhat
 
 dhat-rs 0.3.3 (`dhat`, MIT OR Apache-2.0), patched in phpstan-rs (`patches/dhat`, commit `13675fd3`) so that heap

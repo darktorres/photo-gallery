@@ -1,0 +1,213 @@
+[workspace]
+members = [
+    "resizer",
+]
+
+
+[package]
+name = "fast_image_resize"
+version = "6.1.0"
+authors = ["Kirill Kuzminykh <cykooz@gmail.com>"]
+edition = "2021"
+rust-version = "1.87.0"
+license = "MIT OR Apache-2.0"
+description = "Library for fast image resizing with using of SIMD instructions"
+readme = "README.md"
+keywords = ["image", "resize", "no_std"]
+repository = "https://github.com/cykooz/fast_image_resize"
+documentation = "https://docs.rs/fast_image_resize"
+exclude = ["/data", "/.github"]
+
+
+[dependencies]
+cfg-if = "1.0"
+num-traits = { version = "0.2.19", default-features = false }
+thiserror = { version = "2.0", default-features = false }
+# Optional dependencies
+document-features = { version = "0.2.12", optional = true }
+image = { version = "0.25.6", optional = true, default-features = false }
+bytemuck = { version = "1.25", optional = true }
+rayon = { version = "1.12", optional = true }
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+cpufeatures = { version = "0.3.0", optional = true }
+
+
+[features]
+default = ["std"]
+## It must be enabled to use the crate in `std` environment.
+std = ["thiserror/std", "num-traits/std", "dep:document-features"]
+## This feature must be enabled to use the crate in `no_std` environment.
+## To prevent conflicts with the `std` feature it is not used for
+## conditional compilation. It just installs additional dependencies
+## or activates some features of existing dependencies.
+no_std = ["num-traits/libm", 'dep:cpufeatures']
+## Enable this feature to implement traits [IntoImageView](crate::IntoImageView) and
+## [IntoImageViewMut](crate::IntoImageViewMut) for the
+## [DynamicImage](https://docs.rs/image/latest/image/enum.DynamicImage.html)
+## type and some variants of
+## [ImageBuffer](https://docs.rs/image/latest/image/struct.ImageBuffer.html)
+## type from the `image` crate.
+image = ["std", "dep:image", "dep:bytemuck"]
+## Enable this feature to implement traits [bytemuck::Pod] and
+## [bytemuck::Zeroable] for the `Pixel` type.
+bytemuck = ["dep:bytemuck"]
+## This feature enables image processing in the ` rayon ` thread pool.
+rayon = ["std", "dep:rayon", "resize/rayon", "image/rayon"]
+for_testing = ["std", "image", "image/png", "bytemuck"]
+only_u8x4 = []  # This can be used to experiment with the crate's code.
+
+
+[dev-dependencies]
+fast_image_resize = { path = ".", features = ["for_testing"] }
+resize = { version = "0.8.9", default-features = false, features = ["std"] }
+rgb = "0.8.53"
+png = "0.18.1"
+serde = { version = "1.0", features = ["serde_derive"] }
+serde_json = "1.0"
+walkdir = "2.5"
+itertools = "0.15.0"
+criterion = { version = "0.7.0", default-features = false, features = ["cargo_bench_support"] }
+tera = { version = "2.0.0-alpha.9", features = ["glob_fs"] }
+
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+nix = { version = "0.31.3", default-features = false, features = ["sched"] }
+
+
+[target.'cfg(all(not(target_arch = "wasm32"), not(target_os = "windows")))'.dev-dependencies]
+libvips = "1.7"
+
+
+[package.metadata.docs.rs]
+features = ["image", "bytemuck"]
+
+
+[profile.test]
+opt-level = 1
+incremental = true
+
+
+# debug builds for deps
+[profile.dev.package.'*']
+opt-level = 3
+
+
+# release build for procmacros - the same config as debug build for procmacros
+[profile.release.build-override]
+opt-level = 2
+debug = false # when possible
+
+
+[profile.release]
+opt-level = 3
+incremental = true
+#lto = true
+#codegen-units = 1
+strip = true
+
+
+#[profile.release.package.fast_image_resize]
+#codegen-units = 1
+
+
+[profile.release.package.image]
+codegen-units = 1
+
+
+[profile.release.package.resize]
+codegen-units = 1
+
+
+[package.metadata.release]
+pre-release-replacements = [
+    { file = "CHANGELOG.md", search = "Unreleased", replace = "{{version}}" },
+    { file = "CHANGELOG.md", search = "ReleaseDate", replace = "{{date}}" }
+]
+
+
+[[bench]]
+name = "bench_resize"
+harness = false
+
+
+[[bench]]
+name = "bench_alpha"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_rgb"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_rgb16"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_rgb32f"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_rgba"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_rgba16"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_rgba32f"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_l"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_la"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_l16"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_la16"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_l32f"
+harness = false
+
+
+[[bench]]
+name = "bench_compare_la32f"
+harness = false
+
+
+[[bench]]
+name = "bench_color_mapper"
+harness = false
+
+
+[[bench]]
+name = "bench_threads"
+harness = false
+required-features = ["rayon"]
+
+
+
+# Header of the next release in CHANGELOG.md:
+#   ## [Unreleased] - ReleaseDate

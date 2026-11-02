@@ -34,8 +34,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         return Ok(stats);
     }
     let mut index = catalog.pdq_index()?;
-    // Every file of the list may add its hash.
-    index.reserve(items.len());
+    // Every file of the list may add its 8 orientations.
+    index.reserve(items.len() * 8);
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
 
     let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);
@@ -56,25 +56,16 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                         continue;
                     }
                     if let Some(px) = a.pixels.as_ref().filter(|px| px.pdq.quality >= MIN_QUALITY) {
-                        // Best distance per neighbour over the 8 orientations of the new image.
-                        best.clear();
-                        for (v, h) in px.pdq_dihedral.iter().enumerate() {
-                            index.query(h, MATCH_DISTANCE, &mut found);
-                            for &(other, d) in &found {
-                                match best.iter_mut().find(|b| b.0 == other) {
-                                    Some(b) if d < b.1 => *b = (other, d, v),
-                                    Some(_) => {}
-                                    None => best.push((other, d, v)),
-                                }
-                            }
-                        }
+                        // The new image's 8 orientations against every stored orientation of the earlier ones:
+                        // the pair is found the same whichever image comes first. The best per neighbour.
+                        index.best_matches(&px.pdq_dihedral, MATCH_DISTANCE, &mut found, &mut best);
                         for &(other, d, v) in &best {
                             if other != item.id {
                                 writer.store_pdq_pair(item.id, other, d, v)?;
                                 stats.pairs += 1;
                             }
                         }
-                        index.insert(item.id, &px.pdq.hash);
+                        index.insert_orientations(item.id, &px.pdq_dihedral);
                     }
                 }
                 Err(e) => {

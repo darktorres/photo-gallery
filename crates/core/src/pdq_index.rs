@@ -224,6 +224,37 @@ impl PdqIndex {
         self.indexed = n;
     }
 
+    /// Store every orientation of an image under its id. A pair matches when some orientation of one is within the
+    /// radius of some orientation of the other, so the index needs all of them to find it whichever of the two is
+    /// imported first.
+    pub fn insert_orientations(&mut self, id: i64, orientations: &[Hash]) {
+        for hash in orientations {
+            self.insert(id, hash);
+        }
+    }
+
+    /// The entries matching any of `orientations` within `radius`: for each neighbour, the least distance and the
+    /// index of the orientation it matched, in `best`. `found` and `best` are the caller's buffers (cleared here).
+    pub fn best_matches(
+        &mut self,
+        orientations: &[Hash],
+        radius: u32,
+        found: &mut Vec<(i64, u32)>,
+        best: &mut Vec<(i64, u32, usize)>,
+    ) {
+        best.clear();
+        for (v, hash) in orientations.iter().enumerate() {
+            self.query(hash, radius, found);
+            for &(other, d) in found.iter() {
+                match best.iter_mut().find(|b| b.0 == other) {
+                    Some(b) if d < b.1 => *b = (other, d, v),
+                    Some(_) => {}
+                    None => best.push((other, d, v)),
+                }
+            }
+        }
+    }
+
     /// Every entry within `radius` (≤ [`MAX_RADIUS`]) of `hash`, as (id, distance), into `out` (cleared first), in
     /// no particular order.
     pub fn query(&mut self, hash: &Hash, radius: u32, out: &mut Vec<(i64, u32)>) {
@@ -268,6 +299,7 @@ impl PdqIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::pdq::MATCH_DISTANCE;
 
     fn rand_hash(state: &mut u64) -> Hash {
         let mut h = [0u8; 32];
@@ -278,6 +310,55 @@ mod tests {
             *b = *state as u8;
         }
         Hash(h)
+    }
+
+    /// The pairs found when the images are imported in `order`, as (smaller, larger) image indices: each one is
+    /// queried with all its orientations against the earlier ones' (what the import does).
+    fn pairs_in(order: &[usize], images: &[Vec<Hash>]) -> std::collections::BTreeSet<(i64, i64)> {
+        let mut index = PdqIndex::default();
+        let (mut found, mut best) = (Vec::new(), Vec::new());
+        let mut pairs = std::collections::BTreeSet::new();
+        for &i in order {
+            index.best_matches(&images[i], MATCH_DISTANCE, &mut found, &mut best);
+            for &(other, _, _) in &best {
+                pairs.insert((other.min(i as i64), other.max(i as i64)));
+            }
+            index.insert_orientations(i as i64, &images[i]);
+        }
+        pairs
+    }
+
+    /// Whichever image is imported first, the same pairs are found: a pair matches when some orientation of one is
+    /// within the radius of some orientation of the other, and both sides are in the index.
+    #[test]
+    fn pairs_do_not_depend_on_import_order() {
+        let mut s = 0xA5A5_5A5A_1234_5678u64;
+        // Each image: eight orientations. Each image gets an orientation that is a near copy of a non-identity
+        // orientation of the previous image (within the radius). Neither side's copy is its first orientation, so a
+        // pair exists only if the index holds every orientation of the earlier image.
+        let mut images: Vec<Vec<Hash>> = (0..40).map(|_| (0..8).map(|_| rand_hash(&mut s)).collect()).collect();
+        for i in 1..images.len() {
+            let source = i - 1;
+            let orientation = 1 + (i * 3) % 7;
+            let mut copy = images[source][1 + (i * 5) % 7];
+            for _ in 0..(10 + i % 20) {
+                let bit = rand_hash(&mut s).0[0] as usize;
+                copy.0[bit / 8] ^= 1 << (bit % 8);
+            }
+            images[i][orientation] = copy;
+        }
+        let n = images.len();
+        let forward: Vec<usize> = (0..n).collect();
+        let reverse: Vec<usize> = (0..n).rev().collect();
+        let mut shuffled = forward.clone();
+        for i in (1..n).rev() {
+            let j = (rand_hash(&mut s).0[0] as usize) % (i + 1);
+            shuffled.swap(i, j);
+        }
+        let expected = pairs_in(&forward, &images);
+        assert!(!expected.is_empty(), "the test needs pairs to find");
+        assert_eq!(pairs_in(&reverse, &images), expected);
+        assert_eq!(pairs_in(&shuffled, &images), expected);
     }
 
     /// `bases` random hashes, each with copies at 5 to 40 random bit flips, and the queries: every 10th base hash

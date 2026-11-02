@@ -132,6 +132,7 @@ CREATE TABLE analysis(
     height      INTEGER,
     pdq         BLOB,              -- tier 1: 32 bytes, Meta's byte order
     pdq_quality INTEGER,
+    pdq_dihedral BLOB,             -- tier 1: the 8 orientations' hashes, 32 bytes each (the first is pdq's), for pairs
     thumbhash   BLOB,
     frames      INTEGER,           -- frames in the file: > 1 is an animated image (or a video)
     taken       INTEGER,           -- when it was taken, as wall-clock time (no time zone) in Unix seconds
@@ -314,9 +315,9 @@ END;
 /// `LAYOUT_PARTS`.
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
-     + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due'))
+     + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))";
-const LAYOUT_PARTS: i64 = 9;
+const LAYOUT_PARTS: i64 = 10;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[
@@ -837,15 +838,31 @@ impl Catalog {
         // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the
         // join below costs a quarter of reading it.
         let present: usize = self.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0))?;
-        let (mut ids, mut hashes) = (Vec::with_capacity(present), Vec::with_capacity(present));
+        // An analysis made before the orientations were stored has its main hash but not these: its pairs would
+        // be missing one way round. Those files are re-analyzed (`import --again`), not matched with what they lack.
+        let without: i64 = self.conn.query_row(
+            "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
+             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NULL AND a.pdq_quality >= ?1",
+            [pdq::MIN_QUALITY],
+            |r| r.get(0),
+        )?;
+        if without > 0 {
+            bail!("{without} analyses have no orientation hashes (made by an older build): re-import them");
+        }
+        let (mut ids, mut hashes) = (Vec::with_capacity(present * 8), Vec::with_capacity(present * 8));
         let mut stmt = self.conn.prepare(
-            "SELECT a.file_id, a.pdq FROM analysis a JOIN files f ON f.id = a.file_id
-             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq IS NOT NULL AND a.pdq_quality >= ?1",
+            "SELECT a.file_id, a.pdq_dihedral FROM analysis a JOIN files f ON f.id = a.file_id
+             WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NOT NULL AND a.pdq_quality >= ?1",
         )?;
         let mut rows = stmt.query([pdq::MIN_QUALITY])?;
         while let Some(r) = rows.next()? {
-            ids.push(r.get(0)?);
-            hashes.push(pdq::Hash(r.get::<_, [u8; pdq::HASH_BYTES]>(1)?).words());
+            let id: i64 = r.get(0)?;
+            let blob: Vec<u8> = r.get(1)?;
+            let (orientations, _) = blob.as_chunks::<{ pdq::HASH_BYTES }>();
+            for orientation in orientations {
+                ids.push(id);
+                hashes.push(pdq::Hash(*orientation).words());
+            }
         }
         Ok(PdqIndex::build(ids, hashes))
     }
@@ -1155,9 +1172,9 @@ impl<'tx> AnalysisWriter<'tx> {
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
                     file_hash, pixel_hash, format, orientation, width, height, pdq, pdq_quality, thumbhash, frames,
-                    taken, duration_ms, poster_ms, borders_due)
+                    taken, duration_ms, poster_ms, borders_due, pdq_dihedral)
                  VALUES (?1, ?2, ?3, ?4, ?19, ?20, unixepoch(), NULL, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14,
-                         CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18, 0)",
+                         CASE WHEN ?16 THEN unixepoch(?15, 'unixepoch', 'localtime') ELSE ?15 END, ?17, ?18, 0, ?21)",
             )?,
             failure: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
@@ -1223,6 +1240,7 @@ impl<'tx> AnalysisWriter<'tx> {
             a.poster_ms,
             item.rotation,
             item.kind.key(),
+            a.pixels.as_ref().map(|p| p.pdq_dihedral.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
         ])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id])?;

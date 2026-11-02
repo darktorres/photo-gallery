@@ -187,7 +187,7 @@ fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
     let p = crate::video::probe(path)?;
     let poster = crate::video::poster_ms(p.duration_ms);
     crate::video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
-    let (width, height) = if turns % 2 == 1 { (p.height, p.width) } else { (p.width, p.height) };
+    let (width, height) = if orientation::turns_swap(turns) { (p.height, p.width) } else { (p.width, p.height) };
     Ok(Analysis {
         version: IMPORT_VERSION,
         file_hash,

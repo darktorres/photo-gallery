@@ -25,7 +25,7 @@ pub(crate) enum Op {
 impl Op {
     /// Width and height swap.
     fn quarter(self) -> bool {
-        matches!(self, Op::Orient(5..=8))
+        matches!(self, Op::Orient(o) if crate::orientation::swaps_axes(o))
     }
 
     /// The new size of a `w` × `h` raster.

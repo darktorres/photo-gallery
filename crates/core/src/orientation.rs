@@ -49,6 +49,12 @@ pub fn swaps_axes(o: u8) -> bool {
     (5..=8).contains(&o)
 }
 
+/// Whether `turns` quarter turns (clockwise) swap the picture's sides: an odd number does. The catalog's turns are
+/// counted this way, before they are composed with the file's own orientation (`compose`).
+pub fn turns_swap(turns: u8) -> bool {
+    turns % 2 == 1
+}
+
 /// Where the pixel (`x`, `y`) of a `w` × `h` stored picture is shown.
 pub fn shown_pixel(o: u8, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
     shown(o, (x, y), (w, h), 1)
@@ -114,6 +120,21 @@ mod tests {
     #[test]
     fn swapping_follows_the_quarter_turns() {
         assert_eq!((1..=8).filter(|&o| swaps_axes(o)).collect::<Vec<_>>(), [5, 6, 7, 8]);
+    }
+
+    #[test]
+    fn the_catalog_turns_swap_exactly_when_the_composed_orientation_does() {
+        // The catalog stores turns on their own (`turns_swap`); the file's own orientation is composed in afterwards
+        // (`compose`). Both must agree on whether the sides swap, for every file orientation.
+        for o in 1..=8 {
+            for turns in 0..4 {
+                assert_eq!(
+                    turns_swap(turns),
+                    swaps_axes(compose(o, turns)) != swaps_axes(o),
+                    "o = {o}, turns = {turns}"
+                );
+            }
+        }
     }
 
     #[test]

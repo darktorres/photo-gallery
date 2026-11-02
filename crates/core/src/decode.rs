@@ -31,7 +31,7 @@ pub struct Info {
 impl Info {
     /// The same, for the image once oriented.
     fn upright(self) -> Info {
-        let (full_width, full_height) = if matches!(self.orientation, 5..=8) {
+        let (full_width, full_height) = if orientation::swaps_axes(self.orientation) {
             (self.full_height, self.full_width)
         } else {
             (self.full_width, self.full_height)
@@ -114,7 +114,7 @@ impl Decoder {
         out: &mut Rgb,
     ) -> Result<Info> {
         let orientation = crate::orientation::compose(exif, turns);
-        let quarter_turn = matches!(orientation, 5..=8);
+        let quarter_turn = orientation::swaps_axes(orientation);
         let jpeg = match format {
             Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
             _ => None,

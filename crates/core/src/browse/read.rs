@@ -390,7 +390,11 @@ impl Entry {
 
     /// Width and height as shown, pending turns included; 0 before the import.
     pub fn shown_size(&self) -> (u32, u32) {
-        if self.pending_turns % 2 == 1 { (self.height, self.width) } else { (self.width, self.height) }
+        if crate::orientation::turns_swap(self.pending_turns) {
+            (self.height, self.width)
+        } else {
+            (self.width, self.height)
+        }
     }
 
     /// Width ÷ height as shown; 1 before the import.

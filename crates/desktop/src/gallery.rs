@@ -707,7 +707,7 @@ impl qobject::GalleryModel {
             }
         }
         // An odd turn changes the item's shape, and so the rows.
-        if turns % 2 == 1 {
+        if pg_core::orientation::turns_swap(turns) {
             self.as_mut().lay_out(Changed::Items(&[item as usize]));
         } else {
             self.as_mut().items_changed(&[item as usize]);

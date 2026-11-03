@@ -7,6 +7,7 @@ use std::hint::black_box;
 use gungraun::prelude::*;
 use pg_model::analysis::Analysis;
 use pg_analysis::analyze::Analyzer;
+use pg_model::turns::Turns;
 use pg_render::maker::Maker;
 
 /// A median-size file of the test set: a 126 KB mozjpeg re-encode, 1280×1017 baseline. It's one of the library's
@@ -32,13 +33,13 @@ fn for_thumb() -> (Vec<u8>, Maker) {
 #[library_benchmark]
 #[bench::sample(setup = for_analyze)]
 fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analysis {
-    black_box(analyzer.analyze(black_box(&bytes), 0).unwrap())
+    black_box(analyzer.analyze(black_box(&bytes), Turns::NONE).unwrap())
 }
 
 #[library_benchmark]
 #[bench::h256(setup = for_thumb)]
 fn thumb_jpeg((bytes, mut maker): (Vec<u8>, Maker)) -> Vec<u8> {
-    black_box(maker.make(black_box(&bytes), 256, 0).unwrap())
+    black_box(maker.make(black_box(&bytes), 256, Turns::NONE).unwrap())
 }
 
 library_benchmark_group!(name = per_file, benchmarks = [analyze_jpeg, thumb_jpeg]);

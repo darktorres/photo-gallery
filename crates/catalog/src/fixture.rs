@@ -1,6 +1,7 @@
 //! Test catalogs: files inserted as the scanner would, with their order keys. Behind the `fixture` feature (and in
 //! this crate's tests), so every crate that reads a catalog in its tests builds the same files.
 
+use crate::Catalog;
 use pg_model::turns::Turns;
 use rusqlite::{Connection, params};
 
@@ -24,8 +25,16 @@ impl File {
     }
 }
 
+/// The catalog's connection, for the tests of the crates around the catalog, which check the tables a write left
+/// behind. Test-only (this module is behind the `fixture` feature): production code reads through the catalog's
+/// functions.
+pub fn connection(catalog: &Catalog) -> &Connection {
+    &catalog.conn
+}
+
 /// Insert the files (scan 1 must exist).
-pub fn insert(conn: &Connection, files: &[File]) {
+pub fn insert(catalog: &Catalog, files: &[File]) {
+    let conn = &catalog.conn;
     for f in files {
         let folder: String =
             conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder], |r| r.get(0)).unwrap();

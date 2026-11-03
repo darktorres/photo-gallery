@@ -26,7 +26,7 @@ pub(crate) fn library() -> crate::Catalog {
         (3, 1, "Ä.jpg", 20, 1, "jpeg", 2),
         (4, 3, "c.bmp", 40, 5, "bmp", 0),
     ] {
-        fixture::insert(&c.conn, &[fixture::File::new(id, folder, name, size, mtime)]);
+        fixture::insert(&c, &[fixture::File::new(id, folder, name, size, mtime)]);
         c.conn
             .execute(
                 "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height)
@@ -53,7 +53,7 @@ pub(crate) fn mixed_library() -> crate::Catalog {
     let c = library();
     use fixture::File;
     fixture::insert(
-        &c.conn,
+        &c,
         &[
             File { kind: "video", ..File::new(5, 3, "Clip.MP4", 50, 7) },
             File::new(6, 1, "anim.gif", 15, 2),

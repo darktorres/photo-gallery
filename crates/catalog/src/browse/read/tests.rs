@@ -134,7 +134,7 @@ fn folders_in_the_trees_order() {
     let c = library();
     // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
     c.conn.execute("INSERT INTO folders(id, path) VALUES (4, 'D:\\p-x')", []).unwrap();
-    fixture::insert(&c.conn, &[fixture::File::new(9, 4, "z.jpg", 1, 1)]);
+    fixture::insert(&c, &[fixture::File::new(9, 4, "z.jpg", 1, 1)]);
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
     let tree = folder_tree(&c).unwrap();
     let roots: Vec<&str> = tree.children(None).map(|n| tree.name(n)).collect();

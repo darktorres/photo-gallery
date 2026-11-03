@@ -1655,7 +1655,7 @@ mod tests {
                  INSERT INTO folders(id, path) VALUES (1, 'D:\\x');",
             )
             .unwrap();
-        fixture::insert(&c.conn, &[fixture::File::new(1, 1, "a.jpg", 10, 100)]);
+        fixture::insert(&c, &[fixture::File::new(1, 1, "a.jpg", 10, 100)]);
         (c, 1)
     }
 
@@ -1769,7 +1769,7 @@ mod tests {
         c.conn
             .execute_batch("INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0); INSERT INTO folders(id, path) VALUES (1, 'D:\\x');")
             .unwrap();
-        insert(&c.conn, &[File::new(1, 1, "a.jpg", 10, 100)]);
+        insert(&c, &[File::new(1, 1, "a.jpg", 10, 100)]);
         c.conn
             .execute_batch("INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed) VALUES (1, 1, 10, 100, 0, 'image', 0);")
             .unwrap();
@@ -1791,7 +1791,7 @@ mod tests {
             )
             .unwrap();
         insert(
-            &c.conn,
+            &c,
             &[File::new(1, 1, "a.jpg", 10, 100), File::new(2, 2, "b.jpg", 10, 100), File::new(3, 1, "c.jpg", 10, 100)],
         );
         // File 1 analyzed, file 2 failed (still a source: the pass leaves it out), file 3 not analyzed (not a source).
@@ -2140,7 +2140,7 @@ mod tests {
             .unwrap();
         let files = [(1, 1, "a.jpg"), (2, 2, "b.jpg"), (3, 3, "c.jpg"), (4, 4, "d.jpg"), (5, 4, "e.jpg")];
         let files = files.map(|(id, folder, name)| fixture::File::new(id, folder, name, 10, 100));
-        fixture::insert(&c.conn, &files);
+        fixture::insert(&c, &files);
         for item in c.pending_import(false).unwrap().items {
             analyzed(&mut c, &item);
         }

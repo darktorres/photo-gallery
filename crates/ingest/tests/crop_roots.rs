@@ -55,7 +55,7 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
     borders::find(&mut c, &opts, &ctl).unwrap();
 
     let ids: Vec<FileId> = {
-        let mut stmt = c.conn.prepare("SELECT id FROM files WHERE missing = 0").unwrap();
+        let mut stmt = pg_catalog::fixture::connection(&c).prepare("SELECT id FROM files WHERE missing = 0").unwrap();
         stmt.query_map([], |r| Ok(FileId::new(r.get(0)?))).unwrap().map(Result::unwrap).collect()
     };
     assert_eq!(ids.len(), 2);

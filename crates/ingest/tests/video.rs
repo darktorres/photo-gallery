@@ -177,8 +177,7 @@ fn videos() {
     assert_eq!((stats.files, stats.failed), (6, 0));
     // Name, kind, width, height, duration, poster time, whether the pixel hash is missing.
     type Row = (String, String, i64, i64, i64, i64, Option<i64>);
-    let rows: Vec<Row> = catalog
-        .conn
+    let rows: Vec<Row> = pg_catalog::fixture::connection(&catalog)
         .prepare(
             "SELECT f.name, f.kind, a.width, a.height, a.duration_ms, a.poster_ms, a.pixel_hash IS NULL
              FROM files f JOIN analysis a ON a.file_id = f.id ORDER BY f.name",
@@ -196,14 +195,12 @@ fn videos() {
         assert_eq!((*w, *h), want, "{name}");
     }
     // creation_time is UTC; the catalog keeps this computer's wall-clock time.
-    let taken: Option<i64> = catalog
-        .conn
+    let taken: Option<i64> = pg_catalog::fixture::connection(&catalog)
         .query_row("SELECT taken FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = 'h264.mp4'", [], |r| {
             r.get(0)
         })
         .unwrap();
-    let local: i64 = catalog
-        .conn
+    let local: i64 = pg_catalog::fixture::connection(&catalog)
         .query_row("SELECT unixepoch(?1, 'unixepoch', 'localtime')", [wall_clock_seconds(2022, 3, 4, 5, 6, 7)], |r| {
             r.get(0)
         })

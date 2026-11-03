@@ -10,7 +10,7 @@ use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, import, scan};
 
 fn due(c: &Catalog, name: &str) -> i64 {
-    c.conn
+    pg_catalog::fixture::connection(c)
         .query_row(
             "SELECT a.borders_due FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = ?1",
             [name],

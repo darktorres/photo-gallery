@@ -58,7 +58,9 @@ fn make_files(dir: &Path) -> Vec<String> {
 }
 
 fn ids(c: &Catalog) -> Vec<(i64, String)> {
-    let mut stmt = c.conn.prepare("SELECT id, name FROM files WHERE missing = 0 ORDER BY name").unwrap();
+    let mut stmt = pg_catalog::fixture::connection(c)
+        .prepare("SELECT id, name FROM files WHERE missing = 0 ORDER BY name")
+        .unwrap();
     stmt.query_map([], |r| Ok((r.get(0).unwrap(), r.get(1).unwrap()))).unwrap().map(Result::unwrap).collect()
 }
 

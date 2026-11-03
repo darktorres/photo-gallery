@@ -48,6 +48,8 @@ Rectangle {
         property string title
         property int first: 0
         property int count: 0
+        // `revision >= 0` is true for any loaded model: it makes this binding depend on `revision`, so it re-evaluates
+        // after a change. The model's roles replace these guards at the QML step (docs/REVIEW.md, R-63).
         readonly property int picked: yandex.revision >= 0 ? yandex.pickedIn(first, count) : 0
 
         visible: count > 0

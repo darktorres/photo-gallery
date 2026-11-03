@@ -60,6 +60,8 @@ Pane {
     component Chip: Button {
         required property string facet
         required property string value
+        // `revision >= 0` is true for any loaded model: it makes this binding depend on `revision`, so it re-evaluates
+        // after a change. The model's roles replace these guards at the QML step (docs/REVIEW.md, R-63).
         highlighted: filters.revision >= 0 && filters.has(facet, value)
         padding: 3
         leftPadding: 8

@@ -493,6 +493,8 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     elide: Text.ElideMiddle
                     color: "#aaaaaa"
+                    // `revision >= 0` is true for any loaded model: it makes this binding depend on `revision`, so it re-evaluates
+                    // after a change. The model's roles replace these guards at the QML step (docs/REVIEW.md, R-63).
                     text: galleryModel.revision >= 0 && win.current >= 0
                         ? galleryModel.info(win.current) + "   "
                           + (galleryModel.rating(win.current) > 0

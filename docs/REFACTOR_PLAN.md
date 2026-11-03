@@ -662,7 +662,7 @@ hold the commits. The ID is the step number (`S-nn`, with `.m` for a sub-item). 
 the code comments cite ("step 8"), so they stay. IDs never change and are never reused. The status follows the review
 ledger: `open`, `open (part: <sha>)`, `fixed <sha>` (the commit that did it), `verified`.
 
-Now: steps 0, 1 and 3 are fixed. Step 2's code is fixed, and its verify items are open (S-02.3). Steps 4 to 13 are open.
+Now: steps 0 to 3 are fixed, and their verify items are checked (S-02.3). Steps 4 to 13 are open.
 Step 4 waits for your go-ahead.
 
 Rules that hold for every row:
@@ -682,11 +682,11 @@ Rules that hold for every row:
 | S-01 | fixed | Scaffolding. | Rows below. |
 | S-01.1 | fixed 77d0210 | `members = ["crates/*"]`; `pg-bench` (benches moved, `wsl-bench.sh:38-39` pointed at it). | |
 | S-01.2 | fixed 2122a8f | `pg-testkit` with the fixture and scratch dirs. | |
-| S-01.3 | fixed 82df5ee | `just wsl-check`: a new recipe, clippy for every crate but desktop in the WSL clone. | Leaves out `pg-ingest` until S-04 (21a5fb1): its Windows-only code is not behind `cfg(windows)` yet. |
-| S-02 | open (part: d4c484b) | Spike. | Rows below. |
+| S-01.3 | fixed 82df5ee | `just wsl-check`: a new recipe, clippy for every crate but desktop in the WSL clone. | Leaves out `pg-ingest` until S-04 (21a5fb1): its Windows-only code is not behind `cfg(windows)` yet. The gap closes in S-04 (the platform crate), so it waits for your go-ahead on phase 4. |
+| S-02 | fixed | Spike. | Rows below. |
 | S-02.1 | fixed d4c484b | `pg-ui` becomes `pg-desktop` (lib, calls `cxx_qt::init_crate!(pg_desktop)` in `run()`), plus `pg-gallery` (bin `gallery`, winres moved to its build.rs). | The QML module URI stays `pg.gallery`, so `app_icon.cpp`'s `:/qt/qml/pg/gallery/resources/` path holds. |
 | S-02.2 | fixed d4c484b | Update every reference. Find them with a grep for `pg-core`, `pg-ingest`, `pg-ui`, `crates/core`, `crates/ingest` and `crates/ui`, excluding `target` and `vendor`, and keep the dated logs (FINDINGS, HEAP_PROFILE). The hits at f3d2e60: the manifests and `Cargo.lock` (regenerated), `.cargo/config.toml:4`, `deny.toml:10,45-48`; `Justfile:12,21`, `tools/lint-qml.ps1:13,19,28,36`, `tools/make_icon.py:4,9`, and under `tools/profiling/`: `profile.ps1:2`, `callgraph/callgraph.cpp:7`, `cgtab.py:195`, `wsl-bench.sh:2,38-39`, `bench_data.py:1`; `docs/PROFILING.md` (19, 58, 117, 124, 137, 155, 168, 180, 359, 373), `docs/PLAN.md:283,307`, `docs/VIDEO_PLAYER.md:55,73`, `docs/STORAGE.md:10,12`, `docs/DATABASE.md:21`, `docs/JPEG_DECODERS.md:3,91`; `crates/README.md`, `crates/core/build.rs:7,20`, and the `include!("pg-ui/cpp/…")` paths (`providers.cpp:22`, `animation.rs:15`, `app_icon.rs:7`, `gpu_device.rs:28`, `gui_app.rs:11`, `live_reload.rs:14,18`, `providers.rs:44`, `screenshot.rs:13`); `eval/imgload.py:41`, and `eval/jpeg-decoders/` (comments, `win-build.cmd:29`). | Checked: no `pg-ui` or `crates/ui` outside the dated logs. |
-| S-02.3 | open (part: 0ac379e) | Verify: `just deploy`, the icon, live reload, `lint-qml`, the screenshot smoke test. | The grid, viewer and filters screenshots match the pre-split build (R-14, 0ac379e), and `lint-qml` runs in `just lint`. Nothing in the repo records `just deploy`, the icon or live reload. |
+| S-02.3 | verified ea364ac | Verify: `just deploy`, the icon, live reload, `lint-qml`, the screenshot smoke test. | Checked on the code at ea364ac (later commits are ledger and docs only). `just deploy` exits 0, with two `windeployqt` warnings: no `dxcompiler.dll`/`dxil.dll` (Direct3D 12 compiler) and no `VCINSTALLDIR`. `lint-qml`: no warnings, all 735 bindings compiled. The exe's icon is the app icon. Live reload: a debug run with a visible text change in `Main.qml` during the run showed the new text in its screenshot; the control run showed the original, and the file was reverted. The grid, viewer and filters screenshots match the pre-split build (R-14). |
 | S-03 | fixed | Cut the cycles inside pg-core, one commit each. | Rows below. |
 | S-03.1 | fixed e5575a0 | `Format` into `format.rs`. | `metadata` no longer imports it from the decoder. |
 | S-03.2 | fixed b5235c8 | `Orientation` into `orientation.rs`: its algebra and both coordinate maps replace the five tables. | |
@@ -696,7 +696,7 @@ Rules that hold for every row:
 | S-03.6 | fixed abf8a6b | The literal macros: the minimum side (`min_side!()`), like the group distance. | |
 | S-03.7 | fixed a8d4b75 | The typed `Analysis` record (with `ThumbHash` and `Sides`) into `analysis.rs`, apart from the analyzer. | |
 | S-03.8 | fixed 74dfde3 | `browse` split by job: the read models with `FileState`/`FileSource`/`Placeholder` and the tree builder into `browse::read`, the commands into `browse::writes`. | |
-| S-03.9 | fixed 959236e | The catalog stops calling `browse` (`catalog.rs:455,1089,1104`). | The catalog's tests still call `browse::read` (the border-sides assertion, about line 1964). |
+| S-03.9 | fixed 959236e | The catalog stops calling `browse` (`catalog.rs:455,1089,1104`). | The catalog's test `borders_are_looked_for_after_the_import_and_again_after_a_new_detector` (`catalog.rs:1896`) still calls `browse::read`. Its move belongs to S-08.6 (tests reach the catalog through its API), so it is not moved here. |
 | S-03.10 | fixed 220c379 | The container walkers in one module, `container.rs`: `jpeg_is_progressive` is replaced; `Container` stays in metadata. | |
 | S-03.11 | fixed bd8c86e | The decoder takes the orientation: `decode()` and `decode_stored()` (`decode.rs:139-154`) deleted. | `upright` into `display.rs`: c531b7c. |
 | S-03.12 | fixed a99eebb | Video analysis into analyze (`video.rs:261-290`). | |

@@ -198,6 +198,11 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     Ok(stats)
 }
 
+/// The most pixels one image may have: `image`'s default allocation limit (512 MiB, which the app's decoders keep to)
+/// at three bytes a pixel. A header above it is refused before any pixel is read, so the pipe can't ask for a 3 GB
+/// buffer.
+const MAX_PIXELS: usize = (512 << 20) / 3;
+
 /// Look for borders in images read from `input` until it ends: each one's width and height (u32, little-endian),
 /// then its pixels (RGB, rows top to bottom). For each, a line on `output`: what is left without its borders, as
 /// `left top right bottom` (right and bottom exclusive; the whole image when it has none, or is too small to look
@@ -213,7 +218,7 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
         let mut size = [0u8; 8];
         input.read_exact(&mut size).context("reading an image's size")?;
         let [w, h] = [&size[..4], &size[4..]].map(|b| u32::from_le_bytes(b.try_into().unwrap()) as usize);
-        ensure!(w.checked_mul(h).is_some_and(|p| p <= 1 << 30), "image {n}: {w} × {h} is too large");
+        ensure!(w.checked_mul(h).is_some_and(|p| p <= MAX_PIXELS), "image {n}: {w} × {h} is too large");
         (img.width, img.height) = (w, h);
         img.pixels.resize(w * h * 3, 0);
         input.read_exact(&mut img.pixels).with_context(|| format!("reading image {n}'s pixels"))?;
@@ -292,5 +297,15 @@ mod tests {
         assert_eq!(lines[1], [0, 0, 32, 32]);
         // A stream cut short is an error, not a silent end.
         assert!(serve(&input[..20], &mut Vec::new()).is_err());
+    }
+
+    #[test]
+    fn a_header_above_the_pixel_limit_is_refused_before_its_pixels() {
+        // 20000 × 20000 is 400 M pixels, over MAX_PIXELS; no pixel bytes follow, so the refusal is the header's.
+        let mut input = Vec::new();
+        input.extend_from_slice(&20_000u32.to_le_bytes());
+        input.extend_from_slice(&20_000u32.to_le_bytes());
+        let err = serve(&input[..], &mut Vec::new()).unwrap_err();
+        assert!(err.to_string().contains("too large"), "{err}");
     }
 }

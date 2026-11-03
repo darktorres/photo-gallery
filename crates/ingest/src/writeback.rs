@@ -42,6 +42,9 @@ pub struct WriteStatus {
     pub queued: usize,
     /// The latest failure, until the next success.
     pub error: Option<String>,
+    /// The latest thumbnail that couldn't follow a rewritten file (the cache busy or closing). The thumbnail is made
+    /// again, and the write is done all the same.
+    pub thumbnail_error: Option<String>,
 }
 
 struct Inner {
@@ -266,7 +269,8 @@ impl Inner {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
-                eprintln!("thumbnails of file {}: {e:#}", job.file_id.get());
+                let message = format!("file {}: {e:#}", job.file_id.get());
+                self.status.update(|s| s.thumbnail_error = Some(message));
             }
         }
         if pixels_changed {

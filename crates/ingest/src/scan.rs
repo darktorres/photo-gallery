@@ -15,6 +15,7 @@ use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 
+use crate::{Failure, keep_failure};
 use pg_jobs::control::{Control, Phase};
 
 /// Folders never descended into.
@@ -87,6 +88,8 @@ pub struct ScanStats {
     pub errors: u64,
     /// False when stopped early; nothing is marked missing then.
     pub complete: bool,
+    /// The first folders that couldn't be read (`FAILURES_KEPT`).
+    pub failures: Vec<Failure>,
 }
 
 /// Record the media files under `root` (a folder, from `normalize_path`); files it no longer holds are marked missing.
@@ -98,7 +101,8 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     let volume = root_dir.volume_serial()?;
     let mut root_dir = Some(root_dir);
     let scan_id = catalog.begin_scan(root)?;
-    let mut stats = ScanStats { folders: 0, files: 0, changed: 0, missing: 0, errors: 0, complete: false };
+    let mut stats =
+        ScanStats { folders: 0, files: 0, changed: 0, missing: 0, errors: 0, complete: false, failures: Vec::new() };
     let mut stack = vec![root.to_string()];
     // The folders this scan couldn't list: the files under them weren't seen, so they aren't marked missing (R-45).
     let mut unreadable: Vec<String> = Vec::new();
@@ -124,7 +128,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
         {
             Ok(n) => n,
             Err(e) => {
-                eprintln!("skipped: {e:#}");
+                keep_failure(&mut stats.failures, &dir, format!("{e:#}"));
                 stats.errors += 1;
                 unreadable.push(dir);
                 continue;

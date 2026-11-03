@@ -11,14 +11,21 @@ use pg_catalog::Catalog;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
+use crate::{Failure, keep_failure};
 use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 200;
 
 pub struct ThumbStats {
+    /// The files that needed a thumbnail at the height when the pass began.
+    pub needed: usize,
+    /// The thumbnail cache's size (bytes) when the pass began.
+    pub cache_bytes: u64,
     pub made: usize,
     pub failed: usize,
+    /// The first failures (`FAILURES_KEPT`), for whoever shows the pass.
+    pub failures: Vec<Failure>,
     /// Files changed while they were read (or being rewritten by the app): not kept, tried again.
     pub changed: usize,
     pub cache_full: bool,
@@ -31,18 +38,23 @@ pub struct ThumbStats {
 pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options, ctl: &Control) -> Result<ThumbStats> {
     let Pending { work, snapshot } = cache.pending(catalog_path, height)?;
     let items = &work.items;
-    let mut stats = ThumbStats { made: 0, failed: 0, changed: 0, cache_full: false, complete: false };
+    let mut stats = ThumbStats {
+        needed: items.len(),
+        cache_bytes: 0,
+        made: 0,
+        failed: 0,
+        failures: Vec::new(),
+        changed: 0,
+        cache_full: false,
+        complete: false,
+    };
     if items.is_empty() {
         cache.checked(&snapshot, None)?;
         stats.complete = true;
         cache.shrink()?;
         return Ok(stats);
     }
-    eprintln!(
-        "{} files need a {height} px thumbnail; cache holds {:.2} GB",
-        items.len(),
-        cache.totals()?.0 as f64 / 1e9
-    );
+    stats.cache_bytes = cache.totals()?.0 as u64;
     // To check each file against before its thumbnail is kept.
     let catalog = Catalog::open(catalog_path)?;
     let mut batch = Vec::with_capacity(BATCH);
@@ -126,7 +138,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 Err(e) => {
                     stats.failed += 1;
                     first_failed = Some(first_failed.map_or(item.seq, |s: i64| s.min(item.seq)));
-                    eprintln!("  {}: {e:#}", work.path(item.path));
+                    keep_failure(&mut stats.failures, work.path(item.path), format!("{e:#}"));
                 }
             }
             if batch.len() >= BATCH {

@@ -242,6 +242,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     s.errors,
                     start.elapsed().as_secs_f64()
                 );
+                print_failures("skipped", &s.failures);
             }
         }
         Command::Remove { root } => {
@@ -264,6 +265,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             }
             let opts = pipeline.options(Priority::Normal);
             let s = import::import(&mut catalog, &opts, retry_errors, ctl)?;
+            println!("{} files to import; the tier-1 index held {} hashes", s.pending, s.indexed);
             println!(
                 "imported {} files ({} failed{}), {} PDQ pairs, {:.1} s",
                 s.files,
@@ -280,6 +282,12 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, report())?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
+            println!(
+                "{} files needed a {height} px thumbnail; the cache held {:.2} GB",
+                s.needed,
+                s.cache_bytes as f64 / 1e9
+            );
+            print_failures("failed", &s.failures);
             println!(
                 "{} thumbnails at {height} px ({} failed{}){}; cache {:.2} of {:.2} GB, {:.1} s",
                 s.made,
@@ -342,6 +350,9 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     break;
                 }
             }
+            if let Some(e) = writer.status().thumbnail_error {
+                eprintln!("thumbnails: {e}");
+            }
             drop(writer);
             cache.close();
             let s = catalog.status()?;
@@ -399,6 +410,13 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
         s.files as f64 / s.seconds.max(1e-3)
     );
     Ok(())
+}
+
+/// The first failures a pass kept, one per line on stderr, under `what`.
+fn print_failures(what: &str, failures: &[crate::Failure]) {
+    for f in failures {
+        eprintln!("{what}: {}: {}", f.path, f.error);
+    }
 }
 
 #[cfg(test)]

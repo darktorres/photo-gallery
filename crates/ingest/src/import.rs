@@ -19,6 +19,10 @@ use pg_jobs::pipeline::{self, Options};
 const BATCH: usize = 500;
 
 pub struct ImportStats {
+    /// The files the pass had to import.
+    pub pending: usize,
+    /// The hashes the tier-1 index held when the pass began.
+    pub indexed: usize,
     pub files: usize,
     pub failed: usize,
     pub pairs: usize,
@@ -29,7 +33,7 @@ pub struct ImportStats {
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
     let work = catalog.pending_import(retry_errors)?;
     let items = &work.items;
-    let mut stats = ImportStats { files: 0, failed: 0, pairs: 0, changed: 0 };
+    let mut stats = ImportStats { pending: items.len(), indexed: 0, files: 0, failed: 0, pairs: 0, changed: 0 };
     // Most rounds (a new thumbnail height, a turn) have nothing to import: don't load every hash for them.
     if items.is_empty() {
         return Ok(stats);
@@ -38,7 +42,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     let mut pairer = Pairer::build(ids, hashes);
     // Every file of the list may add its 8 orientations.
     pairer.reserve(items.len() * 8);
-    eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), pairer.len());
+    stats.indexed = pairer.len();
 
     let mut batch: Vec<(usize, Result<Analyzed>)> = Vec::with_capacity(BATCH);
     ctl.begin(Phase::Import, items.len() as u64);

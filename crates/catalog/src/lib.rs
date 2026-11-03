@@ -12,6 +12,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 pub mod browse;
+pub mod dups;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod query;

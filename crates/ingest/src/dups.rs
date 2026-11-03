@@ -2,98 +2,35 @@
 //! together. Grouping here is plain connected components, enough to inspect tiers 0–1. The real grouping is
 //! multicut over verified tier-2 edges (PLAN §5, M3).
 
-use pg_model::ids::FileId;
 use std::collections::BTreeMap;
 
 use anyhow::Result;
 use pg_catalog::Catalog;
+use pg_catalog::dups::{self, Identity};
 use pg_dedup::UnionFind;
+use pg_model::ids::FileId;
 
 pub const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;
 
-/// The present files' current analyses.
-macro_rules! current {
-    () => {
-        "FROM analysis a JOIN files f ON f.id = a.file_id WHERE a.error IS NULL AND f.missing = 0"
-    };
-}
-
-/// The groups of a hash column (`file_hash`, tier 0a; `pixel_hash`, 0b): (how many, how many files in them).
-macro_rules! groups {
-    ($column:literal) => {
-        concat!(
-            "SELECT count(*), coalesce(sum(n), 0) FROM
-             (SELECT count(*) AS n ",
-            current!(),
-            " GROUP BY a.",
-            $column,
-            " HAVING n > 1)"
-        )
-    };
-}
-
-/// The files of those groups, as (hash, file id), by hash.
-macro_rules! grouped {
-    ($column:literal) => {
-        concat!(
-            "SELECT a.",
-            $column,
-            ", a.file_id ",
-            current!(),
-            " AND a.",
-            $column,
-            " IN
-             (SELECT a.",
-            $column,
-            " ",
-            current!(),
-            " GROUP BY a.",
-            $column,
-            " HAVING count(*) > 1) ORDER BY a.",
-            $column
-        )
-    };
-}
-
 pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()> {
     let conn = &catalog.conn;
-    for (tier, sql) in [("0a identical files", groups!("file_hash")), ("0b identical pixels", groups!("pixel_hash"))] {
-        let (groups, files): (i64, i64) = conn.query_row(sql, [], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    for (tier, by) in [("0a identical files", Identity::File), ("0b identical pixels", Identity::Pixels)] {
+        let (groups, files) = dups::identical_groups(conn, by)?;
         println!("tier {tier}: {groups} groups, {files} files");
     }
     println!("tier 1 PDQ pairs by distance:");
     for (lo, hi) in [(0, 0), (1, 8), (9, 22), (23, 31)] {
-        let n: i64 =
-            conn.query_row("SELECT count(*) FROM present_pdq_pairs WHERE distance BETWEEN ?1 AND ?2", [lo, hi], |r| {
-                r.get(0)
-            })?;
-        println!("  {lo:>2}–{hi:<2}: {n}");
+        println!("  {lo:>2}–{hi:<2}: {}", dups::pdq_pairs_between(conn, lo, hi)?);
     }
 
     // Groups: tiers 0a and 0b, plus PDQ pairs up to `group_distance`.
     let mut uf = UnionFind::default();
-    // The previous row's hash and file: each file is joined to the one before it with the same hash.
-    let mut prev = Vec::new();
-    for sql in [grouped!("file_hash"), grouped!("pixel_hash")] {
-        let mut stmt = conn.prepare(sql)?;
-        let mut rows = stmt.query([])?;
-        let mut prev_id = None;
-        while let Some(r) = rows.next()? {
-            let (h, id) = (r.get_ref(0)?.as_blob()?, FileId::new(r.get(1)?));
-            if let Some(p) = prev_id
-                && prev == h
-            {
-                uf.union(p, id);
-            }
-            prev.clear();
-            prev.extend_from_slice(h);
-            prev_id = Some(id);
+    for by in [Identity::File, Identity::Pixels] {
+        for (a, b) in dups::identical_edges(conn, by)? {
+            uf.union(a, b);
         }
     }
-    let mut stmt = conn.prepare("SELECT a, b FROM present_pdq_pairs WHERE distance <= ?1")?;
-    for pair in stmt.query_map([group_distance], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
-        let (a, b) = pair?;
-        let (a, b) = (FileId::new(a), FileId::new(b));
+    for (a, b) in dups::pdq_edges(conn, group_distance)? {
         uf.union(a, b);
     }
     let ids: Vec<FileId> = uf.members().collect();
@@ -114,13 +51,10 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
         groups.iter().take(5).map(Vec::len).collect::<Vec<_>>()
     );
 
-    let mut path = conn.prepare(
-        "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
-    )?;
     for g in groups.iter().take(show) {
         println!("\n{} files:", g.len());
         for id in g.iter().take(20) {
-            println!("  {}", path.query_row([id.get()], |r| r.get::<_, String>(0))?);
+            println!("  {}", dups::path(conn, *id)?);
         }
     }
     Ok(())

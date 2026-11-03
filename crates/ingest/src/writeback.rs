@@ -200,12 +200,36 @@ impl Inner {
                 }
                 return Ok(());
             };
+            // A file the catalog marks missing, or no longer lists, can't be written: its queued write is dropped, and
+            // the status line says why.
+            let gone: bool = catalog.conn.query_row(
+                "SELECT coalesce((SELECT missing FROM files WHERE id = ?1), 1)",
+                [job.file_id],
+                |r| r.get(0),
+            )?;
+            if gone {
+                if let Some((temp, _)) = &job.temp {
+                    let _ = std::fs::remove_file(temp);
+                }
+                catalog.conn.execute(
+                    "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2",
+                    params![job.file_id, job.kind],
+                )?;
+                self.status.lock().unwrap().error =
+                    Some(format!("A queued {} was dropped: file {} is not in the library", job.kind, job.file_id));
+                continue;
+            }
             match self.process(catalog, &job, exiftool) {
                 Ok(()) => self.status.lock().unwrap().error = None,
                 Err(e) => {
-                    let offline = e.downcast_ref::<std::io::Error>().is_some_and(|io| {
-                        matches!(io.kind(), std::io::ErrorKind::NotFound | std::io::ErrorKind::PermissionDenied)
-                    }) && job.temp.is_none();
+                    // Offline: the drive (or the file's folder with it) is not there, and the job waits for it. A
+                    // missing file on a drive that is there is a failure, counted like any other.
+                    let offline = job.temp.is_none()
+                        && e.downcast_ref::<std::io::Error>().is_some_and(|io| match io.kind() {
+                            std::io::ErrorKind::PermissionDenied => true,
+                            std::io::ErrorKind::NotFound => !self.folder_present(catalog, job.file_id),
+                            _ => false,
+                        });
                     let message = format!("{e:#}");
                     catalog.conn.execute(
                         "UPDATE file_writes SET attempts = attempts + ?3, error = ?4, queued = unixepoch()
@@ -223,6 +247,16 @@ impl Inner {
                 }
             }
         }
+    }
+
+    /// Whether the folder the file is in exists, so its drive is there.
+    fn folder_present(&self, catalog: &Catalog, file_id: i64) -> bool {
+        let folder: rusqlite::Result<String> = catalog.conn.query_row(
+            "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+            [file_id],
+            |r| r.get(0),
+        );
+        folder.is_ok_and(|p| Path::new(&p).is_dir())
     }
 
     /// A finishing copy that failed at the cap: its temp is discarded, and the file's content counts as unknown, as

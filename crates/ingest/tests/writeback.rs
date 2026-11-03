@@ -266,3 +266,49 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));
 }
+
+#[test]
+fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
+    // Its own folder, as the other tests here: run_folder keeps one folder per prefix.
+    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "gone");
+    std::fs::create_dir_all(dir.join("images")).unwrap();
+    let files = make_files(&dir);
+    let catalog_path = dir.join("catalog.sqlite");
+    let mut c = Catalog::open(&catalog_path).unwrap();
+    let ctl = Control::new(false);
+    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
+    scan::scan(&mut c, &root, &ctl).unwrap();
+    import::import(&mut c, &Options::new(0), false, &ctl).unwrap();
+    let id =
+        |name: &str| -> i64 { c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name], |r| r.get(0)).unwrap() };
+    // a.jpg: a scan has marked it missing, so its write is dropped. b.png was deleted outside the app while the
+    // catalog still lists it: its write is tried, and each failure is counted (it isn't waited on as offline).
+    let (marked, deleted) = (id("a.jpg"), id("b.png"));
+    c.conn.execute("UPDATE files SET missing = 1 WHERE id = ?1", [marked]).unwrap();
+    std::fs::remove_file(&files[1].0).unwrap();
+    for file in [marked, deleted] {
+        c.conn
+            .execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rating', 3, 0)", [file])
+            .unwrap();
+    }
+
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
+    ));
+    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    writer.wake();
+
+    let start = Instant::now();
+    loop {
+        let queued: i64 =
+            c.conn.query_row("SELECT count(*) FROM file_writes WHERE file_id = ?1", [marked], |r| r.get(0)).unwrap();
+        let attempts: i64 =
+            c.conn.query_row("SELECT attempts FROM file_writes WHERE file_id = ?1", [deleted], |r| r.get(0)).unwrap();
+        if queued == 0 && attempts >= 2 {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(60), "queued {queued}, deleted file's attempts {attempts}");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    assert!(writer.status().error.is_some(), "the cause is in the status line");
+}

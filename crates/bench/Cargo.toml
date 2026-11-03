@@ -10,6 +10,7 @@ workspace = true
 # The callgrind benches (benches/ir.rs): gungraun runs them under Valgrind, which is Linux-only (docs/PROFILING.md),
 # so the benches are built there only; elsewhere the target's `main` prints where to run them.
 [dependencies]
+pg-analysis = { path = "../analysis" }
 pg-core = { path = "../core" }
 pg-model = { path = "../model" }
 rusqlite.workspace = true

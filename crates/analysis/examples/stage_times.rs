@@ -2,11 +2,11 @@
 
 use std::time::{Duration, Instant};
 
+use pg_analysis::analyze::{self, Analyzer};
+use pg_analysis::pdq;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
-use pg_core::analyze::{self, Analyzer};
-use pg_core::pdq;
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 

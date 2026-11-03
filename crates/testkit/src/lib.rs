@@ -52,6 +52,14 @@ pub fn gif(frames: usize) -> Vec<u8> {
     out
 }
 
+/// `rgba` (`w` × `h` pixels, four bytes each) as a PNG, with its transparency.
+pub fn png_rgba(w: u32, h: u32, rgba: &[u8]) -> Vec<u8> {
+    let img = image::RgbaImage::from_raw(w, h, rgba.to_vec()).unwrap();
+    let mut file = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut file, image::ImageFormat::Png).unwrap();
+    file.into_inner()
+}
+
 /// `rgb` (`w` × `h` pixels, three bytes each) as a BMP.
 pub fn bmp_rgb(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
     still(w, h, rgb, image::ImageFormat::Bmp)

@@ -208,72 +208,10 @@ fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::maker::Maker;
-
-    fn pattern(w: usize, h: usize, seed: usize) -> Vec<u8> {
-        (0..w * h * 3).map(|i| ((i / 3 % w) * 7 + (i / 3 / w) * 3 + (i % 3) * 50 + seed * 31) as u8).collect()
-    }
-
-    fn jpeg(w: usize, h: usize, seed: usize) -> Vec<u8> {
-        let pixels = pattern(w, h, seed);
-        let image = turbojpeg::Image {
-            pixels: &pixels[..],
-            width: w,
-            pitch: w * 3,
-            height: h,
-            format: turbojpeg::PixelFormat::RGB,
-        };
-        turbojpeg::compress(image, 90, turbojpeg::Subsamp::Sub2x2).unwrap().to_vec()
-    }
-
-    /// A PNG with transparency, flattened onto white when decoded.
-    fn png_rgba(w: usize, h: usize, seed: usize) -> Vec<u8> {
-        let rgb = pattern(w, h, seed);
-        let rgba: Vec<u8> =
-            rgb.as_chunks::<3>().0.iter().enumerate().flat_map(|(i, p)| [p[0], p[1], p[2], (i * 13) as u8]).collect();
-        let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba).unwrap();
-        let mut file = std::io::Cursor::new(Vec::new());
-        img.write_to(&mut file, image::ImageFormat::Png).unwrap();
-        file.into_inner()
-    }
-
-    fn summary(a: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
-        let px = &a.image().unwrap().pixels;
-        let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, px.pdq_dihedral);
-        (a.file_hash, a.format(), a.orientation, a.width, a.height, a.thumbhash, a.frames, hashes)
-    }
 
     /// The model writes the longest ThumbHash as a literal; it must be the encoder's own length.
     #[test]
     fn thumbhash_max_is_the_encoders_longest() {
         assert_eq!(THUMBHASH_MAX, thumbhash::MAX_LEN);
-    }
-
-    /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a
-    /// file leaves in their buffers changes nothing of the next one's results.
-    #[test]
-    fn kept_buffers_give_what_new_ones_do() {
-        let files = [
-            (jpeg(1200, 800, 1), 0),
-            (png_rgba(300, 200, 2), 1),
-            (jpeg(640, 480, 3), 3),
-            (jpeg(90, 60, 4), 2),
-            (png_rgba(40, 700, 5), 0),
-        ];
-        let mut kept = Analyzer::new().unwrap();
-        let mut maker = Maker::new().unwrap();
-        for _ in 0..2 {
-            for (bytes, turns) in &files {
-                let new = || Analyzer::new().unwrap();
-                assert_eq!(
-                    summary(&kept.analyze(bytes, *turns).unwrap()),
-                    summary(&new().analyze(bytes, *turns).unwrap())
-                );
-                let (a, b) = (kept.borders(bytes, *turns).unwrap(), new().borders(bytes, *turns).unwrap());
-                assert_eq!((a.width, a.height, a.borders), (b.width, b.height, b.borders));
-                let thumb = maker.make(bytes, 64, *turns).unwrap();
-                assert_eq!(thumb, Maker::new().unwrap().make(bytes, 64, *turns).unwrap());
-            }
-        }
     }
 }

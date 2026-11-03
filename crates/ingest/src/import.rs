@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use anyhow::Result;
-use pg_core::analyze::Analyzer;
+use pg_analysis::analyze::Analyzer;
 use pg_core::catalog::{AnalysisWriter, Catalog};
 use pg_core::pdq_index::PdqIndex;
 use pg_model::analysis::Analysis;
@@ -104,7 +104,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         |analyzer, i, bytes| {
             if video(i) {
                 let path = work.path(items[i].path);
-                pg_core::analyze::video(Path::new(&*verbatim(&path)), items[i].rotation, analyzer)
+                pg_analysis::analyze::video(Path::new(&*verbatim(&path)), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)
             }

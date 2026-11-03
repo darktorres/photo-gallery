@@ -1405,10 +1405,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9b4f627cb1b25917193a259e49bdad08f671f8d9708acfd5fe0a8c1455d87220"
 
 [[package]]
+name = "pg-analysis"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "blake3",
+ "pdqhash",
+ "pg-codec",
+ "pg-metadata",
+ "pg-model",
+ "pg-video",
+ "thumbhash",
+ "xxhash-rust",
+]
+
+[[package]]
 name = "pg-bench"
 version = "0.1.0"
 dependencies = [
  "gungraun",
+ "pg-analysis",
  "pg-core",
  "pg-model",
  "rusqlite",
@@ -1443,9 +1459,8 @@ name = "pg-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "blake3",
  "image 0.25.10",
- "pdqhash",
+ "pg-analysis",
  "pg-codec",
  "pg-metadata",
  "pg-model",
@@ -1518,6 +1533,7 @@ dependencies = [
  "clap",
  "crossbeam-channel",
  "image 0.25.10",
+ "pg-analysis",
  "pg-codec",
  "pg-core",
  "pg-edit",

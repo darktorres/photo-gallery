@@ -6,6 +6,8 @@
 //!
 //! The input is the image already fitted into 512 px (see `analyze`), as Meta's hasher recommends and as M0
 //! evaluated it (`eval/pdq.py`).
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::sync::OnceLock;
 

@@ -1,4 +1,4 @@
-//! Borders (pg_core::borders): the pass after the import that looks for them in the files it analyzed, and in
+//! Borders (pg_analysis::borders): the pass after the import that looks for them in the files it analyzed, and in
 //! every file after a new detector (`analysis.borders_due`), each decoded at full size; reports on any files, in
 //! the Python prototype's columns (`tools/borders.py`, in git history); the detector for images piped in (the eval's
 //! `--trim`); and the review marks of the eval viewer's former Borders page taken into the catalog.
@@ -8,9 +8,9 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, ensure};
+use pg_analysis::analyze::{Analyzer, FileBorders};
+use pg_analysis::borders::{self as detector, Detector};
 use pg_codec::pixels::Rgb;
-use pg_core::analyze::{Analyzer, FileBorders};
-use pg_core::borders::{self as detector, Detector};
 use pg_core::catalog::{BordersWriter, Catalog};
 use pg_model::detection::{self, Side};
 use pg_model::media::{Ext, Kind};

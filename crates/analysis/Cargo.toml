@@ -1,0 +1,23 @@
+[package]
+name = "pg-analysis"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The import's analysis of a file: its record's hashes and ThumbHash, the border detector, and the PDQ hasher. The
+# pixels come from the codec, the facts from the metadata and video readers.
+[dependencies]
+pg-codec = { path = "../codec" }
+pg-metadata = { path = "../metadata" }
+pg-model = { path = "../model" }
+pg-video = { path = "../video" }
+anyhow.workspace = true
+blake3.workspace = true
+thumbhash.workspace = true
+xxhash-rust.workspace = true
+
+[dev-dependencies]
+pdqhash.workspace = true

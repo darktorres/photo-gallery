@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 pg-model = { path = "../model" }
+pg-analysis = { path = "../analysis" }
 pg-codec = { path = "../codec" }
 pg-video = { path = "../video" }
 pg-metadata = { path = "../metadata" }
@@ -19,12 +20,10 @@ thumbhash.workspace = true
 turbojpeg.workspace = true
 ureq.workspace = true
 xxhash-rust.workspace = true
-blake3.workspace = true
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
-pdqhash.workspace = true
 pg-codec = { path = "../codec", features = ["fixtures"] }
 pg-testkit = { path = "../testkit" }

@@ -20,7 +20,7 @@ use std::thread::JoinHandle;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use pg_core::analyze::file_hash;
+use pg_analysis::analyze::file_hash;
 use pg_core::catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
 use pg_edit::rotate::{Outcome, rotate};

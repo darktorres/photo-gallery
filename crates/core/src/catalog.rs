@@ -18,8 +18,8 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
-use crate::analyze::IMPORT_VERSION;
-use crate::borders::BORDERS_VERSION;
+use pg_analysis::analyze::IMPORT_VERSION;
+use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::Analysis;
 use pg_model::detection::Detection;
 use pg_model::format::Format;

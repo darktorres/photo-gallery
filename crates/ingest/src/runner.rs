@@ -141,16 +141,18 @@ impl Runner {
         }
         self.inner.ctl.request_stop();
         self.inner.wake.notify_all();
-        let Some(exited) = self.exited.lock().unwrap().take() else { return true };
-        match exited.recv_timeout(timeout) {
-            Ok(()) | Err(RecvTimeoutError::Disconnected) => {
-                if let Some(thread) = self.thread.lock().unwrap().take() {
-                    let _ = thread.join();
-                }
-                true
+        let exited = self.exited.lock().unwrap().take();
+        let finished = match exited {
+            Some(exited) => {
+                matches!(exited.recv_timeout(timeout), Ok(()) | Err(RecvTimeoutError::Disconnected))
             }
-            Err(RecvTimeoutError::Timeout) => false,
+            // The first stop took the channel, so the thread's own state answers for a later one.
+            None => self.thread.lock().unwrap().as_ref().is_none_or(JoinHandle::is_finished),
+        };
+        if finished && let Some(thread) = self.thread.lock().unwrap().take() {
+            let _ = thread.join();
         }
+        finished
     }
 
     /// Scan these folders (normalized), then import and thumbnail what they hold.

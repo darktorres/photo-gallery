@@ -2,13 +2,14 @@
 //! this crate's tests), so every crate that reads a catalog in its tests builds the same files.
 
 use crate::Catalog;
+use pg_model::ids::{FileId, FolderId};
 use pg_model::turns::Turns;
 use rusqlite::{Connection, params};
 
 /// A file row; `folder` must exist in `folders`.
 pub struct File {
-    pub id: i64,
-    pub folder: i64,
+    pub id: FileId,
+    pub folder: FolderId,
     pub name: &'static str,
     pub kind: &'static str,
     pub size: i64,
@@ -20,8 +21,8 @@ pub struct File {
 
 impl File {
     /// An image present on volume 1, its file reference its id.
-    pub fn new(id: i64, folder: i64, name: &'static str, size: i64, mtime: i64) -> File {
-        File { id, folder, name, kind: "image", size, mtime, file_ref: id, missing: false, rotation: Turns::NONE }
+    pub fn new(id: FileId, folder: FolderId, name: &'static str, size: i64, mtime: i64) -> File {
+        File { id, folder, name, kind: "image", size, mtime, file_ref: id.get(), missing: false, rotation: Turns::NONE }
     }
 }
 
@@ -43,15 +44,15 @@ pub fn insert(catalog: &Catalog, files: &[File]) {
     let conn = &catalog.conn;
     for f in files {
         let folder: String =
-            conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder], |r| r.get(0)).unwrap();
+            conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder.get()], |r| r.get(0)).unwrap();
         conn.execute(
             "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
                                rotation, order_key)
              VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?11)",
             params![
-                f.id,
+                f.id.get(),
                 f.file_ref,
-                f.folder,
+                f.folder.get(),
                 f.name,
                 pg_model::media::Ext::of_name(f.name).expect("a media file").name(),
                 f.kind,

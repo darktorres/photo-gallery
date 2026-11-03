@@ -1,7 +1,7 @@
 //! The catalogs the browse tests read: a small library, and one with a video, an animated GIF, a file the import
 //! could not read and one not imported yet.
 
-use pg_model::ids::FileId;
+use pg_model::ids::{FileId, FolderId};
 use pg_model::rating::Rating;
 use rusqlite::params;
 
@@ -26,7 +26,7 @@ pub(crate) fn library() -> crate::Catalog {
         (3, 1, "Ä.jpg", 20, 1, "jpeg", 2),
         (4, 3, "c.bmp", 40, 5, "bmp", 0),
     ] {
-        fixture::insert(&c, &[fixture::File::new(id, folder, name, size, mtime)]);
+        fixture::insert(&c, &[fixture::File::new(FileId::new(id), FolderId::new(folder), name, size, mtime)]);
         c.conn
             .execute(
                 "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height)
@@ -55,10 +55,10 @@ pub(crate) fn mixed_library() -> crate::Catalog {
     fixture::insert(
         &c,
         &[
-            File { kind: "video", ..File::new(5, 3, "Clip.MP4", 50, 7) },
-            File::new(6, 1, "anim.gif", 15, 2),
-            File::new(7, 2, "broken.jpg", 5, 4),
-            File::new(8, 2, "new.webp", 6, 6),
+            File { kind: "video", ..File::new(FileId::new(5), FolderId::new(3), "Clip.MP4", 50, 7) },
+            File::new(FileId::new(6), FolderId::new(1), "anim.gif", 15, 2),
+            File::new(FileId::new(7), FolderId::new(2), "broken.jpg", 5, 4),
+            File::new(FileId::new(8), FolderId::new(2), "new.webp", 6, 6),
         ],
     );
     c.conn

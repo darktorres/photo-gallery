@@ -896,6 +896,7 @@ fn shrink(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::ids::FolderId;
 
     #[test]
     fn the_cap_parser_refuses_what_would_be_no_cache() {
@@ -1237,10 +1238,14 @@ mod tests {
         insert(
             &c,
             &[
-                File { file_ref: 30, ..File::new(1, 1, "a.jpg", 1, 5) },
-                File { file_ref: 10, ..File::new(2, 1, "b.jpg", 1, 5) },
-                File { file_ref: 20, rotation: Turns::new(1), ..File::new(3, 1, "c.jpg", 1, 5) },
-                File { file_ref: 40, missing: true, ..File::new(4, 1, "d.jpg", 1, 5) },
+                File { file_ref: 30, ..File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5) },
+                File { file_ref: 10, ..File::new(FileId::new(2), FolderId::new(1), "b.jpg", 1, 5) },
+                File {
+                    file_ref: 20,
+                    rotation: Turns::new(1),
+                    ..File::new(FileId::new(3), FolderId::new(1), "c.jpg", 1, 5)
+                },
+                File { file_ref: 40, missing: true, ..File::new(FileId::new(4), FolderId::new(1), "d.jpg", 1, 5) },
             ],
         );
         pg_catalog::fixture::connection(&c)

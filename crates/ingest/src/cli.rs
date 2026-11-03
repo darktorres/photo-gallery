@@ -192,9 +192,13 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             }
         }
         Command::Remove { root } => {
+            // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
+            // the catalog's, and the catalog says whether it is a library folder.
             let root = scan::normalize_path(&root).unwrap_or(root);
-            let n = catalog.remove_root(&root)?;
-            println!("{root}: removed from the library, {n} files hidden");
+            match catalog.remove_root(&root)? {
+                Some(n) => println!("{root}: removed from the library, {n} files hidden"),
+                None => anyhow::bail!("{root}: not in the library"),
+            }
         }
         Command::Import { pipeline, retry_errors, again } => {
             if !again.is_empty() {

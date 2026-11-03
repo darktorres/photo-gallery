@@ -831,15 +831,18 @@ impl Catalog {
 
     /// Take a folder out of the library. Its files are marked missing, not deleted: adding it back (or the drive
     /// returning) brings them back with their analysis and ratings. Returns how many files it hid.
-    pub fn remove_root(&self, root: &str) -> Result<usize> {
+    /// Its files are missing from now on. `None`, with nothing changed, when `root` is not a library folder.
+    pub fn remove_root(&self, root: &str) -> Result<Option<usize>> {
         let tx = self.conn.unchecked_transaction()?;
-        tx.execute("DELETE FROM roots WHERE path = ?1", [root])?;
+        if tx.execute("DELETE FROM roots WHERE path = ?1", [root])? == 0 {
+            return Ok(None);
+        }
         let n = tx.execute(
             concat!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN (", under_root!(), ")"),
             [root],
         )?;
         tx.commit()?;
-        Ok(n)
+        Ok(Some(n))
     }
 
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
@@ -1592,8 +1595,9 @@ mod tests {
         assert!(!c.add_root(r"d:\A\b\c").unwrap(), "inside an existing root");
         assert!(c.add_root(r"D:\a").unwrap(), "replaces both");
         assert_eq!(c.roots().unwrap(), [r"D:\a"]);
-        c.remove_root(r"D:\a").unwrap();
+        assert_eq!(c.remove_root(r"D:\a").unwrap(), Some(0));
         assert!(c.roots().unwrap().is_empty());
+        assert_eq!(c.remove_root(r"D:\a").unwrap(), None, "not a library folder any more");
     }
 
     #[test]

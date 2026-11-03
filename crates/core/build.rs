@@ -14,7 +14,12 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let Some(dir) = std::env::var_os("FFMPEG_DIR") else { return };
+    // Without it the app would start and fail at once for want of the DLLs, so the build stops here instead.
+    let dir = std::env::var_os("FFMPEG_DIR").unwrap_or_else(|| {
+        panic!(
+            "FFMPEG_DIR is not set: the FFmpeg DLLs can't be copied beside the binaries (.cargo/config.toml sets it)"
+        )
+    });
     let bin = Path::new(&dir).join("bin");
     println!("cargo:rerun-if-changed={}", bin.display());
     // OUT_DIR is target\<profile>\build\pg-core-<hash>\out.
@@ -28,7 +33,12 @@ fn main() {
             name.ends_with(".dll") && DLLS.iter().any(|d| name.starts_with(&format!("{d}-")))
         })
         .collect();
-    assert_eq!(dlls.len(), DLLS.len(), "FFmpeg DLLs missing from {}", bin.display());
+    assert_eq!(
+        dlls.len(),
+        DLLS.len(),
+        "the FFmpeg DLLs are missing from {}: FFMPEG_DIR must be an FFmpeg build with a bin folder",
+        bin.display()
+    );
     for to in [profile.to_path_buf(), profile.join("deps")] {
         std::fs::create_dir_all(&to).unwrap();
         for dll in &dlls {

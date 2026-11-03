@@ -30,6 +30,5 @@ pub mod resize;
 mod rewrite;
 pub mod rotate;
 pub mod thumbs;
-pub mod verbatim;
 pub mod video;
 pub mod yandex;

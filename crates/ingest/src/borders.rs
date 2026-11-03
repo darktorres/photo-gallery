@@ -14,7 +14,7 @@ use pg_core::catalog::{BordersWriter, Catalog};
 use pg_core::detection::{self, Side};
 use pg_core::media::{Ext, Kind};
 use pg_core::pixels::Rgb;
-use pg_core::verbatim::verbatim_wide;
+use pg_platform::verbatim::verbatim_wide;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -64,7 +64,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     pipeline::run(
         items,
         |item, wide| {
-            work.wide(item.path, wide);
+            let [folder, name] = work.parts(item.path);
+            pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
             true
         },
         opts,

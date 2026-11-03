@@ -33,7 +33,7 @@ use pg_core::orientation;
 use pg_core::pixels::Rgb;
 use pg_core::resize::Resizer;
 use pg_core::thumbs::{self, ThumbCache};
-use pg_core::verbatim::verbatim;
+use pg_platform::verbatim::verbatim;
 
 pub struct AppState {
     pub catalog_dir: PathBuf,

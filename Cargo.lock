@@ -1460,6 +1460,7 @@ dependencies = [
  "cxx-qt-lib",
  "pg-core",
  "pg-ingest",
+ "pg-platform",
  "serde",
  "serde_json",
  "thumbhash",
@@ -1486,10 +1487,18 @@ dependencies = [
  "crossbeam-channel",
  "image 0.25.10",
  "pg-core",
+ "pg-platform",
  "pg-testkit",
  "rusqlite",
  "serde_json",
  "windows-sys",
+]
+
+[[package]]
+name = "pg-platform"
+version = "0.1.0"
+dependencies = [
+ "pg-testkit",
 ]
 
 [[package]]

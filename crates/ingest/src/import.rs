@@ -12,7 +12,7 @@ use pg_core::catalog::{AnalysisWriter, Catalog};
 use pg_core::media::Kind;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
 use pg_core::pdq_index::PdqIndex;
-use pg_core::verbatim::verbatim;
+use pg_platform::verbatim::verbatim;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -93,7 +93,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
             // A video is read by FFmpeg, from its path.
             let whole = item.kind != Kind::Video;
             if whole {
-                work.wide(item.path, wide);
+                let [folder, name] = work.parts(item.path);
+                pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
             }
             whole
         },

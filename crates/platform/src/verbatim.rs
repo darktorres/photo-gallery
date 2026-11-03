@@ -4,9 +4,9 @@
 //! ExifTool takes the plain path, as a `\\?\` path isn't one it reads (its own long-name support is a separate
 //! option, FINDINGS "I/O").
 //!
-//! A pass's paths are kept end to end in strings ([`crate::path::PathArena`]): a [`crate::path::WorkList`] holds each folder's path once and
-//! each file's name, so a list of 189k files is a few allocations, not one per path. A file is opened from them
-//! through a reader's wide buffer ([`crate::path::WorkList::wide`]), without a path of its own.
+//! A pass's paths are kept end to end in strings (the work lists in `pg-core`'s `path` module): a work list holds
+//! each folder's path once and each file's name, so a list of 189k files is a few allocations, not one per path. A
+//! file is opened from them through a reader's wide buffer ([`verbatim_wide_file`]), without a path of its own.
 
 use std::borrow::Cow;
 
@@ -32,6 +32,11 @@ pub fn verbatim_wide(parts: &[&str], out: &mut Vec<u16>) {
         out.extend(part.encode_utf16());
     }
     out.push(0);
+}
+
+/// [`verbatim_wide`] of a file's folder and name, as the path `folder\name`: a work list gives both from its arenas.
+pub fn verbatim_wide_file(folder: &str, name: &str, out: &mut Vec<u16>) {
+    verbatim_wide(&[folder, "\\", name], out);
 }
 
 /// What the verbatim form of a path `len` bytes long that starts with `path` puts first, and the part of `path`
@@ -86,5 +91,17 @@ mod tests {
         assert!(file.as_os_str().len() > 300);
         assert_eq!(std::fs::read(&file).unwrap(), b"long");
         std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// A file's wide path is its folder and name as one path: short as it is, and verbatim past the limit with its
+    /// name counted.
+    #[test]
+    fn a_file_is_wide_as_its_folder_and_name() {
+        let mut wide = Vec::new();
+        verbatim_wide_file(r"D:\f2", "c.jpg", &mut wide);
+        assert_eq!(wide, r"D:\f2\c.jpg".encode_utf16().chain([0]).collect::<Vec<_>>());
+        let dir = "x".repeat(SHORT);
+        verbatim_wide_file(&format!(r"D:\{dir}"), "e.jpg", &mut wide);
+        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), format!(r"\\?\D:\{dir}\e.jpg"));
     }
 }

@@ -2,9 +2,8 @@
 //! Windows calls): the merged path of a folder (its drive dropped, so every drive's copy is one folder), the byte
 //! keys that order folders and files by name (case-insensitive, exact after that, so the order is total), and
 //! whether a path is inside another. The pass's work lists (paths kept end to end in arenas, [`WorkList`]) are here
-//! too: the paths they hold are what the catalog hands out.
-
-use crate::verbatim::verbatim_wide;
+//! too: the paths they hold are what the catalog hands out. The wide form a file is opened by is the platform's
+//! (`pg_platform::verbatim::verbatim_wide_file`), built from a work list's folder and name.
 
 /// A folder's path without its drive: `E:\pinterest\a` and `D:\pinterest\a` are both `pinterest\a`; a drive
 /// root is the empty path. Other paths (UNC) are kept whole.
@@ -216,12 +215,6 @@ impl<T> WorkList<T> {
         [folder, "\\", name].concat()
     }
 
-    /// Its path as [`verbatim_wide`] gives it, for opening it.
-    pub fn wide(&self, path: FilePath, out: &mut Vec<u16>) {
-        let [folder, name] = self.parts(path);
-        verbatim_wide(&[folder, "\\", name], out);
-    }
-
     pub fn len(&self) -> usize {
         self.items.len()
     }
@@ -240,7 +233,6 @@ impl<T> Default for WorkList<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::verbatim::SHORT;
 
     #[test]
     fn a_folder_scope_is_its_own_files_or_those_and_its_subfolders() {
@@ -290,13 +282,6 @@ mod tests {
             [a, b, c, d].map(|p| list.path(p)),
             [r"D:\f2\a.jpg", r"D:\f0\b.jpg", r"D:\f2\c.jpg", r"D:\f9\d.jpg"]
         );
-        let mut wide = Vec::new();
-        list.wide(c, &mut wide);
-        assert_eq!(wide, r"D:\f2\c.jpg".encode_utf16().chain([0]).collect::<Vec<_>>());
-        // A long one is verbatim, its name counted.
-        let dir = "x".repeat(SHORT);
-        let long = list.file(5, "e.jpg", |arena| Ok::<_, ()>(arena.push(&format!(r"D:\{dir}")))).unwrap();
-        list.wide(long, &mut wide);
-        assert_eq!(String::from_utf16(&wide[..wide.len() - 1]).unwrap(), format!(r"\\?\D:\{dir}\e.jpg"));
+        assert_eq!(list.parts(c), [r"D:\f2", "c.jpg"]);
     }
 }

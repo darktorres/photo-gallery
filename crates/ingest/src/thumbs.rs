@@ -11,7 +11,7 @@ use pg_core::browse;
 use pg_core::catalog::Catalog;
 use pg_core::maker::Maker;
 use pg_core::thumbs::{Pending, Thumb, ThumbCache};
-use pg_core::verbatim::verbatim;
+use pg_platform::verbatim::verbatim;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -72,7 +72,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             // A video's poster frame is read by FFmpeg, from its path.
             let whole = item.poster_ms.is_none();
             if whole {
-                work.wide(item.path, wide);
+                let [folder, name] = work.parts(item.path);
+                pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
             }
             whole
         },

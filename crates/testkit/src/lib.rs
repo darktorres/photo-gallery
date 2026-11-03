@@ -3,6 +3,7 @@
 
 use std::path::PathBuf;
 
+pub mod events;
 pub use pg_catalog::fixture;
 
 /// The base folder for a test's files: `PG_TEST_DIR`, or `default`.

@@ -12,5 +12,6 @@ workspace = true
 [dependencies]
 # The catalog's test fixture (files as the scanner inserts them), re-exported below.
 pg-catalog = { path = "../catalog", features = ["fixture"] }
+pg-jobs = { path = "../jobs" }
 image.workspace = true
 png.workspace = true

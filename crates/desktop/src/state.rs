@@ -32,6 +32,7 @@ use pg_catalog::browse;
 use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
+use pg_jobs::events::Bus;
 use pg_model::orientation::Orientation;
 use pg_model::state::FileSource;
 use pg_render::maker::Maker;
@@ -50,6 +51,31 @@ thread_local! {
     static MAKER: RefCell<Option<Maker>> = const { RefCell::new(None) };
 }
 
+/// The thumbnail cache's events, printed on stderr as they come by a thread that ends once the cache is gone.
+fn thumb_events() -> Arc<Bus<pg_thumbcache::Event>> {
+    let bus = Arc::new(Bus::new(64));
+    let events = bus.subscribe();
+    std::thread::spawn(move || {
+        while let Some(event) = events.recv() {
+            eprintln!("{}", thumb_event_text(&event));
+        }
+    });
+    bus
+}
+
+/// What a thumbnail cache event says, on the command line.
+fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
+    use pg_thumbcache::Event;
+    match event {
+        Event::TotalsFixed { kept, actual } => {
+            format!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed")
+        }
+        Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
+        Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
+        Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
+    }
+}
+
 /// Opens (and migrates) the catalog, as this thread's connection, and the thumbnail cache. Call once, on the GUI
 /// thread, before the UI starts. A cache that can't be opened only means thumbnails aren't kept.
 pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
@@ -60,11 +86,10 @@ pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
     // Kept for the GUI thread until `shutdown`: closing the last connection deletes the WAL, and the first QML object
     // would open it again.
     CATALOG.with(|c| *c.borrow_mut() = Some(catalog));
-    let thumbs = ThumbCache::open(&catalog_dir, &catalog_id, thumb_cap_bytes, Box::new(|e| eprintln!("{e:#}")))
-        .unwrap_or_else(|e| {
-            eprintln!("thumbnail cache disabled: {e:#}");
-            ThumbCache::disabled()
-        });
+    let thumbs = ThumbCache::open(&catalog_dir, &catalog_id, thumb_cap_bytes, thumb_events()).unwrap_or_else(|e| {
+        eprintln!("thumbnail cache disabled: {e:#}");
+        ThumbCache::disabled()
+    });
     STATE.set(AppState { catalog_dir, catalog_path, thumbs }).map_err(|_| anyhow::anyhow!("state initialized twice"))
 }
 

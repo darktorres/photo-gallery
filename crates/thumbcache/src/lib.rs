@@ -13,9 +13,9 @@
 //! right for every connection and process that writes the file (the app, `gallery thumbs`).
 //!
 //! Reads take no lock: each thread reads through its own connection (WAL readers never wait for the writer).
-//! Writes go through one writer thread per cache, in IMMEDIATE transactions: an on-demand thumbnail is handed to it
-//! and shown at once, whatever the write does. What fails there has no caller to return to: it goes to the
-//! cache's `Report`.
+//! Writes go through one writer per cache (a `Service`), in IMMEDIATE transactions: an on-demand thumbnail is handed
+//! to it and shown at once, whatever the write does. What fails there has no caller to return to: it is published as
+//! an [`Event`] on the bus the cache was opened with.
 //!
 //! The background task doesn't look at every file each round. The catalog numbers its changes (`files.seq`), and
 //! a pass that went through every file at a height stores how far it looked (`checked`): the next pass at that
@@ -28,14 +28,15 @@
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;
 use std::cell::RefCell;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, VecDeque};
 use std::path::{Path, PathBuf};
-use std::sync::Mutex;
-use std::sync::mpsc::{self, Receiver, RecvTimeoutError, Sender};
-use std::thread::JoinHandle;
+use std::sync::mpsc::{self, Sender};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Result, anyhow, bail};
+use pg_jobs::events::Bus;
+use pg_jobs::service::{Service, Waker, Woke};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use pg_model::path::{FilePath, WorkList};
@@ -198,9 +199,20 @@ END; PRAGMA user_version = ",
 const CONNECTION_PRAGMAS: &str =
     "PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA recursive_triggers = ON;";
 
-/// Where the writer's own failures go (an on-demand put, touches): nothing waits for those, and the thumbnail was
-/// shown anyway.
-pub type Report = Box<dyn Fn(&anyhow::Error) + Send>;
+/// What the cache's writer reports. Nothing waits for these (the thumbnail was shown anyway, the totals were fixed),
+/// so they are events on a bus, not results: a subscriber prints them, or counts them. `error` is the error chain as
+/// `{:#}` prints it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Event {
+    /// The totals were off when the cache was opened, and were fixed: what they were, and what the entries hold.
+    TotalsFixed { kept: (i64, i64), actual: (i64, i64) },
+    /// The times entries were shown could not be written; they stay queued for the next try.
+    TouchesNotWritten { error: String },
+    /// An on-demand thumbnail could not be stored (it was shown anyway).
+    NotStored { error: String },
+    /// The WAL could not be merged when the writer closed.
+    WalNotMerged { error: String },
+}
 
 /// What a cache holds (bytes, entries) and may hold (`cap`, bytes).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -221,8 +233,56 @@ pub struct ThumbCache {
 
 struct Store {
     path: PathBuf,
-    ops: Mutex<Option<Sender<Op>>>,
-    writer: Mutex<Option<JoinHandle<()>>>,
+    inbox: Arc<Inbox>,
+    writer: Service,
+}
+
+/// The writer's queue: the ops not yet done, in order, and whether more are taken. The writer is woken after each push.
+struct Inbox {
+    state: Mutex<Queue>,
+}
+
+struct Queue {
+    ops: VecDeque<Op>,
+    /// False once the cache is closed or its writer has ended: nothing more is queued.
+    open: bool,
+}
+
+impl Inbox {
+    fn new() -> Inbox {
+        Inbox { state: Mutex::new(Queue { ops: VecDeque::new(), open: true }) }
+    }
+
+    /// Queues `op`; false, queuing nothing, once the queue is closed.
+    fn push(&self, op: Op) -> bool {
+        let mut queue = self.state.lock().unwrap();
+        if !queue.open {
+            return false;
+        }
+        queue.ops.push_back(op);
+        true
+    }
+
+    fn next(&self) -> Option<Op> {
+        self.state.lock().unwrap().ops.pop_front()
+    }
+
+    /// Stops taking ops; those queued are still done.
+    fn close(&self) {
+        self.state.lock().unwrap().open = false;
+    }
+}
+
+/// Closes the queue when the writer's body is left, by a return or a panic. What is still queued is dropped: a caller
+/// waiting for an answer to one of those gets none (its `recv` fails).
+struct Closing<'a>(&'a Inbox);
+
+impl Drop for Closing<'_> {
+    fn drop(&mut self) {
+        let mut queue = self.0.state.lock().unwrap_or_else(|poisoned| poisoned.into_inner());
+        queue.open = false;
+        queue.ops.clear();
+    }
 }
 
 /// The writer's work, in order.
@@ -261,8 +321,9 @@ impl ThumbCache {
     /// and start its writer. A cache of another catalog is deleted and made anew (its cap kept); one another process
     /// has open can't be, and fails. With `cap_bytes`, that is the cache's cap from now on, for every process (one
     /// far over it comes down at the next write); without, the cap stays as it is (`DEFAULT_CAP_BYTES` for a new
-    /// cache). The totals are checked against the entries once here (`heal`), a fix reported.
-    pub fn open(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>, report: Report) -> Result<ThumbCache> {
+    /// cache). The totals are checked against the entries once here (`heal`), a fix published on `events` before this
+    /// returns: subscribe first.
+    pub fn open(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>, events: Arc<Bus<Event>>) -> Result<ThumbCache> {
         if let Some(cap) = cap_bytes
             && cap < 0
         {
@@ -271,13 +332,12 @@ impl ThumbCache {
         let path = cache_path(dir);
         let mut conn = open_writer(&path, catalog_id, cap_bytes)?;
         if let Some((kept, actual)) = heal(&mut conn)? {
-            report(&anyhow!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed"));
+            events.publish(Event::TotalsFixed { kept, actual });
         }
-        let (ops, inbox) = mpsc::channel();
-        let writer = std::thread::Builder::new()
-            .name("thumbnail cache".into())
-            .spawn(move || write_loop(conn, inbox, &report))?;
-        Ok(ThumbCache { store: Some(Store { path, ops: Mutex::new(Some(ops)), writer: Mutex::new(Some(writer)) }) })
+        let inbox = Arc::new(Inbox::new());
+        let body = inbox.clone();
+        let writer = Service::start("thumbnail cache", move |waker| write_loop(conn, &body, &events, waker));
+        Ok(ThumbCache { store: Some(Store { path, inbox, writer }) })
     }
 
     /// A cache that keeps nothing, for when the file can't be opened: a cache must never keep the app from
@@ -288,11 +348,11 @@ impl ThumbCache {
 
     fn send(&self, op: Op) -> Result<()> {
         let store = self.store.as_ref().ok_or_else(|| anyhow!("no thumbnail cache"))?;
-        let ops = store.ops.lock().unwrap();
-        ops.as_ref()
-            .ok_or_else(|| anyhow!("thumbnail cache closed"))?
-            .send(op)
-            .map_err(|_| anyhow!("thumbnail cache writer stopped"))
+        if !store.inbox.push(op) {
+            bail!("thumbnail cache closed");
+        }
+        store.writer.wake();
+        Ok(())
     }
 
     /// The cached thumbnail closest to `height` that was made from the file as it is now (`source`): the smallest
@@ -339,7 +399,7 @@ impl ThumbCache {
     }
 
     /// Store a thumbnail made on demand, in the background, evicting the least recently used entries of any
-    /// height if needed. A failure goes to the `Report`: the thumbnail was shown anyway.
+    /// height if needed. A failure is published as an [`Event::NotStored`]: the thumbnail was shown anyway.
     pub fn put(&self, thumb: Thumb) {
         if self.store.is_some() {
             let _ = self.send(Op::PutOne(thumb));
@@ -460,10 +520,8 @@ impl ThumbCache {
     /// a read after this one opens a new connection.
     pub fn close(&self) {
         if let Some(store) = &self.store {
-            drop(store.ops.lock().unwrap().take());
-            if let Some(writer) = store.writer.lock().unwrap().take() {
-                let _ = writer.join();
-            }
+            store.inbox.close();
+            store.writer.stop();
         }
         READERS.with(|readers| readers.borrow_mut().clear());
     }
@@ -682,80 +740,90 @@ impl Touches {
     }
 }
 
-fn write_loop(mut conn: Connection, inbox: Receiver<Op>, report: &Report) {
-    let report_touches = |r: Result<()>| {
-        if let Err(e) = r {
-            report(&e.context("thumbnail cache: touches not written yet"));
-        }
-    };
+/// The writer's body: each queued op in order, and the touches flushed when they are due, until the queue is closed
+/// and empty. Then the touches are flushed and the WAL merged.
+fn write_loop(mut conn: Connection, inbox: &Inbox, events: &Bus<Event>, waker: &Waker<'_>) {
+    // However the loop ends, the queue closes: no caller is left waiting for an answer that won't come.
+    let _closing = Closing(inbox);
     let mut touches = Touches::default();
     loop {
-        let op = match touches.due() {
-            Some(wait) => match inbox.recv_timeout(wait) {
-                Ok(op) => Some(op),
-                Err(RecvTimeoutError::Timeout) => None,
-                Err(RecvTimeoutError::Disconnected) => break,
-            },
-            None => match inbox.recv() {
-                Ok(op) => Some(op),
-                Err(_) => break,
-            },
-        };
-        match op {
-            None => report_touches(touches.flush(&mut conn)),
-            Some(Op::Touch(id)) => {
-                touches.ids.insert(id);
-                touches.since.get_or_insert_with(Instant::now);
-            }
-            Some(Op::Put { thumbs, keep_height, reply }) => {
-                let stored = put(&mut conn, &thumbs, keep_height, &mut touches);
-                let _ = reply.send((stored, thumbs));
-            }
-            Some(Op::PutOne(thumb)) => {
-                if let Err(e) = put(&mut conn, std::slice::from_ref(&thumb), None, &mut touches) {
-                    report(&e.context("thumbnail cache: a thumbnail not stored"));
+        // Read before the queue: `close` closes the queue before it quits, so a quit seen here means nothing more
+        // will be queued, and an empty queue after it is the end.
+        let quitting = waker.quitting();
+        match inbox.next() {
+            Some(op) => apply(op, &mut conn, &mut touches, events),
+            None if quitting => break,
+            None => {
+                if waker.wait(touches.due()) == Woke::Idle {
+                    touches_failure(touches.flush(&mut conn), events);
                 }
-            }
-            Some(Op::Retag { file_id, old_mtime, new_mtime, reply }) => {
-                let done = conn
-                    .execute(
-                        "UPDATE entries SET mtime = ?3 WHERE file_id = ?1 AND mtime = ?2",
-                        params![file_id.get(), old_mtime, new_mtime],
-                    )
-                    .map(drop)
-                    .map_err(anyhow::Error::from);
-                let _ = reply.send(done);
-            }
-            Some(Op::Checked { snapshot, through, reply }) => {
-                // Evicted meanwhile (the counter moved on): not stored.
-                let done = conn
-                    .execute(
-                        "INSERT INTO checked(height, seq, evictions) VALUES (?1, ?2, ?3)
-                         ON CONFLICT(height) DO UPDATE SET seq = excluded.seq
-                         WHERE checked.evictions = excluded.evictions",
-                        params![snapshot.height, through, snapshot.evictions],
-                    )
-                    .map(drop)
-                    .map_err(anyhow::Error::from);
-                let _ = reply.send(done);
-            }
-            Some(Op::Heal(reply)) => {
-                let _ = reply.send(heal(&mut conn));
-            }
-            Some(Op::Shrink(reply)) => {
-                let _ = reply.send(shrink(&conn));
-            }
-            Some(Op::Flush(reply)) => {
-                report_touches(touches.flush(&mut conn));
-                let _ = reply.send(());
             }
         }
     }
-    report_touches(touches.flush(&mut conn));
+    touches_failure(touches.flush(&mut conn), events);
     // The writer's last act: the WAL merged into the file, so the file is whole even if the process ends before the
     // readers close (the last connection to close deletes the WAL, and a reader may still be open).
     if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)") {
-        report(&anyhow::Error::from(e).context("thumbnail cache: the WAL was not merged at close"));
+        events.publish(Event::WalNotMerged { error: format!("{e:#}") });
+    }
+}
+
+/// Does one op of the writer's queue.
+fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Event>) {
+    match op {
+        Op::Touch(id) => {
+            touches.ids.insert(id);
+            touches.since.get_or_insert_with(Instant::now);
+        }
+        Op::Put { thumbs, keep_height, reply } => {
+            let stored = put(conn, &thumbs, keep_height, touches);
+            let _ = reply.send((stored, thumbs));
+        }
+        Op::PutOne(thumb) => {
+            if let Err(e) = put(conn, std::slice::from_ref(&thumb), None, touches) {
+                events.publish(Event::NotStored { error: format!("{e:#}") });
+            }
+        }
+        Op::Retag { file_id, old_mtime, new_mtime, reply } => {
+            let done = conn
+                .execute(
+                    "UPDATE entries SET mtime = ?3 WHERE file_id = ?1 AND mtime = ?2",
+                    params![file_id.get(), old_mtime, new_mtime],
+                )
+                .map(drop)
+                .map_err(anyhow::Error::from);
+            let _ = reply.send(done);
+        }
+        Op::Checked { snapshot, through, reply } => {
+            // Evicted meanwhile (the counter moved on): not stored.
+            let done = conn
+                .execute(
+                    "INSERT INTO checked(height, seq, evictions) VALUES (?1, ?2, ?3)
+                     ON CONFLICT(height) DO UPDATE SET seq = excluded.seq
+                     WHERE checked.evictions = excluded.evictions",
+                    params![snapshot.height, through, snapshot.evictions],
+                )
+                .map(drop)
+                .map_err(anyhow::Error::from);
+            let _ = reply.send(done);
+        }
+        Op::Heal(reply) => {
+            let _ = reply.send(heal(conn));
+        }
+        Op::Shrink(reply) => {
+            let _ = reply.send(shrink(conn));
+        }
+        Op::Flush(reply) => {
+            touches_failure(touches.flush(conn), events);
+            let _ = reply.send(());
+        }
+    }
+}
+
+/// Touches that could not be written are an event; they stay queued for the next try.
+fn touches_failure(written: Result<()>, events: &Bus<Event>) {
+    if let Err(e) = written {
+        events.publish(Event::TouchesNotWritten { error: format!("{e:#}") });
     }
 }
 
@@ -906,6 +974,7 @@ mod tests {
             assert!(parse_cap_gb(text).is_err(), "{text} is refused");
         }
     }
+    use pg_testkit::events::Quiet;
     use pg_testkit::test_folder;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
@@ -939,8 +1008,28 @@ mod tests {
     const CATALOG_ID: &str = "test-catalog";
 
     /// A cache whose writer fails the test on any error it can't return.
-    fn open(dir: &Path, cap_bytes: i64) -> ThumbCache {
-        ThumbCache::open(dir, CATALOG_ID, Some(cap_bytes), Box::new(|e| panic!("{e:#}"))).unwrap()
+    /// A cache for a test, with its events watched: an event the test doesn't expect fails it. The cache is declared
+    /// before the watch, so it closes first.
+    struct Opened {
+        cache: ThumbCache,
+        _events: Quiet<Event>,
+    }
+
+    impl std::ops::Deref for Opened {
+        type Target = ThumbCache;
+        fn deref(&self) -> &ThumbCache {
+            &self.cache
+        }
+    }
+
+    fn open_quiet(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Opened {
+        let (events, watch) = Quiet::bus();
+        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, events).unwrap();
+        Opened { cache, _events: watch }
+    }
+
+    fn open(dir: &Path, cap_bytes: i64) -> Opened {
+        open_quiet(dir, CATALOG_ID, Some(cap_bytes))
     }
 
     fn src(mtime: i64) -> Source {
@@ -1071,7 +1160,7 @@ mod tests {
     fn one_cap_for_every_writer() {
         let dir = test_folder(SCRATCH, "cap");
         assert_eq!(ThumbCache::read_usage(&dir).unwrap(), None);
-        let first = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        let first = open_quiet(&dir, CATALOG_ID, None);
         assert_eq!(first.cap().unwrap(), DEFAULT_CAP_BYTES, "a new cache");
         assert!(first.put_batch(&mut (0..10).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
         // Another process sets a lower cap: the first one keeps to it at its next write.
@@ -1081,10 +1170,10 @@ mod tests {
         assert!(first.totals().unwrap().0 <= 500);
         // Opened without one, the cap stays.
         drop(second);
-        drop(ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap());
+        drop(open_quiet(&dir, CATALOG_ID, None));
         let usage = ThumbCache::read_usage(&dir).unwrap().unwrap();
         assert_eq!((usage.cap, usage.bytes, usage.count), (500, first.totals().unwrap().0, first.totals().unwrap().1));
-        assert!(ThumbCache::open(&dir, CATALOG_ID, Some(-1), Box::new(|_| {})).is_err());
+        assert!(ThumbCache::open(&dir, CATALOG_ID, Some(-1), Arc::new(Bus::new(1))).is_err());
     }
 
     #[test]
@@ -1155,7 +1244,7 @@ mod tests {
     fn another_layout_version_starts_over() {
         let dir = test_folder(SCRATCH, "layout");
         Connection::open(cache_path(&dir)).unwrap().execute_batch("PRAGMA user_version = 7;").unwrap();
-        let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        let cache = open_quiet(&dir, CATALOG_ID, None);
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), DEFAULT_CAP_BYTES));
     }
 
@@ -1222,6 +1311,29 @@ mod tests {
         assert_eq!(cache.heal().unwrap(), Some(((999, 7), (30, 2))));
         assert_eq!(cache.totals().unwrap(), (30, 2));
         assert_eq!(cache.heal().unwrap(), None);
+    }
+
+    #[test]
+    fn a_closed_cache_takes_no_more_writes_and_still_reads() {
+        let dir = test_folder(SCRATCH, "closed");
+        let cache = open(&dir, 1 << 20);
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
+        cache.close();
+        let refused = cache.put_batch(&mut vec![thumb(2, 100, 5, 20)], None).unwrap_err();
+        assert!(refused.to_string().contains("closed"), "{refused:#}");
+        assert_eq!(cache.totals().unwrap(), (10, 1));
+    }
+
+    #[test]
+    fn a_fix_made_at_open_is_published_before_open_returns() {
+        let dir = test_folder(SCRATCH, "fix-event");
+        drop(open(&dir, 1 << 30));
+        Connection::open(cache_path(&dir)).unwrap().execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
+        let bus = Arc::new(Bus::new(4));
+        let events = bus.subscribe();
+        let cache = ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), bus).unwrap();
+        assert_eq!(events.take().items, vec![Event::TotalsFixed { kept: (999, 7), actual: (0, 0) }]);
+        drop(cache);
     }
 
     /// A catalog in `dir` with four analyzed files: 1–3 present (3 turned once in the catalog), 4 missing.
@@ -1362,11 +1474,11 @@ mod tests {
         let cache = open(&dir, 12345);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
-        let reopened = ThumbCache::open(&dir, "rebuilt", None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        let reopened = open_quiet(&dir, "rebuilt", None);
         assert!(reopened.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_none(), "file 1 is another file now");
         assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
         // Open elsewhere: it can't be deleted, so it isn't used.
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|_| {})).err().expect("refused");
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("another catalog"), "{e:#}");
     }
 
@@ -1382,7 +1494,7 @@ mod tests {
         )
         .unwrap();
         drop(old);
-        let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
+        let cache = open_quiet(&dir, CATALOG_ID, None);
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 777), "empty, its cap kept");
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_some());

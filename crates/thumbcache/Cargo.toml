@@ -14,6 +14,7 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 pg-catalog = { path = "../catalog" }
+pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 rusqlite.workspace = true
 

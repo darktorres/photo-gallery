@@ -7,6 +7,8 @@ mod dups;
 use pg_model::ids::FileId;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
@@ -16,6 +18,7 @@ use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
 use pg_jobs::control::{Control, Event, Phase, Progress};
+use pg_jobs::events::Bus;
 use pg_jobs::pipeline;
 use pg_library::writeback::Writer;
 use pg_library::{import, scan, thumbs};
@@ -130,9 +133,30 @@ enum Command {
     },
 }
 
-/// The thumbnail cache's background failures, on stderr with the progress.
-fn report() -> pg_thumbcache::Report {
-    Box::new(|e| eprintln!("{e:#}"))
+/// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
+/// cache is gone (its bus with it): joining the thread then means the last one is out.
+fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, JoinHandle<()>) {
+    let bus = Arc::new(Bus::new(64));
+    let events = bus.subscribe();
+    let printer = std::thread::spawn(move || {
+        while let Some(event) = events.recv() {
+            eprintln!("{}", thumb_event_text(&event));
+        }
+    });
+    (bus, printer)
+}
+
+/// What a thumbnail cache event says, on the command line.
+fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
+    use pg_thumbcache::Event;
+    match event {
+        Event::TotalsFixed { kept, actual } => {
+            format!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed")
+        }
+        Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
+        Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
+        Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
+    }
 }
 
 /// Files left for the next pass because they changed while they were read, when there are any.
@@ -280,7 +304,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
-            let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, report())?;
+            let (events, printer) = thumb_events();
+            let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, events)?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
             println!(
@@ -299,6 +324,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 cache.cap()? as f64 / 1e9,
                 start.elapsed().as_secs_f64()
             );
+            drop(cache);
+            let _ = printer.join();
         }
         Command::Borders { import_review, pipeline, .. } => {
             if let Some(review) = import_review {
@@ -339,8 +366,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         }
         Command::Write => {
             // Only retagged here (never filled): the cap stays as it is.
+            // The cache is leaked, so its events print until the process ends.
+            let (events, _printer) = thumb_events();
             let cache: &'static ThumbCache =
-                Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, None, report())?));
+                Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, None, events)?));
             let writer = Writer::start(catalog_path.clone(), cache);
             writer.wake();
             // Until nothing writable is left (failures past their retries stay queued and are reported).

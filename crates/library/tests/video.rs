@@ -20,6 +20,7 @@ use pg_library::{import, scan, thumbs};
 use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
 use pg_model::turns::Turns;
+use pg_testkit::events::Quiet;
 use pg_thumbcache::ThumbCache;
 use pg_video::{frame, poster_ms, probe};
 
@@ -207,8 +208,8 @@ fn videos() {
         .unwrap();
     assert_eq!(taken, Some(local));
 
-    let cache =
-        ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap();
+    let (events, _quiet) = Quiet::bus();
+    let cache = ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), events).unwrap();
     let made = thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }

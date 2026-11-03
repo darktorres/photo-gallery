@@ -1649,6 +1649,7 @@ version = "0.1.0"
 dependencies = [
  "image 0.25.10",
  "pg-catalog",
+ "pg-jobs",
  "png 0.18.1",
 ]
 
@@ -1658,6 +1659,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "pg-catalog",
+ "pg-jobs",
  "pg-model",
  "pg-testkit",
  "rusqlite",

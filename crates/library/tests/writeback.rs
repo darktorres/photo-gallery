@@ -20,6 +20,7 @@ use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
+use pg_testkit::events::Quiet;
 use pg_thumbcache::ThumbCache;
 
 fn pattern(w: u32, h: u32) -> image::RgbImage {
@@ -99,9 +100,9 @@ fn ratings_and_turns_reach_the_files() {
     let before = ids(&c);
     assert_eq!(before.len(), files.len());
 
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
-        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
-    ));
+    let (events, quiet) = Quiet::bus();
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs);
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
@@ -197,6 +198,7 @@ fn ratings_and_turns_reach_the_files() {
     drop(writer);
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
 }
 
 /// A finishing copy whose original is locked (another program has it open without sharing) fails at every try. The
@@ -240,9 +242,9 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     // Locked: the copy into the original can't open it.
     let _lock = std::fs::OpenOptions::new().read(true).write(true).share_mode(0).open(&files[1].0).unwrap();
 
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
-        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
-    ));
+    let (events, quiet) = Quiet::bus();
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs);
     writer.wake();
 
@@ -279,6 +281,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     drop(writer);
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
 }
 
 #[test]
@@ -309,9 +312,9 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
             .unwrap();
     }
 
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
-        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
-    ));
+    let (events, quiet) = Quiet::bus();
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs);
     writer.wake();
 
@@ -330,6 +333,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
         std::thread::sleep(Duration::from_millis(200));
     }
     assert!(writer.status().error.is_some(), "the cause is in the status line");
+    quiet.check();
 }
 
 #[test]
@@ -366,9 +370,9 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
         )
         .unwrap();
 
-    let thumbs: &'static ThumbCache = Box::leak(Box::new(
-        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
-    ));
+    let (events, quiet) = Quiet::bus();
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs);
     writer.wake();
 
@@ -387,4 +391,5 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
         .query_row("SELECT rotation FROM analysis WHERE file_id = ?1", [id], |r| r.get(0))
         .unwrap();
     assert_eq!(rotation, 0, "the turn is in the file, so the analysis no longer shows it pending");
+    quiet.check();
 }

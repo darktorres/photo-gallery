@@ -1,5 +1,6 @@
 //! The borders pass on real files: a file that can't be read stays due for the next pass (R-47), so it is looked at
-//! again once it can be read.
+//! again once it can be read. It locks the file by a sharing mode, which only Windows has, so the file is Windows only.
+#![cfg(windows)]
 
 use std::path::Path;
 

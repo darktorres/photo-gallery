@@ -23,7 +23,5 @@ export LIBCLANG_PATH
 cd "$CLONE"
 # Excluded, and why. Remove each exclusion when its reason ends.
 #   pg-desktop, pg-gallery: they link Qt, which is Windows only (pg-gallery reaches it through its `desktop` feature).
-#   pg-ingest: its Windows-only code (CreateFileW, the job object, file times, CREATE_NO_WINDOW) isn't behind
-#     cfg(windows) yet; the platform crate (plan step 4) moves it there.
-cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --exclude pg-ingest --all-targets -- -D warnings
+cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings
 echo "wsl-check: clean"

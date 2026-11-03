@@ -10,12 +10,13 @@
 //!
 //! A crash during step 2 leaves the row with its temp set, and the next start finishes the copy.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::windows::fs::MetadataExt;
 use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
-use std::process::{Child, ChildStderr, ChildStdin, ChildStdout, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::mpsc::{self, Receiver};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 use std::time::Duration;
@@ -491,8 +492,9 @@ fn copy_into(temp: &Path, path: &str) -> Result<()> {
 pub struct ExifTool {
     child: Child,
     stdin: ChildStdin,
-    stdout: BufReader<ChildStdout>,
-    stderr: BufReader<ChildStderr>,
+    /// Each pipe's lines, read by a thread of its own (`pump`).
+    stdout: Receiver<String>,
+    stderr: Receiver<String>,
     next: u64,
     /// A command's pipe failed (the process exited or its pipes broke): this one can't be used again.
     broken: bool,
@@ -523,8 +525,8 @@ impl ExifTool {
             })?;
         die_with_us(&child);
         let stdin = child.stdin.take().unwrap();
-        let stdout = BufReader::new(child.stdout.take().unwrap());
-        let stderr = BufReader::new(child.stderr.take().unwrap());
+        let stdout = pump(child.stdout.take().unwrap());
+        let stderr = pump(child.stderr.take().unwrap());
         Ok(ExifTool { child, stdin, stdout, stderr, next: 1, broken: false })
     }
 
@@ -549,21 +551,8 @@ impl ExifTool {
         input.push_str(&format!("-echo4\n{{done{n}}}\n-execute{n}\n"));
         self.stdin.write_all(input.as_bytes())?;
         self.stdin.flush()?;
-        let read_until = |reader: &mut dyn BufRead, marker: &str| -> Result<String> {
-            let mut out = String::new();
-            loop {
-                let mut line = String::new();
-                if reader.read_line(&mut line)? == 0 {
-                    bail!("ExifTool exited");
-                }
-                if line.trim_end() == marker {
-                    return Ok(out);
-                }
-                out.push_str(&line);
-            }
-        };
-        let stdout = read_until(&mut self.stdout, &format!("{{ready{n}}}"))?;
-        let stderr = read_until(&mut self.stderr, &format!("{{done{n}}}"))?;
+        let stdout = read_until(&self.stdout, &format!("{{ready{n}}}"))?;
+        let stderr = read_until(&self.stderr, &format!("{{done{n}}}"))?;
         Ok((stdout, stderr))
     }
 
@@ -636,6 +625,34 @@ fn die_with_us(child: &Child) {
 }
 
 /// "1 image files created" (with `-o`).
+/// A pipe's lines, read by a thread of its own. ExifTool's stdout and stderr fill as it runs: read in turn, a full
+/// stderr would stop it before the stdout marker that is read first (R-39). The thread ends at the pipe's end.
+fn pump(pipe: impl Read + Send + 'static) -> Receiver<String> {
+    let (tx, rx) = mpsc::channel();
+    std::thread::spawn(move || {
+        for line in BufReader::new(pipe).lines() {
+            let Ok(line) = line else { break };
+            if tx.send(line).is_err() {
+                break;
+            }
+        }
+    });
+    rx
+}
+
+/// The lines up to `marker` (not included). An ExifTool that exited ends the wait.
+fn read_until(lines: &Receiver<String>, marker: &str) -> Result<String> {
+    let mut out = String::new();
+    loop {
+        let line = lines.recv().map_err(|_| anyhow::anyhow!("ExifTool exited"))?;
+        if line.trim_end() == marker {
+            return Ok(out);
+        }
+        out.push_str(&line);
+        out.push('\n');
+    }
+}
+
 fn created(stdout: &str) -> bool {
     stdout.lines().any(|l| l.trim().starts_with("1 image files created"))
 }

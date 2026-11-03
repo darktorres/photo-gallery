@@ -116,7 +116,8 @@ use std::ops::Range;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_catalog::browse::{self, read::FolderTree};
+use pg_catalog::browse;
+use pg_model::tree::FolderTree;
 
 use crate::loader::{self, Kind};
 

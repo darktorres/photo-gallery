@@ -19,5 +19,6 @@ pub mod pdq;
 pub mod query;
 pub mod rating;
 pub mod state;
+pub mod tree;
 pub mod turns;
 pub mod write;

@@ -10,8 +10,9 @@
 
 use std::path::{Path, PathBuf};
 
-use pg_catalog::browse::{self, read::{Facets, FolderTree}};
+use pg_catalog::browse::{self, read::Facets};
 use pg_model::grid::Entry;
+use pg_model::tree::FolderTree;
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_catalog::{Catalog, Versions, WorkItem};

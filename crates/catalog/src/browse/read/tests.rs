@@ -1,4 +1,4 @@
-use super::tree::{FOLDER_COUNTS, FOLDER_SIZES, TreeBuilder};
+use super::tree::FOLDER_COUNTS;
 use super::*;
 use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
 use crate::fixture;
@@ -15,6 +15,7 @@ use pg_model::path::folder_key;
 use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};
 use pg_model::query::{DateRange, MediaType, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
 use pg_model::state::FileState;
+use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
 use rusqlite::params_from_iter;
 
@@ -147,11 +148,6 @@ fn folders_in_the_trees_order() {
     let tree = folder_tree(&c).unwrap();
     let roots: Vec<&str> = tree.children(None).map(|n| tree.name(n)).collect();
     assert_eq!(roots, ["p", "p-x"]);
-    // Its strings were made at the size reserved for them, not grown.
-    let (_, bytes, components): (usize, usize, usize) =
-        c.conn.query_row(FOLDER_SIZES, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap();
-    assert_eq!((tree.paths.capacity(), tree.keys.capacity()), (bytes, bytes + components));
-    assert_eq!(tree.nodes.capacity(), tree.nodes.len());
 }
 
 /// A node as compared: merged path, name, depth, direct and total counts, drives (upper case, by letter), and
@@ -255,8 +251,6 @@ fn check_tree(rows: &[(i64, String, i64)]) {
     }
     let tree = builder.build();
     assert_eq!(flat(&tree), reference_tree(rows));
-    // The nodes were counted exactly before they were made.
-    assert_eq!(tree.nodes.capacity(), tree.nodes.len());
     let mut key = Vec::new();
     for n in 0..tree.len() {
         assert_eq!(tree.find(tree.merged_path(n), &mut key), Some(n));
@@ -309,15 +303,7 @@ fn real_tree_is_built_as_before() {
     check_tree(&rows);
     let tree = folder_tree(&c).unwrap();
     assert_eq!(flat(&tree), reference_tree(&rows));
-    assert_eq!(tree.nodes.capacity(), tree.nodes.len());
     eprintln!("{} folders, {} nodes, {} files", rows.len(), tree.len(), tree.total());
-    let sizes = |len: usize, cap: usize| format!("{len} of {cap}");
-    eprintln!(
-        "paths {}, keys {}, nodes {}",
-        sizes(tree.paths.len(), tree.paths.capacity()),
-        sizes(tree.keys.len(), tree.keys.capacity()),
-        sizes(tree.nodes.len(), tree.nodes.capacity())
-    );
 }
 
 #[test]

@@ -47,7 +47,9 @@ pub fn rotate(bytes: &[u8], format: Format, turns: u8) -> Result<Outcome> {
     Ok(match format {
         Format::Jpeg => match rewrite::jpeg(bytes, Op::Orient(total)) {
             Ok(out) => rewritten(out),
-            Err(_) => tag(), // not a perfect transform at this size
+            // Not a perfect transform at this size, or a damaged file: the tag carries the turn.
+            Err(e) if e.is::<rewrite::Imperfect>() => tag(),
+            Err(e) => return Err(e),
         },
         Format::Png if png_chunks(bytes).any(|c| &c.kind == b"acTL") => tag(),
         Format::Png => rewritten(rewrite::png(bytes, Op::Orient(total))?),
@@ -252,5 +254,6 @@ mod tests {
         let good = jpeg(64, 32);
         let scan = crate::container::find(&good, &[0xFF, 0xDA]).unwrap();
         assert!(matches!(rotate(&good[..scan], Format::Jpeg, 1).unwrap(), Outcome::Orientation(6)));
+        assert!(rewrite::jpeg(&good[..scan], Op::Orient(6)).unwrap_err().is::<rewrite::Imperfect>());
     }
 }

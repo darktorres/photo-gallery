@@ -8,8 +8,9 @@
 // VideoOutput. Both are fitted and never enlarged; the poster or first frame shows until the first frame played.
 //
 // The gallery's items are the window's (Main.qml): it gives the one shown, by the properties below, and does the
-// ratings, turns and border marks asked for (rated(), turned(), borderMarkToggled()). The QML compiler compiles a call into the gallery model to C++
-// only where the model is named by its id, in the window. (Reading and writing a final property through another
+// ratings, turns and border marks asked for (rated(), turned(), borderMarkToggled()). The QML compiler compiles a
+// call into the gallery model to C++ only where the model is named by its id, in the window.
+// (Reading and writing a final property through another
 // object compiles: Settings.realSize.)
 //
 // What it shows is made when it is first opened (the content Loader), and the players with the first video or
@@ -679,7 +680,9 @@ Rectangle {
                                 font.pixelSize: 22
                                 font.strikeout: viewer.borderMarked
                                 ToolTip.visible: hovered
-                                ToolTip.text: viewer.borderMarked ? "Marked not a border: unmark (N)" : "Not a border (N)"
+                                ToolTip.text: viewer.borderMarked
+                                    ? "Marked not a border: unmark (N)"
+                                    : "Not a border (N)"
                                 onClicked: viewer.borderMarkToggled(viewer.index, !viewer.borderMarked)
                             }
                             ToolButton {

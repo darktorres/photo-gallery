@@ -1,8 +1,7 @@
 // The filter bar, under the top bar: one control per facet of the query (Filters, src/filters.rs, editing a
 // query::Query). Facets combine with AND, the choices inside one with OR, and an empty facet doesn't filter. Each
 // type, extension and borders choice shows how many files choosing it would show given the other facets
-// (countFacets()). Edits go
-// straight to the query, and edited() fires; the window applies them after a short pause.
+// (countFacets()). Edits go straight to the query, and edited() fires; the window applies them after a short pause.
 //
 // The window sees the query only through this bar's properties, signal and functions: the QML compiler compiles a
 // call into a Rust object to C++ only where the object is named by its id, in its own file.
@@ -252,7 +251,8 @@ Pane {
                         selectByMouse: true
                         font.pixelSize: 12
                         Layout.preferredWidth: 160
-                        // Not bound to the query's name, which is trimmed: a space typed between two words would vanish.
+                        // Not bound to the query's name, which is trimmed: a space typed between two words
+                        // would vanish.
                         function reload() { text = filters.name }
                         onTextEdited: filters.name = text
                         Component.onCompleted: reload()

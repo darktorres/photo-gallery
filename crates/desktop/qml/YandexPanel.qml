@@ -256,8 +256,8 @@ Rectangle {
     }
 
     // One result at full size (a tile's double-click), loaded from its URL: fitted to the window, enlarged when it is
-    // smaller, or 1:1 (one file pixel per screen pixel) by a click on it or the button. ←/→ step through all the results, Space
-    // picks or unpicks, Escape goes back to the list.
+    // smaller, or 1:1 (one file pixel per screen pixel) by a click on it or the button. ←/→ step through all the
+    // results, Space picks or unpicks, Escape goes back to the list.
     Rectangle {
         id: preview
         property int item: -1

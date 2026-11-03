@@ -662,9 +662,9 @@ hold the commits. The ID is the step number (`S-nn`, with `.m` for a sub-item). 
 the code comments cite ("step 8"), so they stay. IDs never change and are never reused. The status follows the review
 ledger: `open`, `open (part: <sha>)`, `fixed <sha>` (the commit that did it), `verified`.
 
-Now: steps 0 to 3 are fixed, and their verify items are checked (S-02.3). Step 4 is in progress: its crates and the
-wasm32 check are in (S-04.1 to S-04.7), and the model items the plan gives to later steps are open rows (S-04.8).
-Steps 5 to 13 are open.
+Now: steps 0 to 3 are fixed, and their verify items are checked (S-02.3). Step 4's crates and the wasm32 check are in
+(S-04.1 to S-04.7); S-04.8 is open for the model items the later steps need. Step 5's eight crates are in (S-05.1 to
+S-05.8); S-05.9 holds the parts of step 5 that are still open. Steps 6 to 13 are open.
 
 Rules that hold for every row:
 
@@ -714,15 +714,16 @@ Rules that hold for every row:
 | S-04.6 | fixed 3f37fec | `pg-model`, part 1: formats, media kinds, civil dates and the path rules. | |
 | S-04.7 | fixed d21f4b0 | `pg-model`, part 2: the EXIF orientation, border detection, the analysis record and the PDQ types; the wasm32 check in `just lint`. The decoder-dependent orientation tests are core's (`decode` tests). | |
 | S-04.8 | open | `pg-model`, the items the plan lists that are not in the crate yet, each with the step that first needs it: the id newtypes, `Rating`, `Turns`, `FileIdentity` and a typed `Orientation` (S-07); `strum` keys for the enums, which are hand-written today (S-07); `Side::describe` and `Reason::text` out to the CLI (S-09); `pdq_dihedral` returned beside the record instead of stored in it (S-08.3); the query data model with typed editing, `Day`, `Sort`, `FolderTree` and the `Entry` and `Details` DTOs, and `contains_ignoring_case` under `cfg(test)` (S-08.7); `FileState`, `FileSource` and `Placeholder` (S-08.4); `WriteKind` (S-08.1); `ImageKey` and `ImageRequest` (S-11.1); `View` and `Session` (S-11.4); the optional `specta` feature (after S-13). | |
-| S-05 | open | Extract the crates below, one commit each, each adding its deny ban. | Rows below. Start after S-04. |
-| S-05.1 | open | `pg-metadata`. | |
-| S-05.2 | open | `pg-codec` (with `codecs.rs`). | |
-| S-05.3 | open | `pg-video`. | |
-| S-05.4 | open | `pg-edit`. | |
-| S-05.5 | open | `pg-analysis`. | |
-| S-05.6 | open | `pg-dedup`. | |
-| S-05.7 | open | `pg-yandex`. | |
-| S-05.8 | open | `pg-exiftool`. | |
+| S-05 | open (part: 5b2540b) | Extract the crates below, one commit each, each adding its deny ban. | Rows below. The eight crates are in; S-05.9 is open. |
+| S-05.1 | fixed 2e62472 | `pg-metadata`: the file metadata (EXIF, XMP, the dates, the orientation and rating patches), with its GIF and APNG fixtures in `pg-testkit`. It stays one module, since its one job is the file metadata; it isn't split by format. The deny ban is `quick-xml` only: `miniz_oxide` and `crc32fast` are also used by `png`, `tiff` and `flate2`, and a wrapper rule can't name third-party parents. | |
+| S-05.2 | fixed bcc3707 | `pg-codec`: the decoders (`decode`, `codecs`), the resizer, the animation frames, the pixel buffers, and the crop's re-encode (`encode::cropped`). The BigTIFF fixture is behind the `fixtures` feature. The `image` ban holds with core and ingest as wrappers, until their fixtures move (S-05.9). The JPEG encoder (`encode_image` in `maker.rs`) stays with `Maker` in core until render (S-06.3). | |
+| S-05.3 | fixed d6ef3d9 | `pg-video`: the probe, the frames and the file hash, with the FFmpeg DLL build script. | `verbatim` in video is open (S-05.9). |
+| S-05.4 | fixed ec4e810 | `pg-edit`: the rotation and the crop, with the rewrites private to the crate. The crop's re-encode is the codec's, and takes the model's `Format`. The tests take their stills from `pg-testkit` and decode with the codec and the metadata reader, not core's display module. | |
+| S-05.5 | fixed f4d51e0 | `pg-analysis`: the analyzer (`analyze`), the border detector (`borders`), the PDQ hasher (`pdq`), and `examples/stage_times`. The kept-buffers test drives core's `Maker`, so it moved to core's `maker` tests; the ThumbHash literal test stays here. | One BLAKE3 hashing path is open (S-05.9). |
+| S-05.6 | fixed 0e571fb | `pg-dedup`: the PDQ index, the import's pairing (`Pairer`: query, then insert, the best per neighbour), and the duplicates' union-find (`UnionFind`). | The tier-2 verifier, multicut and keeper are the plan's later tiers. |
+| S-05.7 | fixed 30325f1 | `pg-yandex`: the client. A download carries the format its bytes sniff as, not the format the response claims; the desktop saves it under `Format::extension`. `YandexError` derives its messages with thiserror. `ureq` is `pg-yandex`'s alone (deny.toml). | The desktop's two Yandex tests move with S-11.6. |
+| S-05.8 | fixed 5b2540b | `pg-exiftool`: the `-stay_open` driver. The program comes from the caller: ingest's `exiftool_program` reads `PG_EXIFTOOL`, once. | The per-command timeout and the kill on close are open (S-05.9). |
+| S-05.9 | open | The parts of step 5 the moves did not finish. `verbatim` in `pg-video`, so video applies it itself. One BLAKE3 hashing path over any `Read` (`analyze` and `video` both hash today). A timeout on each ExifTool command, and a kill on close when ExifTool doesn't exit (a behaviour change, its own commit). The deny wrappers that name `pg-core` and `pg-ingest` (for `image`, `turbojpeg`, `png`, `gif`, `image-webp`, `tiff`, `zune-jpeg`, `zune-core` and `quick-xml`): they come out as their code and fixtures move (S-06.3, S-08, S-09). | |
 | S-06 | open | `pg-catalog`, `pg-thumbcache`, `pg-render`. | Rows below. |
 | S-06.1 | open | `pg-catalog` as a mechanical move (catalog + browse + query_sql, `conn` still public). | R-11 (the fixture) waits for this step. |
 | S-06.2 | open | `pg-thumbcache`. | |

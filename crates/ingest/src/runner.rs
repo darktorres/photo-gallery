@@ -7,6 +7,7 @@
 //! it commits what it has and the next round starts with the new work. Every pass is resumable from the catalog,
 //! so stopping costs nothing but the batch in flight.
 
+use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -45,7 +46,7 @@ struct Inner {
     thumb_height: AtomicU32,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
-    messages: Mutex<Vec<Message>>,
+    messages: Mutex<Messages>,
     on_round_done: Box<dyn Fn() + Send + Sync>,
 }
 
@@ -53,6 +54,27 @@ struct Inner {
 pub struct Message {
     pub text: String,
     pub warning: bool,
+}
+
+/// The most messages kept until the UI takes them.
+const MESSAGE_CAP: usize = 100;
+
+/// Messages for the UI, oldest first. Past `MESSAGE_CAP` the oldest are dropped and counted in `not_kept`, so the
+/// newest is always there and whoever takes them can say how many it did not see.
+#[derive(Default)]
+pub struct Messages {
+    pub kept: VecDeque<Message>,
+    pub not_kept: usize,
+}
+
+impl Messages {
+    fn push(&mut self, message: Message) {
+        if self.kept.len() == MESSAGE_CAP {
+            self.kept.pop_front();
+            self.not_kept += 1;
+        }
+        self.kept.push_back(message);
+    }
 }
 
 /// What the job has done so far, for the app to refresh its views.
@@ -93,7 +115,7 @@ impl Runner {
             thumb_height: AtomicU32::new(thumb_height),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
-            messages: Mutex::new(Vec::new()),
+            messages: Mutex::new(Messages::default()),
             on_round_done: Box::new(on_round_done),
         });
         let job = inner.clone();
@@ -181,8 +203,8 @@ impl Runner {
     }
 
     /// Errors and notes since the last call (a folder that couldn't be scanned, a full cache).
-    pub fn take_messages(&self) -> Vec<Message> {
-        std::mem::take(&mut self.inner.messages.lock().unwrap())
+    pub fn take_messages(&self) -> Messages {
+        std::mem::take(&mut *self.inner.messages.lock().unwrap())
     }
 }
 
@@ -321,4 +343,21 @@ fn crop_note(s: &crop::Stats, folder: &Path) -> String {
         note += &format!("; {} failed, the first: {e}", s.failed);
     }
     note
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_newest_messages_are_kept_and_the_rest_counted() {
+        let mut messages = Messages::default();
+        for i in 0..MESSAGE_CAP + 5 {
+            messages.push(Message { text: i.to_string(), warning: false });
+        }
+        assert_eq!(messages.kept.len(), MESSAGE_CAP);
+        assert_eq!(messages.not_kept, 5);
+        assert_eq!(messages.kept.front().unwrap().text, "5");
+        assert_eq!(messages.kept.back().unwrap().text, (MESSAGE_CAP + 4).to_string());
+    }
 }

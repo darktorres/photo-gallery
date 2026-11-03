@@ -236,8 +236,13 @@ impl qobject::Library {
         self.as_mut().set_paused(paused);
         self.as_mut().set_status(QString::from(&status));
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
-        if let Some(last) = r.take_messages().pop() {
-            self.as_mut().show(last.text, last.warning);
+        // The latest message, with how many others came in since the last poll: the runner keeps the newest and
+        // counts what it dropped, so none goes unannounced.
+        let taken = r.take_messages();
+        if let Some(last) = taken.kept.back() {
+            let more = taken.kept.len() - 1 + taken.not_kept;
+            let text = if more == 0 { last.text.clone() } else { format!("{} (and {more} more)", last.text) };
+            self.as_mut().show(text, last.warning);
         }
         if let Some(w) = WRITER.get() {
             let s = w.status();

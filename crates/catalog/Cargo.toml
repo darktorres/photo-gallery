@@ -15,6 +15,7 @@ fixture = ["dep:pg-analysis"]
 
 [dependencies]
 anyhow.workspace = true
+thiserror.workspace = true
 pg-analysis = { path = "../analysis", optional = true }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }

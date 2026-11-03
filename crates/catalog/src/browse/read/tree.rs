@@ -1,7 +1,7 @@
 //! The folder tree, merged across drives (PLAN §7): its nodes in key order, each with its count and size,
 //! and the lookups the tree panel makes of it.
 
-use anyhow::Result;
+use crate::Result;
 
 use crate::Catalog;
 use pg_model::path::{components, merged_path, push_folder_key};

@@ -1,7 +1,7 @@
 //! What the viewer's details panel and the border overlay show of one file.
 
 use crate::Catalog;
-use anyhow::Result;
+use crate::Result;
 use rusqlite::OptionalExtension;
 use rusqlite::types::Type;
 

@@ -2,7 +2,7 @@
 //! fetch again. Every user-visible change stamps its file, in the same statement as the change (the schema's triggers):
 //! the file itself, its analysis, its rating, its border mark, and its queued write.
 
-use anyhow::Result;
+use crate::Result;
 use pg_model::ids::FileId;
 
 use crate::Catalog;

@@ -17,7 +17,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 
-use anyhow::{Result, anyhow};
+use anyhow::anyhow;
 use pg_catalog::Catalog;
 
 use crate::state;
@@ -33,7 +33,7 @@ pub enum Kind {
 const KINDS: usize = 3;
 
 /// A request, given the reader's connection (or why there is none).
-type Job = Box<dyn FnOnce(Result<&Catalog, &anyhow::Error>) + Send>;
+type Job = Box<dyn FnOnce(pg_catalog::Result<&Catalog, &pg_catalog::Error>) + Send>;
 
 #[derive(Default)]
 struct Slots {
@@ -79,17 +79,19 @@ fn reader() -> &'static Arc<Reader> {
 /// by `stop`).
 pub fn submit<T: 'static>(
     kind: Kind,
-    read: impl FnOnce(&Catalog) -> Result<T> + Send + 'static,
-    deliver: impl FnOnce(Result<T>) + Send + 'static,
+    read: impl FnOnce(&Catalog) -> pg_catalog::Result<T> + Send + 'static,
+    deliver: impl FnOnce(pg_catalog::Result<T>) + Send + 'static,
 ) {
     let job: Job = Box::new(move |catalog| {
         let result = match catalog {
             // A panic is logged by the panic hook and reported here; the thread goes on serving the others.
-            Ok(c) => crate::panic_log::catch(AssertUnwindSafe(|| read(c)))
-                .unwrap_or_else(|_| Err(anyhow!("the catalog read failed (an internal error)"))),
-            Err(e) => Err(anyhow!("the catalog can't be opened: {e:#}")),
+            Ok(c) => crate::panic_log::catch(AssertUnwindSafe(|| read(c))).unwrap_or_else(|_| {
+                Err(pg_catalog::Error::Other(anyhow!("the catalog read failed (an internal error)")))
+            }),
+            Err(e) => Err(pg_catalog::Error::Other(anyhow!("the catalog can't be opened: {e:#}"))),
         };
-        if !matches!(&result, Err(e) if pg_catalog::interrupted(e)) {
+        // A read that the next request (or `stop`) cut short is not delivered.
+        if !matches!(&result, Err(pg_catalog::Error::Interrupted)) {
             deliver(result);
         }
     });

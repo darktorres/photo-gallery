@@ -22,7 +22,10 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, anyhow};
+
+mod error;
+pub use error::{Error, Result};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
@@ -461,7 +464,9 @@ fn migrate(conn: &Connection, baseline: &str, migrations: &[&str]) -> Result<()>
         version = BASELINE_VERSION;
     }
     if version > current {
-        bail!("schema version {version}, which this build doesn't know (it has {current}): made by another build");
+        return Err(Error::Other(anyhow!(
+            "schema version {version}, which this build doesn't know (it has {current}): made by another build"
+        )));
     }
     for (i, sql) in migrations.iter().enumerate().skip((version - BASELINE_VERSION) as usize) {
         let to = BASELINE_VERSION + i as i64 + 1;
@@ -505,7 +510,7 @@ fn rebuild(path: &Path) -> Result<()> {
         old.busy_timeout(std::time::Duration::from_secs(1))?;
         let mode: String = old.query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0)).context(IN_USE)?;
         if !mode.eq_ignore_ascii_case("delete") {
-            bail!(IN_USE);
+            return Err(Error::Other(anyhow!(IN_USE)));
         }
     }
     let new_path = with_suffix(".rebuild");
@@ -524,7 +529,9 @@ fn rebuild(path: &Path) -> Result<()> {
         match std::fs::remove_file(&side) {
             Ok(()) => {}
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(anyhow::Error::from(e).context(format!("deleting {}: {IN_USE}", side.display()))),
+            Err(e) => {
+                return Err(anyhow::Error::from(e).context(format!("deleting {}: {IN_USE}", side.display())).into());
+            }
         }
     }
     // Windows refuses to move over a file another program has open.
@@ -575,7 +582,7 @@ fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
         } else if let Some((_, _, made)) = FILLED.iter().find(|(t, c, _)| *t == table && *c == column) {
             (*made).to_string()
         } else if required {
-            bail!("{table}.{column}: not in this catalog, and nothing to make it from");
+            return Err(Error::Other(anyhow!("{table}.{column}: not in this catalog, and nothing to make it from")));
         } else {
             continue;
         };
@@ -593,7 +600,7 @@ fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
         Ok(tx.query_row(&format!(r#"SELECT count(*) FROM {schema}."{table}""#), [], |r| r.get(0))?)
     };
     if table != "meta" && count("main")? != count("old")? {
-        bail!("copying {table}: {} rows of {}", count("main")?, count("old")?);
+        return Err(Error::Other(anyhow!("copying {table}: {} rows of {}", count("main")?, count("old")?)));
     }
     Ok(())
 }
@@ -770,15 +777,6 @@ pub struct CropSource {
     pub cut: [u32; 4],
 }
 
-/// Whether an error is a statement stopped by [`Catalog::cancel_when`]'s flag.
-pub fn interrupted(e: &anyhow::Error) -> bool {
-    e.chain().any(|c| {
-        c.downcast_ref::<rusqlite::Error>()
-            .and_then(rusqlite::Error::sqlite_error_code)
-            .is_some_and(|code| code == rusqlite::ErrorCode::OperationInterrupted)
-    })
-}
-
 pub struct Status {
     pub files: i64,
     pub missing: i64,
@@ -809,7 +807,10 @@ impl Catalog {
             rebuild(path).with_context(|| format!("catalog {}: copying it into the current layout", path.display()))?;
             conn = connect(path)?;
             if !current_layout(&conn)? {
-                bail!("catalog {}: still not in the current layout after copying it", path.display());
+                return Err(Error::Other(anyhow!(
+                    "catalog {}: still not in the current layout after copying it",
+                    path.display()
+                )));
             }
         }
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
@@ -830,7 +831,10 @@ impl Catalog {
         let version: i64 = conn.query_row("PRAGMA user_version", [], |r| r.get(0))?;
         let current = BASELINE_VERSION + MIGRATIONS.len() as i64;
         if version != current {
-            bail!("catalog {}: schema version {version}, not this build's {current}", path.display());
+            return Err(Error::Other(anyhow!(
+                "catalog {}: schema version {version}, not this build's {current}",
+                path.display()
+            )));
         }
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
@@ -872,7 +876,7 @@ impl Catalog {
     }
 
     /// Stop the statements on this connection while `cancel` is set (from any thread): each fails with an error for
-    /// which [`interrupted`] is true, including those started after it was set, until it is cleared. Unlike
+    /// which [`Error::Interrupted`] is returned, including those started after it was set, until it is cleared. Unlike
     /// SQLite's interrupt, which only reaches the statements running at that moment, it can't fall between two
     /// statements of a read.
     pub fn cancel_when(&self, cancel: Arc<AtomicBool>) {
@@ -983,7 +987,9 @@ impl Catalog {
             |r| r.get(0),
         )?;
         if without > 0 {
-            bail!("{without} analyses have no orientation hashes (made by an older build): re-import them");
+            return Err(Error::Other(anyhow!(
+                "{without} analyses have no orientation hashes (made by an older build): re-import them"
+            )));
         }
         let (mut ids, mut hashes) = (Vec::with_capacity(present * 8), Vec::with_capacity(present * 8));
         let mut stmt = self.conn.prepare(
@@ -1721,12 +1727,12 @@ mod tests {
         c.cancel_when(cancel.clone());
         let long =
             "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000) SELECT count(*) FROM n";
-        let run = || c.conn.query_row(long, [], |r| r.get::<_, i64>(0)).map_err(anyhow::Error::from);
+        let run = || c.conn.query_row(long, [], |r| r.get::<_, i64>(0)).map_err(Error::from);
         assert_eq!(run().unwrap(), 100_000);
         // Set between statements (SQLite's own interrupt would be lost there): every statement fails.
         cancel.store(true, Ordering::Relaxed);
-        assert!(interrupted(&run().unwrap_err()));
-        assert!(interrupted(&run().unwrap_err()));
+        assert!(matches!(run().unwrap_err(), Error::Interrupted));
+        assert!(matches!(run().unwrap_err(), Error::Interrupted));
         cancel.store(false, Ordering::Relaxed);
         assert_eq!(run().unwrap(), 100_000);
     }

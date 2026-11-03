@@ -2,7 +2,7 @@
 //! folder's file list, filtered and sorted.
 
 use crate::Catalog;
-use anyhow::Result;
+use crate::Result;
 use rusqlite::types::Type;
 use rusqlite::{OptionalExtension, params_from_iter};
 

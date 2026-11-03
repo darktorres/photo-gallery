@@ -2,7 +2,7 @@
 //! (`FileSource`, `Placeholder`).
 
 use crate::Catalog;
-use anyhow::Result;
+use crate::Result;
 use rusqlite::OptionalExtension;
 use rusqlite::types::ValueRef;
 

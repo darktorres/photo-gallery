@@ -209,7 +209,7 @@ impl Inner {
         let Some((temp, _)) = &job.temp else { return Ok(()) };
         let path = catalog.file_path(job.file_id)?;
         let _ = std::fs::remove_file(temp);
-        writes::abandon_temp(catalog, job, stat(&path).ok())
+        Ok(writes::abandon_temp(catalog, job, stat(&path).ok())?)
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {

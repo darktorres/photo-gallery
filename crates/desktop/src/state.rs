@@ -93,7 +93,7 @@ pub fn shutdown() {
 
 /// Run `f` with this thread's catalog connection (opened by `init` on the GUI thread; on a provider thread at its
 /// first request, and again after the pool ended it, 30 s idle: `Catalog::open`, without `prepare`'s checks).
-pub fn with_catalog<R>(f: impl FnOnce(&Catalog) -> Result<R>) -> Result<R> {
+pub fn with_catalog<R>(f: impl FnOnce(&Catalog) -> pg_catalog::Result<R>) -> pg_catalog::Result<R> {
     CATALOG.with(|c| {
         let mut c = c.borrow_mut();
         if c.is_none() {

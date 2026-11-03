@@ -1,7 +1,7 @@
 //! The saved views and the session, as they were saved.
 
 use crate::Catalog;
-use anyhow::Result;
+use crate::Result;
 use rusqlite::OptionalExtension;
 
 use crate::query::{Query, Sort};

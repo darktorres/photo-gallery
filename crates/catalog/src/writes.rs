@@ -6,7 +6,7 @@
 //! sees a write both done and still queued.
 
 use crate::Catalog;
-use anyhow::Result;
+use crate::Result;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 

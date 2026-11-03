@@ -1,7 +1,7 @@
 //! The filter bar's counts: how many of a folder's files match each value of each facet.
 
 use crate::Catalog;
-use anyhow::Result;
+use crate::Result;
 use rusqlite::params_from_iter;
 
 use strum::IntoEnumIterator;

@@ -1,7 +1,7 @@
 //! The browsing side's writes that aren't the file queue: a saved view, and the place the session was left at.
 //! The ratings and turns the user makes are in `crate::writes`.
 
-use anyhow::Result;
+use crate::Result;
 use rusqlite::{Connection, params};
 
 use crate::Catalog;

@@ -121,7 +121,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 |---|---|---|---|---|
 | 0a | File-byte hash | Identical files | SQLite index | ~1 GB |
 | 0b | Decoded-pixel hash | Same pixels, different metadata or container | SQLite index | ~1 GB |
-| 1 | PDQ 256-bit (+ dihedral variants at query time) | Re-sizes (Pinterest 236x/474x/736x/originals), recompressions, mirrors and 90° rotations, light crops | Multi-index hashing: pigeonhole split → exact search within radius r | ~2.2 GB RAM |
+| 1 | PDQ 256-bit (the 8 dihedral variants are stored per file, `analysis.pdq_dihedral`, and each is queried) | Re-sizes (Pinterest 236x/474x/736x/originals), recompressions, mirrors and 90° rotations, light crops | Multi-index hashing: pigeonhole split → exact search within radius r | ~2.2 GB RAM |
 | 2 | Copy-detection embedding (SSCD baseline) | **Crops, edits, overlays, filters** | ANN radius search vs cluster heads + augmentation | see below |
 | 3 | Verifier on uncertain pairs | Rejects false positives; confirms heavy crops | — | — |
 

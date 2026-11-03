@@ -1,5 +1,6 @@
-// Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window, up or down, with an antialiased (Lanczos3)
-// resample made in Rust; zoom from fit to 32× around the cursor (wheel, pinch, + −) and pan by dragging. Between
+// Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window, up or down, with an antialiased
+// (Lanczos3) resample made in Rust; zoom from fit to 32× around the cursor (pinch, + −) and pan by dragging; the wheel
+// steps to the previous or next picture. Between
 // fit and 1:1 the GPU scales the fitted image at once, and Rust renders the visible part with Lanczos after a
 // pause; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe; borders (B): a
 // bright frame around the image to reveal black bars, and over it what cropping the borders found would cut, with
@@ -257,10 +258,19 @@ Rectangle {
             Item {
                 id: content
 
+                // The wheel steps through the pictures: a notch (120 units) is one step, up for the previous. A
+                // touchpad's small deltas add up until they make a notch.
                 WheelHandler {
-                    id: wheelZoom
-                    onWheel: (ev) => viewer.setZoom(viewer.zoom * Math.pow(1.25, ev.angleDelta.y / 120),
-                                                    wheelZoom.point.position.x, wheelZoom.point.position.y)
+                    id: wheelStep
+                    property real notches: 0
+                    onWheel: (ev) => {
+                        notches += ev.angleDelta.y / 120
+                        const n = Math.trunc(notches)
+                        if (n !== 0) {
+                            notches -= n
+                            viewer.step(-n)
+                        }
+                    }
                 }
                 PinchHandler {
                     id: pinch

@@ -182,12 +182,12 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   - **0–5**, **↑** (4) and **↓** (1) rate and move to the next picture, showing the rating's symbol for half a
     second. The rating bar at the bottom does the same by click, with the current rating ringed; its ⟲ ⟳ (and
     **R** / **Shift+R**) turn the picture.
-  - **Zoom**: the wheel zooms around the cursor from fit to 32×, + / − around the centre, pinch on a touch
-    screen or touchpad; drag pans. Double-click toggles fit and 1:1. Fit is a Lanczos3 resample of the original
-    to the window, down for a large picture and up for a small one; between fit and 1:1 the GPU scales it at
-    once and the visible part is rendered again with Lanczos3 when zooming stops; from 1:1 up it is the
-    original with nearest neighbour, to judge pixels. A picture smaller than the window opens enlarged, and 1:1
-    is then the furthest zoom out.
+  - **Zoom**: + / − around the centre, pinch on a touch screen or touchpad, from fit to 32×; drag pans. The
+    wheel steps to the previous or next picture (a touchpad's small scrolls add up to a step). Double-click
+    toggles fit and 1:1. Fit is a Lanczos3 resample of the original to the window, down for a large picture and
+    up for a small one; between fit and 1:1 the GPU scales it at once and the visible part is rendered again with
+    Lanczos3 when zooming stops; from 1:1 up it is the original with nearest neighbour, to judge pixels. A picture
+    smaller than the window opens enlarged, and 1:1 is then the furthest zoom out.
   - **Z** Real Size: pictures open at 1:1 instead of fitted, remembered across pictures and runs.
   - **L** a 10× nearest-neighbour loupe under the cursor; **B** a magenta frame around the image to reveal black
     bars, and what cropping its borders would cut, dimmed (grey when marked not a border), with rejected

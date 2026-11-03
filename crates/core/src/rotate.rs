@@ -17,11 +17,11 @@
 
 use anyhow::Result;
 
-use crate::container::{png_chunks, webp_chunks};
 use crate::format::Format;
 use crate::metadata;
 use crate::orientation;
 use crate::rewrite::{self, Op};
+use pg_container::{png_chunks, webp_chunks};
 
 /// What turning a file comes to.
 #[derive(Debug)]
@@ -252,7 +252,7 @@ mod tests {
         assert!(matches!(rotate(&jpeg(65, 33), Format::Jpeg, 1).unwrap(), Outcome::Orientation(6)));
         // Damaged before the scan (cut off there): refused, not re-encoded; the tag carries the turn.
         let good = jpeg(64, 32);
-        let scan = crate::container::find(&good, &[0xFF, 0xDA]).unwrap();
+        let scan = pg_container::find(&good, &[0xFF, 0xDA]).unwrap();
         assert!(matches!(rotate(&good[..scan], Format::Jpeg, 1).unwrap(), Outcome::Orientation(6)));
         assert!(rewrite::jpeg(&good[..scan], Op::Orient(6)).unwrap_err().is::<rewrite::Imperfect>());
     }

@@ -1414,6 +1414,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-container"
+version = "0.1.0"
+
+[[package]]
 name = "pg-core"
 version = "0.1.0"
 dependencies = [
@@ -1428,6 +1432,7 @@ dependencies = [
  "image-webp",
  "miniz_oxide 0.8.9",
  "pdqhash",
+ "pg-container",
  "pg-testkit",
  "png 0.18.1",
  "quick-xml",

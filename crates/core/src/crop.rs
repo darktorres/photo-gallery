@@ -13,9 +13,9 @@ use std::io::Cursor;
 
 use anyhow::{Context, Result, bail, ensure};
 
-use crate::container::{png_chunks, webp_chunks};
 use crate::format::Format;
 use crate::rewrite::{self, Op};
+use pg_container::{png_chunks, webp_chunks};
 
 pub struct Cropped {
     pub bytes: Vec<u8>,

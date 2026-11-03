@@ -8,10 +8,9 @@ use std::io::Cursor;
 use anyhow::{Context, Result, bail};
 use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
-use crate::container;
-use crate::container::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
 use crate::decode::transform;
 use crate::orientation;
+use pg_container::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
 
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]
@@ -117,7 +116,7 @@ pub(crate) fn jpeg(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     // Keep the entropy coding kind: progressive stays progressive; baseline gets optimized Huffman tables (the
     // transform can't reuse the original ones).
     // A JPEG whose structure is damaged before its scan is refused: the transform would re-encode what is left.
-    let Some(progressive) = container::jpeg_is_progressive(bytes) else {
+    let Some(progressive) = pg_container::jpeg_is_progressive(bytes) else {
         return Err(Imperfect("the JPEG's structure is damaged before its scan".into()).into());
     };
     t.progressive = progressive;

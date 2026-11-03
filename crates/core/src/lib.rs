@@ -10,7 +10,6 @@ pub mod borders;
 pub mod browse;
 pub mod catalog;
 mod codecs;
-pub mod container;
 pub mod crop;
 pub mod date;
 pub mod decode;

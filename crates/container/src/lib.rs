@@ -3,43 +3,46 @@
 //! RIFF (WebP) chunks and GIF blocks. Each walk yields byte ranges of the file, so the metadata reader and the
 //! lossless rewriter share one reading of each format's structure. Model-shaped: no decoding, no XMP parsing.
 
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+
 use std::ops::Range;
 
 /// The signature of an APP1 segment that holds a chunk of an extended XMP packet.
-pub(crate) const JPEG_XMP_EXTENSION: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
+pub const JPEG_XMP_EXTENSION: &[u8] = b"http://ns.adobe.com/xmp/extension/\0";
 
 /// Where `part`, a slice of `bytes`, is in it.
-pub(crate) fn range_in(bytes: &[u8], part: &[u8]) -> Range<usize> {
+pub fn range_in(bytes: &[u8], part: &[u8]) -> Range<usize> {
     let start = part.as_ptr() as usize - bytes.as_ptr() as usize;
     debug_assert!(start + part.len() <= bytes.len());
     start..start + part.len()
 }
 
 /// A JPEG marker segment before the image data.
-pub(crate) struct Segment<'a> {
-    pub(crate) marker: u8,
+pub struct Segment<'a> {
+    pub marker: u8,
     /// Offset of the payload (after the length) in the file.
-    pub(crate) start: usize,
-    pub(crate) data: &'a [u8],
+    pub start: usize,
+    pub data: &'a [u8],
 }
 
 /// The marker segments up to the start of scan. Embedded JPEGs (EXIF thumbnails, MPF images) are inside these
 /// or after the image, so they are never visited. The walk ends at the scan or the end marker, or at damage (see
 /// `JpegSegments::damaged`).
-pub(crate) struct JpegSegments<'a> {
+pub struct JpegSegments<'a> {
     bytes: &'a [u8],
     i: usize,
     damaged: bool,
 }
 
-pub(crate) fn jpeg_segments(bytes: &[u8]) -> JpegSegments<'_> {
+pub fn jpeg_segments(bytes: &[u8]) -> JpegSegments<'_> {
     JpegSegments { bytes, i: 2, damaged: false }
 }
 
 impl JpegSegments<'_> {
     /// Whether the walk stopped at damage (a marker byte that isn't 0xFF, a length that runs past the file, or the
     /// file ending before the scan), rather than at the scan or the end marker.
-    pub(crate) fn damaged(&self) -> bool {
+    pub fn damaged(&self) -> bool {
         self.damaged
     }
 }
@@ -81,24 +84,24 @@ impl<'a> Iterator for JpegSegments<'a> {
 }
 
 /// A JPEG segment's EXIF block, if it is one.
-pub(crate) fn jpeg_exif(s: &Segment) -> Option<std::ops::Range<usize>> {
+pub fn jpeg_exif(s: &Segment) -> Option<std::ops::Range<usize>> {
     (s.marker == 0xE1 && s.data.starts_with(b"Exif\0\0")).then(|| s.start + 6..s.start + s.data.len())
 }
 
 /// A chunk of an extended XMP packet (Adobe XMP Part 3, 1.1.3.1), as found in a JPEG.
-pub(crate) struct ExtendedChunk {
+pub struct ExtendedChunk {
     /// Its packet's GUID, in the file.
-    pub(crate) guid: Range<usize>,
+    pub guid: Range<usize>,
     /// Its packet's length, as this chunk says.
-    pub(crate) full: usize,
-    pub(crate) offset: usize,
-    pub(crate) data: Range<usize>,
+    pub full: usize,
+    pub offset: usize,
+    pub data: Range<usize>,
     /// The order it was found in.
-    pub(crate) seq: usize,
+    pub seq: usize,
 }
 
 /// An APP1 segment's data, if it is a chunk of an extended packet.
-pub(crate) fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<ExtendedChunk>) {
+pub fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<ExtendedChunk>) {
     if let Some(rest) = data.strip_prefix(JPEG_XMP_EXTENSION)
         && rest.len() >= 40
     {
@@ -109,7 +112,7 @@ pub(crate) fn add_extended_chunk(bytes: &[u8], data: &[u8], chunks: &mut Vec<Ext
     }
 }
 
-pub(crate) struct Chunk<'a> {
+pub struct Chunk<'a> {
     pub kind: [u8; 4],
     /// Offset of the chunk's first byte (its length field) in the file.
     pub at: usize,
@@ -119,7 +122,7 @@ pub(crate) struct Chunk<'a> {
 }
 
 /// PNG chunks after the signature, up to and including IEND.
-pub(crate) fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
+pub fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
     let mut i = 8;
     std::iter::from_fn(move || {
         if i + 12 > bytes.len() {
@@ -138,7 +141,7 @@ pub(crate) fn png_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
 }
 
 /// WebP (RIFF) chunks after the `WEBP` form type.
-pub(crate) fn webp_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
+pub fn webp_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
     let end = bytes.get(4..8).map_or(0, |s| (u32::from_le_bytes(s.try_into().unwrap()) as usize + 8).min(bytes.len()));
     let mut i = 12;
     std::iter::from_fn(move || {
@@ -159,18 +162,18 @@ pub(crate) fn webp_chunks(bytes: &[u8]) -> impl Iterator<Item = Chunk<'_>> {
 }
 
 /// A PNG chunk's data, as a range of the file.
-pub(crate) fn chunk_data(c: &Chunk) -> std::ops::Range<usize> {
+pub fn chunk_data(c: &Chunk) -> std::ops::Range<usize> {
     c.at + 8..c.at + 8 + c.data.len()
 }
 
 /// A WebP EXIF chunk's EXIF block. Some writers keep JPEG's "Exif\0\0" prefix.
-pub(crate) fn webp_exif(c: &Chunk) -> std::ops::Range<usize> {
+pub fn webp_exif(c: &Chunk) -> std::ops::Range<usize> {
     let skip = if c.data.starts_with(b"Exif\0\0") { 6 } else { 0 };
     c.at + 8 + skip..c.at + 8 + c.data.len()
 }
 
 /// GIF blocks, as the structure walk sees them.
-pub(crate) enum GifBlock {
+pub enum GifBlock {
     /// An extension: label and the byte range of the whole block (introducer to terminator).
     Extension { label: u8, range: std::ops::Range<usize> },
     /// An image: the byte range of its descriptor (from 0x2C), local color table, LZW code size and data.
@@ -178,7 +181,7 @@ pub(crate) enum GifBlock {
 }
 
 /// Header and logical screen descriptor length, global color table included.
-pub(crate) fn gif_header_len(bytes: &[u8]) -> Option<usize> {
+pub fn gif_header_len(bytes: &[u8]) -> Option<usize> {
     let packed = *bytes.get(10)?;
     let table = if packed & 0x80 != 0 { 3 << ((packed & 7) + 1) } else { 0 };
     let len = 13 + table;
@@ -199,14 +202,14 @@ fn skip_sub_blocks(bytes: &[u8], mut i: usize) -> Option<usize> {
 /// The blocks between the header and the trailer, walked as they are read. A GIF is only read as a whole: what
 /// the blocks say counts once [`GifBlocks::complete`] says the walk reached the trailer (a truncated download
 /// doesn't).
-pub(crate) fn gif_blocks(bytes: &[u8]) -> GifBlocks<'_> {
+pub fn gif_blocks(bytes: &[u8]) -> GifBlocks<'_> {
     match gif_header_len(bytes) {
         Some(i) => GifBlocks { bytes, i, walk: GifWalk::Blocks },
         None => GifBlocks { bytes, i: 0, walk: GifWalk::Broken },
     }
 }
 
-pub(crate) struct GifBlocks<'a> {
+pub struct GifBlocks<'a> {
     bytes: &'a [u8],
     /// The next block's offset.
     i: usize,
@@ -224,7 +227,7 @@ enum GifWalk {
 
 impl GifBlocks<'_> {
     /// Whether the walk reached the trailer. Only then do the blocks seen describe the file.
-    pub(crate) fn complete(&self) -> bool {
+    pub fn complete(&self) -> bool {
         self.walk == GifWalk::Complete
     }
 
@@ -285,7 +288,7 @@ impl Iterator for GifBlocks<'_> {
 /// Whether a JPEG is progressive: its frame header (SOF2) is among the segments before the scan. `None` when those
 /// segments are damaged, so the file's structure can't be trusted (the lossless rewriter refuses such a file rather
 /// than re-encode it).
-pub(crate) fn jpeg_is_progressive(bytes: &[u8]) -> Option<bool> {
+pub fn jpeg_is_progressive(bytes: &[u8]) -> Option<bool> {
     let mut segments = jpeg_segments(bytes);
     if segments.by_ref().any(|s| s.marker == 0xC2) {
         return Some(true);
@@ -294,7 +297,7 @@ pub(crate) fn jpeg_is_progressive(bytes: &[u8]) -> Option<bool> {
 }
 
 /// Where `needle` first is in `haystack`.
-pub(crate) fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
+pub fn find(haystack: &[u8], needle: &[u8]) -> Option<usize> {
     haystack.windows(needle.len()).position(|w| w == needle)
 }
 

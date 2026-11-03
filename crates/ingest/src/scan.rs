@@ -11,6 +11,7 @@
 
 use anyhow::{Context, Result};
 use pg_catalog::{Catalog, ScannedFile};
+use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 
@@ -27,7 +28,7 @@ struct DirEntry {
     name: String,
     /// `None` for a folder.
     ext: Option<Ext>,
-    file_ref: u64,
+    file_id: u64,
     size: u64,
     mtime: i64,
 }
@@ -43,11 +44,11 @@ fn list(lister: &mut Lister, dir: &Dir, entries: &mut Vec<DirEntry>) -> std::io:
         let kept = (e.folder && e.name != [DOT] && e.name != [DOT, DOT]) || ext.is_some();
         if !e.reparse && e.file_id != 0 && kept {
             if n == entries.len() {
-                entries.push(DirEntry { name: String::new(), ext: None, file_ref: 0, size: 0, mtime: 0 });
+                entries.push(DirEntry { name: String::new(), ext: None, file_id: 0, size: 0, mtime: 0 });
             }
             let slot = &mut entries[n];
             decode_name(e.name, &mut slot.name);
-            (slot.ext, slot.file_ref, slot.size, slot.mtime) = (ext, e.file_id, e.size, e.mtime);
+            (slot.ext, slot.file_id, slot.size, slot.mtime) = (ext, e.file_id, e.size, e.mtime);
             n += 1;
         }
     })?;
@@ -144,7 +145,13 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             let Some(folder) = &folder else { unreachable!("set above") };
             let changed = writer.upsert_file(
                 folder,
-                &ScannedFile { volume, file_ref: e.file_ref, name: &e.name, ext, size: e.size, mtime: e.mtime },
+                &ScannedFile {
+                    identity: FileIdentity::new(volume, e.file_id),
+                    name: &e.name,
+                    ext,
+                    size: e.size,
+                    mtime: e.mtime,
+                },
             )?;
             stats.files += 1;
             stats.changed += u64::from(changed);

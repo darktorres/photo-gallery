@@ -33,7 +33,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction,
 use pg_model::analysis::Analysis;
 use pg_model::detection::Detection;
 use pg_model::format::Format;
-use pg_model::ids::{FileId, FolderId, RootId};
+use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
 use pg_model::media::{Ext, Kind};
 use pg_model::orientation::Orientation;
 use pg_model::path::is_under;
@@ -747,8 +747,7 @@ pub(crate) fn folder_path(
 
 /// A file as the scanner saw it.
 pub struct ScannedFile<'a> {
-    pub volume: u32,
-    pub file_ref: u64,
+    pub identity: FileIdentity,
     pub name: &'a str,
     /// Its last extension (`Ext::of_name`), which also says its kind.
     pub ext: Ext,
@@ -1288,7 +1287,7 @@ impl<'tx> ScanWriter<'tx> {
         key.clear();
         key.extend_from_slice(&folder.key);
         pg_model::path::push_name_key(key, f.name);
-        let (volume, file_ref, size) = (f.volume, f.file_ref as i64, f.size as i64);
+        let (volume, file_ref, size) = (f.identity.volume, f.identity.file_index as i64, f.size as i64);
         let (ext, kind) = (f.ext.name(), f.ext.kind().key());
         let row = known
             .query_row(params![volume, file_ref], |r| {
@@ -1818,8 +1817,9 @@ mod tests {
         let mut writer = ScanWriter::new(&tx, scan).unwrap();
         let folder = writer.folder(r"D:\x").unwrap();
         let ext = Ext::of_name(name).unwrap();
-        let changed =
-            writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref: 7, name, ext, size, mtime }).unwrap();
+        let changed = writer
+            .upsert_file(&folder, &ScannedFile { identity: FileIdentity::new(1, 7), name, ext, size, mtime })
+            .unwrap();
         drop(writer);
         tx.commit().unwrap();
         changed
@@ -2140,7 +2140,7 @@ mod tests {
             let mut writer = ScanWriter::new(&tx, scan).unwrap();
             let folder = writer.folder(r"D:\x").unwrap();
             let ext = Ext::of_name(name).unwrap();
-            let file = ScannedFile { volume: 1, file_ref: 10 + n as u64, name, ext, size: 10, mtime: 100 };
+            let file = ScannedFile { identity: FileIdentity::new(1, 10 + n as u64), name, ext, size: 10, mtime: 100 };
             writer.upsert_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
@@ -2249,7 +2249,8 @@ mod tests {
             let mut writer = ScanWriter::new(&tx, scan).unwrap();
             let folder = writer.folder(folder).unwrap();
             let ext = Ext::of_name(name).unwrap();
-            writer.upsert_file(&folder, &ScannedFile { volume: 1, file_ref, name, ext, size: 1, mtime: 1 }).unwrap();
+            let identity = FileIdentity::new(1, file_ref);
+            writer.upsert_file(&folder, &ScannedFile { identity, name, ext, size: 1, mtime: 1 }).unwrap();
             drop(writer);
             tx.commit().unwrap();
         };

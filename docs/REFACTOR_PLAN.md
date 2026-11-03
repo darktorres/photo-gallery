@@ -662,8 +662,9 @@ hold the commits. The ID is the step number (`S-nn`, with `.m` for a sub-item). 
 the code comments cite ("step 8"), so they stay. IDs never change and are never reused. The status follows the review
 ledger: `open`, `open (part: <sha>)`, `fixed <sha>` (the commit that did it), `verified`.
 
-Now: steps 0 to 3 are fixed, and their verify items are checked (S-02.3). Steps 4 to 13 are open.
-Step 4 waits for your go-ahead.
+Now: steps 0 to 3 are fixed, and their verify items are checked (S-02.3). Step 4 is in progress: its crates and the
+wasm32 check are in (S-04.1 to S-04.7), and the model items the plan gives to later steps are open rows (S-04.8).
+Steps 5 to 13 are open.
 
 Rules that hold for every row:
 
@@ -704,7 +705,15 @@ Rules that hold for every row:
 | S-03.14 | fixed 6ce2a5b | `Maker` apart from `ThumbCache`: `maker.rs`. | |
 | S-03.15 | fixed 6898f97 | The `thumb_sources` view, with plan tests. | The thumbnail side of the test moves with S-06.2. `thumb_clock` came in f2c29d1. |
 | S-03.16 | fixed 0bc5d6b | `browse::set_border_mark` deleted (`browse.rs:737-739`), and `Detection::depth` (`borders.rs:311`). | |
-| S-04 | open | Extract `pg-model`, `pg-platform`, `pg-trace` and `pg-container`, then add the wasm32 check to lint. | Phase 4. Waits for your explicit go-ahead. |
+| S-04 | open (part: d21f4b0) | Extract `pg-model`, `pg-platform`, `pg-trace` and `pg-container`, then add the wasm32 check to lint. | Phase 4. Rows below. Open until S-04.8 is done or handed to its steps. |
+| S-04.1 | fixed a94fdc9 | `pg-container`: the file containers' walkers (JPEG segments, extended XMP, PNG and RIFF chunks, GIF blocks), with no dependencies. | |
+| S-04.2 | fixed a18388e | `pg-platform`, part 1: `verbatim` and `verbatim_wide`, and a work list's file path as a platform helper. | |
+| S-04.3 | fixed 0831072 | `pg-platform`, part 2: the Win32 calls of ingest and desktop (the directory listing, the reader pool's opens, priorities, the job object, the no-window spawn, file times, the message box, the local and process times). | |
+| S-04.4 | fixed feddc07 | `just wsl-check` includes `pg-ingest` again (the S-01.3 exclusion is gone): the platform's fallbacks build it on Linux, and `tests/borders.rs` is `cfg(windows)`. | |
+| S-04.5 | fixed e13819d | `pg-trace`: the startup stages, with the app's printing as a sink (`set_sink`, `PG_TRACE=1` in the desktop). | |
+| S-04.6 | fixed 3f37fec | `pg-model`, part 1: formats, media kinds, civil dates and the path rules. | |
+| S-04.7 | fixed d21f4b0 | `pg-model`, part 2: the EXIF orientation, border detection, the analysis record and the PDQ types; the wasm32 check in `just lint`. The decoder-dependent orientation tests are core's (`decode` tests). | |
+| S-04.8 | open | `pg-model`, the items the plan lists that are not in the crate yet, each with the step that first needs it: the id newtypes, `Rating`, `Turns`, `FileIdentity` and a typed `Orientation` (S-07); `strum` keys for the enums, which are hand-written today (S-07); `Side::describe` and `Reason::text` out to the CLI (S-09); `pdq_dihedral` returned beside the record instead of stored in it (S-08.3); the query data model with typed editing, `Day`, `Sort`, `FolderTree` and the `Entry` and `Details` DTOs, and `contains_ignoring_case` under `cfg(test)` (S-08.7); `FileState`, `FileSource` and `Placeholder` (S-08.4); `WriteKind` (S-08.1); `ImageKey` and `ImageRequest` (S-11.1); `View` and `Session` (S-11.4); the optional `specta` feature (after S-13). | |
 | S-05 | open | Extract the crates below, one commit each, each adding its deny ban. | Rows below. Start after S-04. |
 | S-05.1 | open | `pg-metadata`. | |
 | S-05.2 | open | `pg-codec` (with `codecs.rs`). | |

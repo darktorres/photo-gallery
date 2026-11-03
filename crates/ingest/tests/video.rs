@@ -10,6 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use pg_core::analysis::Taken;
 use pg_core::analyze;
 use pg_core::animation;
 use pg_core::catalog::Catalog;
@@ -129,7 +130,7 @@ fn videos() {
         assert!(near(pixel(&frame(&path, 60_000, 0).unwrap(), 80, 40), GREEN), "{name} past the end");
     }
     let h264 = probe(&media.join("h264.mp4")).unwrap();
-    assert_eq!(h264.taken, Some((wall_clock_seconds(2022, 3, 4, 5, 6, 7).unwrap(), true)));
+    assert_eq!(h264.taken, Some(Taken::Utc(wall_clock_seconds(2022, 3, 4, 5, 6, 7).unwrap())));
 
     // Shown upright: 80 × 160, the stored left half (red) at the bottom.
     let rotated = media.join("rotated.mp4");

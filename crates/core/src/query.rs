@@ -79,6 +79,7 @@ macro_rules! pair {
         )
     };
 }
+
 /// File sizes are in MB as Explorer counts them (MiB).
 const MB: f64 = 1_048_576.0;
 

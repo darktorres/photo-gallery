@@ -24,6 +24,7 @@ use crate::container::{
 };
 use crate::date::{exif_date, parse_iso_date};
 use crate::format::Format;
+
 const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
 const NS_MICROSOFT_PHOTO: &str = "http://ns.microsoft.com/photo/1.0/";
 const NS_EXIF: &str = "http://ns.adobe.com/exif/1.0/";

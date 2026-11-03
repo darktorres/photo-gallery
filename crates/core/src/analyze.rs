@@ -199,7 +199,7 @@ fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
         height,
         thumbhash: a.thumbhash_of_image(),
         frames: p.frames,
-        taken: p.taken.map(|(t, utc)| if utc { Taken::Utc(t) } else { Taken::Wall(t) }),
+        taken: p.taken,
         media: Media::Video(VideoFacts { codec: p.codec, duration_ms: p.duration_ms, poster_ms: poster }),
     })
 }

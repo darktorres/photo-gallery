@@ -14,6 +14,7 @@ use ffmpeg::media::Type;
 use ffmpeg::util::frame;
 use ffmpeg_next as ffmpeg;
 
+use crate::analysis::Taken;
 use crate::date::parse_iso_date;
 use crate::decode::orient_into;
 use crate::orientation;
@@ -44,9 +45,8 @@ pub struct Probe {
     pub codec: &'static str,
     /// Frames in the stream (counted by the container, else estimated from the duration and frame rate).
     pub frames: u32,
-    /// When it was recorded: `(seconds, is_utc)`. Phones' local-time tag gives wall-clock time; the standard
-    /// `creation_time` is UTC.
-    pub taken: Option<(i64, bool)>,
+    /// When it was recorded. Phones' local-time tag gives wall-clock time; the standard `creation_time` is UTC.
+    pub taken: Option<Taken>,
     /// EXIF-style orientation (1–8) of the display matrix.
     pub orientation: u8,
 }
@@ -126,10 +126,10 @@ pub fn probe(path: &Path) -> Result<Probe> {
     };
     let taken = tag("com.apple.quicktime.creationdate")
         .and_then(|d| parse_iso_date(&d))
-        .map(|s| (s, false))
-        .or_else(|| tag("creation_time").and_then(|d| parse_iso_date(&d)).map(|s| (s, true)))
+        .map(Taken::Wall)
+        .or_else(|| tag("creation_time").and_then(|d| parse_iso_date(&d)).map(Taken::Utc))
         // Cameras and muxers without a clock write the container's epoch.
-        .filter(|&(s, _)| s > 0);
+        .filter(|t| t.parts().0 > 0);
 
     Ok(Probe { width, height, duration_ms, codec, frames: frames.clamp(1, u32::MAX as i64) as u32, taken, orientation })
 }

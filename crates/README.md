@@ -183,17 +183,18 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
     second. The rating bar at the bottom does the same by click, with the current rating ringed; its ⟲ ⟳ (and
     **R** / **Shift+R**) turn the picture.
   - **Zoom**: the wheel zooms around the cursor from fit to 32×, + / − around the centre, pinch on a touch
-    screen or touchpad; drag pans. Double-click toggles fit and 1:1. Fit is a Lanczos3 downscale from the
-    original (never enlarged); between fit and 1:1 the GPU scales it at once and the visible part is rendered
-    again with Lanczos3 when zooming stops; from 1:1 up it is the original with nearest neighbour, to judge
-    pixels.
+    screen or touchpad; drag pans. Double-click toggles fit and 1:1. Fit is a Lanczos3 resample of the original
+    to the window, down for a large picture and up for a small one; between fit and 1:1 the GPU scales it at
+    once and the visible part is rendered again with Lanczos3 when zooming stops; from 1:1 up it is the
+    original with nearest neighbour, to judge pixels. A picture smaller than the window opens enlarged, and 1:1
+    is then the furthest zoom out.
   - **Z** Real Size: pictures open at 1:1 instead of fitted, remembered across pictures and runs.
   - **L** a 10× nearest-neighbour loupe under the cursor; **B** a magenta frame around the image to reveal black
     bars, and what cropping its borders would cut, dimmed (grey when marked not a border), with rejected
     candidates as yellow lines; hovering over the cut shows the picture under it. **N** (or ▭ in the rating bar)
     marks the borders as not a border. **H** or a click hides everything over the picture (zen). Touch: swipe left / right to step, up / down
     to rate 4 / 1. Esc, Enter or ✕ close.
-  - **Videos** play with Qt Multimedia, fitted and never enlarged. They start with sound and loop, and the poster
+  - **Videos** play with Qt Multimedia, fitted to the window, up or down. They start with sound and loop, and the poster
     shows until the first frame. The transport bar has play / pause (**K**), the time, a seek bar, mute (**M**)
     and volume. Rating, turning and stepping work as on pictures; zoom, the loupe and Real Size are for stills.
     The player decodes on the GPU, except on a GPU without AV1 decoding (this machine's RTX 2060). There every

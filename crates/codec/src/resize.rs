@@ -32,17 +32,13 @@ impl Resizer {
         true
     }
 
-    /// The image fitted into `width × height` into `out`, keeping its aspect ratio; `false` (and `out` untouched)
-    /// if it already fits.
-    pub fn fit_box(&mut self, img: &Rgb, width: usize, height: usize, out: &mut Rgb) -> bool {
-        if img.width <= width && img.height <= height {
-            return false;
-        }
+    /// The image fitted into `width × height` into `out`, keeping its aspect ratio: down when it is larger than the
+    /// box, up when it is smaller.
+    pub fn fit_box(&mut self, img: &Rgb, width: usize, height: usize, out: &mut Rgb) {
         let scale = (width as f64 / img.width as f64).min(height as f64 / img.height as f64);
         let w = ((img.width as f64 * scale).round() as usize).max(1);
         let h = ((img.height as f64 * scale).round() as usize).max(1);
         self.resize(img, w, h, out);
-        true
     }
 
     /// The image scaled to `height` (width from the aspect ratio) into `out`, never enlarged: `false` (and `out`
@@ -90,5 +86,23 @@ impl Resizer {
         let mut dst = Image::from_slice_u8(width as u32, height as u32, &mut out.pixels, PixelType::U8x3)
             .expect("buffer matches its size");
         self.inner.resize(&src, &mut dst, options).expect("same pixel type");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fit_box_enlarges_a_small_image_and_shrinks_a_large_one() {
+        let small = Rgb { width: 4, height: 2, pixels: vec![128; 4 * 2 * 3] };
+        let mut out = Rgb::default();
+        Resizer::new().fit_box(&small, 16, 9, &mut out);
+        assert_eq!((out.width, out.height), (16, 8));
+        assert_eq!(out.pixels.len(), 16 * 8 * 3);
+
+        let large = Rgb { width: 40, height: 20, pixels: vec![128; 40 * 20 * 3] };
+        Resizer::new().fit_box(&large, 16, 9, &mut out);
+        assert_eq!((out.width, out.height), (16, 8));
     }
 }

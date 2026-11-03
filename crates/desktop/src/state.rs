@@ -308,7 +308,7 @@ const DECODE_MARGIN: usize = 4;
 /// What the viewer asks for.
 #[derive(Clone, Copy, Debug)]
 pub enum View {
-    /// Fitted into (width, height) device pixels, never enlarged.
+    /// Fitted into (width, height) device pixels, up or down.
     Fit(usize, usize),
     /// Full size (1:1 and beyond, and the loupe).
     Full,
@@ -354,7 +354,8 @@ pub fn full_image(file_id: FileId, view: View) -> Result<Upload> {
     match view {
         View::Fit(w, h) => {
             let mut fitted = Rgb::default();
-            Ok(Upload::opaque(if Resizer::new().fit_box(&img, w, h, &mut fitted) { &fitted } else { &img }))
+            Resizer::new().fit_box(&img, w, h, &mut fitted);
+            Ok(Upload::opaque(&fitted))
         }
         View::Full => Ok(Upload::opaque(&img)),
         View::Region((x, y, rw, rh), w, h) => {

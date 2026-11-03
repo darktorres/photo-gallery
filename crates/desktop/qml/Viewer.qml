@@ -1,11 +1,12 @@
-// Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window with an antialiased (Lanczos3)
-// downscale made in Rust; zoom from fit to 32× around the cursor (wheel, pinch, + −) and pan by dragging. Between
+// Full-window viewer (PLAN §7) and triage (ImageRater's): fit to the window, up or down, with an antialiased (Lanczos3)
+// resample made in Rust; zoom from fit to 32× around the cursor (wheel, pinch, + −) and pan by dragging. Between
 // fit and 1:1 the GPU scales the fitted image at once, and Rust renders the visible part with Lanczos after a
 // pause; from 1:1 up the original is shown with nearest neighbour, to judge pixels. A 10× loupe; borders (B): a
 // bright frame around the image to reveal black bars, and over it what cropping the borders found would cut, with
 // N to mark them as not a border. Rating a picture moves on to the next one. Videos play with Qt Multimedia
 // on our FFmpeg; animated GIF, APNG and WebP with our AnimationPlayer (src/animation.rs), into the same
-// VideoOutput. Both are fitted and never enlarged; the poster or first frame shows until the first frame played.
+// VideoOutput. Both are fitted to the window, enlarged when they are smaller; the poster or first frame shows until
+// the first frame played.
 //
 // The gallery's items are the window's (Main.qml): it gives the one shown, by the properties below, and does the
 // ratings, turns and border marks asked for (rated(), turned(), borderMarkToggled()). The QML compiler compiles a
@@ -74,7 +75,7 @@ Rectangle {
     readonly property bool zoomable: fw > 0 && fh > 0 && still
     readonly property bool playsVideo: visible && kind === "video"
     readonly property bool playsAnimation: visible && kind === "animated"
-    readonly property real playScale: fw > 0 && fh > 0 ? Math.min(width / fw, height / fh, 1 / dpr) : 0
+    readonly property real playScale: fw > 0 && fh > 0 ? Math.min(width / fw, height / fh) : 0
     // Sound, for the session.
     property bool muted: false
     property real volume: 1
@@ -108,14 +109,16 @@ Rectangle {
     property real zoom: 1
     property real ox: 0
     property real oy: 0
-    // At the fit zoom (follows window resizes).
+    // At the fit zoom (follows window resizes): above 1 for an image smaller than the window, which is enlarged to it.
     property bool fitted: true
-    readonly property real fitZoom: zoomable ? Math.min(width * dpr / fw, height * dpr / fh, 1) : 1
+    readonly property real fitZoom: zoomable ? Math.min(width * dpr / fw, height * dpr / fh) : 1
+    // The smallest zoom: the fit, or 1:1 when the fit enlarges the image (1:1 is then the furthest zoom out).
+    readonly property real minZoom: Math.min(fitZoom, 1)
     readonly property real dw: fw * zoom / dpr
     readonly property real dh: fh * zoom / dpr
     readonly property bool zoomed: zoomable && !fitted
-    // 1:1 and beyond: the original, nearest neighbour.
-    readonly property bool pixels: zoomable && zoom >= 0.9999
+    // 1:1 and beyond, away from the fit: the original, nearest neighbour.
+    readonly property bool pixels: zoomable && zoom >= 0.9999 && !fitted
 
     signal closed(int index)
 
@@ -179,18 +182,18 @@ Rectangle {
     function setZoom(z: real, px: real, py: real) {
         if (!zoomable)
             return
-        z = Math.max(fitZoom, Math.min(32, z))
+        z = Math.max(minZoom, Math.min(32, z))
         const u = (px - ox) / dw, v = (py - oy) / dh
         zoom = z
-        fitted = z <= fitZoom * 1.0001
+        fitted = Math.abs(z - fitZoom) <= fitZoom * 0.0001
         ox = px - u * dw
         oy = py - v * dh
         clampView()
     }
 
-    // How a new image opens: fitted, or 1:1 in Real Size mode (Z).
+    // How a new image opens: fitted, or 1:1 in Real Size mode (Z), which is the fit when the two are the same.
     function resetView() {
-        fitted = !(settings.realSize && zoomable && fitZoom < 1)
+        fitted = !(settings.realSize && zoomable && Math.abs(fitZoom - 1) > 0.0001)
         zoom = fitted ? fitZoom : 1
         ox = (width - dw) / 2
         oy = (height - dh) / 2
@@ -394,7 +397,7 @@ Rectangle {
                     active: viewer.mediaOpened
                     sourceComponent: Component {
                         Item {
-                            // Fitted (never enlarged), turned by the catalog's turns.
+                            // Fitted (up or down), turned by the catalog's turns.
                             Item {
                                 visible: !viewer.still && viewer.playScale > 0
                                 width: viewer.fw * viewer.playScale

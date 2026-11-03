@@ -196,6 +196,9 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     ctl.begin("scan", root.to_string(), 0);
 
     while let Some(dir) = stack.pop() {
+        // A stop returns before `finish_scan` and before `mark_missing`: the walk is incomplete, so nothing is
+        // marked missing, and the scan's `finished` stays NULL. No reader looks at `scans.finished`, so a stopped
+        // scan and an interrupted one look the same there.
         if !ctl.checkpoint() {
             drop(writer);
             tx.commit()?;

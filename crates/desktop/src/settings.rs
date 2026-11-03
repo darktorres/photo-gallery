@@ -1,7 +1,8 @@
 //! What the app remembers. Preferences (write-back, Real Size, borders shown, row height, the folder Yandex results
 //! were last saved into) are the user's, not the catalog's: they go in `gallery.json` beside the catalog folder
-//! (`D:\PhotoGallery\gallery.json`; `PG_PREFS` overrides), so they outlive a catalog rebuild. Saved views and where the user was refer to the catalog's folders and files, so they
-//! live in it (`views`, `session`): the views and the session's folder, query and sort are `view::View`'s, the
+//! (`D:\PhotoGallery\gallery.json`; `PG_PREFS` overrides), so they outlive a catalog rebuild. Saved views and where
+//! the user was refer to the catalog's folders and files, so they live in it (`views`, `session`): the views and the
+//! session's folder, query and sort are `view::View`'s, the
 //! selected file is here. Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
 
 #[cxx_qt::bridge]

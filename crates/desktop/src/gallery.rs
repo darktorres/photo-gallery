@@ -654,7 +654,8 @@ impl qobject::GalleryModel {
 
     fn image_key(&self, item: i32) -> QString {
         self.item(item).map_or_else(QString::default, |e| {
-            // Formatted on the stack: at most 20 + 1 + 20 + 1 + 3 + 1 + 3 bytes.
+            // Formatted on the stack: the id and mtime at most 20 bytes each, the rotation and the turns one digit each
+            // (0–3), so 20 + 1 + 20 + 1 + 1 + 1 + 1 = 45 bytes.
             let mut buf = [0u8; 64];
             let mut rest = &mut buf[..];
             write!(rest, "{}@{}.{}.{}", e.id, e.mtime, e.rotation, e.pending_turns).expect("64 bytes hold a key");

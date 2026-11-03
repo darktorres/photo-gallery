@@ -170,8 +170,8 @@ impl FolderRust {
             }
         }
         (self.tree, self.expanded) = (tree, expanded);
-        // Otherwise open single-child chains from the top (D:\PhotoGallery\datasets\pinterest shows its contents
-        // at once).
+        // Otherwise open single-child chains from the top, so a folder whose only child holds the files shows
+        // its contents at once.
         if !any {
             let mut parent = None;
             loop {

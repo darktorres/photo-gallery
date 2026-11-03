@@ -89,6 +89,7 @@ pub mod qobject {
     }
 }
 
+use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard};
@@ -98,7 +99,10 @@ use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
 use pg_core::yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
 
-use crate::settings;
+use crate::{panic_log, settings};
+
+/// The status line when a search or a save stops at an internal error (the panic is in the log).
+const INTERNAL_STOP: &str = "Stopped by an internal error; the details are in gallery.log.";
 
 /// One result as the panel shows and saves it.
 #[derive(Clone)]
@@ -315,7 +319,9 @@ impl qobject::YandexSearch {
         self.as_mut().rust_mut().photo = path.clone();
         self.as_mut().show(Vec::new(), Vec::new());
         thread::spawn(move || {
-            let outcome = find_similar(&path, &shared);
+            // A panic here is logged, and the search ends with a status line, so `busy` is always cleared.
+            let outcome = panic_log::catch(AssertUnwindSafe(|| find_similar(&path, &shared)))
+                .unwrap_or_else(|_| Err(INTERNAL_STOP.to_string()));
             let mut s = lock(&shared);
             match outcome {
                 Ok((found, note)) => {
@@ -452,14 +458,22 @@ impl qobject::YandexSearch {
         let chosen = folder.clone();
         settings::update(|p| p.yandex_folder = chosen);
         thread::spawn(move || {
-            let saved = save_all(&hits, &stem, Path::new(&folder), &shared);
-            let mut s = lock(&shared);
-            s.status = match saved.first_error {
-                None => {
-                    format!("Saved {} file{} to {folder}", saved.written, if saved.written == 1 { "" } else { "s" })
-                }
-                Some(first) => format!("Saved {}, {} failed. First failure: {first}", saved.written, saved.failed),
+            // A panic here is logged, and the save ends with a status line, so `busy` is always cleared.
+            let status = match panic_log::catch(AssertUnwindSafe(|| {
+                save_all(&hits, &stem, Path::new(&folder), &shared)
+            })) {
+                Ok(saved) => match saved.first_error {
+                    None => {
+                        format!("Saved {} file{} to {folder}", saved.written, if saved.written == 1 { "" } else { "s" })
+                    }
+                    Some(first) => {
+                        format!("Saved {}, {} failed. First failure: {first}", saved.written, saved.failed)
+                    }
+                },
+                Err(_) => INTERNAL_STOP.to_string(),
             };
+            let mut s = lock(&shared);
+            s.status = status;
             s.busy = false;
         });
     }

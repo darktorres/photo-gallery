@@ -84,8 +84,8 @@ pub fn submit<T: 'static>(
 ) {
     let job: Job = Box::new(move |catalog| {
         let result = match catalog {
-            // A panic is reported by the panic hook; the thread goes on serving the others.
-            Ok(c) => std::panic::catch_unwind(AssertUnwindSafe(|| read(c)))
+            // A panic is logged by the panic hook and reported here; the thread goes on serving the others.
+            Ok(c) => crate::panic_log::catch(AssertUnwindSafe(|| read(c)))
                 .unwrap_or_else(|_| Err(anyhow!("the catalog read failed (an internal error)"))),
             Err(e) => Err(anyhow!("the catalog can't be opened: {e:#}")),
         };

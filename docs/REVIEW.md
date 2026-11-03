@@ -12,13 +12,13 @@ The review of the workspace refactor (phases 0–3): every finding with its stat
 
 | Status | Count |
 |---|---|
-| `open` | 9 |
+| `open` | 8 |
 | `needs decision` | 0 |
-| `verified` (checked, no defect) | 5 |
+| `verified` (checked, no defect) | 6 |
 | `fixed` | 55 (R-01, R-02, R-03, R-05, R-07, R-08, R-09, R-12, R-13, R-15, R-16, R-17, R-18, R-19, R-23, R-25, R-26, R-27, R-28, R-29, R-30, R-31, R-32, R-33, R-34, R-35, R-37, R-38, R-39, R-40, R-41, R-42, R-43, R-44, R-45, R-46, R-47, R-48, R-49, R-50, R-51, R-52, R-53, R-54, R-55, R-56, R-57, R-58, R-62, R-64, R-65, R-67, R-68, R-69, R-70) |
 | `wontfix` | 0 |
 
-Of the 9 findings that are open or need a decision, by severity: high 0, medium 2, low 4, judgement 3, cosmetic 0.
+Of the 8 findings that are open or need a decision, by severity: high 0, medium 1, low 4, judgement 3, cosmetic 0.
 No row needs a decision now: the agreed recommendations are in each row's Next step column. R-66 is open until it is measured.
 R-06 and R-22 are open because their QML copies of the swap rule wait for the viewport facade; their Rust sites are fixed.
 
@@ -46,7 +46,7 @@ R-06 and R-22 are open because their QML copies of the swap rule wait for the vi
 |---|---|---|---|---|
 | R-02 | fixed b83ef8b | `analyze.rs:188`, `analyze.rs:192`, `browse/read.rs:352` | For a video turned by the catalog, the stored width and height included the turn, but the stored `orientation` did not, so `stored_size` swapped the wrong way for those videos. Fixed: the video's orientation is `compose(display, turns)`, as a still's is. The test in `ingest/tests/video.rs` fails on the old code (8 vs 1). No version bump. A check of all 485 catalogs found no turned video, so no stored value changes and no catalog needed recreating. | The stored size already had the turn; `Entry.orientation` now matches it. |
 | R-03 | fixed 5958773 | `container.rs:256`, `rewrite.rs:127–141` (old) | `jpeg_is_progressive` stops at a bad segment length before SOF2/SOS; the old walk continued. The lossless rewriter now behaves differently on damaged JPEGs. Well-formed files give the same result. | Refuse. A walk that stops early means the structure is damaged, so the rewriter should return an error and leave the file alone. It should not re-encode it. (This corrects the earlier suggestion to keep walking.) |
-| R-04 | open | `crates/desktop/qml/YandexPanel.qml` (`centre` Timer), `Main.qml` (`yandexPreviewHook`) | Commit `d4c484b` is described as a pure split. Its body does describe both QML changes (the centring Timer and the typed hook property), so the premise of this finding was wrong. What is open is confirming that both behave as before. | Confirm both changes behave as before: a before-and-after run of `--find-similar` and `--yandex-preview`, with a stored result if the search can't run offline. |
+| R-04 | verified e361cba (--find-similar and --yandex-preview match the pre-split build 21a5fb1; the R-33 status line is the only intended difference, the preview differs by 6 px of noise) | `crates/desktop/qml/YandexPanel.qml` (`centre` Timer), `Main.qml` (`yandexPreviewHook`) | Commit `d4c484b` is described as a pure split. Its body does describe both QML changes (the centring Timer and the typed hook property), so the premise of this finding was wrong. What is open is confirming that both behave as before. | Confirm both changes behave as before: a before-and-after run of `--find-similar` and `--yandex-preview`, with a stored result if the search can't run offline. |
 | R-05 | fixed f6e1b06 | `codecs.rs:24`, `decode.rs:12` | The one module cycle left in `pg-core`: `codecs` imports `Rgb` and `release_over` from `decode`, and `decode` imports `Codecs`. Phase 3's goal was an acyclic core. | Move `Rgb` and `release_over` to a module both use. No data change. |
 | R-06 | open (Rust sites: 53f480c) | `decode.rs:41`, `decode.rs:124`, `rewrite.rs:28`, `analyze.rs:188` (`turns % 2`), `display.rs:37`, `crates/desktop/src/gallery.rs:710` (`turns % 2 == 1`), `crates/desktop/qml/Viewer.qml:404–405` (`playerTurns % 2`) | The quarter-turn swap rule is still written by hand in Rust and QML. Commit `b5235c8` says only the `>= 5` forms were replaced, but its message reads as if all were. The SQL copies are in R-22. | Done for the Rust sites: `orientation::swaps_axes` for an orientation, `orientation::turns_swap` for the catalog's turns, with a test tying them together. The QML copy moves to the facades (plan step 12). |
 | R-14 | verified 0ac379e (grid, viewer and filters match the pre-split build) | desktop screenshots, phase 2 | The phase 2 screenshot check is not like-for-like: `phase2_filters.png` has a selected first cell and a status-bar path, and no baseline frame has that state. So "the split changed nothing visible" is unproven. | Re-run the same hook arguments against the pre-split build. |

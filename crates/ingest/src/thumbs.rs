@@ -8,7 +8,6 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_catalog::Catalog;
-use pg_catalog::browse;
 use pg_platform::verbatim::verbatim;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
@@ -109,7 +108,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
                 // decides), nor being rewritten by the app
                 // (browse::read::FileState). Otherwise tried again by the next pass, from its change number on.
-                Ok(data) => match browse::read::file_state(&catalog.conn, item.id)? {
+                Ok(data) => match catalog.file_state(item.id)? {
                     Some(s)
                         if !s.writing
                             && (s.mtime, s.size, s.rotation)

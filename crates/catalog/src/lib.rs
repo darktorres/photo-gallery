@@ -1018,6 +1018,11 @@ impl Catalog {
         Ok(())
     }
 
+    /// The file's state as the readers check it (`browse::read::FileState`), `None` when it isn't in the catalog.
+    pub fn file_state(&self, file_id: FileId) -> Result<Option<browse::read::FileState>> {
+        browse::read::file_state(&self.conn, file_id)
+    }
+
     /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
     pub fn status(&self) -> Result<Status> {
         let one = |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, [], |r| r.get(0))?) };

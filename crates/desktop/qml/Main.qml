@@ -1013,6 +1013,8 @@ ApplicationWindow {
     //                          the panel with its error)
     //   --yandex-preview=<n>  with --find-similar: show result n at full size once the results are in
     //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
+    //   --borders  show the borders (as B does) from the start
+    //   --save-crops=<folder>  save cropped copies of the listed files with borders found (GalleryModel.saveCroppedCopies)
     //   --screenshot=<png>  save the window 4 s (or --wait=<s>) after it is ready, and quit (src/screenshot.rs)
     // --query, --sort and --apply-view shape the first list; the others act on it (started()).
     Timer {

@@ -80,10 +80,10 @@ enum Command {
         /// Grid row height in device pixels; any value, chosen at runtime.
         #[arg(long)]
         height: u32,
-        /// Set the cache's size limit, kept in the cache: the app keeps to it too. Without it, the limit stays as it
-        /// is (50 GB for a new cache).
-        #[arg(long)]
-        cap_gb: Option<f64>,
+        /// Set the cache's size limit in GB, kept in the cache: the app keeps to it too. Without it, the limit
+        /// stays as it is (50 GB for a new cache).
+        #[arg(long = "cap-gb", value_parser = pg_core::thumbs::parse_cap_gb)]
+        cap: Option<i64>,
         #[command(flatten)]
         pipeline: PipelineArgs,
         /// Run at normal CPU priority instead of idle.
@@ -216,16 +216,11 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 start.elapsed().as_secs_f64()
             );
         }
-        Command::Thumbs { height, cap_gb, pipeline, foreground } => {
+        Command::Thumbs { height, cap, pipeline, foreground } => {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { THREAD_PRIORITY_NORMAL } else { THREAD_PRIORITY_IDLE });
-            let cache = ThumbCache::open(
-                &cli.catalog_dir,
-                &catalog.catalog_id()?,
-                cap_gb.map(|gb| (gb * 1e9) as i64),
-                report(),
-            )?;
+            let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, report())?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
             cache.flush();
             println!(

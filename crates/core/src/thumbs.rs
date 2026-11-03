@@ -95,6 +95,18 @@ pub const CACHE_VERSION: i64 = cache_version!();
 /// The cap of a new cache, until one is set (`ThumbCache::open`).
 pub const DEFAULT_CAP_BYTES: i64 = 50_000_000_000;
 
+/// Parse a cache size limit in GB, as the command line's `--cap-gb` and the app's `PG_THUMB_CAP_GB` give it,
+/// into bytes. Zero, negative, NaN, infinite and absurd sizes are refused: `as` would turn them into a cap of 0
+/// (which evicts every thumbnail) or a saturated i64.
+pub fn parse_cap_gb(text: &str) -> Result<i64, String> {
+    let gb: f64 = text.trim().parse().map_err(|_| format!("{text} isn't a number of GB"))?;
+    let bytes = gb * 1e9;
+    if !(1.0..9.0e18).contains(&bytes) {
+        return Err(format!("{text} GB isn't a size a cache can have (a number of GB above zero)"));
+    }
+    Ok(bytes as i64)
+}
+
 /// The cache file in the catalog folder.
 pub fn cache_path(dir: &Path) -> PathBuf {
     dir.join("thumbs.sqlite")
@@ -877,6 +889,15 @@ fn shrink(conn: &Connection) -> Result<()> {
 mod tests {
     use super::*;
     use crate::decode::{Decoder, MinSize};
+
+    #[test]
+    fn the_cap_parser_refuses_what_would_be_no_cache() {
+        assert_eq!(parse_cap_gb("2"), Ok(2_000_000_000));
+        assert_eq!(parse_cap_gb(" 0.5 "), Ok(500_000_000));
+        for text in ["0", "-1", "NaN", "inf", "1e-12", "1e12", "lots"] {
+            assert!(parse_cap_gb(text).is_err(), "{text} is refused");
+        }
+    }
     use crate::maker::Maker;
     use pg_testkit::test_folder;
     use turbojpeg::{PixelFormat, Subsamp};

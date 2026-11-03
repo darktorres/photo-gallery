@@ -123,7 +123,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   The ones on screen are made on demand, newest request first, and evict the least recently used of any height.
   A video's thumbnail is its poster frame. HDR videos (PQ, HLG) are converted to RGB without tone mapping, so
   their posters look washed out.
-  - Layout (`thumbs.rs`): the entries (a few dozen bytes each) and the JPEGs are separate tables, and the totals
+  - Layout (`crates/thumbcache/src/lib.rs`): the entries (a few dozen bytes each) and the JPEGs are separate tables, and the totals
     are one row that triggers keep, so opening the cache and listing what's missing never read the JPEGs
     (FINDINGS "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
     the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its

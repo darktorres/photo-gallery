@@ -8,8 +8,8 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use pg_catalog::Catalog;
-use pg_core::thumbs::ThumbCache;
 use pg_platform::priority::Priority;
+use pg_thumbcache::ThumbCache;
 
 use crate::control::Control;
 use crate::writeback::Writer;
@@ -82,7 +82,7 @@ enum Command {
         height: u32,
         /// Set the cache's size limit in GB, kept in the cache: the app keeps to it too. Without it, the limit
         /// stays as it is (50 GB for a new cache).
-        #[arg(long = "cap-gb", value_parser = pg_core::thumbs::parse_cap_gb)]
+        #[arg(long = "cap-gb", value_parser = pg_thumbcache::parse_cap_gb)]
         cap: Option<i64>,
         #[command(flatten)]
         pipeline: PipelineArgs,
@@ -128,7 +128,7 @@ enum Command {
 }
 
 /// The thumbnail cache's background failures, on stderr with the progress.
-fn report() -> pg_core::thumbs::Report {
+fn report() -> pg_thumbcache::Report {
     Box::new(|e| eprintln!("{e:#}"))
 }
 

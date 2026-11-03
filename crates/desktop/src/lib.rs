@@ -46,7 +46,7 @@ pub fn run(args: &[OsString]) {
     panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
-    let cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_core::thumbs::parse_cap_gb(&s) {
+    let cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_thumbcache::parse_cap_gb(&s) {
         Ok(bytes) => Some(bytes),
         Err(e) => {
             panic_log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));

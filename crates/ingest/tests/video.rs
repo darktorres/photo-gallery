@@ -14,12 +14,12 @@ use pg_analysis::analyze;
 use pg_catalog::Catalog;
 use pg_codec::animation;
 use pg_codec::pixels::Rgb;
-use pg_core::thumbs::ThumbCache;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{import, scan, thumbs};
 use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
+use pg_thumbcache::ThumbCache;
 use pg_video::{frame, poster_ms, probe};
 
 const SCENE: &str = "color=c=red:s=80x80:r=25:d=3[a];color=c=blue:s=80x80:r=25:d=3[b];[a][b]hstack[ab];\

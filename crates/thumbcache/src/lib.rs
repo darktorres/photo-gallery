@@ -22,6 +22,8 @@
 //! height reads only the files changed since. Evicting entries at a height forgets that, and so does a cache
 //! started over: the next pass looks at every file again. A cache belongs to one catalog (`meta.catalog_id`, the
 //! catalog's): opened for another one (rebuilt, so its file ids mean other files), it starts over.
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::cell::RefCell;
 use std::collections::BTreeSet;
@@ -892,7 +894,6 @@ fn shrink(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pg_codec::decode::{Decoder, MinSize};
 
     #[test]
     fn the_cap_parser_refuses_what_would_be_no_cache() {
@@ -902,9 +903,7 @@ mod tests {
             assert!(parse_cap_gb(text).is_err(), "{text} is refused");
         }
     }
-    use crate::maker::Maker;
     use pg_testkit::test_folder;
-    use turbojpeg::{PixelFormat, Subsamp};
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = r"D:\PhotoGallery\scratch_thumbs";
@@ -951,49 +950,6 @@ mod tests {
             .unwrap();
         assert_eq!(orphans, 0, "JPEGs without an entry");
         (kept, actual.unwrap())
-    }
-
-    /// A JPEG of a pattern, `w` × `h`.
-    fn jpeg(w: usize, h: usize, seed: usize) -> Vec<u8> {
-        let pixels: Vec<u8> =
-            (0..w * h * 3).map(|i| ((i / 3 % w) * 7 + (i / 3 / w) * 3 + (i % 3) * 50 + seed) as u8).collect();
-        let image =
-            turbojpeg::Image { pixels: &pixels[..], width: w, pitch: w * 3, height: h, format: PixelFormat::RGB };
-        turbojpeg::compress(image, 90, Subsamp::Sub2x2).unwrap().to_vec()
-    }
-
-    /// Files read into the maker make the thumbnails and decodes their bytes make, file after file (larger, smaller,
-    /// missing, not an image), and a missing file fails as `std::fs::read` does.
-    #[test]
-    fn files_read_into_the_maker_are_their_bytes() {
-        let dir = test_folder(SCRATCH, "read-file");
-        let files: Vec<(PathBuf, Vec<u8>)> = [(640, 480, 1), (64, 48, 2), (1200, 800, 3), (33, 77, 4)]
-            .into_iter()
-            .enumerate()
-            .map(|(i, (w, h, seed))| (dir.join(format!("{i}.jpg")), jpeg(w, h, seed)))
-            .chain([(dir.join("text.jpg"), b"not an image".to_vec())])
-            .collect();
-        for (path, bytes) in &files {
-            std::fs::write(path, bytes).unwrap();
-        }
-        let missing = dir.join("missing.jpg");
-        let mut maker = Maker::new().unwrap();
-        for _ in 0..2 {
-            for (path, bytes) in &files {
-                maker.read_file(path).unwrap();
-                let made = maker.make_from_file(120, 1).map_err(|e| format!("{e:#}"));
-                let expected = Maker::new().unwrap().make(bytes, 120, 1).map_err(|e| format!("{e:#}"));
-                assert_eq!(made, expected, "{}", path.display());
-                maker.read_file(path).unwrap();
-                let decoded = maker.decode_file(MinSize::Fit(300, 300), 3).map(|d| (d.image.width, d.image.pixels));
-                let expected = crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Fit(300, 300), 3);
-                let expected = expected.map(|d| (d.image.width, d.image.pixels));
-                assert_eq!(decoded.map_err(|e| format!("{e:#}")), expected.map_err(|e| format!("{e:#}")));
-            }
-            let err = maker.read_file(&missing).unwrap_err();
-            assert_eq!(err.to_string(), std::fs::read(&missing).unwrap_err().to_string());
-        }
-        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

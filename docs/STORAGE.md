@@ -14,7 +14,7 @@ and takes each entry's 64-bit `FileId` as the file's identity: `files(volume, fi
 `dwVolumeSerialNumber`.
 
 The passes over the originals (import, thumbnails) read in on-disk order, `ORDER BY f.volume, f.file_ref &
-0xFFFFFFFFFFFF` (`crates/catalog/src/lib.rs:585,813`, `thumbs.rs:660`): the low 48 bits of an NTFS file ID are its MFT record
+0xFFFFFFFFFFFF` (`crates/catalog/src/lib.rs:585,813`, `crates/thumbcache/src/lib.rs:660`): the low 48 bits of an NTFS file ID are its MFT record
 number. Reads go through `pipeline::run` with 8 readers (`pipeline.rs:41`) using plain `std::fs::File` reads.
 
 Entries are skipped when they are reparse points or have `FileId == 0` (`scan.rs:128`).

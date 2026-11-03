@@ -6,4 +6,3 @@
 pub mod display;
 pub mod layout;
 pub mod maker;
-pub mod thumbs;

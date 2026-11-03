@@ -1,6 +1,6 @@
 //! A worker's thumbnail pipeline: the decode (DCT-scaled, so a thumbnail never decodes more than it needs), the
 //! resize and the JPEG encode, with the buffers a worker keeps from file to file. What a thumbnail is made of;
-//! where thumbnails are kept is [`crate::thumbs`].
+//! where thumbnails are kept is `pg_thumbcache`.
 
 use std::path::Path;
 
@@ -97,7 +97,7 @@ impl Maker {
     }
 
     /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
-    /// given back by the cache's writer ([`crate::thumbs::ThumbCache::put_batch`]).
+    /// given back by the cache's writer (`pg_thumbcache::ThumbCache::put_batch`).
     pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
         let result = self.make_image(bytes, height, turns, out);
         self.trim();
@@ -169,6 +169,8 @@ mod tests {
     use super::*;
     use pg_analysis::analyze::Analyzer;
     use pg_model::analysis::Analysis;
+    use pg_testkit::test_folder;
+    use std::path::PathBuf;
 
     fn pattern(w: usize, h: usize, seed: usize) -> Vec<u8> {
         (0..w * h * 3).map(|i| ((i / 3 % w) * 7 + (i / 3 / w) * 3 + (i % 3) * 50 + seed * 31) as u8).collect()
@@ -226,5 +228,41 @@ mod tests {
                 assert_eq!(thumb, Maker::new().unwrap().make(bytes, 64, *turns).unwrap());
             }
         }
+    }
+
+    const SCRATCH: &str = r"D:\PhotoGallery\scratch_maker";
+
+    /// Files read into the maker make the thumbnails and decodes their bytes make, file after file (larger, smaller,
+    /// missing, not an image), and a missing file fails as `std::fs::read` does.
+    #[test]
+    fn files_read_into_the_maker_are_their_bytes() {
+        let dir = test_folder(SCRATCH, "read-file");
+        let files: Vec<(PathBuf, Vec<u8>)> = [(640, 480, 1), (64, 48, 2), (1200, 800, 3), (33, 77, 4)]
+            .into_iter()
+            .enumerate()
+            .map(|(i, (w, h, seed))| (dir.join(format!("{i}.jpg")), jpeg(w, h, seed)))
+            .chain([(dir.join("text.jpg"), b"not an image".to_vec())])
+            .collect();
+        for (path, bytes) in &files {
+            std::fs::write(path, bytes).unwrap();
+        }
+        let missing = dir.join("missing.jpg");
+        let mut maker = Maker::new().unwrap();
+        for _ in 0..2 {
+            for (path, bytes) in &files {
+                maker.read_file(path).unwrap();
+                let made = maker.make_from_file(120, 1).map_err(|e| format!("{e:#}"));
+                let expected = Maker::new().unwrap().make(bytes, 120, 1).map_err(|e| format!("{e:#}"));
+                assert_eq!(made, expected, "{}", path.display());
+                maker.read_file(path).unwrap();
+                let decoded = maker.decode_file(MinSize::Fit(300, 300), 3).map(|d| (d.image.width, d.image.pixels));
+                let expected = crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Fit(300, 300), 3);
+                let expected = expected.map(|d| (d.image.width, d.image.pixels));
+                assert_eq!(decoded.map_err(|e| format!("{e:#}")), expected.map_err(|e| format!("{e:#}")));
+            }
+            let err = maker.read_file(&missing).unwrap_err();
+            assert_eq!(err.to_string(), std::fs::read(&missing).unwrap_err().to_string());
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

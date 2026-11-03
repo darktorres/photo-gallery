@@ -21,6 +21,7 @@ doctest = false
 pg-codec = { path = "../codec" }
 pg-core = { path = "../core" }
 pg-catalog = { path = "../catalog" }
+pg-thumbcache = { path = "../thumbcache" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }

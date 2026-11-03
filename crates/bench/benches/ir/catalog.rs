@@ -14,7 +14,7 @@ use pg_catalog::browse::{self, read::{Entry, Facets, FolderTree}};
 use pg_catalog::{Catalog, WorkItem};
 use pg_model::path::WorkList;
 use pg_catalog::query::{Query, Sort, SortKey};
-use pg_core::thumbs::{self, Pending};
+use pg_thumbcache::{self as thumbs, Pending};
 
 const DATA: &str = match option_env!("PG_BENCH_DATA") {
     Some(path) => path,

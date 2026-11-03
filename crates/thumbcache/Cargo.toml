@@ -1,0 +1,22 @@
+[package]
+name = "pg-thumbcache"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The thumbnail cache: one SQLite file of the grid's JPEG thumbnails, keyed by (file, height) and capped in bytes, with
+# its writer thread. The storage only: making a thumbnail is `pg-render`'s, and the pass that makes them is the
+# library's. `pg-catalog` is a transitional dependency (`max_folder_id`, the work list's folder count) until the catalog
+# reads the work list itself (S-08.4).
+[dependencies]
+anyhow.workspace = true
+pg-catalog = { path = "../catalog" }
+pg-model = { path = "../model" }
+rusqlite.workspace = true
+
+[dev-dependencies]
+pg-catalog = { path = "../catalog", features = ["fixture"] }
+pg-testkit = { path = "../testkit" }

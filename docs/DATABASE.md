@@ -18,7 +18,7 @@ How it was found:
 
 ## What the catalog needs
 
-From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse.rs`, `crates/catalog/src/query.rs`, `crates/core/src/thumbs.rs`):
+From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse.rs`, `crates/catalog/src/query.rs`, `crates/thumbcache/src/lib.rs`):
 
 - **About 57 GB at 70M.** The real catalog (`D:\PhotoGallery\catalog\catalog.sqlite`) is 154 MB for 189,518 files,
   ~810 B per file, twice PLAN §6's 20–30 GB. The biggest item is `order_key` (134 B on average), stored in `files` and

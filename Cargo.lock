@@ -1428,6 +1428,7 @@ dependencies = [
  "pg-catalog",
  "pg-core",
  "pg-model",
+ "pg-thumbcache",
  "rusqlite",
 ]
 
@@ -1477,14 +1478,12 @@ dependencies = [
  "anyhow",
  "image 0.25.10",
  "pg-analysis",
- "pg-catalog",
  "pg-codec",
  "pg-metadata",
  "pg-model",
  "pg-testkit",
  "pg-video",
  "png 0.18.1",
- "rusqlite",
  "turbojpeg",
  "xxhash-rust",
 ]
@@ -1511,6 +1510,7 @@ dependencies = [
  "pg-ingest",
  "pg-model",
  "pg-platform",
+ "pg-thumbcache",
  "pg-trace",
  "pg-video",
  "pg-yandex",
@@ -1574,6 +1574,7 @@ dependencies = [
  "pg-model",
  "pg-platform",
  "pg-testkit",
+ "pg-thumbcache",
  "pg-video",
  "rusqlite",
  "serde_json",
@@ -1613,6 +1614,17 @@ dependencies = [
  "image 0.25.10",
  "pg-catalog",
  "png 0.18.1",
+]
+
+[[package]]
+name = "pg-thumbcache"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pg-catalog",
+ "pg-model",
+ "pg-testkit",
+ "rusqlite",
 ]
 
 [[package]]

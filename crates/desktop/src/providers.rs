@@ -128,7 +128,7 @@ fn parse_key(key: &str) -> Option<(i64, Option<state::Named>)> {
         let mtime = parts.next()?.parse().ok()?;
         let rotation = parts.next()?.parse::<u8>().ok()? % 4;
         let turns = parts.next()?.parse::<u8>().ok()? % 4;
-        Some(state::Named { source: pg_core::thumbs::Source { mtime, rotation }, turns })
+        Some(state::Named { source: pg_thumbcache::Source { mtime, rotation }, turns })
     });
     Some((file.parse().ok()?, named))
 }

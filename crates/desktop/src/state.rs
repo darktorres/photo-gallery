@@ -31,9 +31,9 @@ use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_core::maker::Maker;
-use pg_core::thumbs::{self, ThumbCache};
 use pg_model::orientation;
 use pg_platform::verbatim::verbatim;
+use pg_thumbcache::{self as thumbs, ThumbCache};
 
 pub struct AppState {
     pub catalog_dir: PathBuf,

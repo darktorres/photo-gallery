@@ -20,12 +20,12 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
 use pg_catalog::Catalog;
-use pg_core::thumbs::ThumbCache;
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
+use pg_thumbcache::ThumbCache;
 use rusqlite::{OptionalExtension, params};
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.

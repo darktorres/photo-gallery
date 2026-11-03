@@ -13,6 +13,7 @@ workspace = true
 pg-analysis = { path = "../analysis" }
 pg-core = { path = "../core" }
 pg-catalog = { path = "../catalog" }
+pg-thumbcache = { path = "../thumbcache" }
 pg-model = { path = "../model" }
 rusqlite.workspace = true
 

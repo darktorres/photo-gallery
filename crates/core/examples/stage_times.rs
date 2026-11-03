@@ -4,11 +4,11 @@ use std::time::{Duration, Instant};
 
 use pg_core::analyze::{self, Analyzer};
 use pg_core::decode::{Decoder, MinSize};
-use pg_core::format::Format;
 use pg_core::metadata::{Meta, MetaScratch};
 use pg_core::pdq;
 use pg_core::pixels::Rgb;
 use pg_core::resize::Resizer;
+use pg_model::format::Format;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();

@@ -19,8 +19,8 @@ use image::error::{
 };
 use image::{ColorType, ExtendedColorType, ImageDecoder, ImageError, ImageFormat, ImageResult, Limits};
 
-use crate::format::Format;
 use crate::pixels::{Rgb, release_over};
+use pg_model::format::Format;
 
 /// What the decoders keep from one file to the next, per worker (inside its [`crate::decode::Decoder`]).
 #[derive(Default)]

@@ -8,12 +8,12 @@ use crate::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, T
 use crate::borders::{self, Detector};
 use crate::decode::{Decoder, MinSize};
 use crate::detection::{self, Detection};
-use crate::format::Format;
 use crate::metadata::{Meta, MetaScratch};
 use crate::orientation;
 use crate::pdq;
 use crate::pixels::{Rgb, release_over};
 use crate::resize::Resizer;
+use pg_model::format::Format;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
 /// in place, which keeps the library, ratings and views. Not a schema version. Until the first release it is not

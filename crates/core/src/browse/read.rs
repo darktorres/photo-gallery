@@ -4,7 +4,7 @@
 
 use rusqlite::types::Value;
 
-use crate::path::scope_keys;
+use pg_model::path::scope_keys;
 
 mod details;
 mod facets;

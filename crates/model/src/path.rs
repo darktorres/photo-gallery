@@ -15,7 +15,7 @@ pub fn merged_path(path: &str) -> &str {
 }
 
 /// The components of a merged path, as the tree has them: `\\server\share\x` is `server`, `share`, `x`.
-pub(crate) fn components(merged: &str) -> impl Iterator<Item = &str> {
+pub fn components(merged: &str) -> impl Iterator<Item = &str> {
     merged.split('\\').filter(|p| !p.is_empty())
 }
 

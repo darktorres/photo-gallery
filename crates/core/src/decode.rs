@@ -10,9 +10,9 @@ use anyhow::Result;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
 use crate::codecs::Codecs;
-use crate::format::Format;
 use crate::orientation;
 use crate::pixels::Rgb;
+use pg_model::format::Format;
 
 /// What a decode found, besides its pixels.
 #[derive(Clone, Copy, Debug)]

@@ -15,10 +15,10 @@ use ffmpeg::util::frame;
 use ffmpeg_next as ffmpeg;
 
 use crate::analysis::Taken;
-use crate::date::parse_iso_date;
 use crate::decode::orient_into;
 use crate::orientation;
 use crate::pixels::Rgb;
+use pg_model::date::parse_iso_date;
 
 /// The poster frame is this far into the video…
 const POSTER_FRACTION: f64 = 0.1;

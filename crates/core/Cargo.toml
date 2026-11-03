@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 pg-container = { path = "../container" }
+pg-model = { path = "../model" }
 anyhow.workspace = true
 arrayvec.workspace = true
 fast_image_resize.workspace = true

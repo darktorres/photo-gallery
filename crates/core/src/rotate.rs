@@ -17,11 +17,11 @@
 
 use anyhow::Result;
 
-use crate::format::Format;
 use crate::metadata;
 use crate::orientation;
 use crate::rewrite::{self, Op};
 use pg_container::{png_chunks, webp_chunks};
+use pg_model::format::Format;
 
 /// What turning a file comes to.
 #[derive(Debug)]

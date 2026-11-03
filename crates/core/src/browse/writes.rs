@@ -6,8 +6,8 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::read::View;
-use crate::format::Format;
 use crate::metadata;
+use pg_model::format::Format;
 
 /// Rate a file: 1–5, or 0 to clear. The catalog changes at once. With `write_back`, the rating is also queued
 /// for the file itself (`ingest::writeback`), when its format can hold one and it differs from what the file

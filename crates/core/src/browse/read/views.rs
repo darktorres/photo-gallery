@@ -3,8 +3,8 @@
 use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::path::name_key;
 use crate::query::{Query, Sort};
+use pg_model::path::name_key;
 
 /// A saved view (ImageRater's bookmarks): where, which files, in what order.
 #[derive(Clone, PartialEq, Debug)]

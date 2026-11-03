@@ -11,7 +11,7 @@
 
 use anyhow::{Context, Result};
 use pg_core::catalog::{Catalog, ScanWriter, ScannedFile};
-use pg_core::media::Ext;
+use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 
 use crate::control::Control;

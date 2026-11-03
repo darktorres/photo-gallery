@@ -34,7 +34,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use anyhow::{Result, anyhow, bail};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 
-use crate::path::{FilePath, WorkList};
+use pg_model::path::{FilePath, WorkList};
 
 pub const FORMAT_JPEG: &str = "jpeg";
 

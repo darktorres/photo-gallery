@@ -22,11 +22,11 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
-use pg_core::format::Format;
-use pg_core::media::Kind;
 use pg_core::metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
+use pg_model::format::Format;
+use pg_model::media::Kind;
 use rusqlite::{OptionalExtension, params};
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.

@@ -1410,6 +1410,7 @@ version = "0.1.0"
 dependencies = [
  "gungraun",
  "pg-core",
+ "pg-model",
  "rusqlite",
 ]
 
@@ -1433,6 +1434,7 @@ dependencies = [
  "miniz_oxide 0.8.9",
  "pdqhash",
  "pg-container",
+ "pg-model",
  "pg-testkit",
  "png 0.18.1",
  "quick-xml",
@@ -1487,11 +1489,16 @@ dependencies = [
  "crossbeam-channel",
  "image 0.25.10",
  "pg-core",
+ "pg-model",
  "pg-platform",
  "pg-testkit",
  "rusqlite",
  "serde_json",
 ]
+
+[[package]]
+name = "pg-model"
+version = "0.1.0"
 
 [[package]]
 name = "pg-platform"

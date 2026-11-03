@@ -22,11 +22,11 @@ use crate::analysis::Analysis;
 use crate::analyze::IMPORT_VERSION;
 use crate::borders::BORDERS_VERSION;
 use crate::detection::Detection;
-use crate::format::Format;
-use crate::media::{Ext, Kind};
-use crate::path::is_under;
-use crate::path::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;
+use pg_model::format::Format;
+use pg_model::media::{Ext, Kind};
+use pg_model::path::is_under;
+use pg_model::path::{FilePath, PathArena, PathRef, WorkList};
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -472,7 +472,7 @@ fn build_copy(path: &Path, new_path: &Path) -> Result<()> {
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
             let text = |i| ctx.get_raw(i).as_str().map_err(|e| rusqlite::Error::UserFunctionError(e.into()));
-            Ok(crate::path::order_key_of(text(0)?, text(1)?))
+            Ok(pg_model::path::order_key_of(text(0)?, text(1)?))
         },
     )?;
     new.execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
@@ -1138,7 +1138,7 @@ impl<'tx> ScanWriter<'tx> {
 
     /// The folder's row, made if it's new.
     pub fn folder(&mut self, path: &str) -> Result<Folder> {
-        let key = crate::path::folder_key(crate::path::merged_path(path));
+        let key = pg_model::path::folder_key(pg_model::path::merged_path(path));
         let id = match self.folder_id.query_row([path], |r| r.get(0)).optional()? {
             Some(id) => id,
             None => self.new_folder.query_row([path], |r| r.get(0))?,
@@ -1153,7 +1153,7 @@ impl<'tx> ScanWriter<'tx> {
         let ScanWriter { scan, known, seen, file, key, .. } = self;
         key.clear();
         key.extend_from_slice(&folder.key);
-        crate::path::push_name_key(key, f.name);
+        pg_model::path::push_name_key(key, f.name);
         let (volume, file_ref, size) = (f.volume, f.file_ref as i64, f.size as i64);
         let (ext, kind) = (f.ext.name(), f.ext.kind().key());
         let row = known
@@ -1440,13 +1440,13 @@ pub(crate) mod fixture {
                     f.file_ref,
                     f.folder,
                     f.name,
-                    crate::media::Ext::of_name(f.name).expect("a media file").name(),
+                    pg_model::media::Ext::of_name(f.name).expect("a media file").name(),
                     f.kind,
                     f.size,
                     f.mtime,
                     f.missing,
                     f.rotation,
-                    crate::path::order_key_of(&folder, f.name)
+                    pg_model::path::order_key_of(&folder, f.name)
                 ],
             )
             .unwrap();
@@ -1540,7 +1540,7 @@ mod tests {
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
         };
         for (key, folder, name) in keys {
-            assert_eq!(key, crate::path::order_key_of(&folder, &name), "{name}");
+            assert_eq!(key, pg_model::path::order_key_of(&folder, &name), "{name}");
         }
         assert_eq!(
             rows("SELECT file_id || ':' || rotation || kind FROM analysis ORDER BY 1"),
@@ -1728,7 +1728,7 @@ mod tests {
                 })
                 .unwrap()
         };
-        let key = |name| crate::path::order_key_of(r"D:\x", name);
+        let key = |name| pg_model::path::order_key_of(r"D:\x", name);
         let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(r"D:\x").unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.

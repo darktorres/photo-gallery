@@ -6,7 +6,7 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::analysis::ThumbHash;
-use crate::media::Kind;
+use pg_model::media::Kind;
 
 /// What a file's images are made from, as the catalog has it now. What is made from the file (a thumbnail, a
 /// decode, an analysis) is kept under the state it was read in, checked before and after the read

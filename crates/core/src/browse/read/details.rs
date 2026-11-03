@@ -5,9 +5,9 @@ use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::detection;
-use crate::format::Format;
-use crate::media::Kind;
 use crate::metadata;
+use pg_model::format::Format;
+use pg_model::media::Kind;
 
 /// What a file's grid entry leaves out, for the file shown (the selection, the viewer's).
 #[derive(Clone, PartialEq, Debug)]

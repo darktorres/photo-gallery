@@ -8,8 +8,8 @@ use rusqlite::{Connection, OptionalExtension, params_from_iter};
 use super::scope;
 use crate::detection;
 use crate::display;
-use crate::media::{Ext, Kind};
 use crate::query::{MediaType, Query, Sort};
+use pg_model::media::{Ext, Kind};
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
 /// The rest is read when the file is shown (`details`). Small and without a `String`, so a list of 190,000 is

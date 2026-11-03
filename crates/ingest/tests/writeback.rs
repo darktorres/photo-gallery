@@ -10,7 +10,6 @@ use std::time::{Duration, Instant};
 
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, MinSize, orient};
-use pg_core::format::Format;
 use pg_core::metadata::{Meta, MetaScratch};
 use pg_core::pixels::Rgb;
 use pg_core::thumbs::ThumbCache;
@@ -18,6 +17,7 @@ use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::writeback::Writer;
 use pg_ingest::{import, scan};
+use pg_model::format::Format;
 
 fn pattern(w: u32, h: u32) -> image::RgbImage {
     image::RgbImage::from_fn(w, h, |x, y| {

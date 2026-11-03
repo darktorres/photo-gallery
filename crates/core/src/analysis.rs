@@ -1,8 +1,8 @@
 //! What the import computes from one file, as data: the record the catalog stores and the grid reads. Producing it
 //! is [`crate::analyze`]'s job. This module is the shape of the result, with no decoding and no I/O.
 
-use crate::format::Format;
 use crate::pdq;
+use pg_model::format::Format;
 
 /// One file's analysis: what every file has, and the facts of its kind (an image's or a video's).
 pub struct Analysis {

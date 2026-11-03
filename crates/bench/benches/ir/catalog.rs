@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use pg_core::browse::{self, read::{Entry, Facets, FolderTree}};
 use pg_core::catalog::{Catalog, WorkItem};
-use pg_core::path::WorkList;
+use pg_model::path::WorkList;
 use pg_core::query::{Query, Sort, SortKey};
 use pg_core::thumbs::{self, Pending};
 

@@ -14,13 +14,13 @@ use pg_core::analysis::Taken;
 use pg_core::analyze;
 use pg_core::animation;
 use pg_core::catalog::Catalog;
-use pg_core::date::wall_clock_seconds;
 use pg_core::pixels::Rgb;
 use pg_core::thumbs::ThumbCache;
 use pg_core::video::{frame, poster_ms, probe};
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{import, scan, thumbs};
+use pg_model::date::wall_clock_seconds;
 
 const SCENE: &str = "color=c=red:s=80x80:r=25:d=3[a];color=c=blue:s=80x80:r=25:d=3[b];[a][b]hstack[ab];\
                      color=c=green:s=160x80:r=25:d=3[g];[ab][g]overlay=enable='gte(t,1)',format=yuv420p";

@@ -9,6 +9,7 @@ workspace = true
 
 [dependencies]
 pg-core = { path = "../core" }
+pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true
 clap.workspace = true

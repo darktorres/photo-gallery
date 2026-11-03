@@ -4,7 +4,7 @@
 use anyhow::Result;
 use rusqlite::Connection;
 
-use crate::path::{components, merged_path, push_folder_key};
+use pg_model::path::{components, merged_path, push_folder_key};
 
 /// A folder of the merged tree. Its strings are in its [`FolderTree`].
 #[derive(Clone, Debug)]

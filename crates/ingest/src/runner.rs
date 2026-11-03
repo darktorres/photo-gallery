@@ -17,8 +17,8 @@ use std::time::Duration;
 
 use anyhow::Result;
 use pg_core::catalog::Catalog;
-use pg_core::path::is_under;
 use pg_core::thumbs::ThumbCache;
+use pg_model::path::is_under;
 use pg_platform::priority::Priority;
 
 use crate::control::{Control, Progress};

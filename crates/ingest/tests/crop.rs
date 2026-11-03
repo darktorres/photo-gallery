@@ -10,11 +10,11 @@ use std::path::Path;
 
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, MinSize};
-use pg_core::format::Format;
-use pg_core::path::PathArena;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
+use pg_model::format::Format;
+use pg_model::path::PathArena;
 
 const W: u32 = 320;
 const H: u32 = 240;

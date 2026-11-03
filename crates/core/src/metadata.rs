@@ -18,12 +18,12 @@ use quick_xml::events::Event;
 use quick_xml::name::{Namespace, ResolveResult};
 use quick_xml::reader::ReaderBuffers;
 
-use crate::date::{exif_date, parse_iso_date};
-use crate::format::Format;
 use pg_container::{
     ExtendedChunk, GifBlock, add_extended_chunk, chunk_data, find, gif_blocks, jpeg_exif, jpeg_segments, png_chunks,
     range_in, webp_chunks, webp_exif,
 };
+use pg_model::date::{exif_date, parse_iso_date};
+use pg_model::format::Format;
 
 const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
 const NS_MICROSOFT_PHOTO: &str = "http://ns.microsoft.com/photo/1.0/";
@@ -631,8 +631,8 @@ pub fn patch_orientation(bytes: &[u8], format: Format, o: u8) -> Option<Vec<u8>>
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::date::wall_clock_seconds;
     use pg_container::{JPEG_XMP_EXTENSION, gif_header_len};
+    use pg_model::date::wall_clock_seconds;
 
     fn meta_of(bytes: &[u8], format: Format) -> Meta {
         Meta::read(bytes, format, &mut MetaScratch::default())

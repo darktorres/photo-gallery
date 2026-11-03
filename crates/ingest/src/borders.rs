@@ -13,8 +13,8 @@ use pg_core::borders::{self as detector, Detector};
 use pg_core::catalog::{BordersWriter, Catalog};
 use pg_core::detection::{self, Side};
 use pg_core::media::{Ext, Kind};
-use pg_core::paths::verbatim_wide;
 use pg_core::pixels::Rgb;
+use pg_core::verbatim::verbatim_wide;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};

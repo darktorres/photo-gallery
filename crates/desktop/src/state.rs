@@ -30,10 +30,10 @@ use pg_core::catalog::Catalog;
 use pg_core::decode::{MinSize, orient_pixels};
 use pg_core::maker::Maker;
 use pg_core::orientation;
-use pg_core::paths::verbatim;
 use pg_core::pixels::Rgb;
 use pg_core::resize::Resizer;
 use pg_core::thumbs::{self, ThumbCache};
+use pg_core::verbatim::verbatim;
 
 pub struct AppState {
     pub catalog_dir: PathBuf,

@@ -12,7 +12,7 @@
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, ScanWriter, ScannedFile};
 use pg_core::media::Ext;
-use pg_core::paths::verbatim_wide;
+use pg_core::verbatim::verbatim_wide;
 use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
 use windows_sys::Win32::Storage::FileSystem::{
     BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,

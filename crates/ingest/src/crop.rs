@@ -10,7 +10,7 @@ use pg_core::catalog::{Catalog, CropSource};
 use pg_core::crop::crop;
 use pg_core::path::is_under;
 use pg_core::path::{PathArena, PathRef};
-use pg_core::paths::verbatim_wide;
+use pg_core::verbatim::verbatim_wide;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};

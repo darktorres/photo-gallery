@@ -4,7 +4,7 @@
 //! whether a path is inside another. The pass's work lists (paths kept end to end in arenas, [`WorkList`]) are here
 //! too: the paths they hold are what the catalog hands out.
 
-use crate::paths::verbatim_wide;
+use crate::verbatim::verbatim_wide;
 
 /// A folder's path without its drive: `E:\pinterest\a` and `D:\pinterest\a` are both `pinterest\a`; a drive
 /// root is the empty path. Other paths (UNC) are kept whole.
@@ -240,7 +240,7 @@ impl<T> Default for WorkList<T> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::paths::SHORT;
+    use crate::verbatim::SHORT;
 
     #[test]
     fn a_folder_scope_is_its_own_files_or_those_and_its_subfolders() {

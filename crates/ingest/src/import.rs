@@ -10,9 +10,9 @@ use pg_core::analysis::Analysis;
 use pg_core::analyze::Analyzer;
 use pg_core::catalog::{AnalysisWriter, Catalog};
 use pg_core::media::Kind;
-use pg_core::paths::verbatim;
 use pg_core::pdq::{MATCH_DISTANCE, MIN_QUALITY};
 use pg_core::pdq_index::PdqIndex;
+use pg_core::verbatim::verbatim;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};

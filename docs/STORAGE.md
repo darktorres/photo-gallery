@@ -29,7 +29,7 @@ either gives ~3× path order).
 | HDD | What it's tuned for: MFT order and queue depth each reach the disk's sequential speed. |
 | SATA SSD / NVMe | MFT order is irrelevant but free. 8 in flight is shallow for NVMe, but FINDINGS "I/O" already has decoding as the bottleneck above ~1,600 files/s, so an SSD runs at decode speed. A deeper queue (picked from `IOCTL_STORAGE_QUERY_PROPERTY` / `StorageDeviceSeekPenaltyProperty`) is only worth it if a measurement shows readers waiting on the disk. |
 | USB HDD | MFT order still helps. Behind a bridge without UAS (USB mass storage "bulk-only"), there's no NCQ, so the drive can't reorder the 8 reads and the queue-depth gain shrinks; the MFT order is what's left. |
-| Network share (SMB) | Latency-bound: reads in flight help, the order hardly matters. Long paths are handled (`\\?\UNC\`, `pg_core::paths`). Identity depends on the server's file IDs (below). |
+| Network share (SMB) | Latency-bound: reads in flight help, the order hardly matters. Long paths are handled (`\\?\UNC\`, `pg_core::verbatim`). Identity depends on the server's file IDs (below). |
 
 ## Other file systems (unsupported)
 

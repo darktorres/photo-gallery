@@ -10,8 +10,8 @@ use anyhow::Result;
 use pg_core::browse;
 use pg_core::catalog::Catalog;
 use pg_core::maker::Maker;
-use pg_core::paths::verbatim;
 use pg_core::thumbs::{Pending, Thumb, ThumbCache};
+use pg_core::verbatim::verbatim;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};

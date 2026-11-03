@@ -82,7 +82,7 @@ fn set_priority(priority: THREAD_PRIORITY) {
 /// `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on
 /// `ctl`, and reading waits while `ctl` is paused.
 ///
-/// `read(item, wide)` writes the file's path into `wide`, as [`pg_core::paths::verbatim_wide`] does, and returns
+/// `read(item, wide)` writes the file's path into `wide`, as [`pg_core::verbatim::verbatim_wide`] does, and returns
 /// true; the reader's buffer is reused from file to file, so no path is made per file. An item it returns false
 /// for isn't read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded).
 pub fn run<T, S, R>(
@@ -353,7 +353,7 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
-    use pg_core::paths::verbatim_wide;
+    use pg_core::verbatim::verbatim_wide;
 
     use super::*;
 

@@ -59,6 +59,7 @@ the same result.
 ## 1. Phases (the order of work)
 
 **Phase 0: checks that need no build of the tree.**
+
 - 0a. Plain stable compile (`rustc +stable`, no `#![feature]`) of tiny files in the scratchpad using `core::hint::cold_path`,
   `<[T]>::array_windows`, `ptr.is_aligned()`, `split_first_chunk`/`first_chunk`. Settles which survey entries are already
   stable (the first probe was invalid: stable rejects `#![feature]` outright).
@@ -68,6 +69,7 @@ the same result.
   the nightly in WSL (`rustup toolchain install nightly-2026-09-22 --profile minimal`) and the components later phases need.
 
 **Phase 1: baseline at HEAD.**
+
 - 1a. Add the missing bench inputs, one commit each: PDQ index nearest-neighbour search (`pdq_index.rs:245,311`
   has no bench) and a PNG decode through `analyze`. Both in `crates/core/benches/ir/linux.rs` beside the existing ones.
 - 1b. `wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-bench.sh --save-baseline=head`. Read with `cgtab.py`.
@@ -350,7 +352,7 @@ no_trait_vptr, no_unique_section_names, normalize_docs, on_broken_pipe, panic_ab
 patchable_function_entry, plt, polonius, pre_link_arg, pre_link_args, precise_enum_drop_elaboration, print_check_cfg,
 print_codegen_stats, print_codegen_stats_json, print_crate_root_lint_levels, print_llvm_passes, print_mono_items,
 print_supported_crate_types, proc_macro_backtrace, proc_macro_execution_strategy, profile_closures, profiler_runtime,
-remap_cwd_prefix, retpoline, retpoline_external_thunk, sanitizer_cfi_* (all, unsupported on this target),
+remap_cwd_prefix, retpoline, retpoline_external_thunk, sanitizer_cfi_*(all, unsupported on this target),
 sanitizer_dataflow_abilist, sanitizer_ignorelist, sanitizer_kcfi_arity, sanitizer_memory_track_origins,
 sanitizer_recover, shell_argfiles, split_dwarf_inlining, split_dwarf_kind, split_dwarf_out_dir, split_lto_unit,
 src_hash_algorithm, staticlib_* (four), strict_init_checks, teach, temps_dir, terminal_urls, thinlto, tls_model,

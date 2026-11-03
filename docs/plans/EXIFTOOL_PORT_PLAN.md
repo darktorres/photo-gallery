@@ -33,7 +33,7 @@ Revalidated against HEAD 4e1ad4d (2026-11-02). The other session's plan is finis
   - JPEG: APP1 only. EXIF is the first `Exif\0\0` segment. XMP is the standard packet first, then `ExtendedXmps`
     with no HasExtendedXMP check.
   - PNG: `eXIf` and iTXt only.
-  - WebP: `EXIF` and `XMP `.
+  - WebP: `EXIF` and `XMP`.
   - GIF: the XMP packet counts only if the walk reaches the trailer.
   - TIFF: the whole file is the EXIF block.
 - **The orientation-only read:** `metadata::orientation` (`:96`) does its own walk through `exif_block` (`:781`).
@@ -88,6 +88,7 @@ Revalidated against HEAD 4e1ad4d (2026-11-02). The other session's plan is finis
 ### 0. Orientation patch that always matches the read (fix in today's code, its own commit)
 
 A latent bug at HEAD:
+
 - `Exif::read` takes IFD0 Orientation as BYTE, SHORT or LONG, the last copy winning.
 - `patch_orientation` changes only the first SHORT×1.
 - `rotate.rs:43` (`Outcome::Rewritten`) calls `patch_orientation(&out, format, 1).unwrap_or(out)`. So when the
@@ -95,6 +96,7 @@ A latent bug at HEAD:
 - The writeback's patch path (`writeback.rs:279`) has no read-back check either.
 
 The fix:
+
 - `patch_orientation` patches, in place, every entry the reader counts, at its own width.
 - It returns `Some` only if `metadata::orientation` of the result is `o`. Otherwise it returns `None`.
 - `rotate.rs`'s rewritten closure turns a `None`, when the original had an orientation other than 1, into
@@ -181,7 +183,7 @@ Every ported function cites its ExifTool file and line.
   - Inflation uses miniz_oxide.
 - **`webp.rs`** (`RIFF.pm` 557–587, 2026–2217).
   - The `EXIF` chunk, with or without the `Exif\0\0` prefix.
-  - `XMP ` and `XMP\0` chunks.
+  - `XMP` and `XMP\0` chunks.
   - The scan runs to EOF, not to the RIFF size. A truncated chunk stops it.
 - **`gif.rs`** (`GIF.pm` 413–459).
   - XMP: the application extension, length bytes kept, trimmed at the xpacket end. XMP found before a truncation

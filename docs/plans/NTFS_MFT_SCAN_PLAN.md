@@ -6,6 +6,7 @@ The scanner (`crates/ingest/src/scan.rs`) lists every folder with `GetFileInform
 Every rescan walks everything again.
 
 **E: measured (2026-11-01, elevated):**
+
 - the MFT holds 99.99 GB of valid data at 1 KiB records: ~97.6M records, in 78 extents of ~200 MB spread across
   the disk;
 - in its first 2M records, 3.3% are directories, which extrapolates to **~3.2M folders**. A cold walk pays
@@ -29,10 +30,12 @@ MFT record number with the sequence number in the top 16 bits (checked: the live
 ## Design
 
 ### Unit of work: the volume
+
 One MFT read covers **every library root on that volume**; the journal position is per volume. The runner groups
 queued roots by volume (`GetVolumePathNameW` → `GetVolumeNameForVolumeMountPointW` → `\\?\Volume{GUID}`).
 
 Which source a scan uses:
+
 - **The root's file system isn't NTFS (`GetVolumeInformationByHandleW`) → refuse it with a message,** when it is
   added and when it is scanned. Z: (Google Drive's virtual drive, presented as FAT32) returns `FileId == 0` for
   every entry, so today it scans silently as empty.
@@ -55,6 +58,7 @@ Refuse a volume whose serial equals another mounted volume's. That's a flaw in t
 collide here (checked).
 
 ### Two privilege levels, kept apart
+
 - **Journal passes use the documented `FSCTL_READ_USN_JOURNAL` in the helper,** which is running anyway for
   live following. When elevation isn't available (a user who isn't an admin, or a prompt declined), they fall
   back to **`FSCTL_READ_UNPRIVILEGED_USN_JOURNAL`**. It is undocumented; BuildXL uses it. Verified on D: and E:
@@ -102,6 +106,7 @@ collide here (checked).
   out of scope until there is an installer.
 
 ### The MFT read (in the helper)
+
 - **Geometry:** `FSCTL_GET_NTFS_VOLUME_DATA`, offsets checked against live output: `BytesPerCluster` 0x2C,
   `BytesPerFileRecordSegment` 0x30, `MftValidDataLength` 0x38, `MftStartLcn` 0x40. Record 0's unnamed `$DATA`
   runs give the `$MFT`'s extents (78 on E:). The low 32 bits of `VolumeSerialNumber` equal
@@ -152,6 +157,7 @@ collide here (checked).
 - **Progress:** records read out of `MftValidDataLength / record size`, through `Control::begin`.
 
 ### One entry filter and one hard-link rule (`crates/ingest/src/listing.rs`)
+
 - **Reparse points:**
   - skip name surrogates: `IsReparseTagNameSurrogate`, i.e. bit 29. That covers mount points `0xA0000003`,
     symlinks `0xA000000C` and WSL links `0xA000001D`, but not cloud `0x9000001x`, WOF `0x80000017` or dedup
@@ -169,6 +175,7 @@ collide here (checked).
 - **`FileId == 0`** is counted in `ScanStats::errors`.
 
 ### Catalog (baseline edited in place, version 1, rebuilt on open: `catalog.rs:26–33`, `FILLED`)
+
 - **Volume identity: the 64-bit NTFS serial.** `files.volume` and `volumes.serial` change from
   `dwVolumeSerialNumber` (32 bits) to the full serial: `FileIdInfo` gives it unelevated,
   `FSCTL_GET_NTFS_VOLUME_DATA` in the helper. `ScannedFile::volume` becomes `u64`. Clones still copy it, so the
@@ -243,6 +250,7 @@ collide here (checked).
   unknown list. Every source writes through it, unelevated.
 
 ### Journal passes (state-based)
+
 1. Read from the saved USN (in the helper, or unprivileged as the fallback); coalesce by file ref.
 2. Keep a ref if it is in the catalog (`files` or `folders`), or it is now a directory, or its live name is a
    media name. A `.jpg` renamed to `.txt` is in the catalog, so it is kept and marked missing.
@@ -269,15 +277,18 @@ collide here (checked).
 6. **Journal unusable** (entry deleted, ID changed, inactive) → a full read.
 
 ### The runner: a full read isn't interrupted by unrelated work
+
 Today any request stops the running pass (`runner.rs:150–154`). A non-resumable ~14 min read would restart each
 time. Requests that only add work queue behind a running volume read; only a removed root, quitting or the
 user's stop end it.
 
 ### Live following (step 7)
+
 The helper keeps a waiting journal read per volume (`BytesToWaitFor`) and tells the job a volume changed; the runner debounces and runs a journal
 pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 
 ## Steps (each verified and committed on its own)
+
 1. **Catalog model:**
    - the `files`/`links` split, with every reader moved to it (`browse.rs`, `thumbs.rs`, `dups.rs`,
      `writeback.rs`, the import);
@@ -317,6 +328,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
    Also fix STORAGE.md: the Z: finding (FileId 0, silently empty), and "only NTFS, others refused".
 
 ## Critical files
+
 - **Changed:**
   - `crates/ingest/src/scan.rs` (the orchestrator), `runner.rs`, `cli.rs`;
   - `crates/core/src/catalog.rs` (schema, `ScanWriter`, `move_folder`, `mark_missing_ref`, `volumes`,
@@ -343,6 +355,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
     (pipe).
 
 ## Verification
+
 - **Test VHD (elevated, made by the test with `diskpart`, detached at the end).** It holds:
   - paths over 260 characters and non-BMP names;
   - hard links across folders (and enough of them for an `$ATTRIBUTE_LIST`);
@@ -398,6 +411,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 | No duplicate serials among the mounted volumes | `Get-CimInstance Win32_Volume` |
 
 **From our code (revalidated at `4e1ad4d`, 2026-11-02, after the other session's commits):**
+
 - catalog opened first (`cli.rs:151–153`);
 - every request stops the pass (`runner.rs:150–154`);
 - folder rows only with media (`scan.rs:216`): replaced by a row per directory;

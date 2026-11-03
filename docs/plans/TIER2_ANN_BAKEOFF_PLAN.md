@@ -12,11 +12,13 @@ not ~35 h** (2026-11-02). Quality over speed, but not days of runtime.
 ## Status
 
 Done and committed or cached:
+
 - Embedding of the 187,806 test images + 18,000 planted edits (D0 pipeline, `sscd_trt_fp16_trim_draft`) in
   `D:\PhotoGallery\eval_ann`; cached exact ground truths for 25k / 50k; validation gates passed at 25k
   (`cache/ann/validate.json`, two explained exceptions); characterization in `cache/ann/charact.json`.
 
 Done but **stashed, not committed** (`stash@{0}` "ANN bake-off WIP (2026-11-02)"; the older `stash@{1}` is a backup):
+
 - `eval/ann/` (data, exact, methods, cpu_worker, metrics, charact, run, report), `eval/plant.py`, the `--draft`
   changes in `common.py` / `imgload.py` / `embed.py`, the `verify.py --list` option, and the FINDINGS / PLAN edits.
 - Scale change: `MAIN = 50_000` (50k test rows + ~4.8k planted copies), trend sizes 12.5k / 25k, `VALIDATE = 25_000`;

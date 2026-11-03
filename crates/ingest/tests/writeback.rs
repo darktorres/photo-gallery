@@ -8,9 +8,9 @@ use std::io::Cursor;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
+use pg_codec::decode::{Decoder, MinSize, orient};
+use pg_codec::pixels::Rgb;
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Decoder, MinSize, orient};
-use pg_core::pixels::Rgb;
 use pg_core::thumbs::ThumbCache;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;

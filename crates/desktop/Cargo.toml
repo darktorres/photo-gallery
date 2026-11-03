@@ -18,6 +18,7 @@ test = false
 doctest = false
 
 [dependencies]
+pg-codec = { path = "../codec" }
 pg-core = { path = "../core" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }

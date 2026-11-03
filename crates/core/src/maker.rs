@@ -7,9 +7,9 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
-use crate::decode::{Decoded, Decoder, MinSize};
-use crate::pixels::{Rgb, release_over};
-use crate::resize::Resizer;
+use pg_codec::decode::{Decoded, Decoder, MinSize};
+use pg_codec::pixels::{Rgb, release_over};
+use pg_codec::resize::Resizer;
 use pg_model::format::Format;
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").

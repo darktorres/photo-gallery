@@ -5,10 +5,10 @@ use anyhow::{Context, Result};
 use std::path::Path;
 
 use crate::borders::{self, Detector};
-use crate::decode::{Decoder, MinSize};
 use crate::pdq;
-use crate::pixels::{Rgb, release_over};
-use crate::resize::Resizer;
+use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::pixels::{Rgb, release_over};
+use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
 use pg_model::detection::{self, Detection};

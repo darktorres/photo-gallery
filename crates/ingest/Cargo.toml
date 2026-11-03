@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 pg-core = { path = "../core" }
 pg-model = { path = "../model" }
+pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true

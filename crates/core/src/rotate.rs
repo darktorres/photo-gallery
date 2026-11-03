@@ -74,8 +74,8 @@ mod tests {
     use std::io::Cursor;
 
     use super::*;
-    use crate::decode::{Decoder, MinSize, orient};
     use crate::rewrite::{pack, png_chunk};
+    use pg_codec::decode::{Decoder, MinSize, orient};
 
     /// A test image with distinct, smoothly varying pixels (so a wrong turn can't match by chance).
     fn pattern(w: usize, h: usize) -> Vec<u8> {
@@ -96,7 +96,7 @@ mod tests {
     /// Expected: the original as shown, turned clockwise `turns` times.
     fn expect_turned(original: &[u8], turns: u8) -> (usize, usize, Vec<u8>) {
         let (w, h, pixels) = shown(original);
-        let img = orient(crate::pixels::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
+        let img = orient(pg_codec::pixels::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
         (img.width, img.height, img.pixels)
     }
 

@@ -1415,6 +1415,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-codec"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crc32fast",
+ "fast_image_resize",
+ "gif 0.14.2",
+ "image 0.25.10",
+ "image-webp",
+ "miniz_oxide 0.8.9",
+ "pg-model",
+ "pg-testkit",
+ "png 0.18.1",
+ "tiff 0.11.3",
+ "turbojpeg",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
 name = "pg-container"
 version = "0.1.0"
 
@@ -1425,13 +1445,11 @@ dependencies = [
  "anyhow",
  "blake3",
  "crc32fast",
- "fast_image_resize",
  "ffmpeg-next",
- "gif 0.14.2",
  "image 0.25.10",
  "image-webp",
- "miniz_oxide 0.8.9",
  "pdqhash",
+ "pg-codec",
  "pg-container",
  "pg-metadata",
  "pg-model",
@@ -1441,13 +1459,10 @@ dependencies = [
  "serde",
  "serde_json",
  "thumbhash",
- "tiff 0.11.3",
  "turbojpeg",
  "ureq",
  "weezl",
  "xxhash-rust",
- "zune-core",
- "zune-jpeg",
 ]
 
 [[package]]
@@ -1459,6 +1474,7 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "pg-codec",
  "pg-core",
  "pg-ingest",
  "pg-model",
@@ -1488,6 +1504,7 @@ dependencies = [
  "clap",
  "crossbeam-channel",
  "image 0.25.10",
+ "pg-codec",
  "pg-core",
  "pg-metadata",
  "pg-model",

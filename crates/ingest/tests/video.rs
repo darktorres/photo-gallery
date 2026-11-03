@@ -1,5 +1,5 @@
 //! Videos through FFmpeg: probing (size, rotation, duration, codec, date), the frame at a time, and a scan,
-//! import and thumbnail pass over a folder of them. Also the viewer's animations (`pg_core::animation`): WebP, GIF
+//! import and thumbnail pass over a folder of them. Also the viewer's animations (`pg_codec::animation`): WebP, GIF
 //! and APNG made by FFmpeg, frame by frame. The clips are made with the `ffmpeg` command line (`PG_FFMPEG`,
 //! else on PATH; the test is skipped without it), in a scratch folder (`PG_TEST_DIR`, default
 //! `D:\PhotoGallery\scratch_video`, never C:).
@@ -10,10 +10,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
+use pg_codec::animation;
+use pg_codec::pixels::Rgb;
 use pg_core::analyze;
-use pg_core::animation;
 use pg_core::catalog::Catalog;
-use pg_core::pixels::Rgb;
 use pg_core::thumbs::ThumbCache;
 use pg_core::video::{frame, poster_ms, probe};
 use pg_ingest::control::Control;

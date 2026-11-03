@@ -892,7 +892,7 @@ fn shrink(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::{Decoder, MinSize};
+    use pg_codec::decode::{Decoder, MinSize};
 
     #[test]
     fn the_cap_parser_refuses_what_would_be_no_cache() {

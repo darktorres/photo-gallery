@@ -8,7 +8,7 @@ use std::io::Cursor;
 use anyhow::{Context, Result, bail};
 use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
-use crate::decode::transform;
+use pg_codec::decode::transform;
 use pg_container::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
 use pg_model::orientation;
 

@@ -1,10 +1,10 @@
 //! What a file shows as: its pixels turned upright (the EXIF orientation, then the catalog's quarter turns), decoded
 //! at the smallest size a caller needs. The one place that reads a file's EXIF orientation for decoding, so the codec
-//! ([`crate::decode`]) takes the orientation as a value and reads no metadata itself.
+//! ([`pg_codec::decode`]) takes the orientation as a value and reads no metadata itself.
 
 use anyhow::{Context, Result};
 
-use crate::decode::{Decoded, Decoder, MinSize, Stored};
+use pg_codec::decode::{Decoded, Decoder, MinSize, Stored};
 use pg_model::format::Format;
 use pg_model::orientation;
 
@@ -14,7 +14,7 @@ use pg_model::orientation;
 pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
     let format = Format::sniff(bytes).context("unknown image format")?;
     let exif = pg_metadata::orientation(bytes, format);
-    let mut image = crate::pixels::Rgb::default();
+    let mut image = pg_codec::pixels::Rgb::default();
     let info = decoder.decode_into(bytes, format, exif, min, turns, &mut image, &mut Vec::new())?;
     Ok(Decoded { image, info })
 }
@@ -23,7 +23,7 @@ pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> R
 pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
     let format = Format::sniff(bytes).context("unknown image format")?;
     let exif = pg_metadata::orientation(bytes, format);
-    let mut image = crate::pixels::Rgb::default();
+    let mut image = pg_codec::pixels::Rgb::default();
     let info = decoder.decode_stored_into(bytes, format, exif, min, turns, &mut image)?;
     Ok(Stored { image, info })
 }
@@ -53,9 +53,9 @@ mod tests {
         let rect = [1.0 / 4.0, 0.0, 3.0 / 4.0, 1.0 / 2.0];
         for orientation in 1..=8u8 {
             for turns in 0..4u8 {
-                let (mut px, mut pw, mut ph) = crate::decode::transform(&pixels, w, h, 1, orientation);
+                let (mut px, mut pw, mut ph) = pg_codec::decode::transform(&pixels, w, h, 1, orientation);
                 for _ in 0..turns {
-                    (px, pw, ph) = crate::decode::transform(&px, pw, ph, 1, 6);
+                    (px, pw, ph) = pg_codec::decode::transform(&px, pw, ph, 1, 6);
                 }
                 let [x0, y0, x1, y1] = upright(rect, orientation, turns);
                 for y in 0..ph {

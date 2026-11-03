@@ -8,10 +8,10 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 use anyhow::{Context, Result, ensure};
+use pg_codec::pixels::Rgb;
 use pg_core::analyze::{Analyzer, FileBorders};
 use pg_core::borders::{self as detector, Detector};
 use pg_core::catalog::{BordersWriter, Catalog};
-use pg_core::pixels::Rgb;
 use pg_model::detection::{self, Side};
 use pg_model::media::{Ext, Kind};
 use pg_platform::verbatim::verbatim_wide;

@@ -10,29 +10,25 @@ workspace = true
 [dependencies]
 pg-container = { path = "../container" }
 pg-model = { path = "../model" }
+pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 anyhow.workspace = true
-fast_image_resize.workspace = true
 ffmpeg-next.workspace = true
-gif.workspace = true
 image.workspace = true
 rusqlite.workspace = true
 thumbhash.workspace = true
-tiff.workspace = true
 turbojpeg.workspace = true
 ureq.workspace = true
 xxhash-rust.workspace = true
 blake3.workspace = true
 crc32fast.workspace = true
 image-webp.workspace = true
-miniz_oxide.workspace = true
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 weezl.workspace = true
-zune-core.workspace = true
-zune-jpeg.workspace = true
 
 [dev-dependencies]
 pdqhash.workspace = true
+pg-codec = { path = "../codec", features = ["fixtures"] }
 pg-testkit = { path = "../testkit" }

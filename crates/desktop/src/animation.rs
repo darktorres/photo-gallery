@@ -1,5 +1,5 @@
 //! `AnimationPlayer`: plays an animated GIF, APNG or WebP into a `VideoOutput`'s sink, so animations show like
-//! videos (same fit and turns) while looping as they should (`pg_core::animation` says why not Qt's player).
+//! videos (same fit and turns) while looping as they should (`pg_codec::animation` says why not Qt's player).
 //! A thread per animation decodes the frames and keeps each one's delay. It loops forever, as most viewers do in
 //! practice: a GIF's loop count isn't honoured.
 
@@ -59,7 +59,7 @@ use std::time::{Duration, Instant};
 use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use pg_core::animation;
+use pg_codec::animation;
 
 pub struct AnimationPlayerRust {
     source: QString,

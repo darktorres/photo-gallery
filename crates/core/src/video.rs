@@ -14,8 +14,8 @@ use ffmpeg::media::Type;
 use ffmpeg::util::frame;
 use ffmpeg_next as ffmpeg;
 
-use crate::decode::orient_into;
-use crate::pixels::Rgb;
+use pg_codec::decode::orient_into;
+use pg_codec::pixels::Rgb;
 use pg_model::analysis::Taken;
 use pg_model::date::parse_iso_date;
 use pg_model::orientation;

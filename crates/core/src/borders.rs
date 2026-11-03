@@ -17,7 +17,7 @@
 //! The arithmetic is exact where Python's was float32: grays are kept as sums of the three channels (×3), medians of
 //! 8-bit values doubled (×2), deviations from a median of medians ×4. Line statistics read every other pixel.
 
-use crate::pixels::Rgb;
+use pg_codec::pixels::Rgb;
 use pg_model::detection::{Detection, Edge, Kind, MAX_SIDES, Reason, Side, Sides};
 
 /// Bump when anything here changes what is detected; detections of an older version are redone.

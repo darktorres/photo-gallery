@@ -9,9 +9,7 @@
 //! - TIFF and compressed BMP: exact, re-encoded (TIFF losslessly) without their metadata; [`Cropped::metadata`]
 //!   is false, and the caller copies it over (ExifTool).
 
-use std::io::Cursor;
-
-use anyhow::{Context, Result, bail, ensure};
+use anyhow::{Result, bail, ensure};
 
 use crate::rewrite::{self, Op};
 use pg_container::{png_chunks, webp_chunks};
@@ -70,16 +68,15 @@ fn reencoded(
     h: u32,
     cut: [u32; 4],
 ) -> Result<Cropped> {
-    let img = image::load_from_memory_with_format(bytes, format).context("decoding")?;
-    let mut out = Cursor::new(Vec::new());
-    img.crop_imm(x, y, w, h).write_to(&mut out, format).context("encoding")?;
-    Ok(Cropped { bytes: out.into_inner(), cut, metadata: false })
+    let bytes = pg_codec::encode::cropped(bytes, format, x, y, w, h)?;
+    Ok(Cropped { bytes, cut, metadata: false })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::{Decoder, MinSize};
+    use pg_codec::decode::{Decoder, MinSize};
+    use std::io::Cursor;
 
     fn pattern(w: usize, h: usize) -> Vec<u8> {
         (0..w * h)
@@ -118,7 +115,7 @@ mod tests {
         e.encode(&rgb, w as u32, h as u32, image_webp::ColorType::Rgb8).unwrap();
         files.push(webp);
         // BigTIFF, which `image` doesn't write: the tiff crate's encoder does.
-        files.push(crate::codecs::tiff_rgb8(w as u32, h as u32, &rgb, true));
+        files.push(pg_codec::fixtures::tiff_rgb8(w as u32, h as u32, &rgb, true));
         for file in files {
             let format = Format::sniff(&file).unwrap();
             let out = crop(&file, format, w as u32, h as u32, cut).unwrap();

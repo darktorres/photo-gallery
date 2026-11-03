@@ -8,8 +8,8 @@
 use std::io::Cursor;
 use std::path::Path;
 
+use pg_codec::decode::{Decoder, MinSize};
 use pg_core::catalog::Catalog;
-use pg_core::decode::{Decoder, MinSize};
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};

@@ -40,13 +40,13 @@ impl Info {
     }
 }
 
-/// An image decoded upright ([`crate::display::decode`]).
+/// An image decoded upright (core's `display::decode`, which reads the file's orientation).
 pub struct Decoded {
     pub image: Rgb,
     pub info: Info,
 }
 
-/// An image as it is stored: decoded, not oriented ([`crate::display::decode_stored`]).
+/// An image as it is stored: decoded, not oriented (core's `display::decode_stored`).
 pub struct Stored {
     pub image: Rgb,
     pub info: Info,
@@ -251,8 +251,12 @@ mod tests {
         let img = image::RgbaImage::from_raw(w as u32, h as u32, rgba.clone()).unwrap();
         let mut file = std::io::Cursor::new(Vec::new());
         img.write_to(&mut file, image::ImageFormat::Png).unwrap();
-        let decoded =
-            crate::display::decode(&mut Decoder::new().unwrap(), file.get_ref(), MinSize::Full, 0).unwrap().image;
+        // A PNG without EXIF is shown as stored: orientation 1.
+        let mut decoded = Rgb::default();
+        Decoder::new()
+            .unwrap()
+            .decode_into(file.get_ref(), Format::Png, 1, MinSize::Full, 0, &mut decoded, &mut Vec::new())
+            .unwrap();
         let want: Vec<u8> = rgba
             .as_chunks::<4>()
             .0

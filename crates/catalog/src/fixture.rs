@@ -1,6 +1,9 @@
 //! Test catalogs: files inserted as the scanner would, with their order keys. Behind the `fixture` feature (and in
 //! this crate's tests), so every crate that reads a catalog in its tests builds the same files.
 
+#[cfg(test)]
+pub(crate) mod raw;
+
 use crate::Catalog;
 use pg_model::ids::{FileId, FolderId};
 use pg_model::turns::Turns;

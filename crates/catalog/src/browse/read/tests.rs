@@ -2,8 +2,9 @@ use super::tree::FOLDER_COUNTS;
 use super::*;
 use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
 use crate::fixture;
+use crate::fixture::raw;
 use crate::query::condition;
-use crate::writes::queue_rotation;
+use crate::writes::{self, queue_rotation};
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::date::Day;
 use pg_model::details::Details;
@@ -17,6 +18,7 @@ use pg_model::query::{DateRange, MediaType, Query, Range, RatingFilter, Shape, S
 use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
+use pg_model::write::WriteKind;
 use rusqlite::params_from_iter;
 
 /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
@@ -83,10 +85,10 @@ fn merged_paths() {
 #[test]
 fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
     let c = library();
-    c.conn.execute("UPDATE analysis SET thumbhash = x'01' WHERE file_id = 1", []).unwrap();
+    raw::set_thumbhash(&c, FileId::new(1), &[1]);
     let state = || file_state(&c, FileId::new(1)).unwrap().unwrap();
     let turns = || placeholder(&c, FileId::new(1)).unwrap().unwrap().turns;
-    let size: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
+    let size = raw::file_size(&c, FileId::new(1));
     assert_eq!(state(), FileState { mtime: 3, size, rotation: Turns::new(0), turns: Turns::new(0), writing: false });
     assert_eq!(file_source(&c, FileId::new(1)).unwrap().unwrap().state, state());
     assert_eq!((turns(), placeholder(&c, FileId::new(1)).unwrap().unwrap().hash), (Turns::NONE, ThumbHash::new(&[1])));
@@ -94,12 +96,13 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
     queue_rotation(&c, FileId::new(1), Turns::new(3)).unwrap();
     assert_eq!((state().turns, turns()), (Turns::new(3), Turns::new(3)));
     // One kept in the catalog since the analysis, and one more asked for.
-    c.conn.execute("UPDATE files SET rotation = 1 WHERE id = 1", []).unwrap();
+    raw::set_rotation(&c, FileId::new(1), Turns::new(1));
     queue_rotation(&c, FileId::new(1), Turns::new(2)).unwrap();
     assert_eq!((state().rotation, state().turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
-    c.conn.execute(r"UPDATE file_writes SET temp = 'D:\p\b.jpg.tmp', temp_value = 1 WHERE file_id = 1", []).unwrap();
+    let job = writes::Job { file_id: FileId::new(1), kind: WriteKind::Turns, value: 2, temp: None, attempts: 0 };
+    writes::record_temp(&c, &job, r"D:\p\b.jpg.tmp", 1).unwrap();
     assert!(state().writing);
     assert_eq!(file_state(&c, FileId::new(99)).unwrap(), None);
     assert!(placeholder(&c, FileId::new(99)).unwrap().is_none());
@@ -142,7 +145,7 @@ fn ratings_and_orders() {
 fn folders_in_the_trees_order() {
     let c = library();
     // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
-    c.conn.execute("INSERT INTO folders(id, path) VALUES (4, 'D:\\p-x')", []).unwrap();
+    raw::add_folder(&c, 4, r"D:\p-x");
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(4), "z.jpg", 1, 1)]);
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
     let tree = folder_tree(&c).unwrap();
@@ -292,14 +295,7 @@ fn the_tree_is_built_as_before() {
 fn real_tree_is_built_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
     let c = crate::Catalog::open(std::path::Path::new(&path)).unwrap();
-    let conn = &c.conn;
-    let rows: Vec<(i64, String, i64)> = conn
-        .prepare(FOLDER_COUNTS)
-        .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap();
+    let rows: Vec<(i64, String, i64)> = raw::rows_of(&c, FOLDER_COUNTS, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)));
     check_tree(&rows);
     let tree = folder_tree(&c).unwrap();
     assert_eq!(flat(&tree), reference_tree(&rows));
@@ -432,14 +428,10 @@ fn folder_keys_are_made_as_before() {
 fn real_names_sort_and_scope_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
     let c = crate::Catalog::open(std::path::Path::new(&path)).unwrap();
-    let conn = &c.conn;
-    let files: Vec<(String, String)> = conn
-        .prepare("SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")
-        .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap();
+    let files: Vec<(String, String)> =
+        raw::rows_of(&c, "SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id", [], |r| {
+            Ok((r.get(0)?, r.get(1)?))
+        });
     let mut by_key = files.clone();
     by_key.sort_by_cached_key(|(folder, name)| order_key_of(folder, name));
     for pair in by_key.windows(2) {
@@ -447,13 +439,7 @@ fn real_names_sort_and_scope_as_before() {
         assert_ne!(reference_order((&a.0, &a.1), (&b.0, &b.1)), std::cmp::Ordering::Greater, "{a:?}, {b:?}");
     }
     // Every folder against every scope, recursive and not: the old match (`in_scope`) and the key range.
-    let folders: Vec<String> = conn
-        .prepare("SELECT path FROM folders")
-        .unwrap()
-        .query_map([], |r| r.get(0))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap();
+    let folders: Vec<String> = raw::rows_of(&c, "SELECT path FROM folders", [], |r| r.get(0));
     let in_range = |scope_of: (&str, bool), folder: &str| {
         let (_, values) = scope(scope_of.0, scope_of.1);
         let key = order_key_of(folder, "a");
@@ -536,39 +522,24 @@ fn lists_read_the_order_index() {
         for sort in [Sort::default(), by(SortKey::Name, true), by(SortKey::Taken, true)] {
             let (scope, values) = scope(folder, recursive);
             let unrated = condition(&Query { ratings: vec![RatingFilter::Unrated], ..Query::default() });
-            let plan: Vec<String> = c
-                .conn
-                .prepare(&format!("EXPLAIN QUERY PLAN {}", grid_sql(&scope, &unrated.sql, sort)))
-                .unwrap()
-                .query_map(params_from_iter(values.into_iter().chain(unrated.params)), |r| r.get(3))
-                .unwrap()
-                .collect::<rusqlite::Result<_>>()
-                .unwrap();
-            let plan = plan.join("\n");
+            let plan = raw::query_plan(
+                &c,
+                &grid_sql(&scope, &unrated.sql, sort),
+                params_from_iter(values.into_iter().chain(unrated.params)),
+            );
             assert!(plan.contains("USING INDEX files_order"), "{plan}");
             assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
         }
         // The list's size, from the index alone.
         let (scope, values) = scope(folder, recursive);
-        let plan: String = c
-            .conn
-            .query_row(
-                &format!("EXPLAIN QUERY PLAN SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
-                params_from_iter(values),
-                |r| r.get(3),
-            )
-            .unwrap();
+        let plan = raw::query_plan(
+            &c,
+            &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+            params_from_iter(values),
+        );
         assert!(plan.contains("COVERING INDEX files_order"), "{plan}");
     }
-    let plan: Vec<String> = c
-        .conn
-        .prepare(&format!("EXPLAIN QUERY PLAN {FOLDER_COUNTS}"))
-        .unwrap()
-        .query_map([], |r| r.get(3))
-        .unwrap()
-        .collect::<rusqlite::Result<_>>()
-        .unwrap();
-    let plan = plan.join("\n");
+    let plan = raw::query_plan(&c, FOLDER_COUNTS, []);
     assert!(plan.contains("COVERING INDEX files_present") && !plan.contains("TEMP B-TREE"), "{plan}");
 }
 

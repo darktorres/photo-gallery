@@ -290,7 +290,7 @@ pub fn abandon_temp(catalog: &Catalog, job: &Job, after: Option<(i64, i64)>) -> 
 }
 
 /// Record what the file holds now (the rating it was last written with, or the import's reads).
-fn set_file_rating(conn: &Connection, file_id: FileId, value: Option<Rating>) -> Result<()> {
+pub(crate) fn set_file_rating(conn: &Connection, file_id: FileId, value: Option<Rating>) -> Result<()> {
     match value {
         Some(v) => conn.prepare_cached(SET_FILE_RATING)?.execute(params![file_id.get(), v.get()])?,
         None => conn.prepare_cached(DELETE_FILE_RATING)?.execute([file_id.get()])?,
@@ -342,40 +342,31 @@ fn add_catalog_rotation(tx: &Transaction, file_id: FileId, turns: Turns) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Catalog;
     use crate::browse::fixtures::library;
-
-    fn queued(c: &Catalog, id: i64, kind: &str) -> Option<i64> {
-        c.conn
-            .query_row("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = ?2", params![id, kind], |r| {
-                r.get(0)
-            })
-            .optional()
-            .unwrap()
-    }
+    use crate::fixture::raw;
 
     #[test]
     fn ratings_and_turns_queue_for_the_file() {
         let c = library();
         set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
-        assert_eq!(queued(&c, 2, "rating"), Some(3));
+        assert_eq!(raw::queued(&c, 2, "rating"), Some(3));
         // Back to what the file holds (nothing): nothing to write.
         set_rating(&c, FileId::new(2), None, true).unwrap();
-        assert_eq!(queued(&c, 2, "rating"), None);
+        assert_eq!(raw::queued(&c, 2, "rating"), None);
         // A file that holds 4: clearing writes 0.
-        set_file_rating(&c.conn, FileId::new(1), Rating::new(4)).unwrap();
+        raw::holds_rating(&c, FileId::new(1), Rating::new(4));
         set_rating(&c, FileId::new(1), None, true).unwrap();
-        assert_eq!(queued(&c, 1, "rating"), Some(0));
+        assert_eq!(raw::queued(&c, 1, "rating"), Some(0));
         // BMP can't hold one; write-back off writes nothing.
         set_rating(&c, FileId::new(4), Rating::new(5), true).unwrap();
         set_rating(&c, FileId::new(3), Rating::new(5), false).unwrap();
-        assert_eq!((queued(&c, 4, "rating"), queued(&c, 3, "rating")), (None, None));
+        assert_eq!((raw::queued(&c, 4, "rating"), raw::queued(&c, 3, "rating")), (None, None));
         // Turns add up modulo 4; a full turn leaves nothing to do.
         queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
         queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
-        assert_eq!(queued(&c, 1, "rotation"), Some(2));
+        assert_eq!(raw::queued(&c, 1, "rotation"), Some(2));
         queue_rotation(&c, FileId::new(1), Turns::new(2)).unwrap();
-        assert_eq!(queued(&c, 1, "rotation"), None);
+        assert_eq!(raw::queued(&c, 1, "rotation"), None);
     }
 
     #[test]
@@ -390,23 +381,14 @@ mod tests {
         let after = (11, 101);
         let rewrite = Rewrite { before: (10, 1), after, metadata_only: Some([7; 32]) };
         done(&c, &first, WriteEffect::FileRating { rewrite, rating: 3 }).unwrap();
-        assert_eq!(queued(&c, 1, "rating"), None);
-        let stored: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
-        assert_eq!(stored, 11);
+        assert_eq!(raw::queued(&c, 1, "rating"), None);
+        assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
         // The turn can't go in the file: the catalog keeps it, and the upright size swaps at once.
         let turn = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!((turn.file_id, turn.kind, turn.value), (FileId::new(2), WriteKind::Turns, 1));
         done(&c, &turn, WriteEffect::KeptInCatalog(Turns::new(1))).unwrap();
-        assert_eq!(queued(&c, 2, "rotation"), None);
-        let (rotation, width): (i64, i64) = c
-            .conn
-            .query_row(
-                "SELECT f.rotation, a.width FROM files f JOIN analysis a ON a.file_id = f.id WHERE f.id = 2",
-                [],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .unwrap();
-        assert_eq!((rotation, width), (1, 3));
+        assert_eq!(raw::queued(&c, 2, "rotation"), None);
+        assert_eq!(raw::rotation_and_width(&c, FileId::new(2)), (1, 3));
         assert!(next_ready(&c, 0).unwrap().is_none());
     }
 

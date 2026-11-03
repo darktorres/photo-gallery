@@ -3,10 +3,9 @@
 
 use pg_model::ids::{FileId, FolderId};
 use pg_model::rating::Rating;
-use rusqlite::params;
 
 use crate::browse::read::{FILE_JOINS, list_grid};
-use crate::fixture;
+use crate::fixture::{self, raw};
 use crate::query::key_sql;
 use crate::writes::set_rating;
 use pg_model::query::{Query, Sort, SortKey};
@@ -15,12 +14,10 @@ use pg_model::query::{Query, Sort, SortKey};
 /// format, rating).
 pub(crate) fn library() -> crate::Catalog {
     let c = crate::Catalog::prepare(std::path::Path::new(":memory:"), crate::fixture::versions()).unwrap();
-    c.conn
-        .execute_batch(
-            "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
-             INSERT INTO folders(id, path) VALUES (1, 'D:\\p'), (2, 'E:\\p'), (3, 'D:\\p\\sub');",
-        )
-        .unwrap();
+    raw::add_scan(&c, 1, "D:");
+    raw::add_folder(&c, 1, r"D:\p");
+    raw::add_folder(&c, 2, r"E:\p");
+    raw::add_folder(&c, 3, r"D:\p\sub");
     for (id, folder, name, size, mtime, format, rating) in [
         (1, 1, "b.jpg", 30, 3, "jpeg", 4),
         (2, 2, "a.png", 10, 9, "png", 0),
@@ -28,13 +25,13 @@ pub(crate) fn library() -> crate::Catalog {
         (4, 3, "c.bmp", 40, 5, "bmp", 0),
     ] {
         fixture::insert(&c, &[fixture::File::new(FileId::new(id), FolderId::new(folder), name, size, mtime)]);
-        c.conn
-            .execute(
-                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height)
-                 VALUES (?1, 1, ?2, ?3, 0, 'image', 0, ?4, 4, 3)",
-                params![id, size, mtime, format],
-            )
-            .unwrap();
+        let row = raw::AnalysisRow {
+            format: Some(format),
+            width: Some(4),
+            height: Some(3),
+            ..raw::AnalysisRow::image(id, size, mtime)
+        };
+        raw::insert_analysis(&c, &row);
         set_rating(&c, FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
     }
     c
@@ -62,19 +59,28 @@ pub(crate) fn mixed_library() -> crate::Catalog {
             File::new(FileId::new(8), FolderId::new(2), "new.webp", 6, 6),
         ],
     );
-    c.conn
-        .execute_batch(
-            "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, format, width, height,
-                                  frames, duration_ms) VALUES
-                (5, 1, 50, 7, 0, 'video', 0, NULL, 1920, 1080, 300, 12000),
-                (6, 1, 15, 2, 0, 'image', 0, 'gif', 3, 3, 10, NULL);
-             INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error)
-                 VALUES (7, 1, 5, 4, 0, 'image', 0, 'bad');
-             UPDATE analysis SET file_hash = x'01' WHERE file_id IN (1, 3);
-             UPDATE analysis SET taken = 1714557600 WHERE file_id = 1; -- 2024-05-01 10:00
-             INSERT INTO pdq_pairs(a, b, distance, variant) VALUES (2, 4, 10, 0), (2, 6, 30, 0);",
-        )
-        .unwrap();
+    let video = raw::AnalysisRow {
+        kind: "video",
+        width: Some(1920),
+        height: Some(1080),
+        frames: Some(300),
+        duration_ms: Some(12000),
+        ..raw::AnalysisRow::image(5, 50, 7)
+    };
+    raw::insert_analysis(&c, &video);
+    let gif = raw::AnalysisRow {
+        format: Some("gif"),
+        width: Some(3),
+        height: Some(3),
+        frames: Some(10),
+        ..raw::AnalysisRow::image(6, 15, 2)
+    };
+    raw::insert_analysis(&c, &gif);
+    raw::insert_analysis(&c, &raw::AnalysisRow { error: Some("bad"), ..raw::AnalysisRow::image(7, 5, 4) });
+    raw::set_file_hash(&c, &[1, 3], &[1]);
+    raw::set_taken(&c, 1, 1714557600); // 2024-05-01 10:00
+    raw::add_pdq_pair(&c, 2, 4, 10);
+    raw::add_pdq_pair(&c, 2, 6, 30);
     c
 }
 
@@ -87,5 +93,5 @@ pub(crate) fn sorted_by_sqlite(c: &crate::Catalog, sort: Sort) -> Vec<i64> {
         Some(k) => format!("{k} IS NULL, {k} {}, f.order_key, f.id", if sort.descending { "DESC" } else { "ASC" }),
     };
     let sql = format!("SELECT f.id FROM files f {FILE_JOINS} WHERE f.missing = 0 ORDER BY {order}");
-    c.conn.prepare(&sql).unwrap().query_map([], |r| r.get(0)).unwrap().collect::<rusqlite::Result<_>>().unwrap()
+    raw::rows_of(c, &sql, [], |r| r.get(0))
 }

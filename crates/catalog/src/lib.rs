@@ -1543,6 +1543,7 @@ impl<'tx> BordersWriter<'tx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixture::raw;
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_analysis::borders::BORDERS_VERSION;
     use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, ThumbHash};
@@ -1582,6 +1583,9 @@ mod tests {
         CREATE TABLE session(key TEXT PRIMARY KEY, value TEXT NOT NULL);
         PRAGMA user_version = 1;";
 
+    // The layout tests below read the file on disk through their own connection (`raw::on_disk`): what they check
+    // is the layout, not the catalog's tables.
+
     #[test]
     fn an_earlier_layout_is_copied_into_the_current_one() {
         let dir = test_folder(SCRATCH, "rebuild");
@@ -1610,10 +1614,11 @@ mod tests {
         drop(old);
 
         let c = Catalog::prepare(&path, versions()).unwrap();
-        assert!(current_layout(&c.conn).unwrap());
+        let disk = raw::on_disk(&path);
+        assert!(current_layout(&disk).unwrap());
         assert!(!dir.join("catalog.sqlite.rebuild").exists());
         let rows = |sql: &str| -> Vec<String> {
-            let mut stmt = c.conn.prepare(sql).unwrap();
+            let mut stmt = disk.prepare(sql).unwrap();
             stmt.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
         };
         // The user's own: the library, ratings, the queued turn, views and session, with the same file ids.
@@ -1628,8 +1633,7 @@ mod tests {
         assert_eq!(rows("SELECT a || '-' || b FROM pdq_pairs"), ["11-12"]);
         // What the layout added: the order keys as the scanner writes them, and each analysis's rotation and kind.
         let keys: Vec<(Vec<u8>, String, String)> = {
-            let mut stmt = c
-                .conn
+            let mut stmt = disk
                 .prepare("SELECT f.order_key, fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")
                 .unwrap();
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
@@ -1643,6 +1647,7 @@ mod tests {
         );
         // Analyses made from the file as it is stand; the file without one and the one changed since are pending.
         assert_eq!(rows("SELECT id || ':' || pending FROM files ORDER BY id"), ["11:0", "12:0", "13:1", "14:1"]);
+        drop(disk);
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1652,7 +1657,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "layout_source");
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions()).unwrap());
-        let fresh = Connection::open(&path).unwrap();
+        let fresh = raw::on_disk(&path);
         assert!(current_layout(&fresh).unwrap());
         // The same names and counts, the text before the size was added: the layout check must refuse it.
         let text = |name: &str| -> String {
@@ -1669,14 +1674,14 @@ mod tests {
             ))
             .unwrap();
         drop(fresh);
-        let earlier = Connection::open(&path).unwrap();
+        let earlier = raw::on_disk(&path);
         assert!(!current_layout(&earlier).unwrap());
         drop(earlier);
 
         let c = Catalog::prepare(&path, versions()).unwrap();
-        assert!(current_layout(&c.conn).unwrap());
-        let copied: String = c
-            .conn
+        let disk = raw::on_disk(&path);
+        assert!(current_layout(&disk).unwrap());
+        let copied: String = disk
             .query_row(
                 "SELECT group_concat(sql, ' ') FROM sqlite_schema WHERE name IN ('files_source_changed', 'thumb_sources')",
                 [],
@@ -1684,6 +1689,7 @@ mod tests {
             )
             .unwrap();
         assert!(copied.contains("old.size IS NOT new.size") && copied.contains("f.size, f.missing"), "{copied}");
+        drop(disk);
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
@@ -1751,9 +1757,7 @@ mod tests {
         let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         c.cancel_when(cancel.clone());
-        let long =
-            "WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i + 1 FROM n WHERE i < 100000) SELECT count(*) FROM n";
-        let run = || c.conn.query_row(long, [], |r| r.get::<_, i64>(0)).map_err(Error::from);
+        let run = || raw::slow_count(&c).map_err(Error::from);
         assert_eq!(run().unwrap(), 100_000);
         // Set between statements (SQLite's own interrupt would be lost there): every statement fails.
         cancel.store(true, Ordering::Relaxed);
@@ -1789,17 +1793,12 @@ mod tests {
     /// A catalog with one file in it.
     fn one_file() -> (Catalog, i64) {
         let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.conn
-            .execute_batch(
-                "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
-                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x');",
-            )
-            .unwrap();
+        raw::add_scan(&c, 1, "D:");
+        raw::add_folder(&c, 1, r"D:\x");
         fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]);
         (c, 1)
     }
 
-    /// Whether the import would analyze file `id`, and its change number (`files.seq`).
     /// A turn the file can't hold, written by the writer: the catalog keeps it.
     fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
         let job =
@@ -1807,16 +1806,20 @@ mod tests {
         writes::done(c, &job, writes::WriteEffect::KeptInCatalog(Turns::new(turns as u8))).unwrap();
     }
 
+    /// Whether the import would analyze file `id` now.
+    fn due(c: &Catalog, id: FileId) -> bool {
+        c.pending_import(false).unwrap().items.iter().any(|i| i.id == id)
+    }
+
+    /// Whether file `id` is due for the import, and its change number (`files.seq`).
     fn state(c: &Catalog, id: FileId) -> (bool, i64) {
-        c.conn
-            .query_row("SELECT pending, seq FROM files WHERE id = ?1", [id.get()], |r| Ok((r.get(0)?, r.get(1)?)))
-            .unwrap()
+        (due(c, id), raw::file_seq(c, id))
     }
 
     /// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
     fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) -> bool {
-        let tx = c.conn.transaction().unwrap();
-        let mut writer = ScanWriter::new(&tx, scan).unwrap();
+        let tx = c.tx().unwrap();
+        let mut writer = tx.scan_writer(scan).unwrap();
         let folder = writer.folder(r"D:\x").unwrap();
         let ext = Ext::of_name(name).unwrap();
         let changed = writer
@@ -1831,19 +1834,12 @@ mod tests {
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed() {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();
-        let row = |c: &Catalog| -> (i64, String, i64, i64, i64, Vec<u8>) {
-            c.conn
-                .query_row("SELECT last_scan, name, size, mtime, missing, order_key FROM files", [], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
-                })
-                .unwrap()
-        };
         let key = |name| pg_model::path::order_key_of(r"D:\x", name);
         let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(r"D:\x").unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
-        assert_eq!(row(&c), (scans[1], "a.jpg".into(), 10, 100, 0, key("a.jpg")));
+        assert_eq!(raw::file_row(&c), (scans[1], "a.jpg".into(), 10, 100, 0, key("a.jpg")));
         for (scan, name, size, mtime) in [
             (scans[2], "A.jpg", 10, 100),
             (scans[3], "b.jpg", 10, 100),
@@ -1851,16 +1847,16 @@ mod tests {
             (scans[5], "b.jpg", 11, 101),
         ] {
             assert!(scanned(&mut c, scan, name, size, mtime), "{name} {size} {mtime}");
-            assert_eq!(row(&c), (scan, name.into(), size as i64, mtime, 0, key(name)));
+            assert_eq!(raw::file_row(&c), (scan, name.into(), size as i64, mtime, 0, key(name)));
         }
         // Back from missing.
-        c.conn.execute("UPDATE files SET missing = 1", []).unwrap();
+        raw::set_missing(&c, FileId::new(1));
         assert!(scanned(&mut c, scans[6], "b.jpg", 11, 101));
-        assert_eq!(row(&c).4, 0);
+        assert_eq!(raw::file_row(&c).4, 0);
         // An order key made by an earlier rule is made again.
-        c.conn.execute("UPDATE files SET order_key = x'00'", []).unwrap();
+        raw::set_order_key(&c, FileId::new(1), &[0]);
         assert!(scanned(&mut c, scans[7], "b.jpg", 11, 101));
-        assert_eq!(row(&c).5, key("b.jpg"));
+        assert_eq!(raw::file_row(&c).5, key("b.jpg"));
         assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
     }
 
@@ -1871,24 +1867,19 @@ mod tests {
         let scan = c.begin_scan(r"D:\x").unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let stored = |c: &mut Catalog, item: &WorkItem| {
-            let tx = c.conn.transaction().unwrap();
-            let stored =
-                AnalysisWriter::new(&tx, versions().import).unwrap().store_failure(item, "a stand-in").unwrap();
+            let tx = c.tx().unwrap();
+            let stored = tx.analysis_writer(versions().import).unwrap().store_failure(item, "a stand-in").unwrap();
             tx.commit().unwrap();
             stored
         };
         let item = next_work(&c);
         // A write of the app's into it in progress: it may have been read part-written.
-        c.conn
-            .execute(
-                r"INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
-                  VALUES (?1, 'rating', 3, 0, 'D:\x\a.jpg.tmp', 3)",
-                [item.id.get()],
-            )
-            .unwrap();
+        writes::queue_rotation(&c, item.id, Turns::new(3)).unwrap();
+        let job = writes::next_ready(&c, 0).unwrap().unwrap();
+        writes::record_temp(&c, &job, r"D:\x\a.jpg.tmp", 3).unwrap();
         assert!(!stored(&mut c, &item));
-        assert!(state(&c, item.id).0, "still due");
-        c.conn.execute("DELETE FROM file_writes", []).unwrap();
+        assert!(due(&c, item.id), "still due");
+        writes::done(&c, &job, writes::WriteEffect::Nothing).unwrap();
         // Changed since it was listed.
         scanned(&mut c, scan, "a.jpg", 11, 101);
         assert!(!stored(&mut c, &item));
@@ -1900,7 +1891,7 @@ mod tests {
         assert!(!stored(&mut c, &unturned));
         // As listed.
         assert!(stored(&mut c, &listed));
-        assert!(!state(&c, item.id).0);
+        assert!(!due(&c, item.id));
     }
 
     #[test]
@@ -1909,30 +1900,22 @@ mod tests {
         // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
         use fixture::{File, insert};
         let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.conn
-            .execute_batch("INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0); INSERT INTO folders(id, path) VALUES (1, 'D:\\x');")
-            .unwrap();
+        raw::add_scan(&c, 1, r"D:\x");
+        raw::add_folder(&c, 1, r"D:\x");
         insert(&c, &[File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]);
-        c.conn
-            .execute_batch("INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed) VALUES (1, 1, 10, 100, 0, 'image', 0);")
-            .unwrap();
-        let seq =
-            || -> i64 { c.conn.query_row("SELECT seq FROM thumb_sources WHERE id = 1", [], |r| r.get(0)).unwrap() };
-        let before = seq();
-        c.conn.execute("UPDATE files SET size = 11 WHERE id = 1", []).unwrap();
-        assert!(seq() > before);
+        raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
+        let before = raw::thumb_source_seq(&c, FileId::new(1));
+        raw::set_size(&c, FileId::new(1), 11);
+        assert!(raw::thumb_source_seq(&c, FileId::new(1)) > before);
     }
 
     #[test]
     fn thumb_sources_is_the_analysed_files_with_their_folders() {
         use fixture::{File, insert};
         let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.conn
-            .execute_batch(
-                "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0);
-                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x'), (2, 'D:\\x\\sub');",
-            )
-            .unwrap();
+        raw::add_scan(&c, 1, r"D:\x");
+        raw::add_folder(&c, 1, r"D:\x");
+        raw::add_folder(&c, 2, r"D:\x\sub");
         insert(
             &c,
             &[
@@ -1942,47 +1925,24 @@ mod tests {
             ],
         );
         // File 1 analyzed, file 2 failed (still a source: the pass leaves it out), file 3 not analyzed (not a source).
-        c.conn
-            .execute_batch(
-                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error) VALUES
-                    (1, 1, 10, 100, 0, 'image', 0, NULL), (2, 1, 10, 100, 0, 'image', 0, 'unreadable');",
-            )
-            .unwrap();
-        let rows: Vec<(i64, String)> = c
-            .conn
-            .prepare("SELECT id, folder FROM thumb_sources ORDER BY id")
-            .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        assert_eq!(rows, [(1, r"D:\x".to_string()), (2, r"D:\x\sub".to_string())]);
+        raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
+        raw::insert_analysis(
+            &c,
+            &raw::AnalysisRow { error: Some("unreadable"), ..raw::AnalysisRow::image(2, 10, 100) },
+        );
+        assert_eq!(raw::thumb_sources(&c), [(1, r"D:\x".to_string()), (2, r"D:\x\sub".to_string())]);
         // The clock is the catalog's change number, as the pass reads it.
-        let clock: i64 = c.conn.query_row("SELECT seq FROM thumb_clock", [], |r| r.get(0)).unwrap();
-        let meta: i64 = c.conn.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0)).unwrap();
-        assert_eq!(clock, meta);
+        assert_eq!(raw::thumb_clock(&c), raw::meta_seq(&c));
         // The pass's shape over it, with a TEMP stub of the thumbnail cache's entries: a change number's range still
         // reads files_seq, and a file with no thumbnail yet is the one listed.
-        c.conn
-            .execute_batch(
-                "CREATE TEMP TABLE entries(file_id INTEGER, height INTEGER, mtime INTEGER, rotation INTEGER, UNIQUE(file_id, height));",
-            )
-            .unwrap();
+        raw::stub_thumb_entries(&c);
         let sql = "SELECT f.id FROM thumb_sources f LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
                    WHERE f.seq > ?2 AND f.missing = 0 AND f.error IS NULL AND f.analyzed_mtime = f.mtime
                      AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
                    ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF";
-        let plan: Vec<String> = c
-            .conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
-            .unwrap()
-            .query_map([100, -1], |r| r.get(3))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        assert!(plan.join("\n").contains("files_seq"), "{plan:?}");
-        let listed: Vec<i64> =
-            c.conn.prepare(sql).unwrap().query_map([100, -1], |r| r.get(0)).unwrap().map(Result::unwrap).collect();
+        let plan = raw::query_plan(&c, sql, [100, -1]);
+        assert!(plan.contains("files_seq"), "{plan:?}");
+        let listed = raw::rows_of(&c, sql, [100, -1], |r| r.get::<_, i64>(0));
         assert_eq!(listed, [1]);
     }
 
@@ -2001,8 +1961,8 @@ mod tests {
 
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
     fn analyzed(c: &mut Catalog, item: &WorkItem) {
-        let tx = c.conn.transaction().unwrap();
-        AnalysisWriter::new(&tx, versions().import).unwrap().store_failure(item, "a stand-in for an analysis").unwrap();
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_failure(item, "a stand-in for an analysis").unwrap();
         tx.commit().unwrap();
     }
 
@@ -2062,27 +2022,17 @@ mod tests {
             taken: None,
             media: a_jpeg(),
         };
-        let tx = c.conn.transaction().unwrap();
-        AnalysisWriter::new(&tx, versions().import)
-            .unwrap()
-            .store_analysis(&item, &stored_analysis(&analysis))
-            .unwrap();
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
         tx.commit().unwrap();
-        let cut = |c: &Catalog| -> [Option<i64>; 4] {
-            c.conn
-                .query_row("SELECT cut_left, cut_top, cut_right, cut_bottom FROM analysis", [], |r| {
-                    Ok([r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?])
-                })
-                .unwrap()
-        };
         // The import leaves them to the borders pass.
-        assert_eq!(cut(&c), [None; 4]);
+        assert_eq!(raw::cut_sides(&c), [None; 4]);
         let due = c.pending_borders().unwrap();
         assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
-        let tx = c.conn.transaction().unwrap();
-        BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         tx.commit().unwrap();
-        assert_eq!(cut(&c), [Some(0), Some(41), Some(0), Some(41)]);
+        assert_eq!(raw::cut_sides(&c), [Some(0), Some(41), Some(0), Some(41)]);
         assert_eq!(browse::read::border_sides(&c, item.id).unwrap(), found.sides);
         assert!(c.pending_borders().unwrap().is_empty());
 
@@ -2109,30 +2059,26 @@ mod tests {
         assert_eq!(list(&c, Query { border_marked: Some(true), ..Query::default() }).len(), 1);
 
         // A new detector: due again, without a new import; the mark stays.
-        c.conn.execute("UPDATE meta SET value = 0 WHERE key = 'borders_version'", []).unwrap();
-        set_borders_version(&c.conn, BORDERS_VERSION).unwrap();
+        raw::older_borders_version(&c);
+        raw::start_borders_version(&c);
         assert!(c.pending_import(false).unwrap().is_empty());
         let due = c.pending_borders().unwrap();
         assert_eq!(due.len(), 1);
-        let tx = c.conn.transaction().unwrap();
-        BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
         tx.commit().unwrap();
-        assert_eq!(cut(&c), [Some(0); 4]);
+        assert_eq!(raw::cut_sides(&c), [Some(0); 4]);
         assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
         assert!(c.pending_borders().unwrap().is_empty());
         assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::None);
-        let marks: i64 = c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap();
-        assert_eq!(marks, 1);
+        assert_eq!(raw::border_marks(&c), 1);
 
         // Analyzed again (the file changed): the old borders go, the new ones are due.
-        let tx = c.conn.transaction().unwrap();
-        BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
-        AnalysisWriter::new(&tx, versions().import)
-            .unwrap()
-            .store_analysis(&item, &stored_analysis(&analysis))
-            .unwrap();
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
         tx.commit().unwrap();
-        assert_eq!(cut(&c), [None; 4]);
+        assert_eq!(raw::cut_sides(&c), [None; 4]);
         assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
         assert_eq!(c.pending_borders().unwrap().len(), 1);
     }
@@ -2150,8 +2096,8 @@ mod tests {
         let files = [("b.jpg", 1, None), ("c.jpg", 1, Some([0, 30, 0, 0])), ("d.jpg", 6, Some([60, 0, 0, 0]))];
         let files = files.into_iter().chain([("e.jpg", 1, Some([0, 90, 0, 0]))]);
         for (n, (name, orientation, cut)) in files.enumerate() {
-            let tx = c.conn.transaction().unwrap();
-            let mut writer = ScanWriter::new(&tx, scan).unwrap();
+            let tx = c.tx().unwrap();
+            let mut writer = tx.scan_writer(scan).unwrap();
             let folder = writer.folder(r"D:\x").unwrap();
             let ext = Ext::of_name(name).unwrap();
             let file = ScannedFile { identity: FileIdentity::new(1, 10 + n as u64), name, ext, size: 10, mtime: 100 };
@@ -2174,12 +2120,9 @@ mod tests {
                 taken: None,
                 media: a_jpeg(),
             };
-            let tx = c.conn.transaction().unwrap();
-            AnalysisWriter::new(&tx, versions().import)
-                .unwrap()
-                .store_analysis(&item, &stored_analysis(&analysis))
-                .unwrap();
-            BordersWriter::new(&tx).unwrap().store_borders(&item, Some(&borders)).unwrap();
+            let tx = c.tx().unwrap();
+            tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+            tx.borders_writer().unwrap().store_borders(&item, Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {
                 c.set_border_mark(item.id, true).unwrap();
@@ -2204,24 +2147,24 @@ mod tests {
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let first = next_work(&c);
         let id = first.id;
-        assert!(state(&c, id).0);
+        assert!(due(&c, id));
         // Analyzed as it is: done. A failure counts as done; only --retry redoes it.
         analyzed(&mut c, &first);
-        assert!(!state(&c, id).0);
+        assert!(!due(&c, id));
         assert!(c.pending_import(false).unwrap().is_empty());
         assert_eq!(c.pending_import(true).unwrap().len(), 1);
         // A rescan that changes nothing changes nothing, for the import or the thumbnails.
-        let seq = state(&c, id).1;
+        let seq = raw::file_seq(&c, id);
         scanned(&mut c, scan, "a.jpg", 10, 100);
         assert_eq!(state(&c, id), (false, seq));
         // Changed while it was being analyzed: what's stored is of the old file.
         let old = c.pending_import(true).unwrap().items.remove(0);
         scanned(&mut c, scan, "a.jpg", 11, 101);
         analyzed(&mut c, &old);
-        assert!(state(&c, id).0);
+        assert!(due(&c, id));
         let current = next_work(&c);
         analyzed(&mut c, &current);
-        assert!(!state(&c, id).0);
+        assert!(!due(&c, id));
         // Turned in the catalog: analyzed again with the turn, and the thumbnails' source moved on.
         turn_kept(&c, id, 1);
         let (pending, after) = state(&c, id);
@@ -2238,9 +2181,9 @@ mod tests {
             writes::done(c, &job, writes::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
         };
         rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
-        assert!(!state(&c, id).0);
+        assert!(!due(&c, id));
         rewritten(&c, (12, 102), (13, 103), None);
-        assert!(state(&c, id).0);
+        assert!(due(&c, id));
         let rewritten = next_work(&c);
         analyzed(&mut c, &rewritten);
         // Renamed to another kind: analyzed again as that.
@@ -2248,32 +2191,29 @@ mod tests {
         let renamed = next_work(&c);
         assert_eq!(renamed.kind, Kind::Video);
         analyzed(&mut c, &renamed);
-        assert!(!state(&c, id).0);
+        assert!(!due(&c, id));
         // Gone, then back: nothing to import, but the thumbnails look at it both times.
-        let seq = state(&c, id).1;
+        let seq = raw::file_seq(&c, id);
         let next = c.begin_scan(r"D:\x").unwrap();
         c.mark_missing(r"D:\x", next, &[]).unwrap();
-        let gone = state(&c, id).1;
+        let gone = raw::file_seq(&c, id);
         scanned(&mut c, next, "a.mp4", 13, 103);
         assert_eq!(c.pending_import(false).unwrap().len(), 0);
-        assert!(seq < gone && gone < state(&c, id).1);
+        assert!(seq < gone && gone < raw::file_seq(&c, id));
     }
 
     #[test]
     fn a_folder_the_scan_could_not_list_keeps_its_files() {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
-            let tx = c.conn.transaction().unwrap();
-            let mut writer = ScanWriter::new(&tx, scan).unwrap();
+            let tx = c.tx().unwrap();
+            let mut writer = tx.scan_writer(scan).unwrap();
             let folder = writer.folder(folder).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let identity = FileIdentity::new(1, file_ref);
             writer.upsert_file(&folder, &ScannedFile { identity, name, ext, size: 1, mtime: 1 }).unwrap();
             drop(writer);
             tx.commit().unwrap();
-        };
-        let missing = |c: &Catalog| -> i64 {
-            c.conn.query_row("SELECT count(*) FROM files WHERE missing = 1", [], |r| r.get(0)).unwrap()
         };
         let first = c.begin_scan(r"D:\x").unwrap();
         put(&mut c, first, r"D:\x\ok", "a.jpg", 1);
@@ -2284,24 +2224,23 @@ mod tests {
         let next = c.begin_scan(r"D:\x").unwrap();
         put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
         assert_eq!(c.mark_missing(r"D:\x", next, &[r"D:\x\locked".to_string()]).unwrap(), 0);
-        assert_eq!(missing(&c), 0);
+        assert_eq!(raw::missing_count(&c), 0);
 
         // Once it can be listed again, a scan that doesn't see its files marks them.
         let later = c.begin_scan(r"D:\x").unwrap();
         put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
         assert_eq!(c.mark_missing(r"D:\x", later, &[]).unwrap(), 2);
-        assert_eq!(missing(&c), 2);
+        assert_eq!(raw::missing_count(&c), 2);
     }
 
     #[test]
     fn files_marked_are_imported_again_once() {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.conn
-            .execute_batch(
-                "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
-                 INSERT INTO folders(id, path) VALUES (1, 'D:\\x'), (2, 'D:\\x\\y'), (3, 'D:\\xy'), (4, 'D:\\x\\y\\z');",
-            )
-            .unwrap();
+        raw::add_scan(&c, 1, "D:");
+        raw::add_folder(&c, 1, r"D:\x");
+        raw::add_folder(&c, 2, r"D:\x\y");
+        raw::add_folder(&c, 3, r"D:\xy");
+        raw::add_folder(&c, 4, r"D:\x\y\z");
         let files = [(1, 1, "a.jpg"), (2, 2, "b.jpg"), (3, 3, "c.jpg"), (4, 4, "d.jpg"), (5, 4, "e.jpg")];
         let files =
             files.map(|(id, folder, name)| fixture::File::new(FileId::new(id), FolderId::new(folder), name, 10, 100));
@@ -2310,7 +2249,7 @@ mod tests {
             analyzed(&mut c, &item);
         }
         // Analyzed, then gone.
-        c.conn.execute("UPDATE files SET missing = 1 WHERE id = 5", []).unwrap();
+        raw::set_missing(&c, FileId::new(5));
         assert!(c.pending_import(false).unwrap().is_empty());
 
         // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
@@ -2321,10 +2260,10 @@ mod tests {
         assert!(c.files_under(r"D:\q").unwrap().is_empty());
 
         // Marked: due, whatever their analysis, the missing one left; the change number doesn't move.
-        let seq = state(&c, FileId::new(2)).1;
+        let seq = raw::file_seq(&c, FileId::new(2));
         assert_eq!(c.mark_pending(&[FileId::new(2), FileId::new(4), FileId::new(5)]).unwrap(), 2);
         assert_eq!(state(&c, FileId::new(2)), (true, seq));
-        assert!(state(&c, FileId::new(4)).0 && !state(&c, FileId::new(5)).0 && !state(&c, FileId::new(1)).0);
+        assert!(due(&c, FileId::new(4)) && !due(&c, FileId::new(5)) && !due(&c, FileId::new(1)));
         let work = c.pending_import(false).unwrap();
         assert_eq!(work.items.iter().map(|i| i.id).collect::<Vec<_>>(), [FileId::new(2), FileId::new(4)]);
         // Analyzed again, as they are: done.
@@ -2340,50 +2279,24 @@ mod tests {
         let item = next_work(&c);
         analyzed(&mut c, &item);
         // As an older build left it: its import version, and analyses made by it.
-        c.conn
-            .execute_batch(&format!(
-                "UPDATE meta SET value = {0} WHERE key = 'import_version';
-                 UPDATE analysis SET version = {0};",
-                IMPORT_VERSION - 1
-            ))
-            .unwrap();
+        raw::older_import_version(&c);
         let (pending, seq) = state(&c, item.id);
         assert!(!pending, "current for that build");
-        set_import_version(&c.conn, IMPORT_VERSION).unwrap();
+        raw::start_import_version(&c);
         let (pending, after) = state(&c, item.id);
         assert!(pending && after > seq);
         // Done once.
-        set_import_version(&c.conn, IMPORT_VERSION).unwrap();
-        assert_eq!(state(&c, item.id).1, after);
+        raw::start_import_version(&c);
+        assert_eq!(raw::file_seq(&c, item.id), after);
     }
 
     #[test]
     fn a_round_with_nothing_to_import_reads_one_index() {
         let (c, _) = one_file();
-        let plan: Vec<String> = c
-            .conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_import_sql(false)))
-            .unwrap()
-            .query_map([], |r| r.get(3))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        let plan = plan.join("\n");
+        let plan = raw::query_plan(&c, pending_import_sql(false), []);
         assert!(plan.contains("USING INDEX files_to_import") && !plan.contains("TEMP B-TREE"), "{plan}");
-        let retry: Vec<String> = c
-            .conn
-            .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_import_sql(true)))
-            .unwrap()
-            .query_map([], |r| r.get(3))
-            .unwrap()
-            .collect::<rusqlite::Result<_>>()
-            .unwrap();
-        let retry = retry.join("\n");
+        let retry = raw::query_plan(&c, pending_import_sql(true), []);
         assert!(retry.contains("files_to_import") && retry.contains("analysis_failed"), "{retry}");
-    }
-
-    fn rating(c: &Catalog, id: i64) -> Option<u8> {
-        c.conn.query_row("SELECT rating FROM ratings WHERE file_id = ?1", [id], |r| r.get(0)).optional().unwrap()
     }
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
@@ -2391,36 +2304,36 @@ mod tests {
         writes::set_rating(c, FileId::new(id), stars, false).unwrap();
     }
 
+    /// The import's sync of the file's rating, in a transaction of its own.
+    fn sync_file(c: &mut Catalog, id: i64, in_file: Option<Rating>) {
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().sync_file_rating(FileId::new(id), in_file).unwrap();
+        tx.commit().unwrap();
+    }
+
     #[test]
     fn three_way_rating_sync() {
-        let (c, id) = one_file();
-        let sync = |in_file| {
-            let tx = c.conn.unchecked_transaction().unwrap();
-            AnalysisWriter::new(&tx, versions().import).unwrap().sync_file_rating(FileId::new(id), in_file).unwrap();
-            tx.commit().unwrap();
-        };
+        let (mut c, id) = one_file();
         // First import of a file rated elsewhere (ImageRater, Explorer): adopted.
-        sync(Rating::new(4));
-        assert_eq!(rating(&c, id), Some(4));
+        sync_file(&mut c, id, Rating::new(4));
+        assert_eq!(raw::rating(&c, id), Some(4));
         // Rated in the app, not written back (or the format can't hold it): the file still says 4, as known, so
         // re-imports keep the catalog's 2.
         set_rating(&c, id, 2);
-        sync(Rating::new(4));
-        assert_eq!(rating(&c, id), Some(2));
+        sync_file(&mut c, id, Rating::new(4));
+        assert_eq!(raw::rating(&c, id), Some(2));
         // Another program changes the file's rating: that is newer, and adopted.
-        sync(Rating::new(5));
-        assert_eq!(rating(&c, id), Some(5));
+        sync_file(&mut c, id, Rating::new(5));
+        assert_eq!(raw::rating(&c, id), Some(5));
         // Another program clears it (writes 0, or removes it): the catalog follows.
-        sync(Rating::new(0));
-        assert_eq!(rating(&c, id), None);
-        sync(None);
-        assert_eq!(rating(&c, id), None);
-        // A write of the app's own still queued wins over the file.
-        set_rating(&c, id, 3);
-        c.conn
-            .execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rating', 3, 0)", [id])
-            .unwrap();
-        sync(Rating::new(1));
-        assert_eq!(rating(&c, id), Some(3));
+        sync_file(&mut c, id, Rating::new(0));
+        assert_eq!(raw::rating(&c, id), None);
+        sync_file(&mut c, id, None);
+        assert_eq!(raw::rating(&c, id), None);
+        // A write of the app's own still queued wins over the file: a JPEG the app rates 3, queued for the file.
+        raw::insert_analysis(&c, &raw::AnalysisRow { format: Some("jpeg"), ..raw::AnalysisRow::image(id, 10, 100) });
+        writes::set_rating(&c, FileId::new(id), Rating::new(3), true).unwrap();
+        sync_file(&mut c, id, Rating::new(1));
+        assert_eq!(raw::rating(&c, id), Some(3));
     }
 }

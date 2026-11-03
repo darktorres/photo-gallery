@@ -22,12 +22,13 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
 use pg_catalog::Catalog;
-use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect, WriteKind};
+use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
+use pg_model::write::WriteKind;
 use pg_thumbcache::ThumbCache;
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
@@ -289,7 +290,7 @@ impl Inner {
         };
 
         // Step 2: the new content is complete; record it, then copy it in. From here until `done` records the write,
-        // readers know the file may be part-written (browse::read::FileState::writing).
+        // readers know the file may be part-written (pg_model::state::FileState::writing).
         writes::record_temp(catalog, job, &temp, job.value)?;
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;

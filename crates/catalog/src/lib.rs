@@ -1138,8 +1138,8 @@ impl Catalog {
         Ok(())
     }
 
-    /// The file's state as the readers check it (`browse::read::FileState`), `None` when it isn't in the catalog.
-    pub fn file_state(&self, file_id: FileId) -> Result<Option<browse::read::FileState>> {
+    /// The file's state as the readers check it (`pg_model::state::FileState`), `None` when it isn't in the catalog.
+    pub fn file_state(&self, file_id: FileId) -> Result<Option<pg_model::state::FileState>> {
         browse::read::file_state(self, file_id)
     }
 
@@ -1802,7 +1802,8 @@ mod tests {
     /// Whether the import would analyze file `id`, and its change number (`files.seq`).
     /// A turn the file can't hold, written by the writer: the catalog keeps it.
     fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
-        let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: turns, temp: None, attempts: 0 };
+        let job =
+            writes::Job { file_id: id, kind: pg_model::write::WriteKind::Turns, value: turns, temp: None, attempts: 0 };
         writes::done(c, &job, writes::WriteEffect::KeptInCatalog(Turns::new(turns as u8))).unwrap();
     }
 
@@ -2231,7 +2232,8 @@ mod tests {
         // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
         let rewritten = |c: &Catalog, before, after, metadata_only| {
             // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
-            let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
+            let job =
+                writes::Job { file_id: id, kind: pg_model::write::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
             let rewrite = writes::Rewrite { before, after, metadata_only };
             writes::done(c, &job, writes::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
         };

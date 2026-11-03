@@ -10,6 +10,7 @@ use pg_model::ids::{FileId, FolderId};
 use pg_model::media::Ext;
 use pg_model::path::folder_key;
 use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};
+use pg_model::state::FileState;
 use pg_model::turns::Turns;
 use rusqlite::params_from_iter;
 

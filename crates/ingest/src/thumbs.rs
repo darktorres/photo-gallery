@@ -106,7 +106,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             match result {
                 // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
                 // decides), nor being rewritten by the app
-                // (browse::read::FileState). Otherwise tried again by the next pass, from its change number on.
+                // (pg_model::state::FileState). Otherwise tried again by the next pass, from its change number on.
                 Ok(data) => match catalog.file_state(item.id)? {
                     Some(s)
                         if !s.writing

@@ -15,33 +15,12 @@ use pg_model::ids::FileId;
 use pg_model::orientation::turns_swap;
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
+use pg_model::write::WriteKind;
 
 use super::{DELETE_FILE_RATING, SET_FILE_RATING};
 
 /// Failed writes are retried at most this many times (offline drives retry without counting).
 pub const MAX_ATTEMPTS: i64 = 5;
-
-/// What a queued write changes in the file.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, strum::EnumString, strum::IntoStaticStr)]
-pub enum WriteKind {
-    /// The file's rating (`XMP:Rating`).
-    #[strum(serialize = "rating")]
-    Rating,
-    /// Quarter turns clockwise, in the file's pixels or its orientation tag (the queue's key is `rotation`).
-    #[strum(serialize = "rotation")]
-    Turns,
-}
-
-impl WriteKind {
-    /// The kind as the queue stores it.
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<WriteKind> {
-        key.parse().ok()
-    }
-}
 
 /// A queued write, as the writer takes it.
 #[derive(Clone, Debug, PartialEq)]
@@ -207,7 +186,7 @@ pub fn recent_errors(catalog: &Catalog, limit: usize) -> Result<Vec<String>> {
 }
 
 /// The new content of a job is complete at `temp`, carrying `value`. The copy into the file comes next; until `done`,
-/// readers see the file as being written (`browse::read::FileState::writing`).
+/// readers see the file as being written (`pg_model::state::FileState::writing`).
 pub fn record_temp(catalog: &Catalog, job: &Job, temp: &str, value: i64) -> Result<()> {
     let conn = &catalog.conn;
     conn.execute(

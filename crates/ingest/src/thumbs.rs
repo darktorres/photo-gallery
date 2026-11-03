@@ -8,7 +8,6 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_catalog::Catalog;
-use pg_platform::verbatim::verbatim;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
@@ -87,7 +86,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 Some(at) => {
                     let path = work.path(item.path);
                     maker
-                        .load_frame(Path::new(&*verbatim(&path)), at, item.source.rotation)
+                        .load_frame(Path::new(&path), at, item.source.rotation)
                         .and_then(|()| maker.encode_frame_into(height as usize, &mut out))
                 }
                 None => maker.make_into(bytes, height as usize, item.source.rotation, &mut out),

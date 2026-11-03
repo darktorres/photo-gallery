@@ -7,7 +7,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use pg_model::turns::Turns;
-use std::io::Read;
+use pg_platform::verbatim::verbatim;
 use std::path::Path;
 use std::sync::Once;
 
@@ -56,7 +56,10 @@ pub struct Probe {
 
 fn open(path: &Path) -> Result<ffmpeg::format::context::Input> {
     init();
-    ffmpeg::format::input(path).with_context(|| format!("opening {}", path.display()))
+    // FFmpeg takes a path past the 260-character limit only in its verbatim form, so the callers' plain paths are made
+    // verbatim here.
+    let text = path.to_str().with_context(|| format!("{} is not Unicode", path.display()))?;
+    ffmpeg::format::input(Path::new(&*verbatim(text))).with_context(|| format!("opening {}", path.display()))
 }
 
 /// The orientation (EXIF 1–8) that shows the stream as its display matrix asks. The matrix maps stored to shown
@@ -243,21 +246,6 @@ fn to_rgb(mut src: frame::Video, out: &mut Rgb) -> Result<()> {
     }
     (out.width, out.height) = (dw as usize, h as usize);
     Ok(())
-}
-
-/// BLAKE3 of a file, streamed (videos aren't read into memory whole).
-pub fn file_hash(path: &Path) -> Result<[u8; 32]> {
-    let mut file = std::fs::File::open(path).with_context(|| format!("reading {}", path.display()))?;
-    let mut hasher = blake3::Hasher::new();
-    let mut buf = vec![0u8; 1 << 20];
-    loop {
-        let n = file.read(&mut buf)?;
-        if n == 0 {
-            break;
-        }
-        hasher.update(&buf[..n]);
-    }
-    Ok(*hasher.finalize().as_bytes())
 }
 
 #[cfg(test)]

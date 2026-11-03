@@ -12,7 +12,6 @@ use pg_dedup::Pairer;
 use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
 use pg_model::pdq::MIN_QUALITY;
-use pg_platform::verbatim::verbatim;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
@@ -98,7 +97,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         |analyzer, i, bytes| {
             if video(i) {
                 let path = work.path(items[i].path);
-                pg_analysis::analyze::video(Path::new(&*verbatim(&path)), items[i].rotation, analyzer)
+                pg_analysis::analyze::video(Path::new(&path), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)
             }

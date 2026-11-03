@@ -1414,6 +1414,7 @@ dependencies = [
  "pg-codec",
  "pg-metadata",
  "pg-model",
+ "pg-testkit",
  "pg-video",
  "thumbhash",
  "xxhash-rust",
@@ -1647,10 +1648,10 @@ name = "pg-video"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "blake3",
  "ffmpeg-next",
  "pg-codec",
  "pg-model",
+ "pg-platform",
 ]
 
 [[package]]

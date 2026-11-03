@@ -4,6 +4,8 @@
 use anyhow::{Context, Result};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
+use std::fs::File;
+use std::io;
 use std::path::Path;
 
 use crate::borders::{self, Detector};
@@ -33,8 +35,17 @@ const PDQ_SIDE: usize = 512;
 /// ThumbHash input limit (the format's own maximum).
 const THUMBHASH_SIDE: usize = 100;
 
+/// The BLAKE3 of a file's bytes, loaded.
 pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
     *blake3::hash(bytes).as_bytes()
+}
+
+/// [`file_hash`] of a file streamed from `path`, for a video (not read whole): the same digest, the hasher reading the
+/// file in chunks.
+pub fn file_hash_of(path: &Path) -> io::Result<[u8; 32]> {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update_reader(File::open(path)?)?;
+    Ok(*hasher.finalize().as_bytes())
 }
 
 /// A worker's buffers for one file's decode, scaled copies and hashes, kept from file to file (a file larger than
@@ -187,7 +198,7 @@ pub fn video(path: &Path, turns: Turns, analyzer: &mut Analyzer) -> Result<Analy
 }
 
 fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis> {
-    let file_hash = pg_video::file_hash(path)?;
+    let file_hash = file_hash_of(path).with_context(|| format!("reading {}", path.display()))?;
     let p = pg_video::probe(path)?;
     let poster = pg_video::poster_ms(p.duration_ms);
     pg_video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
@@ -210,6 +221,17 @@ fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A streamed file (a video) hashes as its loaded bytes do: one digest for both ways in.
+    #[test]
+    fn a_streamed_file_hashes_as_its_bytes_do() {
+        let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_analysis", "analysis");
+        let bytes: Vec<u8> = (0..3_000_000u32).map(|i| (i.wrapping_mul(2_654_435_761) >> 24) as u8).collect();
+        let path = dir.join("streamed.bin");
+        std::fs::write(&path, &bytes).unwrap();
+        assert_eq!(file_hash_of(&path).unwrap(), file_hash(&bytes));
+        assert!(file_hash_of(&dir.join("missing.bin")).is_err());
+    }
 
     /// The model writes the longest ThumbHash as a literal; it must be the encoder's own length.
     #[test]

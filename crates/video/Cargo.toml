@@ -12,6 +12,6 @@ workspace = true
 [dependencies]
 pg-codec = { path = "../codec" }
 pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
 anyhow.workspace = true
-blake3.workspace = true
 ffmpeg-next.workspace = true

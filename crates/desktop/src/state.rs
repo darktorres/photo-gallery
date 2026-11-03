@@ -33,7 +33,6 @@ use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_model::orientation::Orientation;
-use pg_platform::verbatim::verbatim;
 use pg_render::maker::Maker;
 use pg_thumbcache::{self as thumbs, ThumbCache};
 
@@ -221,7 +220,7 @@ pub fn thumbnail(file_id: FileId, height: u32, named: Option<Named>, jpeg: &mut 
         };
         let made = if let Some(at) = src.poster_ms {
             // A video: its poster frame.
-            match with_maker(|m| Ok(m.load_frame(Path::new(&*verbatim(&src.path)), at, current.rotation)))? {
+            match with_maker(|m| Ok(m.load_frame(Path::new(&src.path), at, current.rotation)))? {
                 Ok(()) => with_maker(|m| m.encode_frame(height as usize))?,
                 Err(e) => return Ok(Found::Offline(e, kept_smaller)),
             }
@@ -384,7 +383,7 @@ fn decode(file_id: FileId, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, 
     }
     let (full, image) = if let Some(at) = src.poster_ms {
         // A video: its poster frame stands for it until it plays.
-        let frame = pg_video::frame(Path::new(&*verbatim(&src.path)), at, rotation)?;
+        let frame = pg_video::frame(Path::new(&src.path), at, rotation)?;
         ((frame.width, frame.height), Arc::new(frame))
     } else {
         let decoded = with_maker(|m| {

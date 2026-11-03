@@ -11,7 +11,7 @@ use pg_catalog::Catalog;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
-use pg_jobs::control::Control;
+use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 200;
@@ -50,7 +50,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
     let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
     let (mut tried, mut first_failed) = (0, None);
-    ctl.begin("thumbs", format!("{height} px"), items.len() as u64);
+    ctl.begin(Phase::Thumbs { height }, items.len() as u64);
 
     let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
         let n = batch.len();

@@ -37,7 +37,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop-roots");
     let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
-    let ctl = Control::new(false);
+    let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
 
     // Two folders, both called "images", with different pictures (the same bars, so both are cut the same way).

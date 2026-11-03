@@ -14,9 +14,7 @@ use pg_model::ids::FileId;
 use pg_model::turns::Turns;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
+use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
@@ -25,6 +23,8 @@ use pg_catalog::Catalog;
 use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
+use pg_jobs::events::Watch;
+use pg_jobs::service::{Service, Waker, Woke};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
@@ -47,109 +47,73 @@ pub struct WriteStatus {
 struct Inner {
     catalog_path: PathBuf,
     thumbs: &'static ThumbCache,
-    wake: (Mutex<bool>, Condvar),
-    status: Mutex<WriteStatus>,
-    /// Files whose pixels changed (turned), so the app reloads them.
-    turned: AtomicU64,
-    on_pixels_changed: Box<dyn Fn() + Send + Sync>,
-    stop: AtomicBool,
+    status: Watch<WriteStatus>,
+    /// Files turned so far: their pixels changed, so the app reloads them and the job re-analyzes them.
+    turned: Watch<u64>,
 }
 
+/// The writer thread: wakes for the queue, and rechecks it every `IDLE_CHECK` (retries, offline drives).
 pub struct Writer {
     inner: Arc<Inner>,
-    thread: Mutex<Option<JoinHandle<()>>>,
+    service: Service,
 }
 
 impl Writer {
-    /// Start the writer thread. `on_pixels_changed` runs after a file was turned: its analysis is stale, so the
-    /// background job should run.
-    pub fn start(
-        catalog_path: PathBuf,
-        thumbs: &'static ThumbCache,
-        on_pixels_changed: impl Fn() + Send + Sync + 'static,
-    ) -> Writer {
-        let inner = Arc::new(Inner {
-            catalog_path,
-            thumbs,
-            wake: (Mutex::new(true), Condvar::new()),
-            status: Mutex::new(WriteStatus::default()),
-            turned: AtomicU64::new(0),
-            on_pixels_changed: Box::new(on_pixels_changed),
-            stop: AtomicBool::new(false),
-        });
+    /// Start the writer thread.
+    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache) -> Writer {
+        let inner =
+            Arc::new(Inner { catalog_path, thumbs, status: Watch::new(WriteStatus::default()), turned: Watch::new(0) });
         let job = inner.clone();
-        let thread =
-            std::thread::Builder::new().name("file writer".into()).spawn(move || job.run()).expect("spawn writer");
-        Writer { inner, thread: Mutex::new(Some(thread)) }
+        let service = Service::start("file writer", move |waker| job.run(waker));
+        Writer { inner, service }
     }
 
     /// Something was queued.
     pub fn wake(&self) {
-        *self.inner.wake.0.lock().unwrap() = true;
-        self.inner.wake.1.notify_one();
+        self.service.wake();
     }
 
     pub fn status(&self) -> WriteStatus {
-        self.inner.status.lock().unwrap().clone()
+        self.inner.status.get()
     }
 
     /// Counts files turned so far, for the app to notice.
     pub fn turned(&self) -> u64 {
-        self.inner.turned.load(Ordering::Relaxed)
+        self.inner.turned.get()
     }
 
     /// Stop the thread after the write in progress (a queued write waits for the next start), and wait for it.
     /// Idempotent; dropping the writer does it too.
     pub fn stop(&self) {
-        self.inner.stop.store(true, Ordering::Relaxed);
-        self.wake();
-        if let Some(t) = self.thread.lock().unwrap().take() {
-            let _ = t.join();
-        }
-    }
-}
-
-impl Drop for Writer {
-    fn drop(&mut self) {
-        self.stop();
+        self.service.stop();
     }
 }
 
 impl Inner {
-    fn run(&self) {
+    fn run(&self, waker: &Waker<'_>) {
         let mut exiftool: Option<ExifTool> = None;
         // One connection for every drain; after a drain that failed, a new one.
         let mut catalog: Option<Catalog> = None;
-        loop {
-            {
-                let (lock, cvar) = &self.wake;
-                let mut woken = lock.lock().unwrap();
-                if !*woken {
-                    woken = cvar.wait_timeout(woken, IDLE_CHECK).unwrap().0;
-                }
-                *woken = false;
-            }
-            if self.stop.load(Ordering::Relaxed) {
-                return;
-            }
+        while waker.wait(Some(IDLE_CHECK)) != Woke::Quit {
             let drained = catalog.take().map_or_else(|| Catalog::open(&self.catalog_path), Ok).and_then(|c| {
-                self.drain(&c, &mut exiftool)?;
+                self.drain(waker, &c, &mut exiftool)?;
                 catalog = Some(c);
                 Ok(())
             });
             if let Err(e) = drained {
-                self.status.lock().unwrap().error = Some(format!("{e:#}"));
+                self.status.update(|s| s.error = Some(format!("{e:#}")));
             }
         }
     }
 
     /// Work through the queue until nothing is ready; then wait for what is still settling.
-    fn drain(&self, catalog: &Catalog, exiftool: &mut Option<ExifTool>) -> Result<()> {
+    fn drain(&self, waker: &Waker<'_>, catalog: &Catalog, exiftool: &mut Option<ExifTool>) -> Result<()> {
         loop {
-            if self.stop.load(Ordering::Relaxed) {
+            if waker.quitting() {
                 return Ok(());
             }
-            self.status.lock().unwrap().queued = writes::remaining(catalog)?;
+            let queued = writes::remaining(catalog)?;
+            self.status.update(|s| s.queued = queued);
             // Finishing interrupted copies first; then the oldest settled change (`writes::next_ready`).
             let Some(job) = writes::next_ready(catalog, SETTLE_SECS)? else {
                 if writes::attemptable(catalog)? {
@@ -166,15 +130,16 @@ impl Inner {
                     let _ = std::fs::remove_file(temp);
                 }
                 writes::drop_gone(catalog, &job)?;
-                self.status.lock().unwrap().error = Some(format!(
+                let message = format!(
                     "A queued {} was dropped: file {} is not in the library",
                     job.kind.key(),
                     job.file_id.get()
-                ));
+                );
+                self.status.update(|s| s.error = Some(message));
                 continue;
             }
             match self.process(catalog, &job, exiftool) {
-                Ok(()) => self.status.lock().unwrap().error = None,
+                Ok(()) => self.status.update(|s| s.error = None),
                 Err(e) => {
                     // Offline: the drive (or the file's folder with it) is not there, and the job waits for it. A
                     // missing file on a drive that is there is a failure, counted like any other.
@@ -186,7 +151,7 @@ impl Inner {
                         });
                     let message = format!("{e:#}");
                     writes::failed(catalog, &job, &message, offline)?;
-                    self.status.lock().unwrap().error = Some(message);
+                    self.status.update(|s| s.error = Some(message));
                     if offline {
                         // Leave it for the next idle check rather than spinning on it.
                         return Ok(());
@@ -327,8 +292,7 @@ impl Inner {
     }
 
     fn pixels_changed(&self) {
-        self.turned.fetch_add(1, Ordering::Relaxed);
-        (self.on_pixels_changed)();
+        self.turned.update(|t| *t += 1);
     }
 }
 

@@ -455,7 +455,7 @@ mod tests {
                 true
             },
             &opts,
-            &Control::new(false),
+            &Control::new(),
             || Ok(()),
             |_, i, bytes| {
                 std::thread::sleep(std::time::Duration::from_micros(200));

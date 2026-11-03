@@ -14,7 +14,7 @@ use pg_platform::verbatim::verbatim_wide;
 
 use crate::writeback::{exiftool_program, stat};
 use pg_exiftool::ExifTool;
-use pg_jobs::control::Control;
+use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
 
 pub struct Stats {
@@ -69,7 +69,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
         return Ok(stats);
     }
 
-    ctl.begin("crop", folder.clone(), jobs.len() as u64);
+    ctl.begin(Phase::Crop, jobs.len() as u64);
     let mut done = vec![false; jobs.len()];
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(

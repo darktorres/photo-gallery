@@ -17,7 +17,7 @@ use pg_model::detection::{self, Side};
 use pg_model::media::{Ext, Kind};
 use pg_platform::verbatim::verbatim_wide;
 
-use pg_jobs::control::Control;
+use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 500;
@@ -35,7 +35,7 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     if items.is_empty() {
         return Ok(stats);
     }
-    ctl.begin("borders", String::new(), items.len() as u64);
+    ctl.begin(Phase::Borders, items.len() as u64);
     let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
     let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
         let tx = catalog.tx()?;
@@ -138,7 +138,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     let files = image_files(paths)?;
     let mut rows: Vec<(usize, String)> = Vec::with_capacity(files.len());
     let mut stats = ReportStats { files: 0, borders: 0, rejected: 0, skipped: 0, errors: 0, seconds: 0.0 };
-    ctl.begin("borders", String::new(), files.len() as u64);
+    ctl.begin(Phase::Borders, files.len() as u64);
     pipeline::run(
         &files,
         |file, wide| {

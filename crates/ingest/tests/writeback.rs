@@ -91,7 +91,7 @@ fn ratings_and_turns_reach_the_files() {
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
-    let ctl = Control::new(false);
+    let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
@@ -102,7 +102,7 @@ fn ratings_and_turns_reach_the_files() {
     let thumbs: &'static ThumbCache = Box::leak(Box::new(
         ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    let writer = Writer::start(catalog_path.clone(), thumbs);
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
@@ -213,7 +213,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
-    let ctl = Control::new(false);
+    let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
@@ -243,7 +243,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     let thumbs: &'static ThumbCache = Box::leak(Box::new(
         ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    let writer = Writer::start(catalog_path.clone(), thumbs);
     writer.wake();
 
     // Given up: the temp is gone from the queue and from disk.
@@ -289,7 +289,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
-    let ctl = Control::new(false);
+    let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
@@ -312,7 +312,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     let thumbs: &'static ThumbCache = Box::leak(Box::new(
         ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    let writer = Writer::start(catalog_path.clone(), thumbs);
     writer.wake();
 
     let start = Instant::now();
@@ -340,7 +340,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
-    let ctl = Control::new(false);
+    let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
@@ -369,7 +369,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let thumbs: &'static ThumbCache = Box::leak(Box::new(
         ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    let writer = Writer::start(catalog_path.clone(), thumbs);
     writer.wake();
 
     let start = Instant::now();

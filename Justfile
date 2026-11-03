@@ -14,11 +14,13 @@ build profile="release":
     cargo build {{ if profile == "release" { "--release" } else { "" } }}
 
 # Build, then put the Qt DLLs and QML modules next to gallery.exe (needed once per profile, and after Qt updates).
+# qoffscreen is included on purpose: the test hooks run the window offscreen (QT_QPA_PLATFORM=offscreen), and windeployqt
+# otherwise deploys only qwindows.
 # Not Qt's FFmpeg: the build already put ours there (crates/README.md "Build"). `just deploy release pdb` also puts
 # Qt's PDBs there (Qt's "Debug Information Files", when installed): Pin reads a DLL's PDB only from beside it, for
 # the instruction profiles (tools/profiling/callgraph).
 deploy profile="release" pdb="": (build profile)
-    {{ qt }}/bin/windeployqt.exe --release {{ if pdb == "pdb" { "--pdb" } else { "" } }} --qmldir crates/desktop/qml --no-translations --no-ffmpeg target/{{ profile }}/gallery.exe
+    {{ qt }}/bin/windeployqt.exe --release {{ if pdb == "pdb" { "--pdb" } else { "" } }} --qmldir crates/desktop/qml --no-translations --no-ffmpeg --include-plugins qoffscreen target/{{ profile }}/gallery.exe
 
 # Run the release build: the app, or a command (`just run scan D:\Photos`, `just run status`).
 run *args:

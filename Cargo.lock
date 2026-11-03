@@ -1498,6 +1498,7 @@ dependencies = [
  "pg-codec",
  "pg-core",
  "pg-ingest",
+ "pg-jobs",
  "pg-model",
  "pg-platform",
  "pg-render",

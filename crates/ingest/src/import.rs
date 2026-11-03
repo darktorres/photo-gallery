@@ -13,7 +13,7 @@ use pg_model::analysis::Analyzed;
 use pg_model::media::Kind;
 use pg_model::pdq::MIN_QUALITY;
 
-use pg_jobs::control::Control;
+use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 500;
@@ -41,7 +41,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), pairer.len());
 
     let mut batch: Vec<(usize, Result<Analyzed>)> = Vec::with_capacity(BATCH);
-    ctl.begin("import", String::new(), items.len() as u64);
+    ctl.begin(Phase::Import, items.len() as u64);
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analyzed>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.tx()?;

@@ -15,7 +15,7 @@ use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 
-use pg_jobs::control::Control;
+use pg_jobs::control::{Control, Phase};
 
 /// Folders never descended into.
 const SKIP_DIRS: &[&str] = &["$RECYCLE.BIN", "System Volume Information", "_quarantine"];
@@ -105,7 +105,7 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     let mut tx = catalog.tx()?;
     let mut writer = tx.scan_writer(scan_id)?;
     let mut in_tx = 0;
-    ctl.begin("scan", root.to_string(), 0);
+    ctl.begin(Phase::Scan { root: root.to_string() }, 0);
 
     while let Some(dir) = stack.pop() {
         // A stop returns before `finish_scan` and before `mark_missing`: the walk is incomplete, so nothing is

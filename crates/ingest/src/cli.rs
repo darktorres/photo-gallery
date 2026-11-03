@@ -14,7 +14,7 @@ use pg_thumbcache::ThumbCache;
 
 use crate::writeback::Writer;
 use crate::{borders, dups, import, scan, thumbs};
-use pg_jobs::control::Control;
+use pg_jobs::control::{Control, Event, Phase, Progress};
 use pg_jobs::pipeline;
 
 pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
@@ -160,9 +160,60 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
         return borders_outside(paths, csv.as_deref(), *stdin, pipeline);
     }
     std::fs::create_dir_all(&cli.catalog_dir)?;
+    with_progress(|ctl| run_command(cli, ctl))
+}
+
+/// Runs `f` with a control whose progress is printed on stderr while it runs: a line every few seconds for each
+/// phase, and the phase's last line when it ends. The printer is joined before this returns.
+fn with_progress<T>(f: impl FnOnce(&Control) -> T) -> T {
+    let ctl = Control::new();
+    let events = ctl.subscribe();
+    let printer = std::thread::spawn(move || {
+        while let Some(event) = events.recv() {
+            match event {
+                Event::Progress(p) | Event::Finished(p) => eprintln!("{}", progress_line(&p)),
+            }
+        }
+    });
+    let out = f(&ctl);
+    drop(ctl);
+    let _ = printer.join();
+    out
+}
+
+/// The command line's progress line for a phase.
+fn progress_line(p: &Progress) -> String {
+    let secs = p.elapsed().as_secs_f64().max(1e-3);
+    let label = phase_label(&p.phase);
+    if p.total == 0 {
+        return format!("  {label}: {} files, {:.0} files/s, {secs:.0} s", p.done, p.rate());
+    }
+    format!(
+        "  {label}: {}/{} ({:.1}%), {:.0} files/s, {:.0} MB/s, {} failed, {secs:.0} s elapsed, ETA {:.0} s",
+        p.done,
+        p.total,
+        100.0 * p.fraction(),
+        p.rate(),
+        p.bytes as f64 / secs / 1e6,
+        p.failed,
+        p.eta()
+    )
+}
+
+fn phase_label(phase: &Phase) -> String {
+    match phase {
+        Phase::Idle => "idle".into(),
+        Phase::Crop => "crop".into(),
+        Phase::Scan { root } => format!("scan {root}"),
+        Phase::Import => "import".into(),
+        Phase::Borders => "borders".into(),
+        Phase::Thumbs { height } => format!("thumbs {height} px"),
+    }
+}
+
+fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     let catalog_path = cli.catalog_dir.join("catalog.sqlite");
     let mut catalog = Catalog::prepare(&catalog_path, crate::versions())?;
-    let ctl = Control::new(true);
     let start = Instant::now();
 
     match cli.command {
@@ -181,7 +232,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 normalized
             };
             for root in roots {
-                let s = scan::scan(&mut catalog, &root, &ctl)?;
+                let s = scan::scan(&mut catalog, &root, ctl)?;
                 println!(
                     "{root}: {} files in {} folders, {} new or changed, {} now missing, {} unreadable folders ({:.1} s)",
                     s.files,
@@ -212,7 +263,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 println!("{marked} files to analyze again");
             }
             let opts = pipeline.options(Priority::Normal);
-            let s = import::import(&mut catalog, &opts, retry_errors, &ctl)?;
+            let s = import::import(&mut catalog, &opts, retry_errors, ctl)?;
             println!(
                 "imported {} files ({} failed{}), {} PDQ pairs, {:.1} s",
                 s.files,
@@ -227,7 +278,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
             let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, report())?;
-            let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
+            let s = thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
             println!(
                 "{} thumbnails at {height} px ({} failed{}){}; cache {:.2} of {:.2} GB, {:.1} s",
@@ -245,7 +296,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
                 println!("{marked} files marked as not a border; {unknown} not in the catalog");
             } else {
-                let s = borders::find(&mut catalog, &pipeline.options(Priority::Normal), &ctl)?;
+                let s = borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
                 println!(
                     "borders looked for in {} files ({} failed), {:.1} s",
                     s.files,
@@ -281,7 +332,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // Only retagged here (never filled): the cap stays as it is.
             let cache: &'static ThumbCache =
                 Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, None, report())?));
-            let writer = Writer::start(catalog_path.clone(), cache, || {});
+            let writer = Writer::start(catalog_path.clone(), cache);
             writer.wake();
             // Until nothing writable is left (failures past their retries stay queued and are reported).
             loop {
@@ -336,7 +387,7 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
         return Ok(());
     }
     let csv = csv.context("--csv: where the report goes")?;
-    let s = borders::report(paths, csv, &pipeline.options(Priority::Normal), &Control::new(true))?;
+    let s = with_progress(|ctl| borders::report(paths, csv, &pipeline.options(Priority::Normal), ctl))?;
     println!(
         "{} files: {} with borders, {} rejected candidates only, {} skipped, {} errors; {:.1} s ({:.0} files/s)",
         s.files,

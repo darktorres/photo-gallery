@@ -29,6 +29,7 @@ pg-trace = { path = "../trace" }
 pg-video = { path = "../video" }
 pg-yandex = { path = "../yandex" }
 pg-ingest = { path = "../ingest" }
+pg-jobs = { path = "../jobs" }
 anyhow.workspace = true
 cxx = "1"
 cxx-qt = "0.10"

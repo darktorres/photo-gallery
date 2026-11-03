@@ -85,6 +85,7 @@ use cxx_qt_lib::{QString, QStringList, QUrl};
 use pg_ingest::runner::{Generation, Runner};
 use pg_ingest::scan::normalize_path;
 use pg_ingest::writeback::Writer;
+use pg_jobs::control::{Phase, Progress};
 use pg_model::ids::FileId;
 
 use crate::state;
@@ -136,6 +137,7 @@ pub struct LibraryRust {
     write_failed: bool,
     seen: Generation,
     seen_turned: u64,
+    seen_rounds: u64,
 }
 
 fn library_roots() -> Vec<String> {
@@ -143,6 +145,51 @@ fn library_roots() -> Vec<String> {
         eprintln!("library: {e:#}");
         Vec::new()
     })
+}
+
+/// The status line's text for a pass's progress; empty when idle.
+fn progress_status(p: &Progress) -> String {
+    match &p.phase {
+        Phase::Idle => String::new(),
+        Phase::Scan { root } => format!("Scanning {root} · {} images found", group_digits(p.done)),
+        Phase::Import => working("Importing", p),
+        Phase::Borders => working("Finding borders", p),
+        Phase::Crop => working("Saving cropped copies", p),
+        Phase::Thumbs { height } => working(&format!("Thumbnails at {height} px"), p),
+    }
+}
+
+/// A pass that counts its files: how far it is, its rate, and what is left.
+fn working(what: &str, p: &Progress) -> String {
+    let failed = if p.failed > 0 { format!(" · {} failed", group_digits(p.failed)) } else { String::new() };
+    format!(
+        "{what} {} of {} · {:.0}/s · {}{failed}",
+        group_digits(p.done),
+        group_digits(p.total),
+        p.rate(),
+        duration(p.eta())
+    )
+}
+
+fn group_digits(v: u64) -> String {
+    let s = v.to_string();
+    let mut out = String::new();
+    for (i, c) in s.chars().enumerate() {
+        if i > 0 && (s.len() - i).is_multiple_of(3) {
+            out.push(',');
+        }
+        out.push(c);
+    }
+    out
+}
+
+fn duration(secs: f64) -> String {
+    let s = secs.round() as u64;
+    match s {
+        0..60 => format!("{s} s left"),
+        60..3600 => format!("{} min left", s.div_ceil(60)),
+        _ => format!("{} h {} min left", s / 3600, s % 3600 / 60),
+    }
 }
 
 impl qobject::Library {
@@ -158,19 +205,8 @@ impl qobject::Library {
     fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
         self.as_mut().load_roots();
         let height = thumb_height.max(1) as u32;
-        RUNNER.get_or_init(|| {
-            Runner::start(state::get().catalog_path.clone(), state::thumbs(), height, || {
-                pg_trace::pg_stage_round_done()
-            })
-        });
-        // A turned file needs its analysis and thumbnails redone: the job's work.
-        WRITER.get_or_init(|| {
-            Writer::start(state::get().catalog_path.clone(), state::thumbs(), || {
-                if let Some(r) = RUNNER.get() {
-                    r.wake();
-                }
-            })
-        });
+        RUNNER.get_or_init(|| Runner::start(state::get().catalog_path.clone(), state::thumbs(), height));
+        WRITER.get_or_init(|| Writer::start(state::get().catalog_path.clone(), state::thumbs()));
     }
 
     fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
@@ -233,12 +269,12 @@ impl qobject::Library {
         let Some(r) = RUNNER.get() else { return };
         let p = r.progress();
         let paused = r.is_paused();
-        let status = match (paused, p.status()) {
+        let status = match (paused, progress_status(&p)) {
             (true, s) if s.is_empty() => "Background work paused".to_string(),
             (true, s) => format!("Paused · {s}"),
             (false, s) => s,
         };
-        self.as_mut().set_busy(!p.phase.is_empty());
+        self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().set_paused(paused);
         self.as_mut().set_status(QString::from(&status));
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
@@ -262,17 +298,41 @@ impl qobject::Library {
                 self.as_mut().set_writes(QString::from(&writes));
             }
             self.as_mut().set_write_failed(failed);
+            // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
             let turned = w.turned();
             if std::mem::replace(&mut self.as_mut().rust_mut().seen_turned, turned) != turned {
+                r.wake();
                 self.as_mut().files_changed();
             }
         }
         let now = r.generation();
         let seen = std::mem::replace(&mut self.as_mut().rust_mut().seen, now);
         if now.scans != seen.scans {
-            self.scanned();
+            self.as_mut().scanned();
         } else if now.imports != seen.imports {
-            self.imported();
+            self.as_mut().imported();
         }
+        // The job's rounds, counted as stages for measuring (docs/PROFILING.md); a round ends on its own thread, so
+        // it is counted here, on the poll that sees it.
+        let rounds = r.rounds();
+        let seen_rounds = std::mem::replace(&mut self.as_mut().rust_mut().seen_rounds, rounds);
+        for _ in seen_rounds..rounds {
+            pg_trace::pg_stage_round_done();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn formats() {
+        assert_eq!(group_digits(0), "0");
+        assert_eq!(group_digits(999), "999");
+        assert_eq!(group_digits(1234567), "1,234,567");
+        assert_eq!(duration(5.2), "5 s left");
+        assert_eq!(duration(61.0), "2 min left");
+        assert_eq!(duration(7300.0), "2 h 1 min left");
     }
 }

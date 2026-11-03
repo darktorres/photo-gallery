@@ -8,24 +8,14 @@
 //! a minidump writer, which isn't here yet.
 
 use std::backtrace::Backtrace;
-use std::cell::Cell;
 use std::io::Write as _;
-use std::panic::{PanicHookInfo, UnwindSafe};
+use std::panic::PanicHookInfo;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
-thread_local! {
-    /// Set while [`catch`] runs its closure on this thread.
-    static CAUGHT: Cell<bool> = const { Cell::new(false) };
-}
-
-/// Runs `f`, catching a panic (see the module doc). The caller must report the error it returns.
-pub fn catch<T>(f: impl FnOnce() -> T + UnwindSafe) -> std::thread::Result<T> {
-    CAUGHT.with(|c| c.set(true));
-    let result = std::panic::catch_unwind(f);
-    CAUGHT.with(|c| c.set(false));
-    result
-}
+/// Runs `f`, catching a panic (see the module doc). The caller must report the error it returns. The catch lives in
+/// the job layer, which the background job uses too.
+pub use pg_jobs::panics::catch;
 
 /// The log `install` was given, for [`note`].
 static LOG: OnceLock<PathBuf> = OnceLock::new();
@@ -36,7 +26,7 @@ pub fn install(log: PathBuf) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_hook(info);
-        let caught = CAUGHT.with(Cell::get);
+        let caught = pg_jobs::panics::caught();
         let report = report(info);
         let written = append(&log, &report);
         let where_ = match written {

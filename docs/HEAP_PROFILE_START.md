@@ -298,6 +298,12 @@ paths. All once per start.
 
 ### Leads, by what they would save
 
+These are the leads as they stood before the fixes. The third-round start profile no longer shows them as
+allocations of the start: the list is one block (lead 1), the folder tree is 4 blocks (lead 3), the thumbnail
+requests keep their buffers (lead 4), the clap `Command` is gone from the start (lead 5), and the catalog opens
+are 12 blocks, so `baseline()`'s builds are small (lead 5). Lead 2 is no longer among the start's sites. Lead 6
+was not measured.
+
 1. **The list's capacity** (`browse.rs:373`): 29.4 MB allocated and copied to build a 10.6 MB list, and 4.1 MB
    unused for as long as it is shown. Every folder change and filter builds a list.
 2. **`relayout` without the aspects `Vec`** (`gallery.rs:490`, `layout.rs:20`): 1.5 MB at every resize and row-size

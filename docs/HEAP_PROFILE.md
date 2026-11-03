@@ -71,7 +71,7 @@ Profiles in `D:\PhotoGallery\scratch_dhat\third`, made by the same commands as `
 | Blocks | Bytes | Site | What |
 |---:|---:|---|---|
 | 43 | 852 KB | `pipeline.rs:309` `Pool::take` | The read buffers, reused and grown in place: by design |
-| 202 | 70 KB | `clap_builder` | The command line, built by clap at every start: 182 to 227 blocks in each run |
+| 202 | 70 KB | `clap_builder` | The command line, built by clap in each CLI run (scan, import, passes): 182 to 227 blocks per run. The GUI start builds none |
 | 48 | 118 KB | `pdq_index.rs:124`, `:125`, `:173` | The tier-1 index's keys, links and chain reserve, sized once for the import: 16 blocks at each site |
 | 4 | 2.6 MB | `pdq.rs:90`, `:98` | The PDQ planes, 1.3 MB at each site: the workspace |
 | 2 | 985 KB | `decode.rs:189` `decode_stored_into` | The decode buffer: the workspace |
@@ -88,7 +88,7 @@ Profiles in `D:\PhotoGallery\scratch_dhat\third`, made by the same commands as `
 | Blocks | Bytes | Site | What |
 |---:|---:|---|---|
 | 47 | 183 MB | `pipeline.rs:309` `Pool::take` | The read buffers: the 142 MB file is read whole |
-| 7 | 382 MB | `decode.rs:189` `decode_stored_into` | The decode of that file (348.4 MB at the peak): the workspace, trimmed after an oversize file |
+| 7 | 382 MB | `decode.rs:189` (dhat's line, not the allocation) | The 142 MB PNG's RGB output: 1216 × 95,513 × 3 = 348.4 MB at the peak. The line is the rotation step, which does nothing for a file with no orientation (this PNG has no `eXIf` chunk) |
 | 3 | 52 MB | `codecs.rs:104` `Codecs::png` | A large PNG's output, grown and trimmed after: the workspace |
 | 6 | 20 MB | `borders.rs:688` `DetailSums::measure` | The cumulative sums: the workspace |
 | 35 | 19.5 MB | `image-webp` `vp8.rs:2087`, `:1147` | The planes and partitions of lossy WebP, kept and grown: the workspace |
@@ -101,7 +101,7 @@ Profiles in `D:\PhotoGallery\scratch_dhat\third`, made by the same commands as `
 | Blocks | Bytes | Site | What |
 |---:|---:|---|---|
 | 47 | 183 MB | `pipeline.rs:309` `Pool::take` | The read buffers: as above |
-| 7 | 382 MB | `decode.rs:189` `decode_stored_into` | The decode of the 142 MB file: as above |
+| 7 | 382 MB | `decode.rs:189` (as above) | The 142 MB PNG's output, as above |
 | 6 | 85 MB | `codecs.rs:104` `Codecs::png` | PNG output: as above |
 | 401 | 6.6 MB | `thumbs.rs:183` `encode_image` | The JPEG copies into the recycled buffers: about two batches of 200 |
 | 31 | 19.0 MB | `image-webp` `vp8.rs:2087` | As above |

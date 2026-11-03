@@ -3,6 +3,8 @@
 use anyhow::Result;
 use rusqlite::{Connection, params_from_iter};
 
+use strum::IntoEnumIterator;
+
 use super::grid::FILE_JOINS;
 use super::scope;
 use crate::query::{BORDER_SUMS, BorderFacet, Facet, MediaType, Query};
@@ -18,7 +20,7 @@ pub struct Facets {
     /// facets.
     pub types: Vec<(MediaType, i64)>,
     pub exts: Vec<(String, i64)>,
-    /// Per border value (`BorderFacet::ALL`'s order), the same way.
+    /// Per border value (`BorderFacet::iter()`'s order), the same way.
     pub borders: Vec<(BorderFacet, i64)>,
 }
 
@@ -53,7 +55,7 @@ pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -
         format!("SELECT {BORDER_SUMS} FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {}", cond.sql);
     let values = scope_values.iter().cloned().chain(cond.params);
     let borders = conn.query_row(&sql, params_from_iter(values), |r| {
-        BorderFacet::ALL.iter().enumerate().map(|(i, &b)| Ok((b, r.get(i)?))).collect::<rusqlite::Result<Vec<_>>>()
+        BorderFacet::iter().enumerate().map(|(i, b)| Ok((b, r.get(i)?))).collect::<rusqlite::Result<Vec<_>>>()
     })?;
     Ok(Facets { total, matching, types, exts, borders })
 }

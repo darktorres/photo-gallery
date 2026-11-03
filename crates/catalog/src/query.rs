@@ -86,6 +86,8 @@ const MB: f64 = 1_048_576.0;
 /// Type, as the filter sees it: the file's kind (`media::Kind`), with animated images apart from still ones.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "lowercase")]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum MediaType {
     Image,
     Animated,
@@ -105,23 +107,21 @@ impl MediaType {
     pub(crate) const CASE: &'static str =
         "CASE WHEN f.kind = 'video' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END";
 
-    /// The name in JSON and in `CASE`.
+    /// The name in JSON and in `CASE` (strum's snake_case, which serde's names are too).
     pub fn key(self) -> &'static str {
-        match self {
-            MediaType::Image => "image",
-            MediaType::Animated => "animated",
-            MediaType::Video => "video",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<MediaType> {
-        [MediaType::Image, MediaType::Animated, MediaType::Video].into_iter().find(|t| t.key() == key)
+        key.parse().ok()
     }
 }
 
 /// Upright shape. Within 1% of square counts as square.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Orientation {
     Landscape,
     Portrait,
@@ -129,19 +129,13 @@ pub enum Orientation {
 }
 
 impl Orientation {
-    const ALL: [Orientation; 3] = [Orientation::Landscape, Orientation::Portrait, Orientation::Square];
-
     /// The name in JSON.
     pub fn key(self) -> &'static str {
-        match self {
-            Orientation::Landscape => "landscape",
-            Orientation::Portrait => "portrait",
-            Orientation::Square => "square",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Orientation> {
-        Orientation::ALL.into_iter().find(|o| o.key() == key)
+        key.parse().ok()
     }
 
     fn sql(self) -> &'static str {
@@ -156,6 +150,8 @@ impl Orientation {
 /// Where a file is in the import.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Status {
     /// Analyzed, and the analysis is current.
     Imported,
@@ -166,19 +162,13 @@ pub enum Status {
 }
 
 impl Status {
-    const ALL: [Status; 3] = [Status::Imported, Status::Pending, Status::Failed];
-
     /// The name in JSON.
     pub fn key(self) -> &'static str {
-        match self {
-            Status::Imported => "imported",
-            Status::Pending => "pending",
-            Status::Failed => "failed",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Status> {
-        Status::ALL.into_iter().find(|s| s.key() == key)
+        key.parse().ok()
     }
 
     /// Every file is one of the three: pending (`files.pending`, what the import does next), else imported or
@@ -200,6 +190,8 @@ impl Status {
 /// marked as not a border count as none.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "lowercase")]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum BorderFacet {
     None,
     Black,
@@ -209,22 +201,13 @@ pub enum BorderFacet {
 }
 
 impl BorderFacet {
-    pub const ALL: [BorderFacet; 5] =
-        [BorderFacet::None, BorderFacet::Black, BorderFacet::White, BorderFacet::Color, BorderFacet::Blur];
-
     /// The name in JSON (a class's, `detection::Class::key`).
     pub fn key(self) -> &'static str {
-        match self {
-            BorderFacet::None => "none",
-            BorderFacet::Black => "black",
-            BorderFacet::White => "white",
-            BorderFacet::Color => "color",
-            BorderFacet::Blur => "blur",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<BorderFacet> {
-        BorderFacet::ALL.into_iter().find(|b| b.key() == key)
+        key.parse().ok()
     }
 
     fn sql(self) -> &'static str {
@@ -238,7 +221,7 @@ impl BorderFacet {
     }
 }
 
-/// What `browse::read::facets` counts for borders: each value's condition summed, in `BorderFacet::ALL`'s order. A file
+/// What `browse::read::facets` counts for borders: each value's condition summed, in `BorderFacet::iter()`'s order. A file
 /// with a black and a blurred side counts for both.
 pub(crate) const BORDER_SUMS: &str = concat!(
     "coalesce(sum(",
@@ -674,6 +657,8 @@ const NOT_DUPLICATES: &str = concat!("a.file_id IS NOT NULL AND NOT ", duplicate
 /// What a view is ordered by.
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum SortKey {
     /// Folders together, in path order (all drives of a merged folder as one), then by name.
     Name,
@@ -695,31 +680,13 @@ pub struct Sort {
 }
 
 impl SortKey {
-    const ALL: [SortKey; 7] = [
-        SortKey::Name,
-        SortKey::Size,
-        SortKey::Modified,
-        SortKey::Taken,
-        SortKey::Megapixels,
-        SortKey::Duration,
-        SortKey::Borders,
-    ];
-
     /// The name in JSON.
     pub fn key(self) -> &'static str {
-        match self {
-            SortKey::Name => "name",
-            SortKey::Size => "size",
-            SortKey::Modified => "modified",
-            SortKey::Taken => "taken",
-            SortKey::Megapixels => "megapixels",
-            SortKey::Duration => "duration",
-            SortKey::Borders => "borders",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<SortKey> {
-        SortKey::ALL.into_iter().find(|k| k.key() == key)
+        key.parse().ok()
     }
 }
 
@@ -839,6 +806,7 @@ impl Needle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use strum::IntoEnumIterator;
 
     #[test]
     fn the_sql_swap_list_is_the_swap_rule() {
@@ -918,25 +886,37 @@ mod tests {
 
     #[test]
     fn keys_are_the_json_names() {
+        // The names the catalog and the saved views store, in the order the lists show them.
+        assert_eq!(MediaType::iter().map(MediaType::key).collect::<Vec<_>>(), ["image", "animated", "video"]);
+        assert_eq!(Orientation::iter().map(Orientation::key).collect::<Vec<_>>(), ["landscape", "portrait", "square"]);
+        assert_eq!(Status::iter().map(Status::key).collect::<Vec<_>>(), ["imported", "pending", "failed"]);
+        assert_eq!(
+            BorderFacet::iter().map(BorderFacet::key).collect::<Vec<_>>(),
+            ["none", "black", "white", "color", "blur"],
+        );
+        assert_eq!(
+            SortKey::iter().map(SortKey::key).collect::<Vec<_>>(),
+            ["name", "size", "modified", "taken", "megapixels", "duration", "borders"],
+        );
         for t in [MediaType::Image, MediaType::Animated, MediaType::Video] {
             assert_eq!(json(&t), format!("\"{}\"", t.key()));
         }
-        for o in Orientation::ALL {
+        for o in Orientation::iter() {
             assert_eq!(json(&o), format!("\"{}\"", o.key()));
             assert_eq!(Orientation::from_key(o.key()), Some(o));
         }
-        for s in Status::ALL {
+        for s in Status::iter() {
             assert_eq!(json(&s), format!("\"{}\"", s.key()));
             assert_eq!(Status::from_key(s.key()), Some(s));
         }
-        for b in BorderFacet::ALL {
+        for b in BorderFacet::iter() {
             assert_eq!(json(&b), format!("\"{}\"", b.key()));
             assert_eq!(BorderFacet::from_key(b.key()), Some(b));
         }
-        for c in pg_model::detection::Class::ALL {
+        for c in pg_model::detection::Class::iter() {
             assert_eq!(BorderFacet::from_key(c.key()).map(BorderFacet::key), Some(c.key()));
         }
-        for k in SortKey::ALL {
+        for k in SortKey::iter() {
             assert_eq!(json(&k), format!("\"{}\"", k.key()));
             assert_eq!(SortKey::from_key(k.key()), Some(k));
         }
@@ -1011,9 +991,9 @@ mod tests {
 
     #[test]
     fn border_sums_follow_all_and_each_facet_sql() {
-        let sums: Vec<String> = BorderFacet::ALL.iter().map(|b| format!("coalesce(sum({}), 0)", b.sql())).collect();
+        let sums: Vec<String> = BorderFacet::iter().map(|b| format!("coalesce(sum({}), 0)", b.sql())).collect();
         assert_eq!(BORDER_SUMS, sums.join(", "));
-        for b in BorderFacet::ALL.into_iter().skip(1) {
+        for b in BorderFacet::iter().skip(1) {
             assert!(b.sql().contains(&format!("s.class = '{}'", b.key())), "{b:?}");
         }
     }

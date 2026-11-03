@@ -12,7 +12,8 @@ macro_rules! min_side {
 /// Images with a side shorter than this aren't looked at.
 pub const MIN_SIDE: usize = min_side!();
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Edge {
     Top,
     Bottom,
@@ -21,19 +22,13 @@ pub enum Edge {
 }
 
 impl Edge {
-    pub const ALL: [Edge; 4] = [Edge::Top, Edge::Bottom, Edge::Left, Edge::Right];
-
+    /// The name in the catalog (`border_sides.edge`).
     pub fn key(self) -> &'static str {
-        match self {
-            Edge::Top => "top",
-            Edge::Bottom => "bottom",
-            Edge::Left => "left",
-            Edge::Right => "right",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Edge> {
-        Edge::ALL.into_iter().find(|e| e.key() == key)
+        key.parse().ok()
     }
 
     pub fn opposite(self) -> Edge {
@@ -46,27 +41,27 @@ impl Edge {
     }
 }
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Kind {
     Solid,
     Blur,
 }
 
 impl Kind {
+    /// The name in the catalog (`border_sides.kind`).
     pub fn key(self) -> &'static str {
-        match self {
-            Kind::Solid => "solid",
-            Kind::Blur => "blur",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Kind> {
-        [Kind::Solid, Kind::Blur].into_iter().find(|k| k.key() == key)
+        key.parse().ok()
     }
 }
 
 /// What a side looks like, for the filters: a solid border by its colour, or a blurred bar.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Class {
     Black,
     White,
@@ -75,19 +70,13 @@ pub enum Class {
 }
 
 impl Class {
-    pub const ALL: [Class; 4] = [Class::Black, Class::White, Class::Color, Class::Blur];
-
+    /// The name in the catalog (`border_sides.class`).
     pub fn key(self) -> &'static str {
-        match self {
-            Class::Black => "black",
-            Class::White => "white",
-            Class::Color => "color",
-            Class::Blur => "blur",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Class> {
-        Class::ALL.into_iter().find(|c| c.key() == key)
+        key.parse().ok()
     }
 
     /// The eval viewer's buckets: black / near-black up to 40, white / near-white from 215.
@@ -102,7 +91,8 @@ impl Class {
 }
 
 /// Why a candidate was rejected.
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Reason {
     /// The run of border lines reaches the deepest a border may be.
     TooDeep,
@@ -118,28 +108,13 @@ pub enum Reason {
 }
 
 impl Reason {
-    const ALL: [Reason; 6] = [
-        Reason::TooDeep,
-        Reason::NoSeam,
-        Reason::SeamNotStraight,
-        Reason::UnpairedBlur,
-        Reason::NotFlat,
-        Reason::TooLittleLeft,
-    ];
-
+    /// The name in the catalog (`border_sides.rejected`).
     pub fn key(self) -> &'static str {
-        match self {
-            Reason::TooDeep => "too_deep",
-            Reason::NoSeam => "no_seam",
-            Reason::SeamNotStraight => "seam_not_straight",
-            Reason::UnpairedBlur => "unpaired_blur",
-            Reason::NotFlat => "not_flat",
-            Reason::TooLittleLeft => "too_little_left",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Reason> {
-        Reason::ALL.into_iter().find(|r| r.key() == key)
+        key.parse().ok()
     }
 
     /// The prototype's words for it.
@@ -232,5 +207,27 @@ impl Detection {
     pub fn cut(&self) -> [u32; 4] {
         let [l, t, r, b] = self.content;
         [l, t, self.width - r, self.height - b]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    /// The names the catalog stores: a change to any of them is a change to the catalog's data.
+    #[test]
+    fn the_keys_are_the_catalog_names() {
+        assert_eq!(Edge::iter().map(Edge::key).collect::<Vec<_>>(), ["top", "bottom", "left", "right"]);
+        assert_eq!(Kind::iter().map(Kind::key).collect::<Vec<_>>(), ["solid", "blur"]);
+        assert_eq!(Class::iter().map(Class::key).collect::<Vec<_>>(), ["black", "white", "color", "blur"]);
+        assert_eq!(
+            Reason::iter().map(Reason::key).collect::<Vec<_>>(),
+            ["too_deep", "no_seam", "seam_not_straight", "unpaired_blur", "not_flat", "too_little_left"],
+        );
+        for e in Edge::iter() {
+            assert_eq!(Edge::from_key(e.key()), Some(e));
+        }
+        assert_eq!(Reason::from_key("nope"), None);
     }
 }

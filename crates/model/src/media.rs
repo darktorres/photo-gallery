@@ -6,7 +6,8 @@ const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jfif", "png", "gif", "webp",
 /// Extensions recorded as videos (FFmpeg: `video`).
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "mpg", "mpeg", "3gp"];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Kind {
     Image,
     Video,
@@ -15,18 +16,11 @@ pub enum Kind {
 impl Kind {
     /// The catalog's `files.kind`.
     pub fn key(self) -> &'static str {
-        match self {
-            Kind::Image => "image",
-            Kind::Video => "video",
-        }
+        self.into()
     }
 
     pub fn from_key(key: &str) -> Option<Kind> {
-        match key {
-            "image" => Some(Kind::Image),
-            "video" => Some(Kind::Video),
-            _ => None,
-        }
+        key.parse().ok()
     }
 }
 

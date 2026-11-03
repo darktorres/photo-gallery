@@ -1,7 +1,8 @@
 //! The formats the app reads: what a file's bytes say it is ([`Format::sniff`]) and its stable name in the
 //! catalog and the query. Model-shaped: no decoding here, so the codec, the metadata and the catalog can all use it.
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
 pub enum Format {
     Jpeg,
     Png,
@@ -29,9 +30,7 @@ impl Format {
 
     /// The inverse of [`Format::name`].
     pub fn from_name(name: &str) -> Option<Format> {
-        [Format::Jpeg, Format::Png, Format::Gif, Format::Webp, Format::Bmp, Format::Tiff]
-            .into_iter()
-            .find(|f| f.name() == name)
+        name.parse().ok()
     }
 
     /// The extension a file of the format is saved under, without the dot.
@@ -47,13 +46,21 @@ impl Format {
     }
 
     pub fn name(self) -> &'static str {
-        match self {
-            Format::Jpeg => "jpeg",
-            Format::Png => "png",
-            Format::Gif => "gif",
-            Format::Webp => "webp",
-            Format::Bmp => "bmp",
-            Format::Tiff => "tiff",
+        self.into()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use strum::IntoEnumIterator;
+
+    #[test]
+    fn the_names_are_the_catalog_names() {
+        assert_eq!(Format::iter().map(Format::name).collect::<Vec<_>>(), ["jpeg", "png", "gif", "webp", "bmp", "tiff"],);
+        for f in Format::iter() {
+            assert_eq!(Format::from_name(f.name()), Some(f));
         }
+        assert_eq!(Format::from_name("jpg"), None);
     }
 }

@@ -332,13 +332,17 @@ END;
 );
 
 /// A catalog made before the current baseline (pre-release, the baseline is edited in place) lacks some of these
-/// `LAYOUT_PARTS`.
+/// `LAYOUT_PARTS`. The last two are the text of a trigger and a view that were edited in place (the size joined what a
+/// thumbnail is made from): an earlier catalog has the same names, so only their text tells it apart.
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))
-     + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name IN ('thumb_sources', 'thumb_clock'))";
-const LAYOUT_PARTS: i64 = 12;
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name IN ('thumb_sources', 'thumb_clock'))
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name = 'thumb_sources' AND sql LIKE '%f.size, f.missing%')
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name = 'files_source_changed'
+        AND sql LIKE '%old.size IS NOT new.size%')";
+const LAYOUT_PARTS: i64 = 14;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[
@@ -1544,6 +1548,47 @@ mod tests {
         );
         // Analyses made from the file as it is stand; the file without one and the one changed since are pending.
         assert_eq!(rows("SELECT id || ':' || pending FROM files ORDER BY id"), ["11:0", "12:0", "13:1", "14:1"]);
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_catalog_with_the_earlier_source_trigger_or_view_is_copied_into_the_current_layout() {
+        let dir = test_folder(SCRATCH, "layout_source");
+        let path = dir.join("catalog.sqlite");
+        drop(Catalog::open(&path).unwrap());
+        let fresh = Connection::open(&path).unwrap();
+        assert!(current_layout(&fresh).unwrap());
+        // The same names and counts, the text before the size was added: the layout check must refuse it.
+        let text = |name: &str| -> String {
+            fresh.query_row("SELECT sql FROM sqlite_schema WHERE name = ?1", [name], |r| r.get(0)).unwrap()
+        };
+        let (trigger, view) = (text("files_source_changed"), text("thumb_sources"));
+        let old_trigger =
+            trigger.replace(", size ON files", " ON files").replace("\n    OR old.size IS NOT new.size", "");
+        let old_view = view.replace("f.size, f.missing", "f.missing");
+        assert!(old_trigger != trigger && old_view != view);
+        fresh
+            .execute_batch(&format!(
+                "DROP TRIGGER files_source_changed; {old_trigger}; DROP VIEW thumb_sources; {old_view};"
+            ))
+            .unwrap();
+        drop(fresh);
+        let earlier = Connection::open(&path).unwrap();
+        assert!(!current_layout(&earlier).unwrap());
+        drop(earlier);
+
+        let c = Catalog::open(&path).unwrap();
+        assert!(current_layout(&c.conn).unwrap());
+        let copied: String = c
+            .conn
+            .query_row(
+                "SELECT group_concat(sql, ' ') FROM sqlite_schema WHERE name IN ('files_source_changed', 'thumb_sources')",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(copied.contains("old.size IS NOT new.size") && copied.contains("f.size, f.missing"), "{copied}");
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }

@@ -1470,6 +1470,9 @@ dependencies = [
 [[package]]
 name = "pg-client"
 version = "0.1.0"
+dependencies = [
+ "pg-model",
+]
 
 [[package]]
 name = "pg-codec"

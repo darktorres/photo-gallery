@@ -10,3 +10,4 @@ workspace = true
 # The front end's logic, Qt-free and WASM-safe (PLAN §7): the desktop wraps it, and the web client shares it. It takes
 # the layout now (S-10.1); the rest of the desktop's logic moves in with the modules of S-10.
 [dependencies]
+pg-model = { path = "../model" }

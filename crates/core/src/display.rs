@@ -6,8 +6,8 @@ use anyhow::{Context, Result};
 
 use crate::decode::{Decoded, Decoder, MinSize, Stored};
 use crate::metadata;
-use crate::orientation;
 use pg_model::format::Format;
+use pg_model::orientation;
 
 /// Decode `bytes` upright at the smallest DCT scale that keeps `min` (full size if the image is smaller), into new
 /// buffers: a one-off decode (the viewer). `turns` is the catalog rotation (`files.rotation`, quarter turns clockwise),

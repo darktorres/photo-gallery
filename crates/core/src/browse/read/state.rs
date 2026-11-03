@@ -5,7 +5,7 @@ use anyhow::Result;
 use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::analysis::ThumbHash;
+use pg_model::analysis::ThumbHash;
 use pg_model::media::Kind;
 
 /// What a file's images are made from, as the catalog has it now. What is made from the file (a thumbnail, a

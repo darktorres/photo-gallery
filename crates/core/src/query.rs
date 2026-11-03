@@ -10,8 +10,8 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Value;
 use serde::{Deserialize, Serialize};
 
-use crate::pdq::group_distance;
 use pg_model::date::parse_iso_date;
+use pg_model::group_distance;
 
 /// FILETIME (100 ns since 1601) of the Unix epoch, in seconds. A macro, for SQL made at compile time.
 macro_rules! filetime_unix_offset {
@@ -314,7 +314,7 @@ pub struct Query {
     #[serde(skip_serializing_if = "Range::is_empty")]
     pub duration_s: Range,
     /// Some(true): files with a duplicate among the present files (identical bytes, identical pixels or a tier-1
-    /// pair within `pdq::GROUP_DISTANCE`); Some(false): imported files without one.
+    /// pair within `pg_model::pdq::GROUP_DISTANCE`); Some(false): imported files without one.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub duplicates: Option<bool>,
     #[serde(skip_serializing_if = "Vec::is_empty")]
@@ -844,7 +844,7 @@ mod tests {
     fn the_sql_swap_list_is_the_swap_rule() {
         // The borders sort reads the swap from SQL; the list must be exactly the orientations that swap the sides.
         let listed: Vec<u8> = swapping_orientations!().split(", ").map(|o| o.parse().unwrap()).collect();
-        assert_eq!(listed, (1..=8).filter(|&o| crate::orientation::swaps_axes(o)).collect::<Vec<_>>());
+        assert_eq!(listed, (1..=8).filter(|&o| pg_model::orientation::swaps_axes(o)).collect::<Vec<_>>());
         let borders = Sort { key: SortKey::Borders, descending: false };
         assert!(borders.key_sql().unwrap().contains(concat!("IN (", swapping_orientations!(), ")")));
     }
@@ -933,7 +933,7 @@ mod tests {
             assert_eq!(json(&b), format!("\"{}\"", b.key()));
             assert_eq!(BorderFacet::from_key(b.key()), Some(b));
         }
-        for c in crate::detection::Class::ALL {
+        for c in pg_model::detection::Class::ALL {
             assert_eq!(BorderFacet::from_key(c.key()).map(BorderFacet::key), Some(c.key()));
         }
         for k in SortKey::ALL {

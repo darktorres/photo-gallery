@@ -5,7 +5,7 @@
 //! An orientation is a mirror left-right (applied first), then quarter turns clockwise ([`parts`]). The coordinate maps
 //! ([`shown_pixel`], [`shown_edge`]) apply that same mirror and turn to a point of the stored picture: a pixel index, or
 //! a fraction of the picture's size. The decoder's transform (`decode::transform_into`) gathers the same mapping, and
-//! its test checks the two against each other.
+//! the decoder's tests check the two against each other.
 
 use std::ops::Sub;
 
@@ -101,8 +101,6 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::decode::orient;
-    use crate::pixels::Rgb;
 
     #[test]
     fn composes_orientations() {
@@ -115,21 +113,6 @@ mod tests {
         assert_eq!(compose(6, 1), 3);
         assert_eq!(compose(1, 3), 8);
         assert_eq!(compose(2, 1), 7);
-    }
-
-    #[test]
-    fn composition_matches_turning_the_upright_image() {
-        let img = || Rgb { width: 3, height: 2, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
-        for o in 1..=8 {
-            // Turning the upright image clockwise is EXIF 6 applied to it.
-            let expected = orient(orient(img(), o), 6);
-            let got = orient(img(), compose(o, 1));
-            assert_eq!(
-                (got.width, got.height, &got.pixels),
-                (expected.width, expected.height, &expected.pixels),
-                "o = {o}"
-            );
-        }
     }
 
     #[test]
@@ -148,23 +131,6 @@ mod tests {
                     swaps_axes(compose(o, turns)) != swaps_axes(o),
                     "o = {o}, turns = {turns}"
                 );
-            }
-        }
-    }
-
-    #[test]
-    fn the_pixel_map_is_where_the_decoder_puts_each_pixel() {
-        // A 3×2 picture numbered in reading order: each pixel's value must sit at its shown position in `orient`.
-        let (w, h) = (3, 2);
-        let img = || Rgb { width: w, height: h, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
-        for o in 1..=8 {
-            let out = orient(img(), o);
-            for y in 0..h {
-                for x in 0..w {
-                    let (nx, ny) = shown_pixel(o, x, y, w, h);
-                    let at = (ny * out.width + nx) * 3;
-                    assert_eq!(out.pixels[at], (y * w + x) as u8, "o = {o}, pixel ({x}, {y})");
-                }
             }
         }
     }

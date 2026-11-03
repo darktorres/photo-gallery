@@ -17,8 +17,8 @@
 //! The arithmetic is exact where Python's was float32: grays are kept as sums of the three channels (×3), medians of
 //! 8-bit values doubled (×2), deviations from a median of medians ×4. Line statistics read every other pixel.
 
-use crate::detection::{Detection, Edge, Kind, MAX_SIDES, Reason, Side, Sides};
 use crate::pixels::Rgb;
+use pg_model::detection::{Detection, Edge, Kind, MAX_SIDES, Reason, Side, Sides};
 
 /// Bump when anything here changes what is detected; detections of an older version are redone.
 pub const BORDERS_VERSION: i64 = 1;
@@ -648,7 +648,7 @@ fn judge(side: &mut Side, other: Option<&Side>, p: &Params) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::detection::Class;
+    use pg_model::detection::Class;
 
     /// Detailed content: deterministic noise in 6 px blocks, a little per pixel, over a gradient (a hash, so the
     /// tests need no crate).

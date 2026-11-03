@@ -10,9 +10,9 @@ use anyhow::Result;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
 use crate::codecs::Codecs;
-use crate::orientation;
 use crate::pixels::Rgb;
 use pg_model::format::Format;
+use pg_model::orientation;
 
 /// What a decode found, besides its pixels.
 #[derive(Clone, Copy, Debug)]
@@ -113,7 +113,7 @@ impl Decoder {
         turns: u8,
         out: &mut Rgb,
     ) -> Result<Info> {
-        let orientation = crate::orientation::compose(exif, turns);
+        let orientation = pg_model::orientation::compose(exif, turns);
         let quarter_turn = orientation::swaps_axes(orientation);
         let jpeg = match format {
             Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
@@ -282,5 +282,37 @@ mod tests {
         assert_eq!(first(6), (2, 3, vec![3, 0, 4, 1, 5, 2])); // 90° clockwise
         assert_eq!(first(7), (2, 3, vec![5, 2, 4, 1, 3, 0]));
         assert_eq!(first(8), (2, 3, vec![2, 5, 1, 4, 0, 3])); // 90° counter-clockwise
+    }
+
+    #[test]
+    fn composition_matches_turning_the_upright_image() {
+        let img = || Rgb { width: 3, height: 2, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
+        for o in 1..=8 {
+            // Turning the upright image clockwise is EXIF 6 applied to it.
+            let expected = orient(orient(img(), o), 6);
+            let got = orient(img(), orientation::compose(o, 1));
+            assert_eq!(
+                (got.width, got.height, &got.pixels),
+                (expected.width, expected.height, &expected.pixels),
+                "o = {o}"
+            );
+        }
+    }
+
+    #[test]
+    fn the_pixel_map_is_where_the_decoder_puts_each_pixel() {
+        // A 3×2 picture numbered in reading order: each pixel's value must sit at its shown position in `orient`.
+        let (w, h) = (3, 2);
+        let img = || Rgb { width: w, height: h, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
+        for o in 1..=8 {
+            let out = orient(img(), o);
+            for y in 0..h {
+                for x in 0..w {
+                    let (nx, ny) = orientation::shown_pixel(o, x, y, w, h);
+                    let at = (ny * out.width + nx) * 3;
+                    assert_eq!(out.pixels[at], (y * w + x) as u8, "o = {o}, pixel ({x}, {y})");
+                }
+            }
+        }
     }
 }

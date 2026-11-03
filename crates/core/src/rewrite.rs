@@ -9,8 +9,8 @@ use anyhow::{Context, Result, bail};
 use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
 use crate::decode::transform;
-use crate::orientation;
 use pg_container::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
+use pg_model::orientation;
 
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]
@@ -24,7 +24,7 @@ pub(crate) enum Op {
 impl Op {
     /// Width and height swap.
     fn quarter(self) -> bool {
-        matches!(self, Op::Orient(o) if crate::orientation::swaps_axes(o))
+        matches!(self, Op::Orient(o) if pg_model::orientation::swaps_axes(o))
     }
 
     /// The new size of a `w` × `h` raster.

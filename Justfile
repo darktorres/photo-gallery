@@ -42,6 +42,7 @@ fmt:
 lint: && lint-qml
     cargo fmt --all --check
     cargo clippy --workspace --all-targets -- -D warnings
+    cargo check -p pg-model --target wasm32-unknown-unknown
     $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --no-deps --document-private-items
     cargo deny check
     cargo machete crates

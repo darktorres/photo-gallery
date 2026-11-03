@@ -1,12 +1,12 @@
 //! What the import computes from one file, as data: the record the catalog stores and the grid reads. Producing it
-//! is [`crate::analyze`]'s job. This module is the shape of the result, with no decoding and no I/O.
+//! is core's `analyze` module's job. This module is the shape of the result, with no decoding and no I/O.
 
+use crate::format::Format;
 use crate::pdq;
-use pg_model::format::Format;
 
 /// One file's analysis: what every file has, and the facts of its kind (an image's or a video's).
 pub struct Analysis {
-    /// The version of the producer that made it ([`crate::analyze::IMPORT_VERSION`]); an older one's are redone.
+    /// The version of the producer that made it (core's `analyze::IMPORT_VERSION`); an older one's are redone.
     pub version: i64,
     /// BLAKE3 of the file bytes (tier 0a).
     pub file_hash: [u8; 32],
@@ -60,7 +60,7 @@ pub struct ImageFacts {
 
 /// A still image's pixel hashes.
 pub struct PixelHashes {
-    /// XXH3-128 of the upright decoded pixels (tier 0b), see [`crate::analyze::pixel_hash`].
+    /// XXH3-128 of the upright decoded pixels (tier 0b), see core's `analyze::pixel_hash`.
     pub pixel_hash: [u8; 16],
     pub pdq: pdq::Pdq,
     /// The 8 dihedral PDQ hashes, for the query side of tier 1. The catalog stores them with the analysis.
@@ -98,8 +98,9 @@ impl Analysis {
     }
 }
 
-/// The longest ThumbHash (vendor/thumbhash `MAX_LEN`: 25 bytes with alpha, 24 opaque).
-pub const THUMBHASH_MAX: usize = thumbhash::MAX_LEN;
+/// The longest ThumbHash: 25 bytes with alpha, 24 opaque. It is the vendored encoder's `MAX_LEN` as a literal (the
+/// model has no dependencies); core's `analyze` tests check the two are equal.
+pub const THUMBHASH_MAX: usize = 25;
 
 /// A ThumbHash (`analysis.thumbhash`), held inline: the import's result, and the grid's placeholder.
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Default)]
@@ -117,7 +118,7 @@ impl ThumbHash {
     }
 
     /// A hash the encoder wrote into `bytes`, as its first `len` bytes.
-    pub(crate) fn encoded(bytes: [u8; THUMBHASH_MAX], len: usize) -> ThumbHash {
+    pub fn encoded(bytes: [u8; THUMBHASH_MAX], len: usize) -> ThumbHash {
         ThumbHash { bytes, len: len as u8 }
     }
 

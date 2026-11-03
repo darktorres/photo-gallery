@@ -1,14 +1,14 @@
 //! What border detection found, as data: the sides and the content box, the reasons a candidate was rejected, and the
-//! limits they live under. The detector ([`crate::borders`]) makes them; the catalog keeps them, and the grid and the
-//! crop read them. No pixels and no I/O here.
+//! limits they live under. The detector (core's `borders` module) makes them; the catalog keeps them, and the grid
+//! and the crop read them. No pixels and no I/O here.
 
 /// [`MIN_SIDE`] as a literal, for SQL made at compile time (`catalog`'s `has_borders!`).
+#[macro_export]
 macro_rules! min_side {
     () => {
         64
     };
 }
-pub(crate) use min_side;
 /// Images with a side shorter than this aren't looked at.
 pub const MIN_SIDE: usize = min_side!();
 
@@ -36,7 +36,7 @@ impl Edge {
         Edge::ALL.into_iter().find(|e| e.key() == key)
     }
 
-    pub(crate) fn opposite(self) -> Edge {
+    pub fn opposite(self) -> Edge {
         match self {
             Edge::Top => Edge::Bottom,
             Edge::Bottom => Edge::Top,
@@ -199,7 +199,7 @@ impl Side {
     }
 }
 
-/// What [`crate::borders::detect`] found in an image of `width` × `height` (stored pixels).
+/// What `borders::detect` (core) found in an image of `width` × `height` (stored pixels).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Detection {
     pub width: u32,
@@ -211,7 +211,7 @@ pub struct Detection {
     pub sides: Sides,
 }
 
-/// The most sides a detection finds: [`crate::borders::detect`] peels at most 3 rounds of the 4 edges, and finds at most one side
+/// The most sides a detection finds: `borders::detect` peels at most 3 rounds of the 4 edges, and finds at most one side
 /// of an edge in a round.
 pub const MAX_SIDES: usize = 12;
 

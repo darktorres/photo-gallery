@@ -1462,6 +1462,7 @@ dependencies = [
  "cxx-qt-lib",
  "pg-core",
  "pg-ingest",
+ "pg-model",
  "pg-platform",
  "pg-trace",
  "serde",
@@ -1499,6 +1500,9 @@ dependencies = [
 [[package]]
 name = "pg-model"
 version = "0.1.0"
+dependencies = [
+ "arrayvec",
+]
 
 [[package]]
 name = "pg-platform"

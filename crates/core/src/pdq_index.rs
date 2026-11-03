@@ -13,7 +13,7 @@
 //! tables are rebuilt over every entry: each entry is placed a bounded number of times (amortized O(1)) however
 //! large the index grows, and an empty catalog's first import stays fast. An index without entries holds no table.
 
-use crate::pdq::Hash;
+use pg_model::pdq::Hash;
 
 const CHUNKS: usize = 16;
 /// The largest radius the one-bit probes guarantee to find.
@@ -299,7 +299,7 @@ impl PdqIndex {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::pdq::MATCH_DISTANCE;
+    use pg_model::pdq::MATCH_DISTANCE;
 
     fn rand_hash(state: &mut u64) -> Hash {
         let mut h = [0u8; 32];

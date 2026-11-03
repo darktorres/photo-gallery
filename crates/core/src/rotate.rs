@@ -18,10 +18,10 @@
 use anyhow::Result;
 
 use crate::metadata;
-use crate::orientation;
 use crate::rewrite::{self, Op};
 use pg_container::{png_chunks, webp_chunks};
 use pg_model::format::Format;
+use pg_model::orientation;
 
 /// What turning a file comes to.
 #[derive(Debug)]

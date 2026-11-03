@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use anyhow::Result;
 use pg_core::catalog::Catalog;
 
-pub const DEFAULT_GROUP_DISTANCE: u32 = pg_core::pdq::GROUP_DISTANCE;
+pub const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;
 
 /// Groups of files by union. `parent` links each file to its root; `size` counts the members of each root's group,
 /// and the smaller group joins the larger, so a chain is at most log₂ n long and `find`'s recursion stays shallow.

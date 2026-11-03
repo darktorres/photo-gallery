@@ -280,9 +280,9 @@ use pg_core::browse::{
     self,
     read::{Borders, Details, Entry},
 };
-use pg_core::detection::Class;
 use pg_core::layout::{self, Row, RowChange};
 use pg_core::query::{MediaType, Query, Sort};
+use pg_model::detection::Class;
 
 use crate::loader::{self, Kind as Load};
 use crate::{library, settings, state};
@@ -713,7 +713,7 @@ impl qobject::GalleryModel {
             }
         }
         // An odd turn changes the item's shape, and so the rows.
-        if pg_core::orientation::turns_swap(turns) {
+        if pg_model::orientation::turns_swap(turns) {
             self.as_mut().lay_out(Changed::Items(&[item as usize]));
         } else {
             self.as_mut().items_changed(&[item as usize]);

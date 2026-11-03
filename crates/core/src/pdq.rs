@@ -9,47 +9,10 @@
 
 use std::sync::OnceLock;
 
-pub const HASH_BYTES: usize = 32;
-
-/// Meta's recommended match threshold (FINDINGS "PDQ": d ≤ 31 finds 82.8% of the labeled pairs).
-pub const MATCH_DISTANCE: u32 = 31;
-/// Below this quality the hash is unreliable (flat or near-flat images); Meta's recommendation.
-pub const MIN_QUALITY: u8 = 50;
-/// [`GROUP_DISTANCE`] as a literal, for SQL made at compile time.
-macro_rules! group_distance {
-    () => {
-        22
-    };
-}
-pub(crate) use group_distance;
-/// Distance up to which a tier-1 pair counts as the same picture when grouping and filtering (FINDINGS "Shortcut and
-/// grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked).
-pub const GROUP_DISTANCE: u32 = group_distance!();
+use pg_model::pdq::{HASH_BYTES, Hash, Pdq};
 
 const BUFFER: usize = 64;
 const DCT_OUT: usize = 16;
-
-/// A 256-bit hash in Meta's byte order (byte 0 holds the highest coefficients), so its hex string matches the
-/// reference tools.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
-pub struct Hash(pub [u8; HASH_BYTES]);
-
-impl Hash {
-    pub fn distance(&self, other: &Hash) -> u32 {
-        let (a, b) = (self.words(), other.words());
-        (0..4).map(|i| (a[i] ^ b[i]).count_ones()).sum()
-    }
-
-    pub fn words(&self) -> [u64; 4] {
-        std::array::from_fn(|i| u64::from_le_bytes(self.0[i * 8..i * 8 + 8].try_into().unwrap()))
-    }
-}
-
-pub struct Pdq {
-    pub hash: Hash,
-    /// 0–100, Meta's gradient-based quality metric.
-    pub quality: u8,
-}
 
 /// The hasher's buffers (a luma plane, the filter's pass between, its column sums), kept by a worker from image to
 /// image. The input is at most 512 px on a side (see the module comment), so they stay small.

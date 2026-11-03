@@ -3,7 +3,6 @@
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
-pub mod analysis;
 pub mod analyze;
 pub mod animation;
 pub mod borders;
@@ -12,12 +11,10 @@ pub mod catalog;
 mod codecs;
 pub mod crop;
 pub mod decode;
-pub mod detection;
 pub mod display;
 pub mod layout;
 pub mod maker;
 pub mod metadata;
-pub mod orientation;
 pub mod pdq;
 pub mod pdq_index;
 pub mod pixels;

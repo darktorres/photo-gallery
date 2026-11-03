@@ -4,16 +4,16 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
 use crate::borders::{self, Detector};
 use crate::decode::{Decoder, MinSize};
-use crate::detection::{self, Detection};
 use crate::metadata::{Meta, MetaScratch};
-use crate::orientation;
 use crate::pdq;
 use crate::pixels::{Rgb, release_over};
 use crate::resize::Resizer;
+use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
+use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
+use pg_model::orientation;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
 /// in place, which keeps the library, ratings and views. Not a schema version. Until the first release it is not
@@ -241,6 +241,12 @@ mod tests {
         let px = &a.image().unwrap().pixels;
         let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, px.pdq_dihedral);
         (a.file_hash, a.format(), a.orientation, a.width, a.height, a.thumbhash, a.frames, hashes)
+    }
+
+    /// The model writes the longest ThumbHash as a literal; it must be the encoder's own length.
+    #[test]
+    fn thumbhash_max_is_the_encoders_longest() {
+        assert_eq!(THUMBHASH_MAX, thumbhash::MAX_LEN);
     }
 
     /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a

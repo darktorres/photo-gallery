@@ -5,7 +5,7 @@
 use std::hint::black_box;
 
 use gungraun::prelude::*;
-use pg_core::analysis::Analysis;
+use pg_model::analysis::Analysis;
 use pg_core::analyze::Analyzer;
 use pg_core::maker::Maker;
 

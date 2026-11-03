@@ -18,11 +18,10 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
-use crate::analysis::Analysis;
 use crate::analyze::IMPORT_VERSION;
 use crate::borders::BORDERS_VERSION;
-use crate::detection::Detection;
-use crate::pdq;
+use pg_model::analysis::Analysis;
+use pg_model::detection::Detection;
 use pg_model::format::Format;
 use pg_model::media::{Ext, Kind};
 use pg_model::path::is_under;
@@ -66,10 +65,7 @@ macro_rules! seq {
 /// The analyses borders are looked for in: still images that decoded and are big enough (detection::MIN_SIDE).
 macro_rules! has_borders {
     () => {
-        concat!(
-            "error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= ",
-            crate::detection::min_side!()
-        )
+        concat!("error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= ", pg_model::min_side!())
     };
 }
 
@@ -181,7 +177,7 @@ CREATE TABLE border_marks(
     file_id INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
     marked  INTEGER NOT NULL  -- Unix seconds
 );
--- Tier 1 candidates: PDQ distance <= pdq::MATCH_DISTANCE between reliable hashes, any of the 8 orientations.
+-- Tier 1 candidates: PDQ distance <= pg_model::pdq::MATCH_DISTANCE between reliable hashes, any of the 8 orientations.
 CREATE TABLE pdq_pairs(
     a        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,  -- a < b
     b        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
@@ -878,7 +874,7 @@ impl Catalog {
         let without: i64 = self.conn.query_row(
             "SELECT count(*) FROM analysis a JOIN files f ON f.id = a.file_id
              WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NULL AND a.pdq_quality >= ?1",
-            [pdq::MIN_QUALITY],
+            [pg_model::pdq::MIN_QUALITY],
             |r| r.get(0),
         )?;
         if without > 0 {
@@ -889,14 +885,14 @@ impl Catalog {
             "SELECT a.file_id, a.pdq_dihedral FROM analysis a JOIN files f ON f.id = a.file_id
              WHERE f.missing = 0 AND f.pending = 0 AND a.pdq_dihedral IS NOT NULL AND a.pdq_quality >= ?1",
         )?;
-        let mut rows = stmt.query([pdq::MIN_QUALITY])?;
+        let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
         while let Some(r) = rows.next()? {
             let id: i64 = r.get(0)?;
             let blob: Vec<u8> = r.get(1)?;
-            let (orientations, _) = blob.as_chunks::<{ pdq::HASH_BYTES }>();
+            let (orientations, _) = blob.as_chunks::<{ pg_model::pdq::HASH_BYTES }>();
             for orientation in orientations {
                 ids.push(id);
-                hashes.push(pdq::Hash(*orientation).words());
+                hashes.push(pg_model::pdq::Hash(*orientation).words());
             }
         }
         Ok((ids, hashes))
@@ -979,7 +975,7 @@ impl Catalog {
             )?
             .query_row([file_id], |r| {
                 let (orientation, w, h): (u8, u32, u32) = (r.get(4)?, r.get(5)?, r.get(6)?);
-                let (width, height) = if crate::orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
+                let (width, height) = if pg_model::orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
                 let format = r.get_ref(3)?.as_str()?;
                 let format = Format::from_name(format).ok_or_else(|| {
                     rusqlite::Error::FromSqlConversionFailure(3, Type::Text, format!("unknown format {format}").into())
@@ -1457,7 +1453,7 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
+    use pg_model::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
     use pg_testkit::test_folder;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
@@ -1875,8 +1871,8 @@ mod tests {
 
     /// The facts of a JPEG with no rating and stand-in hashes, for the analyses the tests store.
     fn a_jpeg() -> Media {
-        let pdq = pdq::Pdq { hash: pdq::Hash([0; 32]), quality: 0 };
-        let pixels = PixelHashes { pixel_hash: [0; 16], pdq, pdq_dihedral: [pdq::Hash([0; 32]); 8] };
+        let pdq = pg_model::pdq::Pdq { hash: pg_model::pdq::Hash([0; 32]), quality: 0 };
+        let pixels = PixelHashes { pixel_hash: [0; 16], pdq, pdq_dihedral: [pg_model::pdq::Hash([0; 32]); 8] };
         Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels })
     }
 
@@ -1896,8 +1892,8 @@ mod tests {
     #[test]
     fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector() {
         use crate::browse;
-        use crate::detection::{Edge, Kind as SideKind, Reason, Side};
         use crate::query::{BorderFacet, Query, Sort};
+        use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
 
         let mut c = Catalog::open(Path::new(":memory:")).unwrap();
         c.add_root(r"D:\x").unwrap();
@@ -2037,7 +2033,7 @@ mod tests {
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
             let mut borders = Detection::none(400, 300);
             borders.content = [l, t, 400 - r, 300 - b];
-            let (width, height) = if crate::orientation::swaps_axes(orientation) { (300, 400) } else { (400, 300) };
+            let (width, height) = if pg_model::orientation::swaps_axes(orientation) { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
                 version: IMPORT_VERSION,
                 file_hash: [n as u8; 32],

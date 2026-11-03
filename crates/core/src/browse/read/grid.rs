@@ -6,9 +6,9 @@ use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
 use super::scope;
-use crate::detection;
 use crate::display;
 use crate::query::{MediaType, Query, Sort};
+use pg_model::detection;
 use pg_model::media::{Ext, Kind};
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
@@ -73,7 +73,7 @@ impl Entry {
 
     /// Width and height as shown, pending turns included; 0 before the import.
     pub fn shown_size(&self) -> (u32, u32) {
-        if crate::orientation::turns_swap(self.pending_turns) {
+        if pg_model::orientation::turns_swap(self.pending_turns) {
             (self.height, self.width)
         } else {
             (self.width, self.height)
@@ -123,7 +123,11 @@ impl Entry {
     /// before the import.
     fn stored_size(&self) -> Option<(f64, f64)> {
         let (w, h) = (f64::from(self.width), f64::from(self.height));
-        (w > 0.0 && h > 0.0).then_some(if crate::orientation::swaps_axes(self.orientation) { (h, w) } else { (w, h) })
+        (w > 0.0 && h > 0.0).then_some(if pg_model::orientation::swaps_axes(self.orientation) {
+            (h, w)
+        } else {
+            (w, h)
+        })
     }
 
     /// A rectangle of the stored image in pixels (left, top, right, bottom) as fractions of the image as shown:

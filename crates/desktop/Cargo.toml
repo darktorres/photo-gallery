@@ -19,6 +19,7 @@ doctest = false
 
 [dependencies]
 pg-core = { path = "../core" }
+pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }
 pg-ingest = { path = "../ingest" }

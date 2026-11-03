@@ -4,8 +4,8 @@ use anyhow::Result;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::detection;
 use crate::metadata;
+use pg_model::detection;
 use pg_model::format::Format;
 use pg_model::media::Kind;
 

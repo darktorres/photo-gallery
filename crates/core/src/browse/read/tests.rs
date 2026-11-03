@@ -1,11 +1,11 @@
 use super::tree::{FOLDER_COUNTS, FOLDER_SIZES, TreeBuilder};
 use super::*;
-use crate::analysis::{THUMBHASH_MAX, ThumbHash};
 use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
 use crate::browse::writes::queue_rotation;
 use crate::catalog::fixture;
-use crate::detection;
 use crate::query::{DateRange, MediaType, Orientation, Query, Range, Sort, SortKey, Status};
+use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
+use pg_model::detection;
 use pg_model::media::Ext;
 use pg_model::path::folder_key;
 use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};

@@ -63,8 +63,14 @@ fn ids(c: &Catalog) -> Vec<(i64, String)> {
 fn wait_for_queue(c: &Catalog) {
     let start = Instant::now();
     loop {
-        let left: i64 =
-            c.conn.query_row("SELECT count(*) FROM file_writes WHERE attempts < 5", [], |r| r.get(0)).unwrap();
+        let left: i64 = c
+            .conn
+            .query_row(
+                "SELECT count(*) FROM file_writes WHERE attempts < ?1",
+                [pg_catalog::writes::MAX_ATTEMPTS],
+                |r| r.get(0),
+            )
+            .unwrap();
         if left == 0 {
             return;
         }
@@ -99,8 +105,7 @@ fn ratings_and_turns_reach_the_files() {
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
-        pg_catalog::browse::writes::set_rating(&c.conn, FileId::new(*id), Rating::new((n % 5 + 1) as u8), true)
-            .unwrap();
+        pg_catalog::writes::set_rating(&c.conn, FileId::new(*id), Rating::new((n % 5 + 1) as u8), true).unwrap();
     }
     writer.wake();
     wait_for_queue(&c);
@@ -122,7 +127,7 @@ fn ratings_and_turns_reach_the_files() {
     // A turn: the files show turned; the analysis is redone with the new size.
     let originals: Vec<Rgb> = files.iter().map(|(p, _)| shown(p)).collect();
     for (id, _) in &before {
-        pg_catalog::browse::writes::queue_rotation(&c.conn, FileId::new(*id), Turns::new(1)).unwrap();
+        pg_catalog::writes::queue_rotation(&c.conn, FileId::new(*id), Turns::new(1)).unwrap();
     }
     writer.wake();
     wait_for_queue(&c);

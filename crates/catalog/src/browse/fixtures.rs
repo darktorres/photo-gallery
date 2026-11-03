@@ -6,9 +6,9 @@ use pg_model::rating::Rating;
 use rusqlite::params;
 
 use crate::browse::read::{FILE_JOINS, list_grid};
-use crate::browse::writes::set_rating;
 use crate::fixture;
 use crate::query::{Query, Sort, SortKey};
+use crate::writes::set_rating;
 
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating).

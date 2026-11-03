@@ -712,7 +712,7 @@ impl qobject::GalleryModel {
         if turns == Turns::NONE {
             return;
         }
-        if let Err(e) = state::with_catalog(|c| browse::writes::queue_rotation(&c.conn, id, turns)) {
+        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::queue_rotation(&c.conn, id, turns)) {
             eprintln!("rotating: {e:#}");
             return;
         }
@@ -790,7 +790,7 @@ impl qobject::GalleryModel {
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
         let write_back = settings::prefs().write_back;
-        if let Err(e) = state::with_catalog(|c| browse::writes::set_rating(&c.conn, id, rating, write_back)) {
+        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::set_rating(&c.conn, id, rating, write_back)) {
             eprintln!("rating: {e:#}");
             return;
         }

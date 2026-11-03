@@ -15,6 +15,7 @@ pub mod browse;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod query;
+pub mod writes;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -1015,62 +1016,6 @@ impl Catalog {
         Ok(())
     }
 
-    /// Record what the file holds now, just written by the app (the import's reads: [`AnalysisWriter`]).
-    pub fn set_file_rating(conn: &Connection, file_id: FileId, value: Option<Rating>) -> Result<()> {
-        match value {
-            Some(v) => conn.prepare_cached(SET_FILE_RATING)?.execute(params![file_id.get(), v.get()])?,
-            None => conn.prepare_cached(DELETE_FILE_RATING)?.execute([file_id.get()])?,
-        };
-        Ok(())
-    }
-
-    /// The app rewrote a file in place (ingest::writeback): record its new size and mtime, so the scanner and the
-    /// import see it as the file it is. `before` is the (size, mtime) the file had on disk just before the write.
-    /// After a metadata-only change (`metadata_only` = the new BLAKE3) an analysis made from exactly those bytes
-    /// stays valid and follows the file: nothing is re-imported. After a pixel change it is left stale, so the
-    /// import redoes it (new upright size, hashes, PDQ). In the transaction that ends the write (clears
-    /// `file_writes.temp`), so that a reader sees the file as it was, or as it is now with the write done.
-    pub fn file_rewritten(
-        tx: &Transaction,
-        file_id: FileId,
-        before: (i64, i64),
-        after: (i64, i64),
-        metadata_only: Option<[u8; 32]>,
-    ) -> Result<()> {
-        tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
-        if let Some(file_hash) = metadata_only {
-            tx.execute(
-                "UPDATE analysis SET size = ?2, mtime = ?3, file_hash = ?4
-                 WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
-                params![file_id.get(), after.0, after.1, &file_hash[..], before.0, before.1],
-            )?;
-        }
-        Ok(())
-    }
-
-    /// A turn of `turns` written into the file (its pixels or its orientation tag): the analysis made before is of
-    /// the file as it is now turned back by them, so it is recorded as made at the catalog rotation that many turns
-    /// back. It is stale anyway (the mtime changed); until the import redoes it, the placeholder made from it shows
-    /// the file as it is now (`browse::read::placeholder`). With the file's rewrite, in its transaction.
-    pub fn analysis_turned_back(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
-        tx.execute(
-            "UPDATE analysis SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
-            params![file_id.get(), turns.get()],
-        )?;
-        Ok(())
-    }
-
-    /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the analysis, made without it, is stale
-    /// (`files.pending`), and the thumbnails no longer match (thumbs::Source). In the transaction that takes the
-    /// turn off the queue, so that no reader sees it both kept and queued.
-    pub fn add_catalog_rotation(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
-        tx.execute(
-            "UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1",
-            params![file_id.get(), turns.get()],
-        )?;
-        Ok(())
-    }
-
     /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
     pub fn status(&self) -> Result<Status> {
         let one = |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, [], |r| r.get(0))?) };
@@ -1659,6 +1604,12 @@ mod tests {
     }
 
     /// Whether the import would analyze file `id`, and its change number (`files.seq`).
+    /// A turn the file can't hold, written by the writer: the catalog keeps it.
+    fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
+        let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: turns, temp: None, attempts: 0 };
+        writes::done(&c.conn, &job, turns, writes::WriteEffect::KeptInCatalog).unwrap();
+    }
+
     fn state(c: &Catalog, id: FileId) -> (bool, i64) {
         c.conn
             .query_row("SELECT pending, seq FROM files WHERE id = ?1", [id.get()], |r| Ok((r.get(0)?, r.get(1)?)))
@@ -1743,9 +1694,7 @@ mod tests {
         scanned(&mut c, scan, "a.jpg", 11, 101);
         assert!(!stored(&mut c, &item));
         // Turned in the catalog since.
-        let tx = c.conn.unchecked_transaction().unwrap();
-        Catalog::add_catalog_rotation(&tx, item.id, Turns::new(1)).unwrap();
-        tx.commit().unwrap();
+        turn_kept(&c, item.id, 1);
         let listed = next_work(&c);
         assert_eq!(listed.rotation, Turns::new(1));
         let unturned = WorkItem { rotation: Turns::new(0), ..listed };
@@ -2056,9 +2005,7 @@ mod tests {
         analyzed(&mut c, &current);
         assert!(!state(&c, id).0);
         // Turned in the catalog: analyzed again with the turn, and the thumbnails' source moved on.
-        let tx = c.conn.unchecked_transaction().unwrap();
-        Catalog::add_catalog_rotation(&tx, id, Turns::new(1)).unwrap();
-        tx.commit().unwrap();
+        turn_kept(&c, id, 1);
         let (pending, after) = state(&c, id);
         assert!(pending && after > seq);
         let turned = next_work(&c);
@@ -2066,9 +2013,10 @@ mod tests {
         analyzed(&mut c, &turned);
         // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
         let rewritten = |c: &Catalog, before, after, metadata_only| {
-            let tx = c.conn.unchecked_transaction().unwrap();
-            Catalog::file_rewritten(&tx, id, before, after, metadata_only).unwrap();
-            tx.commit().unwrap();
+            // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
+            let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
+            let effect = writes::WriteEffect::Rewritten { before, after, metadata_only };
+            writes::done(&c.conn, &job, 0, effect).unwrap();
         };
         rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
         assert!(!state(&c, id).0);
@@ -2219,7 +2167,7 @@ mod tests {
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
         let stars = Rating::new(n).filter(|r| r.get() > 0);
-        crate::browse::writes::set_rating(&c.conn, FileId::new(id), stars, false).unwrap();
+        writes::set_rating(&c.conn, FileId::new(id), stars, false).unwrap();
     }
 
     #[test]

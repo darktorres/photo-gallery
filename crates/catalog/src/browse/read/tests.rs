@@ -1,9 +1,9 @@
 use super::tree::{FOLDER_COUNTS, FOLDER_SIZES, TreeBuilder};
 use super::*;
 use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
-use crate::browse::writes::queue_rotation;
 use crate::fixture;
 use crate::query::{DateRange, MediaType, Orientation, Query, Range, Sort, SortKey, Status};
+use crate::writes::queue_rotation;
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::detection;
 use pg_model::ids::FileId;

@@ -268,9 +268,8 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 ),
                 None => println!("thumbnail cache: none yet"),
             }
-            let mut errors = catalog.conn.prepare("SELECT error FROM file_writes WHERE error IS NOT NULL LIMIT 5")?;
-            for e in errors.query_map([], |r| r.get::<_, String>(0))? {
-                println!("  {}", e?);
+            for e in pg_catalog::writes::recent_errors(&catalog.conn, 5)? {
+                println!("  {e}");
             }
         }
         Command::Write => {
@@ -282,11 +281,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // Until nothing writable is left (failures past their retries stay queued and are reported).
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                let left: i64 = catalog.conn.query_row(
-                    "SELECT count(*) FROM file_writes WHERE attempts < 5 AND (error IS NULL OR temp IS NOT NULL)",
-                    [],
-                    |r| r.get(0),
-                )?;
+                let left = pg_catalog::writes::left_to_write(&catalog.conn)?;
                 if left == 0 {
                     break;
                 }

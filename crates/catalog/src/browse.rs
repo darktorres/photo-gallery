@@ -6,4 +6,4 @@ pub mod read;
 pub mod writes;
 
 #[cfg(test)]
-mod fixtures;
+pub(crate) mod fixtures;

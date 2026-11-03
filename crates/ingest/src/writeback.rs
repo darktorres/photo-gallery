@@ -11,7 +11,6 @@
 //! A crash during step 2 leaves the row with its temp set, and the next start finishes the copy.
 
 use pg_model::ids::FileId;
-use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 use std::io::Write;
 use std::path::{Path, PathBuf};
@@ -23,31 +22,18 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
 use pg_catalog::Catalog;
+use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, WriteEffect, WriteKind};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
 use pg_thumbcache::ThumbCache;
-use rusqlite::{OptionalExtension, params};
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
 const SETTLE_SECS: i64 = 2;
-/// Failed writes are retried at most this many times (offline drives retry without counting).
-const MAX_ATTEMPTS: i64 = 5;
 /// How often the queue is looked at without being woken (retries, offline drives).
 const IDLE_CHECK: Duration = Duration::from_secs(30);
-
-/// One queued change.
-struct Job {
-    file_id: FileId,
-    kind: String,
-    value: i64,
-    /// Set when the new content is complete: its path, and the value it carries.
-    temp: Option<(String, i64)>,
-    /// Failed attempts so far.
-    attempts: i64,
-}
 
 /// What the app shows about the queue.
 #[derive(Clone, Default)]
@@ -162,38 +148,10 @@ impl Inner {
             if self.stop.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            let queued: usize = catalog.conn.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0))?;
-            self.status.lock().unwrap().queued = queued;
-            // Finishing interrupted copies first; then the oldest settled change.
-            // A job is tried again once its last attempt is older than the settle time times the attempts so far: a
-            // failure waits longer each time, and at MAX_ATTEMPTS it is no longer picked (see give_up for a temp).
-            let job = catalog
-                .conn
-                .query_row(
-                    "SELECT file_id, kind, value, temp, temp_value, attempts FROM file_writes
-                     WHERE attempts < ?1 AND queued <= unixepoch() - ?2 * (attempts + 1)
-                     ORDER BY temp IS NULL, queued LIMIT 1",
-                    params![MAX_ATTEMPTS, SETTLE_SECS],
-                    |r| {
-                        let temp: Option<String> = r.get(3)?;
-                        let temp_value: Option<i64> = r.get(4)?;
-                        Ok(Job {
-                            file_id: FileId::new(r.get(0)?),
-                            kind: r.get(1)?,
-                            value: r.get(2)?,
-                            temp: temp.zip(temp_value),
-                            attempts: r.get(5)?,
-                        })
-                    },
-                )
-                .optional()?;
-            let Some(job) = job else {
-                let settling: bool = catalog.conn.query_row(
-                    "SELECT EXISTS(SELECT 1 FROM file_writes WHERE attempts < ?1)",
-                    [MAX_ATTEMPTS],
-                    |r| r.get(0),
-                )?;
-                if settling {
+            self.status.lock().unwrap().queued = writes::remaining(&catalog.conn)?;
+            // Finishing interrupted copies first; then the oldest settled change (`writes::next_ready`).
+            let Some(job) = writes::next_ready(&catalog.conn, SETTLE_SECS)? else {
+                if writes::attemptable(&catalog.conn)? {
                     // Come back when the newest change has settled.
                     std::thread::sleep(Duration::from_secs(SETTLE_SECS as u64));
                     continue;
@@ -211,13 +169,10 @@ impl Inner {
                 if let Some((temp, _)) = &job.temp {
                     let _ = std::fs::remove_file(temp);
                 }
-                catalog.conn.execute(
-                    "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2",
-                    params![job.file_id.get(), job.kind],
-                )?;
+                writes::drop_gone(&catalog.conn, &job)?;
                 self.status.lock().unwrap().error = Some(format!(
                     "A queued {} was dropped: file {} is not in the library",
-                    job.kind,
+                    job.kind.key(),
                     job.file_id.get()
                 ));
                 continue;
@@ -234,11 +189,7 @@ impl Inner {
                             _ => false,
                         });
                     let message = format!("{e:#}");
-                    catalog.conn.execute(
-                        "UPDATE file_writes SET attempts = attempts + ?3, error = ?4, queued = unixepoch()
-                         WHERE file_id = ?1 AND kind = ?2",
-                        params![job.file_id.get(), job.kind, if offline { 0 } else { 1 }, message],
-                    )?;
+                    writes::failed(&catalog.conn, &job, &message, offline)?;
                     self.status.lock().unwrap().error = Some(message);
                     if offline {
                         // Leave it for the next idle check rather than spinning on it.
@@ -262,27 +213,17 @@ impl Inner {
         folder.is_ok_and(|p| Path::new(&p).is_dir())
     }
 
-    /// A finishing copy that failed at the cap: its temp is discarded, and the file's content counts as unknown, as
-    /// after an interrupted copy (`file_rewritten` with no hash, so the import redoes the analysis). The file then no
-    /// longer shows as being written. The row stays, with its attempts and error, so the failure is still in the queue.
+    /// A finishing copy that failed at the cap: its temp is discarded, and the job no longer counts as being written
+    /// (`writes::abandon_temp`). The row stays, with its attempts and error, so the failure is still in the queue.
     fn give_up(&self, catalog: &Catalog, job: &Job) -> Result<()> {
         let Some((temp, _)) = &job.temp else { return Ok(()) };
         let path: String = catalog.conn.query_row(
-            "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+            r"SELECT fo.path || '\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
             [job.file_id.get()],
             |r| r.get(0),
         )?;
         let _ = std::fs::remove_file(temp);
-        let tx = catalog.conn.unchecked_transaction()?;
-        if let Ok(after) = stat(&path) {
-            Catalog::file_rewritten(&tx, job.file_id, (-1, -1), after, None)?;
-        }
-        tx.execute(
-            "UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = ?2",
-            params![job.file_id.get(), job.kind],
-        )?;
-        tx.commit()?;
-        Ok(())
+        writes::abandon_temp(&catalog.conn, job, stat(&path).ok())
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {
@@ -295,12 +236,11 @@ impl Inner {
         )?;
 
         // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog, and their ratings are
-        // never queued (browse::writes::set_rating).
+        // never queued (pg_catalog::writes::set_rating).
         if kind == Kind::Video.key() && job.temp.is_none() {
-            if job.kind == "rotation" {
-                self.keep_turn_in_catalog(conn, job)?;
-            } else {
-                self.done(conn, job, job.value, |_| Ok(()))?;
+            match job.kind {
+                WriteKind::Turns => self.keep_turn_in_catalog(conn, job)?,
+                WriteKind::Rating => writes::done(conn, job, job.value, WriteEffect::Nothing)?,
             }
             return Ok(());
         }
@@ -310,8 +250,9 @@ impl Inner {
             // unknown now, so its analysis is redone rather than carried over.
             copy_into(Path::new(temp), &path)?;
             let after = stat(&path)?;
-            self.done(conn, job, *written, |tx| record_rewrite(tx, job, *written, (-1, -1), after, None))?;
-            if job.kind == "rotation" {
+            let effect = WriteEffect::Rewritten { before: (-1, -1), after, metadata_only: None };
+            writes::done(conn, job, *written, effect)?;
+            if job.kind == WriteKind::Turns {
                 self.pixels_changed();
             }
             return Ok(());
@@ -327,8 +268,8 @@ impl Inner {
         let temp = temp_path(&path);
         let _ = std::fs::remove_file(&temp);
 
-        let pixels_changed = match job.kind.as_str() {
-            "rating" => {
+        let pixels_changed = match job.kind {
+            WriteKind::Rating => {
                 let rating = job.value as u8;
                 let tool = ExifTool::running(exiftool, &exiftool_program())?;
                 tool.write_rating(&path, &temp, rating)?;
@@ -339,7 +280,7 @@ impl Inner {
                 }
                 false
             }
-            "rotation" => {
+            WriteKind::Turns => {
                 let turns = job.value.rem_euclid(4) as u8;
                 let new = match rotate(&bytes, format, Turns::new(turns))? {
                     Outcome::Rewritten(new) => Some(new),
@@ -365,20 +306,17 @@ impl Inner {
                 }
                 true
             }
-            other => bail!("unknown write kind {other}"),
         };
 
         // Step 2: the new content is complete; record it, then copy it in. From here until `done` records the write,
         // readers know the file may be part-written (browse::read::FileState::writing).
-        conn.execute(
-            "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
-            params![job.file_id.get(), job.kind, temp, job.value],
-        )?;
+        writes::record_temp(conn, job, &temp, job.value)?;
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
         let after = stat(&path)?;
-        self.done(conn, job, job.value, |tx| record_rewrite(tx, job, job.value, before, after, new_hash))?;
-        if job.kind == "rating" {
+        let effect = WriteEffect::Rewritten { before, after, metadata_only: new_hash };
+        writes::done(conn, job, job.value, effect)?;
+        if job.kind == WriteKind::Rating {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
@@ -393,48 +331,8 @@ impl Inner {
 
     /// A turn the file can't hold is kept in the catalog instead.
     fn keep_turn_in_catalog(&self, conn: &rusqlite::Connection, job: &Job) -> Result<()> {
-        let turns = job.value.rem_euclid(4) as u8;
-        self.done(conn, job, job.value, |tx| Catalog::add_catalog_rotation(tx, job.file_id, Turns::new(turns)))?;
+        writes::done(conn, job, job.value, WriteEffect::KeptInCatalog)?;
         self.pixels_changed();
-        Ok(())
-    }
-
-    /// `written` (a rating, or a number of turns) is now in the file, or the catalog: `record` records what the
-    /// write changed, in the same transaction, so that no reader sees the write both done and still queued (a turn
-    /// shown twice), or the file rewritten and the catalog not yet saying so. A rating changed again meanwhile, or
-    /// more turns added, stays queued for the rest.
-    fn done(
-        &self,
-        conn: &rusqlite::Connection,
-        job: &Job,
-        written: i64,
-        record: impl FnOnce(&rusqlite::Transaction) -> Result<()>,
-    ) -> Result<()> {
-        let (file_id, kind) = (job.file_id.get(), job.kind.as_str());
-        let tx = conn.unchecked_transaction()?;
-        record(&tx)?;
-        if kind == "rotation" {
-            tx.execute(
-                "UPDATE file_writes SET value = (value - ?2 + 4) % 4 WHERE file_id = ?1 AND kind = 'rotation'",
-                params![file_id, written],
-            )?;
-            tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation' AND value = 0", [file_id])?;
-            // The upright size at once: the grid lays the file out turned before its analysis is redone.
-            if pg_model::orientation::turns_swap(Turns::new(written.rem_euclid(4) as u8)) {
-                tx.execute("UPDATE analysis SET width = height, height = width WHERE file_id = ?1", [file_id])?;
-            }
-        } else {
-            tx.execute(
-                "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2 AND value = ?3",
-                params![file_id, kind, written],
-            )?;
-        }
-        tx.execute(
-            "UPDATE file_writes SET temp = NULL, temp_value = NULL, attempts = 0, error = NULL
-             WHERE file_id = ?1 AND kind = ?2",
-            params![file_id, kind],
-        )?;
-        tx.commit()?;
         Ok(())
     }
 
@@ -445,27 +343,6 @@ impl Inner {
 }
 
 /// Size and mtime (FILETIME, as the scanner records it).
-/// What a write put in the file, recorded in the catalog in `tx` (`done`'s transaction): the file's new stat and
-/// its analysis (`file_rewritten`), then what the file now holds, a rating or a turn it shows upright
-/// (`analysis_turned_back`). Both the finishing of an interrupted copy and the normal write record it here, so the
-/// two can't disagree about a turn.
-fn record_rewrite(
-    tx: &rusqlite::Transaction,
-    job: &Job,
-    value: i64,
-    before: (i64, i64),
-    after: (i64, i64),
-    metadata_only: Option<[u8; 32]>,
-) -> Result<()> {
-    Catalog::file_rewritten(tx, job.file_id, before, after, metadata_only)?;
-    if job.kind == "rating" {
-        Catalog::set_file_rating(tx, job.file_id, Rating::new((value as u8).min(5)))?;
-    } else {
-        Catalog::analysis_turned_back(tx, job.file_id, Turns::new(value.rem_euclid(4) as u8))?;
-    }
-    Ok(())
-}
-
 pub(crate) fn stat(path: &str) -> Result<(i64, i64)> {
     let m = std::fs::metadata(path).with_context(|| format!("reading {path}"))?;
     Ok((m.len() as i64, pg_platform::file::last_write_time(&m)))

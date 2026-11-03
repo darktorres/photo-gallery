@@ -2,14 +2,16 @@ use super::tree::{FOLDER_COUNTS, FOLDER_SIZES, TreeBuilder};
 use super::*;
 use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
 use crate::fixture;
-use crate::query::{DateRange, MediaType, Query, Range, Shape, Sort, SortKey, Status};
+use crate::query::condition;
 use crate::writes::queue_rotation;
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
+use pg_model::date::Day;
 use pg_model::detection;
 use pg_model::ids::{FileId, FolderId};
 use pg_model::media::Ext;
 use pg_model::path::folder_key;
 use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};
+use pg_model::query::{DateRange, MediaType, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
 use pg_model::state::FileState;
 use pg_model::turns::Turns;
 use rusqlite::params_from_iter;
@@ -104,7 +106,10 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
 fn ratings_and_orders() {
     let c = library();
     let all = Query::default();
-    let ratings = |r: &[u8]| Query { ratings: r.to_vec(), ..Query::default() };
+    let ratings = |r: &[u8]| Query {
+        ratings: r.iter().map(|&n| RatingFilter::try_from(n).unwrap()).collect(),
+        ..Query::default()
+    };
     // Name: both drives' "p" as one folder, by name (Unicode case-insensitive: Ä after b), then "p\sub".
     assert_eq!(ids(&c, "p", true, &all, Sort::default()), [2, 1, 3, 4]);
     assert_eq!(ids(&c, "p", false, &all, Sort::default()), [2, 1, 3]);
@@ -525,7 +530,14 @@ fn lists_are_made_at_their_size() {
     assert_eq!(all.capacity(), all.len());
     let sorted = list_grid(&c, "", true, &Query::default(), by(SortKey::Size, true)).unwrap();
     assert_eq!(sorted.capacity(), sorted.len());
-    let one = list_grid(&c, "", true, &Query { ratings: vec![5], ..Query::default() }, Sort::default()).unwrap();
+    let one = list_grid(
+        &c,
+        "",
+        true,
+        &Query { ratings: vec![RatingFilter::try_from(5).unwrap()], ..Query::default() },
+        Sort::default(),
+    )
+    .unwrap();
     assert!(one.capacity() < all.len() * 3 / 4 || one.capacity() == one.len());
 }
 
@@ -535,7 +547,7 @@ fn lists_read_the_order_index() {
     for (folder, recursive) in [("p", true), ("p", false), ("", true)] {
         for sort in [Sort::default(), by(SortKey::Name, true), by(SortKey::Taken, true)] {
             let (scope, values) = scope(folder, recursive);
-            let unrated = Query { ratings: vec![0], ..Query::default() }.condition();
+            let unrated = condition(&Query { ratings: vec![RatingFilter::Unrated], ..Query::default() });
             let plan: Vec<String> = c
                 .conn
                 .prepare(&format!("EXPLAIN QUERY PLAN {}", grid_sql(&scope, &unrated.sql, sort)))
@@ -597,14 +609,14 @@ fn facets_filter() {
     assert_eq!(q(&|q| q.status = vec![Status::Failed]), [7]);
     assert_eq!(q(&|q| q.status = vec![Status::Pending]), [8]);
     assert_eq!(q(&|q| q.status = vec![Status::Imported]), [2, 6, 1, 3, 4, 5]);
-    let day = |from: &str, to: &str| DateRange { from: Some(from.into()), to: Some(to.into()) };
+    let day = |from: &str, to: &str| DateRange { from: Day::parse(from), to: Day::parse(to) };
     assert_eq!(q(&|q| q.taken = day("2024-05-01", "2024-05-01")), [1]);
-    assert!(q(&|q| q.taken.from = Some("2024-05-02".into())).is_empty());
+    assert!(q(&|q| q.taken.from = Day::parse("2024-05-02")).is_empty());
     // A malformed date doesn't filter.
-    assert_eq!(q(&|q| q.taken.from = Some("2024-13-45".into())).len(), 8);
+    assert_eq!(q(&|q| q.taken.from = Day::parse("2024-13-45")).len(), 8);
     // The test files' mtimes are FILETIMEs a few hundred ns after 1601.
     assert_eq!(q(&|q| q.modified = day("1600-12-30", "1601-01-02")).len(), 8);
-    assert!(q(&|q| q.modified.from = Some("2000-01-01".into())).is_empty());
+    assert!(q(&|q| q.modified.from = Day::parse("2000-01-01")).is_empty());
     assert_eq!(q(&|q| q.name = "ä".into()), [3]);
     assert_eq!(q(&|q| q.name = "clip".into()), [5]);
     // Facets combine with AND.

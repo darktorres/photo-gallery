@@ -70,7 +70,8 @@ use core::pin::Pin;
 
 use cxx_qt_lib::{QString, QStringList};
 use pg_catalog::browse;
-use pg_catalog::query::{Query, Sort, SortKey};
+use pg_catalog::query::{from_json, to_json};
+use pg_model::query::{Query, Sort, SortKey};
 
 use crate::state;
 
@@ -100,7 +101,7 @@ fn view_names() -> QStringList {
 impl Default for ViewRust {
     /// Where the user was.
     fn default() -> ViewRust {
-        let sort = Sort::from_json(&session("sort").unwrap_or_default());
+        let sort = from_json::<Sort>(&session("sort").unwrap_or_default());
         ViewRust {
             folder: QString::from(&session("folder").unwrap_or_default()),
             recursive: session("recursive").is_none_or(|r| r == "true"),
@@ -122,11 +123,11 @@ impl ViewRust {
 
 impl qobject::View {
     fn sort_json(&self) -> QString {
-        QString::from(&self.sort().to_json())
+        QString::from(&to_json(&self.sort()))
     }
 
     fn set_sort_json(mut self: Pin<&mut Self>, json: &QString) {
-        let sort = Sort::from_json(&json.to_string());
+        let sort = from_json::<Sort>(&json.to_string());
         self.as_mut().set_sort_key(QString::from(sort.key.key()));
         self.set_descending(sort.descending);
     }
@@ -137,7 +138,7 @@ impl qobject::View {
 
     fn save_session(&self, query: &QString) {
         let (folder, recursive, query, sort) =
-            (self.folder.to_string(), self.recursive.to_string(), query.to_string(), self.sort().to_json());
+            (self.folder.to_string(), self.recursive.to_string(), query.to_string(), to_json(&self.sort()));
         let values = [("folder", &*folder), ("recursive", &*recursive), ("query", &*query), ("sort", &*sort)];
         if let Err(e) = state::with_catalog(|c| browse::writes::session_set_many(c, &values)) {
             eprintln!("session: {e:#}");
@@ -153,7 +154,7 @@ impl qobject::View {
             name,
             folder: self.folder.to_string(),
             recursive: self.recursive,
-            query: Query::from_json(&query.to_string()),
+            query: from_json::<Query>(&query.to_string()),
             sort: self.sort(),
         };
         if let Err(e) = state::with_catalog(|c| browse::writes::save_view(c, &view)) {
@@ -178,6 +179,6 @@ impl qobject::View {
         self.as_mut().set_recursive(v.recursive);
         self.as_mut().set_sort_key(QString::from(v.sort.key.key()));
         self.set_descending(v.sort.descending);
-        QString::from(&v.query.to_json())
+        QString::from(&to_json(&v.query))
     }
 }

@@ -15,7 +15,7 @@ use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_catalog::{Catalog, Versions, WorkItem};
 use pg_model::path::WorkList;
-use pg_catalog::query::{Query, Sort, SortKey};
+use pg_model::query::{Query, RatingFilter, Sort, SortKey};
 use pg_thumbcache::{self as thumbs, Pending};
 
 const DATA: &str = match option_env!("PG_BENCH_DATA") {
@@ -76,7 +76,7 @@ fn for_list(which: List) -> (Catalog, List) {
 #[bench::folder_flat(args = (List::FolderFlat), setup = for_list)]
 fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
     let name = Sort::default();
-    let unrated = Query { ratings: vec![0], ..Query::default() };
+    let unrated = Query { ratings: vec![RatingFilter::Unrated], ..Query::default() };
     let (folder, recursive, query, sort) = match which {
         List::AllName => ("", true, Query::default(), name),
         List::AllTaken => ("", true, Query::default(), Sort { key: SortKey::Taken, descending: true }),

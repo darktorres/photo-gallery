@@ -14,6 +14,7 @@ pub mod media;
 pub mod orientation;
 pub mod path;
 pub mod pdq;
+pub mod query;
 pub mod rating;
 pub mod state;
 pub mod turns;

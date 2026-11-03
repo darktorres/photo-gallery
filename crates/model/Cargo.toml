@@ -10,4 +10,5 @@ workspace = true
 # The domain data: pure and WASM-safe (no file, catalog, decoder or platform calls), so the web client can share it.
 [dependencies]
 arrayvec.workspace = true
+serde.workspace = true
 strum.workspace = true

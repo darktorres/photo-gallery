@@ -4,8 +4,9 @@ use crate::Catalog;
 use crate::Result;
 use rusqlite::OptionalExtension;
 
-use crate::query::{Query, Sort};
+use crate::query::from_json;
 use pg_model::path::name_key;
+use pg_model::query::{Query, Sort};
 
 /// A saved view (ImageRater's bookmarks): where, which files, in what order.
 #[derive(Clone, PartialEq, Debug)]
@@ -27,8 +28,8 @@ pub fn views(catalog: &Catalog) -> Result<Vec<View>> {
             name: r.get(0)?,
             folder: r.get(1)?,
             recursive: r.get(2)?,
-            query: Query::from_json(&r.get::<_, String>(3)?),
-            sort: Sort::from_json(&r.get::<_, String>(4)?),
+            query: from_json(&r.get::<_, String>(3)?),
+            sort: from_json(&r.get::<_, String>(4)?),
         })
     })?;
     let mut views: Vec<View> = rows.collect::<rusqlite::Result<_>>()?;

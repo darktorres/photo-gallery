@@ -8,7 +8,8 @@ use strum::IntoEnumIterator;
 
 use super::grid::FILE_JOINS;
 use super::scope;
-use crate::query::{BORDER_SUMS, BorderFacet, Facet, MediaType, Query};
+use crate::query::{BORDER_SUMS, Facet, MEDIA_CASE, condition_without};
+use pg_model::query::{BorderFacet, MediaType, Query};
 
 /// What the filter bar shows next to its choices, for a view's folder.
 #[derive(Default, Debug, PartialEq)]
@@ -29,7 +30,7 @@ pub fn facets(catalog: &Catalog, merged: &str, recursive: bool, query: &Query) -
     let conn = &catalog.conn;
     let (scope, scope_values) = scope(merged, recursive);
     let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
-        let cond = query.condition_without(skip);
+        let cond = condition_without(query, skip);
         let sql = format!(
             "SELECT {select}, count(*) FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
             cond.sql
@@ -45,14 +46,14 @@ pub fn facets(catalog: &Catalog, merged: &str, recursive: bool, query: &Query) -
         |r| r.get(0),
     )?;
     let matching = count(None, "''", "")?.first().map_or(0, |r| r.1);
-    let mut types: Vec<(MediaType, i64)> = count(Some(Facet::Types), MediaType::CASE, "GROUP BY 1")?
+    let mut types: Vec<(MediaType, i64)> = count(Some(Facet::Types), MEDIA_CASE, "GROUP BY 1")?
         .into_iter()
         .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
         .collect();
     types.sort();
     let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
     // In one pass: each value's condition summed (a file can have sides of two classes).
-    let cond = query.condition_without(Some(Facet::Borders));
+    let cond = condition_without(query, Some(Facet::Borders));
     let sql =
         format!("SELECT {BORDER_SUMS} FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {}", cond.sql);
     let values = scope_values.iter().cloned().chain(cond.params);

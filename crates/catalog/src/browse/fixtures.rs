@@ -7,8 +7,9 @@ use rusqlite::params;
 
 use crate::browse::read::{FILE_JOINS, list_grid};
 use crate::fixture;
-use crate::query::{Query, Sort, SortKey};
+use crate::query::key_sql;
 use crate::writes::set_rating;
+use pg_model::query::{Query, Sort, SortKey};
 
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating).
@@ -80,7 +81,7 @@ pub(crate) fn mixed_library() -> crate::Catalog {
 /// The order SQLite gave when it sorted (before the sort moved here): the key, files without it last, then
 /// name order ascending.
 pub(crate) fn sorted_by_sqlite(c: &crate::Catalog, sort: Sort) -> Vec<i64> {
-    let order = match sort.key_sql() {
+    let order = match key_sql(sort) {
         None if sort.descending => "f.order_key DESC, f.id DESC".to_string(),
         None => "f.order_key, f.id".to_string(),
         Some(k) => format!("{k} IS NULL, {k} {}, f.order_key, f.id", if sort.descending { "DESC" } else { "ASC" }),

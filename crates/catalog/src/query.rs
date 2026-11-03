@@ -1,6 +1,7 @@
-//! What a view shows and in what order (PLAN §7): a [`Query`] of facets and a [`Sort`]. Facets combine with AND,
-//! the values inside one facet with OR, and an empty facet doesn't filter. Both become SQL here, with every value
-//! the user typed bound as a parameter, and both travel as JSON (saved views, the session, the QML side).
+//! What a view shows and in what order (PLAN §7): a `Query` of facets and a `Sort` (`pg_model::query`, the data and
+//! its typed editing). Facets combine with AND, the values inside one facet with OR, and an empty facet doesn't filter.
+//! Both become SQL here, with every value the user typed bound as a parameter. The JSON they are saved and sessioned as
+//! is read and written here too (`from_json`, `to_json`).
 //!
 //! The SQL expects the browse query's aliases: `f` the file, `a` its analysis (joined only without an error), `r`
 //! its rating, `m` its border mark (`f.order_key` is the name order).
@@ -8,10 +9,11 @@
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Value;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
+use serde::de::DeserializeOwned;
 
-use pg_model::date::parse_iso_date;
 use pg_model::group_distance;
+use pg_model::query::{BorderFacet, MediaType, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
 
 /// FILETIME (100 ns since 1601) of the Unix epoch, in seconds. A macro, for SQL made at compile time.
 macro_rules! filetime_unix_offset {
@@ -83,141 +85,50 @@ macro_rules! pair {
 /// File sizes are in MB as Explorer counts them (MiB).
 const MB: f64 = 1_048_576.0;
 
-/// Type, as the filter sees it: the file's kind (`media::Kind`), with animated images apart from still ones.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
-pub enum MediaType {
-    Image,
-    Animated,
-    Video,
+/// The condition of a type's value.
+fn media_sql(media: MediaType) -> &'static str {
+    match media {
+        MediaType::Image => "(f.kind = 'image' AND coalesce(a.frames, 1) <= 1)",
+        MediaType::Animated => "(f.kind = 'image' AND a.frames > 1)",
+        MediaType::Video => "f.kind = 'video'",
+    }
 }
 
-impl MediaType {
-    fn sql(self) -> &'static str {
-        match self {
-            MediaType::Image => "(f.kind = 'image' AND coalesce(a.frames, 1) <= 1)",
-            MediaType::Animated => "(f.kind = 'image' AND a.frames > 1)",
-            MediaType::Video => "f.kind = 'video'",
+/// The type of a row, for the counts (`browse::read::facets`).
+pub(crate) const MEDIA_CASE: &str =
+    "CASE WHEN f.kind = 'video' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END";
+
+/// The condition of a shape's value.
+fn shape_sql(shape: Shape) -> &'static str {
+    match shape {
+        Shape::Landscape => "(a.width - a.height) * 100 > a.width",
+        Shape::Portrait => "(a.height - a.width) * 100 > a.height",
+        Shape::Square => "abs(a.width - a.height) * 100 <= max(a.width, a.height)",
+    }
+}
+
+/// The condition of a status's value. Every file is one of the three: pending (`files.pending`, what the import does
+/// next), else imported or failed by its current analysis.
+fn status_sql(status: Status) -> &'static str {
+    match status {
+        Status::Imported => {
+            "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NULL))"
         }
-    }
-
-    /// The type of a row, for the counts (`browse::read::facets`).
-    pub(crate) const CASE: &'static str =
-        "CASE WHEN f.kind = 'video' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END";
-
-    /// The name in JSON and in `CASE` (strum's snake_case, which serde's names are too).
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<MediaType> {
-        key.parse().ok()
-    }
-}
-
-/// Upright shape. Within 1% of square counts as square.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
-pub enum Shape {
-    Landscape,
-    Portrait,
-    Square,
-}
-
-impl Shape {
-    /// The name in JSON.
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<Shape> {
-        key.parse().ok()
-    }
-
-    fn sql(self) -> &'static str {
-        match self {
-            Shape::Landscape => "(a.width - a.height) * 100 > a.width",
-            Shape::Portrait => "(a.height - a.width) * 100 > a.height",
-            Shape::Square => "abs(a.width - a.height) * 100 <= max(a.width, a.height)",
+        Status::Pending => "f.pending = 1",
+        Status::Failed => {
+            "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NOT NULL))"
         }
     }
 }
 
-/// Where a file is in the import.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
-pub enum Status {
-    /// Analyzed, and the analysis is current.
-    Imported,
-    /// Not analyzed yet, or changed since (the background job will get to it).
-    Pending,
-    /// The import couldn't read or decode it.
-    Failed,
-}
-
-impl Status {
-    /// The name in JSON.
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<Status> {
-        key.parse().ok()
-    }
-
-    /// Every file is one of the three: pending (`files.pending`, what the import does next), else imported or
-    /// failed by its current analysis.
-    fn sql(self) -> &'static str {
-        match self {
-            Status::Imported => {
-                "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NULL))"
-            }
-            Status::Pending => "f.pending = 1",
-            Status::Failed => {
-                "(f.pending = 0 AND EXISTS (SELECT 1 FROM analysis s WHERE s.file_id = f.id AND s.error IS NOT NULL))"
-            }
-        }
-    }
-}
-
-/// Borders, as the filter sees them: none found, or a side found of a class (`detection::Class`). Borders the user
-/// marked as not a border count as none.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
-pub enum BorderFacet {
-    None,
-    Black,
-    White,
-    Color,
-    Blur,
-}
-
-impl BorderFacet {
-    /// The name in JSON (a class's, `detection::Class::key`).
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<BorderFacet> {
-        key.parse().ok()
-    }
-
-    fn sql(self) -> &'static str {
-        match self {
-            BorderFacet::None => border_none!(),
-            BorderFacet::Black => border_class!("black"),
-            BorderFacet::White => border_class!("white"),
-            BorderFacet::Color => border_class!("color"),
-            BorderFacet::Blur => border_class!("blur"),
-        }
+/// The condition of a border value (a class's, `detection::Class`, or none).
+fn border_sql(border: BorderFacet) -> &'static str {
+    match border {
+        BorderFacet::None => border_none!(),
+        BorderFacet::Black => border_class!("black"),
+        BorderFacet::White => border_class!("white"),
+        BorderFacet::Color => border_class!("color"),
+        BorderFacet::Blur => border_class!("blur"),
     }
 }
 
@@ -240,79 +151,6 @@ pub(crate) const BORDER_SUMS: &str = concat!(
 /// One the user marked.
 const MARKED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NOT NULL)";
 
-/// A numeric range; either end may be open. Both ends are included.
-#[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Debug)]
-#[serde(default)]
-pub struct Range {
-    pub min: Option<f64>,
-    pub max: Option<f64>,
-}
-
-impl Range {
-    fn is_empty(&self) -> bool {
-        self.min.is_none() && self.max.is_none()
-    }
-}
-
-/// Calendar days `YYYY-MM-DD`, both included; either end may be open. A malformed date doesn't filter (the UI
-/// marks it).
-#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
-#[serde(default)]
-pub struct DateRange {
-    pub from: Option<String>,
-    pub to: Option<String>,
-}
-
-impl DateRange {
-    fn is_empty(&self) -> bool {
-        self.from.is_none() && self.to.is_none()
-    }
-}
-
-/// The facets a view filters by. `Query::default()` shows everything.
-#[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
-#[serde(default)]
-pub struct Query {
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub types: Vec<MediaType>,
-    /// Lower-case extensions without the dot.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub exts: Vec<String>,
-    /// 0 is unrated.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub ratings: Vec<u8>,
-    #[serde(skip_serializing_if = "Range::is_empty")]
-    pub size_mb: Range,
-    #[serde(skip_serializing_if = "Range::is_empty")]
-    pub megapixels: Range,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub shapes: Vec<Shape>,
-    /// When it was taken (`analysis.taken`, wall-clock time).
-    #[serde(skip_serializing_if = "DateRange::is_empty")]
-    pub taken: DateRange,
-    /// Last modified, in this computer's time zone.
-    #[serde(skip_serializing_if = "DateRange::is_empty")]
-    pub modified: DateRange,
-    /// Seconds; videos only (anything without a duration is left out when set).
-    #[serde(skip_serializing_if = "Range::is_empty")]
-    pub duration_s: Range,
-    /// Some(true): files with a duplicate among the present files (identical bytes, identical pixels or a tier-1
-    /// pair within `pg_model::pdq::GROUP_DISTANCE`); Some(false): imported files without one.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub duplicates: Option<bool>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub status: Vec<Status>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub borders: Vec<BorderFacet>,
-    /// The review: Some(true), files whose borders the user marked as not a border; Some(false), files with borders
-    /// found and not marked.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub border_marked: Option<bool>,
-    /// Part of the file name, any case.
-    #[serde(skip_serializing_if = "String::is_empty")]
-    pub name: String,
-}
-
 /// A facet whose own values are left out when counting it (`browse::read::facets`): each value's count is what choosing
 /// it would show, given the other facets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -328,308 +166,144 @@ pub struct Condition {
     pub params: Vec<Value>,
 }
 
-impl Query {
-    /// The query a JSON text describes; malformed or empty text is everything (`Query::default`).
-    pub fn from_json(json: &str) -> Query {
-        serde_json::from_str(json).unwrap_or_default()
-    }
+/// The condition of a query.
+pub fn condition(query: &Query) -> Condition {
+    condition_without(query, None)
+}
 
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| "{}".into())
+/// The condition, leaving one facet out.
+pub fn condition_without(query: &Query, skip: Option<Facet>) -> Condition {
+    // Written into one string: each part ANDed on, a facet's values ORed in parentheses.
+    let mut sql = String::new();
+    let mut params: Vec<Value> = Vec::new();
+    fn and(sql: &mut String) -> &mut String {
+        if !sql.is_empty() {
+            sql.push_str(" AND ");
+        }
+        sql
     }
-
-    /// Whether it filters anything.
-    pub fn is_empty(&self) -> bool {
-        *self == Query::default()
-    }
-
-    pub fn condition(&self) -> Condition {
-        self.condition_without(None)
-    }
-
-    /// The condition, leaving one facet out.
-    pub fn condition_without(&self, skip: Option<Facet>) -> Condition {
-        // Written into one string: each part ANDed on, a facet's values ORed in parentheses.
-        let mut sql = String::new();
-        let mut params: Vec<Value> = Vec::new();
-        fn and(sql: &mut String) -> &mut String {
-            if !sql.is_empty() {
-                sql.push_str(" AND ");
+    fn any<'a>(sql: &mut String, items: impl IntoIterator<Item = &'a str>) {
+        let sql = and(sql);
+        sql.push('(');
+        for (i, item) in items.into_iter().enumerate() {
+            if i > 0 {
+                sql.push_str(" OR ");
             }
-            sql
+            sql.push_str(item);
         }
-        fn any<'a>(sql: &mut String, items: impl IntoIterator<Item = &'a str>) {
-            let sql = and(sql);
-            sql.push('(');
-            for (i, item) in items.into_iter().enumerate() {
-                if i > 0 {
-                    sql.push_str(" OR ");
-                }
-                sql.push_str(item);
-            }
-            sql.push(')');
+        sql.push(')');
+    }
+    /// `column IN (?, …)` for `n` values.
+    fn among(sql: &mut String, column: &str, n: usize) {
+        sql.push_str(column);
+        sql.push_str(" IN (");
+        for i in 0..n {
+            sql.push_str(if i > 0 { ", ?" } else { "?" });
         }
-        /// `column IN (?, …)` for `n` values.
-        fn among(sql: &mut String, column: &str, n: usize) {
-            sql.push_str(column);
-            sql.push_str(" IN (");
-            for i in 0..n {
-                sql.push_str(if i > 0 { ", ?" } else { "?" });
-            }
-            sql.push(')');
-        }
+        sql.push(')');
+    }
 
-        if !self.types.is_empty() && skip != Some(Facet::Types) {
-            any(&mut sql, self.types.iter().map(|t| t.sql()));
+    if !query.types.is_empty() && skip != Some(Facet::Types) {
+        any(&mut sql, query.types.iter().map(|&t| media_sql(t)));
+    }
+    if !query.exts.is_empty() && skip != Some(Facet::Exts) {
+        among(and(&mut sql), "f.ext", query.exts.len());
+        params.extend(query.exts.iter().map(|e| Value::Text(e.trim_start_matches('.').to_lowercase())));
+    }
+    let unrated = query.ratings.contains(&RatingFilter::Unrated);
+    let stars: Vec<u8> = query
+        .ratings
+        .iter()
+        .filter_map(|&r| match r {
+            RatingFilter::Stars(stars) => Some(stars.get()),
+            RatingFilter::Unrated => None,
+        })
+        .collect();
+    if unrated || !stars.is_empty() {
+        let sql = and(&mut sql);
+        sql.push('(');
+        if unrated {
+            sql.push_str("r.rating IS NULL");
         }
-        if !self.exts.is_empty() && skip != Some(Facet::Exts) {
-            among(and(&mut sql), "f.ext", self.exts.len());
-            params.extend(self.exts.iter().map(|e| Value::Text(e.trim_start_matches('.').to_lowercase())));
-        }
-        let unrated = self.ratings.contains(&0);
-        let stars = self.ratings.iter().filter(|&&n| (1..=5).contains(&n));
-        let starred = stars.clone().count();
-        if unrated || starred > 0 {
-            let sql = and(&mut sql);
-            sql.push('(');
+        if !stars.is_empty() {
             if unrated {
-                sql.push_str("r.rating IS NULL");
+                sql.push_str(" OR ");
             }
-            if starred > 0 {
-                if unrated {
-                    sql.push_str(" OR ");
-                }
-                among(sql, "r.rating", starred);
-                params.extend(stars.map(|&n| Value::Integer(n.into())));
-            }
-            sql.push(')');
+            among(sql, "r.rating", stars.len());
+            params.extend(stars.iter().map(|&n| Value::Integer(n.into())));
         }
-        let mut range = |column: &str, r: &Range, scale: f64| {
-            for (end, op) in [(r.min, " >= ?"), (r.max, " <= ?")] {
-                if let Some(v) = end {
-                    let sql = and(&mut sql);
-                    sql.push_str(column);
-                    sql.push_str(op);
-                    params.push(Value::Real(v * scale));
-                }
-            }
-        };
-        range("f.size", &self.size_mb, MB);
-        range("a.width * a.height", &self.megapixels, 1e6);
-        range("a.duration_ms", &self.duration_s, 1e3);
-        if !self.shapes.is_empty() {
-            any(&mut sql, self.shapes.iter().map(|o| o.sql()));
-        }
-        // Taken is wall-clock time: compared as is. Modified is a UTC FILETIME: the local day's bounds are converted.
-        let day = |d: &Option<String>| d.as_deref().and_then(parse_iso_date).map(|s| s - s.rem_euclid(86_400));
-        macro_rules! local_day_start {
-            () => {
-                concat!("(unixepoch(?, 'unixepoch', 'utc') + ", filetime_unix_offset!(), ") * 10000000")
-            };
-        }
-        let bounds = [
-            (day(&self.taken.from), "a.taken >= ?", 0),
-            (day(&self.taken.to), "a.taken < ?", 86_400),
-            (day(&self.modified.from), concat!("f.mtime >= ", local_day_start!()), 0),
-            (day(&self.modified.to), concat!("f.mtime < ", local_day_start!()), 86_400),
-        ];
-        for (bound, condition, add) in bounds {
-            if let Some(d) = bound {
-                and(&mut sql).push_str(condition);
-                params.push(Value::Integer(d + add));
+        sql.push(')');
+    }
+    let mut range = |column: &str, r: &Range, scale: f64| {
+        for (end, op) in [(r.min, " >= ?"), (r.max, " <= ?")] {
+            if let Some(v) = end {
+                let sql = and(&mut sql);
+                sql.push_str(column);
+                sql.push_str(op);
+                params.push(Value::Real(v * scale));
             }
         }
-        match self.duplicates {
-            Some(true) => and(&mut sql).push_str(DUPLICATES),
-            Some(false) => and(&mut sql).push_str(NOT_DUPLICATES),
-            None => {}
-        }
-        if !self.status.is_empty() {
-            any(&mut sql, self.status.iter().map(|s| s.sql()));
-        }
-        if !self.borders.is_empty() && skip != Some(Facet::Borders) {
-            any(&mut sql, self.borders.iter().map(|b| b.sql()));
-        }
-        match self.border_marked {
-            Some(true) => and(&mut sql).push_str(MARKED),
-            Some(false) => and(&mut sql).push_str(bordered!()),
-            None => {}
-        }
-        let name = self.name.trim();
-        if !name.is_empty() {
-            and(&mut sql).push_str("pg_contains(f.name, ?)");
-            params.push(Value::Text(name.to_string()));
-        }
-
-        if sql.is_empty() {
-            sql.push('1');
-        }
-        Condition { sql, params }
-    }
-}
-
-/// Editing a query from a filter bar. Facets and values go by their JSON names: list facets `types`, `exts`,
-/// `ratings` (`"0"`–`"5"`), `orientations`, `status` and `borders`; range facets `size_mb`, `megapixels` and `duration_s`
-/// (ends `min`, `max`) and `taken` and `modified` (ends `from`, `to`, as `YYYY-MM-DD`). A name or value it doesn't
-/// know changes nothing.
-impl Query {
-    /// How many facets filter.
-    pub fn active(&self) -> usize {
-        [
-            !self.types.is_empty(),
-            !self.exts.is_empty(),
-            !self.ratings.is_empty(),
-            !self.size_mb.is_empty(),
-            !self.megapixels.is_empty(),
-            !self.shapes.is_empty(),
-            !self.taken.is_empty(),
-            !self.modified.is_empty(),
-            !self.duration_s.is_empty(),
-            self.duplicates.is_some(),
-            !self.status.is_empty(),
-            !self.borders.is_empty(),
-            self.border_marked.is_some(),
-            !self.name.is_empty(),
-        ]
-        .into_iter()
-        .filter(|&filters| filters)
-        .count()
-    }
-
-    /// The values chosen in a list facet, in the order they were chosen.
-    pub fn chosen(&self, facet: &str) -> Vec<String> {
-        match facet {
-            "types" => self.types.iter().map(|t| t.key().to_string()).collect(),
-            "exts" => self.exts.clone(),
-            "ratings" => self.ratings.iter().map(u8::to_string).collect(),
-            "orientations" => self.shapes.iter().map(|o| o.key().to_string()).collect(),
-            "status" => self.status.iter().map(|s| s.key().to_string()).collect(),
-            "borders" => self.borders.iter().map(|b| b.key().to_string()).collect(),
-            _ => Vec::new(),
-        }
-    }
-
-    pub fn has(&self, facet: &str, value: &str) -> bool {
-        self.chosen(facet).iter().any(|v| v == value)
-    }
-
-    /// Choose a value of a list facet, or unchoose it if it is chosen.
-    pub fn toggle(&mut self, facet: &str, value: &str) {
-        fn flip<T: PartialEq>(list: &mut Vec<T>, value: T) {
-            match list.iter().position(|v| *v == value) {
-                Some(i) => {
-                    list.remove(i);
-                }
-                None => list.push(value),
-            }
-        }
-        match facet {
-            "types" => MediaType::from_key(value).into_iter().for_each(|t| flip(&mut self.types, t)),
-            "exts" => flip(&mut self.exts, value.to_string()),
-            "ratings" => {
-                value.parse::<u8>().ok().filter(|&n| n <= 5).into_iter().for_each(|n| flip(&mut self.ratings, n))
-            }
-            "orientations" => Shape::from_key(value).into_iter().for_each(|o| flip(&mut self.shapes, o)),
-            "status" => Status::from_key(value).into_iter().for_each(|s| flip(&mut self.status, s)),
-            "borders" => BorderFacet::from_key(value).into_iter().for_each(|b| flip(&mut self.borders, b)),
-            _ => {}
-        }
-    }
-
-    fn range_mut(&mut self, facet: &str) -> Option<&mut Range> {
-        match facet {
-            "size_mb" => Some(&mut self.size_mb),
-            "megapixels" => Some(&mut self.megapixels),
-            "duration_s" => Some(&mut self.duration_s),
-            _ => None,
-        }
-    }
-
-    fn date_range_mut(&mut self, facet: &str) -> Option<&mut DateRange> {
-        match facet {
-            "taken" => Some(&mut self.taken),
-            "modified" => Some(&mut self.modified),
-            _ => None,
-        }
-    }
-
-    /// One end of a range facet as text, `""` when it is open.
-    pub fn bound(&self, facet: &str, end: &str) -> String {
-        let number = |r: &Range| match end {
-            "min" => r.min,
-            "max" => r.max,
-            _ => None,
-        };
-        let day = |r: &DateRange| match end {
-            "from" => r.from.clone(),
-            "to" => r.to.clone(),
-            _ => None,
-        };
-        match facet {
-            "size_mb" => number(&self.size_mb).map(|v| v.to_string()),
-            "megapixels" => number(&self.megapixels).map(|v| v.to_string()),
-            "duration_s" => number(&self.duration_s).map(|v| v.to_string()),
-            "taken" => day(&self.taken),
-            "modified" => day(&self.modified),
-            _ => None,
-        }
-        .unwrap_or_default()
-    }
-
-    /// Set one end of a range facet from what was typed. Text that doesn't parse (see `bound_is_valid`) leaves
-    /// that end open.
-    pub fn set_bound(&mut self, facet: &str, end: &str, text: &str) {
-        if let Some(r) = self.range_mut(facet) {
-            let value = parse_number(text);
-            match end {
-                "min" => r.min = value,
-                "max" => r.max = value,
-                _ => {}
-            }
-        } else if let Some(r) = self.date_range_mut(facet) {
-            let value = parse_day(text);
-            match end {
-                "from" => r.from = value,
-                "to" => r.to = value,
-                _ => {}
-            }
-        }
-    }
-
-    /// Whether text typed for a range facet is empty (an open end) or parses: a number (`,` or `.` before the
-    /// decimals) for `size_mb`, `megapixels` and `duration_s`, a calendar day `YYYY-MM-DD` for `taken` and `modified`.
-    pub fn bound_is_valid(facet: &str, text: &str) -> bool {
-        text.trim().is_empty()
-            || match facet {
-                "taken" | "modified" => parse_day(text).is_some(),
-                _ => parse_number(text).is_some(),
-            }
-    }
-}
-
-/// A number as typed, with a comma or a point before the decimals.
-fn parse_number(text: &str) -> Option<f64> {
-    text.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite())
-}
-
-/// A calendar day `YYYY-MM-DD` that exists.
-fn parse_day(text: &str) -> Option<String> {
-    let t = text.trim();
-    let b = t.as_bytes();
-    let digits = |r: std::ops::Range<usize>| b[r].iter().all(u8::is_ascii_digit);
-    if b.len() != 10 || b[4] != b'-' || b[7] != b'-' || !digits(0..4) || !digits(5..7) || !digits(8..10) {
-        return None;
-    }
-    let (y, m, d): (u32, u32, u32) = (t[0..4].parse().ok()?, t[5..7].parse().ok()?, t[8..10].parse().ok()?);
-    let leap = y % 4 == 0 && (y % 100 != 0 || y % 400 == 0);
-    let days = match m {
-        1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-        4 | 6 | 9 | 11 => 30,
-        2 if leap => 29,
-        2 => 28,
-        _ => return None,
     };
-    (1..=days).contains(&d).then(|| t.to_string())
+    range("f.size", &query.size_mb, MB);
+    range("a.width * a.height", &query.megapixels, 1e6);
+    range("a.duration_ms", &query.duration_s, 1e3);
+    if !query.shapes.is_empty() {
+        any(&mut sql, query.shapes.iter().map(|&o| shape_sql(o)));
+    }
+    // Taken is wall-clock time: compared as is. Modified is a UTC FILETIME: the local day's bounds are converted.
+    macro_rules! local_day_start {
+        () => {
+            concat!("(unixepoch(?, 'unixepoch', 'utc') + ", filetime_unix_offset!(), ") * 10000000")
+        };
+    }
+    let bounds = [
+        (query.taken.from, "a.taken >= ?", 0),
+        (query.taken.to, "a.taken < ?", 86_400),
+        (query.modified.from, concat!("f.mtime >= ", local_day_start!()), 0),
+        (query.modified.to, concat!("f.mtime < ", local_day_start!()), 86_400),
+    ];
+    for (bound, condition, add) in bounds {
+        if let Some(day) = bound {
+            and(&mut sql).push_str(condition);
+            params.push(Value::Integer(day.seconds() + add));
+        }
+    }
+    match query.duplicates {
+        Some(true) => and(&mut sql).push_str(DUPLICATES),
+        Some(false) => and(&mut sql).push_str(NOT_DUPLICATES),
+        None => {}
+    }
+    if !query.status.is_empty() {
+        any(&mut sql, query.status.iter().map(|&s| status_sql(s)));
+    }
+    if !query.borders.is_empty() && skip != Some(Facet::Borders) {
+        any(&mut sql, query.borders.iter().map(|&b| border_sql(b)));
+    }
+    match query.border_marked {
+        Some(true) => and(&mut sql).push_str(MARKED),
+        Some(false) => and(&mut sql).push_str(bordered!()),
+        None => {}
+    }
+    let name = query.name.trim();
+    if !name.is_empty() {
+        and(&mut sql).push_str("pg_contains(f.name, ?)");
+        params.push(Value::Text(name.to_string()));
+    }
+
+    if sql.is_empty() {
+        sql.push('1');
+    }
+    Condition { sql, params }
+}
+
+/// `T` as JSON, as a view's query or sort is saved and sessioned.
+pub fn to_json<T: Serialize>(value: &T) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "{}".into())
+}
+
+/// `T` from JSON; malformed or empty text is `T::default()` (everything, for a query).
+pub fn from_json<T: DeserializeOwned + Default>(json: &str) -> T {
+    serde_json::from_str(json).unwrap_or_default()
 }
 
 /// A duplicate among the present files: identical bytes (tier 0a), identical pixels (0b) or a tier-1 pair within
@@ -654,86 +328,34 @@ const DUPLICATES: &str = duplicates!();
 /// An imported file without one.
 const NOT_DUPLICATES: &str = concat!("a.file_id IS NOT NULL AND NOT ", duplicates!());
 
-/// What a view is ordered by.
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-#[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
-pub enum SortKey {
-    /// Folders together, in path order (all drives of a merged folder as one), then by name.
-    Name,
-    Size,
-    Modified,
-    /// When it was taken; files that don't say sort by their modified time (as local wall-clock time).
-    Taken,
-    Megapixels,
-    Duration,
-    /// The largest share of the image borders take on any one side; files without borders last.
-    Borders,
-}
-
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
-pub struct Sort {
-    pub key: SortKey,
-    #[serde(default)]
-    pub descending: bool,
-}
-
-impl SortKey {
-    /// The name in JSON.
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<SortKey> {
-        key.parse().ok()
-    }
-}
-
-impl Default for Sort {
-    fn default() -> Sort {
-        Sort { key: SortKey::Name, descending: false }
-    }
-}
-
-impl Sort {
-    pub fn from_json(json: &str) -> Sort {
-        serde_json::from_str(json).unwrap_or_default()
-    }
-
-    pub fn to_json(&self) -> String {
-        serde_json::to_string(self).unwrap_or_else(|_| "{}".into())
-    }
-
-    /// The value sorted on, as an integer expression over the file `f` and its analysis `a` (NULL: none, which
-    /// comes last either way); `None` for name order (`files.order_key`, then the id for files of the same name in
-    /// the same folder on two drives), which is also every other key's order for ties (`browse::read::list_grid`).
-    pub fn key_sql(self) -> Option<&'static str> {
-        match self.key {
-            SortKey::Name => None,
-            SortKey::Size => Some("f.size"),
-            SortKey::Modified => Some("f.mtime"),
-            SortKey::Taken => Some(concat!(
-                "coalesce(a.taken, unixepoch(f.mtime / 10000000 - ",
-                filetime_unix_offset!(),
-                ", 'unixepoch', 'localtime'))"
-            )),
-            SortKey::Megapixels => Some("a.width * a.height"),
-            SortKey::Duration => Some("a.duration_ms"),
-            // In millionths. Cuts are in stored pixels: a quarter turn (orientation 5–8) swaps the upright sides.
-            SortKey::Borders => Some(concat!(
-                "CASE WHEN ",
-                bordered!(),
-                " THEN CAST(1e6 * max(
-                    1.0 * max(a.cut_left, a.cut_right) / CASE WHEN a.orientation IN (",
-                swapping_orientations!(),
-                ") THEN a.height ELSE a.width END,
-                    1.0 * max(a.cut_top, a.cut_bottom) / CASE WHEN a.orientation IN (",
-                swapping_orientations!(),
-                ") THEN a.width ELSE a.height END)
-                    AS INTEGER) END"
-            )),
-        }
+/// The value a sort orders by, as an integer expression over the file `f` and its analysis `a` (NULL: none, which
+/// comes last either way); `None` for name order (`files.order_key`, then the id for files of the same name in
+/// the same folder on two drives), which is also every other key's order for ties (`browse::read::list_grid`).
+pub fn key_sql(sort: Sort) -> Option<&'static str> {
+    match sort.key {
+        SortKey::Name => None,
+        SortKey::Size => Some("f.size"),
+        SortKey::Modified => Some("f.mtime"),
+        SortKey::Taken => Some(concat!(
+            "coalesce(a.taken, unixepoch(f.mtime / 10000000 - ",
+            filetime_unix_offset!(),
+            ", 'unixepoch', 'localtime'))"
+        )),
+        SortKey::Megapixels => Some("a.width * a.height"),
+        SortKey::Duration => Some("a.duration_ms"),
+        // In millionths. Cuts are in stored pixels: a quarter turn (orientation 5–8) swaps the upright sides.
+        SortKey::Borders => Some(concat!(
+            "CASE WHEN ",
+            bordered!(),
+            " THEN CAST(1e6 * max(
+                1.0 * max(a.cut_left, a.cut_right) / CASE WHEN a.orientation IN (",
+            swapping_orientations!(),
+            ") THEN a.height ELSE a.width END,
+                1.0 * max(a.cut_top, a.cut_bottom) / CASE WHEN a.orientation IN (",
+            swapping_orientations!(),
+            ") THEN a.width ELSE a.height END)
+                AS INTEGER) END"
+        )),
     }
 }
 
@@ -806,6 +428,8 @@ impl Needle {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::date::Day;
+    use pg_model::query::DateRange;
     use strum::IntoEnumIterator;
 
     #[test]
@@ -817,7 +441,7 @@ mod tests {
             (1..=8).filter(|&o| pg_model::orientation::Orientation::from_tag(o).swaps_axes()).collect::<Vec<_>>()
         );
         let borders = Sort { key: SortKey::Borders, descending: false };
-        assert!(borders.key_sql().unwrap().contains(concat!("IN (", swapping_orientations!(), ")")));
+        assert!(key_sql(borders).unwrap().contains(concat!("IN (", swapping_orientations!(), ")")));
     }
 
     /// Every name of up to 3 and text of up to 2 characters from a set chosen for their lower cases: ASCII,
@@ -864,9 +488,9 @@ mod tests {
         let q = Query {
             types: vec![MediaType::Video, MediaType::Animated],
             exts: vec!["mp4".into()],
-            ratings: vec![0, 5],
+            ratings: vec![RatingFilter::Unrated, RatingFilter::try_from(5).unwrap()],
             size_mb: Range { min: Some(1.5), max: None },
-            taken: DateRange { from: Some("2024-01-01".into()), to: None },
+            taken: DateRange { from: Day::parse("2024-01-01"), to: None },
             duplicates: Some(false),
             status: vec![Status::Failed],
             borders: vec![BorderFacet::None, BorderFacet::White],
@@ -874,13 +498,22 @@ mod tests {
             name: "cat".into(),
             ..Query::default()
         };
-        assert_eq!(Query::from_json(&q.to_json()), q);
-        assert_eq!(Query::default().to_json(), "{}");
-        assert_eq!(Query::from_json("not json"), Query::default());
+        assert_eq!(from_json::<Query>(&to_json(&q)), q);
+        assert_eq!(to_json(&Query::default()), "{}");
+        assert_eq!(from_json::<Query>("not json"), Query::default());
         let s = Sort { key: SortKey::Taken, descending: true };
-        assert_eq!(Sort::from_json(&s.to_json()), s);
-        assert_eq!(Sort::from_json(r#"{"key":"size"}"#), Sort { key: SortKey::Size, descending: false });
+        assert_eq!(from_json::<Sort>(&to_json(&s)), s);
+        assert_eq!(from_json::<Sort>(r#"{"key":"size"}"#), Sort { key: SortKey::Size, descending: false });
         assert_eq!(MediaType::from_key("animated"), Some(MediaType::Animated));
+    }
+
+    #[test]
+    fn a_stored_date_that_doesnt_parse_is_no_filter_and_keeps_the_rest() {
+        // Hand-edited JSON with a day that doesn't exist: that end is open, and the other facets still filter.
+        let stored: Query = from_json(r#"{"ratings":[0,5],"taken":{"from":"2024-02-30","to":"2024-03-01"}}"#);
+        assert_eq!(stored.ratings, vec![RatingFilter::Unrated, RatingFilter::try_from(5).unwrap()]);
+        assert_eq!(stored.taken, DateRange { from: None, to: Day::parse("2024-03-01") });
+        assert!(to_json(&stored).contains(r#""taken":{"from":null,"to":"2024-03-01"}"#));
     }
 
     fn json<T: Serialize>(value: &T) -> String {
@@ -927,77 +560,19 @@ mod tests {
     }
 
     #[test]
-    fn list_facets_toggle() {
-        let mut q = Query::default();
-        q.toggle("types", "video");
-        q.toggle("ratings", "0");
-        q.toggle("ratings", "5");
-        q.toggle("exts", "jpg");
-        q.toggle("orientations", "square");
-        q.toggle("status", "failed");
-        q.toggle("borders", "blur");
-        assert_eq!(q.borders, vec![BorderFacet::Blur]);
-        q.toggle("borders", "blur");
-        assert_eq!(q.types, vec![MediaType::Video]);
-        assert_eq!(q.ratings, vec![0, 5]);
-        assert!(q.has("ratings", "5") && q.has("exts", "jpg") && !q.has("types", "image"));
-        assert_eq!(q.chosen("ratings"), vec!["0", "5"]);
-        assert_eq!(q.active(), 5);
-        q.toggle("ratings", "0");
-        q.toggle("types", "video");
-        assert_eq!(q.ratings, vec![5]);
-        assert!(q.types.is_empty());
-        assert_eq!(q.active(), 4);
-        // Unknown facets and values, and ratings out of range, change nothing.
-        let before = q.clone();
-        q.toggle("types", "picture");
-        q.toggle("ratings", "6");
-        q.toggle("ratings", "x");
-        q.toggle("colour", "red");
-        assert_eq!(q, before);
-    }
-
-    #[test]
-    fn range_facets_parse_what_was_typed() {
-        let mut q = Query::default();
-        q.set_bound("size_mb", "min", " 1,5 ");
-        q.set_bound("megapixels", "max", "12");
-        q.set_bound("taken", "from", "2024-02-29");
-        assert_eq!(q.size_mb, Range { min: Some(1.5), max: None });
-        assert_eq!(q.bound("size_mb", "min"), "1.5");
-        assert_eq!(q.bound("megapixels", "max"), "12");
-        assert_eq!(q.bound("taken", "from"), "2024-02-29");
-        assert_eq!(q.bound("taken", "to"), "");
-        assert_eq!(q.active(), 3);
-        // Text that doesn't parse opens that end again.
-        q.set_bound("size_mb", "min", "lots");
-        q.set_bound("taken", "from", "2023-02-29");
-        assert!(q.size_mb.is_empty() && q.taken.is_empty());
-        assert_eq!(q.active(), 1);
-        assert!(Query::bound_is_valid("size_mb", ""));
-        assert!(Query::bound_is_valid("duration_s", "2.5"));
-        assert!(!Query::bound_is_valid("duration_s", "inf"));
-        assert!(!Query::bound_is_valid("size_mb", "1 MB"));
-        assert!(Query::bound_is_valid("modified", "2000-12-31"));
-        assert!(!Query::bound_is_valid("modified", "2000-13-01"));
-        assert!(!Query::bound_is_valid("modified", "1900-02-29"));
-        assert!(!Query::bound_is_valid("modified", "2000-1-1"));
-    }
-
-    #[test]
     fn values_are_bound_not_spliced() {
         let q = Query { exts: vec!["jpg'); DROP TABLE files; --".into()], name: "a'b".into(), ..Query::default() };
-        let c = q.condition();
+        let c = condition(&q);
         assert!(!c.sql.contains("DROP") && !c.sql.contains("a'b"));
         assert_eq!(c.params.len(), 2);
     }
 
     #[test]
     fn border_sums_follow_all_and_each_facet_sql() {
-        let sums: Vec<String> = BorderFacet::iter().map(|b| format!("coalesce(sum({}), 0)", b.sql())).collect();
+        let sums: Vec<String> = BorderFacet::iter().map(|b| format!("coalesce(sum({}), 0)", border_sql(b))).collect();
         assert_eq!(BORDER_SUMS, sums.join(", "));
         for b in BorderFacet::iter().skip(1) {
-            assert!(b.sql().contains(&format!("s.class = '{}'", b.key())), "{b:?}");
+            assert!(border_sql(b).contains(&format!("s.class = '{}'", b.key())), "{b:?}");
         }
     }
 }

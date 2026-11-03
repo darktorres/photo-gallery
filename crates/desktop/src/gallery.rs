@@ -280,10 +280,11 @@ use pg_catalog::browse::{
     self,
     read::{Borders, Details, Entry},
 };
-use pg_catalog::query::{MediaType, Query, Sort};
+use pg_catalog::query::from_json;
 use pg_core::layout::{self, Row, RowChange};
 use pg_model::detection::Class;
 use pg_model::ids::FileId;
+use pg_model::query::{MediaType, Query, Sort};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
@@ -463,7 +464,7 @@ impl qobject::GalleryModel {
         };
         self.as_mut().set_loading(true);
         let path = merged.to_string();
-        let (query, sort) = (Query::from_json(&query.to_string()), Sort::from_json(&sort.to_string()));
+        let (query, sort) = (from_json::<Query>(&query.to_string()), from_json::<Sort>(&sort.to_string()));
         let model = self.qt_thread();
         let shown = path.clone();
         loader::submit(

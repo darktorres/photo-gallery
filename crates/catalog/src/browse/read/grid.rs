@@ -7,11 +7,12 @@ use rusqlite::types::Type;
 use rusqlite::{OptionalExtension, params_from_iter};
 
 use super::scope;
-use crate::query::{MediaType, Query, Sort};
+use crate::query::{condition, key_sql};
 use pg_model::detection;
 use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
 use pg_model::orientation::Orientation;
+use pg_model::query::{MediaType, Query, Sort};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
@@ -209,7 +210,7 @@ pub fn entry(catalog: &Catalog, file_id: FileId) -> Result<Option<Entry>> {
 
 /// `list_grid`'s query: the entries in name order, then the sort key if it isn't the name.
 pub(super) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
-    let key = sort.key_sql();
+    let key = key_sql(sort);
     // Name order backwards for "by name, descending"; the other keys take their ties in name order.
     let dir = if key.is_none() && sort.descending { "DESC" } else { "ASC" };
     // `missing = 0` is written out, not bound: it's the `files_order` index's condition.
@@ -237,11 +238,11 @@ pub fn list_grid(catalog: &Catalog, merged: &str, recursive: bool, query: &Query
         params_from_iter(&values),
         |r| r.get(0),
     )?;
-    let cond = query.condition();
+    let cond = condition(query);
     values.extend(cond.params);
     let mut stmt = tx.prepare(&grid_sql(&scope, &cond.sql, sort))?;
     let mut rows = stmt.query(params_from_iter(values))?;
-    let entries = if sort.key_sql().is_none() {
+    let entries = if key_sql(sort).is_none() {
         let mut entries = Vec::with_capacity(bound);
         while let Some(r) = rows.next()? {
             entries.push(entry_from_row(r)?);

@@ -5,6 +5,7 @@ use crate::Result;
 use rusqlite::{Connection, params};
 
 use crate::Catalog;
+use crate::query::to_json;
 
 use super::read::View;
 
@@ -13,7 +14,7 @@ pub fn save_view(catalog: &Catalog, v: &View) -> Result<()> {
     let conn = &catalog.conn;
     conn.execute(
         "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![v.name, v.folder, v.recursive, v.query.to_json(), v.sort.to_json()],
+        params![v.name, v.folder, v.recursive, to_json(&v.query), to_json(&v.sort)],
     )?;
     Ok(())
 }
@@ -48,7 +49,7 @@ mod tests {
     use super::*;
     use crate::browse::fixtures::{by, library};
     use crate::browse::read::views;
-    use crate::query::{MediaType, Query, SortKey};
+    use pg_model::query::{MediaType, Query, RatingFilter, SortKey};
 
     #[test]
     fn views_keep_their_query() {
@@ -57,7 +58,7 @@ mod tests {
             name: "Unrated videos".into(),
             folder: "p".into(),
             recursive: true,
-            query: Query { types: vec![MediaType::Video], ratings: vec![0], ..Query::default() },
+            query: Query { types: vec![MediaType::Video], ratings: vec![RatingFilter::Unrated], ..Query::default() },
             sort: by(SortKey::Size, true),
         };
         save_view(&c, &v).unwrap();

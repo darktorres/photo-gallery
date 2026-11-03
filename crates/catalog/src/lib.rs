@@ -2015,8 +2015,8 @@ mod tests {
     #[test]
     fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector() {
         use crate::browse;
-        use crate::query::{BorderFacet, Query, Sort};
         use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
+        use pg_model::query::{BorderFacet, Query, Sort};
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();
@@ -2140,7 +2140,7 @@ mod tests {
     #[test]
     fn border_depth_sorts_by_the_largest_share_of_a_side_cut() {
         use crate::browse;
-        use crate::query::{Query, Sort, SortKey};
+        use pg_model::query::{Query, Sort, SortKey};
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();

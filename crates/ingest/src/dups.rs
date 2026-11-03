@@ -9,24 +9,35 @@ use pg_core::catalog::Catalog;
 
 pub const DEFAULT_GROUP_DISTANCE: u32 = pg_core::pdq::GROUP_DISTANCE;
 
-struct UnionFind(BTreeMap<i64, i64>);
+/// Groups of files by union. `parent` links each file to its root; `size` counts the members of each root's group,
+/// and the smaller group joins the larger, so a chain is at most log₂ n long and `find`'s recursion stays shallow.
+#[derive(Default)]
+struct UnionFind {
+    parent: BTreeMap<i64, i64>,
+    size: BTreeMap<i64, i64>,
+}
 
 impl UnionFind {
     fn find(&mut self, x: i64) -> i64 {
-        let p = *self.0.entry(x).or_insert(x);
+        let p = *self.parent.entry(x).or_insert(x);
         if p == x {
             return x;
         }
         let root = self.find(p);
-        self.0.insert(x, root);
+        self.parent.insert(x, root);
         root
     }
 
     fn union(&mut self, a: i64, b: i64) {
         let (ra, rb) = (self.find(a), self.find(b));
-        if ra != rb {
-            self.0.insert(ra.max(rb), ra.min(rb));
+        if ra == rb {
+            return;
         }
+        let size = |s: &BTreeMap<i64, i64>, r: i64| s.get(&r).copied().unwrap_or(1);
+        let (sa, sb) = (size(&self.size, ra), size(&self.size, rb));
+        let (big, small) = if sa >= sb { (ra, rb) } else { (rb, ra) };
+        self.parent.insert(small, big);
+        self.size.insert(big, sa + sb);
     }
 }
 
@@ -90,7 +101,7 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     }
 
     // Groups: tiers 0a and 0b, plus PDQ pairs up to `group_distance`.
-    let mut uf = UnionFind(BTreeMap::new());
+    let mut uf = UnionFind::default();
     // The previous row's hash and file: each file is joined to the one before it with the same hash.
     let mut prev = Vec::new();
     for sql in [grouped!("file_hash"), grouped!("pixel_hash")] {
@@ -114,12 +125,14 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
         let (a, b) = pair?;
         uf.union(a, b);
     }
-    let ids: Vec<i64> = uf.0.keys().copied().collect();
-    // Members in id order; groups by size, then by their smallest id (the root).
+    let ids: Vec<i64> = uf.parent.keys().copied().collect();
+    // Members in id order; groups by size, then by their smallest id: the first member of each group seen.
+    let mut smallest: BTreeMap<i64, i64> = BTreeMap::new();
     let mut groups: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
     for id in ids {
         let root = uf.find(id);
-        groups.entry(root).or_default().push(id);
+        let first = *smallest.entry(root).or_insert(id);
+        groups.entry(first).or_default().push(id);
     }
     let mut groups: Vec<Vec<i64>> = groups.into_values().filter(|g| g.len() > 1).collect();
     groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
@@ -140,4 +153,22 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_long_chain_of_unions_stays_shallow() {
+        // Each union joins a file to the one below it, from the top down, so the chain grows by one link each time. The
+        // old union (the larger id under the smaller) made that a chain 200,000 deep, and `find` recursed once per
+        // link. Here the smaller group joins the larger, so the depth stays about log₂ n.
+        let mut uf = UnionFind::default();
+        for i in (1..=200_000).rev() {
+            uf.union(i - 1, i);
+        }
+        let root = uf.find(200_000);
+        assert_eq!(uf.find(0), root);
+    }
 }

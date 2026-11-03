@@ -664,9 +664,9 @@ ledger: `open`, `open (part: <sha>)`, `fixed <sha>` (the commit that did it), `v
 
 Now: steps 0 to 3 are fixed, and their verify items are checked (S-02.3). Step 4's crates and the wasm32 check are in
 (S-04.1 to S-04.7); S-04.8 is open for the model items the later steps need. Step 5's eight crates are in (S-05.1 to
-S-05.8); S-05.9 holds the parts of step 5 that are still open. Step 6 is in progress: the catalog is `pg-catalog`
-(S-06.1, 828dbf0), and the thumbnail cache is `pg-thumbcache` (S-06.2, 66f757f). S-06.3 is open. Steps 7 to 13
-are open.
+S-05.8); S-05.9 holds the parts of step 5 that are still open. Step 6's three crates are in: `pg-catalog` (S-06.1,
+828dbf0), `pg-thumbcache` (S-06.2, 66f757f) and `pg-render` (S-06.3, 81141cb). The desktop's image functions and
+the animation player move with S-11. Steps 7 to 13 are open.
 
 Rules that hold for every row:
 
@@ -726,10 +726,10 @@ Rules that hold for every row:
 | S-05.7 | fixed 30325f1 | `pg-yandex`: the client. A download carries the format its bytes sniff as, not the format the response claims; the desktop saves it under `Format::extension`. `YandexError` derives its messages with thiserror. `ureq` is `pg-yandex`'s alone (deny.toml). | The desktop's two Yandex tests move with S-11.6. |
 | S-05.8 | fixed 5b2540b | `pg-exiftool`: the `-stay_open` driver. The program comes from the caller: ingest's `exiftool_program` reads `PG_EXIFTOOL`, once. | The per-command timeout and the kill on close are open (S-05.9). |
 | S-05.9 | open | The parts of step 5 the moves did not finish. `verbatim` in `pg-video`, so video applies it itself. One BLAKE3 hashing path over any `Read` (`analyze` and `video` both hash today). A timeout on each ExifTool command, and a kill on close when ExifTool doesn't exit (a behaviour change, its own commit). The deny wrappers that name `pg-core` and `pg-ingest` (for `image`, `turbojpeg`, `png`, `gif`, `image-webp`, `tiff`, `zune-jpeg`, `zune-core` and `quick-xml`): they come out as their code and fixtures move (S-06.3, S-08, S-09). | |
-| S-06 | open (part: 66f757f) | `pg-catalog`, `pg-thumbcache`, `pg-render`. | Rows below. |
+| S-06 | open (part: 81141cb) | `pg-catalog`, `pg-thumbcache`, `pg-render`. | Rows below. Its three crates are in; the desktop's image functions and the animation player are open (S-06.3). |
 | S-06.1 | fixed 828dbf0 | `pg-catalog` as a mechanical move: `catalog.rs` is the crate root, with `query.rs` and `browse/` as modules, and `conn` still public. The catalog's test fixture is behind the `fixture` feature, and pg-testkit re-exports it (R-11). `display::upright`, a pure rectangle map that the grid uses, is `pg_model::orientation::upright_rect`. `max_folder_id` is public until the thumbnail cache moves (S-06.2). The rusqlite ban is in deny.toml, with pg-core, pg-ingest and pg-bench as transitional wrappers. | The scratch-dir wrappers of R-11 are open (testkit's `scratch`). |
 | S-06.2 | fixed 66f757f | `pg-thumbcache`: the cache's store, `pending_in` and their tests, moved whole (`thumbs.rs`). The Maker test (files read into the maker) is in `maker.rs`, so the cache's tests need no JPEG encoder. Its one catalog dependency is `max_folder_id`, transitional until the catalog's read API carries the work list. | `pending_in` still reads the catalog's tables (S-08.4 moves it to `thumb_sources`). Its errors still go to the `Report` callback; the `Bus` comes with S-09. |
-| S-06.3 | open | `pg-render`. | |
+| S-06.3 | fixed 81141cb | `pg-render`: `display` (the upright decodes) and `maker` (the thumbnail `Maker`), moved whole; the decodediff example too. It is a local eval tool, untracked (excluded in `.git/info/exclude`, which now names its new path), and it is the reason render has dev-dependencies on `image`, `png` and `xxhash-rust`, and why the `image` and `png` bans name pg-render. `pg-render` depends on `pg-video` (the posters' frames). | Still in the desktop, for S-11: `state.rs`'s fit, region and full images, `turn_jpeg`, the ThumbHash to RGBA, the pixels, and `animation.rs`'s Player (its FrameSink). The core keeps `layout` (S-10.1), so `pg-core` is deleted at S-10.1, not at S-09 as the S-09 row says. |
 | S-07 | open | Newtypes (`FileId`…) and `strum` keys, with no file moves mixed in. | |
 | S-08 | open | Catalog API, one commit per consumer area. | Rows below. |
 | S-08.1 | open | The writeback queue (`writes`, with `WriteEffect`). | |

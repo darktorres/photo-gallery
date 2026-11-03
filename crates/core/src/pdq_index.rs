@@ -8,8 +8,8 @@
 //!
 //! Each chunk's table is flat: the entries' positions grouped by chunk value, with each value's range in
 //! `offsets`, built by a counting sort. Entries inserted since are chained per value (a link per entry, and the
-//! newest of each value in [`Heads`], whose size follows the values chained, not the 65,536 there are), so an insert
-//! is O(1). Once the chains hold an eighth as many entries as the flat tables (at least [`MIN_REINDEX`]), the flat
+//! newest of each value in `Heads`, whose size follows the values chained, not the 65,536 there are), so an insert
+//! is O(1). Once the chains hold an eighth as many entries as the flat tables (at least `MIN_REINDEX`), the flat
 //! tables are rebuilt over every entry: each entry is placed a bounded number of times (amortized O(1)) however
 //! large the index grows, and an empty catalog's first import stays fast. An index without entries holds no table.
 

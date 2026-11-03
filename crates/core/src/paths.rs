@@ -4,9 +4,9 @@
 //! ExifTool takes the plain path, as a `\\?\` path isn't one it reads (its own long-name support is a separate
 //! option, FINDINGS "I/O").
 //!
-//! A pass's paths are kept end to end in strings ([`PathArena`]): a [`WorkList`] holds each folder's path once and
+//! A pass's paths are kept end to end in strings ([`crate::path::PathArena`]): a [`crate::path::WorkList`] holds each folder's path once and
 //! each file's name, so a list of 189k files is a few allocations, not one per path. A file is opened from them
-//! through a reader's wide buffer ([`WorkList::wide`]), without a path of its own.
+//! through a reader's wide buffer ([`crate::path::WorkList::wide`]), without a path of its own.
 
 use std::borrow::Cow;
 

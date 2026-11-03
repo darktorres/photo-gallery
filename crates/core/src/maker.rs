@@ -97,7 +97,7 @@ impl Maker {
     }
 
     /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
-    /// given back by the cache's writer ([`ThumbCache::put_batch`]).
+    /// given back by the cache's writer ([`crate::thumbs::ThumbCache::put_batch`]).
     pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
         let result = self.make_image(bytes, height, turns, out);
         self.trim();

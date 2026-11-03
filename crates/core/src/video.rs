@@ -148,7 +148,7 @@ pub fn frame(path: &Path, at_ms: i64, turns: u8) -> Result<Rgb> {
     Ok(out)
 }
 
-/// [`frame`] into a worker's buffers, which keep their capacity from file to file: the pixels go into `out`, and
+/// [`frame()`] into a worker's buffers, which keep their capacity from file to file: the pixels go into `out`, and
 /// are oriented through `spare` (swapped with `out`'s).
 pub fn frame_into(path: &Path, at_ms: i64, turns: u8, out: &mut Rgb, spare: &mut Vec<u8>) -> Result<()> {
     let mut input = open(path)?;

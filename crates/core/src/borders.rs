@@ -11,7 +11,7 @@
 //! - The border is the run of such lines from the edge; the seam is the first strong line-to-line change near its end.
 //! - Accepted only if the seam is a straight edge across most of the line (a dark sky or a bokeh background ends
 //!   irregularly), and, for a blurred bar, if the content past the seam is clearly sharper.
-//! - Then the rules that need the opposite side ([`judge`]): solid padding is digitally flat, and blurred bars come
+//! - Then the rules that need the opposite side (`judge`): solid padding is digitally flat, and blurred bars come
 //!   in equal pairs.
 //!
 //! The arithmetic is exact where Python's was float32: grays are kept as sums of the three channels (×3), medians of

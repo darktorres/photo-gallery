@@ -40,13 +40,13 @@ impl Info {
     }
 }
 
-/// An image decoded upright ([`Decoder::decode`]).
+/// An image decoded upright ([`crate::display::decode`]).
 pub struct Decoded {
     pub image: Rgb,
     pub info: Info,
 }
 
-/// An image as it is stored: decoded, not oriented ([`Decoder::decode_stored`]).
+/// An image as it is stored: decoded, not oriented ([`crate::display::decode_stored`]).
 pub struct Stored {
     pub image: Rgb,
     pub info: Info,
@@ -66,8 +66,8 @@ pub enum MinSize {
 }
 
 /// Per-thread decoder state, reused across images: libjpeg-turbo's handle, and the other formats' decoders' buffers
-/// ([`Codecs`]). The pixels go into the caller's buffers ([`Decoder::decode_into`]), or into new ones
-/// ([`Decoder::decode`]).
+/// (`Codecs`). The pixels go into the caller's buffers ([`Decoder::decode_into`], or
+/// [`Decoder::decode_stored_into`] for the file as stored).
 pub struct Decoder {
     jpeg: Decompressor,
     codecs: Codecs,
@@ -78,12 +78,12 @@ impl Decoder {
         Ok(Decoder { jpeg: Decompressor::new()?, codecs: Codecs::default() })
     }
 
-    /// Free what one oversize file grew: buffers over `bytes` (see [`release_over`]).
+    /// Free what one oversize file grew: buffers over `bytes` (see [`crate::pixels::release_over`]).
     pub fn trim(&mut self, bytes: usize) {
         self.codecs.trim(bytes);
     }
 
-    /// [`Decoder::decode`] into a worker's buffers, which keep their capacity from file to file: the pixels go into
+    /// Decode into a worker's buffers, which keep their capacity from file to file: the pixels go into
     /// `out`, and are oriented through `spare` (swapped with `out`'s). `format` is the file's (`Format::sniff`),
     /// `exif` its EXIF orientation (`metadata::orientation`, 1 without one).
     #[allow(clippy::too_many_arguments)]

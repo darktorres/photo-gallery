@@ -28,7 +28,7 @@ use crate::path::is_under;
 use crate::path::{FilePath, PathArena, PathRef, WorkList};
 use crate::pdq;
 
-/// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`baseline`] at version [`BASELINE_VERSION`],
+/// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
 ///
 /// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit
@@ -718,7 +718,7 @@ pub struct Status {
 
 impl Catalog {
     /// Open the catalog at `path`, creating it when new. One made with an earlier layout is copied into the current
-    /// one first ([`rebuild`]): seconds for 190k files.
+    /// one first (`rebuild`): seconds for 190k files.
     /// Merge the WAL into the file, then close the connection (on drop, too, without the merge). The last connection
     /// to a file to close deletes its WAL; the merge keeps the file whole if the process ends before the others close.
     pub fn close(self) -> Result<()> {
@@ -894,7 +894,7 @@ impl Catalog {
         Ok((ids, hashes))
     }
 
-    /// Analyses whose borders are due (new ones, and all after a new detector: [`set_borders_version`]), of
+    /// Analyses whose borders are due (new ones, and all after a new detector: `set_borders_version`), of
     /// files the import has nothing to do for, in on-disk order.
     pub fn pending_borders(&self) -> Result<WorkList<WorkItem>> {
         // An upper bound, from `analysis_borders_due` alone.

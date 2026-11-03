@@ -566,7 +566,8 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
         Some(c) => vec![height as i64, c],
         None => vec![height as i64],
     };
-    let mut work = WorkList::default();
+    // The folder ids' table is sized up front. The items are not: counting them first would scan the view.
+    let mut work = WorkList::with_capacity(0, crate::catalog::max_folder_id(&tx, "cat.")?);
     {
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;

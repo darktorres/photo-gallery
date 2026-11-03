@@ -74,7 +74,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     c.add_root(&root).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
-    let opts = Options::new(0);
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
     import::import(&mut c, &opts, false, &ctl).unwrap();
     for (id, _) in ids(&c) {
         assert!(c.crop_source(id, &mut PathArena::default()).unwrap().is_none(), "the import doesn't look for borders");

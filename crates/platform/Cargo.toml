@@ -7,9 +7,12 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The operating system's calls behind portable functions: the verbatim paths Win32 takes, and (as they move here)
-# the directory listing, the file opens, the thread priorities, the child processes and the clock. Each has a
-# portable fallback where there is no Windows.
+# The operating system's calls behind portable functions: the directory listing, the file opens and their times, the
+# thread priorities, the child processes, the clock, the message box, and the verbatim paths Win32 takes. Windows is
+# the target; each function has a portable fallback so the library crates build on Unix too (the WSL checks).
+[target.'cfg(windows)'.dependencies]
+windows-sys.workspace = true
+
 [dependencies]
 
 [dev-dependencies]

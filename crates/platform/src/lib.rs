@@ -4,4 +4,10 @@
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
+pub mod clock;
+pub mod dir;
+pub mod file;
+pub mod message;
+pub mod priority;
+pub mod process;
 pub mod verbatim;

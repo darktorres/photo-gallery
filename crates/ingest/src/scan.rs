@@ -9,16 +9,10 @@
 //! PLAN §8 named an Everything-based scanner: the running Everything is 1.5, whose SDK has no file IDs, so the
 //! scanner lists directories itself. Everything (or the USN journal) remains the option for incremental changes.
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result};
 use pg_core::catalog::{Catalog, ScanWriter, ScannedFile};
 use pg_core::media::Ext;
-use pg_platform::verbatim::verbatim_wide;
-use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Storage::FileSystem::{
-    BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT,
-    FILE_FLAG_BACKUP_SEMANTICS, FILE_ID_BOTH_DIR_INFO, FILE_LIST_DIRECTORY, FILE_SHARE_DELETE, FILE_SHARE_READ,
-    FILE_SHARE_WRITE, FileIdBothDirectoryInfo, GetFileInformationByHandle, GetFileInformationByHandleEx, OPEN_EXISTING,
-};
+use pg_platform::dir::{Dir, Lister};
 
 use crate::control::Control;
 
@@ -38,110 +32,26 @@ struct DirEntry {
     mtime: i64,
 }
 
-/// What listing a folder needs, kept from one folder to the next.
-struct Lister {
-    /// The folder's path as NUL-terminated UTF-16.
-    wide: Vec<u16>,
-    /// The records, as u64s to keep them 8-byte aligned as they must be.
-    buf: Vec<u64>,
-    /// Entries of earlier listings keep their names' buffers: a listing fills the first ones.
-    entries: Vec<DirEntry>,
-}
-
-/// An open directory handle.
-struct Dir(HANDLE);
-
-impl Drop for Dir {
-    fn drop(&mut self) {
-        // SAFETY: the handle came from a successful CreateFileW (`Dir::open`) and is closed only here.
-        unsafe { CloseHandle(self.0) };
-    }
-}
-
-impl Dir {
-    fn open(path: &str, wide: &mut Vec<u16>) -> Result<Dir> {
-        // With its trailing backslash (a drive root is `D:`, which alone means the drive's current folder), and
-        // in its verbatim form when long, which lifts the 260-character limit.
-        verbatim_wide(&[path, "\\"], wide);
-        // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.
-        let h = unsafe {
-            CreateFileW(
-                wide.as_ptr(),
-                FILE_LIST_DIRECTORY,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                std::ptr::null(),
-                OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS,
-                std::ptr::null_mut(),
-            )
-        };
-        if h == INVALID_HANDLE_VALUE {
-            bail!("can't open {path}: {}", std::io::Error::last_os_error());
-        }
-        Ok(Dir(h))
-    }
-
-    fn volume_serial(&self) -> Result<u32> {
-        let mut info = BY_HANDLE_FILE_INFORMATION::default();
-        // SAFETY: an open handle, and `info` is the struct the call fills.
-        if unsafe { GetFileInformationByHandle(self.0, &mut info) } == 0 {
-            bail!("GetFileInformationByHandle: {}", std::io::Error::last_os_error());
-        }
-        Ok(info.dwVolumeSerialNumber)
-    }
-
-    /// The folder's subfolders and media files: the first `n` of `entries`, `n` returned.
-    fn entries(&self, buf: &mut [u64], entries: &mut Vec<DirEntry>) -> Result<usize> {
-        let mut n = 0;
-        loop {
-            // SAFETY: an open handle, and `buf` is writable for the length given.
-            let ok = unsafe {
-                GetFileInformationByHandleEx(
-                    self.0,
-                    FileIdBothDirectoryInfo,
-                    buf.as_mut_ptr().cast(),
-                    std::mem::size_of_val(buf) as u32,
-                )
-            };
-            if ok == 0 {
-                let err = std::io::Error::last_os_error();
-                if err.raw_os_error() == Some(ERROR_NO_MORE_FILES as i32) {
-                    return Ok(n);
-                }
-                bail!("listing directory: {err}");
+/// Lists a folder's media files and subfolders into `entries`, reusing the first ones: returns how many. The
+/// platform gives the records; the choices are here: a record needs its file ID, reparse points aren't
+/// followed, the dot folders are skipped, and only files the library holds are kept.
+fn list(lister: &mut Lister, dir: &Dir, entries: &mut Vec<DirEntry>) -> std::io::Result<usize> {
+    const DOT: u16 = b'.' as u16;
+    let mut n = 0;
+    lister.each(dir, |e| {
+        let ext = if e.folder { None } else { Ext::of_name_utf16(e.name) };
+        let kept = (e.folder && e.name != [DOT] && e.name != [DOT, DOT]) || ext.is_some();
+        if !e.reparse && e.file_id != 0 && kept {
+            if n == entries.len() {
+                entries.push(DirEntry { name: String::new(), ext: None, file_ref: 0, size: 0, mtime: 0 });
             }
-            let base = buf.as_ptr().cast::<u8>();
-            let mut offset = 0usize;
-            loop {
-                // SAFETY: the API filled `buf` with a chain of 8-byte-aligned records linked by NextEntryOffset,
-                // each followed by its FileNameLength bytes of name.
-                let (info, name) = unsafe {
-                    let record = base.add(offset);
-                    let info = &*record.cast::<FILE_ID_BOTH_DIR_INFO>();
-                    let name_ptr = record.add(std::mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName));
-                    (info, std::slice::from_raw_parts(name_ptr.cast::<u16>(), info.FileNameLength as usize / 2))
-                };
-                let folder = info.FileAttributes & FILE_ATTRIBUTE_DIRECTORY != 0;
-                let reparse = info.FileAttributes & FILE_ATTRIBUTE_REPARSE_POINT != 0;
-                const DOT: u16 = b'.' as u16;
-                let ext = if folder { None } else { Ext::of_name_utf16(name) };
-                if !reparse && info.FileId != 0 && (folder && name != [DOT] && name != [DOT, DOT] || ext.is_some()) {
-                    if n == entries.len() {
-                        entries.push(DirEntry { name: String::new(), ext: None, file_ref: 0, size: 0, mtime: 0 });
-                    }
-                    let e = &mut entries[n];
-                    decode_name(name, &mut e.name);
-                    (e.ext, e.file_ref, e.size, e.mtime) =
-                        (ext, info.FileId as u64, info.EndOfFile as u64, info.LastWriteTime);
-                    n += 1;
-                }
-                if info.NextEntryOffset == 0 {
-                    break;
-                }
-                offset += info.NextEntryOffset as usize;
-            }
+            let slot = &mut entries[n];
+            decode_name(e.name, &mut slot.name);
+            (slot.ext, slot.file_ref, slot.size, slot.mtime) = (ext, e.file_id, e.size, e.mtime);
+            n += 1;
         }
-    }
+    })?;
+    Ok(n)
 }
 
 /// A UTF-16 name as `String::from_utf16_lossy` gives it, into `out` (its buffer kept), sized first: `extend` would
@@ -180,9 +90,10 @@ pub struct ScanStats {
 
 /// Record the media files under `root` (a folder, from `normalize_path`); files it no longer holds are marked missing.
 pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStats> {
-    let mut lister = Lister { wide: Vec::new(), buf: vec![0; 8192], entries: Vec::new() };
+    let mut lister = Lister::new();
+    let mut entries: Vec<DirEntry> = Vec::new();
     // Opened once, for its volume and its listing.
-    let root_dir = Dir::open(root, &mut lister.wide)?;
+    let root_dir = lister.open(root).with_context(|| format!("can't open {root}"))?;
     let volume = root_dir.volume_serial()?;
     let mut root_dir = Some(root_dir);
     let scan_id = catalog.begin_scan(root)?;
@@ -205,17 +116,19 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
             ctl.finish();
             return Ok(stats);
         }
-        let Lister { wide, buf, entries } = &mut lister;
-        let listed =
-            match root_dir.take().map_or_else(|| Dir::open(&dir, wide), Ok).and_then(|d| d.entries(buf, entries)) {
-                Ok(n) => n,
-                Err(e) => {
-                    eprintln!("skipped: {e:#}");
-                    stats.errors += 1;
-                    unreadable.push(dir);
-                    continue;
-                }
-            };
+        let listed = match root_dir
+            .take()
+            .map_or_else(|| lister.open(&dir), Ok)
+            .and_then(|d| list(&mut lister, &d, &mut entries))
+        {
+            Ok(n) => n,
+            Err(e) => {
+                eprintln!("skipped: {e:#}");
+                stats.errors += 1;
+                unreadable.push(dir);
+                continue;
+            }
+        };
         stats.folders += 1;
         let mut folder = None;
         for e in &entries[..listed] {

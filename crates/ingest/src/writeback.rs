@@ -11,13 +11,11 @@
 //! A crash during step 2 leaves the row with its temp set, and the next start finishes the copy.
 
 use std::io::{BufRead, BufReader, Read, Write};
-use std::os::windows::fs::MetadataExt;
-use std::os::windows::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{self, Receiver};
-use std::sync::{Arc, Condvar, Mutex, OnceLock};
+use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 use std::time::Duration;
 
@@ -37,7 +35,6 @@ const SETTLE_SECS: i64 = 2;
 const MAX_ATTEMPTS: i64 = 5;
 /// How often the queue is looked at without being woken (retries, offline drives).
 const IDLE_CHECK: Duration = Duration::from_secs(30);
-const CREATE_NO_WINDOW: u32 = 0x0800_0000;
 
 /// One queued change.
 struct Job {
@@ -466,7 +463,7 @@ fn record_rewrite(
 
 pub(crate) fn stat(path: &str) -> Result<(i64, i64)> {
     let m = std::fs::metadata(path).with_context(|| format!("reading {path}"))?;
-    Ok((m.len() as i64, m.last_write_time() as i64))
+    Ok((m.len() as i64, pg_platform::file::last_write_time(&m)))
 }
 
 /// Beside the original, so it is on the same drive; the scanner ignores the extension.
@@ -513,17 +510,13 @@ impl ExifTool {
     /// `PG_EXIFTOOL`, or `exiftool` on PATH.
     pub fn start() -> Result<ExifTool> {
         let program = std::env::var_os("PG_EXIFTOOL").unwrap_or_else(|| "exiftool".into());
-        let mut child = Command::new(&program)
-            .args(["-stay_open", "True", "-@", "-"])
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .creation_flags(CREATE_NO_WINDOW)
-            .spawn()
-            .with_context(|| {
-                format!("starting {} (ExifTool, needed to write ratings into files)", program.to_string_lossy())
-            })?;
-        die_with_us(&child);
+        let mut cmd = Command::new(&program);
+        cmd.args(["-stay_open", "True", "-@", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
+        pg_platform::process::hide_console_window(&mut cmd);
+        let mut child = cmd.spawn().with_context(|| {
+            format!("starting {} (ExifTool, needed to write ratings into files)", program.to_string_lossy())
+        })?;
+        pg_platform::process::die_with_parent(&child);
         let stdin = child.stdin.take().unwrap();
         let stdout = pump(child.stdout.take().unwrap());
         let stderr = pump(child.stderr.take().unwrap());
@@ -592,36 +585,6 @@ impl ExifTool {
         }
         bail!("ExifTool couldn't set the orientation of {path}: {}", stderr.trim())
     }
-}
-
-/// Put a child process in a job that closes, killing it, when this process ends however it ends (the app
-/// quitting runs no destructors; a stay-open ExifTool would otherwise outlive it).
-fn die_with_us(child: &Child) {
-    use std::os::windows::io::AsRawHandle;
-    use windows_sys::Win32::System::JobObjects::{
-        AssignProcessToJobObject, CreateJobObjectW, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JobObjectExtendedLimitInformation, SetInformationJobObject,
-    };
-    // The job handle is never closed: the system closes it when the process exits.
-    static JOB: OnceLock<usize> = OnceLock::new();
-    let job = *JOB.get_or_init(|| {
-        let mut info = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        // SAFETY: null security attributes and name are allowed; `info` is the struct this information class
-        // takes, with its size.
-        unsafe {
-            let job = CreateJobObjectW(std::ptr::null(), std::ptr::null());
-            SetInformationJobObject(
-                job,
-                JobObjectExtendedLimitInformation,
-                (&raw const info).cast(),
-                std::mem::size_of_val(&info) as u32,
-            );
-            job as usize
-        }
-    });
-    // SAFETY: the job handle is never closed, and the child's handle is open while `child` lives.
-    unsafe { AssignProcessToJobObject(job as _, child.as_raw_handle() as _) };
 }
 
 /// "1 image files created" (with `-o`).

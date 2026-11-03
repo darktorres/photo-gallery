@@ -116,9 +116,5 @@ fn fatal(message: &str) -> ! {
 
 /// An error message box, from any thread (it runs its own message loop).
 fn message_box(message: &str) {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{MB_ICONERROR, MessageBoxW};
-    let wide = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
-    let (text, caption) = (wide(message), wide("Photo Gallery"));
-    // SAFETY: both strings are NUL-terminated and outlive the call; no owner window.
-    unsafe { MessageBoxW(std::ptr::null_mut(), text.as_ptr(), caption.as_ptr(), MB_ICONERROR) };
+    pg_platform::message::error_box("Photo Gallery", message);
 }

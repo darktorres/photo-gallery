@@ -19,7 +19,7 @@ use anyhow::Result;
 use pg_core::catalog::Catalog;
 use pg_core::path::is_under;
 use pg_core::thumbs::ThumbCache;
-use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_BELOW_NORMAL, THREAD_PRIORITY_IDLE};
+use pg_platform::priority::Priority;
 
 use crate::control::{Control, Progress};
 use crate::pipeline::Options;
@@ -264,7 +264,7 @@ impl Inner {
 
     fn round(&self, catalog: &mut Catalog, roots: Vec<String>, crops: Vec<(Vec<i64>, PathBuf)>) -> Result<()> {
         for (i, (ids, folder)) in crops.iter().enumerate() {
-            match crop::save(catalog, ids, folder, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), &self.ctl) {
+            match crop::save(catalog, ids, folder, &Options::new(Priority::BelowNormal), &self.ctl) {
                 Ok(s) if !s.remaining.is_empty() => {
                     // Stopped: what is left of it, and of the round, goes first in the next one.
                     let rest = std::iter::once((s.remaining, folder.clone())).chain(crops[i + 1..].iter().cloned());
@@ -306,7 +306,7 @@ impl Inner {
             }
         }
 
-        let s = import::import(catalog, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), false, &self.ctl)?;
+        let s = import::import(catalog, &Options::new(Priority::BelowNormal), false, &self.ctl)?;
         if s.files > 0 {
             self.imports_done.fetch_add(1, Ordering::Relaxed);
         }
@@ -315,7 +315,7 @@ impl Inner {
         }
 
         // Its own pass, after the import: the import's decode is reduced, the detector wants full size.
-        let s = borders::find(catalog, &Options::new(THREAD_PRIORITY_BELOW_NORMAL), &self.ctl)?;
+        let s = borders::find(catalog, &Options::new(Priority::BelowNormal), &self.ctl)?;
         if s.files > 0 {
             self.imports_done.fetch_add(1, Ordering::Relaxed);
         }
@@ -324,7 +324,7 @@ impl Inner {
         }
 
         let height = self.thumb_height.load(Ordering::Relaxed);
-        let opts = Options::new(THREAD_PRIORITY_IDLE);
+        let opts = Options::new(Priority::Idle);
         let s = thumbs::run(self.thumbs, &self.catalog_path, height, &opts, &self.ctl)?;
         if s.cache_full {
             self.warn(format!("The thumbnail cache is full: {} thumbnails at {height} px weren't made", s.made));

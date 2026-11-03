@@ -84,7 +84,7 @@ fn ratings_and_turns_reach_the_files() {
     let ctl = Control::new(false);
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
-    let opts = Options::new(0);
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
     import::import(&mut c, &opts, false, &ctl).unwrap();
     let before = ids(&c);
     assert_eq!(before.len(), files.len());
@@ -202,7 +202,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     let ctl = Control::new(false);
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &Options::new(0), false, &ctl).unwrap();
+    import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
     // The file as the database has it, and the temp a write would have left beside it (writeback's temp_path).
     let (id, db_path): (i64, String) = c
@@ -278,7 +278,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     let ctl = Control::new(false);
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &Options::new(0), false, &ctl).unwrap();
+    import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
     let id =
         |name: &str| -> i64 { c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name], |r| r.get(0)).unwrap() };
     // a.jpg: a scan has marked it missing, so its write is dropped. b.png was deleted outside the app while the
@@ -324,7 +324,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let ctl = Control::new(false);
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &Options::new(0), false, &ctl).unwrap();
+    import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
     // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
     // shows the turn pending (rotation 1).

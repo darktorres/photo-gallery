@@ -1464,7 +1464,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thumbhash",
- "windows-sys",
 ]
 
 [[package]]
@@ -1491,7 +1490,6 @@ dependencies = [
  "pg-testkit",
  "rusqlite",
  "serde_json",
- "windows-sys",
 ]
 
 [[package]]
@@ -1499,6 +1497,7 @@ name = "pg-platform"
 version = "0.1.0"
 dependencies = [
  "pg-testkit",
+ "windows-sys",
 ]
 
 [[package]]

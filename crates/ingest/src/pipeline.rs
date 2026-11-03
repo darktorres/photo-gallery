@@ -11,19 +11,13 @@
 //! the workers, a folder of large files holds no more than one of small files, and the buffers are reused from file
 //! to file: a pass makes about `slots` of them, whatever its length.
 
-use std::fs::File;
 use std::io::Read;
-use std::os::windows::io::{FromRawHandle, RawHandle};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex};
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
-use windows_sys::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
-use windows_sys::Win32::Storage::FileSystem::{
-    CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
-};
-use windows_sys::Win32::System::Threading::{GetCurrentThread, SetThreadPriority, THREAD_PRIORITY};
+use pg_platform::priority::{self, Priority};
 
 use crate::control::Control;
 
@@ -36,9 +30,9 @@ pub struct Options {
     /// The bytes of file buffers the pass holds at most (read, waiting, being processed, or idle in the pool). A
     /// file larger than all of it is read alone. [`Options::budget`] by default.
     pub buffer_bytes: usize,
-    /// Thread priority of the readers and workers (`THREAD_PRIORITY_*`). Below normal keeps the app's own threads
+    /// Thread priority of the readers and workers (a `Priority`). Below normal keeps the app's own threads
     /// (the UI, thumbnails on screen) ahead of a background pass.
-    pub priority: THREAD_PRIORITY,
+    pub priority: Priority,
 }
 
 /// The budget per read in flight and per worker: a large camera JPEG (24 MP at high quality).
@@ -46,7 +40,7 @@ const BUFFER_PER_SLOT: usize = 12 << 20;
 
 impl Options {
     /// 8 reads in flight, a worker per logical CPU, and their [`Options::budget`].
-    pub fn new(priority: THREAD_PRIORITY) -> Options {
+    pub fn new(priority: Priority) -> Options {
         let cpus = std::thread::available_parallelism().map_or(4, |n| n.get());
         Options {
             readers: 8,
@@ -71,11 +65,6 @@ impl Options {
     pub fn budget(readers: usize, workers: usize) -> usize {
         (readers + workers) * BUFFER_PER_SLOT
     }
-}
-
-fn set_priority(priority: THREAD_PRIORITY) {
-    // SAFETY: GetCurrentThread's pseudo-handle is always valid for the calling thread.
-    unsafe { SetThreadPriority(GetCurrentThread(), priority) };
 }
 
 /// Read each item's file, run `process(state, i, bytes)` (with per-worker state from `init`), and call
@@ -112,7 +101,7 @@ where
             let raw_tx = raw_tx.clone();
             let (next, stop, read, pool) = (&next, &stop, &read, &pool);
             s.spawn(move || {
-                set_priority(opts.priority);
+                priority::set_current_thread(opts.priority);
                 let mut wide = Vec::new();
                 while !stop.load(Ordering::Relaxed) && ctl.checkpoint() {
                     let i = next.fetch_add(1, Ordering::Relaxed);
@@ -138,7 +127,7 @@ where
             let (raw_rx, res_tx) = (raw_rx.clone(), res_tx.clone());
             let (init, process) = (&init, &process);
             s.spawn(move || {
-                set_priority(opts.priority);
+                priority::set_current_thread(opts.priority);
                 let mut state = match init() {
                     Ok(st) => st,
                     Err(e) => {
@@ -176,7 +165,7 @@ where
 /// Read the file at `path` (item `i`; NUL-terminated UTF-16) into a buffer from the pool, its size reserved in list
 /// order. `None` once the pass stops.
 fn read_whole<'p>(pool: &'p Pool, i: usize, path: &[u16]) -> Option<std::io::Result<Lease<'p>>> {
-    let mut file = match open(path).and_then(|f| Ok((f.metadata()?.len(), f))) {
+    let mut file = match pg_platform::file::open_read(path).and_then(|f| Ok((f.metadata()?.len(), f))) {
         Ok((size, file)) => (file, size as usize),
         Err(e) => {
             pool.pass(i);
@@ -185,29 +174,6 @@ fn read_whole<'p>(pool: &'p Pool, i: usize, path: &[u16]) -> Option<std::io::Res
     };
     let mut lease = pool.take(i, file.1)?;
     Some(file.0.read_to_end(&mut lease.bytes).map(|_| lease))
-}
-
-/// `File::open` of a NUL-terminated UTF-16 path, which std would otherwise make from a `&str` into a new buffer for
-/// each file. The same call as std's: read access, every sharing mode, an existing file, no flags.
-fn open(path: &[u16]) -> std::io::Result<File> {
-    debug_assert_eq!(path.last(), Some(&0));
-    // SAFETY: `path` is NUL-terminated and outlives the call; the null pointers are optional arguments.
-    let h = unsafe {
-        CreateFileW(
-            path.as_ptr(),
-            GENERIC_READ,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            std::ptr::null(),
-            OPEN_EXISTING,
-            0,
-            std::ptr::null_mut(),
-        )
-    };
-    if h == INVALID_HANDLE_VALUE {
-        return Err(std::io::Error::last_os_error());
-    }
-    // SAFETY: a handle just opened, owned by nothing else; the `File` closes it.
-    Ok(unsafe { File::from_raw_handle(h as RawHandle) })
 }
 
 /// Ends the pass: tells the readers and the pool.
@@ -354,6 +320,7 @@ impl Pool {
 #[cfg(test)]
 mod tests {
     use pg_platform::verbatim::verbatim_wide;
+    use std::fs::File;
 
     use super::*;
 
@@ -479,7 +446,7 @@ mod tests {
                 path.to_str().unwrap().to_string()
             })
             .collect();
-        let opts = Options { readers: 4, workers: 1, slots: 6, buffer_bytes: 1 << 20, priority: 0 };
+        let opts = Options { readers: 4, workers: 1, slots: 6, buffer_bytes: 1 << 20, priority: Priority::Normal };
         let mut seen = vec![false; paths.len()];
         run(
             &paths,
@@ -522,11 +489,11 @@ mod tests {
             std::fs::write(&path, name.as_bytes()).unwrap();
             verbatim_wide(&[path.to_str().unwrap()], &mut wide);
             let mut bytes = Vec::new();
-            open(&wide).unwrap().read_to_end(&mut bytes).unwrap();
+            pg_platform::file::open_read(&wide).unwrap().read_to_end(&mut bytes).unwrap();
             assert_eq!(bytes, name.as_bytes());
         }
         verbatim_wide(&[dir.join("missing.jpg").to_str().unwrap()], &mut wide);
-        let ours = open(&wide).unwrap_err();
+        let ours = pg_platform::file::open_read(&wide).unwrap_err();
         let std = File::open(dir.join("missing.jpg")).unwrap_err();
         assert_eq!((ours.kind(), ours.raw_os_error()), (std.kind(), std.raw_os_error()));
         std::fs::remove_dir_all(&root).unwrap();

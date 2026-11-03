@@ -74,10 +74,6 @@ fn report(info: &PanicHookInfo) -> String {
 
 /// `2026-10-30 17:04:16`, local time.
 fn local_time() -> String {
-    use windows_sys::Win32::Foundation::SYSTEMTIME;
-    use windows_sys::Win32::System::SystemInformation::GetLocalTime;
-    let mut t = SYSTEMTIME::default();
-    // SAFETY: GetLocalTime only writes the SYSTEMTIME it is given.
-    unsafe { GetLocalTime(&mut t) };
-    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.wYear, t.wMonth, t.wDay, t.wHour, t.wMinute, t.wSecond)
+    let t = pg_platform::clock::local_time();
+    format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second)
 }

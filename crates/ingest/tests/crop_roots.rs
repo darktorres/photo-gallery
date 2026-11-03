@@ -37,7 +37,7 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop-roots");
     let mut c = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
     let ctl = Control::new(false);
-    let opts = Options::new(0);
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
 
     // Two folders, both called "images", with different pictures (the same bars, so both are cut the same way).
     for (sub, pixel) in [("one", [255, 0, 0]), ("two", [0, 0, 255])] {

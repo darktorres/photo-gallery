@@ -15,7 +15,6 @@ clap.workspace = true
 crossbeam-channel.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
-windows-sys.workspace = true
 
 [dev-dependencies]
 image.workspace = true

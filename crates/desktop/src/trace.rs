@@ -33,10 +33,6 @@ pub mod qobject {
 
 use std::sync::LazyLock;
 
-use windows_sys::Win32::Foundation::FILETIME;
-use windows_sys::Win32::System::SystemInformation::GetSystemTimePreciseAsFileTime;
-use windows_sys::Win32::System::Threading::{GetCurrentProcess, GetProcessTimes};
-
 #[derive(Default)]
 pub struct StagesRust;
 
@@ -90,19 +86,6 @@ stages! {
 
 fn reached(stage: &str) {
     if *PRINT {
-        eprintln!("stage {:>9.1} ms  {stage}", since_process_start_ms());
+        eprintln!("stage {:>9.1} ms  {stage}", pg_platform::clock::process_age_ms());
     }
-}
-
-fn since_process_start_ms() -> f64 {
-    let ticks = |t: FILETIME| (u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime);
-    let zero = FILETIME { dwLowDateTime: 0, dwHighDateTime: 0 };
-    let (mut created, mut exited, mut kernel, mut user, mut now) = (zero, zero, zero, zero, zero);
-    // SAFETY: both only write the FILETIMEs they are given; the pseudo-handle of this process needs no closing.
-    unsafe {
-        GetProcessTimes(GetCurrentProcess(), &mut created, &mut exited, &mut kernel, &mut user);
-        GetSystemTimePreciseAsFileTime(&mut now);
-    }
-    // FILETIME counts 100 ns.
-    ticks(now).saturating_sub(ticks(created)) as f64 / 1e4
 }

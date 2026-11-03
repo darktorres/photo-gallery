@@ -171,7 +171,7 @@ fn videos() {
     let root = scan::normalize_path(&media.to_string_lossy()).unwrap();
     catalog.add_root(&root).unwrap();
     scan::scan(&mut catalog, &root, &ctl).unwrap();
-    let opts = Options::new(0);
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
     let stats = import::import(&mut catalog, &opts, false, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed), (6, 0));
     // Name, kind, width, height, duration, poster time, whether the pixel hash is missing.

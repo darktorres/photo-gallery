@@ -36,7 +36,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     let ctl = Control::new(false);
     let root = scan::normalize_path(&images.to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
-    let opts = Options::new(0);
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
     import::import(&mut c, &opts, false, &ctl).unwrap();
     assert_eq!((due(&c, "a.png"), due(&c, "b.png")), (1, 1));
 

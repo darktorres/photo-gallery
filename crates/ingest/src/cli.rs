@@ -9,7 +9,7 @@ use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use pg_core::catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
-use windows_sys::Win32::System::Threading::{THREAD_PRIORITY_IDLE, THREAD_PRIORITY_NORMAL};
+use pg_platform::priority::Priority;
 
 use crate::control::Control;
 use crate::writeback::Writer;
@@ -45,7 +45,7 @@ struct PipelineArgs {
 }
 
 impl PipelineArgs {
-    fn options(&self, priority: i32) -> pipeline::Options {
+    fn options(&self, priority: Priority) -> pipeline::Options {
         let mut opts = pipeline::Options::new(priority);
         opts.readers = self.readers.max(1);
         opts.workers = self.workers.unwrap_or(opts.workers).max(1);
@@ -205,7 +205,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
                 println!("{marked} files to analyze again");
             }
-            let opts = pipeline.options(THREAD_PRIORITY_NORMAL);
+            let opts = pipeline.options(Priority::Normal);
             let s = import::import(&mut catalog, &opts, retry_errors, &ctl)?;
             println!(
                 "imported {} files ({} failed{}), {} PDQ pairs, {:.1} s",
@@ -219,7 +219,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
         Command::Thumbs { height, cap, pipeline, foreground } => {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
-            let opts = pipeline.options(if foreground { THREAD_PRIORITY_NORMAL } else { THREAD_PRIORITY_IDLE });
+            let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
             let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, report())?;
             let s = thumbs::run(&cache, &catalog_path, height, &opts, &ctl)?;
             cache.flush();
@@ -239,7 +239,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
                 println!("{marked} files marked as not a border; {unknown} not in the catalog");
             } else {
-                let s = borders::find(&mut catalog, &pipeline.options(THREAD_PRIORITY_NORMAL), &ctl)?;
+                let s = borders::find(&mut catalog, &pipeline.options(Priority::Normal), &ctl)?;
                 println!(
                     "borders looked for in {} files ({} failed), {:.1} s",
                     s.files,
@@ -335,7 +335,7 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
         return Ok(());
     }
     let csv = csv.context("--csv: where the report goes")?;
-    let s = borders::report(paths, csv, &pipeline.options(THREAD_PRIORITY_NORMAL), &Control::new(true))?;
+    let s = borders::report(paths, csv, &pipeline.options(Priority::Normal), &Control::new(true))?;
     println!(
         "{} files: {} with borders, {} rejected candidates only, {} skipped, {} errors; {:.1} s ({:.0} files/s)",
         s.files,

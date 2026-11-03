@@ -12,6 +12,7 @@ use pg_model::detection;
 use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
 use pg_model::orientation::upright_rect;
+use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
@@ -32,7 +33,8 @@ pub struct Entry {
     pub rotation: Turns,
     /// Quarter turns clockwise asked for but not yet written (`queue_rotation`): the grid shows them already.
     pub pending_turns: Turns,
-    pub rating: u8,
+    /// The rating in stars, `None` when unrated (the catalog keeps no row for it).
+    pub rating: Option<Rating>,
     /// More than one frame (known after the import).
     pub animated: bool,
     /// Orientation (1–8) of the analysis: what turns the stored pixels upright, the catalog rotation included.
@@ -148,7 +150,7 @@ impl Entry {
 macro_rules! entry_columns {
     () => {
         "f.id, f.mtime, coalesce(a.width, 0), coalesce(a.height, 0), a.duration_ms, f.ext,
-    f.rotation, coalesce(w.value, 0), coalesce(r.rating, 0), coalesce(a.frames, 1), coalesce(a.orientation, 1),
+    f.rotation, coalesce(w.value, 0), r.rating, coalesce(a.frames, 1), coalesce(a.orientation, 1),
     a.cut_left, a.cut_top, a.cut_right, a.cut_bottom, m.file_id IS NOT NULL"
     };
 }
@@ -187,7 +189,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         ext: Ext::of(ext).ok_or_else(|| rusqlite::Error::InvalidColumnType(5, format!("ext {ext}"), Type::Text))?,
         rotation: Turns::new(r.get(6)?),
         pending_turns: Turns::new(r.get(7)?),
-        rating: r.get(8)?,
+        rating: r.get::<_, Option<u8>>(8)?.and_then(Rating::new),
         animated: r.get::<_, i64>(9)? > 1,
         orientation: r.get(10)?,
         cut,

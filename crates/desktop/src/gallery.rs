@@ -781,7 +781,7 @@ impl qobject::GalleryModel {
     }
 
     fn rating(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |i| i.rating as i32)
+        self.item(item).and_then(|i| i.rating).map_or(0, |r| r.get() as i32)
     }
 
     fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
@@ -799,7 +799,7 @@ impl qobject::GalleryModel {
         }
         {
             let mut this = self.as_mut().rust_mut();
-            this.entries[item as usize].rating = stars;
+            this.entries[item as usize].rating = rating;
             this.forget_details();
             if this.loading {
                 this.edited.push(id);
@@ -920,7 +920,7 @@ impl qobject::GalleryModel {
             let dims = if w > 0 { format!("{w} × {h}") } else { "not imported".to_string() };
             let bytes = d.size as f64;
             let size = if bytes >= 1e6 { format!("{:.1} MB", bytes / 1e6) } else { format!("{:.0} KB", bytes / 1e3) };
-            let kept = if e.rating > 0 && !d.rating_in_file { "   rating kept in the catalog" } else { "" };
+            let kept = if e.rating.is_some() && !d.rating_in_file { "   rating kept in the catalog" } else { "" };
             QString::from(&format!("{}   {dims}   {size}{kept}{}", d.path, borders_info(e, d)))
         })
         .unwrap_or_default()

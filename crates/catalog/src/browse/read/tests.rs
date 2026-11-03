@@ -53,7 +53,7 @@ fn the_cut_is_described_as_shown() {
         ext: Ext::of("jpg").unwrap(),
         rotation: Turns::new(0),
         pending_turns: Turns::NONE,
-        rating: 0,
+        rating: None,
         animated: false,
         orientation: 6,
         cut: [0, 163, 0, 131],

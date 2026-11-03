@@ -159,7 +159,7 @@ impl qobject::Library {
         let height = thumb_height.max(1) as u32;
         RUNNER.get_or_init(|| {
             Runner::start(state::get().catalog_path.clone(), state::thumbs(), height, || {
-                crate::trace::pg_stage_round_done()
+                pg_trace::pg_stage_round_done()
             })
         });
         // A turned file needs its analysis and thumbnails redone: the job's work.

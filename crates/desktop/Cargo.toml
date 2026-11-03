@@ -20,6 +20,7 @@ doctest = false
 [dependencies]
 pg-core = { path = "../core" }
 pg-platform = { path = "../platform" }
+pg-trace = { path = "../trace" }
 pg-ingest = { path = "../ingest" }
 anyhow.workspace = true
 cxx = "1"

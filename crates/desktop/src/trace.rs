@@ -1,13 +1,6 @@
-//! Startup stages, for measuring them (docs/PROFILING.md "Startup"). Each stage is a function with a plain C name,
-//! called when the app gets there:
-//!
-//! - Intel SDE counts the instructions between two of them, on every thread: `sde -icount -controller_default_start
-//!   0 -control start:enter_func:pg_stage_main:bcast,stop:enter_func:pg_stage_ready:bcast -- gallery.exe …`.
-//! - With `PG_TRACE=1`, each prints the milliseconds since the process was created on stderr (`stage 1070.4 ms
-//!   pg_stage_first_frame`).
-//!
-//! Otherwise a stage costs a call. The tree and the list are marked each time one is shown; the first of each is the
-//! start's.
+//! The startup stages as the QML sees them: Main.qml calls `Stages.firstFrame()` and `Stages.ready()`. The stages
+//! themselves are `pg-trace`'s (docs/PROFILING.md "Startup"): this module is the bridge, and the app's printing of them
+//! with `PG_TRACE=1` (`install`).
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -31,7 +24,7 @@ pub mod qobject {
     }
 }
 
-use std::sync::LazyLock;
+use pg_trace::{pg_stage_first_frame, pg_stage_ready};
 
 #[derive(Default)]
 pub struct StagesRust;
@@ -46,46 +39,10 @@ impl qobject::Stages {
     }
 }
 
-static PRINT: LazyLock<bool> = LazyLock::new(|| std::env::var_os("PG_TRACE").is_some_and(|v| v == "1"));
-
-/// Each body names its stage, so no two are identical and the linker can't fold them into one function.
-macro_rules! stages {
-    ($($(#[$doc:meta])* $name:ident),* $(,)?) => {
-        $(
-            $(#[$doc])*
-            #[unsafe(no_mangle)]
-            #[inline(never)]
-            pub extern "C" fn $name() {
-                reached(stringify!($name));
-            }
-        )*
-    };
-}
-
-stages! {
-    /// `main` runs (the DLLs are loaded).
-    pg_stage_main,
-    /// The catalog and the thumbnail cache are open.
-    pg_stage_init_done,
-    /// The QML engine starts loading the window.
-    pg_stage_qml_load,
-    /// It has (the window is up, not yet painted).
-    pg_stage_qml_loaded,
-    /// The first frame is on screen.
-    pg_stage_first_frame,
-    /// A folder tree is shown.
-    pg_stage_tree_shown,
-    /// A grid list is shown.
-    pg_stage_list_shown,
-    /// The start is done.
-    pg_stage_ready,
-    /// The library's background job finished a round (on its thread; the first is the start's import check and
-    /// thumbnail pass).
-    pg_stage_round_done,
-}
-
-fn reached(stage: &str) {
-    if *PRINT {
-        eprintln!("stage {:>9.1} ms  {stage}", pg_platform::clock::process_age_ms());
+/// With `PG_TRACE=1`, each stage prints its milliseconds since the process was created on stderr (`stage 1070.4 ms
+/// pg_stage_first_frame`). Called before the first stage; without it a stage costs a call.
+pub fn install() {
+    if std::env::var_os("PG_TRACE").is_some_and(|v| v == "1") {
+        pg_trace::set_sink(|stage, ms| eprintln!("stage {ms:>9.1} ms  {stage}"));
     }
 }

@@ -1,5 +1,5 @@
 # Instruction profile of the gallery, callgrind's format, one file per thread: runs target/release/gallery.exe
-# under Pin with callgraph.dll (build.sh) until a startup stage (crates/desktop/src/trace.rs), then names the functions
+# under Pin with callgraph.dll (build.sh) until a startup stage (crates/trace/src/lib.rs), then names the functions
 # Pin could only name by address (symbolize.py). Read the result with tools/profiling/cgtab.py or KCachegrind.
 #
 #   profile.ps1 -Out D:\profiles\ready [-Stop pg_stage_ready] [-Start STAGE] [-- gallery arguments]

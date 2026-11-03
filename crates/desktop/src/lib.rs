@@ -34,7 +34,8 @@ pub fn run(args: &[OsString]) {
     // The crate's and the QML module's C++ initializers. A static library keeps them only where they are called.
     cxx_qt::init_crate!(pg_desktop);
     cxx_qt::init_qml_module!("pg.gallery");
-    trace::pg_stage_main();
+    trace::install();
+    pg_trace::pg_stage_main();
     command_line::init(args);
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
@@ -55,7 +56,7 @@ pub fn run(args: &[OsString]) {
     if let Err(e) = state::init(catalog_dir, cap) {
         fatal(&format!("Can't open the catalog: {e:#}"));
     }
-    trace::pg_stage_init_done();
+    pg_trace::pg_stage_init_done();
 
     // The controls style is Fusion, imported by name in the QML (`QtQuick.Controls.Fusion`): it follows the
     // window's dark palette. The default on Windows, the native style, draws light system buttons regardless.
@@ -81,9 +82,9 @@ pub fn run(args: &[OsString]) {
         let qml_dir = QString::from(concat!(env!("CARGO_MANIFEST_DIR"), "/qml"));
         #[cfg(debug_assertions)]
         live_reload::ffi::read_qml_from_source(engine.as_mut(), &main_qml, &qml_dir);
-        trace::pg_stage_qml_load();
+        pg_trace::pg_stage_qml_load();
         engine.as_mut().load(&main_qml);
-        trace::pg_stage_qml_loaded();
+        pg_trace::pg_stage_qml_loaded();
         // Only now: the device is made meanwhile. Qt Multimedia reads the decoding choice when the QML makes the
         // first player, which the load doesn't (the viewer's media Loader makes them with the first video).
         gpu = gpu_thread.join().expect("the gpu device thread");

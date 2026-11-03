@@ -55,7 +55,7 @@ tools/profiling/callgraph/profile.ps1 -Out D:\…\profiles\ready   # to pg_stage
 python tools/profiling/cgtab.py table D:\…\profiles\ready.<pid>-<thread> --sort incl
 ```
 
-- **Stages:** `crates/desktop/src/trace.rs` marks the start's stages with functions of plain C names (`pg_stage_main` …
+- **Stages:** `crates/trace/src/lib.rs` marks the start's stages with functions of plain C names (`pg_stage_main` …
   `pg_stage_ready`). `-stop STAGE` stops every thread when one enters it, writes the profile and ends the process, so
   nothing after it is counted. SDE's `-control stop:…` didn't do that: threads started later kept counting. `-start
   STAGE` zeroes the counts. With `PG_TRACE=1` the app prints each stage's milliseconds since process start.
@@ -114,7 +114,7 @@ sde.exe -mix -omix out.txt -- prog.exe args     # per-function and per-block cou
 - **Threads:** counts are per thread. For pipelines, add the threads up; the split between them varies from run to
   run.
 - **Whole run:** the totals include startup, opening the catalog and exit. `-control stop:enter_func:pg_stage_ready:bcast`
-  stops at a startup stage (`crates/desktop/src/trace.rs`; Rust's `::` paths can't be named there, hence the C names),
+  stops at a startup stage (`crates/trace/src/lib.rs`; Rust's `::` paths can't be named there, hence the C names),
   but threads started after the stop still count.
 - **Slowdown:** about 10–100×, roughly valgrind's.
 
@@ -370,7 +370,7 @@ Catalog: 189,518 files, all analyzed, 5,216 PDQ pairs, no thumbnails. 18 s under
 
 - **What to measure next:** the hot paths of the app, i.e. `thumbs` on a small folder (decode, resize, encode) and
   `import`. Use a separate `--catalog-dir`, never the real catalog.
-- **Region markers** beyond the start: the start's stages are functions (`crates/desktop/src/trace.rs`) that both SDE
+- **Region markers** beyond the start: the start's stages are functions (`crates/trace/src/lib.rs`) that both SDE
   and the Pin call graph stop at. Other regions (a scan, a thumbnail pass) would get stages the same way.
 - **Repeatability under SDE:** check that two runs of the same command give the same count (single-threaded paths
   should be identical). Under callgrind/gungraun they are (see above).

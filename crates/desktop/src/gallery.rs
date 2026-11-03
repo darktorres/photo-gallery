@@ -285,7 +285,7 @@ use pg_core::layout::{self, Row, RowChange};
 use pg_core::query::{MediaType, Query, Sort};
 
 use crate::loader::{self, Kind as Load};
-use crate::{library, settings, state, trace};
+use crate::{library, settings, state};
 
 /// A row's items, (first, count) as a point: one value, so a row changed or reused is given its items at once.
 const ROLE_SPAN: i32 = 256;
@@ -542,7 +542,7 @@ impl qobject::GalleryModel {
         self.as_mut().set_anchor(-1);
         let revision = self.revision + 1;
         self.as_mut().set_revision(revision);
-        trace::pg_stage_list_shown();
+        pg_trace::pg_stage_list_shown();
         self.loaded(kept);
     }
 

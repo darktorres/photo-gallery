@@ -4,7 +4,7 @@
 //   pin -t callgraph.dll [-o PREFIX] [-start SYMBOL] [-stop SYMBOL] -- gallery.exe ...
 //
 // -start zeroes every thread's counts when any thread enters SYMBOL; -stop writes the profile and ends the process
-// when any thread enters it (pg_stage_ready and the other stages in crates/desktop/src/trace.rs). Without -stop the
+// when any thread enters it (pg_stage_ready and the other stages in crates/trace/src/lib.rs). Without -stop the
 // profile is written at exit. Outputs: PREFIX.<pid>-<thread> per thread, and PREFIX.<pid>.threads listing them.
 //
 // The cost model:

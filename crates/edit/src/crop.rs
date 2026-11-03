@@ -52,22 +52,14 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
         },
         Format::Bmp => match rewrite::bmp(bytes, exact(l, t))? {
             Some(out) => kept(out),
-            None => reencoded(bytes, image::ImageFormat::Bmp, l, t, width - l - r, height - t - b, cut),
+            None => reencoded(bytes, Format::Bmp, l, t, width - l - r, height - t - b, cut),
         },
-        Format::Tiff => reencoded(bytes, image::ImageFormat::Tiff, l, t, width - l - r, height - t - b, cut),
+        Format::Tiff => reencoded(bytes, Format::Tiff, l, t, width - l - r, height - t - b, cut),
     }
 }
 
 /// Decoded, cropped and encoded again in the same format, without the metadata.
-fn reencoded(
-    bytes: &[u8],
-    format: image::ImageFormat,
-    x: u32,
-    y: u32,
-    w: u32,
-    h: u32,
-    cut: [u32; 4],
-) -> Result<Cropped> {
+fn reencoded(bytes: &[u8], format: Format, x: u32, y: u32, w: u32, h: u32, cut: [u32; 4]) -> Result<Cropped> {
     let bytes = pg_codec::encode::cropped(bytes, format, x, y, w, h)?;
     Ok(Cropped { bytes, cut, metadata: false })
 }
@@ -75,8 +67,7 @@ fn reencoded(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pg_codec::decode::{Decoder, MinSize};
-    use std::io::Cursor;
+    use crate::testing::stored;
 
     fn pattern(w: usize, h: usize) -> Vec<u8> {
         (0..w * h)
@@ -87,12 +78,6 @@ mod tests {
             .collect()
     }
 
-    /// Decoded stored pixels, full size.
-    fn stored(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
-        let d = crate::display::decode_stored(&mut Decoder::new().unwrap(), bytes, MinSize::Full, 0).unwrap();
-        (d.image.width, d.image.height, d.image.pixels)
-    }
-
     fn cut_out(pixels: &[u8], w: usize, [l, t, r, b]: [usize; 4], h: usize) -> Vec<u8> {
         (t..h - b).flat_map(|y| pixels[(y * w + l) * 3..(y * w + w - r) * 3].to_vec()).collect()
     }
@@ -101,14 +86,12 @@ mod tests {
     fn lossless_formats_crop_exactly_and_keep_their_chunks() {
         let (w, h) = (37, 23);
         let rgb = pattern(w, h);
-        let img = image::RgbImage::from_raw(w as u32, h as u32, rgb.clone()).unwrap();
         let cut = [3, 5, 7, 2];
-        let mut files = Vec::new();
-        for format in [image::ImageFormat::Png, image::ImageFormat::Bmp, image::ImageFormat::Tiff] {
-            let mut file = Cursor::new(Vec::new());
-            img.write_to(&mut file, format).unwrap();
-            files.push(file.into_inner());
-        }
+        let mut files = vec![
+            pg_testkit::png_rgb(w as u32, h as u32, &rgb),
+            pg_testkit::bmp_rgb(w as u32, h as u32, &rgb),
+            pg_testkit::tiff_rgb(w as u32, h as u32, &rgb),
+        ];
         let mut webp = Vec::new();
         let mut e = image_webp::WebPEncoder::new(&mut webp);
         e.set_exif_metadata(b"II*\0\x08\0\0\0\0\0\0\0\0\0".to_vec());
@@ -134,10 +117,7 @@ mod tests {
     #[test]
     fn gif_crops_the_frame_and_the_screen() {
         let (w, h) = (19, 11);
-        let img = image::RgbImage::from_raw(w as u32, h as u32, pattern(w, h)).unwrap();
-        let mut file = Cursor::new(Vec::new());
-        img.write_to(&mut file, image::ImageFormat::Gif).unwrap();
-        let file = file.into_inner();
+        let file = pg_testkit::gif_rgb(w as u32, h as u32, &pattern(w, h));
         let (_, _, before) = stored(&file);
         let cut = [2, 1, 4, 3];
         let out = crop(&file, Format::Gif, w as u32, h as u32, cut).unwrap();

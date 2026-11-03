@@ -71,11 +71,10 @@ pub fn rotate(bytes: &[u8], format: Format, turns: u8) -> Result<Outcome> {
 
 #[cfg(test)]
 mod tests {
-    use std::io::Cursor;
-
     use super::*;
     use crate::rewrite::{pack, png_chunk};
-    use pg_codec::decode::{Decoder, MinSize, orient};
+    use crate::testing::shown;
+    use pg_codec::decode::orient;
 
     /// A test image with distinct, smoothly varying pixels (so a wrong turn can't match by chance).
     fn pattern(w: usize, h: usize) -> Vec<u8> {
@@ -85,12 +84,6 @@ mod tests {
                 [(x * 255 / w) as u8, (y * 255 / h) as u8, ((x * 7 + y * 13) % 256) as u8]
             })
             .collect()
-    }
-
-    /// Decode as shown, full size.
-    fn shown(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
-        let d = crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Full, 0).unwrap();
-        (d.image.width, d.image.height, d.image.pixels)
     }
 
     /// Expected: the original as shown, turned clockwise `turns` times.
@@ -193,12 +186,8 @@ mod tests {
     fn bmp_gif_webp_exact() {
         let (w, h) = (11, 6);
         let rgb = pattern(w, h);
-        let img = image::RgbImage::from_raw(w as u32, h as u32, rgb.clone()).unwrap();
-        for format in [image::ImageFormat::Bmp, image::ImageFormat::Gif] {
-            let mut file = Cursor::new(Vec::new());
-            img.write_to(&mut file, format).unwrap();
-            // No EXIF in these formats: no starting orientation but 1.
-            let file = file.into_inner();
+        // No EXIF in these formats: no starting orientation but 1.
+        for file in [pg_testkit::bmp_rgb(w as u32, h as u32, &rgb), pg_testkit::gif_rgb(w as u32, h as u32, &rgb)] {
             let format = Format::sniff(&file).unwrap();
             check_exact(&[file], format);
         }

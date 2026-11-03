@@ -1,4 +1,4 @@
-//! Saving cropped copies (pg_core::crop): each file's borders as the catalog has them (found, not marked as not a
+//! Saving cropped copies (pg_edit::crop): each file's borders as the catalog has them (found, not marked as not a
 //! border), cut off into a copy at `<folder>\<library folder name>\<path inside it>`, with the original's
 //! modification time. The originals are never written: a folder whose copies would land in the library is refused
 //! up front, and each file is checked to still be the one its borders were found in.
@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, CropSource};
-use pg_core::crop::crop;
+use pg_edit::crop::crop;
 use pg_model::path::{PathArena, PathRef, is_under};
 use pg_platform::verbatim::verbatim_wide;
 

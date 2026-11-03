@@ -1,5 +1,5 @@
 //! Writing the user's changes into the files themselves (PLAN §2): ratings as `XMP:Rating` (ExifTool), turns
-//! losslessly (`pg_core::rotate`). The catalog changed already when the user acted; this catches the files up,
+//! losslessly (`pg_edit::rotate`). The catalog changed already when the user acted; this catches the files up,
 //! from the `file_writes` queue, so a write survives quitting and a file that is offline waits for its drive.
 //!
 //! Files keep their NTFS identity, which is the catalog's identity for them (PLAN §4). Writing a temp file and
@@ -22,8 +22,8 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
-use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
+use pg_edit::rotate::{Outcome, rotate};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;

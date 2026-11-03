@@ -8,7 +8,6 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-pg-container = { path = "../container" }
 pg-model = { path = "../model" }
 pg-codec = { path = "../codec" }
 pg-video = { path = "../video" }
@@ -21,12 +20,9 @@ turbojpeg.workspace = true
 ureq.workspace = true
 xxhash-rust.workspace = true
 blake3.workspace = true
-crc32fast.workspace = true
-image-webp.workspace = true
 png.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-weezl.workspace = true
 
 [dev-dependencies]
 pdqhash.workspace = true

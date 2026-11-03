@@ -52,6 +52,33 @@ pub fn gif(frames: usize) -> Vec<u8> {
     out
 }
 
+/// `rgb` (`w` × `h` pixels, three bytes each) as a BMP.
+pub fn bmp_rgb(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
+    still(w, h, rgb, image::ImageFormat::Bmp)
+}
+
+/// `rgb` as a GIF, one frame.
+pub fn gif_rgb(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
+    still(w, h, rgb, image::ImageFormat::Gif)
+}
+
+/// `rgb` as a PNG.
+pub fn png_rgb(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
+    still(w, h, rgb, image::ImageFormat::Png)
+}
+
+/// `rgb` as a classic TIFF (`image` writes no BigTIFF: the codec's fixtures do).
+pub fn tiff_rgb(w: u32, h: u32, rgb: &[u8]) -> Vec<u8> {
+    still(w, h, rgb, image::ImageFormat::Tiff)
+}
+
+fn still(w: u32, h: u32, rgb: &[u8], format: image::ImageFormat) -> Vec<u8> {
+    let img = image::RgbImage::from_raw(w, h, rgb.to_vec()).unwrap();
+    let mut file = std::io::Cursor::new(Vec::new());
+    img.write_to(&mut file, format).unwrap();
+    file.into_inner()
+}
+
 /// An animated PNG of `frames` 2 × 2 frames of one grey, or a still PNG for one frame.
 pub fn apng(frames: u32) -> Vec<u8> {
     let mut out = Vec::new();

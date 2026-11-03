@@ -1444,12 +1444,9 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "blake3",
- "crc32fast",
  "image 0.25.10",
- "image-webp",
  "pdqhash",
  "pg-codec",
- "pg-container",
  "pg-metadata",
  "pg-model",
  "pg-testkit",
@@ -1461,7 +1458,6 @@ dependencies = [
  "thumbhash",
  "turbojpeg",
  "ureq",
- "weezl",
  "xxhash-rust",
 ]
 
@@ -1487,6 +1483,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-edit"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "crc32fast",
+ "image-webp",
+ "pg-codec",
+ "pg-container",
+ "pg-metadata",
+ "pg-model",
+ "pg-testkit",
+ "png 0.18.1",
+ "turbojpeg",
+ "weezl",
+]
+
+[[package]]
 name = "pg-gallery"
 version = "0.1.0"
 dependencies = [
@@ -1507,6 +1520,7 @@ dependencies = [
  "image 0.25.10",
  "pg-codec",
  "pg-core",
+ "pg-edit",
  "pg-metadata",
  "pg-model",
  "pg-platform",

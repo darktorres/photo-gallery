@@ -307,13 +307,7 @@ impl Inner {
             // unknown now, so its analysis is redone rather than carried over.
             copy_into(Path::new(temp), &path)?;
             let after = stat(&path)?;
-            self.done(conn, job, *written, |tx| {
-                Catalog::file_rewritten(tx, job.file_id, (-1, -1), after, None)?;
-                if job.kind == "rating" {
-                    Catalog::set_file_rating(tx, job.file_id, Some(*written as u8))?;
-                }
-                Ok(())
-            })?;
+            self.done(conn, job, *written, |tx| record_rewrite(tx, job, *written, (-1, -1), after, None))?;
             if job.kind == "rotation" {
                 self.pixels_changed();
             }
@@ -380,15 +374,7 @@ impl Inner {
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
         let after = stat(&path)?;
-        self.done(conn, job, job.value, |tx| {
-            Catalog::file_rewritten(tx, job.file_id, before, after, new_hash)?;
-            if job.kind == "rating" {
-                Catalog::set_file_rating(tx, job.file_id, Some(job.value as u8))?;
-            } else {
-                Catalog::analysis_turned_back(tx, job.file_id, job.value.rem_euclid(4) as u8)?;
-            }
-            Ok(())
-        })?;
+        self.done(conn, job, job.value, |tx| record_rewrite(tx, job, job.value, before, after, new_hash))?;
         if job.kind == "rating" {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
@@ -456,6 +442,27 @@ impl Inner {
 }
 
 /// Size and mtime (FILETIME, as the scanner records it).
+/// What a write put in the file, recorded in the catalog in `tx` (`done`'s transaction): the file's new stat and
+/// its analysis (`file_rewritten`), then what the file now holds, a rating or a turn it shows upright
+/// (`analysis_turned_back`). Both the finishing of an interrupted copy and the normal write record it here, so the
+/// two can't disagree about a turn.
+fn record_rewrite(
+    tx: &rusqlite::Transaction,
+    job: &Job,
+    value: i64,
+    before: (i64, i64),
+    after: (i64, i64),
+    metadata_only: Option<[u8; 32]>,
+) -> Result<()> {
+    Catalog::file_rewritten(tx, job.file_id, before, after, metadata_only)?;
+    if job.kind == "rating" {
+        Catalog::set_file_rating(tx, job.file_id, Some(value as u8))?;
+    } else {
+        Catalog::analysis_turned_back(tx, job.file_id, value.rem_euclid(4) as u8)?;
+    }
+    Ok(())
+}
+
 pub(crate) fn stat(path: &str) -> Result<(i64, i64)> {
     let m = std::fs::metadata(path).with_context(|| format!("reading {path}"))?;
     Ok((m.len() as i64, m.last_write_time() as i64))

@@ -312,3 +312,59 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     }
     assert!(writer.status().error.is_some(), "the cause is in the status line");
 }
+
+#[test]
+fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
+    // Its own folder, as the other tests here: run_folder keeps one folder per prefix.
+    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "finish");
+    std::fs::create_dir_all(dir.join("images")).unwrap();
+    let files = make_files(&dir);
+    let catalog_path = dir.join("catalog.sqlite");
+    let mut c = Catalog::open(&catalog_path).unwrap();
+    let ctl = Control::new(false);
+    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
+    scan::scan(&mut c, &root, &ctl).unwrap();
+    import::import(&mut c, &Options::new(0), false, &ctl).unwrap();
+
+    // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
+    // shows the turn pending (rotation 1).
+    let (id, db_path): (i64, String) = c
+        .conn
+        .query_row(
+            "SELECT f.id, fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id
+             WHERE f.name = 'b.png'",
+            [],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap();
+    let (folder, name) = db_path.rsplit_once('\\').unwrap();
+    let temp = format!("{folder}\\.{name}.pg-write");
+    std::fs::copy(&files[1].0, &temp).unwrap();
+    c.conn.execute("UPDATE analysis SET rotation = 1 WHERE file_id = ?1", [id]).unwrap();
+    c.conn
+        .execute(
+            "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rotation', 1, 0, ?2, 1)",
+            rusqlite::params![id, temp],
+        )
+        .unwrap();
+
+    let thumbs: &'static ThumbCache = Box::leak(Box::new(
+        ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), Box::new(|e| panic!("{e:#}"))).unwrap(),
+    ));
+    let writer = Writer::start(catalog_path.clone(), thumbs, || {});
+    writer.wake();
+
+    let start = Instant::now();
+    loop {
+        let queued: i64 =
+            c.conn.query_row("SELECT count(*) FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0)).unwrap();
+        if queued == 0 {
+            break;
+        }
+        assert!(start.elapsed() < Duration::from_secs(60), "the finished copy is still queued");
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let rotation: i64 =
+        c.conn.query_row("SELECT rotation FROM analysis WHERE file_id = ?1", [id], |r| r.get(0)).unwrap();
+    assert_eq!(rotation, 0, "the turn is in the file, so the analysis no longer shows it pending");
+}

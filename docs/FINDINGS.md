@@ -1378,6 +1378,60 @@ Windows' cache (the fill had just read 2 GB of images); "warm" the next one.
    will do better, but exact search makes that question moot ("Nearest-neighbour search"). An index is still
    needed for interactive semantic search, where one text query must scan 70M So400m vectors.
 
+## Phase 0 baseline (2026-11-02, before the refactor)
+
+The numbers the refactor's before-and-after comparison uses (plan step 0). The raw files are in
+`D:\PhotoGallery\baseline_2026-11-02`, and the gungraun logs are in WSL under `~/photo-gallery/target/gungraun`. The
+files don't record the commit they were measured at, so read them as a reference for that day.
+
+### Instruction counts (gungraun, callgrind `Ir`, WSL, 16:10)
+
+| Bench | Ir |
+|---|---|
+| `catalog::tree.all` | 3,275,602 |
+| `catalog::list.folder_flat` | 735,865 |
+| `catalog::list.folder_recursive` | 33,928,736 |
+| `catalog::list.all_name` | 32,015,927 |
+| `catalog::list.all_taken` | 46,406,218 |
+| `catalog::list.all_unrated` | 32,241,343 |
+| `catalog::facets.all` | 93,581,775 |
+| `catalog::pending_import.empty` | 115,827 |
+| `catalog::pending_thumbs.at_height` | 29,447,015 |
+| `per_file::analyze_jpeg.sample` | 60,603,752 |
+| `per_file::thumb_jpeg.h256` | 52,045,318 |
+
+The `pg-core` folder holds the 2026-10-31 runs of the two per-file benches, under the crate's old name:
+`analyze_jpeg.sample` 63,523,272 and `thumb_jpeg.h256` 50,677,681.
+
+### Startup stages (`D:\PhotoGallery\baseline_2026-11-02\startup_runs.json` and `synthetic_startup_runs.json`)
+
+Milliseconds from process start, median of 5 runs (each stage's min and max are in the JSON).
+
+| Stage | Real library (189,518 files) | Synthetic library (4,000 files) |
+|---|---|---|
+| `main` | 27.2 | 21.5 |
+| `init_done` | 60.2 | 27.0 |
+| `qml_load` | 82.9 | 45.7 |
+| `qml_loaded` | 363.1 | 230.6 |
+| `tree_shown` | 454.6 | 322.8 |
+| `list_shown` | 1001.4 | 346.9 |
+| `first_frame` | 478.6 | 349.7 |
+| `ready` | 1144.6 | 473.7 |
+| `round_done` | 3730.6 | 3303.9 |
+
+### Import and thumbnails (`import.log` and `synthetic_build.log`)
+
+- Pinterest sample (`D:\PhotoGallery\datasets\pinterest`, 189,518 files in 693 folders): the scan took 6.3 s (about
+  30,000 files/s). The import ran at 432–445 files/s (58–63 MB/s) over its first 6,554 files; the log ends there, with
+  "6500 analyzed", so the run was stopped.
+- Synthetic library (`D:\PhotoGallery\synthetic\library`, 4,000 files): the scan took 0.2 s. The import took 9.6 s
+  (417 files/s, 148–158 MB/s, 1,590 PDQ pairs, 0 failed). The 256 px thumbnails took 11.4 s (351 files/s, 124–132 MB/s).
+
+### Test-hook screenshots
+
+The phase 0 hook screenshots are in `D:\PhotoGallery\baseline_2026-11-02\shots`: `start_0` to `start_5`, `library`,
+`filters`, the `hooks_*` set (keys, zoom, similar, crops) and the `symmetric_*` set.
+
 ## Pending
 
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.

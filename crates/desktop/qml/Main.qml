@@ -607,6 +607,8 @@ ApplicationWindow {
                     id: grid
                     anchors.fill: parent
                     anchors.margins: win.gap
+                    // The scrollbar's lane: on the right of the grid, not over the rows (its 16 px, and a gap).
+                    anchors.rightMargin: win.gap + 16
                     clip: true
                     focus: true
                     model: galleryModel
@@ -619,7 +621,6 @@ ApplicationWindow {
                     // relayout changes the rows in view before the view moves to its selection or its anchor.
                     property bool settling: false
                     boundsBehavior: Flickable.StopAtBounds
-                    ScrollBar.vertical: ScrollBar { policy: ScrollBar.AlwaysOn }
                     onWidthChanged: layoutTimer.restart()
                     Keys.onPressed: (e) => win.gridKey(e)
 
@@ -819,6 +820,57 @@ ApplicationWindow {
                         : library.busy ? "Nothing here yet: the library is being imported." : "No images here."
                     horizontalAlignment: Text.AlignHCenter
                     color: "#888888"
+                }
+
+                // The grid's scrollbar, in its own lane to the right of the grid. It is a standalone bar, not the view's
+                // attached one, which lies over the view's own right edge. Qt's style makes the handle a 6 px nub, as
+                // long as it is wide at least: on a big library it is all but impossible to grab, so this one is 12 px
+                // wide and at least 48 px long, and brightens as it is hovered and dragged.
+                ScrollBar {
+                    id: gridBar
+                    orientation: Qt.Vertical
+                    policy: ScrollBar.AlwaysOn
+                    anchors.top: grid.top
+                    anchors.bottom: grid.bottom
+                    anchors.right: parent.right
+                    anchors.rightMargin: win.gap
+                    size: grid.visibleArea.heightRatio
+                    minimumSize: height > 0 ? Math.min(1, 48 / height) : 0
+                    // The view follows the bar while it is not dragged; a drag moves the view.
+                    Binding on position {
+                        value: grid.visibleArea.yPosition
+                        when: !gridBar.pressed
+                    }
+                    onPositionChanged: if (pressed) grid.contentY = grid.originY + position * grid.contentHeight
+                    contentItem: Rectangle {
+                        implicitWidth: 12
+                        radius: width / 2
+                        color: gridBar.pressed ? "#a0a0a0" : gridBar.hovered ? "#808080" : "#5a5a5a"
+                    }
+                }
+
+                // While the scrollbar is dragged: about where in the library the grid is, in files.
+                Rectangle {
+                    visible: gridBar.pressed && galleryModel.count > 0
+                    width: readout.implicitWidth + 16
+                    height: readout.implicitHeight + 8
+                    x: parent.width - width - 24
+                    y: Math.max(0, Math.min(parent.height - height,
+                                            gridBar.y + gridBar.position * gridBar.height - height / 2))
+                    radius: 4
+                    color: "#2a2a2a"
+                    border.color: "#555555"
+                    Label {
+                        id: readout
+                        anchors.centerIn: parent
+                        color: "#dddddd"
+                        font.pixelSize: 12
+                        text: {
+                            const f = gridBar.size < 1 ? Math.min(1, gridBar.position / (1 - gridBar.size)) : 0
+                            return "file ≈ " + Qt.locale().toString(Math.round(f * (galleryModel.count - 1)) + 1)
+                                + " of " + Qt.locale().toString(galleryModel.count)
+                        }
+                    }
                 }
             }
         }

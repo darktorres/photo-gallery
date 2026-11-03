@@ -17,7 +17,6 @@
 
 use anyhow::Result;
 
-use crate::metadata;
 use crate::rewrite::{self, Op};
 use pg_container::{png_chunks, webp_chunks};
 use pg_model::format::Format;
@@ -28,7 +27,7 @@ use pg_model::orientation;
 pub enum Outcome {
     /// The new file: pixels turned, orientation reset.
     Rewritten(Vec<u8>),
-    /// Set the EXIF Orientation tag to this (metadata::patch_orientation, or ExifTool when the file has no tag).
+    /// Set the EXIF Orientation tag to this (pg_metadata::patch_orientation, or ExifTool when the file has no tag).
     Orientation(u8),
     /// Nothing in the file can carry it: keep the turn in the catalog.
     Catalog,
@@ -36,13 +35,13 @@ pub enum Outcome {
 
 /// Turn a file `turns` quarter turns clockwise (as shown).
 pub fn rotate(bytes: &[u8], format: Format, turns: u8) -> Result<Outcome> {
-    let shown = metadata::orientation(bytes, format);
+    let shown = pg_metadata::orientation(bytes, format);
     // The transform that takes the stored pixels to the new upright image.
     let total = orientation::compose(shown, turns % 4);
     let tag = || Outcome::Orientation(total);
     let rewritten = |out: Vec<u8>| -> Outcome {
         // Pixels now upright: the tag (if any) goes back to 1.
-        Outcome::Rewritten(metadata::patch_orientation(&out, format, 1).unwrap_or(out))
+        Outcome::Rewritten(pg_metadata::patch_orientation(&out, format, 1).unwrap_or(out))
     };
     Ok(match format {
         Format::Jpeg => match rewrite::jpeg(bytes, Op::Orient(total)) {
@@ -146,12 +145,12 @@ mod tests {
                     panic!("{format:?} should be rewritten")
                 };
                 assert_eq!(Format::sniff(&out), Some(format));
-                assert_eq!(metadata::orientation(&out, format), 1);
+                assert_eq!(pg_metadata::orientation(&out, format), 1);
                 assert_eq!(
                     shown(&out),
                     expect_turned(original, turns),
                     "{format:?}, orientation {}, {turns} turns",
-                    metadata::orientation(original, format)
+                    pg_metadata::orientation(original, format)
                 );
             }
         }
@@ -236,12 +235,12 @@ mod tests {
         // MCU-aligned: the pixels turn. Decoding the turned coefficients matches turning the decoded image up
         // to the decoder's chroma rounding.
         for aligned in all_orientations(&jpeg(64, 32), Format::Jpeg) {
-            let o = metadata::orientation(&aligned, Format::Jpeg);
+            let o = pg_metadata::orientation(&aligned, Format::Jpeg);
             for turns in 1..=3 {
                 let Outcome::Rewritten(out) = rotate(&aligned, Format::Jpeg, turns).unwrap() else {
                     panic!("aligned JPEG")
                 };
-                assert_eq!(metadata::orientation(&out, Format::Jpeg), 1);
+                assert_eq!(pg_metadata::orientation(&out, Format::Jpeg), 1);
                 let (got, want) = (shown(&out), expect_turned(&aligned, turns));
                 assert_eq!((got.0, got.1), (want.0, want.1), "orientation {o}, {turns} turns");
                 let worst = got.2.iter().zip(&want.2).map(|(a, b)| a.abs_diff(*b)).max().unwrap();

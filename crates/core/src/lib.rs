@@ -14,7 +14,6 @@ pub mod decode;
 pub mod display;
 pub mod layout;
 pub mod maker;
-pub mod metadata;
 pub mod pdq;
 pub mod pdq_index;
 pub mod pixels;

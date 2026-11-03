@@ -7,5 +7,8 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# Test helpers only (a dev-dependency of the crates that have tests). No dependencies of its own.
+# Test helpers only (a dev-dependency of the crates that have tests). Its dependencies are the encoders the
+# fixtures use (`image`, `png`).
 [dependencies]
+image.workspace = true
+png.workspace = true

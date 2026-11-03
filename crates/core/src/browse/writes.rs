@@ -6,7 +6,6 @@ use anyhow::Result;
 use rusqlite::{Connection, OptionalExtension, params};
 
 use super::read::View;
-use crate::metadata;
 use pg_model::format::Format;
 
 /// Rate a file: 1–5, or 0 to clear. The catalog changes at once. With `write_back`, the rating is also queued
@@ -28,7 +27,7 @@ pub fn set_rating(conn: &Connection, file_id: i64, rating: u8, write_back: bool)
         .query_row("SELECT format FROM analysis WHERE file_id = ?1 AND error IS NULL", [file_id], |r| r.get(0))
         .optional()?
         .flatten();
-    let can_hold = format.as_deref().and_then(Format::from_name).is_some_and(metadata::can_hold_rating);
+    let can_hold = format.as_deref().and_then(Format::from_name).is_some_and(pg_metadata::can_hold_rating);
     let in_file: Option<u8> =
         tx.query_row("SELECT value FROM file_ratings WHERE file_id = ?1", [file_id], |r| r.get(0)).optional()?;
     let wanted = if rating > 0 || in_file.is_some_and(|v| v > 0) { Some(rating) } else { in_file };

@@ -8,6 +8,8 @@
 //!
 //! EXIF is read in place by a reader of its own: IFD0 and the Exif IFD, only the tags used here, every offset
 //! checked. A broken field elsewhere in the block (a thumbnail's IFD, GPS) doesn't lose the ones read.
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::ops::Range;
 
@@ -633,6 +635,7 @@ mod tests {
     use super::*;
     use pg_container::{JPEG_XMP_EXTENSION, gif_header_len};
     use pg_model::date::wall_clock_seconds;
+    use pg_testkit::{apng, gif};
 
     fn meta_of(bytes: &[u8], format: Format) -> Meta {
         Meta::read(bytes, format, &mut MetaScratch::default())
@@ -930,17 +933,6 @@ mod tests {
         assert_eq!(wall_clock_seconds(1601, 1, 1, 0, 0, 0), Some(-11_644_473_600));
     }
 
-    fn gif(frames: usize) -> Vec<u8> {
-        let mut out = Vec::new();
-        let mut enc = image::codecs::gif::GifEncoder::new(&mut out);
-        for i in 0..frames {
-            let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([i as u8 * 60, 0, 0, 255]));
-            enc.encode_frame(image::Frame::new(img)).unwrap();
-        }
-        drop(enc);
-        out
-    }
-
     fn rating_packet(rating: u8) -> Vec<u8> {
         format!(
             r#"<?xpacket begin=""?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF
@@ -1010,20 +1002,6 @@ mod tests {
         assert_eq!(frames(&gif(1), Format::Gif), 1);
         assert_eq!(frames(&gif(3), Format::Gif), 3);
 
-        let apng = |frames: u32| {
-            let mut out = Vec::new();
-            let mut enc = png::Encoder::new(&mut out, 2, 2);
-            enc.set_color(png::ColorType::Rgb);
-            if frames > 1 {
-                enc.set_animated(frames, 0).unwrap();
-            }
-            let mut w = enc.write_header().unwrap();
-            for _ in 0..frames {
-                w.write_image_data(&[7; 12]).unwrap();
-            }
-            w.finish().unwrap();
-            out
-        };
         assert_eq!(frames(&apng(1), Format::Png), 1);
         assert_eq!(frames(&apng(4), Format::Png), 4);
 

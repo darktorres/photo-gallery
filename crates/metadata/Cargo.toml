@@ -1,0 +1,20 @@
+[package]
+name = "pg-metadata"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The files' metadata: EXIF, XMP, the dates, and the patches that write a new orientation or rating into a file's
+# bytes. Over bytes only: the caller reads and writes the files.
+[dependencies]
+pg-container = { path = "../container" }
+pg-model = { path = "../model" }
+crc32fast.workspace = true
+miniz_oxide.workspace = true
+quick-xml.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }

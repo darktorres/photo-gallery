@@ -85,7 +85,7 @@ impl Decoder {
 
     /// Decode into a worker's buffers, which keep their capacity from file to file: the pixels go into
     /// `out`, and are oriented through `spare` (swapped with `out`'s). `format` is the file's (`Format::sniff`),
-    /// `exif` its EXIF orientation (`metadata::orientation`, 1 without one).
+    /// `exif` its EXIF orientation (`pg_metadata::orientation`, 1 without one).
     #[allow(clippy::too_many_arguments)]
     pub fn decode_into(
         &mut self,

@@ -6,10 +6,10 @@ use std::path::Path;
 
 use crate::borders::{self, Detector};
 use crate::decode::{Decoder, MinSize};
-use crate::metadata::{Meta, MetaScratch};
 use crate::pdq;
 use crate::pixels::{Rgb, release_over};
 use crate::resize::Resizer;
+use pg_metadata::{Meta, MetaScratch};
 use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
 use pg_model::detection::{self, Detection};
 use pg_model::format::Format;

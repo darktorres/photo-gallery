@@ -22,9 +22,9 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_core::analyze::file_hash;
 use pg_core::catalog::Catalog;
-use pg_core::metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_core::rotate::{Outcome, rotate};
 use pg_core::thumbs::ThumbCache;
+use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
 use rusqlite::{OptionalExtension, params};
@@ -345,7 +345,7 @@ impl Inner {
                             // the catalog.
                             let tool = ExifTool::running(exiftool)?;
                             match tool.write_orientation(&path, &temp, o) {
-                                Ok(()) if metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
+                                Ok(()) if pg_metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
                                 _ => {
                                     let _ = std::fs::remove_file(&temp);
                                     return self.keep_turn_in_catalog(conn, job);

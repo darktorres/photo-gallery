@@ -4,7 +4,6 @@ use anyhow::Result;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension};
 
-use crate::metadata;
 use pg_model::detection;
 use pg_model::format::Format;
 use pg_model::media::Kind;
@@ -34,7 +33,7 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
                 size: r.get(1)?,
                 // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
                 rating_in_file: r.get_ref(2)?.as_str()? == Kind::Image.key()
-                    && format.as_deref().and_then(Format::from_name).is_none_or(metadata::can_hold_rating),
+                    && format.as_deref().and_then(Format::from_name).is_none_or(pg_metadata::can_hold_rating),
                 border_sides: detection::Sides::new(),
             })
         })

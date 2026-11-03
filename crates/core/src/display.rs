@@ -5,7 +5,6 @@
 use anyhow::{Context, Result};
 
 use crate::decode::{Decoded, Decoder, MinSize, Stored};
-use crate::metadata;
 use pg_model::format::Format;
 use pg_model::orientation;
 
@@ -14,7 +13,7 @@ use pg_model::orientation;
 /// applied after the EXIF orientation.
 pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
     let format = Format::sniff(bytes).context("unknown image format")?;
-    let exif = metadata::orientation(bytes, format);
+    let exif = pg_metadata::orientation(bytes, format);
     let mut image = crate::pixels::Rgb::default();
     let info = decoder.decode_into(bytes, format, exif, min, turns, &mut image, &mut Vec::new())?;
     Ok(Decoded { image, info })
@@ -23,7 +22,7 @@ pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> R
 /// [`decode`] without the orientation, into new buffers: the pixels as stored, which is what a lossless crop cuts.
 pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
     let format = Format::sniff(bytes).context("unknown image format")?;
-    let exif = metadata::orientation(bytes, format);
+    let exif = pg_metadata::orientation(bytes, format);
     let mut image = crate::pixels::Rgb::default();
     let info = decoder.decode_stored_into(bytes, format, exif, min, turns, &mut image)?;
     Ok(Stored { image, info })

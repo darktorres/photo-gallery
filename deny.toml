@@ -46,6 +46,9 @@ allow-wildcard-paths = true
 deny = [
     { crate = "cxx-qt", wrappers = ["pg-desktop", "cxx-qt-lib"] },
     { crate = "cxx-qt-lib", wrappers = ["pg-desktop"] },
+    # The file metadata (pg-metadata) is the only XML parser. pg-core stays a wrapper until its code moves (S-05, S-09).
+    # miniz_oxide and crc32fast aren't banned: png, tiff and flate2 depend on them too.
+    { crate = "quick-xml", wrappers = ["pg-metadata", "pg-core"] },
 ]
 
 [sources]

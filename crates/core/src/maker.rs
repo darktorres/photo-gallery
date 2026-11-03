@@ -107,7 +107,7 @@ impl Maker {
     fn make_image(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
-        let exif = crate::metadata::orientation(bytes, format);
+        let exif = pg_metadata::orientation(bytes, format);
         self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
         self.encode_image(height, out)
     }

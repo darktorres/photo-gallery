@@ -10,6 +10,7 @@ workspace = true
 [dependencies]
 pg-container = { path = "../container" }
 pg-model = { path = "../model" }
+pg-metadata = { path = "../metadata" }
 anyhow.workspace = true
 fast_image_resize.workspace = true
 ffmpeg-next.workspace = true
@@ -26,7 +27,6 @@ crc32fast.workspace = true
 image-webp.workspace = true
 miniz_oxide.workspace = true
 png.workspace = true
-quick-xml.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 weezl.workspace = true

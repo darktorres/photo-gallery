@@ -40,6 +40,34 @@ pub fn run_folder_with(default: &str, prefix: &str, dirs: &[&str]) -> PathBuf {
     dir
 }
 
+/// An animated GIF of `frames` 4 × 4 frames, the first red and each after it brighter.
+pub fn gif(frames: usize) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = image::codecs::gif::GifEncoder::new(&mut out);
+    for i in 0..frames {
+        let img = image::RgbaImage::from_pixel(4, 4, image::Rgba([i as u8 * 60, 0, 0, 255]));
+        enc.encode_frame(image::Frame::new(img)).unwrap();
+    }
+    drop(enc);
+    out
+}
+
+/// An animated PNG of `frames` 2 × 2 frames of one grey, or a still PNG for one frame.
+pub fn apng(frames: u32) -> Vec<u8> {
+    let mut out = Vec::new();
+    let mut enc = png::Encoder::new(&mut out, 2, 2);
+    enc.set_color(png::ColorType::Rgb);
+    if frames > 1 {
+        enc.set_animated(frames, 0).unwrap();
+    }
+    let mut w = enc.write_header().unwrap();
+    for _ in 0..frames {
+        w.write_image_data(&[7; 12]).unwrap();
+    }
+    w.finish().unwrap();
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

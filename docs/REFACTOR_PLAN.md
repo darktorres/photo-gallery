@@ -758,7 +758,7 @@ Rules that hold for every row:
 | S-10 | open | `pg-client`, one commit per module, each rewiring the desktop to it. | Rows below. |
 | S-10.1 | fixed fb4218b | Layout. | `pg-client` is the crate, and `pg-core` is deleted. `layout` is the justified layout, moved unchanged. `Placement` (the row, the span and the neighbour a step away) replaces the three methods `gallery.rs` had. Deviation: the row diff (`RowChange`) and the `Layout` value wait for S-10.3, when the grid's list session takes them. Stale names left outside the dated logs, to S-13.1: the prose in `docs/PROFILING.md` (including its `pg_core::` filter), `docs/JPEG_DECODERS.md`, `docs/STORAGE.md`, the crate map in `crates/README.md`, and the example symbols in `tools/profiling/callgraph/symbolize.py`. Checked: `just lint`, `just test`, and the release build run offscreen: the grid screenshot is pixel-identical to S-09.4. |
 | S-10.2 | fixed dc32a23 | Tree. | `Tree::toggle` is the apply step the plan called `apply_toggle`; `plan_toggle` gives the rows first. |
-| S-10.3 | open | Grid list session. | |
+| S-10.3 | fixed db54068 | Grid list session. | The smoke catalog has no files, so the pixel check covers an empty library; a populated run (4000 synthetic files) was checked by eye, not diffed. |
 | S-10.4 | open | Viewport. | R-06 and R-22 (the QML copies of the swap rule) wait for this step. |
 | S-10.5 | open | Picks. | |
 | S-10.6 | open | Input. | |

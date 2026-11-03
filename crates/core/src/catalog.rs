@@ -1449,11 +1449,11 @@ pub(crate) mod fixture {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
     use pg_testkit::test_folder;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = r"D:\PhotoGallery\scratch_catalog";
-    use crate::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
 
     /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
     const BEFORE_ORDER_KEY: &str = r"

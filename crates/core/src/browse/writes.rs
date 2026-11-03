@@ -9,8 +9,6 @@ use super::read::View;
 use crate::format::Format;
 use crate::metadata;
 
-/// The files of a merged folder (optionally with everything below it), as a range of order keys: a condition
-/// on `f` and the values it binds, which the `files_order` index answers.
 /// Rate a file: 1–5, or 0 to clear. The catalog changes at once. With `write_back`, the rating is also queued
 /// for the file itself (`ingest::writeback`), when its format can hold one and it differs from what the file
 /// holds; clearing writes 0 only into a file that holds a rating.

@@ -7,6 +7,7 @@ use crate::browse::read::{FILE_JOINS, list_grid};
 use crate::browse::writes::set_rating;
 use crate::catalog::fixture;
 use crate::query::{Query, Sort, SortKey};
+
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating).
 pub(crate) fn library() -> crate::catalog::Catalog {

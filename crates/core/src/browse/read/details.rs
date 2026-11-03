@@ -45,7 +45,6 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
     }
 }
 
-/// The sides the border detector found in a file, in the order found.
 /// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
 /// than detection finds (`detection::MAX_SIDES`) can only be in a damaged catalog: an error.
 pub fn border_sides(conn: &Connection, file_id: i64) -> Result<detection::Sides> {

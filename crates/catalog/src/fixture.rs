@@ -3,11 +3,12 @@
 
 #[cfg(test)]
 pub(crate) mod raw;
+pub mod state;
 
 use crate::Catalog;
 use pg_model::ids::{FileId, FolderId};
 use pg_model::turns::Turns;
-use rusqlite::{Connection, params};
+use rusqlite::params;
 
 /// A file row; `folder` must exist in `folders`.
 pub struct File {
@@ -33,13 +34,6 @@ impl File {
 /// the catalog.
 pub fn versions() -> crate::Versions {
     crate::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }
-}
-
-/// The catalog's connection, for the tests of the crates around the catalog, which check the tables a write left
-/// behind. Test-only (this module is behind the `fixture` feature): production code reads through the catalog's
-/// functions.
-pub fn connection(catalog: &Catalog) -> &Connection {
-    &catalog.conn
 }
 
 /// Insert the files (scan 1 must exist).

@@ -9,6 +9,7 @@ use std::io::Cursor;
 use std::path::Path;
 
 use pg_catalog::Catalog;
+use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
@@ -58,10 +59,7 @@ fn make_files(dir: &Path) -> Vec<String> {
 }
 
 fn ids(c: &Catalog) -> Vec<(i64, String)> {
-    let mut stmt = pg_catalog::fixture::connection(c)
-        .prepare("SELECT id, name FROM files WHERE missing = 0 ORDER BY name")
-        .unwrap();
-    stmt.query_map([], |r| Ok((r.get(0).unwrap(), r.get(1).unwrap()))).unwrap().map(Result::unwrap).collect()
+    state::present_files(c).into_iter().map(|(id, name)| (id.get(), name)).collect()
 }
 
 #[test]

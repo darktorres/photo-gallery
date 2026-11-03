@@ -1594,7 +1594,6 @@ dependencies = [
  "pg-testkit",
  "pg-thumbcache",
  "pg-video",
- "rusqlite",
 ]
 
 [[package]]

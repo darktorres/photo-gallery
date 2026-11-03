@@ -964,6 +964,7 @@ fn shrink(conn: &Connection) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_catalog::fixture::state;
     use pg_model::ids::FolderId;
 
     #[test]
@@ -1340,12 +1341,8 @@ mod tests {
     fn catalog_of_four(dir: &Path) -> (PathBuf, pg_catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
         let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::fixture::versions()).unwrap();
-        pg_catalog::fixture::connection(&c)
-            .execute_batch(
-                "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\p', 0);
-                 INSERT INTO folders(id, path) VALUES (1, 'D:\\p');",
-            )
-            .unwrap();
+        state::add_scan(&c, 1, "D:\\p");
+        state::add_folder(&c, 1, "D:\\p");
         use pg_catalog::fixture::{File, insert};
         insert(
             &c,
@@ -1360,12 +1357,7 @@ mod tests {
                 File { file_ref: 40, missing: true, ..File::new(FileId::new(4), FolderId::new(1), "d.jpg", 1, 5) },
             ],
         );
-        pg_catalog::fixture::connection(&c)
-            .execute_batch(
-                "INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed)
-                 SELECT id, 1, size, mtime, rotation, kind, 0 FROM files;",
-            )
-            .unwrap();
+        state::stub_analysis_of_all(&c);
         (catalog, c)
     }
 
@@ -1416,12 +1408,10 @@ mod tests {
         let third = cache.pending(&catalog, 100).unwrap();
         assert!(third.snapshot.since_checked && third.work.is_empty(), "{:?}", ids(&third));
         // A change in the catalog after it: only that file. (The analysis follows, as a metadata write's does.)
-        pg_catalog::fixture::connection(&c)
-            .execute_batch("UPDATE files SET mtime = 6 WHERE id = 1; UPDATE analysis SET mtime = 6 WHERE file_id = 1;")
-            .unwrap();
+        state::change_mtime(&c, FileId::new(1), 6);
         assert_eq!(ids(&cache.pending(&catalog, 100).unwrap()), vec![1]);
         // A catalog behind the cache (restored from a copy): every file again.
-        pg_catalog::fixture::connection(&c).execute("UPDATE meta SET value = 1 WHERE key = 'seq'", []).unwrap();
+        state::set_meta_seq(&c, 1);
         let behind = cache.pending(&catalog, 100).unwrap();
         assert!(!behind.snapshot.since_checked);
         assert_eq!(ids(&behind), vec![2, 1]);

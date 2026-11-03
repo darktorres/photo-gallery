@@ -12,6 +12,7 @@ use std::process::Command;
 
 use pg_analysis::analyze;
 use pg_catalog::Catalog;
+use pg_catalog::fixture::state;
 use pg_codec::animation;
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
@@ -176,18 +177,7 @@ fn videos() {
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let stats = import::import(&mut catalog, &opts, false, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed), (6, 0));
-    // Name, kind, width, height, duration, poster time, whether the pixel hash is missing.
-    type Row = (String, String, i64, i64, i64, i64, Option<i64>);
-    let rows: Vec<Row> = pg_catalog::fixture::connection(&catalog)
-        .prepare(
-            "SELECT f.name, f.kind, a.width, a.height, a.duration_ms, a.poster_ms, a.pixel_hash IS NULL
-             FROM files f JOIN analysis a ON a.file_id = f.id ORDER BY f.name",
-        )
-        .unwrap()
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?)))
-        .unwrap()
-        .collect::<Result<_, _>>()
-        .unwrap();
+    let rows = state::media_rows(&catalog);
     for (name, kind, w, h, duration, poster, no_pixel_hash) in &rows {
         assert_eq!(kind, "video", "{name}");
         assert!((2900..=3100).contains(duration), "{name}");
@@ -196,16 +186,8 @@ fn videos() {
         assert_eq!((*w, *h), want, "{name}");
     }
     // creation_time is UTC; the catalog keeps this computer's wall-clock time.
-    let taken: Option<i64> = pg_catalog::fixture::connection(&catalog)
-        .query_row("SELECT taken FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = 'h264.mp4'", [], |r| {
-            r.get(0)
-        })
-        .unwrap();
-    let local: i64 = pg_catalog::fixture::connection(&catalog)
-        .query_row("SELECT unixepoch(?1, 'unixepoch', 'localtime')", [wall_clock_seconds(2022, 3, 4, 5, 6, 7)], |r| {
-            r.get(0)
-        })
-        .unwrap();
+    let taken = state::taken_of(&catalog, "h264.mp4");
+    let local = state::local_epoch(&catalog, wall_clock_seconds(2022, 3, 4, 5, 6, 7).unwrap());
     assert_eq!(taken, Some(local));
 
     let (events, _quiet) = Quiet::bus();

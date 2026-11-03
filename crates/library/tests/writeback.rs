@@ -9,6 +9,7 @@ use std::path::Path;
 use std::time::{Duration, Instant};
 
 use pg_catalog::Catalog;
+use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize, orient};
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
@@ -57,23 +58,13 @@ fn shown(path: &str) -> Rgb {
 }
 
 fn ids(c: &Catalog) -> Vec<(i64, String)> {
-    let mut stmt = pg_catalog::fixture::connection(c)
-        .prepare("SELECT id, name FROM files WHERE missing = 0 ORDER BY name")
-        .unwrap();
-    stmt.query_map([], |r| Ok((r.get(0).unwrap(), r.get(1).unwrap()))).unwrap().map(Result::unwrap).collect()
+    state::present_files(c).into_iter().map(|(id, name)| (id.get(), name)).collect()
 }
 
 fn wait_for_queue(c: &Catalog) {
     let start = Instant::now();
     loop {
-        let left: i64 = pg_catalog::fixture::connection(c)
-            .query_row(
-                "SELECT count(*) FROM file_writes WHERE attempts < ?1",
-                [pg_catalog::writes::MAX_ATTEMPTS],
-                |r| r.get(0),
-            )
-            .unwrap();
-        if left == 0 {
+        if state::writes_still_tried(c) == 0 {
             return;
         }
         assert!(start.elapsed() < Duration::from_secs(60), "writes still queued");
@@ -136,13 +127,7 @@ fn ratings_and_turns_reach_the_files() {
     assert_eq!(writer.status().error, None);
     for ((path, format), original) in files.iter().zip(originals) {
         let turned = orient(original, pg_model::orientation::Orientation::new(6).unwrap());
-        let rotation: u8 = pg_catalog::fixture::connection(&c)
-            .query_row(
-                "SELECT rotation FROM files WHERE name = ?1",
-                [Path::new(path).file_name().unwrap().to_string_lossy()],
-                |r| r.get(0),
-            )
-            .unwrap();
+        let rotation = state::file_rotation(&c, &Path::new(path).file_name().unwrap().to_string_lossy());
         let bytes = std::fs::read(path).unwrap();
         let now = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, Turns::new(rotation))
             .unwrap()
@@ -156,15 +141,7 @@ fn ratings_and_turns_reach_the_files() {
             assert!(Meta::read(&bytes, *format, &mut MetaScratch::default()).rating.is_some(), "{path}: rating kept");
         }
     }
-    let dims = |c: &Catalog| -> Vec<(u32, u32)> {
-        pg_catalog::fixture::connection(c)
-            .prepare("SELECT a.width, a.height FROM analysis a JOIN files f ON f.id = a.file_id ORDER BY f.name")
-            .unwrap()
-            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))
-            .unwrap()
-            .map(Result::unwrap)
-            .collect()
-    };
+    let dims = |c: &Catalog| state::analysis_sizes(c);
     // The grid lays them out turned at once, before the analysis is redone, and shows their placeholders turned:
     // the turn is in the file, or kept in the catalog.
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "sizes right after the turn: {:?}", dims(&c));
@@ -190,10 +167,7 @@ fn ratings_and_turns_reach_the_files() {
     assert!(out.status.success());
     scan::scan(&mut c, &root, &ctl).unwrap();
     import::import(&mut c, &opts, false, &ctl).unwrap();
-    let rating: u8 = pg_catalog::fixture::connection(&c)
-        .query_row("SELECT rating FROM ratings WHERE file_id = ?1", [before[0].0], |r| r.get(0))
-        .unwrap();
-    assert_eq!(rating, 2);
+    assert_eq!(state::rating_of(&c, FileId::new(before[0].0)), Some(2));
 
     drop(writer);
     drop(c);
@@ -221,23 +195,11 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
     // The file as the database has it, and the temp a write would have left beside it (writeback's temp_path).
-    let (id, db_path): (i64, String) = pg_catalog::fixture::connection(&c)
-        .query_row(
-            "SELECT f.id, fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id
-             WHERE f.name = 'b.png'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png");
     let (folder, name) = db_path.rsplit_once('\\').unwrap();
     let temp = format!("{folder}\\.{name}.pg-write");
     std::fs::copy(&files[1].0, &temp).unwrap();
-    pg_catalog::fixture::connection(&c)
-        .execute(
-            "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rating', 3, 0, ?2, 3)",
-            rusqlite::params![id, temp],
-        )
-        .unwrap();
+    state::queue_finished_copy(&c, id, "rating", 3, &temp);
 
     // Locked: the copy into the original can't open it.
     let _lock = std::fs::OpenOptions::new().read(true).write(true).share_mode(0).open(&files[1].0).unwrap();
@@ -251,30 +213,22 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     // Given up: the temp is gone from the queue and from disk.
     let start = Instant::now();
     loop {
-        let (attempts, temp_left): (i64, Option<String>) = pg_catalog::fixture::connection(&c)
-            .query_row("SELECT attempts, temp FROM file_writes WHERE file_id = ?1", [id], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
-            .unwrap();
-        if attempts >= 5 && temp_left.is_none() {
+        let row = state::write_row(&c, id);
+        if row.attempts >= 5 && row.temp.is_none() {
             break;
         }
-        assert!(start.elapsed() < Duration::from_secs(120), "not given up at {attempts} attempts");
+        assert!(start.elapsed() < Duration::from_secs(120), "not given up at {} attempts", row.attempts);
         std::thread::sleep(Duration::from_millis(200));
     }
     assert!(!Path::new(&temp).exists(), "the temp is still on disk");
     assert!(writer.status().error.is_some());
-    let error: Option<String> = pg_catalog::fixture::connection(&c)
-        .query_row("SELECT error FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0))
-        .unwrap();
+    let error = state::write_row(&c, id).error;
     assert!(error.is_some(), "the failure is gone from the queue");
-    assert!(!pg_catalog::browse::read::file_state(&c, FileId::new(id)).unwrap().unwrap().writing);
+    assert!(!pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
 
     // And it stays given up: no more tries.
     std::thread::sleep(Duration::from_secs(3));
-    let attempts: i64 = pg_catalog::fixture::connection(&c)
-        .query_row("SELECT attempts FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0))
-        .unwrap();
+    let attempts = state::write_row(&c, id).attempts;
     assert_eq!(attempts, 5);
 
     drop(_lock);
@@ -296,20 +250,13 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
     import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
-    let id = |name: &str| -> i64 {
-        pg_catalog::fixture::connection(&c)
-            .query_row("SELECT id FROM files WHERE name = ?1", [name], |r| r.get(0))
-            .unwrap()
-    };
     // a.jpg: a scan has marked it missing, so its write is dropped. b.png was deleted outside the app while the
     // catalog still lists it: its write is tried, and each failure is counted (it isn't waited on as offline).
-    let (marked, deleted) = (id("a.jpg"), id("b.png"));
-    pg_catalog::fixture::connection(&c).execute("UPDATE files SET missing = 1 WHERE id = ?1", [marked]).unwrap();
+    let (marked, deleted) = (state::file_id(&c, "a.jpg"), state::file_id(&c, "b.png"));
+    state::mark_missing(&c, marked);
     std::fs::remove_file(&files[1].0).unwrap();
     for file in [marked, deleted] {
-        pg_catalog::fixture::connection(&c)
-            .execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rating', 3, 0)", [file])
-            .unwrap();
+        state::queue_write(&c, file, "rating", 3);
     }
 
     let (events, quiet) = Quiet::bus();
@@ -320,12 +267,8 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
 
     let start = Instant::now();
     loop {
-        let queued: i64 = pg_catalog::fixture::connection(&c)
-            .query_row("SELECT count(*) FROM file_writes WHERE file_id = ?1", [marked], |r| r.get(0))
-            .unwrap();
-        let attempts: i64 = pg_catalog::fixture::connection(&c)
-            .query_row("SELECT attempts FROM file_writes WHERE file_id = ?1", [deleted], |r| r.get(0))
-            .unwrap();
+        let queued = state::writes_queued(&c, marked);
+        let attempts = state::write_row(&c, deleted).attempts;
         if queued == 0 && attempts >= 2 {
             break;
         }
@@ -351,24 +294,12 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
 
     // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
     // shows the turn pending (rotation 1).
-    let (id, db_path): (i64, String) = pg_catalog::fixture::connection(&c)
-        .query_row(
-            "SELECT f.id, fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id
-             WHERE f.name = 'b.png'",
-            [],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png");
     let (folder, name) = db_path.rsplit_once('\\').unwrap();
     let temp = format!("{folder}\\.{name}.pg-write");
     std::fs::copy(&files[1].0, &temp).unwrap();
-    pg_catalog::fixture::connection(&c).execute("UPDATE analysis SET rotation = 1 WHERE file_id = ?1", [id]).unwrap();
-    pg_catalog::fixture::connection(&c)
-        .execute(
-            "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rotation', 1, 0, ?2, 1)",
-            rusqlite::params![id, temp],
-        )
-        .unwrap();
+    state::set_analysis_rotation(&c, id, 1);
+    state::queue_finished_copy(&c, id, "rotation", 1, &temp);
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
@@ -378,18 +309,13 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
 
     let start = Instant::now();
     loop {
-        let queued: i64 = pg_catalog::fixture::connection(&c)
-            .query_row("SELECT count(*) FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0))
-            .unwrap();
-        if queued == 0 {
+        if state::writes_queued(&c, id) == 0 {
             break;
         }
         assert!(start.elapsed() < Duration::from_secs(60), "the finished copy is still queued");
         std::thread::sleep(Duration::from_millis(200));
     }
-    let rotation: i64 = pg_catalog::fixture::connection(&c)
-        .query_row("SELECT rotation FROM analysis WHERE file_id = ?1", [id], |r| r.get(0))
-        .unwrap();
+    let rotation = state::analysis_rotation(&c, id);
     assert_eq!(rotation, 0, "the turn is in the file, so the analysis no longer shows it pending");
     quiet.check();
 }

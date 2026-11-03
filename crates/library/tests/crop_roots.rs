@@ -3,6 +3,7 @@
 use std::path::{Path, PathBuf};
 
 use pg_catalog::Catalog;
+use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_library::{borders, crop, import, scan};
@@ -54,10 +55,7 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
     import::import(&mut c, &opts, false, &ctl).unwrap();
     borders::find(&mut c, &opts, &ctl).unwrap();
 
-    let ids: Vec<FileId> = {
-        let mut stmt = pg_catalog::fixture::connection(&c).prepare("SELECT id FROM files WHERE missing = 0").unwrap();
-        stmt.query_map([], |r| Ok(FileId::new(r.get(0)?))).unwrap().map(Result::unwrap).collect()
-    };
+    let ids: Vec<FileId> = state::present_files(&c).into_iter().map(|(id, _)| id).collect();
     assert_eq!(ids.len(), 2);
 
     let out = dir.join("out");

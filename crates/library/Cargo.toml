@@ -22,7 +22,6 @@ pg-metadata = { path = "../metadata" }
 pg-platform = { path = "../platform" }
 pg-jobs = { path = "../jobs" }
 anyhow.workspace = true
-rusqlite.workspace = true
 
 [dev-dependencies]
 image.workspace = true

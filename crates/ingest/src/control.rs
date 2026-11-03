@@ -60,10 +60,9 @@ impl Progress {
 
     /// The app's status text.
     pub fn status(&self) -> String {
-        let n = |v: u64| group_digits(v);
         match self.phase {
             "" => String::new(),
-            "scan" => format!("Scanning {} · {} images found", self.detail, n(self.done)),
+            "scan" => format!("Scanning {} · {} images found", self.detail, group_digits(self.done)),
             phase => {
                 let what = match phase {
                     "import" => "Importing".to_string(),
@@ -71,11 +70,12 @@ impl Progress {
                     "crop" => "Saving cropped copies".to_string(),
                     _ => format!("Thumbnails at {}", self.detail),
                 };
-                let failed = if self.failed > 0 { format!(" · {} failed", n(self.failed)) } else { String::new() };
+                let failed =
+                    if self.failed > 0 { format!(" · {} failed", group_digits(self.failed)) } else { String::new() };
                 format!(
                     "{what} {} of {} · {:.0}/s · {}{failed}",
-                    n(self.done),
-                    n(self.total),
+                    group_digits(self.done),
+                    group_digits(self.total),
                     self.rate(),
                     duration(self.eta())
                 )
@@ -109,12 +109,18 @@ fn duration(secs: f64) -> String {
     }
 }
 
+/// The progress shown, and when a progress line was last printed.
+struct Printed {
+    progress: Progress,
+    last: Instant,
+}
+
 pub struct Control {
     stop: AtomicBool,
     paused: AtomicBool,
     /// Print progress lines on stderr (the command line).
     print: bool,
-    progress: Mutex<(Progress, Instant)>,
+    progress: Mutex<Printed>,
 }
 
 impl Control {
@@ -123,7 +129,7 @@ impl Control {
             stop: AtomicBool::new(false),
             paused: AtomicBool::new(false),
             print,
-            progress: Mutex::new((Progress::idle(), Instant::now())),
+            progress: Mutex::new(Printed { progress: Progress::idle(), last: Instant::now() }),
         }
     }
 
@@ -163,8 +169,10 @@ impl Control {
 
     pub fn begin(&self, phase: &'static str, detail: String, total: u64) {
         let now = Instant::now();
-        *self.progress.lock().unwrap() =
-            (Progress { phase, detail, done: 0, total, failed: 0, bytes: 0, started: now }, now);
+        *self.progress.lock().unwrap() = Printed {
+            progress: Progress { phase, detail, done: 0, total, failed: 0, bytes: 0, started: now },
+            last: now,
+        };
     }
 
     /// One file done.
@@ -183,11 +191,11 @@ impl Control {
 
     fn update(&self, f: impl FnOnce(&mut Progress)) {
         let mut guard = self.progress.lock().unwrap();
-        let (p, last) = &mut *guard;
-        f(p);
-        if self.print && last.elapsed() >= Duration::from_secs(5) {
-            *last = Instant::now();
-            eprintln!("{}", p.line());
+        let shown = &mut *guard;
+        f(&mut shown.progress);
+        if self.print && shown.last.elapsed() >= Duration::from_secs(5) {
+            shown.last = Instant::now();
+            eprintln!("{}", shown.progress.line());
         }
     }
 
@@ -195,13 +203,13 @@ impl Control {
     pub fn finish(&self) {
         let mut guard = self.progress.lock().unwrap();
         if self.print {
-            eprintln!("{}", guard.0.line());
+            eprintln!("{}", guard.progress.line());
         }
-        guard.0 = Progress::idle();
+        guard.progress = Progress::idle();
     }
 
     pub fn snapshot(&self) -> Progress {
-        self.progress.lock().unwrap().0.clone()
+        self.progress.lock().unwrap().progress.clone()
     }
 }
 

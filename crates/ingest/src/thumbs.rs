@@ -121,8 +121,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 // drive offline): the next pass tries it again.
                 Err(e) => {
                     stats.failed += 1;
-                    first_failed = Some(first_failed.map_or(items[i].seq, |s: i64| s.min(items[i].seq)));
-                    eprintln!("  {}: {e:#}", work.path(items[i].path));
+                    first_failed = Some(first_failed.map_or(item.seq, |s: i64| s.min(item.seq)));
+                    eprintln!("  {}: {e:#}", work.path(item.path));
                 }
             }
             if batch.len() >= BATCH {

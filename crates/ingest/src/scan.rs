@@ -6,7 +6,7 @@
 //! file ID gives both the catalog identity (moves and renames keep their analysis) and the MFT record number the
 //! import sorts by (FINDINGS "I/O": ~3× path order on the HDD).
 //!
-//! PLAN §8 named an Everything-based scanner: the running Everything is 1.4, whose SDK has no file IDs, so the
+//! PLAN §8 named an Everything-based scanner: the running Everything is 1.5, whose SDK has no file IDs, so the
 //! scanner lists directories itself. Everything (or the USN journal) remains the option for incremental changes.
 
 use anyhow::{Context, Result, bail};

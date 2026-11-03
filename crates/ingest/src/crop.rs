@@ -8,8 +8,7 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use pg_core::catalog::{Catalog, CropSource};
 use pg_core::crop::crop;
-use pg_core::path::is_under;
-use pg_core::path::{PathArena, PathRef};
+use pg_core::path::{PathArena, PathRef, is_under};
 use pg_core::verbatim::verbatim_wide;
 
 use crate::control::Control;

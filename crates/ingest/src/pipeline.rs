@@ -471,8 +471,7 @@ mod tests {
     /// processed once, through slots and a channel far smaller than the pass.
     #[test]
     fn a_pass_reads_every_file_within_its_slots() {
-        let dir = std::env::temp_dir().join(format!("pg-pipeline-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
+        let dir = pg_testkit::test_folder(r"D:\PhotoGallery\scratch_rate", "pg-pipeline");
         let paths: Vec<String> = (0..200)
             .map(|i| {
                 let path = dir.join(format!("{i}.bin"));
@@ -511,7 +510,7 @@ mod tests {
     /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
     #[test]
     fn files_open_as_std_opens_them() {
-        let root = std::env::temp_dir().join(format!("pg-open-{}", std::process::id()));
+        let root = pg_testkit::test_folder(r"D:\PhotoGallery\scratch_rate", "pg-open");
         let mut dir = root.clone();
         while dir.as_os_str().len() < 300 {
             dir.push("a-folder-name-of-forty-characters-long--");

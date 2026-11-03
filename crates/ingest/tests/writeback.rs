@@ -5,7 +5,7 @@
 //! in a dataset.
 
 use std::io::Cursor;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use pg_core::catalog::Catalog;
@@ -18,13 +18,6 @@ use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::writeback::Writer;
 use pg_ingest::{import, scan};
-
-fn scratch() -> PathBuf {
-    // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
-    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "writeback");
-    std::fs::create_dir_all(dir.join("images")).unwrap();
-    dir
-}
 
 fn pattern(w: u32, h: u32) -> image::RgbImage {
     image::RgbImage::from_fn(w, h, |x, y| {
@@ -83,7 +76,8 @@ fn ratings_and_turns_reach_the_files() {
         eprintln!("ExifTool not found: skipped");
         return;
     }
-    let dir = scratch();
+    // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
+    let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "writeback", &["images"]);
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::open(&catalog_path).unwrap();

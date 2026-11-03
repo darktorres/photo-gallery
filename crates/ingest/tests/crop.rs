@@ -6,7 +6,7 @@
 //! in a dataset.
 
 use std::io::Cursor;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use pg_core::catalog::Catalog;
 use pg_core::decode::{Decoder, MinSize};
@@ -15,12 +15,6 @@ use pg_core::path::PathArena;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
-
-fn scratch() -> PathBuf {
-    let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop");
-    std::fs::create_dir_all(dir.join("images").join("sub")).unwrap();
-    dir
-}
 
 const W: u32 = 320;
 const H: u32 = 240;
@@ -73,7 +67,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
         eprintln!("ExifTool not found: skipped");
         return;
     }
-    let dir = scratch();
+    let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "crop", &["images/sub"]);
     let files = make_files(&dir);
     let mut c = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
     let ctl = Control::new(false);

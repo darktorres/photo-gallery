@@ -75,7 +75,7 @@ mod tests {
     /// std reads a file through a path past the limit as it is (it makes the verbatim form itself).
     #[test]
     fn std_takes_long_paths_as_they_are() {
-        let root = std::env::temp_dir().join(format!("pg-paths-{}", std::process::id()));
+        let root = pg_testkit::test_folder(r"D:\PhotoGallery\scratch_rate", "pg-paths");
         let mut dir = root.clone();
         while dir.as_os_str().len() < 300 {
             dir.push("a-folder-name-of-forty-characters-long--");

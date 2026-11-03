@@ -31,6 +31,15 @@ pub fn run_folder(default: &str, prefix: &str) -> PathBuf {
     dir
 }
 
+/// [`run_folder`], with the folders `dirs` (paths relative to it, made as needed) made in it.
+pub fn run_folder_with(default: &str, prefix: &str, dirs: &[&str]) -> PathBuf {
+    let dir = run_folder(default, prefix);
+    for sub in dirs {
+        std::fs::create_dir_all(dir.join(sub)).unwrap();
+    }
+    dir
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

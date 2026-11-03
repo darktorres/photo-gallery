@@ -8,9 +8,16 @@
 use std::ffi::OsStr;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::sync::mpsc::{self, Receiver, RecvTimeoutError};
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+
+/// How long one command may take, from its first byte to its last marker. A command past it fails, and its process is
+/// killed: the next command starts a new one (R-38).
+const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
+/// How long a closing ExifTool gets to exit after `-stay_open False` before it is killed.
+const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// One ExifTool kept running (`-stay_open`), as starting it costs ~0.3 s per call.
 pub struct ExifTool {
@@ -49,11 +56,14 @@ impl ExifTool {
         Ok(ExifTool { child, stdin, stdout, stderr, next: 1, broken: false })
     }
 
-    /// Run one command; returns (stdout, stderr). A pipe failure marks the process broken.
+    /// Run one command; returns (stdout, stderr). A failure (a pipe broken, or no answer in time) marks the process
+    /// broken and kills it: a process that failed mid-command would answer the next command out of step.
     fn run(&mut self, args: &[&str]) -> Result<(String, String)> {
         let result = self.exchange(args);
         if result.is_err() {
             self.broken = true;
+            let _ = self.child.kill();
+            let _ = self.child.wait();
         }
         result
     }
@@ -61,6 +71,7 @@ impl ExifTool {
     fn exchange(&mut self, args: &[&str]) -> Result<(String, String)> {
         let n = self.next;
         self.next += 1;
+        let deadline = Instant::now() + COMMAND_TIMEOUT;
         // UTF-8 file names (non-ASCII paths), one argument per line.
         let mut input = String::from("-charset\nfilename=utf8\n");
         for a in args {
@@ -70,8 +81,8 @@ impl ExifTool {
         input.push_str(&format!("-echo4\n{{done{n}}}\n-execute{n}\n"));
         self.stdin.write_all(input.as_bytes())?;
         self.stdin.flush()?;
-        let stdout = read_until(&self.stdout, &format!("{{ready{n}}}"))?;
-        let stderr = read_until(&self.stderr, &format!("{{done{n}}}"))?;
+        let stdout = read_until(&self.stdout, &format!("{{ready{n}}}"), deadline)?;
+        let stderr = read_until(&self.stderr, &format!("{{done{n}}}"), deadline)?;
         Ok((stdout, stderr))
     }
 
@@ -128,11 +139,19 @@ fn pump(pipe: impl Read + Send + 'static) -> Receiver<String> {
     rx
 }
 
-/// The lines up to `marker` (not included). An ExifTool that exited ends the wait.
-fn read_until(lines: &Receiver<String>, marker: &str) -> Result<String> {
+/// The lines up to `marker` (not included). An ExifTool that exited ends the wait, and one that hasn't reached the
+/// marker by `deadline` fails it.
+fn read_until(lines: &Receiver<String>, marker: &str, deadline: Instant) -> Result<String> {
     let mut out = String::new();
     loop {
-        let line = lines.recv().map_err(|_| anyhow::anyhow!("ExifTool exited"))?;
+        let wait = deadline.checked_duration_since(Instant::now()).unwrap_or_default();
+        let line = match lines.recv_timeout(wait) {
+            Ok(line) => line,
+            Err(RecvTimeoutError::Timeout) => {
+                bail!("ExifTool didn't answer within {}s", COMMAND_TIMEOUT.as_secs())
+            }
+            Err(RecvTimeoutError::Disconnected) => bail!("ExifTool exited"),
+        };
         if line.trim_end() == marker {
             return Ok(out);
         }
@@ -147,9 +166,19 @@ fn created(stdout: &str) -> bool {
 }
 
 impl Drop for ExifTool {
+    /// Asks ExifTool to exit, and kills it when it hasn't within `CLOSE_TIMEOUT`: a process stuck on a command must
+    /// not hold the app's shutdown.
     fn drop(&mut self) {
         let _ = self.stdin.write_all(b"-stay_open\nFalse\n");
         let _ = self.stdin.flush();
+        let deadline = Instant::now() + CLOSE_TIMEOUT;
+        while Instant::now() < deadline {
+            if !matches!(self.child.try_wait(), Ok(None)) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let _ = self.child.kill();
         let _ = self.child.wait();
     }
 }
@@ -157,6 +186,23 @@ impl Drop for ExifTool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A command's lines up to its marker are its answer; a marker that doesn't come by the deadline fails it.
+    #[test]
+    fn a_command_is_read_up_to_its_marker_or_times_out() {
+        let (tx, rx) = mpsc::channel::<String>();
+        for line in ["1 image files created", "{ready1}"] {
+            tx.send(line.to_owned()).unwrap();
+        }
+        let answer = read_until(&rx, "{ready1}", Instant::now() + COMMAND_TIMEOUT).unwrap();
+        assert_eq!(answer, "1 image files created\n");
+
+        let err = read_until(&rx, "{ready2}", Instant::now() + Duration::from_millis(50)).unwrap_err();
+        assert!(err.to_string().contains("didn't answer"), "{err}");
+        drop(tx);
+        let err = read_until(&rx, "{ready2}", Instant::now() + COMMAND_TIMEOUT).unwrap_err();
+        assert!(err.to_string().contains("exited"), "{err}");
+    }
 
     /// A process that died is replaced by the next command, instead of failing every later write (R-38). Needs
     /// ExifTool; skipped without it.

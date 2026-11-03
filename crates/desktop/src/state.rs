@@ -14,7 +14,7 @@
 //! the thumbnail threads keep what the requests in flight need while the grid scrolls, and for 30 s after. The
 //! viewer reads the original into its thread's `Maker` too (kept likewise, up to `KEEP_BYTES`), but its decodes and
 //! resizes go to new buffers (`Maker::decode_file`, a `Resizer` per request), so a full-image thread keeps no
-//! full-size image.
+//! full-size image of its own. The process keeps one: `LAST_DECODE`, the last full-size decode.
 //!
 //! A thumbnail made on a miss goes to the cache's writer once it is shown, moved there rather than copied
 //! ([`Keep`]): Qt decodes it, then hands it back (`providers::keep_thumbnail`), or it is turned here first.
@@ -316,9 +316,12 @@ pub enum View {
 }
 
 /// The last decode, kept for the zoom regions that follow each other while the user zooms and pans one image.
+/// It is kept for the process, not the thread, until the next decode: a 24 MP image is about 72 MB of RGB.
 struct Decoded {
     file_id: i64,
     mtime: i64,
+    /// The file's size: a decode is reused only while the file still has it.
+    size: i64,
     /// With the turns not yet written.
     rotation: u8,
     /// Upright full size, and the decode (possibly DCT-scaled).
@@ -370,6 +373,7 @@ fn decode(file_id: i64, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Opt
         if let Some(d) = last.as_ref()
             && d.file_id == file_id
             && d.mtime == src.state.mtime
+            && d.size == src.state.size
             && d.rotation == rotation
             && big_enough(d.image.width, d.image.height, d.full, min)
         {
@@ -387,7 +391,7 @@ fn decode(file_id: i64, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Opt
         })?;
         ((decoded.info.full_width as usize, decoded.info.full_height as usize), Arc::new(decoded.image))
     };
-    Ok((image.clone(), Some(Decoded { file_id, mtime: src.state.mtime, rotation, full, image })))
+    Ok((image.clone(), Some(Decoded { file_id, mtime: src.state.mtime, size: src.state.size, rotation, full, image })))
 }
 
 /// Whether a decode of `w × h` (of an upright full size `full`) satisfies `min`.

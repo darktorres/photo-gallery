@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use pg_core::catalog::Catalog;
+use pg_catalog::Catalog;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, import, scan};

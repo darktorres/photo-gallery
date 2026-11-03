@@ -11,9 +11,9 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use pg_analysis::analyze;
+use pg_catalog::Catalog;
 use pg_codec::animation;
 use pg_codec::pixels::Rgb;
-use pg_core::catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;

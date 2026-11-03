@@ -7,8 +7,8 @@ use std::path::Path;
 use std::sync::Mutex;
 
 use anyhow::Result;
-use pg_core::browse;
-use pg_core::catalog::Catalog;
+use pg_catalog::Catalog;
+use pg_catalog::browse;
 use pg_core::maker::Maker;
 use pg_core::thumbs::{Pending, Thumb, ThumbCache};
 use pg_platform::verbatim::verbatim;

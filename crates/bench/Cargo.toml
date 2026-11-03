@@ -12,6 +12,7 @@ workspace = true
 [dependencies]
 pg-analysis = { path = "../analysis" }
 pg-core = { path = "../core" }
+pg-catalog = { path = "../catalog" }
 pg-model = { path = "../model" }
 rusqlite.workspace = true
 

@@ -18,12 +18,12 @@ How it was found:
 
 ## What the catalog needs
 
-From the code (`crates/core/src/catalog.rs`, `browse.rs`, `query.rs`, `thumbs.rs`):
+From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse.rs`, `crates/catalog/src/query.rs`, `crates/core/src/thumbs.rs`):
 
 - **About 57 GB at 70M.** The real catalog (`D:\PhotoGallery\catalog\catalog.sqlite`) is 154 MB for 189,518 files,
   ~810 B per file, twice PLAN §6's 20–30 GB. The biggest item is `order_key` (134 B on average), stored in `files` and
   again in `files_order`: ~270 B per file, ~19 GB at 70M.
-- **SQL built at run time** (`query.rs`, 803 lines): facet counts, folder counts, name order, joins of `files` and
+- **SQL built at run time** (`crates/catalog/src/query.rs`, 803 lines): facet counts, folder counts, name order, joins of `files` and
   `analysis`, keyset paging on a BLOB key.
 - **Row triggers and a view:** `files_added`, `files_changed`, `analysis_*` keep `pending`, `seq` and the totals;
   `present_pdq_pairs` is a view. Partial indexes. `auto_vacuum = INCREMENTAL` in the thumbnail cache.

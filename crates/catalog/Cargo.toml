@@ -1,0 +1,27 @@
+[package]
+name = "pg-catalog"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The catalog: the SQLite library of the photo library (the files, their analyses and pairs, the ratings and turns
+# queued for the files), and the reads over it that the UI and the command line make. Its test fixture is behind the
+# `fixture` feature, for the other crates' tests.
+[features]
+fixture = []
+
+[dependencies]
+anyhow.workspace = true
+pg-analysis = { path = "../analysis" }
+pg-metadata = { path = "../metadata" }
+pg-model = { path = "../model" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }
+thumbhash.workspace = true

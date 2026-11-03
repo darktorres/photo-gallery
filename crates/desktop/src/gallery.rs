@@ -276,12 +276,12 @@ use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QUrl,
     QVariant,
 };
-use pg_core::browse::{
+use pg_catalog::browse::{
     self,
     read::{Borders, Details, Entry},
 };
+use pg_catalog::query::{MediaType, Query, Sort};
 use pg_core::layout::{self, Row, RowChange};
-use pg_core::query::{MediaType, Query, Sort};
 use pg_model::detection::Class;
 
 use crate::loader::{self, Kind as Load};
@@ -829,7 +829,7 @@ impl qobject::GalleryModel {
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
-        if let Err(err) = state::with_catalog(|c| pg_core::catalog::Catalog::set_border_mark(&c.conn, e.id, marked)) {
+        if let Err(err) = state::with_catalog(|c| pg_catalog::Catalog::set_border_mark(&c.conn, e.id, marked)) {
             eprintln!("marking borders: {err:#}");
             return;
         }

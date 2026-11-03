@@ -567,7 +567,7 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
         None => vec![height as i64],
     };
     // The folder ids' table is sized up front. The items are not: counting them first would scan the view.
-    let mut work = WorkList::with_capacity(0, crate::catalog::max_folder_id(&tx, "cat.")?);
+    let mut work = WorkList::with_capacity(0, pg_catalog::max_folder_id(&tx, "cat.")?);
     {
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
@@ -1256,16 +1256,16 @@ mod tests {
     }
 
     /// A catalog in `dir` with four analyzed files: 1–3 present (3 turned once in the catalog), 4 missing.
-    fn catalog_of_four(dir: &Path) -> (PathBuf, crate::catalog::Catalog) {
+    fn catalog_of_four(dir: &Path) -> (PathBuf, pg_catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
-        let c = crate::catalog::Catalog::open(&catalog).unwrap();
+        let c = pg_catalog::Catalog::open(&catalog).unwrap();
         c.conn
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\p', 0);
                  INSERT INTO folders(id, path) VALUES (1, 'D:\\p');",
             )
             .unwrap();
-        use crate::catalog::fixture::{File, insert};
+        use pg_catalog::fixture::{File, insert};
         insert(
             &c.conn,
             &[

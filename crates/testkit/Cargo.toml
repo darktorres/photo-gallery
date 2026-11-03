@@ -10,5 +10,7 @@ workspace = true
 # Test helpers only (a dev-dependency of the crates that have tests). Its dependencies are the encoders the
 # fixtures use (`image`, `png`).
 [dependencies]
+# The catalog's test fixture (files as the scanner inserts them), re-exported below.
+pg-catalog = { path = "../catalog", features = ["fixture"] }
 image.workspace = true
 png.workspace = true

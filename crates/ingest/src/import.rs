@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use pg_analysis::analyze::Analyzer;
-use pg_core::catalog::{AnalysisWriter, Catalog};
+use pg_catalog::{AnalysisWriter, Catalog};
 use pg_dedup::Pairer;
 use pg_model::analysis::Analysis;
 use pg_model::media::Kind;

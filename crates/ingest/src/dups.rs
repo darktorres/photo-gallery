@@ -5,7 +5,7 @@
 use std::collections::BTreeMap;
 
 use anyhow::Result;
-use pg_core::catalog::Catalog;
+use pg_catalog::Catalog;
 use pg_dedup::UnionFind;
 
 pub const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;

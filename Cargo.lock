@@ -1425,9 +1425,25 @@ version = "0.1.0"
 dependencies = [
  "gungraun",
  "pg-analysis",
+ "pg-catalog",
  "pg-core",
  "pg-model",
  "rusqlite",
+]
+
+[[package]]
+name = "pg-catalog"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pg-analysis",
+ "pg-metadata",
+ "pg-model",
+ "pg-testkit",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "thumbhash",
 ]
 
 [[package]]
@@ -1461,6 +1477,7 @@ dependencies = [
  "anyhow",
  "image 0.25.10",
  "pg-analysis",
+ "pg-catalog",
  "pg-codec",
  "pg-metadata",
  "pg-model",
@@ -1468,9 +1485,6 @@ dependencies = [
  "pg-video",
  "png 0.18.1",
  "rusqlite",
- "serde",
- "serde_json",
- "thumbhash",
  "turbojpeg",
  "xxhash-rust",
 ]
@@ -1491,6 +1505,7 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "pg-catalog",
  "pg-codec",
  "pg-core",
  "pg-ingest",
@@ -1549,6 +1564,7 @@ dependencies = [
  "crossbeam-channel",
  "image 0.25.10",
  "pg-analysis",
+ "pg-catalog",
  "pg-codec",
  "pg-core",
  "pg-dedup",
@@ -1595,6 +1611,7 @@ name = "pg-testkit"
 version = "0.1.0"
 dependencies = [
  "image 0.25.10",
+ "pg-catalog",
  "png 0.18.1",
 ]
 

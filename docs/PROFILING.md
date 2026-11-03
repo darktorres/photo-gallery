@@ -356,7 +356,7 @@ Catalog: 189,518 files, all analyzed, 5,216 PDQ pairs, no thumbnails. 18 s under
 | `RtlAllocateHeap` (ntdll) | 5.3 M | 0.5% | 18 k |
 
 - About 96% of the instructions are SQLite running the 8 `count(*)` queries in `Catalog::status`
-  (`crates/core/src/catalog.rs`). Startup and the rest of the CLI are a few percent.
+  (`crates/catalog/src/lib.rs`). Startup and the rest of the CLI are a few percent.
 - **The counts are exact:** `countStep` ran 384,252 times = 189,518 files + 189,518 analyzed + 5,216 PDQ pairs, the
   rows those queries match. The `missing = 1`, `failed` and `file_writes` counts match no rows but still scan.
 - The 579 k `sqlite3BtreeTableMoveto` calls are rowid lookups. The two `analysis ⋈ files` joins explain about 379 k

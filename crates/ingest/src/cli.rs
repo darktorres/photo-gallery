@@ -7,7 +7,7 @@ use std::time::Instant;
 
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
-use pg_core::catalog::Catalog;
+use pg_catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
 use pg_platform::priority::Priority;
 

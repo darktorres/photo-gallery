@@ -10,10 +10,10 @@
 
 use std::path::{Path, PathBuf};
 
-use pg_core::browse::{self, read::{Entry, Facets, FolderTree}};
-use pg_core::catalog::{Catalog, WorkItem};
+use pg_catalog::browse::{self, read::{Entry, Facets, FolderTree}};
+use pg_catalog::{Catalog, WorkItem};
 use pg_model::path::WorkList;
-use pg_core::query::{Query, Sort, SortKey};
+use pg_catalog::query::{Query, Sort, SortKey};
 use pg_core::thumbs::{self, Pending};
 
 const DATA: &str = match option_env!("PG_BENCH_DATA") {

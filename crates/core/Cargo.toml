@@ -10,19 +10,18 @@ workspace = true
 [dependencies]
 pg-model = { path = "../model" }
 pg-analysis = { path = "../analysis" }
+pg-catalog = { path = "../catalog" }
 pg-codec = { path = "../codec" }
 pg-video = { path = "../video" }
 pg-metadata = { path = "../metadata" }
 anyhow.workspace = true
 image.workspace = true
 rusqlite.workspace = true
-thumbhash.workspace = true
 turbojpeg.workspace = true
 xxhash-rust.workspace = true
 png.workspace = true
-serde.workspace = true
-serde_json.workspace = true
 
 [dev-dependencies]
+pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-codec = { path = "../codec", features = ["fixtures"] }
 pg-testkit = { path = "../testkit" }

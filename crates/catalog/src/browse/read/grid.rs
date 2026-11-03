@@ -6,10 +6,10 @@ use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, params_from_iter};
 
 use super::scope;
-use crate::display;
 use crate::query::{MediaType, Query, Sort};
 use pg_model::detection;
 use pg_model::media::{Ext, Kind};
+use pg_model::orientation::upright_rect;
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
 /// The rest is read when the file is shown (`details`). Small and without a `String`, so a list of 190,000 is
@@ -135,7 +135,7 @@ impl Entry {
     fn shown(&self, rect: [f64; 4]) -> [f64; 4] {
         let Some((w, h)) = self.stored_size() else { return [0.0; 4] };
         let [l, t, r, b] = rect;
-        let [x0, y0, x1, y1] = display::upright([l / w, t / h, r / w, b / h], self.orientation, self.pending_turns);
+        let [x0, y0, x1, y1] = upright_rect([l / w, t / h, r / w, b / h], self.orientation, self.pending_turns);
         [x0, y0, x1 - x0, y1 - y0]
     }
 }

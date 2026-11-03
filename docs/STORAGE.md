@@ -9,12 +9,12 @@ known to behave; none of it was tested against this code.
 
 The scanner (`crates/ingest/src/scan.rs`) lists folders with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`
 and takes each entry's 64-bit `FileId` as the file's identity: `files(volume, file_ref)` is `UNIQUE`
-(`crates/core/src/catalog.rs:90,104`), and the scan upserts on it (`ON CONFLICT(volume, file_ref)`,
-`catalog.rs:965`), so a moved or renamed file keeps its row and its analysis. `volume` is the root's
+(`crates/catalog/src/lib.rs:90,104`), and the scan upserts on it (`ON CONFLICT(volume, file_ref)`,
+`crates/catalog/src/lib.rs:965`), so a moved or renamed file keeps its row and its analysis. `volume` is the root's
 `dwVolumeSerialNumber`.
 
 The passes over the originals (import, thumbnails) read in on-disk order, `ORDER BY f.volume, f.file_ref &
-0xFFFFFFFFFFFF` (`catalog.rs:585,813`, `thumbs.rs:660`): the low 48 bits of an NTFS file ID are its MFT record
+0xFFFFFFFFFFFF` (`crates/catalog/src/lib.rs:585,813`, `thumbs.rs:660`): the low 48 bits of an NTFS file ID are its MFT record
 number. Reads go through `pipeline::run` with 8 readers (`pipeline.rs:41`) using plain `std::fs::File` reads.
 
 Entries are skipped when they are reparse points or have `FileId == 0` (`scan.rs:128`).

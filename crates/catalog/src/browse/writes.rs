@@ -120,7 +120,7 @@ mod tests {
         assert_eq!(views(&c.conn).unwrap(), [v]);
     }
 
-    fn queued(c: &crate::catalog::Catalog, id: i64, kind: &str) -> Option<i64> {
+    fn queued(c: &crate::Catalog, id: i64, kind: &str) -> Option<i64> {
         c.conn
             .query_row("SELECT value FROM file_writes WHERE file_id = ?1 AND kind = ?2", params![id, kind], |r| {
                 r.get(0)
@@ -138,7 +138,7 @@ mod tests {
         set_rating(&c.conn, 2, 0, true).unwrap();
         assert_eq!(queued(&c, 2, "rating"), None);
         // A file that holds 4: clearing writes 0.
-        crate::catalog::Catalog::set_file_rating(&c.conn, 1, Some(4)).unwrap();
+        crate::Catalog::set_file_rating(&c.conn, 1, Some(4)).unwrap();
         set_rating(&c.conn, 1, 0, true).unwrap();
         assert_eq!(queued(&c, 1, "rating"), Some(0));
         // BMP can't hold one; write-back off writes nothing.

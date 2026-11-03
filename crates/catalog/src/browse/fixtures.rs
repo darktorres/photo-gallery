@@ -5,13 +5,13 @@ use rusqlite::params;
 
 use crate::browse::read::{FILE_JOINS, list_grid};
 use crate::browse::writes::set_rating;
-use crate::catalog::fixture;
+use crate::fixture;
 use crate::query::{Query, Sort, SortKey};
 
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating).
-pub(crate) fn library() -> crate::catalog::Catalog {
-    let c = crate::catalog::Catalog::open(std::path::Path::new(":memory:")).unwrap();
+pub(crate) fn library() -> crate::Catalog {
+    let c = crate::Catalog::open(std::path::Path::new(":memory:")).unwrap();
     c.conn
         .execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
@@ -37,7 +37,7 @@ pub(crate) fn library() -> crate::catalog::Catalog {
     c
 }
 
-pub(crate) fn ids(c: &crate::catalog::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
+pub(crate) fn ids(c: &crate::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
     list_grid(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|e| e.id).collect()
 }
 
@@ -47,7 +47,7 @@ pub(crate) fn by(key: SortKey, descending: bool) -> Sort {
 
 /// `library()` plus a video, an animated GIF, a file the import couldn't read and one not imported yet, with
 /// duplicates: 1 and 3 are the same bytes, 2–4 a close tier-1 pair, 2–6 a distant one.
-pub(crate) fn mixed_library() -> crate::catalog::Catalog {
+pub(crate) fn mixed_library() -> crate::Catalog {
     let c = library();
     use fixture::File;
     fixture::insert(
@@ -77,7 +77,7 @@ pub(crate) fn mixed_library() -> crate::catalog::Catalog {
 
 /// The order SQLite gave when it sorted (before the sort moved here): the key, files without it last, then
 /// name order ascending.
-pub(crate) fn sorted_by_sqlite(c: &crate::catalog::Catalog, sort: Sort) -> Vec<i64> {
+pub(crate) fn sorted_by_sqlite(c: &crate::Catalog, sort: Sort) -> Vec<i64> {
     let order = match sort.key_sql() {
         None if sort.descending => "f.order_key DESC, f.id DESC".to_string(),
         None => "f.order_key, f.id".to_string(),

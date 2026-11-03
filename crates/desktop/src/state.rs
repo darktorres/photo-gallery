@@ -25,11 +25,11 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result, bail};
+use pg_catalog::Catalog;
+use pg_catalog::browse::{self, read::FileSource};
 use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
-use pg_core::browse::{self, read::FileSource};
-use pg_core::catalog::Catalog;
 use pg_core::maker::Maker;
 use pg_core::thumbs::{self, ThumbCache};
 use pg_model::orientation;

@@ -37,7 +37,7 @@ use std::path::PathBuf;
 use std::sync::Mutex;
 
 use cxx_qt::CxxQtType;
-use pg_core::browse;
+use pg_catalog::browse;
 use serde::{Deserialize, Serialize};
 
 use crate::state;

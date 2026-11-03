@@ -72,7 +72,7 @@ change it). The app's preferences (write-back, Real Size, row height) are in `ga
 folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they survive rebuilding the catalog.
 Saved views and where you were (folder, filters, sort, selected file) are in the catalog.
 
-The catalog schema is one baseline (`catalog.rs`). Until the first catalog worth keeping, schema changes edit it in
+The catalog schema is one baseline (`crates/catalog/src/lib.rs`). Until the first catalog worth keeping, schema changes edit it in
 place, with no new version, so a catalog made before a change has to be deleted and re-imported. The migration
 mechanism is in place for later, unused.
 
@@ -162,7 +162,7 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
 - **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file size, date
   modified, date taken, megapixels, duration, border depth) and its direction (↑ / ↓). **Views ▾** saves the current folder,
   subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
-- **Filter bar** (`FilterBar.qml`, `query.rs`): type (image, animated, video), extension, rating (unrated,
+- **Filter bar** (`FilterBar.qml`, `crates/catalog/src/query.rs`): type (image, animated, video), extension, rating (unrated,
   1–5), shape (landscape, portrait, square), file size, megapixels, duration, date taken, date modified,
   duplicates (has / has none, from tiers 0a, 0b and tier-1 pairs within PDQ 22), import status (imported, not
   yet, unreadable), borders (none, black, white, coloured, blurred bars), their review (not marked, marked not a

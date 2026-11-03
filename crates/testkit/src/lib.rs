@@ -3,6 +3,8 @@
 
 use std::path::PathBuf;
 
+pub use pg_catalog::fixture;
+
 /// The base folder for a test's files: `PG_TEST_DIR`, or `default`.
 fn base(default: &str) -> PathBuf {
     std::env::var_os("PG_TEST_DIR").map_or_else(|| PathBuf::from(default), PathBuf::from)

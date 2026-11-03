@@ -8,8 +8,8 @@
 use std::io::Cursor;
 use std::path::Path;
 
+use pg_catalog::Catalog;
 use pg_codec::decode::{Decoder, MinSize};
-use pg_core::catalog::Catalog;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
@@ -108,7 +108,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
 
     // One marked as not a border, one changed since: both skipped.
     let id_of = |name: &str| files_ids.iter().find(|(_, n)| n == name).unwrap().0;
-    pg_core::catalog::Catalog::set_border_mark(&c.conn, id_of("b.png"), true).unwrap();
+    pg_catalog::Catalog::set_border_mark(&c.conn, id_of("b.png"), true).unwrap();
     let webp = &files[2];
     let mut changed = std::fs::read(webp).unwrap();
     changed.extend_from_slice(b"\0\0");

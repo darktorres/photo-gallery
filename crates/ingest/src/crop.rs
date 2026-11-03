@@ -6,7 +6,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use pg_core::catalog::{Catalog, CropSource};
+use pg_catalog::{Catalog, CropSource};
 use pg_edit::crop::crop;
 use pg_model::path::{PathArena, PathRef, is_under};
 use pg_platform::verbatim::verbatim_wide;

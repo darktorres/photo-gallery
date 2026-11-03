@@ -8,6 +8,13 @@
 //! The thumbnails' work is tracked the same way: whatever a thumbnail depends on changing gives the file the next
 //! number of a change sequence (`files.seq`, from `meta.seq`), so the thumbnail pass looks only at files changed
 //! since it last looked (`thumbs::pending_in`).
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
+
+pub mod browse;
+#[cfg(any(test, feature = "fixture"))]
+pub mod fixture;
+pub mod query;
 
 use std::path::Path;
 use std::sync::Arc;
@@ -636,7 +643,7 @@ const FOLDER_PATH: &str = "SELECT path FROM folders WHERE id = ?1";
 
 /// The largest folder id of the catalog (`schema`: `""`, or `"cat."` where it is attached under that name): an
 /// O(1) read of the table's last row.
-pub(crate) fn max_folder_id(conn: &Connection, schema: &str) -> Result<i64> {
+pub fn max_folder_id(conn: &Connection, schema: &str) -> Result<i64> {
     let sql = format!("SELECT coalesce(max(id), -1) FROM {schema}folders");
     Ok(conn.query_row(&sql, [], |r| r.get(0))?)
 }
@@ -1394,59 +1401,6 @@ impl<'tx> BordersWriter<'tx> {
             ])?;
         }
         Ok(())
-    }
-}
-
-/// Test catalogs: files inserted as the scanner would, with their order keys.
-#[cfg(test)]
-pub(crate) mod fixture {
-    use rusqlite::{Connection, params};
-
-    /// A file row; `folder` must exist in `folders`.
-    pub struct File {
-        pub id: i64,
-        pub folder: i64,
-        pub name: &'static str,
-        pub kind: &'static str,
-        pub size: i64,
-        pub mtime: i64,
-        pub file_ref: i64,
-        pub missing: bool,
-        pub rotation: u8,
-    }
-
-    impl File {
-        /// An image present on volume 1, its file reference its id.
-        pub fn new(id: i64, folder: i64, name: &'static str, size: i64, mtime: i64) -> File {
-            File { id, folder, name, kind: "image", size, mtime, file_ref: id, missing: false, rotation: 0 }
-        }
-    }
-
-    /// Insert the files (scan 1 must exist).
-    pub fn insert(conn: &Connection, files: &[File]) {
-        for f in files {
-            let folder: String =
-                conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder], |r| r.get(0)).unwrap();
-            conn.execute(
-                "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
-                                   rotation, order_key)
-                 VALUES (?1, 1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, 1, ?9, ?10, ?11)",
-                params![
-                    f.id,
-                    f.file_ref,
-                    f.folder,
-                    f.name,
-                    pg_model::media::Ext::of_name(f.name).expect("a media file").name(),
-                    f.kind,
-                    f.size,
-                    f.mtime,
-                    f.missing,
-                    f.rotation,
-                    pg_model::path::order_key_of(&folder, f.name)
-                ],
-            )
-            .unwrap();
-        }
     }
 }
 

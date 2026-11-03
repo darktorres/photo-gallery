@@ -19,7 +19,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
-use pg_core::catalog::Catalog;
+use pg_catalog::Catalog;
 use pg_core::thumbs::ThumbCache;
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;

@@ -18,7 +18,7 @@ use std::sync::{Arc, Condvar, Mutex, OnceLock};
 use std::thread::JoinHandle;
 
 use anyhow::{Result, anyhow};
-use pg_core::catalog::{self, Catalog};
+use pg_catalog::Catalog;
 
 use crate::state;
 
@@ -89,7 +89,7 @@ pub fn submit<T: 'static>(
                 .unwrap_or_else(|_| Err(anyhow!("the catalog read failed (an internal error)"))),
             Err(e) => Err(anyhow!("the catalog can't be opened: {e:#}")),
         };
-        if !matches!(&result, Err(e) if catalog::interrupted(e)) {
+        if !matches!(&result, Err(e) if pg_catalog::interrupted(e)) {
             deliver(result);
         }
     });

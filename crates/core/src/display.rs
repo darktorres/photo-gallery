@@ -6,7 +6,6 @@ use anyhow::{Context, Result};
 
 use pg_codec::decode::{Decoded, Decoder, MinSize, Stored};
 use pg_model::format::Format;
-use pg_model::orientation;
 
 /// Decode `bytes` upright at the smallest DCT scale that keeps `min` (full size if the image is smaller), into new
 /// buffers: a one-off decode (the viewer). `turns` is the catalog rotation (`files.rotation`, quarter turns clockwise),
@@ -28,21 +27,8 @@ pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u
     Ok(Stored { image, info })
 }
 
-/// A rectangle of the stored image (fractions: left, top, right, bottom) in the image as shown: turned upright by
-/// `orientation` (1–8, as `decode::orient` applies it), then `turns` quarter turns clockwise.
-pub fn upright(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
-    // Where a stored point (u, v) is shown, as decode::transform moves pixels.
-    let shown = |(u, v): (f64, f64)| orientation::shown_edge(orientation, u, v);
-    let turned = |p: (f64, f64)| (0..turns % 4).fold(p, |(x, y), _| (1.0 - y, x));
-    let [l, t, r, b] = rect;
-    let (a, c) = (turned(shown((l, t))), turned(shown((r, b))));
-    [a.0.min(c.0), a.1.min(c.1), a.0.max(c.0), a.1.max(c.1)]
-}
-
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn upright_follows_the_decoders_transform() {
         // A 4×2 stored image whose only lit pixel block is the rectangle x 1..3, y 0..1; every orientation and turn
@@ -57,7 +43,7 @@ mod tests {
                 for _ in 0..turns {
                     (px, pw, ph) = pg_codec::decode::transform(&px, pw, ph, 1, 6);
                 }
-                let [x0, y0, x1, y1] = upright(rect, orientation, turns);
+                let [x0, y0, x1, y1] = pg_model::orientation::upright_rect(rect, orientation, turns);
                 for y in 0..ph {
                     for x in 0..pw {
                         let (cx, cy) = ((x as f64 + 0.5) / pw as f64, (y as f64 + 0.5) / ph as f64);

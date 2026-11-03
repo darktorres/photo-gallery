@@ -3,10 +3,7 @@
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
-pub mod browse;
-pub mod catalog;
 pub mod display;
 pub mod layout;
 pub mod maker;
-pub mod query;
 pub mod thumbs;

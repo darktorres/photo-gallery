@@ -69,8 +69,8 @@ pub mod qobject {
 use core::pin::Pin;
 
 use cxx_qt_lib::{QString, QStringList};
-use pg_core::browse;
-use pg_core::query::{Query, Sort, SortKey};
+use pg_catalog::browse;
+use pg_catalog::query::{Query, Sort, SortKey};
 
 use crate::state;
 

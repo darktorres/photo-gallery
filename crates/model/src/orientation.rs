@@ -80,6 +80,17 @@ pub fn shown_edge(o: u8, u: f64, v: f64) -> (f64, f64) {
     shown(o, (u, v), (1.0, 1.0), 0.0)
 }
 
+/// A rectangle of the stored picture (fractions: left, top, right, bottom) in the picture as shown: turned upright
+/// by `orientation` (1–8, as [`shown_edge`] maps it), then `turns` quarter turns clockwise.
+pub fn upright_rect(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
+    // Where a stored point (u, v) is shown.
+    let shown = |(u, v): (f64, f64)| shown_edge(orientation, u, v);
+    let turned = |p: (f64, f64)| (0..turns % 4).fold(p, |(x, y), _| (1.0 - y, x));
+    let [l, t, r, b] = rect;
+    let (a, c) = (turned(shown((l, t))), turned(shown((r, b))));
+    [a.0.min(c.0), a.1.min(c.1), a.0.max(c.0), a.1.max(c.1)]
+}
+
 /// The one coordinate map. `last` is how far the last index lies below its extent: 1 for pixels (the last pixel of a
 /// width `w` is `w - 1`), 0 for fractions of a unit extent.
 fn shown<T>(o: u8, (x, y): (T, T), (w, h): (T, T), last: T) -> (T, T)

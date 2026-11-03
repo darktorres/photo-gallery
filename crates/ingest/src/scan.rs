@@ -10,7 +10,7 @@
 //! scanner lists directories itself. Everything (or the USN journal) remains the option for incremental changes.
 
 use anyhow::{Context, Result};
-use pg_core::catalog::{Catalog, ScanWriter, ScannedFile};
+use pg_catalog::{Catalog, ScanWriter, ScannedFile};
 use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 

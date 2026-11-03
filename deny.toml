@@ -48,20 +48,23 @@ deny = [
     { crate = "cxx-qt-lib", wrappers = ["pg-desktop"] },
     # The file metadata (pg-metadata) is the only XML parser. pg-core stays a wrapper until its code moves (S-05, S-09).
     # miniz_oxide and crc32fast aren't banned: png, tiff and flate2 depend on them too.
-    { crate = "quick-xml", wrappers = ["pg-metadata", "pg-core"] },
+    { crate = "quick-xml", wrappers = ["pg-metadata"] },
     # The image decoders and encoders are pg-codec's, and the test fixtures' (pg-testkit). `image` is the door to the
     # rest, so its parents are these crates; pg-core and pg-ingest keep their tests' fixtures until S-05.4, S-05.5 and
     # S-09 move them. turbojpeg also serves pg-core's maker and rewriter until S-05.4, S-05.5 and S-06.3.
     { crate = "image", wrappers = ["pg-codec", "pg-testkit", "pg-core", "pg-ingest", "pdqhash"] },
     { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit", "pg-core"] },
     { crate = "png", wrappers = ["pg-codec", "pg-testkit", "pg-edit", "image", "pg-core"] },
-    { crate = "gif", wrappers = ["pg-codec", "pg-testkit", "image", "pg-core"] },
-    { crate = "image-webp", wrappers = ["pg-codec", "pg-edit", "image", "pg-core"] },
-    { crate = "tiff", wrappers = ["pg-codec", "pg-testkit", "image", "pg-core"] },
-    { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff", "pg-core"] },
-    { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg", "pg-core"] },
+    { crate = "gif", wrappers = ["pg-codec", "image"] },
+    { crate = "image-webp", wrappers = ["pg-codec", "pg-edit", "image"] },
+    { crate = "tiff", wrappers = ["pg-codec", "image"] },
+    { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff"] },
+    { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
+    # SQLite is pg-catalog's (and the thumbnail cache's, from S-06.2). pg-core, pg-ingest and pg-bench keep their
+    # uses until S-06.2, S-08 and S-09 move them.
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-core", "pg-ingest", "pg-bench"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
     # FFmpeg is linked by pg-video alone: a video's probe, frames and file hash.

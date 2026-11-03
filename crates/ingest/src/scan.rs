@@ -10,7 +10,7 @@
 //! scanner lists directories itself. Everything (or the USN journal) remains the option for incremental changes.
 
 use anyhow::{Context, Result};
-use pg_catalog::{Catalog, ScanWriter, ScannedFile};
+use pg_catalog::{Catalog, ScannedFile};
 use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 
@@ -101,8 +101,8 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
     let mut stack = vec![root.to_string()];
     // The folders this scan couldn't list: the files under them weren't seen, so they aren't marked missing (R-45).
     let mut unreadable: Vec<String> = Vec::new();
-    let mut tx = catalog.conn.transaction()?;
-    let mut writer = ScanWriter::new(&tx, scan_id)?;
+    let mut tx = catalog.tx()?;
+    let mut writer = tx.scan_writer(scan_id)?;
     let mut in_tx = 0;
     ctl.begin("scan", root.to_string(), 0);
 
@@ -153,8 +153,8 @@ pub fn scan(catalog: &mut Catalog, root: &str, ctl: &Control) -> Result<ScanStat
         if in_tx >= BATCH {
             drop(writer);
             tx.commit()?;
-            tx = catalog.conn.transaction()?;
-            writer = ScanWriter::new(&tx, scan_id)?;
+            tx = catalog.tx()?;
+            writer = tx.scan_writer(scan_id)?;
             in_tx = 0;
         }
         ctl.set_done(stats.files);

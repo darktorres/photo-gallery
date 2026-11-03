@@ -11,7 +11,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, ensure};
 use pg_analysis::analyze::{Analyzer, FileBorders};
 use pg_analysis::borders::{self as detector, Detector};
-use pg_catalog::{BordersWriter, Catalog};
+use pg_catalog::Catalog;
 use pg_codec::pixels::Rgb;
 use pg_model::detection::{self, Side};
 use pg_model::media::{Ext, Kind};
@@ -38,8 +38,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     ctl.begin("borders", String::new(), items.len() as u64);
     let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
     let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
-        let tx = catalog.conn.transaction()?;
-        let mut writer = BordersWriter::new(&tx)?;
+        let tx = catalog.tx()?;
+        let mut writer = tx.borders_writer()?;
         for (i, result) in batch.drain(..) {
             stats.files += 1;
             let found = match result {
@@ -248,7 +248,7 @@ pub fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)>
         }
         match catalog.file_by_path(&path)? {
             Some(id) => {
-                Catalog::set_border_mark(&catalog.conn, id, true)?;
+                catalog.set_border_mark(id, true)?;
                 marked += 1;
             }
             None => unknown += 1,

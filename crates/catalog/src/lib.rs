@@ -1007,12 +1007,13 @@ impl Catalog {
     }
 
     /// Mark a file's borders as not a border, or take the mark back (the review).
-    pub fn set_border_mark(conn: &Connection, file_id: FileId, marked: bool) -> Result<()> {
+    pub fn set_border_mark(&self, file_id: FileId, marked: bool) -> Result<()> {
         if marked {
-            conn.prepare_cached("INSERT OR REPLACE INTO border_marks(file_id, marked) VALUES (?1, unixepoch())")?
+            self.conn
+                .prepare_cached("INSERT OR REPLACE INTO border_marks(file_id, marked) VALUES (?1, unixepoch())")?
                 .execute([file_id.get()])?;
         } else {
-            conn.prepare_cached("DELETE FROM border_marks WHERE file_id = ?1")?.execute([file_id.get()])?;
+            self.conn.prepare_cached("DELETE FROM border_marks WHERE file_id = ?1")?.execute([file_id.get()])?;
         }
         Ok(())
     }
@@ -1056,6 +1057,41 @@ const DELETE_SIDES: &str = "DELETE FROM border_sides WHERE file_id = ?1";
 const SET_FILE_RATING: &str = "INSERT INTO file_ratings(file_id, value) VALUES (?1, ?2)
      ON CONFLICT(file_id) DO UPDATE SET value = excluded.value";
 const DELETE_FILE_RATING: &str = "DELETE FROM file_ratings WHERE file_id = ?1";
+
+/// A transaction on the catalog. It hands out the writers of the scan, the import and the borders, so a batch of
+/// their writes commits together, with `commit`.
+pub struct Tx<'c> {
+    inner: Transaction<'c>,
+}
+
+impl Catalog {
+    /// Begin a transaction on the catalog (see [`Tx`]).
+    pub fn tx(&mut self) -> Result<Tx<'_>> {
+        Ok(Tx { inner: self.conn.transaction()? })
+    }
+}
+
+impl Tx<'_> {
+    /// The writer of the scan `scan`, in this transaction.
+    pub fn scan_writer(&self, scan: i64) -> Result<ScanWriter<'_>> {
+        ScanWriter::new(&self.inner, scan)
+    }
+
+    /// The writer of the import's analyses, in this transaction.
+    pub fn analysis_writer(&self) -> Result<AnalysisWriter<'_>> {
+        AnalysisWriter::new(&self.inner)
+    }
+
+    /// The writer of the borders, in this transaction.
+    pub fn borders_writer(&self) -> Result<BordersWriter<'_>> {
+        BordersWriter::new(&self.inner)
+    }
+
+    /// Commit what was written through this transaction's writers.
+    pub fn commit(self) -> Result<()> {
+        Ok(self.inner.commit()?)
+    }
+}
 
 /// The scan's writes.
 pub struct ScanWriter<'tx> {
@@ -1891,7 +1927,7 @@ mod tests {
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
 
         // Marked as not a border: no border to the filters, the mark to the review.
-        Catalog::set_border_mark(&c.conn, item.id, true).unwrap();
+        c.set_border_mark(item.id, true).unwrap();
         assert_eq!(list(&c, Query::default())[0].borders, browse::read::Borders::Marked);
         assert!(list(&c, only(vec![BorderFacet::Black])).is_empty());
         assert_eq!(list(&c, only(vec![BorderFacet::None])).len(), 1);
@@ -1965,7 +2001,7 @@ mod tests {
             BordersWriter::new(&tx).unwrap().store_borders(&item, Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {
-                Catalog::set_border_mark(&c.conn, item.id, true).unwrap();
+                c.set_border_mark(item.id, true).unwrap();
             }
         }
         let names = |descending: bool| -> Vec<String> {

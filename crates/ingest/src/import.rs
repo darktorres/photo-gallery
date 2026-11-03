@@ -7,7 +7,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use pg_analysis::analyze::Analyzer;
-use pg_catalog::{AnalysisWriter, Catalog};
+use pg_catalog::Catalog;
 use pg_dedup::Pairer;
 use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
@@ -45,8 +45,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     ctl.begin("import", String::new(), items.len() as u64);
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
-        let tx = catalog.conn.transaction()?;
-        let mut writer = AnalysisWriter::new(&tx)?;
+        let tx = catalog.tx()?;
+        let mut writer = tx.analysis_writer()?;
         for (i, result) in batch.drain(..) {
             let item = &items[i];
             match result {

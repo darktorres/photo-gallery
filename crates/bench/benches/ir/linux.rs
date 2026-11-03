@@ -5,7 +5,7 @@
 use std::hint::black_box;
 
 use gungraun::prelude::*;
-use pg_model::analysis::Analysis;
+use pg_model::analysis::Analyzed;
 use pg_analysis::analyze::Analyzer;
 use pg_model::turns::Turns;
 use pg_render::maker::Maker;
@@ -32,7 +32,7 @@ fn for_thumb() -> (Vec<u8>, Maker) {
 
 #[library_benchmark]
 #[bench::sample(setup = for_analyze)]
-fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analysis {
+fn analyze_jpeg((bytes, mut analyzer): (Vec<u8>, Analyzer)) -> Analyzed {
     black_box(analyzer.analyze(black_box(&bytes), Turns::NONE).unwrap())
 }
 

@@ -14,6 +14,7 @@ pg-analysis = { path = "../analysis" }
 pg-dedup = { path = "../dedup" }
 pg-codec = { path = "../codec" }
 pg-edit = { path = "../edit" }
+pg-exiftool = { path = "../exiftool" }
 pg-video = { path = "../video" }
 pg-metadata = { path = "../metadata" }
 pg-platform = { path = "../platform" }

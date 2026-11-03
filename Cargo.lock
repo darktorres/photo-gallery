@@ -1522,6 +1522,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-exiftool"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pg-platform",
+]
+
+[[package]]
 name = "pg-gallery"
 version = "0.1.0"
 dependencies = [
@@ -1545,6 +1553,7 @@ dependencies = [
  "pg-core",
  "pg-dedup",
  "pg-edit",
+ "pg-exiftool",
  "pg-metadata",
  "pg-model",
  "pg-platform",

@@ -13,7 +13,8 @@ use pg_platform::verbatim::verbatim_wide;
 
 use crate::control::Control;
 use crate::pipeline::{self, Options};
-use crate::writeback::{ExifTool, stat};
+use crate::writeback::{exiftool_program, stat};
+use pg_exiftool::ExifTool;
 
 pub struct Stats {
     pub saved: usize,
@@ -89,7 +90,7 @@ pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: 
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
                     let (source, out) = (paths.get(job.source.path), paths.get(job.out));
-                    ExifTool::running(&mut exiftool)?.copy_tags(source, out)?;
+                    ExifTool::running(&mut exiftool, &exiftool_program())?.copy_tags(source, out)?;
                     keep_time(source, out)?;
                     Ok(true)
                 }

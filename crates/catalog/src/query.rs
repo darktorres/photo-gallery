@@ -122,27 +122,27 @@ impl MediaType {
 #[serde(rename_all = "lowercase")]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
 #[strum(serialize_all = "snake_case")]
-pub enum Orientation {
+pub enum Shape {
     Landscape,
     Portrait,
     Square,
 }
 
-impl Orientation {
+impl Shape {
     /// The name in JSON.
     pub fn key(self) -> &'static str {
         self.into()
     }
 
-    pub fn from_key(key: &str) -> Option<Orientation> {
+    pub fn from_key(key: &str) -> Option<Shape> {
         key.parse().ok()
     }
 
     fn sql(self) -> &'static str {
         match self {
-            Orientation::Landscape => "(a.width - a.height) * 100 > a.width",
-            Orientation::Portrait => "(a.height - a.width) * 100 > a.height",
-            Orientation::Square => "abs(a.width - a.height) * 100 <= max(a.width, a.height)",
+            Shape::Landscape => "(a.width - a.height) * 100 > a.width",
+            Shape::Portrait => "(a.height - a.width) * 100 > a.height",
+            Shape::Square => "abs(a.width - a.height) * 100 <= max(a.width, a.height)",
         }
     }
 }
@@ -286,7 +286,7 @@ pub struct Query {
     #[serde(skip_serializing_if = "Range::is_empty")]
     pub megapixels: Range,
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub orientations: Vec<Orientation>,
+    pub shapes: Vec<Shape>,
     /// When it was taken (`analysis.taken`, wall-clock time).
     #[serde(skip_serializing_if = "DateRange::is_empty")]
     pub taken: DateRange,
@@ -417,8 +417,8 @@ impl Query {
         range("f.size", &self.size_mb, MB);
         range("a.width * a.height", &self.megapixels, 1e6);
         range("a.duration_ms", &self.duration_s, 1e3);
-        if !self.orientations.is_empty() {
-            any(&mut sql, self.orientations.iter().map(|o| o.sql()));
+        if !self.shapes.is_empty() {
+            any(&mut sql, self.shapes.iter().map(|o| o.sql()));
         }
         // Taken is wall-clock time: compared as is. Modified is a UTC FILETIME: the local day's bounds are converted.
         let day = |d: &Option<String>| d.as_deref().and_then(parse_iso_date).map(|s| s - s.rem_euclid(86_400));
@@ -481,7 +481,7 @@ impl Query {
             !self.ratings.is_empty(),
             !self.size_mb.is_empty(),
             !self.megapixels.is_empty(),
-            !self.orientations.is_empty(),
+            !self.shapes.is_empty(),
             !self.taken.is_empty(),
             !self.modified.is_empty(),
             !self.duration_s.is_empty(),
@@ -502,7 +502,7 @@ impl Query {
             "types" => self.types.iter().map(|t| t.key().to_string()).collect(),
             "exts" => self.exts.clone(),
             "ratings" => self.ratings.iter().map(u8::to_string).collect(),
-            "orientations" => self.orientations.iter().map(|o| o.key().to_string()).collect(),
+            "orientations" => self.shapes.iter().map(|o| o.key().to_string()).collect(),
             "status" => self.status.iter().map(|s| s.key().to_string()).collect(),
             "borders" => self.borders.iter().map(|b| b.key().to_string()).collect(),
             _ => Vec::new(),
@@ -529,7 +529,7 @@ impl Query {
             "ratings" => {
                 value.parse::<u8>().ok().filter(|&n| n <= 5).into_iter().for_each(|n| flip(&mut self.ratings, n))
             }
-            "orientations" => Orientation::from_key(value).into_iter().for_each(|o| flip(&mut self.orientations, o)),
+            "orientations" => Shape::from_key(value).into_iter().for_each(|o| flip(&mut self.shapes, o)),
             "status" => Status::from_key(value).into_iter().for_each(|s| flip(&mut self.status, s)),
             "borders" => BorderFacet::from_key(value).into_iter().for_each(|b| flip(&mut self.borders, b)),
             _ => {}
@@ -888,7 +888,7 @@ mod tests {
     fn keys_are_the_json_names() {
         // The names the catalog and the saved views store, in the order the lists show them.
         assert_eq!(MediaType::iter().map(MediaType::key).collect::<Vec<_>>(), ["image", "animated", "video"]);
-        assert_eq!(Orientation::iter().map(Orientation::key).collect::<Vec<_>>(), ["landscape", "portrait", "square"]);
+        assert_eq!(Shape::iter().map(Shape::key).collect::<Vec<_>>(), ["landscape", "portrait", "square"]);
         assert_eq!(Status::iter().map(Status::key).collect::<Vec<_>>(), ["imported", "pending", "failed"]);
         assert_eq!(
             BorderFacet::iter().map(BorderFacet::key).collect::<Vec<_>>(),
@@ -901,9 +901,9 @@ mod tests {
         for t in [MediaType::Image, MediaType::Animated, MediaType::Video] {
             assert_eq!(json(&t), format!("\"{}\"", t.key()));
         }
-        for o in Orientation::iter() {
+        for o in Shape::iter() {
             assert_eq!(json(&o), format!("\"{}\"", o.key()));
-            assert_eq!(Orientation::from_key(o.key()), Some(o));
+            assert_eq!(Shape::from_key(o.key()), Some(o));
         }
         for s in Status::iter() {
             assert_eq!(json(&s), format!("\"{}\"", s.key()));

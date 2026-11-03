@@ -235,8 +235,8 @@ fn describe(q: &Query, symbols: &QStringList) -> String {
     if q.megapixels.min.is_some() || q.megapixels.max.is_some() {
         parts.push(range(&q.megapixels, " MP"));
     }
-    if !q.orientations.is_empty() {
-        parts.push(q.orientations.iter().map(|o| o.key()).collect::<Vec<_>>().join(", "));
+    if !q.shapes.is_empty() {
+        parts.push(q.shapes.iter().map(|o| o.key()).collect::<Vec<_>>().join(", "));
     }
     if q.taken.from.is_some() || q.taken.to.is_some() {
         parts.push(format!("taken {}", days(&q.taken)));

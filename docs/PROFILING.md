@@ -134,7 +134,7 @@ the same vendored source, but with GCC instead of MSVC.
   headers, rustup (Rust 1.99.1, with clippy and rustfmt), and the `gungraun-runner` of the exact version in
   `Cargo.lock`.
 
-**The bench** is `crates/core/benches/ir.rs` (gungraun 0.20, a Linux-only dev-dependency of `pg-core`). On other
+**The bench** is `crates/bench/benches/ir.rs` (gungraun 0.20, a Linux-only dev-dependency of `pg-bench`). On other
 systems the target is an empty `main`, so `cargo clippy --all-targets` still builds it on Windows. It measures
 `Analyzer::analyze` and `Maker::make` (height 256) on one file from the test set,
 `dups2/amateur-alice-von-v-mbDfqe.jpg.mozjpeg.jpg` (126 KB, 1280×1017 baseline JPEG). The file is read from D:

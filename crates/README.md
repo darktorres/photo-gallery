@@ -47,7 +47,7 @@ just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint, t
 ```
 
 `just deploy debug`, then `just dev`, give the debug build (it links the release Qt too). It reads the QML from
-`crates\ui\qml` instead of the copy compiled into it and reloads the window whenever a file there changes, where
+`crates\desktop\qml` instead of the copy compiled into it and reloads the window whenever a file there changes, where
 it was: QML edits show without a rebuild. QML errors go to the debugger output unless
 `QT_FORCE_STDERR_LOGGING=1` is set.
 

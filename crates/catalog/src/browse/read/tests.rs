@@ -289,7 +289,7 @@ fn the_tree_is_built_as_before() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let c = crate::Catalog::open_current(std::path::Path::new(&path)).unwrap();
+    let c = crate::Catalog::open(std::path::Path::new(&path)).unwrap();
     let conn = &c.conn;
     let rows: Vec<(i64, String, i64)> = conn
         .prepare(FOLDER_COUNTS)
@@ -437,7 +437,7 @@ fn folder_keys_are_made_as_before() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_names_sort_and_scope_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let c = crate::Catalog::open_current(std::path::Path::new(&path)).unwrap();
+    let c = crate::Catalog::open(std::path::Path::new(&path)).unwrap();
     let conn = &c.conn;
     let files: Vec<(String, String)> = conn
         .prepare("SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")

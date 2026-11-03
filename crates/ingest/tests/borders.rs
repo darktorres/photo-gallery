@@ -33,7 +33,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
             .unwrap();
     }
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::open(&catalog_path).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
     let ctl = Control::new(false);
     let root = scan::normalize_path(&images.to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();

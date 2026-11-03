@@ -131,7 +131,7 @@ impl Inner {
             if self.stop.load(Ordering::Relaxed) {
                 return;
             }
-            let drained = catalog.take().map_or_else(|| Catalog::open_current(&self.catalog_path), Ok).and_then(|c| {
+            let drained = catalog.take().map_or_else(|| Catalog::open(&self.catalog_path), Ok).and_then(|c| {
                 self.drain(&c, &mut exiftool)?;
                 catalog = Some(c);
                 Ok(())
@@ -160,12 +160,7 @@ impl Inner {
             };
             // A file the catalog marks missing, or no longer lists, can't be written: its queued write is dropped, and
             // the status line says why.
-            let gone: bool = catalog.conn.query_row(
-                "SELECT coalesce((SELECT missing FROM files WHERE id = ?1), 1)",
-                [job.file_id.get()],
-                |r| r.get(0),
-            )?;
-            if gone {
+            if catalog.file_gone(job.file_id)? {
                 if let Some((temp, _)) = &job.temp {
                     let _ = std::fs::remove_file(temp);
                 }
@@ -205,12 +200,7 @@ impl Inner {
 
     /// Whether the folder the file is in exists, so its drive is there.
     fn folder_present(&self, catalog: &Catalog, file_id: FileId) -> bool {
-        let folder: rusqlite::Result<String> = catalog.conn.query_row(
-            "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
-            [file_id.get()],
-            |r| r.get(0),
-        );
-        folder.is_ok_and(|p| Path::new(&p).is_dir())
+        catalog.file_folder(file_id).is_some_and(|p| Path::new(&p).is_dir())
     }
 
     /// A finishing copy that failed at the cap: its temp is discarded, and the job no longer counts as being written
@@ -223,13 +213,7 @@ impl Inner {
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {
-        let conn = &catalog.conn;
-        let (path, format, kind): (String, Option<String>, String) = conn.query_row(
-            "SELECT fo.path || '\\' || f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
-             LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
-            [job.file_id.get()],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?;
+        let (path, format, kind) = catalog.write_target(job.file_id)?;
 
         // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog, and their ratings are
         // never queued (pg_catalog::writes::set_rating).

@@ -141,9 +141,7 @@ impl Reader {
             // Opened by the first request, and again by the next one if that failed.
             let opened = match catalog.take() {
                 Some(c) => Ok(c),
-                None => {
-                    Catalog::open_current(&state::get().catalog_path).inspect(|c| c.cancel_when(self.cancel.clone()))
-                }
+                None => Catalog::open(&state::get().catalog_path).inspect(|c| c.cancel_when(self.cancel.clone())),
             };
             job(opened.as_ref());
             // The pages a job read aren't kept for the next: listing the whole library (189,518 files) fills the

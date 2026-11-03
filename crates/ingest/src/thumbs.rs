@@ -45,7 +45,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         cache.totals()?.0 as f64 / 1e9
     );
     // To check each file against before its thumbnail is kept.
-    let catalog = Catalog::open_current(catalog_path)?;
+    let catalog = Catalog::open(catalog_path)?;
     let mut batch = Vec::with_capacity(BATCH);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.

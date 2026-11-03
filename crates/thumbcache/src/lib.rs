@@ -1226,7 +1226,7 @@ mod tests {
     /// A catalog in `dir` with four analyzed files: 1–3 present (3 turned once in the catalog), 4 missing.
     fn catalog_of_four(dir: &Path) -> (PathBuf, pg_catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
-        let c = pg_catalog::Catalog::open(&catalog).unwrap();
+        let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::fixture::versions()).unwrap();
         pg_catalog::fixture::connection(&c)
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\p', 0);

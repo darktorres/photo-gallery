@@ -13,7 +13,7 @@ use crate::writes::set_rating;
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating).
 pub(crate) fn library() -> crate::Catalog {
-    let c = crate::Catalog::open(std::path::Path::new(":memory:")).unwrap();
+    let c = crate::Catalog::prepare(std::path::Path::new(":memory:"), crate::fixture::versions()).unwrap();
     c.conn
         .execute_batch(
             "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);

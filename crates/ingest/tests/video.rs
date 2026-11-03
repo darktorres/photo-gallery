@@ -167,7 +167,7 @@ fn videos() {
     assert_eq!(poster_ms(3_600_000), 10_000);
 
     // The library passes: scan, import, thumbnails.
-    let mut catalog = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
+    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
     let ctl = Control::new(false);
     let root = scan::normalize_path(&media.to_string_lossy()).unwrap();
     catalog.add_root(&root).unwrap();

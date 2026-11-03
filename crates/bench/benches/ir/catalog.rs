@@ -11,7 +11,9 @@
 use std::path::{Path, PathBuf};
 
 use pg_catalog::browse::{self, read::{Entry, Facets, FolderTree}};
-use pg_catalog::{Catalog, WorkItem};
+use pg_analysis::analyze::IMPORT_VERSION;
+use pg_analysis::borders::BORDERS_VERSION;
+use pg_catalog::{Catalog, Versions, WorkItem};
 use pg_model::path::WorkList;
 use pg_catalog::query::{Query, Sort, SortKey};
 use pg_thumbcache::{self as thumbs, Pending};
@@ -44,7 +46,8 @@ fn copy_data() -> PathBuf {
 }
 
 fn open_catalog() -> Catalog {
-    let catalog = Catalog::open(&copy_data().join("catalog.sqlite")).unwrap();
+    let versions = Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION };
+    let catalog = Catalog::prepare(&copy_data().join("catalog.sqlite"), versions).unwrap();
     catalog.status().unwrap(); // reads the schema and the counts: the connection is warm before the measured code
     catalog
 }

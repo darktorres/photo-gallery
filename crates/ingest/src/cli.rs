@@ -160,7 +160,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     }
     std::fs::create_dir_all(&cli.catalog_dir)?;
     let catalog_path = cli.catalog_dir.join("catalog.sqlite");
-    let mut catalog = Catalog::open(&catalog_path)?;
+    let mut catalog = Catalog::prepare(&catalog_path, crate::versions())?;
     let ctl = Control::new(true);
     let start = Instant::now();
 

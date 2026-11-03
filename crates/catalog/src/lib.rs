@@ -27,8 +27,6 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
-use pg_analysis::analyze::IMPORT_VERSION;
-use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::Analysis;
 use pg_model::detection::Detection;
 use pg_model::format::Format;
@@ -157,7 +155,7 @@ CREATE TABLE analysis(
     -- Borders (borders::detect) on the stored pixels, found after the import by a pass of their own: what a crop
     -- cuts from the left, top, right and bottom (detection::Detection::cut), all 0 for none. NULL until looked for,
     -- and where they aren't (videos, animated and tiny images, failures). `borders_due`: to be looked for, by this
-    -- build's detector (the import sets it; Catalog::open too when meta.borders_version differs).
+    -- build's detector (the import sets it; Catalog::prepare too when meta.borders_version differs).
     cut_left    INTEGER,
     cut_top     INTEGER,
     cut_right   INTEGER,
@@ -269,7 +267,7 @@ CREATE TABLE session(
 );
 -- About the catalog itself. `catalog_id` is made with it: a cache keyed by file ids (the thumbnails) checks it,
 -- since a rebuilt catalog numbers its files anew. `import_version` is the IMPORT_VERSION `files.pending` was
--- computed for (Catalog::open recomputes it when the build's differs). `seq` is the change sequence's last number.
+-- computed for (Catalog::prepare recomputes it when the build's differs). `seq` is the change sequence's last number.
 -- `borders_version` is the BORDERS_VERSION `analysis.borders_due` was computed for.
 CREATE TABLE meta(
     key   TEXT PRIMARY KEY,
@@ -434,7 +432,16 @@ const FILLED: &[(&str, &str, &str)] = &[
 ];
 
 pub struct Catalog {
-    pub conn: Connection,
+    conn: Connection,
+}
+
+/// The versions of the analyses the build makes, which `files.pending` and `analysis.borders_due` are kept against
+/// (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`). The library passes them to [`Catalog::prepare`]: the
+/// catalog doesn't depend on the analysis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Versions {
+    pub import: i64,
+    pub borders: i64,
 }
 
 /// Bring a catalog to the current schema: a new one gets the baseline, then each migration it lacks runs in its
@@ -595,16 +602,16 @@ fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
 /// (a new catalog, or a build that analyzes differently), every file's is computed again, and every file's `seq`
 /// moves on, so the thumbnail pass looks at all of them once. Checked and set in one write transaction, so two
 /// processes opening the catalog at once do it once.
-fn set_import_version(conn: &Connection) -> Result<()> {
+fn set_import_version(conn: &Connection, current: i64) -> Result<()> {
     let version = |c: &Connection| -> Result<i64> {
         Ok(c.query_row("SELECT value FROM meta WHERE key = 'import_version'", [], |r| r.get(0))?)
     };
-    if version(conn)? == IMPORT_VERSION {
+    if version(conn)? == current {
         return Ok(());
     }
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if version(&tx)? != IMPORT_VERSION {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'import_version'", [IMPORT_VERSION])?;
+    if version(&tx)? != current {
+        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'import_version'", [current])?;
         tx.execute_batch(concat!(
             "UPDATE files SET pending = ",
             stale!(),
@@ -620,16 +627,16 @@ fn set_import_version(conn: &Connection) -> Result<()> {
 
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
 /// every analysis that can have borders is due. Like [`set_import_version`], in one write transaction.
-fn set_borders_version(conn: &Connection) -> Result<()> {
+fn set_borders_version(conn: &Connection, current: i64) -> Result<()> {
     let version = |c: &Connection| -> Result<i64> {
         Ok(c.query_row("SELECT value FROM meta WHERE key = 'borders_version'", [], |r| r.get(0))?)
     };
-    if version(conn)? == BORDERS_VERSION {
+    if version(conn)? == current {
         return Ok(());
     }
     let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
-    if version(&tx)? != BORDERS_VERSION {
-        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [BORDERS_VERSION])?;
+    if version(&tx)? != current {
+        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [current])?;
         tx.execute_batch(concat!("UPDATE analysis SET borders_due = coalesce(", has_borders!(), ", 0)"))?;
     }
     Ok(tx.commit()?)
@@ -792,9 +799,10 @@ impl Catalog {
         Ok(())
     }
 
-    /// Open the catalog at `path`, creating it when new. One made with an earlier layout is copied into the current
-    /// one first (`rebuild`): seconds for 190k files.
-    pub fn open(path: &Path) -> Result<Catalog> {
+    /// Prepare the catalog at `path` for this build, creating it when new: one made with an earlier layout is copied
+    /// into the current one first (`rebuild`, seconds for 190k files), and its version marks are set to `versions`.
+    /// The library calls this once, before anything else opens the catalog.
+    pub fn prepare(path: &Path, versions: Versions) -> Result<Catalog> {
         let mut conn = connect(path)?;
         if !current_layout(&conn)? {
             drop(conn);
@@ -804,18 +812,18 @@ impl Catalog {
                 bail!("catalog {}: still not in the current layout after copying it", path.display());
             }
         }
-        set_import_version(&conn).with_context(|| format!("catalog {}", path.display()))?;
-        set_borders_version(&conn).with_context(|| format!("catalog {}", path.display()))?;
+        set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
+        set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
     }
 
-    /// Another connection to a catalog this process has opened ([`Catalog::open`], which makes it, brings it to the
-    /// current layout and sets the build's version marks): the settings and the SQL functions only. For every
-    /// connection after the first (the app's threads, the background job, the writer), which would otherwise
-    /// check the layout and the marks again each time. An error if the catalog isn't there, or its schema isn't
-    /// this build's (another program changed it since).
-    pub fn open_current(path: &Path) -> Result<Catalog> {
+    /// Open a catalog this process has prepared ([`Catalog::prepare`], which makes it, brings it to the current layout
+    /// and sets the build's version marks): the settings and the SQL functions only. Every connection to it (the
+    /// app's threads, the background job, the writer), which would otherwise check the layout and the marks again
+    /// each time. An error if the catalog isn't there, or its schema isn't this build's (another program changed it
+    /// since).
+    pub fn open(path: &Path) -> Result<Catalog> {
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(path, flags).with_context(|| format!("catalog {}", path.display()))?;
         conn.execute_batch(SETTINGS)?;
@@ -826,6 +834,36 @@ impl Catalog {
         }
         crate::query::register_functions(&conn)?;
         Ok(Catalog { conn })
+    }
+
+    /// Whether the file can't be written: it is missing from the catalog, or no longer listed.
+    pub fn file_gone(&self, file_id: FileId) -> Result<bool> {
+        Ok(self.conn.query_row(
+            "SELECT coalesce((SELECT missing FROM files WHERE id = ?1), 1)",
+            [file_id.get()],
+            |r| r.get(0),
+        )?)
+    }
+
+    /// The folder the file is in, as the catalog has it; `None` if there is no such file.
+    pub fn file_folder(&self, file_id: FileId) -> Option<String> {
+        self.conn
+            .query_row(
+                "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+                [file_id.get()],
+                |r| r.get(0),
+            )
+            .ok()
+    }
+
+    /// What a queued write needs of its file: its path, its analyzed format, and its kind (`files.kind`).
+    pub fn write_target(&self, file_id: FileId) -> Result<(String, Option<String>, String)> {
+        Ok(self.conn.query_row(
+            "SELECT fo.path || '\\' || f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
+             LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
+            [file_id.get()],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )?)
     }
 
     /// The id made with the catalog (`meta.catalog_id`).
@@ -1152,8 +1190,10 @@ impl Tx<'_> {
     }
 
     /// The writer of the import's analyses, in this transaction.
-    pub fn analysis_writer(&self) -> Result<AnalysisWriter<'_>> {
-        AnalysisWriter::new(&self.inner)
+    /// The writer of the analyses, in this transaction. `import` is the build's IMPORT_VERSION (`Versions::import`),
+    /// which the failures it stores are made against.
+    pub fn analysis_writer(&self, import: i64) -> Result<AnalysisWriter<'_>> {
+        AnalysisWriter::new(&self.inner, import)
     }
 
     /// The writer of the borders, in this transaction.
@@ -1247,6 +1287,8 @@ impl<'tx> ScanWriter<'tx> {
 
 /// The import's writes: analyses, failures, the file ratings they carry, and tier-1 pairs.
 pub struct AnalysisWriter<'tx> {
+    /// The build's IMPORT_VERSION, which a stored failure is made against.
+    import: i64,
     current: Statement<'tx>,
     delete_pairs: Statement<'tx>,
     analysis: Statement<'tx>,
@@ -1263,8 +1305,9 @@ pub struct AnalysisWriter<'tx> {
 }
 
 impl<'tx> AnalysisWriter<'tx> {
-    pub fn new(tx: &'tx Transaction) -> Result<AnalysisWriter<'tx>> {
+    pub fn new(tx: &'tx Transaction, import: i64) -> Result<AnalysisWriter<'tx>> {
         Ok(AnalysisWriter {
+            import,
             current: tx.prepare(concat!(
                 "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND size = ?2 AND mtime = ?3 AND rotation = ?4) AND ",
                 not_being_written!()
@@ -1363,7 +1406,7 @@ impl<'tx> AnalysisWriter<'tx> {
         self.delete_pairs.execute([item.id.get()])?;
         self.failure.execute(params![
             item.id.get(),
-            IMPORT_VERSION,
+            self.import,
             item.size,
             item.mtime,
             item.rotation.get(),
@@ -1472,8 +1515,15 @@ impl<'tx> BordersWriter<'tx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_analysis::analyze::IMPORT_VERSION;
+    use pg_analysis::borders::BORDERS_VERSION;
     use pg_model::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
     use pg_testkit::test_folder;
+
+    /// The versions this build's analyses are stamped with, as the library passes them to [`Catalog::prepare`].
+    fn versions() -> Versions {
+        Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION }
+    }
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = r"D:\PhotoGallery\scratch_catalog";
@@ -1531,7 +1581,7 @@ mod tests {
         .unwrap();
         drop(old);
 
-        let c = Catalog::open(&path).unwrap();
+        let c = Catalog::prepare(&path, versions()).unwrap();
         assert!(current_layout(&c.conn).unwrap());
         assert!(!dir.join("catalog.sqlite.rebuild").exists());
         let rows = |sql: &str| -> Vec<String> {
@@ -1571,7 +1621,7 @@ mod tests {
     fn a_catalog_with_the_earlier_source_trigger_or_view_is_copied_into_the_current_layout() {
         let dir = test_folder(SCRATCH, "layout_source");
         let path = dir.join("catalog.sqlite");
-        drop(Catalog::open(&path).unwrap());
+        drop(Catalog::prepare(&path, versions()).unwrap());
         let fresh = Connection::open(&path).unwrap();
         assert!(current_layout(&fresh).unwrap());
         // The same names and counts, the text before the size was added: the layout check must refuse it.
@@ -1593,7 +1643,7 @@ mod tests {
         assert!(!current_layout(&earlier).unwrap());
         drop(earlier);
 
-        let c = Catalog::open(&path).unwrap();
+        let c = Catalog::prepare(&path, versions()).unwrap();
         assert!(current_layout(&c.conn).unwrap());
         let copied: String = c
             .conn
@@ -1620,7 +1670,7 @@ mod tests {
         )
         .unwrap();
         drop(conn);
-        let e = Catalog::open(&path).err().expect("refused");
+        let e = Catalog::prepare(&path, versions()).err().expect("refused");
         assert!(format!("{e:#}").contains("files.volume"), "{e:#}");
         let conn = Connection::open(&path).unwrap();
         assert_eq!(conn.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
@@ -1634,23 +1684,26 @@ mod tests {
         let path = dir.join("catalog.sqlite");
         let other = Connection::open(&path).unwrap();
         other.execute_batch(BEFORE_ORDER_KEY).unwrap();
-        let e = Catalog::open(&path).err().expect("refused");
+        let e = Catalog::prepare(&path, versions()).err().expect("refused");
         assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         drop(other);
-        assert!(Catalog::open(&path).is_ok(), "copied once nothing else has it open");
+        assert!(Catalog::prepare(&path, versions()).is_ok(), "copied once nothing else has it open");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn catalogs_have_their_own_id() {
-        let (a, b) = (Catalog::open(Path::new(":memory:")).unwrap(), Catalog::open(Path::new(":memory:")).unwrap());
+        let (a, b) = (
+            Catalog::prepare(Path::new(":memory:"), versions()).unwrap(),
+            Catalog::prepare(Path::new(":memory:"), versions()).unwrap(),
+        );
         assert_eq!(a.catalog_id().unwrap().len(), 32);
         assert_ne!(a.catalog_id().unwrap(), b.catalog_id().unwrap());
     }
 
     #[test]
     fn roots_never_nest() {
-        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         assert!(c.add_root(r"D:\a\b").unwrap());
         assert!(c.add_root(r"D:\a\bc").unwrap());
         assert!(!c.add_root(r"d:\A\b\c").unwrap(), "inside an existing root");
@@ -1663,7 +1716,7 @@ mod tests {
 
     #[test]
     fn cancelled_until_cleared() {
-        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         c.cancel_when(cancel.clone());
         let long =
@@ -1703,7 +1756,7 @@ mod tests {
 
     /// A catalog with one file in it.
     fn one_file() -> (Catalog, i64) {
-        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.conn
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
@@ -1742,7 +1795,7 @@ mod tests {
 
     #[test]
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed() {
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();
         let row = |c: &Catalog| -> (i64, String, i64, i64, i64, Vec<u8>) {
             c.conn
@@ -1779,13 +1832,14 @@ mod tests {
 
     #[test]
     fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed() {
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();
         let scan = c.begin_scan(r"D:\x").unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let stored = |c: &mut Catalog, item: &WorkItem| {
             let tx = c.conn.transaction().unwrap();
-            let stored = AnalysisWriter::new(&tx).unwrap().store_failure(item, "a stand-in").unwrap();
+            let stored =
+                AnalysisWriter::new(&tx, versions().import).unwrap().store_failure(item, "a stand-in").unwrap();
             tx.commit().unwrap();
             stored
         };
@@ -1820,7 +1874,7 @@ mod tests {
         // The scanner decides a file changed by its size and mtime, so a size change with the same mtime must reach
         // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
         use fixture::{File, insert};
-        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.conn
             .execute_batch("INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0); INSERT INTO folders(id, path) VALUES (1, 'D:\\x');")
             .unwrap();
@@ -1838,7 +1892,7 @@ mod tests {
     #[test]
     fn thumb_sources_is_the_analysed_files_with_their_folders() {
         use fixture::{File, insert};
-        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.conn
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0);
@@ -1904,7 +1958,7 @@ mod tests {
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
     fn analyzed(c: &mut Catalog, item: &WorkItem) {
         let tx = c.conn.transaction().unwrap();
-        AnalysisWriter::new(&tx).unwrap().store_failure(item, "a stand-in for an analysis").unwrap();
+        AnalysisWriter::new(&tx, versions().import).unwrap().store_failure(item, "a stand-in for an analysis").unwrap();
         tx.commit().unwrap();
     }
 
@@ -1920,7 +1974,7 @@ mod tests {
         use crate::query::{BorderFacet, Query, Sort};
         use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
 
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();
         let scan = c.begin_scan(r"D:\x").unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
@@ -1965,7 +2019,7 @@ mod tests {
             media: a_jpeg(),
         };
         let tx = c.conn.transaction().unwrap();
-        AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
+        AnalysisWriter::new(&tx, versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         let cut = |c: &Catalog| -> [Option<i64>; 4] {
             c.conn
@@ -2009,7 +2063,7 @@ mod tests {
 
         // A new detector: due again, without a new import; the mark stays.
         c.conn.execute("UPDATE meta SET value = 0 WHERE key = 'borders_version'", []).unwrap();
-        set_borders_version(&c.conn).unwrap();
+        set_borders_version(&c.conn, BORDERS_VERSION).unwrap();
         assert!(c.pending_import(false).unwrap().is_empty());
         let due = c.pending_borders().unwrap();
         assert_eq!(due.len(), 1);
@@ -2026,7 +2080,7 @@ mod tests {
         // Analyzed again (the file changed): the old borders go, the new ones are due.
         let tx = c.conn.transaction().unwrap();
         BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
-        AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
+        AnalysisWriter::new(&tx, versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [None; 4]);
         assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
@@ -2038,7 +2092,7 @@ mod tests {
         use crate::browse;
         use crate::query::{Query, Sort, SortKey};
 
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.add_root(r"D:\x").unwrap();
         let scan = c.begin_scan(r"D:\x").unwrap();
         // 400 × 300 stored. b: none; c: 30 of 300 at the top (10%); d: 60 of 400 at the left (15%), but turned a
@@ -2071,7 +2125,7 @@ mod tests {
                 media: a_jpeg(),
             };
             let tx = c.conn.transaction().unwrap();
-            AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
+            AnalysisWriter::new(&tx, versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
             BordersWriter::new(&tx).unwrap().store_borders(&item, Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {
@@ -2091,7 +2145,7 @@ mod tests {
 
     #[test]
     fn pending_follows_what_the_analysis_was_made_from() {
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         let scan = c.begin_scan(r"D:\x").unwrap();
         // New: pending.
         scanned(&mut c, scan, "a.jpg", 10, 100);
@@ -2153,7 +2207,7 @@ mod tests {
 
     #[test]
     fn a_folder_the_scan_could_not_list_keeps_its_files() {
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
             let tx = c.conn.transaction().unwrap();
             let mut writer = ScanWriter::new(&tx, scan).unwrap();
@@ -2186,7 +2240,7 @@ mod tests {
 
     #[test]
     fn files_marked_are_imported_again_once() {
-        let mut c = Catalog::open(Path::new(":memory:")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
         c.conn
             .execute_batch(
                 "INSERT INTO scans(id, root, started) VALUES (1, 'D:', 0);
@@ -2239,11 +2293,11 @@ mod tests {
             .unwrap();
         let (pending, seq) = state(&c, item.id);
         assert!(!pending, "current for that build");
-        set_import_version(&c.conn).unwrap();
+        set_import_version(&c.conn, IMPORT_VERSION).unwrap();
         let (pending, after) = state(&c, item.id);
         assert!(pending && after > seq);
         // Done once.
-        set_import_version(&c.conn).unwrap();
+        set_import_version(&c.conn, IMPORT_VERSION).unwrap();
         assert_eq!(state(&c, item.id).1, after);
     }
 
@@ -2286,7 +2340,7 @@ mod tests {
         let (c, id) = one_file();
         let sync = |in_file| {
             let tx = c.conn.unchecked_transaction().unwrap();
-            AnalysisWriter::new(&tx).unwrap().sync_file_rating(FileId::new(id), in_file).unwrap();
+            AnalysisWriter::new(&tx, versions().import).unwrap().sync_file_rating(FileId::new(id), in_file).unwrap();
             tx.commit().unwrap();
         };
         // First import of a file rated elsewhere (ImageRater, Explorer): adopted.

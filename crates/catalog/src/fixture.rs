@@ -25,6 +25,12 @@ impl File {
     }
 }
 
+/// The versions this build's analyses are stamped with, for [`Catalog::prepare`] in the tests of the crates around
+/// the catalog.
+pub fn versions() -> crate::Versions {
+    crate::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }
+}
+
 /// The catalog's connection, for the tests of the crates around the catalog, which check the tables a write left
 /// behind. Test-only (this module is behind the `fixture` feature): production code reads through the catalog's
 /// functions.

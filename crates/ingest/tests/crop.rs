@@ -73,7 +73,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     }
     let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "crop", &["images/sub"]);
     let files = make_files(&dir);
-    let mut c = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
     let ctl = Control::new(false);
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     c.add_root(&root).unwrap();

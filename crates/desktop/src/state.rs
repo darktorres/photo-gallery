@@ -55,7 +55,7 @@ thread_local! {
 pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
     std::fs::create_dir_all(&catalog_dir)?;
     let catalog_path = catalog_dir.join("catalog.sqlite");
-    let catalog = Catalog::open(&catalog_path)?;
+    let catalog = Catalog::prepare(&catalog_path, pg_ingest::versions())?;
     let catalog_id = catalog.catalog_id()?;
     // Kept for the GUI thread until `shutdown`: closing the last connection deletes the WAL, and the first QML object
     // would open it again.
@@ -92,12 +92,12 @@ pub fn shutdown() {
 }
 
 /// Run `f` with this thread's catalog connection (opened by `init` on the GUI thread; on a provider thread at its
-/// first request, and again after the pool ended it, 30 s idle: `Catalog::open_current`, without `open`'s checks).
+/// first request, and again after the pool ended it, 30 s idle: `Catalog::open`, without `prepare`'s checks).
 pub fn with_catalog<R>(f: impl FnOnce(&Catalog) -> Result<R>) -> Result<R> {
     CATALOG.with(|c| {
         let mut c = c.borrow_mut();
         if c.is_none() {
-            *c = Some(Catalog::open_current(&get().catalog_path)?);
+            *c = Some(Catalog::open(&get().catalog_path)?);
         }
         f(c.as_ref().unwrap())
     })

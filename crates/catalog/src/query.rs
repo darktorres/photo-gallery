@@ -737,7 +737,7 @@ impl Sort {
     }
 }
 
-/// SQL functions the conditions use, registered on every catalog connection (`Catalog::open`).
+/// SQL functions the conditions use, registered on every catalog connection (`Catalog::prepare`, `Catalog::open`).
 pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
     // Whether a name contains a text, ignoring case as Windows does (Unicode, unlike SQLite's LIKE).
     conn.create_scalar_function(

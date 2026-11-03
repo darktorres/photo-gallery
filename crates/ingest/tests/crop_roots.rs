@@ -36,7 +36,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop-roots");
-    let mut c = Catalog::open(&dir.join("catalog.sqlite")).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
     let ctl = Control::new(false);
     let opts = Options::new(pg_platform::priority::Priority::Normal);
 

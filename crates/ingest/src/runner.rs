@@ -242,12 +242,11 @@ impl Inner {
                 self.ctl.clear_stop();
                 (std::mem::take(&mut q.scans), std::mem::take(&mut q.crops))
             };
-            let done =
-                catalog.take().map_or_else(|| Catalog::open_current(&self.catalog_path), Ok).and_then(|mut c| {
-                    self.round(&mut c, roots.0, roots.1)?;
-                    catalog = Some(c);
-                    Ok(())
-                });
+            let done = catalog.take().map_or_else(|| Catalog::open(&self.catalog_path), Ok).and_then(|mut c| {
+                self.round(&mut c, roots.0, roots.1)?;
+                catalog = Some(c);
+                Ok(())
+            });
             if let Err(e) = done {
                 self.warn(format!("{e:#}"));
             }

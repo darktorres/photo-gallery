@@ -46,7 +46,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.tx()?;
-        let mut writer = tx.analysis_writer()?;
+        let mut writer = tx.analysis_writer(crate::versions().import)?;
         for (i, result) in batch.drain(..) {
             let item = &items[i];
             match result {

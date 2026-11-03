@@ -8,10 +8,10 @@ use std::path::Path;
 use anyhow::Result;
 use pg_analysis::analyze::Analyzer;
 use pg_core::catalog::{AnalysisWriter, Catalog};
-use pg_core::pdq_index::PdqIndex;
+use pg_dedup::Pairer;
 use pg_model::analysis::Analysis;
 use pg_model::media::Kind;
-use pg_model::pdq::{MATCH_DISTANCE, MIN_QUALITY};
+use pg_model::pdq::MIN_QUALITY;
 use pg_platform::verbatim::verbatim;
 
 use crate::control::Control;
@@ -36,15 +36,12 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         return Ok(stats);
     }
     let (ids, hashes) = catalog.pdq_hashes()?;
-    let mut index = PdqIndex::build(ids, hashes);
+    let mut pairer = Pairer::build(ids, hashes);
     // Every file of the list may add its 8 orientations.
-    index.reserve(items.len() * 8);
-    eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), index.len());
+    pairer.reserve(items.len() * 8);
+    eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), pairer.len());
 
     let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);
-    // Kept across files: one orientation's neighbours, and each neighbour's best (distance, orientation).
-    let mut found: Vec<(i64, u32)> = Vec::new();
-    let mut best: Vec<(i64, u32, usize)> = Vec::new();
     ctl.begin("import", String::new(), items.len() as u64);
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
@@ -59,16 +56,13 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                         continue;
                     }
                     if let Some(px) = a.image().map(|i| &i.pixels).filter(|px| px.pdq.quality >= MIN_QUALITY) {
-                        // The new image's 8 orientations against every stored orientation of the earlier ones:
-                        // the pair is found the same whichever image comes first. The best per neighbour.
-                        index.best_matches(&px.pdq_dihedral, MATCH_DISTANCE, &mut found, &mut best);
-                        for &(other, d, v) in &best {
-                            if other != item.id {
-                                writer.store_pdq_pair(item.id, other, d, v)?;
-                                stats.pairs += 1;
-                            }
+                        // The new image's 8 orientations against every stored orientation of the earlier ones,
+                        // then stored: the pair is found the same whichever image comes first, with the best per
+                        // neighbour.
+                        for &(other, d, v) in pairer.pair_and_insert(item.id, &px.pdq_dihedral) {
+                            writer.store_pdq_pair(item.id, other, d, v)?;
+                            stats.pairs += 1;
                         }
-                        index.insert_orientations(item.id, &px.pdq_dihedral);
                     }
                 }
                 Err(e) => {

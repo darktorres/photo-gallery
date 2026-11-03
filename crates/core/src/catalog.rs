@@ -864,7 +864,7 @@ impl Catalog {
     }
 
     /// The reliable PDQ hashes of current analyses (PLAN §6), as ids and hash words: `ids[i]`'s hash is `hashes[i]`, and
-    /// a file contributes its 8 orientations. The tier-1 index (`pdq_index::PdqIndex::build`) is made from them for each import.
+    /// a file contributes its 8 orientations. The tier-1 index (`pg_dedup::pdq_index::PdqIndex::build`) is made from them for each import.
     pub fn pdq_hashes(&self) -> Result<(Vec<i64>, Vec<[u64; 4]>)> {
         // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the
         // join below costs a quarter of reading it.

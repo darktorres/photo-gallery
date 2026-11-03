@@ -8,7 +8,6 @@ pub mod catalog;
 pub mod display;
 pub mod layout;
 pub mod maker;
-pub mod pdq_index;
 pub mod query;
 pub mod thumbs;
 pub mod yandex;

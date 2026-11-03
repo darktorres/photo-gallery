@@ -1477,6 +1477,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-dedup"
+version = "0.1.0"
+dependencies = [
+ "pg-model",
+]
+
+[[package]]
 name = "pg-desktop"
 version = "0.1.0"
 dependencies = [
@@ -1536,6 +1543,7 @@ dependencies = [
  "pg-analysis",
  "pg-codec",
  "pg-core",
+ "pg-dedup",
  "pg-edit",
  "pg-metadata",
  "pg-model",

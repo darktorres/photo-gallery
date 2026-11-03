@@ -32,3 +32,18 @@ impl FolderId {
         self.0
     }
 }
+
+/// A library folder's row in the catalog (`roots.id`).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct RootId(i64);
+
+impl RootId {
+    pub const fn new(id: i64) -> RootId {
+        RootId(id)
+    }
+
+    /// The row number, for binding it in a statement or reading it from a row.
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}

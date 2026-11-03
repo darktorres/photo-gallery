@@ -33,7 +33,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction,
 use pg_model::analysis::Analysis;
 use pg_model::detection::Detection;
 use pg_model::format::Format;
-use pg_model::ids::{FileId, FolderId};
+use pg_model::ids::{FileId, FolderId, RootId};
 use pg_model::media::{Ext, Kind};
 use pg_model::path::is_under;
 use pg_model::path::{FilePath, PathArena, PathRef, WorkList};
@@ -223,8 +223,9 @@ CREATE VIEW thumb_clock AS SELECT value AS seq FROM meta WHERE key = 'seq';
 
 -- The library: folders the user added, which a rescan walks again. None is inside another.
 CREATE TABLE roots(
-    path  TEXT PRIMARY KEY,  -- absolute, no trailing backslash
-    added INTEGER NOT NULL   -- Unix seconds
+    id    INTEGER PRIMARY KEY,
+    path  TEXT NOT NULL UNIQUE,  -- absolute, no trailing backslash
+    added INTEGER NOT NULL       -- Unix seconds
 );
 
 -- Ratings: the catalog is the source of truth, for every format (PLAN §2). Unrated files have no row.
@@ -398,6 +399,7 @@ const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE typ
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq', 'changed'))
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))
+     + (SELECT count(*) FROM pragma_table_info('roots') WHERE name = 'id' AND pk = 1)
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name IN ('thumb_sources', 'thumb_clock'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name = 'thumb_sources' AND sql LIKE '%f.size, f.missing%')
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name = 'files_source_changed'
@@ -406,7 +408,7 @@ const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE typ
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name IN ('ratings_stamp_insert',
         'ratings_stamp_update', 'ratings_stamp_delete', 'border_marks_stamp_insert', 'border_marks_stamp_delete',
         'file_writes_stamp_insert', 'file_writes_stamp_update', 'file_writes_stamp_delete'))";
-const LAYOUT_PARTS: i64 = 24;
+const LAYOUT_PARTS: i64 = 25;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[
@@ -432,7 +434,17 @@ const FILLED: &[(&str, &str, &str)] = &[
     ("files", "order_key", "pg_order_key((SELECT path FROM old.folders WHERE id = o.folder_id), o.name)"),
     ("analysis", "rotation", "(SELECT rotation FROM old.files WHERE id = o.file_id)"),
     ("analysis", "kind", "(SELECT kind FROM old.files WHERE id = o.file_id)"),
+    // A root kept its row when the earlier layout had no id: the row number stands for it.
+    ("roots", "id", "o.rowid"),
 ];
+
+/// A library folder: the user added it, and a rescan walks it again.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Root {
+    pub id: RootId,
+    /// Absolute, with no trailing backslash.
+    pub path: String,
+}
 
 pub struct Catalog {
     conn: Connection,
@@ -918,38 +930,46 @@ impl Catalog {
         Ok(marked)
     }
 
-    /// The library folders, by path.
-    pub fn roots(&self) -> Result<Vec<String>> {
-        let mut stmt = self.conn.prepare("SELECT path FROM roots ORDER BY path")?;
-        let rows = stmt.query_map([], |r| r.get(0))?;
+    /// The library folders, by path, with their ids.
+    pub fn roots(&self) -> Result<Vec<Root>> {
+        let mut stmt = self.conn.prepare("SELECT id, path FROM roots ORDER BY path")?;
+        let rows = stmt.query_map([], |r| Ok(Root { id: RootId::new(r.get(0)?), path: r.get(1)? }))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
+    }
+
+    /// The id of a library folder, by its path; `None` when the path is not one.
+    pub fn root_id(&self, path: &str) -> Result<Option<RootId>> {
+        let id: Option<i64> =
+            self.conn.query_row("SELECT id FROM roots WHERE path = ?1", [path], |r| r.get(0)).optional()?;
+        Ok(id.map(RootId::new))
     }
 
     /// Add a folder to the library. A folder already inside the library adds nothing (returns false); one that
     /// contains library folders replaces them.
     pub fn add_root(&self, root: &str) -> Result<bool> {
         let roots = self.roots()?;
-        if roots.iter().any(|r| is_under(root, r)) {
+        if roots.iter().any(|r| is_under(root, &r.path)) {
             return Ok(false);
         }
-        for r in roots.iter().filter(|r| is_under(r, root)) {
-            self.conn.execute("DELETE FROM roots WHERE path = ?1", [r])?;
+        for r in roots.iter().filter(|r| is_under(&r.path, root)) {
+            self.conn.execute("DELETE FROM roots WHERE id = ?1", [r.id.get()])?;
         }
         self.conn.execute("INSERT INTO roots(path, added) VALUES (?1, unixepoch())", [root])?;
         Ok(true)
     }
 
     /// Take a folder out of the library. Its files are marked missing, not deleted: adding it back (or the drive
-    /// returning) brings them back with their analysis and ratings. Returns how many files it hid.
-    /// Its files are missing from now on. `None`, with nothing changed, when `root` is not a library folder.
-    pub fn remove_root(&self, root: &str) -> Result<Option<usize>> {
+    /// returning) brings them back with their analysis and ratings. Returns how many files it hid; `None`, with
+    /// nothing changed, when `root` is not a library folder.
+    pub fn remove_root(&self, root: RootId) -> Result<Option<usize>> {
         let tx = self.conn.unchecked_transaction()?;
-        if tx.execute("DELETE FROM roots WHERE path = ?1", [root])? == 0 {
-            return Ok(None);
-        }
+        let path: Option<String> =
+            tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
+        let Some(path) = path else { return Ok(None) };
+        tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
         let n = tx.execute(
             concat!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN (", under_root!(), ")"),
-            [root],
+            [path.as_str()],
         )?;
         tx.commit()?;
         Ok(Some(n))
@@ -1596,6 +1616,8 @@ mod tests {
         };
         // The user's own: the library, ratings, the queued turn, views and session, with the same file ids.
         assert_eq!(rows("SELECT path FROM roots"), [r"D:\p"]);
+        // The row number of the old layout is the root's id now.
+        assert_eq!(rows("SELECT id || ' ' || path FROM roots"), [r"1 D:\p"]);
         assert_eq!(rows("SELECT file_id || ':' || rating FROM ratings ORDER BY 1"), ["11:4", "13:1"]);
         assert_eq!(rows("SELECT file_id || ':' || value FROM file_ratings"), ["11:4"]);
         assert_eq!(rows("SELECT file_id || kind || value FROM file_writes"), ["12rotation1"]);
@@ -1714,10 +1736,12 @@ mod tests {
         assert!(c.add_root(r"D:\a\bc").unwrap());
         assert!(!c.add_root(r"d:\A\b\c").unwrap(), "inside an existing root");
         assert!(c.add_root(r"D:\a").unwrap(), "replaces both");
-        assert_eq!(c.roots().unwrap(), [r"D:\a"]);
-        assert_eq!(c.remove_root(r"D:\a").unwrap(), Some(0));
-        assert!(c.roots().unwrap().is_empty());
-        assert_eq!(c.remove_root(r"D:\a").unwrap(), None, "not a library folder any more");
+        let paths = |c: &Catalog| c.roots().unwrap().into_iter().map(|r| r.path).collect::<Vec<_>>();
+        assert_eq!(paths(&c), [r"D:\a"]);
+        let id = c.root_id(r"D:\a").unwrap().expect("a library folder has an id");
+        assert_eq!(c.remove_root(id).unwrap(), Some(0));
+        assert!(paths(&c).is_empty());
+        assert_eq!(c.remove_root(id).unwrap(), None, "not a library folder any more");
     }
 
     #[test]

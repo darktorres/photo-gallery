@@ -139,7 +139,7 @@ pub struct LibraryRust {
 }
 
 fn library_roots() -> Vec<String> {
-    state::with_catalog(|c| c.roots()).unwrap_or_else(|e| {
+    state::with_catalog(|c| Ok(c.roots()?.into_iter().map(|r| r.path).collect())).unwrap_or_else(|e| {
         eprintln!("library: {e:#}");
         Vec::new()
     })
@@ -195,7 +195,12 @@ impl qobject::Library {
     }
 
     fn remove_folder(mut self: Pin<&mut Self>, path: &QString) {
-        if let Err(e) = state::with_catalog(|c| c.remove_root(&path.to_string())) {
+        let path = path.to_string();
+        let removed = state::with_catalog(|c| match c.root_id(&path)? {
+            Some(id) => c.remove_root(id),
+            None => Ok(None),
+        });
+        if let Err(e) = removed {
             return self.show(format!("{e:#}"), true);
         }
         // A scan of it in progress stops; the job skips folders no longer in the library.

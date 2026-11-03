@@ -278,7 +278,7 @@ impl Inner {
             }
         }
 
-        let library = catalog.roots()?;
+        let library: Vec<String> = catalog.roots()?.into_iter().map(|r| r.path).collect();
         for (i, root) in roots.iter().enumerate() {
             // Removed from the library since it was asked for.
             if !library.iter().any(|l| is_under(root, l)) {

@@ -167,7 +167,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     match cli.command {
         Command::Scan { roots } => {
             let roots = if roots.is_empty() {
-                catalog.roots()?
+                catalog.roots()?.into_iter().map(|r| r.path).collect()
             } else {
                 let mut normalized = Vec::new();
                 for root in roots {
@@ -196,7 +196,11 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
             // the catalog's, and the catalog says whether it is a library folder.
             let root = scan::normalize_path(&root).unwrap_or(root);
-            match catalog.remove_root(&root)? {
+            let removed = match catalog.root_id(&root)? {
+                Some(id) => catalog.remove_root(id)?,
+                None => None,
+            };
+            match removed {
                 Some(n) => println!("{root}: removed from the library, {n} files hidden"),
                 None => anyhow::bail!("{root}: not in the library"),
             }
@@ -251,7 +255,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
         }
         Command::Status => {
             for root in catalog.roots()? {
-                println!("library: {root}");
+                println!("library: {}", root.path);
             }
             let s = catalog.status()?;
             println!(

@@ -38,7 +38,7 @@ struct Job {
 /// Save cropped copies of `ids` under `folder`.
 pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
     let folder = folder.to_string_lossy().trim_end_matches('\\').to_string();
-    let roots = catalog.roots()?;
+    let roots: Vec<String> = catalog.roots()?.into_iter().map(|r| r.path).collect();
     let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
     let mut paths = PathArena::default();

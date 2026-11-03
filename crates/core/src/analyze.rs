@@ -176,7 +176,8 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
     ThumbHash::encoded(bytes, len)
 }
 
-/// A video's analysis (the file's hash, its probe, and its poster frame's ThumbHash): what the import stores.
+/// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
+/// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
 pub fn video(path: &Path, turns: u8, analyzer: &mut Analyzer) -> Result<Analysis> {
     let result = analyze_video(path, turns, analyzer);
     analyzer.trim();

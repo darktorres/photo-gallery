@@ -293,7 +293,6 @@ fn yp_cookie() -> String {
     format!("yp={}.szm.1:1920x1080:1920x937", now + 31_536_000)
 }
 
-/// The URL without its scheme: `avatars.mds.yandex.net/get-images-cbir/…/orig`.
 /// `host/path` of a URL, without the scheme and the query, as the crawler's `netloc + path`.
 fn host_and_path(url: &str) -> &str {
     let rest = url.split_once("://").map_or(url, |(_, rest)| rest);

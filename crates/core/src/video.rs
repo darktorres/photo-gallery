@@ -257,8 +257,6 @@ pub fn file_hash(path: &Path) -> Result<[u8; 32]> {
     Ok(*hasher.finalize().as_bytes())
 }
 
-/// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
-/// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
 #[cfg(test)]
 mod tests {
     use super::*;

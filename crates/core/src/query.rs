@@ -793,6 +793,7 @@ pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
 }
 
 /// Whether `name` contains `text`, both in lower case (Unicode): `name.to_lowercase().contains(&text.to_lowercase())`.
+#[cfg(test)]
 pub fn contains_ignoring_case(name: &str, text: &str) -> bool {
     Needle::new(text).found_in(name)
 }

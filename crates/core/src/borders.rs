@@ -158,12 +158,12 @@ fn detect_with(d: &mut Detector, img: &Rgb, p: &Params) -> Detection {
                     }
                     continue;
                 }
-                let d = side.depth as usize;
+                let depth = side.depth as usize;
                 match side.edge {
-                    Edge::Top => content[1] += d,
-                    Edge::Bottom => content[3] -= d,
-                    Edge::Left => content[0] += d,
-                    Edge::Right => content[2] -= d,
+                    Edge::Top => content[1] += depth,
+                    Edge::Bottom => content[3] -= depth,
+                    Edge::Left => content[0] += depth,
+                    Edge::Right => content[2] -= depth,
                 }
                 sides.push(side);
                 changed = true;

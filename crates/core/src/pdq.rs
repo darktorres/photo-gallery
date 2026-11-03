@@ -43,10 +43,6 @@ impl Hash {
     pub fn words(&self) -> [u64; 4] {
         std::array::from_fn(|i| u64::from_le_bytes(self.0[i * 8..i * 8 + 8].try_into().unwrap()))
     }
-
-    pub fn to_hex(&self) -> String {
-        self.0.iter().map(|b| format!("{b:02x}")).collect()
-    }
 }
 
 pub struct Pdq {

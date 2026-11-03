@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use pg_catalog::Catalog;
-use pg_ingest::{borders, crop, import, scan};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_library::{borders, crop, import, scan};
 use pg_model::ids::FileId;
 
 /// A letterboxed picture (black bars at the top and bottom, the content between them).
@@ -36,7 +36,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop-roots");
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions()).unwrap();
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
 

@@ -7,7 +7,7 @@ known to behave; none of it was tested against this code.
 
 ## What assumes NTFS
 
-The scanner (`crates/ingest/src/scan.rs`) lists folders with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`
+The scanner (`crates/library/src/scan.rs`) lists folders with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`
 and takes each entry's 64-bit `FileId` as the file's identity: `files(volume, file_ref)` is `UNIQUE`
 (`crates/catalog/src/lib.rs:90,104`), and the scan upserts on it (`ON CONFLICT(volume, file_ref)`,
 `crates/catalog/src/lib.rs:965`), so a moved or renamed file keeps its row and its analysis. `volume` is the root's

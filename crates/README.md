@@ -7,9 +7,10 @@ See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.
   sorts, saved views), the justified layout, ratings, reading XMP/EXIF ratings (`metadata`), lossless
   rotation (`rotate`), the border detector (`borders`) and cropping (`crop`; both rewrite a file's pixels in its
   own format through `rewrite`). No UI dependency.
-- `ingest` (`pg-ingest`): the passes over the originals (scan, import, borders, thumbnails, cropped copies), the
+- `library` (`pg-library`): the passes over the originals (scan, import, borders, thumbnails, cropped copies), the
   app's background job that runs them, the writer that puts ratings and turns into the files (`writeback`), and
-  the command line.
+- `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
+  borders and duplicates reports.
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
   flat folder), the image providers and the GPU device.
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
@@ -22,7 +23,7 @@ Needs CMake and NASM (libjpeg-turbo is built from source by the `turbojpeg` crat
 (`C:\Qt\6.12.0\msvc2022_64`, set in `.cargo/config.toml`), with the **Qt Image Formats** add-on: the Yandex panel
 shows remote previews through Qt's decoders, and without its `qwebp` plugin WebP results stay blank. Writing ratings into files needs
 [ExifTool](https://exiftool.org) on `PATH` (or `PG_EXIFTOOL`); without it they stay queued and the bottom bar
-says why. Its test (`crates/ingest/tests/writeback.rs`) works on generated files in
+says why. Its test (`crates/library/tests/writeback.rs`) works on generated files in
 `D:\PhotoGallery\scratch_rate` (`PG_TEST_DIR`), and skips itself without ExifTool.
 
 Videos go through FFmpeg 9, our own copy rather than the one Qt bundles: BtbN's prebuilt `gpl-shared` package
@@ -32,7 +33,7 @@ video test needs. The app is linked against this GPL build, so a distributed bui
 is not distributed. Its bindings are generated with libclang (LLVM,
 `LIBCLANG_PATH`). `pg-core`'s build script copies its DLLs next to the binaries. Qt Multimedia plays videos with
 the same DLLs: Qt 6.12 is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
---no-ffmpeg`. The video test (`crates/ingest/tests/video.rs`) makes its clips and animations with the same `ffmpeg` command line,
+--no-ffmpeg`. The video test (`crates/library/tests/video.rs`) makes its clips and animations with the same `ffmpeg` command line,
 found on `PATH` (the tools folder's `bin` is on it), or at `PG_FFMPEG` if that is set. The clips go in
 `D:\PhotoGallery\scratch_video`, and the test skips itself without an ffmpeg.
 
@@ -52,7 +53,7 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 `QT_FORCE_STDERR_LOGGING=1` is set.
 
 `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
-(the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and `pg-ingest`;
+(the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and `pg-library`;
 `cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or
 function the QML compiler (qmlcachegen, as the build runs it) leaves to the interpreter instead of compiling to C++.
 It reads the Rust types from the last build, so build first (`tools/lint-qml.ps1` says why it lints a copy of the

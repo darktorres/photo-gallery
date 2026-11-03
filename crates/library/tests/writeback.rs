@@ -11,10 +11,10 @@ use std::time::{Duration, Instant};
 use pg_catalog::Catalog;
 use pg_codec::decode::{Decoder, MinSize, orient};
 use pg_codec::pixels::Rgb;
-use pg_ingest::writeback::Writer;
-use pg_ingest::{import, scan};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_library::writeback::Writer;
+use pg_library::{import, scan};
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
@@ -90,7 +90,7 @@ fn ratings_and_turns_reach_the_files() {
     let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "writeback", &["images"]);
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
@@ -212,7 +212,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
@@ -288,7 +288,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();
@@ -339,7 +339,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();

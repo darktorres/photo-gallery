@@ -1,6 +1,9 @@
 //! The command line of `gallery.exe` (`gallery scan`, `gallery import`, …): the app's passes without the window,
 //! for scripts, profiling and checking results. Progress goes to stderr.
 
+mod borders;
+mod dups;
+
 use pg_model::ids::FileId;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -12,18 +15,16 @@ use pg_catalog::Catalog;
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
-use crate::writeback::Writer;
-use crate::{borders, dups, import, scan, thumbs};
 use pg_jobs::control::{Control, Event, Phase, Progress};
 use pg_jobs::pipeline;
-
-pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
+use pg_library::writeback::Writer;
+use pg_library::{import, scan, thumbs};
 
 #[derive(Parser)]
 #[command(name = "gallery", version, about = "Photo gallery. Without a command, opens the app.")]
 struct Cli {
     /// Folder holding catalog.sqlite and the thumbnail cache (on D:, never C:).
-    #[arg(long, env = "PG_CATALOG_DIR", default_value = DEFAULT_CATALOG_DIR)]
+    #[arg(long, env = "PG_CATALOG_DIR", default_value = pg_library::DEFAULT_CATALOG_DIR)]
     catalog_dir: PathBuf,
     #[command(subcommand)]
     command: Command,
@@ -213,7 +214,7 @@ fn phase_label(phase: &Phase) -> String {
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     let catalog_path = cli.catalog_dir.join("catalog.sqlite");
-    let mut catalog = Catalog::prepare(&catalog_path, crate::versions())?;
+    let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions())?;
     let start = Instant::now();
 
     match cli.command {
@@ -304,7 +305,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
                 println!("{marked} files marked as not a border; {unknown} not in the catalog");
             } else {
-                let s = borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
+                let s = pg_library::borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
                 println!(
                     "borders looked for in {} files ({} failed), {:.1} s",
                     s.files,
@@ -413,7 +414,7 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
 }
 
 /// The first failures a pass kept, one per line on stderr, under `what`.
-fn print_failures(what: &str, failures: &[crate::Failure]) {
+fn print_failures(what: &str, failures: &[pg_library::Failure]) {
     for f in failures {
         eprintln!("{what}: {}: {}", f.path, f.error);
     }

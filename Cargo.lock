@@ -1451,6 +1451,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-cli"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "pg-analysis",
+ "pg-catalog",
+ "pg-codec",
+ "pg-jobs",
+ "pg-library",
+ "pg-model",
+ "pg-platform",
+ "pg-thumbcache",
+ "serde_json",
+]
+
+[[package]]
 name = "pg-codec"
 version = "0.1.0"
 dependencies = [
@@ -1497,8 +1514,8 @@ dependencies = [
  "pg-catalog",
  "pg-codec",
  "pg-core",
- "pg-ingest",
  "pg-jobs",
+ "pg-library",
  "pg-model",
  "pg-platform",
  "pg-render",
@@ -1541,18 +1558,27 @@ name = "pg-gallery"
 version = "0.1.0"
 dependencies = [
  "dhat",
+ "pg-cli",
  "pg-desktop",
- "pg-ingest",
  "windows-sys",
  "winres",
 ]
 
 [[package]]
-name = "pg-ingest"
+name = "pg-jobs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "clap",
+ "crossbeam-channel",
+ "pg-platform",
+ "pg-testkit",
+]
+
+[[package]]
+name = "pg-library"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
  "image 0.25.10",
  "pg-analysis",
  "pg-catalog",
@@ -1569,17 +1595,6 @@ dependencies = [
  "pg-thumbcache",
  "pg-video",
  "rusqlite",
- "serde_json",
-]
-
-[[package]]
-name = "pg-jobs"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "crossbeam-channel",
- "pg-platform",
- "pg-testkit",
 ]
 
 [[package]]

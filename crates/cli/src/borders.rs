@@ -1,9 +1,8 @@
-//! Borders (pg_analysis::borders): the pass after the import that looks for them in the files it analyzed, and in
-//! every file after a new detector (`analysis.borders_due`), each decoded at full size; reports on any files, in
-//! the Python prototype's columns (`tools/borders.py`, in git history); the detector for images piped in (the eval's
-//! `--trim`); and the review marks of the eval viewer's former Borders page taken into the catalog.
+//! The borders tools of the command line: a report on the borders the detector finds in files outside the library
+//! (in the Python prototype's `report.csv` columns, so the two can be compared), the detector for images piped in
+//! (`--stdin`, for the eval), and the review marks of the eval viewer's former Borders page taken into the catalog
+//! (`--import-review`). The pass that looks for the borders due in the library is `pg_library::borders`.
 
-use pg_model::turns::Turns;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -13,79 +12,12 @@ use pg_analysis::analyze::{Analyzer, FileBorders};
 use pg_analysis::borders::{self as detector, Detector};
 use pg_catalog::Catalog;
 use pg_codec::pixels::Rgb;
-use pg_model::detection::{self, Side};
-use pg_model::media::{Ext, Kind};
-use pg_platform::verbatim::verbatim_wide;
-
 use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
-
-const BATCH: usize = 500;
-
-pub struct Stats {
-    pub files: usize,
-    pub failed: usize,
-}
-
-/// Look for the borders that are due, committing in batches (stopping loses at most the batch).
-pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stats> {
-    let work = catalog.pending_borders()?;
-    let items = &work.items;
-    let mut stats = Stats { files: 0, failed: 0 };
-    if items.is_empty() {
-        return Ok(stats);
-    }
-    ctl.begin(Phase::Borders, items.len() as u64);
-    let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
-    let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
-        let tx = catalog.tx()?;
-        let mut writer = tx.borders_writer()?;
-        for (i, result) in batch.drain(..) {
-            stats.files += 1;
-            let found = match result {
-                Ok(b) => b.borders,
-                // Couldn't be read (a locked file, an offline drive): nothing is stored, so the file stays due and the
-                // next pass tries it again. Storing "no borders" here would hide it until BORDERS_VERSION changed (R-47).
-                Err(e) if e.downcast_ref::<std::io::Error>().is_some() => {
-                    stats.failed += 1;
-                    continue;
-                }
-                // It doesn't decode: no borders, for the file as it is; the import records the failure.
-                Err(_) => {
-                    stats.failed += 1;
-                    None
-                }
-            };
-            writer.store_borders(&items[i], found.as_ref())?;
-        }
-        drop(writer);
-        tx.commit()?;
-        Ok(())
-    };
-    pipeline::run(
-        items,
-        |item, wide| {
-            let [folder, name] = work.parts(item.path);
-            pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
-            true
-        },
-        opts,
-        ctl,
-        Analyzer::new,
-        |analyzer, i, bytes| analyzer.borders(bytes, items[i].rotation),
-        |i, result, len| {
-            ctl.add(len, result.is_err());
-            batch.push((i, result));
-            if batch.len() >= BATCH {
-                flush(&mut batch, &mut stats)?;
-            }
-            Ok(true)
-        },
-    )?;
-    flush(&mut batch, &mut stats)?;
-    ctl.finish();
-    Ok(stats)
-}
+use pg_model::detection::{self, Reason, Side};
+use pg_model::media::{Ext, Kind};
+use pg_model::turns::Turns;
+use pg_platform::verbatim::verbatim_wide;
 
 pub struct ReportStats {
     pub files: usize,
@@ -164,7 +96,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
                 Ok(FileBorders { width, height, borders: Some(d) }) => {
                     let describe = |accepted: bool| {
                         let sides: Vec<String> =
-                            d.sides.iter().filter(|s| s.accepted() == accepted).map(Side::describe).collect();
+                            d.sides.iter().filter(|s| s.accepted() == accepted).map(describe_side).collect();
                         field(&sides.join("; "))
                     };
                     let status = if d.found() {
@@ -255,6 +187,32 @@ pub fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)>
         }
     }
     Ok((marked, unknown))
+}
+
+/// The prototype's `Side.describe()`, for reports compared with its own.
+fn describe_side(side: &Side) -> String {
+    let kind = match (side.kind, side.color) {
+        (detection::Kind::Solid, Some([r, g, b])) => format!(
+            "solid #{r:02x}{g:02x}{b:02x} dev {:.0} drift {:.0}",
+            side.dev.unwrap_or(0.0),
+            side.drift.unwrap_or(0.0)
+        ),
+        _ => "blur".to_string(),
+    };
+    let verdict = side.rejected.map(|r| format!(" [{}]", reason_text(r))).unwrap_or_default();
+    format!("{}: {kind} {}px straight {:.2}{verdict}", side.edge.key(), side.depth, side.straight)
+}
+
+/// The prototype's words for a rejection.
+fn reason_text(reason: Reason) -> &'static str {
+    match reason {
+        Reason::TooDeep => "too deep",
+        Reason::NoSeam => "no seam",
+        Reason::SeamNotStraight => "seam not straight",
+        Reason::UnpairedBlur => "blurred bar without an equal opposite bar",
+        Reason::NotFlat => "not flat (shading: wall or sky?)",
+        Reason::TooLittleLeft => "too little content left",
+    }
 }
 
 #[cfg(test)]

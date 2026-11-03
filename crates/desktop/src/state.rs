@@ -55,7 +55,7 @@ thread_local! {
 pub fn init(catalog_dir: PathBuf, thumb_cap_bytes: Option<i64>) -> Result<()> {
     std::fs::create_dir_all(&catalog_dir)?;
     let catalog_path = catalog_dir.join("catalog.sqlite");
-    let catalog = Catalog::prepare(&catalog_path, pg_ingest::versions())?;
+    let catalog = Catalog::prepare(&catalog_path, pg_library::versions())?;
     let catalog_id = catalog.catalog_id()?;
     // Kept for the GUI thread until `shutdown`: closing the last connection deletes the WAL, and the first QML object
     // would open it again.

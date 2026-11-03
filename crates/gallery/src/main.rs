@@ -1,13 +1,11 @@
 //! `gallery`: the photo gallery (PLAN §7). Without arguments it opens the app (crates/desktop), which imports the library
-//! in the background; with a command (`gallery scan`, `gallery import`, … see `pg_ingest::cli`) it runs that pass on
+//! in the background; with a command (`gallery scan`, `gallery import`, … see `pg_cli`) it runs that pass on
 //! the command line instead. Without the `desktop` feature only the commands run.
 
 // A GUI program: no console window when started from Explorer. The command line attaches to its caller's console.
 #![windows_subsystem = "windows"]
 
 use std::ffi::OsString;
-
-use pg_ingest::cli;
 
 // The heap profiler's build (docs/PROFILING.md "Tool: dhat"). It sees Rust's allocations only: Qt's and FFmpeg's go
 // to the C runtime's heap.
@@ -24,9 +22,9 @@ fn main() {
         dhat::Profiler::builder().trim_backtraces(frames).build()
     };
     let args: Vec<OsString> = std::env::args_os().collect();
-    if cli::wants_cli(&args[1..]) {
+    if pg_cli::wants_cli(&args[1..]) {
         attach_console();
-        if let Err(e) = cli::main(args) {
+        if let Err(e) = pg_cli::main(args) {
             eprintln!("error: {e:#}");
             std::process::exit(1);
         }

@@ -1,5 +1,5 @@
 //! The desktop app (PLAN §7): the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it with `run` when it's
-//! given no command; everything below the QML lives in `pg-core` and `pg-ingest`.
+//! given no command; everything below the QML lives in `pg-core` and `pg-library`.
 
 mod animation;
 mod app_icon;
@@ -27,7 +27,6 @@ use std::path::PathBuf;
 
 use cxx_qt::casting::Upcast;
 use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
-use pg_ingest::cli;
 
 /// Opens the app with the program's arguments (the program's name first). Returns when its window closes.
 pub fn run(args: &[OsString]) {
@@ -41,8 +40,8 @@ pub fn run(args: &[OsString]) {
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
     let mut gpu: cxx::UniquePtr<gpu_device::ffi::GpuDevice>;
-    let catalog_dir =
-        std::env::var_os("PG_CATALOG_DIR").map_or_else(|| PathBuf::from(cli::DEFAULT_CATALOG_DIR), PathBuf::from);
+    let catalog_dir = std::env::var_os("PG_CATALOG_DIR")
+        .map_or_else(|| PathBuf::from(pg_library::DEFAULT_CATALOG_DIR), PathBuf::from);
     panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.

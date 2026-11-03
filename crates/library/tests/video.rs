@@ -14,9 +14,9 @@ use pg_analysis::analyze;
 use pg_catalog::Catalog;
 use pg_codec::animation;
 use pg_codec::pixels::Rgb;
-use pg_ingest::{import, scan, thumbs};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_library::{import, scan, thumbs};
 use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
 use pg_model::turns::Turns;
@@ -167,7 +167,7 @@ fn videos() {
     assert_eq!(poster_ms(3_600_000), 10_000);
 
     // The library passes: scan, import, thumbnails.
-    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
+    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&media.to_string_lossy()).unwrap();
     catalog.add_root(&root).unwrap();

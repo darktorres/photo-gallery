@@ -5,9 +5,9 @@
 use std::path::Path;
 
 use pg_catalog::Catalog;
-use pg_ingest::{borders, import, scan};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_library::{borders, import, scan};
 
 fn due(c: &Catalog, name: &str) -> i64 {
     pg_catalog::fixture::connection(c)
@@ -33,7 +33,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
             .unwrap();
     }
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&images.to_string_lossy()).unwrap();
     scan::scan(&mut c, &root, &ctl).unwrap();

@@ -28,7 +28,7 @@ pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }
 pg-video = { path = "../video" }
 pg-yandex = { path = "../yandex" }
-pg-ingest = { path = "../ingest" }
+pg-library = { path = "../library" }
 pg-jobs = { path = "../jobs" }
 anyhow.workspace = true
 cxx = "1"

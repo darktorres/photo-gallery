@@ -15,7 +15,7 @@ path = "src/main.rs"
 test = false
 
 [dependencies]
-pg-ingest = { path = "../ingest" }
+pg-cli = { path = "../cli" }
 # The app window. Without it `gallery` runs only its commands, and builds without Qt.
 pg-desktop = { path = "../desktop", optional = true }
 windows-sys.workspace = true

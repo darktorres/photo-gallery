@@ -116,18 +116,6 @@ impl Reason {
     pub fn from_key(key: &str) -> Option<Reason> {
         key.parse().ok()
     }
-
-    /// The prototype's words for it.
-    pub fn text(self) -> &'static str {
-        match self {
-            Reason::TooDeep => "too deep",
-            Reason::NoSeam => "no seam",
-            Reason::SeamNotStraight => "seam not straight",
-            Reason::UnpairedBlur => "blurred bar without an equal opposite bar",
-            Reason::NotFlat => "not flat (shading: wall or sky?)",
-            Reason::TooLittleLeft => "too little content left",
-        }
-    }
 }
 
 /// A border found on one side, accepted or not.
@@ -157,20 +145,6 @@ impl Side {
 
     pub fn class(&self) -> Class {
         Class::of(self.kind, self.color.unwrap_or([128; 3]))
-    }
-
-    /// The prototype's `Side.describe()`, for reports compared with its own.
-    pub fn describe(&self) -> String {
-        let kind = match (self.kind, self.color) {
-            (Kind::Solid, Some([r, g, b])) => format!(
-                "solid #{r:02x}{g:02x}{b:02x} dev {:.0} drift {:.0}",
-                self.dev.unwrap_or(0.0),
-                self.drift.unwrap_or(0.0)
-            ),
-            _ => "blur".to_string(),
-        };
-        let verdict = self.rejected.map(|r| format!(" [{}]", r.text())).unwrap_or_default();
-        format!("{}: {kind} {}px straight {:.2}{verdict}", self.edge.key(), self.depth, self.straight)
     }
 }
 

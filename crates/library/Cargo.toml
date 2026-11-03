@@ -1,0 +1,29 @@
+[package]
+name = "pg-library"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pg-catalog = { path = "../catalog" }
+pg-thumbcache = { path = "../thumbcache" }
+pg-render = { path = "../render" }
+pg-model = { path = "../model" }
+pg-analysis = { path = "../analysis" }
+pg-dedup = { path = "../dedup" }
+pg-codec = { path = "../codec" }
+pg-edit = { path = "../edit" }
+pg-exiftool = { path = "../exiftool" }
+pg-video = { path = "../video" }
+pg-metadata = { path = "../metadata" }
+pg-platform = { path = "../platform" }
+pg-jobs = { path = "../jobs" }
+anyhow.workspace = true
+rusqlite.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+pg-testkit = { path = "../testkit" }

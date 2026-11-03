@@ -10,9 +10,9 @@ use std::path::Path;
 
 use pg_catalog::Catalog;
 use pg_codec::decode::{Decoder, MinSize};
-use pg_ingest::{borders, crop, import, scan};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
+use pg_library::{borders, crop, import, scan};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::path::PathArena;
@@ -73,7 +73,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     }
     let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "crop", &["images/sub"]);
     let files = make_files(&dir);
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_ingest::versions()).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions()).unwrap();
     let ctl = Control::new();
     let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
     c.add_root(&root).unwrap();

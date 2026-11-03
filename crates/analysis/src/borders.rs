@@ -2,7 +2,7 @@
 //! padding bars (a blurred, enlarged copy of the image filling the letterbox). A port of the Python prototype that
 //! measured them (`tools/borders.py`, removed once this matched it file for file; in git history), run on the stored
 //! pixels at full size (no EXIF orientation: a crop of the stored image keeps the tag
-//! valid), by a pass of its own after the import (`pg_ingest::borders`).
+//! valid), by a pass of its own after the import (`pg_library::borders`).
 //!
 //! Per side (top, bottom, left, right; repeated so nested borders peel off):
 //! - A line is *solid* if nearly all its pixels lie within `tol` of the line's median colour, and that colour changes

@@ -1,6 +1,6 @@
 //! The library (the folders the user added) and the background work that keeps the catalog and the files in step:
-//! the job that saves cropped copies, scans, imports and makes thumbnails (`pg_ingest::runner`), and the writer
-//! that puts ratings and turns into the files (`pg_ingest::writeback`). QML polls `poll()` for progress, and
+//! the job that saves cropped copies, scans, imports and makes thumbnails (`pg_library::runner`), and the writer
+//! that puts ratings and turns into the files (`pg_library::writeback`). QML polls `poll()` for progress, and
 //! reloads its views on `scanned` (the folder tree changed), `imported` (sizes and placeholders changed) and
 //! `filesChanged` (files were turned).
 
@@ -82,10 +82,10 @@ use std::sync::OnceLock;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList, QUrl};
-use pg_ingest::runner::{Generation, Runner};
-use pg_ingest::scan::normalize_path;
-use pg_ingest::writeback::Writer;
 use pg_jobs::control::{Phase, Progress};
+use pg_library::runner::{Generation, Runner};
+use pg_library::scan::normalize_path;
+use pg_library::writeback::Writer;
 use pg_model::ids::FileId;
 
 use crate::state;

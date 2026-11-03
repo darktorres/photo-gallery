@@ -221,7 +221,7 @@ pub mod qobject {
         fn border_rejected(self: &GalleryModel, item: i32, edge: &QString) -> f64;
 
         /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder at
-        /// `url`, in the background (`pg_ingest::crop`). Returns how many it asked for.
+        /// `url`, in the background (`pg_library::crop`). Returns how many it asked for.
         #[qinvokable]
         #[cxx_name = "saveCroppedCopies"]
         fn save_cropped_copies(self: &GalleryModel, url: &QUrl) -> i32;

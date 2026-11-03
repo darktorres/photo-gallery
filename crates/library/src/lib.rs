@@ -1,11 +1,10 @@
-//! Passes over the originals (scan, import, borders, thumbnails) and the reports on them, shared by the app's
-//! background job (`runner`) and its command line (`cli`). See PLAN §4, §8 M1.
+//! Passes over the originals (scan, import, borders, crop, thumbnails, the writes back into the files, duplicates),
+//! and the job (`runner`) that runs them in order for the app and for the command line (`pg_cli`). See PLAN §4, §8 M1.
 //!
 //! The passes report what they did as values (their stats, the failures they hit), and print nothing: whoever runs
 //! them decides what to show, and in what words.
 
 pub mod borders;
-pub mod cli;
 pub mod crop;
 pub mod dups;
 pub mod import;
@@ -13,6 +12,9 @@ pub mod runner;
 pub mod scan;
 pub mod thumbs;
 pub mod writeback;
+
+/// The catalog folder when none is given (on D:, never C:).
+pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
 
 /// A file or folder a pass couldn't process, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]

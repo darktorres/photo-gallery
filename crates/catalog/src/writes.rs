@@ -60,7 +60,7 @@ pub enum WriteEffect {
 }
 
 /// Rate a file: 1–5, or `None` to clear. The catalog changes at once. With `write_back`, the rating is also queued
-/// for the file itself (`pg_ingest::writeback`), when its format can hold one and it differs from what the file
+/// for the file itself (`pg_library::writeback`), when its format can hold one and it differs from what the file
 /// holds; clearing writes 0 only into a file that holds a rating.
 pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
     let conn = &catalog.conn;

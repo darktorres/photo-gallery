@@ -200,7 +200,7 @@ CREATE VIEW present_pdq_pairs AS
 CREATE VIEW thumb_sources AS
     SELECT f.id, f.volume, f.file_ref, f.folder_id,
            (SELECT path FROM folders WHERE id = f.folder_id) AS folder,
-           f.name, f.kind, f.mtime, f.rotation, f.missing, f.seq,
+           f.name, f.kind, f.mtime, f.rotation, f.size, f.missing, f.seq,
            (SELECT error FROM analysis WHERE file_id = f.id) AS error,
            (SELECT mtime FROM analysis WHERE file_id = f.id) AS analyzed_mtime,
            (SELECT poster_ms FROM analysis WHERE file_id = f.id) AS poster_ms
@@ -288,8 +288,9 @@ BEGIN
     r" WHERE id = new.id;
 END;
 -- What a thumbnail is made from (thumbs::Source), and whether the file is there to show.
-CREATE TRIGGER files_source_changed AFTER UPDATE OF mtime, rotation, missing ON files
+CREATE TRIGGER files_source_changed AFTER UPDATE OF mtime, rotation, missing, size ON files
 WHEN old.mtime IS NOT new.mtime OR old.rotation IS NOT new.rotation OR old.missing IS NOT new.missing
+    OR old.size IS NOT new.size
 BEGIN
     ",
     next_seq!(),
@@ -1746,6 +1747,26 @@ mod tests {
         // As listed.
         assert!(stored(&mut c, &listed));
         assert!(!state(&c, item.id).0);
+    }
+
+    #[test]
+    fn a_size_change_alone_moves_the_file_in_the_thumbnail_source() {
+        // The scanner decides a file changed by its size and mtime, so a size change with the same mtime must reach
+        // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
+        use fixture::{File, insert};
+        let c = Catalog::open(Path::new(":memory:")).unwrap();
+        c.conn
+            .execute_batch("INSERT INTO scans(id, root, started) VALUES (1, 'D:\\x', 0); INSERT INTO folders(id, path) VALUES (1, 'D:\\x');")
+            .unwrap();
+        insert(&c.conn, &[File::new(1, 1, "a.jpg", 10, 100)]);
+        c.conn
+            .execute_batch("INSERT INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed) VALUES (1, 1, 10, 100, 0, 'image', 0);")
+            .unwrap();
+        let seq =
+            || -> i64 { c.conn.query_row("SELECT seq FROM thumb_sources WHERE id = 1", [], |r| r.get(0)).unwrap() };
+        let before = seq();
+        c.conn.execute("UPDATE files SET size = 11 WHERE id = 1", []).unwrap();
+        assert!(seq() > before);
     }
 
     #[test]

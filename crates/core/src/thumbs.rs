@@ -60,6 +60,8 @@ pub struct ThumbWork {
     /// In its list.
     pub path: FilePath,
     pub source: Source,
+    /// The file's size when the work was listed: a thumbnail is kept only if the file still has it.
+    pub size: i64,
     /// For a video, the time of its poster frame (`video::poster_ms`).
     pub poster_ms: Option<i64>,
     /// The catalog's change number for it (`files.seq`).
@@ -576,6 +578,7 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
                 id: r.get(0)?,
                 path,
                 source: Source { mtime: r.get(3)?, rotation: r.get(4)? },
+                size: r.get(8)?,
                 poster_ms: r.get(5)?,
                 seq: r.get(6)?,
             });
@@ -591,7 +594,7 @@ fn pending_sql(since_checked: bool) -> &'static str {
     macro_rules! pending {
         ($changed:literal) => {
             concat!(
-                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(f.poster_ms, 0) END, f.seq, f.folder
+                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(f.poster_ms, 0) END, f.seq, f.folder, f.size
                  FROM cat.thumb_sources f
                  LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
                  WHERE ",

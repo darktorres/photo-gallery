@@ -105,10 +105,15 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             tried += 1;
             let item = &items[i];
             match result {
-                // Kept only if made from the file as listed: not changed since, nor being rewritten by the app
+                // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
+                // decides), nor being rewritten by the app
                 // (browse::read::FileState). Otherwise tried again by the next pass, from its change number on.
                 Ok(data) => match browse::read::file_state(&catalog.conn, item.id)? {
-                    Some(s) if !s.writing && (s.mtime, s.rotation) == (item.source.mtime, item.source.rotation) => {
+                    Some(s)
+                        if !s.writing
+                            && (s.mtime, s.size, s.rotation)
+                                == (item.source.mtime, item.size, item.source.rotation) =>
+                    {
                         batch.push(Thumb { file_id: item.id, height, source: item.source, data });
                     }
                     _ => {

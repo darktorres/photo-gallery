@@ -16,6 +16,8 @@ pub struct FileState {
     /// With `rotation`, what the thumbnail cache keeps a file's thumbnails under (`thumbs::Source`).
     pub mtime: i64,
     pub rotation: u8,
+    /// The file's size (`files.size`): with `mtime`, what the scanner decides a file changed by.
+    pub size: i64,
     /// Quarter turns clockwise asked for and not yet written (`queue_rotation`): what is made from the file is shown
     /// turned by them.
     pub turns: u8,
@@ -29,7 +31,8 @@ macro_rules! file_state_columns {
     () => {
         "f.mtime, f.rotation,
         coalesce((SELECT value FROM file_writes WHERE file_id = f.id AND kind = 'rotation'), 0),
-        EXISTS(SELECT 1 FROM file_writes WHERE file_id = f.id AND temp IS NOT NULL)"
+        EXISTS(SELECT 1 FROM file_writes WHERE file_id = f.id AND temp IS NOT NULL),
+        f.size"
     };
 }
 
@@ -39,6 +42,7 @@ fn file_state_at(r: &rusqlite::Row, first: usize) -> rusqlite::Result<FileState>
         rotation: r.get(first + 1)?,
         turns: r.get(first + 2)?,
         writing: r.get(first + 3)?,
+        size: r.get(first + 4)?,
     })
 }
 

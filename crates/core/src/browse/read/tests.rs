@@ -78,7 +78,8 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
     c.conn.execute("UPDATE analysis SET thumbhash = x'01' WHERE file_id = 1", []).unwrap();
     let state = || file_state(&c.conn, 1).unwrap().unwrap();
     let turns = || placeholder(&c.conn, 1).unwrap().unwrap().turns;
-    assert_eq!(state(), FileState { mtime: 3, rotation: 0, turns: 0, writing: false });
+    let size: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
+    assert_eq!(state(), FileState { mtime: 3, size, rotation: 0, turns: 0, writing: false });
     assert_eq!(file_source(&c.conn, 1).unwrap().unwrap().state, state());
     assert_eq!((turns(), placeholder(&c.conn, 1).unwrap().unwrap().hash), (0, ThumbHash::new(&[1])));
     // A turn asked for, not yet written.

@@ -270,7 +270,7 @@ impl Inner {
                             // No tag to change: ExifTool adds one. A format it can't add EXIF to keeps the turn in
                             // the catalog.
                             let tool = ExifTool::running(exiftool, &exiftool_program())?;
-                            match tool.write_orientation(&path, &temp, o) {
+                            match tool.write_orientation(&path, &temp, o.get()) {
                                 Ok(()) if pg_metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
                                 _ => {
                                     let _ = std::fs::remove_file(&temp);

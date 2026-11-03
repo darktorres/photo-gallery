@@ -812,7 +812,10 @@ mod tests {
     fn the_sql_swap_list_is_the_swap_rule() {
         // The borders sort reads the swap from SQL; the list must be exactly the orientations that swap the sides.
         let listed: Vec<u8> = swapping_orientations!().split(", ").map(|o| o.parse().unwrap()).collect();
-        assert_eq!(listed, (1..=8).filter(|&o| pg_model::orientation::swaps_axes(o)).collect::<Vec<_>>());
+        assert_eq!(
+            listed,
+            (1..=8).filter(|&o| pg_model::orientation::Orientation::from_tag(o).swaps_axes()).collect::<Vec<_>>()
+        );
         let borders = Sort { key: SortKey::Borders, descending: false };
         assert!(borders.key_sql().unwrap().contains(concat!("IN (", swapping_orientations!(), ")")));
     }

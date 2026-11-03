@@ -134,7 +134,7 @@ fn ratings_and_turns_reach_the_files() {
     wait_for_queue(&c);
     assert_eq!(writer.status().error, None);
     for ((path, format), original) in files.iter().zip(originals) {
-        let turned = orient(original, 6);
+        let turned = orient(original, pg_model::orientation::Orientation::new(6).unwrap());
         let rotation: u8 = pg_catalog::fixture::connection(&c)
             .query_row(
                 "SELECT rotation FROM files WHERE name = ?1",

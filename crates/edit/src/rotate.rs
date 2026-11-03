@@ -21,7 +21,7 @@ use pg_model::turns::Turns;
 use crate::rewrite::{self, Op};
 use pg_container::{png_chunks, webp_chunks};
 use pg_model::format::Format;
-use pg_model::orientation;
+use pg_model::orientation::Orientation;
 
 /// What turning a file comes to.
 #[derive(Debug)]
@@ -29,7 +29,7 @@ pub enum Outcome {
     /// The new file: pixels turned, orientation reset.
     Rewritten(Vec<u8>),
     /// Set the EXIF Orientation tag to this (pg_metadata::patch_orientation, or ExifTool when the file has no tag).
-    Orientation(u8),
+    Orientation(Orientation),
     /// Nothing in the file can carry it: keep the turn in the catalog.
     Catalog,
 }
@@ -38,11 +38,11 @@ pub enum Outcome {
 pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
     let shown = pg_metadata::orientation(bytes, format);
     // The transform that takes the stored pixels to the new upright image.
-    let total = orientation::compose(shown, turns);
+    let total = shown.compose(turns);
     let tag = || Outcome::Orientation(total);
     let rewritten = |out: Vec<u8>| -> Outcome {
         // Pixels now upright: the tag (if any) goes back to 1.
-        Outcome::Rewritten(pg_metadata::patch_orientation(&out, format, 1).unwrap_or(out))
+        Outcome::Rewritten(pg_metadata::patch_orientation(&out, format, Orientation::UPRIGHT).unwrap_or(out))
     };
     Ok(match format {
         Format::Jpeg => match rewrite::jpeg(bytes, Op::Orient(total)) {
@@ -90,25 +90,25 @@ mod tests {
     /// Expected: the original as shown, turned clockwise `turns` times.
     fn expect_turned(original: &[u8], turns: Turns) -> (usize, usize, Vec<u8>) {
         let (w, h, pixels) = shown(original);
-        let img = orient(pg_codec::pixels::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
+        let img = orient(pg_codec::pixels::Rgb { width: w, height: h, pixels }, Orientation::UPRIGHT.compose(turns));
         (img.width, img.height, img.pixels)
     }
 
     /// A minimal EXIF block (TIFF, little-endian) holding only an orientation.
-    fn exif_tiff(o: u8) -> Vec<u8> {
+    fn exif_tiff(o: Orientation) -> Vec<u8> {
         let mut t = b"II*\0\x08\0\0\0".to_vec();
         t.extend(1u16.to_le_bytes());
         t.extend(0x0112u16.to_le_bytes());
         t.extend(3u16.to_le_bytes());
         t.extend(1u32.to_le_bytes());
-        t.extend((o as u16).to_le_bytes());
+        t.extend((o.get() as u16).to_le_bytes());
         t.extend([0, 0]);
         t.extend(0u32.to_le_bytes());
         t
     }
 
     /// The file with an EXIF orientation tag added (JPEG APP1, PNG eXIf).
-    fn tagged(file: &[u8], format: Format, o: u8) -> Vec<u8> {
+    fn tagged(file: &[u8], format: Format, o: Orientation) -> Vec<u8> {
         match format {
             Format::Jpeg => {
                 let mut seg = b"Exif\0\0".to_vec();
@@ -139,19 +139,21 @@ mod tests {
                     panic!("{format:?} should be rewritten")
                 };
                 assert_eq!(Format::sniff(&out), Some(format));
-                assert_eq!(pg_metadata::orientation(&out, format), 1);
+                assert_eq!(pg_metadata::orientation(&out, format).get(), 1);
                 assert_eq!(
                     shown(&out),
                     expect_turned(original, Turns::new(turns)),
                     "{format:?}, orientation {}, {turns} turns",
-                    pg_metadata::orientation(original, format)
+                    pg_metadata::orientation(original, format).get()
                 );
             }
         }
     }
 
     fn all_orientations(file: &[u8], format: Format) -> Vec<Vec<u8>> {
-        std::iter::once(file.to_vec()).chain((1..=8).map(|o| tagged(file, format, o))).collect()
+        std::iter::once(file.to_vec())
+            .chain((1..=8).map(|o| tagged(file, format, Orientation::new(o).unwrap())))
+            .collect()
     }
 
     #[test]
@@ -198,7 +200,7 @@ mod tests {
             let mut webp = Vec::new();
             let mut e = image_webp::WebPEncoder::new(&mut webp);
             if o > 0 {
-                e.set_exif_metadata(exif_tiff(o));
+                e.set_exif_metadata(exif_tiff(Orientation::new(o).unwrap()));
             }
             e.encode(&rgb, w as u32, h as u32, image_webp::ColorType::Rgb8).unwrap();
             variants.push(webp);
@@ -225,12 +227,12 @@ mod tests {
         // MCU-aligned: the pixels turn. Decoding the turned coefficients matches turning the decoded image up
         // to the decoder's chroma rounding.
         for aligned in all_orientations(&jpeg(64, 32), Format::Jpeg) {
-            let o = pg_metadata::orientation(&aligned, Format::Jpeg);
+            let o = pg_metadata::orientation(&aligned, Format::Jpeg).get();
             for turns in 1..=3 {
                 let Outcome::Rewritten(out) = rotate(&aligned, Format::Jpeg, Turns::new(turns)).unwrap() else {
                     panic!("aligned JPEG")
                 };
-                assert_eq!(pg_metadata::orientation(&out, Format::Jpeg), 1);
+                assert_eq!(pg_metadata::orientation(&out, Format::Jpeg).get(), 1);
                 let (got, want) = (shown(&out), expect_turned(&aligned, Turns::new(turns)));
                 assert_eq!((got.0, got.1), (want.0, want.1), "orientation {o}, {turns} turns");
                 let worst = got.2.iter().zip(&want.2).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
@@ -238,11 +240,19 @@ mod tests {
             }
         }
         // Not aligned: no perfect transform, so the orientation tag carries it.
-        assert!(matches!(rotate(&jpeg(65, 33), Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(6)));
+        assert!(
+            matches!(rotate(&jpeg(65, 33), Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(o) if o.get() == 6)
+        );
         // Damaged before the scan (cut off there): refused, not re-encoded; the tag carries the turn.
         let good = jpeg(64, 32);
         let scan = pg_container::find(&good, &[0xFF, 0xDA]).unwrap();
-        assert!(matches!(rotate(&good[..scan], Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(6)));
-        assert!(rewrite::jpeg(&good[..scan], Op::Orient(6)).unwrap_err().is::<rewrite::Imperfect>());
+        assert!(
+            matches!(rotate(&good[..scan], Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(o) if o.get() == 6)
+        );
+        assert!(
+            rewrite::jpeg(&good[..scan], Op::Orient(Orientation::new(6).unwrap()))
+                .unwrap_err()
+                .is::<rewrite::Imperfect>()
+        );
     }
 }

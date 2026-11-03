@@ -32,7 +32,7 @@ use pg_catalog::browse::{self, read::FileSource};
 use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
-use pg_model::orientation;
+use pg_model::orientation::Orientation;
 use pg_platform::verbatim::verbatim;
 use pg_render::maker::Maker;
 use pg_thumbcache::{self as thumbs, ThumbCache};
@@ -298,7 +298,7 @@ pub fn placeholder(file_id: FileId) -> Result<Upload> {
     let p = with_catalog(|c| browse::read::placeholder(c, file_id))?.context("unknown file")?;
     let hash = p.hash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
-    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, orientation::compose(1, p.turns));
+    let (rgba, w, h) = orient_pixels(rgba, w, h, 4, Orientation::UPRIGHT.compose(p.turns));
     Ok(Upload::straight(w, h, rgba))
 }
 

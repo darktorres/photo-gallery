@@ -11,7 +11,7 @@ use crate::query::{MediaType, Query, Sort};
 use pg_model::detection;
 use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
-use pg_model::orientation::upright_rect;
+use pg_model::orientation::Orientation;
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
@@ -38,7 +38,7 @@ pub struct Entry {
     /// More than one frame (known after the import).
     pub animated: bool,
     /// Orientation (1–8) of the analysis: what turns the stored pixels upright, the catalog rotation included.
-    pub orientation: u8,
+    pub orientation: Orientation,
     /// Borders found: stored pixels cut from the left, top, right and bottom (`analysis.cut_*`), all 0 for none.
     pub cut: [u32; 4],
     pub borders: Borders,
@@ -128,11 +128,7 @@ impl Entry {
     /// before the import.
     fn stored_size(&self) -> Option<(f64, f64)> {
         let (w, h) = (f64::from(self.width), f64::from(self.height));
-        (w > 0.0 && h > 0.0).then_some(if pg_model::orientation::swaps_axes(self.orientation) {
-            (h, w)
-        } else {
-            (w, h)
-        })
+        (w > 0.0 && h > 0.0).then_some(if self.orientation.swaps_axes() { (h, w) } else { (w, h) })
     }
 
     /// A rectangle of the stored image in pixels (left, top, right, bottom) as fractions of the image as shown:
@@ -140,7 +136,7 @@ impl Entry {
     fn shown(&self, rect: [f64; 4]) -> [f64; 4] {
         let Some((w, h)) = self.stored_size() else { return [0.0; 4] };
         let [l, t, r, b] = rect;
-        let [x0, y0, x1, y1] = upright_rect([l / w, t / h, r / w, b / h], self.orientation, self.pending_turns);
+        let [x0, y0, x1, y1] = self.orientation.upright_rect([l / w, t / h, r / w, b / h], self.pending_turns);
         [x0, y0, x1 - x0, y1 - y0]
     }
 }
@@ -191,7 +187,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
         pending_turns: Turns::new(r.get(7)?),
         rating: r.get::<_, Option<u8>>(8)?.and_then(Rating::new),
         animated: r.get::<_, i64>(9)? > 1,
-        orientation: r.get(10)?,
+        orientation: Orientation::from_tag(r.get(10)?),
         cut,
         borders: match cut_found {
             None => Borders::Unknown,

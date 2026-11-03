@@ -55,7 +55,7 @@ fn the_cut_is_described_as_shown() {
         pending_turns: Turns::NONE,
         rating: None,
         animated: false,
-        orientation: 6,
+        orientation: pg_model::orientation::Orientation::new(6).unwrap(),
         cut: [0, 163, 0, 131],
         borders: Borders::Found,
     };

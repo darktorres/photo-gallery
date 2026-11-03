@@ -35,6 +35,7 @@ use pg_model::detection::Detection;
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FolderId, RootId};
 use pg_model::media::{Ext, Kind};
+use pg_model::orientation::Orientation;
 use pg_model::path::is_under;
 use pg_model::path::{FilePath, PathArena, PathRef, WorkList};
 use pg_model::rating::Rating;
@@ -1106,8 +1107,9 @@ impl Catalog {
                    AND NOT EXISTS(SELECT 1 FROM border_marks WHERE file_id = f.id)",
             )?
             .query_row([file_id.get()], |r| {
-                let (orientation, w, h): (u8, u32, u32) = (r.get(4)?, r.get(5)?, r.get(6)?);
-                let (width, height) = if pg_model::orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
+                let (orientation, w, h): (Orientation, u32, u32) =
+                    (Orientation::from_tag(r.get(4)?), r.get(5)?, r.get(6)?);
+                let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
                 let format = r.get_ref(3)?.as_str()?;
                 let format = Format::from_name(format).ok_or_else(|| {
                     rusqlite::Error::FromSqlConversionFailure(3, Type::Text, format!("unknown format {format}").into())
@@ -1402,7 +1404,7 @@ impl<'tx> AnalysisWriter<'tx> {
             &a.file_hash[..],
             image.map(|i| &i.pixels.pixel_hash[..]),
             a.format(),
-            a.orientation,
+            a.orientation.get(),
             a.width,
             a.height,
             image.map(|i| &i.pixels.pdq.hash.0[..]),
@@ -2044,7 +2046,7 @@ mod tests {
         let analysis = Analysis {
             version: IMPORT_VERSION,
             file_hash: [1; 32],
-            orientation: 1,
+            orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
             thumbhash: ThumbHash::default(),
@@ -2146,11 +2148,11 @@ mod tests {
             let [l, t, r, b] = cut.unwrap_or([0; 4]);
             let mut borders = Detection::none(400, 300);
             borders.content = [l, t, 400 - r, 300 - b];
-            let (width, height) = if pg_model::orientation::swaps_axes(orientation) { (300, 400) } else { (400, 300) };
+            let (width, height) = if Orientation::from_tag(orientation).swaps_axes() { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
                 version: IMPORT_VERSION,
                 file_hash: [n as u8; 32],
-                orientation,
+                orientation: Orientation::from_tag(orientation),
                 width,
                 height,
                 thumbhash: ThumbHash::default(),

@@ -119,7 +119,7 @@ fn videos() {
     for (name, codec) in [("h264.mp4", "h264"), ("vp9.webm", "vp9"), ("av1.mp4", "av1"), ("prores.mov", "prores")] {
         let path = media.join(name);
         let p = probe(&path).unwrap();
-        assert_eq!((p.width, p.height, p.codec, p.orientation), (160, 80, codec, 1), "{name}");
+        assert_eq!((p.width, p.height, p.codec, p.orientation.get()), (160, 80, codec, 1), "{name}");
         assert!((2900..=3100).contains(&p.duration_ms), "{name}: {} ms", p.duration_ms);
         assert!((70..=80).contains(&p.frames), "{name}: {} frames", p.frames);
         let early = frame(&path, 500, Turns::new(0)).unwrap();
@@ -136,7 +136,7 @@ fn videos() {
     // Shown upright: 80 × 160, the stored left half (red) at the bottom.
     let rotated = media.join("rotated.mp4");
     let p = probe(&rotated).unwrap();
-    assert_eq!((p.width, p.height, p.orientation), (80, 160, 8));
+    assert_eq!((p.width, p.height, p.orientation.get()), (80, 160, 8));
     let f = frame(&rotated, 500, Turns::new(0)).unwrap();
     assert_eq!((f.width, f.height), (80, 160));
     assert!(near(pixel(&f, 40, 140), RED) && near(pixel(&f, 40, 20), BLUE));
@@ -148,7 +148,7 @@ fn videos() {
     // Mirrored: blue on the left. A catalog turn comes after the mirror: red at the top.
     let mirrored = media.join("mirrored.mp4");
     let p = probe(&mirrored).unwrap();
-    assert_eq!((p.width, p.height, p.orientation), (160, 80, 2));
+    assert_eq!((p.width, p.height, p.orientation.get()), (160, 80, 2));
     let f = frame(&mirrored, 500, Turns::new(0)).unwrap();
     assert!(near(pixel(&f, 20, 40), BLUE) && near(pixel(&f, 140, 40), RED), "{:?}", pixel(&f, 20, 40));
     let f = frame(&mirrored, 500, Turns::new(1)).unwrap();
@@ -160,7 +160,7 @@ fn videos() {
     let mut analyzer = analyze::Analyzer::new().unwrap();
     for (path, turns, want) in [(&rotated, 0, 8), (&rotated, 1, 1), (&mirrored, 0, 2), (&mirrored, 1, 7)] {
         let a = analyze::video(path, Turns::new(turns), &mut analyzer).unwrap();
-        assert_eq!(a.orientation, want, "{} with {turns} turn(s)", path.display());
+        assert_eq!(a.orientation.get(), want, "{} with {turns} turn(s)", path.display());
     }
 
     assert_eq!(poster_ms(3000), 300);

@@ -21,7 +21,7 @@ use pg_codec::decode::orient_into;
 use pg_codec::pixels::Rgb;
 use pg_model::analysis::Taken;
 use pg_model::date::parse_iso_date;
-use pg_model::orientation;
+use pg_model::orientation::Orientation;
 
 /// The poster frame is this far into the video…
 const POSTER_FRACTION: f64 = 0.1;
@@ -51,7 +51,7 @@ pub struct Probe {
     /// When it was recorded. Phones' local-time tag gives wall-clock time; the standard `creation_time` is UTC.
     pub taken: Option<Taken>,
     /// EXIF-style orientation (1–8) of the display matrix.
-    pub orientation: u8,
+    pub orientation: Orientation,
 }
 
 fn open(path: &Path) -> Result<ffmpeg::format::context::Input> {
@@ -61,19 +61,19 @@ fn open(path: &Path) -> Result<ffmpeg::format::context::Input> {
 
 /// The orientation (EXIF 1–8) that shows the stream as its display matrix asks. The matrix maps stored to shown
 /// pixels; FFmpeg's players apply the same (`-autorotate`).
-fn display_orientation(stream: &ffmpeg::format::stream::Stream) -> u8 {
+fn display_orientation(stream: &ffmpeg::format::stream::Stream) -> Orientation {
     let Some(sd) = stream.side_data().find(|sd| sd.kind() == ffmpeg::codec::packet::side_data::Type::DisplayMatrix)
     else {
-        return 1;
+        return Orientation::UPRIGHT;
     };
     match sd.data().as_chunks::<4>().0.get(..9) {
         Some(m) => matrix_orientation(std::array::from_fn(|i| i32::from_le_bytes(m[i]))),
-        None => 1,
+        None => Orientation::UPRIGHT,
     }
 }
 
 /// The orientation (EXIF 1–8) of a display matrix (`a b u c d v x y w`, 16.16 fixed point but for u, v and w).
-fn matrix_orientation(m: [i32; 9]) -> u8 {
+fn matrix_orientation(m: [i32; 9]) -> Orientation {
     let [a, b, _, c, d, ..] = m.map(f64::from);
     // A negative determinant is a mirror. FFmpeg's flip (av_display_matrix_flip) mirrors the shown picture after
     // the rotation, by negating a and c; undo it to read the rotation.
@@ -81,13 +81,13 @@ fn matrix_orientation(m: [i32; 9]) -> u8 {
     let (a, c) = if mirrored { (-a, -c) } else { (a, c) };
     let (s0, s1) = (a.hypot(c), b.hypot(d));
     if s0 == 0.0 || s1 == 0.0 {
-        return 1;
+        return Orientation::UPRIGHT;
     }
     // av_display_rotation_get is the counterclockwise angle; turning clockwise by the opposite shows it upright.
     let clockwise = (b / s1).atan2(a / s0).to_degrees();
     let turns = ((clockwise / 90.0).round() as i64).rem_euclid(4) as u8;
     // EXIF mirrors the stored picture before the rotation: the same picture with the turn reversed.
-    orientation::from_parts(mirrored, Turns::new(if mirrored { (4 - turns) % 4 } else { turns }))
+    Orientation::from_parts(mirrored, Turns::new(if mirrored { (4 - turns) % 4 } else { turns }))
 }
 
 pub fn probe(path: &Path) -> Result<Probe> {
@@ -105,7 +105,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
         w = (w as f64 * sar.numerator() as f64 / sar.denominator() as f64).round() as u32;
     }
     let orientation = display_orientation(&stream);
-    let (width, height) = if orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
+    let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
 
     let tb = stream.time_base();
     let in_ms = |t: i64| t as f64 * tb.numerator() as f64 * 1000.0 / tb.denominator().max(1) as f64;
@@ -157,7 +157,7 @@ pub fn frame_into(path: &Path, at_ms: i64, turns: Turns, out: &mut Rgb, spare: &
     let mut input = open(path)?;
     let stream = input.streams().best(Type::Video).context("no video stream")?;
     let index = stream.index();
-    let orientation = orientation::compose(display_orientation(&stream), turns);
+    let orientation = display_orientation(&stream).compose(turns);
     let tb = stream.time_base();
     let start = if stream.start_time() == ffmpeg::ffi::AV_NOPTS_VALUE { 0 } else { stream.start_time() };
     let mut decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?.decoder().video()?;
@@ -281,10 +281,10 @@ mod tests {
             (m(0, -1, 1, 0), 8),  // 90 counterclockwise
         ];
         for (matrix, want) in cases {
-            assert_eq!(matrix_orientation(matrix), want, "{matrix:?}");
+            assert_eq!(matrix_orientation(matrix).get(), want, "{matrix:?}");
         }
         // Scaled and slightly off (a muxer's rounding) still snaps to the nearest quarter turn.
-        assert_eq!(matrix_orientation([2 * ONE, -ONE / 50, 0, 0, -2 * ONE, 0, 0, 0, 1 << 30]), 4);
-        assert_eq!(matrix_orientation([0; 9]), 1);
+        assert_eq!(matrix_orientation([2 * ONE, -ONE / 50, 0, 0, -2 * ONE, 0, 0, 0, 1 << 30]).get(), 4);
+        assert_eq!(matrix_orientation([0; 9]).get(), 1);
     }
 }

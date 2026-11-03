@@ -40,18 +40,25 @@ mod tests {
         let lit = |x: usize, y: usize| (1..3).contains(&x) && y < 1;
         let pixels: Vec<u8> = (0..h).flat_map(|y| (0..w).map(move |x| u8::from(lit(x, y)))).collect();
         let rect = [1.0 / 4.0, 0.0, 3.0 / 4.0, 1.0 / 2.0];
-        for orientation in 1..=8u8 {
+        for tag in 1..=8u8 {
+            let orientation = pg_model::orientation::Orientation::new(tag).unwrap();
             for turns in 0..4u8 {
                 let (mut px, mut pw, mut ph) = pg_codec::decode::transform(&pixels, w, h, 1, orientation);
                 for _ in 0..turns {
-                    (px, pw, ph) = pg_codec::decode::transform(&px, pw, ph, 1, 6);
+                    (px, pw, ph) = pg_codec::decode::transform(
+                        &px,
+                        pw,
+                        ph,
+                        1,
+                        pg_model::orientation::Orientation::new(6).unwrap(),
+                    );
                 }
-                let [x0, y0, x1, y1] = pg_model::orientation::upright_rect(rect, orientation, Turns::new(turns));
+                let [x0, y0, x1, y1] = orientation.upright_rect(rect, Turns::new(turns));
                 for y in 0..ph {
                     for x in 0..pw {
                         let (cx, cy) = ((x as f64 + 0.5) / pw as f64, (y as f64 + 0.5) / ph as f64);
                         let inside = (x0..x1).contains(&cx) && (y0..y1).contains(&cy);
-                        assert_eq!(px[y * pw + x] == 1, inside, "orientation {orientation}, {turns} turns, ({x}, {y})");
+                        assert_eq!(px[y * pw + x] == 1, inside, "orientation {tag}, {turns} turns, ({x}, {y})");
                     }
                 }
             }

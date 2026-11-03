@@ -2,6 +2,7 @@
 //! is core's `analyze` module's job. This module is the shape of the result, with no decoding and no I/O.
 
 use crate::format::Format;
+use crate::orientation::Orientation;
 use crate::pdq;
 
 /// One file's analysis: what every file has, and the facts of its kind (an image's or a video's).
@@ -11,7 +12,7 @@ pub struct Analysis {
     /// BLAKE3 of the file bytes (tier 0a).
     pub file_hash: [u8; 32],
     /// EXIF orientation (1–8) the file asks for (a video's display matrix).
-    pub orientation: u8,
+    pub orientation: Orientation,
     /// Upright full-size dimensions.
     pub width: u32,
     pub height: u32,

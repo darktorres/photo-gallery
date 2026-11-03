@@ -26,6 +26,7 @@ use pg_container::{
 };
 use pg_model::date::{exif_date, parse_iso_date};
 use pg_model::format::Format;
+use pg_model::orientation::Orientation;
 
 const NS_XMP: &str = "http://ns.adobe.com/xap/1.0/";
 const NS_MICROSOFT_PHOTO: &str = "http://ns.microsoft.com/photo/1.0/";
@@ -48,7 +49,7 @@ pub fn can_hold_rating(format: Format) -> bool {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Meta {
     /// EXIF orientation 1–8; 1 when absent or unreadable.
-    pub orientation: u8,
+    pub orientation: Orientation,
     /// The file's own rating: 0–5 (0 = explicitly unrated), or `None` when it holds none. XMP `xmp:Rating` first
     /// (the standard packet, then the extended one), then `MicrosoftPhoto:Rating`, then EXIF Rating and
     /// RatingPercent. XMP's -1 ("rejected") has no equivalent here and reads as no rating.
@@ -136,7 +137,7 @@ impl Meta {
 }
 
 /// The EXIF orientation (1–8) of a file, alone; 1 when absent or unreadable.
-pub fn orientation(bytes: &[u8], format: Format) -> u8 {
+pub fn orientation(bytes: &[u8], format: Format) -> Orientation {
     exif_block(bytes, format)
         .and_then(|block| Exif::read(&bytes[block], format == Format::Tiff))
         .unwrap_or_default()
@@ -405,8 +406,8 @@ impl<'a> Exif<'a> {
         Some(exif)
     }
 
-    fn orientation(&self) -> u8 {
-        self.orientation.filter(|o| (1..=8).contains(o)).map_or(1, |o| o as u8)
+    fn orientation(&self) -> Orientation {
+        self.orientation.and_then(|o| u8::try_from(o).ok()).map_or(Orientation::UPRIGHT, Orientation::from_tag)
     }
 }
 
@@ -614,12 +615,12 @@ fn tiff_orientation_offset(block: &[u8], bigtiff: bool) -> Option<usize> {
 
 /// The file with its EXIF orientation set to `o`, changed in place (same size, nothing moves), or `None` when
 /// the file has no orientation tag to change (adding one is a job for ExifTool).
-pub fn patch_orientation(bytes: &[u8], format: Format, o: u8) -> Option<Vec<u8>> {
+pub fn patch_orientation(bytes: &[u8], format: Format, o: Orientation) -> Option<Vec<u8>> {
     let block = exif_block(bytes, format)?;
     let at = block.start + tiff_orientation_offset(&bytes[block.clone()], format == Format::Tiff)?;
     let le = bytes.get(block.start..block.start + 2)? == b"II";
     let mut out = bytes.to_vec();
-    out[at..at + 2].copy_from_slice(&if le { (o as u16).to_le_bytes() } else { (o as u16).to_be_bytes() });
+    out[at..at + 2].copy_from_slice(&if le { (o.get() as u16).to_le_bytes() } else { (o.get() as u16).to_be_bytes() });
     if format == Format::Png {
         // The eXIf chunk's CRC covers its type and data.
         let chunk = png_chunks(&out).find(|c| &c.kind == b"eXIf")?;
@@ -811,19 +812,19 @@ mod tests {
                 |ifd0: &[TestEntry], exif: &[TestEntry]| meta_of(&tiff_block_as(big, le, ifd0, exif), Format::Tiff);
 
             let m = read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6]))], &[date(b"2023:07:15 18:30:05")]);
-            assert_eq!((m.orientation, m.taken), (6, Some(1_689_445_805)));
+            assert_eq!((m.orientation.get(), m.taken), (6, Some(1_689_445_805)));
             // A SHORT array stored out of the entry: its first value. BYTE and LONG count too; other types don't.
-            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 3, short(&[8, 1, 1]))], &[]).orientation, 8);
-            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![3])], &[]).orientation, 3);
-            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_LONG, 1, long(5))], &[]).orientation, 5);
-            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_ASCII, 2, b"6\0".to_vec())], &[]).orientation, 1);
-            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[9]))], &[]).orientation, 1);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 3, short(&[8, 1, 1]))], &[]).orientation.get(), 8);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![3])], &[]).orientation.get(), 3);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_LONG, 1, long(5))], &[]).orientation.get(), 5);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_ASCII, 2, b"6\0".to_vec())], &[]).orientation.get(), 1);
+            assert_eq!(read(&[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[9]))], &[]).orientation.get(), 1);
             // A tag given twice reads as the last.
             let twice = [
                 (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6])),
                 (EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[3])),
             ];
-            assert_eq!(read(&twice, &[]).orientation, 3);
+            assert_eq!(read(&twice, &[]).orientation.get(), 3);
             // Rating, capped at 5; RatingPercent only without it.
             assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating, Some(5));
             let percent = (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, short(&[50]));
@@ -859,14 +860,14 @@ mod tests {
         assert_eq!(meta_of(&block, Format::Tiff).rating, Some(4));
         // Not a TIFF structure without its 42. A 43 is BigTIFF only with its offset size (8) after it.
         let mut block = tiff_block(true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
-        assert_eq!(orientation(&block, Format::Tiff), 6);
+        assert_eq!(orientation(&block, Format::Tiff).get(), 6);
         block[2] = 43;
         block[4] = 4;
-        assert_eq!(orientation(&block, Format::Tiff), 1);
+        assert_eq!(orientation(&block, Format::Tiff).get(), 1);
         // BigTIFF is for a TIFF file: an EXIF block (JPEG, PNG, WebP) with one is not read.
         let big = tiff_block_as(true, true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
         assert!(Exif::read(&big, false).is_none());
-        assert_eq!(Exif::read(&big, true).map(|e| e.orientation()), Some(6));
+        assert_eq!(Exif::read(&big, true).map(|e| e.orientation().get()), Some(6));
     }
 
     #[test]
@@ -884,10 +885,12 @@ mod tests {
             let big = meta_of(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff);
             assert_eq!(big, classic);
             // XMP's rating first (3), then the date.
-            assert_eq!((big.orientation, big.rating, big.taken), (6, Some(3), Some(1_689_445_805)));
+            assert_eq!((big.orientation.get(), big.rating, big.taken), (6, Some(3), Some(1_689_445_805)));
             // The orientation is patched in place, as in a classic file.
-            let patched = patch_orientation(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff, 3).unwrap();
-            assert_eq!(orientation(&patched, Format::Tiff), 3);
+            let patched =
+                patch_orientation(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff, Orientation::new(3).unwrap())
+                    .unwrap();
+            assert_eq!(orientation(&patched, Format::Tiff).get(), 3);
         }
     }
 

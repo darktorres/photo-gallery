@@ -197,7 +197,7 @@ fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis
         file_hash,
         // The stills' orientation includes the catalog turn (`decode_into`); the video's must too, or its stored
         // size and its shown orientation disagree (R-02). `width`/`height` above already carry the display matrix.
-        orientation: orientation::compose(p.orientation, turns),
+        orientation: p.orientation.compose(turns),
         width,
         height,
         thumbhash: a.thumbhash_of_image(),

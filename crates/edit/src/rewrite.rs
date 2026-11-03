@@ -10,13 +10,13 @@ use turbojpeg::{Transform, TransformCrop, TransformOp, Transformer};
 
 use pg_codec::decode::transform;
 use pg_container::{GifBlock, gif_blocks, gif_header_len, png_chunks, webp_chunks};
-use pg_model::orientation;
+use pg_model::orientation::Orientation;
 
 /// What happens to the stored pixels.
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum Op {
     /// Turned under an EXIF orientation (1–8).
-    Orient(u8),
+    Orient(Orientation),
     /// Cut to this rectangle: left, top, width, height.
     Crop([usize; 4]),
 }
@@ -24,7 +24,7 @@ pub(crate) enum Op {
 impl Op {
     /// Width and height swap.
     fn quarter(self) -> bool {
-        matches!(self, Op::Orient(o) if pg_model::orientation::swaps_axes(o))
+        matches!(self, Op::Orient(o) if o.swaps_axes())
     }
 
     /// The new size of a `w` × `h` raster.
@@ -62,10 +62,7 @@ impl Op {
     ) -> Option<((usize, usize), [usize; 4], (usize, usize))> {
         match self {
             Op::Orient(o) => {
-                let (a, b) = (
-                    orientation::shown_pixel(o, left, top, sw, sh),
-                    orientation::shown_pixel(o, left + w - 1, top + h - 1, sw, sh),
-                );
+                let (a, b) = (o.shown_pixel(left, top, sw, sh), o.shown_pixel(left + w - 1, top + h - 1, sw, sh));
                 Some(((a.0.min(b.0), a.1.min(b.1)), [0, 0, w, h], self.size(sw, sh)))
             }
             Op::Crop([cx, cy, cw, ch]) => {
@@ -99,7 +96,7 @@ pub(crate) fn jpeg(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     let mut t = Transform::default();
     match op {
         Op::Orient(o) => {
-            t.op = match o {
+            t.op = match o.get() {
                 2 => TransformOp::Hflip,
                 3 => TransformOp::Rot180,
                 4 => TransformOp::Vflip,

@@ -13,7 +13,7 @@ use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 use crate::codecs::Codecs;
 use crate::pixels::Rgb;
 use pg_model::format::Format;
-use pg_model::orientation;
+use pg_model::orientation::Orientation;
 
 /// What a decode found, besides its pixels.
 #[derive(Clone, Copy, Debug)]
@@ -21,7 +21,7 @@ pub struct Info {
     pub format: Format,
     /// Orientation (1–8) that shows the image upright: the EXIF one, combined with the catalog rotation. Applied by
     /// [`Decoder::decode_into`], not by [`Decoder::decode_stored_into`].
-    pub orientation: u8,
+    pub orientation: Orientation,
     /// Dimensions of the full-size image, as the pixels are: upright after an oriented decode, stored otherwise.
     pub full_width: u32,
     pub full_height: u32,
@@ -32,7 +32,7 @@ pub struct Info {
 impl Info {
     /// The same, for the image once oriented.
     fn upright(self) -> Info {
-        let (full_width, full_height) = if orientation::swaps_axes(self.orientation) {
+        let (full_width, full_height) = if self.orientation.swaps_axes() {
             (self.full_height, self.full_width)
         } else {
             (self.full_width, self.full_height)
@@ -92,7 +92,7 @@ impl Decoder {
         &mut self,
         bytes: &[u8],
         format: Format,
-        exif: u8,
+        exif: Orientation,
         min: MinSize,
         turns: Turns,
         out: &mut Rgb,
@@ -109,13 +109,13 @@ impl Decoder {
         &mut self,
         bytes: &[u8],
         format: Format,
-        exif: u8,
+        exif: Orientation,
         min: MinSize,
         turns: Turns,
         out: &mut Rgb,
     ) -> Result<Info> {
-        let orientation = pg_model::orientation::compose(exif, turns);
-        let quarter_turn = orientation::swaps_axes(orientation);
+        let orientation = exif.compose(turns);
+        let quarter_turn = orientation.swaps_axes();
         let jpeg = match format {
             Format::Jpeg => self.decode_jpeg(bytes, min, quarter_turn, out).ok(),
             _ => None,
@@ -177,14 +177,14 @@ impl Decoder {
 }
 
 /// Apply an EXIF orientation, giving the upright image.
-pub fn orient(img: Rgb, orientation: u8) -> Rgb {
+pub fn orient(img: Rgb, orientation: Orientation) -> Rgb {
     let (pixels, width, height) = orient_pixels(img.pixels, img.width, img.height, 3, orientation);
     Rgb { width, height, pixels }
 }
 
 /// Apply an EXIF orientation to `img` in place, through `spare` (which gets `img`'s old buffer).
-pub fn orient_into(img: &mut Rgb, orientation: u8, spare: &mut Vec<u8>) {
-    if !(2..=8).contains(&orientation) {
+pub fn orient_into(img: &mut Rgb, orientation: Orientation, spare: &mut Vec<u8>) {
+    if orientation == Orientation::UPRIGHT {
         return;
     }
     (img.width, img.height) = transform_into(&img.pixels, img.width, img.height, 3, orientation, spare);
@@ -192,8 +192,14 @@ pub fn orient_into(img: &mut Rgb, orientation: u8, spare: &mut Vec<u8>) {
 }
 
 /// [`transform`], which leaves `pixels` as they are at orientation 1 (or none).
-pub fn orient_pixels(pixels: Vec<u8>, w: usize, h: usize, unit: usize, orientation: u8) -> (Vec<u8>, usize, usize) {
-    if !(2..=8).contains(&orientation) {
+pub fn orient_pixels(
+    pixels: Vec<u8>,
+    w: usize,
+    h: usize,
+    unit: usize,
+    orientation: Orientation,
+) -> (Vec<u8>, usize, usize) {
+    if orientation == Orientation::UPRIGHT {
         return (pixels, w, h);
     }
     transform(&pixels, w, h, unit, orientation)
@@ -201,7 +207,7 @@ pub fn orient_pixels(pixels: Vec<u8>, w: usize, h: usize, unit: usize, orientati
 
 /// Apply an EXIF orientation (1–8) to a packed `w` × `h` raster of `unit`-byte pixels: the raster as it is shown.
 /// Returns it with its new width and height.
-pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: u8) -> (Vec<u8>, usize, usize) {
+pub fn transform(pixels: &[u8], w: usize, h: usize, unit: usize, orientation: Orientation) -> (Vec<u8>, usize, usize) {
     let mut out = Vec::new();
     let (ow, oh) = transform_into(pixels, w, h, unit, orientation, &mut out);
     (out, ow, oh)
@@ -213,15 +219,15 @@ pub fn transform_into(
     w: usize,
     h: usize,
     unit: usize,
-    orientation: u8,
+    orientation: Orientation,
     out: &mut Vec<u8>,
 ) -> (usize, usize) {
-    let (ow, oh) = if orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
+    let (ow, oh) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
     // Every pixel is written below: a grown buffer only zeroes what it grew by.
     out.resize(w * h * unit, 0);
     for y in 0..oh {
         for x in 0..ow {
-            let (sx, sy) = orientation::source_pixel(orientation, x, y, w, h);
+            let (sx, sy) = orientation.source_pixel(x, y, w, h);
             let (s, d) = ((sy * w + sx) * unit, (y * ow + x) * unit);
             out[d..d + unit].copy_from_slice(&pixels[s..s + unit]);
         }
@@ -256,7 +262,15 @@ mod tests {
         let mut decoded = Rgb::default();
         Decoder::new()
             .unwrap()
-            .decode_into(file.get_ref(), Format::Png, 1, MinSize::Full, Turns::NONE, &mut decoded, &mut Vec::new())
+            .decode_into(
+                file.get_ref(),
+                Format::Png,
+                Orientation::UPRIGHT,
+                MinSize::Full,
+                Turns::NONE,
+                &mut decoded,
+                &mut Vec::new(),
+            )
             .unwrap();
         let want: Vec<u8> = rgba
             .as_chunks::<4>()
@@ -276,7 +290,7 @@ mod tests {
         // 3×2 image whose pixels are numbered 0..6 in reading order.
         let img = || Rgb { width: 3, height: 2, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
         let first = |o| {
-            let r = orient(img(), o);
+            let r = orient(img(), Orientation::new(o).unwrap());
             (r.width, r.height, r.pixels.chunks(3).map(|p| p[0]).collect::<Vec<_>>())
         };
         assert_eq!(first(1), (3, 2, vec![0, 1, 2, 3, 4, 5]));
@@ -294,8 +308,8 @@ mod tests {
         let img = || Rgb { width: 3, height: 2, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
         for o in 1..=8 {
             // Turning the upright image clockwise is EXIF 6 applied to it.
-            let expected = orient(orient(img(), o), 6);
-            let got = orient(img(), orientation::compose(o, Turns::new(1)));
+            let expected = orient(orient(img(), Orientation::new(o).unwrap()), Orientation::new(6).unwrap());
+            let got = orient(img(), Orientation::new(o).unwrap().compose(Turns::new(1)));
             assert_eq!(
                 (got.width, got.height, &got.pixels),
                 (expected.width, expected.height, &expected.pixels),
@@ -310,10 +324,10 @@ mod tests {
         let (w, h) = (3, 2);
         let img = || Rgb { width: w, height: h, pixels: (0..6u8).flat_map(|i| [i, 0, 0]).collect() };
         for o in 1..=8 {
-            let out = orient(img(), o);
+            let out = orient(img(), Orientation::new(o).unwrap());
             for y in 0..h {
                 for x in 0..w {
-                    let (nx, ny) = orientation::shown_pixel(o, x, y, w, h);
+                    let (nx, ny) = Orientation::new(o).unwrap().shown_pixel(x, y, w, h);
                     let at = (ny * out.width + nx) * 3;
                     assert_eq!(out.pixels[at], (y * w + x) as u8, "o = {o}, pixel ({x}, {y})");
                 }

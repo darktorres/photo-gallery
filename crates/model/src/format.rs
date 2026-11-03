@@ -34,6 +34,18 @@ impl Format {
             .find(|f| f.name() == name)
     }
 
+    /// The extension a file of the format is saved under, without the dot.
+    pub fn extension(self) -> &'static str {
+        match self {
+            Format::Jpeg => "jpg",
+            Format::Png => "png",
+            Format::Gif => "gif",
+            Format::Webp => "webp",
+            Format::Bmp => "bmp",
+            Format::Tiff => "tif",
+        }
+    }
+
     pub fn name(self) -> &'static str {
         match self {
             Format::Jpeg => "jpeg",

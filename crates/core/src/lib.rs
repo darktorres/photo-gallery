@@ -10,4 +10,3 @@ pub mod layout;
 pub mod maker;
 pub mod query;
 pub mod thumbs;
-pub mod yandex;

@@ -1472,7 +1472,6 @@ dependencies = [
  "serde_json",
  "thumbhash",
  "turbojpeg",
- "ureq",
  "xxhash-rust",
 ]
 
@@ -1499,6 +1498,7 @@ dependencies = [
  "pg-platform",
  "pg-trace",
  "pg-video",
+ "pg-yandex",
  "serde",
  "serde_json",
  "thumbhash",
@@ -1605,6 +1605,16 @@ dependencies = [
  "ffmpeg-next",
  "pg-codec",
  "pg-model",
+]
+
+[[package]]
+name = "pg-yandex"
+version = "0.1.0"
+dependencies = [
+ "pg-model",
+ "serde_json",
+ "thiserror 2.0.21",
+ "ureq",
 ]
 
 [[package]]

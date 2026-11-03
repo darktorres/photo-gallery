@@ -18,7 +18,6 @@ image.workspace = true
 rusqlite.workspace = true
 thumbhash.workspace = true
 turbojpeg.workspace = true
-ureq.workspace = true
 xxhash-rust.workspace = true
 png.workspace = true
 serde.workspace = true

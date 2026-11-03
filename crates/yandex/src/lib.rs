@@ -10,11 +10,14 @@
 //! anti-robot cookie, and this client does not try to get one.
 //!
 //! Endpoints and parsing follow `crawlers/yandex-reverse/search.py`.
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::io::Read;
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
+use pg_model::format::Format;
 use serde_json::Value;
 
 const UPLOAD_URL: &str = "https://yandex.com/images-apphost/image-download?cbird=111";
@@ -34,30 +37,21 @@ pub const DEFAULT_MAX_SIMILAR_PAGES: u32 = 5;
 pub const MAX_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Why a Yandex request failed.
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum YandexError {
     /// Yandex asked for an anti-robot check. Nothing is retried; the user has to resolve it in a browser.
+    #[error("Yandex asked for a captcha")]
     Captcha,
     /// An HTTP status other than success.
+    #[error("Yandex answered HTTP {0}")]
     Status(u16),
     /// A connection, TLS or timeout failure.
+    #[error("Yandex request failed: {0}")]
     Transport(String),
     /// A response that did not have the data we read.
+    #[error("unexpected Yandex response: {0}")]
     Unexpected(&'static str),
 }
-
-impl std::fmt::Display for YandexError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Captcha => write!(f, "Yandex asked for a captcha"),
-            Self::Status(code) => write!(f, "Yandex answered HTTP {code}"),
-            Self::Transport(msg) => write!(f, "Yandex request failed: {msg}"),
-            Self::Unexpected(what) => write!(f, "unexpected Yandex response: {what}"),
-        }
-    }
-}
-
-impl std::error::Error for YandexError {}
 
 /// The ids Yandex gives an upload. `orig_url` is the uploaded photo on Yandex's CDN.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,8 +84,8 @@ pub struct SimilarItem {
 #[derive(Debug)]
 pub struct Download {
     pub bytes: Vec<u8>,
-    /// Without the dot: `jpg`, `png`, `webp`, `gif` or `bmp`.
-    pub extension: &'static str,
+    /// The format of the bytes, from the bytes themselves (`Format::sniff`).
+    pub format: Format,
 }
 
 /// One page of the similar endpoint.
@@ -226,8 +220,9 @@ impl Client {
             Err(ureq::Error::Status(code, _)) => return Err(YandexError::Status(code)),
             Err(e) => return Err(YandexError::Transport(e.to_string())),
         };
-        let extension =
-            extension_for(resp.content_type(), url).ok_or(YandexError::Unexpected("the result is not an image"))?;
+        if claimed_format(resp.content_type(), url).is_none() {
+            return Err(YandexError::Unexpected("the result is not an image"));
+        }
         let mut bytes = Vec::new();
         resp.into_reader()
             .take(MAX_DOWNLOAD_BYTES + 1)
@@ -236,21 +231,23 @@ impl Client {
         if bytes.len() as u64 > MAX_DOWNLOAD_BYTES {
             return Err(YandexError::Unexpected("the image is larger than the download limit"));
         }
-        Ok(Download { bytes, extension })
+        let format = sniffed(&bytes)?;
+        Ok(Download { bytes, format })
     }
 }
 
-/// The extension for an image, from its Content-Type. A file sent without a type (or as
-/// `application/octet-stream`) is judged by the URL's extension. Anything else is not an image.
-pub fn extension_for(content_type: &str, url: &str) -> Option<&'static str> {
+/// The format an image response claims, from its Content-Type. A file sent without a type (or as
+/// `application/octet-stream`) is judged by the URL's extension. Anything else is not an image. The bytes have the last
+/// word: see `sniffed`.
+pub fn claimed_format(content_type: &str, url: &str) -> Option<Format> {
     let content_type = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
     if content_type.starts_with("image/") {
         return match content_type.as_str() {
-            "image/jpeg" => Some("jpg"),
-            "image/png" => Some("png"),
-            "image/webp" => Some("webp"),
-            "image/gif" => Some("gif"),
-            "image/bmp" => Some("bmp"),
+            "image/jpeg" => Some(Format::Jpeg),
+            "image/png" => Some(Format::Png),
+            "image/webp" => Some(Format::Webp),
+            "image/gif" => Some(Format::Gif),
+            "image/bmp" => Some(Format::Bmp),
             _ => None,
         };
     }
@@ -259,12 +256,20 @@ pub fn extension_for(content_type: &str, url: &str) -> Option<&'static str> {
     }
     let path = url.split(['?', '#']).next()?;
     match path.rsplit_once('.')?.1.to_ascii_lowercase().as_str() {
-        "jpg" | "jpeg" => Some("jpg"),
-        "png" => Some("png"),
-        "webp" => Some("webp"),
-        "gif" => Some("gif"),
-        "bmp" => Some("bmp"),
+        "jpg" | "jpeg" => Some(Format::Jpeg),
+        "png" => Some(Format::Png),
+        "webp" => Some(Format::Webp),
+        "gif" => Some(Format::Gif),
+        "bmp" => Some(Format::Bmp),
         _ => None,
+    }
+}
+
+/// The format of a downloaded file, from its bytes: one of the kinds the search returns. Anything else is not an image.
+fn sniffed(bytes: &[u8]) -> Result<Format, YandexError> {
+    match Format::sniff(bytes) {
+        Some(format @ (Format::Jpeg | Format::Png | Format::Webp | Format::Gif | Format::Bmp)) => Ok(format),
+        _ => Err(YandexError::Unexpected("the result is not an image")),
     }
 }
 
@@ -569,20 +574,28 @@ mod tests {
 
     #[test]
     fn result_files_are_images_only() {
-        assert_eq!(extension_for("image/jpeg; charset=x", ""), Some("jpg"));
-        assert_eq!(extension_for("image/webp", "https://a.example/x"), Some("webp"));
-        assert_eq!(extension_for("image/avif", "https://a.example/x.avif"), None);
+        assert_eq!(claimed_format("image/jpeg; charset=x", ""), Some(Format::Jpeg));
+        assert_eq!(claimed_format("image/webp", "https://a.example/x"), Some(Format::Webp));
+        assert_eq!(claimed_format("image/avif", "https://a.example/x.avif"), None);
         // An error page must not be saved as a picture, even when its URL ends in .jpg.
-        assert_eq!(extension_for("text/html", "https://a.example/x.jpg"), None);
+        assert_eq!(claimed_format("text/html", "https://a.example/x.jpg"), None);
         // No type: the URL decides, ignoring a query string.
-        assert_eq!(extension_for("", "https://a.example/x.PNG?w=1"), Some("png"));
-        assert_eq!(extension_for("application/octet-stream", "https://a.example/x.gif#f"), Some("gif"));
-        assert_eq!(extension_for("", "https://a.example/x"), None);
+        assert_eq!(claimed_format("", "https://a.example/x.PNG?w=1"), Some(Format::Png));
+        assert_eq!(claimed_format("application/octet-stream", "https://a.example/x.gif#f"), Some(Format::Gif));
+        assert_eq!(claimed_format("", "https://a.example/x"), None);
     }
 
     #[test]
     fn percent_decoding_handles_truncated_escapes() {
         assert_eq!(percent_decode("a%2Fb%3"), "a/b%3");
         assert_eq!(percent_decode("%E2%9C%93"), "✓");
+    }
+
+    #[test]
+    fn the_bytes_decide_the_format() {
+        // A PNG sent as a JPEG is a PNG; a page or a TIFF is not a kind the search returns.
+        assert_eq!(sniffed(b"\x89PNG\r\n\x1a\n....").unwrap(), Format::Png);
+        assert!(sniffed(b"<html>").is_err());
+        assert!(sniffed(b"II*\0\x08\0\0\0").is_err());
     }
 }

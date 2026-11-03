@@ -97,7 +97,7 @@ use std::thread;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
-use pg_core::yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
+use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
 
 use crate::{panic_log, settings};
 
@@ -287,7 +287,7 @@ fn save_all(hits: &[Hit], stem: &str, folder: &Path, shared: &Mutex<Shared>) -> 
     for (i, hit) in hits.iter().enumerate() {
         set_status(shared, format!("Saving {} of {}…", i + 1, hits.len()));
         let result = client.download(&hit.url).map_err(|e| e.to_string()).and_then(|file| {
-            let path = unique_path(folder, &sanitize(&format!("{stem} ({})", hit.suffix)), file.extension);
+            let path = unique_path(folder, &sanitize(&format!("{stem} ({})", hit.suffix)), file.format.extension());
             std::fs::write(&path, &file.bytes).map_err(|e| format!("{}: {e}", path.display()))
         });
         match result {

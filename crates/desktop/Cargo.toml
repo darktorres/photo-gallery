@@ -24,6 +24,7 @@ pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }
 pg-video = { path = "../video" }
+pg-yandex = { path = "../yandex" }
 pg-ingest = { path = "../ingest" }
 anyhow.workspace = true
 cxx = "1"

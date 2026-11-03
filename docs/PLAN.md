@@ -308,7 +308,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   near-duplicate detection, and their ratings and turns stay in the catalog (see Later).
 - **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
   groups in a panel: the photo's other sizes (to find a better copy) and similar images (to find more), all of
-  them, not just the first page (`pg_core::yandex`, ported from the crawlers repo's `search.py`; why the browser
+  them, not just the first page (`pg_yandex`, ported from the crawlers repo's `search.py`; why the browser
   sees more is in `docs/FINDINGS.md`). Picking and saving (done 2026-11-01):
   - A click picks a result, **Shift-click** a range (to the anchor's state), and each group has **Select all**.
   - **Double-click** shows a result at full size, fitted or 1:1 (←/→ step, Space picks, Escape goes back).

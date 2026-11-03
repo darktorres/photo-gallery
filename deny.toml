@@ -62,6 +62,8 @@ deny = [
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg", "pg-core"] },
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
+    # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
+    { crate = "ureq", wrappers = ["pg-yandex"] },
     # FFmpeg is linked by pg-video alone: a video's probe, frames and file hash.
     { crate = "ffmpeg-next", wrappers = ["pg-video"] },
 ]

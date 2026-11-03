@@ -29,6 +29,7 @@ quick-xml = "0.42"
 rusqlite = { version = "0.37", features = ["bundled", "collation", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+thiserror = "2"
 thumbhash = "0.1"
 tiff = "0.11"
 turbojpeg = { version = "1", features = ["cmake"] }

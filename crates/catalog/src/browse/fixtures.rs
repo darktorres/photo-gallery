@@ -1,6 +1,8 @@
 //! The catalogs the browse tests read: a small library, and one with a video, an animated GIF, a file the import
 //! could not read and one not imported yet.
 
+use pg_model::ids::FileId;
+use pg_model::rating::Rating;
 use rusqlite::params;
 
 use crate::browse::read::{FILE_JOINS, list_grid};
@@ -32,13 +34,13 @@ pub(crate) fn library() -> crate::Catalog {
                 params![id, size, mtime, format],
             )
             .unwrap();
-        set_rating(&c.conn, id, rating, false).unwrap();
+        set_rating(&c.conn, FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
     }
     c
 }
 
 pub(crate) fn ids(c: &crate::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
-    list_grid(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|e| e.id).collect()
+    list_grid(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
 }
 
 pub(crate) fn by(key: SortKey, descending: bool) -> Sort {

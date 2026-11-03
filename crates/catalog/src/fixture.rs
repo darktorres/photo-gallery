@@ -1,6 +1,7 @@
 //! Test catalogs: files inserted as the scanner would, with their order keys. Behind the `fixture` feature (and in
 //! this crate's tests), so every crate that reads a catalog in its tests builds the same files.
 
+use pg_model::turns::Turns;
 use rusqlite::{Connection, params};
 
 /// A file row; `folder` must exist in `folders`.
@@ -13,13 +14,13 @@ pub struct File {
     pub mtime: i64,
     pub file_ref: i64,
     pub missing: bool,
-    pub rotation: u8,
+    pub rotation: Turns,
 }
 
 impl File {
     /// An image present on volume 1, its file reference its id.
     pub fn new(id: i64, folder: i64, name: &'static str, size: i64, mtime: i64) -> File {
-        File { id, folder, name, kind: "image", size, mtime, file_ref: id, missing: false, rotation: 0 }
+        File { id, folder, name, kind: "image", size, mtime, file_ref: id, missing: false, rotation: Turns::NONE }
     }
 }
 
@@ -42,7 +43,7 @@ pub fn insert(conn: &Connection, files: &[File]) {
                 f.size,
                 f.mtime,
                 f.missing,
-                f.rotation,
+                f.rotation.get(),
                 pg_model::path::order_key_of(&folder, f.name)
             ],
         )

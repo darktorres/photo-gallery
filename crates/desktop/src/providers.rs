@@ -54,6 +54,9 @@ use anyhow::Context;
 use cxx_qt_lib::QImage;
 use ffi::Pixels;
 
+use pg_model::ids::FileId;
+use pg_model::turns::Turns;
+
 use crate::state;
 
 pub const KIND_THUMB: i32 = 0;
@@ -71,11 +74,11 @@ fn failed() -> Pixels {
 
 /// A thumbnail `height` px high of `file_id` (`state::thumbnail`), decoded, or turned by its turns. One made on a
 /// miss moves to the cache's writer once decoded.
-fn thumbnail(file_id: i64, height: u32, named: Option<state::Named>) -> anyhow::Result<Pixels> {
+fn thumbnail(file_id: FileId, height: u32, named: Option<state::Named>) -> anyhow::Result<Pixels> {
     JPEG.with_borrow_mut(|jpeg| {
         let thumb = state::thumbnail(file_id, height, named, jpeg)?;
         let bytes = thumb.made.as_ref().map_or(&jpeg[..], |(made, _)| made);
-        let pixels = if thumb.turns == 0 {
+        let pixels = if thumb.turns == Turns::NONE {
             let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
             Ok(Pixels { width: 0, height: 0, format: 0, data: Vec::new(), image })
         } else {
@@ -121,16 +124,16 @@ fn full_view(rest: &str) -> Option<state::View> {
 }
 
 /// A key's file, and what its version names (`None` without a version that reads).
-fn parse_key(key: &str) -> Option<(i64, Option<state::Named>)> {
+fn parse_key(key: &str) -> Option<(FileId, Option<state::Named>)> {
     let (file, version) = key.split_once('@').map_or((key, None), |(f, v)| (f, Some(v)));
     let named = version.and_then(|v| {
         let mut parts = v.split('.');
         let mtime = parts.next()?.parse().ok()?;
-        let rotation = parts.next()?.parse::<u8>().ok()? % 4;
-        let turns = parts.next()?.parse::<u8>().ok()? % 4;
+        let rotation = Turns::new(parts.next()?.parse::<u8>().ok()?);
+        let turns = Turns::new(parts.next()?.parse::<u8>().ok()?);
         Some(state::Named { source: pg_thumbcache::Source { mtime, rotation }, turns })
     });
-    Some((file.parse().ok()?, named))
+    Some((FileId::new(file.parse().ok()?), named))
 }
 
 fn load_image(kind: i32, id: &str) -> Pixels {

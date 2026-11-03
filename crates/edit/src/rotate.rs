@@ -16,6 +16,7 @@
 //! ignore the tag.
 
 use anyhow::Result;
+use pg_model::turns::Turns;
 
 use crate::rewrite::{self, Op};
 use pg_container::{png_chunks, webp_chunks};
@@ -34,10 +35,10 @@ pub enum Outcome {
 }
 
 /// Turn a file `turns` quarter turns clockwise (as shown).
-pub fn rotate(bytes: &[u8], format: Format, turns: u8) -> Result<Outcome> {
+pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
     let shown = pg_metadata::orientation(bytes, format);
     // The transform that takes the stored pixels to the new upright image.
-    let total = orientation::compose(shown, turns % 4);
+    let total = orientation::compose(shown, turns);
     let tag = || Outcome::Orientation(total);
     let rewritten = |out: Vec<u8>| -> Outcome {
         // Pixels now upright: the tag (if any) goes back to 1.
@@ -87,7 +88,7 @@ mod tests {
     }
 
     /// Expected: the original as shown, turned clockwise `turns` times.
-    fn expect_turned(original: &[u8], turns: u8) -> (usize, usize, Vec<u8>) {
+    fn expect_turned(original: &[u8], turns: Turns) -> (usize, usize, Vec<u8>) {
         let (w, h, pixels) = shown(original);
         let img = orient(pg_codec::pixels::Rgb { width: w, height: h, pixels }, orientation::compose(1, turns));
         (img.width, img.height, img.pixels)
@@ -134,14 +135,14 @@ mod tests {
     fn check_exact(variants: &[Vec<u8>], format: Format) {
         for original in variants {
             for turns in 1..=3 {
-                let Outcome::Rewritten(out) = rotate(original, format, turns).unwrap() else {
+                let Outcome::Rewritten(out) = rotate(original, format, Turns::new(turns)).unwrap() else {
                     panic!("{format:?} should be rewritten")
                 };
                 assert_eq!(Format::sniff(&out), Some(format));
                 assert_eq!(pg_metadata::orientation(&out, format), 1);
                 assert_eq!(
                     shown(&out),
-                    expect_turned(original, turns),
+                    expect_turned(original, Turns::new(turns)),
                     "{format:?}, orientation {}, {turns} turns",
                     pg_metadata::orientation(original, format)
                 );
@@ -226,22 +227,22 @@ mod tests {
         for aligned in all_orientations(&jpeg(64, 32), Format::Jpeg) {
             let o = pg_metadata::orientation(&aligned, Format::Jpeg);
             for turns in 1..=3 {
-                let Outcome::Rewritten(out) = rotate(&aligned, Format::Jpeg, turns).unwrap() else {
+                let Outcome::Rewritten(out) = rotate(&aligned, Format::Jpeg, Turns::new(turns)).unwrap() else {
                     panic!("aligned JPEG")
                 };
                 assert_eq!(pg_metadata::orientation(&out, Format::Jpeg), 1);
-                let (got, want) = (shown(&out), expect_turned(&aligned, turns));
+                let (got, want) = (shown(&out), expect_turned(&aligned, Turns::new(turns)));
                 assert_eq!((got.0, got.1), (want.0, want.1), "orientation {o}, {turns} turns");
                 let worst = got.2.iter().zip(&want.2).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
                 assert!(worst <= 3, "orientation {o}, {turns} turns: max difference {worst}");
             }
         }
         // Not aligned: no perfect transform, so the orientation tag carries it.
-        assert!(matches!(rotate(&jpeg(65, 33), Format::Jpeg, 1).unwrap(), Outcome::Orientation(6)));
+        assert!(matches!(rotate(&jpeg(65, 33), Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(6)));
         // Damaged before the scan (cut off there): refused, not re-encoded; the tag carries the turn.
         let good = jpeg(64, 32);
         let scan = pg_container::find(&good, &[0xFF, 0xDA]).unwrap();
-        assert!(matches!(rotate(&good[..scan], Format::Jpeg, 1).unwrap(), Outcome::Orientation(6)));
+        assert!(matches!(rotate(&good[..scan], Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(6)));
         assert!(rewrite::jpeg(&good[..scan], Op::Orient(6)).unwrap_err().is::<rewrite::Imperfect>());
     }
 }

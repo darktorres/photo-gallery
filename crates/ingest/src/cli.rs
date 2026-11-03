@@ -1,6 +1,7 @@
 //! The command line of `gallery.exe` (`gallery scan`, `gallery import`, …): the app's passes without the window,
 //! for scripts, profiling and checking results. Progress goes to stderr.
 
+use pg_model::ids::FileId;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -308,7 +309,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
 
 /// The present files of the catalog at these paths, each a file or a folder (its files and its subfolders'), each
 /// once. Fails, before anything is done, on a path that holds none.
-fn files_named(catalog: &Catalog, paths: &[String]) -> Result<Vec<i64>> {
+fn files_named(catalog: &Catalog, paths: &[String]) -> Result<Vec<FileId>> {
     let mut ids = Vec::new();
     for path in paths {
         let real = scan::normalize_path(path)?;

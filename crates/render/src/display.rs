@@ -3,6 +3,7 @@
 //! ([`pg_codec::decode`]) takes the orientation as a value and reads no metadata itself.
 
 use anyhow::{Context, Result};
+use pg_model::turns::Turns;
 
 use pg_codec::decode::{Decoded, Decoder, MinSize, Stored};
 use pg_model::format::Format;
@@ -10,7 +11,7 @@ use pg_model::format::Format;
 /// Decode `bytes` upright at the smallest DCT scale that keeps `min` (full size if the image is smaller), into new
 /// buffers: a one-off decode (the viewer). `turns` is the catalog rotation (`files.rotation`, quarter turns clockwise),
 /// applied after the EXIF orientation.
-pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Decoded> {
+pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: Turns) -> Result<Decoded> {
     let format = Format::sniff(bytes).context("unknown image format")?;
     let exif = pg_metadata::orientation(bytes, format);
     let mut image = pg_codec::pixels::Rgb::default();
@@ -19,7 +20,7 @@ pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> R
 }
 
 /// [`decode`] without the orientation, into new buffers: the pixels as stored, which is what a lossless crop cuts.
-pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u8) -> Result<Stored> {
+pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: Turns) -> Result<Stored> {
     let format = Format::sniff(bytes).context("unknown image format")?;
     let exif = pg_metadata::orientation(bytes, format);
     let mut image = pg_codec::pixels::Rgb::default();
@@ -29,6 +30,8 @@ pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: u
 
 #[cfg(test)]
 mod tests {
+    use pg_model::turns::Turns;
+
     #[test]
     fn upright_follows_the_decoders_transform() {
         // A 4×2 stored image whose only lit pixel block is the rectangle x 1..3, y 0..1; every orientation and turn
@@ -43,7 +46,7 @@ mod tests {
                 for _ in 0..turns {
                     (px, pw, ph) = pg_codec::decode::transform(&px, pw, ph, 1, 6);
                 }
-                let [x0, y0, x1, y1] = pg_model::orientation::upright_rect(rect, orientation, turns);
+                let [x0, y0, x1, y1] = pg_model::orientation::upright_rect(rect, orientation, Turns::new(turns));
                 for y in 0..ph {
                     for x in 0..pw {
                         let (cx, cy) = ((x as f64 + 0.5) / pw as f64, (y as f64 + 0.5) / ph as f64);

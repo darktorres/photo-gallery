@@ -10,6 +10,9 @@
 //!
 //! A crash during step 2 leaves the row with its temp set, and the next start finishes the copy.
 
+use pg_model::ids::FileId;
+use pg_model::rating::Rating;
+use pg_model::turns::Turns;
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -37,7 +40,7 @@ const IDLE_CHECK: Duration = Duration::from_secs(30);
 
 /// One queued change.
 struct Job {
-    file_id: i64,
+    file_id: FileId,
     kind: String,
     value: i64,
     /// Set when the new content is complete: its path, and the value it carries.
@@ -175,7 +178,7 @@ impl Inner {
                         let temp: Option<String> = r.get(3)?;
                         let temp_value: Option<i64> = r.get(4)?;
                         Ok(Job {
-                            file_id: r.get(0)?,
+                            file_id: FileId::new(r.get(0)?),
                             kind: r.get(1)?,
                             value: r.get(2)?,
                             temp: temp.zip(temp_value),
@@ -201,7 +204,7 @@ impl Inner {
             // the status line says why.
             let gone: bool = catalog.conn.query_row(
                 "SELECT coalesce((SELECT missing FROM files WHERE id = ?1), 1)",
-                [job.file_id],
+                [job.file_id.get()],
                 |r| r.get(0),
             )?;
             if gone {
@@ -210,10 +213,13 @@ impl Inner {
                 }
                 catalog.conn.execute(
                     "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2",
-                    params![job.file_id, job.kind],
+                    params![job.file_id.get(), job.kind],
                 )?;
-                self.status.lock().unwrap().error =
-                    Some(format!("A queued {} was dropped: file {} is not in the library", job.kind, job.file_id));
+                self.status.lock().unwrap().error = Some(format!(
+                    "A queued {} was dropped: file {} is not in the library",
+                    job.kind,
+                    job.file_id.get()
+                ));
                 continue;
             }
             match self.process(catalog, &job, exiftool) {
@@ -231,7 +237,7 @@ impl Inner {
                     catalog.conn.execute(
                         "UPDATE file_writes SET attempts = attempts + ?3, error = ?4, queued = unixepoch()
                          WHERE file_id = ?1 AND kind = ?2",
-                        params![job.file_id, job.kind, if offline { 0 } else { 1 }, message],
+                        params![job.file_id.get(), job.kind, if offline { 0 } else { 1 }, message],
                     )?;
                     self.status.lock().unwrap().error = Some(message);
                     if offline {
@@ -247,10 +253,10 @@ impl Inner {
     }
 
     /// Whether the folder the file is in exists, so its drive is there.
-    fn folder_present(&self, catalog: &Catalog, file_id: i64) -> bool {
+    fn folder_present(&self, catalog: &Catalog, file_id: FileId) -> bool {
         let folder: rusqlite::Result<String> = catalog.conn.query_row(
             "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
-            [file_id],
+            [file_id.get()],
             |r| r.get(0),
         );
         folder.is_ok_and(|p| Path::new(&p).is_dir())
@@ -263,7 +269,7 @@ impl Inner {
         let Some((temp, _)) = &job.temp else { return Ok(()) };
         let path: String = catalog.conn.query_row(
             "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
-            [job.file_id],
+            [job.file_id.get()],
             |r| r.get(0),
         )?;
         let _ = std::fs::remove_file(temp);
@@ -273,7 +279,7 @@ impl Inner {
         }
         tx.execute(
             "UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = ?2",
-            params![job.file_id, job.kind],
+            params![job.file_id.get(), job.kind],
         )?;
         tx.commit()?;
         Ok(())
@@ -284,7 +290,7 @@ impl Inner {
         let (path, format, kind): (String, Option<String>, String) = conn.query_row(
             "SELECT fo.path || '\\' || f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
              LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
-            [job.file_id],
+            [job.file_id.get()],
             |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )?;
 
@@ -335,7 +341,7 @@ impl Inner {
             }
             "rotation" => {
                 let turns = job.value.rem_euclid(4) as u8;
-                let new = match rotate(&bytes, format, turns)? {
+                let new = match rotate(&bytes, format, Turns::new(turns))? {
                     Outcome::Rewritten(new) => Some(new),
                     Outcome::Orientation(o) => match patch_orientation(&bytes, format, o) {
                         Some(new) => Some(new),
@@ -366,7 +372,7 @@ impl Inner {
         // readers know the file may be part-written (browse::read::FileState::writing).
         conn.execute(
             "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
-            params![job.file_id, job.kind, temp, job.value],
+            params![job.file_id.get(), job.kind, temp, job.value],
         )?;
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
@@ -376,7 +382,7 @@ impl Inner {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
-                eprintln!("thumbnails of file {}: {e:#}", job.file_id);
+                eprintln!("thumbnails of file {}: {e:#}", job.file_id.get());
             }
         }
         if pixels_changed {
@@ -388,7 +394,7 @@ impl Inner {
     /// A turn the file can't hold is kept in the catalog instead.
     fn keep_turn_in_catalog(&self, conn: &rusqlite::Connection, job: &Job) -> Result<()> {
         let turns = job.value.rem_euclid(4) as u8;
-        self.done(conn, job, job.value, |tx| Catalog::add_catalog_rotation(tx, job.file_id, turns))?;
+        self.done(conn, job, job.value, |tx| Catalog::add_catalog_rotation(tx, job.file_id, Turns::new(turns)))?;
         self.pixels_changed();
         Ok(())
     }
@@ -404,7 +410,7 @@ impl Inner {
         written: i64,
         record: impl FnOnce(&rusqlite::Transaction) -> Result<()>,
     ) -> Result<()> {
-        let (file_id, kind) = (job.file_id, job.kind.as_str());
+        let (file_id, kind) = (job.file_id.get(), job.kind.as_str());
         let tx = conn.unchecked_transaction()?;
         record(&tx)?;
         if kind == "rotation" {
@@ -414,7 +420,7 @@ impl Inner {
             )?;
             tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation' AND value = 0", [file_id])?;
             // The upright size at once: the grid lays the file out turned before its analysis is redone.
-            if pg_model::orientation::turns_swap(written.rem_euclid(4) as u8) {
+            if pg_model::orientation::turns_swap(Turns::new(written.rem_euclid(4) as u8)) {
                 tx.execute("UPDATE analysis SET width = height, height = width WHERE file_id = ?1", [file_id])?;
             }
         } else {
@@ -453,9 +459,9 @@ fn record_rewrite(
 ) -> Result<()> {
     Catalog::file_rewritten(tx, job.file_id, before, after, metadata_only)?;
     if job.kind == "rating" {
-        Catalog::set_file_rating(tx, job.file_id, Some(value as u8))?;
+        Catalog::set_file_rating(tx, job.file_id, Rating::new((value as u8).min(5)))?;
     } else {
-        Catalog::analysis_turned_back(tx, job.file_id, value.rem_euclid(4) as u8)?;
+        Catalog::analysis_turned_back(tx, job.file_id, Turns::new(value.rem_euclid(4) as u8))?;
     }
     Ok(())
 }

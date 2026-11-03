@@ -7,6 +7,7 @@
 //! matters").
 
 use anyhow::Result;
+use pg_model::turns::Turns;
 use turbojpeg::{Decompressor, Image, PixelFormat, ScalingFactor};
 
 use crate::codecs::Codecs;
@@ -93,7 +94,7 @@ impl Decoder {
         format: Format,
         exif: u8,
         min: MinSize,
-        turns: u8,
+        turns: Turns,
         out: &mut Rgb,
         spare: &mut Vec<u8>,
     ) -> Result<Info> {
@@ -110,7 +111,7 @@ impl Decoder {
         format: Format,
         exif: u8,
         min: MinSize,
-        turns: u8,
+        turns: Turns,
         out: &mut Rgb,
     ) -> Result<Info> {
         let orientation = pg_model::orientation::compose(exif, turns);
@@ -255,7 +256,7 @@ mod tests {
         let mut decoded = Rgb::default();
         Decoder::new()
             .unwrap()
-            .decode_into(file.get_ref(), Format::Png, 1, MinSize::Full, 0, &mut decoded, &mut Vec::new())
+            .decode_into(file.get_ref(), Format::Png, 1, MinSize::Full, Turns::NONE, &mut decoded, &mut Vec::new())
             .unwrap();
         let want: Vec<u8> = rgba
             .as_chunks::<4>()
@@ -294,7 +295,7 @@ mod tests {
         for o in 1..=8 {
             // Turning the upright image clockwise is EXIF 6 applied to it.
             let expected = orient(orient(img(), o), 6);
-            let got = orient(img(), orientation::compose(o, 1));
+            let got = orient(img(), orientation::compose(o, Turns::new(1)));
             assert_eq!(
                 (got.width, got.height, &got.pixels),
                 (expected.width, expected.height, &expected.pixels),

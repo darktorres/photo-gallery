@@ -7,6 +7,7 @@
 //! it commits what it has and the next round starts with the new work. Every pass is resumable from the catalog,
 //! so stopping costs nothing but the batch in flight.
 
+use pg_model::ids::FileId;
 use std::collections::VecDeque;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
@@ -30,7 +31,7 @@ struct Queue {
     /// Folders to scan, normalized.
     scans: Vec<String>,
     /// Cropped copies to save: the files, and the folder.
-    crops: Vec<(Vec<i64>, PathBuf)>,
+    crops: Vec<(Vec<FileId>, PathBuf)>,
     /// Something to do: start a round.
     wake: bool,
 }
@@ -167,7 +168,7 @@ impl Runner {
     }
 
     /// Save cropped copies of these files' borders into `folder` (`crop::save`), before anything else.
-    pub fn save_crops(&self, ids: Vec<i64>, folder: PathBuf) {
+    pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
         let mut q = self.inner.queue.lock().unwrap();
         q.crops.push((ids, folder));
         self.inner.wake_up(q);
@@ -262,7 +263,7 @@ impl Inner {
         q.wake = true;
     }
 
-    fn round(&self, catalog: &mut Catalog, roots: Vec<String>, crops: Vec<(Vec<i64>, PathBuf)>) -> Result<()> {
+    fn round(&self, catalog: &mut Catalog, roots: Vec<String>, crops: Vec<(Vec<FileId>, PathBuf)>) -> Result<()> {
         for (i, (ids, folder)) in crops.iter().enumerate() {
             match crop::save(catalog, ids, folder, &Options::new(Priority::BelowNormal), &self.ctl) {
                 Ok(s) if !s.remaining.is_empty() => {

@@ -283,6 +283,9 @@ use pg_catalog::browse::{
 use pg_catalog::query::{MediaType, Query, Sort};
 use pg_core::layout::{self, Row, RowChange};
 use pg_model::detection::Class;
+use pg_model::ids::FileId;
+use pg_model::rating::Rating;
+use pg_model::turns::Turns;
 
 use crate::loader::{self, Kind as Load};
 use crate::{library, settings, state};
@@ -318,7 +321,7 @@ pub struct GalleryRust {
     entries: Vec<Entry>,
     /// The details read last, of at most two files (the selection's and the viewer's), newest first. Emptied
     /// whenever a list is shown or a file changes.
-    details: RefCell<Vec<(i64, Details)>>,
+    details: RefCell<Vec<(FileId, Details)>>,
     rows: Vec<Row>,
     /// The last layout's rows, kept for their capacity: a relayout is made into it, then swapped in.
     spare_rows: Vec<Row>,
@@ -337,7 +340,7 @@ pub struct GalleryRust {
     held: Option<(u64, Vec<Entry>)>,
     /// Files rated or turned since it was asked for (its snapshot may predate them), and whether turns were
     /// written meanwhile (`refreshTurned`).
-    edited: Vec<i64>,
+    edited: Vec<FileId>,
     turned: bool,
 }
 
@@ -384,7 +387,7 @@ impl GalleryRust {
             let details = match state::with_catalog(|c| browse::read::details(&c.conn, e.id)) {
                 Ok(d) => d?,
                 Err(err) => {
-                    eprintln!("reading {}: {err:#}", e.id);
+                    eprintln!("reading {}: {err:#}", e.id.get());
                     return None;
                 }
             };
@@ -502,7 +505,7 @@ impl qobject::GalleryModel {
         }
         self.as_mut().about_to_load();
         let keep = self.keep;
-        let (current, anchor) = (self.file_id(self.current), self.file_id(self.anchor));
+        let (current, anchor) = (self.id_at(self.current), self.id_at(self.anchor));
         // What was rated or turned since the list was read, as the catalog has it now (this thread's connection
         // sees its own writes).
         let edited = std::mem::take(&mut self.as_mut().rust_mut().edited);
@@ -511,7 +514,7 @@ impl qobject::GalleryModel {
                 match state::with_catalog(|c| browse::read::entry(&c.conn, id)) {
                     Ok(Some(fresh)) => *slot = fresh,
                     Ok(None) => {}
-                    Err(e) => eprintln!("reloading {id}: {e:#}"),
+                    Err(e) => eprintln!("reloading {}: {e:#}", id.get()),
                 }
             }
         }
@@ -533,11 +536,11 @@ impl qobject::GalleryModel {
         let new_current = match (keep, self.current) {
             (false, _) | (true, -1) => -1,
             (true, old) => {
-                let i = self.index_of(current);
+                let i = self.position_of(current);
                 if i >= 0 || count == 0 { i } else { old.min(count - 1) }
             }
         };
-        let kept = if keep && anchor >= 0 { self.index_of(anchor) } else { -1 };
+        let kept = if keep { self.position_of(anchor) } else { -1 };
         self.as_mut().set_current(new_current);
         self.as_mut().set_anchor(-1);
         let revision = self.revision + 1;
@@ -645,12 +648,22 @@ impl qobject::GalleryModel {
         }
     }
 
+    /// The file of an item, `None` without the item.
+    fn id_at(&self, item: i32) -> Option<FileId> {
+        self.item(item).map(|i| i.id)
+    }
+
+    /// The position of a file in the list, -1 when it is not there (or `None`).
+    fn position_of(&self, id: Option<FileId>) -> i32 {
+        id.and_then(|id| self.entries.iter().position(|e| e.id == id)).map_or(-1, |i| i as i32)
+    }
+
     fn file_id(&self, item: i32) -> i64 {
-        self.item(item).map_or(-1, |i| i.id)
+        self.id_at(item).map_or(-1, FileId::get)
     }
 
     fn index_of(&self, file_id: i64) -> i32 {
-        self.entries.iter().position(|e| e.id == file_id).map_or(-1, |i| i as i32)
+        self.position_of(Some(FileId::new(file_id)))
     }
 
     fn aspect(&self, item: i32) -> f64 {
@@ -663,7 +676,8 @@ impl qobject::GalleryModel {
             // (0–3), so 20 + 1 + 20 + 1 + 1 + 1 + 1 = 45 bytes.
             let mut buf = [0u8; 64];
             let mut rest = &mut buf[..];
-            write!(rest, "{}@{}.{}.{}", e.id, e.mtime, e.rotation, e.pending_turns).expect("64 bytes hold a key");
+            write!(rest, "{}@{}.{}.{}", e.id.get(), e.mtime, e.rotation.get(), e.pending_turns.get())
+                .expect("64 bytes hold a key");
             let len = 64 - rest.len();
             QString::from(std::str::from_utf8(&buf[..len]).expect("ASCII"))
         })
@@ -689,13 +703,13 @@ impl qobject::GalleryModel {
     }
 
     fn pending_turns(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |i| i.pending_turns as i32)
+        self.item(item).map_or(0, |i| i.pending_turns.get() as i32)
     }
 
     fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
-        let Some(id) = self.item(item).map(|i| i.id) else { return };
-        let turns = turns.rem_euclid(4) as u8;
-        if turns == 0 {
+        let Some(id) = self.id_at(item) else { return };
+        let turns = Turns::new(turns.rem_euclid(4) as u8);
+        if turns == Turns::NONE {
             return;
         }
         if let Err(e) = state::with_catalog(|c| browse::writes::queue_rotation(&c.conn, id, turns)) {
@@ -706,7 +720,7 @@ impl qobject::GalleryModel {
         {
             let mut this = self.as_mut().rust_mut();
             let e = &mut this.entries[item as usize];
-            e.pending_turns = (e.pending_turns + turns) % 4;
+            e.pending_turns = e.pending_turns.plus(turns);
             this.forget_details();
             if this.loading {
                 this.edited.push(id);
@@ -729,7 +743,8 @@ impl qobject::GalleryModel {
         }
         // Not the queued turns (`file_writes`): the writer deletes a turn's row once it's written, so these are
         // exactly the entries that still show one.
-        let waiting: Vec<usize> = (0..self.entries.len()).filter(|&i| self.entries[i].pending_turns != 0).collect();
+        let waiting: Vec<usize> =
+            (0..self.entries.len()).filter(|&i| self.entries[i].pending_turns != Turns::NONE).collect();
         if waiting.is_empty() {
             return;
         }
@@ -746,7 +761,7 @@ impl qobject::GalleryModel {
                     changed.push(i);
                 }
                 Ok(_) => {}
-                Err(e) => eprintln!("reloading {id}: {e:#}"),
+                Err(e) => eprintln!("reloading {}: {e:#}", id.get()),
             }
         }
         if changed.is_empty() {
@@ -770,8 +785,10 @@ impl qobject::GalleryModel {
     }
 
     fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
-        let Some(id) = self.item(item).map(|i| i.id) else { return };
-        let rating = rating.clamp(0, 5) as u8;
+        let Some(id) = self.id_at(item) else { return };
+        let stars = rating.clamp(0, 5) as u8;
+        // Zero stars is no rating: the catalog keeps no row for it.
+        let rating = Rating::new(stars).filter(|r| r.get() > 0);
         let write_back = settings::prefs().write_back;
         if let Err(e) = state::with_catalog(|c| browse::writes::set_rating(&c.conn, id, rating, write_back)) {
             eprintln!("rating: {e:#}");
@@ -782,7 +799,7 @@ impl qobject::GalleryModel {
         }
         {
             let mut this = self.as_mut().rust_mut();
-            this.entries[item as usize].rating = rating;
+            this.entries[item as usize].rating = stars;
             this.forget_details();
             if this.loading {
                 this.edited.push(id);
@@ -866,7 +883,7 @@ impl qobject::GalleryModel {
     }
 
     fn save_cropped_copies(&self, url: &QUrl) -> i32 {
-        let ids: Vec<i64> = self.entries.iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
+        let ids: Vec<FileId> = self.entries.iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
         let folder = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
         let n = ids.len() as i32;
         if n > 0 {
@@ -894,7 +911,7 @@ impl qobject::GalleryModel {
     }
 
     fn player_turns(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |e| ((e.rotation + e.pending_turns) % 4) as i32)
+        self.item(item).map_or(0, |e| e.rotation.plus(e.pending_turns).get() as i32)
     }
 
     fn info(&self, item: i32) -> QString {

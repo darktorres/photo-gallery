@@ -1,6 +1,7 @@
 //! The import's tier-1 pairs. A new picture's 8 orientations are queried against the index and then inserted, so every
 //! pair is found once, whichever picture came first.
 
+use pg_model::ids::FileId;
 use pg_model::pdq::{Hash, MATCH_DISTANCE};
 
 use crate::pdq_index::PdqIndex;
@@ -9,14 +10,14 @@ use crate::pdq_index::PdqIndex;
 pub struct Pairer {
     index: PdqIndex,
     /// One orientation's neighbours, as the index finds them.
-    found: Vec<(i64, u32)>,
+    found: Vec<(FileId, u32)>,
     /// Each neighbour's best (distance, orientation variant), for the picture being paired.
-    best: Vec<(i64, u32, usize)>,
+    best: Vec<(FileId, u32, usize)>,
 }
 
 impl Pairer {
     /// The index of the stored hashes: `ids` and their hash words, as [`PdqIndex::build`] takes them.
-    pub fn build(ids: Vec<i64>, hashes: Vec<[u64; 4]>) -> Pairer {
+    pub fn build(ids: Vec<FileId>, hashes: Vec<[u64; 4]>) -> Pairer {
         Pairer { index: PdqIndex::build(ids, hashes), found: Vec::new(), best: Vec::new() }
     }
 
@@ -37,7 +38,7 @@ impl Pairer {
 
     /// Query the picture `id`'s orientations against the index, then insert them. The result is each other picture's
     /// best (distance, orientation variant) within [`MATCH_DISTANCE`]; the picture's own entries are left out.
-    pub fn pair_and_insert(&mut self, id: i64, orientations: &[Hash]) -> &[(i64, u32, usize)] {
+    pub fn pair_and_insert(&mut self, id: FileId, orientations: &[Hash]) -> &[(FileId, u32, usize)] {
         self.index.best_matches(orientations, MATCH_DISTANCE, &mut self.found, &mut self.best);
         self.best.retain(|&(other, _, _)| other != id);
         self.index.insert_orientations(id, orientations);

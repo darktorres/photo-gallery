@@ -17,6 +17,7 @@ pub(crate) mod testing {
     use pg_codec::decode::{Decoder, MinSize};
     use pg_codec::pixels::Rgb;
     use pg_model::format::Format;
+    use pg_model::turns::Turns;
 
     /// `bytes` decoded upright at full size: (width, height, pixels).
     pub(crate) fn shown(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
@@ -25,7 +26,7 @@ pub(crate) mod testing {
         let exif = pg_metadata::orientation(bytes, format);
         Decoder::new()
             .unwrap()
-            .decode_into(bytes, format, exif, MinSize::Full, 0, &mut image, &mut Vec::new())
+            .decode_into(bytes, format, exif, MinSize::Full, Turns::NONE, &mut image, &mut Vec::new())
             .unwrap();
         (image.width, image.height, image.pixels)
     }
@@ -35,7 +36,10 @@ pub(crate) mod testing {
         let format = Format::sniff(bytes).unwrap();
         let mut image = Rgb::default();
         let exif = pg_metadata::orientation(bytes, format);
-        Decoder::new().unwrap().decode_stored_into(bytes, format, exif, MinSize::Full, 0, &mut image).unwrap();
+        Decoder::new()
+            .unwrap()
+            .decode_stored_into(bytes, format, exif, MinSize::Full, Turns::NONE, &mut image)
+            .unwrap();
         (image.width, image.height, image.pixels)
     }
 }

@@ -54,7 +54,7 @@ pub enum Media {
 pub struct ImageFacts {
     pub format: Format,
     /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
-    pub file_rating: Option<u8>,
+    pub file_rating: Option<crate::rating::Rating>,
     pub pixels: PixelHashes,
 }
 

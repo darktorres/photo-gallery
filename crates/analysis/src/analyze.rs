@@ -2,6 +2,8 @@
 //! out before any thumbnail exists. No thumbnails here: they are a background task after the import (PLAN §6).
 
 use anyhow::{Context, Result};
+use pg_model::rating::Rating;
+use pg_model::turns::Turns;
 use std::path::Path;
 
 use crate::borders::{self, Detector};
@@ -76,13 +78,13 @@ impl Analyzer {
 
     /// The import's analysis of an image. `turns`: the file's catalog rotation (quarter turns clockwise), part of
     /// what "upright" means.
-    pub fn analyze(&mut self, bytes: &[u8], turns: u8) -> Result<Analysis> {
+    pub fn analyze(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
         let result = self.analyze_image(bytes, turns);
         self.trim();
         result
     }
 
-    fn analyze_image(&mut self, bytes: &[u8], turns: u8) -> Result<Analysis> {
+    fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
         let file_hash = file_hash(bytes);
         let format = Format::sniff(bytes).context("unknown image format")?;
         let meta = Meta::read(bytes, format, &mut self.meta);
@@ -105,7 +107,7 @@ impl Analyzer {
             taken: meta.taken.map(Taken::Wall),
             media: Media::Image(ImageFacts {
                 format: info.format,
-                file_rating: meta.rating,
+                file_rating: meta.rating.and_then(Rating::new),
                 pixels: PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral },
             }),
         })
@@ -118,13 +120,13 @@ impl Analyzer {
 
     /// The borders of a file ([`borders::detect`] on its stored pixels, at full size), looked for after the
     /// import, in a pass of their own. `None` for animated images and images too small to look at.
-    pub fn borders(&mut self, bytes: &[u8], turns: u8) -> Result<FileBorders> {
+    pub fn borders(&mut self, bytes: &[u8], turns: Turns) -> Result<FileBorders> {
         let result = self.find_borders(bytes, turns);
         self.trim();
         result
     }
 
-    fn find_borders(&mut self, bytes: &[u8], turns: u8) -> Result<FileBorders> {
+    fn find_borders(&mut self, bytes: &[u8], turns: Turns) -> Result<FileBorders> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let meta = Meta::read(bytes, format, &mut self.meta);
         let info =
@@ -178,13 +180,13 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
 
 /// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
 /// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
-pub fn video(path: &Path, turns: u8, analyzer: &mut Analyzer) -> Result<Analysis> {
+pub fn video(path: &Path, turns: Turns, analyzer: &mut Analyzer) -> Result<Analysis> {
     let result = analyze_video(path, turns, analyzer);
     analyzer.trim();
     result
 }
 
-fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
+fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis> {
     let file_hash = pg_video::file_hash(path)?;
     let p = pg_video::probe(path)?;
     let poster = pg_video::poster_ms(p.duration_ms);

@@ -6,6 +6,7 @@
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
+use pg_model::turns::Turns;
 use std::io::Read;
 use std::path::Path;
 use std::sync::Once;
@@ -86,7 +87,7 @@ fn matrix_orientation(m: [i32; 9]) -> u8 {
     let clockwise = (b / s1).atan2(a / s0).to_degrees();
     let turns = ((clockwise / 90.0).round() as i64).rem_euclid(4) as u8;
     // EXIF mirrors the stored picture before the rotation: the same picture with the turn reversed.
-    orientation::from_parts(mirrored, if mirrored { (4 - turns) % 4 } else { turns })
+    orientation::from_parts(mirrored, Turns::new(if mirrored { (4 - turns) % 4 } else { turns }))
 }
 
 pub fn probe(path: &Path) -> Result<Probe> {
@@ -144,7 +145,7 @@ pub fn poster_ms(duration_ms: i64) -> i64 {
 /// The frame shown at `at_ms` (the first at or after it; the last one if the video is shorter), upright and
 /// turned `turns` quarter turns clockwise further (the catalog rotation), as RGB at its display size, in a new
 /// buffer: for a one-off frame (the viewer).
-pub fn frame(path: &Path, at_ms: i64, turns: u8) -> Result<Rgb> {
+pub fn frame(path: &Path, at_ms: i64, turns: Turns) -> Result<Rgb> {
     let mut out = Rgb::default();
     frame_into(path, at_ms, turns, &mut out, &mut Vec::new())?;
     Ok(out)
@@ -152,7 +153,7 @@ pub fn frame(path: &Path, at_ms: i64, turns: u8) -> Result<Rgb> {
 
 /// [`frame()`] into a worker's buffers, which keep their capacity from file to file: the pixels go into `out`, and
 /// are oriented through `spare` (swapped with `out`'s).
-pub fn frame_into(path: &Path, at_ms: i64, turns: u8, out: &mut Rgb, spare: &mut Vec<u8>) -> Result<()> {
+pub fn frame_into(path: &Path, at_ms: i64, turns: Turns, out: &mut Rgb, spare: &mut Vec<u8>) -> Result<()> {
     let mut input = open(path)?;
     let stream = input.streams().best(Type::Video).context("no video stream")?;
     let index = stream.index();

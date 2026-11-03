@@ -6,7 +6,9 @@ use rusqlite::types::ValueRef;
 use rusqlite::{Connection, OptionalExtension};
 
 use pg_model::analysis::ThumbHash;
+use pg_model::ids::FileId;
 use pg_model::media::Kind;
+use pg_model::turns::Turns;
 
 /// What a file's images are made from, as the catalog has it now. What is made from the file (a thumbnail, a
 /// decode, an analysis) is kept under the state it was read in, checked before and after the read
@@ -15,12 +17,12 @@ use pg_model::media::Kind;
 pub struct FileState {
     /// With `rotation`, what the thumbnail cache keeps a file's thumbnails under (`thumbs::Source`).
     pub mtime: i64,
-    pub rotation: u8,
+    pub rotation: Turns,
     /// The file's size (`files.size`): with `mtime`, what the scanner decides a file changed by.
     pub size: i64,
     /// Quarter turns clockwise asked for and not yet written (`queue_rotation`): what is made from the file is shown
     /// turned by them.
-    pub turns: u8,
+    pub turns: Turns,
     /// A write of the app's into the file is in progress (`file_writes.temp`, until the transaction that records
     /// it): the file may be part-written, or hold a write the catalog doesn't show yet.
     pub writing: bool,
@@ -39,18 +41,18 @@ macro_rules! file_state_columns {
 fn file_state_at(r: &rusqlite::Row, first: usize) -> rusqlite::Result<FileState> {
     Ok(FileState {
         mtime: r.get(first)?,
-        rotation: r.get(first + 1)?,
-        turns: r.get(first + 2)?,
+        rotation: Turns::new(r.get(first + 1)?),
+        turns: Turns::new(r.get(first + 2)?),
         writing: r.get(first + 3)?,
         size: r.get(first + 4)?,
     })
 }
 
 /// The file's state now (`None`: no such file).
-pub fn file_state(conn: &Connection, file_id: i64) -> Result<Option<FileState>> {
+pub fn file_state(conn: &Connection, file_id: FileId) -> Result<Option<FileState>> {
     Ok(conn
         .prepare_cached(concat!("SELECT ", file_state_columns!(), " FROM files f WHERE f.id = ?1"))?
-        .query_row([file_id], |r| file_state_at(r, 0))
+        .query_row([file_id.get()], |r| file_state_at(r, 0))
         .optional()?)
 }
 
@@ -63,7 +65,7 @@ pub struct FileSource {
     pub poster_ms: Option<i64>,
 }
 
-pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>> {
+pub fn file_source(conn: &Connection, file_id: FileId) -> Result<Option<FileSource>> {
     Ok(conn
         .prepare_cached(concat!(
             "SELECT fo.path || '\\' || f.name, f.kind, a.poster_ms, ",
@@ -71,7 +73,7 @@ pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>
             " FROM files f JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id
              WHERE f.id = ?1"
         ))?
-        .query_row([file_id], |r| {
+        .query_row([file_id.get()], |r| {
             let video = r.get_ref(1)?.as_str()? == Kind::Video.key();
             Ok(FileSource {
                 path: r.get(0)?,
@@ -87,24 +89,24 @@ pub fn file_source(conn: &Connection, file_id: i64) -> Result<Option<FileSource>
 pub struct Placeholder {
     /// `None` before the import.
     pub hash: Option<ThumbHash>,
-    pub turns: u8,
+    pub turns: Turns,
 }
 
-pub fn placeholder(conn: &Connection, file_id: i64) -> Result<Option<Placeholder>> {
+pub fn placeholder(conn: &Connection, file_id: FileId) -> Result<Option<Placeholder>> {
     Ok(conn
         .prepare_cached(concat!(
             "SELECT a.thumbhash, (f.rotation - coalesce(a.rotation, f.rotation) + 4) % 4, ",
             file_state_columns!(),
             " FROM files f LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1"
         ))?
-        .query_row([file_id], |r| {
+        .query_row([file_id.get()], |r| {
             let kept: u8 = r.get(1)?;
             // Read in place: the blob isn't copied into a `Vec` first.
             let hash = match r.get_ref(0)? {
                 ValueRef::Null => None,
                 v => ThumbHash::new(v.as_blob()?),
             };
-            Ok(Placeholder { hash, turns: (kept + file_state_at(r, 2)?.turns) % 4 })
+            Ok(Placeholder { hash, turns: Turns::new(kept).plus(file_state_at(r, 2)?.turns) })
         })
         .optional()?)
 }

@@ -6,6 +6,7 @@ use pg_catalog::Catalog;
 use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
+use pg_model::ids::FileId;
 
 /// A letterboxed picture (black bars at the top and bottom, the content between them).
 fn letterboxed() -> image::RgbImage {
@@ -53,9 +54,9 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
     import::import(&mut c, &opts, false, &ctl).unwrap();
     borders::find(&mut c, &opts, &ctl).unwrap();
 
-    let ids: Vec<i64> = {
+    let ids: Vec<FileId> = {
         let mut stmt = c.conn.prepare("SELECT id FROM files WHERE missing = 0").unwrap();
-        stmt.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+        stmt.query_map([], |r| Ok(FileId::new(r.get(0)?))).unwrap().map(Result::unwrap).collect()
     };
     assert_eq!(ids.len(), 2);
 

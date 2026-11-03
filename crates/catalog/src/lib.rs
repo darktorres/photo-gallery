@@ -30,9 +30,12 @@ use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::Analysis;
 use pg_model::detection::Detection;
 use pg_model::format::Format;
+use pg_model::ids::{FileId, FolderId};
 use pg_model::media::{Ext, Kind};
 use pg_model::path::is_under;
 use pg_model::path::{FilePath, PathArena, PathRef, WorkList};
+use pg_model::rating::Rating;
+use pg_model::turns::Turns;
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -627,11 +630,11 @@ fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound: usize) ->
         let Some(folder) = folder.as_mut() else { unreachable!("made above") };
         let path = list.file(r.get(1)?, r.get_ref(2)?.as_str()?, |arena| folder_path(folder, r, arena))?;
         list.items.push(WorkItem {
-            id: r.get(0)?,
+            id: FileId::new(r.get(0)?),
             path,
             size: r.get(3)?,
             mtime: r.get(4)?,
-            rotation: r.get(5)?,
+            rotation: Turns::new(r.get(5)?),
             kind: Kind::from_key(r.get_ref(6)?.as_str()?).unwrap_or(Kind::Image),
         });
     }
@@ -671,20 +674,20 @@ pub struct ScannedFile<'a> {
 
 /// A folder's row, with its part of its files' order key (`path::folder_key`).
 pub struct Folder {
-    pub id: i64,
+    pub id: FolderId,
     pub key: Vec<u8>,
 }
 
 /// A file the import (or the borders pass) still has to analyze.
 #[derive(Clone, Copy, Debug)]
 pub struct WorkItem {
-    pub id: i64,
+    pub id: FileId,
     /// In its list.
     pub path: FilePath,
     pub size: i64,
     pub mtime: i64,
     /// Catalog rotation (`files.rotation`), applied when decoding.
-    pub rotation: u8,
+    pub rotation: Turns,
     pub kind: Kind,
 }
 
@@ -872,7 +875,7 @@ impl Catalog {
 
     /// The reliable PDQ hashes of current analyses (PLAN §6), as ids and hash words: `ids[i]`'s hash is `hashes[i]`, and
     /// a file contributes its 8 orientations. The tier-1 index (`pg_dedup::pdq_index::PdqIndex::build`) is made from them for each import.
-    pub fn pdq_hashes(&self) -> Result<(Vec<i64>, Vec<[u64; 4]>)> {
+    pub fn pdq_hashes(&self) -> Result<(Vec<FileId>, Vec<[u64; 4]>)> {
         // Sized by the present files (an upper bound, counted from `files_present` alone): an exact count of the
         // join below costs a quarter of reading it.
         let present: usize = self.conn.query_row("SELECT count(*) FROM files WHERE missing = 0", [], |r| r.get(0))?;
@@ -894,7 +897,7 @@ impl Catalog {
         )?;
         let mut rows = stmt.query([pg_model::pdq::MIN_QUALITY])?;
         while let Some(r) = rows.next()? {
-            let id: i64 = r.get(0)?;
+            let id = FileId::new(r.get(0)?);
             let blob: Vec<u8> = r.get(1)?;
             let (orientations, _) = blob.as_chunks::<{ pg_model::pdq::HASH_BYTES }>();
             for orientation in orientations {
@@ -925,7 +928,7 @@ impl Catalog {
     }
 
     /// The present file at an absolute path (Windows paths: any case).
-    pub fn file_by_path(&self, path: &str) -> Result<Option<i64>> {
+    pub fn file_by_path(&self, path: &str) -> Result<Option<FileId>> {
         let Some((folder, name)) = path.rsplit_once('\\') else { return Ok(None) };
         Ok(self
             .conn
@@ -933,32 +936,33 @@ impl Catalog {
                 "SELECT f.id FROM files f JOIN folders d ON d.id = f.folder_id
                  WHERE lower(d.path) = lower(?1) AND lower(f.name) = lower(?2) AND f.missing = 0",
             )?
-            .query_row([folder, name], |r| r.get(0))
-            .optional()?)
+            .query_row([folder, name], |r| r.get::<_, i64>(0))
+            .optional()?
+            .map(FileId::new))
     }
 
     /// The present files in a folder and its subfolders (an absolute path in the catalog's case, without a
     /// trailing backslash).
-    pub fn files_under(&self, folder: &str) -> Result<Vec<i64>> {
+    pub fn files_under(&self, folder: &str) -> Result<Vec<FileId>> {
         let mut stmt = self.conn.prepare(concat!(
             "SELECT id FROM files WHERE missing = 0 AND folder_id IN (",
             under_root!(),
             ")"
         ))?;
-        let ids = stmt.query_map([folder], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
-        Ok(ids)
+        let ids: Vec<i64> = stmt.query_map([folder], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        Ok(ids.into_iter().map(FileId::new).collect())
     }
 
     /// Make these files due for the import again (`files.pending`), whatever their analysis: after a fix to what
     /// the import reads, which comes without a new IMPORT_VERSION before the first release. Their next analysis
     /// clears it, as any does (`analysis_added`). Missing files are left as they are. Returns how many it marked.
-    pub fn mark_pending(&self, ids: &[i64]) -> Result<usize> {
+    pub fn mark_pending(&self, ids: &[FileId]) -> Result<usize> {
         let tx = self.conn.unchecked_transaction()?;
         let mut marked = 0;
         {
             let mut mark = tx.prepare("UPDATE files SET pending = 1 WHERE id = ?1 AND missing = 0")?;
             for id in ids {
-                marked += mark.execute([id])?;
+                marked += mark.execute([id.get()])?;
             }
         }
         tx.commit()?;
@@ -968,7 +972,7 @@ impl Catalog {
     /// What cropping a file's borders off needs: its borders as found in the file as it was analyzed (`size`,
     /// `mtime`: the caller checks the file is still that one), its path added to `paths`. `None` when it has none to
     /// crop: none found, marked as not a border, or not looked for in the file as it is.
-    pub fn crop_source(&self, file_id: i64, paths: &mut PathArena) -> Result<Option<CropSource>> {
+    pub fn crop_source(&self, file_id: FileId, paths: &mut PathArena) -> Result<Option<CropSource>> {
         Ok(self
             .conn
             .prepare_cached(
@@ -980,7 +984,7 @@ impl Catalog {
                    AND a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0
                    AND NOT EXISTS(SELECT 1 FROM border_marks WHERE file_id = f.id)",
             )?
-            .query_row([file_id], |r| {
+            .query_row([file_id.get()], |r| {
                 let (orientation, w, h): (u8, u32, u32) = (r.get(4)?, r.get(5)?, r.get(6)?);
                 let (width, height) = if pg_model::orientation::swaps_axes(orientation) { (h, w) } else { (w, h) };
                 let format = r.get_ref(3)?.as_str()?;
@@ -1001,21 +1005,21 @@ impl Catalog {
     }
 
     /// Mark a file's borders as not a border, or take the mark back (the review).
-    pub fn set_border_mark(conn: &Connection, file_id: i64, marked: bool) -> Result<()> {
+    pub fn set_border_mark(conn: &Connection, file_id: FileId, marked: bool) -> Result<()> {
         if marked {
             conn.prepare_cached("INSERT OR REPLACE INTO border_marks(file_id, marked) VALUES (?1, unixepoch())")?
-                .execute([file_id])?;
+                .execute([file_id.get()])?;
         } else {
-            conn.prepare_cached("DELETE FROM border_marks WHERE file_id = ?1")?.execute([file_id])?;
+            conn.prepare_cached("DELETE FROM border_marks WHERE file_id = ?1")?.execute([file_id.get()])?;
         }
         Ok(())
     }
 
     /// Record what the file holds now, just written by the app (the import's reads: [`AnalysisWriter`]).
-    pub fn set_file_rating(conn: &Connection, file_id: i64, value: Option<u8>) -> Result<()> {
+    pub fn set_file_rating(conn: &Connection, file_id: FileId, value: Option<Rating>) -> Result<()> {
         match value {
-            Some(v) => conn.prepare_cached(SET_FILE_RATING)?.execute(params![file_id, v.min(5)])?,
-            None => conn.prepare_cached(DELETE_FILE_RATING)?.execute([file_id])?,
+            Some(v) => conn.prepare_cached(SET_FILE_RATING)?.execute(params![file_id.get(), v.get()])?,
+            None => conn.prepare_cached(DELETE_FILE_RATING)?.execute([file_id.get()])?,
         };
         Ok(())
     }
@@ -1028,17 +1032,17 @@ impl Catalog {
     /// `file_writes.temp`), so that a reader sees the file as it was, or as it is now with the write done.
     pub fn file_rewritten(
         tx: &Transaction,
-        file_id: i64,
+        file_id: FileId,
         before: (i64, i64),
         after: (i64, i64),
         metadata_only: Option<[u8; 32]>,
     ) -> Result<()> {
-        tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id, after.0, after.1])?;
+        tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
         if let Some(file_hash) = metadata_only {
             tx.execute(
                 "UPDATE analysis SET size = ?2, mtime = ?3, file_hash = ?4
                  WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
-                params![file_id, after.0, after.1, &file_hash[..], before.0, before.1],
+                params![file_id.get(), after.0, after.1, &file_hash[..], before.0, before.1],
             )?;
         }
         Ok(())
@@ -1048,10 +1052,10 @@ impl Catalog {
     /// the file as it is now turned back by them, so it is recorded as made at the catalog rotation that many turns
     /// back. It is stale anyway (the mtime changed); until the import redoes it, the placeholder made from it shows
     /// the file as it is now (`browse::read::placeholder`). With the file's rewrite, in its transaction.
-    pub fn analysis_turned_back(tx: &Transaction, file_id: i64, turns: u8) -> Result<()> {
+    pub fn analysis_turned_back(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
         tx.execute(
             "UPDATE analysis SET rotation = (rotation + 4 - ?2 % 4) % 4 WHERE file_id = ?1",
-            params![file_id, turns],
+            params![file_id.get(), turns.get()],
         )?;
         Ok(())
     }
@@ -1059,8 +1063,11 @@ impl Catalog {
     /// The turn is kept in the catalog (`rotate::Outcome::Catalog`): the analysis, made without it, is stale
     /// (`files.pending`), and the thumbnails no longer match (thumbs::Source). In the transaction that takes the
     /// turn off the queue, so that no reader sees it both kept and queued.
-    pub fn add_catalog_rotation(tx: &Transaction, file_id: i64, turns: u8) -> Result<()> {
-        tx.execute("UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1", params![file_id, turns])?;
+    pub fn add_catalog_rotation(tx: &Transaction, file_id: FileId, turns: Turns) -> Result<()> {
+        tx.execute(
+            "UPDATE files SET rotation = (rotation + ?2) % 4 WHERE id = ?1",
+            params![file_id.get(), turns.get()],
+        )?;
         Ok(())
     }
 
@@ -1142,11 +1149,11 @@ impl<'tx> ScanWriter<'tx> {
     /// The folder's row, made if it's new.
     pub fn folder(&mut self, path: &str) -> Result<Folder> {
         let key = pg_model::path::folder_key(pg_model::path::merged_path(path));
-        let id = match self.folder_id.query_row([path], |r| r.get(0)).optional()? {
+        let id: i64 = match self.folder_id.query_row([path], |r| r.get(0)).optional()? {
             Some(id) => id,
             None => self.new_folder.query_row([path], |r| r.get(0))?,
         };
-        Ok(Folder { id, key })
+        Ok(Folder { id: FolderId::new(id), key })
     }
 
     /// Record a file the scan found, by identity: a moved or renamed file keeps its row (and its analysis).
@@ -1161,7 +1168,7 @@ impl<'tx> ScanWriter<'tx> {
         let (ext, kind) = (f.ext.name(), f.ext.kind().key());
         let row = known
             .query_row(params![volume, file_ref], |r| {
-                let same = r.get::<_, i64>(1)? == folder.id
+                let same = r.get::<_, i64>(1)? == folder.id.get()
                     && r.get_ref(2)?.as_str()? == f.name
                     && r.get_ref(3)?.as_str()? == ext
                     && r.get_ref(4)?.as_str()? == kind
@@ -1177,7 +1184,7 @@ impl<'tx> ScanWriter<'tx> {
             return Ok(false);
         }
         // `pending` and `seq` follow from the triggers.
-        file.execute(params![volume, file_ref, folder.id, f.name, ext, kind, size, f.mtime, *scan, &key[..]])?;
+        file.execute(params![volume, file_ref, folder.id.get(), f.name, ext, kind, size, f.mtime, *scan, &key[..]])?;
         Ok(true)
     }
 }
@@ -1247,7 +1254,7 @@ impl<'tx> AnalysisWriter<'tx> {
     /// then is what was read from it stored. Otherwise it is left as it is, due again (a changed file is stale; a
     /// file whose metadata was rewritten keeps the analysis made before, which the writer carried over).
     fn current(&mut self, item: &WorkItem) -> Result<bool> {
-        Ok(self.current.query_row(params![item.id, item.size, item.mtime, item.rotation], |r| r.get(0))?)
+        Ok(self.current.query_row(params![item.id.get(), item.size, item.mtime, item.rotation.get()], |r| r.get(0))?)
     }
 
     /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
@@ -1256,14 +1263,14 @@ impl<'tx> AnalysisWriter<'tx> {
             return Ok(false);
         }
         // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
-        self.delete_pairs.execute([item.id])?;
+        self.delete_pairs.execute([item.id.get()])?;
         let (taken, taken_utc) = a.taken.map_or((None, false), |t| {
             let (seconds, utc) = t.parts();
             (Some(seconds), utc)
         });
         let (image, video) = (a.image(), a.video());
         self.analysis.execute(params![
-            item.id,
+            item.id.get(),
             a.version,
             item.size,
             item.mtime,
@@ -1281,13 +1288,13 @@ impl<'tx> AnalysisWriter<'tx> {
             taken_utc,
             video.map(|v| v.duration_ms),
             video.map(|v| v.poster_ms),
-            item.rotation,
+            item.rotation.get(),
             item.kind.key(),
             image.map(|i| i.pixels.pdq_dihedral.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
         ])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
-        self.borders_due.execute([item.id])?;
-        self.delete_sides.execute([item.id])?;
+        self.borders_due.execute([item.id.get()])?;
+        self.delete_sides.execute([item.id.get()])?;
         self.sync_file_rating(item.id, image.and_then(|i| i.file_rating))?;
         Ok(true)
     }
@@ -1297,23 +1304,23 @@ impl<'tx> AnalysisWriter<'tx> {
         if !self.current(item)? {
             return Ok(false);
         }
-        self.delete_pairs.execute([item.id])?;
+        self.delete_pairs.execute([item.id.get()])?;
         self.failure.execute(params![
-            item.id,
+            item.id.get(),
             IMPORT_VERSION,
             item.size,
             item.mtime,
-            item.rotation,
+            item.rotation.get(),
             item.kind.key(),
             error
         ])?;
-        self.delete_sides.execute([item.id])?;
+        self.delete_sides.execute([item.id.get()])?;
         Ok(true)
     }
 
-    pub fn store_pdq_pair(&mut self, a: i64, b: i64, distance: u32, variant: usize) -> Result<()> {
+    pub fn store_pdq_pair(&mut self, a: FileId, b: FileId, distance: u32, variant: usize) -> Result<()> {
         let (a, b) = if a < b { (a, b) } else { (b, a) };
-        self.pair.execute(params![a, b, distance, variant])?;
+        self.pair.execute(params![a.get(), b.get(), distance, variant])?;
         Ok(())
     }
 
@@ -1321,19 +1328,21 @@ impl<'tx> AnalysisWriter<'tx> {
     /// differs from it was set by another program after that, so it becomes the catalog rating. Otherwise the
     /// catalog's stands (it may be newer and not written back yet, or the file can't hold one). A write of our own
     /// still queued is newer than anything in the file: nothing is adopted then.
-    fn sync_file_rating(&mut self, file_id: i64, in_file: Option<u8>) -> Result<()> {
-        let known: Option<u8> = self.known_rating.query_row([file_id], |r| r.get(0)).optional()?;
-        let queued: bool = self.queued_rating.query_row([file_id], |r| r.get(0))?;
+    fn sync_file_rating(&mut self, file_id: FileId, in_file: Option<Rating>) -> Result<()> {
+        let known: Option<Rating> =
+            self.known_rating.query_row([file_id.get()], |r| r.get::<_, u8>(0)).optional()?.and_then(Rating::new);
+        let queued: bool = self.queued_rating.query_row([file_id.get()], |r| r.get(0))?;
         if in_file == known || queued {
             return Ok(());
         }
         match in_file {
-            Some(n @ 1..=5) => self.set_rating.execute(params![file_id, n])?,
-            _ => self.delete_rating.execute([file_id])?,
+            // The user's ratings are 1 to 5: a file that holds none (0) clears the catalog's.
+            Some(v) if v.get() >= 1 => self.set_rating.execute(params![file_id.get(), v.get()])?,
+            _ => self.delete_rating.execute([file_id.get()])?,
         };
         match in_file {
-            Some(v) => self.set_file_rating.execute(params![file_id, v.min(5)])?,
-            None => self.delete_file_rating.execute([file_id])?,
+            Some(v) => self.set_file_rating.execute(params![file_id.get(), v.get()])?,
+            None => self.delete_file_rating.execute([file_id.get()])?,
         };
         Ok(())
     }
@@ -1371,23 +1380,23 @@ impl<'tx> BordersWriter<'tx> {
     /// unless the file changed meanwhile (the import then analyzes it again, and the borders are due again) or a
     /// write of the app's into it is in progress (they stay due).
     pub fn store_borders(&mut self, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
-        let current: bool = self.current.query_row(params![item.id, item.size, item.mtime], |r| r.get(0))?;
+        let current: bool = self.current.query_row(params![item.id.get(), item.size, item.mtime], |r| r.get(0))?;
         if !current {
             return Ok(());
         }
         let cut = borders.map(Detection::cut);
         self.cut.execute(params![
-            item.id,
+            item.id.get(),
             cut.map(|c| c[0]),
             cut.map(|c| c[1]),
             cut.map(|c| c[2]),
             cut.map(|c| c[3])
         ])?;
-        self.delete_sides.execute([item.id])?;
+        self.delete_sides.execute([item.id.get()])?;
         for s in borders.map_or(&[][..], |b| &b.sides) {
             let color = s.color.map(|[r, g, b]| ((r as i64) << 16) | ((g as i64) << 8) | b as i64);
             self.side.execute(params![
-                item.id,
+                item.id.get(),
                 s.pass,
                 s.edge.key(),
                 s.kind.key(),
@@ -1650,8 +1659,10 @@ mod tests {
     }
 
     /// Whether the import would analyze file `id`, and its change number (`files.seq`).
-    fn state(c: &Catalog, id: i64) -> (bool, i64) {
-        c.conn.query_row("SELECT pending, seq FROM files WHERE id = ?1", [id], |r| Ok((r.get(0)?, r.get(1)?))).unwrap()
+    fn state(c: &Catalog, id: FileId) -> (bool, i64) {
+        c.conn
+            .query_row("SELECT pending, seq FROM files WHERE id = ?1", [id.get()], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
     }
 
     /// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
@@ -1722,7 +1733,7 @@ mod tests {
             .execute(
                 r"INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
                   VALUES (?1, 'rating', 3, 0, 'D:\x\a.jpg.tmp', 3)",
-                [item.id],
+                [item.id.get()],
             )
             .unwrap();
         assert!(!stored(&mut c, &item));
@@ -1733,11 +1744,11 @@ mod tests {
         assert!(!stored(&mut c, &item));
         // Turned in the catalog since.
         let tx = c.conn.unchecked_transaction().unwrap();
-        Catalog::add_catalog_rotation(&tx, item.id, 1).unwrap();
+        Catalog::add_catalog_rotation(&tx, item.id, Turns::new(1)).unwrap();
         tx.commit().unwrap();
         let listed = next_work(&c);
-        assert_eq!(listed.rotation, 1);
-        let unturned = WorkItem { rotation: 0, ..listed };
+        assert_eq!(listed.rotation, Turns::new(1));
+        let unturned = WorkItem { rotation: Turns::new(0), ..listed };
         assert!(!stored(&mut c, &unturned));
         // As listed.
         assert!(stored(&mut c, &listed));
@@ -2046,12 +2057,12 @@ mod tests {
         assert!(!state(&c, id).0);
         // Turned in the catalog: analyzed again with the turn, and the thumbnails' source moved on.
         let tx = c.conn.unchecked_transaction().unwrap();
-        Catalog::add_catalog_rotation(&tx, id, 1).unwrap();
+        Catalog::add_catalog_rotation(&tx, id, Turns::new(1)).unwrap();
         tx.commit().unwrap();
         let (pending, after) = state(&c, id);
         assert!(pending && after > seq);
         let turned = next_work(&c);
-        assert_eq!(turned.rotation, 1);
+        assert_eq!(turned.rotation, Turns::new(1));
         analyzed(&mut c, &turned);
         // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
         let rewritten = |c: &Catalog, before, after, metadata_only| {
@@ -2136,17 +2147,17 @@ mod tests {
         // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
         let mut under = c.files_under(r"D:\x\y").unwrap();
         under.sort();
-        assert_eq!(under, [2, 4]);
+        assert_eq!(under, [FileId::new(2), FileId::new(4)]);
         assert_eq!(c.files_under(r"D:\x").unwrap().len(), 3);
         assert!(c.files_under(r"D:\q").unwrap().is_empty());
 
         // Marked: due, whatever their analysis, the missing one left; the change number doesn't move.
-        let seq = state(&c, 2).1;
-        assert_eq!(c.mark_pending(&[2, 4, 5]).unwrap(), 2);
-        assert_eq!(state(&c, 2), (true, seq));
-        assert!(state(&c, 4).0 && !state(&c, 5).0 && !state(&c, 1).0);
+        let seq = state(&c, FileId::new(2)).1;
+        assert_eq!(c.mark_pending(&[FileId::new(2), FileId::new(4), FileId::new(5)]).unwrap(), 2);
+        assert_eq!(state(&c, FileId::new(2)), (true, seq));
+        assert!(state(&c, FileId::new(4)).0 && !state(&c, FileId::new(5)).0 && !state(&c, FileId::new(1)).0);
         let work = c.pending_import(false).unwrap();
-        assert_eq!(work.items.iter().map(|i| i.id).collect::<Vec<_>>(), [2, 4]);
+        assert_eq!(work.items.iter().map(|i| i.id).collect::<Vec<_>>(), [FileId::new(2), FileId::new(4)]);
         // Analyzed again, as they are: done.
         for item in work.items {
             analyzed(&mut c, &item);
@@ -2207,7 +2218,8 @@ mod tests {
     }
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
-        crate::browse::writes::set_rating(&c.conn, id, n, false).unwrap();
+        let stars = Rating::new(n).filter(|r| r.get() > 0);
+        crate::browse::writes::set_rating(&c.conn, FileId::new(id), stars, false).unwrap();
     }
 
     #[test]
@@ -2215,22 +2227,22 @@ mod tests {
         let (c, id) = one_file();
         let sync = |in_file| {
             let tx = c.conn.unchecked_transaction().unwrap();
-            AnalysisWriter::new(&tx).unwrap().sync_file_rating(id, in_file).unwrap();
+            AnalysisWriter::new(&tx).unwrap().sync_file_rating(FileId::new(id), in_file).unwrap();
             tx.commit().unwrap();
         };
         // First import of a file rated elsewhere (ImageRater, Explorer): adopted.
-        sync(Some(4));
+        sync(Rating::new(4));
         assert_eq!(rating(&c, id), Some(4));
         // Rated in the app, not written back (or the format can't hold it): the file still says 4, as known, so
         // re-imports keep the catalog's 2.
         set_rating(&c, id, 2);
-        sync(Some(4));
+        sync(Rating::new(4));
         assert_eq!(rating(&c, id), Some(2));
         // Another program changes the file's rating: that is newer, and adopted.
-        sync(Some(5));
+        sync(Rating::new(5));
         assert_eq!(rating(&c, id), Some(5));
         // Another program clears it (writes 0, or removes it): the catalog follows.
-        sync(Some(0));
+        sync(Rating::new(0));
         assert_eq!(rating(&c, id), None);
         sync(None);
         assert_eq!(rating(&c, id), None);
@@ -2239,7 +2251,7 @@ mod tests {
         c.conn
             .execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rating', 3, 0)", [id])
             .unwrap();
-        sync(Some(1));
+        sync(Rating::new(1));
         assert_eq!(rating(&c, id), Some(3));
     }
 }

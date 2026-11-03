@@ -9,6 +9,8 @@
 
 use std::ops::Sub;
 
+use crate::turns::Turns;
+
 /// The orientation's (mirrored, quarter turns clockwise): the upright picture is the stored one mirrored left-right (if
 /// so), then turned. Values outside 1–8 read as 1.
 pub fn parts(o: u8) -> (bool, u8) {
@@ -25,8 +27,8 @@ pub fn parts(o: u8) -> (bool, u8) {
 }
 
 /// The orientation with that mirror and those quarter turns (the turns taken modulo 4).
-pub fn from_parts(mirrored: bool, turns: u8) -> u8 {
-    match (mirrored, turns % 4) {
+pub fn from_parts(mirrored: bool, turns: Turns) -> u8 {
+    match (mirrored, turns.get()) {
         (false, 0) => 1,
         (true, 0) => 2,
         (false, 2) => 3,
@@ -39,9 +41,9 @@ pub fn from_parts(mirrored: bool, turns: u8) -> u8 {
 }
 
 /// The orientation that shows the image `turns` quarter turns further clockwise than `o` does.
-pub fn compose(o: u8, turns: u8) -> u8 {
+pub fn compose(o: u8, turns: Turns) -> u8 {
     let (mirrored, t) = parts(o);
-    from_parts(mirrored, t + turns)
+    from_parts(mirrored, Turns::new(t).plus(turns))
 }
 
 /// Whether the orientation turns the picture a quarter turn (or three): its width and height swap.
@@ -51,8 +53,8 @@ pub fn swaps_axes(o: u8) -> bool {
 
 /// Whether `turns` quarter turns (clockwise) swap the picture's sides: an odd number does. The catalog's turns are
 /// counted this way, before they are composed with the file's own orientation (`compose`).
-pub fn turns_swap(turns: u8) -> bool {
-    turns % 2 == 1
+pub fn turns_swap(turns: Turns) -> bool {
+    turns.swaps_axes()
 }
 
 /// Where the pixel (`x`, `y`) of a `w` × `h` stored picture is shown.
@@ -82,10 +84,10 @@ pub fn shown_edge(o: u8, u: f64, v: f64) -> (f64, f64) {
 
 /// A rectangle of the stored picture (fractions: left, top, right, bottom) in the picture as shown: turned upright
 /// by `orientation` (1–8, as [`shown_edge`] maps it), then `turns` quarter turns clockwise.
-pub fn upright_rect(rect: [f64; 4], orientation: u8, turns: u8) -> [f64; 4] {
+pub fn upright_rect(rect: [f64; 4], orientation: u8, turns: Turns) -> [f64; 4] {
     // Where a stored point (u, v) is shown.
     let shown = |(u, v): (f64, f64)| shown_edge(orientation, u, v);
-    let turned = |p: (f64, f64)| (0..turns % 4).fold(p, |(x, y), _| (1.0 - y, x));
+    let turned = |p: (f64, f64)| (0..turns.get()).fold(p, |(x, y), _| (1.0 - y, x));
     let [l, t, r, b] = rect;
     let (a, c) = (turned(shown((l, t))), turned(shown((r, b))));
     [a.0.min(c.0), a.1.min(c.1), a.0.max(c.0), a.1.max(c.1)]
@@ -117,13 +119,13 @@ mod tests {
     fn composes_orientations() {
         // Four quarter turns are the identity; one turn of the identity is EXIF 6 (90° clockwise).
         for o in 1..=8 {
-            assert_eq!(compose(o, 4), o);
-            assert_eq!(compose(o, 0), o);
+            assert_eq!(compose(o, Turns::new(4)), o);
+            assert_eq!(compose(o, Turns::new(0)), o);
         }
-        assert_eq!(compose(1, 1), 6);
-        assert_eq!(compose(6, 1), 3);
-        assert_eq!(compose(1, 3), 8);
-        assert_eq!(compose(2, 1), 7);
+        assert_eq!(compose(1, Turns::new(1)), 6);
+        assert_eq!(compose(6, Turns::new(1)), 3);
+        assert_eq!(compose(1, Turns::new(3)), 8);
+        assert_eq!(compose(2, Turns::new(1)), 7);
     }
 
     #[test]
@@ -138,8 +140,8 @@ mod tests {
         for o in 1..=8 {
             for turns in 0..4 {
                 assert_eq!(
-                    turns_swap(turns),
-                    swaps_axes(compose(o, turns)) != swaps_axes(o),
+                    turns_swap(Turns::new(turns)),
+                    swaps_axes(compose(o, Turns::new(turns))) != swaps_axes(o),
                     "o = {o}, turns = {turns}"
                 );
             }

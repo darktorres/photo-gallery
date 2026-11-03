@@ -14,7 +14,9 @@ use pg_ingest::control::Control;
 use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
 use pg_model::format::Format;
+use pg_model::ids::FileId;
 use pg_model::path::PathArena;
+use pg_model::turns::Turns;
 
 const W: u32 = 320;
 const H: u32 = 240;
@@ -77,7 +79,10 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     import::import(&mut c, &opts, false, &ctl).unwrap();
     for (id, _) in ids(&c) {
-        assert!(c.crop_source(id, &mut PathArena::default()).unwrap().is_none(), "the import doesn't look for borders");
+        assert!(
+            c.crop_source(FileId::new(id), &mut PathArena::default()).unwrap().is_none(),
+            "the import doesn't look for borders"
+        );
     }
     borders::find(&mut c, &opts, &ctl).unwrap();
     let files_ids = ids(&c);
@@ -86,7 +91,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let mut cuts = std::collections::BTreeMap::new();
     for (id, name) in &files_ids {
         let source = c
-            .crop_source(*id, &mut PathArena::default())
+            .crop_source(FileId::new(*id), &mut PathArena::default())
             .unwrap()
             .unwrap_or_else(|| panic!("{name}: no borders found"));
         let [l, t, r, b] = source.cut;
@@ -98,7 +103,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
         cuts.insert(name.clone(), source.cut);
     }
     let originals: Vec<Vec<u8>> = files.iter().map(|p| std::fs::read(p).unwrap()).collect();
-    let all: Vec<i64> = files_ids.iter().map(|(id, _)| *id).collect();
+    let all: Vec<FileId> = files_ids.iter().map(|(id, _)| FileId::new(*id)).collect();
 
     // Into the library: refused, nothing written.
     assert!(crop::save(&c, &all, &dir.join("images"), &opts, &ctl).is_err());
@@ -108,7 +113,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
 
     // One marked as not a border, one changed since: both skipped.
     let id_of = |name: &str| files_ids.iter().find(|(_, n)| n == name).unwrap().0;
-    pg_catalog::Catalog::set_border_mark(&c.conn, id_of("b.png"), true).unwrap();
+    pg_catalog::Catalog::set_border_mark(&c.conn, FileId::new(id_of("b.png")), true).unwrap();
     let webp = &files[2];
     let mut changed = std::fs::read(webp).unwrap();
     changed.extend_from_slice(b"\0\0");
@@ -129,7 +134,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     for name in ["a.jpg", "d.tif", r"sub\e.bmp"] {
         let copy = copies.join(name);
         let bytes = std::fs::read(&copy).unwrap_or_else(|e| panic!("{}: {e}", copy.display()));
-        let d = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, 0).unwrap();
+        let d = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, Turns::NONE).unwrap();
         // JPEG: the top cut moves inward to the 8 or 16 px grid, the bottom is exact.
         let [_, top, _, bottom] = cuts[name.rsplit('\\').next().unwrap()];
         assert_eq!(d.image.width as u32, W, "{name}");

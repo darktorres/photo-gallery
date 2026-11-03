@@ -19,6 +19,7 @@ use pg_ingest::pipeline::Options;
 use pg_ingest::{import, scan, thumbs};
 use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
+use pg_model::turns::Turns;
 use pg_thumbcache::ThumbCache;
 use pg_video::{frame, poster_ms, probe};
 
@@ -121,13 +122,13 @@ fn videos() {
         assert_eq!((p.width, p.height, p.codec, p.orientation), (160, 80, codec, 1), "{name}");
         assert!((2900..=3100).contains(&p.duration_ms), "{name}: {} ms", p.duration_ms);
         assert!((70..=80).contains(&p.frames), "{name}: {} frames", p.frames);
-        let early = frame(&path, 500, 0).unwrap();
+        let early = frame(&path, 500, Turns::new(0)).unwrap();
         assert_eq!((early.width, early.height), (160, 80));
         assert!(near(pixel(&early, 20, 40), RED) && near(pixel(&early, 140, 40), BLUE), "{name} at 0.5 s");
-        let late = frame(&path, 2000, 0).unwrap();
+        let late = frame(&path, 2000, Turns::new(0)).unwrap();
         assert!(near(pixel(&late, 20, 40), GREEN), "{name} at 2 s: {:?}", pixel(&late, 20, 40));
         // Past the end: the last frame.
-        assert!(near(pixel(&frame(&path, 60_000, 0).unwrap(), 80, 40), GREEN), "{name} past the end");
+        assert!(near(pixel(&frame(&path, 60_000, Turns::new(0)).unwrap(), 80, 40), GREEN), "{name} past the end");
     }
     let h264 = probe(&media.join("h264.mp4")).unwrap();
     assert_eq!(h264.taken, Some(Taken::Utc(wall_clock_seconds(2022, 3, 4, 5, 6, 7).unwrap())));
@@ -136,11 +137,11 @@ fn videos() {
     let rotated = media.join("rotated.mp4");
     let p = probe(&rotated).unwrap();
     assert_eq!((p.width, p.height, p.orientation), (80, 160, 8));
-    let f = frame(&rotated, 500, 0).unwrap();
+    let f = frame(&rotated, 500, Turns::new(0)).unwrap();
     assert_eq!((f.width, f.height), (80, 160));
     assert!(near(pixel(&f, 40, 140), RED) && near(pixel(&f, 40, 20), BLUE));
     // A catalog turn on top: one more quarter turn clockwise brings it back to landscape, red on the left.
-    let f = frame(&rotated, 500, 1).unwrap();
+    let f = frame(&rotated, 500, Turns::new(1)).unwrap();
     assert_eq!((f.width, f.height), (160, 80));
     assert!(near(pixel(&f, 20, 40), RED), "{:?}", pixel(&f, 20, 40));
 
@@ -148,9 +149,9 @@ fn videos() {
     let mirrored = media.join("mirrored.mp4");
     let p = probe(&mirrored).unwrap();
     assert_eq!((p.width, p.height, p.orientation), (160, 80, 2));
-    let f = frame(&mirrored, 500, 0).unwrap();
+    let f = frame(&mirrored, 500, Turns::new(0)).unwrap();
     assert!(near(pixel(&f, 20, 40), BLUE) && near(pixel(&f, 140, 40), RED), "{:?}", pixel(&f, 20, 40));
-    let f = frame(&mirrored, 500, 1).unwrap();
+    let f = frame(&mirrored, 500, Turns::new(1)).unwrap();
     assert_eq!((f.width, f.height), (80, 160));
     assert!(near(pixel(&f, 40, 20), BLUE) && near(pixel(&f, 40, 140), RED), "{:?}", pixel(&f, 40, 20));
 
@@ -158,7 +159,7 @@ fn videos() {
     // composed with the turn. With a turn, the orientation is the one that shows the stored pixels turned.
     let mut analyzer = analyze::Analyzer::new().unwrap();
     for (path, turns, want) in [(&rotated, 0, 8), (&rotated, 1, 1), (&mirrored, 0, 2), (&mirrored, 1, 7)] {
-        let a = analyze::video(path, turns, &mut analyzer).unwrap();
+        let a = analyze::video(path, Turns::new(turns), &mut analyzer).unwrap();
         assert_eq!(a.orientation, want, "{} with {turns} turn(s)", path.display());
     }
 

@@ -25,6 +25,8 @@
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
+use pg_model::ids::FileId;
+use pg_model::turns::Turns;
 use std::cell::RefCell;
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
@@ -45,11 +47,11 @@ pub const FORMAT_JPEG: &str = "jpeg";
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Source {
     pub mtime: i64,
-    pub rotation: u8,
+    pub rotation: Turns,
 }
 
 pub struct Thumb {
-    pub file_id: i64,
+    pub file_id: FileId,
     /// The requested grid height (the image may be smaller).
     pub height: u32,
     pub source: Source,
@@ -58,7 +60,7 @@ pub struct Thumb {
 
 /// A file the background task still has to thumbnail at the current height.
 pub struct ThumbWork {
-    pub id: i64,
+    pub id: FileId,
     /// In its list.
     pub path: FilePath,
     pub source: Source,
@@ -236,7 +238,7 @@ enum Op {
     /// An entry was shown (its id).
     Touch(i64),
     Retag {
-        file_id: i64,
+        file_id: FileId,
         old_mtime: i64,
         new_mtime: i64,
         reply: Sender<Result<()>>,
@@ -298,7 +300,7 @@ impl ThumbCache {
     /// a buffer the caller keeps from one thumbnail to the next; returns its height.
     pub fn get_nearest_into(
         &self,
-        file_id: i64,
+        file_id: FileId,
         height: u32,
         source: Source,
         jpeg: &mut Vec<u8>,
@@ -311,7 +313,7 @@ impl ThumbCache {
                      WHERE e.file_id = ?1 AND e.mtime = ?3 AND e.rotation = ?4
                      ORDER BY e.height < ?2, abs(e.height - ?2) LIMIT 1",
                 )?
-                .query_row(params![file_id, height, source.mtime, source.rotation], |r| {
+                .query_row(params![file_id.get(), height, source.mtime, source.rotation.get()], |r| {
                     // An entry without its JPEG (another process deleting it now) is a miss.
                     let Some(bytes) = r.get_ref(3)?.as_blob_or_null()? else { return Ok(None) };
                     jpeg.clear();
@@ -331,7 +333,7 @@ impl ThumbCache {
 
     /// [`ThumbCache::get_nearest_into`] into a new buffer: its height and bytes.
     #[cfg(test)]
-    pub fn get_nearest(&self, file_id: i64, height: u32, source: Source) -> Result<Option<(u32, Vec<u8>)>> {
+    pub fn get_nearest(&self, file_id: FileId, height: u32, source: Source) -> Result<Option<(u32, Vec<u8>)>> {
         let mut jpeg = Vec::new();
         Ok(self.get_nearest_into(file_id, height, source, &mut jpeg)?.map(|h| (h, jpeg)))
     }
@@ -361,7 +363,7 @@ impl ThumbCache {
 
     /// The file was rewritten without changing its pixels (a rating written into it): its thumbnails still
     /// show it, so they follow it to the new mtime. Waits for it.
-    pub fn retag(&self, file_id: i64, old_mtime: i64, new_mtime: i64) -> Result<()> {
+    pub fn retag(&self, file_id: FileId, old_mtime: i64, new_mtime: i64) -> Result<()> {
         if self.store.is_none() {
             return Ok(());
         }
@@ -578,9 +580,9 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
             let path =
                 work.file(r.get(1)?, name, |arena| Ok::<_, rusqlite::Error>(arena.push(r.get_ref(7)?.as_str()?)))?;
             work.items.push(ThumbWork {
-                id: r.get(0)?,
+                id: FileId::new(r.get(0)?),
                 path,
-                source: Source { mtime: r.get(3)?, rotation: r.get(4)? },
+                source: Source { mtime: r.get(3)?, rotation: Turns::new(r.get(4)?) },
                 size: r.get(8)?,
                 poster_ms: r.get(5)?,
                 seq: r.get(6)?,
@@ -718,7 +720,7 @@ fn write_loop(mut conn: Connection, inbox: Receiver<Op>, report: &Report) {
                 let done = conn
                     .execute(
                         "UPDATE entries SET mtime = ?3 WHERE file_id = ?1 AND mtime = ?2",
-                        params![file_id, old_mtime, new_mtime],
+                        params![file_id.get(), old_mtime, new_mtime],
                     )
                     .map(drop)
                     .map_err(anyhow::Error::from);
@@ -782,7 +784,7 @@ fn put(conn: &mut Connection, thumbs: &[Thumb], keep_height: Option<u32>, touche
     {
         let mut replaced = tx.prepare_cached("DELETE FROM entries WHERE file_id = ?1 AND height = ?2")?;
         for t in thumbs {
-            replaced.execute(params![t.file_id, t.height])?;
+            replaced.execute(params![t.file_id.get(), t.height])?;
         }
     }
     let (total, cap_bytes) = total_and_cap(&tx)?;
@@ -815,7 +817,7 @@ fn put(conn: &mut Connection, thumbs: &[Thumb], keep_height: Option<u32>, touche
         )?;
         for Thumb { file_id, height, source, data: jpeg } in thumbs {
             let id: i64 = entry.query_row(
-                params![file_id, height, source.mtime, source.rotation, FORMAT_JPEG, jpeg.len() as i64],
+                params![file_id.get(), height, source.mtime, source.rotation.get(), FORMAT_JPEG, jpeg.len() as i64],
                 |r| r.get(0),
             )?;
             data.execute(params![id, jpeg])?;
@@ -924,7 +926,12 @@ mod tests {
     }
 
     fn thumb(file_id: i64, height: u32, mtime: i64, bytes: usize) -> Thumb {
-        Thumb { file_id, height, source: Source { mtime, rotation: 0 }, data: vec![file_id as u8; bytes] }
+        Thumb {
+            file_id: FileId::new(file_id),
+            height,
+            source: Source { mtime, rotation: Turns::new(0) },
+            data: vec![file_id as u8; bytes],
+        }
     }
 
     /// The catalog the test caches belong to.
@@ -936,7 +943,7 @@ mod tests {
     }
 
     fn src(mtime: i64) -> Source {
-        Source { mtime, rotation: 0 }
+        Source { mtime, rotation: Turns::new(0) }
     }
 
     /// The totals as a second connection sees them, and the entries' actual sum.
@@ -958,18 +965,20 @@ mod tests {
         let cache = open(&dir, 1 << 30);
         assert!(cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 300, 5, 30)], None).unwrap());
         // The smallest at least as high, else the largest below.
-        assert_eq!(cache.get_nearest(1, 200, src(5)).unwrap().unwrap().0, 300);
-        assert_eq!(cache.get_nearest(1, 90, src(5)).unwrap().unwrap().0, 100);
-        assert_eq!(cache.get_nearest(1, 400, src(5)).unwrap().unwrap().0, 300);
+        assert_eq!(cache.get_nearest(FileId::new(1), 200, src(5)).unwrap().unwrap().0, 300);
+        assert_eq!(cache.get_nearest(FileId::new(1), 90, src(5)).unwrap().unwrap().0, 100);
+        assert_eq!(cache.get_nearest(FileId::new(1), 400, src(5)).unwrap().unwrap().0, 300);
         // Made from another version of the file, or another rotation: a miss.
-        assert!(cache.get_nearest(1, 100, src(6)).unwrap().is_none());
-        assert!(cache.get_nearest(1, 100, Source { mtime: 5, rotation: 1 }).unwrap().is_none());
-        assert!(cache.get_nearest(2, 100, src(5)).unwrap().is_none());
+        assert!(cache.get_nearest(FileId::new(1), 100, src(6)).unwrap().is_none());
+        assert!(
+            cache.get_nearest(FileId::new(1), 100, Source { mtime: 5, rotation: Turns::new(1) }).unwrap().is_none()
+        );
+        assert!(cache.get_nearest(FileId::new(2), 100, src(5)).unwrap().is_none());
         // An entry whose JPEG is gone (another process deleting it right now) is a miss too.
         let c = Connection::open(cache_path(&dir)).unwrap();
         c.execute("DELETE FROM data WHERE id = (SELECT id FROM entries WHERE height = 100)", []).unwrap();
-        assert!(cache.get_nearest(1, 90, src(5)).unwrap().is_none());
-        assert_eq!(cache.get_nearest(1, 300, src(5)).unwrap().unwrap().0, 300);
+        assert!(cache.get_nearest(FileId::new(1), 90, src(5)).unwrap().is_none());
+        assert_eq!(cache.get_nearest(FileId::new(1), 300, src(5)).unwrap().unwrap().0, 300);
     }
 
     /// A batch comes back as it went, its thumbnails' buffers with it, for the next batch; one put alone is stored
@@ -980,14 +989,17 @@ mod tests {
         let cache = open(&dir, 1 << 30);
         let mut batch = vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)];
         assert!(cache.put_batch(&mut batch, None).unwrap());
-        assert_eq!(batch.iter().map(|t| (t.file_id, t.data.len())).collect::<Vec<_>>(), [(1, 10), (2, 20)]);
+        assert_eq!(
+            batch.iter().map(|t| (t.file_id, t.data.len())).collect::<Vec<_>>(),
+            [(FileId::new(1), 10), (FileId::new(2), 20)]
+        );
         cache.put(thumb(3, 100, 5, 30));
         cache.flush();
         let mut jpeg = vec![9; 100];
-        assert_eq!(cache.get_nearest_into(3, 100, src(5), &mut jpeg).unwrap(), Some(100));
+        assert_eq!(cache.get_nearest_into(FileId::new(3), 100, src(5), &mut jpeg).unwrap(), Some(100));
         assert_eq!(jpeg, vec![3u8; 30]);
         // A miss leaves it as it was.
-        assert_eq!(cache.get_nearest_into(4, 100, src(5), &mut jpeg).unwrap(), None);
+        assert_eq!(cache.get_nearest_into(FileId::new(4), 100, src(5), &mut jpeg).unwrap(), None);
         assert_eq!(jpeg, vec![3u8; 30]);
         assert_eq!(cache.totals().unwrap(), (60, 3));
     }
@@ -1001,8 +1013,8 @@ mod tests {
         // Re-put file 1 after file 2 was inserted: an upsert that updates. With last_insert_rowid() this put file 1's
         // JPEG under file 2.
         cache.put_batch(&mut vec![thumb(1, 100, 6, 15)], None).unwrap();
-        assert_eq!(cache.get_nearest(1, 100, src(6)).unwrap().unwrap().1, vec![1u8; 15]);
-        assert_eq!(cache.get_nearest(2, 100, src(5)).unwrap().unwrap().1, vec![2u8; 20]);
+        assert_eq!(cache.get_nearest(FileId::new(1), 100, src(6)).unwrap().unwrap().1, vec![1u8; 15]);
+        assert_eq!(cache.get_nearest(FileId::new(2), 100, src(5)).unwrap().unwrap().1, vec![2u8; 20]);
         assert_eq!(cache.totals().unwrap(), (35, 2));
         let (kept, actual) = totals_and_sum(&dir);
         assert_eq!(kept, actual);
@@ -1023,13 +1035,13 @@ mod tests {
         let c = Connection::open(cache_path(&dir)).unwrap();
         c.execute("UPDATE entries SET last_used = last_used - 100 + file_id", []).unwrap();
         assert!(cache.put_batch(&mut vec![thumb(20, 80, 1, 150)], Some(80)).unwrap());
-        assert!(cache.get_nearest(0, 50, src(1)).unwrap().is_none());
-        assert!(cache.get_nearest(1, 50, src(1)).unwrap().is_none());
-        assert!(cache.get_nearest(2, 50, src(1)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(0), 50, src(1)).unwrap().is_none());
+        assert!(cache.get_nearest(FileId::new(1), 50, src(1)).unwrap().is_none());
+        assert!(cache.get_nearest(FileId::new(2), 50, src(1)).unwrap().is_some());
         // On demand, any height goes; a batch bigger than the cap stores nothing.
         cache.put(thumb(21, 80, 1, 100));
         cache.flush();
-        assert!(cache.get_nearest(21, 80, src(1)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(21), 80, src(1)).unwrap().is_some());
         assert!(!cache.put_batch(&mut vec![thumb(30, 80, 1, 2000)], None).unwrap());
         let (kept, actual) = totals_and_sum(&dir);
         assert_eq!(kept, actual);
@@ -1046,7 +1058,7 @@ mod tests {
         let cache = open(&dir, 500);
         cache.put(thumb(100, 80, 1, 100));
         cache.flush();
-        assert!(cache.get_nearest(100, 80, src(1)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(100), 80, src(1)).unwrap().is_some());
         let (kept, actual) = totals_and_sum(&dir);
         assert_eq!(kept, actual);
         assert!(kept.0 <= 500, "{kept:?}");
@@ -1097,18 +1109,18 @@ mod tests {
         let last_used = || -> i64 { c.query_row("SELECT last_used FROM entries", [], |r| r.get(0)).unwrap() };
         // Shown an hour ago or more: touched (when the writer flushes); recently: left alone.
         c.execute("UPDATE entries SET last_used = 1000", []).unwrap();
-        cache.get_nearest(1, 100, src(5)).unwrap().unwrap();
+        cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().unwrap();
         assert_eq!(last_used(), 1000, "a touch waits for the flush");
         cache.flush();
         let touched = last_used();
         assert!(touched > unix_now() - 5);
         c.execute("UPDATE entries SET last_used = ?1", [touched - 10]).unwrap();
-        cache.get_nearest(1, 100, src(5)).unwrap().unwrap();
+        cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().unwrap();
         cache.flush();
         assert_eq!(last_used(), touched - 10);
         // Closing writes what's waiting.
         c.execute("UPDATE entries SET last_used = 1000", []).unwrap();
-        cache.get_nearest(1, 100, src(5)).unwrap().unwrap();
+        cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().unwrap();
         cache.close();
         assert!(last_used() > 1000);
     }
@@ -1118,13 +1130,13 @@ mod tests {
         let dir = test_folder(SCRATCH, "retag");
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(1, 200, 5, 10), thumb(2, 100, 5, 10)], None).unwrap();
-        cache.retag(1, 5, 9).unwrap();
-        assert!(cache.get_nearest(1, 100, src(9)).unwrap().is_some());
-        assert!(cache.get_nearest(1, 200, src(9)).unwrap().is_some());
-        assert!(cache.get_nearest(2, 100, src(5)).unwrap().is_some());
+        cache.retag(FileId::new(1), 5, 9).unwrap();
+        assert!(cache.get_nearest(FileId::new(1), 100, src(9)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(1), 200, src(9)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(2), 100, src(5)).unwrap().is_some());
         // Only from the mtime it had.
-        cache.retag(2, 4, 9).unwrap();
-        assert!(cache.get_nearest(2, 100, src(5)).unwrap().is_some());
+        cache.retag(FileId::new(2), 4, 9).unwrap();
+        assert!(cache.get_nearest(FileId::new(2), 100, src(5)).unwrap().is_some());
     }
 
     #[test]
@@ -1134,7 +1146,7 @@ mod tests {
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
         let cache = open(&dir, 1 << 30);
-        assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_some());
         assert_eq!(cache.totals().unwrap(), (10, 1));
     }
 
@@ -1191,7 +1203,7 @@ mod tests {
                     cache.put_batch(&mut vec![thumb(file, height, 1, size)], Some(height)).unwrap();
                 }
                 2 => cache.put(thumb(file, height, 1, size)),
-                _ => cache.retag(file, 1, 1).unwrap(),
+                _ => cache.retag(FileId::new(file), 1, 1).unwrap(),
             }
         }
         cache.flush();
@@ -1227,7 +1239,7 @@ mod tests {
             &[
                 File { file_ref: 30, ..File::new(1, 1, "a.jpg", 1, 5) },
                 File { file_ref: 10, ..File::new(2, 1, "b.jpg", 1, 5) },
-                File { file_ref: 20, rotation: 1, ..File::new(3, 1, "c.jpg", 1, 5) },
+                File { file_ref: 20, rotation: Turns::new(1), ..File::new(3, 1, "c.jpg", 1, 5) },
                 File { file_ref: 40, missing: true, ..File::new(4, 1, "d.jpg", 1, 5) },
             ],
         );
@@ -1241,7 +1253,7 @@ mod tests {
     }
 
     fn ids(p: &Pending) -> Vec<i64> {
-        p.work.items.iter().map(|w| w.id).collect()
+        p.work.items.iter().map(|w| w.id.get()).collect()
     }
 
     /// Thumbnails of `bytes` bytes for the work `which` picks, as a pass makes them.
@@ -1277,8 +1289,8 @@ mod tests {
         let first = cache.pending(&catalog, 100).unwrap();
         assert_eq!(ids(&first), vec![2, 3, 1]);
         // Done, but file 2 couldn't be made: it stays in the work.
-        assert!(cache.put_batch(&mut made(&first, |w| w.id != 2, 10), Some(100)).unwrap());
-        let failed = first.work.items.iter().find(|w| w.id == 2).unwrap().seq;
+        assert!(cache.put_batch(&mut made(&first, |w| w.id != FileId::new(2), 10), Some(100)).unwrap());
+        let failed = first.work.items.iter().find(|w| w.id == FileId::new(2)).unwrap().seq;
         cache.checked(&first.snapshot, Some(failed)).unwrap();
         let second = cache.pending(&catalog, 100).unwrap();
         assert!(second.snapshot.since_checked);
@@ -1346,7 +1358,7 @@ mod tests {
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
         let reopened = ThumbCache::open(&dir, "rebuilt", None, Box::new(|e| panic!("{e:#}"))).unwrap();
-        assert!(reopened.get_nearest(1, 100, src(5)).unwrap().is_none(), "file 1 is another file now");
+        assert!(reopened.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_none(), "file 1 is another file now");
         assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
         // Open elsewhere: it can't be deleted, so it isn't used.
         let e = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|_| {})).err().expect("refused");
@@ -1368,7 +1380,7 @@ mod tests {
         let cache = ThumbCache::open(&dir, CATALOG_ID, None, Box::new(|e| panic!("{e:#}"))).unwrap();
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 777), "empty, its cap kept");
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
-        assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_some());
+        assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_some());
     }
 
     #[test]
@@ -1376,7 +1388,7 @@ mod tests {
         let cache = ThumbCache::disabled();
         cache.put(thumb(1, 100, 5, 10));
         assert!(!cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap());
-        assert!(cache.get_nearest(1, 100, src(5)).unwrap().is_none());
+        assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_none());
         assert_eq!(cache.totals().unwrap(), (0, 0));
         assert!(cache.pending(Path::new("nowhere"), 100).unwrap().work.is_empty());
         cache.flush();

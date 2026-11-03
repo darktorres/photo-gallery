@@ -19,6 +19,8 @@
 //! A thumbnail made on a miss goes to the cache's writer once it is shown, moved there rather than copied
 //! ([`Keep`]): Qt decodes it, then hands it back (`providers::keep_thumbnail`), or it is turned here first.
 
+use pg_model::ids::FileId;
+use pg_model::turns::Turns;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -112,7 +114,7 @@ fn with_maker<R>(f: impl FnOnce(&mut Maker) -> Result<R>) -> Result<R> {
     })
 }
 
-fn source(file_id: i64) -> Result<FileSource> {
+fn source(file_id: FileId) -> Result<FileSource> {
     with_catalog(|c| browse::read::file_source(&c.conn, file_id))?.context("unknown file")
 }
 
@@ -123,7 +125,7 @@ const WRITE_WAIT: Duration = Duration::from_secs(10);
 /// counts only when no write of the app's into the file was in progress and the state stayed the same. The writer
 /// marks a write before it rewrites the file and records it in the transaction that ends the mark, so a write
 /// that overlapped the read shows in one state or the other. Otherwise it is read again once the write is done.
-fn consistent<T>(file_id: i64, mut read: impl FnMut(&FileSource) -> Result<T>) -> Result<(FileSource, T)> {
+fn consistent<T>(file_id: FileId, mut read: impl FnMut(&FileSource) -> Result<T>) -> Result<(FileSource, T)> {
     let start = Instant::now();
     loop {
         let src = source(file_id)?;
@@ -134,7 +136,7 @@ fn consistent<T>(file_id: i64, mut read: impl FnMut(&FileSource) -> Result<T>) -
             }
         }
         if start.elapsed() > WRITE_WAIT {
-            bail!("file {file_id} is being rewritten");
+            bail!("file {} is being rewritten", file_id.get());
         }
         std::thread::sleep(Duration::from_millis(20));
     }
@@ -145,7 +147,7 @@ fn consistent<T>(file_id: i64, mut read: impl FnMut(&FileSource) -> Result<T>) -
 pub struct Named {
     pub source: thumbs::Source,
     /// Quarter turns clockwise asked for and not yet written then.
-    pub turns: u8,
+    pub turns: Turns,
 }
 
 /// What a thumbnail request found, as the catalog has the file.
@@ -162,7 +164,7 @@ enum Found {
 /// A thumbnail, as [`thumbnail`] finds it.
 pub struct Thumbnail {
     /// Quarter turns clockwise to show it turned by.
-    pub turns: u8,
+    pub turns: Turns,
     /// One made from the original: its bytes, and where the cache keeps it once it is shown. Otherwise the bytes
     /// are the cache's, in the buffer [`thumbnail`] was given.
     pub made: Option<(Vec<u8>, Keep)>,
@@ -172,7 +174,7 @@ pub struct Thumbnail {
 /// ([`Keep::put`]), so that they move to the cache's writer instead of being copied for it.
 #[derive(Clone, Copy, Debug)]
 pub struct Keep {
-    pub file_id: i64,
+    pub file_id: FileId,
     pub height: u32,
     pub source: thumbs::Source,
 }
@@ -191,7 +193,7 @@ impl Keep {
 ///
 /// A kept one is read into `jpeg`, a buffer the caller keeps from one thumbnail to the next (the provider thread's),
 /// so that showing a cached thumbnail makes no buffer for its bytes.
-pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
+pub fn thumbnail(file_id: FileId, height: u32, named: Option<Named>, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
     let kept = |turns| Thumbnail { turns, made: None };
     // A smaller one of the file as named, read into `jpeg`.
     let mut smaller = false;
@@ -249,7 +251,7 @@ pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>, jpeg: &mut Vec
 }
 
 /// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
-pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Upload> {
+pub fn turn_jpeg(jpeg: &[u8], turns: Turns) -> Result<Upload> {
     with_maker(|m| Ok(Upload::opaque(&pg_render::display::decode(m.decoder(), jpeg, MinSize::Full, turns)?.image)))
 }
 
@@ -292,7 +294,7 @@ impl Upload {
 }
 
 /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now (`browse::read::placeholder`).
-pub fn placeholder(file_id: i64) -> Result<Upload> {
+pub fn placeholder(file_id: FileId) -> Result<Upload> {
     let p = with_catalog(|c| browse::read::placeholder(&c.conn, file_id))?.context("unknown file")?;
     let hash = p.hash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
@@ -318,12 +320,12 @@ pub enum View {
 /// The last decode, kept for the zoom regions that follow each other while the user zooms and pans one image.
 /// It is kept for the process, not the thread, until the next decode: a 24 MP image is about 72 MB of RGB.
 struct Decoded {
-    file_id: i64,
+    file_id: FileId,
     mtime: i64,
     /// The file's size: a decode is reused only while the file still has it.
     size: i64,
     /// With the turns not yet written.
-    rotation: u8,
+    rotation: Turns,
     /// Upright full size, and the decode (possibly DCT-scaled).
     full: (usize, usize),
     image: Arc<Rgb>,
@@ -333,7 +335,7 @@ static LAST_DECODE: Mutex<Option<Decoded>> = Mutex::new(None);
 
 /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as
 /// the viewer asks for it.
-pub fn full_image(file_id: i64, view: View) -> Result<Upload> {
+pub fn full_image(file_id: FileId, view: View) -> Result<Upload> {
     let min = match view {
         View::Fit(w, h) => MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN),
         View::Full => MinSize::Full,
@@ -366,8 +368,8 @@ pub fn full_image(file_id: i64, view: View) -> Result<Upload> {
 
 /// Decode at least `min`, turned as the catalog says, reusing the last decode of the file in that state when it
 /// is big enough; a new decode comes with what to keep of it.
-fn decode(file_id: i64, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Option<Decoded>)> {
-    let rotation = (src.state.rotation + src.state.turns) % 4;
+fn decode(file_id: FileId, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Option<Decoded>)> {
+    let rotation = src.state.rotation.plus(src.state.turns);
     {
         let last = LAST_DECODE.lock().unwrap();
         if let Some(d) = last.as_ref()

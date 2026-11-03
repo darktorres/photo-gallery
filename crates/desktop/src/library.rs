@@ -85,6 +85,7 @@ use cxx_qt_lib::{QString, QStringList, QUrl};
 use pg_ingest::runner::{Generation, Runner};
 use pg_ingest::scan::normalize_path;
 use pg_ingest::writeback::Writer;
+use pg_model::ids::FileId;
 
 use crate::state;
 
@@ -99,7 +100,7 @@ pub fn wake_writer() {
 }
 
 /// Save cropped copies of these files' borders into `folder`, first thing in the background job.
-pub fn save_crops(ids: Vec<i64>, folder: std::path::PathBuf) {
+pub fn save_crops(ids: Vec<FileId>, folder: std::path::PathBuf) {
     if let Some(r) = RUNNER.get() {
         r.save_crops(ids, folder);
     }

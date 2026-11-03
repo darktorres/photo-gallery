@@ -6,9 +6,11 @@ use crate::fixture;
 use crate::query::{DateRange, MediaType, Orientation, Query, Range, Sort, SortKey, Status};
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::detection;
+use pg_model::ids::FileId;
 use pg_model::media::Ext;
 use pg_model::path::folder_key;
 use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};
+use pg_model::turns::Turns;
 use rusqlite::{Connection, params_from_iter};
 
 /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
@@ -43,14 +45,14 @@ fn the_cut_is_described_as_shown() {
     // Stored 736 × 1593 with bars of 163 at the top and 131 at the bottom, shown turned a quarter clockwise
     // (orientation 6: upright 1593 × 736): the top bar is on the right.
     let mut e = Entry {
-        id: 1,
+        id: FileId::new(1),
         mtime: 0,
         width: 1593,
         height: 736,
         duration_ms: Entry::NO_DURATION,
         ext: Ext::of("jpg").unwrap(),
-        rotation: 0,
-        pending_turns: 0,
+        rotation: Turns::new(0),
+        pending_turns: Turns::NONE,
         rating: 0,
         animated: false,
         orientation: 6,
@@ -59,7 +61,7 @@ fn the_cut_is_described_as_shown() {
     };
     assert_eq!(e.shown_cut(), Some([131, 0, 163, 0]));
     // A quarter turn more, not yet written: upside down from stored, the top bar at the bottom.
-    e.pending_turns = 1;
+    e.pending_turns = Turns::new(1);
     assert_eq!(e.shown_cut(), Some([0, 131, 0, 163]));
     e.borders = Borders::None;
     assert_eq!(e.shown_cut(), None);
@@ -76,25 +78,28 @@ fn merged_paths() {
 fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
     let c = library();
     c.conn.execute("UPDATE analysis SET thumbhash = x'01' WHERE file_id = 1", []).unwrap();
-    let state = || file_state(&c.conn, 1).unwrap().unwrap();
-    let turns = || placeholder(&c.conn, 1).unwrap().unwrap().turns;
+    let state = || file_state(&c.conn, FileId::new(1)).unwrap().unwrap();
+    let turns = || placeholder(&c.conn, FileId::new(1)).unwrap().unwrap().turns;
     let size: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
-    assert_eq!(state(), FileState { mtime: 3, size, rotation: 0, turns: 0, writing: false });
-    assert_eq!(file_source(&c.conn, 1).unwrap().unwrap().state, state());
-    assert_eq!((turns(), placeholder(&c.conn, 1).unwrap().unwrap().hash), (0, ThumbHash::new(&[1])));
+    assert_eq!(state(), FileState { mtime: 3, size, rotation: Turns::new(0), turns: Turns::new(0), writing: false });
+    assert_eq!(file_source(&c.conn, FileId::new(1)).unwrap().unwrap().state, state());
+    assert_eq!(
+        (turns(), placeholder(&c.conn, FileId::new(1)).unwrap().unwrap().hash),
+        (Turns::NONE, ThumbHash::new(&[1]))
+    );
     // A turn asked for, not yet written.
-    queue_rotation(&c.conn, 1, 3).unwrap();
-    assert_eq!((state().turns, turns()), (3, 3));
+    queue_rotation(&c.conn, FileId::new(1), Turns::new(3)).unwrap();
+    assert_eq!((state().turns, turns()), (Turns::new(3), Turns::new(3)));
     // One kept in the catalog since the analysis, and one more asked for.
     c.conn.execute("UPDATE files SET rotation = 1 WHERE id = 1", []).unwrap();
-    queue_rotation(&c.conn, 1, 2).unwrap();
-    assert_eq!((state().rotation, state().turns, turns()), (1, 1, 2));
+    queue_rotation(&c.conn, FileId::new(1), Turns::new(2)).unwrap();
+    assert_eq!((state().rotation, state().turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
     c.conn.execute(r"UPDATE file_writes SET temp = 'D:\p\b.jpg.tmp', temp_value = 1 WHERE file_id = 1", []).unwrap();
     assert!(state().writing);
-    assert_eq!(file_state(&c.conn, 99).unwrap(), None);
-    assert!(placeholder(&c.conn, 99).unwrap().is_none());
+    assert_eq!(file_state(&c.conn, FileId::new(99)).unwrap(), None);
+    assert!(placeholder(&c.conn, FileId::new(99)).unwrap().is_none());
 }
 
 #[test]
@@ -112,11 +117,11 @@ fn ratings_and_orders() {
     assert_eq!(ids(&c, "", true, &ratings(&[1, 2, 3, 4, 5]), Sort::default()), [1, 3]);
     assert_eq!(ids(&c, "", true, &ratings(&[2]), Sort::default()), [3]);
     assert_eq!(ids(&c, "", true, &ratings(&[0, 2]), Sort::default()), [2, 3, 4]);
-    let bmp = details(&c.conn, 4).unwrap().unwrap();
+    let bmp = details(&c.conn, FileId::new(4)).unwrap().unwrap();
     assert!(!bmp.rating_in_file, "BMP keeps its rating in the catalog");
-    assert!(details(&c.conn, 1).unwrap().unwrap().rating_in_file);
+    assert!(details(&c.conn, FileId::new(1)).unwrap().unwrap().rating_in_file);
     assert_eq!(
-        details(&c.conn, 2).unwrap(),
+        details(&c.conn, FileId::new(2)).unwrap(),
         Some(Details {
             path: r"E:\p\a.png".into(),
             size: 10,
@@ -124,7 +129,7 @@ fn ratings_and_orders() {
             border_sides: detection::Sides::new()
         })
     );
-    assert_eq!(details(&c.conn, 99).unwrap(), None);
+    assert_eq!(details(&c.conn, FileId::new(99)).unwrap(), None);
 }
 
 #[test]
@@ -638,13 +643,13 @@ fn grid_lists_sort_as_sqlite_did() {
         assert_eq!(entry(&c.conn, e.id).unwrap(), Some(e));
     }
     let entries = list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
-    let get = |id: i64| *entries.iter().find(|e| e.id == id).unwrap();
+    let get = |id: i64| *entries.iter().find(|e| e.id == FileId::new(id)).unwrap();
     let (clip, gif, broken) = (get(5), get(6), get(7));
     assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
     assert_eq!((gif.media_type(), gif.duration_ms(), gif.ext.name()), (MediaType::Animated, None, "gif"));
     // Not imported (its analysis failed): no size yet, square.
     assert_eq!((broken.shown_size(), broken.aspect()), ((0, 0), 1.0));
-    assert_eq!(entry(&c.conn, 99).unwrap(), None);
+    assert_eq!(entry(&c.conn, FileId::new(99)).unwrap(), None);
 }
 
 #[test]

@@ -6,6 +6,7 @@ use rusqlite::{Connection, OptionalExtension};
 
 use pg_model::detection;
 use pg_model::format::Format;
+use pg_model::ids::FileId;
 use pg_model::media::Kind;
 
 /// What a file's grid entry leaves out, for the file shown (the selection, the viewer's).
@@ -19,14 +20,14 @@ pub struct Details {
     pub border_sides: detection::Sides,
 }
 
-pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
+pub fn details(conn: &Connection, file_id: FileId) -> Result<Option<Details>> {
     let found = conn
         .prepare_cached(
             "SELECT fo.path || '\\' || f.name, f.size, f.kind, a.format FROM files f
              JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
              WHERE f.id = ?1",
         )?
-        .query_row([file_id], |r| {
+        .query_row([file_id.get()], |r| {
             let format: Option<String> = r.get(3)?;
             Ok(Details {
                 path: r.get(0)?,
@@ -46,12 +47,12 @@ pub fn details(conn: &Connection, file_id: i64) -> Result<Option<Details>> {
 
 /// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
 /// than detection finds (`detection::MAX_SIDES`) can only be in a damaged catalog: an error.
-pub fn border_sides(conn: &Connection, file_id: i64) -> Result<detection::Sides> {
+pub fn border_sides(conn: &Connection, file_id: FileId) -> Result<detection::Sides> {
     let mut stmt = conn.prepare_cached(
         "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
          ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",
     )?;
-    let mut rows = stmt.query([file_id])?;
+    let mut rows = stmt.query([file_id.get()])?;
     let mut sides = detection::Sides::new();
     while let Some(r) = rows.next()? {
         let unknown = |i: usize, v: &str| rusqlite::Error::InvalidColumnType(i, v.to_string(), Type::Text);
@@ -71,9 +72,9 @@ pub fn border_sides(conn: &Connection, file_id: i64) -> Result<detection::Sides>
                 None => None,
             },
         };
-        sides
-            .try_push(side)
-            .map_err(|_| anyhow::anyhow!("file {file_id}: more than {} border sides kept", detection::MAX_SIDES))?;
+        sides.try_push(side).map_err(|_| {
+            anyhow::anyhow!("file {}: more than {} border sides kept", file_id.get(), detection::MAX_SIDES)
+        })?;
     }
     Ok(sides)
 }

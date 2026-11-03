@@ -8,15 +8,17 @@ use rusqlite::{Connection, OptionalExtension, params_from_iter};
 use super::scope;
 use crate::query::{MediaType, Query, Sort};
 use pg_model::detection;
+use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
 use pg_model::orientation::upright_rect;
+use pg_model::turns::Turns;
 
 /// A file as the grid holds it: what laying it out, drawing its thumbnail and badge, and naming its image take.
 /// The rest is read when the file is shown (`details`). Small and without a `String`, so a list of 190,000 is
 /// 10.6 MB and quick to build.
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub struct Entry {
-    pub id: i64,
+    pub id: FileId,
     /// With `rotation`, what makes an image URL current.
     pub mtime: i64,
     /// As analyzed, without `pending_turns`; 0 until the file is imported.
@@ -26,9 +28,9 @@ pub struct Entry {
     pub duration_ms: u32,
     pub ext: Ext,
     /// Catalog rotation (quarter turns clockwise).
-    pub rotation: u8,
+    pub rotation: Turns,
     /// Quarter turns clockwise asked for but not yet written (`queue_rotation`): the grid shows them already.
-    pub pending_turns: u8,
+    pub pending_turns: Turns,
     pub rating: u8,
     /// More than one frame (known after the import).
     pub animated: bool,
@@ -173,7 +175,7 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let cut = sides.map(Option::unwrap_or_default);
     let cut_found = sides[0].map(|_| cut.iter().any(|&c| c > 0));
     Ok(Entry {
-        id: r.get(0)?,
+        id: FileId::new(r.get(0)?),
         mtime: r.get(1)?,
         width: r.get(2)?,
         height: r.get(3)?,
@@ -182,8 +184,8 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
             .map_or(Entry::NO_DURATION, |ms| ms.clamp(0, u32::MAX as i64 - 1) as u32),
         // The scan records only files with these extensions.
         ext: Ext::of(ext).ok_or_else(|| rusqlite::Error::InvalidColumnType(5, format!("ext {ext}"), Type::Text))?,
-        rotation: r.get(6)?,
-        pending_turns: r.get(7)?,
+        rotation: Turns::new(r.get(6)?),
+        pending_turns: Turns::new(r.get(7)?),
         rating: r.get(8)?,
         animated: r.get::<_, i64>(9)? > 1,
         orientation: r.get(10)?,
@@ -198,10 +200,10 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
 }
 
 /// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
-pub fn entry(conn: &Connection, file_id: i64) -> Result<Option<Entry>> {
+pub fn entry(conn: &Connection, file_id: FileId) -> Result<Option<Entry>> {
     Ok(conn
         .prepare_cached(concat!("SELECT ", entry_columns!(), " FROM files f ", file_joins!(), " WHERE f.id = ?1"))?
-        .query_row([file_id], entry_from_row)
+        .query_row([file_id.get()], entry_from_row)
         .optional()?)
 }
 

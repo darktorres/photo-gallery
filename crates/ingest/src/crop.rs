@@ -3,6 +3,7 @@
 //! modification time. The originals are never written: a folder whose copies would land in the library is refused
 //! up front, and each file is checked to still be the one its borders were found in.
 
+use pg_model::ids::FileId;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
@@ -24,18 +25,18 @@ pub struct Stats {
     /// The first failure, with its file.
     pub error: Option<String>,
     /// What a stop left (to queue again).
-    pub remaining: Vec<i64>,
+    pub remaining: Vec<FileId>,
 }
 
 struct Job {
-    id: i64,
+    id: FileId,
     source: CropSource,
     /// Where its copy goes. Both paths are in the jobs' arena.
     out: PathRef,
 }
 
 /// Save cropped copies of `ids` under `folder`.
-pub fn save(catalog: &Catalog, ids: &[i64], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
+pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
     let folder = folder.to_string_lossy().trim_end_matches('\\').to_string();
     let roots = catalog.roots()?;
     let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };

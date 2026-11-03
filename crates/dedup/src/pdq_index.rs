@@ -13,6 +13,7 @@
 //! tables are rebuilt over every entry: each entry is placed a bounded number of times (amortized O(1)) however
 //! large the index grows, and an empty catalog's first import stays fast. An index without entries holds no table.
 
+use pg_model::ids::FileId;
 use pg_model::pdq::Hash;
 
 const CHUNKS: usize = 16;
@@ -28,7 +29,7 @@ const MAP_MAX_SLOTS: usize = 1 << 15;
 
 #[derive(Default)]
 pub struct PdqIndex {
-    ids: Vec<i64>,
+    ids: Vec<FileId>,
     hashes: Vec<[u64; 4]>,
     /// How many entries (the first ones) are in the flat tables; the rest are chained.
     indexed: usize,
@@ -147,7 +148,7 @@ fn value(words: &[u64; 4], c: usize) -> u16 {
 
 impl PdqIndex {
     /// The index of these entries: `ids[i]`'s hash words are `hashes[i]`.
-    pub fn build(ids: Vec<i64>, hashes: Vec<[u64; 4]>) -> PdqIndex {
+    pub fn build(ids: Vec<FileId>, hashes: Vec<[u64; 4]>) -> PdqIndex {
         assert_eq!(ids.len(), hashes.len());
         let mut index = PdqIndex { seen: vec![0; ids.len()], ids, hashes, ..PdqIndex::default() };
         index.reindex();
@@ -175,7 +176,7 @@ impl PdqIndex {
         }
     }
 
-    pub fn insert(&mut self, id: i64, hash: &Hash) {
+    pub fn insert(&mut self, id: FileId, hash: &Hash) {
         let words = hash.words();
         let link = u32::try_from(self.ids.len() + 1).expect("PDQ index of 2³² entries");
         for (c, chunk) in self.chunks.iter_mut().enumerate() {
@@ -227,7 +228,7 @@ impl PdqIndex {
     /// Store every orientation of an image under its id. A pair matches when some orientation of one is within the
     /// radius of some orientation of the other, so the index needs all of them to find it whichever of the two is
     /// imported first.
-    pub fn insert_orientations(&mut self, id: i64, orientations: &[Hash]) {
+    pub fn insert_orientations(&mut self, id: FileId, orientations: &[Hash]) {
         for hash in orientations {
             self.insert(id, hash);
         }
@@ -239,8 +240,8 @@ impl PdqIndex {
         &mut self,
         orientations: &[Hash],
         radius: u32,
-        found: &mut Vec<(i64, u32)>,
-        best: &mut Vec<(i64, u32, usize)>,
+        found: &mut Vec<(FileId, u32)>,
+        best: &mut Vec<(FileId, u32, usize)>,
     ) {
         best.clear();
         for (v, hash) in orientations.iter().enumerate() {
@@ -257,7 +258,7 @@ impl PdqIndex {
 
     /// Every entry within `radius` (≤ [`MAX_RADIUS`]) of `hash`, as (id, distance), into `out` (cleared first), in
     /// no particular order.
-    pub fn query(&mut self, hash: &Hash, radius: u32, out: &mut Vec<(i64, u32)>) {
+    pub fn query(&mut self, hash: &Hash, radius: u32, out: &mut Vec<(FileId, u32)>) {
         assert!(radius <= MAX_RADIUS);
         out.clear();
         self.query_no = self.query_no.wrapping_add(1);
@@ -314,16 +315,16 @@ mod tests {
 
     /// The pairs found when the images are imported in `order`, as (smaller, larger) image indices: each one is
     /// queried with all its orientations against the earlier ones' (what the import does).
-    fn pairs_in(order: &[usize], images: &[Vec<Hash>]) -> std::collections::BTreeSet<(i64, i64)> {
+    fn pairs_in(order: &[usize], images: &[Vec<Hash>]) -> std::collections::BTreeSet<(FileId, FileId)> {
         let mut index = PdqIndex::default();
         let (mut found, mut best) = (Vec::new(), Vec::new());
         let mut pairs = std::collections::BTreeSet::new();
         for &i in order {
             index.best_matches(&images[i], MATCH_DISTANCE, &mut found, &mut best);
             for &(other, _, _) in &best {
-                pairs.insert((other.min(i as i64), other.max(i as i64)));
+                pairs.insert((other.min(FileId::new(i as i64)), other.max(FileId::new(i as i64))));
             }
-            index.insert_orientations(i as i64, &images[i]);
+            index.insert_orientations(FileId::new(i as i64), &images[i]);
         }
         pairs
     }
@@ -382,14 +383,14 @@ mod tests {
     }
 
     /// Each query's results are the brute-force set over the first `index.len()` hashes, ids being positions.
-    fn check(index: &mut PdqIndex, all: &[Hash], queries: &[Hash], out: &mut Vec<(i64, u32)>) {
+    fn check(index: &mut PdqIndex, all: &[Hash], queries: &[Hash], out: &mut Vec<(FileId, u32)>) {
         for q in queries {
             index.query(q, MAX_RADIUS, out);
             out.sort();
-            let want: Vec<(i64, u32)> = all[..index.len()]
+            let want: Vec<(FileId, u32)> = all[..index.len()]
                 .iter()
                 .enumerate()
-                .map(|(id, h)| (id as i64, q.distance(h)))
+                .map(|(id, h)| (FileId::new(id as i64), q.distance(h)))
                 .filter(|&(_, d)| d <= MAX_RADIUS)
                 .collect();
             assert_eq!(*out, want, "{} entries, {} indexed", index.len(), index.indexed);
@@ -399,7 +400,8 @@ mod tests {
     #[test]
     fn a_built_index_finds_exactly_the_brute_force_set() {
         let (all, queries) = sample(1100);
-        let mut index = PdqIndex::build((0..all.len() as i64).collect(), all.iter().map(Hash::words).collect());
+        let mut index =
+            PdqIndex::build((0..all.len() as i64).map(FileId::new).collect(), all.iter().map(Hash::words).collect());
         assert_eq!(index.indexed, all.len());
         check(&mut index, &all, &queries, &mut Vec::new());
     }
@@ -411,7 +413,7 @@ mod tests {
         let mut out = Vec::new();
         check(&mut index, &all, &queries, &mut out);
         for (id, h) in all.iter().enumerate() {
-            index.insert(id as i64, h);
+            index.insert(FileId::new(id as i64), h);
             if [1, 100, MIN_REINDEX - 1, MIN_REINDEX, MIN_REINDEX + 1, all.len()].contains(&index.len()) {
                 check(&mut index, &all, &queries, &mut out);
             }
@@ -459,7 +461,7 @@ mod tests {
         let mut index = PdqIndex::default();
         index.reserve(all.len());
         for (id, h) in all.iter().enumerate() {
-            index.insert(id as i64, h);
+            index.insert(FileId::new(id as i64), h);
         }
         check(&mut index, &all, &queries, &mut Vec::new());
     }
@@ -468,10 +470,13 @@ mod tests {
     fn inserts_into_a_built_index_are_found_across_reindexes() {
         let (all, queries) = sample(1300);
         let built = 3000;
-        let mut index = PdqIndex::build((0..built as i64).collect(), all[..built].iter().map(Hash::words).collect());
+        let mut index = PdqIndex::build(
+            (0..built as i64).map(FileId::new).collect(),
+            all[..built].iter().map(Hash::words).collect(),
+        );
         let mut out = Vec::new();
         for (id, h) in all.iter().enumerate().skip(built) {
-            index.insert(id as i64, h);
+            index.insert(FileId::new(id as i64), h);
             let chained = index.len() - index.indexed;
             if [1, 2000, MIN_REINDEX - 1].contains(&chained) || index.len() == all.len() {
                 check(&mut index, &all, &queries, &mut out);

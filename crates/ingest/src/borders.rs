@@ -3,6 +3,7 @@
 //! the Python prototype's columns (`tools/borders.py`, in git history); the detector for images piped in (the eval's
 //! `--trim`); and the review marks of the eval viewer's former Borders page taken into the catalog.
 
+use pg_model::turns::Turns;
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
@@ -147,7 +148,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
         opts,
         ctl,
         Analyzer::new,
-        |analyzer, _, bytes| analyzer.borders(bytes, 0),
+        |analyzer, _, bytes| analyzer.borders(bytes, Turns::NONE),
         |i, result, len| {
             ctl.add(len, result.is_err());
             let path = field(&files[i]);

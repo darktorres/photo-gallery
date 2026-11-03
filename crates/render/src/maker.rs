@@ -2,6 +2,7 @@
 //! resize and the JPEG encode, with the buffers a worker keeps from file to file. What a thumbnail is made of;
 //! where thumbnails are kept is `pg_thumbcache`.
 
+use pg_model::turns::Turns;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -73,7 +74,7 @@ impl Maker {
     }
 
     /// [`Maker::make`] of the file [`Maker::read_file`] read.
-    pub fn make_from_file(&mut self, height: usize, turns: u8) -> Result<Vec<u8>> {
+    pub fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>> {
         let file = std::mem::take(&mut self.file);
         let mut out = Vec::new();
         let result = self.make_image(&file, height, turns, &mut out);
@@ -83,7 +84,7 @@ impl Maker {
     }
 
     /// A one-off decode of the file [`Maker::read_file`] read (the viewer's): its pixels go to new buffers.
-    pub fn decode_file(&mut self, min: MinSize, turns: u8) -> Result<Decoded> {
+    pub fn decode_file(&mut self, min: MinSize, turns: Turns) -> Result<Decoded> {
         let result = crate::display::decode(&mut self.decoder, &self.file, min, turns);
         release_over(&mut self.file, KEEP_BYTES);
         result
@@ -91,20 +92,20 @@ impl Maker {
 
     /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
     /// file's catalog rotation.
-    pub fn make(&mut self, bytes: &[u8], height: usize, turns: u8) -> Result<Vec<u8>> {
+    pub fn make(&mut self, bytes: &[u8], height: usize, turns: Turns) -> Result<Vec<u8>> {
         let mut out = Vec::new();
         self.make_into(bytes, height, turns, &mut out).map(|()| out)
     }
 
     /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
     /// given back by the cache's writer (`pg_thumbcache::ThumbCache::put_batch`).
-    pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
+    pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
         let result = self.make_image(bytes, height, turns, out);
         self.trim();
         result
     }
 
-    fn make_image(&mut self, bytes: &[u8], height: usize, turns: u8, out: &mut Vec<u8>) -> Result<()> {
+    fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
         let format = Format::sniff(bytes).context("unknown image format")?;
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
         let exif = pg_metadata::orientation(bytes, format);
@@ -113,7 +114,7 @@ impl Maker {
     }
 
     /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
-    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: u8) -> Result<()> {
+    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<()> {
         let result = pg_video::frame_into(path, at_ms, turns, &mut self.image, &mut self.spare);
         if result.is_err() {
             self.trim();
@@ -207,11 +208,11 @@ mod tests {
     #[test]
     fn kept_buffers_give_what_new_ones_do() {
         let files = [
-            (jpeg(1200, 800, 1), 0),
-            (png_rgba(300, 200, 2), 1),
-            (jpeg(640, 480, 3), 3),
-            (jpeg(90, 60, 4), 2),
-            (png_rgba(40, 700, 5), 0),
+            (jpeg(1200, 800, 1), Turns::new(0)),
+            (png_rgba(300, 200, 2), Turns::new(1)),
+            (jpeg(640, 480, 3), Turns::new(3)),
+            (jpeg(90, 60, 4), Turns::new(2)),
+            (png_rgba(40, 700, 5), Turns::new(0)),
         ];
         let mut kept = Analyzer::new().unwrap();
         let mut maker = Maker::new().unwrap();
@@ -251,12 +252,14 @@ mod tests {
         for _ in 0..2 {
             for (path, bytes) in &files {
                 maker.read_file(path).unwrap();
-                let made = maker.make_from_file(120, 1).map_err(|e| format!("{e:#}"));
-                let expected = Maker::new().unwrap().make(bytes, 120, 1).map_err(|e| format!("{e:#}"));
+                let made = maker.make_from_file(120, Turns::new(1)).map_err(|e| format!("{e:#}"));
+                let expected = Maker::new().unwrap().make(bytes, 120, Turns::new(1)).map_err(|e| format!("{e:#}"));
                 assert_eq!(made, expected, "{}", path.display());
                 maker.read_file(path).unwrap();
-                let decoded = maker.decode_file(MinSize::Fit(300, 300), 3).map(|d| (d.image.width, d.image.pixels));
-                let expected = crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Fit(300, 300), 3);
+                let decoded =
+                    maker.decode_file(MinSize::Fit(300, 300), Turns::new(3)).map(|d| (d.image.width, d.image.pixels));
+                let expected =
+                    crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Fit(300, 300), Turns::new(3));
                 let expected = expected.map(|d| (d.image.width, d.image.pixels));
                 assert_eq!(decoded.map_err(|e| format!("{e:#}")), expected.map_err(|e| format!("{e:#}")));
             }

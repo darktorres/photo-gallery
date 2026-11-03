@@ -1,5 +1,6 @@
 //! Per-stage timing of the import analysis on one thread: `cargo run --release --example stage_times -- <folder> [n]`.
 
+use pg_model::turns::Turns;
 use std::time::{Duration, Instant};
 
 use pg_analysis::analyze::{self, Analyzer};
@@ -35,7 +36,7 @@ fn main() -> anyhow::Result<()> {
         let meta = Meta::read(b, format, &mut meta_scratch);
         t[1] += s.elapsed();
         let s = Instant::now();
-        dec.decode_into(b, format, meta.orientation, MinSize::Sides(512, 320), 0, &mut image, &mut spare)?;
+        dec.decode_into(b, format, meta.orientation, MinSize::Sides(512, 320), Turns::NONE, &mut image, &mut spare)?;
         t[2] += s.elapsed();
         let s = Instant::now();
         let _ = analyze::pixel_hash(&image);
@@ -47,7 +48,7 @@ fn main() -> anyhow::Result<()> {
         let _ = hasher.hash_rgb_dihedral(&img.pixels, img.width, img.height);
         t[5] += s.elapsed();
         let s = Instant::now();
-        let _ = analyzer.analyze(b, 0)?;
+        let _ = analyzer.analyze(b, Turns::NONE)?;
         t[6] += s.elapsed();
     }
     for (name, d) in ["blake3", "metadata", "decode", "pixel hash", "resize 512", "pdq", "analyze total"].iter().zip(t)

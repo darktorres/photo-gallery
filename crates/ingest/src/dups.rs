@@ -2,6 +2,7 @@
 //! together. Grouping here is plain connected components, enough to inspect tiers 0–1. The real grouping is
 //! multicut over verified tier-2 edges (PLAN §5, M3).
 
+use pg_model::ids::FileId;
 use std::collections::BTreeMap;
 
 use anyhow::Result;
@@ -78,7 +79,7 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
         let mut rows = stmt.query([])?;
         let mut prev_id = None;
         while let Some(r) = rows.next()? {
-            let (h, id) = (r.get_ref(0)?.as_blob()?, r.get(1)?);
+            let (h, id) = (r.get_ref(0)?.as_blob()?, FileId::new(r.get(1)?));
             if let Some(p) = prev_id
                 && prev == h
             {
@@ -92,18 +93,19 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     let mut stmt = conn.prepare("SELECT a, b FROM present_pdq_pairs WHERE distance <= ?1")?;
     for pair in stmt.query_map([group_distance], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?)))? {
         let (a, b) = pair?;
+        let (a, b) = (FileId::new(a), FileId::new(b));
         uf.union(a, b);
     }
-    let ids: Vec<i64> = uf.members().collect();
+    let ids: Vec<FileId> = uf.members().collect();
     // Members in id order; groups by size, then by their smallest id: the first member of each group seen.
-    let mut smallest: BTreeMap<i64, i64> = BTreeMap::new();
-    let mut groups: BTreeMap<i64, Vec<i64>> = BTreeMap::new();
+    let mut smallest: BTreeMap<FileId, FileId> = BTreeMap::new();
+    let mut groups: BTreeMap<FileId, Vec<FileId>> = BTreeMap::new();
     for id in ids {
         let root = uf.find(id);
         let first = *smallest.entry(root).or_insert(id);
         groups.entry(first).or_default().push(id);
     }
-    let mut groups: Vec<Vec<i64>> = groups.into_values().filter(|g| g.len() > 1).collect();
+    let mut groups: Vec<Vec<FileId>> = groups.into_values().filter(|g| g.len() > 1).collect();
     groups.sort_by_key(|g| std::cmp::Reverse(g.len()));
     let files: usize = groups.iter().map(Vec::len).sum();
     println!(
@@ -118,7 +120,7 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     for g in groups.iter().take(show) {
         println!("\n{} files:", g.len());
         for id in g.iter().take(20) {
-            println!("  {}", path.query_row([id], |r| r.get::<_, String>(0))?);
+            println!("  {}", path.query_row([id.get()], |r| r.get::<_, String>(0))?);
         }
     }
     Ok(())

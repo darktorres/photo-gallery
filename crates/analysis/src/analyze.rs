@@ -14,7 +14,9 @@ use pg_codec::decode::{Decoder, MinSize};
 use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
-use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts};
+use pg_model::analysis::{
+    Analysis, Analyzed, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts,
+};
 use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
 use pg_model::orientation;
@@ -89,13 +91,13 @@ impl Analyzer {
 
     /// The import's analysis of an image. `turns`: the file's catalog rotation (quarter turns clockwise), part of
     /// what "upright" means.
-    pub fn analyze(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
+    pub fn analyze(&mut self, bytes: &[u8], turns: Turns) -> Result<Analyzed> {
         let result = self.analyze_image(bytes, turns);
         self.trim();
         result
     }
 
-    fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analysis> {
+    fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analyzed> {
         let file_hash = file_hash(bytes);
         let format = Format::sniff(bytes).context("unknown image format")?;
         let meta = Meta::read(bytes, format, &mut self.meta);
@@ -107,7 +109,7 @@ impl Analyzer {
         let pdq_img = if self.resizer.fit_within(img, PDQ_SIDE, &mut self.pdq_in) { &self.pdq_in } else { img };
         let (pdq, pdq_dihedral) = self.hasher.hash_rgb_dihedral(&pdq_img.pixels, pdq_img.width, pdq_img.height);
 
-        Ok(Analysis {
+        let record = Analysis {
             version: IMPORT_VERSION,
             file_hash,
             orientation: info.orientation,
@@ -119,9 +121,10 @@ impl Analyzer {
             media: Media::Image(ImageFacts {
                 format: info.format,
                 file_rating: meta.rating.and_then(Rating::new),
-                pixels: PixelHashes { pixel_hash: pixel_hash(img), pdq, pdq_dihedral },
+                pixels: PixelHashes { pixel_hash: pixel_hash(img), pdq },
             }),
-        })
+        };
+        Ok(Analyzed { record, pdq_dihedral: Some(pdq_dihedral) })
     }
 
     /// The ThumbHash of the image in [`Analyzer::image`] (a video's frame).
@@ -191,19 +194,19 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
 
 /// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
 /// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
-pub fn video(path: &Path, turns: Turns, analyzer: &mut Analyzer) -> Result<Analysis> {
+pub fn video(path: &Path, turns: Turns, analyzer: &mut Analyzer) -> Result<Analyzed> {
     let result = analyze_video(path, turns, analyzer);
     analyzer.trim();
     result
 }
 
-fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis> {
+fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analyzed> {
     let file_hash = file_hash_of(path).with_context(|| format!("reading {}", path.display()))?;
     let p = pg_video::probe(path)?;
     let poster = pg_video::poster_ms(p.duration_ms);
     pg_video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
     let (width, height) = if orientation::turns_swap(turns) { (p.height, p.width) } else { (p.width, p.height) };
-    Ok(Analysis {
+    let record = Analysis {
         version: IMPORT_VERSION,
         file_hash,
         // The stills' orientation includes the catalog turn (`decode_into`); the video's must too, or its stored
@@ -215,7 +218,8 @@ fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analysis
         frames: p.frames,
         taken: p.taken,
         media: Media::Video(VideoFacts { codec: p.codec, duration_ms: p.duration_ms, poster_ms: poster }),
-    })
+    };
+    Ok(Analyzed { record, pdq_dihedral: None })
 }
 
 #[cfg(test)]

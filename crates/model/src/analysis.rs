@@ -6,6 +6,7 @@ use crate::orientation::Orientation;
 use crate::pdq;
 
 /// One file's analysis: what every file has, and the facts of its kind (an image's or a video's).
+#[derive(Clone)]
 pub struct Analysis {
     /// The version of the producer that made it (core's `analyze::IMPORT_VERSION`); an older one's are redone.
     pub version: i64,
@@ -22,6 +23,15 @@ pub struct Analysis {
     /// When the file says it was taken, if it does.
     pub taken: Option<Taken>,
     pub media: Media,
+}
+
+/// One file's analysis, and the 8 dihedral PDQ hashes of its image (the query side of tier 1: the orientations the
+/// import pairs on). Those are returned beside the record, not held in it: the catalog stores them with it, and the
+/// import's pairing reads them. A video has none.
+#[derive(Clone)]
+pub struct Analyzed {
+    pub record: Analysis,
+    pub pdq_dihedral: Option<[pdq::Hash; 8]>,
 }
 
 /// When a file was taken: a wall-clock time (no time zone: what the camera's clock showed), or a UTC instant.
@@ -46,12 +56,14 @@ impl Taken {
 // The image's hashes are held inline on purpose: an import allocates nothing per file, and a video's facts are the
 // small case.
 #[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
 pub enum Media {
     Image(ImageFacts),
     Video(VideoFacts),
 }
 
 /// A still image's facts: its format, the rating the file itself holds, and its hashes (tiers 0b and 1).
+#[derive(Clone)]
 pub struct ImageFacts {
     pub format: Format,
     /// The rating the file itself holds (`Meta::rating`), for the catalog's three-way sync.
@@ -60,15 +72,15 @@ pub struct ImageFacts {
 }
 
 /// A still image's pixel hashes.
+#[derive(Clone)]
 pub struct PixelHashes {
-    /// XXH3-128 of the upright decoded pixels (tier 0b), see core's `analyze::pixel_hash`.
+    /// XXH3-128 of the upright decoded pixels (tier 0b), see `pg_analysis::analyze::pixel_hash`.
     pub pixel_hash: [u8; 16],
     pub pdq: pdq::Pdq,
-    /// The 8 dihedral PDQ hashes, for the query side of tier 1. The catalog stores them with the analysis.
-    pub pdq_dihedral: [pdq::Hash; 8],
 }
 
 /// A video's facts: its codec, its length, and where the frame its ThumbHash and thumbnails come from is.
+#[derive(Clone)]
 pub struct VideoFacts {
     pub codec: &'static str,
     pub duration_ms: i64,

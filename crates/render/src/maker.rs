@@ -169,7 +169,7 @@ impl Maker {
 mod tests {
     use super::*;
     use pg_analysis::analyze::Analyzer;
-    use pg_model::analysis::Analysis;
+    use pg_model::analysis::Analyzed;
     use pg_testkit::test_folder;
     use std::path::PathBuf;
 
@@ -197,10 +197,11 @@ mod tests {
         pg_testkit::png_rgba(w as u32, h as u32, &rgba)
     }
 
-    fn summary(a: &Analysis) -> impl PartialEq + std::fmt::Debug + use<> {
-        let px = &a.image().unwrap().pixels;
-        let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, px.pdq_dihedral);
-        (a.file_hash, a.format(), a.orientation, a.width, a.height, a.thumbhash, a.frames, hashes)
+    fn summary(a: &Analyzed) -> impl PartialEq + std::fmt::Debug + use<> {
+        let r = &a.record;
+        let px = &r.image().unwrap().pixels;
+        let hashes = (px.pixel_hash, px.pdq.hash, px.pdq.quality, a.pdq_dihedral);
+        (r.file_hash, r.format(), r.orientation, r.width, r.height, r.thumbhash, r.frames, hashes)
     }
 
     /// One analyzer and one thumbnail maker for files of every size, format and turn, as a worker keeps them: what a

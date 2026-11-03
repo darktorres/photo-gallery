@@ -34,6 +34,7 @@ impl Hash {
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Pdq {
     pub hash: Hash,
     /// 0–100, Meta's gradient-based quality metric.

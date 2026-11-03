@@ -160,7 +160,7 @@ fn videos() {
     let mut analyzer = analyze::Analyzer::new().unwrap();
     for (path, turns, want) in [(&rotated, 0, 8), (&rotated, 1, 1), (&mirrored, 0, 2), (&mirrored, 1, 7)] {
         let a = analyze::video(path, Turns::new(turns), &mut analyzer).unwrap();
-        assert_eq!(a.orientation.get(), want, "{} with {turns} turn(s)", path.display());
+        assert_eq!(a.record.orientation.get(), want, "{} with {turns} turn(s)", path.display());
     }
 
     assert_eq!(poster_ms(3000), 300);

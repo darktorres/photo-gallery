@@ -9,7 +9,7 @@ use anyhow::Result;
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::Catalog;
 use pg_dedup::Pairer;
-use pg_model::analysis::Analysis;
+use pg_model::analysis::Analyzed;
 use pg_model::media::Kind;
 use pg_model::pdq::MIN_QUALITY;
 
@@ -40,10 +40,10 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     pairer.reserve(items.len() * 8);
     eprintln!("{} files to import; tier-1 index holds {} hashes", items.len(), pairer.len());
 
-    let mut batch: Vec<(usize, Result<Analysis>)> = Vec::with_capacity(BATCH);
+    let mut batch: Vec<(usize, Result<Analyzed>)> = Vec::with_capacity(BATCH);
     ctl.begin("import", String::new(), items.len() as u64);
 
-    let mut flush = |batch: &mut Vec<(usize, Result<Analysis>)>, stats: &mut ImportStats| -> Result<()> {
+    let mut flush = |batch: &mut Vec<(usize, Result<Analyzed>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.tx()?;
         let mut writer = tx.analysis_writer(crate::versions().import)?;
         for (i, result) in batch.drain(..) {
@@ -54,11 +54,12 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                         stats.changed += 1;
                         continue;
                     }
-                    if let Some(px) = a.image().map(|i| &i.pixels).filter(|px| px.pdq.quality >= MIN_QUALITY) {
+                    let quality_ok = a.record.image().is_some_and(|i| i.pixels.pdq.quality >= MIN_QUALITY);
+                    if let Some(dihedral) = a.pdq_dihedral.filter(|_| quality_ok) {
                         // The new image's 8 orientations against every stored orientation of the earlier ones,
                         // then stored: the pair is found the same whichever image comes first, with the best per
                         // neighbour.
-                        for &(other, d, v) in pairer.pair_and_insert(item.id, &px.pdq_dihedral) {
+                        for &(other, d, v) in pairer.pair_and_insert(item.id, &dihedral) {
                             writer.store_pdq_pair(item.id, other, d, v)?;
                             stats.pairs += 1;
                         }

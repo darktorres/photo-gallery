@@ -30,7 +30,7 @@ use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
-use pg_model::analysis::Analysis;
+use pg_model::analysis::Analyzed;
 use pg_model::detection::Detection;
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
@@ -1384,10 +1384,11 @@ impl<'tx> AnalysisWriter<'tx> {
     }
 
     /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
-    pub fn store_analysis(&mut self, item: &WorkItem, a: &Analysis) -> Result<bool> {
+    pub fn store_analysis(&mut self, item: &WorkItem, analyzed: &Analyzed) -> Result<bool> {
         if !self.current(item)? {
             return Ok(false);
         }
+        let a = &analyzed.record;
         // A re-analysis invalidates the file's tier-1 pairs; the caller re-queries it.
         self.delete_pairs.execute([item.id.get()])?;
         let (taken, taken_utc) = a.taken.map_or((None, false), |t| {
@@ -1416,7 +1417,7 @@ impl<'tx> AnalysisWriter<'tx> {
             video.map(|v| v.poster_ms),
             item.rotation.get(),
             item.kind.key(),
-            image.map(|i| i.pixels.pdq_dihedral.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
+            analyzed.pdq_dihedral.map(|d| d.iter().flat_map(|h| h.0).collect::<Vec<u8>>()),
         ])?;
         // The borders of what was there before are gone; the borders pass finds the new ones.
         self.borders_due.execute([item.id.get()])?;
@@ -1544,7 +1545,7 @@ mod tests {
     use super::*;
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_analysis::borders::BORDERS_VERSION;
-    use pg_model::analysis::{ImageFacts, Media, PixelHashes, ThumbHash};
+    use pg_model::analysis::{Analysis, ImageFacts, Media, PixelHashes, ThumbHash};
     use pg_testkit::test_folder;
 
     /// The versions this build's analyses are stamped with, as the library passes them to [`Catalog::prepare`].
@@ -1987,8 +1988,14 @@ mod tests {
     /// The facts of a JPEG with no rating and stand-in hashes, for the analyses the tests store.
     fn a_jpeg() -> Media {
         let pdq = pg_model::pdq::Pdq { hash: pg_model::pdq::Hash([0; 32]), quality: 0 };
-        let pixels = PixelHashes { pixel_hash: [0; 16], pdq, pdq_dihedral: [pg_model::pdq::Hash([0; 32]); 8] };
+        let pixels = PixelHashes { pixel_hash: [0; 16], pdq };
         Media::Image(ImageFacts { format: Format::Jpeg, file_rating: None, pixels })
+    }
+
+    /// An analysis as the import holds it: an image's dihedral hashes are stand-ins (`a_jpeg`'s), a video's are none.
+    fn stored_analysis(record: &Analysis) -> Analyzed {
+        let pdq_dihedral = record.image().map(|_| [pg_model::pdq::Hash([0; 32]); 8]);
+        Analyzed { record: record.clone(), pdq_dihedral }
     }
 
     /// The import storing what it made of `item` (a failure: it counts as made, and needs no Analysis).
@@ -2055,7 +2062,10 @@ mod tests {
             media: a_jpeg(),
         };
         let tx = c.conn.transaction().unwrap();
-        AnalysisWriter::new(&tx, versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
+        AnalysisWriter::new(&tx, versions().import)
+            .unwrap()
+            .store_analysis(&item, &stored_analysis(&analysis))
+            .unwrap();
         tx.commit().unwrap();
         let cut = |c: &Catalog| -> [Option<i64>; 4] {
             c.conn
@@ -2116,7 +2126,10 @@ mod tests {
         // Analyzed again (the file changed): the old borders go, the new ones are due.
         let tx = c.conn.transaction().unwrap();
         BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
-        AnalysisWriter::new(&tx, versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
+        AnalysisWriter::new(&tx, versions().import)
+            .unwrap()
+            .store_analysis(&item, &stored_analysis(&analysis))
+            .unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [None; 4]);
         assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
@@ -2161,7 +2174,10 @@ mod tests {
                 media: a_jpeg(),
             };
             let tx = c.conn.transaction().unwrap();
-            AnalysisWriter::new(&tx, versions().import).unwrap().store_analysis(&item, &analysis).unwrap();
+            AnalysisWriter::new(&tx, versions().import)
+                .unwrap()
+                .store_analysis(&item, &stored_analysis(&analysis))
+                .unwrap();
             BordersWriter::new(&tx).unwrap().store_borders(&item, Some(&borders)).unwrap();
             tx.commit().unwrap();
             if name == "e.jpg" {

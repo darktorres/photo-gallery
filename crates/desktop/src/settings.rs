@@ -85,7 +85,17 @@ pub fn prefs() -> Prefs {
         let path = prefs_path();
         match std::fs::read(&path) {
             Ok(bytes) => serde_json::from_slice(&bytes).unwrap_or_else(|e| {
-                eprintln!("{}: {e}; using defaults", path.display());
+                // Kept aside, not overwritten by the first save: its content (the Yandex folder, the
+                // write-back setting) can be copied back by hand.
+                let bad = path.with_extension("json.bad");
+                let kept = match std::fs::rename(&path, &bad) {
+                    Ok(()) => format!("is kept as {}", bad.display()),
+                    Err(r) => format!("could not be kept aside ({r})"),
+                };
+                crate::panic_log::note(&format!(
+                    "{} did not parse ({e}); using defaults, and it {kept}",
+                    path.display()
+                ));
                 Prefs::default()
             }),
             Err(_) => Prefs::default(),

@@ -11,7 +11,8 @@ use std::backtrace::Backtrace;
 use std::cell::Cell;
 use std::io::Write as _;
 use std::panic::{PanicHookInfo, UnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 thread_local! {
     /// Set while [`catch`] runs its closure on this thread.
@@ -26,18 +27,18 @@ pub fn catch<T>(f: impl FnOnce() -> T + UnwindSafe) -> std::thread::Result<T> {
     result
 }
 
+/// The log `install` was given, for [`note`].
+static LOG: OnceLock<PathBuf> = OnceLock::new();
+
 /// Log panics to `log` (and to stderr, when there is one), and show a box for those that end the process.
 pub fn install(log: PathBuf) {
+    let _ = LOG.set(log.clone());
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_hook(info);
         let caught = CAUGHT.with(Cell::get);
         let report = report(info);
-        let written = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&log)
-            .and_then(|mut f| f.write_all(report.as_bytes()));
+        let written = append(&log, &report);
         let where_ = match written {
             Ok(()) => format!("The details are in {}.", log.display()),
             Err(e) => format!("Writing them to {} failed ({e}).", log.display()),
@@ -46,6 +47,18 @@ pub fn install(log: PathBuf) {
             crate::message_box(&format!("Photo Gallery hit an internal error:\n\n{info}\n\n{where_}"));
         }
     }));
+}
+
+/// Append a line to `gallery.log`, for a problem a GUI program can't show on stderr. Does nothing before
+/// `install`.
+pub fn note(line: &str) {
+    if let Some(log) = LOG.get() {
+        let _ = append(log, &format!("{} {line}\n", local_time()));
+    }
+}
+
+fn append(log: &Path, text: &str) -> std::io::Result<()> {
+    std::fs::OpenOptions::new().create(true).append(true).open(log)?.write_all(text.as_bytes())
 }
 
 fn report(info: &PanicHookInfo) -> String {

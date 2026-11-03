@@ -50,7 +50,6 @@ Pane {
 
     Filters {
         id: filters
-        symbols: Ratings.symbols
         onEdited: bar.edited()
     }
 

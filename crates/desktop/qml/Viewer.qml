@@ -106,20 +106,26 @@ Rectangle {
     // The bar's "find similar" button: the photo's file, for the Yandex panel (Main.qml).
     signal findSimilar(string path)
 
-    // The view: `zoom` device pixels per image pixel, the image's top-left corner at (ox, oy) in logical pixels.
-    property real zoom: 1
-    property real ox: 0
-    property real oy: 0
+    // The view (Rust: pg_client's View, behind the Viewport object): `zoom` device pixels per image pixel, the image's
+    // top-left corner at (ox, oy) in logical pixels, fitted to the window or not. The numbers are the Viewport's; this
+    // file makes the gestures and the signals.
+    readonly property real zoom: viewport.zoom
+    readonly property real ox: viewport.ox
+    readonly property real oy: viewport.oy
     // At the fit zoom (follows window resizes): above 1 for an image smaller than the window, which is enlarged to it.
-    property bool fitted: true
-    readonly property real fitZoom: zoomable ? Math.min(width * dpr / fw, height * dpr / fh) : 1
+    readonly property bool fitted: viewport.fitted
+    readonly property real fitZoom: viewport.fitZoom
     // The smallest zoom: the fit, or 1:1 when the fit enlarges the image (1:1 is then the furthest zoom out).
-    readonly property real minZoom: Math.min(fitZoom, 1)
-    readonly property real dw: fw * zoom / dpr
-    readonly property real dh: fh * zoom / dpr
-    readonly property bool zoomed: zoomable && !fitted
+    readonly property real minZoom: viewport.minZoom
+    readonly property real dw: viewport.dw
+    readonly property real dh: viewport.dh
+    readonly property bool zoomed: viewport.zoomed
     // 1:1 and beyond, away from the fit: the original, nearest neighbour.
-    readonly property bool pixels: zoomable && zoom >= 0.9999 && !fitted
+    readonly property bool pixels: viewport.pixels
+
+    Viewport {
+        id: viewport
+    }
 
     signal closed(int index)
 
@@ -166,87 +172,106 @@ Rectangle {
 
     // A playback position: m:ss, or h:mm:ss from an hour.
     function time(ms: real): string {
-        const s = Math.floor(ms / 1000)
-        return s >= 3600 ? Math.floor(s / 3600) + ":" + twoDigits(Math.floor(s / 60) % 60) + ":" + twoDigits(s % 60)
-                         : Math.floor(s / 60) + ":" + twoDigits(s % 60)
-    }
-    function twoDigits(n: int): string { return (n < 10 ? "0" : "") + n }
-
-    // Keep the image on screen: centred along a side that fits, otherwise no gap at the edges.
-    function clampView() {
-        ox = dw <= width ? (width - dw) / 2 : Math.min(0, Math.max(width - dw, ox))
-        oy = dh <= height ? (height - dh) / 2 : Math.min(0, Math.max(height - dh, oy))
-        viewMoved()
+        return words.timecode(Math.floor(ms / 1000))
     }
 
-    // Zoom to `z` keeping the image point under (px, py) where it is.
+    // Zoom to `z` keeping the image point under (px, py) where it is (the view limits it).
     function setZoom(z: real, px: real, py: real) {
         if (!zoomable)
             return
-        z = Math.max(minZoom, Math.min(32, z))
-        const u = (px - ox) / dw, v = (py - oy) / dh
-        zoom = z
-        fitted = Math.abs(z - fitZoom) <= fitZoom * 0.0001
-        ox = px - u * dw
-        oy = py - v * dh
-        clampView()
+        viewport.setZoom(z, px, py)
+        viewMoved()
+    }
+
+    // Pan the image's corner (a drag or a swipe), kept on screen.
+    function pan(x: real, y: real) {
+        viewport.pan(x, y)
+        viewMoved()
     }
 
     // How a new image opens: fitted, or 1:1 in Real Size mode (Z), which is the fit when the two are the same.
     function resetView() {
-        fitted = !(settings.realSize && zoomable && Math.abs(fitZoom - 1) > 0.0001)
-        zoom = fitted ? fitZoom : 1
-        ox = (width - dw) / 2
-        oy = (height - dh) / 2
-        clampView()
+        viewport.resetView(settings.realSize)
+        viewMoved()
         viewReset()
     }
 
     // Double-click: fit ↔ 1:1 at the point clicked.
     function toggleOneToOne(px: real, py: real) {
-        if (fitted)
-            setZoom(1, px, py)
-        else
-            setZoom(fitZoom, px, py)
+        if (!zoomable)
+            return
+        viewport.toggleOneToOne(px, py)
+        viewMoved()
     }
 
-    onWidthChanged: if (fitted) resetView(); else clampView()
-    onHeightChanged: if (fitted) resetView(); else clampView()
-    onFwChanged: if (fitted) resetView()
-    onFhChanged: if (fitted) resetView()
+    // The window's size changed: a fitted view follows it (reopened fitted), another is kept and clamped.
+    function pushWindow() {
+        const reset = viewport.setWindow(width, height, dpr, settings.realSize)
+        viewMoved()
+        if (reset)
+            viewReset()
+    }
 
-    // A fraction of the image, to six places: the region's URL names it, so a pixel of panning doesn't make a new one.
-    function sixPlaces(v: real): real { return Math.round(v * 1e6) / 1e6 }
+    // The image's size changed: a fitted view opens it again, fitted (or 1:1 in Real Size mode).
+    function pushMedia() {
+        if (viewport.setMedia(fw, fh, settings.realSize)) {
+            viewMoved()
+            viewReset()
+        }
+    }
+
+    onWidthChanged: pushWindow()
+    onHeightChanged: pushWindow()
+    onFwChanged: pushMedia()
+    onFhChanged: pushMedia()
+    onStillChanged: viewport.setStill(still)
+
+    // The view starts from the values the properties have when the viewer is made, without the signals.
+    Component.onCompleted: {
+        viewport.setStill(still)
+        viewport.setMedia(fw, fh, settings.realSize)
+        viewport.setWindow(width, height, dpr, settings.realSize)
+    }
 
     // An image (by its key) fitted to the window by Rust (shown 1:1 in device pixels).
     function fitSource(imageKey: string): string {
-        if (imageKey === "")
-            return ""
-        return "image://full/" + imageKey + "/" + Math.round(width * dpr) + "x" + Math.round(height * dpr)
+        return viewport.fitSource(imageKey)
     }
 
+    // The key map (pg-client's keys, through the KeyMap facade) names the viewer's action for a key; this carries it out.
+    KeyMap {
+        id: keymap
+    }
+
+    Words {
+        id: words
+    }
+
+    // The viewer's actions, as the codes keymap.viewerAction returns (the Rust side lists them in the same order).
+    enum ViewerAction { Close, StepBack, StepForward, Rate, TurnForward, TurnBack, RealSize, ZoomIn, ZoomOut, Loupe, Borders, MarkBorder, Hide, PlayPause, Mute }
+
     Keys.onPressed: (e) => {
-        const shift = e.modifiers & Qt.ShiftModifier
-        if (e.key === Qt.Key_Escape || e.key === Qt.Key_Return || e.key === Qt.Key_Enter) close()
-        else if (e.key === Qt.Key_Left || e.key === Qt.Key_Backspace) step(-1)
-        else if (e.key === Qt.Key_Right || e.key === Qt.Key_Space) step(1)
-        else if (e.key === Qt.Key_Up) rate(4)
-        else if (e.key === Qt.Key_Down) rate(1)
-        else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5) rate(e.key - Qt.Key_0)
-        else if (e.key === Qt.Key_R) turn(shift ? 1 : -1)
-        else if (e.key === Qt.Key_Z) {
-            settings.realSize = !settings.realSize
-            resetView()
+        const action = keymap.viewerAction(e.key, e.modifiers, kind, hasBorders)
+        if (action < 0)
+            return
+        const arg = keymap.viewerArg(e.key, e.modifiers, kind, hasBorders)
+        switch (action) {
+        case Viewer.ViewerAction.Close: close(); break
+        case Viewer.ViewerAction.StepBack: step(-1); break
+        case Viewer.ViewerAction.StepForward: step(1); break
+        case Viewer.ViewerAction.Rate: rate(arg); break
+        case Viewer.ViewerAction.TurnForward: turn(1); break
+        case Viewer.ViewerAction.TurnBack: turn(-1); break
+        case Viewer.ViewerAction.RealSize: settings.realSize = !settings.realSize; resetView(); break
+        case Viewer.ViewerAction.ZoomIn: setZoom(zoom * 1.25, width / 2, height / 2); break
+        case Viewer.ViewerAction.ZoomOut: setZoom(zoom / 1.25, width / 2, height / 2); break
+        case Viewer.ViewerAction.Loupe: loupe = !loupe; break
+        case Viewer.ViewerAction.Borders: bordersToggled(); break
+        case Viewer.ViewerAction.MarkBorder: borderMarkToggled(index, !borderMarked); break
+        case Viewer.ViewerAction.Hide: zen = !zen; break
+        case Viewer.ViewerAction.PlayPause: togglePlay(); break
+        case Viewer.ViewerAction.Mute: muted = !muted; break
         }
-        else if (e.key === Qt.Key_Plus || e.key === Qt.Key_Equal) setZoom(zoom * 1.25, width / 2, height / 2)
-        else if (e.key === Qt.Key_Minus) setZoom(zoom / 1.25, width / 2, height / 2)
-        else if (e.key === Qt.Key_L) loupe = !loupe
-        else if (e.key === Qt.Key_B) bordersToggled()
-        else if (e.key === Qt.Key_N && hasBorders) borderMarkToggled(index, !borderMarked)
-        else if (e.key === Qt.Key_H) zen = !zen
-        else if (e.key === Qt.Key_K && !still) togglePlay()
-        else if (e.key === Qt.Key_M && kind === "video") muted = !muted
-        else return
         e.accepted = true
     }
 
@@ -286,11 +311,8 @@ Rectangle {
                     acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad | PointerDevice.Stylus
                     property point start
                     onActiveChanged: if (active) start = Qt.point(viewer.ox, viewer.oy)
-                    onActiveTranslationChanged: if (active && viewer.zoomed) {
-                        viewer.ox = start.x + activeTranslation.x
-                        viewer.oy = start.y + activeTranslation.y
-                        viewer.clampView()
-                    }
+                    onActiveTranslationChanged: if (active && viewer.zoomed)
+                        viewer.pan(start.x + activeTranslation.x, start.y + activeTranslation.y)
                 }
                 // Touch: a zoomed image pans; a fitted one swipes (left/right step, up rates 4, down rates 1).
                 DragHandler {
@@ -311,9 +333,7 @@ Rectangle {
                         else if (Math.abs(t.y) > 60) viewer.rate(t.y < 0 ? 4 : 1)
                     }
                     onActiveTranslationChanged: if (active && panning) {
-                        viewer.ox = start.x + activeTranslation.x
-                        viewer.oy = start.y + activeTranslation.y
-                        viewer.clampView()
+                        viewer.pan(start.x + activeTranslation.x, start.y + activeTranslation.y)
                     }
                 }
                 // A tap shows or hides the overlays (zen); a double tap toggles fit ↔ 1:1.
@@ -372,19 +392,14 @@ Rectangle {
                     onTriggered: {
                         if (!viewer.visible || !viewer.zoomed || viewer.pixels)
                             return
-                        const x0 = Math.max(viewer.ox, 0), y0 = Math.max(viewer.oy, 0)
-                        const x1 = Math.min(viewer.ox + viewer.dw, viewer.width)
-                        const y1 = Math.min(viewer.oy + viewer.dh, viewer.height)
-                        if (x1 <= x0 || y1 <= y0)
+                        // The part on screen (Rust works it out and renders it); "" when none shows.
+                        const source = viewport.regionSource(viewer.key)
+                        if (source === "")
                             return
-                        const rx = viewer.sixPlaces((x0 - viewer.ox) / viewer.dw)
-                        const ry = viewer.sixPlaces((y0 - viewer.oy) / viewer.dh)
-                        const rw = viewer.sixPlaces((x1 - x0) / viewer.dw), rh = viewer.sixPlaces((y1 - y0) / viewer.dh)
-                        const source = "image://full/" + viewer.key + "/region/" + rx + "," + ry + "," + rw + "," + rh
-                            + "/" + Math.round((x1 - x0) * viewer.dpr) + "x" + Math.round((y1 - y0) * viewer.dpr)
                         // Before the source: a cached region is ready at once.
-                        region.next = Qt.rect(rx, ry, rw, rh)
+                        region.next = Qt.rect(viewport.regionX(), viewport.regionY(), viewport.regionW(), viewport.regionH())
                         region.source = source
+
                     }
                 }
                 // 1:1 and beyond (and the loupe's source): the original, nearest neighbour.
@@ -415,8 +430,8 @@ Rectangle {
                                 anchors.centerIn: parent
                                 Item {
                                     anchors.centerIn: parent
-                                    width: viewer.playerTurns % 2 ? parent.height : parent.width
-                                    height: viewer.playerTurns % 2 ? parent.width : parent.height
+                                    width: viewport.swapsAxes(viewer.playerTurns) ? parent.height : parent.width
+                                    height: viewport.swapsAxes(viewer.playerTurns) ? parent.width : parent.height
                                     rotation: viewer.playerTurns * 90
                                     VideoOutput {
                                         id: videoOut
@@ -625,14 +640,7 @@ Rectangle {
                         color: "#999999"
                         style: Text.Outline
                         styleColor: "black"
-                        text: viewer.kind === "video"
-                            ? "← → step · K play/pause · M mute · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide"
-                              + " · Esc close"
-                            : viewer.kind === "animated"
-                            ? "← → step · K play/pause · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · H hide · Esc close"
-                            : "← → step · 0–5 rate · ↑ 4 · ↓ 1 · R ⟲ · ⇧R ⟳ · wheel zoom · double-click 1:1"
-                              + " · Z real size · L loupe · B borders" + (viewer.hasBorders ? " · N not a border" : "")
-                              + " · H hide · Esc close"
+                        text: keymap.viewerHint(viewer.kind, viewer.hasBorders)
                     }
                     ToolButton {
                         id: closeButton

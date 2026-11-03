@@ -280,11 +280,12 @@ use pg_catalog::browse::{self};
 use pg_catalog::query::from_json;
 use pg_client::grid::{Arrival, Changed, Grid, Plan, Shape};
 use pg_client::layout;
+use pg_client::text::{self, FoundBorders};
 use pg_model::details::Details;
 use pg_model::detection::Class;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_model::query::{MediaType, Query, Sort};
+use pg_model::query::{Query, Sort};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
@@ -656,22 +657,7 @@ impl qobject::GalleryModel {
 
     fn badge(&self, item: i32) -> QString {
         let Some(e) = self.grid.item(item) else { return QString::default() };
-        let text = match e.media_type() {
-            MediaType::Video => match e.duration_ms() {
-                Some(ms) => {
-                    let s = (ms + 500) / 1000;
-                    let (h, m, s) = (s / 3600, s / 60 % 60, s % 60);
-                    if h > 0 { format!("▶ {h}:{m:02}:{s:02}") } else { format!("▶ {m}:{s:02}") }
-                }
-                None => "▶".to_string(),
-            },
-            MediaType::Animated => match e.ext.name() {
-                "png" => "APNG".to_string(),
-                ext => ext.to_uppercase(),
-            },
-            MediaType::Image => String::new(),
-        };
-        QString::from(&text)
+        QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.name()))
     }
 
     fn border_box(&self, item: i32) -> QRectF {
@@ -759,12 +745,15 @@ impl qobject::GalleryModel {
 
     fn info(&self, item: i32) -> QString {
         self.with_details(item, |e, d| {
-            let (w, h) = e.shown_size();
-            let dims = if w > 0 { format!("{w} × {h}") } else { "not imported".to_string() };
-            let bytes = d.size as f64;
-            let size = if bytes >= 1e6 { format!("{:.1} MB", bytes / 1e6) } else { format!("{:.0} KB", bytes / 1e3) };
-            let kept = if e.rating.is_some() && !d.rating_in_file { "   rating kept in the catalog" } else { "" };
-            QString::from(&format!("{}   {dims}   {size}{kept}{}", d.path, borders_info(e, d)))
+            let classes: Vec<Class> = d.border_sides.iter().filter(|s| s.accepted()).map(|s| s.class()).collect();
+            let borders = match (e.borders, e.shown_cut()) {
+                (Borders::Found | Borders::Marked, Some(cut)) => {
+                    Some(FoundBorders { marked: e.borders == Borders::Marked, cut, classes: &classes })
+                }
+                _ => None,
+            };
+            let kept = e.rating.is_some() && !d.rating_in_file;
+            QString::from(&text::info(&d.path, e.shown_size(), u64::try_from(d.size).unwrap_or(0), kept, borders))
         })
         .unwrap_or_default()
     }
@@ -779,28 +768,6 @@ impl qobject::GalleryModel {
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
         self.grid.placement().neighbor(item, dx, dy)
     }
-}
-
-/// The status line's part about borders: what a crop would cut, in stored pixels, and their classes.
-fn borders_info(e: &Entry, d: &Details) -> String {
-    if !matches!(e.borders, Borders::Found | Borders::Marked) {
-        return String::new();
-    }
-    let Some([l, t, r, b]) = e.shown_cut() else { return String::new() };
-    let mut classes: Vec<&str> = Vec::new();
-    for c in d.border_sides.iter().filter(|s| s.accepted()).map(|s| s.class()) {
-        let name = match c {
-            Class::Black => "black",
-            Class::White => "white",
-            Class::Color => "colored",
-            Class::Blur => "blurred",
-        };
-        if !classes.contains(&name) {
-            classes.push(name);
-        }
-    }
-    let marked = if e.borders == Borders::Marked { " — marked not a border" } else { "" };
-    format!("   borders {} (L {l} T {t} R {r} B {b} px){marked}", classes.join(", "))
 }
 
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).

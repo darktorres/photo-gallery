@@ -82,6 +82,7 @@ use std::sync::OnceLock;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList, QUrl};
+use pg_client::text;
 use pg_jobs::control::{Phase, Progress};
 use pg_library::runner::{Generation, Notice, Runner};
 use pg_library::scan::normalize_path;
@@ -149,71 +150,28 @@ fn library_roots() -> Vec<String> {
 
 /// The status line's text for a pass's progress; empty when idle.
 fn progress_status(p: &Progress) -> String {
-    match &p.phase {
-        Phase::Idle => String::new(),
-        Phase::Scan { root } => format!("Scanning {root} · {} images found", group_digits(p.done)),
-        Phase::Import => working("Importing", p),
-        Phase::Borders => working("Finding borders", p),
-        Phase::Crop => working("Saving cropped copies", p),
-        Phase::Thumbs { height } => working(&format!("Thumbnails at {height} px"), p),
-    }
+    let pass = match &p.phase {
+        Phase::Idle => text::Pass::Idle,
+        Phase::Scan { root } => text::Pass::Scan { root: root.as_str() },
+        Phase::Import => text::Pass::Import,
+        Phase::Borders => text::Pass::Borders,
+        Phase::Crop => text::Pass::Crop,
+        Phase::Thumbs { height } => text::Pass::Thumbs { height: *height },
+    };
+    let counts = text::Counts { done: p.done, total: p.total, failed: p.failed, rate: p.rate(), eta_secs: p.eta() };
+    text::pass_status(pass, &counts)
 }
 
-/// A pass that counts its files: how far it is, its rate, and what is left.
-fn working(what: &str, p: &Progress) -> String {
-    let failed = if p.failed > 0 { format!(" · {} failed", group_digits(p.failed)) } else { String::new() };
-    format!(
-        "{what} {} of {} · {:.0}/s · {}{failed}",
-        group_digits(p.done),
-        group_digits(p.total),
-        p.rate(),
-        duration(p.eta())
-    )
-}
-
-fn group_digits(v: u64) -> String {
-    let s = v.to_string();
-    let mut out = String::new();
-    for (i, c) in s.chars().enumerate() {
-        if i > 0 && (s.len() - i).is_multiple_of(3) {
-            out.push(',');
-        }
-        out.push(c);
-    }
-    out
-}
-
-fn duration(secs: f64) -> String {
-    let s = secs.round() as u64;
-    match s {
-        0..60 => format!("{s} s left"),
-        60..3600 => format!("{} min left", s.div_ceil(60)),
-        _ => format!("{} h {} min left", s / 3600, s % 3600 / 60),
-    }
-}
-
-/// The words for a notice from the job. The English is here, in the app, which is where the text is shown; it moves
-/// to `pg-client` with the other strings (S-10.8).
+/// The words for a notice from the job; the wording is `pg_client::text`'s.
 fn notice_text(notice: &Notice) -> String {
     match notice {
-        Notice::UnreadableFolders { root, count } => format!("{root}: {count} folders couldn't be read"),
-        Notice::ScanFailed { root, error } => format!("{root}: {error}"),
+        Notice::UnreadableFolders { root, count } => text::unreadable_folders(root, *count),
+        Notice::ScanFailed { root, error } => text::scan_failed(root, error),
         Notice::RoundFailed { error } | Notice::CropFailed { error } => error.clone(),
-        Notice::RoundPanicked { message } => format!("internal error in the background job: {message}"),
-        Notice::CacheFull { height, made } => {
-            format!("The thumbnail cache is full: {made} thumbnails at {height} px weren't made")
-        }
+        Notice::RoundPanicked { message } => text::round_panicked(message),
+        Notice::CacheFull { height, made } => text::cache_full(*height, *made),
         Notice::Cropped { folder, saved, skipped, failed, first_error } => {
-            let plural = |n: usize| if n == 1 { "" } else { "s" };
-            let mut note =
-                format!("Saved {saved} cropped cop{} in {}", if *saved == 1 { "y" } else { "ies" }, folder.display());
-            if *skipped > 0 {
-                note += &format!("; {skipped} file{} had nothing to crop any more", plural(*skipped));
-            }
-            if let Some(e) = first_error {
-                note += &format!("; {failed} failed, the first: {e}");
-            }
-            note
+            text::cropped(*saved, &folder.display().to_string(), *skipped, *failed, first_error.as_deref())
         }
     }
 }
@@ -316,11 +274,7 @@ impl qobject::Library {
         if let Some(w) = WRITER.get() {
             let s = w.status();
             let failed = s.error.is_some();
-            let writes = match (s.queued, s.error) {
-                (0, None) => String::new(),
-                (n, None) => format!("Writing {n} change{} into files", if n == 1 { "" } else { "s" }),
-                (n, Some(e)) => format!("{n} change{} not yet in the files: {e}", if n == 1 { "" } else { "s" }),
-            };
+            let writes = text::write_status(s.queued, s.error.as_deref());
             if self.writes.to_string() != writes {
                 self.as_mut().set_writes(QString::from(&writes));
             }
@@ -346,20 +300,5 @@ impl qobject::Library {
         for _ in seen_rounds..rounds {
             pg_trace::pg_stage_round_done();
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn formats() {
-        assert_eq!(group_digits(0), "0");
-        assert_eq!(group_digits(999), "999");
-        assert_eq!(group_digits(1234567), "1,234,567");
-        assert_eq!(duration(5.2), "5 s left");
-        assert_eq!(duration(61.0), "2 min left");
-        assert_eq!(duration(7300.0), "2 h 1 min left");
     }
 }

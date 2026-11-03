@@ -9,6 +9,7 @@ mod folders;
 mod gallery;
 mod gpu_device;
 mod gui_app;
+mod keymap;
 mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
@@ -20,6 +21,9 @@ mod settings;
 mod state;
 mod trace;
 mod view;
+mod viewport;
+mod words;
+
 mod yandex;
 
 use std::ffi::OsString;

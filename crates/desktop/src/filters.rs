@@ -36,8 +36,6 @@ pub mod qobject {
         /// The folder's extensions, most files first, then any chosen that it doesn't have (so they can be
         /// unchosen).
         #[qproperty(QStringList, extensions, READ, WRITE, NOTIFY, FINAL)]
-        /// The rating symbols (`Ratings.symbols`), for `description`.
-        #[qproperty(QStringList, symbols, READ, WRITE = set_symbols_described, NOTIFY, FINAL)]
         /// One line saying what the query keeps, for the save-view dialog.
         #[qproperty(QString, description, READ, WRITE, NOTIFY, FINAL)]
         type Filters = super::FiltersRust;
@@ -54,7 +52,6 @@ pub mod qobject {
         fn set_name_edited(self: Pin<&mut Filters>, value: &QString);
         fn set_duplicates_edited(self: Pin<&mut Filters>, value: i32);
         fn set_border_marked_edited(self: Pin<&mut Filters>, value: i32);
-        fn set_symbols_described(self: Pin<&mut Filters>, value: &QStringList);
 
         /// The user changed the query.
         #[qsignal]
@@ -127,10 +124,10 @@ use cxx_qt_lib::{QString, QStringList};
 use pg_catalog::browse::{self, read::Facets};
 use pg_catalog::query::{from_json, to_json};
 use pg_model::date::Day;
-use pg_model::query::{
-    BorderFacet, Choice, DateFacet, DateRange, DayEnd, End, MediaType, Query, Range, RangeFacet, RatingFilter, Shape,
-    Status, parse_number,
-};
+use pg_model::query::{BorderFacet, MediaType, Query, parse_number};
+
+use pg_client::input::{bound_is_valid, choice, date_facet, day_end_of, end_of, range_facet};
+use pg_client::text;
 
 use crate::loader::{self, Kind};
 
@@ -144,7 +141,6 @@ pub struct FiltersRust {
     total: i32,
     matching: i32,
     extensions: QStringList,
-    symbols: QStringList,
     description: QString,
     parsed: Query,
     facets: Facets,
@@ -166,8 +162,7 @@ impl Default for FiltersRust {
             total: 0,
             matching: 0,
             extensions: QStringList::default(),
-            symbols: QStringList::default(),
-            description: QString::from(&describe(&parsed, &QStringList::default())),
+            description: QString::from(&text::describe(&parsed)),
             parsed,
             facets: Facets::default(),
             generation: 0,
@@ -193,151 +188,6 @@ fn count(n: i64) -> i32 {
     i32::try_from(n.max(0)).unwrap_or(i32::MAX)
 }
 
-/// A list facet's value as the filter bar names it (`types`, `exts`, `ratings`, `orientations`, `status`, `borders`).
-fn choice(facet: &str, value: &str) -> Option<Choice> {
-    match facet {
-        "types" => MediaType::from_key(value).map(Choice::Type),
-        "exts" => Some(Choice::Ext(value.to_string())),
-        "ratings" => value.parse::<u8>().ok().and_then(|n| RatingFilter::try_from(n).ok()).map(Choice::Rating),
-        "orientations" => Shape::from_key(value).map(Choice::Shape),
-        "status" => Status::from_key(value).map(Choice::Status),
-        "borders" => BorderFacet::from_key(value).map(Choice::Border),
-        _ => None,
-    }
-}
-
-/// A range facet of the filter bar (`size_mb`, `megapixels`, `duration_s`).
-fn range_facet(name: &str) -> Option<RangeFacet> {
-    match name {
-        "size_mb" => Some(RangeFacet::SizeMb),
-        "megapixels" => Some(RangeFacet::Megapixels),
-        "duration_s" => Some(RangeFacet::DurationS),
-        _ => None,
-    }
-}
-
-/// A day facet of the filter bar (`taken`, `modified`).
-fn date_facet(name: &str) -> Option<DateFacet> {
-    match name {
-        "taken" => Some(DateFacet::Taken),
-        "modified" => Some(DateFacet::Modified),
-        _ => None,
-    }
-}
-
-/// The end of a range facet's text (`min`, `max`), and of a day facet's (`from`, `to`).
-fn end_of(name: &str) -> Option<End> {
-    match name {
-        "min" => Some(End::Min),
-        "max" => Some(End::Max),
-        _ => None,
-    }
-}
-
-fn day_end_of(name: &str) -> Option<DayEnd> {
-    match name {
-        "from" => Some(DayEnd::From),
-        "to" => Some(DayEnd::To),
-        _ => None,
-    }
-}
-
-/// Whether text typed for a range facet is empty (an open end) or parses: a number for the number facets, a
-/// calendar day for the day facets.
-fn bound_is_valid(facet: &str, text: &str) -> bool {
-    text.trim().is_empty()
-        || if date_facet(facet).is_some() { Day::parse(text).is_some() } else { parse_number(text).is_some() }
-}
-
-/// A day as the filter bar shows it, `""` when it is open.
-fn day_text(day: Option<Day>) -> String {
-    day.map(|d| d.to_string()).unwrap_or_default()
-}
-
-/// How the filter bar names a value of a list facet.
-fn label(facet: &str, value: &str) -> String {
-    match (facet, value) {
-        ("types", "image") => "Image",
-        ("types", "animated") => "Animated",
-        ("types", "video") => "Video",
-        ("orientations", "landscape") => "Landscape",
-        ("orientations", "portrait") => "Portrait",
-        ("orientations", "square") => "Square",
-        ("status", "imported") => "Imported",
-        ("status", "pending") => "Not imported yet",
-        ("status", "failed") => "Unreadable",
-        ("borders", "none") => "None",
-        ("borders", "black") => "Black",
-        ("borders", "white") => "White",
-        ("borders", "color") => "Colored",
-        ("borders", "blur") => "Blurred bars",
-        ("exts", "") => "(none)",
-        (_, other) => other,
-    }
-    .to_string()
-}
-
-/// What `q` keeps, in one line: "all files" when it filters nothing. `symbols` name the ratings.
-fn describe(q: &Query, symbols: &QStringList) -> String {
-    let open = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_default();
-    let range = |r: &Range, unit: &str| format!("{}–{}{unit}", open(r.min), open(r.max));
-    let days = |r: &DateRange| format!("{} – {}", day_text(r.from), day_text(r.to));
-    let mut parts: Vec<String> = Vec::new();
-    if !q.types.is_empty() {
-        parts.push(q.types.iter().map(|t| label("types", t.key())).collect::<Vec<_>>().join(", "));
-    }
-    if !q.exts.is_empty() {
-        parts.push(q.exts.join(", "));
-    }
-    if !q.ratings.is_empty() {
-        let symbol = |n: u8| symbols.get(n.into()).map(QString::to_string).unwrap_or_else(|| n.to_string());
-        let ratings: Vec<String> = q
-            .ratings
-            .iter()
-            .map(|&r| match r {
-                RatingFilter::Unrated => "unrated".to_string(),
-                RatingFilter::Stars(stars) => symbol(stars.get()),
-            })
-            .collect();
-        parts.push(ratings.join(" "));
-    }
-    if q.size_mb.min.is_some() || q.size_mb.max.is_some() {
-        parts.push(range(&q.size_mb, " MB"));
-    }
-    if q.megapixels.min.is_some() || q.megapixels.max.is_some() {
-        parts.push(range(&q.megapixels, " MP"));
-    }
-    if !q.shapes.is_empty() {
-        parts.push(q.shapes.iter().map(|o| o.key()).collect::<Vec<_>>().join(", "));
-    }
-    if q.taken.from.is_some() || q.taken.to.is_some() {
-        parts.push(format!("taken {}", days(&q.taken)));
-    }
-    if q.modified.from.is_some() || q.modified.to.is_some() {
-        parts.push(format!("modified {}", days(&q.modified)));
-    }
-    if q.duration_s.min.is_some() || q.duration_s.max.is_some() {
-        parts.push(range(&q.duration_s, " s"));
-    }
-    if let Some(d) = q.duplicates {
-        parts.push(if d { "with duplicates" } else { "without duplicates" }.to_string());
-    }
-    if !q.status.is_empty() {
-        parts.push(q.status.iter().map(|s| label("status", s.key()).to_lowercase()).collect::<Vec<_>>().join(", "));
-    }
-    if !q.borders.is_empty() {
-        let values: Vec<String> = q.borders.iter().map(|b| label("borders", b.key()).to_lowercase()).collect();
-        parts.push(format!("borders: {}", values.join(", ")));
-    }
-    if let Some(m) = q.border_marked {
-        parts.push(if m { "borders marked not a border" } else { "borders not marked" }.to_string());
-    }
-    if !q.name.is_empty() {
-        parts.push(format!("name has “{}”", q.name));
-    }
-    if parts.is_empty() { "all files".to_string() } else { parts.join(" · ") }
-}
-
 impl qobject::Filters {
     /// After the query changed: the properties that show it, and a new revision.
     fn sync(mut self: Pin<&mut Self>) {
@@ -348,7 +198,7 @@ impl qobject::Filters {
             QString::from(&q.name),
             duplicates_number(q.duplicates),
             duplicates_number(q.border_marked),
-            QString::from(&describe(q, &self.symbols)),
+            QString::from(&text::describe(q)),
         );
         let mut exts: Vec<String> = self.facets.exts.iter().map(|(e, _)| e.clone()).collect();
         exts.extend(q.exts.iter().filter(|e| !self.facets.exts.iter().any(|(x, _)| x == *e)).cloned());
@@ -414,13 +264,6 @@ impl qobject::Filters {
         }
     }
 
-    fn set_symbols_described(mut self: Pin<&mut Self>, value: &QStringList) {
-        self.as_mut().rust_mut().symbols = value.clone();
-        self.as_mut().symbols_changed();
-        let description = QString::from(&describe(&self.parsed, &self.symbols));
-        self.set_description(description);
-    }
-
     fn has(&self, facet: &QString, value: &QString) -> bool {
         choice(&facet.to_string(), &value.to_string()).is_some_and(|c| self.parsed.has(&c))
     }
@@ -433,7 +276,7 @@ impl qobject::Filters {
     }
 
     fn label(&self, facet: &QString, value: &QString) -> QString {
-        QString::from(&label(&facet.to_string(), &value.to_string()))
+        QString::from(&text::facet_label(&facet.to_string(), &value.to_string()))
     }
 
     fn bound(&self, facet: &QString, end: &QString) -> QString {

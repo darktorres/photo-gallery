@@ -121,7 +121,20 @@ Rectangle {
     visible: false
     color: "#b0000000"
     focus: visible
-    Keys.onEscapePressed: close()
+    // The panel's actions, as the codes keymap.panelAction returns (the Rust side lists them in the same order).
+    enum PanelAction { Close, StepBack, StepForward, Pick }
+
+    // The panel's keys: the key map (pg-client's keys) names the action.
+    KeyMap {
+        id: keymap
+    }
+
+    Keys.onPressed: (e) => {
+        if (keymap.panelAction(e.key) !== YandexPanel.PanelAction.Close)
+            return
+        close()
+        e.accepted = true
+    }
     // Clicks on the dimmed background close it. No click or wheel reaches the viewer below: the results' Flickable
     // passes the wheel on at its ends, and the viewer would zoom.
     MouseArea {
@@ -302,10 +315,18 @@ Rectangle {
         anchors.fill: parent
         visible: false
         color: "#141414"
-        Keys.onEscapePressed: close()
-        Keys.onLeftPressed: step(-1)
-        Keys.onRightPressed: step(1)
-        Keys.onSpacePressed: yandex.togglePick(item)
+        Keys.onPressed: (e) => {
+            const action = keymap.panelAction(e.key)
+            if (action < 0)
+                return
+            switch (action) {
+            case YandexPanel.PanelAction.Close: close(); break
+            case YandexPanel.PanelAction.StepBack: step(-1); break
+            case YandexPanel.PanelAction.StepForward: step(1); break
+            case YandexPanel.PanelAction.Pick: yandex.togglePick(item); break
+            }
+            e.accepted = true
+        }
         // Nothing reaches the list below.
         MouseArea {
             anchors.fill: parent

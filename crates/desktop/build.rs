@@ -35,6 +35,9 @@ fn main() {
         "src/settings.rs",
         "src/trace.rs",
         "src/view.rs",
+        "src/keymap.rs",
+        "src/viewport.rs",
+        "src/words.rs",
         "src/yandex.rs",
     ])
     .cpp_file("cpp/app_icon.cpp")

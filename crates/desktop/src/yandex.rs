@@ -97,6 +97,8 @@ use std::thread;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
+use pg_client::picks::Picks;
+use pg_client::text;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
 
 use crate::{panic_log, settings};
@@ -142,9 +144,7 @@ pub struct YandexSearchRust {
     photo: String,
     /// The other sizes, then the similar images.
     hits: Vec<Hit>,
-    picked: Vec<bool>,
-    /// The result toggled last, where a Shift-click range starts.
-    anchor: Option<usize>,
+    picks: Picks,
 }
 
 impl YandexSearchRust {
@@ -154,9 +154,7 @@ impl YandexSearchRust {
 
     /// The results `first..first + count` that exist.
     fn range(&self, first: i32, count: i32) -> std::ops::Range<usize> {
-        let len = self.picked.len();
-        let start = usize::try_from(first).unwrap_or(0).min(len);
-        start..start.saturating_add(usize::try_from(count).unwrap_or(0)).min(len)
+        self.picks.range(usize::try_from(first).unwrap_or(0), usize::try_from(count).unwrap_or(0))
     }
 }
 
@@ -172,8 +170,7 @@ fn set_status(shared: &Mutex<Shared>, text: impl Into<String>) {
 /// What the user reads when a request fails.
 fn explain(e: YandexError) -> String {
     match e {
-        // Solving it in a browser doesn't help: the app doesn't share the browser's cookies.
-        YandexError::Captcha => "Yandex asked for a captcha, which the app can't answer. Try again later.".to_string(),
+        YandexError::Captcha => text::YANDEX_CAPTCHA.to_string(),
         other => other.to_string(),
     }
 }
@@ -192,23 +189,21 @@ fn dimension(n: u32) -> i32 {
 /// images failed (the other sizes are still shown, as the crawler keeps them), or the message to show.
 fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<(Found, Option<String>), String> {
     if !is_still_image(path) {
-        return Err("Yandex search takes still images (JPEG, PNG, WebP, GIF or BMP).".to_string());
+        return Err(text::YANDEX_NOT_STILL.to_string());
     }
-    let bytes = std::fs::read(path).map_err(|e| format!("Can't read the photo: {e}"))?;
+    let bytes = std::fs::read(path).map_err(|e| text::yandex_unreadable_photo(&e.to_string()))?;
     let mut client = Client::new().map_err(explain)?;
-    set_status(shared, "Uploading the photo…");
+    set_status(shared, text::YANDEX_UPLOADING);
     let upload = client.upload(&bytes).map_err(explain)?;
-    set_status(shared, "Reading the other sizes…");
+    set_status(shared, text::YANDEX_OTHER_SIZES);
     let other = client.other_sizes(&upload).map_err(explain)?;
-    set_status(shared, "Reading similar images…");
+    set_status(shared, text::YANDEX_SIMILAR);
     let (similar, note) = match client.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
         Ok(list) => {
-            let note = list
-                .stopped
-                .map(|e| format!("Similar images stopped after {} results: {}", list.items.len(), explain(e)));
+            let note = list.stopped.map(|e| text::yandex_similar_stopped(list.items.len(), &explain(e)));
             (list.items, note)
         }
-        Err(e) => (Vec::new(), Some(format!("Similar images failed: {}", explain(e)))),
+        Err(e) => (Vec::new(), Some(text::yandex_similar_failed(&explain(e)))),
     };
     let found = Found {
         other: other
@@ -341,8 +336,8 @@ impl qobject::YandexSearch {
         {
             let mut this = self.as_mut().rust_mut();
             this.hits = other.into_iter().chain(similar).collect();
-            this.picked = vec![false; this.hits.len()];
-            this.anchor = None;
+            let count = this.hits.len();
+            this.picks.reset(count);
         }
         self.as_mut().set_other_count(other_count);
         self.as_mut().set_similar_count(similar_count);
@@ -351,7 +346,7 @@ impl qobject::YandexSearch {
 
     /// After the picks change: their count, and a new revision for the bindings.
     fn picks_changed(mut self: Pin<&mut Self>) {
-        let picked_count = self.picked.iter().filter(|&&p| p).count() as i32;
+        let picked_count = self.picks.count() as i32;
         self.as_mut().set_picked_count(picked_count);
         let revision = self.revision + 1;
         self.set_revision(revision);
@@ -389,38 +384,29 @@ impl qobject::YandexSearch {
     }
 
     fn is_picked(&self, item: i32) -> bool {
-        usize::try_from(item).ok().and_then(|i| self.picked.get(i)).copied().unwrap_or(false)
+        usize::try_from(item).is_ok_and(|i| self.picks.is_picked(i))
     }
 
     fn toggle_pick(mut self: Pin<&mut Self>, item: i32) {
-        let Some(i) = usize::try_from(item).ok().filter(|&i| i < self.picked.len()) else { return };
-        {
-            let mut this = self.as_mut().rust_mut();
-            this.picked[i] = !this.picked[i];
-            this.anchor = Some(i);
-        }
+        let Ok(i) = usize::try_from(item) else { return };
+        self.as_mut().rust_mut().picks.toggle(i);
         self.picks_changed();
     }
 
     fn pick_to(mut self: Pin<&mut Self>, item: i32) {
-        let Some(i) = usize::try_from(item).ok().filter(|&i| i < self.picked.len()) else { return };
-        let Some(anchor) = self.anchor.filter(|&a| a < self.picked.len()) else { return self.toggle_pick(item) };
-        {
-            let mut this = self.as_mut().rust_mut();
-            let value = this.picked[anchor];
-            this.picked[anchor.min(i)..=anchor.max(i)].fill(value);
-        }
+        let Ok(i) = usize::try_from(item) else { return };
+        self.as_mut().rust_mut().picks.pick_to(i);
         self.picks_changed();
     }
 
     fn set_picked(mut self: Pin<&mut Self>, first: i32, count: i32, picked: bool) {
         let range = self.range(first, count);
-        self.as_mut().rust_mut().picked[range].fill(picked);
+        self.as_mut().rust_mut().picks.set(range, picked);
         self.picks_changed();
     }
 
     fn picked_in(&self, first: i32, count: i32) -> i32 {
-        self.picked[self.range(first, count)].iter().filter(|&&p| p).count() as i32
+        self.picks.picked_in(self.range(first, count)) as i32
     }
 
     fn start_folder(&self) -> QUrl {
@@ -435,8 +421,8 @@ impl qobject::YandexSearch {
 
     fn download(mut self: Pin<&mut Self>, folder: &QUrl) {
         let folder = folder.to_local_file().map_or_else(|| folder.to_qstring().to_string(), |p| p.to_string());
-        let hits: Vec<Hit> =
-            self.hits.iter().zip(&self.picked).filter(|&(_, &picked)| picked).map(|(h, _)| h.clone()).collect();
+        let hits: Vec<Hit> = self.picks.indices().filter_map(|i| self.hits.get(i).cloned()).collect();
+
         if hits.is_empty() {
             return;
         }

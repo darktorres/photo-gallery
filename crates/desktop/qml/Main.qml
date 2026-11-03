@@ -325,28 +325,37 @@ ApplicationWindow {
         saveViewAsked()
     }
 
+    // The key map (pg-client's keys, through the KeyMap facade) names the grid's action for a key; this carries it out.
+    KeyMap {
+        id: keymap
+    }
+
+    // The grid's actions, as the codes keymap.gridAction returns (the Rust side lists them in the same order).
+    enum GridAction { Grow, Shrink, Left, Right, Up, Down, First, Last, Open, Rate, TurnForward, TurnBack, Filters, Borders, MarkBorder }
+
     function gridKey(e: KeyEvent) {
+        const action = keymap.gridAction(e.key, e.modifiers, current >= 0)
+        if (action < 0)
+            return
+        const arg = keymap.gridArg(e.key, e.modifiers, current >= 0)
         const c = current < 0 ? 0 : current
-        const ctrl = e.modifiers & Qt.ControlModifier
-        if (ctrl && (e.key === Qt.Key_Plus || e.key === Qt.Key_Equal)) setSize(rowHeight * 1.15)
-        else if (ctrl && e.key === Qt.Key_Minus) setSize(rowHeight / 1.15)
-        else if (e.key === Qt.Key_Left) select(galleryModel.neighbor(c, -1, 0))
-        else if (e.key === Qt.Key_Right) select(galleryModel.neighbor(c, 1, 0))
-        else if (e.key === Qt.Key_Up) select(galleryModel.neighbor(c, 0, -1))
-        else if (e.key === Qt.Key_Down) select(galleryModel.neighbor(c, 0, 1))
-        else if (e.key === Qt.Key_Home) select(0)
-        else if (e.key === Qt.Key_End) select(galleryModel.count - 1)
-        else if ((e.key === Qt.Key_Return || e.key === Qt.Key_Enter || e.key === Qt.Key_Space) && current >= 0)
-            viewer.show(current)
-        else if (e.key >= Qt.Key_0 && e.key <= Qt.Key_5 && current >= 0)
-            galleryModel.setRating(current, e.key - Qt.Key_0)
-        else if (e.key === Qt.Key_R && current >= 0)
-            galleryModel.rotate(current, e.modifiers & Qt.ShiftModifier ? 1 : -1)
-        else if (e.key === Qt.Key_F && !ctrl) filtersOpen = !filtersOpen
-        else if (e.key === Qt.Key_B) toggleBorders()
-        else if (e.key === Qt.Key_N && current >= 0)
-            galleryModel.setBorderMarked(current, !galleryModel.borderMarked(current))
-        else return
+        switch (action) {
+        case Main.Main.GridAction.Grow: setSize(rowHeight * 1.15); break
+        case Main.Main.GridAction.Shrink: setSize(rowHeight / 1.15); break
+        case Main.Main.GridAction.Left: select(galleryModel.neighbor(c, -1, 0)); break
+        case Main.Main.GridAction.Right: select(galleryModel.neighbor(c, 1, 0)); break
+        case Main.Main.GridAction.Up: select(galleryModel.neighbor(c, 0, -1)); break
+        case Main.Main.GridAction.Down: select(galleryModel.neighbor(c, 0, 1)); break
+        case Main.Main.GridAction.First: select(0); break
+        case Main.Main.GridAction.Last: select(galleryModel.count - 1); break
+        case Main.Main.GridAction.Open: viewer.show(current); break
+        case Main.Main.GridAction.Rate: galleryModel.setRating(current, arg); break
+        case Main.Main.GridAction.TurnForward: galleryModel.rotate(current, 1); break
+        case Main.Main.GridAction.TurnBack: galleryModel.rotate(current, -1); break
+        case Main.Main.GridAction.Filters: filtersOpen = !filtersOpen; break
+        case Main.Main.GridAction.Borders: toggleBorders(); break
+        case Main.Main.GridAction.MarkBorder: galleryModel.setBorderMarked(current, !galleryModel.borderMarked(current)); break
+        }
         e.accepted = true
     }
 
@@ -499,8 +508,7 @@ ApplicationWindow {
                         ? galleryModel.info(win.current) + "   "
                           + (galleryModel.rating(win.current) > 0
                               ? Ratings.symbol(galleryModel.rating(win.current)) : "")
-                        : "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move"
-                          + " · F filters · B borders · N not a border · Ctrl+wheel or Ctrl +/− resize"
+                        : keymap.gridHint()
                 }
                 // Ratings and turns on their way into the files, or why they aren't.
                 Label {

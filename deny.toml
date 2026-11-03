@@ -60,6 +60,8 @@ deny = [
     { crate = "tiff", wrappers = ["pg-codec", "pg-testkit", "image", "pg-core"] },
     { crate = "zune-jpeg", wrappers = ["pg-codec", "image", "tiff", "pg-core"] },
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg", "pg-core"] },
+    # FFmpeg is linked by pg-video alone: a video's probe, frames and file hash.
+    { crate = "ffmpeg-next", wrappers = ["pg-video"] },
 ]
 
 [sources]

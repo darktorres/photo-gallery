@@ -17,5 +17,4 @@ pub mod query;
 mod rewrite;
 pub mod rotate;
 pub mod thumbs;
-pub mod video;
 pub mod yandex;

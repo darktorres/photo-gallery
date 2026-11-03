@@ -114,7 +114,7 @@ impl Maker {
 
     /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
     pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: u8) -> Result<()> {
-        let result = crate::video::frame_into(path, at_ms, turns, &mut self.image, &mut self.spare);
+        let result = pg_video::frame_into(path, at_ms, turns, &mut self.image, &mut self.spare);
         if result.is_err() {
             self.trim();
         }

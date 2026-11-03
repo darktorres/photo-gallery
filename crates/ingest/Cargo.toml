@@ -11,6 +11,7 @@ workspace = true
 pg-core = { path = "../core" }
 pg-model = { path = "../model" }
 pg-codec = { path = "../codec" }
+pg-video = { path = "../video" }
 pg-metadata = { path = "../metadata" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true

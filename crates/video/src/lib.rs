@@ -3,6 +3,8 @@
 //!
 //! "Upright" is as players show it: the stream's display matrix (a phone's rotation tag) applied, then the
 //! catalog rotation. Near-duplicate detection doesn't cover videos yet (PLAN, later list): no pixel hash or PDQ.
+// A library reports through its results; printing is for the command line and the app.
+#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::io::Read;
 use std::path::Path;

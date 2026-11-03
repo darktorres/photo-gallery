@@ -11,9 +11,9 @@ workspace = true
 pg-container = { path = "../container" }
 pg-model = { path = "../model" }
 pg-codec = { path = "../codec" }
+pg-video = { path = "../video" }
 pg-metadata = { path = "../metadata" }
 anyhow.workspace = true
-ffmpeg-next.workspace = true
 image.workspace = true
 rusqlite.workspace = true
 thumbhash.workspace = true

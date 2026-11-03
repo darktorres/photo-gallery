@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-/// What pg-core and Qt Multimedia load; avdevice and avfilter are used by neither.
+/// What pg-video and Qt Multimedia load; avdevice and avfilter are used by neither.
 const DLLS: &[&str] = &["avcodec", "avformat", "avutil", "swresample", "swscale"];
 
 fn main() {
@@ -22,7 +22,7 @@ fn main() {
     });
     let bin = Path::new(&dir).join("bin");
     println!("cargo:rerun-if-changed={}", bin.display());
-    // OUT_DIR is target\<profile>\build\pg-core-<hash>\out.
+    // OUT_DIR is target\<profile>\build\pg-video-<hash>\out.
     let out = PathBuf::from(std::env::var_os("OUT_DIR").expect("OUT_DIR"));
     let profile = out.ancestors().nth(3).expect("target profile folder");
     let entries = std::fs::read_dir(&bin).unwrap_or_else(|e| panic!("{}: {e}", bin.display()));

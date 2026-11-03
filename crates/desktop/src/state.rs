@@ -382,7 +382,7 @@ fn decode(file_id: i64, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Opt
     }
     let (full, image) = if let Some(at) = src.poster_ms {
         // A video: its poster frame stands for it until it plays.
-        let frame = pg_core::video::frame(Path::new(&*verbatim(&src.path)), at, rotation)?;
+        let frame = pg_video::frame(Path::new(&*verbatim(&src.path)), at, rotation)?;
         ((frame.width, frame.height), Arc::new(frame))
     } else {
         let decoded = with_maker(|m| {

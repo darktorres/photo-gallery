@@ -165,7 +165,7 @@ $C diff $O.old $O                        # per function: what the last change di
 
 1. `libssl-dev`: `ureq`'s `native-tls` is OpenSSL on Linux.
 2. A way around `.cargo/config.toml`'s `[env]`, which sets Windows paths for every build. `FFMPEG_DIR = D:/…` made
-   `crates/core/build.rs` panic looking for the DLLs, and `LIBCLANG_PATH = C:/…/LLVM/bin` kept bindgen from finding
+   `crates/video/build.rs` panic looking for the DLLs, and `LIBCLANG_PATH = C:/…/LLVM/bin` kept bindgen from finding
    libclang. Cargo has no per-target `[env]` and can't unset an entry, but the real environment wins over it. So
    `wsl-bench.sh` sets `LIBCLANG_PATH` to the newest `/usr/lib/llvm-*/lib`, and sets `FFMPEG_DIR` to a prefix that
    `wsl-setup.sh` makes (`~/.local/share/pg-bench/ffmpeg`, with `include` and `lib` linked to Ubuntu's multiarch

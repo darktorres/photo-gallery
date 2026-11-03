@@ -185,10 +185,10 @@ pub fn video(path: &Path, turns: u8, analyzer: &mut Analyzer) -> Result<Analysis
 }
 
 fn analyze_video(path: &Path, turns: u8, a: &mut Analyzer) -> Result<Analysis> {
-    let file_hash = crate::video::file_hash(path)?;
-    let p = crate::video::probe(path)?;
-    let poster = crate::video::poster_ms(p.duration_ms);
-    crate::video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
+    let file_hash = pg_video::file_hash(path)?;
+    let p = pg_video::probe(path)?;
+    let poster = pg_video::poster_ms(p.duration_ms);
+    pg_video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
     let (width, height) = if orientation::turns_swap(turns) { (p.height, p.width) } else { (p.width, p.height) };
     Ok(Analysis {
         version: IMPORT_VERSION,

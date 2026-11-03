@@ -17,7 +17,12 @@ mkdir -p "$PG_BENCH_DATA"
 for layout in "$BENCH_DATA_SOURCE"/*/; do
     [ -d "$layout" ] || continue
     name=$(basename "$layout")
-    [ -d "$PG_BENCH_DATA/$name" ] || cp -r "$layout" "$PG_BENCH_DATA/$name"
+    dest="$PG_BENCH_DATA/$name"
+    # Copied under a temporary name and renamed when complete: an interrupted copy must not look finished.
+    if [ ! -d "$dest" ]; then
+        rm -rf "$dest.partial"
+        cp -r "$layout" "$dest.partial" && mv "$dest.partial" "$dest"
+    fi
 done
 
 [ -d "$CLONE/.git" ] || git clone -q "$REPO" "$CLONE"

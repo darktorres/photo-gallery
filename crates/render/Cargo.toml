@@ -1,0 +1,27 @@
+[package]
+name = "pg-render"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The display images: the thumbnails the grid shows (`maker`, which turbojpeg encodes as JPEG), and the one-off decodes
+# turned upright (`display`). The codec decodes and the metadata reads the orientation; this crate passes it between them.
+[dependencies]
+anyhow.workspace = true
+pg-codec = { path = "../codec" }
+pg-metadata = { path = "../metadata" }
+pg-model = { path = "../model" }
+pg-video = { path = "../video" }
+turbojpeg.workspace = true
+
+[dev-dependencies]
+pg-analysis = { path = "../analysis" }
+pg-testkit = { path = "../testkit" }
+# The decodediff example (a local eval tool, not in git) compares the display decodes with the `image` and `png`
+# decoders.
+image.workspace = true
+png.workspace = true
+xxhash-rust.workspace = true

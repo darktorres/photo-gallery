@@ -7,18 +7,5 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# Transitional: the justified layout the grid lays its files in. It moves to pg-client with the desktop's logic (S-10.1).
 [dependencies]
-pg-model = { path = "../model" }
-pg-analysis = { path = "../analysis" }
-pg-codec = { path = "../codec" }
-pg-video = { path = "../video" }
-pg-metadata = { path = "../metadata" }
-anyhow.workspace = true
-image.workspace = true
-turbojpeg.workspace = true
-xxhash-rust.workspace = true
-png.workspace = true
-
-[dev-dependencies]
-pg-codec = { path = "../codec", features = ["fixtures"] }
-pg-testkit = { path = "../testkit" }

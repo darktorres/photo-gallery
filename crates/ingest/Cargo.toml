@@ -8,9 +8,9 @@ publish.workspace = true
 workspace = true
 
 [dependencies]
-pg-core = { path = "../core" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }
+pg-render = { path = "../render" }
 pg-model = { path = "../model" }
 pg-analysis = { path = "../analysis" }
 pg-dedup = { path = "../dedup" }

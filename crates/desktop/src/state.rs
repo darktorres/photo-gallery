@@ -30,9 +30,9 @@ use pg_catalog::browse::{self, read::FileSource};
 use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
-use pg_core::maker::Maker;
 use pg_model::orientation;
 use pg_platform::verbatim::verbatim;
+use pg_render::maker::Maker;
 use pg_thumbcache::{self as thumbs, ThumbCache};
 
 pub struct AppState {
@@ -250,7 +250,7 @@ pub fn thumbnail(file_id: i64, height: u32, named: Option<Named>, jpeg: &mut Vec
 
 /// A thumbnail turned by `turns` quarter turns clockwise (a turn not yet written into the file).
 pub fn turn_jpeg(jpeg: &[u8], turns: u8) -> Result<Upload> {
-    with_maker(|m| Ok(Upload::opaque(&pg_core::display::decode(m.decoder(), jpeg, MinSize::Full, turns)?.image)))
+    with_maker(|m| Ok(Upload::opaque(&pg_render::display::decode(m.decoder(), jpeg, MinSize::Full, turns)?.image)))
 }
 
 /// An image in a format Qt's scene graph uploads as it is (`QSGPlainTexture`): 4 bytes a pixel, RGBX8888 or

@@ -282,7 +282,7 @@ fn the_tree_is_built_as_before() {
     check_tree(&[]);
 }
 
-/// On a real catalog (read-only): `PG_TEST_CATALOG=… cargo test -p pg-core real_tree -- --ignored`.
+/// On a real catalog (read-only): `PG_TEST_CATALOG=… cargo test -p pg-catalog real_tree -- --ignored`.
 #[test]
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
@@ -428,7 +428,7 @@ fn folder_keys_are_made_as_before() {
     }
 }
 
-/// On a real catalog's names (read-only, any layout): `PG_TEST_CATALOG=… cargo test -p pg-core real_names --
+/// On a real catalog's names (read-only, any layout): `PG_TEST_CATALOG=… cargo test -p pg-catalog real_names --
 /// --ignored`.
 #[test]
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]

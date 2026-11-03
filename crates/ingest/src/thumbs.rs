@@ -9,8 +9,8 @@ use std::sync::Mutex;
 use anyhow::Result;
 use pg_catalog::Catalog;
 use pg_catalog::browse;
-use pg_core::maker::Maker;
 use pg_platform::verbatim::verbatim;
+use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
 use crate::control::Control;

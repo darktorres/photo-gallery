@@ -1426,8 +1426,8 @@ dependencies = [
  "gungraun",
  "pg-analysis",
  "pg-catalog",
- "pg-core",
  "pg-model",
+ "pg-render",
  "pg-thumbcache",
  "rusqlite",
 ]
@@ -1474,19 +1474,6 @@ version = "0.1.0"
 [[package]]
 name = "pg-core"
 version = "0.1.0"
-dependencies = [
- "anyhow",
- "image 0.25.10",
- "pg-analysis",
- "pg-codec",
- "pg-metadata",
- "pg-model",
- "pg-testkit",
- "pg-video",
- "png 0.18.1",
- "turbojpeg",
- "xxhash-rust",
-]
 
 [[package]]
 name = "pg-dedup"
@@ -1510,6 +1497,7 @@ dependencies = [
  "pg-ingest",
  "pg-model",
  "pg-platform",
+ "pg-render",
  "pg-thumbcache",
  "pg-trace",
  "pg-video",
@@ -1566,13 +1554,13 @@ dependencies = [
  "pg-analysis",
  "pg-catalog",
  "pg-codec",
- "pg-core",
  "pg-dedup",
  "pg-edit",
  "pg-exiftool",
  "pg-metadata",
  "pg-model",
  "pg-platform",
+ "pg-render",
  "pg-testkit",
  "pg-thumbcache",
  "pg-video",
@@ -1605,6 +1593,23 @@ version = "0.1.0"
 dependencies = [
  "pg-testkit",
  "windows-sys",
+]
+
+[[package]]
+name = "pg-render"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "image 0.25.10",
+ "pg-analysis",
+ "pg-codec",
+ "pg-metadata",
+ "pg-model",
+ "pg-testkit",
+ "pg-video",
+ "png 0.18.1",
+ "turbojpeg",
+ "xxhash-rust",
 ]
 
 [[package]]

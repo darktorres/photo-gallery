@@ -11,9 +11,9 @@ workspace = true
 # so the benches are built there only; elsewhere the target's `main` prints where to run them.
 [dependencies]
 pg-analysis = { path = "../analysis" }
-pg-core = { path = "../core" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }
+pg-render = { path = "../render" }
 pg-model = { path = "../model" }
 rusqlite.workspace = true
 

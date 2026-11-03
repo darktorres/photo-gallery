@@ -22,6 +22,7 @@ pg-codec = { path = "../codec" }
 pg-core = { path = "../core" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }
+pg-render = { path = "../render" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }

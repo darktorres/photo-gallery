@@ -50,11 +50,11 @@ deny = [
     # miniz_oxide and crc32fast aren't banned: png, tiff and flate2 depend on them too.
     { crate = "quick-xml", wrappers = ["pg-metadata"] },
     # The image decoders and encoders are pg-codec's, and the test fixtures' (pg-testkit). `image` is the door to the
-    # rest, so its parents are these crates; pg-core and pg-ingest keep their tests' fixtures until S-05.4, S-05.5 and
-    # S-09 move them. turbojpeg also serves pg-core's maker and rewriter until S-05.4, S-05.5 and S-06.3.
-    { crate = "image", wrappers = ["pg-codec", "pg-testkit", "pg-core", "pg-ingest", "pdqhash"] },
-    { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit", "pg-core"] },
-    { crate = "png", wrappers = ["pg-codec", "pg-testkit", "pg-edit", "image", "pg-core"] },
+    # rest, so its parents are these crates; pg-ingest keeps its tests' fixtures until S-09 moves them. pg-render's
+    # decodediff example (a dev-only eval tool) compares against image's decoders.
+    { crate = "image", wrappers = ["pg-codec", "pg-testkit", "pg-render", "pg-ingest", "pdqhash"] },
+    { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit", "pg-render"] },
+    { crate = "png", wrappers = ["pg-codec", "pg-testkit", "pg-edit", "pg-render", "image"] },
     { crate = "gif", wrappers = ["pg-codec", "image"] },
     { crate = "image-webp", wrappers = ["pg-codec", "pg-edit", "image"] },
     { crate = "tiff", wrappers = ["pg-codec", "image"] },

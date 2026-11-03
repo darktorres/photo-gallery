@@ -129,7 +129,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     for name in ["a.jpg", "d.tif", r"sub\e.bmp"] {
         let copy = copies.join(name);
         let bytes = std::fs::read(&copy).unwrap_or_else(|e| panic!("{}: {e}", copy.display()));
-        let d = pg_core::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, 0).unwrap();
+        let d = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, 0).unwrap();
         // JPEG: the top cut moves inward to the 8 or 16 px grid, the bottom is exact.
         let [_, top, _, bottom] = cuts[name.rsplit('\\').next().unwrap()];
         assert_eq!(d.image.width as u32, W, "{name}");

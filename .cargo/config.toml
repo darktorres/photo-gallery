@@ -1,7 +1,7 @@
 # Qt for the desktop crate (cxx-qt-build finds Qt through qmake). The MSVC kit matches Rust's msvc target.
 [env]
 QMAKE = "C:/Qt/6.12.0/msvc2022_64/bin/qmake.exe"
-# FFmpeg for pg-core's video support and the video tests: BtbN's GPL shared build of FFmpeg 9.0 (headers, MSVC import libraries and
+# FFmpeg for pg-video's video support and the video tests: BtbN's GPL shared build of FFmpeg 9.0 (headers, MSVC import libraries and
 # DLLs; tools/ffmpeg-9.0/SOURCE.txt names the exact build). Its major version is Qt Multimedia's, so Qt plays
 # videos with the same DLLs (crates/README.md "Build"). ffmpeg-sys-next generates its bindings with libclang.
 FFMPEG_DIR = "D:/PhotoGallery/tools/ffmpeg-9.0"

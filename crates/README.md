@@ -2,11 +2,8 @@
 
 See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.md` ("M1 import").
 
-- `core` (`pg-core`): catalog (SQLite), decoding, the import analysis (tiers 0a/0b/1, dimensions, ThumbHash,
-  the rating stored in the file), the PDQ index, the thumbnail cache, folder browsing (merged drives, filters,
-  sorts, saved views), the justified layout, ratings, reading XMP/EXIF ratings (`metadata`), lossless
-  rotation (`rotate`), the border detector (`borders`) and cropping (`crop`; both rewrite a file's pixels in its
-  own format through `rewrite`). No UI dependency.
+- `client` (`pg-client`): the front end's logic, Qt-free: the justified layout so far (S-10 moves the rest of the
+  desktop's logic in). The rest of this map is rewritten with the crate map at S-13.1.
 - `library` (`pg-library`): the passes over the originals (scan, import, borders, thumbnails, cropped copies), the
   app's background job that runs them, the writer that puts ratings and turns into the files (`writeback`), and
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
@@ -31,7 +28,7 @@ Videos go through FFmpeg 9, our own copy rather than the one Qt bundles: BtbN's 
 `SOURCE.txt`). It has dav1d for AV1, which Qt's copy lacks, and the x264, libvpx, libaom and libwebp encoders the
 video test needs. The app is linked against this GPL build, so a distributed build would be under the GPL; the app
 is not distributed. Its bindings are generated with libclang (LLVM,
-`LIBCLANG_PATH`). `pg-core`'s build script copies its DLLs next to the binaries. Qt Multimedia plays videos with
+`LIBCLANG_PATH`). `pg-video`'s build script copies its DLLs next to the binaries. Qt Multimedia plays videos with
 the same DLLs: Qt 6.12 is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
 --no-ffmpeg`. The video test (`crates/library/tests/video.rs`) makes its clips and animations with the same `ffmpeg` command line,
 found on `PATH` (the tools folder's `bin` is on it), or at `PG_FFMPEG` if that is set. The clips go in
@@ -53,7 +50,7 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 `QT_FORCE_STDERR_LOGGING=1` is set.
 
 `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
-(the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-core` and `pg-library`;
+(the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-client` and `pg-library`;
 `cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or
 function the QML compiler (qmlcachegen, as the build runs it) leaves to the interpreter instead of compiling to C++.
 It reads the Rust types from the last build, so build first (`tools/lint-qml.ps1` says why it lints a copy of the

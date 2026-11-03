@@ -38,7 +38,7 @@ class FileSource:
         return load_rgb(self.root / self.files[i])
 
 
-# The gallery's border detector (crates/core/src/borders.rs), run on piped pixels by `gallery borders --stdin`.
+# The gallery's border detector (crates/analysis/src/borders.rs), run on piped pixels by `gallery borders --stdin`.
 GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / "gallery.exe"))
 
 

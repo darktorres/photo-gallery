@@ -26,7 +26,7 @@ if exist "%HERE%patches\%~1.patch" git -C "%JPEG_EVAL%\src\%~1" apply "%HERE%pat
 exit /b 0
 
 :turbo
-rem pg-core's vendored libjpeg-turbo 3.1.0, static with SIMD: the reference and CPU baseline
+rem The app's vendored libjpeg-turbo 3.1.0, static with SIMD: the reference and CPU baseline
 cmake -G Ninja -S "%REPO%\vendor\turbojpeg-sys\libjpeg-turbo" -B "%JPEG_EVAL%\build\libjpeg-turbo" -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DENABLE_SHARED=OFF -DWITH_TURBOJPEG=ON "-DCMAKE_INSTALL_PREFIX=%JPEG_EVAL%\deps\libjpeg-turbo" >nul || exit /b 1
 cmake --build "%JPEG_EVAL%\build\libjpeg-turbo" -j 4 || exit /b 1
 cmake --install "%JPEG_EVAL%\build\libjpeg-turbo" >nul

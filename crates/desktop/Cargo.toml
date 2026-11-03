@@ -19,7 +19,7 @@ doctest = false
 
 [dependencies]
 pg-codec = { path = "../codec" }
-pg-core = { path = "../core" }
+pg-client = { path = "../client" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-render = { path = "../render" }

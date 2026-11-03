@@ -1,5 +1,5 @@
 //! The desktop app (PLAN §7): the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it with `run` when it's
-//! given no command; everything below the QML lives in `pg-core` and `pg-library`.
+//! given no command; everything below the QML lives in `pg-client` and `pg-library`.
 
 mod animation;
 mod app_icon;

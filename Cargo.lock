@@ -1468,6 +1468,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-client"
+version = "0.1.0"
+
+[[package]]
 name = "pg-codec"
 version = "0.1.0"
 dependencies = [
@@ -1492,10 +1496,6 @@ name = "pg-container"
 version = "0.1.0"
 
 [[package]]
-name = "pg-core"
-version = "0.1.0"
-
-[[package]]
 name = "pg-dedup"
 version = "0.1.0"
 dependencies = [
@@ -1512,8 +1512,8 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "pg-catalog",
+ "pg-client",
  "pg-codec",
- "pg-core",
  "pg-jobs",
  "pg-library",
  "pg-model",

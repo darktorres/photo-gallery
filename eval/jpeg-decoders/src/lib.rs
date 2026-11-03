@@ -1,11 +1,11 @@
 //! JPEG decoders behind one interface, each decoding to packed RGB8 on one thread, for the speed and output
 //! comparison in docs/JPEG_DECODERS.md.
 //!
-//! - libjpeg-turbo as the app calls it (`pg-core` decode.rs): accurate integer IDCT, smooth upsampling.
+//! - libjpeg-turbo as the app calls it (`pg-codec` decode.rs): accurate integer IDCT, smooth upsampling.
 //! - libjpeg-turbo with `TJPARAM_FASTDCT` and `TJPARAM_FASTUPSAMPLE`: the fast but less accurate options.
 //! - zune-jpeg, the `image` crate's JPEG decoder since 0.25 (pure Rust, AVX2). It has no DCT scaling.
 //! - jpeg-decoder, the `image` crate's decoder before 0.25 (pure Rust), without its rayon threads.
-//! - FFmpeg's MJPEG decoder (`lowres` for the scaled decode), then swscale to RGB, as `pg-core` video.rs does.
+//! - FFmpeg's MJPEG decoder (`lowres` for the scaled decode), then swscale to RGB, as `pg-video` does.
 //! - libvips's `jpegload` (shrink-on-load for the scaled decode), sequential, one thread, its operation cache off.
 //!   It decodes with the system's libjpeg (Ubuntu 26.04: libjpeg-turbo 2.1.5), not the vendored 3.x.
 //!
@@ -70,7 +70,7 @@ pub struct Rgb {
     pub pixels: Vec<u8>,
 }
 
-/// The scale denominator `pg-core` picks (decode.rs): libjpeg-turbo rounds scaled sizes up.
+/// The scale denominator `pg-codec` picks (decode.rs): libjpeg-turbo rounds scaled sizes up.
 pub fn denom(mode: Mode, w: usize, h: usize) -> usize {
     match mode {
         Mode::Full => 1,
@@ -259,7 +259,7 @@ fn open_mjpeg(lowres: usize) -> Result<ffmpeg::decoder::Video> {
     Ok(ctx.decoder().video()?)
 }
 
-/// Packed RGB through swscale with the frame's own matrix and range, as `pg-core` video.rs converts.
+/// Packed RGB through swscale with the frame's own matrix and range, as `pg-video` converts.
 fn ffmpeg_rgb(mut src: ffmpeg::frame::Video) -> Result<Rgb> {
     use ffmpeg::util::color::{Range, Space};
     let (w, h) = (src.width(), src.height());

@@ -1,4 +1,4 @@
-//! The grid model: the files of the open folder, laid out in justified rows (`pg_core::layout`). QML sees one
+//! The grid model: the files of the open folder, laid out in justified rows (`pg_client::layout`). QML sees one
 //! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index. The
 //! model holds a compact entry per file (`browse::read::Entry`); a file's path and size are read when it is shown
 //! (`browse::read::details`), for the selection and the viewer's file.
@@ -278,7 +278,7 @@ use cxx_qt_lib::{
 };
 use pg_catalog::browse::{self};
 use pg_catalog::query::from_json;
-use pg_core::layout::{self, Row, RowChange};
+use pg_client::layout::{self, Placement, Row, RowChange};
 use pg_model::details::Details;
 use pg_model::detection::Class;
 use pg_model::grid::{Borders, Entry};
@@ -407,16 +407,18 @@ impl GalleryRust {
         self.last_version
     }
 
-    fn row_index(&self, item: usize) -> usize {
-        self.rows.partition_point(|r| r.first + r.count <= item)
+    /// The layout's rows as they are placed: the items' clamped aspects, read from the entries.
+    fn placement(&self) -> Placement<'_, impl Fn(usize) -> f64 + '_> {
+        Placement {
+            rows: &self.rows,
+            spacing: self.spacing,
+            len: self.entries.len(),
+            aspect: |i: usize| layout::clamp_aspect(self.entries[i].aspect()),
+        }
     }
 
-    /// Left edge and width of an item in its row.
-    fn span(&self, item: usize) -> (f64, f64) {
-        let row = &self.rows[self.row_index(item)];
-        let w = |i: usize| layout::clamp_aspect(self.entries[i].aspect()) * row.height;
-        let x: f64 = (row.first..item).map(|i| w(i) + self.spacing).sum();
-        (x, w(item))
+    fn row_index(&self, item: usize) -> usize {
+        self.placement().row_index(item)
     }
 }
 
@@ -934,28 +936,7 @@ impl qobject::GalleryModel {
     }
 
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
-        let n = self.entries.len() as i32;
-        if n == 0 || self.rows.is_empty() {
-            return -1;
-        }
-        let item = item.clamp(0, n - 1);
-        if dy == 0 {
-            return (item + dx).clamp(0, n - 1);
-        }
-        let row = self.row_index(item as usize) as i32;
-        let target = (row + dy).clamp(0, self.rows.len() as i32 - 1);
-        if target == row {
-            return item;
-        }
-        let (x, w) = self.span(item as usize);
-        let center = x + w / 2.0;
-        let r = self.rows[target as usize];
-        (r.first..r.first + r.count)
-            .find(|&i| {
-                let (x, w) = self.span(i);
-                center < x + w + self.spacing
-            })
-            .unwrap_or(r.first + r.count - 1) as i32
+        self.placement().neighbor(item, dx, dy)
     }
 }
 

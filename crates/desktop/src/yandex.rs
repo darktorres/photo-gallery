@@ -1,5 +1,5 @@
 //! Reverse image search on Yandex, from the viewer: the other sizes of a photo and the images that look like it
-//! (`pg_core::yandex`). The search and the downloads run on background threads; QML calls `poll()` while `busy`.
+//! (`pg_yandex`). The search and the downloads run on background threads; QML calls `poll()` while `busy`.
 //! The results are items by index, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
 //! then the similar images (`similarCount`). The picks to save are kept here too. Nothing here touches the catalog:
 //! the files go into the folder the user picks, named after the photo (`IMG_1234 (yandex 1920x1080).jpg`), and that

@@ -56,6 +56,59 @@ fn greedy(aspects: impl Iterator<Item = f64>, width: f64, target_height: f64, sp
     }
 }
 
+/// Where the items of a laid-out grid are: the rows, the spacing, and the clamped aspect each item is laid out at
+/// (`aspect(i)` for item `i`, of `len` items). It answers the cursor's questions: an item's row, its span in the row,
+/// and the item a step away.
+pub struct Placement<'a, A> {
+    pub rows: &'a [Row],
+    pub spacing: f64,
+    pub len: usize,
+    pub aspect: A,
+}
+
+impl<A: Fn(usize) -> f64> Placement<'_, A> {
+    /// The row an item is in.
+    pub fn row_index(&self, item: usize) -> usize {
+        self.rows.partition_point(|r| r.first + r.count <= item)
+    }
+
+    /// Left edge and width of an item in its row.
+    pub fn span(&self, item: usize) -> (f64, f64) {
+        let row = &self.rows[self.row_index(item)];
+        let w = |i: usize| (self.aspect)(i) * row.height;
+        let x: f64 = (row.first..item).map(|i| w(i) + self.spacing).sum();
+        (x, w(item))
+    }
+
+    /// The item `dx` along the row, or `dy` rows along: in the other row, the item under the centre of this one (or the
+    /// row's last item, when the row is shorter). Clamped to the grid, so an item stays where it is when there is no row
+    /// that way; `-1` for an empty grid.
+    pub fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
+        let n = self.len as i32;
+        if n == 0 || self.rows.is_empty() {
+            return -1;
+        }
+        let item = item.clamp(0, n - 1);
+        if dy == 0 {
+            return (item + dx).clamp(0, n - 1);
+        }
+        let row = self.row_index(item as usize) as i32;
+        let target = (row + dy).clamp(0, self.rows.len() as i32 - 1);
+        if target == row {
+            return item;
+        }
+        let (x, w) = self.span(item as usize);
+        let center = x + w / 2.0;
+        let r = self.rows[target as usize];
+        (r.first..r.first + r.count)
+            .find(|&i| {
+                let (x, w) = self.span(i);
+                center < x + w + self.spacing
+            })
+            .unwrap_or(r.first + r.count - 1) as i32
+    }
+}
+
 /// How a new layout changes the rows shown, so that a view keeps the delegates of the rows that stay: the rows
 /// before and after those whose items differ are kept, the ones between are changed in place, then rows are
 /// inserted or removed after them. Rows are told apart by their items' range: a row is kept when it holds the same
@@ -219,5 +272,26 @@ mod tests {
         assert_eq!(fresh, rows);
         justify_into(&mut fresh, std::iter::empty(), width, 200.0, spacing);
         assert!(fresh.is_empty());
+    }
+
+    #[test]
+    fn placement_finds_the_row_and_the_neighbour_under_the_centre() {
+        // Row 0: items 0..3 at height 100 (aspects 1, 1, 2). Row 1: items 3..5 at height 50 (aspects 1, 1).
+        let rows = rows(&[(0, 3, 100.0), (3, 2, 50.0)]);
+        let aspects = [1.0, 1.0, 2.0, 1.0, 1.0];
+        let p = Placement { rows: &rows, spacing: 0.0, len: 5, aspect: |i: usize| aspects[i] };
+        assert_eq!((p.row_index(2), p.row_index(3)), (0, 1));
+        assert_eq!(p.span(2), (200.0, 200.0));
+        assert_eq!(p.span(4), (50.0, 50.0));
+        // Along the row, clamped at its ends.
+        assert_eq!((p.neighbor(1, 1, 0), p.neighbor(0, -1, 0), p.neighbor(4, 1, 0)), (2, 0, 4));
+        // Down from item 2 (its centre at 300 px): row 1 has no item that far right, so its last one.
+        assert_eq!(p.neighbor(2, 0, 1), 4);
+        // Up from item 3 (its centre at 25 px): item 0 is the first in row 0 with its right edge past it.
+        assert_eq!(p.neighbor(3, 0, -1), 0);
+        // No row that way: the item stays.
+        assert_eq!(p.neighbor(3, 0, 1), 3);
+        let none = Placement { rows: &[], spacing: 0.0, len: 0, aspect: |_: usize| 1.0 };
+        assert_eq!(none.neighbor(0, 1, 0), -1);
     }
 }

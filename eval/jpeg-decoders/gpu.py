@@ -31,7 +31,7 @@ MAX_BATCH_BYTES = 2.5e9  # decoded RGB per batch; the 2060 has 6 GB, ~1.4 GB in 
 
 
 def denom(w, h):
-    """pg-core's choice for analyze: the smallest 1/8, 1/4, 1/2 keeping long ≥ 512 and short ≥ 320."""
+    """pg-analysis's choice for analyze: the smallest 1/8, 1/4, 1/2 keeping long ≥ 512 and short ≥ 320."""
     mw, mh = (512, 320) if w >= h else (320, 512)
     return next((d for d in (8, 4, 2) if -(-w // d) >= mw and -(-h // d) >= mh), 1)
 

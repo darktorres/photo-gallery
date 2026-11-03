@@ -4,7 +4,7 @@
 //! ExifTool takes the plain path, as a `\\?\` path isn't one it reads (its own long-name support is a separate
 //! option, FINDINGS "I/O").
 //!
-//! A pass's paths are kept end to end in strings (the work lists in `pg-core`'s `path` module): a work list holds
+//! A pass's paths are kept end to end in strings (the work lists in `pg-model`'s `path` module): a work list holds
 //! each folder's path once and each file's name, so a list of 189k files is a few allocations, not one per path. A
 //! file is opened from them through a reader's wide buffer ([`verbatim_wide_file`]), without a path of its own.
 

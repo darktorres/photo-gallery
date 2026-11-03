@@ -1,7 +1,7 @@
 #!/bin/bash
 # Restart markers and progressive -> baseline, both lossless (jpegtran), on the 7 decoder inputs
 # (docs/JPEG_DECODERS.md "Restart markers and lossless baseline conversion"): size, pixel identity (djpeg, full and 1/2),
-# and libjpeg-turbo's cost (pg-core's vendored 3.1, through the eval harness): callgrind instructions per decode
+# and libjpeg-turbo's cost (the vendored 3.1, through the eval harness): callgrind instructions per decode
 # (3 decodes minus 1, halved) and wall ms per decode (best of 3 runs of N decodes).
 # In WSL, after `wsl.sh inputs time` (which copy the inputs and build the harness):
 #   bash eval/jpeg-decoders/restart.sh    (needs apt-get install libjpeg-turbo-progs, for jpegtran and djpeg)

@@ -1432,6 +1432,25 @@ Milliseconds from process start, median of 5 runs (each stage's min and max are 
 The phase 0 hook screenshots are in `D:\PhotoGallery\baseline_2026-11-02\shots`: `start_0` to `start_5`, `library`,
 `filters`, the `hooks_*` set (keys, zoom, similar, crops) and the `symmetric_*` set.
 
+## Refactor S-02.3: deploy, icon and live reload (2026-11-03)
+
+The S-02 verify items that the repo did not record. The screenshots and logs are in the session scratchpad
+(`C:\Users\Torres\AppData\Local\Temp\claude\C--Users-Torres-Documents-GitHub-photo-gallery\ee9bb8ea-1267-4b3d-a17b-506b8d945183\scratchpad`).
+
+- **`just deploy`** (release build, then `windeployqt`) at 713cd7e: exit 0 (`deploy5.log`). Two warnings, neither an
+  error: no `dxcompiler.dll` or `dxil.dll` (needed only for Direct3D 12), and `VCINSTALLDIR` is not set (no Visual
+  Studio installation directory). The same two warnings are in the earlier log `deploy4.log` (13:05).
+- **Icon:** the icon resource of `target/release/gallery.exe` (its `winres` build step) shows the app icon at 32 × 32,
+  both in the extraction of the 05:24 build (`exe_icon.png`) and of the 13:05 release build (`exe_icon_recheck.png`).
+- **Live reload:** on the debug build, with the scratch catalog and prefs. The control run, with no edit, showed
+  "No folders in the library yet." (`live_control.png`). The test run changed the text of `Main.qml` 9 s after start
+  to "LIVE RELOAD CHECK.", and the window showed the new text (`live_changed.png`). The script reverts `Main.qml` with
+  `git checkout` on exit; `Main.qml` is clean.
+- **`lint-qml`** runs in `just lint`, and passed at 713cd7e: "QML: no warnings; all 735 bindings and functions
+  compiled to C++ (7 files)".
+- **Screenshots:** the grid, viewer and filters screenshots match the pre-split build (R-14, 0ac379e). That check was
+  recorded at 0ac379e and was not run again today.
+
 ## Pending
 
 - Hand marks on the k-NN candidates (viewer), then tune or learn the verifier decision on them.

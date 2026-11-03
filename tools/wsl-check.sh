@@ -1,6 +1,6 @@
 #!/bin/bash
-# Clippy (-D warnings) on every crate but the desktop, on the committed HEAD of this checkout, in WSL's own clone (the
-# sync is wsl-bench.sh's: the same clone, reset to HEAD). The desktop needs Qt, which is Windows only. From the repo:
+# Clippy (-D warnings) on the crates that build here, on the committed HEAD of this checkout, in WSL's own clone (the
+# sync is wsl-bench.sh's: the same clone, reset to HEAD). The exclusions are listed beside the cargo command. From the repo:
 #   wsl -d Ubuntu-26.04 -u root -- bash tools/wsl-check.sh          (or `just wsl-check`)
 # The code that only builds on Linux (the callgrind benches, the platform's Unix paths) is checked here: `just lint`
 # on Windows never sees it.
@@ -21,7 +21,9 @@ LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V 
 export LIBCLANG_PATH
 
 cd "$CLONE"
-# pg-ingest is out until the platform crate (plan step 4) moves its Windows-only code (CreateFileW, the job object,
-# file times, CREATE_NO_WINDOW) behind cfg(windows): it doesn't build here yet. Remove the exclusion then.
+# Excluded, and why. Remove each exclusion when its reason ends.
+#   pg-desktop, pg-gallery: they link Qt, which is Windows only (pg-gallery reaches it through its `desktop` feature).
+#   pg-ingest: its Windows-only code (CreateFileW, the job object, file times, CREATE_NO_WINDOW) isn't behind
+#     cfg(windows) yet; the platform crate (plan step 4) moves it there.
 cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --exclude pg-ingest --all-targets -- -D warnings
 echo "wsl-check: clean"

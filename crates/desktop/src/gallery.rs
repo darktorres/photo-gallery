@@ -276,13 +276,12 @@ use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QUrl,
     QVariant,
 };
-use pg_catalog::browse::{
-    self,
-    read::{Borders, Details, Entry},
-};
+use pg_catalog::browse::{self};
 use pg_catalog::query::from_json;
 use pg_core::layout::{self, Row, RowChange};
+use pg_model::details::Details;
 use pg_model::detection::Class;
+use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::query::{MediaType, Query, Sort};
 use pg_model::rating::Rating;

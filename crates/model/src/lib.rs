@@ -7,8 +7,10 @@
 
 pub mod analysis;
 pub mod date;
+pub mod details;
 pub mod detection;
 pub mod format;
+pub mod grid;
 pub mod ids;
 pub mod media;
 pub mod orientation;

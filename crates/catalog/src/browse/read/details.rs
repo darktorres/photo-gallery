@@ -5,21 +5,11 @@ use crate::Result;
 use rusqlite::OptionalExtension;
 use rusqlite::types::Type;
 
+use pg_model::details::Details;
 use pg_model::detection;
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::media::Kind;
-
-/// What a file's grid entry leaves out, for the file shown (the selection, the viewer's).
-#[derive(Clone, PartialEq, Debug)]
-pub struct Details {
-    pub path: String,
-    pub size: i64,
-    /// Whether the file can hold its rating too (`false`: kept in the catalog only). Unknown before the import.
-    pub rating_in_file: bool,
-    /// Every side the border detector found, accepted and rejected (`borders::detect`).
-    pub border_sides: detection::Sides,
-}
 
 pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
     let conn = &catalog.conn;

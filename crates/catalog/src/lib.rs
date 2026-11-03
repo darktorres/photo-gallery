@@ -2087,11 +2087,11 @@ mod tests {
         assert!(c.pending_borders().unwrap().is_empty());
 
         // The grid's entry, the filters and the sort.
-        let list = |c: &Catalog, q: Query| -> Vec<browse::read::Entry> {
+        let list = |c: &Catalog, q: Query| -> Vec<pg_model::grid::Entry> {
             browse::read::list_grid(c, "", true, &q, Sort::default()).unwrap()
         };
         let entry = list(&c, Query::default()).remove(0);
-        assert_eq!(entry.borders, browse::read::Borders::Found);
+        assert_eq!(entry.borders, pg_model::grid::Borders::Found);
         let [x, y, w, h] = entry.content().unwrap();
         assert!(x == 0.0 && w == 1.0 && (y - 41.0 / 300.0).abs() < 1e-9 && (h - 218.0 / 300.0).abs() < 1e-9);
         let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
@@ -2103,7 +2103,7 @@ mod tests {
 
         // Marked as not a border: no border to the filters, the mark to the review.
         c.set_border_mark(item.id, true).unwrap();
-        assert_eq!(list(&c, Query::default())[0].borders, browse::read::Borders::Marked);
+        assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::Marked);
         assert!(list(&c, only(vec![BorderFacet::Black])).is_empty());
         assert_eq!(list(&c, only(vec![BorderFacet::None])).len(), 1);
         assert_eq!(list(&c, Query { border_marked: Some(true), ..Query::default() }).len(), 1);
@@ -2120,7 +2120,7 @@ mod tests {
         assert_eq!(cut(&c), [Some(0); 4]);
         assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
         assert!(c.pending_borders().unwrap().is_empty());
-        assert_eq!(list(&c, Query::default())[0].borders, browse::read::Borders::None);
+        assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::None);
         let marks: i64 = c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap();
         assert_eq!(marks, 1);
 

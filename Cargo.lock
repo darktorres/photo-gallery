@@ -1423,7 +1423,6 @@ name = "pg-core"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "arrayvec",
  "blake3",
  "crc32fast",
  "fast_image_resize",

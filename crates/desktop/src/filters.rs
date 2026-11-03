@@ -406,7 +406,7 @@ impl qobject::Filters {
         let shown = path.clone();
         loader::submit(
             Kind::Facets,
-            move |c| browse::read::facets(&c.conn, &path, recursive, &query),
+            move |c| browse::read::facets(c, &path, recursive, &query),
             move |facets| {
                 let facets = facets.unwrap_or_else(|e| {
                     eprintln!("facets of {shown}: {e:#}");

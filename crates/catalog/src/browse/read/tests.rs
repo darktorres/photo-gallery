@@ -11,7 +11,7 @@ use pg_model::media::Ext;
 use pg_model::path::folder_key;
 use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};
 use pg_model::turns::Turns;
-use rusqlite::{Connection, params_from_iter};
+use rusqlite::params_from_iter;
 
 /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
 /// and without.
@@ -78,28 +78,25 @@ fn merged_paths() {
 fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
     let c = library();
     c.conn.execute("UPDATE analysis SET thumbhash = x'01' WHERE file_id = 1", []).unwrap();
-    let state = || file_state(&c.conn, FileId::new(1)).unwrap().unwrap();
-    let turns = || placeholder(&c.conn, FileId::new(1)).unwrap().unwrap().turns;
+    let state = || file_state(&c, FileId::new(1)).unwrap().unwrap();
+    let turns = || placeholder(&c, FileId::new(1)).unwrap().unwrap().turns;
     let size: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
     assert_eq!(state(), FileState { mtime: 3, size, rotation: Turns::new(0), turns: Turns::new(0), writing: false });
-    assert_eq!(file_source(&c.conn, FileId::new(1)).unwrap().unwrap().state, state());
-    assert_eq!(
-        (turns(), placeholder(&c.conn, FileId::new(1)).unwrap().unwrap().hash),
-        (Turns::NONE, ThumbHash::new(&[1]))
-    );
+    assert_eq!(file_source(&c, FileId::new(1)).unwrap().unwrap().state, state());
+    assert_eq!((turns(), placeholder(&c, FileId::new(1)).unwrap().unwrap().hash), (Turns::NONE, ThumbHash::new(&[1])));
     // A turn asked for, not yet written.
-    queue_rotation(&c.conn, FileId::new(1), Turns::new(3)).unwrap();
+    queue_rotation(&c, FileId::new(1), Turns::new(3)).unwrap();
     assert_eq!((state().turns, turns()), (Turns::new(3), Turns::new(3)));
     // One kept in the catalog since the analysis, and one more asked for.
     c.conn.execute("UPDATE files SET rotation = 1 WHERE id = 1", []).unwrap();
-    queue_rotation(&c.conn, FileId::new(1), Turns::new(2)).unwrap();
+    queue_rotation(&c, FileId::new(1), Turns::new(2)).unwrap();
     assert_eq!((state().rotation, state().turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
     c.conn.execute(r"UPDATE file_writes SET temp = 'D:\p\b.jpg.tmp', temp_value = 1 WHERE file_id = 1", []).unwrap();
     assert!(state().writing);
-    assert_eq!(file_state(&c.conn, FileId::new(99)).unwrap(), None);
-    assert!(placeholder(&c.conn, FileId::new(99)).unwrap().is_none());
+    assert_eq!(file_state(&c, FileId::new(99)).unwrap(), None);
+    assert!(placeholder(&c, FileId::new(99)).unwrap().is_none());
 }
 
 #[test]
@@ -117,11 +114,11 @@ fn ratings_and_orders() {
     assert_eq!(ids(&c, "", true, &ratings(&[1, 2, 3, 4, 5]), Sort::default()), [1, 3]);
     assert_eq!(ids(&c, "", true, &ratings(&[2]), Sort::default()), [3]);
     assert_eq!(ids(&c, "", true, &ratings(&[0, 2]), Sort::default()), [2, 3, 4]);
-    let bmp = details(&c.conn, FileId::new(4)).unwrap().unwrap();
+    let bmp = details(&c, FileId::new(4)).unwrap().unwrap();
     assert!(!bmp.rating_in_file, "BMP keeps its rating in the catalog");
-    assert!(details(&c.conn, FileId::new(1)).unwrap().unwrap().rating_in_file);
+    assert!(details(&c, FileId::new(1)).unwrap().unwrap().rating_in_file);
     assert_eq!(
-        details(&c.conn, FileId::new(2)).unwrap(),
+        details(&c, FileId::new(2)).unwrap(),
         Some(Details {
             path: r"E:\p\a.png".into(),
             size: 10,
@@ -129,7 +126,7 @@ fn ratings_and_orders() {
             border_sides: detection::Sides::new()
         })
     );
-    assert_eq!(details(&c.conn, FileId::new(99)).unwrap(), None);
+    assert_eq!(details(&c, FileId::new(99)).unwrap(), None);
 }
 
 #[test]
@@ -139,7 +136,7 @@ fn folders_in_the_trees_order() {
     c.conn.execute("INSERT INTO folders(id, path) VALUES (4, 'D:\\p-x')", []).unwrap();
     fixture::insert(&c.conn, &[fixture::File::new(9, 4, "z.jpg", 1, 1)]);
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
-    let tree = folder_tree(&c.conn).unwrap();
+    let tree = folder_tree(&c).unwrap();
     let roots: Vec<&str> = tree.children(None).map(|n| tree.name(n)).collect();
     assert_eq!(roots, ["p", "p-x"]);
     // Its strings were made at the size reserved for them, not grown.
@@ -292,7 +289,8 @@ fn the_tree_is_built_as_before() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let c = crate::Catalog::open_current(std::path::Path::new(&path)).unwrap();
+    let conn = &c.conn;
     let rows: Vec<(i64, String, i64)> = conn
         .prepare(FOLDER_COUNTS)
         .unwrap()
@@ -301,7 +299,7 @@ fn real_tree_is_built_as_before() {
         .collect::<rusqlite::Result<_>>()
         .unwrap();
     check_tree(&rows);
-    let tree = folder_tree(&conn).unwrap();
+    let tree = folder_tree(&c).unwrap();
     assert_eq!(flat(&tree), reference_tree(&rows));
     assert_eq!(tree.nodes.capacity(), tree.nodes.len());
     eprintln!("{} folders, {} nodes, {} files", rows.len(), tree.len(), tree.total());
@@ -439,7 +437,8 @@ fn folder_keys_are_made_as_before() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_names_sort_and_scope_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let c = crate::Catalog::open_current(std::path::Path::new(&path)).unwrap();
+    let conn = &c.conn;
     let files: Vec<(String, String)> = conn
         .prepare("SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")
         .unwrap()
@@ -521,11 +520,11 @@ fn scopes_are_key_ranges() {
 #[test]
 fn lists_are_made_at_their_size() {
     let c = mixed_library();
-    let all = list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
+    let all = list_grid(&c, "", true, &Query::default(), Sort::default()).unwrap();
     assert_eq!(all.capacity(), all.len());
-    let sorted = list_grid(&c.conn, "", true, &Query::default(), by(SortKey::Size, true)).unwrap();
+    let sorted = list_grid(&c, "", true, &Query::default(), by(SortKey::Size, true)).unwrap();
     assert_eq!(sorted.capacity(), sorted.len());
-    let one = list_grid(&c.conn, "", true, &Query { ratings: vec![5], ..Query::default() }, Sort::default()).unwrap();
+    let one = list_grid(&c, "", true, &Query { ratings: vec![5], ..Query::default() }, Sort::default()).unwrap();
     assert!(one.capacity() < all.len() * 3 / 4 || one.capacity() == one.len());
 }
 
@@ -639,29 +638,29 @@ fn grid_lists_sort_as_sqlite_did() {
         }
     }
     // Each entry as read alone.
-    for e in list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap() {
-        assert_eq!(entry(&c.conn, e.id).unwrap(), Some(e));
+    for e in list_grid(&c, "", true, &Query::default(), Sort::default()).unwrap() {
+        assert_eq!(entry(&c, e.id).unwrap(), Some(e));
     }
-    let entries = list_grid(&c.conn, "", true, &Query::default(), Sort::default()).unwrap();
+    let entries = list_grid(&c, "", true, &Query::default(), Sort::default()).unwrap();
     let get = |id: i64| *entries.iter().find(|e| e.id == FileId::new(id)).unwrap();
     let (clip, gif, broken) = (get(5), get(6), get(7));
     assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
     assert_eq!((gif.media_type(), gif.duration_ms(), gif.ext.name()), (MediaType::Animated, None, "gif"));
     // Not imported (its analysis failed): no size yet, square.
     assert_eq!((broken.shown_size(), broken.aspect()), ((0, 0), 1.0));
-    assert_eq!(entry(&c.conn, FileId::new(99)).unwrap(), None);
+    assert_eq!(entry(&c, FileId::new(99)).unwrap(), None);
 }
 
 #[test]
 fn facet_counts() {
     let c = mixed_library();
     let videos = Query { types: vec![MediaType::Video], ..Query::default() };
-    let f = facets(&c.conn, "", true, &videos).unwrap();
+    let f = facets(&c, "", true, &videos).unwrap();
     assert_eq!((f.total, f.matching), (8, 1));
     // A facet's own choices are counted without it; the other facets apply.
     assert_eq!(f.types, [(MediaType::Image, 6), (MediaType::Animated, 1), (MediaType::Video, 1)]);
     assert_eq!(f.exts, [("mp4".to_string(), 1)]);
-    let f = facets(&c.conn, "p", false, &Query::default()).unwrap();
+    let f = facets(&c, "p", false, &Query::default()).unwrap();
     assert_eq!(
         f.exts,
         [("jpg".to_string(), 3), ("gif".to_string(), 1), ("png".to_string(), 1), ("webp".to_string(), 1)]

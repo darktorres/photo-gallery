@@ -4,10 +4,13 @@
 use anyhow::Result;
 use rusqlite::{Connection, params};
 
+use crate::Catalog;
+
 use super::read::View;
 
 /// Save a view, replacing one of the same name.
-pub fn save_view(conn: &Connection, v: &View) -> Result<()> {
+pub fn save_view(catalog: &Catalog, v: &View) -> Result<()> {
+    let conn = &catalog.conn;
     conn.execute(
         "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
         params![v.name, v.folder, v.recursive, v.query.to_json(), v.sort.to_json()],
@@ -15,21 +18,26 @@ pub fn save_view(conn: &Connection, v: &View) -> Result<()> {
     Ok(())
 }
 
-pub fn delete_view(conn: &Connection, name: &str) -> Result<()> {
+pub fn delete_view(catalog: &Catalog, name: &str) -> Result<()> {
+    let conn = &catalog.conn;
     conn.execute("DELETE FROM views WHERE name = ?1", [name])?;
     Ok(())
 }
 
-pub fn session_set(conn: &Connection, key: &str, value: &str) -> Result<()> {
+pub fn session_set(catalog: &Catalog, key: &str, value: &str) -> Result<()> {
+    put_session(&catalog.conn, key, value)
+}
+
+fn put_session(conn: &Connection, key: &str, value: &str) -> Result<()> {
     conn.execute("INSERT OR REPLACE INTO session(key, value) VALUES (?1, ?2)", [key, value])?;
     Ok(())
 }
 
 /// Several session keys, in one transaction.
-pub fn session_set_many(conn: &Connection, values: &[(&str, &str)]) -> Result<()> {
-    let tx = conn.unchecked_transaction()?;
+pub fn session_set_many(catalog: &Catalog, values: &[(&str, &str)]) -> Result<()> {
+    let tx = catalog.conn.unchecked_transaction()?;
     for (key, value) in values {
-        session_set(&tx, key, value)?;
+        put_session(&tx, key, value)?;
     }
     tx.commit()?;
     Ok(())
@@ -52,7 +60,7 @@ mod tests {
             query: Query { types: vec![MediaType::Video], ratings: vec![0], ..Query::default() },
             sort: by(SortKey::Size, true),
         };
-        save_view(&c.conn, &v).unwrap();
-        assert_eq!(views(&c.conn).unwrap(), [v]);
+        save_view(&c, &v).unwrap();
+        assert_eq!(views(&c).unwrap(), [v]);
     }
 }

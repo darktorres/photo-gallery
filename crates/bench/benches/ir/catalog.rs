@@ -45,7 +45,7 @@ fn copy_data() -> PathBuf {
 
 fn open_catalog() -> Catalog {
     let catalog = Catalog::open(&copy_data().join("catalog.sqlite")).unwrap();
-    catalog.conn.query_row("SELECT count(*) FROM sqlite_schema", [], |r| r.get::<_, i64>(0)).unwrap();
+    catalog.status().unwrap(); // reads the schema and the counts: the connection is warm before the measured code
     catalog
 }
 
@@ -81,7 +81,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
         List::FolderRecursive => (r"PhotoGallery\synthetic\library", true, Query::default(), name),
         List::FolderFlat => (r"PhotoGallery\synthetic\library\folder-00", false, Query::default(), name),
     };
-    let entries = browse::read::list_grid(&catalog.conn, folder, recursive, &query, sort).unwrap();
+    let entries = browse::read::list_grid(&catalog, folder, recursive, &query, sort).unwrap();
     (catalog, black_box(entries))
 }
 
@@ -89,7 +89,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
-    let tree = browse::read::folder_tree(&catalog.conn).unwrap();
+    let tree = browse::read::folder_tree(&catalog).unwrap();
     (catalog, black_box(tree))
 }
 
@@ -97,7 +97,7 @@ fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn facets(catalog: Catalog) -> (Catalog, Facets) {
-    let facets = browse::read::facets(&catalog.conn, "", true, &Query::default()).unwrap();
+    let facets = browse::read::facets(&catalog, "", true, &Query::default()).unwrap();
     (catalog, black_box(facets))
 }
 

@@ -2,8 +2,8 @@
 //! and the lookups the tree panel makes of it.
 
 use anyhow::Result;
-use rusqlite::Connection;
 
+use crate::Catalog;
 use pg_model::path::{components, merged_path, push_folder_key};
 
 /// A folder of the merged tree. Its strings are in its [`FolderTree`].
@@ -55,7 +55,8 @@ pub(super) const FOLDER_SIZES: &str = "SELECT count(*), coalesce(sum(length(CAST
     coalesce(sum(length(path) - length(replace(path, char(92), '')) + 1), 0) FROM folders";
 
 /// The merged tree of every folder holding present files, with their ancestors.
-pub fn folder_tree(conn: &Connection) -> Result<FolderTree> {
+pub fn folder_tree(catalog: &Catalog) -> Result<FolderTree> {
+    let conn = &catalog.conn;
     let (folders, bytes, components): (usize, usize, usize) =
         conn.query_row(FOLDER_SIZES, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
     let mut stmt = conn.prepare(FOLDER_COUNTS)?;

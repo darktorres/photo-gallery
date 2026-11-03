@@ -384,7 +384,7 @@ impl GalleryRust {
             let found = memo.remove(at);
             memo.insert(0, found);
         } else {
-            let details = match state::with_catalog(|c| browse::read::details(&c.conn, e.id)) {
+            let details = match state::with_catalog(|c| browse::read::details(c, e.id)) {
                 Ok(d) => d?,
                 Err(err) => {
                     eprintln!("reading {}: {err:#}", e.id.get());
@@ -468,7 +468,7 @@ impl qobject::GalleryModel {
         let shown = path.clone();
         loader::submit(
             Load::Grid,
-            move |c| browse::read::list_grid(&c.conn, &path, recursive, &query, sort),
+            move |c| browse::read::list_grid(c, &path, recursive, &query, sort),
             move |entries| {
                 let entries = entries.unwrap_or_else(|e| {
                     eprintln!("listing {shown}: {e:#}");
@@ -511,7 +511,7 @@ impl qobject::GalleryModel {
         let edited = std::mem::take(&mut self.as_mut().rust_mut().edited);
         for id in edited {
             if let Some(slot) = entries.iter_mut().find(|e| e.id == id) {
-                match state::with_catalog(|c| browse::read::entry(&c.conn, id)) {
+                match state::with_catalog(|c| browse::read::entry(c, id)) {
                     Ok(Some(fresh)) => *slot = fresh,
                     Ok(None) => {}
                     Err(e) => eprintln!("reloading {}: {e:#}", id.get()),
@@ -712,7 +712,7 @@ impl qobject::GalleryModel {
         if turns == Turns::NONE {
             return;
         }
-        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::queue_rotation(&c.conn, id, turns)) {
+        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::queue_rotation(c, id, turns)) {
             eprintln!("rotating: {e:#}");
             return;
         }
@@ -754,7 +754,7 @@ impl qobject::GalleryModel {
         let mut reshaped = false;
         for i in waiting {
             let id = self.entries[i].id;
-            match state::with_catalog(|c| browse::read::entry(&c.conn, id)) {
+            match state::with_catalog(|c| browse::read::entry(c, id)) {
                 Ok(Some(fresh)) if fresh != self.entries[i] => {
                     reshaped |= fresh.aspect() != self.entries[i].aspect();
                     self.as_mut().rust_mut().entries[i] = fresh;
@@ -790,7 +790,7 @@ impl qobject::GalleryModel {
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
         let write_back = settings::prefs().write_back;
-        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::set_rating(&c.conn, id, rating, write_back)) {
+        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::set_rating(c, id, rating, write_back)) {
             eprintln!("rating: {e:#}");
             return;
         }

@@ -1,9 +1,10 @@
 //! The grid's entries: what a list of files shows of each (`Entry`, 56 bytes), a single file's entry, and a
 //! folder's file list, filtered and sorted.
 
+use crate::Catalog;
 use anyhow::Result;
 use rusqlite::types::Type;
-use rusqlite::{Connection, OptionalExtension, params_from_iter};
+use rusqlite::{OptionalExtension, params_from_iter};
 
 use super::scope;
 use crate::query::{MediaType, Query, Sort};
@@ -200,7 +201,8 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
 }
 
 /// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
-pub fn entry(conn: &Connection, file_id: FileId) -> Result<Option<Entry>> {
+pub fn entry(catalog: &Catalog, file_id: FileId) -> Result<Option<Entry>> {
+    let conn = &catalog.conn;
     Ok(conn
         .prepare_cached(concat!("SELECT ", entry_columns!(), " FROM files f ", file_joins!(), " WHERE f.id = ?1"))?
         .query_row([file_id.get()], entry_from_row)
@@ -228,7 +230,8 @@ pub(super) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
 ///
 /// The list is sized by a count of the scope's files, read from the `files_order` index alone in the same read
 /// transaction (the background job writes meanwhile): exact without filters, an upper bound with them.
-pub fn list_grid(conn: &Connection, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
+pub fn list_grid(catalog: &Catalog, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
+    let conn = &catalog.conn;
     let (scope, mut values) = scope(merged, recursive);
     let tx = conn.unchecked_transaction()?;
     let bound: usize = tx.query_row(

@@ -151,7 +151,7 @@ impl Reader {
             // second copy of what the file cache holds. Listing it again then takes ~100 ms more (360-430 ms
             // against 210-310 ms, measured on the pinterest catalog).
             if let Ok(c) = &opened
-                && let Err(e) = c.conn.release_memory()
+                && let Err(e) = c.release_memory()
             {
                 eprintln!("loader: {e:#}");
             }

@@ -115,7 +115,7 @@ fn with_maker<R>(f: impl FnOnce(&mut Maker) -> Result<R>) -> Result<R> {
 }
 
 fn source(file_id: FileId) -> Result<FileSource> {
-    with_catalog(|c| browse::read::file_source(&c.conn, file_id))?.context("unknown file")
+    with_catalog(|c| browse::read::file_source(c, file_id))?.context("unknown file")
 }
 
 /// How long a request waits for a write of the app's into its file to end before it fails.
@@ -131,7 +131,7 @@ fn consistent<T>(file_id: FileId, mut read: impl FnMut(&FileSource) -> Result<T>
         let src = source(file_id)?;
         if !src.state.writing {
             let result = read(&src);
-            if with_catalog(|c| browse::read::file_state(&c.conn, file_id))? == Some(src.state) {
+            if with_catalog(|c| browse::read::file_state(c, file_id))? == Some(src.state) {
                 return result.map(|r| (src, r));
             }
         }
@@ -295,7 +295,7 @@ impl Upload {
 
 /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now (`browse::read::placeholder`).
 pub fn placeholder(file_id: FileId) -> Result<Upload> {
-    let p = with_catalog(|c| browse::read::placeholder(&c.conn, file_id))?.context("unknown file")?;
+    let p = with_catalog(|c| browse::read::placeholder(c, file_id))?.context("unknown file")?;
     let hash = p.hash.context("not imported yet")?;
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| anyhow::anyhow!("bad thumbhash"))?;
     let (rgba, w, h) = orient_pixels(rgba, w, h, 4, orientation::compose(1, p.turns));

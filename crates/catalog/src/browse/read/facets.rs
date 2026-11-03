@@ -1,7 +1,8 @@
 //! The filter bar's counts: how many of a folder's files match each value of each facet.
 
+use crate::Catalog;
 use anyhow::Result;
-use rusqlite::{Connection, params_from_iter};
+use rusqlite::params_from_iter;
 
 use strum::IntoEnumIterator;
 
@@ -24,7 +25,8 @@ pub struct Facets {
     pub borders: Vec<(BorderFacet, i64)>,
 }
 
-pub fn facets(conn: &Connection, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
+pub fn facets(catalog: &Catalog, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
+    let conn = &catalog.conn;
     let (scope, scope_values) = scope(merged, recursive);
     let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
         let cond = query.condition_without(skip);

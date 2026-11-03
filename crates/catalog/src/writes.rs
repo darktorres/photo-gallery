@@ -5,6 +5,7 @@
 //! catalog, a `WriteEffect`), `failed`, or `drop_gone`. Each call is one transaction or one statement, so no reader
 //! sees a write both done and still queued.
 
+use crate::Catalog;
 use anyhow::Result;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
@@ -16,7 +17,6 @@ use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
 use super::{DELETE_FILE_RATING, SET_FILE_RATING};
-use crate::Catalog;
 
 /// Failed writes are retried at most this many times (offline drives retry without counting).
 pub const MAX_ATTEMPTS: i64 = 5;
@@ -74,7 +74,8 @@ pub enum WriteEffect {
 /// Rate a file: 1–5, or `None` to clear. The catalog changes at once. With `write_back`, the rating is also queued
 /// for the file itself (`pg_ingest::writeback`), when its format can hold one and it differs from what the file
 /// holds; clearing writes 0 only into a file that holds a rating.
-pub fn set_rating(conn: &Connection, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
+pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
+    let conn = &catalog.conn;
     let tx = conn.unchecked_transaction()?;
     let file_id = file_id.get();
     match rating {
@@ -120,7 +121,8 @@ pub fn set_rating(conn: &Connection, file_id: FileId, rating: Option<Rating>, wr
 
 /// Turn a file `turns` quarter turns clockwise: queued for the writer, which turns the file itself losslessly where
 /// it can and keeps the turn in the catalog otherwise. Turns add up until written.
-pub fn queue_rotation(conn: &Connection, file_id: FileId, turns: Turns) -> Result<()> {
+pub fn queue_rotation(catalog: &Catalog, file_id: FileId, turns: Turns) -> Result<()> {
+    let conn = &catalog.conn;
     let tx = conn.unchecked_transaction()?;
     let (file_id, turns) = (file_id.get(), turns.get());
     tx.execute(
@@ -363,32 +365,32 @@ mod tests {
     #[test]
     fn ratings_and_turns_queue_for_the_file() {
         let c = library();
-        set_rating(&c.conn, FileId::new(2), Rating::new(3), true).unwrap();
+        set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
         assert_eq!(queued(&c, 2, "rating"), Some(3));
         // Back to what the file holds (nothing): nothing to write.
-        set_rating(&c.conn, FileId::new(2), None, true).unwrap();
+        set_rating(&c, FileId::new(2), None, true).unwrap();
         assert_eq!(queued(&c, 2, "rating"), None);
         // A file that holds 4: clearing writes 0.
         set_file_rating(&c.conn, FileId::new(1), Rating::new(4)).unwrap();
-        set_rating(&c.conn, FileId::new(1), None, true).unwrap();
+        set_rating(&c, FileId::new(1), None, true).unwrap();
         assert_eq!(queued(&c, 1, "rating"), Some(0));
         // BMP can't hold one; write-back off writes nothing.
-        set_rating(&c.conn, FileId::new(4), Rating::new(5), true).unwrap();
-        set_rating(&c.conn, FileId::new(3), Rating::new(5), false).unwrap();
+        set_rating(&c, FileId::new(4), Rating::new(5), true).unwrap();
+        set_rating(&c, FileId::new(3), Rating::new(5), false).unwrap();
         assert_eq!((queued(&c, 4, "rating"), queued(&c, 3, "rating")), (None, None));
         // Turns add up modulo 4; a full turn leaves nothing to do.
-        queue_rotation(&c.conn, FileId::new(1), Turns::new(1)).unwrap();
-        queue_rotation(&c.conn, FileId::new(1), Turns::new(1)).unwrap();
+        queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
+        queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
         assert_eq!(queued(&c, 1, "rotation"), Some(2));
-        queue_rotation(&c.conn, FileId::new(1), Turns::new(2)).unwrap();
+        queue_rotation(&c, FileId::new(1), Turns::new(2)).unwrap();
         assert_eq!(queued(&c, 1, "rotation"), None);
     }
 
     #[test]
     fn a_job_is_taken_once_it_settles_and_done_applies_its_effect() {
         let c = library();
-        set_rating(&c.conn, FileId::new(1), Rating::new(3), true).unwrap();
-        queue_rotation(&c.conn, FileId::new(2), Turns::new(1)).unwrap();
+        set_rating(&c, FileId::new(1), Rating::new(3), true).unwrap();
+        queue_rotation(&c, FileId::new(2), Turns::new(1)).unwrap();
         // Both are new: nothing is ready until they settle (a settle time of 0 takes them now).
         let first = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!((first.file_id, first.kind, first.value), (FileId::new(1), WriteKind::Rating, 3));
@@ -418,7 +420,7 @@ mod tests {
     #[test]
     fn a_failure_waits_longer_and_an_offline_drive_does_not_count() {
         let c = library();
-        set_rating(&c.conn, FileId::new(1), Rating::new(3), true).unwrap();
+        set_rating(&c, FileId::new(1), Rating::new(3), true).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
         failed(&c, &job, "denied", false).unwrap();
         // One attempt in: due two settle times later, not now.

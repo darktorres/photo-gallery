@@ -1,9 +1,10 @@
 //! What a reader checks a file against: its state (`FileState`), and what a thumbnail or the viewer needs of it
 //! (`FileSource`, `Placeholder`).
 
+use crate::Catalog;
 use anyhow::Result;
+use rusqlite::OptionalExtension;
 use rusqlite::types::ValueRef;
-use rusqlite::{Connection, OptionalExtension};
 
 use pg_model::analysis::ThumbHash;
 use pg_model::ids::FileId;
@@ -49,7 +50,8 @@ fn file_state_at(r: &rusqlite::Row, first: usize) -> rusqlite::Result<FileState>
 }
 
 /// The file's state now (`None`: no such file).
-pub fn file_state(conn: &Connection, file_id: FileId) -> Result<Option<FileState>> {
+pub fn file_state(catalog: &Catalog, file_id: FileId) -> Result<Option<FileState>> {
+    let conn = &catalog.conn;
     Ok(conn
         .prepare_cached(concat!("SELECT ", file_state_columns!(), " FROM files f WHERE f.id = ?1"))?
         .query_row([file_id.get()], |r| file_state_at(r, 0))
@@ -65,7 +67,8 @@ pub struct FileSource {
     pub poster_ms: Option<i64>,
 }
 
-pub fn file_source(conn: &Connection, file_id: FileId) -> Result<Option<FileSource>> {
+pub fn file_source(catalog: &Catalog, file_id: FileId) -> Result<Option<FileSource>> {
+    let conn = &catalog.conn;
     Ok(conn
         .prepare_cached(concat!(
             "SELECT fo.path || '\\' || f.name, f.kind, a.poster_ms, ",
@@ -92,7 +95,8 @@ pub struct Placeholder {
     pub turns: Turns,
 }
 
-pub fn placeholder(conn: &Connection, file_id: FileId) -> Result<Option<Placeholder>> {
+pub fn placeholder(catalog: &Catalog, file_id: FileId) -> Result<Option<Placeholder>> {
+    let conn = &catalog.conn;
     Ok(conn
         .prepare_cached(concat!(
             "SELECT a.thumbhash, (f.rotation - coalesce(a.rotation, f.rotation) + 4) % 4, ",

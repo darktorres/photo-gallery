@@ -105,7 +105,7 @@ fn ratings_and_turns_reach_the_files() {
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
-        pg_catalog::writes::set_rating(&c.conn, FileId::new(*id), Rating::new((n % 5 + 1) as u8), true).unwrap();
+        pg_catalog::writes::set_rating(&c, FileId::new(*id), Rating::new((n % 5 + 1) as u8), true).unwrap();
     }
     writer.wake();
     wait_for_queue(&c);
@@ -127,7 +127,7 @@ fn ratings_and_turns_reach_the_files() {
     // A turn: the files show turned; the analysis is redone with the new size.
     let originals: Vec<Rgb> = files.iter().map(|(p, _)| shown(p)).collect();
     for (id, _) in &before {
-        pg_catalog::writes::queue_rotation(&c.conn, FileId::new(*id), Turns::new(1)).unwrap();
+        pg_catalog::writes::queue_rotation(&c, FileId::new(*id), Turns::new(1)).unwrap();
     }
     writer.wake();
     wait_for_queue(&c);
@@ -170,9 +170,7 @@ fn ratings_and_turns_reach_the_files() {
     let placeholder_turns = |c: &Catalog| -> Vec<u8> {
         before
             .iter()
-            .map(|(id, _)| {
-                pg_catalog::browse::read::placeholder(&c.conn, FileId::new(*id)).unwrap().unwrap().turns.get()
-            })
+            .map(|(id, _)| pg_catalog::browse::read::placeholder(c, FileId::new(*id)).unwrap().unwrap().turns.get())
             .collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
@@ -268,7 +266,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     let error: Option<String> =
         c.conn.query_row("SELECT error FROM file_writes WHERE file_id = ?1", [id], |r| r.get(0)).unwrap();
     assert!(error.is_some(), "the failure is gone from the queue");
-    assert!(!pg_catalog::browse::read::file_state(&c.conn, FileId::new(id)).unwrap().unwrap().writing);
+    assert!(!pg_catalog::browse::read::file_state(&c, FileId::new(id)).unwrap().unwrap().writing);
 
     // And it stays given up: no more tries.
     std::thread::sleep(Duration::from_secs(3));

@@ -83,11 +83,11 @@ pub struct ViewRust {
 }
 
 fn session(key: &str) -> Option<String> {
-    state::with_catalog(|c| browse::read::session_get(&c.conn, key)).ok().flatten()
+    state::with_catalog(|c| browse::read::session_get(c, key)).ok().flatten()
 }
 
 fn view_names() -> QStringList {
-    state::with_catalog(|c| browse::read::views(&c.conn))
+    state::with_catalog(browse::read::views)
         .unwrap_or_else(|e| {
             eprintln!("views: {e:#}");
             Vec::new()
@@ -139,7 +139,7 @@ impl qobject::View {
         let (folder, recursive, query, sort) =
             (self.folder.to_string(), self.recursive.to_string(), query.to_string(), self.sort().to_json());
         let values = [("folder", &*folder), ("recursive", &*recursive), ("query", &*query), ("sort", &*sort)];
-        if let Err(e) = state::with_catalog(|c| browse::writes::session_set_many(&c.conn, &values)) {
+        if let Err(e) = state::with_catalog(|c| browse::writes::session_set_many(c, &values)) {
             eprintln!("session: {e:#}");
         }
     }
@@ -156,14 +156,14 @@ impl qobject::View {
             query: Query::from_json(&query.to_string()),
             sort: self.sort(),
         };
-        if let Err(e) = state::with_catalog(|c| browse::writes::save_view(&c.conn, &view)) {
+        if let Err(e) = state::with_catalog(|c| browse::writes::save_view(c, &view)) {
             eprintln!("saving view: {e:#}");
         }
         self.set_saved_views(view_names());
     }
 
     fn delete_view(self: Pin<&mut Self>, name: &QString) {
-        if let Err(e) = state::with_catalog(|c| browse::writes::delete_view(&c.conn, &name.to_string())) {
+        if let Err(e) = state::with_catalog(|c| browse::writes::delete_view(c, &name.to_string())) {
             eprintln!("deleting view: {e:#}");
         }
         self.set_saved_views(view_names());
@@ -171,9 +171,8 @@ impl qobject::View {
 
     fn apply_view(mut self: Pin<&mut Self>, name: &QString) -> QString {
         let name = name.to_string();
-        let found = state::with_catalog(|c| browse::read::views(&c.conn))
-            .ok()
-            .and_then(|vs| vs.into_iter().find(|v| v.name == name));
+        let found =
+            state::with_catalog(browse::read::views).ok().and_then(|vs| vs.into_iter().find(|v| v.name == name));
         let Some(v) = found else { return QString::default() };
         self.as_mut().set_folder(QString::from(&v.folder));
         self.as_mut().set_recursive(v.recursive);

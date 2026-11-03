@@ -1020,7 +1020,7 @@ impl Catalog {
 
     /// The file's state as the readers check it (`browse::read::FileState`), `None` when it isn't in the catalog.
     pub fn file_state(&self, file_id: FileId) -> Result<Option<browse::read::FileState>> {
-        browse::read::file_state(&self.conn, file_id)
+        browse::read::file_state(self, file_id)
     }
 
     /// Where a file is: its folder and name, as Windows spells it.
@@ -1030,6 +1030,11 @@ impl Catalog {
             [file_id.get()],
             |r| r.get(0),
         )?)
+    }
+
+    /// Give back this connection's page cache (the reader does it after each list it made).
+    pub fn release_memory(&self) -> rusqlite::Result<()> {
+        self.conn.release_memory()
     }
 
     /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
@@ -1922,12 +1927,12 @@ mod tests {
         BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0), Some(41), Some(0), Some(41)]);
-        assert_eq!(browse::read::border_sides(&c.conn, item.id).unwrap(), found.sides);
+        assert_eq!(browse::read::border_sides(&c, item.id).unwrap(), found.sides);
         assert!(c.pending_borders().unwrap().is_empty());
 
         // The grid's entry, the filters and the sort.
         let list = |c: &Catalog, q: Query| -> Vec<browse::read::Entry> {
-            browse::read::list_grid(&c.conn, "", true, &q, Sort::default()).unwrap()
+            browse::read::list_grid(c, "", true, &q, Sort::default()).unwrap()
         };
         let entry = list(&c, Query::default()).remove(0);
         assert_eq!(entry.borders, browse::read::Borders::Found);
@@ -1936,7 +1941,7 @@ mod tests {
         let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
         assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
         assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
-        let counts = browse::read::facets(&c.conn, "", true, &Query::default()).unwrap().borders;
+        let counts = browse::read::facets(&c, "", true, &Query::default()).unwrap().borders;
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
 
@@ -1957,7 +1962,7 @@ mod tests {
         BordersWriter::new(&tx).unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [Some(0); 4]);
-        assert!(browse::read::border_sides(&c.conn, item.id).unwrap().is_empty());
+        assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
         assert!(c.pending_borders().unwrap().is_empty());
         assert_eq!(list(&c, Query::default())[0].borders, browse::read::Borders::None);
         let marks: i64 = c.conn.query_row("SELECT count(*) FROM border_marks", [], |r| r.get(0)).unwrap();
@@ -1969,7 +1974,7 @@ mod tests {
         AnalysisWriter::new(&tx).unwrap().store_analysis(&item, &analysis).unwrap();
         tx.commit().unwrap();
         assert_eq!(cut(&c), [None; 4]);
-        assert!(browse::read::border_sides(&c.conn, item.id).unwrap().is_empty());
+        assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
         assert_eq!(c.pending_borders().unwrap().len(), 1);
     }
 
@@ -2020,8 +2025,8 @@ mod tests {
         }
         let names = |descending: bool| -> Vec<String> {
             let sort = Sort { key: SortKey::Borders, descending };
-            let entries = browse::read::list_grid(&c.conn, "", true, &Query::default(), sort).unwrap();
-            let path = |id| browse::read::details(&c.conn, id).unwrap().unwrap().path;
+            let entries = browse::read::list_grid(&c, "", true, &Query::default(), sort).unwrap();
+            let path = |id| browse::read::details(&c, id).unwrap().unwrap().path;
             entries.iter().map(|e| path(e.id).rsplit('\\').next().unwrap().to_string()).collect()
         };
         // Without a border (none found, or marked) last, by name, either way.
@@ -2218,7 +2223,7 @@ mod tests {
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
         let stars = Rating::new(n).filter(|r| r.get() > 0);
-        writes::set_rating(&c.conn, FileId::new(id), stars, false).unwrap();
+        writes::set_rating(c, FileId::new(id), stars, false).unwrap();
     }
 
     #[test]

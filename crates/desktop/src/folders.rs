@@ -275,18 +275,14 @@ impl qobject::FolderModel {
             this.generation
         };
         let model = self.qt_thread();
-        loader::submit(
-            Kind::Tree,
-            |c| browse::read::folder_tree(&c.conn),
-            move |tree| {
-                let tree = tree.unwrap_or_else(|e| {
-                    eprintln!("folder tree: {e:#}");
-                    FolderTree::default()
-                });
-                // Fails only when the model is gone (the window closing).
-                let _ = model.queue(move |model| model.apply(generation, tree));
-            },
-        );
+        loader::submit(Kind::Tree, browse::read::folder_tree, move |tree| {
+            let tree = tree.unwrap_or_else(|e| {
+                eprintln!("folder tree: {e:#}");
+                FolderTree::default()
+            });
+            // Fails only when the model is gone (the window closing).
+            let _ = model.queue(move |model| model.apply(generation, tree));
+        });
     }
 
     fn apply(mut self: Pin<&mut Self>, generation: u64, tree: FolderTree) {

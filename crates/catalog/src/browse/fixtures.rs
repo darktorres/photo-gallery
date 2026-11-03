@@ -34,13 +34,13 @@ pub(crate) fn library() -> crate::Catalog {
                 params![id, size, mtime, format],
             )
             .unwrap();
-        set_rating(&c.conn, FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
+        set_rating(&c, FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
     }
     c
 }
 
 pub(crate) fn ids(c: &crate::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
-    list_grid(&c.conn, folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
+    list_grid(c, folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
 }
 
 pub(crate) fn by(key: SortKey, descending: bool) -> Sort {

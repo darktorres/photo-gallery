@@ -1,8 +1,9 @@
 //! What the viewer's details panel and the border overlay show of one file.
 
+use crate::Catalog;
 use anyhow::Result;
+use rusqlite::OptionalExtension;
 use rusqlite::types::Type;
-use rusqlite::{Connection, OptionalExtension};
 
 use pg_model::detection;
 use pg_model::format::Format;
@@ -20,7 +21,8 @@ pub struct Details {
     pub border_sides: detection::Sides,
 }
 
-pub fn details(conn: &Connection, file_id: FileId) -> Result<Option<Details>> {
+pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
+    let conn = &catalog.conn;
     let found = conn
         .prepare_cached(
             "SELECT fo.path || '\\' || f.name, f.size, f.kind, a.format FROM files f
@@ -40,14 +42,15 @@ pub fn details(conn: &Connection, file_id: FileId) -> Result<Option<Details>> {
         })
         .optional()?;
     match found {
-        Some(d) => Ok(Some(Details { border_sides: border_sides(conn, file_id)?, ..d })),
+        Some(d) => Ok(Some(Details { border_sides: border_sides(catalog, file_id)?, ..d })),
         None => Ok(None),
     }
 }
 
 /// The sides detection found in a file, as the catalog keeps them. The keys are read in place. A file with more
 /// than detection finds (`detection::MAX_SIDES`) can only be in a damaged catalog: an error.
-pub fn border_sides(conn: &Connection, file_id: FileId) -> Result<detection::Sides> {
+pub fn border_sides(catalog: &Catalog, file_id: FileId) -> Result<detection::Sides> {
+    let conn = &catalog.conn;
     let mut stmt = conn.prepare_cached(
         "SELECT pass, edge, kind, depth, color, straight, dev, drift, rejected FROM border_sides WHERE file_id = ?1
          ORDER BY pass, CASE edge WHEN 'top' THEN 0 WHEN 'bottom' THEN 1 WHEN 'left' THEN 2 ELSE 3 END",

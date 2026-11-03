@@ -1,7 +1,8 @@
 //! The saved views and the session, as they were saved.
 
+use crate::Catalog;
 use anyhow::Result;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::OptionalExtension;
 
 use crate::query::{Query, Sort};
 use pg_model::path::name_key;
@@ -18,7 +19,8 @@ pub struct View {
 }
 
 /// The saved views, by name as the grid orders file names (`name_key`).
-pub fn views(conn: &Connection) -> Result<Vec<View>> {
+pub fn views(catalog: &Catalog) -> Result<Vec<View>> {
+    let conn = &catalog.conn;
     let mut stmt = conn.prepare("SELECT name, folder, recursive, query, sort FROM views")?;
     let rows = stmt.query_map([], |r| {
         Ok(View {
@@ -35,6 +37,7 @@ pub fn views(conn: &Connection) -> Result<Vec<View>> {
 }
 
 /// Where the user was (`session` table): read at start, written as they move.
-pub fn session_get(conn: &Connection, key: &str) -> Result<Option<String>> {
+pub fn session_get(catalog: &Catalog, key: &str) -> Result<Option<String>> {
+    let conn = &catalog.conn;
     Ok(conn.query_row("SELECT value FROM session WHERE key = ?1", [key], |r| r.get(0)).optional()?)
 }

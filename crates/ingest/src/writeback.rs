@@ -22,7 +22,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
 use pg_catalog::Catalog;
-use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, WriteEffect, WriteKind};
+use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect, WriteKind};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
@@ -220,18 +220,18 @@ impl Inner {
         if kind == Kind::Video.key() && job.temp.is_none() {
             match job.kind {
                 WriteKind::Turns => self.keep_turn_in_catalog(catalog, job)?,
-                WriteKind::Rating => writes::done(catalog, job, job.value, WriteEffect::Nothing)?,
+                WriteKind::Rating => writes::done(catalog, job, WriteEffect::Nothing)?,
             }
             return Ok(());
         }
 
-        if let Some((temp, written)) = &job.temp {
+        if let Some((temp, _)) = &job.temp {
             // Interrupted after the new content was complete: finish the copy. What the file held before is
             // unknown now, so its analysis is redone rather than carried over.
             copy_into(Path::new(temp), &path)?;
             let after = stat(&path)?;
-            let effect = WriteEffect::Rewritten { before: (-1, -1), after, metadata_only: None };
-            writes::done(catalog, job, *written, effect)?;
+            let rewrite = Rewrite { before: (-1, -1), after, metadata_only: None };
+            writes::done(catalog, job, Self::rewrote(job, rewrite))?;
             if job.kind == WriteKind::Turns {
                 self.pixels_changed();
             }
@@ -294,8 +294,8 @@ impl Inner {
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
         let after = stat(&path)?;
-        let effect = WriteEffect::Rewritten { before, after, metadata_only: new_hash };
-        writes::done(catalog, job, job.value, effect)?;
+        let rewrite = Rewrite { before, after, metadata_only: new_hash };
+        writes::done(catalog, job, Self::rewrote(job, rewrite))?;
         if job.kind == WriteKind::Rating {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
@@ -309,9 +309,18 @@ impl Inner {
         Ok(())
     }
 
+    /// The effect of a job that rewrote its file: the rating it now holds, or the turns it shows.
+    fn rewrote(job: &Job, rewrite: Rewrite) -> WriteEffect {
+        match job.kind {
+            WriteKind::Rating => WriteEffect::FileRating { rewrite, rating: (job.value as u8).min(5) },
+            WriteKind::Turns => WriteEffect::TurnedBack { rewrite, turns: Turns::new(job.value.rem_euclid(4) as u8) },
+        }
+    }
+
     /// A turn the file can't hold is kept in the catalog instead.
     fn keep_turn_in_catalog(&self, catalog: &Catalog, job: &Job) -> Result<()> {
-        writes::done(catalog, job, job.value, WriteEffect::KeptInCatalog)?;
+        let turns = Turns::new(job.value.rem_euclid(4) as u8);
+        writes::done(catalog, job, WriteEffect::KeptInCatalog(turns))?;
         self.pixels_changed();
         Ok(())
     }

@@ -1777,7 +1777,7 @@ mod tests {
     /// A turn the file can't hold, written by the writer: the catalog keeps it.
     fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
         let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: turns, temp: None, attempts: 0 };
-        writes::done(c, &job, turns, writes::WriteEffect::KeptInCatalog).unwrap();
+        writes::done(c, &job, writes::WriteEffect::KeptInCatalog(Turns::new(turns as u8))).unwrap();
     }
 
     fn state(c: &Catalog, id: FileId) -> (bool, i64) {
@@ -2186,8 +2186,8 @@ mod tests {
         let rewritten = |c: &Catalog, before, after, metadata_only| {
             // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
             let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
-            let effect = writes::WriteEffect::Rewritten { before, after, metadata_only };
-            writes::done(c, &job, 0, effect).unwrap();
+            let rewrite = writes::Rewrite { before, after, metadata_only };
+            writes::done(c, &job, writes::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
         };
         rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
         assert!(!state(&c, id).0);

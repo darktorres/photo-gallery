@@ -56,17 +56,26 @@ pub struct Job {
     pub attempts: i64,
 }
 
+/// A file a write rewrote: its (size, mtime) on disk before and after (`before` is (-1, -1) when it isn't known), and
+/// the BLAKE3 of the new bytes when only metadata changed (the analysis stays valid, and follows the file). `None` when
+/// the pixels did, so the analysis is redone.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rewrite {
+    pub before: (i64, i64),
+    pub after: (i64, i64),
+    pub metadata_only: Option<[u8; 32]>,
+}
+
 /// What a finished write changed in the catalog. Applied in the transaction that takes the job off the queue
-/// (`done`), so the catalog and the queue never disagree.
+/// (`done`), so the catalog and the queue never disagree. The effect's value is the job's: `done` checks it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriteEffect {
-    /// The file was rewritten, and now holds the job's value: its rating, or the turns it shows upright. `before` and
-    /// `after` are its (size, mtime) on disk; `before` is (-1, -1) when it isn't known. `metadata_only` is the BLAKE3
-    /// of the new bytes when only metadata changed (the analysis stays valid, and follows the file); `None` when the
-    /// pixels did, so the analysis is redone.
-    Rewritten { before: (i64, i64), after: (i64, i64), metadata_only: Option<[u8; 32]> },
+    /// The rating is in the file, which was rewritten to hold it (`rating`, 0 to 5).
+    FileRating { rewrite: Rewrite, rating: u8 },
+    /// The turns are in the file, which was rewritten to show them: the analysis is turned back to match.
+    TurnedBack { rewrite: Rewrite, turns: Turns },
     /// The file can't hold the turns: the catalog keeps them (`files.rotation`).
-    KeptInCatalog,
+    KeptInCatalog(Turns),
     /// Nothing to record: the write is done, and the catalog already says so.
     Nothing,
 }
@@ -208,25 +217,29 @@ pub fn record_temp(catalog: &Catalog, job: &Job, temp: &str, value: i64) -> Resu
     Ok(())
 }
 
-/// The job is written: `written` (a rating, or the turns) is now in the file or the catalog. `effect` changes the
+/// The job is written: its value (a rating, or the turns) is now in the file or the catalog. `effect` changes the
 /// catalog in the same transaction that takes the job off the queue (a rating or turns changed again meanwhile stays
 /// queued for the rest).
-pub fn done(catalog: &Catalog, job: &Job, written: i64, effect: WriteEffect) -> Result<()> {
+pub fn done(catalog: &Catalog, job: &Job, effect: WriteEffect) -> Result<()> {
     let conn = &catalog.conn;
     let (file_id, kind) = (job.file_id.get(), job.kind.key());
+    // What the queue records as written: the job's rating, or its turns.
+    let written = job.value;
     let tx = conn.unchecked_transaction()?;
     match effect {
-        WriteEffect::Rewritten { before, after, metadata_only } => {
-            file_rewritten(&tx, job.file_id, before, after, metadata_only)?;
-            match job.kind {
-                WriteKind::Rating => set_file_rating(&tx, job.file_id, Rating::new((written as u8).min(5)))?,
-                WriteKind::Turns => {
-                    analysis_turned_back(&tx, job.file_id, Turns::new(written.rem_euclid(4) as u8))?;
-                }
-            }
+        WriteEffect::FileRating { rewrite, rating } => {
+            debug_assert!(job.kind == WriteKind::Rating && i64::from(rating) == written);
+            file_rewritten(&tx, job.file_id, rewrite.before, rewrite.after, rewrite.metadata_only)?;
+            set_file_rating(&tx, job.file_id, Rating::new(rating))?;
         }
-        WriteEffect::KeptInCatalog => {
-            add_catalog_rotation(&tx, job.file_id, Turns::new(written.rem_euclid(4) as u8))?;
+        WriteEffect::TurnedBack { rewrite, turns } => {
+            debug_assert!(job.kind == WriteKind::Turns && i64::from(turns.get()) == written.rem_euclid(4));
+            file_rewritten(&tx, job.file_id, rewrite.before, rewrite.after, rewrite.metadata_only)?;
+            analysis_turned_back(&tx, job.file_id, turns)?;
+        }
+        WriteEffect::KeptInCatalog(turns) => {
+            debug_assert!(job.kind == WriteKind::Turns && i64::from(turns.get()) == written.rem_euclid(4));
+            add_catalog_rotation(&tx, job.file_id, turns)?;
         }
         WriteEffect::Nothing => {}
     }
@@ -396,14 +409,15 @@ mod tests {
         assert_eq!((first.file_id, first.kind, first.value), (FileId::new(1), WriteKind::Rating, 3));
         // The rating is in the file: the catalog records it, and the job leaves the queue.
         let after = (11, 101);
-        done(&c, &first, 3, WriteEffect::Rewritten { before: (10, 1), after, metadata_only: Some([7; 32]) }).unwrap();
+        let rewrite = Rewrite { before: (10, 1), after, metadata_only: Some([7; 32]) };
+        done(&c, &first, WriteEffect::FileRating { rewrite, rating: 3 }).unwrap();
         assert_eq!(queued(&c, 1, "rating"), None);
         let stored: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(stored, 11);
         // The turn can't go in the file: the catalog keeps it, and the upright size swaps at once.
         let turn = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!((turn.file_id, turn.kind, turn.value), (FileId::new(2), WriteKind::Turns, 1));
-        done(&c, &turn, 1, WriteEffect::KeptInCatalog).unwrap();
+        done(&c, &turn, WriteEffect::KeptInCatalog(Turns::new(1))).unwrap();
         assert_eq!(queued(&c, 2, "rotation"), None);
         let (rotation, width): (i64, i64) = c
             .conn

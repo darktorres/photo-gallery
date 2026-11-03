@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 
 use pg_catalog::Catalog;
-use pg_ingest::control::Control;
-use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::Options;
 use pg_model::ids::FileId;
 
 /// A letterboxed picture (black bars at the top and bottom, the content between them).

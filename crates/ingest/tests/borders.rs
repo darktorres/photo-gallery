@@ -5,9 +5,9 @@
 use std::path::Path;
 
 use pg_catalog::Catalog;
-use pg_ingest::control::Control;
-use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, import, scan};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::Options;
 
 fn due(c: &Catalog, name: &str) -> i64 {
     pg_catalog::fixture::connection(c)

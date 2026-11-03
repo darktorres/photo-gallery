@@ -12,10 +12,10 @@ use pg_edit::crop::crop;
 use pg_model::path::{PathArena, PathRef, is_under};
 use pg_platform::verbatim::verbatim_wide;
 
-use crate::control::Control;
-use crate::pipeline::{self, Options};
 use crate::writeback::{exiftool_program, stat};
 use pg_exiftool::ExifTool;
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::{self, Options};
 
 pub struct Stats {
     pub saved: usize,

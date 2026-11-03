@@ -13,8 +13,8 @@ use pg_model::analysis::Analyzed;
 use pg_model::media::Kind;
 use pg_model::pdq::MIN_QUALITY;
 
-use crate::control::Control;
-use crate::pipeline::{self, Options};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 500;
 

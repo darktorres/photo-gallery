@@ -11,8 +11,8 @@ use pg_catalog::Catalog;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
-use crate::control::Control;
-use crate::pipeline::{self, Options};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 200;
 

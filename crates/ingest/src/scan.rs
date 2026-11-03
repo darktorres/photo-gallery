@@ -15,7 +15,7 @@ use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_platform::dir::{Dir, Lister};
 
-use crate::control::Control;
+use pg_jobs::control::Control;
 
 /// Folders never descended into.
 const SKIP_DIRS: &[&str] = &["$RECYCLE.BIN", "System Volume Information", "_quarantine"];

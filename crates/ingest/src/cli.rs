@@ -12,9 +12,10 @@ use pg_catalog::Catalog;
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
-use crate::control::Control;
 use crate::writeback::Writer;
-use crate::{borders, dups, import, pipeline, scan, thumbs};
+use crate::{borders, dups, import, scan, thumbs};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline;
 
 pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
 

@@ -22,9 +22,9 @@ use pg_model::path::is_under;
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
-use crate::control::{Control, Progress};
-use crate::pipeline::Options;
 use crate::{borders, crop, import, scan, thumbs};
+use pg_jobs::control::{Control, Progress};
+use pg_jobs::pipeline::Options;
 
 #[derive(Default)]
 struct Queue {

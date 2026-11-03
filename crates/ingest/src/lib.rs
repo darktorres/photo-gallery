@@ -3,11 +3,9 @@
 
 pub mod borders;
 pub mod cli;
-pub mod control;
 pub mod crop;
 pub mod dups;
 pub mod import;
-pub mod pipeline;
 pub mod runner;
 pub mod scan;
 pub mod thumbs;

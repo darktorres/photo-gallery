@@ -10,9 +10,9 @@ use std::path::Path;
 
 use pg_catalog::Catalog;
 use pg_codec::decode::{Decoder, MinSize};
-use pg_ingest::control::Control;
-use pg_ingest::pipeline::Options;
 use pg_ingest::{borders, crop, import, scan};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::Options;
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::path::PathArena;

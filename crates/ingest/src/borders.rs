@@ -17,8 +17,8 @@ use pg_model::detection::{self, Side};
 use pg_model::media::{Ext, Kind};
 use pg_platform::verbatim::verbatim_wide;
 
-use crate::control::Control;
-use crate::pipeline::{self, Options};
+use pg_jobs::control::Control;
+use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 500;
 

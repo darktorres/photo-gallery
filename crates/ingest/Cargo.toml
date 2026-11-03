@@ -20,9 +20,9 @@ pg-exiftool = { path = "../exiftool" }
 pg-video = { path = "../video" }
 pg-metadata = { path = "../metadata" }
 pg-platform = { path = "../platform" }
+pg-jobs = { path = "../jobs" }
 anyhow.workspace = true
 clap.workspace = true
-crossbeam-channel.workspace = true
 rusqlite.workspace = true
 serde_json.workspace = true
 

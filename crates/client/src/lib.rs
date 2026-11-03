@@ -2,5 +2,6 @@
 
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
+pub mod grid;
 pub mod layout;
 pub mod tree;

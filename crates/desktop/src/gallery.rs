@@ -278,7 +278,8 @@ use cxx_qt_lib::{
 };
 use pg_catalog::browse::{self};
 use pg_catalog::query::from_json;
-use pg_client::layout::{self, Placement, Row, RowChange};
+use pg_client::grid::{Arrival, Changed, Grid, Plan, Shape};
+use pg_client::layout;
 use pg_model::details::Details;
 use pg_model::detection::Class;
 use pg_model::grid::{Borders, Entry};
@@ -299,18 +300,6 @@ const ROLE_HEIGHT: i32 = 257;
 /// knows from it whether its cells show that row as it is.
 const ROLE_VERSION: i32 = 258;
 
-/// What changed in the items since the rows were last shown (`lay_out`).
-enum Changed<'a> {
-    /// Nothing: a new size.
-    Nothing,
-    /// These items (turned, rewritten).
-    Items(&'a [usize]),
-    /// The list was read again (the same folder): what it was.
-    List(&'a [Entry]),
-    /// Another list: every row is made again (a reset, which takes the view to the top).
-    All,
-}
-
 pub struct GalleryRust {
     count: i32,
     revision: i32,
@@ -318,30 +307,11 @@ pub struct GalleryRust {
     current: i32,
     viewing: i32,
     anchor: i32,
-    entries: Vec<Entry>,
+    /// The list, its rows and the list session (`pg_client::grid`).
+    grid: Grid,
     /// The details read last, of at most two files (the selection's and the viewer's), newest first. Emptied
     /// whenever a list is shown or a file changes.
     details: RefCell<Vec<(FileId, Details)>>,
-    rows: Vec<Row>,
-    /// The last layout's rows, kept for their capacity: a relayout is made into it, then swapped in.
-    spare_rows: Vec<Row>,
-    /// Per row (`ROLE_VERSION`).
-    versions: Vec<u32>,
-    /// The last version given.
-    last_version: u32,
-    spacing: f64,
-    width: f64,
-    row_height: f64,
-    /// The latest list asked for; older ones arriving are dropped.
-    generation: u64,
-    /// Whether it keeps the selection: every request since the last list shown was a refresh of the same folder.
-    keep: bool,
-    /// A list that arrived while the viewer was open (its generation, its entries).
-    held: Option<(u64, Vec<Entry>)>,
-    /// Files rated or turned since it was asked for (its snapshot may predate them), and whether turns were
-    /// written meanwhile (`refreshTurned`).
-    edited: Vec<FileId>,
-    turned: bool,
 }
 
 impl Default for GalleryRust {
@@ -353,32 +323,16 @@ impl Default for GalleryRust {
             current: -1,
             viewing: -1,
             anchor: -1,
-            entries: Vec::new(),
+            grid: Grid::default(),
             details: RefCell::new(Vec::new()),
-            rows: Vec::new(),
-            spare_rows: Vec::new(),
-            versions: Vec::new(),
-            last_version: 0,
-            spacing: 0.0,
-            width: 0.0,
-            row_height: 0.0,
-            generation: 0,
-            keep: false,
-            held: None,
-            edited: Vec::new(),
-            turned: false,
         }
     }
 }
 
 impl GalleryRust {
-    fn item(&self, i: i32) -> Option<&Entry> {
-        usize::try_from(i).ok().and_then(|i| self.entries.get(i))
-    }
-
     /// `f` of an item's entry and details; `None` without the item, or when its file is gone from the catalog.
     fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
-        let e = self.item(item)?;
+        let e = self.grid.item(item)?;
         let mut memo = self.details.borrow_mut();
         if let Some(at) = memo.iter().position(|(id, _)| *id == e.id) {
             let found = memo.remove(at);
@@ -401,34 +355,15 @@ impl GalleryRust {
     fn forget_details(&mut self) {
         self.details.get_mut().clear();
     }
-
-    fn new_version(&mut self) -> u32 {
-        self.last_version += 1;
-        self.last_version
-    }
-
-    /// The layout's rows as they are placed: the items' clamped aspects, read from the entries.
-    fn placement(&self) -> Placement<'_, impl Fn(usize) -> f64 + '_> {
-        Placement {
-            rows: &self.rows,
-            spacing: self.spacing,
-            len: self.entries.len(),
-            aspect: |i: usize| layout::clamp_aspect(self.entries[i].aspect()),
-        }
-    }
-
-    fn row_index(&self, item: usize) -> usize {
-        self.placement().row_index(item)
-    }
 }
 
 impl qobject::GalleryModel {
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let Some(row) = self.rows.get(index.row() as usize) else { return QVariant::default() };
+        let Some(row) = self.grid.rows().get(index.row() as usize) else { return QVariant::default() };
         match role {
             ROLE_SPAN => QVariant::from(&QPointF::new(row.first as f64, row.count as f64)),
             ROLE_HEIGHT => QVariant::from(&row.height),
-            ROLE_VERSION => QVariant::from(&(self.versions[index.row() as usize] as i32)),
+            ROLE_VERSION => QVariant::from(&(self.grid.version(index.row() as usize) as i32)),
             _ => QVariant::default(),
         }
     }
@@ -442,7 +377,7 @@ impl qobject::GalleryModel {
     }
 
     fn row_count(&self, _parent: &QModelIndex) -> i32 {
-        self.rows.len() as i32
+        self.grid.rows().len() as i32
     }
 
     fn open_folder(
@@ -453,16 +388,8 @@ impl qobject::GalleryModel {
         sort: &QString,
         keep: bool,
     ) {
-        let generation = {
-            let mut this = self.as_mut().rust_mut();
-            this.generation += 1;
-            // A folder change still on its way stays one: a refresh asked meanwhile mustn't keep a selection made
-            // in another folder.
-            this.keep = keep && (this.keep || !this.loading);
-            this.edited.clear();
-            this.turned = false;
-            this.generation
-        };
+        let loading = self.loading;
+        let generation = self.as_mut().rust_mut().grid.request(keep, loading);
         self.as_mut().set_loading(true);
         let path = merged.to_string();
         let (query, sort) = (from_json::<Query>(&query.to_string()), from_json::<Sort>(&sort.to_string()));
@@ -489,7 +416,7 @@ impl qobject::GalleryModel {
         self.as_mut().rust_mut().viewing = value;
         self.as_mut().viewing_changed();
         if value < 0
-            && let Some((generation, entries)) = self.as_mut().rust_mut().held.take()
+            && let Some((generation, entries)) = self.as_mut().rust_mut().grid.release_held()
         {
             self.apply(generation, entries);
         }
@@ -497,137 +424,92 @@ impl qobject::GalleryModel {
 
     /// Show a list `open_folder` asked for, unless a newer one was asked for since; while the viewer is open, when
     /// it closes.
-    fn apply(mut self: Pin<&mut Self>, generation: u64, mut entries: Vec<Entry>) {
-        if generation != self.generation {
-            return;
-        }
-        if self.viewing >= 0 {
-            self.as_mut().rust_mut().held = Some((generation, entries));
-            return;
-        }
+    fn apply(mut self: Pin<&mut Self>, generation: u64, entries: Vec<Entry>) {
+        let viewing = self.viewing >= 0;
+        let entries = match self.as_mut().rust_mut().grid.arrive(generation, entries, viewing, fresh_entry) {
+            Arrival::Ready(entries) => entries,
+            Arrival::Stale | Arrival::Held => return,
+        };
         self.as_mut().about_to_load();
-        let keep = self.keep;
-        let (current, anchor) = (self.id_at(self.current), self.id_at(self.anchor));
-        // What was rated or turned since the list was read, as the catalog has it now (this thread's connection
-        // sees its own writes).
-        let edited = std::mem::take(&mut self.as_mut().rust_mut().edited);
-        for id in edited {
-            if let Some(slot) = entries.iter_mut().find(|e| e.id == id) {
-                match state::with_catalog(|c| browse::read::entry(c, id)) {
-                    Ok(Some(fresh)) => *slot = fresh,
-                    Ok(None) => {}
-                    Err(e) => eprintln!("reloading {}: {e:#}", id.get()),
-                }
-            }
-        }
+        let keep = self.grid.keep();
+        let (current, anchor) = (self.grid.id_at(self.current), self.grid.id_at(self.anchor));
         let count = entries.len() as i32;
         let shown = {
             let mut this = self.as_mut().rust_mut();
             this.forget_details();
-            std::mem::replace(&mut this.entries, entries)
+            this.grid.swap_entries(entries)
         };
         self.as_mut().set_count(count);
         // The same folder read again: only the rows that changed change.
-        self.as_mut().lay_out(if keep { Changed::List(&shown) } else { Changed::All });
+        let changed = if keep { Changed::List(&shown) } else { Changed::All };
+        let plan = self.as_mut().rust_mut().grid.plan(changed);
+        self.as_mut().show(plan);
         // Before the turns are read again: they aren't on their way any more.
         self.as_mut().set_loading(false);
-        if std::mem::take(&mut self.as_mut().rust_mut().turned) {
+        if self.as_mut().rust_mut().grid.take_turned() {
             self.as_mut().refresh_turned();
         }
         // The selection stays with its file; if the file left the list (rated out of "Unrated"), what took its place.
-        let new_current = match (keep, self.current) {
-            (false, _) | (true, -1) => -1,
-            (true, old) => {
-                let i = self.position_of(current);
-                if i >= 0 || count == 0 { i } else { old.min(count - 1) }
-            }
-        };
-        let kept = if keep { self.position_of(anchor) } else { -1 };
-        self.as_mut().set_current(new_current);
+        let selection = self.grid.selection_after(keep, self.current, current, anchor);
+        self.as_mut().set_current(selection.current);
         self.as_mut().set_anchor(-1);
         let revision = self.revision + 1;
         self.as_mut().set_revision(revision);
         pg_trace::pg_stage_list_shown();
-        self.loaded(kept);
+        self.loaded(selection.anchor);
     }
 
     fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
-        {
+        let plan = {
             let mut this = self.as_mut().rust_mut();
-            (this.width, this.row_height, this.spacing) = (width, row_height, spacing);
-        }
-        self.lay_out(Changed::Nothing);
+            this.grid.set_size(width, row_height, spacing);
+            this.grid.plan(Changed::Nothing)
+        };
+        self.show(plan);
     }
 
-    /// Lay the items out again at the current size, and show what changed. Another list is a reset. Otherwise only
-    /// the rows that changed change (in place, inserted or removed: `layout::RowChange`), and the others keep their
-    /// delegates: ListView keeps the first row in view where it is through them, where a reset takes the view to
-    /// the top and fills it there.
-    fn lay_out(mut self: Pin<&mut Self>, changed: Changed) {
-        let mut rows = std::mem::take(&mut self.as_mut().rust_mut().spare_rows);
-        if self.width > 0.0 && self.row_height > 0.0 {
-            let (width, height, spacing) = (self.width, self.row_height, self.spacing);
-            layout::justify_into(&mut rows, self.entries.iter().map(Entry::aspect), width, height, spacing);
-        } else {
-            rows.clear();
-        }
-        if let Changed::All = changed {
-            self.as_mut().begin_reset_model();
-            {
-                let mut this = self.as_mut().rust_mut();
-                this.spare_rows = std::mem::replace(&mut this.rows, rows);
-                let (count, version) = (this.rows.len(), this.new_version());
-                this.versions.clear();
-                this.versions.resize(count, version);
-            }
-            self.end_reset_model();
-            return;
-        }
-        let change = RowChange::between(&self.rows, &rows);
-        let updates = change.updates(&self.rows, &rows, |span| match changed {
-            Changed::Nothing | Changed::All => false,
-            Changed::Items(items) => items.iter().any(|i| span.contains(i)),
-            Changed::List(shown) => shown.get(span.clone()) != self.entries.get(span),
-        });
-        let version = self.as_mut().rust_mut().new_version();
+    /// Puts a laid-out list in (`Grid::plan`). A reset, an insert or a remove is made around the change of the rows,
+    /// as Qt wants it; then each row that changed in place is sent its changed roles, in one change per run of rows.
+    /// The others keep their delegates: ListView keeps the first row in view where it is through them, where a reset
+    /// takes the view to the top and fills it there.
+    fn show(mut self: Pin<&mut Self>, plan: Plan) {
         let root = QModelIndex::default();
-        let at = change.changed.end;
-        let swap = |mut this: Pin<&mut Self>, rows: Vec<Row>| {
-            let mut this = this.as_mut().rust_mut();
-            this.spare_rows = std::mem::replace(&mut this.rows, rows);
+        let updates = match plan.shape() {
+            Shape::Reset => {
+                self.as_mut().begin_reset_model();
+                let updates = self.as_mut().rust_mut().grid.commit(plan);
+                self.as_mut().end_reset_model();
+                updates
+            }
+            Shape::Insert(rows) => {
+                self.as_mut().begin_insert_rows(&root, rows.start as i32, rows.end as i32 - 1);
+                let updates = self.as_mut().rust_mut().grid.commit(plan);
+                self.as_mut().end_insert_rows();
+                updates
+            }
+            Shape::Remove(rows) => {
+                self.as_mut().begin_remove_rows(&root, rows.start as i32, rows.end as i32 - 1);
+                let updates = self.as_mut().rust_mut().grid.commit(plan);
+                self.as_mut().end_remove_rows();
+                updates
+            }
+            Shape::Same => self.as_mut().rust_mut().grid.commit(plan),
         };
-        if change.inserted > 0 {
-            let last = at + change.inserted - 1;
-            self.as_mut().begin_insert_rows(&root, at as i32, last as i32);
-            swap(self.as_mut(), rows);
-            self.as_mut().rust_mut().versions.splice(at..at, std::iter::repeat_n(version, change.inserted));
-            self.as_mut().end_insert_rows();
-        } else if change.removed > 0 {
-            let last = at + change.removed - 1;
-            self.as_mut().begin_remove_rows(&root, at as i32, last as i32);
-            swap(self.as_mut(), rows);
-            self.as_mut().rust_mut().versions.drain(at..=last);
-            self.as_mut().end_remove_rows();
-        } else {
-            swap(self.as_mut(), rows);
-        }
         // A row's new span and its new version can come in one change: the QML reads its items again either way, so
         // every role that changed is signalled, in the same change.
-        for (range, update) in updates {
+        for update in updates {
             let mut roles = Vec::with_capacity(3);
             if update.span {
                 roles.push(ROLE_SPAN);
             }
-            if update.items {
+            if update.version {
                 roles.push(ROLE_VERSION);
             }
-            if update.span || !update.items || update.height {
+            if update.height {
                 roles.push(ROLE_HEIGHT);
             }
-            if update.items {
-                self.as_mut().rust_mut().versions[range.clone()].fill(version);
-            }
-            let (top, bottom) = (self.index(range.start as i32, 0, &root), self.index(range.end as i32 - 1, 0, &root));
+            let (top, bottom) =
+                (self.index(update.rows.start as i32, 0, &root), self.index(update.rows.end as i32 - 1, 0, &root));
             self.as_mut().data_changed(&top, &bottom, &QList::from(roles.as_slice()));
         }
     }
@@ -635,45 +517,27 @@ impl qobject::GalleryModel {
     /// Items changed (rated, turned, marked) without changing shape: the cells of their rows read them again
     /// (`ROLE_VERSION`).
     fn items_changed(mut self: Pin<&mut Self>, items: &[usize]) {
-        if self.rows.is_empty() {
-            return;
-        }
-        let last = self.rows.len() - 1;
-        let mut rows: Vec<usize> = items.iter().map(|&i| self.row_index(i).min(last)).collect();
-        rows.sort_unstable();
-        rows.dedup();
-        let version = self.as_mut().rust_mut().new_version();
+        let rows = self.as_mut().rust_mut().grid.touch(items);
         for row in rows {
-            self.as_mut().rust_mut().versions[row] = version;
             let index = self.index(row as i32, 0, &QModelIndex::default());
             self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
         }
     }
 
-    /// The file of an item, `None` without the item.
-    fn id_at(&self, item: i32) -> Option<FileId> {
-        self.item(item).map(|i| i.id)
-    }
-
-    /// The position of a file in the list, -1 when it is not there (or `None`).
-    fn position_of(&self, id: Option<FileId>) -> i32 {
-        id.and_then(|id| self.entries.iter().position(|e| e.id == id)).map_or(-1, |i| i as i32)
-    }
-
     fn file_id(&self, item: i32) -> i64 {
-        self.id_at(item).map_or(-1, FileId::get)
+        self.grid.id_at(item).map_or(-1, FileId::get)
     }
 
     fn index_of(&self, file_id: i64) -> i32 {
-        self.position_of(Some(FileId::new(file_id)))
+        self.grid.position_of(Some(FileId::new(file_id)))
     }
 
     fn aspect(&self, item: i32) -> f64 {
-        self.item(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
+        self.grid.item(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
     }
 
     fn image_key(&self, item: i32) -> QString {
-        self.item(item).map_or_else(QString::default, |e| {
+        self.grid.item(item).map_or_else(QString::default, |e| {
             // Formatted on the stack: the id and mtime at most 20 bytes each, the rotation and the turns one digit each
             // (0–3), so 20 + 1 + 20 + 1 + 1 + 1 + 1 = 45 bytes.
             let mut buf = [0u8; 64];
@@ -686,30 +550,30 @@ impl qobject::GalleryModel {
     }
 
     fn keys_around(&self, item: i32, reach: i32) -> QStringList {
-        if self.item(item).is_none() {
+        if self.grid.item(item).is_none() {
             return QStringList::default();
         }
         (1..=reach)
             .flat_map(|d| [item - d, item + d])
-            .filter(|&i| self.item(i).is_some())
+            .filter(|&i| self.grid.item(i).is_some())
             .map(|i| self.image_key(i))
             .collect()
     }
 
     fn full_width(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |e| e.shown_size().0 as i32)
+        self.grid.item(item).map_or(0, |e| e.shown_size().0 as i32)
     }
 
     fn full_height(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |e| e.shown_size().1 as i32)
+        self.grid.item(item).map_or(0, |e| e.shown_size().1 as i32)
     }
 
     fn pending_turns(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |i| i.pending_turns.get() as i32)
+        self.grid.item(item).map_or(0, |i| i.pending_turns.get() as i32)
     }
 
     fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
-        let Some(id) = self.id_at(item) else { return };
+        let Some(id) = self.grid.id_at(item) else { return };
         let turns = Turns::new(turns.rem_euclid(4) as u8);
         if turns == Turns::NONE {
             return;
@@ -719,18 +583,16 @@ impl qobject::GalleryModel {
             return;
         }
         library::wake_writer();
+        let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
-            let e = &mut this.entries[item as usize];
-            e.pending_turns = e.pending_turns.plus(turns);
+            this.grid.edit(item, loading, |e| e.pending_turns = e.pending_turns.plus(turns));
             this.forget_details();
-            if this.loading {
-                this.edited.push(id);
-            }
         }
         // An odd turn changes the item's shape, and so the rows.
         if pg_model::orientation::turns_swap(turns) {
-            self.as_mut().lay_out(Changed::Items(&[item as usize]));
+            let plan = self.as_mut().rust_mut().grid.plan(Changed::Items(&[item as usize]));
+            self.as_mut().show(plan);
         } else {
             self.as_mut().items_changed(&[item as usize]);
         }
@@ -740,39 +602,21 @@ impl qobject::GalleryModel {
 
     fn refresh_turned(mut self: Pin<&mut Self>) {
         // The list on its way may have been read before these turns were written: do it again when it arrives.
-        if self.loading {
-            self.as_mut().rust_mut().turned = true;
-        }
+        let loading = self.loading;
+        self.as_mut().rust_mut().grid.note_turns_written(loading);
         // Not the queued turns (`file_writes`): the writer deletes a turn's row once it's written, so these are
         // exactly the entries that still show one.
-        let waiting: Vec<usize> =
-            (0..self.entries.len()).filter(|&i| self.entries[i].pending_turns != Turns::NONE).collect();
-        if waiting.is_empty() {
+        let turned = self.as_mut().rust_mut().grid.refresh_turned(fresh_entry);
+        if turned.changed.is_empty() {
             return;
         }
-        // A written turn changes the file's size too.
+        // A written turn changes the file's size too: what was read of it is stale.
         self.as_mut().rust_mut().forget_details();
-        let mut changed = Vec::new();
-        let mut reshaped = false;
-        for i in waiting {
-            let id = self.entries[i].id;
-            match state::with_catalog(|c| browse::read::entry(c, id)) {
-                Ok(Some(fresh)) if fresh != self.entries[i] => {
-                    reshaped |= fresh.aspect() != self.entries[i].aspect();
-                    self.as_mut().rust_mut().entries[i] = fresh;
-                    changed.push(i);
-                }
-                Ok(_) => {}
-                Err(e) => eprintln!("reloading {}: {e:#}", id.get()),
-            }
-        }
-        if changed.is_empty() {
-            return;
-        }
-        if reshaped {
-            self.as_mut().lay_out(Changed::Items(&changed));
+        if turned.reshaped {
+            let plan = self.as_mut().rust_mut().grid.plan(Changed::Items(&turned.changed));
+            self.as_mut().show(plan);
         } else {
-            self.as_mut().items_changed(&changed);
+            self.as_mut().items_changed(&turned.changed);
         }
         let revision = self.revision + 1;
         self.set_revision(revision);
@@ -783,11 +627,11 @@ impl qobject::GalleryModel {
     }
 
     fn rating(&self, item: i32) -> i32 {
-        self.item(item).and_then(|i| i.rating).map_or(0, |r| r.get() as i32)
+        self.grid.item(item).and_then(|i| i.rating).map_or(0, |r| r.get() as i32)
     }
 
     fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
-        let Some(id) = self.id_at(item) else { return };
+        let Some(id) = self.grid.id_at(item) else { return };
         let stars = rating.clamp(0, 5) as u8;
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
@@ -799,13 +643,11 @@ impl qobject::GalleryModel {
         if write_back {
             library::wake_writer();
         }
+        let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
-            this.entries[item as usize].rating = rating;
+            this.grid.edit(item, loading, |e| e.rating = rating);
             this.forget_details();
-            if this.loading {
-                this.edited.push(id);
-            }
         }
         self.as_mut().items_changed(&[item as usize]);
         let revision = self.revision + 1;
@@ -813,7 +655,7 @@ impl qobject::GalleryModel {
     }
 
     fn badge(&self, item: i32) -> QString {
-        let Some(e) = self.item(item) else { return QString::default() };
+        let Some(e) = self.grid.item(item) else { return QString::default() };
         let text = match e.media_type() {
             MediaType::Video => match e.duration_ms() {
                 Some(ms) => {
@@ -833,18 +675,18 @@ impl qobject::GalleryModel {
     }
 
     fn border_box(&self, item: i32) -> QRectF {
-        match self.item(item).and_then(Entry::content) {
+        match self.grid.item(item).and_then(Entry::content) {
             Some([x, y, w, h]) => QRectF::new(x, y, w, h),
             None => QRectF::default(),
         }
     }
 
     fn border_marked(&self, item: i32) -> bool {
-        self.item(item).is_some_and(|e| e.borders == Borders::Marked)
+        self.grid.item(item).is_some_and(|e| e.borders == Borders::Marked)
     }
 
     fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
-        let Some(e) = self.item(item).copied() else { return };
+        let Some(e) = self.grid.item(item).copied() else { return };
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
@@ -852,13 +694,11 @@ impl qobject::GalleryModel {
             eprintln!("marking borders: {err:#}");
             return;
         }
-        {
-            let mut this = self.as_mut().rust_mut();
-            this.entries[item as usize].borders = if marked { Borders::Marked } else { Borders::Found };
-            if this.loading {
-                this.edited.push(e.id);
-            }
-        }
+        let loading = self.loading;
+        self.as_mut()
+            .rust_mut()
+            .grid
+            .edit(item, loading, |entry| entry.borders = if marked { Borders::Marked } else { Borders::Found });
         self.as_mut().items_changed(&[item as usize]);
         let revision = self.revision + 1;
         self.set_revision(revision);
@@ -885,7 +725,8 @@ impl qobject::GalleryModel {
     }
 
     fn save_cropped_copies(&self, url: &QUrl) -> i32 {
-        let ids: Vec<FileId> = self.entries.iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
+        let ids: Vec<FileId> =
+            self.grid.entries().iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
         let folder = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
         let n = ids.len() as i32;
         if n > 0 {
@@ -895,11 +736,11 @@ impl qobject::GalleryModel {
     }
 
     fn bordered_count(&self) -> i32 {
-        self.entries.iter().filter(|e| e.borders == Borders::Found).count() as i32
+        self.grid.entries().iter().filter(|e| e.borders == Borders::Found).count() as i32
     }
 
     fn media_type(&self, item: i32) -> QString {
-        QString::from(self.item(item).map_or("image", |e| e.media_type().key()))
+        QString::from(self.grid.item(item).map_or("image", |e| e.media_type().key()))
     }
 
     fn file_url(&self, item: i32) -> QUrl {
@@ -913,7 +754,7 @@ impl qobject::GalleryModel {
     }
 
     fn player_turns(&self, item: i32) -> i32 {
-        self.item(item).map_or(0, |e| e.rotation.plus(e.pending_turns).get() as i32)
+        self.grid.item(item).map_or(0, |e| e.rotation.plus(e.pending_turns).get() as i32)
     }
 
     fn info(&self, item: i32) -> QString {
@@ -929,14 +770,14 @@ impl qobject::GalleryModel {
     }
 
     fn row_of(&self, item: i32) -> i32 {
-        if self.item(item).is_none() || self.rows.is_empty() {
+        if self.grid.item(item).is_none() || self.grid.rows().is_empty() {
             return -1;
         }
-        self.row_index(item as usize) as i32
+        self.grid.row_index(item as usize) as i32
     }
 
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
-        self.placement().neighbor(item, dx, dy)
+        self.grid.placement().neighbor(item, dx, dy)
     }
 }
 
@@ -960,4 +801,15 @@ fn borders_info(e: &Entry, d: &Details) -> String {
     }
     let marked = if e.borders == Borders::Marked { " — marked not a border" } else { "" };
     format!("   borders {} (L {l} T {t} R {r} B {b} px){marked}", classes.join(", "))
+}
+
+/// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).
+fn fresh_entry(id: FileId) -> Option<Entry> {
+    match state::with_catalog(|c| browse::read::entry(c, id)) {
+        Ok(found) => found,
+        Err(e) => {
+            eprintln!("reloading {}: {e:#}", id.get());
+            None
+        }
+    }
 }

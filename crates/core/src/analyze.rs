@@ -16,9 +16,10 @@ use crate::pixels::{Rgb, release_over};
 use crate::resize::Resizer;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
-/// in place. Not a schema version: bump it when a change below alters what is stored, before the first release too,
-/// since redoing the analyses keeps the library, ratings and views, where deleting the catalog loses them. A
-/// change to the tables instead edits the catalog's baseline in place (`catalog::BASELINE_VERSION` stays 1).
+/// in place, which keeps the library, ratings and views. Not a schema version. Until the first release it is not
+/// bumped: a change that alters what is stored means the owner recreates the catalogs (a change to the tables is
+/// made in place in the catalog's baseline, `catalog::BASELINE_VERSION` stays 1). From the first release on, a change
+/// that alters what is stored bumps it.
 pub const IMPORT_VERSION: i64 = 1;
 
 /// The JPEG decode keeps at least this many pixels on the upright long side…

@@ -103,7 +103,7 @@ class Symbols:
             sys.exit(f"SymInitialize failed: {ctypes.GetLastError()}")
         self.images = []  # (low, high, path), sorted by low
         self.lows = []
-        self.loaded = {}  # path -> loaded
+        self.loaded = {}  # (path, base) -> loaded: a DLL loaded again at another base is a new load
         self.names = {}
         self.lines = {}
 
@@ -115,10 +115,11 @@ class Symbols:
         self.lows.insert(i, low)
 
     def _load(self, low, high, path):
-        if path not in self.loaded:
-            self.loaded[path] = bool(self.dbghelp.SymLoadModuleExW(self.handle, None, path, None, low, high - low,
-                                                                   None, 0))  # fmt: skip
-        return self.loaded[path]
+        key = (path, low)
+        if key not in self.loaded:
+            self.loaded[key] = bool(self.dbghelp.SymLoadModuleExW(self.handle, None, path, None, low, high - low,
+                                                                  None, 0))  # fmt: skip
+        return self.loaded[key]
 
     def _image_at(self, addr):
         i = bisect.bisect(self.lows, addr) - 1
@@ -235,13 +236,6 @@ def symbolize(path, symbols, demangler):
         named += 1
         return f"{key}={m.group(1)} {name}"
 
-    def where(addr):
-        nonlocal unknown
-        file, line = symbols.line(addr)
-        if line == 0:
-            unknown += 1
-        return file, line
-
     cob = None
     for line in lines:
         if line.startswith("positions:"):
@@ -261,14 +255,16 @@ def symbolize(path, symbols, demangler):
             cob = None
         elif sep and key == "calls":
             count, target = value.split()
-            file, ln = where(address(target))
+            file, ln = symbols.line(address(target))
             # cfi= before the cfn= it belongs to: held is [cob=]? cfn=
             held.insert(len(held) - 1, f"cfi={files(file)}")
             held.append(f"calls={count} {ln}")
             after_calls = True
         elif line[:1].isdigit():
             pos, _, costs = line.partition(" ")
-            file, ln = where(address(pos))
+            file, ln = symbols.line(address(pos))
+            if ln == 0:  # only a cost position counts: a call target without a line is not in the figure
+                unknown += 1
             if after_calls:
                 if file != cur_file:
                     out.append(f"fi={files(file)}")

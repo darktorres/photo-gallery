@@ -606,19 +606,24 @@ impl qobject::GalleryModel {
         } else {
             swap(self.as_mut(), rows);
         }
-        // A row is given its new span or a new version, never both: either makes its cells read their items.
+        // A row's new span and its new version can come in one change: the QML reads its items again either way, so
+        // every role that changed is signalled, in the same change.
         for (range, update) in updates {
-            let roles: &[i32] = match (update.span, update.items, update.height) {
-                (true, ..) => &[ROLE_SPAN, ROLE_HEIGHT],
-                (false, true, true) => &[ROLE_VERSION, ROLE_HEIGHT],
-                (false, true, false) => &[ROLE_VERSION],
-                (false, false, _) => &[ROLE_HEIGHT],
-            };
+            let mut roles = Vec::with_capacity(3);
+            if update.span {
+                roles.push(ROLE_SPAN);
+            }
+            if update.items {
+                roles.push(ROLE_VERSION);
+            }
+            if update.span || !update.items || update.height {
+                roles.push(ROLE_HEIGHT);
+            }
             if update.items {
                 self.as_mut().rust_mut().versions[range.clone()].fill(version);
             }
             let (top, bottom) = (self.index(range.start as i32, 0, &root), self.index(range.end as i32 - 1, 0, &root));
-            self.as_mut().data_changed(&top, &bottom, &QList::from(roles));
+            self.as_mut().data_changed(&top, &bottom, &QList::from(roles.as_slice()));
         }
     }
 

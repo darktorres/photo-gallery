@@ -627,15 +627,16 @@ ApplicationWindow {
                     readonly final property int firstItem: span.x
                     required property real rowHeight
                     // New whenever the row's items change in place: rated, turned, marked, rewritten, or another
-                    // list (galleryModel's ROLE_VERSION, never given twice).
+                    // list (galleryModel's ROLE_VERSION, signalled with a new span too when both change).
                     required property int version
                     width: grid.width
                     height: rowHeight
 
                     // What the cells show, made to match the row once it is in use (not in the view's pool) and the
                     // view is where it is going (grid.settling): its span's items, at its version. A reuse sets the
-                    // span and the version one after the other, before the row is in use; the model changes one or
-                    // the other, never both. So the cells read their items (and ask for their images) once.
+                    // span and the version one after the other, before the row is in use. A span change makes the
+                    // cells read their items, so a version signalled with it is not read again. Either way the cells
+                    // read their items (and ask for their images) once.
                     property int cellsFirst: 0
                     property int cellsCount: 0
                     // Bumped to read the same items again.

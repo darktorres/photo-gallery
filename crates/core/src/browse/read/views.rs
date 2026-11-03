@@ -1,0 +1,40 @@
+//! The saved views and the session, as they were saved.
+
+use anyhow::Result;
+use rusqlite::{Connection, OptionalExtension};
+
+use crate::path::name_key;
+use crate::query::{Query, Sort};
+
+/// A saved view (ImageRater's bookmarks): where, which files, in what order.
+#[derive(Clone, PartialEq, Debug)]
+pub struct View {
+    pub name: String,
+    /// Merged path; `""` for all folders.
+    pub folder: String,
+    pub recursive: bool,
+    pub query: Query,
+    pub sort: Sort,
+}
+
+/// The saved views, by name as the grid orders file names (`name_key`).
+pub fn views(conn: &Connection) -> Result<Vec<View>> {
+    let mut stmt = conn.prepare("SELECT name, folder, recursive, query, sort FROM views")?;
+    let rows = stmt.query_map([], |r| {
+        Ok(View {
+            name: r.get(0)?,
+            folder: r.get(1)?,
+            recursive: r.get(2)?,
+            query: Query::from_json(&r.get::<_, String>(3)?),
+            sort: Sort::from_json(&r.get::<_, String>(4)?),
+        })
+    })?;
+    let mut views: Vec<View> = rows.collect::<rusqlite::Result<_>>()?;
+    views.sort_by_cached_key(|v| name_key(&v.name));
+    Ok(views)
+}
+
+/// Where the user was (`session` table): read at start, written as they move.
+pub fn session_get(conn: &Connection, key: &str) -> Result<Option<String>> {
+    Ok(conn.query_row("SELECT value FROM session WHERE key = ?1", [key], |r| r.get(0)).optional()?)
+}

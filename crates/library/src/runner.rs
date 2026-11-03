@@ -10,12 +10,12 @@
 
 use std::collections::VecDeque;
 use std::panic::AssertUnwindSafe;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use pg_catalog::Catalog;
 use pg_jobs::control::{Control, Progress};
 use pg_jobs::panics;
@@ -50,10 +50,31 @@ struct Inner {
     messages: Mutex<Messages>,
 }
 
-/// Something the job tells the user: an error or a warning, or how a job asked for went.
-pub struct Message {
-    pub text: String,
-    pub warning: bool,
+/// Something the job tells the user: a problem it ran into, or how a job asked for went. The job says what happened
+/// in values; the app words it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Notice {
+    /// Folders of a scan that couldn't be read.
+    UnreadableFolders { root: String, count: u64 },
+    /// A scan that failed. Its batches before the error are in.
+    ScanFailed { root: String, error: String },
+    /// A round that failed.
+    RoundFailed { error: String },
+    /// A round that panicked (caught): the job goes on with the next request.
+    RoundPanicked { message: String },
+    /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
+    CacheFull { height: u32, made: usize },
+    /// A crop job that ran to the end of its request.
+    Cropped { folder: PathBuf, saved: usize, skipped: usize, failed: usize, first_error: Option<String> },
+    /// A crop job that failed before it could save anything.
+    CropFailed { error: String },
+}
+
+impl Notice {
+    /// Whether it is a problem (shown as a warning), not a job that went as asked.
+    pub fn is_warning(&self) -> bool {
+        !matches!(self, Notice::Cropped { failed: 0, .. })
+    }
 }
 
 /// The most messages kept until the UI takes them.
@@ -63,17 +84,17 @@ const MESSAGE_CAP: usize = 100;
 /// newest is always there and whoever takes them can say how many it did not see.
 #[derive(Default)]
 pub struct Messages {
-    pub kept: VecDeque<Message>,
+    pub kept: VecDeque<Notice>,
     pub not_kept: usize,
 }
 
 impl Messages {
-    fn push(&mut self, message: Message) {
+    fn push(&mut self, notice: Notice) {
         if self.kept.len() == MESSAGE_CAP {
             self.kept.pop_front();
             self.not_kept += 1;
         }
-        self.kept.push_back(message);
+        self.kept.push_back(notice);
     }
 }
 
@@ -179,7 +200,7 @@ impl Runner {
         self.inner.rounds.load(Ordering::Relaxed)
     }
 
-    /// Errors and notes since the last call (a folder that couldn't be scanned, a full cache).
+    /// Notices since the last call (a folder that couldn't be scanned, a full cache).
     pub fn take_messages(&self) -> Messages {
         std::mem::take(&mut *self.inner.messages.lock().unwrap())
     }
@@ -192,12 +213,8 @@ impl Runner {
 }
 
 impl Inner {
-    fn note(&self, text: String) {
-        self.messages.lock().unwrap().push(Message { text, warning: false });
-    }
-
-    fn warn(&self, text: String) {
-        self.messages.lock().unwrap().push(Message { text, warning: true });
+    fn notify(&self, notice: Notice) {
+        self.messages.lock().unwrap().push(notice);
     }
 
     fn run(&self, waker: &Waker<'_>) {
@@ -219,7 +236,7 @@ impl Inner {
             match self.round_caught(&mut catalog) {
                 Ok(Step::Done) => {}
                 Ok(Step::Preempted) => again = true,
-                Err(e) => self.warn(format!("{e:#}")),
+                Err(notice) => self.notify(notice),
             }
             self.rounds.fetch_add(1, Ordering::Relaxed);
         }
@@ -227,13 +244,13 @@ impl Inner {
 
     /// A round, with a panic in it caught: the job reports it (the status line, and the log through the panic hook)
     /// and goes on with the next request.
-    fn round_caught(&self, catalog: &mut Option<Catalog>) -> Result<Step> {
+    fn round_caught(&self, catalog: &mut Option<Catalog>) -> std::result::Result<Step, Notice> {
         match panics::catch(AssertUnwindSafe(|| self.round(catalog))) {
-            Ok(result) => result,
+            Ok(result) => result.map_err(|e| Notice::RoundFailed { error: format!("{e:#}") }),
             Err(panic) => {
                 // The connection a panicking pass held is not trusted: the next round opens a new one.
                 *catalog = None;
-                Err(anyhow!("internal error in the background job: {}", panics::message(&*panic)))
+                Err(Notice::RoundPanicked { message: panics::message(&*panic).to_string() })
             }
         }
     }
@@ -275,9 +292,14 @@ impl Pass<Cx<'_>> for Crops {
                     cx.inner.queue.lock().unwrap().crops.push_front((s.remaining, folder));
                     return Ok(Step::Preempted);
                 }
-                Ok(s) if s.failed > 0 => cx.inner.warn(crop_note(&s, &folder)),
-                Ok(s) => cx.inner.note(crop_note(&s, &folder)),
-                Err(e) => cx.inner.warn(format!("{e:#}")),
+                Ok(s) => cx.inner.notify(Notice::Cropped {
+                    folder,
+                    saved: s.saved,
+                    skipped: s.skipped,
+                    failed: s.failed,
+                    first_error: s.error,
+                }),
+                Err(e) => cx.inner.notify(Notice::CropFailed { error: format!("{e:#}") }),
             }
         }
     }
@@ -307,11 +329,11 @@ impl Pass<Cx<'_>> for Scans {
                         return Ok(Step::Preempted);
                     }
                     if s.errors > 0 {
-                        cx.inner.warn(format!("{root}: {} folders couldn't be read", s.errors));
+                        cx.inner.notify(Notice::UnreadableFolders { root, count: s.errors });
                     }
                 }
                 Err(e) => {
-                    cx.inner.warn(format!("{root}: {e:#}"));
+                    cx.inner.notify(Notice::ScanFailed { root, error: format!("{e:#}") });
                     // Its batches before the error are in.
                     cx.inner.scans_done.fetch_add(1, Ordering::Relaxed);
                 }
@@ -356,24 +378,10 @@ impl Pass<Cx<'_>> for Thumbs {
         let opts = Options::new(Priority::Idle);
         let s = thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
         if s.cache_full {
-            cx.inner.warn(format!("The thumbnail cache is full: {} thumbnails at {height} px weren't made", s.made));
+            cx.inner.notify(Notice::CacheFull { height, made: s.made });
         }
         Ok(Step::Done)
     }
-}
-
-/// What a crop job did, for the status line.
-fn crop_note(s: &crop::Stats, folder: &Path) -> String {
-    let plural = |n: usize| if n == 1 { "" } else { "s" };
-    let mut note =
-        format!("Saved {} cropped cop{} in {}", s.saved, if s.saved == 1 { "y" } else { "ies" }, folder.display());
-    if s.skipped > 0 {
-        note += &format!("; {} file{} had nothing to crop any more", s.skipped, plural(s.skipped));
-    }
-    if let Some(e) = &s.error {
-        note += &format!("; {} failed, the first: {e}", s.failed);
-    }
-    note
 }
 
 #[cfg(test)]
@@ -384,11 +392,21 @@ mod tests {
     fn the_newest_messages_are_kept_and_the_rest_counted() {
         let mut messages = Messages::default();
         for i in 0..MESSAGE_CAP + 5 {
-            messages.push(Message { text: i.to_string(), warning: false });
+            messages.push(Notice::CacheFull { height: 0, made: i });
         }
         assert_eq!(messages.kept.len(), MESSAGE_CAP);
         assert_eq!(messages.not_kept, 5);
-        assert_eq!(messages.kept.front().unwrap().text, "5");
-        assert_eq!(messages.kept.back().unwrap().text, (MESSAGE_CAP + 4).to_string());
+        assert_eq!(messages.kept.front(), Some(&Notice::CacheFull { height: 0, made: 5 }));
+        assert_eq!(messages.kept.back(), Some(&Notice::CacheFull { height: 0, made: MESSAGE_CAP + 4 }));
+    }
+
+    #[test]
+    fn only_a_crop_with_failures_is_a_warning() {
+        let folder = PathBuf::from("out");
+        let done = Notice::Cropped { folder: folder.clone(), saved: 2, skipped: 0, failed: 0, first_error: None };
+        assert!(!done.is_warning());
+        let some_failed = Notice::Cropped { folder, saved: 1, skipped: 0, failed: 1, first_error: None };
+        assert!(some_failed.is_warning());
+        assert!(Notice::RoundFailed { error: String::new() }.is_warning());
     }
 }

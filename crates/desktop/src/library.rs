@@ -83,7 +83,7 @@ use std::sync::OnceLock;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use pg_jobs::control::{Phase, Progress};
-use pg_library::runner::{Generation, Runner};
+use pg_library::runner::{Generation, Notice, Runner};
 use pg_library::scan::normalize_path;
 use pg_library::writeback::Writer;
 use pg_model::ids::FileId;
@@ -192,6 +192,32 @@ fn duration(secs: f64) -> String {
     }
 }
 
+/// The words for a notice from the job. The English is here, in the app, which is where the text is shown; it moves
+/// to `pg-client` with the other strings (S-10.8).
+fn notice_text(notice: &Notice) -> String {
+    match notice {
+        Notice::UnreadableFolders { root, count } => format!("{root}: {count} folders couldn't be read"),
+        Notice::ScanFailed { root, error } => format!("{root}: {error}"),
+        Notice::RoundFailed { error } | Notice::CropFailed { error } => error.clone(),
+        Notice::RoundPanicked { message } => format!("internal error in the background job: {message}"),
+        Notice::CacheFull { height, made } => {
+            format!("The thumbnail cache is full: {made} thumbnails at {height} px weren't made")
+        }
+        Notice::Cropped { folder, saved, skipped, failed, first_error } => {
+            let plural = |n: usize| if n == 1 { "" } else { "s" };
+            let mut note =
+                format!("Saved {saved} cropped cop{} in {}", if *saved == 1 { "y" } else { "ies" }, folder.display());
+            if *skipped > 0 {
+                note += &format!("; {skipped} file{} had nothing to crop any more", plural(*skipped));
+            }
+            if let Some(e) = first_error {
+                note += &format!("; {failed} failed, the first: {e}");
+            }
+            note
+        }
+    }
+}
+
 impl qobject::Library {
     fn show(mut self: Pin<&mut Self>, text: String, warning: bool) {
         self.as_mut().set_message_warning(warning);
@@ -283,8 +309,9 @@ impl qobject::Library {
         let taken = r.take_messages();
         if let Some(last) = taken.kept.back() {
             let more = taken.kept.len() - 1 + taken.not_kept;
-            let text = if more == 0 { last.text.clone() } else { format!("{} (and {more} more)", last.text) };
-            self.as_mut().show(text, last.warning);
+            let text = notice_text(last);
+            let text = if more == 0 { text } else { format!("{text} (and {more} more)") };
+            self.as_mut().show(text, last.is_warning());
         }
         if let Some(w) = WRITER.get() {
             let s = w.status();

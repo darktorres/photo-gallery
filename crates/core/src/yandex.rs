@@ -101,6 +101,39 @@ pub struct SimilarPage {
     pub has_next: bool,
 }
 
+/// The similar images read, in order, and why the list ends early if it does.
+#[derive(Debug)]
+pub struct Similar {
+    pub items: Vec<SimilarItem>,
+    /// The error that ended the list after its first page: a captcha, a failed request, or a page that isn't what
+    /// was read. `None` when the list ended by itself (an empty page, no next page) or at the page limit.
+    pub stopped: Option<YandexError>,
+}
+
+/// Reads the pages `fetch` gives, from page 0 up to `max_pages`, as [`Client::similar`] does. A failure on page 0 is
+/// the error; one on a later page stops the list with the items read so far.
+fn read_similar_pages(
+    max_pages: u32,
+    mut fetch: impl FnMut(u32) -> Result<SimilarPage, YandexError>,
+) -> Result<Similar, YandexError> {
+    let mut items = Vec::new();
+    for page in 0..max_pages {
+        let parsed = match fetch(page) {
+            Ok(p) => p,
+            Err(e) if page > 0 => return Ok(Similar { items, stopped: Some(e) }),
+            Err(e) => return Err(e),
+        };
+        if parsed.items.is_empty() {
+            break;
+        }
+        items.extend(parsed.items);
+        if !parsed.has_next {
+            break;
+        }
+    }
+    Ok(Similar { items, stopped: None })
+}
+
 /// A blocking Yandex client. One client paces its own requests, so callers can use it from a worker thread.
 pub struct Client {
     agent: ureq::Agent,
@@ -145,24 +178,9 @@ impl Client {
 
     /// Visually similar images. Pages are fetched until one is empty, has no next link, or `max_pages` is reached.
     /// Only a failure on the first page is an error. Yandex answers page 1 with a captcha (2026-10-31, the crawler
-    /// too), so a failure on a later page ends the list with the pages already read, as the crawler does.
-    pub fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Vec<SimilarItem>, YandexError> {
-        let mut all = Vec::new();
-        for page in 0..max_pages {
-            let parsed = match self.similar_request(up, page).and_then(|body| parse_similar_page(&body)) {
-                Ok(p) => p,
-                Err(_) if page > 0 => break,
-                Err(e) => return Err(e),
-            };
-            if parsed.items.is_empty() {
-                break;
-            }
-            all.extend(parsed.items);
-            if !parsed.has_next {
-                break;
-            }
-        }
-        Ok(all)
+    /// too), so a failure on a later page ends the list with the pages already read, and `stopped` says why.
+    pub fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError> {
+        read_similar_pages(max_pages, |page| self.similar_request(up, page).and_then(|body| parse_similar_page(&body)))
     }
 
     fn similar_request(&mut self, up: &Upload, page: u32) -> Result<String, YandexError> {
@@ -518,6 +536,28 @@ mod tests {
             "avatars.mds.yandex.net/get-images-cbir/1/2/orig"
         );
         assert_eq!(host_and_path("https://a.example/x/orig?x=1#f"), "a.example/x/orig");
+    }
+
+    #[test]
+    fn a_later_page_that_fails_stops_the_list_with_its_reason() {
+        let item = |pos: u32| SimilarItem { pos, width: 1, height: 1, image_url: format!("u{pos}"), thumb_url: None };
+        let page = |n: u32, has_next: bool| -> Result<SimilarPage, YandexError> {
+            Ok(SimilarPage { items: vec![item(n)], has_next })
+        };
+        // Pages 0 and 1 are read; page 2 is a captcha: the list keeps what it has, and says why it stopped.
+        let got = read_similar_pages(5, |p| match p {
+            0 | 1 => page(p, true),
+            _ => Err(YandexError::Captcha),
+        })
+        .unwrap();
+        assert_eq!(got.items.iter().map(|i| i.pos).collect::<Vec<_>>(), [0, 1]);
+        assert!(matches!(got.stopped, Some(YandexError::Captcha)));
+        // A failure on the first page is the error itself.
+        assert!(matches!(read_similar_pages(5, |_| Err(YandexError::Captcha)), Err(YandexError::Captcha)));
+        // A list that ends by itself (no next page) has no reason.
+        let got = read_similar_pages(5, |p| page(p, p < 1)).unwrap();
+        assert_eq!(got.items.len(), 2);
+        assert!(got.stopped.is_none());
     }
 
     #[test]

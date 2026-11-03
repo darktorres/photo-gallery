@@ -198,7 +198,12 @@ fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<(Found, Option<Str
     let other = client.other_sizes(&upload).map_err(explain)?;
     set_status(shared, "Reading similar images…");
     let (similar, note) = match client.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
-        Ok(similar) => (similar, None),
+        Ok(list) => {
+            let note = list
+                .stopped
+                .map(|e| format!("Similar images stopped after {} results: {}", list.items.len(), explain(e)));
+            (list.items, note)
+        }
         Err(e) => (Vec::new(), Some(format!("Similar images failed: {}", explain(e)))),
     };
     let found = Found {

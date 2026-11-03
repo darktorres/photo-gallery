@@ -117,6 +117,7 @@ CREATE TABLE files(
     order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (path::order_key)
     pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
     seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers
+    changed   INTEGER NOT NULL DEFAULT 0,  -- meta.seq at its last user-visible change (changes_since): kept by triggers
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
@@ -128,6 +129,8 @@ CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
 CREATE INDEX files_to_import ON files(volume, file_ref & 0xFFFFFFFFFFFF) WHERE missing = 0 AND pending = 1;
 -- The files changed since the thumbnail pass last looked (thumbs::pending_in).
 CREATE INDEX files_seq ON files(seq);
+-- The files changed since a change number (browse::read::changes_since).
+CREATE INDEX files_changed ON files(changed);
 CREATE TABLE analysis(
     file_id     INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
     version     INTEGER NOT NULL,  -- analyze::IMPORT_VERSION
@@ -285,6 +288,8 @@ CREATE TRIGGER files_added AFTER INSERT ON files BEGIN
     stale!(),
     ", seq = ",
     seq!(),
+    ", changed = ",
+    seq!(),
     r" WHERE id = new.id;
 END;
 CREATE TRIGGER files_changed AFTER UPDATE OF size, mtime, rotation, kind ON files
@@ -305,6 +310,8 @@ BEGIN
     ";
     UPDATE files SET seq = ",
     seq!(),
+    ", changed = ",
+    seq!(),
     r" WHERE id = new.id;
 END;
 -- A REPLACE fires only this one (recursive triggers are off): its delete half fires no trigger.
@@ -315,6 +322,8 @@ CREATE TRIGGER analysis_added AFTER INSERT ON analysis BEGIN
     UPDATE files SET pending = ",
     stale!(),
     ", seq = ",
+    seq!(),
+    ", changed = ",
     seq!(),
     r" WHERE id = new.file_id;
 END;
@@ -331,26 +340,72 @@ BEGIN
     stale!(),
     ", seq = ",
     seq!(),
+    ", changed = ",
+    seq!(),
     r" WHERE id = new.file_id;
 END;
 CREATE TRIGGER analysis_removed AFTER DELETE ON analysis BEGIN
     UPDATE files SET pending = 1 WHERE id = old.file_id;
 END;
-"
+",
+    "CREATE TRIGGER ratings_stamp_insert AFTER INSERT ON ratings BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER ratings_stamp_update AFTER UPDATE ON ratings BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER ratings_stamp_delete AFTER DELETE ON ratings BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = old.file_id;\nEND;\n",
+    "CREATE TRIGGER border_marks_stamp_insert AFTER INSERT ON border_marks BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER border_marks_stamp_delete AFTER DELETE ON border_marks BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = old.file_id;\nEND;\n",
+    "CREATE TRIGGER file_writes_stamp_insert AFTER INSERT ON file_writes BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER file_writes_stamp_update AFTER UPDATE ON file_writes BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER file_writes_stamp_delete AFTER DELETE ON file_writes BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = old.file_id;\nEND;\n",
 );
 
 /// A catalog made before the current baseline (pre-release, the baseline is edited in place) lacks some of these
 /// `LAYOUT_PARTS`. The last two are the text of a trigger and a view that were edited in place (the size joined what a
 /// thumbnail is made from): an earlier catalog has the same names, so only their text tells it apart.
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
-     + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq'))
+     + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq', 'changed'))
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name IN ('thumb_sources', 'thumb_clock'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'view' AND name = 'thumb_sources' AND sql LIKE '%f.size, f.missing%')
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name = 'files_source_changed'
-        AND sql LIKE '%old.size IS NOT new.size%')";
-const LAYOUT_PARTS: i64 = 14;
+        AND sql LIKE '%old.size IS NOT new.size%')
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'index' AND name = 'files_changed')
+     + (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name IN ('ratings_stamp_insert',
+        'ratings_stamp_update', 'ratings_stamp_delete', 'border_marks_stamp_insert', 'border_marks_stamp_delete',
+        'file_writes_stamp_insert', 'file_writes_stamp_update', 'file_writes_stamp_delete'))";
+const LAYOUT_PARTS: i64 = 24;
 
 /// The tables [`rebuild`] copies, each after those it refers to.
 const CARRIED: &[&str] = &[

@@ -6,6 +6,7 @@ use rusqlite::types::Value;
 
 use pg_model::path::scope_keys;
 
+mod changes;
 mod details;
 mod facets;
 mod grid;
@@ -13,6 +14,7 @@ mod state;
 mod tree;
 mod views;
 
+pub use changes::*;
 pub use details::*;
 pub use facets::*;
 pub use grid::*;

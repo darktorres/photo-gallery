@@ -13,24 +13,23 @@ use pg_model::ids::FileId;
 pub const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;
 
 pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()> {
-    let conn = &catalog.conn;
     for (tier, by) in [("0a identical files", Identity::File), ("0b identical pixels", Identity::Pixels)] {
-        let (groups, files) = dups::identical_groups(conn, by)?;
+        let (groups, files) = dups::identical_groups(catalog, by)?;
         println!("tier {tier}: {groups} groups, {files} files");
     }
     println!("tier 1 PDQ pairs by distance:");
     for (lo, hi) in [(0, 0), (1, 8), (9, 22), (23, 31)] {
-        println!("  {lo:>2}–{hi:<2}: {}", dups::pdq_pairs_between(conn, lo, hi)?);
+        println!("  {lo:>2}–{hi:<2}: {}", dups::pdq_pairs_between(catalog, lo, hi)?);
     }
 
     // Groups: tiers 0a and 0b, plus PDQ pairs up to `group_distance`.
     let mut uf = UnionFind::default();
     for by in [Identity::File, Identity::Pixels] {
-        for (a, b) in dups::identical_edges(conn, by)? {
+        for (a, b) in dups::identical_edges(catalog, by)? {
             uf.union(a, b);
         }
     }
-    for (a, b) in dups::pdq_edges(conn, group_distance)? {
+    for (a, b) in dups::pdq_edges(catalog, group_distance)? {
         uf.union(a, b);
     }
     let ids: Vec<FileId> = uf.members().collect();
@@ -54,7 +53,7 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     for g in groups.iter().take(show) {
         println!("\n{} files:", g.len());
         for id in g.iter().take(20) {
-            println!("  {}", dups::path(conn, *id)?);
+            println!("  {}", catalog.file_path(*id)?);
         }
     }
     Ok(())

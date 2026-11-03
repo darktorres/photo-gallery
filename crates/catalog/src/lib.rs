@@ -1023,6 +1023,15 @@ impl Catalog {
         browse::read::file_state(&self.conn, file_id)
     }
 
+    /// Where a file is: its folder and name, as Windows spells it.
+    pub fn file_path(&self, file_id: FileId) -> Result<String> {
+        Ok(self.conn.query_row(
+            "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+            [file_id.get()],
+            |r| r.get(0),
+        )?)
+    }
+
     /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
     pub fn status(&self) -> Result<Status> {
         let one = |sql: &str| -> Result<i64> { Ok(self.conn.query_row(sql, [], |r| r.get(0))?) };
@@ -1649,7 +1658,7 @@ mod tests {
     /// A turn the file can't hold, written by the writer: the catalog keeps it.
     fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
         let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: turns, temp: None, attempts: 0 };
-        writes::done(&c.conn, &job, turns, writes::WriteEffect::KeptInCatalog).unwrap();
+        writes::done(c, &job, turns, writes::WriteEffect::KeptInCatalog).unwrap();
     }
 
     fn state(c: &Catalog, id: FileId) -> (bool, i64) {
@@ -2058,7 +2067,7 @@ mod tests {
             // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
             let job = writes::Job { file_id: id, kind: writes::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
             let effect = writes::WriteEffect::Rewritten { before, after, metadata_only };
-            writes::done(&c.conn, &job, 0, effect).unwrap();
+            writes::done(c, &job, 0, effect).unwrap();
         };
         rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
         assert!(!state(&c, id).0);

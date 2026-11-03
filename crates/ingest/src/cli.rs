@@ -268,7 +268,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
                 ),
                 None => println!("thumbnail cache: none yet"),
             }
-            for e in pg_catalog::writes::recent_errors(&catalog.conn, 5)? {
+            for e in pg_catalog::writes::recent_errors(&catalog, 5)? {
                 println!("  {e}");
             }
         }
@@ -281,7 +281,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
             // Until nothing writable is left (failures past their retries stay queued and are reported).
             loop {
                 std::thread::sleep(std::time::Duration::from_millis(500));
-                let left = pg_catalog::writes::left_to_write(&catalog.conn)?;
+                let left = pg_catalog::writes::left_to_write(&catalog)?;
                 if left == 0 {
                     break;
                 }

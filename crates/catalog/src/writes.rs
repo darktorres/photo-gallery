@@ -16,6 +16,7 @@ use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
 use super::{DELETE_FILE_RATING, SET_FILE_RATING};
+use crate::Catalog;
 
 /// Failed writes are retried at most this many times (offline drives retry without counting).
 pub const MAX_ATTEMPTS: i64 = 5;
@@ -138,7 +139,8 @@ pub fn queue_rotation(conn: &Connection, file_id: FileId, turns: Turns) -> Resul
 
 /// The oldest job the writer can try now: an interrupted copy first (its temp is complete), then the oldest change
 /// that has settled for `settle_secs`. A failed job waits `settle_secs` longer for each attempt so far.
-pub fn next_ready(conn: &Connection, settle_secs: i64) -> Result<Option<Job>> {
+pub fn next_ready(catalog: &Catalog, settle_secs: i64) -> Result<Option<Job>> {
+    let conn = &catalog.conn;
     let job = conn
         .query_row(
             "SELECT file_id, kind, value, temp, temp_value, attempts FROM file_writes
@@ -164,17 +166,20 @@ pub fn next_ready(conn: &Connection, settle_secs: i64) -> Result<Option<Job>> {
 }
 
 /// Whether a job is left that may still be tried (the writer waits for it to settle, rather than stopping).
-pub fn attemptable(conn: &Connection) -> Result<bool> {
+pub fn attemptable(catalog: &Catalog) -> Result<bool> {
+    let conn = &catalog.conn;
     Ok(conn.query_row("SELECT EXISTS(SELECT 1 FROM file_writes WHERE attempts < ?1)", [MAX_ATTEMPTS], |r| r.get(0))?)
 }
 
 /// Every queued write, failing or not.
-pub fn remaining(conn: &Connection) -> Result<usize> {
+pub fn remaining(catalog: &Catalog) -> Result<usize> {
+    let conn = &catalog.conn;
     Ok(conn.query_row("SELECT count(*) FROM file_writes", [], |r| r.get(0))?)
 }
 
 /// The queued writes still to make now: those that have retries left, and aren't failing without a temp to finish.
-pub fn left_to_write(conn: &Connection) -> Result<i64> {
+pub fn left_to_write(catalog: &Catalog) -> Result<i64> {
+    let conn = &catalog.conn;
     Ok(conn.query_row(
         "SELECT count(*) FROM file_writes WHERE attempts < ?1 AND (error IS NULL OR temp IS NOT NULL)",
         [MAX_ATTEMPTS],
@@ -183,7 +188,8 @@ pub fn left_to_write(conn: &Connection) -> Result<i64> {
 }
 
 /// The latest errors of the queue, for the command line.
-pub fn recent_errors(conn: &Connection, limit: usize) -> Result<Vec<String>> {
+pub fn recent_errors(catalog: &Catalog, limit: usize) -> Result<Vec<String>> {
+    let conn = &catalog.conn;
     let mut stmt = conn.prepare("SELECT error FROM file_writes WHERE error IS NOT NULL LIMIT ?1")?;
     let errors = stmt.query_map([limit as i64], |r| r.get(0))?.collect::<rusqlite::Result<Vec<String>>>()?;
     Ok(errors)
@@ -191,7 +197,8 @@ pub fn recent_errors(conn: &Connection, limit: usize) -> Result<Vec<String>> {
 
 /// The new content of a job is complete at `temp`, carrying `value`. The copy into the file comes next; until `done`,
 /// readers see the file as being written (`browse::read::FileState::writing`).
-pub fn record_temp(conn: &Connection, job: &Job, temp: &str, value: i64) -> Result<()> {
+pub fn record_temp(catalog: &Catalog, job: &Job, temp: &str, value: i64) -> Result<()> {
+    let conn = &catalog.conn;
     conn.execute(
         "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
         params![job.file_id.get(), job.kind.key(), temp, value],
@@ -202,7 +209,8 @@ pub fn record_temp(conn: &Connection, job: &Job, temp: &str, value: i64) -> Resu
 /// The job is written: `written` (a rating, or the turns) is now in the file or the catalog. `effect` changes the
 /// catalog in the same transaction that takes the job off the queue (a rating or turns changed again meanwhile stays
 /// queued for the rest).
-pub fn done(conn: &Connection, job: &Job, written: i64, effect: WriteEffect) -> Result<()> {
+pub fn done(catalog: &Catalog, job: &Job, written: i64, effect: WriteEffect) -> Result<()> {
+    let conn = &catalog.conn;
     let (file_id, kind) = (job.file_id.get(), job.kind.key());
     let tx = conn.unchecked_transaction()?;
     match effect {
@@ -250,7 +258,8 @@ pub fn done(conn: &Connection, job: &Job, written: i64, effect: WriteEffect) -> 
 
 /// The write failed. An offline drive's failure doesn't count as an attempt. The message is the status line's until a
 /// success.
-pub fn failed(conn: &Connection, job: &Job, message: &str, offline: bool) -> Result<()> {
+pub fn failed(catalog: &Catalog, job: &Job, message: &str, offline: bool) -> Result<()> {
+    let conn = &catalog.conn;
     conn.execute(
         "UPDATE file_writes SET attempts = attempts + ?3, error = ?4, queued = unixepoch()
          WHERE file_id = ?1 AND kind = ?2",
@@ -260,7 +269,8 @@ pub fn failed(conn: &Connection, job: &Job, message: &str, offline: bool) -> Res
 }
 
 /// The file is no longer in the library (missing, or unlisted): the write is dropped.
-pub fn drop_gone(conn: &Connection, job: &Job) -> Result<()> {
+pub fn drop_gone(catalog: &Catalog, job: &Job) -> Result<()> {
+    let conn = &catalog.conn;
     conn.execute(
         "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2",
         params![job.file_id.get(), job.kind.key()],
@@ -271,7 +281,8 @@ pub fn drop_gone(conn: &Connection, job: &Job) -> Result<()> {
 /// A copy that failed at the attempts' cap is given up: its temp is discarded by the caller, and the job no longer
 /// counts as being written. The file's content is unknown, as after an interrupted copy, so `after` (its stat now,
 /// when known) is recorded with no size or mtime before, and the analysis is redone. The row stays, with its error.
-pub fn abandon_temp(conn: &Connection, job: &Job, after: Option<(i64, i64)>) -> Result<()> {
+pub fn abandon_temp(catalog: &Catalog, job: &Job, after: Option<(i64, i64)>) -> Result<()> {
+    let conn = &catalog.conn;
     let tx = conn.unchecked_transaction()?;
     if let Some(after) = after {
         file_rewritten(&tx, job.file_id, (-1, -1), after, None)?;
@@ -379,19 +390,18 @@ mod tests {
         set_rating(&c.conn, FileId::new(1), Rating::new(3), true).unwrap();
         queue_rotation(&c.conn, FileId::new(2), Turns::new(1)).unwrap();
         // Both are new: nothing is ready until they settle (a settle time of 0 takes them now).
-        let first = next_ready(&c.conn, 0).unwrap().unwrap();
+        let first = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!((first.file_id, first.kind, first.value), (FileId::new(1), WriteKind::Rating, 3));
         // The rating is in the file: the catalog records it, and the job leaves the queue.
         let after = (11, 101);
-        done(&c.conn, &first, 3, WriteEffect::Rewritten { before: (10, 1), after, metadata_only: Some([7; 32]) })
-            .unwrap();
+        done(&c, &first, 3, WriteEffect::Rewritten { before: (10, 1), after, metadata_only: Some([7; 32]) }).unwrap();
         assert_eq!(queued(&c, 1, "rating"), None);
         let stored: i64 = c.conn.query_row("SELECT size FROM files WHERE id = 1", [], |r| r.get(0)).unwrap();
         assert_eq!(stored, 11);
         // The turn can't go in the file: the catalog keeps it, and the upright size swaps at once.
-        let turn = next_ready(&c.conn, 0).unwrap().unwrap();
+        let turn = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!((turn.file_id, turn.kind, turn.value), (FileId::new(2), WriteKind::Turns, 1));
-        done(&c.conn, &turn, 1, WriteEffect::KeptInCatalog).unwrap();
+        done(&c, &turn, 1, WriteEffect::KeptInCatalog).unwrap();
         assert_eq!(queued(&c, 2, "rotation"), None);
         let (rotation, width): (i64, i64) = c
             .conn
@@ -402,25 +412,25 @@ mod tests {
             )
             .unwrap();
         assert_eq!((rotation, width), (1, 3));
-        assert!(next_ready(&c.conn, 0).unwrap().is_none());
+        assert!(next_ready(&c, 0).unwrap().is_none());
     }
 
     #[test]
     fn a_failure_waits_longer_and_an_offline_drive_does_not_count() {
         let c = library();
         set_rating(&c.conn, FileId::new(1), Rating::new(3), true).unwrap();
-        let job = next_ready(&c.conn, 0).unwrap().unwrap();
-        failed(&c.conn, &job, "denied", false).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        failed(&c, &job, "denied", false).unwrap();
         // One attempt in: due two settle times later, not now.
-        assert!(next_ready(&c.conn, 1).unwrap().is_none());
-        assert!(attemptable(&c.conn).unwrap());
-        let job = next_ready(&c.conn, 0).unwrap().unwrap();
+        assert!(next_ready(&c, 1).unwrap().is_none());
+        assert!(attemptable(&c).unwrap());
+        let job = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!(job.attempts, 1);
-        failed(&c.conn, &job, "offline", true).unwrap();
-        let job = next_ready(&c.conn, 0).unwrap().unwrap();
+        failed(&c, &job, "offline", true).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
         assert_eq!(job.attempts, 1, "an offline failure is not an attempt");
-        assert_eq!(recent_errors(&c.conn, 5).unwrap(), ["offline"]);
-        drop_gone(&c.conn, &job).unwrap();
-        assert_eq!(remaining(&c.conn).unwrap(), 0);
+        assert_eq!(recent_errors(&c, 5).unwrap(), ["offline"]);
+        drop_gone(&c, &job).unwrap();
+        assert_eq!(remaining(&c).unwrap(), 0);
     }
 }

@@ -148,10 +148,10 @@ impl Inner {
             if self.stop.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            self.status.lock().unwrap().queued = writes::remaining(&catalog.conn)?;
+            self.status.lock().unwrap().queued = writes::remaining(catalog)?;
             // Finishing interrupted copies first; then the oldest settled change (`writes::next_ready`).
-            let Some(job) = writes::next_ready(&catalog.conn, SETTLE_SECS)? else {
-                if writes::attemptable(&catalog.conn)? {
+            let Some(job) = writes::next_ready(catalog, SETTLE_SECS)? else {
+                if writes::attemptable(catalog)? {
                     // Come back when the newest change has settled.
                     std::thread::sleep(Duration::from_secs(SETTLE_SECS as u64));
                     continue;
@@ -169,7 +169,7 @@ impl Inner {
                 if let Some((temp, _)) = &job.temp {
                     let _ = std::fs::remove_file(temp);
                 }
-                writes::drop_gone(&catalog.conn, &job)?;
+                writes::drop_gone(catalog, &job)?;
                 self.status.lock().unwrap().error = Some(format!(
                     "A queued {} was dropped: file {} is not in the library",
                     job.kind.key(),
@@ -189,7 +189,7 @@ impl Inner {
                             _ => false,
                         });
                     let message = format!("{e:#}");
-                    writes::failed(&catalog.conn, &job, &message, offline)?;
+                    writes::failed(catalog, &job, &message, offline)?;
                     self.status.lock().unwrap().error = Some(message);
                     if offline {
                         // Leave it for the next idle check rather than spinning on it.
@@ -217,13 +217,9 @@ impl Inner {
     /// (`writes::abandon_temp`). The row stays, with its attempts and error, so the failure is still in the queue.
     fn give_up(&self, catalog: &Catalog, job: &Job) -> Result<()> {
         let Some((temp, _)) = &job.temp else { return Ok(()) };
-        let path: String = catalog.conn.query_row(
-            r"SELECT fo.path || '\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
-            [job.file_id.get()],
-            |r| r.get(0),
-        )?;
+        let path = catalog.file_path(job.file_id)?;
         let _ = std::fs::remove_file(temp);
-        writes::abandon_temp(&catalog.conn, job, stat(&path).ok())
+        writes::abandon_temp(catalog, job, stat(&path).ok())
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {
@@ -239,8 +235,8 @@ impl Inner {
         // never queued (pg_catalog::writes::set_rating).
         if kind == Kind::Video.key() && job.temp.is_none() {
             match job.kind {
-                WriteKind::Turns => self.keep_turn_in_catalog(conn, job)?,
-                WriteKind::Rating => writes::done(conn, job, job.value, WriteEffect::Nothing)?,
+                WriteKind::Turns => self.keep_turn_in_catalog(catalog, job)?,
+                WriteKind::Rating => writes::done(catalog, job, job.value, WriteEffect::Nothing)?,
             }
             return Ok(());
         }
@@ -251,7 +247,7 @@ impl Inner {
             copy_into(Path::new(temp), &path)?;
             let after = stat(&path)?;
             let effect = WriteEffect::Rewritten { before: (-1, -1), after, metadata_only: None };
-            writes::done(conn, job, *written, effect)?;
+            writes::done(catalog, job, *written, effect)?;
             if job.kind == WriteKind::Turns {
                 self.pixels_changed();
             }
@@ -294,12 +290,12 @@ impl Inner {
                                 Ok(()) if pg_metadata::orientation(&std::fs::read(&temp)?, format) == o => None,
                                 _ => {
                                     let _ = std::fs::remove_file(&temp);
-                                    return self.keep_turn_in_catalog(conn, job);
+                                    return self.keep_turn_in_catalog(catalog, job);
                                 }
                             }
                         }
                     },
-                    Outcome::Catalog => return self.keep_turn_in_catalog(conn, job),
+                    Outcome::Catalog => return self.keep_turn_in_catalog(catalog, job),
                 };
                 if let Some(new) = new {
                     std::fs::write(&temp, new).with_context(|| format!("writing {temp}"))?;
@@ -310,12 +306,12 @@ impl Inner {
 
         // Step 2: the new content is complete; record it, then copy it in. From here until `done` records the write,
         // readers know the file may be part-written (browse::read::FileState::writing).
-        writes::record_temp(conn, job, &temp, job.value)?;
+        writes::record_temp(catalog, job, &temp, job.value)?;
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
         copy_into(Path::new(&temp), &path)?;
         let after = stat(&path)?;
         let effect = WriteEffect::Rewritten { before, after, metadata_only: new_hash };
-        writes::done(conn, job, job.value, effect)?;
+        writes::done(catalog, job, job.value, effect)?;
         if job.kind == WriteKind::Rating {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
@@ -330,8 +326,8 @@ impl Inner {
     }
 
     /// A turn the file can't hold is kept in the catalog instead.
-    fn keep_turn_in_catalog(&self, conn: &rusqlite::Connection, job: &Job) -> Result<()> {
-        writes::done(conn, job, job.value, WriteEffect::KeptInCatalog)?;
+    fn keep_turn_in_catalog(&self, catalog: &Catalog, job: &Job) -> Result<()> {
+        writes::done(catalog, job, job.value, WriteEffect::KeptInCatalog)?;
         self.pixels_changed();
         Ok(())
     }

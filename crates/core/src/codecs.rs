@@ -20,8 +20,8 @@ use image::error::{
 use image::{ColorType, ExtendedColorType, ImageDecoder, ImageError, ImageFormat, ImageResult, Limits};
 
 use crate::format::Format;
-
 use crate::pixels::{Rgb, release_over};
+
 /// What the decoders keep from one file to the next, per worker (inside its [`crate::decode::Decoder`]).
 #[derive(Default)]
 pub(crate) struct Codecs {
@@ -1101,8 +1101,6 @@ mod tests {
         files
     }
 
-    /// Every kind of file decodes to what `image` gave, or fails with its error, with one `Codecs` reused across
-    /// them all, forwards and backwards, so that state left by one file would show in another.
     /// A GIF with XMP and ICC application extensions of `len` bytes each, placed before the first frame (after the
     /// header and the global palette).
     fn with_app_extensions(gif: &[u8], len: usize) -> Vec<u8> {
@@ -1186,6 +1184,8 @@ mod tests {
         }
     }
 
+    /// Every kind of file decodes to what `image` gave, or fails with its error, with one `Codecs` reused across
+    /// them all, forwards and backwards, so that state left by one file would show in another.
     #[test]
     fn files_decode_as_image_did() {
         let files = files();

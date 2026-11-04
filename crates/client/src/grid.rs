@@ -316,6 +316,12 @@ impl Grid {
         self.held.take()
     }
 
+    /// Whether the list asked for last (`request`) has arrived and waits under the viewer: loaded, not yet shown. A
+    /// held list asked for before a newer request doesn't count: that one is still loading.
+    pub fn is_held(&self) -> bool {
+        matches!(self.held, Some((generation, _)) if generation == self.generation)
+    }
+
     /// Puts a list in as the items, and returns the ones it replaces (the layout compares them, `Changed::List`).
     pub fn swap_entries(&mut self, entries: Vec<Entry>) -> Vec<Entry> {
         std::mem::replace(&mut self.entries, entries)
@@ -523,6 +529,20 @@ mod tests {
         assert_eq!(g.release_held(), Some((new, list.clone())));
         assert_eq!(g.release_held(), None);
         assert!(matches!(g.arrive(new, list.clone(), false, |_| None), Arrival::Ready(l) if l == list));
+    }
+
+    #[test]
+    fn a_held_list_counts_as_held_only_while_it_is_the_newest_request() {
+        let mut g = Grid::default();
+        let first = g.request(false, false);
+        assert!(!g.is_held());
+        assert!(matches!(g.arrive(first, vec![entry(1, 1, 1)], true, |_| None), Arrival::Held));
+        assert!(g.is_held());
+        // A newer list is asked for: the held one is stale and the newer one is still loading.
+        let second = g.request(false, true);
+        assert!(!g.is_held());
+        assert!(matches!(g.arrive(second, vec![entry(2, 1, 1)], false, |_| None), Arrival::Ready(_)));
+        assert!(!g.is_held());
     }
 
     #[test]

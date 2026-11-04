@@ -394,7 +394,8 @@ ApplicationWindow {
             descending: view.descending
             savedViews: view.savedViews
             hasSavedViews: view.savedViews.length > 0
-            loading: galleryModel.loading
+            // A list held under the viewer is loaded: it is not loading to the user until it shows.
+            loading: galleryModel.loading && !galleryModel.holding
             fileCount: galleryModel.count
             filterActive: filterBar.active
             filterTotal: filterBar.total

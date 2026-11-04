@@ -44,6 +44,9 @@ pub mod qobject {
         #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
         /// A list asked for (`openFolder`) hasn't arrived yet; the one shown stays meanwhile.
         #[qproperty(bool, loading, READ, WRITE, NOTIFY, FINAL)]
+        /// The list asked for has arrived and waits under the viewer (`Grid::is_held`): it is loaded, not shown, so
+        /// it is not "loading" to the user. QML reads `loading && !holding`.
+        #[qproperty(bool, holding, READ, WRITE, NOTIFY, FINAL)]
         /// The selected item (-1: none): it follows its file to a new list. Set through `set_current_item`, which
         /// reads the selection's text again.
         #[qproperty(i32, current, READ, WRITE = set_current_item, NOTIFY, FINAL)]
@@ -301,6 +304,7 @@ pub struct GalleryRust {
     revision: i32,
     croppable: i32,
     loading: bool,
+    holding: bool,
     current: i32,
     selection_info: QString,
     viewing: i32,
@@ -338,6 +342,7 @@ impl Default for GalleryRust {
             revision: 0,
             croppable: 0,
             loading: false,
+            holding: false,
             current: -1,
             selection_info: QString::default(),
             viewing: -1,
@@ -452,6 +457,9 @@ impl qobject::GalleryModel {
     ) {
         let loading = self.loading;
         let generation = self.as_mut().rust_mut().grid.request(keep, loading);
+        // A list held for the viewer is stale now: the one asked for is loading.
+        let holding = self.grid.is_held();
+        self.as_mut().set_holding(holding);
         self.as_mut().set_loading(true);
         let path = merged.to_string();
         let (query, sort) = (from_json::<Query>(&query.to_string()), from_json::<Sort>(&sort.to_string()));
@@ -489,7 +497,10 @@ impl qobject::GalleryModel {
     /// it closes.
     fn apply(mut self: Pin<&mut Self>, generation: u64, entries: Vec<Entry>) {
         let viewing = self.viewing >= 0;
-        let entries = match self.as_mut().rust_mut().grid.arrive(generation, entries, viewing, fresh_entry) {
+        let arrival = self.as_mut().rust_mut().grid.arrive(generation, entries, viewing, fresh_entry);
+        let holding = self.grid.is_held();
+        self.as_mut().set_holding(holding);
+        let entries = match arrival {
             Arrival::Ready(entries) => entries,
             Arrival::Stale | Arrival::Held => return,
         };

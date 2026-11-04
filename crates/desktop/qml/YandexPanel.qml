@@ -1,7 +1,7 @@
 // Reverse image search on Yandex for the photo in the viewer: its other sizes, and the images that look like it.
 // Pick any of them (a click, Shift-click for a range, or a group's Select all), look at one at full size
 // (double-click), and save the picks into a folder. The search, the results, the picks and the saving are the
-// YandexSearch object's (src/yandex.rs), which works on background threads; this panel polls it while it is busy.
+// YandexSearch object's (src/yandex.rs), which works on background threads and announces each change.
 // Over a dimmed window, like the library panel. The results are ResultTile, the full-size view YandexPreview: the
 // QML compiler compiles a call into a Rust object only in the file that names the object, so this file makes every
 // call to YandexSearch and passes the tiles and the preview what they show.
@@ -89,15 +89,8 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
+    // Its state comes across when it changes: the object's change pump polls it (src/yandex.rs).
     YandexSearch { id: yandex }
-
-    // While a search or a save runs, the object's state comes across on each tick.
-    Timer {
-        interval: 250
-        repeat: true
-        running: yandex.busy
-        onTriggered: yandex.poll()
-    }
 
     FolderDialog {
         id: saveDialog

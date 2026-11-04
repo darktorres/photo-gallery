@@ -1,4 +1,5 @@
-//! Reverse image search on Yandex, from the viewer: the Qt glue over `pg_app::yandex`. QML calls `poll()` while `busy`.
+//! Reverse image search on Yandex, from the viewer: the Qt glue over `pg_app::yandex`. A thread subscribes to the search's
+//! changes and queues a `poll()` onto the Qt thread for each one, as the library's change pump does; QML doesn't poll.
 //! The results are items by index, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
 //! then the similar images (`similarCount`). The picks to save are kept here too. The words the panel shows are
 //! formatted here (`pg_client::text` and the QML's own), from the typed outcomes the app returns.
@@ -27,14 +28,12 @@ pub mod qobject {
         type YandexSearch = super::YandexSearchRust;
     }
 
+    impl cxx_qt::Threading for YandexSearch {}
+
     unsafe extern "RustQt" {
         /// Upload the photo at the local file `path` and read its other sizes and similar images.
         #[qinvokable]
         fn search(self: Pin<&mut YandexSearch>, path: &QString);
-
-        /// Copy the background state into the properties. QML calls this while `busy`.
-        #[qinvokable]
-        fn poll(self: Pin<&mut YandexSearch>);
 
         /// A result's full-size file.
         #[qinvokable]
@@ -90,7 +89,7 @@ pub mod qobject {
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QUrl};
 use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status};
 use pg_client::picks::Picks;
@@ -109,6 +108,8 @@ pub struct YandexSearchRust {
     picked_count: i32,
     revision: i32,
     search: Search,
+    /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
+    pump: bool,
     /// The other sizes, then the similar images, as the latest search found them.
     hits: Vec<Hit>,
     picks: Picks,
@@ -204,13 +205,38 @@ fn file_url(path: &Path) -> String {
 impl qobject::YandexSearch {
     fn search(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
+        self.as_mut().ensure_pump();
         if !self.search.start(Path::new(&path)) {
             return;
         }
-        // QML runs its poll timer while the `busy` property is set, and only poll() sets it: set it here too.
+        // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from(&phase_text(Phase::Starting)));
         self.as_mut().show(Vec::new(), Vec::new());
+    }
+
+    /// Start the thread that polls on each change of the search (once). It subscribes before any search or save starts,
+    /// so none of their changes is missed.
+    fn ensure_pump(mut self: Pin<&mut Self>) {
+        if self.pump {
+            return;
+        }
+        self.as_mut().rust_mut().pump = true;
+        let changes = self.search.subscribe();
+        let thread = self.qt_thread();
+        std::thread::Builder::new()
+            .name("yandex changes".into())
+            .spawn(move || {
+                while changes.recv().is_some() {
+                    // Each poll reads the whole state, so what came in while this one was queued is read with it.
+                    changes.take();
+                    // Fails only when the window is gone: the pump ends with it.
+                    if thread.queue(|search| search.poll()).is_err() {
+                        break;
+                    }
+                }
+            })
+            .expect("spawn the yandex change pump");
     }
 
     /// Show these results, none picked.
@@ -297,6 +323,7 @@ impl qobject::YandexSearch {
         let folder = folder.to_local_file().map_or_else(|| folder.to_qstring().to_string(), |p| p.to_string());
         let hits: Vec<Hit> = self.picks.indices().filter_map(|i| self.hits.get(i).cloned()).collect();
         let files = hits.len();
+        self.as_mut().ensure_pump();
         // The app refuses an empty pick, a search or a save already running, and remembers the folder when it saves.
         if !self.search.save(crate::app::get(), hits, PathBuf::from(folder)) {
             return;

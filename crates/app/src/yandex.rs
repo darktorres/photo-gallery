@@ -1,6 +1,7 @@
 //! Reverse image search on Yandex (`pg_yandex`): the other sizes of a photo and the images that look like it, and the
-//! saving of the results the user picks. The search and the saves run on background threads; the front end calls
-//! [`Search::poll`] while [`Poll::busy`] and shows what comes back. Results and words are typed values: nothing here
+//! saving of the results the user picks. The search and the saves run on background threads. The front end subscribes
+//! ([`Search::subscribe`]) and calls [`Search::poll`] on each change, and shows what comes back ([`Poll::busy`] says
+//! whether one is still running). Results and words are typed values: nothing here
 //! formats text or prints. The files go into the folder the user picks, named after the photo (`IMG_1234 (yandex
 //! 1920x1080).jpg`), and that folder is remembered in the preferences (`yandex_folder`) for the next save.
 
@@ -9,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
+use pg_jobs::events::{Bus, Subscription};
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
 
 use crate::app::App;
@@ -128,10 +130,17 @@ struct Shared {
 }
 
 /// One reverse image search at a time, and the saves of its results. A search or a save that starts while another runs
-/// is refused.
-#[derive(Default)]
+/// is refused. Every change to what `poll` reports is also announced on `changes`, so a front end need not poll.
 pub struct Search {
     shared: Arc<Mutex<Shared>>,
+    changes: Arc<Bus<()>>,
+}
+
+impl Default for Search {
+    fn default() -> Self {
+        // Each subscriber keeps a few changes; a slow one loses the oldest, and `poll` reads the whole state anyway.
+        Search { shared: Arc::default(), changes: Arc::new(Bus::new(16)) }
+    }
 }
 
 /// Still images only: videos and anything else are refused before anything is sent.
@@ -145,8 +154,9 @@ fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
     shared.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
 }
 
-fn set_status(shared: &Mutex<Shared>, status: Status) {
+fn set_status(shared: &Mutex<Shared>, changes: &Bus<()>, status: Status) {
     lock(shared).status = Some(status);
+    changes.publish(());
 }
 
 fn dimension(n: u32) -> i32 {
@@ -155,17 +165,21 @@ fn dimension(n: u32) -> i32 {
 
 /// The search, on its own thread: upload, other sizes, similar. Returns what it found, with a note when the similar
 /// images stopped or failed (the other sizes are still shown, as the crawler keeps them).
-fn find_similar(photo: &Path, shared: &Mutex<Shared>) -> Result<(Found, Option<SimilarNote>), SearchError> {
+fn find_similar(
+    photo: &Path,
+    shared: &Mutex<Shared>,
+    changes: &Bus<()>,
+) -> Result<(Found, Option<SimilarNote>), SearchError> {
     if !is_still_image(photo) {
         return Err(SearchError::NotStill);
     }
     let bytes = std::fs::read(photo).map_err(SearchError::Unreadable)?;
     let mut client = Client::new().map_err(SearchError::Request)?;
-    set_status(shared, Status::Working(Phase::Uploading));
+    set_status(shared, changes, Status::Working(Phase::Uploading));
     let upload = client.upload(&bytes).map_err(SearchError::Request)?;
-    set_status(shared, Status::Working(Phase::OtherSizes));
+    set_status(shared, changes, Status::Working(Phase::OtherSizes));
     let other = client.other_sizes(&upload).map_err(SearchError::Request)?;
-    set_status(shared, Status::Working(Phase::Similar));
+    set_status(shared, changes, Status::Working(Phase::Similar));
     let (similar, note) = match client.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
         Ok(list) => {
             let shown = list.items.len();
@@ -230,7 +244,7 @@ fn save_one(client: &Client, hit: &Hit, stem: &str, folder: &Path) -> Result<(),
 }
 
 /// Downloads every hit into `folder`, one at a time (these are CDN files, so the client paces nothing here).
-fn save_all(hits: &[Hit], stem: &str, folder: &Path, shared: &Mutex<Shared>) -> Saved {
+fn save_all(hits: &[Hit], stem: &str, folder: &Path, shared: &Mutex<Shared>, changes: &Bus<()>) -> Saved {
     let mut saved = Saved { folder: folder.to_path_buf(), written: 0, failed: 0, first_error: None };
     let client = match Client::new() {
         Ok(client) => client,
@@ -241,7 +255,7 @@ fn save_all(hits: &[Hit], stem: &str, folder: &Path, shared: &Mutex<Shared>) -> 
         }
     };
     for (i, hit) in hits.iter().enumerate() {
-        set_status(shared, Status::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
+        set_status(shared, changes, Status::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
         match save_one(&client, hit, stem, folder) {
             Ok(()) => saved.written += 1,
             Err(failure) => {
@@ -266,10 +280,12 @@ impl Search {
             s.photo = photo.clone();
             s.status = Some(Status::Working(Phase::Starting));
         }
+        self.changes.publish(());
         let shared = self.shared.clone();
+        let changes = self.changes.clone();
         thread::spawn(move || {
             // A panic here is logged (the hook), and the search ends with a status, so `busy` is always cleared.
-            let outcome = pg_jobs::panics::catch(AssertUnwindSafe(|| find_similar(&photo, &shared)));
+            let outcome = pg_jobs::panics::catch(AssertUnwindSafe(|| find_similar(&photo, &shared, &changes)));
             let mut s = lock(&shared);
             match outcome {
                 Ok(Ok((found, note))) => {
@@ -281,8 +297,16 @@ impl Search {
             }
             // Same lock as the results, so `poll()` never sees the search end before its results.
             s.busy = false;
+            drop(s);
+            changes.publish(());
         });
         true
+    }
+
+    /// A subscriber's end of the change bus: an event each time what `poll` reports changes. Events are only a signal;
+    /// the state is read with `poll`. Subscribe before `start` or `save`, or the first changes are missed.
+    pub fn subscribe(&self) -> Subscription<()> {
+        self.changes.subscribe()
     }
 
     /// The background state, read by the front end while `busy`: the results that came in, and the status since the last
@@ -319,20 +343,25 @@ impl Search {
             s.status = Some(Status::Working(Phase::Saving { files: hits.len() }));
             stem_of(&s.photo)
         };
+        self.changes.publish(());
         // A preferences file that can't be written keeps the folder in memory for this run; the save goes on. The app
         // reports that failure through its notes when it can be reported.
         let chosen = folder.to_string_lossy().into_owned();
         let _ = app.update_prefs(|p| p.yandex_folder = chosen);
         let shared = self.shared.clone();
+        let changes = self.changes.clone();
         thread::spawn(move || {
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
-            let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| save_all(&hits, &stem, &folder, &shared))) {
-                Ok(saved) => Status::Saved(saved),
-                Err(_) => Status::Stopped,
-            };
+            let status =
+                match pg_jobs::panics::catch(AssertUnwindSafe(|| save_all(&hits, &stem, &folder, &shared, &changes))) {
+                    Ok(saved) => Status::Saved(saved),
+                    Err(_) => Status::Stopped,
+                };
             let mut s = lock(&shared);
             s.status = Some(status);
             s.busy = false;
+            drop(s);
+            changes.publish(());
         });
         true
     }

@@ -6,25 +6,14 @@ use rusqlite::OptionalExtension;
 
 use crate::query::from_json;
 use pg_model::path::name_key;
-use pg_model::query::{Query, Sort};
-
-/// A saved view (ImageRater's bookmarks): where, which files, in what order.
-#[derive(Clone, PartialEq, Debug)]
-pub struct View {
-    pub name: String,
-    /// Merged path; `""` for all folders.
-    pub folder: String,
-    pub recursive: bool,
-    pub query: Query,
-    pub sort: Sort,
-}
+use pg_model::view::SavedView;
 
 /// The saved views, by name as the grid orders file names (`name_key`).
-pub fn views(catalog: &Catalog) -> Result<Vec<View>> {
+pub fn views(catalog: &Catalog) -> Result<Vec<SavedView>> {
     let conn = &catalog.conn;
     let mut stmt = conn.prepare("SELECT name, folder, recursive, query, sort FROM views")?;
     let rows = stmt.query_map([], |r| {
-        Ok(View {
+        Ok(SavedView {
             name: r.get(0)?,
             folder: r.get(1)?,
             recursive: r.get(2)?,
@@ -32,7 +21,7 @@ pub fn views(catalog: &Catalog) -> Result<Vec<View>> {
             sort: from_json(&r.get::<_, String>(4)?),
         })
     })?;
-    let mut views: Vec<View> = rows.collect::<rusqlite::Result<_>>()?;
+    let mut views: Vec<SavedView> = rows.collect::<rusqlite::Result<_>>()?;
     views.sort_by_cached_key(|v| name_key(&v.name));
     Ok(views)
 }

@@ -48,7 +48,7 @@ mod tests {
         // A view is not a file's change.
         save_view(
             &c,
-            &crate::browse::read::View {
+            &pg_model::view::SavedView {
                 name: "v".into(),
                 folder: "p".into(),
                 recursive: true,

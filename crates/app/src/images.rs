@@ -16,6 +16,7 @@ use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_model::ids::FileId;
+use pg_model::image::{ImageKey, Version, View};
 use pg_model::orientation::Orientation;
 use pg_model::state::FileSource;
 use pg_model::turns::Turns;
@@ -30,12 +31,9 @@ const WRITE_WAIT: Duration = Duration::from_secs(10);
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
 const DECODE_MARGIN: usize = 4;
 
-/// What an image key names (the grid's image key): the file as the grid showed it when the key was made.
-#[derive(Clone, Copy, Debug)]
-pub struct Named {
-    pub source: thumbs::Source,
-    /// Quarter turns clockwise asked for and not yet written then.
-    pub turns: Turns,
+/// The thumbnail cache's source of a key's version: the file as the grid showed it when the key was made.
+fn source_of(v: Version) -> thumbs::Source {
+    thumbs::Source { mtime: v.mtime, rotation: v.rotation }
 }
 
 /// What a thumbnail request found, as the catalog has the file.
@@ -64,18 +62,6 @@ pub struct Keep {
     pub file_id: FileId,
     pub height: u32,
     pub source: thumbs::Source,
-}
-
-/// What the viewer asks for.
-#[derive(Clone, Copy, Debug)]
-pub enum View {
-    /// Fitted into (width, height) device pixels, up or down.
-    Fit(usize, usize),
-    /// Full size (1:1 and beyond, and the loupe).
-    Full,
-    /// Zoom between fit and 1:1: the region (x, y, w, h, as fractions of the upright image) at (width, height) device
-    /// pixels, the part of the zoomed image that is on screen.
-    Region((f64, f64, f64, f64), usize, usize),
 }
 
 /// An image in a format Qt's scene graph uploads as it is (`QSGPlainTexture`): 4 bytes a pixel, RGBX8888 or RGBA8888
@@ -159,24 +145,19 @@ impl App {
     }
 
     /// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps one at
-    /// least that high for the file as `named` names it, that one, turned by the name's turns: nothing else is read.
-    /// Otherwise as the catalog has the file now: kept, or made from the original (and to be kept), and turned by the
-    /// catalog's turns. With the original offline, the best smaller one.
+    /// least that high for the file as the key's version names it, that one, turned by the version's turns: nothing else
+    /// is read. Otherwise as the catalog has the file now: kept, or made from the original (and to be kept), and turned by
+    /// the catalog's turns. With the original offline, the best smaller one.
     ///
     /// A kept one is read into `jpeg`, a buffer the caller keeps from one thumbnail to the next, so that showing a cached
     /// thumbnail makes no buffer for its bytes.
-    pub fn thumbnail(
-        &self,
-        file_id: FileId,
-        height: u32,
-        named: Option<Named>,
-        jpeg: &mut Vec<u8>,
-    ) -> Result<Thumbnail> {
+    pub fn thumbnail(&self, key: ImageKey, height: u32, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
+        let (file_id, named) = (key.file, key.version);
         let kept = |turns| Thumbnail { turns, made: None };
         // A smaller one of the file as named, read into `jpeg`.
         let mut smaller = false;
         if let Some(n) = named {
-            match self.thumbs.get_nearest_into(file_id, height, n.source, jpeg).map_err(failed)? {
+            match self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)? {
                 Some(h) if h >= height => return Ok(kept(n.turns)),
                 Some(_) => smaller = true,
                 None => {}
@@ -184,7 +165,7 @@ impl App {
         }
         let (src, found) = self.consistent(file_id, |src| {
             let current = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
-            let kept_smaller = if named.is_some_and(|n| n.source == current) {
+            let kept_smaller = if named.is_some_and(|n| source_of(n) == current) {
                 // Looked for already.
                 false
             } else {
@@ -223,7 +204,9 @@ impl App {
             Found::Offline(e, false) => match named {
                 Some(n) if smaller => Ok(kept(n.turns)),
                 // A read of the file as it is (an earlier try of `consistent`) overwrote it: read again.
-                Some(n) if self.thumbs.get_nearest_into(file_id, height, n.source, jpeg).map_err(failed)?.is_some() => {
+                Some(n)
+                    if self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)?.is_some() =>
+                {
                     Ok(kept(n.turns))
                 }
                 _ => Err(e),

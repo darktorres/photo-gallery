@@ -251,6 +251,7 @@ use pg_model::details::Details;
 use pg_model::detection::Class;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
+use pg_model::image::{ImageKey, Version};
 use pg_model::query::{Query, Sort};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
@@ -639,16 +640,19 @@ impl qobject::GalleryModel {
         self.grid.item(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
     }
 
-    /// What names the item's image for the providers (`<file id>@<mtime>.<rotation>.<pending turns>`, see
+    /// What names the item's image for the providers (`ImageKey`: `<file id>@<mtime>.<rotation>.<pending turns>`, see
     /// `providers`): it changes whenever the image does, so no stale image is shown.
     fn image_key(&self, item: i32) -> QString {
         self.grid.item(item).map_or_else(QString::default, |e| {
+            let key = ImageKey {
+                file: e.id,
+                version: Some(Version { mtime: e.mtime, rotation: e.rotation, turns: e.pending_turns }),
+            };
             // Formatted on the stack: the id and mtime at most 20 bytes each, the rotation and the turns one digit each
             // (0–3), so 20 + 1 + 20 + 1 + 1 + 1 + 1 = 45 bytes.
             let mut buf = [0u8; 64];
             let mut rest = &mut buf[..];
-            write!(rest, "{}@{}.{}.{}", e.id.get(), e.mtime, e.rotation.get(), e.pending_turns.get())
-                .expect("64 bytes hold a key");
+            write!(rest, "{key}").expect("64 bytes hold a key");
             let len = 64 - rest.len();
             QString::from(std::str::from_utf8(&buf[..len]).expect("ASCII"))
         })

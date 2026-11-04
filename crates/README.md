@@ -7,7 +7,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 
 - `model` (`pg-model`): the domain data: the analysis record, border detection, EXIF orientation, PDQ, formats, media
   kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
-  turns, writes). Pure and WASM-safe: no file, catalog, decoder or platform calls.
+  turns, writes, image keys and requests, saved views and the session place). Pure and WASM-safe: no file, catalog, decoder or platform calls.
 - `platform` (`pg-platform`): the operating system behind portable functions. Win32 calls are made here and only here
   (file identity, directory handles, priorities, processes, verbatim paths, message boxes).
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and

@@ -50,7 +50,7 @@ deny = [
     # miniz_oxide and crc32fast aren't banned: png, tiff and flate2 depend on them too.
     { crate = "quick-xml", wrappers = ["pg-metadata"] },
     # The image decoders and encoders are pg-codec's, and the test fixtures' (pg-testkit). `image` is the door to the
-    # rest, so its parents are these crates; pg-library keeps its tests' fixtures until S-09.7 moves them. pg-render's
+    # rest, so its parents are these crates. pg-library's tests write image fixtures (a dev-dependency). pg-render's
     # decodediff example (a dev-only eval tool) compares against image's decoders.
     { crate = "image", wrappers = ["pg-codec", "pg-testkit", "pg-render", "pg-library", "pdqhash"] },
     { crate = "turbojpeg", wrappers = ["pg-codec", "pg-edit", "pg-render"] },
@@ -62,9 +62,8 @@ deny = [
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
-    # SQLite is pg-catalog's and the thumbnail cache's. pg-library's tests and pg-bench keep their uses until S-09.7 and
-    # their own steps move them.
-    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-thumbcache", "pg-library", "pg-bench"] },
+    # SQLite is pg-catalog's and the thumbnail cache's, and pg-bench's (the catalog benches).
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-thumbcache", "pg-bench"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
     # FFmpeg is linked by pg-video alone: a video's probe, frames and file hash.

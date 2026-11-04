@@ -91,9 +91,9 @@ pub mod qobject {
 use core::pin::Pin;
 
 use cxx_qt_lib::{QString, QStringList};
-use pg_app::{Place, SavedView};
 use pg_catalog::query::{from_json, to_json};
 use pg_model::query::{Query, Sort, SortKey};
+use pg_model::view::{Place, SavedView};
 
 use crate::app;
 

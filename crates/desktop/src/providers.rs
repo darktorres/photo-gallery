@@ -1,10 +1,10 @@
-//! The QML image providers. A file is named by `<file id>@<mtime>.<rotation>.<turns>` (`GalleryModel::image_key`):
-//! the version changes whenever the image does, so Qt's pixmap cache never serves a stale one, and `turns` are the
-//! quarter turns the user asked for that aren't in the file yet: the image is served already turned by them, so
-//! every view shows a turn at once. Each image comes from one view of the file (`pg_app::App`'s image methods): a
-//! thumbnail the cache keeps for the file as the key names it, from the key alone; anything else from the catalog
-//! alone, turned by its own turns. A request racing a written turn then shows the file turned once, either way, and
-//! the model's refresh changes the key.
+//! The QML image providers. A file is named by `<file id>@<mtime>.<rotation>.<turns>` (`GalleryModel::image_key`, parsed
+//! as `pg_model::image::ImageKey`): the version changes whenever the image does, so Qt's pixmap cache never serves a
+//! stale one, and `turns` are the quarter turns the user asked for that aren't in the file yet: the image is served
+//! already turned by them, so every view shows a turn at once. Each image comes from one view of the file (`pg_app::App`'s
+//! image methods): a thumbnail the cache keeps for the file as the key names it, from the key alone; anything else from
+//! the catalog alone, turned by its own turns. A request racing a written turn then shows the file turned once, either
+//! way, and the model's refresh changes the key.
 //! - `image://thumb/<file>/<height>`
 //! - `image://thumbhash/<file>`
 //! - `image://full/<file>/<width>x<height>` (fitted), `…/full`, or `…/region/<x>,<y>,<w>,<h>/<width>x<height>` (the
@@ -73,8 +73,8 @@ use anyhow::Context;
 use cxx_qt_lib::QImage;
 use ffi::{ImageKind, PixelFormat, Pixels};
 
-use pg_app::{Named, Upload, View};
-use pg_model::ids::FileId;
+use pg_app::Upload;
+use pg_model::image::{ImageKey, ImageRequest, View};
 use pg_model::turns::Turns;
 
 use crate::app;
@@ -88,12 +88,12 @@ fn failed() -> Pixels {
     Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image: QImage::default() }
 }
 
-/// A thumbnail `height` px high of `file_id` (`App::thumbnail`), decoded, or turned by its turns. One made on a
+/// A thumbnail `height` px high of the key's file (`App::thumbnail`), decoded, or turned by its turns. One made on a
 /// miss moves to the cache's writer once decoded.
-fn thumbnail(file_id: FileId, height: u32, named: Option<Named>) -> anyhow::Result<Pixels> {
+fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
     let app = app::get();
     JPEG.with_borrow_mut(|jpeg| {
-        let thumb = app.thumbnail(file_id, height, named, jpeg)?;
+        let thumb = app.thumbnail(key, height, jpeg)?;
         let bytes = thumb.made.as_ref().map_or(&jpeg[..], |(made, _)| made);
         let pixels = if thumb.turns == Turns::NONE {
             let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
@@ -140,33 +140,29 @@ fn full_view(rest: &str) -> Option<View> {
     ok.then_some(View::Region((x, y, w.min(1.0 - x), h.min(1.0 - y)), ow.min(16384), oh.min(16384)))
 }
 
-/// A key's file, and what its version names (`None` without a version that reads).
-fn parse_key(key: &str) -> Option<(FileId, Option<Named>)> {
-    let (file, version) = key.split_once('@').map_or((key, None), |(f, v)| (f, Some(v)));
-    let named = version.and_then(|v| {
-        let mut parts = v.split('.');
-        let mtime = parts.next()?.parse().ok()?;
-        let rotation = Turns::new(parts.next()?.parse::<u8>().ok()?);
-        let turns = Turns::new(parts.next()?.parse::<u8>().ok()?);
-        Some(Named { source: pg_thumbcache::Source { mtime, rotation }, turns })
-    });
-    Some((FileId::new(file.parse().ok()?), named))
+/// The request a provider of `kind` makes for `key`, from what follows the key in its URL (`rest`).
+fn request(kind: ImageKind, key: ImageKey, rest: &str) -> anyhow::Result<ImageRequest> {
+    Ok(match kind {
+        ImageKind::Thumb => {
+            let height = rest.parse::<u32>().context("bad height")?;
+            ImageRequest::Thumb { key, height: height.clamp(16, 2048) }
+        }
+        ImageKind::Thumbhash => ImageRequest::Thumbhash { key },
+        ImageKind::Full => ImageRequest::Full { key, view: full_view(rest).context("bad view")? },
+        _ => anyhow::bail!("an unknown provider"),
+    })
 }
 
 fn load_image(kind: ImageKind, id: &str) -> Pixels {
     let (key, rest) = id.split_once('/').unwrap_or((id, ""));
-    let Some((file_id, named)) = parse_key(key) else { return failed() };
-    let result = match kind {
-        ImageKind::Thumb => {
-            rest.parse::<u32>().context("bad height").and_then(|h| thumbnail(file_id, h.clamp(16, 2048), named))
+    let Some(key) = ImageKey::parse(key) else { return failed() };
+    let result = request(kind, key, rest).and_then(|request| match request {
+        ImageRequest::Thumb { key, height } => thumbnail(key, height),
+        ImageRequest::Thumbhash { key } => app::get().placeholder(key.file).map(upload).map_err(anyhow::Error::from),
+        ImageRequest::Full { key, view } => {
+            app::get().full_image(key.file, view).map(upload).map_err(anyhow::Error::from)
         }
-        ImageKind::Thumbhash => app::get().placeholder(file_id).map(upload).map_err(anyhow::Error::from),
-        ImageKind::Full => match full_view(rest) {
-            Some(view) => app::get().full_image(file_id, view).map(upload).map_err(anyhow::Error::from),
-            None => return failed(),
-        },
-        _ => return failed(),
-    };
+    });
     result.unwrap_or_else(|e| {
         eprintln!("image {kind:?} {id}: {e:#}");
         failed()

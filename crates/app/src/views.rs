@@ -6,22 +6,10 @@ use pg_catalog::browse;
 use pg_catalog::query::{from_json, to_json};
 use pg_model::query::{Query, Sort};
 use pg_model::tree::FolderTree;
+use pg_model::view::{Place, SavedView};
 
 use crate::app::App;
 use crate::error::Result;
-
-/// A saved view, as the catalog keeps it.
-pub type SavedView = browse::read::View;
-
-/// Where the user was: the folder shown (`""` for all folders), with its subfolders, in what order, filtered by what.
-#[derive(Clone, Debug)]
-pub struct Place {
-    pub folder: String,
-    pub recursive: bool,
-    pub sort: Sort,
-    /// The filter bar's query (`Query` as JSON in the catalog; empty when none).
-    pub query: Query,
-}
 
 impl App {
     /// A session value (the front end's keys: `folder`, `recursive`, `query`, `sort`, `file`), if one was saved.

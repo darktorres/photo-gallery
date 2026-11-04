@@ -7,10 +7,10 @@ use rusqlite::{Connection, params};
 use crate::Catalog;
 use crate::query::to_json;
 
-use super::read::View;
+use pg_model::view::SavedView;
 
 /// Save a view, replacing one of the same name.
-pub fn save_view(catalog: &Catalog, v: &View) -> Result<()> {
+pub fn save_view(catalog: &Catalog, v: &SavedView) -> Result<()> {
     let conn = &catalog.conn;
     conn.execute(
         "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
@@ -54,7 +54,7 @@ mod tests {
     #[test]
     fn views_keep_their_query() {
         let c = library();
-        let v = View {
+        let v = SavedView {
             name: "Unrated videos".into(),
             folder: "p".into(),
             recursive: true,

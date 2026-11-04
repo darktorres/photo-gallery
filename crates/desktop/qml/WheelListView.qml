@@ -26,6 +26,29 @@ ListView {
         return Math.max(top, Math.min(bottom, y))
     }
 
+    // One wheel event, by its vertical fields (QWheelEvent's angleDelta.y, pixelDelta.y and phase): the handler below
+    // calls this. It is a function, not only the handler's body, so the tests can drive it: QtTest's mouseWheel does not
+    // reach a WheelHandler (a MouseArea's onWheel does), so the routing is checked by the app, not the tests. Typed
+    // scalars, not the event object: the QML compiler needs the types to compile this to C++.
+    function wheelBy(angleY: real, pixelY: real, phase: int) {
+        if (!frames.running)
+            scroller.destination = list.contentY
+        // Pixel deltas from the platform (touchpads, on some systems): follow them as they come, which is what
+        // they are for. Qt takes this path under the same conditions, except that it cannot see the event's
+        // source here.
+        if (pixelY !== 0 && phase !== Qt.NoScrollPhase) {
+            frames.stop()
+            scroller.moveTo(clampContentY(scroller.destination - pixelY))
+            return
+        }
+        scroller.destination = clampContentY(
+            scroller.destination - angleY / 120 * Application.styleHints.wheelScrollLines * wheelLineHeight)
+        if (!frames.running) {
+            scroller.written = contentY
+            frames.start()
+        }
+    }
+
     // A handler declared in a Flickable is moved onto its contentItem (QQuickFlickablePrivate::addPointerHandler),
     // which hit-tests as the whole view (QQuickFlickableContentItem::contains) and is reached before the Flickable's
     // own wheelEvent().
@@ -52,24 +75,7 @@ ListView {
         acceptedModifiers: Qt.NoModifier
         orientation: Qt.Vertical
 
-        onWheel: (ev) => {
-            if (!frames.running)
-                destination = list.contentY
-            // Pixel deltas from the platform (touchpads, on some systems): follow them as they come, which is what
-            // they are for. Qt takes this path under the same conditions, except that it cannot see the event's
-            // source here.
-            if (ev.pixelDelta.y !== 0 && ev.phase !== Qt.NoScrollPhase) {
-                frames.stop()
-                moveTo(list.clampContentY(destination - ev.pixelDelta.y))
-                return
-            }
-            destination = list.clampContentY(
-                destination - ev.angleDelta.y / 120 * Application.styleHints.wheelScrollLines * list.wheelLineHeight)
-            if (!frames.running) {
-                written = list.contentY
-                frames.start()
-            }
-        }
+        onWheel: (ev) => list.wheelBy(ev.angleDelta.y, ev.pixelDelta.y, ev.phase)
     }
 
     FrameAnimation {

@@ -30,10 +30,10 @@ run *args:
 dev *args:
     cargo run -- {{ args }}
 
-# The unit and integration tests. Qt's bin is on PATH: pg-desktop's tests link Qt and need its DLLs.
+# The unit and integration tests. Qt's bin is on PATH: pg-desktop's tests link Qt and need its DLLs. One line: `just`
+# runs each line of a recipe in its own shell, so a PATH set on one line is gone by the next.
 test *args:
-    $env:PATH = "{{ qt }}/bin;" + $env:PATH
-    cargo test --workspace {{ args }}
+    $env:PATH = "{{ qt }}/bin;" + $env:PATH; cargo test --workspace {{ args }}
 
 # Format the Rust and the Python code.
 fmt:
@@ -58,6 +58,21 @@ lint: && lint-qml
 # runs some scenarios. Builds two binaries: the first run is slow.
 shots *args:
     pwsh -NoLogo -NoProfile -File tools/compare-shots.ps1 {{ args }}
+
+# The QML tests (S-14.3): Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen. The viewer's
+# test runs against stubs of the pg.gallery types (tests/qml/stubs), so it checks Viewer.qml and nothing Rust.
+qmltest:
+    $env:PATH = "{{ qt }}/bin;" + $env:PATH; $env:QT_QPA_PLATFORM = "offscreen"; & "{{ qt }}/bin/qmltestrunner.exe" -input crates/desktop/tests/qml -import crates/desktop/tests/qml/stubs -import crates/desktop/qml -o target/qmltest.txt,txt; $code = $LASTEXITCODE; Get-Content target/qmltest.txt; exit $code
+
+# The instruction-count gate (S-16.2): the callgrind benches in WSL, compared with docs/perf/baseline.json at ±1%
+# (tools/perf-check.sh). After a change that should move the counts: `just perf --update`.
+perf *args:
+    wsl -d Ubuntu-26.04 -u root -- bash tools/perf-check.sh {{ args }}
+
+# Each fuzz target for a short time, in WSL (fuzz/, tools/fuzz-smoke.sh): the nightly gate (S-18.3). `just fuzz-smoke 300`
+# for five minutes per target.
+fuzz-smoke *args:
+    wsl -d Ubuntu-26.04 -u root -- bash tools/fuzz-smoke.sh {{ args }}
 
 # Clippy (-D warnings) for every crate but the desktop, in WSL, where the Linux-only code compiles (tools/wsl-check.sh).
 wsl-check:

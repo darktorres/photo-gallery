@@ -1,0 +1,185 @@
+# CI (S-15). Three jobs: `windows` (the app: lint, tests, the QML tests, a deploy smoke test, the screenshot comparison),
+# `linux` (the crates that build without Qt: tests, the wasm32 check, the supply-chain checks), and `nightly` (the fuzz
+# smoke test and the instruction-count gate). Every command is one the Justfile or tools/ has, so a failure here
+# reproduces locally.
+#
+# Not verified: this file was written without running it on a runner. The first run is the check. Two things it needs
+# from outside the repository:
+#   - Qt 6.12.0 (msvc2022_64), installed at C:\Qt (the Justfile's path, .cargo/config.toml's QMAKE).
+#   - FFmpeg 9.0 shared build (the BtbN GPL build tools/ffmpeg-9.0/SOURCE.txt names). Its URL is the repository variable
+#     FFMPEG_URL, which must be set in the repository settings; the job fails without it. FFMPEG_DIR is set from it,
+#     which overrides the Windows path in .cargo/config.toml.
+# The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  QT_VERSION: "6.12.0"
+
+jobs:
+  windows:
+    name: Windows (app, Qt)
+    if: github.event_name != 'schedule'
+    runs-on: windows-2025
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # the screenshot comparison builds the PR's base commit
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-deny,cargo-machete
+
+      - name: Qt ${{ env.QT_VERSION }} (at the path the Justfile names: C:/Qt/6.12.0/msvc2022_64)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          dir: C:\Qt
+          modules: qtmultimedia
+          cache: true
+
+      - name: FFmpeg (shared build, for pg-video and its tests)
+        shell: pwsh
+        env:
+          FFMPEG_URL: ${{ vars.FFMPEG_URL }}
+        run: |
+          if (-not $env:FFMPEG_URL) { Write-Error "repository variable FFMPEG_URL is not set"; exit 1 }
+          Invoke-WebRequest -Uri $env:FFMPEG_URL -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+          $root = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName
+          "FFMPEG_DIR=$root" >> $env:GITHUB_ENV
+          "$root\bin" >> $env:GITHUB_PATH
+
+      - name: ExifTool (the metadata tests)
+        shell: pwsh
+        run: choco install exiftool -y --no-progress
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Lint (formatting, clippy, dependencies, Python, Markdown, QML)
+        run: just lint
+
+      - name: Tests (Qt's bin on PATH; a skipped test fails the job)
+        shell: pwsh
+        run: |
+          just test 2>&1 | Tee-Object -FilePath test.log
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          if (Select-String -Path test.log -Pattern 'SKIPPED' -Quiet) { Write-Error "a test was skipped"; exit 1 }
+
+      - name: QML tests
+        run: just qmltest
+
+      - name: Deploy smoke test (the release build with Qt's DLLs and QML modules)
+        run: just deploy
+
+      - name: Screenshot comparison against the PR's base
+        if: github.event_name == 'pull_request'
+        continue-on-error: true # informational until it is stable (plan S-15)
+        shell: pwsh
+        run: just shots -Base "origin/$env:GITHUB_BASE_REF"
+
+      - name: Screenshot report
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@v4
+        with:
+          name: screenshots
+          path: |
+            target/shots/report.txt
+            target/shots/diff/
+          if-no-files-found: ignore
+
+  linux:
+    name: Linux (crates without Qt)
+    if: github.event_name != 'schedule'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just,cargo-deny,cargo-machete
+
+      - name: System libraries (FFmpeg, libclang, valgrind for the benches)
+        run: bash tools/profiling/wsl-setup.sh
+
+      - name: ExifTool (the metadata tests)
+        run: sudo apt-get install -y -qq libimage-exiftool-perl
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build and test the crates that need no Qt
+        env:
+          FFMPEG_DIR: /home/runner/.local/share/pg-bench/ffmpeg
+        run: |
+          LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
+          export LIBCLANG_PATH
+          cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings
+          cargo test --workspace --exclude pg-desktop --exclude pg-gallery
+
+      - name: wasm32 (the shared model and the client stay free of platform code)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo check -p pg-model -p pg-client --target wasm32-unknown-unknown
+
+      - name: Supply chain (licences, advisories, unused dependencies)
+        run: |
+          cargo deny check
+          cargo machete crates
+
+      - name: Python and Markdown
+        run: |
+          python -m pip install --quiet ruff
+          ruff format --check .
+          ruff check .
+          npm install --global markdownlint-cli
+          markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
+
+  nightly:
+    name: Nightly (fuzz smoke, instruction counts)
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: just
+
+      - name: System libraries
+        run: bash tools/profiling/wsl-setup.sh
+
+      - name: Fuzz smoke test (60 s per target, S-18.3)
+        run: bash tools/fuzz-smoke.sh 60
+
+      - name: Instruction counts against the baseline (S-16.2; informational until the baseline is measured)
+        continue-on-error: true
+        run: bash tools/perf-check.sh

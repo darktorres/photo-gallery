@@ -17,3 +17,7 @@ specta = { version = "=2.0.0-rc.27", optional = true, features = ["derive"] }
 
 [features]
 specta = ["dep:specta"]
+
+# The laws of the pure types (tests/laws.rs), generated (S-18.2).
+[dev-dependencies]
+proptest.workspace = true

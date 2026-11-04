@@ -1,0 +1,86 @@
+# The fuzz targets (S-18.1). Outside the workspace (its own `[workspace]`, so `cargo check --workspace` never builds
+# libFuzzer): run with cargo-fuzz on Linux, `tools/fuzz-smoke.sh` (`just fuzz-smoke`) or `cargo fuzz run <target>`.
+# Each crash found becomes a regression test in the crate that owns the code, then the input is kept in corpus/.
+[package]
+name = "pg-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pg-codec = { path = "../crates/codec" }
+pg-container = { path = "../crates/container" }
+pg-edit = { path = "../crates/edit" }
+pg-metadata = { path = "../crates/metadata" }
+pg-model = { path = "../crates/model" }
+serde_json = "1"
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "container_jpeg"
+path = "fuzz_targets/container_jpeg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "container_chunks"
+path = "fuzz_targets/container_chunks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata_read"
+path = "fuzz_targets/metadata_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edit_rotate"
+path = "fuzz_targets/edit_rotate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_keys"
+path = "fuzz_targets/model_keys.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_query_json"
+path = "fuzz_targets/model_query_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codec_transform"
+path = "fuzz_targets/codec_transform.rs"
+test = false
+doc = false
+bench = false
+
+# The workspace's vendored crates (vendor/README.md; the root Cargo.toml's [patch.crates-io] is the full list). Without
+# these, this crate's graph would take the upstream quick-xml, which pg-metadata does not compile against.
+[patch.crates-io]
+fast_image_resize = { path = "../vendor/fast_image_resize" }
+fdeflate = { path = "../vendor/fdeflate" }
+gif = { path = "../vendor/gif" }
+image-webp = { path = "../vendor/image-webp" }
+png = { path = "../vendor/png" }
+quick-xml = { path = "../vendor/quick-xml" }
+tiff = { path = "../vendor/tiff" }
+turbojpeg-sys = { path = "../vendor/turbojpeg-sys" }
+zune-core = { path = "../vendor/zune-core" }
+zune-jpeg = { path = "../vendor/zune-jpeg" }

@@ -25,6 +25,7 @@ image-webp = "0.2"
 miniz_oxide = "0.8"
 pdqhash = "0.1"
 png = "0.18"
+proptest = "1"
 quick-xml = "0.42"
 rusqlite = { version = "0.37", features = ["bundled", "collation", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }

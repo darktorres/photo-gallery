@@ -9,3 +9,7 @@ __pycache__/
 .qmlls.ini
 # Logs of the Playwright MCP browser.
 .playwright-mcp/
+# The fuzz targets (fuzz/, S-18.1): the crate's build output, and what the fuzzer finds (corpus, crashes).
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/

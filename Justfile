@@ -30,8 +30,9 @@ run *args:
 dev *args:
     cargo run -- {{ args }}
 
-# The unit and integration tests.
+# The unit and integration tests. Qt's bin is on PATH: pg-desktop's tests link Qt and need its DLLs.
 test *args:
+    $env:PATH = "{{ qt }}/bin;" + $env:PATH
     cargo test --workspace {{ args }}
 
 # Format the Rust and the Python code.
@@ -51,6 +52,12 @@ lint: && lint-qml
     ruff format --check .
     ruff check .
     markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
+
+# Screenshot comparison: the test-hook matrix on one fixture, the working tree against HEAD (or the commit given),
+# pixel by pixel (tools/compare-shots.ps1). `just shots -Self` runs the working tree against itself; `-Only a,b`
+# runs some scenarios. Builds two binaries: the first run is slow.
+shots *args:
+    pwsh -NoLogo -NoProfile -File tools/compare-shots.ps1 {{ args }}
 
 # Clippy (-D warnings) for every crate but the desktop, in WSL, where the Linux-only code compiles (tools/wsl-check.sh).
 wsl-check:

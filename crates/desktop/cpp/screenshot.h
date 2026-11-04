@@ -6,7 +6,8 @@
 
 namespace pg {
 
-// `delay_ms` after the call, save the window the engine shows to `path` (its format by its extension), then quit.
-void save_screenshot_later(QQmlApplicationEngine& engine, const QString& path, int delay_ms);
+// Once the window has settled (screenshot.cpp), save the window the engine shows to `path` (its format by its
+// extension) and quit. `max_ms` is the most to wait for it to settle, after the call.
+void save_screenshot_later(QQmlApplicationEngine& engine, const QString& path, int max_ms);
 
 }  // namespace pg

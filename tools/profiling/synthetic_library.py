@@ -50,11 +50,11 @@ def exif_with(orientation: int | None, when: datetime) -> bytes:
     return exif.tobytes()
 
 
-def write_file(job: tuple[Path, str, datetime, int]) -> Path:
-    path, kind, when, seed = job
+def write_file(job: tuple[Path, str, datetime, int, list[tuple[int, int, int]]]) -> Path:
+    path, kind, when, seed, sizes = job
     rng = random.Random(seed)
     if kind == "jpg":
-        width, height, _ = rng.choices(JPEG_SIZES, weights=[w for *_, w in JPEG_SIZES])[0]
+        width, height, _ = rng.choices(sizes, weights=[w for *_, w in sizes])[0]
         img = picture(seed, width, height)
         orientation = rng.choice([6, 8]) if rng.random() < 0.1 else None
         img.save(path, "JPEG", quality=85, exif=exif_with(orientation, when))
@@ -69,7 +69,13 @@ def write_file(job: tuple[Path, str, datetime, int]) -> Path:
     return path
 
 
-def plan(folders: int, per_folder: int, seed: int, out: Path) -> list[tuple[Path, str, datetime, int]]:
+def plan(
+    folders: int,
+    per_folder: int,
+    seed: int,
+    out: Path,
+    sizes: list[tuple[int, int, int]] = JPEG_SIZES,
+) -> list[tuple[Path, str, datetime, int, list[tuple[int, int, int]]]]:
     """Every file's job, drawn in a fixed order from the master seed."""
     master = random.Random(seed)
     start = datetime(2024, 1, 1)
@@ -79,8 +85,17 @@ def plan(folders: int, per_folder: int, seed: int, out: Path) -> list[tuple[Path
         for i in range(per_folder):
             when = start + timedelta(days=master.randrange(900), seconds=master.randrange(86400))
             kind = master.choices(["jpg", "png", "gif", "webp"], weights=[70, 15, 5, 5])[0]
-            jobs.append((folder / f"IMG_{f:02d}_{i:03d}.{kind}", kind, when, master.randrange(2**32)))
+            jobs.append((folder / f"IMG_{f:02d}_{i:03d}.{kind}", kind, when, master.randrange(2**32), sizes))
     return jobs
+
+
+def parse_sizes(text: str) -> list[tuple[int, int, int]]:
+    """`WxH,WxH…`: those JPEG sizes, equally likely."""
+    sizes = []
+    for part in text.split(","):
+        width, height = part.lower().split("x")
+        sizes.append((int(width), int(height), 1))
+    return sizes
 
 
 def main() -> None:
@@ -90,8 +105,13 @@ def main() -> None:
     parser.add_argument("--per-folder", type=int, default=50)
     parser.add_argument("--seed", type=int, default=1)
     parser.add_argument("--jobs", type=int, default=os.cpu_count() or 1)
+    parser.add_argument(
+        "--jpeg-size",
+        help="JPEG sizes as WxH[,WxH…], equally likely (default: the camera-like mix above, up to 12 MP)",
+    )
     args = parser.parse_args()
-    jobs = plan(args.folders, args.per_folder, args.seed, args.out)
+    sizes = parse_sizes(args.jpeg_size) if args.jpeg_size else JPEG_SIZES
+    jobs = plan(args.folders, args.per_folder, args.seed, args.out, sizes)
     for folder in {job[0].parent for job in jobs}:
         folder.mkdir(parents=True, exist_ok=True)
     with Pool(args.jobs) as pool:

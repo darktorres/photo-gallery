@@ -1,0 +1,4 @@
+# The Python packages `tools/profiling/synthetic_library.py` needs, for the screenshot fixture (`just shots`).
+# `just shots` makes its own venv under target\shots\venv from this file.
+numpy==2.5.4
+pillow==13.0.0

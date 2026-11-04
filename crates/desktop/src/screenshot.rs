@@ -1,6 +1,8 @@
-//! The `--screenshot=<png>` test hook (with `--wait=<s>`, 4 by default, after the window is `ready`): save the
-//! window once it has settled, then quit (cpp/screenshot.cpp). For checking the UI without a person at the screen,
-//! with the QML's own hooks (Main.qml).
+//! The `--screenshot=<png>` test hook (with `--wait=<s>`, the most to wait for the window to settle, 10 by default):
+//! save the window once it has settled (ready, no image loading, no QML timer pending, no animation, no library job or
+//! write pending, no frame for a while), then
+//! quit (cpp/screenshot.cpp). The reason it was taken goes to `<png>.settle.txt`. For checking the UI without a person
+//! at the screen, with the QML's own hooks (Main.qml).
 
 #[cxx_qt::bridge]
 pub mod ffi {
@@ -11,9 +13,9 @@ pub mod ffi {
         type QString = cxx_qt_lib::QString;
 
         include!("pg-desktop/cpp/screenshot.h");
-        /// `delay_ms` after the window the engine shows is `ready`, save it to `path`, then quit.
+        /// Once the window the engine shows has settled (at most `max_ms` after this call), save it to `path`, then quit.
         #[namespace = "pg"]
-        fn save_screenshot_later(engine: Pin<&mut QQmlApplicationEngine>, path: &QString, delay_ms: i32);
+        fn save_screenshot_later(engine: Pin<&mut QQmlApplicationEngine>, path: &QString, max_ms: i32);
     }
 }
 
@@ -26,6 +28,6 @@ use crate::command_line;
 /// Schedule the screenshot if the command line asks for one.
 pub fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     let Some(path) = command_line::value("screenshot") else { return };
-    let wait: f64 = command_line::value("wait").and_then(|w| w.trim().parse().ok()).unwrap_or(4.0);
+    let wait: f64 = command_line::value("wait").and_then(|w| w.trim().parse().ok()).unwrap_or(10.0);
     ffi::save_screenshot_later(engine, &QString::from(path), (wait * 1000.0) as i32);
 }

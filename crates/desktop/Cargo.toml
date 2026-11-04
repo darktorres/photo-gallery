@@ -9,9 +9,8 @@ workspace = true
 
 
 [lib]
-# No unit tests here (the UI is checked through its test hooks, crates/README.md). A test binary would still link Qt
-# and run from target/<profile>/deps, where the Qt DLLs aren't, and fail with STATUS_DLL_NOT_FOUND.
-test = false
+# The unit tests run with Qt's bin on PATH (`just test` puts it there): a test binary links Qt and runs from
+# target/<profile>/deps, where the Qt DLLs aren't, so without that PATH it fails with STATUS_DLL_NOT_FOUND.
 doctest = false
 
 [dependencies]

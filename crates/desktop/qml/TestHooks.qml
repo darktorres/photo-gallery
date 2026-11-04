@@ -14,7 +14,9 @@
 //   --borders  show the borders (as B does) from the start
 //   --save-crops=<folder>  save cropped copies of the listed files with borders found
 //                        (GalleryModel.saveCroppedCopies)
-//   --screenshot=<png>  save the window 4 s (or --wait=<s>) after it is ready, and quit (src/screenshot.rs)
+//   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
+//                       library job or write pending, no frame for a while), and quit; --wait=<s> is the most to wait
+//                       for that, 10 by default (src/screenshot.rs)
 // The options are read here. What they do to the window is signalled to Main, which makes the calls on the viewer and
 // the Rust objects. --query, --sort, --apply-view, --filters and --borders shape the first list (Main reads
 // them before it loads); the others act once the first list is shown (run, from started()).

@@ -1,8 +1,9 @@
 //! The library (the folders the user added) and the background work that keeps the catalog and the files in step: the
 //! job that scans, imports, makes thumbnails and saves cropped copies, and the writer that puts ratings and turns into
 //! the files. Both run in `pg_app` (`App::library`), which announces what changed on one bus. A thread here subscribes
-//! to that bus and queues each change onto the Qt thread, which reads the new state and updates the properties and
-//! emits `scanned`, `imported` and `filesChanged`. QML doesn't poll.
+//! to that bus and hands the changes to the Qt thread in passes: one pass is queued at a time, and it handles what came
+//! in meanwhile, each kind once. The Qt thread reads the new state and updates the properties and emits `scanned`,
+//! `imported` and `filesChanged`. QML doesn't poll.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -77,7 +78,7 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
-use std::sync::OnceLock;
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use cxx_qt::Threading;
 use cxx_qt_lib::{QString, QStringList, QUrl};
@@ -90,6 +91,45 @@ use crate::app;
 
 /// The library, once `start` has started it: what the change pump and the folder operations read.
 static LIBRARY: OnceLock<&'static pg_app::Library> = OnceLock::new();
+
+/// The changes the pump has taken off the bus and the Qt thread hasn't handled, and whether a pass is queued for them.
+/// At most one pass is queued at a time, so the Qt thread runs one per event-loop turn at most.
+#[derive(Default)]
+struct Pending {
+    changes: Changes,
+    queued: bool,
+}
+
+/// What the pending changes come to: each kind is handled once per pass, however many came in. The rounds are counted.
+#[derive(Default)]
+struct Changes {
+    progress: bool,
+    notice: bool,
+    writes: bool,
+    turned: bool,
+    scanned: bool,
+    imported: bool,
+    rounds: u32,
+}
+
+impl Changes {
+    fn add(&mut self, change: Change) {
+        match change {
+            Change::Progress => self.progress = true,
+            Change::Notice => self.notice = true,
+            Change::Writes => self.writes = true,
+            Change::Turned => self.turned = true,
+            Change::Scanned => self.scanned = true,
+            Change::Imported => self.imported = true,
+            Change::Round => self.rounds += 1,
+        }
+    }
+}
+
+fn lock(shared: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
+    // A panic on the other side leaves the changes as they were: the next pass handles them.
+    shared.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 #[derive(Default)]
 pub struct LibraryRust {
@@ -155,14 +195,24 @@ impl qobject::Library {
         // Subscribed before the pump starts, so no change is missed between the start and the first one it handles.
         let changes = library.changes().subscribe();
         let _ = LIBRARY.set(library);
+        let shared: Arc<Mutex<Pending>> = Arc::default();
         let thread = self.qt_thread();
         std::thread::Builder::new()
             .name("library changes".into())
             .spawn(move || {
                 while let Some(change) = changes.recv() {
-                    // Fails only when the window is gone: the pump ends with it.
-                    if thread.queue(move |library| library.on_change(change)).is_err() {
-                        break;
+                    // Queued only when no pass is: a pass that is queued reads what this change is added to.
+                    let queue = {
+                        let mut pending = lock(&shared);
+                        pending.changes.add(change);
+                        !std::mem::replace(&mut pending.queued, true)
+                    };
+                    if queue {
+                        let pass = Arc::clone(&shared);
+                        // Fails only when the window is gone: the pump ends with it.
+                        if thread.queue(move |library| library.on_pass(pass)).is_err() {
+                            break;
+                        }
                     }
                 }
             })
@@ -172,23 +222,38 @@ impl qobject::Library {
         self.as_mut().refresh_writes();
     }
 
-    /// One change from the job or the writer, on the Qt thread.
-    fn on_change(mut self: Pin<&mut Self>, change: Change) {
-        match change {
-            Change::Progress => self.as_mut().refresh_progress(),
-            Change::Notice => self.as_mut().show_notices(),
-            Change::Writes => self.as_mut().refresh_writes(),
-            Change::Turned => {
-                // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
-                if let Some(library) = LIBRARY.get() {
-                    library.wake_job();
-                }
-                self.as_mut().files_changed();
+    /// One pass on the Qt thread: the changes that came in since the last one, each kind handled once, in this order.
+    fn on_pass(mut self: Pin<&mut Self>, shared: Arc<Mutex<Pending>>) {
+        let taken = {
+            let mut pending = lock(&shared);
+            pending.queued = false;
+            std::mem::take(&mut pending.changes)
+        };
+        if taken.progress {
+            self.as_mut().refresh_progress();
+        }
+        if taken.notice {
+            self.as_mut().show_notices();
+        }
+        if taken.writes {
+            self.as_mut().refresh_writes();
+        }
+        if taken.turned {
+            // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
+            if let Some(library) = LIBRARY.get() {
+                library.wake_job();
             }
-            Change::Scanned => self.as_mut().scanned(),
-            Change::Imported => self.as_mut().imported(),
-            // The job's rounds, counted as stages for measuring (docs/PROFILING.md).
-            Change::Round => pg_trace::pg_stage_round_done(),
+            self.as_mut().files_changed();
+        }
+        if taken.scanned {
+            self.as_mut().scanned();
+        }
+        if taken.imported {
+            self.as_mut().imported();
+        }
+        // The job's rounds, counted as stages for measuring (docs/PROFILING.md).
+        for _ in 0..taken.rounds {
+            pg_trace::pg_stage_round_done();
         }
     }
 

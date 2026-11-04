@@ -13,6 +13,40 @@ pub mod qobject {
         type QStringList = cxx_qt_lib::QStringList;
     }
 
+    /// Upright shape: the `orientations` facet (`query::Shape`).
+    #[qenum(Filters)]
+    enum Shape {
+        Landscape,
+        Portrait,
+        Square,
+    }
+
+    /// The `types` facet (`query::MediaType`).
+    #[qenum(Filters)]
+    enum MediaType {
+        Image,
+        Animated,
+        Video,
+    }
+
+    /// The `status` facet (`query::Status`).
+    #[qenum(Filters)]
+    enum Status {
+        Imported,
+        Pending,
+        Failed,
+    }
+
+    /// The `borders` facet (`query::BorderFacet`).
+    #[qenum(Filters)]
+    enum Border {
+        None,
+        Black,
+        White,
+        Color,
+        Blur,
+    }
+
     extern "RustQt" {
         #[qobject]
         #[qml_element]
@@ -108,6 +142,81 @@ pub mod qobject {
         #[cxx_name = "borderCount"]
         fn border_count(self: &Filters, value: &QString) -> i32;
 
+        // Typed twins of `has`, `toggle`, `label`, `typeCount` and `borderCount` for the facets whose values are
+        // the enums above. A parameter of a qenum type doesn't resolve in QML's compiler, so these take the enum's
+        // number (`Filters.Shape.Landscape` is 0), mapped to the query enum by `shape_of` and its siblings. One name
+        // per enum: an overload would not compile in QML.
+
+        /// Whether a shape is chosen (`has` for `orientations`).
+        #[qinvokable]
+        #[cxx_name = "hasShape"]
+        fn has_shape(self: &Filters, value: i32) -> bool;
+
+        /// Choose a shape, or unchoose it (`toggle` for `orientations`).
+        #[qinvokable]
+        #[cxx_name = "toggleShape"]
+        fn toggle_shape(self: Pin<&mut Filters>, value: i32);
+
+        /// How the filter bar names a shape.
+        #[qinvokable]
+        #[cxx_name = "shapeLabel"]
+        fn shape_label(self: &Filters, value: i32) -> QString;
+
+        /// Whether a media type is chosen (`has` for `types`).
+        #[qinvokable]
+        #[cxx_name = "hasMediaType"]
+        fn has_media_type(self: &Filters, value: i32) -> bool;
+
+        /// Choose a media type, or unchoose it (`toggle` for `types`).
+        #[qinvokable]
+        #[cxx_name = "toggleMediaType"]
+        fn toggle_media_type(self: Pin<&mut Filters>, value: i32);
+
+        /// How the filter bar names a media type.
+        #[qinvokable]
+        #[cxx_name = "mediaTypeLabel"]
+        fn media_type_label(self: &Filters, value: i32) -> QString;
+
+        /// How many files choosing a media type would show (`typeCount`).
+        #[qinvokable]
+        #[cxx_name = "mediaTypeCount"]
+        fn media_type_count(self: &Filters, value: i32) -> i32;
+
+        /// Whether a status is chosen (`has` for `status`).
+        #[qinvokable]
+        #[cxx_name = "hasStatus"]
+        fn has_status(self: &Filters, value: i32) -> bool;
+
+        /// Choose a status, or unchoose it (`toggle` for `status`).
+        #[qinvokable]
+        #[cxx_name = "toggleStatus"]
+        fn toggle_status(self: Pin<&mut Filters>, value: i32);
+
+        /// How the filter bar names a status.
+        #[qinvokable]
+        #[cxx_name = "statusLabel"]
+        fn status_label(self: &Filters, value: i32) -> QString;
+
+        /// Whether a borders value is chosen (`has` for `borders`).
+        #[qinvokable]
+        #[cxx_name = "hasBorder"]
+        fn has_border(self: &Filters, value: i32) -> bool;
+
+        /// Choose a borders value, or unchoose it (`toggle` for `borders`).
+        #[qinvokable]
+        #[cxx_name = "toggleBorder"]
+        fn toggle_border(self: Pin<&mut Filters>, value: i32);
+
+        /// How the filter bar names a borders value.
+        #[qinvokable]
+        #[cxx_name = "borderLabel"]
+        fn border_label(self: &Filters, value: i32) -> QString;
+
+        /// How many files choosing a borders value would show (`borderCount`).
+        #[qinvokable]
+        #[cxx_name = "borderValueCount"]
+        fn border_value_count(self: &Filters, value: i32) -> i32;
+
         /// Count a merged folder's files (`""` = all folders), with or without its subfolders: `total`, `matching`,
         /// the types', extensions' and borders' counts. Counted off the GUI thread; they change when the counts are in
         /// (`counted`).
@@ -124,11 +233,59 @@ use cxx_qt_lib::{QString, QStringList};
 use pg_catalog::browse::{self, read::Facets};
 use pg_catalog::query::{from_json, to_json};
 use pg_model::date::Day;
-use pg_model::query::{BorderFacet, MediaType, Query, parse_number};
+use pg_model::query::{BorderFacet, Choice, MediaType, Query, Shape, Status, parse_number};
 
 use pg_app::Kind;
 use pg_client::input::{bound_is_valid, choice, date_facet, day_end_of, end_of, range_facet};
 use pg_client::text;
+
+// Names each qenum variant, so Rust doesn't read them as dead code: QML reads them, and the number tables below follow
+// the enums' declaration order. Renaming a variant fails to compile here.
+const _: () = {
+    let _ = (qobject::Shape::Landscape, qobject::Shape::Portrait, qobject::Shape::Square);
+    let _ = (qobject::MediaType::Image, qobject::MediaType::Animated, qobject::MediaType::Video);
+    let _ = (qobject::Status::Imported, qobject::Status::Pending, qobject::Status::Failed);
+    let _ = (
+        qobject::Border::None,
+        qobject::Border::Black,
+        qobject::Border::White,
+        qobject::Border::Color,
+        qobject::Border::Blur,
+    );
+};
+
+/// The number QML passes for a value of an enum: its index in the qenum's declaration order in the bridge above
+/// (`Filters.Shape.Landscape` is 0). The bridge's enums are opaque to Rust (no `as` cast), so the order is kept here;
+/// `None` for a number the enum doesn't name.
+fn by_number<T: Copy>(values: &[T], value: i32) -> Option<T> {
+    usize::try_from(value).ok().and_then(|i| values.get(i).copied())
+}
+
+fn shape_of(value: i32) -> Option<Shape> {
+    const SHAPES: [Shape; 3] = [Shape::Landscape, Shape::Portrait, Shape::Square];
+    by_number(&SHAPES, value)
+}
+
+fn media_type_of(value: i32) -> Option<MediaType> {
+    const TYPES: [MediaType; 3] = [MediaType::Image, MediaType::Animated, MediaType::Video];
+    by_number(&TYPES, value)
+}
+
+fn status_of(value: i32) -> Option<Status> {
+    const STATUSES: [Status; 3] = [Status::Imported, Status::Pending, Status::Failed];
+    by_number(&STATUSES, value)
+}
+
+fn border_of(value: i32) -> Option<BorderFacet> {
+    const BORDERS: [BorderFacet; 5] =
+        [BorderFacet::None, BorderFacet::Black, BorderFacet::White, BorderFacet::Color, BorderFacet::Blur];
+    by_number(&BORDERS, value)
+}
+
+/// A typed value's label in the filter bar: `text::facet_label` for its facet and key, `""` for no value.
+fn label_of(facet: &str, key: Option<&str>) -> QString {
+    QString::from(&key.map_or_else(String::new, |k| text::facet_label(facet, k)))
+}
 
 pub struct FiltersRust {
     query: QString,
@@ -320,6 +477,72 @@ impl qobject::Filters {
 
     fn border_count(&self, value: &QString) -> i32 {
         let b = BorderFacet::from_key(&value.to_string());
+        count(self.facets.borders.iter().find(|(x, _)| Some(*x) == b).map_or(0, |(_, n)| *n))
+    }
+
+    fn has_shape(&self, value: i32) -> bool {
+        shape_of(value).is_some_and(|s| self.parsed.has(&Choice::Shape(s)))
+    }
+
+    fn toggle_shape(self: Pin<&mut Self>, value: i32) {
+        if let Some(s) = shape_of(value) {
+            self.edit(|q| q.toggle(Choice::Shape(s)));
+        }
+    }
+
+    fn shape_label(&self, value: i32) -> QString {
+        label_of("orientations", shape_of(value).map(Shape::key))
+    }
+
+    fn has_media_type(&self, value: i32) -> bool {
+        media_type_of(value).is_some_and(|t| self.parsed.has(&Choice::Type(t)))
+    }
+
+    fn toggle_media_type(self: Pin<&mut Self>, value: i32) {
+        if let Some(t) = media_type_of(value) {
+            self.edit(|q| q.toggle(Choice::Type(t)));
+        }
+    }
+
+    fn media_type_label(&self, value: i32) -> QString {
+        label_of("types", media_type_of(value).map(MediaType::key))
+    }
+
+    fn media_type_count(&self, value: i32) -> i32 {
+        let t = media_type_of(value);
+        count(self.facets.types.iter().find(|(x, _)| Some(*x) == t).map_or(0, |(_, n)| *n))
+    }
+
+    fn has_status(&self, value: i32) -> bool {
+        status_of(value).is_some_and(|s| self.parsed.has(&Choice::Status(s)))
+    }
+
+    fn toggle_status(self: Pin<&mut Self>, value: i32) {
+        if let Some(s) = status_of(value) {
+            self.edit(|q| q.toggle(Choice::Status(s)));
+        }
+    }
+
+    fn status_label(&self, value: i32) -> QString {
+        label_of("status", status_of(value).map(Status::key))
+    }
+
+    fn has_border(&self, value: i32) -> bool {
+        border_of(value).is_some_and(|b| self.parsed.has(&Choice::Border(b)))
+    }
+
+    fn toggle_border(self: Pin<&mut Self>, value: i32) {
+        if let Some(b) = border_of(value) {
+            self.edit(|q| q.toggle(Choice::Border(b)));
+        }
+    }
+
+    fn border_label(&self, value: i32) -> QString {
+        label_of("borders", border_of(value).map(BorderFacet::key))
+    }
+
+    fn border_value_count(&self, value: i32) -> i32 {
+        let b = border_of(value);
         count(self.facets.borders.iter().find(|(x, _)| Some(*x) == b).map_or(0, |(_, n)| *n))
     }
 

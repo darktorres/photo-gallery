@@ -158,6 +158,11 @@ pub mod qobject {
         #[cxx_name = "keysAround"]
         fn keys_around(self: &GalleryModel, item: i32, reach: i32) -> QStringList;
 
+        /// The URL of a full-size view of a file (`image://full/<key>/<rest>`, `rest` as the providers parse it).
+        #[qinvokable]
+        #[cxx_name = "fullUrl"]
+        fn full_url(self: &GalleryModel, key: &QString, rest: &QString) -> QString;
+
         /// Upright size in pixels, as shown (pending turns included); 0 before the import.
         #[qinvokable]
         #[cxx_name = "fullWidth"]
@@ -300,6 +305,32 @@ const ROLE_HEIGHT: i32 = 257;
 /// change anywhere (`revision`, which the viewer and the toolbar follow); and a delegate the view reuses for a row
 /// knows from it whether its cells show that row as it is.
 const ROLE_VERSION: i32 = 258;
+/// The values a row's cells show, one role per field: a list with an entry per item of the row, in order. They are
+/// typed lists (`QStringList`, `QList<i32>`, `QList<bool>`, `QList<f64>`), which QML's compiler reads without `var`
+/// (`GridRow`). Each comes with `ROLE_SPAN` and `ROLE_VERSION`, and before them (`show`, `items_changed`).
+const ROLE_KEYS: i32 = 259;
+const ROLE_BADGES: i32 = 260;
+const ROLE_RATINGS: i32 = 261;
+const ROLE_BORDERS_MARKED: i32 = 262;
+const ROLE_IMAGE_ASPECTS: i32 = 263;
+const ROLE_ASPECTS: i32 = 264;
+const ROLE_CONTENT_X: i32 = 265;
+const ROLE_CONTENT_Y: i32 = 266;
+const ROLE_CONTENT_WIDTH: i32 = 267;
+const ROLE_CONTENT_HEIGHT: i32 = 268;
+/// The cells' roles, and their names in QML.
+const CELL_ROLES: [(i32, &str); 10] = [
+    (ROLE_KEYS, "keys"),
+    (ROLE_BADGES, "badges"),
+    (ROLE_RATINGS, "ratings"),
+    (ROLE_BORDERS_MARKED, "bordersMarked"),
+    (ROLE_IMAGE_ASPECTS, "imageAspects"),
+    (ROLE_ASPECTS, "aspects"),
+    (ROLE_CONTENT_X, "contentX"),
+    (ROLE_CONTENT_Y, "contentY"),
+    (ROLE_CONTENT_WIDTH, "contentWidth"),
+    (ROLE_CONTENT_HEIGHT, "contentHeight"),
+];
 
 pub struct GalleryRust {
     count: i32,
@@ -361,10 +392,27 @@ impl GalleryRust {
 impl qobject::GalleryModel {
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Some(row) = self.grid.rows().get(index.row() as usize) else { return QVariant::default() };
+        let items = row.first..row.first + row.count;
         match role {
             ROLE_SPAN => QVariant::from(&QPointF::new(row.first as f64, row.count as f64)),
             ROLE_HEIGHT => QVariant::from(&row.height),
             ROLE_VERSION => QVariant::from(&(self.grid.version(index.row() as usize) as i32)),
+            ROLE_KEYS => QVariant::from(&items.map(|i| self.image_key(i as i32)).collect::<QStringList>()),
+            ROLE_BADGES => QVariant::from(&items.map(|i| self.badge(i as i32)).collect::<QStringList>()),
+            ROLE_RATINGS => QVariant::from(&items.map(|i| self.rating(i as i32)).collect::<QList<i32>>()),
+            ROLE_BORDERS_MARKED => {
+                QVariant::from(&items.map(|i| self.border_marked(i as i32)).collect::<QList<bool>>())
+            }
+            ROLE_IMAGE_ASPECTS => QVariant::from(&items.map(|i| self.image_aspect(i as i32)).collect::<QList<f64>>()),
+            ROLE_ASPECTS => QVariant::from(&items.map(|i| self.aspect(i as i32)).collect::<QList<f64>>()),
+            ROLE_CONTENT_X => QVariant::from(&items.map(|i| self.border_box(i as i32).x()).collect::<QList<f64>>()),
+            ROLE_CONTENT_Y => QVariant::from(&items.map(|i| self.border_box(i as i32).y()).collect::<QList<f64>>()),
+            ROLE_CONTENT_WIDTH => {
+                QVariant::from(&items.map(|i| self.border_box(i as i32).width()).collect::<QList<f64>>())
+            }
+            ROLE_CONTENT_HEIGHT => {
+                QVariant::from(&items.map(|i| self.border_box(i as i32).height()).collect::<QList<f64>>())
+            }
             _ => QVariant::default(),
         }
     }
@@ -374,7 +422,16 @@ impl qobject::GalleryModel {
         roles.insert(ROLE_SPAN, QByteArray::from("span"));
         roles.insert(ROLE_HEIGHT, QByteArray::from("rowHeight"));
         roles.insert(ROLE_VERSION, QByteArray::from("version"));
+        for (role, name) in CELL_ROLES {
+            roles.insert(role, QByteArray::from(name));
+        }
         roles
+    }
+
+    /// The image's aspect as shown (pending turns included); 1 without its height (`ROLE_IMAGE_ASPECTS`).
+    fn image_aspect(&self, item: i32) -> f64 {
+        let (w, h) = (self.full_width(item), self.full_height(item));
+        if h > 0 { f64::from(w) / f64::from(h) } else { 1.0 }
     }
 
     fn row_count(&self, _parent: &QModelIndex) -> i32 {
@@ -497,8 +554,14 @@ impl qobject::GalleryModel {
             Shape::Same => self.as_mut().rust_mut().grid.commit(plan),
         };
         // A row's new span and its new version can come in one change: the QML reads its items again either way, so
-        // every role that changed is signalled, in the same change.
+        // every role that changed is signalled. The cells' lists go first, in a change of their own: the row takes
+        // its values when its span or version arrives, and they must all be in by then.
         for update in updates {
+            let (top, bottom) =
+                (self.index(update.rows.start as i32, 0, &root), self.index(update.rows.end as i32 - 1, 0, &root));
+            if update.span || update.version {
+                self.as_mut().data_changed(&top, &bottom, &QList::from(cell_roles().as_slice()));
+            }
             let mut roles = Vec::with_capacity(3);
             if update.span {
                 roles.push(ROLE_SPAN);
@@ -509,18 +572,17 @@ impl qobject::GalleryModel {
             if update.height {
                 roles.push(ROLE_HEIGHT);
             }
-            let (top, bottom) =
-                (self.index(update.rows.start as i32, 0, &root), self.index(update.rows.end as i32 - 1, 0, &root));
             self.as_mut().data_changed(&top, &bottom, &QList::from(roles.as_slice()));
         }
     }
 
-    /// Items changed (rated, turned, marked) without changing shape: the cells of their rows read them again
-    /// (`ROLE_VERSION`).
+    /// Items changed (rated, turned, marked) without changing shape: the cells of their rows read them again (the
+    /// cells' lists, then `ROLE_VERSION`).
     fn items_changed(mut self: Pin<&mut Self>, items: &[usize]) {
         let rows = self.as_mut().rust_mut().grid.touch(items);
         for row in rows {
             let index = self.index(row as i32, 0, &QModelIndex::default());
+            self.as_mut().data_changed(&index, &index, &QList::from(cell_roles().as_slice()));
             self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
         }
     }
@@ -559,6 +621,10 @@ impl qobject::GalleryModel {
             .filter(|&i| self.grid.item(i).is_some())
             .map(|i| self.image_key(i))
             .collect()
+    }
+
+    fn full_url(&self, key: &QString, rest: &QString) -> QString {
+        QString::from(&format!("image://full/{key}/{rest}"))
     }
 
     fn full_width(&self, item: i32) -> i32 {
@@ -763,6 +829,11 @@ impl qobject::GalleryModel {
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
         self.grid.placement().neighbor(item, dx, dy)
     }
+}
+
+/// The cells' roles (`CELL_ROLES`), for a change of their values.
+fn cell_roles() -> Vec<i32> {
+    CELL_ROLES.iter().map(|&(role, _)| role).collect()
 }
 
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).

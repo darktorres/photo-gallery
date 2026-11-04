@@ -12,6 +12,18 @@ pub mod qobject {
         type QStringList = cxx_qt_lib::QStringList;
     }
 
+    /// What the grid's files are ordered by (`query::SortKey`), in the sort menu's order.
+    #[qenum(View)]
+    enum SortKey {
+        Name,
+        Size,
+        Modified,
+        Taken,
+        Megapixels,
+        Duration,
+        Borders,
+    }
+
     extern "RustQt" {
         #[qobject]
         #[qml_element]
@@ -63,6 +75,16 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "applyView"]
         fn apply_view(self: Pin<&mut View>, name: &QString) -> QString;
+
+        /// Order by a key (`View.SortKey`), keeping the way: the typed twin of setting `sortKey`.
+        #[qinvokable]
+        #[cxx_name = "sortBy"]
+        fn sort_by(self: Pin<&mut View>, key: SortKey);
+
+        /// Whether the files are ordered by a key (`View.SortKey`): the typed reading of `sortKey`.
+        #[qinvokable]
+        #[cxx_name = "isSortedBy"]
+        fn is_sorted_by(self: &View, key: SortKey) -> bool;
     }
 }
 
@@ -118,7 +140,31 @@ impl ViewRust {
     }
 }
 
+/// The query's sort key for a `View.SortKey` value; `None` for a value the enum doesn't name.
+fn sort_key_of(key: qobject::SortKey) -> Option<SortKey> {
+    Some(match key {
+        qobject::SortKey::Name => SortKey::Name,
+        qobject::SortKey::Size => SortKey::Size,
+        qobject::SortKey::Modified => SortKey::Modified,
+        qobject::SortKey::Taken => SortKey::Taken,
+        qobject::SortKey::Megapixels => SortKey::Megapixels,
+        qobject::SortKey::Duration => SortKey::Duration,
+        qobject::SortKey::Borders => SortKey::Borders,
+        _ => return None,
+    })
+}
+
 impl qobject::View {
+    fn sort_by(mut self: Pin<&mut Self>, key: qobject::SortKey) {
+        if let Some(key) = sort_key_of(key) {
+            self.as_mut().set_sort_key(QString::from(key.key()));
+        }
+    }
+
+    fn is_sorted_by(&self, key: qobject::SortKey) -> bool {
+        sort_key_of(key) == Some(self.sort().key)
+    }
+
     fn sort_json(&self) -> QString {
         QString::from(&to_json(&self.sort()))
     }

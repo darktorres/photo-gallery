@@ -69,9 +69,9 @@ pub fn run(args: &[OsString]) {
         {
             let mut qml: core::pin::Pin<&mut QQmlEngine> = engine.as_mut().upcast_pin();
             for (name, kind) in [
-                ("thumb", providers::KIND_THUMB),
-                ("thumbhash", providers::KIND_THUMBHASH),
-                ("full", providers::KIND_FULL),
+                ("thumb", providers::ffi::ImageKind::Thumb),
+                ("thumbhash", providers::ffi::ImageKind::Thumbhash),
+                ("full", providers::ffi::ImageKind::Full),
             ] {
                 // SAFETY: a new provider, which the engine takes ownership of.
                 unsafe {

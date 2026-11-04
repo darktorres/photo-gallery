@@ -1,12 +1,12 @@
-// Main window: merged folder tree on the left, justified thumbnail grid on the right, viewer on top. The
-// library (folders the user added) is imported by a background job; its progress is in the bottom bar.
+// Main window: the composition of the page (top bar, folder tree and grid, status bar, filters, viewer) and the panels made
+// when first needed. It owns the Rust objects (the gallery, the folders, the view, the library) and makes their calls; the
+// components report what the user asks for through signals. The start choreography (started, gridLoaded, treeLoaded) is
+// here; the test hooks are in TestHooks.
 pragma ComponentBehavior: Bound
 
-import QtQml.Models
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Dialogs
-import QtQuick.Layouts
 import QtQuick.Window
 import pg.gallery
 
@@ -59,17 +59,13 @@ ApplicationWindow {
     // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
     property int loadedIndex: -2
     readonly property real gap: 4
-    // query::SortKey names, and the sort box's names for them.
+    // query::SortKey names, in the order of the sort box (TopBar).
     readonly property list<string> sortKeys: ["name", "size", "modified", "taken", "megapixels", "duration",
         "borders"]
-    readonly property list<string> sortNames: ["By name", "By file size", "By date modified", "By date taken",
-        "By megapixels", "By duration", "By border depth"]
-    // The test hook's rating keys (--viewer-keys): "r3" rates 3.
-    readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
     // Both read the catalog off the GUI thread: what they were asked for arrives later (onLoaded).
     FolderModel {
-        id: folders
+        id: folderModel
         onLoaded: win.treeLoaded()
     }
     GalleryModel {
@@ -77,7 +73,7 @@ ApplicationWindow {
         // Without a selection, a refreshed list keeps the top row's file in view. The rows change (all of them for
         // another list), then gridLoaded moves the view to where it belongs.
         onAboutToLoad: {
-            galleryModel.anchor = win.current >= 0 ? -1 : win.topItem()
+            galleryModel.anchor = win.current >= 0 ? -1 : grid.topItem()
             grid.settling = true
         }
         onLoaded: (index) => win.gridLoaded(index)
@@ -85,7 +81,6 @@ ApplicationWindow {
     // Where the grid looks, with or without subfolders, in what order; with the filter bar's query, a view.
     // Remembered across runs, and in saved views (src/view.rs).
     View { id: view }
-    CommandLine { id: commandLine }
     // The start's stages, for measuring it (src/trace.rs).
     Stages { id: stages }
     Connections {
@@ -121,7 +116,7 @@ ApplicationWindow {
         interval: 1000
         // Not before the start selected it: a key pressed on the empty grid would save no file.
         onTriggered: if (win.ready)
-            appSettings.lastFile = galleryModel.fileId(viewer.visible ? viewer.index : win.current)
+            appSettings.lastFile = galleryModel.fileId(viewerItem.visible ? viewerItem.index : win.current)
     }
     onCurrentChanged: sessionTimer.restart()
     Timer {
@@ -168,23 +163,16 @@ ApplicationWindow {
         cropDialog.active = true
     }
 
-    // The first item of the topmost visible row, to keep the view anchored across relayouts.
-    function topItem(): int {
-        const row = grid.indexAt(10, grid.contentY + 1)
-        const del = row >= 0 ? grid.itemAtIndex(row) as GridRow : null
-        return del ? del.firstItem : -1
-    }
-
     function relayout() {
-        const anchor = current >= 0 ? current : topItem()
+        const anchor = current >= 0 ? current : grid.topItem()
         grid.settling = true
-        galleryModel.relayout(grid.width, rowHeight, gap)
+        galleryModel.relayout(grid.gridWidth, rowHeight, gap)
         if (loadedIndex > -2) {
             gridLoaded(loadedIndex)
             return
         }
         if (anchor >= 0)
-            grid.positionViewAtIndex(galleryModel.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
+            grid.positionAt(galleryModel.rowOf(anchor), current >= 0 ? ListView.Contain : ListView.Beginning)
         grid.settling = false
     }
 
@@ -204,11 +192,11 @@ ApplicationWindow {
                 current = last
         }
         if (current >= 0)
-            grid.positionViewAtIndex(galleryModel.rowOf(current), ListView.Contain)
+            grid.positionAt(galleryModel.rowOf(current), ListView.Contain)
         else if (index >= 0)
-            grid.positionViewAtIndex(galleryModel.rowOf(index), ListView.Beginning)
+            grid.positionAt(galleryModel.rowOf(index), ListView.Beginning)
         else
-            grid.positionViewAtBeginning()
+            grid.positionAtBeginning()
         grid.settling = false
         // The tree says whether the folder is still there: without it this may be a list of a folder gone.
         if (!ready && treeShown)
@@ -220,13 +208,13 @@ ApplicationWindow {
     function treeLoaded() {
         const first = !treeShown
         treeShown = true
-        // At the start, the saved folder if the tree still has it (folders.restore; "" when it is gone, or for all
+        // At the start, the saved folder if the tree still has it (folderModel.restore; "" when it is gone, or for all
         // folders). The list was asked for the saved one: when the answer differs, the list is asked again for it,
         // and the tree shows it; the list's loading finishes the start.
         if (first) {
-            const restored = folders.restore()
+            const restored = folderModel.restore()
             if (restored !== view.folder) {
-                const at = folders.reveal(restored)
+                const at = folderModel.reveal(restored)
                 tree.currentIndex = Math.max(at, 0)
                 if (at >= 0)
                     tree.positionViewAtIndex(at, ListView.Contain)
@@ -234,18 +222,18 @@ ApplicationWindow {
                 return
             }
         }
-        const row = first ? folders.reveal(view.folder) : folders.rowOf(view.folder)
+        const row = first ? folderModel.reveal(view.folder) : folderModel.rowOf(view.folder)
         if (row >= 0) {
             tree.currentIndex = row
             if (first)
                 tree.positionViewAtIndex(row, ListView.Contain)
             // Spelled as the tree spells it (paths match in any case): the list already shows it.
-            const spelled = folders.mergedPath(row)
+            const spelled = folderModel.mergedPath(row)
             if (spelled !== view.folder) {
                 view.folder = spelled
                 view.saveSession(filterBar.query)
             }
-        } else if (folders.contains(view.folder)) {
+        } else if (folderModel.contains(view.folder)) {
             // Under a folder the user collapsed.
             tree.currentIndex = -1
         } else {
@@ -262,7 +250,7 @@ ApplicationWindow {
 
     // The folder tree changed (a scan): read it again, and the open folder's files.
     function reloadAll() {
-        folders.reload()
+        folderModel.reload()
         refreshGrid()
     }
 
@@ -275,7 +263,7 @@ ApplicationWindow {
     }
 
     function openFolder(row: int) {
-        openPath(folders.mergedPath(row))
+        openPath(folderModel.mergedPath(row))
     }
 
     // Show a merged folder (`""` = all) with the current subfolders, filters and sort, and remember it.
@@ -283,18 +271,18 @@ ApplicationWindow {
         view.folder = path
         galleryModel.openFolder(path, view.recursive, filterBar.query, view.sortJson(), false)
         updateFacets()
-        sortBox.currentIndex = sortKeys.indexOf(view.sortKey)
+        topBar.sortIndex = sortKeys.indexOf(view.sortKey)
         view.saveSession(filterBar.query)
     }
 
     // Open a folder by path, showing it in the tree (its parents expanded). Before the tree is in, it is shown
     // when it arrives (treeLoaded).
     function goTo(path: string) {
-        const row = folders.reveal(path)
+        const row = folderModel.reveal(path)
         tree.currentIndex = Math.max(row, 0)
         if (row >= 0)
             tree.positionViewAtIndex(row, ListView.Contain)
-        openPath(row >= 0 ? folders.mergedPath(row) : folders.ready ? "" : path)
+        openPath(row >= 0 ? folderModel.mergedPath(row) : folderModel.ready ? "" : path)
     }
 
     function applyView(name: string) {
@@ -303,24 +291,19 @@ ApplicationWindow {
             return
         filterBar.query = query
         goTo(view.folder)
-        grid.forceActiveFocus()
+        grid.takeFocus()
     }
 
     function select(i: int) {
         if (i < 0 || i >= galleryModel.count)
             return
         current = i
-        grid.positionViewAtIndex(galleryModel.rowOf(i), ListView.Contain)
+        grid.positionAt(galleryModel.rowOf(i), ListView.Contain)
     }
 
-    // To the panel and dialog made when first needed (their Loaders, below): what they are asked to do comes as a
-    // signal once they are made (a Loader not loading asynchronously makes its item at once).
+    // To the panel made when first needed (Yandex's Loader, below): what it is asked to do comes as a signal once it
+    // is made (a Loader not loading asynchronously makes its item at once).
     signal similarAsked(path: string)
-    signal saveViewAsked()
-
-    // The test hook --yandex-preview: the result the Yandex panel shows at full size once its search has results. Set
-    // before the panel is made (findSimilar), which takes it as its own property.
-    property int yandexPreviewHook: -1
 
     // The viewer's "find similar": search Yandex for the photo's file.
     function findSimilar(path: string) {
@@ -328,9 +311,11 @@ ApplicationWindow {
         similarAsked(path)
     }
 
+    // The save-view dialog (saveViewLoader) opens each time this rises: made at the first ask, then kept.
+    property int saveViewRequests: 0
     function askSaveView() {
         saveViewLoader.active = true
-        saveViewAsked()
+        saveViewRequests++
     }
 
     // The key map (pg-client's keys, through the KeyMap facade) names the grid's action for a key; this carries it out.
@@ -356,7 +341,7 @@ ApplicationWindow {
         case Main.Main.GridAction.Down: select(galleryModel.neighbor(c, 0, 1)); break
         case Main.Main.GridAction.First: select(0); break
         case Main.Main.GridAction.Last: select(galleryModel.count - 1); break
-        case Main.Main.GridAction.Open: viewer.show(current); break
+        case Main.Main.GridAction.Open: viewerItem.show(current); break
         case Main.Main.GridAction.Rate: galleryModel.setRating(current, arg); break
         case Main.Main.GridAction.TurnForward: galleryModel.rotate(current, 1); break
         case Main.Main.GridAction.TurnBack: galleryModel.rotate(current, -1); break
@@ -367,192 +352,101 @@ ApplicationWindow {
         e.accepted = true
     }
 
+    // The status bar's selection: the item's info and rating, or the key hints with none selected.
+    readonly property string selectionInfo: galleryModel.revision >= 0 && win.current >= 0
+        ? galleryModel.info(win.current) + "   "
+          + (galleryModel.rating(win.current) > 0
+              ? Ratings.symbol(galleryModel.rating(win.current)) : "")
+        : keymap.gridHint()
+
+    // The test hooks (command-line options): their values are read in TestHooks, and what they do is run here.
+    TestHooks {
+        id: testHooks
+        viewer: viewerItem
+        rowHeight: win.rowHeight
+        onSizeRequested: (h) => win.setSize(h)
+        onSelectRequested: (i) => win.select(i)
+        onBorderMarkToggled: (i) => {
+            galleryModel.setBorderMarked(i, !galleryModel.borderMarked(i))
+        }
+        onBordersRequested: {
+            win.showBorders = true
+        }
+        onViewsMenuRequested: topBar.openViewsMenu()
+        onLibraryPanelRequested: {
+            win.libraryOpen = true
+        }
+        onSaveViewDialogRequested: win.askSaveView()
+        onSimilarRequested: (path) => win.findSimilar(path)
+        onAddFolderRequested: (folder) => library.addFolder(folder)
+        onSaveCropsRequested: (folder) => galleryModel.saveCroppedCopies(folder)
+        onViewerShowRequested: (index) => viewerItem.show(index)
+        onViewerPlayRequested: viewerItem.togglePlay()
+        onViewerSetZoomRequested: (z, px, py) => viewerItem.setZoom(z, px, py)
+        onViewerTurnRequested: (turns) => viewerItem.turn(turns)
+        onViewerRateRequested: (rating) => viewerItem.rate(rating)
+    }
+
     Item {
         id: page
         anchors.fill: parent
 
-        ToolBar {
+        TopBar {
             id: topBar
-            anchors.left: parent.left
-            anchors.right: parent.right
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                spacing: 12
-                Label {
-                    text: view.folder.length ? view.folder : "All folders"
-                    font.bold: true
-                    elide: Text.ElideMiddle
-                    Layout.maximumWidth: 600
-                }
-                Label {
-                    color: "#999999"
-                    text: galleryModel.loading && galleryModel.count === 0 ? "Loading…"
-                        : Qt.locale().toString(galleryModel.count)
-                          + (filterBar.active > 0 ? " of " + Qt.locale().toString(filterBar.total) : "")
-                          + " files"
-                }
-                BusyIndicator {
-                    running: galleryModel.loading
-                    visible: running
-                    Layout.preferredWidth: 20
-                    Layout.preferredHeight: 20
-                }
-                CheckBox {
-                    text: "Include subfolders"
-                    checked: view.recursive
-                    onToggled: {
-                        view.recursive = checked
-                        win.openPath(view.folder)
-                    }
-                }
-                Button {
-                    text: "Filters" + (filterBar.active > 0 ? " (" + filterBar.active + ")" : "")
-                        + (win.filtersOpen ? " ▴" : " ▾")
-                    highlighted: filterBar.active > 0
-                    onClicked: win.filtersOpen = !win.filtersOpen
-                    ToolTip.visible: hovered
-                    ToolTip.text: "Filter by type, extension, rating, size, date, duplicates… (F)"
-                }
-                ComboBox {
-                    id: sortBox
-                    model: win.sortNames
-                    onActivated: (i) => {
-                        // Name reads A→Z; the others start with the largest, newest or longest.
-                        view.sortKey = win.sortKeys[i]
-                        view.descending = i !== 0
-                        win.openPath(view.folder)
-                        grid.forceActiveFocus()
-                    }
-                    Layout.preferredWidth: 160
-                }
-                Button {
-                    text: view.descending ? "↓" : "↑"
-                    onClicked: {
-                        view.descending = !view.descending
-                        win.openPath(view.folder)
-                        grid.forceActiveFocus()
-                    }
-                    ToolTip.visible: hovered
-                    ToolTip.text: view.descending
-                        ? "Descending (click for ascending)"
-                        : "Ascending (click for descending)"
-                    Layout.preferredWidth: 32
-                }
-                // Saved views (ImageRater's bookmarks): a folder with its subfolders, filters and sort, by name.
-                Button {
-                    id: viewsButton
-                    text: "Views ▾"
-                    onClicked: viewsMenu.popup(viewsButton, 0, viewsButton.height)
-                    Menu {
-                        id: viewsMenu
-                        Instantiator {
-                            model: view.savedViews
-                            delegate: MenuItem {
-                                required property string modelData
-                                text: modelData
-                                onTriggered: win.applyView(modelData)
-                            }
-                            onObjectAdded: (i, o) => viewsMenu.insertItem(i, o as MenuItem)
-                            onObjectRemoved: (i, o) => viewsMenu.removeItem(o as MenuItem)
-                        }
-                        MenuSeparator {}
-                        MenuItem {
-                            text: "Save current view…"
-                            onTriggered: win.askSaveView()
-                        }
-                        Menu {
-                            id: deleteMenu
-                            title: "Delete view"
-                            enabled: view.savedViews.length > 0
-                            Instantiator {
-                                model: view.savedViews
-                                delegate: MenuItem {
-                                    required property string modelData
-                                    text: modelData
-                                    onTriggered: view.deleteView(modelData)
-                                }
-                                onObjectAdded: (i, o) => deleteMenu.insertItem(i, o as MenuItem)
-                                onObjectRemoved: (i, o) => deleteMenu.removeItem(o as MenuItem)
-                            }
-                        }
-                    }
-                }
-                Item { Layout.fillWidth: true }
-                Button {
-                    text: "Library…"
-                    onClicked: win.libraryOpen = true
-                }
-                Label { text: "Size" }
-                Slider {
-                    from: 60
-                    to: 800
-                    value: win.rowHeight
-                    onMoved: win.setSize(value)
-                    Layout.preferredWidth: 220
-                }
-                Label { text: Math.round(win.rowHeight) + " px"; Layout.preferredWidth: 50 }
+            folder: view.folder
+            recursive: view.recursive
+            descending: view.descending
+            savedViews: view.savedViews
+            hasSavedViews: view.savedViews.length > 0
+            loading: galleryModel.loading
+            fileCount: galleryModel.count
+            filterActive: filterBar.active
+            filterTotal: filterBar.total
+            filtersOpen: win.filtersOpen
+            rowHeight: win.rowHeight
+            onFiltersToggled: {
+                win.filtersOpen = !win.filtersOpen
             }
+            onRecursiveToggled: (on) => {
+                view.recursive = on
+                win.openPath(view.folder)
+            }
+            onSortActivated: (i) => {
+                // Name reads A→Z; the others start with the largest, newest or longest.
+                view.sortKey = win.sortKeys[i]
+                view.descending = i !== 0
+                win.openPath(view.folder)
+                grid.takeFocus()
+            }
+            onDescendingToggled: {
+                view.descending = !view.descending
+                win.openPath(view.folder)
+                grid.takeFocus()
+            }
+            onViewChosen: (name) => win.applyView(name)
+            onViewDeleteRequested: (name) => view.deleteView(name)
+            onSaveViewRequested: win.askSaveView()
+            onLibraryRequested: {
+                win.libraryOpen = true
+            }
+            onSizeChosen: (h) => win.setSize(h)
         }
 
-        ToolBar {
+        StatusBar {
             id: bottomBar
-            anchors.left: parent.left
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            RowLayout {
-                anchors.fill: parent
-                anchors.leftMargin: 8
-                anchors.rightMargin: 8
-                spacing: 12
-                Label {
-                    Layout.fillWidth: true
-                    elide: Text.ElideMiddle
-                    color: "#aaaaaa"
-                    // `revision >= 0` is true for any loaded model: it makes this binding depend on `revision`, so it re-evaluates
-                    // after a change. The model's roles replace these guards at the QML step (docs/REVIEW.md, R-63).
-                    text: galleryModel.revision >= 0 && win.current >= 0
-                        ? galleryModel.info(win.current) + "   "
-                          + (galleryModel.rating(win.current) > 0
-                              ? Ratings.symbol(galleryModel.rating(win.current)) : "")
-                        : keymap.gridHint()
-                }
-                // Ratings and turns on their way into the files, or why they aren't.
-                Label {
-                    visible: library.writeStatus.length > 0
-                    text: library.writeStatus
-                    color: library.writeFailed ? "#e0a050" : "#aaaaaa"
-                    elide: Text.ElideMiddle
-                    Layout.maximumWidth: 500
-                }
-                // The latest error or note from the background job; click to dismiss.
-                Label {
-                    visible: library.message.length > 0
-                    text: (library.messageWarning ? "⚠ " : "") + library.message
-                    color: library.messageWarning ? "#e0a050" : "#aaaaaa"
-                    elide: Text.ElideMiddle
-                    Layout.maximumWidth: 500
-                    TapHandler { onTapped: library.message = "" }
-                }
-                Label {
-                    visible: library.status.length > 0
-                    text: library.status
-                    color: "#aaaaaa"
-                }
-                ProgressBar {
-                    visible: library.busy
-                    indeterminate: library.progress < 0
-                    value: Math.max(library.progress, 0)
-                    Layout.preferredWidth: 140
-                }
-                Button {
-                    visible: library.busy || library.paused
-                    text: library.paused ? "Resume" : "Pause"
-                    flat: true
-                    onClicked: library.togglePause()
-                }
+            selection: win.selectionInfo
+            writeStatus: library.writeStatus
+            writeFailed: library.writeFailed
+            message: library.message
+            messageWarning: library.messageWarning
+            status: library.status
+            busy: library.busy
+            paused: library.paused
+            progress: library.progress
+            onMessageDismissed: {
+                library.message = ""
             }
+            onPauseToggled: library.togglePause()
         }
 
         FilterBar {
@@ -572,358 +466,73 @@ ApplicationWindow {
             anchors.top: filterBar.visible ? filterBar.bottom : topBar.bottom
             anchors.bottom: bottomBar.top
 
-            WheelListView {
+            FolderTree {
                 id: tree
                 SplitView.preferredWidth: 320
                 SplitView.minimumWidth: 160
-                clip: true
-                model: folders
-                currentIndex: 0
-                ScrollBar.vertical: ScrollBar {}
-                delegate: ItemDelegate {
-                    id: node
-                    required property int index
-                    required property string name
-                    required property int depth
-                    required property bool expandable
-                    required property bool expanded
-                    required property double total
-                    required property string drives
-                    required property bool merged
-                    width: ListView.view.width
-                    height: 26
-                    rightPadding: 18  // clear of the scrollbar
-                    highlighted: ListView.isCurrentItem
-                    contentItem: RowLayout {
-                        spacing: 4
-                        Item { Layout.preferredWidth: node.depth * 14 }
-                        Label {
-                            text: node.expandable ? (node.expanded ? "▾" : "▸") : ""
-                            Layout.preferredWidth: 12
-                            TapHandler { onTapped: folders.toggle(node.index) }
-                        }
-                        Label { text: node.name; elide: Text.ElideRight; Layout.fillWidth: true }
-                        // Folders present on more than one drive are merged into this one node.
-                        Label { text: node.drives; color: "#6fbf8f"; visible: node.merged; font.pixelSize: 11 }
-                        Label { text: Qt.locale().toString(node.total, "f", 0); color: "#888888"; font.pixelSize: 11 }
-                    }
-                    onClicked: {
-                        tree.currentIndex = index
-                        win.openFolder(index)
-                        grid.forceActiveFocus()
-                    }
-                    onDoubleClicked: folders.toggle(index)
+                folders: folderModel
+                onToggleRequested: (row) => folderModel.toggle(row)
+                onFolderOpened: (row) => {
+                    win.openFolder(row)
+                    grid.takeFocus()
                 }
             }
 
-            Item {
+            GalleryGrid {
+                id: grid
                 SplitView.fillWidth: true
-
-                WheelListView {
-                    id: grid
-                    anchors.fill: parent
-                    anchors.margins: win.gap
-                    // The scrollbar's lane: on the right of the grid, not over the rows (its 16 px, and a gap).
-                    anchors.rightMargin: win.gap + 16
-                    clip: true
-                    focus: true
-                    model: galleryModel
-                    spacing: win.gap
-                    cacheBuffer: 1500
-                    reuseItems: true
-                    // The view is about to be moved: rows are made, reused or changed without their cells until it is
-                    // where it is going. Another list is a model reset, which takes the view to the top and fills it
-                    // there (and 1500 px beyond) before it can be moved to the list's selection; a list read again or a
-                    // relayout changes the rows in view before the view moves to its selection or its anchor.
-                    property bool settling: false
-                    boundsBehavior: Flickable.StopAtBounds
-                    onWidthChanged: layoutTimer.restart()
-                    Keys.onPressed: (e) => win.gridKey(e)
-
-                    WheelHandler {
-                        acceptedModifiers: Qt.ControlModifier
-                        onWheel: (ev) => win.setSize(win.rowHeight * (ev.angleDelta.y > 0 ? 1.1 : 1 / 1.1))
-                    }
-
-                    // A row of the grid: a component with a name, so topItem() can read its firstItem typed (and final,
-                    // so the QML compiler can trust it through the cast).
-                    component GridRow: Item {
-                        id: rowItem
-                        // The row's items: (first, count), one property (galleryModel's ROLE_SPAN), so that a row
-                        // changed in place or reused sees its new items at once, not its first item before its count.
-                        required property point span
-                        readonly final property int firstItem: span.x
-                        required property real rowHeight
-                        // New whenever the row's items change in place: rated, turned, marked, rewritten, or another
-                        // list (galleryModel's ROLE_VERSION, signalled with a new span too when both change).
-                        required property int version
-                        width: grid.width
-                        height: rowHeight
-
-                        // What the cells show, made to match the row once it is in use (not in the view's pool) and the
-                        // view is where it is going (grid.settling): its span's items, at its version. A reuse sets the
-                        // span and the version one after the other, before the row is in use. A span change makes the
-                        // cells read their items, so a version signalled with it is not read again. Either way the
-                        // cells read their items (and ask for their images) once.
-                        property int cellsFirst: 0
-                        property int cellsCount: 0
-                        // Bumped to read the same items again.
-                        property int cellsVersion: 0
-                        property int shownVersion: -1
-                        property bool pooled: false
-                        readonly property bool live: !pooled && !grid.settling
-                        function update() {
-                            if (!live)
-                                return
-                            const first = span.x
-                            const count = span.y
-                            if (cellsFirst !== first || cellsCount !== count) {
-                                // The Repeater (an integer model) makes all its cells anew when its count changes: they
-                                // are made once, for the new items.
-                                if (cellsCount !== count)
-                                    cellsCount = 0
-                                cellsFirst = first
-                                cellsCount = count
-                            } else if (shownVersion !== version) {
-                                cellsVersion++
-                            }
-                            shownVersion = version
-                        }
-                        Component.onCompleted: update()
-                        onLiveChanged: update()
-                        onSpanChanged: update()
-                        onVersionChanged: update()
-                        ListView.onPooled: pooled = true
-                        ListView.onReused: pooled = false
-
-                        Row {
-                            spacing: win.gap
-                            Repeater {
-                                model: rowItem.cellsCount
-                                delegate: Item {
-                                    id: cell
-                                    required property int index
-                                    readonly property int item: rowItem.cellsFirst + index
-                                    // Changes when the file is rewritten or turned (galleryModel.imageKey).
-                                    readonly property string key:
-                                        rowItem.cellsVersion >= 0 ? galleryModel.imageKey(item) : ""
-                                    readonly property int rating:
-                                        rowItem.cellsVersion >= 0 ? galleryModel.rating(item) : 0
-                                    readonly property string badge:
-                                        rowItem.cellsVersion >= 0 ? galleryModel.badge(item) : ""
-                                    // What is left without the borders (an empty rectangle: none found).
-                                    readonly property rect content:
-                                        rowItem.cellsVersion >= 0 ? galleryModel.borderBox(item)
-                                        : Qt.rect(0, 0, 0, 0)
-                                    readonly property bool bordersMarked:
-                                        rowItem.cellsVersion >= 0 && galleryModel.borderMarked(item)
-                                    // The image's aspect as shown; the tile's may be narrower (clamped panoramas), and
-                                    // the thumbnail is then cropped to it.
-                                    readonly property real imageAspect:
-                                        rowItem.cellsVersion >= 0 && galleryModel.fullHeight(item) > 0
-                                            ? galleryModel.fullWidth(item) / galleryModel.fullHeight(item) : 1
-                                    // A turn changes the item's shape.
-                                    width: rowItem.cellsVersion >= 0 ? galleryModel.aspect(item) * rowItem.rowHeight : 0
-                                    height: rowItem.rowHeight
-
-                                    // ThumbHash placeholder (from the import) until the thumbnail arrives.
-                                    Image {
-                                        anchors.fill: parent
-                                        source: "image://thumbhash/" + cell.key
-                                        asynchronous: true
-                                        smooth: true
-                                        visible: thumb.status !== Image.Ready
-                                    }
-                                    Image {
-                                        id: thumb
-                                        anchors.fill: parent
-                                        // Files not imported yet have no size: their cell is square until they are.
-                                        fillMode: Image.PreserveAspectCrop
-                                        clip: true
-                                        source: "image://thumb/" + cell.key + "/" + win.thumbHeight
-                                        asynchronous: true
-                                        retainWhileLoading: true
-                                        smooth: true
-                                        mipmap: true
-                                        opacity: status === Image.Ready ? 1 : 0
-                                        Behavior on opacity { NumberAnimation { duration: 120 } }
-                                    }
-                                    // B: the borders over the thumbnail, placed as PreserveAspectCrop paints it.
-                                    Item {
-                                        anchors.fill: parent
-                                        clip: true
-                                        visible: win.showBorders && cell.content.width > 0
-                                        BorderOverlay {
-                                            readonly property bool wider: cell.imageAspect > cell.width / cell.height
-                                            width: wider ? cell.height * cell.imageAspect : cell.width
-                                            height: wider ? cell.height : cell.width / cell.imageAspect
-                                            x: (cell.width - width) / 2
-                                            y: (cell.height - height) / 2
-                                            kept: cell.content
-                                            marked: cell.bordersMarked
-                                            lineWidth: 1
-                                        }
-                                    }
-                                    Rectangle {
-                                        anchors.fill: parent
-                                        color: "transparent"
-                                        border.color: "#4aa3ff"
-                                        border.width: 3
-                                        visible: cell.item === win.current
-                                    }
-                                    // Borders found (grey: marked as not a border).
-                                    Label {
-                                        anchors.left: parent.left
-                                        anchors.top: parent.top
-                                        anchors.margins: 4
-                                        visible: cell.content.width > 0
-                                        text: "▭"
-                                        font.pixelSize: 12
-                                        font.bold: true
-                                        font.strikeout: cell.bordersMarked
-                                        color: cell.bordersMarked ? "#a0a0a0" : "#ff4ad8"
-                                        padding: 1
-                                        leftPadding: 4
-                                        rightPadding: 4
-                                        background: Rectangle { color: "#a0000000"; radius: 3 }
-                                    }
-                                    Text {
-                                        anchors.left: parent.left
-                                        anchors.bottom: parent.bottom
-                                        anchors.margins: 4
-                                        visible: cell.rating > 0
-                                        text: Ratings.symbol(cell.rating)
-                                        style: Text.Outline
-                                        styleColor: "black"
-                                        font.pixelSize: 16
-                                    }
-                                    // Animated images (and, later, videos) say so.
-                                    Label {
-                                        anchors.right: parent.right
-                                        anchors.top: parent.top
-                                        anchors.margins: 4
-                                        visible: cell.badge.length > 0
-                                        text: cell.badge
-                                        font.pixelSize: 11
-                                        font.bold: true
-                                        color: "white"
-                                        padding: 2
-                                        leftPadding: 4
-                                        rightPadding: 4
-                                        background: Rectangle { color: "#a0000000"; radius: 3 }
-                                    }
-                                    MouseArea {
-                                        anchors.fill: parent
-                                        onClicked: {
-                                            win.current = cell.item
-                                            grid.forceActiveFocus()
-                                        }
-                                        onDoubleClicked: viewer.show(cell.item)
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    delegate: GridRow {}
+                gallery: galleryModel
+                gap: win.gap
+                current: win.current
+                thumbHeight: win.thumbHeight
+                showBorders: win.showBorders
+                noFolders: library.roots.length === 0
+                filtering: filterBar.active > 0
+                importing: library.busy
+                onKeyPressed: (e) => win.gridKey(e)
+                onCellClicked: (i) => {
+                    win.current = i
                 }
-
-                Label {
-                    anchors.centerIn: parent
-                    visible: galleryModel.count === 0 && !galleryModel.loading
-                    text: library.roots.length === 0
-                        ? "No folders in the library yet.\nAdd one with Library… (top right)."
-                        : filterBar.active > 0 ? "Nothing here matches the filters."
-                        : library.busy ? "Nothing here yet: the library is being imported." : "No images here."
-                    horizontalAlignment: Text.AlignHCenter
-                    color: "#888888"
-                }
-
-                // The grid's scrollbar, in its own lane to the right of the grid. It is a standalone bar, not the view's
-                // attached one, which lies over the view's own right edge. Qt's style makes the handle a 6 px nub, as
-                // long as it is wide at least: on a big library it is all but impossible to grab, so this one is 12 px
-                // wide and at least 48 px long, and brightens as it is hovered and dragged.
-                ScrollBar {
-                    id: gridBar
-                    orientation: Qt.Vertical
-                    policy: ScrollBar.AlwaysOn
-                    anchors.top: grid.top
-                    anchors.bottom: grid.bottom
-                    anchors.right: parent.right
-                    anchors.rightMargin: win.gap
-                    size: grid.visibleArea.heightRatio
-                    minimumSize: height > 0 ? Math.min(1, 48 / height) : 0
-                    // The view follows the bar while it is not dragged; a drag moves the view.
-                    Binding on position {
-                        value: grid.visibleArea.yPosition
-                        when: !gridBar.pressed
-                    }
-                    onPositionChanged: if (pressed) grid.contentY = grid.originY + position * grid.contentHeight
-                    contentItem: Rectangle {
-                        implicitWidth: 12
-                        radius: width / 2
-                        color: gridBar.pressed ? "#a0a0a0" : gridBar.hovered ? "#808080" : "#5a5a5a"
-                    }
-                }
-
-                // While the scrollbar is dragged: about where in the library the grid is, in files.
-                Rectangle {
-                    visible: gridBar.pressed && galleryModel.count > 0
-                    width: readout.implicitWidth + 16
-                    height: readout.implicitHeight + 8
-                    x: parent.width - width - 24
-                    y: Math.max(0, Math.min(parent.height - height,
-                                            gridBar.y + gridBar.position * gridBar.height - height / 2))
-                    radius: 4
-                    color: "#2a2a2a"
-                    border.color: "#555555"
-                    Label {
-                        id: readout
-                        anchors.centerIn: parent
-                        color: "#dddddd"
-                        font.pixelSize: 12
-                        text: {
-                            const f = gridBar.size < 1 ? Math.min(1, gridBar.position / (1 - gridBar.size)) : 0
-                            return "file ≈ " + Qt.locale().toString(Math.round(f * (galleryModel.count - 1)) + 1)
-                                + " of " + Qt.locale().toString(galleryModel.count)
-                        }
-                    }
-                }
+                onCellDoubleClicked: (i) => viewerItem.show(i)
+                onSizeStepped: (factor) => win.setSize(win.rowHeight * factor)
+                onGridResized: layoutTimer.restart()
             }
         }
 
         Viewer {
-            id: viewer
+            id: viewerItem
             anchors.fill: parent
+            fullUrl: galleryModel.fullUrl(viewerItem.key, "full")
             index: galleryModel.viewing
             count: galleryModel.count
             // The shown item, read again when the gallery changes it in place (a rating, a turn). Out of range (-1:
             // closed), the gallery gives empty values.
-            key: galleryModel.revision >= 0 ? galleryModel.imageKey(viewer.index) : ""
-            neighbourKeys: galleryModel.revision >= 0 && viewer.visible ? galleryModel.keysAround(viewer.index, 4) : []
-            turns: galleryModel.revision >= 0 ? galleryModel.pendingTurns(viewer.index) : 0
-            rating: galleryModel.revision >= 0 ? galleryModel.rating(viewer.index) : 0
-            fw: galleryModel.revision >= 0 ? galleryModel.fullWidth(viewer.index) : 0
-            fh: galleryModel.revision >= 0 ? galleryModel.fullHeight(viewer.index) : 0
-            kind: galleryModel.revision >= 0 ? galleryModel.mediaType(viewer.index) : ""
-            playerTurns: galleryModel.revision >= 0 ? galleryModel.playerTurns(viewer.index) : 0
-            fileUrl: galleryModel.revision >= 0 ? galleryModel.fileUrl(viewer.index) : Qt.url("")
-            filePath: galleryModel.revision >= 0 ? galleryModel.filePath(viewer.index) : ""
-            info: galleryModel.revision >= 0 ? galleryModel.info(viewer.index) : ""
-            borderBox: galleryModel.revision >= 0 ? galleryModel.borderBox(viewer.index) : Qt.rect(0, 0, 0, 0)
-            rejectedTop: galleryModel.revision >= 0 && viewer.visible
-                ? galleryModel.borderRejected(viewer.index, "top") : -1
-            rejectedBottom: galleryModel.revision >= 0 && viewer.visible
-                ? galleryModel.borderRejected(viewer.index, "bottom") : -1
-            rejectedLeft: galleryModel.revision >= 0 && viewer.visible
-                ? galleryModel.borderRejected(viewer.index, "left") : -1
-            rejectedRight: galleryModel.revision >= 0 && viewer.visible
-                ? galleryModel.borderRejected(viewer.index, "right") : -1
-            borderMarked: galleryModel.revision >= 0 && galleryModel.borderMarked(viewer.index)
+            key: galleryModel.revision >= 0 ? galleryModel.imageKey(viewerItem.index) : ""
+            neighbourKeys: galleryModel.revision >= 0 && viewerItem.visible ? galleryModel.keysAround(viewerItem.index, 4) : []
+            turns: galleryModel.revision >= 0 ? galleryModel.pendingTurns(viewerItem.index) : 0
+            rating: galleryModel.revision >= 0 ? galleryModel.rating(viewerItem.index) : 0
+            fw: galleryModel.revision >= 0 ? galleryModel.fullWidth(viewerItem.index) : 0
+            fh: galleryModel.revision >= 0 ? galleryModel.fullHeight(viewerItem.index) : 0
+            kind: galleryModel.revision >= 0 ? galleryModel.mediaType(viewerItem.index) : ""
+            playerTurns: galleryModel.revision >= 0 ? galleryModel.playerTurns(viewerItem.index) : 0
+            fileUrl: galleryModel.revision >= 0 ? galleryModel.fileUrl(viewerItem.index) : Qt.url("")
+            filePath: galleryModel.revision >= 0 ? galleryModel.filePath(viewerItem.index) : ""
+            info: galleryModel.revision >= 0 ? galleryModel.info(viewerItem.index) : ""
+            borderBox: galleryModel.revision >= 0 ? galleryModel.borderBox(viewerItem.index) : Qt.rect(0, 0, 0, 0)
+            rejectedTop: galleryModel.revision >= 0 && viewerItem.visible
+                ? galleryModel.borderRejected(viewerItem.index, "top") : -1
+            rejectedBottom: galleryModel.revision >= 0 && viewerItem.visible
+                ? galleryModel.borderRejected(viewerItem.index, "bottom") : -1
+            rejectedLeft: galleryModel.revision >= 0 && viewerItem.visible
+                ? galleryModel.borderRejected(viewerItem.index, "left") : -1
+            rejectedRight: galleryModel.revision >= 0 && viewerItem.visible
+                ? galleryModel.borderRejected(viewerItem.index, "right") : -1
+            borderMarked: galleryModel.revision >= 0 && galleryModel.borderMarked(viewerItem.index)
             showBorders: win.showBorders
             settings: appSettings
             onMoved: (i) => galleryModel.viewing = i
             // Closed: the keys go back to the grid.
-            onVisibleChanged: if (!visible) grid.forceActiveFocus()
+            onVisibleChanged: if (!visible) grid.takeFocus()
             onRated: (i, r) => galleryModel.setRating(i, r)
             onTurned: (i, d) => galleryModel.rotate(i, d)
             onBordersToggled: win.toggleBorders()
@@ -940,89 +549,20 @@ ApplicationWindow {
             anchors.fill: parent
             active: false
             sourceComponent: Component {
-                Rectangle {
-                    id: libraryPanel
-                    visible: win.libraryOpen
-                    color: "#b0000000"
-                    // The Loader is a focus scope: the keys are taken here when it opens, and go back to the grid.
-                    Component.onCompleted: forceActiveFocus()
-                    onVisibleChanged: visible ? forceActiveFocus() : grid.forceActiveFocus()
-                    Keys.onEscapePressed: win.libraryOpen = false
-                    // Clicks outside the panel close it; no click or wheel reaches the grid below.
-                    MouseArea {
-                        anchors.fill: parent
-                        onClicked: win.libraryOpen = false
-                        onWheel: (wheel) => wheel.accepted = true
+                LibraryPanel {
+                    open: win.libraryOpen
+                    roots: library.roots
+                    hasRoots: library.roots.length > 0
+                    writeBack: appSettings.writeBack
+                    onDismissed: {
+                        win.libraryOpen = false
                     }
-
-                    Pane {
-                        anchors.centerIn: parent
-                        width: 680
-                        height: 440
-                        padding: 16
-                        MouseArea { anchors.fill: parent }
-                        ColumnLayout {
-                            anchors.fill: parent
-                            spacing: 10
-                            Label { text: "Library folders"; font.bold: true; font.pixelSize: 16 }
-                            Label {
-                                text: "Images in these folders and their subfolders are imported in the background. "
-                                    + "Removing a folder only hides its images: adding it back restores them, ratings "
-                                    + "included."
-                                color: "#999999"
-                                wrapMode: Text.Wrap
-                                Layout.fillWidth: true
-                            }
-                            WheelListView {
-                                Layout.fillWidth: true
-                                Layout.fillHeight: true
-                                clip: true
-                                model: library.roots
-                                ScrollBar.vertical: ScrollBar {}
-                                delegate: RowLayout {
-                                    id: rootRow
-                                    required property string modelData
-                                    width: ListView.view.width
-                                    Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
-                                    Button {
-                                        text: "Remove"
-                                        flat: true
-                                        onClicked: library.removeFolder(rootRow.modelData)
-                                    }
-                                }
-                                Label {
-                                    anchors.centerIn: parent
-                                    visible: library.roots.length === 0
-                                    text: "No folders yet."
-                                    color: "#888888"
-                                }
-                            }
-                            CheckBox {
-                                text: "Write ratings and turns into the files too (where the format allows)"
-                                checked: appSettings.writeBack
-                                onToggled: appSettings.writeBack = checked
-                                ToolTip.visible: hovered
-                                ToolTip.text: "Ratings are always kept in the catalog. With this on, they also go into "
-                                    + "the image files (XMP), so other programs see them; turns rotate the files "
-                                    + "losslessly."
-                            }
-                            RowLayout {
-                                Button { text: "Add folder…"; onClicked: folderDialog.open() }
-                                Button {
-                                    text: "Rescan all"
-                                    enabled: library.roots.length > 0
-                                    onClicked: library.rescan()
-                                }
-                                Item { Layout.fillWidth: true }
-                                Button { text: "Close"; onClicked: win.libraryOpen = false }
-                            }
-                        }
-                    }
-
-                    FolderDialog {
-                        id: folderDialog
-                        title: "Add a folder to the library"
-                        onAccepted: library.addFolder(selectedFolder)
+                    onHidden: grid.takeFocus()
+                    onFolderPicked: (folder) => library.addFolder(folder)
+                    onRemoveRequested: (path) => library.removeFolder(path)
+                    onRescanRequested: library.rescan()
+                    onWriteBackToggled: (on) => {
+                        appSettings.writeBack = on
                     }
                 }
             }
@@ -1037,10 +577,10 @@ ApplicationWindow {
             sourceComponent: Component {
                 YandexPanel {
                     id: yandexPanel
-                    previewWhenFound: win.yandexPreviewHook
+                    previewWhenFound: testHooks.yandexPreview
                     // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer
                     // is gone.
-                    onClosed: viewer.visible ? viewer.forceActiveFocus() : grid.forceActiveFocus()
+                    onClosed: viewerItem.visible ? viewerItem.forceActiveFocus() : grid.takeFocus()
                     Connections {
                         target: win
                         function onSimilarAsked(path: string) { yandexPanel.show(path) }
@@ -1049,90 +589,43 @@ ApplicationWindow {
             }
         }
 
-        // Made the first time it is asked for (saveViewAsked), then kept.
+        // Made the first time it is asked for (askSaveView), then kept.
         Loader {
             id: saveViewLoader
             active: false
             sourceComponent: Component {
-                Dialog {
-                    id: saveViewDialog
-                    // A Loader doesn't parent a popup to an item: centred over the page.
-                    parent: page
-                    anchors.centerIn: parent
-                    title: "Save the current view"
-                    modal: true
-                    standardButtons: Dialog.Save | Dialog.Cancel
-                    onAboutToShow: {
-                        viewName.text = ""
-                        viewName.forceActiveFocus()
-                    }
-                    onAccepted: view.saveView(viewName.text, filterBar.query)
-                    onClosed: grid.forceActiveFocus()
-                    Connections {
-                        target: win
-                        function onSaveViewAsked() { saveViewDialog.open() }
-                    }
-                    ColumnLayout {
-                        Label {
-                            text: (view.folder.length ? view.folder : "All folders")
-                                + (view.recursive ? " and subfolders" : "") + " · " + filterBar.description + " · "
-                                + sortBox.currentText + (view.descending ? " ↓" : " ↑")
-                            color: "#999999"
-                        }
-                        TextField {
-                            id: viewName
-                            placeholderText: "Name (one already saved is replaced)"
-                            Layout.preferredWidth: 400
-                            onAccepted: saveViewDialog.accept()
-                        }
-                    }
+                SaveViewDialog {
+                    host: page
+                    requests: win.saveViewRequests
+                    folder: view.folder
+                    recursive: view.recursive
+                    descending: view.descending
+                    filters: filterBar.description
+                    sortName: topBar.sortText
+                    onSaved: (name) => view.saveView(name, filterBar.query)
+                    onClosed: grid.takeFocus()
                 }
             }
         }
     }
-
-    // Test hooks, for checking the UI without a person at the screen:
-    //   --size=<px>  row height   --select=<n>  select item n   --view=<n>  open item n in the viewer
-    //   --viewer-keys=<keys>  e.g. "LB" (loupe, borders); also H (zen), K (play/pause), + (zoom in), 1 (1:1), < > (turn
-    //                         left, right), N (not a border), digits after "r" rate
-    //   --zoom=<factor>  zoom the viewer to this many device px per image px
-    //   --menu=views  open the views menu   --apply-view=<name>  open a saved view
-    //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
-    //   --library=1  open the library folders   --save-view=1  open the save-view dialog
-    //   --find-similar=<path>  search Yandex for the file (it is uploaded: a path that isn't a still image only shows
-    //                          the panel with its error)
-    //   --yandex-preview=<n>  with --find-similar: show result n at full size once the results are in
-    //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
-    //   --borders  show the borders (as B does) from the start
-    //   --save-crops=<folder>  save cropped copies of the listed files with borders found
-    //                        (GalleryModel.saveCroppedCopies)
-    //   --screenshot=<png>  save the window 4 s (or --wait=<s>) after it is ready, and quit (src/screenshot.rs)
-    // --query, --sort and --apply-view shape the first list; the others act on it (started()).
-    Timer {
-        id: menuTimer
-        interval: 500
-        onTriggered: viewsButton.clicked()
-    }
-    // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
-    readonly property list<string> viewerKeys: commandLine.keys("viewer-keys")
 
     // The window is made (it shows right after): ask for where the user was. Nothing here waits for the catalog;
     // the tree and the files arrive later, in either order (treeLoaded, gridLoaded), and the second of them
     // finishes the start (started).
     Component.onCompleted: {
         // The folder, subfolders and sort are the view's (it read them at its start), the filters the bar's.
-        filterBar.query = commandLine.has("query") ? commandLine.text("query") : view.sessionQuery()
-        if (commandLine.has("sort")) view.setSortJson(commandLine.text("sort"))
-        if (commandLine.has("apply-view")) {
-            const query = view.applyView(commandLine.text("apply-view"))
+        filterBar.query = testHooks.hasQuery ? testHooks.queryJson : view.sessionQuery()
+        if (testHooks.hasSort) view.setSortJson(testHooks.sortJson)
+        if (testHooks.hasApplyView) {
+            const query = view.applyView(testHooks.applyViewName)
             if (query !== "")
                 filterBar.query = query
         }
-        if (commandLine.has("filters")) filtersOpen = true
-        if (commandLine.has("borders")) showBorders = true
-        sortBox.currentIndex = sortKeys.indexOf(view.sortKey)
+        if (testHooks.hasFilters) filtersOpen = true
+        if (testHooks.hasBorders) showBorders = true
+        topBar.sortIndex = sortKeys.indexOf(view.sortKey)
         relayout()
-        folders.reload()
+        folderModel.reload()
         // As it was left: whether the folder still exists is known once the tree is in (treeLoaded).
         galleryModel.openFolder(view.folder, view.recursive, filterBar.query, view.sortJson(), true)
         updateFacets()
@@ -1143,37 +636,9 @@ ApplicationWindow {
     function started() {
         ready = true
         stages.ready()
-        if (commandLine.has("apply-view")) view.saveSession(filterBar.query)
-
-        if (commandLine.has("size")) setSize(commandLine.number("size", rowHeight))
-        if (commandLine.has("select")) select(commandLine.number("select", -1))
-        if (commandLine.has("view")) {
-            viewer.show(commandLine.number("view", -1))
-            for (let k = 0; k < viewerKeys.length; k++) {
-                const c = viewerKeys[k]
-                if (c === "L") viewer.loupe = true
-                else if (c === "B") showBorders = true
-                else if (c === "N") galleryModel.setBorderMarked(viewer.index, !galleryModel.borderMarked(viewer.index))
-                else if (c === "H") viewer.zen = true
-                else if (c === "K") viewer.togglePlay()
-                else if (c === "+") viewer.setZoom(viewer.zoom * 1.25, viewer.width / 2, viewer.height / 2)
-                else if (c === "1") viewer.setZoom(1, viewer.width / 2, viewer.height / 2)
-                else if (c === "<") viewer.turn(-1)
-                else if (c === ">") viewer.turn(1)
-                else if (ratingKeys.indexOf(c) >= 0) viewer.rate(ratingKeys.indexOf(c))
-            }
-            if (commandLine.has("zoom"))
-                viewer.setZoom(commandLine.number("zoom", 1), viewer.width / 2, viewer.height / 2)
-        }
-        if (commandLine.text("menu") === "views") menuTimer.start()
-        if (commandLine.has("library")) libraryOpen = true
-        if (commandLine.has("save-view")) askSaveView()
-        if (commandLine.has("find-similar")) {
-            if (commandLine.has("yandex-preview")) yandexPreviewHook = commandLine.number("yandex-preview", 0)
-            findSimilar(commandLine.text("find-similar"))
-        }
+        if (testHooks.hasApplyView) view.saveSession(filterBar.query)
+        testHooks.run()
         library.start(thumbHeight)
-        if (commandLine.has("add-folder")) library.addFolder(commandLine.url("add-folder"))
-        if (commandLine.has("save-crops")) galleryModel.saveCroppedCopies(commandLine.url("save-crops"))
+        testHooks.runAfterLibraryStart()
     }
 }

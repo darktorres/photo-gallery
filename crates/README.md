@@ -236,8 +236,10 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the first list; the others act on it
   once it is shown, and `--wait` (4 s by default) counts from then. `--borders` shows the borders (B) for the run. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
   opens the panel on its error without sending anything; `--yandex-preview` then shows result n at full size. With
-  `QT_QPA_PLATFORM=offscreen` (needs `platforms\qoffscreen.dll` next to the exe, from Qt's `plugins\platforms`)
-  and `QT_QPA_FONTDIR=C:\Windows\Fonts` no window opens; set `QT_FORCE_STDERR_LOGGING=1` to see QML messages.
+  `QT_QPA_PLATFORM=offscreen` needs `platforms\qoffscreen.dll` next to the exe (from Qt's `plugins\platforms`). The app
+  points `QT_QPA_FONTDIR` at the Windows fonts folder itself when the platform is offscreen (`cpp/gui_app.cpp`), since
+  offscreen's font lookup otherwise finds no fonts and text draws as boxes. Set `QT_FORCE_STDERR_LOGGING=1` to see QML
+  messages.
   Offscreen draws with Qt's software renderer, which shows no video frames: check playback through the player's
   state and position instead. The screenshot is the window as shown, menus included. Rating and turning hooks
   write to the catalog and the files: use them on a scratch library (`PG_CATALOG_DIR`, `PG_PREFS`).

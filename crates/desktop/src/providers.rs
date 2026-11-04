@@ -17,21 +17,40 @@
 
 #[cxx_qt::bridge]
 pub mod ffi {
-    /// An image for the C++ side: `format` 0 = `image`, already a `QImage` (a decoded thumbnail); 1 = RGBX8888,
-    /// 2 = RGBA8888 premultiplied (`pg_app::Upload`) in `data`, which Qt takes as it is, without a copy. A null
-    /// `image` or an empty `data` means it failed.
+    /// Which provider a request is for: the `image://` name it is registered under (lib.rs).
+    #[namespace = "pg"]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u8)]
+    pub enum ImageKind {
+        Thumb,
+        Thumbhash,
+        Full,
+    }
+
+    /// How a `Pixels` holds its image: `Image` is a `QImage` (a decoded thumbnail, in `image`); the others are raw
+    /// pixels in `data` (`pg_app::Upload`), which Qt takes as they are, without a copy.
+    #[namespace = "pg"]
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    #[repr(u8)]
+    pub enum PixelFormat {
+        Image,
+        Rgbx8888,
+        Rgba8888Premultiplied,
+    }
+
+    /// An image for the C++ side, in `format`. A null `image` or an empty `data` means it failed.
     #[namespace = "pg"]
     struct Pixels {
         width: i32,
         height: i32,
-        format: i32,
+        format: PixelFormat,
         data: Vec<u8>,
         image: QImage,
     }
 
     extern "Rust" {
         #[namespace = "pg"]
-        fn load_image(kind: i32, id: &str) -> Pixels;
+        fn load_image(kind: ImageKind, id: &str) -> Pixels;
     }
 
     unsafe extern "C++" {
@@ -42,9 +61,9 @@ pub mod ffi {
         type QQmlImageProviderBase = cxx_qt_lib::QQmlImageProviderBase;
 
         include!("pg-desktop/cpp/providers.h");
-        /// A new provider of `kind` (`KIND_*`); the engine takes ownership.
+        /// A new provider of `kind`; the engine takes ownership.
         #[namespace = "pg"]
-        fn new_image_provider(kind: i32) -> *mut QQmlImageProviderBase;
+        fn new_image_provider(kind: ImageKind) -> *mut QQmlImageProviderBase;
     }
 }
 
@@ -52,7 +71,7 @@ use std::cell::RefCell;
 
 use anyhow::Context;
 use cxx_qt_lib::QImage;
-use ffi::Pixels;
+use ffi::{ImageKind, PixelFormat, Pixels};
 
 use pg_app::{Named, Upload, View};
 use pg_model::ids::FileId;
@@ -60,17 +79,13 @@ use pg_model::turns::Turns;
 
 use crate::app;
 
-pub const KIND_THUMB: i32 = 0;
-pub const KIND_THUMBHASH: i32 = 1;
-pub const KIND_FULL: i32 = 2;
-
 thread_local! {
     /// The provider thread's buffer for cached thumbnails' bytes, kept from one to the next.
     static JPEG: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
 fn failed() -> Pixels {
-    Pixels { width: 0, height: 0, format: 0, data: Vec::new(), image: QImage::default() }
+    Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image: QImage::default() }
 }
 
 /// A thumbnail `height` px high of `file_id` (`App::thumbnail`), decoded, or turned by its turns. One made on a
@@ -82,7 +97,7 @@ fn thumbnail(file_id: FileId, height: u32, named: Option<Named>) -> anyhow::Resu
         let bytes = thumb.made.as_ref().map_or(&jpeg[..], |(made, _)| made);
         let pixels = if thumb.turns == Turns::NONE {
             let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
-            Ok(Pixels { width: 0, height: 0, format: 0, data: Vec::new(), image })
+            Ok(Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image })
         } else {
             app.turn_jpeg(bytes, thumb.turns).map(upload).map_err(anyhow::Error::from)
         };
@@ -97,7 +112,7 @@ fn upload(img: Upload) -> Pixels {
     Pixels {
         width: img.width as i32,
         height: img.height as i32,
-        format: if img.premultiplied { 2 } else { 1 },
+        format: if img.premultiplied { PixelFormat::Rgba8888Premultiplied } else { PixelFormat::Rgbx8888 },
         data: img.pixels,
         image: QImage::default(),
     }
@@ -138,22 +153,22 @@ fn parse_key(key: &str) -> Option<(FileId, Option<Named>)> {
     Some((FileId::new(file.parse().ok()?), named))
 }
 
-fn load_image(kind: i32, id: &str) -> Pixels {
+fn load_image(kind: ImageKind, id: &str) -> Pixels {
     let (key, rest) = id.split_once('/').unwrap_or((id, ""));
     let Some((file_id, named)) = parse_key(key) else { return failed() };
     let result = match kind {
-        KIND_THUMB => {
+        ImageKind::Thumb => {
             rest.parse::<u32>().context("bad height").and_then(|h| thumbnail(file_id, h.clamp(16, 2048), named))
         }
-        KIND_THUMBHASH => app::get().placeholder(file_id).map(upload).map_err(anyhow::Error::from),
-        KIND_FULL => match full_view(rest) {
+        ImageKind::Thumbhash => app::get().placeholder(file_id).map(upload).map_err(anyhow::Error::from),
+        ImageKind::Full => match full_view(rest) {
             Some(view) => app::get().full_image(file_id, view).map(upload).map_err(anyhow::Error::from),
             None => return failed(),
         },
         _ => return failed(),
     };
     result.unwrap_or_else(|e| {
-        eprintln!("image {kind} {id}: {e:#}");
+        eprintln!("image {kind:?} {id}: {e:#}");
         failed()
     })
 }

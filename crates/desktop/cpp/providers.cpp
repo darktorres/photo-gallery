@@ -38,14 +38,14 @@ struct Link {
 // become the QImage's own: the QImage keeps the buffer and frees it with its last copy. Their formats are ones the
 // scene graph uploads as they are (pg_app::Upload), so neither side copies the image.
 QImage to_qimage(Pixels px) {
-    if (px.format == 0) return std::move(px.image);
+    if (px.format == PixelFormat::Image) return std::move(px.image);
     if (px.data.empty()) return {};
     QImage::Format format;
     switch (px.format) {
-        case 1:
+        case PixelFormat::Rgbx8888:
             format = QImage::Format_RGBX8888;
             break;
-        case 2:
+        case PixelFormat::Rgba8888Premultiplied:
             format = QImage::Format_RGBA8888_Premultiplied;
             break;
         default:
@@ -97,7 +97,8 @@ private:
 
 class Job : public QRunnable {
 public:
-    Job(int kind, QString id, std::shared_ptr<Link> link) : m_kind(kind), m_id(std::move(id)), m_link(std::move(link)) {}
+    Job(ImageKind kind, QString id, std::shared_ptr<Link> link)
+        : m_kind(kind), m_id(std::move(id)), m_link(std::move(link)) {}
 
     void run() override {
         QImage image;
@@ -113,17 +114,17 @@ public:
     }
 
 private:
-    int m_kind;
+    ImageKind m_kind;
     QString m_id;
     std::shared_ptr<Link> m_link;
 };
 
 class Provider : public QQuickAsyncImageProvider {
 public:
-    explicit Provider(int kind) : m_kind(kind) {
+    explicit Provider(ImageKind kind) : m_kind(kind) {
         // Thumbnails read originals and decode: enough threads to keep the disk queue full (FINDINGS "I/O": 8 in
         // flight). Full-size images are big; two at a time keeps memory in check.
-        m_pool.setMaxThreadCount(kind == 2 ? 2 : kind == 1 ? 2 : 8);
+        m_pool.setMaxThreadCount(kind == ImageKind::Thumb ? 8 : 2);
     }
 
     ~Provider() override {
@@ -141,7 +142,7 @@ public:
     }
 
 private:
-    int m_kind;
+    ImageKind m_kind;
     QThreadPool m_pool;
     // Rising priority = last in, first out. Wraps after 2^31 requests, harmlessly.
     std::atomic<int> m_priority{0};
@@ -149,6 +150,6 @@ private:
 
 }  // namespace
 
-QQmlImageProviderBase* new_image_provider(int kind) { return new Provider(kind); }
+QQmlImageProviderBase* new_image_provider(ImageKind kind) { return new Provider(kind); }
 
 }  // namespace pg

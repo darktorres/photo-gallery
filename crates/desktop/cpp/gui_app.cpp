@@ -3,7 +3,9 @@
 
 #include "gui_app.h"
 
+#include <QtCore/QByteArray>
 #include <QtCore/QObject>
+#include <QtCore/QString>
 
 #include <cstddef>
 #include <vector>
@@ -11,6 +13,20 @@
 namespace pg {
 
 namespace {
+
+// The offscreen platform (the test hooks) draws text with FreeType on Windows. FreeType reads the fonts from
+// QT_QPA_FONTDIR, or else from <Qt>/lib/fonts, which a Windows Qt install doesn't have: the text would draw as empty
+// boxes. So when the platform is offscreen and no font folder is given, the Windows fonts folder is used. It is set here
+// because Qt reads it when the application's font database is made, and only the C runtime's environment is read by Qt.
+void use_windows_fonts_for_offscreen() {
+#ifdef Q_OS_WIN
+    if (qEnvironmentVariable("QT_QPA_PLATFORM") != "offscreen" || qEnvironmentVariableIsSet("QT_QPA_FONTDIR"))
+        return;
+    const QString windir = qEnvironmentVariable("WINDIR");
+    if (!windir.isEmpty())
+        qputenv("QT_QPA_FONTDIR", (windir + "/Fonts").toLocal8Bit());
+#endif
+}
 
 // Qt keeps the argc and argv it is given for the application's whole life, so they are a child of the application,
 // as cxx-qt-lib keeps its own.
@@ -40,6 +56,7 @@ private:
 }  // namespace
 
 std::unique_ptr<QGuiApplication> new_gui_application(rust::Slice<const std::uint8_t> args) {
+    use_windows_fonts_for_offscreen();
     auto* arguments = new Arguments(args);
     auto app = std::make_unique<QGuiApplication>(arguments->argc(), arguments->argv());
     arguments->setParent(app.get());

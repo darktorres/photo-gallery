@@ -15,8 +15,28 @@ fn main() {
                 "qml/Viewer.qml",
                 "qml/WheelListView.qml",
                 "qml/YandexPanel.qml",
+                "qml/YandexPreview.qml",
+                "qml/ResultTile.qml",
+                "qml/TopBar.qml",
+                "qml/StatusBar.qml",
+                "qml/FolderTree.qml",
+                "qml/GalleryGrid.qml",
+                "qml/GridRow.qml",
+                "qml/GridCell.qml",
+                "qml/LibraryPanel.qml",
+                "qml/SaveViewDialog.qml",
+                "qml/ModalOverlay.qml",
+                "qml/TestHooks.qml",
+                "qml/ImageLayers.qml",
+                "qml/MediaView.qml",
+                "qml/VideoTransport.qml",
+                "qml/Loupe.qml",
+                "qml/RatingBar.qml",
+                "qml/RatingPopup.qml",
+                "qml/Hud.qml",
             ])
-            .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true)),
+            .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true))
+            .qml_file(QmlFile::from("qml/Theme.qml").singleton(true)),
     )
     .qt_module("Quick")
     .qt_module("Multimedia")

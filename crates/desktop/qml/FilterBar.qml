@@ -33,17 +33,9 @@ Pane {
     // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
     function countFacets(folder: string, recursive: bool) { filters.countFacets(folder, recursive) }
 
-    // The choices of the list facets: the Rust enums, in the bar's order (the labels are Filters.label()).
-    readonly property list<int> types: [Filters.MediaType.Image, Filters.MediaType.Animated, Filters.MediaType.Video]
-    readonly property list<int> orientations: [Filters.Shape.Landscape, Filters.Shape.Portrait, Filters.Shape.Square]
-    readonly property list<int> statuses: [Filters.Status.Imported, Filters.Status.Pending, Filters.Status.Failed]
-    // Filters.duplicates: -1 either way, 1 with a duplicate, 0 without; in the duplicates box's order.
+    // Filters.duplicates and Filters.borderMarked, in the boxes' order (-1 either way, then 1 and 0). The list facets'
+    // choices are FacetChoices rows, made in the flow below.
     readonly property list<string> duplicateChoices: ["Any", "Has duplicates", "No duplicates"]
-    // query::BorderFacet, in the bar's order.
-    readonly property list<int> borderValues: [
-        Filters.Border.None, Filters.Border.Black, Filters.Border.White, Filters.Border.Color, Filters.Border.Blur
-    ]
-    // Filters.borderMarked in the review box's order (-1, 0, 1).
     readonly property list<string> reviewChoices: ["Any", "Not marked", "Marked not a border"]
 
     padding: 6
@@ -59,11 +51,13 @@ Pane {
 
     function count(n: int): string { return Qt.locale().toString(n) }
 
-    // A choice in a list facet: highlighted while the query has it. Each delegate binds `chosen` and `onClicked` to
-    // its facet's calls on the Filters object (the enums' typed ones, or the string ones for extensions and ratings).
+    // A choice in a list facet, one row of a FacetChoices: highlighted while the query has it (`chosen`). Each
+    // delegate's `onClicked` toggles its row's key in its facet (`Filters.toggle`).
     component Chip: Button {
-        // `revision` is what the delegates' bindings depend on: it changes whenever the query or the counts do.
-        property bool chosen: false
+        required property string key
+        required property string label
+        required property int count
+        required property bool chosen
         highlighted: chosen
         padding: 3
         leftPadding: 8
@@ -108,20 +102,23 @@ Pane {
             Flow {
                 spacing: 14
 
+                // The rows of each list facet (facet_choices.rs): a chip reads its row's key, label, count and chosen.
+                // They follow the query and the counts, so no binding needs a revision.
+                FacetChoices { id: typeChoices; facet: "types"; query: filters.query; counts: filters.counts }
+                FacetChoices { id: ratingChoices; facet: "ratings"; query: filters.query; counts: filters.counts }
+                FacetChoices { id: extChoices; facet: "exts"; query: filters.query; counts: filters.counts }
+                FacetChoices { id: shapeChoices; facet: "orientations"; query: filters.query; counts: filters.counts }
+                FacetChoices { id: statusChoices; facet: "status"; query: filters.query; counts: filters.counts }
+                FacetChoices { id: borderChoices; facet: "borders"; query: filters.query; counts: filters.counts }
+
                 RowLayout {
                     spacing: 4
                     Caption { text: "Type" }
                     Repeater {
-                        model: bar.types
+                        model: typeChoices
                         delegate: Chip {
-                            required property var modelData
-                            // `revision >= 0` is true for any loaded model: it makes this binding depend on `revision`,
-                            // so it re-evaluates after a change. The model's roles replace these guards at the QML
-                            // step (docs/REVIEW.md, R-63).
-                            chosen: filters.revision >= 0 && filters.hasMediaType(modelData)
-                            text: filters.mediaTypeLabel(modelData) + "  "
-                                + bar.count(filters.revision >= 0 ? filters.mediaTypeCount(modelData) : 0)
-                            onClicked: filters.toggleMediaType(modelData)
+                            text: label + "  " + bar.count(count)
+                            onClicked: filters.toggle("types", key)
                         }
                     }
                 }
@@ -130,12 +127,11 @@ Pane {
                     spacing: 4
                     Caption { text: "Rating" }
                     Repeater {
-                        model: 6
+                        model: ratingChoices
                         delegate: Chip {
                             required property int index
-                            chosen: filters.revision >= 0 && filters.has("ratings", "" + index)
                             text: Ratings.symbol(index) + (index === 0 ? " Unrated" : "")
-                            onClicked: filters.toggle("ratings", "" + index)
+                            onClicked: filters.toggle("ratings", key)
                         }
                     }
                 }
@@ -144,13 +140,10 @@ Pane {
                     spacing: 4
                     Caption { text: "Extension" }
                     Repeater {
-                        model: filters.extensions
+                        model: extChoices
                         delegate: Chip {
-                            required property string modelData
-                            chosen: filters.revision >= 0 && filters.has("exts", modelData)
-                            text: filters.label("exts", modelData) + "  "
-                                + bar.count(filters.revision >= 0 ? filters.extCount(modelData) : 0)
-                            onClicked: filters.toggle("exts", modelData)
+                            text: label + "  " + bar.count(count)
+                            onClicked: filters.toggle("exts", key)
                         }
                     }
                 }
@@ -159,12 +152,10 @@ Pane {
                     spacing: 4
                     Caption { text: "Shape" }
                     Repeater {
-                        model: bar.orientations
+                        model: shapeChoices
                         delegate: Chip {
-                            required property var modelData
-                            chosen: filters.revision >= 0 && filters.hasShape(modelData)
-                            text: filters.shapeLabel(modelData)
-                            onClicked: filters.toggleShape(modelData)
+                            text: label
+                            onClicked: filters.toggle("orientations", key)
                         }
                     }
                 }
@@ -204,12 +195,10 @@ Pane {
                     }
                     Caption { text: "Import" }
                     Repeater {
-                        model: bar.statuses
+                        model: statusChoices
                         delegate: Chip {
-                            required property var modelData
-                            chosen: filters.revision >= 0 && filters.hasStatus(modelData)
-                            text: filters.statusLabel(modelData)
-                            onClicked: filters.toggleStatus(modelData)
+                            text: label
+                            onClicked: filters.toggle("status", key)
                         }
                     }
                 }
@@ -218,13 +207,10 @@ Pane {
                     spacing: 4
                     Caption { text: "Borders" }
                     Repeater {
-                        model: bar.borderValues
+                        model: borderChoices
                         delegate: Chip {
-                            required property var modelData
-                            chosen: filters.revision >= 0 && filters.hasBorder(modelData)
-                            text: filters.borderLabel(modelData) + "  "
-                                + bar.count(filters.revision >= 0 ? filters.borderValueCount(modelData) : 0)
-                            onClicked: filters.toggleBorder(modelData)
+                            text: label + "  " + bar.count(count)
+                            onClicked: filters.toggle("borders", key)
                         }
                     }
                     Caption { text: "Review" }

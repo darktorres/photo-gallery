@@ -5,6 +5,7 @@ mod animation;
 mod app;
 mod app_icon;
 mod command_line;
+mod facet_choices;
 mod filters;
 mod folders;
 mod gallery;

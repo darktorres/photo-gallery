@@ -1537,7 +1537,6 @@ dependencies = [
  "pg-app",
  "pg-catalog",
  "pg-client",
- "pg-codec",
  "pg-jobs",
  "pg-library",
  "pg-model",

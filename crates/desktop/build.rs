@@ -44,6 +44,7 @@ fn main() {
         "src/animation.rs",
         "src/app_icon.rs",
         "src/command_line.rs",
+        "src/facet_choices.rs",
         "src/filters.rs",
         "src/folders.rs",
         "src/gallery.rs",

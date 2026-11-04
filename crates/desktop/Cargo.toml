@@ -15,7 +15,6 @@ test = false
 doctest = false
 
 [dependencies]
-pg-codec = { path = "../codec" }
 pg-client = { path = "../client" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }

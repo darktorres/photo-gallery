@@ -353,11 +353,7 @@ ApplicationWindow {
     }
 
     // The status bar's selection: the item's info and rating, or the key hints with none selected.
-    readonly property string selectionInfo: galleryModel.revision >= 0 && win.current >= 0
-        ? galleryModel.info(win.current) + "   "
-          + (galleryModel.rating(win.current) > 0
-              ? Ratings.symbol(galleryModel.rating(win.current)) : "")
-        : keymap.gridHint()
+    readonly property string selectionInfo: win.current >= 0 ? galleryModel.selectionInfo : keymap.gridHint()
 
     // The test hooks (command-line options): their values are read in TestHooks, and what they do is run here.
     TestHooks {
@@ -452,7 +448,7 @@ ApplicationWindow {
         FilterBar {
             id: filterBar
             onEdited: applyTimer.restart()
-            croppable: galleryModel.revision >= 0 && galleryModel.count >= 0 ? galleryModel.borderedCount() : 0
+            croppable: galleryModel.croppable
             onSaveCropsRequested: win.askSaveCrops()
             anchors.left: parent.left
             anchors.right: parent.right

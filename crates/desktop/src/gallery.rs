@@ -38,11 +38,18 @@ pub mod qobject {
         #[base = QAbstractListModel]
         #[qml_element]
         #[qproperty(i32, count, READ, WRITE, NOTIFY, FINAL)]
+        /// How many of the listed files have borders found and not marked: what `saveCroppedCopies` crops. Read again
+        /// with the revision (`bump_revision`).
+        #[qproperty(i32, croppable, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
         /// A list asked for (`openFolder`) hasn't arrived yet; the one shown stays meanwhile.
         #[qproperty(bool, loading, READ, WRITE, NOTIFY, FINAL)]
-        /// The selected item (-1: none): it follows its file to a new list.
-        #[qproperty(i32, current, READ, WRITE, NOTIFY, FINAL)]
+        /// The selected item (-1: none): it follows its file to a new list. Set through `set_current_item`, which
+        /// reads the selection's text again.
+        #[qproperty(i32, current, READ, WRITE = set_current_item, NOTIFY, FINAL)]
+        /// The status bar's text for the selected item: its info, and its rating's symbol after it. Empty with none.
+        /// Read again with the selection and the revision.
+        #[qproperty(QString, selection_info, cxx_name = "selectionInfo", READ, WRITE, NOTIFY, FINAL)]
         /// The viewer's item (-1: closed). While it is open, a list that arrives is held, and shown when it closes.
         #[qproperty(i32, viewing, READ, WRITE = set_viewing_holding, NOTIFY, FINAL)]
         /// Without a selection, the item a new list keeps in view (the top one): set in `aboutToLoad`.
@@ -73,6 +80,7 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         fn set_viewing_holding(self: Pin<&mut GalleryModel>, value: i32);
+        fn set_current_item(self: Pin<&mut GalleryModel>, value: i32);
 
         /// A new list is about to replace the shown one: the last moment to set `anchor`.
         #[qsignal]
@@ -213,11 +221,6 @@ pub mod qobject {
         #[cxx_name = "saveCroppedCopies"]
         fn save_cropped_copies(self: &GalleryModel, url: &QUrl) -> i32;
 
-        /// How many of the listed files have borders found (and not marked): what `saveCroppedCopies` crops.
-        #[qinvokable]
-        #[cxx_name = "borderedCount"]
-        fn bordered_count(self: &GalleryModel) -> i32;
-
         /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file
         /// (the QML adds the rating's symbol), and the borders found.
         #[qinvokable]
@@ -296,8 +299,10 @@ const CELL_ROLES: [(i32, &str); 10] = [
 pub struct GalleryRust {
     count: i32,
     revision: i32,
+    croppable: i32,
     loading: bool,
     current: i32,
+    selection_info: QString,
     viewing: i32,
     anchor: i32,
     // The viewer's item's values (`refresh_viewed`): the qproperties' backing fields. Before any refresh they are the
@@ -331,8 +336,10 @@ impl Default for GalleryRust {
         GalleryRust {
             count: 0,
             revision: 0,
+            croppable: 0,
             loading: false,
             current: -1,
+            selection_info: QString::default(),
             viewing: -1,
             anchor: -1,
             viewed_key: QString::default(),
@@ -507,11 +514,9 @@ impl qobject::GalleryModel {
         }
         // The selection stays with its file; if the file left the list (rated out of "Unrated"), what took its place.
         let selection = self.grid.selection_after(keep, self.current, current, anchor);
-        self.as_mut().set_current(selection.current);
+        self.as_mut().set_current_item(selection.current);
         self.as_mut().set_anchor(-1);
-        self.as_mut().refresh_viewed();
-        let revision = self.revision + 1;
-        self.as_mut().set_revision(revision);
+        self.as_mut().bump_revision();
         pg_trace::pg_stage_list_shown();
         self.loaded(selection.anchor);
     }
@@ -584,6 +589,43 @@ impl qobject::GalleryModel {
             self.as_mut().data_changed(&index, &index, &QList::from(cell_roles().as_slice()));
             self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
         }
+    }
+
+    /// The selection (`current`) changed, from QML or from a new list: its text is read again.
+    fn set_current_item(mut self: Pin<&mut Self>, value: i32) {
+        if value == self.current {
+            return;
+        }
+        self.as_mut().rust_mut().current = value;
+        self.as_mut().current_changed();
+        self.as_mut().refresh_derived();
+    }
+
+    /// The grid's values changed (the list, a turn, a rating, a border mark): what the views read from them is read
+    /// again first, then the revision moves on, which the views follow.
+    fn bump_revision(mut self: Pin<&mut Self>) {
+        self.as_mut().refresh_viewed();
+        self.as_mut().refresh_derived();
+        let revision = self.revision + 1;
+        self.as_mut().set_revision(revision);
+    }
+
+    /// The status bar's selection text and the bordered count, the values the views used to call for.
+    fn refresh_derived(mut self: Pin<&mut Self>) {
+        let selection = if self.current >= 0 {
+            let rating = self.rating(self.current);
+            let symbol = if rating > 0 {
+                text::rating_symbol(u8::try_from(rating.clamp(0, 5)).unwrap_or(0)).to_string()
+            } else {
+                String::new()
+            };
+            format!("{}   {symbol}", self.info(self.current))
+        } else {
+            String::new()
+        };
+        self.as_mut().set_selection_info(QString::from(&selection));
+        let bordered = self.bordered_count();
+        self.as_mut().set_croppable(bordered);
     }
 
     /// Sets what the viewer shows of its item (`viewing`), the viewed properties. Read again wherever what they show
@@ -711,9 +753,7 @@ impl qobject::GalleryModel {
         } else {
             self.as_mut().items_changed(&[item as usize]);
         }
-        self.as_mut().refresh_viewed();
-        let revision = self.revision + 1;
-        self.set_revision(revision);
+        self.as_mut().bump_revision();
     }
 
     fn refresh_turned(mut self: Pin<&mut Self>) {
@@ -734,9 +774,7 @@ impl qobject::GalleryModel {
         } else {
             self.as_mut().items_changed(&turned.changed);
         }
-        self.as_mut().refresh_viewed();
-        let revision = self.revision + 1;
-        self.set_revision(revision);
+        self.as_mut().bump_revision();
     }
 
     fn rating_in_file(&self, item: i32) -> bool {
@@ -763,9 +801,7 @@ impl qobject::GalleryModel {
             this.forget_details();
         }
         self.as_mut().items_changed(&[item as usize]);
-        self.as_mut().refresh_viewed();
-        let revision = self.revision + 1;
-        self.set_revision(revision);
+        self.as_mut().bump_revision();
     }
 
     fn badge(&self, item: i32) -> QString {
@@ -801,9 +837,7 @@ impl qobject::GalleryModel {
             .grid
             .edit(item, loading, |entry| entry.borders = if marked { Borders::Marked } else { Borders::Found });
         self.as_mut().items_changed(&[item as usize]);
-        self.as_mut().refresh_viewed();
-        let revision = self.revision + 1;
-        self.set_revision(revision);
+        self.as_mut().bump_revision();
     }
 
     /// Where the border detector's first rejected candidate at an edge of the image as shown (`top`, `bottom`, `left`,
@@ -838,6 +872,7 @@ impl qobject::GalleryModel {
         n
     }
 
+    /// How many of the listed files have borders found (and not marked): what `saveCroppedCopies` crops.
     fn bordered_count(&self) -> i32 {
         self.grid.entries().iter().filter(|e| e.borders == Borders::Found).count() as i32
     }

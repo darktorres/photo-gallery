@@ -26,7 +26,7 @@ Pane {
 
     // The user changed the query.
     signal edited()
-    // Listed files with borders to crop off (GalleryModel.borderedCount), and the user asking to save them cropped.
+    // Listed files with borders to crop off (GalleryModel.croppable), and the user asking to save them cropped.
     property int croppable: 0
     signal saveCropsRequested()
 

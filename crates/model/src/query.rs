@@ -9,6 +9,7 @@ use crate::date::Day;
 use crate::rating::Rating;
 
 /// Type, as the filter sees it: the file's kind (`media::Kind`), with animated images apart from still ones.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "lowercase")]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
@@ -31,6 +32,7 @@ impl MediaType {
 }
 
 /// Upright shape. Within 1% of square counts as square.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
@@ -53,6 +55,7 @@ impl Shape {
 }
 
 /// Where a file is in the import.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
@@ -79,6 +82,7 @@ impl Status {
 
 /// Borders, as the filter sees them: none found, or a side found of a class (`detection::Class`). Borders the user
 /// marked as not a border count as none.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
 #[serde(rename_all = "lowercase")]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
@@ -103,6 +107,7 @@ impl BorderFacet {
 }
 
 /// A rating the query keeps: unrated, or a number of stars. In JSON, 0 is unrated and 1 to 5 the stars.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Serialize, Deserialize)]
 #[serde(try_from = "u8", into = "u8")]
 pub enum RatingFilter {
@@ -132,6 +137,7 @@ impl From<RatingFilter> for u8 {
 }
 
 /// What a view sorts by.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 #[serde(rename_all = "lowercase")]
 #[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
@@ -161,6 +167,7 @@ impl SortKey {
 }
 
 /// A sort: its key, and whether it runs down.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Sort {
     pub key: SortKey,
@@ -175,6 +182,7 @@ impl Default for Sort {
 }
 
 /// A numeric range; either end may be open. Both ends are included.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Debug)]
 #[serde(default)]
 pub struct Range {
@@ -189,6 +197,7 @@ impl Range {
 }
 
 /// Calendar days, both included; either end may be open.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Copy, Default, PartialEq, Eq, Debug)]
 #[serde(default)]
 pub struct DateRange {
@@ -210,6 +219,7 @@ fn lenient_day<'de, D: Deserializer<'de>>(de: D) -> Result<Option<Day>, D::Error
 }
 
 /// The facets a view filters by. `Query::default()` shows everything.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
 #[derive(Serialize, Deserialize, Clone, Default, PartialEq, Debug)]
 #[serde(default)]
 pub struct Query {

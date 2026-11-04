@@ -12,3 +12,8 @@ workspace = true
 arrayvec.workspace = true
 serde.workspace = true
 strum.workspace = true
+# The TypeScript types for the web client (S-04.8): the wire types of `query` derive `specta::Type` behind this feature.
+specta = { version = "=2.0.0-rc.27", optional = true, features = ["derive"] }
+
+[features]
+specta = ["dep:specta"]

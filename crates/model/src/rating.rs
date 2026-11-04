@@ -2,6 +2,7 @@
 //! 1 to 5). An unrated file has no rating at all, so it is `Option<Rating>`.
 
 /// Stars, 0 to 5.
+#[cfg_attr(feature = "specta", derive(specta::Type), specta(type = u8))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Rating(u8);
 

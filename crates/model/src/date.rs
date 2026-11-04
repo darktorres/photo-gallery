@@ -67,6 +67,7 @@ pub fn wall_clock_seconds(y: i64, m: i64, d: i64, h: i64, mi: i64, s: i64) -> Op
 }
 
 /// A calendar day, without a time zone: the days since 1970-01-01 (negative before it).
+#[cfg_attr(feature = "specta", derive(specta::Type), specta(type = String))]
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct Day(i64);
 

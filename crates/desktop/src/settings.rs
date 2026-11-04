@@ -92,15 +92,21 @@ fn load() -> Prefs {
         }),
         // No desktop.json yet: an older version kept these fields in gallery.json, beside the server's. They are taken
         // from there and saved here now, so that a later save of the server's (which rewrites gallery.json without
-        // them) can't lose them.
-        Err(_) => match std::fs::read(path.with_file_name("gallery.json")) {
-            Ok(bytes) => {
-                let p = serde_json::from_slice::<Prefs>(&bytes).unwrap_or_default();
-                save(&p);
-                p
+        // them) can't lose them. The server's load moves a gallery.json it can't parse to gallery.json.bad, so that
+        // copy is read too, when it has been moved already.
+        Err(_) => {
+            let older = ["gallery.json", "gallery.json.bad"]
+                .into_iter()
+                .find_map(|name| std::fs::read(path.with_file_name(name)).ok());
+            match older {
+                Some(bytes) => {
+                    let p = serde_json::from_slice::<Prefs>(&bytes).unwrap_or_default();
+                    save(&p);
+                    p
+                }
+                None => Prefs::default(),
             }
-            Err(_) => Prefs::default(),
-        },
+        }
     }
 }
 

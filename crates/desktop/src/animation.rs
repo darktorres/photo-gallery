@@ -1,7 +1,7 @@
 //! `AnimationPlayer`: plays an animated GIF, APNG or WebP into a `VideoOutput`'s sink, so animations show like
-//! videos (same fit and turns) while looping as they should (`pg_codec::animation` says why not Qt's player).
-//! A thread per animation decodes the frames and keeps each one's delay. It loops forever, as most viewers do in
-//! practice: a GIF's loop count isn't honoured.
+//! videos (same fit and turns) while looping as they should (`pg_codec::animation` says why not Qt's player). The
+//! loop itself is `pg_render::player`'s; this file is the Qt side: the source and the sink, and the thread-safety of
+//! the frame sink's calls.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -52,20 +52,18 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
-use std::sync::{Arc, Condvar, Mutex};
-use std::thread::JoinHandle;
-use std::time::{Duration, Instant};
+use std::sync::Arc;
 
 use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
-use pg_codec::animation;
+use pg_render::player::{Player, Sink};
 
 pub struct AnimationPlayerRust {
     source: QString,
     playing: bool,
     sink: Option<UniquePtr<qobject::SinkRef>>,
-    worker: Option<Worker>,
+    worker: Option<Player<Frames>>,
 }
 
 impl Default for AnimationPlayerRust {
@@ -116,8 +114,8 @@ impl qobject::AnimationPlayer {
             return;
         }
         let Some(sink) = &self.sink else { return };
-        let (frames, paused) = (Frames(sink.frame_sink()), !self.playing);
-        self.as_mut().rust_mut().worker = Some(Worker::start(path, frames, paused));
+        let (frames, paused) = (Arc::new(Frames(sink.frame_sink())), !self.playing);
+        self.as_mut().rust_mut().worker = Some(Player::start(path, frames, paused));
     }
 }
 
@@ -125,102 +123,17 @@ impl qobject::AnimationPlayer {
 struct Frames(UniquePtr<qobject::FrameSink>);
 
 // SAFETY: `FrameSink::present` may be called from any thread (cpp/frame_sink.cpp); `close` is called on the GUI
-// thread, by `Worker::drop`.
+// thread, by `Player`'s drop.
 unsafe impl Send for Frames {}
 // SAFETY: as above; both methods take `&self` and touch the sink only on its own thread.
 unsafe impl Sync for Frames {}
 
-struct Control {
-    stop: bool,
-    paused: bool,
-}
-
-type Shared = Arc<(Mutex<Control>, Condvar)>;
-
-/// The thread playing one animation; dropping it stops it.
-struct Worker {
-    control: Shared,
-    frames: Arc<Frames>,
-    thread: Option<JoinHandle<()>>,
-}
-
-impl Worker {
-    fn start(path: String, frames: Frames, paused: bool) -> Worker {
-        let control: Shared = Arc::new((Mutex::new(Control { stop: false, paused }), Condvar::new()));
-        let frames = Arc::new(frames);
-        let thread = std::thread::Builder::new()
-            .name("animation".into())
-            .spawn({
-                let (control, frames) = (control.clone(), frames.clone());
-                move || play(&path, &frames, &control)
-            })
-            .ok();
-        Worker { control, frames, thread }
+impl Sink for Frames {
+    fn present(&self, width: u32, height: u32, rgba: &[u8]) {
+        self.0.present(width, height, rgba);
     }
 
-    fn set_paused(&self, paused: bool) {
-        let (lock, wake) = &*self.control;
-        lock.lock().unwrap().paused = paused;
-        wake.notify_all();
-    }
-}
-
-impl Drop for Worker {
-    fn drop(&mut self) {
-        let (lock, wake) = &*self.control;
-        lock.lock().unwrap().stop = true;
-        wake.notify_all();
-        // At most one frame's decoding away; after it, nothing more is sent.
-        if let Some(t) = self.thread.take() {
-            let _ = t.join();
-        }
-        self.frames.0.close();
-    }
-}
-
-/// Loops over the animation's frames until stopped. Each frame is shown when the previous one's delay is over
-/// (decoding the next counts toward it). An unreadable file, or one whose first frame fails, shows nothing: the
-/// viewer keeps the poster.
-fn play(path: &str, frames: &Frames, control: &Shared) {
-    let Ok(bytes) = std::fs::read(path) else { return };
-    let bytes: Arc<[u8]> = bytes.into();
-    let mut due = Instant::now();
-    loop {
-        let Ok(pass) = animation::frames(bytes.clone()) else { return };
-        let mut shown = false;
-        // A frame that fails to decode ends the pass: what came before it still loops.
-        for frame in pass.map_while(Result::ok) {
-            if !wait_until(control, &mut due) {
-                return;
-            }
-            frames.0.present(frame.width, frame.height, &frame.rgba);
-            shown = true;
-            // Late (a slow decode, a busy machine): carry on from now rather than rushing to catch up.
-            due = (due + Duration::from_millis(frame.delay_ms.into())).max(Instant::now());
-        }
-        if !shown {
-            return;
-        }
-    }
-}
-
-/// Waits for `due`, and while paused; false once stopped. After a pause the next frame is due at once.
-fn wait_until(control: &Shared, due: &mut Instant) -> bool {
-    let (lock, wake) = &**control;
-    let mut c = lock.lock().unwrap();
-    loop {
-        if c.stop {
-            return false;
-        }
-        if c.paused {
-            c = wake.wait(c).unwrap();
-            *due = Instant::now();
-            continue;
-        }
-        let now = Instant::now();
-        if now >= *due {
-            return true;
-        }
-        c = wake.wait_timeout(c, *due - now).unwrap().0;
+    fn close(&self) {
+        self.0.close();
     }
 }

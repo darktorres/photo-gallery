@@ -26,6 +26,7 @@ pg-yandex = { path = "../yandex" }
 pg-library = { path = "../library" }
 pg-jobs = { path = "../jobs" }
 pg-app = { path = "../app" }
+pg-render = { path = "../render" }
 anyhow.workspace = true
 cxx = "1"
 cxx-qt = "0.10"

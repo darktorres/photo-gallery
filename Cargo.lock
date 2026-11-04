@@ -1542,6 +1542,7 @@ dependencies = [
  "pg-library",
  "pg-model",
  "pg-platform",
+ "pg-render",
  "pg-thumbcache",
  "pg-trace",
  "pg-yandex",

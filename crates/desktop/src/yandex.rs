@@ -1,12 +1,24 @@
 //! Reverse image search on Yandex, from the viewer: the Qt glue over `pg_app::yandex`. A thread subscribes to the search's
 //! changes and queues a `poll()` onto the Qt thread for each one, as the library's change pump does; QML doesn't poll.
-//! The results are items by index, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
-//! then the similar images (`similarCount`). The picks to save are kept here too. The words the panel shows are
-//! formatted here (`pg_client::text` and the QML's own), from the typed outcomes the app returns.
+//! The results are the model's rows, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
+//! then the similar images (`similarCount`). A row's `picked` role follows the picks to save. The preview shows one
+//! result (`previewItem`): its URL, size and pick are properties, set whenever the item or its pick changes. The words
+//! the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed outcomes the app returns.
 
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
+        include!(<QtCore/QAbstractListModel>);
+        type QAbstractListModel;
+
+        include!("cxx-qt-lib/qhash.h");
+        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
+        include!("cxx-qt-lib/qmodelindex.h");
+        type QModelIndex = cxx_qt_lib::QModelIndex;
+        include!("cxx-qt-lib/qvariant.h");
+        type QVariant = cxx_qt_lib::QVariant;
+        include!("cxx-qt-lib/qlist.h");
+        type QList_i32 = cxx_qt_lib::QList<i32>;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qurl.h");
@@ -15,44 +27,70 @@ pub mod qobject {
 
     extern "RustQt" {
         #[qobject]
+        #[base = QAbstractListModel]
         #[qml_element]
         #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
-        /// Results of the latest search: the other sizes, then the similar images.
+        /// The results are the model's rows: the other sizes first, then the similar images.
         #[qproperty(i32, other_count, cxx_name = "otherCount", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, similar_count, cxx_name = "similarCount", READ, WRITE, NOTIFY, FINAL)]
-        /// Results picked to be saved.
+        /// Results picked to be saved, and how many of each group are (its header's count).
         #[qproperty(i32, picked_count, cxx_name = "pickedCount", READ, WRITE, NOTIFY, FINAL)]
-        /// Changes whenever the results or the picks do: for bindings that call the item functions.
-        #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, other_picked, cxx_name = "otherPicked", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, similar_picked, cxx_name = "similarPicked", READ, WRITE, NOTIFY, FINAL)]
+        /// The result the preview shows (-1: none). Setting it refreshes the four properties below.
+        #[qproperty(i32, preview_item, cxx_name = "previewItem", READ, WRITE = set_preview_item, NOTIFY, FINAL)]
+        /// What the preview shows of its item: its picture's URL (`""` for none), its size in pixels as Yandex gives
+        /// it (0 when it doesn't), and whether it is picked.
+        #[qproperty(QString, preview_url, cxx_name = "previewUrl", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, preview_width, cxx_name = "previewWidth", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, preview_height, cxx_name = "previewHeight", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(bool, preview_picked, cxx_name = "previewPicked", READ, WRITE, NOTIFY, FINAL)]
         type YandexSearch = super::YandexSearchRust;
     }
 
     impl cxx_qt::Threading for YandexSearch {}
 
     unsafe extern "RustQt" {
+        fn set_preview_item(self: Pin<&mut YandexSearch>, value: i32);
+
         /// Upload the photo at the local file `path` and read its other sizes and similar images.
         #[qinvokable]
         fn search(self: Pin<&mut YandexSearch>, path: &QString);
 
-        /// A result's full-size file.
         #[qinvokable]
-        fn url(self: &YandexSearch, item: i32) -> QString;
-
-        /// A picture of the result to show: Yandex's preview for a similar image, the file itself for another size.
-        #[qinvokable]
-        fn thumb(self: &YandexSearch, item: i32) -> QString;
-
-        /// Its size in pixels, as Yandex gives it; 0 when it doesn't.
-        #[qinvokable]
-        fn width(self: &YandexSearch, item: i32) -> i32;
+        #[cxx_override]
+        fn data(self: &YandexSearch, index: &QModelIndex, role: i32) -> QVariant;
 
         #[qinvokable]
-        fn height(self: &YandexSearch, item: i32) -> i32;
+        #[cxx_override]
+        #[cxx_name = "roleNames"]
+        fn role_names(self: &YandexSearch) -> QHash_i32_QByteArray;
 
         #[qinvokable]
-        #[cxx_name = "isPicked"]
-        fn is_picked(self: &YandexSearch, item: i32) -> bool;
+        #[cxx_override]
+        #[cxx_name = "rowCount"]
+        fn row_count(self: &YandexSearch, parent: &QModelIndex) -> i32;
+
+        #[inherit]
+        #[cxx_name = "beginResetModel"]
+        fn begin_reset_model(self: Pin<&mut YandexSearch>);
+
+        #[inherit]
+        #[cxx_name = "endResetModel"]
+        fn end_reset_model(self: Pin<&mut YandexSearch>);
+
+        #[inherit]
+        #[cxx_name = "dataChanged"]
+        fn data_changed(
+            self: Pin<&mut YandexSearch>,
+            top_left: &QModelIndex,
+            bottom_right: &QModelIndex,
+            roles: &QList_i32,
+        );
+
+        #[inherit]
+        fn index(self: &YandexSearch, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
         /// Pick a result to be saved, or unpick it. It becomes the anchor of the next `pickTo`.
         #[qinvokable]
@@ -70,11 +108,6 @@ pub mod qobject {
         #[cxx_name = "setPicked"]
         fn set_picked(self: Pin<&mut YandexSearch>, first: i32, count: i32, picked: bool);
 
-        /// How many of the `count` results from `first` are picked.
-        #[qinvokable]
-        #[cxx_name = "pickedIn"]
-        fn picked_in(self: &YandexSearch, first: i32, count: i32) -> i32;
-
         /// Where the save dialog opens: the folder saved into last, while it exists, or else the photo's folder.
         #[qinvokable]
         #[cxx_name = "startFolder"]
@@ -90,7 +123,7 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QString, QUrl};
+use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QUrl, QVariant};
 use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status};
 use pg_client::picks::Picks;
 use pg_client::text;
@@ -99,6 +132,11 @@ use pg_yandex::YandexError;
 /// The status line when a search or a save stops at an internal error (the panic is in the log).
 const INTERNAL_STOP: &str = "Stopped by an internal error; the details are in gallery.log.";
 
+const ROLE_THUMB: i32 = 256;
+const ROLE_IMAGE_WIDTH: i32 = 257;
+const ROLE_IMAGE_HEIGHT: i32 = 258;
+const ROLE_PICKED: i32 = 259;
+
 #[derive(Default)]
 pub struct YandexSearchRust {
     busy: bool,
@@ -106,7 +144,13 @@ pub struct YandexSearchRust {
     other_count: i32,
     similar_count: i32,
     picked_count: i32,
-    revision: i32,
+    other_picked: i32,
+    similar_picked: i32,
+    preview_item: i32,
+    preview_url: QString,
+    preview_width: i32,
+    preview_height: i32,
+    preview_picked: bool,
     search: Search,
     /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
     pump: bool,
@@ -116,10 +160,6 @@ pub struct YandexSearchRust {
 }
 
 impl YandexSearchRust {
-    fn hit(&self, item: i32) -> Option<&Hit> {
-        usize::try_from(item).ok().and_then(|i| self.hits.get(i))
-    }
-
     /// The results `first..first + count` that exist.
     fn range(&self, first: i32, count: i32) -> std::ops::Range<usize> {
         self.picks.range(usize::try_from(first).unwrap_or(0), usize::try_from(count).unwrap_or(0))
@@ -242,23 +282,56 @@ impl qobject::YandexSearch {
     /// Show these results, none picked.
     fn show(mut self: Pin<&mut Self>, other: Vec<Hit>, similar: Vec<Hit>) {
         let (other_count, similar_count) = (other.len() as i32, similar.len() as i32);
+        self.as_mut().begin_reset_model();
         {
             let mut this = self.as_mut().rust_mut();
             this.hits = other.into_iter().chain(similar).collect();
             let count = this.hits.len();
             this.picks.reset(count);
         }
+        self.as_mut().end_reset_model();
         self.as_mut().set_other_count(other_count);
         self.as_mut().set_similar_count(similar_count);
         self.picks_changed();
     }
 
-    /// After the picks change: their count, and a new revision for the bindings.
+    /// After the picks change: each row's `picked` role, the counts, and the preview's pick.
     fn picks_changed(mut self: Pin<&mut Self>) {
+        let rows = self.hits.len() as i32;
+        if rows > 0 {
+            let root = QModelIndex::default();
+            let (top, bottom) = (self.index(0, 0, &root), self.index(rows - 1, 0, &root));
+            self.as_mut().data_changed(&top, &bottom, &QList::from(&[ROLE_PICKED][..]));
+        }
+        let other_picked = self.picks.picked_in(self.range(0, self.other_count)) as i32;
+        let similar_picked = self.picks.picked_in(self.range(self.other_count, self.similar_count)) as i32;
         let picked_count = self.picks.count() as i32;
         self.as_mut().set_picked_count(picked_count);
-        let revision = self.revision + 1;
-        self.set_revision(revision);
+        self.as_mut().set_other_picked(other_picked);
+        self.as_mut().set_similar_picked(similar_picked);
+        self.refresh_preview();
+    }
+
+    fn set_preview_item(mut self: Pin<&mut Self>, value: i32) {
+        if self.preview_item == value {
+            return;
+        }
+        self.as_mut().rust_mut().preview_item = value;
+        self.as_mut().preview_item_changed();
+        self.refresh_preview();
+    }
+
+    /// The preview's values for its item: the picture's URL, its size and its pick (empty for no item).
+    fn refresh_preview(mut self: Pin<&mut Self>) {
+        let shown = usize::try_from(self.preview_item).ok().and_then(|i| self.hits.get(i).map(|hit| (i, hit)));
+        let (url, width, height, picked) = match shown {
+            Some((i, hit)) => (QString::from(&hit.url), hit.width, hit.height, self.picks.is_picked(i)),
+            None => (QString::default(), 0, 0, false),
+        };
+        self.as_mut().set_preview_url(url);
+        self.as_mut().set_preview_width(width);
+        self.as_mut().set_preview_height(height);
+        self.as_mut().set_preview_picked(picked);
     }
 
     fn poll(mut self: Pin<&mut Self>) {
@@ -273,24 +346,37 @@ impl qobject::YandexSearch {
         self.set_busy(poll.busy);
     }
 
-    fn url(&self, item: i32) -> QString {
-        self.hit(item).map_or_else(QString::default, |h| QString::from(&h.url))
+    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+        let Ok(i) = usize::try_from(index.row()) else {
+            return QVariant::default();
+        };
+        let Some(hit) = self.hits.get(i) else {
+            return QVariant::default();
+        };
+        match role {
+            ROLE_THUMB => QVariant::from(&QString::from(&hit.thumb)),
+            ROLE_IMAGE_WIDTH => QVariant::from(&hit.width),
+            ROLE_IMAGE_HEIGHT => QVariant::from(&hit.height),
+            ROLE_PICKED => QVariant::from(&self.picks.is_picked(i)),
+            _ => QVariant::default(),
+        }
     }
 
-    fn thumb(&self, item: i32) -> QString {
-        self.hit(item).map_or_else(QString::default, |h| QString::from(&h.thumb))
+    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
+        let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
+        for (role, name) in [
+            (ROLE_THUMB, "thumb"),
+            (ROLE_IMAGE_WIDTH, "imageWidth"),
+            (ROLE_IMAGE_HEIGHT, "imageHeight"),
+            (ROLE_PICKED, "picked"),
+        ] {
+            roles.insert(role, QByteArray::from(name));
+        }
+        roles
     }
 
-    fn width(&self, item: i32) -> i32 {
-        self.hit(item).map_or(0, |h| h.width)
-    }
-
-    fn height(&self, item: i32) -> i32 {
-        self.hit(item).map_or(0, |h| h.height)
-    }
-
-    fn is_picked(&self, item: i32) -> bool {
-        usize::try_from(item).is_ok_and(|i| self.picks.is_picked(i))
+    fn row_count(&self, _parent: &QModelIndex) -> i32 {
+        self.hits.len() as i32
     }
 
     fn toggle_pick(mut self: Pin<&mut Self>, item: i32) {
@@ -309,10 +395,6 @@ impl qobject::YandexSearch {
         let range = self.range(first, count);
         self.as_mut().rust_mut().picks.set(range, picked);
         self.picks_changed();
-    }
-
-    fn picked_in(&self, first: i32, count: i32) -> i32 {
-        self.picks.picked_in(self.range(first, count)) as i32
     }
 
     fn start_folder(&self) -> QUrl {

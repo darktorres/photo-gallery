@@ -1,10 +1,9 @@
 // Reverse image search on Yandex for the photo in the viewer: its other sizes, and the images that look like it.
 // Pick any of them (a click, Shift-click for a range, or a group's Select all), look at one at full size
 // (double-click), and save the picks into a folder. The search, the results, the picks and the saving are the
-// YandexSearch object's (src/yandex.rs), which works on background threads and announces each change.
-// Over a dimmed window, like the library panel. The results are ResultTile, the full-size view YandexPreview: the
-// QML compiler compiles a call into a Rust object only in the file that names the object, so this file makes every
-// call to YandexSearch and passes the tiles and the preview what they show.
+// YandexSearch object's (src/yandex.rs), which works on background threads and announces each change: its rows are
+// the results, so each ResultTile reads its roles, and the preview shows the item this file sets it to.
+// Over a dimmed window, like the library panel. The results are ResultTile, the full-size view YandexPreview.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -49,9 +48,8 @@ Rectangle {
         property string title
         property int first: 0
         property int count: 0
-        // `revision >= 0` is true for any loaded model: it makes this binding depend on `revision`, so it re-evaluates
-        // after a change. The model's roles replace these guards at the QML step (docs/REVIEW.md, R-63).
-        readonly property int picked: yandex.revision >= 0 ? yandex.pickedIn(first, count) : 0
+        // The group's picked results, which the search counts on each change.
+        property int picked: 0
 
         visible: count > 0
         spacing: 12
@@ -89,7 +87,7 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
-    // Its state comes across when it changes: the object's change pump polls it (src/yandex.rs).
+    // The results are its rows, and its state comes across when it changes (the change pump, src/yandex.rs).
     YandexSearch { id: yandex }
 
     FolderDialog {
@@ -174,20 +172,15 @@ Rectangle {
                     GroupHeader {
                         title: "Other sizes of this photo"
                         count: yandex.otherCount
+                        picked: yandex.otherPicked
                     }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 8
                         Repeater {
-                            model: yandex.otherCount
+                            model: yandex
                             ResultTile {
-                                required property int index
-                                readonly property int result: index
-                                item: result
-                                picked: yandex.revision >= 0 && yandex.isPicked(result)
-                                thumb: yandex.revision >= 0 ? yandex.thumb(result) : ""
-                                size: yandex.revision >= 0 && yandex.width(result) > 0
-                                    ? yandex.width(result) + "×" + yandex.height(result) : ""
+                                visible: index < yandex.otherCount
                                 onToggled: (chosen) => yandex.togglePick(chosen)
                                 onRangeTo: (chosen) => yandex.pickTo(chosen)
                                 onPreviewRequested: (chosen) => preview.open(chosen)
@@ -199,20 +192,15 @@ Rectangle {
                         title: "Similar images"
                         first: yandex.otherCount
                         count: yandex.similarCount
+                        picked: yandex.similarPicked
                     }
                     Flow {
                         Layout.fillWidth: true
                         spacing: 8
                         Repeater {
-                            model: yandex.similarCount
+                            model: yandex
                             ResultTile {
-                                required property int index
-                                readonly property int result: yandex.otherCount + index
-                                item: result
-                                picked: yandex.revision >= 0 && yandex.isPicked(result)
-                                thumb: yandex.revision >= 0 ? yandex.thumb(result) : ""
-                                size: yandex.revision >= 0 && yandex.width(result) > 0
-                                    ? yandex.width(result) + "×" + yandex.height(result) : ""
+                                visible: index >= yandex.otherCount
                                 onToggled: (chosen) => yandex.togglePick(chosen)
                                 onRangeTo: (chosen) => yandex.pickTo(chosen)
                                 onPreviewRequested: (chosen) => preview.open(chosen)
@@ -236,11 +224,16 @@ Rectangle {
         id: preview
         otherCount: yandex.otherCount
         similarCount: yandex.similarCount
-        imageUrl: yandex.revision >= 0 && preview.visible && preview.item >= 0 ? yandex.url(preview.item) : ""
-        sizeText: yandex.revision >= 0 && preview.item >= 0 && yandex.width(preview.item) > 0
-            ? yandex.width(preview.item) + "×" + yandex.height(preview.item) : ""
-        picked: yandex.revision >= 0 && preview.item >= 0 && yandex.isPicked(preview.item)
+        imageUrl: yandex.previewUrl
+        sizeText: yandex.previewWidth > 0 ? yandex.previewWidth + "×" + yandex.previewHeight : ""
+        picked: yandex.previewPicked
         onPickRequested: (chosen) => yandex.togglePick(chosen)
         onClosed: panel.forceActiveFocus()
+    }
+    // The search previews the item the preview is open on, and none while it is closed.
+    Binding {
+        target: yandex
+        property: "previewItem"
+        value: preview.visible ? preview.item : -1
     }
 }

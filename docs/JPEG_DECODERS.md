@@ -1,6 +1,6 @@
 # JPEG decoders
 
-Which JPEG decoder the app should use: libjpeg-turbo, as `pg-core` calls it, against every other decoder found
+Which JPEG decoder the app should use: libjpeg-turbo, as `pg-codec` calls it, against every other decoder found
 (eight on the CPU, six on the GPU) on seven library files, plus restart markers and lossless baseline conversion
 (`eval/jpeg-decoders`, 2026-10-31). Instruction counts use the callgrind setup in [PROFILING.md](PROFILING.md).
 Encoders are in [JPEG_ENCODERS.md](JPEG_ENCODERS.md).
@@ -88,12 +88,12 @@ All decode to packed RGB8 on one thread unless noted. "Scaled" is the DCT scale 
 for (long side ≥ 512, short side ≥ 320): 1/2 for the Pinterest files, 1/4 for the phone and the 7 MP Sony, 1/8
 for the A6000.
 
-- **libjpeg-turbo:** the vendored 3.x, called as `pg-core` does: accurate IDCT, smooth upsampling.
+- **libjpeg-turbo:** the vendored 3.x, called as `pg-codec` does: accurate IDCT, smooth upsampling.
 - **libjpeg-turbo fast:** the same, with `TJPARAM_FASTDCT` and `TJPARAM_FASTUPSAMPLE`.
 - **zune-jpeg 0.5.15:** the `image` crate's decoder since 0.25. It has no DCT scaling.
 - **jpeg-decoder 0.3.2:** the `image` crate's decoder before 0.25. Even without rayon it decodes in worker
   threads, so its wall times got help from extra threads.
-- **FFmpeg 8 `mjpeg`:** `lowres` for scaling, then swscale to RGB, as `video.rs` converts.
+- **FFmpeg 8 `mjpeg`:** `lowres` for scaling, then swscale to RGB, as `crates/video/src/lib.rs` converts.
 - **libvips 8.18.0:** `jpegload_buffer` with shrink-on-load, sequential, `concurrency` 1, operation cache off,
   plus a copy out of its buffer. It decodes with Ubuntu's libjpeg-turbo 2.1.5, in a worker thread.
 - **nvJPEG:** through torchvision 0.29 (CUDA 13.4) on Windows (`gpu.py`), with Pillow 13 and pyvips 8.18.7 as
@@ -166,7 +166,7 @@ From `wsl.sh compare`: mean |difference| per channel value, the largest, and PSN
 
 ## Where the differences come from
 
-From `cgtab.py` on the gungraun outputs.
+From `tools/profiling/cgtab.py` on the gungraun outputs.
 
 - **FFmpeg's decoder costs about what libjpeg-turbo does.** On `pin-base444-1mp`, libavcodec is 31.8 M against
   libjpeg-turbo's 31.0 M in total. The rest, 53 M (62%), is swscale's YUV 4:4:4 → RGB conversion.

@@ -70,7 +70,7 @@ libraries; they differ in who owns the playback core. Both were checked against 
   - It also draws our animation frames, replacing `QVideoSink` + `VideoOutput`.
   - Offscreen (software scene graph) it draws nothing, so its tests need a real window.
 - **Qt Multimedia goes away, in stages.** With it go Qt's FFmpeg plugin, the environment-variable stopgap
-  (`choose_video_decoding` in `crates/desktop/cpp/gpu_device.*` and its call in `main.rs`), `windeployqt --no-ffmpeg`
+  (`choose_video_decoding` in `crates/desktop/cpp/gpu_device.*` and its call in `crates/desktop/src/lib.rs`), `windeployqt --no-ffmpeg`
   and `frame_sink.*`.
   Until the new player has sound, Qt Multimedia stays: it is today's only audio path.
 - **The transport bar and keys stay in QML** and drive the item through properties and invokables. The seek

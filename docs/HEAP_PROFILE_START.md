@@ -2,7 +2,19 @@
 
 Every Rust heap allocation from process start until the window has loaded and settled, charged to the code of ours
 that decides to make it, each site read at its source lines. How the profiles are made and read: PROFILING.md
-"Tool: dhat". The import and the scan: [HEAP_PROFILE.md](HEAP_PROFILE.md).
+"Tool: dhat heap profiles". The import and the scan: [HEAP_PROFILE.md](HEAP_PROFILE.md).
+
+**Where the files are now.** The file and line references below are those of the commits measured (the lines have moved
+on). The code has since been split into crates: `browse.rs` is `crates/catalog/src/browse/` (`list_grid` in
+`read/grid.rs`, `folder_tree` in `read/tree.rs`), `catalog.rs` and `query.rs` are in `crates/catalog/src/`, `thumbs.rs`
+(the cache) is `crates/thumbcache/src/lib.rs` and the `thumbs.rs` of the import and the thumbnail pass is
+`crates/library/src/thumbs.rs`, `layout.rs` is `crates/client/src/layout.rs`, `runner.rs` and `writeback.rs` are in
+`crates/library/src/`, `library.rs` is in `crates/app/src/` and `crates/desktop/src/`, `decode.rs` is
+`crates/codec/src/decode.rs`, `cli.rs` is `crates/cli/src/lib.rs`, `main.rs` is `crates/gallery/src/main.rs`, and
+`gallery.rs`, `folders.rs`, `command_line.rs`, `gpu_device.rs`, `providers.rs`, `panic_log.rs` and `settings.rs` are in
+`crates/desktop/src/`. `state.rs` and `loader.rs` are gone: the placeholder and the thumbnail requests are in
+`crates/app/src/images.rs`, the catalog reader in `crates/app/src/reader.rs`. `browse::folder_key` and `components` are
+in `crates/model/src/path.rs`.
 
 **Run:** `target/dhat/gallery.exe --screenshot=…\ready.png` (commit d2205ba, `--profile dhat --features dhat-heap`,
 Qt deployed beside it with windeployqt), untrimmed (`PG_DHAT_UNTRIMMED=1`), `PG_TRACE=1`, no `PG_CATALOG_DIR`: the

@@ -119,7 +119,7 @@ or deleted. Finding it needs a full-set run.
     on the 1,000 files was dropped: its third round ran 30% slower in every configuration, from some other load
     on the machine.
 - **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and FFmpeg and the
-  scanner's `CreateFileW` are handed the verbatim form (`pg_core::paths`, `\\?\UNC\` for a share). ExifTool
+  scanner's `CreateFileW` are handed the verbatim form (`pg_platform::verbatim`, `\\?\UNC\` for a share). ExifTool
   gets the plain path, as `\\?\` isn't a path it reads, and its own long-name support (the `WindowsLongPath`
   API option) isn't turned on: whether its writes reach such a file is untested.
 - **HDD read, path order (robocopy E:→D:): 70 MB/s, ~410 files/s** (consistent with the 557 files/s
@@ -1021,7 +1021,7 @@ subset's 9,306 images (2.4%), and it also runs on the synthetic edited copies.
 - Measured with the Python prototype. `--trim` now runs the gallery's detector (`gallery borders --stdin`) on the
   same loaded images, and gives the same box on all 900 checked (below), so the table stands.
 
-## Border detector in the gallery (Rust, `crates/core/src/borders.rs`, 2026-11-01)
+## Border detector in the gallery (Rust, `crates/analysis/src/borders.rs`, 2026-11-01)
 
 A port of `tools/borders.py`, in integer arithmetic where the prototype used float32. It runs in a pass of its own
 after the import, on the stored pixels decoded at full size, and its results are in the catalog (usage in
@@ -1101,7 +1101,7 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
     `qffmpeghwaccel.cpp`, v6.12.0 and the dev branch alike), so the result is 0 frames and no error shown.
   - The only switch is `QT_FFMPEG_DECODING_HW_DEVICE_TYPES`. It's private API, global for every codec, and
     read once per process.
-  - Our stopgap (`crates/ui/src/gpu_device.rs`): ask D3D11 for the AV1 profile at startup and, without
+  - Our stopgap (`crates/desktop/src/gpu_device.rs`): ask D3D11 for the AV1 profile at startup and, without
     it, turn hardware decoding off. Then AV1 plays through libdav1d (61 frames in 2.4 s), but every codec
     decodes on the CPU on this machine.
   - Rust's `std::env::set_var` doesn't reach Qt here. Qt reads the C runtime's copy of the environment,
@@ -1110,7 +1110,7 @@ the app and the video test use one copy, and the test's x264 clips need the GPL 
   `ffmpeg -stream_loop 2` gives 10 frames instead of 30, while GIF and APNG give 30. Through Qt's player, an
   animated WebP plays once, then restarts tens of thousands of times a second.
   - Qt's `AnimatedImage` has no APNG, and WebP only with the Qt Image Formats add-on, which isn't installed.
-  - So animations play through our own player (`crates/ui/src/animation.rs`: the `image` crate's decoders,
+  - So animations play through our own player (`crates/desktop/src/animation.rs`: the `image` crate's decoders,
     frames pushed into the VideoOutput's sink). Verified for WebP (70 ms frames, loops), GIF and APNG (200 ms
     frames, loop), and pause.
 - **libwebp_anim merges identical frames:** 10 identical frames became one still VP8L image. Tests check the
@@ -1236,7 +1236,7 @@ the Sites list above was the wrong target for group 1:
 - **The `yp` szm cookie is sent** (user decision): it is a cookie the site's own JavaScript sets, and no
   challenge is passed. `spravka` is never sent, so the Sites list is not fetched (its pages 1 and up need it,
   and copying it from a passed-challenge session would get around the bot check).
-- **The port** (`pg_core::yandex`, the panel in `crates/ui`, usage in PLAN §8 M2): plain HTTP to `yandex.com`
+- **The port** (`pg_yandex`, the panel in `crates/desktop`, usage in PLAN §8 M2): plain HTTP to `yandex.com`
   like the script, group 1 from the results page's `cbirOtherSizes`, group 2 from the similar JSON API with
   `yp`, up to 5 pages. Like the script, a failure on a page after the first (in practice the page-1 captcha)
   ends the list and keeps what came before. A failure on page 0 of the similar images shows the other sizes with

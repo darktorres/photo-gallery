@@ -29,8 +29,9 @@ Done but **stashed, not committed** (`stash@{0}` "ANN bake-off WIP (2026-11-02)"
 
 ## Remaining steps
 
-1. **Restore the work:** `git stash pop` (working tree is clean apart from the user's `.vscode/`). If the other
-   session stashes again, the files vanish again, so commit as soon as step 2 holds.
+1. **Restore the work:** `git stash pop` (the stash is still there; `eval/ann/` holds only `__pycache__`. The working
+   tree is no longer clean: leave other sessions' uncommitted files alone). If the other session stashes again, the
+   files vanish again, so commit as soon as step 2 holds.
 2. **Decide the USearch grid size** (the only open cost lever; see below), then edit `grid()` in `eval/ann/run.py`.
 3. **Run the tune stage** in the background, logged to `D:\PhotoGallery\experiments_<date>.log`, with
    `PG_DATA_ROOT=D:\PhotoGallery\datasets PG_WORK_DIR=D:\PhotoGallery\eval_ann` from `eval/`

@@ -18,12 +18,12 @@ How it was found:
 
 ## What the catalog needs
 
-From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse.rs`, `crates/catalog/src/query.rs`, `crates/thumbcache/src/lib.rs`):
+From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse/`, `crates/catalog/src/query.rs`, `crates/thumbcache/src/lib.rs`):
 
 - **About 57 GB at 70M.** The real catalog (`D:\PhotoGallery\catalog\catalog.sqlite`) is 154 MB for 189,518 files,
   ~810 B per file, twice PLAN §6's 20–30 GB. The biggest item is `order_key` (134 B on average), stored in `files` and
   again in `files_order`: ~270 B per file, ~19 GB at 70M.
-- **SQL built at run time** (`crates/catalog/src/query.rs`, 803 lines): facet counts, folder counts, name order, joins of `files` and
+- **SQL built at run time** (`crates/catalog/src/query.rs`, 578 lines): facet counts, folder counts, name order, joins of `files` and
   `analysis`, keyset paging on a BLOB key.
 - **Row triggers and a view:** `files_added`, `files_changed`, `analysis_*` keep `pending`, `seq` and the totals;
   `present_pdq_pairs` is a view. Partial indexes. `auto_vacuum = INCREMENTAL` in the thumbnail cache.
@@ -42,7 +42,7 @@ names, folders, tags and maybe captions or OCR, the duplicate groups.
 - **Facet and folder counts must stop scanning.** SQLite took 0.6–0.9 s for a GROUP BY over 2M rows here, so ~20–30 s
   over 70M. Keep the counts up to date in the transaction (the thumbnail cache already does this with triggers), or
   hold the facet columns in RAM (~11 B per file, ~0.8 GB), or let DuckDB read the catalog for them (§3).
-- **The grid must page.** `browse::list_grid` reads the whole scope into a `Vec`: 2.2 s for 189k rows, minutes and
+- **The grid must page.** `browse::list_grid` (`crates/catalog/src/browse/read/grid.rs`) reads the whole scope into a `Vec`: 2.2 s for 189k rows, minutes and
   tens of GB at 70M. Keyset paging on `order_key`, plus a sparse in-RAM table of every ~1000th key for the scrollbar
   (PLAN §7).
 - **Text search: FTS5 with the trigram tokenizer**, contentless, in its own attached file (§5).

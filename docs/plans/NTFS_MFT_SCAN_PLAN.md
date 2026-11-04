@@ -2,8 +2,8 @@
 
 ## Context
 
-The scanner (`crates/ingest/src/scan.rs`) lists every folder with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`.
-Every rescan walks everything again.
+The scanner (`crates/library/src/scan.rs`, over `pg_platform::dir::Lister`) lists every folder with
+`GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`. Every rescan walks everything again.
 
 **E: measured (2026-11-01, elevated):**
 
@@ -73,11 +73,11 @@ collide here (checked).
   The pass is state-based and needs no names (below), so both reads feed the same code.
 - **The raw MFT read runs in a separate small helper,** `pg-volume.exe`: a bin target in a new crate
   `crates/volume`, depending on `windows-sys` alone. It is not `gallery.exe`, for three reasons:
-  - `cli::main` opens (and would create) the catalog before dispatching (`cli.rs:151–153`);
+  - `cli::main` opens (and would create) the catalog before dispatching (`run_command`, `crates/cli/src/lib.rs:241`);
   - Qt and FFmpeg DLLs would load elevated (`just deploy` puts them next to `gallery.exe`);
   - an elevated UI can't receive drops from Explorer.
 
-  The media extensions come in the request (`pg_core::media` keeps the list). An elevated CLI runs the same code
+  The media extensions come in the request (`pg_model::media` keeps the list). An elevated CLI runs the same code
   in-process.
 - **Launch:** `ShellExecuteExW` (`runas`, `SW_HIDE`).
   - **The parent's environment is not passed** (verified: a variable set in the parent was empty in the elevated
@@ -125,8 +125,11 @@ collide here (checked).
   - If that fails too, the record goes on the pass's **unknown** list: nothing under an unknown directory, and
     no unknown file, is marked missing or loses a link, and the scan reports them as errors.
   - The walker gets the same rule: today `mark_missing` runs after folders that couldn't be listed and hides
-    their files (`scan.rs:203` counts the error, then `scan.rs:239` runs `catalog.mark_missing` anyway). That is a bug in
-    today's code, fixed in step 2.
+    their files (`scan.rs:203` counts the error, then `scan.rs:239` runs `catalog.mark_missing` anyway). That was a
+    bug in the code at the time, to be fixed in step 2. *Note: it is fixed since (R-45): `scan` passes its
+    `unreadable` folders to `mark_missing(root, scan, unreadable)` (`scan.rs:175`, `crates/catalog/src/lib.rs:912`),
+    which leaves the files under them alone. What step 2 still adds is the walker's unknown list in the scan's
+    report and the MFT read's refs.*
 - **Reads:** `FILE_FLAG_NO_BUFFERING` with overlapped IO, 4 MiB sector-aligned chunks, 2 in flight, in extent
   order. Low IO priority as a per-handle hint (`SetFileInformationByHandle(FileIoPriorityHintInfo, low)`;
   verified accepted on a volume handle).
@@ -156,7 +159,7 @@ collide here (checked).
   in them resolves. Memory stays bounded whatever the layout; the second read costs only what overflowed.
 - **Progress:** records read out of `MftValidDataLength / record size`, through `Control::begin`.
 
-### One entry filter and one hard-link rule (`crates/ingest/src/listing.rs`)
+### One entry filter and one hard-link rule (`crates/library/src/listing.rs`)
 
 - **Reparse points:**
   - skip name surrogates: `IsReparseTagNameSurrogate`, i.e. bit 29. That covers mount points `0xA0000003`,
@@ -165,7 +168,7 @@ collide here (checked).
   - keep the other reparse files, but skip ones not local (`OFFLINE`, `RECALL_ON_DATA_ACCESS`);
   - the walker takes the tag from `EaSize` (MS-FSCC FileIdBothDirectoryInformation: it holds the reparse tag
     when the reparse attribute is set);
-  - this fixes `scan.rs:128` skipping every reparse point.
+  - this fixes `scan.rs:46` (`!e.reparse`) skipping every reparse point.
 - **Hard links are modelled, not collapsed:** every name of a file under a root is a link (catalog below). A
   hard-linked photo appears in each of its folders, as in Explorer; ratings and analysis stay per file. Every
   pass, journal passes included, has a `scans` row, and a link not seen by a full pass is gone.
@@ -174,11 +177,12 @@ collide here (checked).
     itself (above), and the MFT read from `$STANDARD_INFORMATION` and `$DATA`.
 - **`FileId == 0`** is counted in `ScanStats::errors`.
 
-### Catalog (baseline edited in place, version 1, rebuilt on open: `catalog.rs:26–33`, `FILLED`)
+### Catalog (baseline edited in place, version 1, rebuilt on open: `crates/catalog/src/lib.rs:44–50`, `FILLED`)
 
 - **Volume identity: the 64-bit NTFS serial.** `files.volume` and `volumes.serial` change from
   `dwVolumeSerialNumber` (32 bits) to the full serial: `FileIdInfo` gives it unelevated,
-  `FSCTL_GET_NTFS_VOLUME_DATA` in the helper. `ScannedFile::volume` becomes `u64`. Clones still copy it, so the
+  `FSCTL_GET_NTFS_VOLUME_DATA` in the helper. `FileIdentity::volume` (`pg_model::ids`; `ScannedFile` carries a `FileIdentity`)
+  becomes `u64`. Clones still copy it, so the
   duplicate refusal stays.
 - **Paths relative to their volume; the drive letter is never stored.**
   - `folders.path` becomes the path inside the volume, and `roots` becomes `(volume, rel_path)`;
@@ -186,65 +190,71 @@ collide here (checked).
     arrival or removal (`GetVolumePathNamesForVolumeNameW`);
   - a full path is the current mount + `rel_path` + name, built in one place: an SQL function `pg_path(volume,
     rel_path, name)` over a process-wide mount table, registered in `query::register_functions`
-    (`query.rs:761`, called by `Catalog::open` and `open_current`, `catalog.rs:694`, `:712`). The thumbnail
-    cache's connections (`thumbs.rs` `open_writer`, `open_file`) attach the catalog and don't call it today, so
-    they must; so must the rebuild connection (`catalog.rs:446`), when it copies paths. It replaces the six
-    concatenations `path || '\' || name`: `browse.rs:647`, `:872`; `catalog.rs:555`, `:860`; `thumbs.rs:652`;
-    `dups.rs:134`. `file_by_path` (`catalog.rs:841`, used by `borders.rs:227`) resolves a full path to
+    (`crates/catalog/src/query.rs:363`, called by `Catalog::prepare` and `Catalog::open`,
+    `crates/catalog/src/lib.rs:830`, `:851`). The thumbnail cache's connections (`open_writer`, `open_file`,
+    `crates/thumbcache/src/lib.rs:543`, `:587`) attach the catalog (`:619`) and don't call it today, so they must;
+    so must the rebuild connection (`rebuild`, `lib.rs:513`), when it copies paths. It replaces the five
+    concatenations `path || '\' || name`: `browse/read/details.rs:18`, `browse/read/state.rs:48`, and
+    `lib.rs:878`, `:1100`, `:1149` (the test fixture's `fixture/state.rs:59` also builds one). `file_by_path`
+    (`lib.rs:1052`, used by `crates/cli/src/borders.rs:181` and `crates/cli/src/lib.rs:412`) resolves a full path to
     `(volume, rel_path)` first;
-  - roots by `(volume, rel_path)`: `Catalog::roots`/`add_root`/`remove_root` (`catalog.rs:753–784`), `is_under`
-    and its users (`runner.rs:217`, `crop.rs:43`, `:49`), and the library panel in the app (`ui/src/library.rs`,
-    which shows them with their current letter);
-  - **the folder tree's drive marks:** each node carries one bit per drive *letter* it is on (`browse.rs:142`,
-    `:190`). They become the node's volumes, shown by current letter, or by volume label when offline;
+  - roots by `(volume, rel_path)`: `Catalog::roots`/`add_root`/`remove_root` (`lib.rs:934–964`), `is_under`
+    (`pg_model::path`, `crates/model/src/path.rs:113`) and its users (`lib.rs:951/954`,
+    `crates/library/src/runner.rs:341`, `crates/library/src/crop.rs:52/60`), and the library panel in the app
+    (`crates/desktop/src/library.rs`, over `crates/app/src/library.rs`, which shows them with their current letter);
+  - **the folder tree's drive marks:** each node carries one bit per drive *letter* it is on (`drives: u32` in
+    `crates/model/src/tree.rs:22`, one bit per row at `:52`, `:160`; the rows come from
+    `crates/catalog/src/browse/read/tree.rs`). They become the node's volumes, shown by current letter, or by
+    volume label when offline;
   - a volume that isn't mounted is **offline**: its files show as unavailable, not missing, and come back as
     they were when it returns, under whatever letter. In the app: the grid and viewer show cached thumbnails
     with an "offline" mark, opening the original says the drive is offline, and the import, borders, thumbnail
     and writeback passes skip it (writes stay queued);
-  - this fits the merged tree: `browse::merged_path` already drops the drive letter, so folder keys and
-    `order_key` don't change. Nothing else stores letters: `session` keeps a file ID and a merged folder path,
-    `views.folder` a merged path (`settings.rs:173`, `view.rs:142`).
+  - this fits the merged tree: `pg_model::path::merged_path` (`crates/model/src/path.rs:10`) already drops the
+    drive letter, so folder keys and `order_key` don't change. Nothing else stores letters: `session` keeps a file
+    ID and a merged folder path, `views.folder` a merged path (`crates/catalog/src/lib.rs:263`, the baseline's
+    comment).
 - **Folders are a tree:** `parent_id` + `name` are the truth; `rel_path` is derived and kept indexed for
   `under_root!` range queries; `move_folder` changes one `parent_id`/`name`, then rewrites the derived paths and
   `order_key`s under it in one statement each.
-- **`folders`: a row for every directory under a root,** not only those holding media (today `scan.rs:216`):
+- **`folders`: a row for every directory under a root,** not only those holding media (today `scan.rs:147`):
   `volume`, `file_ref`, `parent_id`, `UNIQUE(volume, file_ref)`.
   - A rename or move is always found by ref → **`Catalog::move_folder(old, new)`**, which rewrites the paths
     under it and its links' `order_key` (`pg_order_key`);
   - uniqueness is `UNIQUE(parent_id, name)` (and the derived `UNIQUE(volume, rel_path)`); a stale row already at
     the new place is merged first.
-  - The tree in the UI is unaffected: its counts come from links (today `FOLDER_COUNTS`, `browse.rs:164`, from
-    `files`), so folders without media still don't show.
+  - The tree in the UI is unaffected: its counts come from links (today `FOLDER_COUNTS`,
+    `crates/catalog/src/browse/read/tree.rs:10`, from `files`), so folders without media still don't show.
 - **Identity and location split:**
   - `files` keeps identity (`volume`, `file_ref`), `size`, `mtime`, `kind`, `missing`, `pending`, `seq` and the
     per-file data (analysis, ratings, writes);
   - a new **`links(id, file_id, folder_id, name, ext, order_key, last_scan)`**, `UNIQUE(folder_id, name)`, takes
     `folder_id`, `name`, `ext` and `order_key` off `files`;
   - `files_order` and `files_present` move to `links`. The grid, the folder counts and the order list links; a
-    file reads and writes through any present link (`writeback.rs`, the import's paths).
-  - Everything that reads `files.folder_id`/`name`/`order_key` moves to `links`: 26 uses of `folder_id` in
-    `browse.rs`, `catalog.rs`, `thumbs.rs`, `dups.rs` and `writeback.rs`; the name filter
-    `pg_contains(f.name, ?)` (`query.rs:468`) and the name order `f.order_key` in `query.rs`; and the tests that
-    query them (`crates/ingest/tests/video.rs`, `writeback.rs`). `rebuild` gets a `FILLED`-style copy from old catalogs: one link per old
-    row.
+    file reads and writes through any present link (`crates/library/src/writeback.rs`, the import's paths).
+  - Everything that reads `files.folder_id`/`name`/`order_key` moves to `links`: about 30 uses of `folder_id` in
+    `crates/catalog/src/lib.rs`, `browse/read/` and `fixture/`, and in `crates/thumbcache/src/lib.rs`; the name
+    filter `pg_contains(f.name, ?)` (`crates/catalog/src/query.rs:289`) and the name order `f.order_key` in
+    `query.rs`; and the tests that query them (`crates/library/tests/video.rs`, `writeback.rs`). `rebuild` gets a
+    `FILLED`-style copy from old catalogs: one link per old row.
   - A file is missing when it has no present link.
 - **A content generation, not mtime, says whether derived data is current.** `stale!` (analysis: size, mtime,
-  rotation, kind) and the thumbnail cache's `Source` (mtime, rotation: `thumbs.rs:146–150`, checked at
-  `:658–659`) both trust mtime. A rewrite that keeps the mtime, which the journal now detects, would leave the
+  rotation, kind) and the thumbnail cache's `Source` (mtime, rotation: `crates/thumbcache/src/lib.rs:46–51`,
+  checked at `:665–666`) both trust mtime. A rewrite that keeps the mtime, which the journal now detects, would leave the
   analysis and the cached thumbnails current forever.
   - **`files.content_gen`** goes up on a change of size or mtime, and on a journal data-change reason that isn't
     ours;
   - `analysis` records the `content_gen` it was made from, and `stale!` compares it (with rotation and kind);
   - the thumbnail cache's `Source` becomes `(content_gen, rotation)`. The cache schema is edited in place, at
     version 1;
-  - writeback's own writes bump it too, and `retag` (`thumbs.rs:428`) moves the thumbnails from the old
-    generation to the new one, as it moves them between mtimes today;
+  - writeback's own writes bump it too, and `retag` (`crates/thumbcache/src/lib.rs:426`) moves the thumbnails from the
+    old generation to the new one, as it moves them between mtimes today;
   - the import's check that a file didn't change while it was read (`AnalysisWriter`'s `current`) compares
     `content_gen`.
 - **New `volumes(serial PRIMARY KEY, guid_path, journal_id, next_usn, synced)`;
   `Catalog::mark_missing_ref(volume, file_ref)`.**
-- `mark_missing(root, scan)` (`catalog.rs:741`) becomes: links under `root` that this scan didn't see are
-  deleted, except under the pass's unknown directories; then files left without a present link are marked
+- `mark_missing(root, scan, unreadable)` (`crates/catalog/src/lib.rs:912`) becomes: links under `root` that this
+  scan didn't see are deleted, except under the pass's unknown directories; then files left without a present link are marked
   missing. In an MFT read each root gets its own scan ID.
 - `ScanWriter` is rewritten: it writes files and links, records folders by ref (moving them), and takes the
   unknown list. Every source writes through it, unelevated.
@@ -271,14 +281,15 @@ collide here (checked).
      That makes it pending, and gives it a new `seq` for the thumbnails, whatever its size and mtime.
    - **Our own writes don't count:** after writeback writes a file, it reads the file's latest USN
      (`FSCTL_READ_FILE_USN_DATA` on its handle, verified unelevated) and records it as `files.own_usn` through
-     `Catalog::file_rewritten`, which both write paths already call (`writeback.rs:241`, `:314`). A journal
+     `file_rewritten` (`crates/catalog/src/writes.rs:306`), which both write paths already go through (`:211`, `:216`, `:282`). A journal
      record for that file at or below `own_usn` is ours, and is ignored. Otherwise every rating write would
      re-import the file.
 6. **Journal unusable** (entry deleted, ID changed, inactive) → a full read.
 
 ### The runner: a full read isn't interrupted by unrelated work
 
-Today any request stops the running pass (`runner.rs:150–154`). A non-resumable ~14 min read would restart each
+Today any request stops the running pass (`crates/library/src/runner.rs:219–221`). A non-resumable ~14 min read would
+restart each
 time. Requests that only add work queue behind a running volume read; only a removed root, quitting or the
 user's stop end it.
 
@@ -290,7 +301,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 ## Steps (each verified and committed on its own)
 
 1. **Catalog model:**
-   - the `files`/`links` split, with every reader moved to it (`browse.rs`, `thumbs.rs`, `dups.rs`,
+   - the `files`/`links` split, with every reader moved to it (`crates/catalog`, `crates/thumbcache`, `dups.rs`,
      `writeback.rs`, the import);
    - the 64-bit volume serial;
    - `content_gen` in `files`, `analysis` and the thumbnail cache;
@@ -300,12 +311,12 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 
    Committed as separate steps (links; serial; `content_gen`; relative paths and offline; folder tree), each with
    its tests. It
-   touches `browse.rs`, which the other session is changing, so it needs that work committed first and the
+   touches `crates/catalog/src/browse/`, which the other session is changing, so it needs that work committed first and the
    user's go-ahead. Tests: catalog unit tests (links, missing, `move_folder`, `rebuild` from an old catalog),
    the existing suites, and the app's grid and folder tree by screenshot (`run` skill).
 2. **`listing.rs`** (the filter, `FileId == 0`, the unknown list); refusing non-NTFS roots, shares and duplicate
    serials. The walker moves to `walk.rs`, records links, takes live values by ID, and no longer hides the files
-   of folders it couldn't list. Tests: the existing `crates/ingest/tests/*.rs`, plus hard-link, reparse and
+   of folders it couldn't list. Tests: the existing `crates/library/tests/*.rs`, plus hard-link, reparse and
    unreadable-folder cases (a folder with a deny-list ACL).
 3. **`crates/volume`: the parser (`record.rs`, `runs.rs`).** Tests:
    - records from a builder with fixups, plus real records captured in step 4;
@@ -315,7 +326,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
      in must pass them, or the oracle is replaced by records cross-checked with `GetFileInformationByHandle`.
 4. **The MFT reader (`mft.rs`)** in-process when elevated, with `--full/--walk`. Differential test on the test
    VHD, then on the real drives.
-5. **`pg-volume.exe` and the pipe.** `runner.rs`: volume grouping, source choice, uninterrupted reads. `cli.rs`:
+5. **`pg-volume.exe` and the pipe.** `crates/library/src/runner.rs`: volume grouping, source choice, uninterrupted reads. `crates/cli/src/lib.rs`:
    the flags.
 6. **Journal passes** (privileged read in the helper, unprivileged fallback); `volumes`; the replay after a
    full read.
@@ -330,24 +341,26 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 ## Critical files
 
 - **Changed:**
-  - `crates/ingest/src/scan.rs` (the orchestrator), `runner.rs`, `cli.rs`;
-  - `crates/core/src/catalog.rs` (schema, `ScanWriter`, `move_folder`, `mark_missing_ref`, `volumes`,
+  - `crates/library/src/scan.rs` (the orchestrator), `runner.rs`, and `crates/cli/src/lib.rs`;
+  - `crates/catalog/src/lib.rs` (schema, `ScanWriter`, `move_folder`, `mark_missing_ref`, `volumes`,
     `pg_path`);
-  - `crates/core/src/browse.rs`, `query.rs`, `thumbs.rs` (links, `pg_path`, drive marks, `content_gen`);
-  - `crates/ingest/src/{import.rs, dups.rs, crop.rs, borders.rs, writeback.rs}` (links, paths, roots,
+  - `crates/catalog/src/browse/`, `crates/catalog/src/query.rs`, `crates/thumbcache/src/lib.rs` (links, `pg_path`,
+    drive marks, `content_gen`), and `crates/model/src/tree.rs` (the drive marks);
+  - `crates/library/src/{import.rs, dups.rs, crop.rs, borders.rs, writeback.rs}` (links, paths, roots,
     `own_usn`);
-  - `crates/ui/src/library.rs` (roots by volume), plus the offline mark in the grid and viewer (`gallery.rs`,
-    `providers.rs`, QML);
+  - `crates/desktop/src/library.rs` and `crates/app/src/library.rs` (roots by volume), plus the offline mark in the
+    grid and viewer (`crates/desktop/src/gallery.rs`, `providers.rs`, QML);
   - `Cargo.toml` (member `crates/volume`; windows-sys `Win32_System_Ioctl`, `Win32_System_Pipes`,
     `Win32_UI_Shell`, `Win32_Security_Authorization`).
 - **New:**
   - `crates/volume/src/{lib.rs, record.rs, runs.rs, mft.rs, usn.rs, protocol.rs, bin/pg-volume.rs}`;
-  - `crates/ingest/src/{listing.rs, walk.rs, helper.rs}`.
+  - `crates/library/src/{listing.rs, walk.rs, helper.rs}`.
 - **Reused:**
-  - `catalog.rs`'s statement style (constants, `concat!` macros) and `rebuild`/`FILLED` for the schema change;
-  - `pg_core::paths::verbatim_wide` (`crates/core/src/paths.rs`);
-  - `Ext::of_name_utf16` (`crates/core/src/media.rs:61`);
-  - `Control` (`crates/ingest/src/control.rs`), `normalize_root` (`scan.rs:152`), `pg_order_key`.
+  - the catalog crate's (`crates/catalog/src/lib.rs`) statement style (constants, `concat!` macros) and
+    `rebuild`/`FILLED` for the schema change;
+  - `pg_platform::verbatim::verbatim_wide` (`crates/platform/src/verbatim.rs:26`);
+  - `Ext::of_name_utf16` (`crates/model/src/media.rs:55`);
+  - `Control` (`crates/jobs/src/control.rs`), `normalize_path` (`crates/library/src/scan.rs:70`), `pg_order_key`.
 - **The prototypes behind these checks** (C# through PowerShell, in the session scratchpad):
   - `C:\Users\Torres\AppData\Local\Temp\claude\C--Users-Torres-Documents-GitHub-photo-gallery\b0042dab-511d-417c-bafa-1a31bf7c518c\scratchpad\elev.ps1`
     (raw MFT);
@@ -410,17 +423,21 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 | `mft` allocates per entry; `ntfs` reads per record | docs.rs |
 | No duplicate serials among the mounted volumes | `Get-CimInstance Win32_Volume` |
 
-**From our code (revalidated at `4e1ad4d`, 2026-11-02, after the other session's commits):**
+**From our code (revalidated at `4e1ad4d`, 2026-11-02, after the other session's commits).** The anchors below are
+those of `4e1ad4d`, before the crate split; where the code is now: `cli.rs` is `crates/cli/src/lib.rs`, `scan.rs` and
+`runner.rs` are in `crates/library/src/`, `catalog.rs` is `crates/catalog/src/lib.rs`, `browse.rs` is
+`crates/catalog/src/browse/`, `thumbs.rs` is `crates/thumbcache/src/lib.rs`. The sections above give the current
+lines. At `e669f2d` the `mark_missing` item (R-45) is fixed; the rest still holds.
 
 - catalog opened first (`cli.rs:151–153`);
 - every request stops the pass (`runner.rs:150–154`);
 - folder rows only with media (`scan.rs:216`): replaced by a row per directory;
 - all reparse points skipped (`scan.rs:128`);
 - the errors of listing a folder are counted (`scan.rs:203`), and `mark_missing` still runs (`:239`);
-- full paths concatenated in six places, and the drive-letter bits in the folder tree (`browse.rs:142`);
+- full paths concatenated in six places (five now), and the drive-letter bits in the folder tree (`browse.rs:142`);
 - thumbnail and analysis staleness trust mtime (`thumbs.rs:146–150`, `:658–659`; `stale!`);
-- writeback's temp is `.<name>.pg-write`, not a media name (`writeback.rs:396`), and both writes record through
-  `Catalog::file_rewritten`;
+- writeback's temp is `.<name>.pg-write`, not a media name (`writeback.rs:396`, now `:333`), and both writes record
+  through `file_rewritten`;
 - `session` and `views` keep merged paths and file IDs, never drive letters;
 - every other anchor in the plan checked and current: `cli.rs:151–153`, `runner.rs:150–154`,
   `catalog.rs:32–33/69/338/741/989`, `browse.rs:18/164`, `media.rs:61`, `paths.rs:22`, `control.rs:112`,

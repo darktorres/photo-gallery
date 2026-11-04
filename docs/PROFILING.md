@@ -38,8 +38,9 @@ target/dhat/gallery.exe import --workers 1        # writes dhat-heap.json in the
   the innermost frame of ours that isn't a container or conversion helper: that is the code that decides to allocate.
 - **Checked** on `gallery import` of 305 small JPEGs (`D:\PhotoGallery\borders_sample\_preview`, 5.3 MB), 1.3 s:
   425.6 MB in 167,454 blocks, 33.2 MB at the peak, 1 kB at exit. Trimmed and untrimmed give the same totals.
-  Untrimmed, the stacks are up to 55 frames deep and reach the thread's start; the largest site is `pdq::dct16`'s
-  zeroed buffer (105.7 MB in 305 blocks, `pdq.rs:117`).
+  Untrimmed, the stacks are up to 55 frames deep and reach the thread's start; the largest site was `pdq::dct16`'s
+  zeroed buffer (105.7 MB in 305 blocks, `pdq.rs:117` then; `crates/analysis/src/pdq.rs` now keeps the hasher's
+  buffers between images).
 
 ## Tool: Pin call graph, `tools/profiling/callgraph` (2026-10-31)
 
@@ -121,7 +122,7 @@ sde.exe -mix -omix out.txt -- prog.exe args     # per-function and per-block cou
 ## Tool: WSL2 + callgrind / gungraun (2026-10-31)
 
 For repeatable instruction counts per function (regression benches), with callgrind's call graph and its inclusive
-costs, which SDE lacks. The catch: it measures the **Linux** build of `pg-core`. That build uses glibc's allocator and
+costs, which SDE lacks. The catch: it measures the **Linux** build of the per-file code (`pg-analysis`, `pg-render`). That build uses glibc's allocator and
 FFmpeg 8 (Ubuntu's `libavcodec` 62.11; the Windows app ships FFmpeg with `avcodec-63`). libjpeg-turbo is built from
 the same vendored source, but with GCC instead of MSVC.
 
@@ -134,13 +135,15 @@ the same vendored source, but with GCC instead of MSVC.
   headers, rustup (Rust 1.99.1, with clippy and rustfmt), and the `gungraun-runner` of the exact version in
   `Cargo.lock`.
 
-**The bench** is `crates/bench/benches/ir.rs` (gungraun 0.20, a Linux-only dev-dependency of `pg-bench`). On other
+**The bench** is `crates/bench/benches/ir.rs` (gungraun 0.20, a Linux-only dependency of `pg-bench`). On other
 systems the target is an empty `main`, so `cargo clippy --all-targets` still builds it on Windows. It measures
 `Analyzer::analyze` and `Maker::make` (height 256) on one file from the test set,
-`dups2/amateur-alice-von-v-mbDfqe.jpg.mozjpeg.jpg` (126 KB, 1280×1017 baseline JPEG). The file is read from D:
+`datasets/pinterest/dups2/amateur-alice-von-v-mbDfqe.jpg.mozjpeg.jpg` (126 KB, 1280×1017 baseline JPEG). The file is read from D:
 through `/mnt/d` and stays out of the repo, since it's one of the library's photos. `PG_BENCH_JPEG` at build time
 picks another file. Reading it and creating the `Analyzer` and the `Maker` happen in gungraun's `setup`, outside
-the measured function. Their buffers start empty, so each run measures a worker's first file.
+the measured function. Their buffers start empty, so each run measures a worker's first file. The bench also has
+catalog benches (`crates/bench/benches/ir/catalog.rs`: the grid's list, the tree and the background job, on a
+synthetic catalog made by `tools/profiling/bench_data.py`); `wsl-bench.sh` takes a bench name to run only those.
 
 ```powershell
 wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-setup.sh   # once, and after a gungraun update
@@ -152,10 +155,10 @@ That's faster than `/mnt/c`, and the Windows tree's uncommitted work stays out. 
 (e.g. `--save-baseline=before`, then `--baseline=before`). Read the results with `cgtab.py`, in WSL:
 
 ```sh
-O=~/photo-gallery/target/gungraun/pg-core/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out
-C=/mnt/c/Users/Torres/Documents/GitHub/photo-gallery/tools/profiling/cgtab.py
+O=~/photo-gallery/target/gungraun/pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out
+C=/mnt/d/GitHub/photo-gallery/tools/profiling/cgtab.py
 $C table $O                              # self, inclusive, calls per function
-$C table $O --sort incl --match 'pg_core::'
+$C table $O --sort incl --match 'pg_analysis::'
 $C table $O --by crate                   # self cost per crate, following inlined code to its source
 $C calls $O 'precompute_coefficients'    # callers (<) and callees (>), with call counts
 $C diff $O.old $O                        # per function: what the last change did
@@ -177,7 +180,7 @@ $C diff $O.old $O                        # per function: what the last change di
 **Noise between builds:** the code is deterministic, but code generation is not stable across unrelated changes. From
 41eaa1c to e9d93b6 both benchmarks rose about 0.05% (29 k instructions), with no change to the code they run.
 `cgtab.py diff` puts all of it in EXIF parsing: `kamadak-exif` reading through a `Chain` reader instead of a plain
-`Cursor`. e9d93b6 added about 1,000 lines to `thumbs.rs`, which changes how rustc splits `pg-core` into codegen
+`Cursor`. e9d93b6 added about 1,000 lines to `thumbs.rs` (now `crates/thumbcache/src/lib.rs`), which changes how rustc splits `pg-core` (since split into the per-concern crates) into codegen
 units and so what gets inlined where. Treat changes under ~0.1% from unrelated commits as layout, not cost.
 
 **`cgtab.py`** reads the raw callgrind format instead of scraping `callgrind_annotate`, whose columns shift with
@@ -249,7 +252,7 @@ that kept counting after it (a 0.96 G SQLite thread: the library's first import 
 
 | Thread | Instructions | What |
 |---|---:|---|
-| catalog reader | 10.90 G | the grid's `browse::list_files` 10.25 G; the tree and the rest 0.65 G |
+| catalog reader | 10.90 G | the grid's `browse::list_files` (now `list_grid`, `crates/catalog/src/browse/read/grid.rs`) 10.25 G; the tree and the rest 0.65 G |
 | main | 1.24 G | QML creation, fonts, a Direct3D 9 probe |
 | QSGRenderThread | 1.18 G | the Direct3D 11 device |
 | video decoding | 0.93 G | `choose_video_decoding`'s own Direct3D 11 device (the AV1 probe) |
@@ -257,7 +260,7 @@ that kept counting after it (a 0.96 G SQLite thread: the library's first import 
 | QQmlThread | 0.30 G | QML type loading |
 
 - **The name sort, about 7.0 G (46%).** In `list_files`, SQLite's sorter (`vdbeSorterSort`) is 7.59 G, nearly all
-  of it `browse::path_collation`: 1.59 M comparisons at about 4,400 instructions each. Unicode lowercasing
+  of it `browse::path_collation` (gone: the list is read in `files_order`): 1.59 M comparisons at about 4,400 instructions each. Unicode lowercasing
   (`FlatMap<Chars, ToLowercase>`, `to_lower`, `ToCasefold`) is 5.67 G, and rusqlite's `String::from_utf8_lossy` of
   both strings on every comparison 1.24 G. The rest of SQLite's work on the list is about 2.6 G.
 - **The GPU driver verifying its signature, 2.0 G (13%), in 11 scans.** Each Direct3D device creation reaches NVIDIA's
@@ -280,6 +283,9 @@ NVDEC, restart markers, lossless baseline conversion, and the decoders researche
 keep libjpeg-turbo, and convert progressive files to baseline (2.6× fewer instructions, identical pixels).
 
 ### `analyze` and `thumbs::make` on one JPEG (gungraun, Linux build of HEAD 41eaa1c, the bench's 126 KB sample, 2026-10-31)
+
+The functions are named as at that commit: `analyze::analyze` is `Analyzer::analyze` (`crates/analysis/src/analyze.rs`)
+and `thumbs::make` is `Maker::make` (`crates/render/src/maker.rs`).
 
 Two runs gave exactly the same counts (63,494,636 and 50,648,725 instructions, gungraun: "No change"), so a change of
 even 0.1% shows. gungraun's estimated cycles, from callgrind's cache simulation, are 86.4 M and 68.7 M.
@@ -307,7 +313,7 @@ The ThumbHash row includes its own resize, which is also in the resize row.
 |---|---:|---:|
 | libjpeg-turbo | 32.9% | 60.3% |
 | fast_image_resize | 23.9% | 30.5% |
-| pg_core (PDQ, mostly) | 25.5% | 0.0% |
+| pg_analysis (PDQ, mostly) | 25.5% | 0.0% |
 | thumbhash | 7.3% | — |
 | libm (`sin`, the Lanczos weights) | 4.0% | 4.5% |
 | libc (memset/memcpy, malloc) | 2.7% | 3.2% |
@@ -325,7 +331,7 @@ The ThumbHash row includes its own resize, which is also in the resize row.
 
 **Leads** (not acted on):
 
-- **The thumbnail decode is at full scale.** `DECODE_MARGIN = 4` asks for ≥ 1024 px high, and the image is 1017
+- **The thumbnail decode is at full scale.** `DECODE_MARGIN = 4` (`crates/render/src/maker.rs`) asks for ≥ 1024 px high, and the image is 1017
   high, so no DCT scaling is applied. That costs 28.5 M here against `analyze`'s 21.2 M. The margin is a quality decision
   (FINDINGS "Thumbnails"); this measures its price for images just under 4× the thumbnail height.
 - **`pdq::box_1d` is 21% of `analyze`, and the cache misses are concentrated there.** It has 65% of the
@@ -356,7 +362,8 @@ Catalog: 189,518 files, all analyzed, 5,216 PDQ pairs, no thumbnails. 18 s under
 | `RtlAllocateHeap` (ntdll) | 5.3 M | 0.5% | 18 k |
 
 - About 96% of the instructions are SQLite running the 8 `count(*)` queries in `Catalog::status`
-  (`crates/catalog/src/lib.rs`). Startup and the rest of the CLI are a few percent.
+  (`crates/catalog/src/lib.rs`). Each count now has its own index where one exists
+  (`files_present`, `files_to_import`, `analysis_failed`), so this profile no longer describes it. Startup and the rest of the CLI are a few percent.
 - **The counts are exact:** `countStep` ran 384,252 times = 189,518 files + 189,518 analyzed + 5,216 PDQ pairs, the
   rows those queries match. The `missing = 1`, `failed` and `file_writes` counts match no rows but still scan.
 - The 579 k `sqlite3BtreeTableMoveto` calls are rowid lookups. The two `analysis ⋈ files` joins explain about 379 k

@@ -47,15 +47,15 @@ Across all threads, `D3D11CreateDevice` is called once instead of twice, and NVI
 
 | Item | Instructions |
 |---|---:|
-| `browse::list_grid` | 1,317 M |
-| `browse::folder_tree` | 115 M |
+| `browse::list_grid` (`crates/catalog/src/browse/read/grid.rs`) | 1,317 M |
+| `browse::folder_tree` (`.../read/tree.rs`) | 115 M |
 | opening the connection | 2 M |
 
 - **The grid's list** has no sort and no collation left. SQLite reads the 189,518 rows from `files_order`: 667 M in
   the VM's own code (`sqlite3VdbeExec`, mostly decoding records), three B-tree lookups per row for the joins
   (`sqlite3BtreeTableMoveto`, 568,555 calls, 179 M), and the index's rowids (103 M). rusqlite's column reads
   (`entry_from_row`) are 348 M: `value_ref` and `sqlite3_column_type` for each of 10 columns, and the extension read
-  as text and matched (`media::Ext::of`, `from_utf8`). About 6,900 instructions per file.
+  as text and matched (`media::Ext::of`, `crates/model/src/media.rs`, `from_utf8`). About 6,900 instructions per file.
 - **The tree:** 102 M of the 115 M is the per-folder count over `files_present` (691 groups from 189,518 index
   entries); the rest is building the tree.
 
@@ -84,12 +84,12 @@ every device a process makes; making one device is the most the app can do.
 | `pg::show_windows` | 181 M |
 | — window creation (`WindowCreationData::create`) | 166 M |
 | — of which the Direct3D 9 probe (`Direct3DCreate9`), one signature scan 152 M | 165 M |
-| `state::init` | 94 M |
-| — `thumbs::heal` | 91 M |
+| `state::init` (now `App::open`, `crates/app/src/app.rs`) | 94 M |
+| — `thumbs::heal` (now `heal` in `crates/thumbcache/src/lib.rs`) | 91 M |
 | — `Catalog::open` | 2.5 M |
 | event loop up to `ready` (`QCoreApplication::exec`) | 75 M |
 | — the views' delegates (24 `createItem`, and 42 items their Repeaters make) | 63 M |
-| — `layout::justify`, two passes over 189,518 aspects | 6 M |
+| — `layout::justify` (now `justify_into`, `crates/client/src/layout.rs`), two passes over 189,518 aspects | 6 M |
 | `QGuiApplication` and `QQmlApplicationEngine` | 21 M |
 | process start before `main` (the DLL loader) | 18 M |
 

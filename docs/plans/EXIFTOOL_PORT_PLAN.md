@@ -17,37 +17,41 @@ Revalidated against HEAD 4e1ad4d (2026-11-02). The other session's plan is finis
 
 ## Starting point (HEAD)
 
-`crates/core/src/metadata.rs` (1,167 lines):
+`crates/metadata/src/lib.rs` (package `pg-metadata`, 1,180 lines; it was `crates/core/src/metadata.rs` before the
+crate split):
 
-- **The IFD reader:** `struct Tiff`, `Entry`, `Exif` (`:168–316`).
-  - It wants 42 in the header.
+- **The IFD reader:** `struct Tiff`, `Entry`, `Exif` (`:225–412`).
+  - It wants 42 in the header (43 for BigTIFF, in TIFF files only).
   - IFD0 gives Orientation, Rating, RatingPercent (BYTE, SHORT or LONG) and the XMP tag 700. A repeated tag reads
     as the last copy.
   - The Exif IFD gives DateTimeOriginal and DateTimeDigitized.
   - There is no IFD1, no SubIFD, no visited set, and no format or count rules.
-- **Dates:** `exif_date` (`:320`) applies kamadak's date rules.
-  - `parse_iso_date` (`:337`) is also used outside metadata: by `query.rs:432` (date filters) and by
-    `video.rs:127–129` (video creation time).
-  - `wall_clock_seconds` (`:362`) is also used by video and tests.
-- **The container walk:** `Container::walk` (`:394`).
+- **Dates:** `exif_date` (`crates/model/src/date.rs:11`, in `pg-model` now) applies kamadak's date rules.
+  - `parse_iso_date` (`date.rs:25`) is also used outside metadata: by `crates/video/src/lib.rs:134/136` (video
+    creation time). The catalog's date filters now go through `Day::parse` instead.
+  - `wall_clock_seconds` (`date.rs:50`) is also used by `Day`, video tests and `exif_date`.
+- **The container walk:** `Container::walk` (`:426`).
   - JPEG: APP1 only. EXIF is the first `Exif\0\0` segment. XMP is the standard packet first, then `ExtendedXmps`
     with no HasExtendedXMP check.
   - PNG: `eXIf` and iTXt only.
   - WebP: `EXIF` and `XMP`.
   - GIF: the XMP packet counts only if the walk reaches the trailer.
   - TIFF: the whole file is the EXIF block.
-- **The orientation-only read:** `metadata::orientation` (`:96`) does its own walk through `exif_block` (`:781`).
-  - Callers: `decode.rs:129/138`, `thumbs.rs:98`, `rotate.rs:37`, `writeback.rs:286`.
-- **`Meta::read`** (`:67`). Callers: `analyze.rs:112/153`, `writeback.rs:269`, `tests/writeback.rs:115/149`,
-  `examples/stage_times.rs:32`.
-- **XMP:** parsed by quick-xml (`xmp_properties`, `:102`). quick-xml has no other user.
-- **Shared chunk walkers:** `png_chunks`, `webp_chunks`, `gif_blocks`, `gif_header_len`, `GifBlock` and `Chunk` are
-  also used by `rewrite.rs`, `rotate.rs` and `crop.rs`. Those use them to rewrite files, so their semantics must not
-  change.
-- **The in-place patch:** `patch_orientation` (`:801`) patches the **first** IFD0 Orientation that is a SHORT×1.
-- **Tests:** a test builder, `tiff_block` (tests, `:934`).
-- **`IMPORT_VERSION` is still 1** (`analyze.rs:16`). The 6 files from 29c4d5e's run, which gained a Rating of 4,
-  aren't settled yet.
+- **The orientation-only read:** `pg_metadata::orientation` (`:140`) does its own walk through `exif_block` (`:598`).
+  - Callers: `crates/edit/src/lib.rs:26/38`, `crates/edit/src/rotate.rs:39`, `crates/render/src/display.rs:16/25`,
+    `crates/render/src/maker.rs:111`, `crates/library/src/writeback.rs:264`.
+- **`Meta::read`** (`:101`; it now takes a `&mut MetaScratch` that keeps the buffers from file to file). Callers:
+  `crates/analysis/src/analyze.rs:103/145`, `crates/library/src/writeback.rs:247`,
+  `crates/library/tests/writeback.rs:111/143`, `crates/analysis/examples/stage_times.rs:36`.
+- **XMP:** parsed by quick-xml (`xmp_properties`, `:150`). quick-xml has no other user (only `pg-metadata` depends
+  on it; the workspace also patches it to `vendor/quick-xml`).
+- **Shared chunk walkers:** `png_chunks`, `webp_chunks`, `gif_blocks`, `gif_header_len`, `GifBlock` and `Chunk` live
+  in `pg-container` (`crates/container/src/lib.rs`) and are also used by `pg-edit`'s `rewrite.rs`, `rotate.rs` and
+  `crop.rs`. Those use them to rewrite files, so their semantics must not change.
+- **The in-place patch:** `patch_orientation` (`:618`) patches the **first** IFD0 Orientation that is a SHORT×1.
+- **Tests:** a test builder, `tiff_block` (tests, `:729`).
+- **`IMPORT_VERSION` is still 1** (`crates/analysis/src/analyze.rs:29`). The 6 files from 29c4d5e's run, which gained
+  a Rating of 4, aren't settled yet.
 
 ## Decisions (defaults I chose; tell me to change any)
 
@@ -91,9 +95,10 @@ A latent bug at HEAD:
 
 - `Exif::read` takes IFD0 Orientation as BYTE, SHORT or LONG, the last copy winning.
 - `patch_orientation` changes only the first SHORT×1.
-- `rotate.rs:43` (`Outcome::Rewritten`) calls `patch_orientation(&out, format, 1).unwrap_or(out)`. So when the
-  orientation is a LONG (or a second copy), the pixels are turned but the old tag stays: the image shows turned twice.
-- The writeback's patch path (`writeback.rs:279`) has no read-back check either.
+- `crates/edit/src/rotate.rs:45` (`Outcome::Rewritten`) calls
+  `pg_metadata::patch_orientation(&out, format, Orientation::UPRIGHT).unwrap_or(out)`. So when the orientation is a
+  LONG (or a second copy), the pixels are turned but the old tag stays: the image shows turned twice.
+- The writeback's patch path (`crates/library/src/writeback.rs:257`) has no read-back check either.
 
 The fix:
 
@@ -104,10 +109,11 @@ The fix:
 - Tests: a LONG orientation, two copies, and a rewritten JPEG that reads back as 1.
 - The port (step 2) keeps the same contract: patch every in-place `EXIF:Orientation` occurrence, and check the read.
 
-### 1. Oracle harness (kept: `crates/ingest/examples/metadata_oracle.rs`)
+### 1. Oracle harness (kept: `crates/library/examples/metadata_oracle.rs`; not written yet)
 
-- **ExifTool driver:** reuses `pg_ingest::writeback::ExifTool` (`writeback.rs:422`, stay-open, `PG_EXIFTOOL`).
-  - It gains `pub fn read_tags(&mut self, files, args) -> Result<String>` beside the private `run` (`:452`).
+- **ExifTool driver:** reuses `pg_exiftool::ExifTool` (`crates/exiftool/src/lib.rs:23`, stay-open; the program is
+  `PG_EXIFTOOL`, read in `crates/library/src/writeback.rs:351`).
+  - It gains `pub fn read_tags(&mut self, files, args) -> Result<String>` beside the private `run` (`:61`).
 - **Command, no `-fast`:** `-n -a -G1 -args -EXIF:Orientation -Rating -RatingPercent -DateTimeOriginal -CreateDate
   -XMP-photoshop:DateCreated -HasExtendedXMP`.
   - The first task: confirm how a batch separates files and keeps duplicates in order. `-args` keeps duplicates;
@@ -122,7 +128,7 @@ The fix:
   reproducing input.
 - **Safety:** read-only on the library. It runs on E: only with your go-ahead, since E: is the library HDD.
 
-### 2. The port (pg-core: `metadata.rs` becomes `metadata/`)
+### 2. The port (pg-metadata: `crates/metadata/src/lib.rs` grows modules beside it)
 
 Every ported function cites its ExifTool file and line.
 
@@ -157,8 +163,8 @@ Every ported function cites its ExifTool file and line.
     - A visited-address set. It never changes a value, only where ExifTool would hang.
   - Our tags are read in any IFD, with group1 set to that IFD's name.
 - **Container walks: separate from the shared walkers.**
-  - `png_chunks`, `webp_chunks` and `gif_blocks` keep their current semantics for `rewrite.rs`, `rotate.rs` and
-    `crop.rs`.
+  - `png_chunks`, `webp_chunks` and `gif_blocks` (in `pg-container`) keep their current semantics for pg-edit's
+    `rewrite.rs`, `rotate.rs` and `crop.rs`.
   - The ported walks are their own functions in `jpeg.rs`, `png.rs`, `webp.rs` and `gif.rs`. They may share
     low-level helpers.
 - **`jpeg.rs`: `ProcessJPEG`** (`ExifTool.pm` 7272–7690).
@@ -205,7 +211,7 @@ Every ported function cites its ExifTool file and line.
 - **Allocation:** none on the common path. Only an inflate, a hex decode, a multi-segment join, an extended XMP or a
   transcode produces an owned buffer.
 
-### 3. App policy (`metadata/mod.rs`)
+### 3. App policy (the `Meta` code in `crates/metadata/src/lib.rs`)
 
 - **One walk:** `Meta::read` walks the container once, feeds the store, and applies decision 2.
 - **`metadata::orientation`** uses the same walk with an orientation-only sink.
@@ -216,7 +222,8 @@ Every ported function cites its ExifTool file and line.
 - **Date taken:** one parser for ExifTool's form, `YYYY:MM:DD[ HH:MM[:SS[.f]]][zone]`.
   - EXIF strings arrive raw; XMP strings are already converted.
   - Blanks and impossible dates fail through `wall_clock_seconds`. A date alone means midnight.
-  - `exif_date` goes. `parse_iso_date` and `wall_clock_seconds` stay: queries and videos use them.
+  - `exif_date` goes. `parse_iso_date` and `wall_clock_seconds` (all in `pg-model`'s `date.rs`) stay: `Day`
+    (the catalog's date filters) and videos use them.
 - **`patch_orientation`:** step 0's contract on top of the store's occurrences. It covers the EXIF block, IRB EXIF
   and multi-segment EXIF where the bytes are in place. A hex or compressed carrier can't be patched, so it returns
   `None`, and ExifTool writes.
@@ -227,7 +234,7 @@ Every ported function cites its ExifTool file and line.
 - One unit test per ported rule, built with `tiff_block` grown into a builder (TIFF/IFD, plus JPEG, PNG, WebP, GIF and
   IRB wrappers). Each test names the ExifTool line it covers.
 - One test runs every builder case through ExifTool and compares. It is skipped without ExifTool, as in
-  `crates/ingest/tests/writeback.rs:85`.
+  `crates/library/tests/writeback.rs:79`.
 - Fuzzing: a `cargo-fuzz` target on `Meta::read` for each format (nightly, MSVC). It must never panic, never hang, and
   stay within a fixed amount of work per input.
 
@@ -247,7 +254,7 @@ Each mismatch is fixed in the port, and its minimized input becomes a builder te
 
 - **App-level diff:** the old `Meta` against the new one on the default catalog's files. Today's reader is kept as
   `metadata::legacy` until this step ends.
-- **Ratings:** `CatalogWriter::sync_file_rating` (`catalog.rs:1199`) adopts any file rating that differs from
+- **Ratings:** `AnalysisWriter::sync_file_rating` (`crates/catalog/src/lib.rs:1458`) adopts any file rating that differs from
   `file_ratings` as an external change. A reader that reads an unchanged file differently would overwrite your
   catalog rating.
   - So for each file where the old read equals `file_ratings` and the new read differs, `file_ratings` is set to the
@@ -258,28 +265,29 @@ Each mismatch is fixed in the port, and its minimized input becomes a builder te
 - **Orientation and date:** count the files whose stored values change. You choose:
   - bump `IMPORT_VERSION`, which re-analyses everything (hours on the HDD); or
   - re-analyse only those files: deleting their `analysis` rows sets `files.pending` through the `analysis_removed`
-    trigger (`catalog.rs:304`).
+    trigger (`crates/catalog/src/lib.rs:350`).
   - The 6 files are settled in the same decision.
-- **Then remove** `legacy` and quick-xml from the workspace `Cargo.toml` and `crates/core/Cargo.toml`, checked with
+- **Then remove** `legacy` and quick-xml from the workspace `Cargo.toml` (including its `vendor/quick-xml` patch) and
+  `crates/metadata/Cargo.toml`, checked with
   `cargo deny` and `cargo machete`.
 
-### 7. ImageRater's metadata fixer for orientation writes (pg-ingest `writeback.rs`)
+### 7. ImageRater's metadata fixer for orientation writes (pg-exiftool `lib.rs`, used by pg-library `writeback.rs`)
 
-Independent of the port; its own commit.
+Independent of the port; its own commit. Not done yet.
 
 - **Today:**
-  - `ExifTool::write_rating` (`writeback.rs:484`) retries once after ImageRater's rebuild
+  - `ExifTool::write_rating` (`crates/exiftool/src/lib.rs:91`) retries once after ImageRater's rebuild
     (`fix_metadata_and_retry`, `ImageRater\rust\src\services\file_operations.rs:256`):
     `-all= -tagsfromfile @ -all:all -unsafe -icc_profile`.
-  - `write_orientation` (`:510`) doesn't retry. When ExifTool won't update a file, `process` keeps the turn in the
-    catalog only (`keep_turn_in_catalog`, `:289`).
+  - `write_orientation` (`:117`) doesn't retry. When ExifTool won't update a file, `process` keeps the turn in the
+    catalog only (`keep_turn_in_catalog`, `crates/library/src/writeback.rs:312`).
 - **Change:** one helper, `write_tag(tag, extra_args, path, out)`, holds the try, then the removal of the half-written
   output, then the rebuild and one retry. Both methods use it; orientation passes `-n`.
   - The read-back check in `process` stays.
   - `copy_tags` (crops) only reads its source, so it is unchanged.
 - **The rebuild is slightly lossy:** segments ExifTool can't copy are dropped. That is the trade ratings already
   make, and it only happens after the plain write has failed.
-- **Test**, in `crates/ingest/tests/writeback.rs`, skipped without ExifTool:
+- **Test**, in `crates/library/tests/writeback.rs`, skipped without ExifTool:
   - A JPEG whose metadata 13.60 won't update in place, but will after the rebuild. Finding such damage is the first
     task, e.g. an IFD entry pointing outside the segment.
   - The turn must reach the file, not the catalog.
@@ -315,7 +323,7 @@ One commit per verified step. Before building, check that no other session is bu
 - **Measured once at the end:**
   - Instruction counts with gungraun (`tools/profiling/wsl-bench.sh`, which benches the committed HEAD), before and
     after.
-    - `analyze_jpeg` (`crates/core/benches/ir/linux.rs:33`) reads `PG_BENCH_JPEG`.
+    - `analyze_jpeg` (`crates/bench/benches/ir/linux.rs:35`) reads `PG_BENCH_JPEG`.
     - A new `meta_read` bench uses a camera JPEG with EXIF, XMP and a thumbnail IFD. It is added in step 0's commit
       so the baseline exists.
   - A dhat import profile: no allocation at the metadata sites for files without inflated, joined or extended

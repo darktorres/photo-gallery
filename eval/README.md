@@ -12,6 +12,8 @@ Python is used only here; everything that runs at library scale is Rust.
 - Environment: `D:\PhotoGallery\venv-eval` (CUDA PyTorch; the global Python has CPU-only torch)
 
 All paths can be overridden with `PG_DATA_ROOT`, `PG_WORK_DIR`, `PG_CACHE_DIR`.
+`--trim` runs the gallery's border detector (`crates/analysis/src/borders.rs`) through `gallery borders --stdin`: it
+needs `targetelease\gallery.exe` built (`just build`), or `PG_GALLERY` pointing at one.
 
 ## Ground truth
 

@@ -38,7 +38,7 @@ the same result.
 ## How the work runs
 
 - **Benchmarks:** `tools/profiling/wsl-bench.sh` clones the *committed* HEAD into WSL and runs gungraun (callgrind) on
-  `crates/core/benches/ir.rs`: `analyze_jpeg`, `thumb h256` (`ir/linux.rs`) and the catalog benches (`ir/catalog.rs`).
+  `crates/bench/benches/ir.rs`: `analyze_jpeg`, `thumb_jpeg` (`ir/linux.rs`) and the catalog benches (`ir/catalog.rs`).
   Results go to `target/gungraun/` in the clone and are read with `tools/profiling/cgtab.py`. Counts are
   deterministic, so one run per variant is enough. Uncommitted work is never benched, so:
   - flag and profile trials go in through the environment (`RUSTFLAGS`, `CARGO_PROFILE_BENCH_LTO`,
@@ -63,15 +63,17 @@ the same result.
 - 0a. Plain stable compile (`rustc +stable`, no `#![feature]`) of tiny files in the scratchpad using `core::hint::cold_path`,
   `<[T]>::array_windows`, `ptr.is_aligned()`, `split_first_chunk`/`first_chunk`. Settles which survey entries are already
   stable (the first probe was invalid: stable rejects `#![feature]` outright).
-- 0b. `rustc +stable -O --emit asm` of a copy of `Hash::distance`'s body, at baseline and with
-  `-C target-cpu=x86-64-v3`: is it a software popcount today? Decides how much of E1 is about POPCNT.
+- 0b. `rustc +stable -O --emit asm` of a copy of `Hash::distance`'s body (`crates/model/src/pdq.rs:27`), at baseline and
+  with `-C target-cpu=x86-64-v3`: is it a software popcount today? Decides how much of E1 is about POPCNT.
 - 0c. `rustup component list --toolchain nightly-2026-09-22` for what is installed (rust-docs only so far); install
   the nightly in WSL (`rustup toolchain install nightly-2026-09-22 --profile minimal`) and the components later phases need.
 
 **Phase 1: baseline at HEAD.**
 
-- 1a. Add the missing bench inputs, one commit each: PDQ index nearest-neighbour search (`pdq_index.rs:245,311`
-  has no bench) and a PNG decode through `analyze`. Both in `crates/core/benches/ir/linux.rs` beside the existing ones.
+- 1a. Add the missing bench inputs, one commit each: PDQ index nearest-neighbour search (`crates/dedup/src/pdq_index.rs`,
+  `best_matches` 239 and `query` 261, has no bench) and a PNG decode through `analyze`. Both in
+  `crates/bench/benches/ir/linux.rs` beside the existing ones
+  (not added yet: the file still has only `analyze_jpeg` and `thumb_jpeg`).
 - 1b. `wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-bench.sh --save-baseline=head`. Read with `cgtab.py`.
   Record counts and the new top self-cost lines in `PROFILING.md`; replace the stale 41eaa1c leads (E2, box_1d).
 
@@ -102,42 +104,42 @@ files in Git Bash's `/tmp` (`feat.txt`, `x`; written by review agents), and repo
 | ID | Evaluate | Evidence | How | Gate |
 |---|---|---|---|---|
 | E0 | Baseline at HEAD and stable-feature check | See Context 4; Phase 0 and 1 | Phase 0a, 1b | Everything below compares to it |
-| E1 | `-C target-cpu=x86-64-v3` | `.cargo/config.toml` sets no `target-cpu`, so the x86-64 baseline. `Hash::distance` (`pdq.rs:41`) and the Hamming scans (`pdq_index.rs:245,311`) use `count_ones`; POPCNT is not in baseline x86-64 (asm unverified, Phase 0b). Also AVX2 autovectorization of our own loops; the JPEG, resize and zlib kernels already pick their own SIMD paths | `RUSTFLAGS="-C target-cpu=x86-64-v3"` through `WSLENV`; compare `analyze_jpeg`, `thumb`, the new PDQ-search and PNG benches | Threshold; D1 allows adopting. A flag in `.cargo/config.toml` `[build]` also applies to the Windows build |
+| E1 | `-C target-cpu=x86-64-v3` | `.cargo/config.toml` sets no `target-cpu`, so the x86-64 baseline. `Hash::distance` (`crates/model/src/pdq.rs:27`) and the Hamming scan (`crates/dedup/src/pdq_index.rs:277`) use `count_ones`; POPCNT is not in baseline x86-64 (asm unverified, Phase 0b). Also AVX2 autovectorization of our own loops; the JPEG, resize and zlib kernels already pick their own SIMD paths | `RUSTFLAGS="-C target-cpu=x86-64-v3"` through `WSLENV`; compare `analyze_jpeg`, `thumb`, the new PDQ-search and PNG benches | Threshold; D1 allows adopting. A flag in `.cargo/config.toml` `[build]` also applies to the Windows build |
 | E2 | PDQ after 81ad925 | Premise gone (Context 4) | Re-read the Phase 1 profile; update the `PROFILING.md` lead | Close if `pdq` no longer dominates cache misses |
 | E3 | Lanczos weight cache (`precompute_coefficients` in vendored `fast_image_resize`) | 3.2 M of 50.6 M instructions per thumbnail (6.4%) at 41eaa1c, mostly libm `sin` | Count (source, target) size repeats in a real `gallery thumbs` pass on a scratch catalog; prototype a cache only if repeats are common | High repeat rate and the threshold |
 | E4 | `DECODE_MARGIN = 4` (full-scale decode vs DCT scaling) | 28.5 M vs 21.2 M instructions for images just under 4x | A quality comparison (FINDINGS "Thumbnails"), not a speed one | Your decision; I record the price |
-| E5 | Release `lto = "fat"`/`"thin"` and `codegen-units = 1`; nightly variants `-Zcross-crate-inline-threshold=always`, `-Zinline-mir` | `[profile.release]` sets only `debug = "line-tables-only"`; no cross-crate inlining between pg-core, the vendored decoders and std; release is non-incremental so inference is on | `CARGO_PROFILE_BENCH_LTO` / `_CODEGEN_UNITS` through `WSLENV`, also build time; nightly variants only if the stable ones leave a gap | Threshold and acceptable build time |
+| E5 | Release `lto = "fat"`/`"thin"` and `codegen-units = 1`; nightly variants `-Zcross-crate-inline-threshold=always`, `-Zinline-mir` | `[profile.release]` sets only `debug = "line-tables-only"`; no cross-crate inlining between the pg-* crates, the vendored decoders and std; release is non-incremental so inference is on | `CARGO_PROFILE_BENCH_LTO` / `_CODEGEN_UNITS` through `WSLENV`, also build time; nightly variants only if the stable ones leave a gap | Threshold and acceptable build time |
 | E6 | PGO (`-Cprofile-generate` / `-Cprofile-use`) | Stable; needs `llvm-profdata` (`llvm-tools` component) | Instrument a thumbnail and import run on a scratch catalog, rebuild, compare | After E5; threshold and a workable profile-refresh process |
 | E7 | `target/` footprint (48 GiB, 78,053 files) | `Cargo.toml` leaves dev `debug` unset (full) and builds dependencies at `opt-level = 3` (inferred cause, unmeasured) | `[profile.dev.package."*"] debug = "line-tables-only"` (or `false`), `split-debuginfo`; compare `target/` size after one full dev build; then N11 | Size down without hurting debugging |
-| E8 | Bit-exact loop interchange in `dct_64_to_16` (`pdq.rs:240-262`) | The k-sums are in-order f32 and `input[k][j]` is read down a column. Looping i, k, j keeps each output's operation sequence (Rust never fuses `a*b+c`), so hashes stay bit-identical, and lets LLVM vectorize across j; stage 2 needs the DCT matrix transposed once (same values). Tests assert exact bits against Meta's reference (`pdq.rs:338-358`) | Only if the Phase 1 profile shows it visible. Branch `eval/e8`; N17 remarks show whether the current loop vectorizes | Bit-identical hashes and the threshold |
+| E8 | Bit-exact loop interchange in `dct_64_to_16` (`crates/analysis/src/pdq.rs:201-224`) | The k-sums are in-order f32 and `input[k][j]` is read down a column. Looping i, k, j keeps each output's operation sequence (Rust never fuses `a*b+c`), so hashes stay bit-identical, and lets LLVM vectorize across j; stage 2 needs the DCT matrix transposed once (same values). Tests assert exact bits against the reference crate (`pdq.rs:323-331`) | Only if the Phase 1 profile shows it visible. Branch `eval/e8`; N17 remarks show whether the current loop vectorizes | Bit-identical hashes and the threshold |
 
 ## 3. Nightly tooling and options (opt-in runs; adoptable under D2 if they win)
 
 | ID | Evaluate | Evidence | How | Gate |
 |---|---|---|---|---|
-| N5 | `cargo-fuzz` (libFuzzer) on parsers of untrusted bytes | No fuzzing exists. Targets: `Meta::read` (`metadata.rs:101`), `orientation` (136), `patch_orientation` (908; rewrites the user's files through write-back), `animation::frames`, the codec wrappers (`codecs.rs`). `pg-core` builds on Linux | `crates/core/fuzz/` targets seeded from the test samples; a fixed time per target in WSL; check `patch_orientation` output re-parses with the orientation asked | Any crash, hang or OOM: fix with a regression test |
+| N5 | `cargo-fuzz` (libFuzzer) on parsers of untrusted bytes | No fuzzing exists. Targets: `Meta::read` (`crates/metadata/src/lib.rs:101`), `orientation` (140), `patch_orientation` (618; rewrites the user's files through write-back), `animation::frames`, the codec wrappers (`crates/codec/src/codecs.rs`). `pg-metadata` and `pg-codec` build on Linux | `fuzz/` targets (in `crates/metadata/` and `crates/codec/`) seeded from the test samples; a fixed time per target in WSL; check `patch_orientation` output re-parses with the orientation asked | Any crash, hang or OOM: fix with a regression test |
 | N13 | Branch coverage: `-Cinstrument-coverage -Zcoverage-options=branch` (`mcdc` is rejected on this nightly) | Needs `llvm-tools` | Tests plus N5's corpus, scratch target dir; read uncovered parser branches | Informational; add tests |
-| N6 | `-Zsanitizer=address` over the tests, aimed at the C boundaries (turbojpeg, ffmpeg-next, `scan.rs`, `video.rs`) | The MSVC target supports only `address`. Needs the ASan runtime DLL on `PATH`. Link-and-run not yet tried; C libraries stay uninstrumented | A trivial crate first, then `pg-core` / `pg-ingest` tests with `--target x86_64-pc-windows-msvc` | Fix what it finds |
-| N1 | `-Zub-checks=yes` on a release test run, and `cargo careful` | Dev and test already check UB (debug-assertions); this adds release / `dhat` coverage only. Failures abort. The only `from_raw_parts` in `crates/` is `scan.rs:122` (sound: `Vec<u64>` buffer); more unsafe in `video.rs`, `writeback.rs`, `crates/ui`, `vendor/` | One run with `RUSTFLAGS="-Zub-checks=yes"`, own target dir | Informational, low priority |
+| N6 | `-Zsanitizer=address` over the tests, aimed at the C boundaries (turbojpeg, ffmpeg-next, `crates/platform/src/dir.rs`, `crates/video/src/lib.rs`) | The MSVC target supports only `address`. Needs the ASan runtime DLL on `PATH`. Link-and-run not yet tried; C libraries stay uninstrumented | A trivial crate first, then `pg-codec` / `pg-library` tests with `--target x86_64-pc-windows-msvc` | Fix what it finds |
+| N1 | `-Zub-checks=yes` on a release test run, and `cargo careful` | Dev and test already check UB (debug-assertions); this adds release / `dhat` coverage only. Failures abort. The only `from_raw_parts` in `crates/` is `platform/src/dir.rs:143` (sound: the API-filled buffer); more unsafe in `video`, `platform/src/process.rs`, `crates/desktop`, `vendor/` | One run with `RUSTFLAGS="-Zub-checks=yes"`, own target dir | Informational, low priority |
 | N10 | `-Zannotate-moves[=N]` | Debug info only: big moves appear as `core::profiling::compiler_move::<T, SIZE>` frames above `memcpy`. libc memcpy / memset / malloc together were 2.7% / 3.2% with no Rust attribution. Whether callgrind plus `cgtab.py` shows the frames is unverified | WSL bench build with the flag; counts must equal the baseline (self-check); list memcpy callers by annotated type | Informational: avoidable large moves, or all in C libraries |
-| N12 | `-Zprint-type-sizes` of hot structs | Recent commits moved data inline (ArrayVec of 12, inline ThumbHash) | `cargo +nightly rustc -p pg-core -- -Zprint-type-sizes`, scratch dir; list types over a threshold | Fix only clearly wasteful padding |
-| N15 | `-Zmove-size-limit=N` (`large_assignments` lint) | `pdq.rs:127` and `:240` return `[f32; 256]` by value; `browse.rs:447` pins `Entry` at 56 bytes | `RUSTFLAGS=-Zmove-size-limit=512 cargo +nightly check`, scratch dir | Informational; pairs with N10 |
-| N16 | `-Zrandomize-layout -Zlayout-seed=N` over the tests | Catches reliance on unspecified `repr(Rust)` layout (the UTF-16 slice at `scan.rs:122`, FFI wrappers, vendored transmutes); cxx shared structs are `repr(C)`; std is not randomized without build-std | Several seeds, scratch dir | Green across seeds |
-| N17 | `-Cremark=all -Zremark-dir=<dir>` | Shows whether `dct_64_to_16`, `box_1d` and the resize kernels vectorize; output format unverified | Release build of `pg-core` in WSL, grep remarks at the hot lines | Informs E1 / E8 |
+| N12 | `-Zprint-type-sizes` of hot structs | Recent commits moved data inline (ArrayVec of 12, inline ThumbHash) | `cargo +nightly rustc -p pg-analysis -- -Zprint-type-sizes` (and `pg-model`), scratch dir; list types over a threshold | Fix only clearly wasteful padding |
+| N15 | `-Zmove-size-limit=N` (`large_assignments` lint) | `pdq.rs:71`, `:88` and `:201` return `[f32; 256]` by value; `crates/model/src/grid.rs:41` pins `Entry` at 56 bytes | `RUSTFLAGS=-Zmove-size-limit=512 cargo +nightly check`, scratch dir | Informational; pairs with N10 |
+| N16 | `-Zrandomize-layout -Zlayout-seed=N` over the tests | Catches reliance on unspecified `repr(Rust)` layout (the UTF-16 slice at `platform/src/dir.rs:143`, FFI wrappers, vendored transmutes); cxx shared structs are `repr(C)`; std is not randomized without build-std | Several seeds, scratch dir | Green across seeds |
+| N17 | `-Cremark=all -Zremark-dir=<dir>` | Shows whether `dct_64_to_16`, `box_1d` and the resize kernels vectorize; output format unverified | Release build of `pg-analysis` and `pg-codec` in WSL, grep remarks at the hot lines | Informs E1 / E8 |
 | N14 | `portable_simd` in vendored `png` | The one site that could move speed. `vendor/png/Cargo.toml:41` (`unstable = ["crc32fast/nightly"]`), `vendor/png/src/lib.rs:69` (`cfg_attr(feature = "unstable", feature(portable_simd))`), Paeth in `filter/paeth.rs`; upstream PR #632 (cited at `paeth.rs:262`): +23% on Epyc 7B13, +10% on Zen 3 for 3 / 4-byte pixels. Never measured here, and `png = "0.18"` is built without it | The 1a PNG bench, stable vs `--features png/unstable` on the nightly | Threshold and PNG decode being hot at all: then enable under the pin, or port the loop to stable `core::arch` (the vendored `fast_image_resize` already does AVX2 that way) |
-| N18 | `loop_hints` (`#[rustc_unroll]` via `-Zcrate-attr=feature(loop_hints)`) on `pdq.rs:243-257` | In-order f32 sums do not vectorize by unrolling; tracking #156874, the spelling may change (#159429) | Only if E8 is rejected | Closed if E8 lands |
-| N19 | Lints `strict_provenance_lints` (`metadata.rs:95`, the only pointer-to-integer cast found) and `non_exhaustive_omitted_patterns_lint` (`codecs.rs:432-435`, a `_ =>` over `image::ColorType`; whether that enum is `non_exhaustive` is unchecked) | One site each | `-Zcrate-attr=feature(...)` on a nightly `cargo check` | Fix the sites on stable (`.addr()`, explicit variants) |
+| N18 | `loop_hints` (`#[rustc_unroll]` via `-Zcrate-attr=feature(loop_hints)`) on `pdq.rs:205-221` | In-order f32 sums do not vectorize by unrolling; tracking #156874, the spelling may change (#159429) | Only if E8 is rejected | Closed if E8 lands |
+| N19 | Lints `strict_provenance_lints` (`crates/container/src/lib.rs:16`, the only pointer-to-integer cast found) and `non_exhaustive_omitted_patterns_lint` (`crates/codec/src/codecs.rs:458-461`, a `_ =>` over `image::ColorType`; whether that enum is `non_exhaustive` is unchecked) | One site each | `-Zcrate-attr=feature(...)` on a nightly `cargo check` | Fix the sites on stable (`.addr()`, explicit variants) |
 
 ## 4. Compile time and rebuild (gated on T1)
 
 | ID | Evaluate | Evidence | How | Gate |
 |---|---|---|---|---|
-| T1 | Dev build time breakdown | Incremental is on for dev by default, off for release; nothing is timed | Quiet tree: full dev build, then a one-line edit in `pg-core`, with `cargo build --timings`; split compile, link of `gallery.exe` (Qt, FFmpeg) and build scripts; repeat for `pg-ui` | Gates this section |
-| N3 | `--jobs-frontend=N` (with `-Zunstable-options`; `-Zthreads` is superseded) and `-Zshare-generics=yes` | Both accepted by the nightly. Front-end time matters for `check` / clippy on `pg-ui` (cxx-qt bridge); `opt-level = 3` dependencies may duplicate generics | Re-time T1 one flag at a time; `target/` size and bench counts for share-generics | Clear time or size win; note the CPU cost |
+| T1 | Dev build time breakdown | Incremental is on for dev by default, off for release; nothing is timed | Quiet tree: full dev build, then a one-line edit in `pg-model`, with `cargo build --timings`; split compile, link of `gallery.exe` (Qt, FFmpeg) and build scripts; repeat for `pg-desktop` | Gates this section |
+| N3 | `--jobs-frontend=N` (with `-Zunstable-options`; `-Zthreads` is superseded) and `-Zshare-generics=yes` | Both accepted by the nightly. Front-end time matters for `check` / clippy on `pg-desktop` (cxx-qt bridge); `opt-level = 3` dependencies may duplicate generics | Re-time T1 one flag at a time; `target/` size and bench counts for share-generics | Clear time or size win; note the CPU cost |
 | N8 | `-Zself-profile`, `-Ztime-passes`, `-Zllvm-time-trace`, `-Zdump-mono-stats`, `-Zmacro-stats` | `--timings` splits by crate only | Only if T1 shows compile time is the problem: slowest crate first | Diagnostic for N2 / N3 |
 | N9 | `-Zbuild-std` | `rust-src` not installed. Lets std use `x86-64-v3` and gives sanitizers and ub-checks std coverage | Only if E1 pays or for N6 | Clear win only |
 | N11 | Cargo options: `-Zembed-metadata=no`, `-Zbuild-analysis` with `cargo report rebuilds`, `-Zfeature-unification` (`CARGO_RESOLVER_FEATURE_UNIFICATION=workspace`), `-Zchecksum-freshness` (`CARGO_BUILD_FINGERPRINT=content`) | The tree is copied to WSL for benches and edited on Windows; mtime-only freshness can rebuild the `vendor/*` path crates for nothing. Duplicate dependency artifacts across `-p` and `--workspace` builds are unchecked | After E7: `cargo report rebuilds`, `target/` size, a no-op rebuild after a copy | Adopt what removes rebuilds or disk |
-| N2 | Cranelift backend for our crates (`codegen-backend` profile key) | Component `rustc-codegen-cranelift-x86_64-pc-windows-msvc` available, not installed. cg_clif has no Windows unwinding and partial `std::arch`; panic=abort is its default. Whether we rely on unwinding is unverified (`panic_log.rs` installs a hook). The pin makes `cargo-features` possible | After T1, only if codegen is a large share; run the suite under it | WATCH: a clear win and green tests |
+| N2 | Cranelift backend for our crates (`codegen-backend` profile key) | Component `rustc-codegen-cranelift-x86_64-pc-windows-msvc` available, not installed. cg_clif has no Windows unwinding and partial `std::arch`; panic=abort is its default. Whether we rely on unwinding is unverified (`crates/desktop/src/panic_log.rs` installs a hook). The pin makes `cargo-features` possible | After T1, only if codegen is a large share; run the suite under it | WATCH: a clear win and green tests |
 
 ## 5. Unstable features with a site in our code (candidates under the pin, Phase 6)
 
@@ -145,21 +147,21 @@ None is worth a pin alone; the question is whether they are worth it as a group.
 
 | Feature | Site | Gain and stable alternative |
 |---|---|---|
-| `nonpoison_mutex`, `nonpoison_condvar`, `sync_nonpoison` (#134645) | **57** lock / wait unwrap sites in 10 files: ingest `pipeline.rs` 11 (6 in tests), `runner.rs` 11, `writeback.rs` 9, `control.rs` 4, `thumbs.rs` 4; core `thumbs.rs` 3; ui `loader.rs` 6, `animation.rs` 5, `settings.rs` 2, `state.rs` 2 | Removes the unwraps and the panic cascade after a poisoned lock. Stable today: `ui/src/yandex.rs:159-162` already uses `unwrap_or_else(PoisonError::into_inner)`; an extension trait gives the same semantics everywhere |
-| `lock_value_accessors` (#133407) | `control.rs:166,204`, `writeback.rs:99,104`, `settings.rs:109`, `state.rs:337` | With nonpoison only; a two-line helper does it on stable |
-| `mpmc_channel` (#126840) | `ingest/pipeline.rs:21,105,106,138,149,164`, the only crossbeam use | Drops a dependency; no speed change expected |
-| `oneshot_channel` (#143674) | Six reply channels, `core/src/thumbs.rs:494-587` | A small saving per cache batch |
+| `nonpoison_mutex`, `nonpoison_condvar`, `sync_nonpoison` (#134645) | **57** lock / wait unwrap sites in 10 files when counted, before the crate split (now spread over `crates/jobs` `pipeline.rs` `control.rs` `events.rs` `service.rs`, `crates/library` `runner.rs` `thumbs.rs`, `crates/thumbcache`, `crates/app`, `crates/desktop` `animation.rs` `settings.rs`; recount before relying on the number) | Removes the unwraps and the panic cascade after a poisoned lock. Stable today: an extension trait using `unwrap_or_else(PoisonError::into_inner)` (no site in `crates/` uses it now) gives the same semantics everywhere |
+| `lock_value_accessors` (#133407) | sites counted before the split (`control.rs`, `writeback.rs`, `settings.rs`, `state.rs`); not re-located | With nonpoison only; a two-line helper does it on stable |
+| `mpmc_channel` (#126840) | `crates/jobs/src/pipeline.rs:19,94,95`, the only crossbeam use | Drops a dependency; no speed change expected |
+| `oneshot_channel` (#143674) | Six reply channels, `crates/thumbcache/src/lib.rs:417-512` | A small saving per cache batch |
 | `iter_array_chunks` (#100450) | `vendor/fast_image_resize/src/array_chunks.rs`, a 14-unsafe-line polyfill | Deletes the polyfill; same counts |
-| `read_array`, `read_le` (#148848, #156984) | `ingest/borders.rs:206-209` | Two `try_into().unwrap()`; stable `split_first_chunk` does it |
-| `windows_by_handle` (#63010) | `ingest/scan.rs:84-91` (`volume_serial`) | One unsafe call fewer; the handle still comes from raw `CreateFileW` |
-| `windows_process_extensions_raw_attribute` (#114854) | `ingest/writeback.rs:434-444`, `:522-548` | Starts the ExifTool child inside the kill-on-close job, closing the window before assignment. A correctness gain, the most meaningful of this table |
-| `panic_can_unwind` (#92988) | `ui/src/panic_log.rs:17-29` | The panic message could say the app will close |
-| `casefold` (#157000) | `catalog.rs:349` (`is_under` allocates two lowercased strings) | Not a drop-in: Unicode folding differs from NTFS's upcase table |
-| `default_field_values` (#132162), `try_blocks` | `borders.rs:65-84`, `ui/settings.rs:56-66`; `examples/decodediff.rs:73-81` (not shipped) | Readability only |
+| `read_array`, `read_le` (#148848, #156984) | `crates/cli/src/borders.rs:154` | One `try_into().unwrap()`; stable `split_first_chunk` does it |
+| `windows_by_handle` (#63010) | `crates/platform/src/dir.rs:82-90` (`volume_serial`) | One unsafe call fewer; the handle still comes from raw `CreateFileW` |
+| `windows_process_extensions_raw_attribute` (#114854) | `crates/exiftool/src/lib.rs:46-52` (via `crates/platform/src/process.rs:22-48`, `die_with_parent`) | Starts the ExifTool child inside the kill-on-close job, closing the window before assignment. A correctness gain, the most meaningful of this table |
+| `panic_can_unwind` (#92988) | `crates/desktop/src/panic_log.rs:17-29` | The panic message could say the app will close |
+| `casefold` (#157000) | `crates/model/src/path.rs:113` (`is_under` allocates two lowercased strings) | Not a drop-in: Unicode folding differs from NTFS's upcase table |
+| `default_field_values` (#132162), `try_blocks` | `crates/cli/src/borders.rs` and `crates/desktop/src/settings.rs` (lines not re-located; `examples/decodediff.rs` no longer exists) | Readability only |
 | `loop_match`, `const_continue` (#132306, stalled) | The only in-function state loop is `vendor/fdeflate/src/decompress.rs:971-973`, not the needed shape | None |
 | `integer_casts` family (#157388, #154650, #154330) | About 546 `as <int>` casts in `crates/` | Watch: the API is new |
-| `borrowed_buf` / `read_buf` | `core/src/video.rs:246-255` (`file_hash` zero-fills 1 MiB per call) | Negligible against BLAKE3; reusing the buffer does it on stable |
-| `float_mul_add_relaxed` (#151770), `float_algebraic` | `pdq.rs:240-260` | Unusable: PDQ is bit-exact with Meta's reference |
+| `borrowed_buf` / `read_buf` | `crates/analysis/src/analyze.rs:46-50` (`file_hash_of`) | No site left: it streams the file with BLAKE3's `update_reader`, no zero-filled buffer |
+| `float_mul_add_relaxed` (#151770), `float_algebraic` | `pdq.rs:201-224` | Unusable: PDQ is bit-exact with Meta's reference |
 
 ## 6. Closed with no site
 
@@ -179,14 +181,14 @@ Library: 176 (a-g) and 235 (h-z) entries examined, 133 bulk-excluded. Flags: 177
 - `-Zhint-mostly-unused` (the mostly-unused crates are extern declarations, nothing to defer), `-Ztune-cpu` (stable
   `-Ctarget-cpu` covers it), `-Zthreads` (superseded by `--jobs-frontend`), `-Zlocation-detail`, `-Zfunction-sections`,
   `-Zfmt-debug`, `-Zretpoline`, `-Zcf-protection`: no benefit here.
-- `pointer_is_aligned_to`: stable `ptr.is_aligned()` covers `scan.rs:116`.
+- `pointer_is_aligned_to`: stable `ptr.is_aligned()` would cover the record walk at `crates/platform/src/dir.rs:139-143` (the old `scan.rs:116` check is gone).
 
 ## Critical files
 
-- Edited by adoptions: `Cargo.toml` (profiles), `.cargo/config.toml` (`target-cpu`), `crates/core/src/pdq.rs` (E8),
+- Edited by adoptions: `Cargo.toml` (profiles), `.cargo/config.toml` (`target-cpu`), `crates/analysis/src/pdq.rs` (E8),
   `docs/PROFILING.md` (results), and with the pin `rust-toolchain.toml`, `tools/profiling/wsl-bench.sh`, section 5 sites.
-- New: bench inputs in `crates/core/benches/ir/linux.rs`; `crates/core/fuzz/` (N5).
-- Reused as is: `tools/profiling/wsl-bench.sh`, `cgtab.py`, `bench_data.py`, `crates/core/benches/ir.rs`, the
+- New: bench inputs in `crates/bench/benches/ir/linux.rs`; `fuzz/` directories under `crates/metadata/` and `crates/codec/` (N5).
+- Reused as is: `tools/profiling/wsl-bench.sh`, `cgtab.py`, `bench_data.py`, `crates/bench/benches/ir.rs`, the
   `justfile` recipes (`lint`: fmt, clippy `-D warnings`, `cargo deny`, `cargo machete`, ruff, markdownlint).
 
 ## Verification
@@ -230,7 +232,7 @@ binary_heap_from_raw_vec, binary_heap_into_iter_sorted, binary_heap_peek_mut_ref
 btree_merge, btree_set_entry, btreemap_alloc, deque_extend_front, linked_list_cursors, linked_list_remove,
 linked_list_retain, vec_deque_extract_if, vec_deque_iter_as_slices, vec_deque_retain_range, vec_as_non_null,
 vec_fallible_shrink, vec_into_chunks, vec_peek_mut, vec_push_within_capacity, vec_recycle, vec_split_at_spare,
-try_with_capacity (stable `try_reserve` covers `borders.rs:211`), try_reserve_kind, try_entry, map_try_insert,
+try_with_capacity (stable `try_reserve`; `crates/` no longer uses it), try_reserve_kind, try_entry, map_try_insert,
 hash_map_macro and hash_set_entry (std hash containers are banned), thin_box, unique_rc_arc, arc_is_unique,
 arc_raw_get_strong, box_as_non_null, box_into_boxed_slice, box_into_inner, box_take, cow_is_borrowed, cell_get_cloned,
 cell_leak, refcell_try_map, lazy_cell_into_inner, once_cell_get_mut, once_cell_new_init, once_cell_try,
@@ -259,7 +261,7 @@ time_saturating_systemtime, time_systemtime_limits, deadline_api, thread_sleep_u
 **Library, strings, chars, paths, OS strings:** ascii_char, ascii_char_variants, bstr, bstr_to_string, byte_str,
 byte_str_to_string, case_ignorable, char_is_xid, char_to_u32, char_unassigned_private_use, concat_bytes, cstr_bytes,
 cstr_display, default_ignorable, normalize_lexically, os_str_slice, os_str_split_at, os_string_truncate, path_absolute_method
-(stable `std::path::absolute` already used at `borders.rs:109`), path_trailing_sep, str_as_str, str_copy_from_str,
+(stable `std::path::absolute` already used at `crates/cli/src/borders.rs:50`), path_trailing_sep, str_as_str, str_copy_from_str,
 str_lines_remainder, str_split_inclusive_remainder, str_split_remainder, str_split_whitespace_remainder,
 string_remove_matches, string_replace_in_place, titlecase, u8_split_ascii_whitespace, utf16_extra, pattern,
 slice_pattern, fmt_arguments_from_str, formatting_options, debug_closure_helpers, hasher_prefixfree_extras.
@@ -272,7 +274,7 @@ new_range_remainder, next_index, option_array_transpose, option_get_or_try_inser
 option_reduce, option_reference_flattening, option_zip, rev_into_inner, try_find, try_trait_v2, try_trait_v2_residual,
 try_trait_v2_yeet, array_try_from_fn, array_try_map, slice_concat_ext, slice_concat_trait, slice_index_methods,
 slice_iter_mut_as_mut_slice, slice_partial_sort_unstable, slice_partition_dedup, slice_range, slice_shift,
-sliceindex_wrappers, sort_floats (stable `select_nth_unstable_by` already used at `borders.rs:614`), split_array,
+sliceindex_wrappers, sort_floats (stable `select_nth_unstable_by` already used at `crates/analysis/src/borders.rs:362`), split_array,
 split_as_slice, step_trait, trusted_len, trusted_step, trusted_fused, trusted_random_access, partial_ord_chaining_methods,
 inplace_iteration, sized_type_properties, tuple_trait, type_ascription, type_info, variant_count, try_as_dyn.
 

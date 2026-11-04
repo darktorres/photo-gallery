@@ -232,7 +232,8 @@ Shape:
   - Keyboard-first: keep / quarantine / "not a duplicate".
 - **Merged-drives view:** a virtual tree where folders with the same name across drives appear merged.
 
-The `core` crate has no UI dependency, so a web or phone UI can be added later against the same core.
+`pg-app` (the application layer) and `pg-client` (the front end's logic) have no UI dependency, so a web or phone UI
+can be added later against the same crates.
 
 ---
 
@@ -270,7 +271,9 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 ### M1 — Core and ingest (on the sample)
 
 - Cargo workspace (`core`, `ingest`, `ui`), catalog schema, scanner, the single-pass import pipeline,
-  tiers 0–1, resumability.
+  tiers 0–1, resumability. (Since split into the `crates/*` packages in `crates/README.md`: `pg-catalog`,
+  `pg-analysis`, `pg-jobs`, `pg-library`, `pg-cli`, `pg-desktop` and others; `core`, `ingest` and `ui` no longer
+  exist, see `docs/REFACTOR_PLAN.md`.)
 - Background thumbnail task (after import, size chosen at runtime) and its cache.
 - **Status (2026-10-30):** built and verified on `dups2` (FINDINGS "M1 import"; usage in `crates/README.md`).
   The scanner lists directories by handle (NTFS file IDs, no admin) instead of Everything: the installed
@@ -280,7 +283,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
 
 - QML grid with lazy model and thumbnail provider, viewer and loupe, ratings in the catalog, merged-drives
   tree.
-- **Status (2026-10-30):** first version built (`gallery.exe`, `crates/desktop`). Justified rows from Rust in a
+- **Status (2026-10-30):** first version built (`gallery.exe`; the app is `crates/desktop`, the binary `crates/gallery`). Justified rows from Rust in a
   virtualized ListView. The row height is adjustable at runtime, with thumbnails made on demand at that size
   (newest request first) and ThumbHash placeholders. Viewer with Lanczos fit, 1:1, 10× loupe and a frame to
   reveal black bars. Ratings 0–5 in the catalog (schema v2). The tree merges folders by their path below the
@@ -297,13 +300,14 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   preloading. Ratings are written back into the files (XMP via ExifTool, queued and in place) for every format
   that holds XMP, and read from them at import with a three-way sync. Turns are lossless and in the pixels where
   the format allows. Usage in `crates/README.md`. Reverse image search (Yandex) came after, inside the app (below).
-- **Filters and videos (user request, 2026-10-30):** one query model (`query.rs`, JSON in views and the
+- **Filters and videos (user request, 2026-10-30):** one query model (`crates/catalog/src/query.rs`, JSON in views and the
   session) replaces the rating filter. Its facets are type (image, animated, video), extension, rating, shape,
   size, megapixels, duration, date taken (read at import), date modified, duplicates, import status and name.
   Facets combine with AND, values within one with OR, and the type and extension facets show counts. Sorts are
   a key and a direction. To make "video" a type, videos are now scanned, imported (streamed hash, probe, poster
   frame), thumbnailed and played (Qt Multimedia). Animated GIF/APNG/WebP play too. Decoding uses our own
-  FFmpeg 9 (BtbN `lgpl-shared`, which has dav1d), shared with Qt's player in place of Qt's copy. On a GPU
+  FFmpeg 9 (BtbN, `lgpl-shared` then, `gpl-shared` since 2026-11-02; both have dav1d), shared with Qt's player in
+  place of Qt's copy. On a GPU
   without AV1 decoding the player decodes on the CPU (`crates/desktop/src/gpu_device.rs`). Videos get no
   near-duplicate detection, and their ratings and turns stay in the catalog (see Later).
 - **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
@@ -317,7 +321,7 @@ The `core` crate has no UI dependency, so a web or phone UI can be added later a
   - Saved files are named after the photo (`IMG_1234 (yandex 1920x1080).jpg`, `IMG_1234 (yandex similar 3).jpg`),
     so they sort next to it; "(2)", "(3)"… are added on a clash.
 - **Borders (user request, 2026-11-01):** the border detector and its review moved from the eval tools into
-  the gallery (`pg_core::borders`, a port of `tools/borders.py` that matches it on all 187,806 Pinterest images;
+  the gallery (`pg_analysis::borders`, a port of `tools/borders.py` that matches it on all 187,806 Pinterest images;
   the script and the eval viewer's Borders page are gone, and the eval's `--trim` uses the gallery's detector).
   - **Detection:** a background pass after the import, on full-size decodes (§4). Results are in the catalog
     (cut, every side found with why, "not a border" marks), with its own detector version, so a change looks

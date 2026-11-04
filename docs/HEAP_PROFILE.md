@@ -1,8 +1,20 @@
 # Heap profile: `gallery scan`, `gallery import` and the passes (dhat, 2026-11-01, after three rounds of fixes 2026-11-02)
 
 Every Rust heap allocation of a scan and an import, charged to the code of ours that decides to make it (the
-innermost frame in `pg_core`, `pg_ingest` or `gallery` that isn't a container or conversion helper), and each site
-read at its source lines. How the profiles are made and read: PROFILING.md "Tool: dhat".
+innermost frame in our crates (then `pg_core` and `pg_ingest`, and `gallery`) that isn't a container or conversion
+helper), and each site read at its source lines. How the profiles are made and read: PROFILING.md "Tool: dhat heap
+profiles".
+
+**File names are as of the profiled commits.** `pg_core` and `pg_ingest` have since been split (S-08 to S-13), so the
+bare file names in the tables below now live in these crates: `pipeline.rs`, `control.rs` in `crates/jobs/src`;
+`import.rs`, `scan.rs`, `thumbs.rs` in `crates/library/src`; `cli.rs` is `crates/cli/src/lib.rs` and the borders
+command is `crates/cli/src/borders.rs`; `analyze.rs`, `pdq.rs` and the detector `borders.rs` in
+`crates/analysis/src`; `decode.rs`, `codecs.rs`, `resize.rs` in `crates/codec/src`; `pdq_index.rs` in
+`crates/dedup/src`; `metadata.rs` is `crates/metadata/src/lib.rs`; `video.rs` is `crates/video/src/lib.rs`;
+`catalog.rs` is `crates/catalog/src/lib.rs` and `browse.rs` is `crates/catalog/src/browse.rs`; `media.rs` is in
+`crates/model/src`; `paths.rs` is split into `crates/model/src/path.rs` (`PathArena`, `WorkList`) and
+`crates/platform/src/verbatim.rs` (`verbatim_wide`); `main.rs` is `crates/gallery/src/main.rs`. Line numbers
+are those of the profiled commits and have drifted.
 
 **Profiles:** `target/dhat/gallery.exe` (commit d2205ba, `--profile dhat --features dhat-heap`), untrimmed
 (`PG_DHAT_UNTRIMMED=1`), in `D:\PhotoGallery\scratch_dhat`:
@@ -239,7 +251,7 @@ files.
 | 9 + 6 + 3 + 1 / – | 3.7 KB | `metadata.rs:152`, `:169`, `:165`, `:456` | The kept XML reader's buffers, values and packet list growing with the first packets: the workspace (4,542 blocks before) |
 | – / 29 + 3 + 3 + 2 | 16.1 MB | `resize.rs:92`, `:88`, `thumbs.rs:157`, `decode.rs:287` | The resizer, the kept JPEG buffer and the turned copy growing: the workspace |
 | – / 20 | 1.7 KB | `video.rs:55` | FFmpeg's paths: 2 blocks for each of the 10 videos |
-| – / 5 + 11 + 15 | 64 KB | `ingest/thumbs.rs:54`, `thumbs.rs:456`, `:458`, `:787`–`:802` | Each batch handed to the cache's writer, and the writer's replies: by design |
+| – / 5 + 11 + 15 | 64 KB | `library/thumbs.rs:54`, `thumbs.rs:456`, `:458`, `:787`–`:802` | Each batch handed to the cache's writer, and the writer's replies: by design |
 | ~150 / ~170 | ~15 KB | `cli.rs`, `main.rs:49`, `pipeline.rs`, `catalog.rs`, `thumbs.rs:397`, `browse.rs:888`, `borders.rs:36` | The command line, threads, channels, connections, the batch |
 
 The decoders' allocations (thumbnail pass, by the innermost library frame):

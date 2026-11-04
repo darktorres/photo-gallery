@@ -64,7 +64,7 @@ read-only agent's reading, not a line I checked myself.
 ### 2. Compute scrollbar landmarks in the same scan as the filter
 
 - **Ours:** the desktop scrollbar is a linear map over the whole list
-  (`crates/desktop/qml/Main.qml`, `gridBar`, around lines 825–860). It shows no date markers.
+  (`crates/desktop/qml/GalleryGrid.qml`, `gridBar`, lines 105–145). It shows no date markers.
 - **Theirs:** year and month boundaries are computed during the filter scan and returned with
   the snapshot (`get_prefetch.rs:99-153`; survey).
 - **Proposal:** when the list is built, record the first index of each year and month. Expose
@@ -108,7 +108,8 @@ read-only agent's reading, not a line I checked myself.
   cap (`tasks/actor/folder_import.rs:285-330`; survey), and reads whole files into memory before
   decoding (`operations/indexation/generate_dynamic_image.rs`; survey).
 - **Decode is scaled.** JPEGs are DCT-scaled to at least 512×320 before analysis
-  (`crates/codec/src/decode.rs`). Urocissa decodes at full resolution.
+  (`crates/analysis/src/analyze.rs:32-34`, scaling in `crates/codec/src/decode.rs`). Urocissa decodes at full
+  resolution.
 - **Near-duplicate detection.** We run PDQ with 16-chunk multi-index lookup at radius ≤ 31
   (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/FINDINGS.md`. Urocissa
   does exact hashing only. Its perceptual hash is computed but not used.

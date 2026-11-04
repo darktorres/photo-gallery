@@ -1,18 +1,58 @@
-# M1–M2: core, import and desktop UI (Rust)
+# The crates: library, import and desktop UI (Rust)
 
-See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.md` ("M1 import").
+See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.md` ("M1 import"). The layering is in
+`docs/plans/CRATE_LAYERING_PLAN.md`; the steps that built it are in `docs/REFACTOR_PLAN.md`.
 
-- `client` (`pg-client`): the front end's logic, Qt-free: the justified layout so far (S-10 moves the rest of the
-  desktop's logic in). The rest of this map is rewritten with the crate map at S-13.1.
-- `library` (`pg-library`): the passes over the originals (scan, import, borders, thumbnails, cropped copies), the
-  app's background job that runs them, the writer that puts ratings and turns into the files (`writeback`), and
+Every directory under `crates/` is one package, named `pg-<directory>`. From the bottom up:
+
+- `model` (`pg-model`): the domain data: the analysis record, border detection, EXIF orientation, PDQ, formats, media
+  kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
+  turns, writes). Pure and WASM-safe: no file, catalog, decoder or platform calls.
+- `platform` (`pg-platform`): the operating system behind portable functions. Win32 calls are made here and only here
+  (file identity, directory handles, priorities, processes, verbatim paths, message boxes).
+- `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
+  GIF chunks, extended XMP packets, as byte ranges.
+- `metadata` (`pg-metadata`): ratings, dates, orientation and frame counts as the files hold them (XMP parsed as XML;
+  the only XML parser).
+- `codec` (`pg-codec`): every format's decoder and encoder (libjpeg-turbo, PNG, GIF, WebP, TIFF, BMP), the resizer and
+  the animation frames. The one place the image codecs are linked (`deny.toml`).
+- `video` (`pg-video`): videos through FFmpeg: the probe, the poster frame, the file hash. Its build script finds the
+  FFmpeg build and copies its DLLs.
+- `exiftool` (`pg-exiftool`): ExifTool kept running (`-stay_open`), for writing ratings and orientation and copying
+  metadata.
+- `edit` (`pg-edit`): the lossless edits of a file in its own bytes: the turns and the crops (`rotate.rs`, `crop.rs`,
+  `rewrite.rs`).
+- `analysis` (`pg-analysis`): the import's analysis of a file: its hashes (BLAKE3, XXH3, PDQ, ThumbHash) and the border
+  detector (`BORDERS_VERSION`).
+- `dedup` (`pg-dedup`): the tier-1 duplicates: the PDQ index, the import's pairing and the union-find that groups
+  pairs.
+- `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`) and the viewer's
+  images (`display`).
+- `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
+  schema, the writes, the reads (`browse`), the filters and sort (`query.rs`) and the duplicate reports.
+- `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
+- `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
+  pause, stop), the job thread and schedule, the panics it catches and the event bus.
+- `yandex` (`pg-yandex`): Yandex Images reverse search: the upload, the two result lists and the downloads (the only
+  HTTP client).
+- `library` (`pg-library`): the passes over the originals (scan, import, borders, thumbnails, cropped copies,
+  duplicates), the job (`runner`) that runs them in order, and the writer that puts ratings and turns into the files
+  (`writeback`).
+- `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
+  picks, input, keys, text and the folder tree.
+- `app` (`pg-app`): the UI-free application layer the front ends share: opens the app from a `Config`, reads what the
+  window shows (`reader.rs`, off the UI thread), edits, preferences (`gallery.json`), saved views, the library, the
+  Yandex search, and reports through a notes bus.
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports.
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
-  flat folder), the image providers and the GPU device.
+  flat folder), the image providers and the GPU device. The only crate that links Qt.
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
   command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
   the program runs commands only, and builds without Qt.
+- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
+- `testkit` (`pg-testkit`): helpers for the crates' tests (scratch folders under `PG_TEST_DIR`).
+- `bench` (`pg-bench`): the callgrind benches (`benches/ir.rs`), built on Linux only.
 
 ## Build
 
@@ -49,8 +89,10 @@ just lint    # rustfmt, clippy, cargo-deny, cargo-machete, ruff, markdownlint, t
 it was: QML edits show without a rebuild. QML errors go to the debugger output unless
 `QT_FORCE_STDERR_LOGGING=1` is set.
 
-`just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
-(the allowed list is in `deny.toml`), duplicate versions, and Qt staying out of `pg-client` and `pg-library`;
+`just lint` also checks that `pg-model` and `pg-client` build for WebAssembly (`wasm32-unknown-unknown`) and that the
+rustdoc has no warnings. `just wsl-check` runs clippy in WSL for the Linux-only code. `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
+(the allowed list is in `deny.toml`), duplicate versions, and each dependency staying in its crates (Qt in `pg-desktop` alone, the image codecs in
+`pg-codec`, SQLite in `pg-catalog` and `pg-thumbcache`);
 `cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or
 function the QML compiler (qmlcachegen, as the build runs it) leaves to the interpreter instead of compiling to C++.
 It reads the Rust types from the last build, so build first (`tools/lint-qml.ps1` says why it lints a copy of the
@@ -71,8 +113,8 @@ folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they surviv
 Saved views and where you were (folder, filters, sort, selected file) are in the catalog.
 
 The catalog schema is one baseline (`crates/catalog/src/lib.rs`). Until the first catalog worth keeping, schema changes edit it in
-place, with no new version, so a catalog made before a change has to be deleted and re-imported. The migration
-mechanism is in place for later, unused.
+place, with no new version: a catalog made before a change is copied into one in the new layout when it is opened
+(`rebuild`), and the import redoes what the change made stale. The migration mechanism is in place for later, unused.
 
 Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
@@ -102,13 +144,13 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 `| Out-Host`.
 
 - **Scan** lists folders by directory handle, which yields each file's NTFS file ID: a moved or renamed file
-  keeps its row and its analysis. It records the files whose extension is a supported format (`media.rs`), with
+  keeps its row and its analysis. It records the files whose extension is a supported format (`crates/model/src/media.rs`), with
   their extension and kind.
 - **Import** reads files in MFT-record order with 8 reads in flight, decodes once (libjpeg-turbo, DCT-scaled
   to ≥ 512 × 320), and stores the BLAKE3 file hash, the pixel hash, PDQ, dimensions and a ThumbHash, plus the
   frame count (from the GIF, APNG or WebP container) and the date taken (EXIF DateTimeOriginal, else XMP). Each new
   PDQ hash is queried (all 8 orientations) and then inserted, so tier-1 pairs (d ≤ 31) come out of the import
-  itself. A video (`video.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
+  itself. A video (`crates/video/src/lib.rs`) is hashed by streaming, never read whole. Its upright size, duration, codec and
   creation date come from the container: the rotation matrix, and Apple's local creation date before the UTC
   `creation_time`. Its ThumbHash comes from the poster frame, at 10% of the duration (at most 10 s). Videos get
   no pixel hash or PDQ, so tiers 0b and 1 don't cover them. Every 500 files is one transaction; a rerun continues
@@ -130,7 +172,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   - Its layout version stays 1 before the first release, like the catalog's: a layout change edits it in place,
     and an existing cache file is deleted by hand. A file of another version is refused, and one that can't be
     opened only means thumbnails aren't kept.
-- **Borders** (`borders.rs`, a port of the Python prototype `tools/borders.py`, now in git history; FINDINGS
+- **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, now in git history; FINDINGS
   "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
   the stored pixels at full size.
   A pass of its own after the import (`gallery borders`, or the background job before the thumbnails) reads and
@@ -150,7 +192,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
 ImageRater's triage, without Everything: open "Unrated", largest first, rate each picture and move on.
 
 The window comes up before anything is read from the catalog: the folder tree, the grid's files and the filter
-counts are read by a thread of their own (`loader.rs`), oldest request first, each kind keeping only its newest
+counts are read by a thread of their own (`crates/app/src/reader.rs`), oldest request first, each kind keeping only its newest
 (which cancels one of its kind running), and shown when they arrive ("Loading…" meanwhile). The selection stays
 with its file when a list is refreshed; while the viewer is open a new list waits for it to close. A rating or a turn
 made while a list was on its way is kept. Startup times are in FINDINGS "Startup".
@@ -196,11 +238,11 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
     shows until the first frame. The transport bar has play / pause (**K**), the time, a seek bar, mute (**M**)
     and volume. Rating, turning and stepping work as on pictures; zoom, the loupe and Real Size are for stills.
     The player decodes on the GPU, except on a GPU without AV1 decoding (this machine's RTX 2060). There every
-    video decodes on the CPU (AV1 through dav1d) (`gpu_device.rs` explains why).
+    video decodes on the CPU (AV1 through dav1d) (`crates/desktop/src/gpu_device.rs` explains why).
   - **Animated** GIF, APNG and WebP play the same way: our FFmpeg decodes all three. Qt's `AnimatedImage` has no
     APNG, and has WebP only with Qt's Image Formats add-on. They loop silently, without the transport bar; **K**
     pauses.
-  - **≈** (the rating bar) finds similar images on Yandex (`yandex.rs`, `YandexPanel.qml`): the photo is uploaded,
+  - **≈** (the rating bar) finds similar images on Yandex (`crates/yandex`, `crates/app/src/yandex.rs`, `YandexPanel.qml`): the photo is uploaded,
     and a panel shows its other sizes and the similar images. A click picks a result, Shift-click picks or unpicks
     a range (to the state of the result clicked last), and each group has Select all. A double-click shows a
     result at full size, fitted or 1:1 (a click or the button); ←/→ step through the results, Space picks,
@@ -225,19 +267,19 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   file follows in the background, and its analysis and thumbnails are redone.
 - **Save cropped copies (N)…** (the filter bar's borders row) writes the listed files with their borders cut
   off into a folder of your choice, as `<folder>\<library folder name>\<path inside it>`, with the original's
-  modification time, in the background (`ingest::crop`). The originals are never written: a folder whose copies
+  modification time, in the background (`pg_library::crop`). The originals are never written: a folder whose copies
   would land in the library is refused, and a file changed since its borders were found is skipped. JPEGs are
   cropped losslessly; their left and top cuts move inward to the 8 or 16 px block grid. PNG, BMP, GIF and WebP
   are cropped exactly and re-encoded losslessly with every other chunk kept (a lossy WebP comes out lossless,
   larger), TIFF re-encoded with its metadata copied by ExifTool.
-- Test hooks (for checking the UI without a screen; see `Main.qml`): `--size=<px> --select=<n> --view=<n>
+- Test hooks (for checking the UI without a screen; see `TestHooks.qml`): `--size=<px> --select=<n> --view=<n>
   --viewer-keys=LBNHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
   --borders=1 --library=1 --save-view=1 --find-similar=<path> --yandex-preview=<n> --add-folder=<path> --save-crops=<folder>
   --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the first list; the others act on it
   once it is shown, and `--wait` (4 s by default) counts from then. `--borders` shows the borders (B) for the run. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
   opens the panel on its error without sending anything; `--yandex-preview` then shows result n at full size. With
   `QT_QPA_PLATFORM=offscreen` needs `platforms\qoffscreen.dll` next to the exe (from Qt's `plugins\platforms`). The app
-  points `QT_QPA_FONTDIR` at the Windows fonts folder itself when the platform is offscreen (`cpp/gui_app.cpp`), since
+  points `QT_QPA_FONTDIR` at the Windows fonts folder itself when the platform is offscreen (`crates/desktop/cpp/gui_app.cpp`), since
   offscreen's font lookup otherwise finds no fonts and text draws as boxes. Set `QT_FORCE_STDERR_LOGGING=1` to see QML
   messages.
   Offscreen draws with Qt's software renderer, which shows no video frames: check playback through the player's

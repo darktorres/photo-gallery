@@ -69,11 +69,11 @@ pub mod qobject {
 use core::pin::Pin;
 
 use cxx_qt_lib::{QString, QStringList};
-use pg_catalog::browse;
+use pg_app::{Place, SavedView};
 use pg_catalog::query::{from_json, to_json};
 use pg_model::query::{Query, Sort, SortKey};
 
-use crate::state;
+use crate::app;
 
 pub struct ViewRust {
     folder: QString,
@@ -83,12 +83,9 @@ pub struct ViewRust {
     saved_views: QStringList,
 }
 
-fn session(key: &str) -> Option<String> {
-    state::with_catalog(|c| browse::read::session_get(c, key)).ok().flatten()
-}
-
 fn view_names() -> QStringList {
-    state::with_catalog(browse::read::views)
+    app::get()
+        .views()
         .unwrap_or_else(|e| {
             eprintln!("views: {e:#}");
             Vec::new()
@@ -101,12 +98,12 @@ fn view_names() -> QStringList {
 impl Default for ViewRust {
     /// Where the user was.
     fn default() -> ViewRust {
-        let sort = from_json::<Sort>(&session("sort").unwrap_or_default());
+        let place = app::get().place();
         ViewRust {
-            folder: QString::from(&session("folder").unwrap_or_default()),
-            recursive: session("recursive").is_none_or(|r| r == "true"),
-            sort_key: QString::from(sort.key.key()),
-            descending: sort.descending,
+            folder: QString::from(&place.folder),
+            recursive: place.recursive,
+            sort_key: QString::from(place.sort.key.key()),
+            descending: place.sort.descending,
             saved_views: view_names(),
         }
     }
@@ -133,14 +130,17 @@ impl qobject::View {
     }
 
     fn session_query(&self) -> QString {
-        QString::from(&session("query").unwrap_or_default())
+        QString::from(&app::get().session_value("query").unwrap_or_default())
     }
 
     fn save_session(&self, query: &QString) {
-        let (folder, recursive, query, sort) =
-            (self.folder.to_string(), self.recursive.to_string(), query.to_string(), to_json(&self.sort()));
-        let values = [("folder", &*folder), ("recursive", &*recursive), ("query", &*query), ("sort", &*sort)];
-        if let Err(e) = state::with_catalog(|c| browse::writes::session_set_many(c, &values)) {
+        let place = Place {
+            folder: self.folder.to_string(),
+            recursive: self.recursive,
+            sort: self.sort(),
+            query: from_json::<Query>(&query.to_string()),
+        };
+        if let Err(e) = app::get().save_place(&place) {
             eprintln!("session: {e:#}");
         }
     }
@@ -150,21 +150,21 @@ impl qobject::View {
         if name.is_empty() {
             return;
         }
-        let view = browse::read::View {
+        let view = SavedView {
             name,
             folder: self.folder.to_string(),
             recursive: self.recursive,
             query: from_json::<Query>(&query.to_string()),
             sort: self.sort(),
         };
-        if let Err(e) = state::with_catalog(|c| browse::writes::save_view(c, &view)) {
+        if let Err(e) = app::get().save_view(&view) {
             eprintln!("saving view: {e:#}");
         }
         self.set_saved_views(view_names());
     }
 
     fn delete_view(self: Pin<&mut Self>, name: &QString) {
-        if let Err(e) = state::with_catalog(|c| browse::writes::delete_view(c, &name.to_string())) {
+        if let Err(e) = app::get().delete_view(&name.to_string()) {
             eprintln!("deleting view: {e:#}");
         }
         self.set_saved_views(view_names());
@@ -172,8 +172,7 @@ impl qobject::View {
 
     fn apply_view(mut self: Pin<&mut Self>, name: &QString) -> QString {
         let name = name.to_string();
-        let found =
-            state::with_catalog(browse::read::views).ok().and_then(|vs| vs.into_iter().find(|v| v.name == name));
+        let found = app::get().view(&name).ok().flatten();
         let Some(v) = found else { return QString::default() };
         self.as_mut().set_folder(QString::from(&v.folder));
         self.as_mut().set_recursive(v.recursive);

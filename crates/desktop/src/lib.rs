@@ -2,6 +2,7 @@
 //! given no command; everything below the QML lives in `pg-client` and `pg-library`.
 
 mod animation;
+mod app;
 mod app_icon;
 mod command_line;
 mod filters;
@@ -13,12 +14,10 @@ mod keymap;
 mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
-mod loader;
 mod panic_log;
 mod providers;
 mod screenshot;
 mod settings;
-mod state;
 mod trace;
 mod view;
 mod viewport;
@@ -27,7 +26,6 @@ mod words;
 mod yandex;
 
 use std::ffi::OsString;
-use std::path::PathBuf;
 
 use cxx_qt::casting::Upcast;
 use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
@@ -44,19 +42,20 @@ pub fn run(args: &[OsString]) {
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
     let mut gpu: cxx::UniquePtr<gpu_device::ffi::GpuDevice>;
-    let catalog_dir = std::env::var_os("PG_CATALOG_DIR")
-        .map_or_else(|| PathBuf::from(pg_library::DEFAULT_CATALOG_DIR), PathBuf::from);
-    panic_log::install(catalog_dir.parent().unwrap_or(&catalog_dir).join("gallery.log"));
+    // The catalog folder and the preferences file, from the environment.
+    let mut config = pg_app::Config::from_env();
+    panic_log::install(config.catalog_dir.parent().unwrap_or(&config.catalog_dir).join("gallery.log"));
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
-    let cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_thumbcache::parse_cap_gb(&s) {
-        Ok(bytes) => Some(bytes),
-        Err(e) => {
-            panic_log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
-            None
-        }
-    });
-    if let Err(e) = state::init(catalog_dir, cap) {
+    config.thumb_cap_bytes =
+        std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_thumbcache::parse_cap_gb(&s) {
+            Ok(bytes) => Some(bytes),
+            Err(e) => {
+                panic_log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
+                None
+            }
+        });
+    if let Err(e) = app::open(config) {
         fatal(&format!("Can't open the catalog: {e:#}"));
     }
     pg_trace::pg_stage_init_done();
@@ -104,12 +103,12 @@ pub fn run(args: &[OsString]) {
     if let Some(app) = app.as_mut() {
         app.exec();
     }
-    loader::stop();
-    library::stop();
-    // The engine ends the image providers, and Qt joins their thread pools as they end: the connections those threads
-    // hold close with them, before the state closes its own.
+    // The background work stops first (the reader, then the library). Then the engine ends the image providers, and
+    // Qt joins their thread pools as they end: the connections those threads hold close with them, before the app
+    // closes its own (`app::shutdown`).
+    app::stop();
     drop(engine);
-    state::shutdown();
+    app::shutdown();
 }
 
 /// A GUI program has nowhere to print: show the error, then quit.

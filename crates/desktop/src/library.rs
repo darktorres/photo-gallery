@@ -1,8 +1,8 @@
-//! The library (the folders the user added) and the background work that keeps the catalog and the files in step:
-//! the job that saves cropped copies, scans, imports and makes thumbnails (`pg_library::runner`), and the writer
-//! that puts ratings and turns into the files (`pg_library::writeback`). QML polls `poll()` for progress, and
-//! reloads its views on `scanned` (the folder tree changed), `imported` (sizes and placeholders changed) and
-//! `filesChanged` (files were turned).
+//! The library (the folders the user added) and the background work that keeps the catalog and the files in step: the
+//! job that scans, imports, makes thumbnails and saves cropped copies, and the writer that puts ratings and turns into
+//! the files. Both run in `pg_app` (`App::library`), which announces what changed on one bus. A thread here subscribes
+//! to that bus and queues each change onto the Qt thread, which reads the new state and updates the properties and
+//! emits `scanned`, `imported` and `filesChanged`. QML doesn't poll.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -34,6 +34,8 @@ pub mod qobject {
         #[qproperty(bool, write_failed, cxx_name = "writeFailed", READ, WRITE, NOTIFY, FINAL)]
         type Library = super::LibraryRust;
     }
+
+    impl cxx_qt::Threading for Library {}
 
     unsafe extern "RustQt" {
         #[qsignal]
@@ -71,59 +73,23 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "togglePause"]
         fn toggle_pause(self: Pin<&mut Library>);
-
-        #[qinvokable]
-        fn poll(self: Pin<&mut Library>);
     }
 }
 
 use core::pin::Pin;
 use std::sync::OnceLock;
 
-use cxx_qt::CxxQtType;
+use cxx_qt::Threading;
 use cxx_qt_lib::{QString, QStringList, QUrl};
 use pg_client::text;
 use pg_jobs::control::{Phase, Progress};
-use pg_library::runner::{Generation, Notice, Runner};
-use pg_library::scan::normalize_path;
-use pg_library::writeback::Writer;
-use pg_model::ids::FileId;
+use pg_library::Change;
+use pg_library::runner::Notice;
 
-use crate::state;
+use crate::app;
 
-static RUNNER: OnceLock<Runner> = OnceLock::new();
-static WRITER: OnceLock<Writer> = OnceLock::new();
-
-/// Something was queued for the files (a rating, a turn).
-pub fn wake_writer() {
-    if let Some(w) = WRITER.get() {
-        w.wake();
-    }
-}
-
-/// Save cropped copies of these files' borders into `folder`, first thing in the background job.
-pub fn save_crops(ids: Vec<FileId>, folder: std::path::PathBuf) {
-    if let Some(r) = RUNNER.get() {
-        r.save_crops(ids, folder);
-    }
-}
-
-/// After the event loop, before the thumbnail cache closes: let the file write in progress finish, with its
-/// thumbnails retagged. Then the background job stops after the file (or batch) it has, and its thread ends, so its
-/// connections close. What it stops in the middle is redone at the next start. The wait is bounded: a file that
-/// takes longer to read than `JOB_STOP_WAIT` is left to end with the process, as before.
-pub fn stop() {
-    if let Some(w) = WRITER.get() {
-        w.stop();
-    }
-    if let Some(r) = RUNNER.get()
-        && !r.stop(JOB_STOP_WAIT)
-    {
-        eprintln!("background job still running at exit: its last changes are merged at the next open");
-    }
-}
-
-const JOB_STOP_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// The library, once `start` has started it: what the change pump and the folder operations read.
+static LIBRARY: OnceLock<&'static pg_app::Library> = OnceLock::new();
 
 #[derive(Default)]
 pub struct LibraryRust {
@@ -136,16 +102,6 @@ pub struct LibraryRust {
     message_warning: bool,
     writes: QString,
     write_failed: bool,
-    seen: Generation,
-    seen_turned: u64,
-    seen_rounds: u64,
-}
-
-fn library_roots() -> Vec<String> {
-    state::with_catalog(|c| Ok(c.roots()?.into_iter().map(|r| r.path).collect())).unwrap_or_else(|e| {
-        eprintln!("library: {e:#}");
-        Vec::new()
-    })
 }
 
 /// The status line's text for a pass's progress; empty when idle.
@@ -183,122 +139,138 @@ impl qobject::Library {
     }
 
     fn load_roots(self: Pin<&mut Self>) {
-        self.set_roots(library_roots().iter().map(QString::from).collect());
+        let roots = app::get().roots().unwrap_or_else(|e| {
+            eprintln!("library: {e}");
+            Vec::new()
+        });
+        self.set_roots(roots.iter().map(QString::from).collect());
     }
 
     fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
+        if LIBRARY.get().is_some() {
+            return;
+        }
         self.as_mut().load_roots();
-        let height = thumb_height.max(1) as u32;
-        RUNNER.get_or_init(|| Runner::start(state::get().catalog_path.clone(), state::thumbs(), height));
-        WRITER.get_or_init(|| Writer::start(state::get().catalog_path.clone(), state::thumbs()));
-    }
-
-    fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
-        let path = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
-        let root = match normalize_path(&path) {
-            Ok(r) => r,
-            Err(e) => return self.show(format!("{e:#}"), true),
-        };
-        match state::with_catalog(|c| c.add_root(&root)) {
-            // A folder inside the library is just rescanned.
-            Ok(added) => {
-                if !added {
-                    self.as_mut().show(format!("{root} is already in the library: rescanning it"), false);
+        let library = app::get().library(thumb_height.max(1) as u32);
+        // Subscribed before the pump starts, so no change is missed between the start and the first one it handles.
+        let changes = library.changes().subscribe();
+        let _ = LIBRARY.set(library);
+        let thread = self.qt_thread();
+        std::thread::Builder::new()
+            .name("library changes".into())
+            .spawn(move || {
+                while let Some(change) = changes.recv() {
+                    // Fails only when the window is gone: the pump ends with it.
+                    if thread.queue(move |library| library.on_change(change)).is_err() {
+                        break;
+                    }
                 }
+            })
+            .expect("spawn the library's change pump");
+        // The state as it is now, for what was announced before the pump.
+        self.as_mut().refresh_progress();
+        self.as_mut().refresh_writes();
+    }
+
+    /// One change from the job or the writer, on the Qt thread.
+    fn on_change(mut self: Pin<&mut Self>, change: Change) {
+        match change {
+            Change::Progress => self.as_mut().refresh_progress(),
+            Change::Notice => self.as_mut().show_notices(),
+            Change::Writes => self.as_mut().refresh_writes(),
+            Change::Turned => {
+                // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
+                if let Some(library) = LIBRARY.get() {
+                    library.wake_job();
+                }
+                self.as_mut().files_changed();
             }
-            Err(e) => return self.show(format!("{e:#}"), true),
-        }
-        self.as_mut().load_roots();
-        if let Some(r) = RUNNER.get() {
-            r.scan(vec![root]);
-        }
-    }
-
-    fn remove_folder(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
-        let removed = state::with_catalog(|c| match c.root_id(&path)? {
-            Some(id) => c.remove_root(id),
-            None => Ok(None),
-        });
-        if let Err(e) = removed {
-            return self.show(format!("{e:#}"), true);
-        }
-        // A scan of it in progress stops; the job skips folders no longer in the library.
-        if let Some(r) = RUNNER.get() {
-            r.scan(Vec::new());
-        }
-        self.as_mut().load_roots();
-        self.scanned();
-    }
-
-    fn rescan(self: Pin<&mut Self>) {
-        if let Some(r) = RUNNER.get() {
-            r.scan(library_roots());
+            Change::Scanned => self.as_mut().scanned(),
+            Change::Imported => self.as_mut().imported(),
+            // The job's rounds, counted as stages for measuring (docs/PROFILING.md).
+            Change::Round => pg_trace::pg_stage_round_done(),
         }
     }
 
-    fn set_thumb_height(&self, height: i32) {
-        if let Some(r) = RUNNER.get() {
-            r.set_thumb_height(height.max(1) as u32);
-        }
-    }
-
-    fn toggle_pause(mut self: Pin<&mut Self>) {
-        let Some(r) = RUNNER.get() else { return };
-        r.set_paused(!r.is_paused());
-        self.as_mut().poll();
-    }
-
-    fn poll(mut self: Pin<&mut Self>) {
-        let Some(r) = RUNNER.get() else { return };
-        let p = r.progress();
-        let paused = r.is_paused();
-        let status = match (paused, progress_status(&p)) {
+    /// The job's pass and its pause: the status line, the busy state and the progress.
+    fn refresh_progress(mut self: Pin<&mut Self>) {
+        let Some(library) = LIBRARY.get() else { return };
+        let status = library.status();
+        let p = &status.progress;
+        let line = match (status.paused, progress_status(p)) {
             (true, s) if s.is_empty() => "Background work paused".to_string(),
             (true, s) => format!("Paused · {s}"),
             (false, s) => s,
         };
         self.as_mut().set_busy(p.phase != Phase::Idle);
-        self.as_mut().set_paused(paused);
-        self.as_mut().set_status(QString::from(&status));
+        self.as_mut().set_paused(status.paused);
+        self.as_mut().set_status(QString::from(&line));
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
-        // The latest message, with how many others came in since the last poll: the runner keeps the newest and
-        // counts what it dropped, so none goes unannounced.
-        let taken = r.take_messages();
+    }
+
+    /// The writer's queue and its latest failure.
+    fn refresh_writes(mut self: Pin<&mut Self>) {
+        let Some(library) = LIBRARY.get() else { return };
+        let s = library.status().writes;
+        let writes = text::write_status(s.queued, s.error.as_deref());
+        if self.writes.to_string() != writes {
+            self.as_mut().set_writes(QString::from(&writes));
+        }
+        self.as_mut().set_write_failed(s.error.is_some());
+    }
+
+    /// The newest notice from the job, with how many others came in since the last one: the job keeps the newest and
+    /// counts what it dropped, so none goes unannounced.
+    fn show_notices(self: Pin<&mut Self>) {
+        let Some(library) = LIBRARY.get() else { return };
+        let taken = library.take_messages();
         if let Some(last) = taken.kept.back() {
             let more = taken.kept.len() - 1 + taken.not_kept;
             let text = notice_text(last);
             let text = if more == 0 { text } else { format!("{text} (and {more} more)") };
-            self.as_mut().show(text, last.is_warning());
+            self.show(text, last.is_warning());
         }
-        if let Some(w) = WRITER.get() {
-            let s = w.status();
-            let failed = s.error.is_some();
-            let writes = text::write_status(s.queued, s.error.as_deref());
-            if self.writes.to_string() != writes {
-                self.as_mut().set_writes(QString::from(&writes));
+    }
+
+    fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
+        let path = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
+        match app::get().add_folder(&path) {
+            Ok((root, added)) => {
+                // A folder already in the library is rescanned (the app scans it either way).
+                if !added {
+                    self.as_mut().show(format!("{root} is already in the library: rescanning it"), false);
+                }
+                self.as_mut().load_roots();
             }
-            self.as_mut().set_write_failed(failed);
-            // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
-            let turned = w.turned();
-            if std::mem::replace(&mut self.as_mut().rust_mut().seen_turned, turned) != turned {
-                r.wake();
-                self.as_mut().files_changed();
+            Err(e) => self.show(format!("{e}"), true),
+        }
+    }
+
+    fn remove_folder(mut self: Pin<&mut Self>, path: &QString) {
+        match app::get().remove_folder(&path.to_string()) {
+            Ok(()) => {
+                self.as_mut().load_roots();
+                self.scanned();
             }
+            Err(e) => self.show(format!("{e}"), true),
         }
-        let now = r.generation();
-        let seen = std::mem::replace(&mut self.as_mut().rust_mut().seen, now);
-        if now.scans != seen.scans {
-            self.as_mut().scanned();
-        } else if now.imports != seen.imports {
-            self.as_mut().imported();
+    }
+
+    fn rescan(self: Pin<&mut Self>) {
+        if let Err(e) = app::get().rescan() {
+            self.show(format!("{e}"), true);
         }
-        // The job's rounds, counted as stages for measuring (docs/PROFILING.md); a round ends on its own thread, so
-        // it is counted here, on the poll that sees it.
-        let rounds = r.rounds();
-        let seen_rounds = std::mem::replace(&mut self.as_mut().rust_mut().seen_rounds, rounds);
-        for _ in seen_rounds..rounds {
-            pg_trace::pg_stage_round_done();
+    }
+
+    fn set_thumb_height(&self, height: i32) {
+        if let Some(library) = LIBRARY.get() {
+            library.set_thumb_height(height.max(1) as u32);
         }
+    }
+
+    fn toggle_pause(mut self: Pin<&mut Self>) {
+        let Some(library) = LIBRARY.get() else { return };
+        library.set_paused(!library.is_paused());
+        self.as_mut().refresh_progress();
     }
 }

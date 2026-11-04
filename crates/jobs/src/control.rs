@@ -2,7 +2,7 @@
 //! thumbnail height, quitting). It holds no text: whoever shows the progress formats it (the command line, the app).
 
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Condvar, Mutex};
+use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::events::{Bus, Subscription, Watch};
@@ -81,6 +81,9 @@ pub struct Control {
     resumed: Condvar,
     progress: Watch<Progress>,
     events: Bus<Event>,
+    /// Called whenever what `snapshot` or `is_paused` says changes (progress, the pause), for an owner that
+    /// reads them on its own thread instead of polling.
+    hook: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// When the last progress event went out.
     last_event: Mutex<Instant>,
 }
@@ -93,6 +96,7 @@ impl Control {
             resumed: Condvar::new(),
             progress: Watch::new(Progress::idle()),
             events: Bus::new(EVENT_CAP),
+            hook: OnceLock::new(),
             last_event: Mutex::new(Instant::now()),
         }
     }
@@ -114,9 +118,23 @@ impl Control {
     }
 
     pub fn set_paused(&self, paused: bool) {
-        let mut guard = self.paused.lock().unwrap();
-        *guard = paused;
-        self.resumed.notify_all();
+        {
+            let mut guard = self.paused.lock().unwrap();
+            *guard = paused;
+            self.resumed.notify_all();
+        }
+        self.changed();
+    }
+
+    /// The hook `changed` calls from now on (set once: a second one is ignored).
+    pub fn on_change(&self, hook: impl Fn() + Send + Sync + 'static) {
+        let _ = self.hook.set(Box::new(hook));
+    }
+
+    fn changed(&self) {
+        if let Some(hook) = self.hook.get() {
+            hook();
+        }
     }
 
     pub fn is_paused(&self) -> bool {
@@ -141,6 +159,7 @@ impl Control {
         let now = Instant::now();
         *self.last_event.lock().unwrap() = now;
         self.progress.set(Progress { phase, done: 0, total, failed: 0, bytes: 0, started: now });
+        self.changed();
     }
 
     /// One file done.
@@ -167,12 +186,14 @@ impl Control {
             *last = Instant::now();
             self.events.publish(Event::Progress(progress));
         }
+        self.changed();
     }
 
     /// The phase ended: its final progress goes out as an event, and the phase is idle.
     pub fn finish(&self) {
         let ended = self.progress.update(|p| std::mem::replace(p, Progress::idle()));
         self.events.publish(Event::Finished(ended));
+        self.changed();
     }
 
     pub fn snapshot(&self) -> Progress {

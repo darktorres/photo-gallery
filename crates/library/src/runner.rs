@@ -18,6 +18,7 @@ use std::time::Duration;
 use anyhow::Result;
 use pg_catalog::Catalog;
 use pg_jobs::control::{Control, Progress};
+use pg_jobs::events::Bus;
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
@@ -27,7 +28,7 @@ use pg_model::path::is_under;
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
-use crate::{borders, crop, import, scan, thumbs};
+use crate::{Change, borders, crop, import, scan, thumbs};
 
 #[derive(Default)]
 struct Queue {
@@ -48,6 +49,8 @@ struct Inner {
     /// Rounds finished, however they ended: the app marks each one as a stage for measuring (docs/PROFILING.md).
     rounds: AtomicU64,
     messages: Mutex<Messages>,
+    /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.
+    changes: Arc<Bus<Change>>,
 }
 
 /// Something the job tells the user: a problem it ran into, or how a job asked for went. The job says what happened
@@ -116,8 +119,13 @@ pub struct Runner {
 
 impl Runner {
     /// Start the job thread. It begins by importing whatever is pending and making the thumbnails still missing
-    /// at `thumb_height`.
-    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, thumb_height: u32) -> Runner {
+    /// at `thumb_height`. What it changes is published on `changes` (`Change`).
+    pub fn start(
+        catalog_path: PathBuf,
+        thumbs: &'static ThumbCache,
+        thumb_height: u32,
+        changes: Arc<Bus<Change>>,
+    ) -> Runner {
         let inner = Arc::new(Inner {
             catalog_path,
             thumbs,
@@ -128,7 +136,10 @@ impl Runner {
             imports_done: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
             messages: Mutex::new(Messages::default()),
+            changes,
         });
+        let announce = inner.changes.clone();
+        inner.ctl.on_change(move || announce.publish(Change::Progress));
         let job = inner.clone();
         let service = Service::start("background job", move |waker| job.run(waker));
         Runner { inner, service }
@@ -215,6 +226,17 @@ impl Runner {
 impl Inner {
     fn notify(&self, notice: Notice) {
         self.messages.lock().unwrap().push(notice);
+        self.changes.publish(Change::Notice);
+    }
+
+    fn scanned(&self) {
+        self.scans_done.fetch_add(1, Ordering::Relaxed);
+        self.changes.publish(Change::Scanned);
+    }
+
+    fn imported(&self) {
+        self.imports_done.fetch_add(1, Ordering::Relaxed);
+        self.changes.publish(Change::Imported);
     }
 
     fn run(&self, waker: &Waker<'_>) {
@@ -239,6 +261,7 @@ impl Inner {
                 Err(notice) => self.notify(notice),
             }
             self.rounds.fetch_add(1, Ordering::Relaxed);
+            self.changes.publish(Change::Round);
         }
     }
 
@@ -322,7 +345,7 @@ impl Pass<Cx<'_>> for Scans {
                 Ok(s) => {
                     // A scan stopped early has committed what it recorded so far.
                     if s.changed > 0 || s.missing > 0 {
-                        cx.inner.scans_done.fetch_add(1, Ordering::Relaxed);
+                        cx.inner.scanned();
                     }
                     if !s.complete {
                         cx.inner.queue.lock().unwrap().scans.push_front(root);
@@ -335,7 +358,7 @@ impl Pass<Cx<'_>> for Scans {
                 Err(e) => {
                     cx.inner.notify(Notice::ScanFailed { root, error: format!("{e:#}") });
                     // Its batches before the error are in.
-                    cx.inner.scans_done.fetch_add(1, Ordering::Relaxed);
+                    cx.inner.scanned();
                 }
             }
         }
@@ -349,7 +372,7 @@ impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
         let s = import::import(cx.catalog, &Options::new(Priority::BelowNormal), false, &cx.inner.ctl)?;
         if s.files > 0 {
-            cx.inner.imports_done.fetch_add(1, Ordering::Relaxed);
+            cx.inner.imported();
         }
         Ok(Step::Done)
     }
@@ -363,7 +386,7 @@ impl Pass<Cx<'_>> for Borders {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
         let s = borders::find(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
         if s.files > 0 {
-            cx.inner.imports_done.fetch_add(1, Ordering::Relaxed);
+            cx.inner.imported();
         }
         Ok(Step::Done)
     }

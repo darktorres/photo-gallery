@@ -23,13 +23,15 @@ use pg_catalog::Catalog;
 use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
-use pg_jobs::events::Watch;
+use pg_jobs::events::{Bus, Watch};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
 use pg_model::write::WriteKind;
 use pg_thumbcache::ThumbCache;
+
+use crate::Change;
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
 const SETTLE_SECS: i64 = 2;
@@ -53,6 +55,20 @@ struct Inner {
     status: Watch<WriteStatus>,
     /// Files turned so far: their pixels changed, so the app reloads them and the job re-analyzes them.
     turned: Watch<u64>,
+    /// Told what changed (`Change::Writes`, `Change::Turned`).
+    changes: Arc<Bus<Change>>,
+}
+
+impl Inner {
+    fn update_status(&self, change: impl FnOnce(&mut WriteStatus)) {
+        self.status.update(change);
+        self.changes.publish(Change::Writes);
+    }
+
+    fn turned_once(&self) {
+        self.turned.update(|t| *t += 1);
+        self.changes.publish(Change::Turned);
+    }
 }
 
 /// The writer thread: wakes for the queue, and rechecks it every `IDLE_CHECK` (retries, offline drives).
@@ -62,10 +78,15 @@ pub struct Writer {
 }
 
 impl Writer {
-    /// Start the writer thread.
-    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache) -> Writer {
-        let inner =
-            Arc::new(Inner { catalog_path, thumbs, status: Watch::new(WriteStatus::default()), turned: Watch::new(0) });
+    /// Start the writer thread. What it changes is published on `changes` (`Change`).
+    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, changes: Arc<Bus<Change>>) -> Writer {
+        let inner = Arc::new(Inner {
+            catalog_path,
+            thumbs,
+            status: Watch::new(WriteStatus::default()),
+            turned: Watch::new(0),
+            changes,
+        });
         let job = inner.clone();
         let service = Service::start("file writer", move |waker| job.run(waker));
         Writer { inner, service }
@@ -104,7 +125,7 @@ impl Inner {
                 Ok(())
             });
             if let Err(e) = drained {
-                self.status.update(|s| s.error = Some(format!("{e:#}")));
+                self.update_status(|s| s.error = Some(format!("{e:#}")));
             }
         }
     }
@@ -116,7 +137,7 @@ impl Inner {
                 return Ok(());
             }
             let queued = writes::remaining(catalog)?;
-            self.status.update(|s| s.queued = queued);
+            self.update_status(|s| s.queued = queued);
             // Finishing interrupted copies first; then the oldest settled change (`writes::next_ready`).
             let Some(job) = writes::next_ready(catalog, SETTLE_SECS)? else {
                 if writes::attemptable(catalog)? {
@@ -138,11 +159,11 @@ impl Inner {
                     job.kind.key(),
                     job.file_id.get()
                 );
-                self.status.update(|s| s.error = Some(message));
+                self.update_status(|s| s.error = Some(message));
                 continue;
             }
             match self.process(catalog, &job, exiftool) {
-                Ok(()) => self.status.update(|s| s.error = None),
+                Ok(()) => self.update_status(|s| s.error = None),
                 Err(e) => {
                     // Offline: the drive (or the file's folder with it) is not there, and the job waits for it. A
                     // missing file on a drive that is there is a failure, counted like any other.
@@ -154,7 +175,7 @@ impl Inner {
                         });
                     let message = format!("{e:#}");
                     writes::failed(catalog, &job, &message, offline)?;
-                    self.status.update(|s| s.error = Some(message));
+                    self.update_status(|s| s.error = Some(message));
                     if offline {
                         // Leave it for the next idle check rather than spinning on it.
                         return Ok(());
@@ -270,7 +291,7 @@ impl Inner {
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
                 let message = format!("file {}: {e:#}", job.file_id.get());
-                self.status.update(|s| s.thumbnail_error = Some(message));
+                self.update_status(|s| s.thumbnail_error = Some(message));
             }
         }
         if pixels_changed {
@@ -296,7 +317,7 @@ impl Inner {
     }
 
     fn pixels_changed(&self) {
-        self.turned.update(|t| *t += 1);
+        self.turned_once();
     }
 }
 

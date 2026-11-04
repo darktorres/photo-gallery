@@ -126,10 +126,9 @@ use pg_catalog::query::{from_json, to_json};
 use pg_model::date::Day;
 use pg_model::query::{BorderFacet, MediaType, Query, parse_number};
 
+use pg_app::Kind;
 use pg_client::input::{bound_is_valid, choice, date_facet, day_end_of, end_of, range_facet};
 use pg_client::text;
-
-use crate::loader::{self, Kind};
 
 pub struct FiltersRust {
     query: QString,
@@ -333,7 +332,7 @@ impl qobject::Filters {
         let (path, query) = (folder.to_string(), self.parsed.clone());
         let filters = self.qt_thread();
         let shown = path.clone();
-        loader::submit(
+        crate::app::get().session().submit(
             Kind::Facets,
             move |c| browse::read::facets(c, &path, recursive, &query),
             move |facets| {

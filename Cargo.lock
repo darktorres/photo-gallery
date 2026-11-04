@@ -1421,6 +1421,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "pg-app"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "pg-catalog",
+ "pg-codec",
+ "pg-jobs",
+ "pg-library",
+ "pg-model",
+ "pg-render",
+ "pg-thumbcache",
+ "pg-video",
+ "pg-yandex",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "thumbhash",
+]
+
+[[package]]
 name = "pg-bench"
 version = "0.1.0"
 dependencies = [
@@ -1514,6 +1534,7 @@ dependencies = [
  "cxx-qt",
  "cxx-qt-build",
  "cxx-qt-lib",
+ "pg-app",
  "pg-catalog",
  "pg-client",
  "pg-codec",
@@ -1521,14 +1542,11 @@ dependencies = [
  "pg-library",
  "pg-model",
  "pg-platform",
- "pg-render",
  "pg-thumbcache",
  "pg-trace",
- "pg-video",
  "pg-yandex",
  "serde",
  "serde_json",
- "thumbhash",
 ]
 
 [[package]]

@@ -1,0 +1,26 @@
+[package]
+name = "pg-app"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The UI-free application layer (PLAN §7): the catalog, the thumbnail cache, the pools, the reader, the library's job
+# and writer, the images, the edits, the views, Yandex and the server's preferences. Sync, runtime-free, no Qt.
+[dependencies]
+pg-catalog = { path = "../catalog" }
+pg-codec = { path = "../codec" }
+pg-jobs = { path = "../jobs" }
+pg-library = { path = "../library" }
+pg-model = { path = "../model" }
+pg-render = { path = "../render" }
+pg-thumbcache = { path = "../thumbcache" }
+pg-video = { path = "../video" }
+pg-yandex = { path = "../yandex" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+thumbhash.workspace = true

@@ -370,7 +370,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let (events, _printer) = thumb_events();
             let cache: &'static ThumbCache =
                 Box::leak(Box::new(ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, None, events)?));
-            let writer = Writer::start(catalog_path.clone(), cache);
+            let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)));
             writer.wake();
             // Until nothing writable is left (failures past their retries stay queued and are reported).
             loop {

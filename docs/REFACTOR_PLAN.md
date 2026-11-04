@@ -764,14 +764,14 @@ Rules that hold for every row:
 | S-10.6 | fixed (with S-10.4, S-10.5, S-10.7, S-10.8) | Input. | |
 | S-10.7 | fixed (with S-10.4 to S-10.6, S-10.8) | Keys. | The key handlers switch on action codes from `keymap.rs`, with a QML `enum` per file that lists them in the same order. The codes replaced the string actions, which the QML compiler couldn't compile. |
 | S-10.8 | fixed (with S-10.4 to S-10.7) | Text. | The QML's own literals (tooltips and the like) were not moved to `text`. |
-| S-11 | open | `pg-app`, each sub-step rewiring the desktop in the same commit. | Rows below. |
-| S-11.1 | open | (a) `Config`, `App`, pools, `images`, the shutdown order. | |
-| S-11.2 | open | (b) `Session` and the `Reader`. | |
-| S-11.3 | open | (c) Edits. | |
-| S-11.4 | open | (d) Views and restore. | |
-| S-11.5 | open | (e) `Watch`/`Bus` replace the polling. | |
-| S-11.6 | open | (f) Yandex. | |
-| S-11.7 | open | (g) The prefs split. | |
+| S-11 | fixed (one commit, with S-11.1 to S-11.7) | `pg-app`, each sub-step rewiring the desktop in the same commit. | Deviation: the sub-steps went in one commit, not one each (the user asked for phase 11 at once, with compilation at the end). Checked: `just lint`, `cargo test --workspace`, and the release build run offscreen on a scratch copy of the synthetic catalog: the grid, viewer (`--view=0`), filters, library and views menu screenshots are pixel-identical to the step-0 baseline. Not run yet: `--viewer-keys`, `--save-crops`, `--find-similar`. |
+| S-11.1 | fixed (with S-11.2 to S-11.7) | (a) `Config`, `App`, pools, `images`, the shutdown order. | `pg-app` depends on pg-codec and pg-video, which the plan's list leaves out (the images need them). `App` leaks the thumbnail cache to a `'static` reference, because `pg-library`'s job and writer take `&'static ThumbCache`. Shutdown: `app::stop`, then the engine, then `app::shutdown` (cache, then the pooled connections, the keeper last). |
+| S-11.2 | fixed (with S-11.1, S-11.3 to S-11.7) | (b) `Session` and the `Reader`. | One reader thread serves every session; a session's requests are keyed by kind (`Grid`, `Tree`, `Facets`), and a newer request replaces its kind's waiting one. |
+| S-11.3 | fixed (with S-11.1, S-11.2, S-11.4 to S-11.7) | (c) Edits. | `rate` wakes the writer even when write-back is off (the old code didn't); the writer does nothing then. |
+| S-11.4 | fixed (with S-11.1 to S-11.3, S-11.5 to S-11.7) | (d) Views and restore. | `FolderModel.restore()` returns the saved folder (merged path) when the tree still has it, else `""`; QML calls it on first load. `save_session` now re-serializes the query and sort through `Place`, so a stored query is canonical JSON, not verbatim. |
+| S-11.5 | fixed (with S-11.1 to S-11.4, S-11.6, S-11.7) | (e) `Watch`/`Bus` replace the polling. | The job's `Control` gets an `on_change` hook; `pg-library` publishes a `Change` bus (Progress, Notice, Scanned, Imported, Round, Writes, Turned). The desktop pump queues each change to the Qt thread; `poll()` and the QML timer are gone. |
+| S-11.6 | fixed (with S-11.1 to S-11.5, S-11.7) | (f) Yandex. | The search and save logic moved to `pg-app::yandex`, print-free. A failed preferences write now reaches the notes bus (`Note::PrefsNotSaved`), not stderr only. |
+| S-11.7 | fixed (with S-11.1 to S-11.6) | (g) The prefs split. | Server prefs (`gallery.json`: write-back, Yandex folder) are `pg-app::Prefs`; the desktop's (real size, borders, row height) are `desktop.json` beside it, migrated from `gallery.json` when absent. Known gap: an unparseable `gallery.json` is renamed before the migration reads it, so its desktop fields are not migrated. |
 | S-12 | open | QML: the facade spike, then one component per commit, then the typed bridge. | Rows below. |
 | S-12.1 | open | The facade spike: a `CurrentItem` of FINAL properties read through a property, plus a `#[qml_singleton]` (checked against `lint-qml`); grid cells reading their values as roles of a per-row item model. | R-63 (the QML guards) is replaced by the roles here. |
 | S-12.2 | open | One component per commit (the split in the QML section). | |

@@ -3,7 +3,8 @@
 //! model holds a compact entry per file (`browse::read::Entry`); a file's path and size are read when it is shown
 //! (`browse::read::details`), for the selection and the viewer's file.
 //!
-//! The files are listed off the GUI thread (`loader`): `openFolder` asks, and the list arrives later (`loaded`).
+//! The files are listed off the GUI thread (the app's catalog reader): `openFolder` asks, and the list arrives
+//! later (`loaded`).
 //! So that nothing is renumbered under the user, the model keeps the items QML holds: the selection (`current`)
 //! moves with its file when a new list arrives, and while the viewer is open (`viewing`) an arriving list waits
 //! for it to close. A rating or a turn made while a list was on its way is read again into it.
@@ -289,8 +290,7 @@ use pg_model::query::{Query, Sort};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
-use crate::loader::{self, Kind as Load};
-use crate::{library, settings, state};
+use pg_app::Kind as Load;
 
 /// A row's items, (first, count) as a point: one value, so a row changed or reused is given its items at once.
 const ROLE_SPAN: i32 = 256;
@@ -339,7 +339,7 @@ impl GalleryRust {
             let found = memo.remove(at);
             memo.insert(0, found);
         } else {
-            let details = match state::with_catalog(|c| browse::read::details(c, e.id)) {
+            let details = match crate::app::get().with_catalog(|c| browse::read::details(c, e.id)) {
                 Ok(d) => d?,
                 Err(err) => {
                     eprintln!("reading {}: {err:#}", e.id.get());
@@ -396,7 +396,7 @@ impl qobject::GalleryModel {
         let (query, sort) = (from_json::<Query>(&query.to_string()), from_json::<Sort>(&sort.to_string()));
         let model = self.qt_thread();
         let shown = path.clone();
-        loader::submit(
+        crate::app::get().session().submit(
             Load::Grid,
             move |c| browse::read::list_grid(c, &path, recursive, &query, sort),
             move |entries| {
@@ -579,11 +579,10 @@ impl qobject::GalleryModel {
         if turns == Turns::NONE {
             return;
         }
-        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::queue_rotation(c, id, turns)) {
+        if let Err(e) = crate::app::get().turn(id, turns) {
             eprintln!("rotating: {e:#}");
             return;
         }
-        library::wake_writer();
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
@@ -636,13 +635,9 @@ impl qobject::GalleryModel {
         let stars = rating.clamp(0, 5) as u8;
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
-        let write_back = settings::prefs().write_back;
-        if let Err(e) = state::with_catalog(|c| pg_catalog::writes::set_rating(c, id, rating, write_back)) {
+        if let Err(e) = crate::app::get().rate(id, rating) {
             eprintln!("rating: {e:#}");
             return;
-        }
-        if write_back {
-            library::wake_writer();
         }
         let loading = self.loading;
         {
@@ -676,7 +671,7 @@ impl qobject::GalleryModel {
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
-        if let Err(err) = state::with_catalog(|c| c.set_border_mark(e.id, marked)) {
+        if let Err(err) = crate::app::get().set_border_mark(e.id, marked) {
             eprintln!("marking borders: {err:#}");
             return;
         }
@@ -716,7 +711,7 @@ impl qobject::GalleryModel {
         let folder = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
         let n = ids.len() as i32;
         if n > 0 {
-            library::save_crops(ids, std::path::PathBuf::from(folder.replace('/', "\\")));
+            crate::app::get().save_crops(ids, std::path::PathBuf::from(folder.replace('/', "\\")));
         }
         n
     }
@@ -772,7 +767,7 @@ impl qobject::GalleryModel {
 
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).
 fn fresh_entry(id: FileId) -> Option<Entry> {
-    match state::with_catalog(|c| browse::read::entry(c, id)) {
+    match crate::app::get().with_catalog(|c| browse::read::entry(c, id)) {
         Ok(found) => found,
         Err(e) => {
             eprintln!("reloading {}: {e:#}", id.get());

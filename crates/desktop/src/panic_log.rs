@@ -1,7 +1,7 @@
 //! Panics in the app. A GUI program has no console, so the default hook's message goes nowhere: a panic on the
 //! UI thread or in an image provider (where it aborts: it can't unwind into Qt) closes the window without a word.
 //! The hook appends the message and a backtrace to `gallery.log` beside the catalog folder (with `gallery.json`).
-//! A panic that ends the process also shows a box with where the log is. A panic that [`catch`] catches is only
+//! A panic that ends the process also shows a box with where the log is. A panic that `pg_jobs::panics::catch` catches is only
 //! logged: its caller reports it in the status line, and the app goes on.
 //!
 //! Crashes that aren't panics (an access violation in Qt or libjpeg-turbo) still end without a trace: that needs
@@ -12,10 +12,6 @@ use std::io::Write as _;
 use std::panic::PanicHookInfo;
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
-
-/// Runs `f`, catching a panic (see the module doc). The caller must report the error it returns. The catch lives in
-/// the job layer, which the background job uses too.
-pub use pg_jobs::panics::catch;
 
 /// The log `install` was given, for [`note`].
 static LOG: OnceLock<PathBuf> = OnceLock::new();

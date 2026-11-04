@@ -103,12 +103,6 @@ ApplicationWindow {
         // Turned files changed in place: no renumbering, so the viewer can stay open.
         onFilesChanged: galleryModel.refreshTurned()
     }
-    Timer {
-        interval: 500
-        running: true
-        repeat: true
-        onTriggered: library.poll()
-    }
     onThumbHeightChanged: library.setThumbHeight(thumbHeight)
     // The tree has been shown once: from then on a new tree (a scan) leaves its folders as the user left them.
     property bool treeShown: false
@@ -226,6 +220,20 @@ ApplicationWindow {
     function treeLoaded() {
         const first = !treeShown
         treeShown = true
+        // At the start, the saved folder if the tree still has it (folders.restore; "" when it is gone, or for all
+        // folders). The list was asked for the saved one: when the answer differs, the list is asked again for it,
+        // and the tree shows it; the list's loading finishes the start.
+        if (first) {
+            const restored = folders.restore()
+            if (restored !== view.folder) {
+                const at = folders.reveal(restored)
+                tree.currentIndex = Math.max(at, 0)
+                if (at >= 0)
+                    tree.positionViewAtIndex(at, ListView.Contain)
+                openPath(restored)
+                return
+            }
+        }
         const row = first ? folders.reveal(view.folder) : folders.rowOf(view.folder)
         if (row >= 0) {
             tree.currentIndex = row

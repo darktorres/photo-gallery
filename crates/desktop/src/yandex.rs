@@ -1,9 +1,7 @@
-//! Reverse image search on Yandex, from the viewer: the other sizes of a photo and the images that look like it
-//! (`pg_yandex`). The search and the downloads run on background threads; QML calls `poll()` while `busy`.
+//! Reverse image search on Yandex, from the viewer: the Qt glue over `pg_app::yandex`. QML calls `poll()` while `busy`.
 //! The results are items by index, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
-//! then the similar images (`similarCount`). The picks to save are kept here too. Nothing here touches the catalog:
-//! the files go into the folder the user picks, named after the photo (`IMG_1234 (yandex 1920x1080).jpg`), and that
-//! folder is remembered (`Prefs::yandex_folder`) for the next save.
+//! then the similar images (`similarCount`). The picks to save are kept here too. The words the panel shows are
+//! formatted here (`pg_client::text` and the QML's own), from the typed outcomes the app returns.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -89,47 +87,18 @@ pub mod qobject {
     }
 }
 
-use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard};
-use std::thread;
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QUrl};
+use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status};
 use pg_client::picks::Picks;
 use pg_client::text;
-use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, YandexError};
-
-use crate::{panic_log, settings};
+use pg_yandex::YandexError;
 
 /// The status line when a search or a save stops at an internal error (the panic is in the log).
 const INTERNAL_STOP: &str = "Stopped by an internal error; the details are in gallery.log.";
-
-/// One result as the panel shows and saves it.
-#[derive(Clone)]
-struct Hit {
-    url: String,
-    thumb: String,
-    width: i32,
-    height: i32,
-    /// What follows the photo's name in the saved file's name, inside the brackets: `yandex 1920x1080`.
-    suffix: String,
-}
-
-/// What a finished search found.
-struct Found {
-    other: Vec<Hit>,
-    similar: Vec<Hit>,
-}
-
-/// What the background threads share with `poll()`.
-#[derive(Default)]
-struct Shared {
-    busy: bool,
-    status: String,
-    found: Option<Found>,
-}
 
 #[derive(Default)]
 pub struct YandexSearchRust {
@@ -139,10 +108,8 @@ pub struct YandexSearchRust {
     similar_count: i32,
     picked_count: i32,
     revision: i32,
-    shared: Arc<Mutex<Shared>>,
-    /// The photo searched for, a local path: the saved files are named after it.
-    photo: String,
-    /// The other sizes, then the similar images.
+    search: Search,
+    /// The other sizes, then the similar images, as the latest search found them.
     hits: Vec<Hit>,
     picks: Picks,
 }
@@ -158,83 +125,64 @@ impl YandexSearchRust {
     }
 }
 
-fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
-    // A thread that panicked must not stop the next search, so a poisoned lock is still used.
-    shared.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
-}
-
-fn set_status(shared: &Mutex<Shared>, text: impl Into<String>) {
-    lock(shared).status = text.into();
-}
-
 /// What the user reads when a request fails.
-fn explain(e: YandexError) -> String {
+fn explain(e: &YandexError) -> String {
     match e {
         YandexError::Captcha => text::YANDEX_CAPTCHA.to_string(),
         other => other.to_string(),
     }
 }
 
-/// Still images only: videos and anything else are refused before anything is sent.
-fn is_still_image(path: &str) -> bool {
-    let ext = Path::new(path).extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
-    matches!(ext.as_deref(), Some("jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp"))
-}
-
-fn dimension(n: u32) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
-}
-
-/// The search, on its own thread: upload, other sizes, similar. Returns what it found, with a note when the similar
-/// images failed (the other sizes are still shown, as the crawler keeps them), or the message to show.
-fn find_similar(path: &str, shared: &Mutex<Shared>) -> Result<(Found, Option<String>), String> {
-    if !is_still_image(path) {
-        return Err(text::YANDEX_NOT_STILL.to_string());
+fn phase_text(phase: Phase) -> String {
+    match phase {
+        Phase::Starting => "Starting…".to_string(),
+        Phase::Uploading => text::YANDEX_UPLOADING.to_string(),
+        Phase::OtherSizes => text::YANDEX_OTHER_SIZES.to_string(),
+        Phase::Similar => text::YANDEX_SIMILAR.to_string(),
+        Phase::Saving { files } => format!("Saving {files} files…"),
+        Phase::SavingFile { n, of } => format!("Saving {n} of {of}…"),
     }
-    let bytes = std::fs::read(path).map_err(|e| text::yandex_unreadable_photo(&e.to_string()))?;
-    let mut client = Client::new().map_err(explain)?;
-    set_status(shared, text::YANDEX_UPLOADING);
-    let upload = client.upload(&bytes).map_err(explain)?;
-    set_status(shared, text::YANDEX_OTHER_SIZES);
-    let other = client.other_sizes(&upload).map_err(explain)?;
-    set_status(shared, text::YANDEX_SIMILAR);
-    let (similar, note) = match client.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
-        Ok(list) => {
-            let note = list.stopped.map(|e| text::yandex_similar_stopped(list.items.len(), &explain(e)));
-            (list.items, note)
-        }
-        Err(e) => (Vec::new(), Some(text::yandex_similar_failed(&explain(e)))),
-    };
-    let found = Found {
-        other: other
-            .into_iter()
-            .map(|s| Hit {
-                thumb: s.url.clone(),
-                url: s.url,
-                width: dimension(s.width),
-                height: dimension(s.height),
-                suffix: format!("yandex {}x{}", s.width, s.height),
-            })
-            .collect(),
-        similar: similar
-            .into_iter()
-            .map(|s| Hit {
-                thumb: s.thumb_url.unwrap_or_else(|| s.image_url.clone()),
-                url: s.image_url,
-                width: dimension(s.width),
-                height: dimension(s.height),
-                suffix: format!("yandex similar {}", s.pos + 1),
-            })
-            .collect(),
-    };
-    Ok((found, note))
 }
 
-/// A file name without characters that Windows refuses in names.
-fn sanitize(name: &str) -> String {
-    let clean: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
-    let clean = clean.trim();
-    if clean.is_empty() { "image".to_string() } else { clean.to_string() }
+fn search_error_text(e: SearchError) -> String {
+    match e {
+        SearchError::NotStill => text::YANDEX_NOT_STILL.to_string(),
+        SearchError::Unreadable(e) => text::yandex_unreadable_photo(&e.to_string()),
+        SearchError::Request(e) => explain(&e),
+    }
+}
+
+fn similar_note_text(note: SimilarNote) -> String {
+    match note {
+        SimilarNote::Stopped { shown, error } => text::yandex_similar_stopped(shown, &explain(&error)),
+        SimilarNote::Failed(error) => text::yandex_similar_failed(&explain(&error)),
+    }
+}
+
+fn failure_text(failure: SaveFailure) -> String {
+    match failure {
+        SaveFailure::Client(e) => explain(&e),
+        SaveFailure::Download { url, error } => format!("{url}: {error}"),
+        SaveFailure::Write { url, path, error } => format!("{url}: {}: {error}", path.display()),
+    }
+}
+
+fn saved_text(saved: Saved) -> String {
+    let Saved { folder, written, failed, first_error } = saved;
+    match first_error {
+        None => format!("Saved {written} file{} to {}", if written == 1 { "" } else { "s" }, folder.display()),
+        Some(first) => format!("Saved {written}, {failed} failed. First failure: {}", failure_text(first)),
+    }
+}
+
+fn status_text(status: Status) -> String {
+    match status {
+        Status::Working(phase) => phase_text(phase),
+        Status::Searched(note) => note.map_or_else(String::new, similar_note_text),
+        Status::SearchFailed(e) => search_error_text(e),
+        Status::Saved(saved) => saved_text(saved),
+        Status::Stopped => INTERNAL_STOP.to_string(),
+    }
 }
 
 /// `file:///C:/a/b`: a local path as a URL, for the folder dialog. `%`, `#` and `?` are escaped, or the URL would read
@@ -253,81 +201,16 @@ fn file_url(path: &Path) -> String {
     url
 }
 
-/// `folder/stem.ext`, or with ` (2)`, ` (3)`… before the extension when that name is taken.
-fn unique_path(folder: &Path, stem: &str, ext: &str) -> PathBuf {
-    let mut path = folder.join(format!("{stem}.{ext}"));
-    let mut n = 2;
-    while path.exists() {
-        path = folder.join(format!("{stem} ({n}).{ext}"));
-        n += 1;
-    }
-    path
-}
-
-/// What `save_all` did: how many files were written, how many failed, and the first failure's reason.
-struct Saved {
-    written: usize,
-    failed: usize,
-    first_error: Option<String>,
-}
-
-/// Downloads every hit into `folder`, one at a time (the client paces nothing here; these are CDN files), each named
-/// `<stem> (<suffix>)` so they sort next to the photo.
-fn save_all(hits: &[Hit], stem: &str, folder: &Path, shared: &Mutex<Shared>) -> Saved {
-    let client = match Client::new() {
-        Ok(client) => client,
-        Err(e) => return Saved { written: 0, failed: hits.len(), first_error: Some(explain(e)) },
-    };
-    let mut saved = Saved { written: 0, failed: 0, first_error: None };
-    for (i, hit) in hits.iter().enumerate() {
-        set_status(shared, format!("Saving {} of {}…", i + 1, hits.len()));
-        let result = client.download(&hit.url).map_err(|e| e.to_string()).and_then(|file| {
-            let path = unique_path(folder, &sanitize(&format!("{stem} ({})", hit.suffix)), file.format.extension());
-            std::fs::write(&path, &file.bytes).map_err(|e| format!("{}: {e}", path.display()))
-        });
-        match result {
-            Ok(()) => saved.written += 1,
-            Err(e) => {
-                saved.failed += 1;
-                saved.first_error.get_or_insert(format!("{}: {e}", hit.url));
-            }
-        }
-    }
-    saved
-}
-
 impl qobject::YandexSearch {
     fn search(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
-        let shared = self.shared.clone();
-        {
-            let mut s = lock(&shared);
-            if s.busy {
-                return;
-            }
-            s.busy = true;
-            s.status = "Starting…".to_string();
+        if !self.search.start(Path::new(&path)) {
+            return;
         }
         // QML runs its poll timer while the `busy` property is set, and only poll() sets it: set it here too.
         self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from("Starting…"));
-        self.as_mut().rust_mut().photo = path.clone();
+        self.as_mut().set_status(QString::from(&phase_text(Phase::Starting)));
         self.as_mut().show(Vec::new(), Vec::new());
-        thread::spawn(move || {
-            // A panic here is logged, and the search ends with a status line, so `busy` is always cleared.
-            let outcome = panic_log::catch(AssertUnwindSafe(|| find_similar(&path, &shared)))
-                .unwrap_or_else(|_| Err(INTERNAL_STOP.to_string()));
-            let mut s = lock(&shared);
-            match outcome {
-                Ok((found, note)) => {
-                    s.found = Some(found);
-                    s.status = note.unwrap_or_default();
-                }
-                Err(message) => s.status = message,
-            }
-            // Same lock as the results, so `poll()` never sees the search end before its results.
-            s.busy = false;
-        });
     }
 
     /// Show these results, none picked.
@@ -353,18 +236,15 @@ impl qobject::YandexSearch {
     }
 
     fn poll(mut self: Pin<&mut Self>) {
-        let (busy, status, found) = {
-            let mut s = lock(&self.shared);
-            (s.busy, s.status.clone(), s.found.take())
-        };
+        let poll = self.search.poll();
         // The results first: whatever watches `busy` going off finds them in place.
-        if let Some(found) = found {
+        if let Some(found) = poll.found {
             self.as_mut().show(found.other, found.similar);
         }
-        if self.status.to_string() != status {
-            self.as_mut().set_status(QString::from(&status));
+        if let Some(status) = poll.status {
+            self.as_mut().set_status(QString::from(&status_text(status)));
         }
-        self.set_busy(busy);
+        self.set_busy(poll.busy);
     }
 
     fn url(&self, item: i32) -> QString {
@@ -410,58 +290,19 @@ impl qobject::YandexSearch {
     }
 
     fn start_folder(&self) -> QUrl {
-        let last = PathBuf::from(settings::prefs().yandex_folder);
-        let folder = if !last.as_os_str().is_empty() && last.is_dir() {
-            Some(last)
-        } else {
-            Path::new(&self.photo).parent().map(Path::to_path_buf)
-        };
-        folder.map_or_else(QUrl::default, |f| QUrl::from(&file_url(&f)))
+        self.search.start_folder(crate::app::get()).map_or_else(QUrl::default, |f| QUrl::from(&file_url(&f)))
     }
 
     fn download(mut self: Pin<&mut Self>, folder: &QUrl) {
         let folder = folder.to_local_file().map_or_else(|| folder.to_qstring().to_string(), |p| p.to_string());
         let hits: Vec<Hit> = self.picks.indices().filter_map(|i| self.hits.get(i).cloned()).collect();
-
-        if hits.is_empty() {
+        let files = hits.len();
+        // The app refuses an empty pick, a search or a save already running, and remembers the folder when it saves.
+        if !self.search.save(crate::app::get(), hits, PathBuf::from(folder)) {
             return;
         }
-        let stem =
-            Path::new(&self.photo).file_stem().map_or_else(|| "image".into(), |s| s.to_string_lossy().into_owned());
-        let shared = self.shared.clone();
-        let starting = format!("Saving {} files…", hits.len());
-        {
-            let mut s = lock(&shared);
-            if s.busy {
-                return;
-            }
-            s.busy = true;
-            s.status = starting.clone();
-        }
         self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from(&starting));
-        // Remembered once chosen: the user went there, whether or not every download works.
-        let chosen = folder.clone();
-        settings::update(|p| p.yandex_folder = chosen);
-        thread::spawn(move || {
-            // A panic here is logged, and the save ends with a status line, so `busy` is always cleared.
-            let status = match panic_log::catch(AssertUnwindSafe(|| {
-                save_all(&hits, &stem, Path::new(&folder), &shared)
-            })) {
-                Ok(saved) => match saved.first_error {
-                    None => {
-                        format!("Saved {} file{} to {folder}", saved.written, if saved.written == 1 { "" } else { "s" })
-                    }
-                    Some(first) => {
-                        format!("Saved {}, {} failed. First failure: {first}", saved.written, saved.failed)
-                    }
-                },
-                Err(_) => INTERNAL_STOP.to_string(),
-            };
-            let mut s = lock(&shared);
-            s.status = status;
-            s.busy = false;
-        });
+        self.as_mut().set_status(QString::from(&status_text(Status::Working(Phase::Saving { files }))));
     }
 }
 
@@ -473,12 +314,5 @@ mod tests {
     fn file_url_escapes_what_a_url_would_misread() {
         assert_eq!(file_url(Path::new(r"C:\a b\c")), "file:///C:/a b/c");
         assert_eq!(file_url(Path::new(r"D:\100% #1?\x")), "file:///D:/100%25 %231%3F/x");
-    }
-
-    #[test]
-    fn saved_names_follow_the_photo() {
-        let folder = std::env::temp_dir();
-        let name = sanitize(&format!("{} ({})", "IMG_1234", "yandex 1920x1080"));
-        assert_eq!(unique_path(&folder, &name, "jpg"), folder.join("IMG_1234 (yandex 1920x1080).jpg"));
     }
 }

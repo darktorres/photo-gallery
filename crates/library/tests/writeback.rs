@@ -6,6 +6,7 @@
 
 use std::io::Cursor;
 use std::path::Path;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use pg_catalog::Catalog;
@@ -13,6 +14,7 @@ use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize, orient};
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
+use pg_jobs::events::Bus;
 use pg_jobs::pipeline::Options;
 use pg_library::writeback::Writer;
 use pg_library::{import, scan};
@@ -94,7 +96,7 @@ fn ratings_and_turns_reach_the_files() {
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
         Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
-    let writer = Writer::start(catalog_path.clone(), thumbs);
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)));
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
@@ -207,7 +209,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
         Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
-    let writer = Writer::start(catalog_path.clone(), thumbs);
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)));
     writer.wake();
 
     // Given up: the temp is gone from the queue and from disk.
@@ -262,7 +264,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
         Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
-    let writer = Writer::start(catalog_path.clone(), thumbs);
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)));
     writer.wake();
 
     let start = Instant::now();
@@ -304,7 +306,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
         Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
-    let writer = Writer::start(catalog_path.clone(), thumbs);
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)));
     writer.wake();
 
     let start = Instant::now();

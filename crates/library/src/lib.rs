@@ -13,6 +13,26 @@ pub mod scan;
 pub mod thumbs;
 pub mod writeback;
 
+/// What the background job or the writer changed, for an owner that reads the new state on its own thread instead of
+/// polling. An event says only that something changed: the state is read from the job's and the writer's getters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Change {
+    /// The pass's progress, or the pause.
+    Progress,
+    /// A notice for the user (`Runner::take_messages`).
+    Notice,
+    /// A folder scan changed the catalog (`Runner::generation`).
+    Scanned,
+    /// An import or border pass analyzed something (`Runner::generation`).
+    Imported,
+    /// A round ended (`Runner::rounds`).
+    Round,
+    /// The writer's queue or its latest failure (`Writer::status`).
+    Writes,
+    /// A file was turned (`Writer::turned`).
+    Turned,
+}
+
 /// The catalog folder when none is given (on D:, never C:).
 pub const DEFAULT_CATALOG_DIR: &str = r"D:\PhotoGallery\catalog";
 

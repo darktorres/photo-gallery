@@ -28,33 +28,36 @@ Rectangle {
     // list is refreshed). Showing another asks the window (`moved`).
     final required property int index
     required property int count
-    // The shown item, from the gallery (which changes them in place, at a rating or a turn).
-    // Its image's key (image://full/<key>/…); the keys of the items around it, preloaded.
-    required property string key
-    required property list<string> neighbourKeys
+    // The gallery the item comes from. What the viewer shows of the item is the gallery's viewed* properties, which
+    // it sets again when it changes the item in place (a rating, a turn): read here, not asked for.
+    required property GalleryModel gallery
+    // The shown item, from the gallery. Its image's key (image://full/<key>/…); the keys of the items around it,
+    // preloaded.
+    readonly property string key: gallery.viewedKey
+    readonly property list<string> neighbourKeys: gallery.viewedNeighbourKeys
     // Quarter turns asked for but not yet in the file; its rating.
-    required property int turns
-    required property int rating
+    readonly property int turns: gallery.viewedTurns
+    readonly property int rating: gallery.viewedRating
     // Upright size in image pixels (pending turns included); 0 before the import, which leaves only the fit.
-    required property int fw
-    required property int fh
+    readonly property int fw: gallery.viewedFullWidth
+    readonly property int fh: gallery.viewedFullHeight
     // image, animated or video (query::MediaType). Only still images zoom.
-    required property string kind
+    readonly property string kind: gallery.viewedKind
     // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
-    required property int playerTurns
+    readonly property int playerTurns: gallery.viewedPlayerTurns
     // The file, for the players; a line about it for the bar.
-    required property url fileUrl
-    required property string filePath
-    required property string info
+    readonly property url fileUrl: gallery.viewedFileUrl
+    readonly property string filePath: gallery.viewedFilePath
+    readonly property string info: gallery.viewedInfo
     // Its borders: what is left without them, as fractions of the image as shown (empty: none found); where a
     // rejected candidate would have cut at each edge (a fraction from that edge, -1: none); whether they are marked as
     // not a border. Whether to show them (B, the window's).
-    required property rect borderBox
-    required property real rejectedTop
-    required property real rejectedBottom
-    required property real rejectedLeft
-    required property real rejectedRight
-    required property bool borderMarked
+    readonly property rect borderBox: gallery.viewedBorderBox
+    readonly property real rejectedTop: gallery.viewedRejectedTop
+    readonly property real rejectedBottom: gallery.viewedRejectedBottom
+    readonly property real rejectedLeft: gallery.viewedRejectedLeft
+    readonly property real rejectedRight: gallery.viewedRejectedRight
+    readonly property bool borderMarked: gallery.viewedBorderMarked
     required property bool showBorders
     // Real Size (Z): open images at 1:1 instead of fitted.
     required property Settings settings

@@ -502,32 +502,10 @@ ApplicationWindow {
         Viewer {
             id: viewerItem
             anchors.fill: parent
+            gallery: galleryModel
             fullUrl: galleryModel.fullUrl(viewerItem.key, "full")
             index: galleryModel.viewing
             count: galleryModel.count
-            // The shown item, read again when the gallery changes it in place (a rating, a turn). Out of range (-1:
-            // closed), the gallery gives empty values.
-            key: galleryModel.revision >= 0 ? galleryModel.imageKey(viewerItem.index) : ""
-            neighbourKeys: galleryModel.revision >= 0 && viewerItem.visible ? galleryModel.keysAround(viewerItem.index, 4) : []
-            turns: galleryModel.revision >= 0 ? galleryModel.pendingTurns(viewerItem.index) : 0
-            rating: galleryModel.revision >= 0 ? galleryModel.rating(viewerItem.index) : 0
-            fw: galleryModel.revision >= 0 ? galleryModel.fullWidth(viewerItem.index) : 0
-            fh: galleryModel.revision >= 0 ? galleryModel.fullHeight(viewerItem.index) : 0
-            kind: galleryModel.revision >= 0 ? galleryModel.mediaType(viewerItem.index) : ""
-            playerTurns: galleryModel.revision >= 0 ? galleryModel.playerTurns(viewerItem.index) : 0
-            fileUrl: galleryModel.revision >= 0 ? galleryModel.fileUrl(viewerItem.index) : Qt.url("")
-            filePath: galleryModel.revision >= 0 ? galleryModel.filePath(viewerItem.index) : ""
-            info: galleryModel.revision >= 0 ? galleryModel.info(viewerItem.index) : ""
-            borderBox: galleryModel.revision >= 0 ? galleryModel.borderBox(viewerItem.index) : Qt.rect(0, 0, 0, 0)
-            rejectedTop: galleryModel.revision >= 0 && viewerItem.visible
-                ? galleryModel.borderRejected(viewerItem.index, "top") : -1
-            rejectedBottom: galleryModel.revision >= 0 && viewerItem.visible
-                ? galleryModel.borderRejected(viewerItem.index, "bottom") : -1
-            rejectedLeft: galleryModel.revision >= 0 && viewerItem.visible
-                ? galleryModel.borderRejected(viewerItem.index, "left") : -1
-            rejectedRight: galleryModel.revision >= 0 && viewerItem.visible
-                ? galleryModel.borderRejected(viewerItem.index, "right") : -1
-            borderMarked: galleryModel.revision >= 0 && galleryModel.borderMarked(viewerItem.index)
             showBorders: win.showBorders
             settings: appSettings
             onMoved: (i) => galleryModel.viewing = i

@@ -1,4 +1,4 @@
-//! The QML image providers. A file is named by `<file id>@<mtime>.<rotation>.<turns>` (`GalleryModel::imageKey`):
+//! The QML image providers. A file is named by `<file id>@<mtime>.<rotation>.<turns>` (`GalleryModel::image_key`):
 //! the version changes whenever the image does, so Qt's pixmap cache never serves a stale one, and `turns` are the
 //! quarter turns the user asked for that aren't in the file yet: the image is served already turned by them, so
 //! every view shows a turn at once. Each image comes from one view of the file (`pg_app::App`'s image methods): a

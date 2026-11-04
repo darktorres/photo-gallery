@@ -47,6 +47,25 @@ pub mod qobject {
         #[qproperty(i32, viewing, READ, WRITE = set_viewing_holding, NOTIFY, FINAL)]
         /// Without a selection, the item a new list keeps in view (the top one): set in `aboutToLoad`.
         #[qproperty(i32, anchor, READ, WRITE, NOTIFY, FINAL)]
+        /// What the viewer shows of its item (`viewing`): set by `refresh_viewed` whenever the item or what it shows
+        /// changes, and bound to by the viewer, which asks for none of them one by one.
+        #[qproperty(QString, viewed_key, cxx_name = "viewedKey", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QStringList, viewed_neighbour_keys, cxx_name = "viewedNeighbourKeys", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, viewed_turns, cxx_name = "viewedTurns", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, viewed_rating, cxx_name = "viewedRating", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, viewed_full_width, cxx_name = "viewedFullWidth", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, viewed_full_height, cxx_name = "viewedFullHeight", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QString, viewed_kind, cxx_name = "viewedKind", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QUrl, viewed_file_url, cxx_name = "viewedFileUrl", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QString, viewed_file_path, cxx_name = "viewedFilePath", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QString, viewed_info, cxx_name = "viewedInfo", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QRectF, viewed_border_box, cxx_name = "viewedBorderBox", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(f64, viewed_rejected_top, cxx_name = "viewedRejectedTop", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(f64, viewed_rejected_bottom, cxx_name = "viewedRejectedBottom", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(f64, viewed_rejected_left, cxx_name = "viewedRejectedLeft", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(f64, viewed_rejected_right, cxx_name = "viewedRejectedRight", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(bool, viewed_border_marked, cxx_name = "viewedBorderMarked", READ, WRITE, NOTIFY, FINAL)]
         type GalleryModel = super::GalleryRust;
     }
 
@@ -146,36 +165,10 @@ pub mod qobject {
         #[qinvokable]
         fn aspect(self: &GalleryModel, item: i32) -> f64;
 
-        /// What names the item's image for the providers (`<file id>@<mtime>.<rotation>.<pending turns>`, see
-        /// `providers`): it changes whenever the image does, so no stale image is shown.
-        #[qinvokable]
-        #[cxx_name = "imageKey"]
-        fn image_key(self: &GalleryModel, item: i32) -> QString;
-
-        /// The image keys of the items up to `reach` before and after `item`, nearest first, for the viewer to
-        /// preload.
-        #[qinvokable]
-        #[cxx_name = "keysAround"]
-        fn keys_around(self: &GalleryModel, item: i32, reach: i32) -> QStringList;
-
         /// The URL of a full-size view of a file (`image://full/<key>/<rest>`, `rest` as the providers parse it).
         #[qinvokable]
         #[cxx_name = "fullUrl"]
         fn full_url(self: &GalleryModel, key: &QString, rest: &QString) -> QString;
-
-        /// Upright size in pixels, as shown (pending turns included); 0 before the import.
-        #[qinvokable]
-        #[cxx_name = "fullWidth"]
-        fn full_width(self: &GalleryModel, item: i32) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "fullHeight"]
-        fn full_height(self: &GalleryModel, item: i32) -> i32;
-
-        /// Quarter turns clockwise asked for but not yet written into the file (the images are served turned).
-        #[qinvokable]
-        #[cxx_name = "pendingTurns"]
-        fn pending_turns(self: &GalleryModel, item: i32) -> i32;
 
         /// Turn a file by quarter turns (1 = clockwise, -1 = counterclockwise), losslessly, in the background.
         #[qinvokable]
@@ -204,12 +197,6 @@ pub mod qobject {
         #[qinvokable]
         fn badge(self: &GalleryModel, item: i32) -> QString;
 
-        /// What is left of the image without its borders, as fractions of the image as shown (pending turns
-        /// included); an empty rectangle without borders found. Marked ones (`borderMarked`) have theirs.
-        #[qinvokable]
-        #[cxx_name = "borderBox"]
-        fn border_box(self: &GalleryModel, item: i32) -> QRectF;
-
         /// Whether the item's borders are marked as not a border (the review).
         #[qinvokable]
         #[cxx_name = "borderMarked"]
@@ -219,12 +206,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setBorderMarked"]
         fn set_border_marked(self: Pin<&mut GalleryModel>, item: i32, marked: bool);
-
-        /// Where the border detector's first rejected candidate at an edge of the image as shown (`top`,
-        /// `bottom`, `left`, `right`) would have cut, as a fraction of the image from that edge; -1 for none.
-        #[qinvokable]
-        #[cxx_name = "borderRejected"]
-        fn border_rejected(self: &GalleryModel, item: i32, edge: &QString) -> f64;
 
         /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder at
         /// `url`, in the background (`pg_library::crop`). Returns how many it asked for.
@@ -236,27 +217,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "borderedCount"]
         fn bordered_count(self: &GalleryModel) -> i32;
-
-        /// `image`, `animated` or `video` (`query::MediaType`): what the viewer shows it with.
-        #[qinvokable]
-        #[cxx_name = "mediaType"]
-        fn media_type(self: &GalleryModel, item: i32) -> QString;
-
-        /// The file as a URL, for Qt's player (videos).
-        #[qinvokable]
-        #[cxx_name = "fileUrl"]
-        fn file_url(self: &GalleryModel, item: i32) -> QUrl;
-
-        /// The file's path (for `AnimationPlayer`), or `""`.
-        #[qinvokable]
-        #[cxx_name = "filePath"]
-        fn file_path(self: &GalleryModel, item: i32) -> QString;
-
-        /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the
-        /// turns not yet written. (A video's own rotation tag is applied by the player.)
-        #[qinvokable]
-        #[cxx_name = "playerTurns"]
-        fn player_turns(self: &GalleryModel, item: i32) -> i32;
 
         /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file
         /// (the QML adds the rating's symbol), and the borders found.
@@ -339,6 +299,25 @@ pub struct GalleryRust {
     current: i32,
     viewing: i32,
     anchor: i32,
+    // The viewer's item's values (`refresh_viewed`): the qproperties' backing fields. Before any refresh they are the
+    // values of no item, which `refresh_viewed` gives with `viewing` out of range.
+    viewed_key: QString,
+    viewed_neighbour_keys: QStringList,
+    viewed_turns: i32,
+    viewed_rating: i32,
+    viewed_full_width: i32,
+    viewed_full_height: i32,
+    viewed_kind: QString,
+    viewed_player_turns: i32,
+    viewed_file_url: QUrl,
+    viewed_file_path: QString,
+    viewed_info: QString,
+    viewed_border_box: QRectF,
+    viewed_rejected_top: f64,
+    viewed_rejected_bottom: f64,
+    viewed_rejected_left: f64,
+    viewed_rejected_right: f64,
+    viewed_border_marked: bool,
     /// The list, its rows and the list session (`pg_client::grid`).
     grid: Grid,
     /// The details read last, of at most two files (the selection's and the viewer's), newest first. Emptied
@@ -355,6 +334,23 @@ impl Default for GalleryRust {
             current: -1,
             viewing: -1,
             anchor: -1,
+            viewed_key: QString::default(),
+            viewed_neighbour_keys: QStringList::default(),
+            viewed_turns: 0,
+            viewed_rating: 0,
+            viewed_full_width: 0,
+            viewed_full_height: 0,
+            viewed_kind: QString::from("image"),
+            viewed_player_turns: 0,
+            viewed_file_url: QUrl::default(),
+            viewed_file_path: QString::default(),
+            viewed_info: QString::default(),
+            viewed_border_box: QRectF::default(),
+            viewed_rejected_top: -1.0,
+            viewed_rejected_bottom: -1.0,
+            viewed_rejected_left: -1.0,
+            viewed_rejected_right: -1.0,
+            viewed_border_marked: false,
             grid: Grid::default(),
             details: RefCell::new(Vec::new()),
         }
@@ -473,6 +469,7 @@ impl qobject::GalleryModel {
         }
         self.as_mut().rust_mut().viewing = value;
         self.as_mut().viewing_changed();
+        self.as_mut().refresh_viewed();
         if value < 0
             && let Some((generation, entries)) = self.as_mut().rust_mut().grid.release_held()
         {
@@ -511,6 +508,7 @@ impl qobject::GalleryModel {
         let selection = self.grid.selection_after(keep, self.current, current, anchor);
         self.as_mut().set_current(selection.current);
         self.as_mut().set_anchor(-1);
+        self.as_mut().refresh_viewed();
         let revision = self.revision + 1;
         self.as_mut().set_revision(revision);
         pg_trace::pg_stage_list_shown();
@@ -587,6 +585,48 @@ impl qobject::GalleryModel {
         }
     }
 
+    /// Sets what the viewer shows of its item (`viewing`), the viewed properties. Read again wherever what they show
+    /// may have changed: when the item is set (`set_viewing_holding`), and before each change of `revision`. With no
+    /// item (`-1`, the viewer closed) each reads as the item-less value (`""`, `0`, an empty rectangle, `-1` for a
+    /// border line), which is what the viewer shows nothing with.
+    fn refresh_viewed(mut self: Pin<&mut Self>) {
+        let item = self.viewing;
+        let key = self.image_key(item);
+        self.as_mut().set_viewed_key(key);
+        let neighbours = self.keys_around(item, 4);
+        self.as_mut().set_viewed_neighbour_keys(neighbours);
+        let turns = self.pending_turns(item);
+        self.as_mut().set_viewed_turns(turns);
+        let rating = self.rating(item);
+        self.as_mut().set_viewed_rating(rating);
+        let width = self.full_width(item);
+        self.as_mut().set_viewed_full_width(width);
+        let height = self.full_height(item);
+        self.as_mut().set_viewed_full_height(height);
+        let kind = self.media_type(item);
+        self.as_mut().set_viewed_kind(kind);
+        let player_turns = self.player_turns(item);
+        self.as_mut().set_viewed_player_turns(player_turns);
+        let file_url = self.file_url(item);
+        self.as_mut().set_viewed_file_url(file_url);
+        let file_path = self.file_path(item);
+        self.as_mut().set_viewed_file_path(file_path);
+        let info = self.info(item);
+        self.as_mut().set_viewed_info(info);
+        let border_box = self.border_box(item);
+        self.as_mut().set_viewed_border_box(border_box);
+        let top = self.border_rejected(item, "top");
+        self.as_mut().set_viewed_rejected_top(top);
+        let bottom = self.border_rejected(item, "bottom");
+        self.as_mut().set_viewed_rejected_bottom(bottom);
+        let left = self.border_rejected(item, "left");
+        self.as_mut().set_viewed_rejected_left(left);
+        let right = self.border_rejected(item, "right");
+        self.as_mut().set_viewed_rejected_right(right);
+        let marked = self.border_marked(item);
+        self.as_mut().set_viewed_border_marked(marked);
+    }
+
     fn file_id(&self, item: i32) -> i64 {
         self.grid.id_at(item).map_or(-1, FileId::get)
     }
@@ -599,6 +639,8 @@ impl qobject::GalleryModel {
         self.grid.item(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
     }
 
+    /// What names the item's image for the providers (`<file id>@<mtime>.<rotation>.<pending turns>`, see
+    /// `providers`): it changes whenever the image does, so no stale image is shown.
     fn image_key(&self, item: i32) -> QString {
         self.grid.item(item).map_or_else(QString::default, |e| {
             // Formatted on the stack: the id and mtime at most 20 bytes each, the rotation and the turns one digit each
@@ -612,6 +654,7 @@ impl qobject::GalleryModel {
         })
     }
 
+    /// The image keys of the items up to `reach` before and after `item`, nearest first, for the viewer to preload.
     fn keys_around(&self, item: i32, reach: i32) -> QStringList {
         if self.grid.item(item).is_none() {
             return QStringList::default();
@@ -627,6 +670,7 @@ impl qobject::GalleryModel {
         QString::from(&format!("image://full/{key}/{rest}"))
     }
 
+    /// Upright size in pixels, as shown (pending turns included); 0 before the import.
     fn full_width(&self, item: i32) -> i32 {
         self.grid.item(item).map_or(0, |e| e.shown_size().0 as i32)
     }
@@ -635,6 +679,7 @@ impl qobject::GalleryModel {
         self.grid.item(item).map_or(0, |e| e.shown_size().1 as i32)
     }
 
+    /// Quarter turns clockwise asked for but not yet written into the file (the images are served turned).
     fn pending_turns(&self, item: i32) -> i32 {
         self.grid.item(item).map_or(0, |i| i.pending_turns.get() as i32)
     }
@@ -662,6 +707,7 @@ impl qobject::GalleryModel {
         } else {
             self.as_mut().items_changed(&[item as usize]);
         }
+        self.as_mut().refresh_viewed();
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
@@ -684,6 +730,7 @@ impl qobject::GalleryModel {
         } else {
             self.as_mut().items_changed(&turned.changed);
         }
+        self.as_mut().refresh_viewed();
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
@@ -712,6 +759,7 @@ impl qobject::GalleryModel {
             this.forget_details();
         }
         self.as_mut().items_changed(&[item as usize]);
+        self.as_mut().refresh_viewed();
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
@@ -721,6 +769,8 @@ impl qobject::GalleryModel {
         QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.name()))
     }
 
+    /// What is left of the image without its borders, as fractions of the image as shown (pending turns included);
+    /// an empty rectangle without borders found. Marked ones (`borderMarked`) have theirs.
     fn border_box(&self, item: i32) -> QRectF {
         match self.grid.item(item).and_then(Entry::content) {
             Some([x, y, w, h]) => QRectF::new(x, y, w, h),
@@ -747,12 +797,14 @@ impl qobject::GalleryModel {
             .grid
             .edit(item, loading, |entry| entry.borders = if marked { Borders::Marked } else { Borders::Found });
         self.as_mut().items_changed(&[item as usize]);
+        self.as_mut().refresh_viewed();
         let revision = self.revision + 1;
         self.set_revision(revision);
     }
 
-    fn border_rejected(&self, item: i32, edge: &QString) -> f64 {
-        let edge = edge.to_string();
+    /// Where the border detector's first rejected candidate at an edge of the image as shown (`top`, `bottom`, `left`,
+    /// `right`) would have cut, as a fraction of the image from that edge; -1 for none.
+    fn border_rejected(&self, item: i32, edge: &str) -> f64 {
         self.with_details(item, |e, d| {
             // A side's line, as the shown edge it is nearest (borders cut less than half a side) and the distance.
             let shown = |[x, y, w, _]: [f64; 4]| match (w == 0.0, x < 0.5, y < 0.5) {
@@ -786,20 +838,25 @@ impl qobject::GalleryModel {
         self.grid.entries().iter().filter(|e| e.borders == Borders::Found).count() as i32
     }
 
+    /// `image`, `animated` or `video` (`query::MediaType`): what the viewer shows it with.
     fn media_type(&self, item: i32) -> QString {
         QString::from(self.grid.item(item).map_or("image", |e| e.media_type().key()))
     }
 
+    /// The file as a URL, for Qt's player (videos).
     fn file_url(&self, item: i32) -> QUrl {
         // fromUserInput makes a local path a file URL, escaping what URLs reserve (names here contain '#').
         self.with_details(item, |_, d| QUrl::from_user_input(&QString::from(&d.path), &QString::default()))
             .unwrap_or_default()
     }
 
+    /// The file's path (for `AnimationPlayer`), or `""`.
     fn file_path(&self, item: i32) -> QString {
         self.with_details(item, |_, d| QString::from(&d.path)).unwrap_or_default()
     }
 
+    /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the turns not
+    /// yet written. (A video's own rotation tag is applied by the player.)
     fn player_turns(&self, item: i32) -> i32 {
         self.grid.item(item).map_or(0, |e| e.rotation.plus(e.pending_turns).get() as i32)
     }

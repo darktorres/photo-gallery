@@ -10,7 +10,7 @@ import pg.gallery
 Item {
     id: cell
     // The item this cell shows, and its values (see GalleryModel's ROLE_KEYS to ROLE_CONTENT_HEIGHT): the image key
-    // (it names the image: GalleryModel's imageKey), the badge, the rating, whether the borders are marked, the aspect
+    // (it names the image: GalleryModel's image_key), the badge, the rating, whether the borders are marked, the aspect
     // of the image as shown and of the tile, and the borders' box (left as fractions of the image: x, y, width, height).
     required property int item
     required property string itemKey
@@ -33,7 +33,7 @@ Item {
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
 
-    // Changes when the file is rewritten or turned (the image key: its URLs, and GalleryModel's imageKey).
+    // Changes when the file is rewritten or turned (the image key: its URLs, and GalleryModel's image_key).
     readonly property string key: cell.version >= 0 ? cell.itemKey : ""
     readonly property int rating: cell.version >= 0 ? cell.itemRating : 0
     readonly property string badge: cell.version >= 0 ? cell.itemBadge : ""

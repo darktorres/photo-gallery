@@ -26,7 +26,7 @@ Candidates came from GitHub topic search by stars (`photo-gallery`, `photos`, `p
 
 ## Verdict
 
-- **Client: TypeScript with Svelte 5, `layout::justify_into` compiled to WASM.** Every production gallery has a
+- **Client: TypeScript with Svelte 5, `pg-client`'s `layout::justify_into` compiled to WASM.** Every production gallery has a
   TypeScript client. Rust-backed ones too (Spacedrive, lap, Urocissa). Immich runs exactly this stack, and Ente
   shows Rust→WASM inside a TS app works in production. No gallery of any size has a Leptos or Dioxus client.
 - **The hard problems are the same in every stack, and none is solved by the framework:**
@@ -234,7 +234,7 @@ It's a poor fit for rating and selecting.
 ## Open checks
 
 - **Qt for WebAssembly on a phone.** QML is touch-first, and the viewer already has `PinchHandler` and a
-  touch-only `DragHandler` (`Viewer.qml:280`, `:298`). Qt 6's WASM page lists no touch limits, but Qt Multimedia
+  touch-only `DragHandler` (`Viewer.qml:301`). Qt 6's WASM page lists no touch limits, but Qt Multimedia
   is a technology preview there. Build one QML screen for WASM, then:
   - measure the cold start from a PWA cache on a mid-range phone;
   - measure image decode time in WASM;

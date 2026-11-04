@@ -11,8 +11,8 @@ path: the directories given with --path, then Microsoft's symbol server, cached 
   as callgrind's own. An address without line information (Windows' public PDBs have none) becomes line 0 of "???".
 - A function named by address gets its symbol's name, or "Name+0x40" when it was entered somewhere other than its
   start (a jump into its middle). A DLL without a PDB (the GPU driver) gets dbghelp's nearest export and offset.
-- Rust's mangled names (the v0 scheme: "_RNvNtCs..._7pg_core6browse10list_files", as the PDB has some of them) are
-  demangled with LLVM's llvm-cxxfilt ("pg_core::browse::list_files"), without LTO's ".llvm.NNNN" suffix.
+- Rust's mangled names (the v0 scheme: "_RNvNtCs..._10pg_catalog6browse7details", as the PDB has some of them) are
+  demangled with LLVM's llvm-cxxfilt ("pg_catalog::browse::details"), without LTO's ".llvm.NNNN" suffix.
 
     symbolize.py [--path DIR]... [--cache DIR] FILE...
 

@@ -14,7 +14,7 @@ current one as `*.out.old`, so `diff X.out.old X.out` shows what the last change
 Inclusive cost is self cost plus the cost of the calls the function makes, leaving out direct recursion.
 Indirect recursion (A -> B -> A) is still counted twice, as in callgrind_annotate. Callgrind charges inlined code
 to the function it was inlined into. The `crate` and `file` groupings follow the source file instead, through
-fi=/fe=, so code from fast_image_resize inlined into pg_core counts as fast_image_resize.
+fi=/fe=, so code from fast_image_resize inlined into pg_codec counts as fast_image_resize.
 """
 
 import argparse
@@ -192,7 +192,7 @@ def crate_of(path, ob, fn):
         return m.group(1)
     m = re.match(r"^crates/([^/]+)/", p)
     if m:
-        return f"pg_{m.group(1)}"  # crates/core -> pg_core, as the symbols name it
+        return f"pg_{m.group(1)}"  # crates/codec -> pg_codec, as the symbols name it
     if p.startswith("benches/") or "/benches/" in p:
         return "bench harness"
     return short_obj(ob)  # glibc, ld.so, FFmpeg's shared libs, no debug info

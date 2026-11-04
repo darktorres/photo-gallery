@@ -1,7 +1,7 @@
 # The crates: library, import and desktop UI (Rust)
 
-See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.md` ("M1 import"). The layering is in
-`docs/plans/CRATE_LAYERING_PLAN.md`; the steps that built it are in `docs/REFACTOR_PLAN.md`.
+See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.md` ("M1 import"). The layering and the steps
+that built it are in `docs/REFACTOR_PLAN.md` (its crate table, and the rows for each step).
 
 Every directory under `crates/` is one package, named `pg-<directory>`. From the bottom up:
 
@@ -10,6 +10,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   turns, writes, image keys and requests, saved views and the session place). Pure and WASM-safe: no file, catalog, decoder or platform calls.
 - `platform` (`pg-platform`): the operating system behind portable functions. Win32 calls are made here and only here
   (file identity, directory handles, priorities, processes, verbatim paths, message boxes).
+- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges.
 - `metadata` (`pg-metadata`): ratings, dates, orientation and frame counts as the files hold them (XMP parsed as XML;
@@ -30,9 +31,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   images (`display`).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
   schema, the writes, the reads (`browse`), the filters and sort (`query.rs`) and the duplicate reports.
-- `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
   pause, stop), the job thread and schedule, the panics it catches and the event bus.
+- `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
 - `yandex` (`pg-yandex`): Yandex Images reverse search: the upload, the two result lists and the downloads (the only
   HTTP client).
 - `library` (`pg-library`): the passes over the originals (scan, import, borders, thumbnails, cropped copies,
@@ -50,9 +51,54 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
   command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
   the program runs commands only, and builds without Qt.
-- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `testkit` (`pg-testkit`): helpers for the crates' tests (scratch folders under `PG_TEST_DIR`).
 - `bench` (`pg-bench`): the callgrind benches (`benches/ir.rs`), built on Linux only.
+
+## Dependencies
+
+The internal dependencies (normal ones, from `cargo metadata`) only point down the list, and no crate depends on one
+above it:
+
+- `model`, `platform` and `container` depend on no crate here. `client` and `yandex` depend on `model` alone.
+- `desktop` is the only crate that links Qt; it depends on `app`, the UI-free layer the front ends share, and `app`
+  does not depend on it. `cli` is the command line beside it, and `gallery` depends on `cli` and `desktop` (the latter
+  behind its `desktop` feature).
+- External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
+  `catalog`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in `codec` (plus the
+  test fixtures and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
+
+## Where the old paths went
+
+The crates were `core` (`pg-core`), `ingest` (`pg-ingest`), `desktop`, `gallery`, `testkit` and `bench` before the
+refactor (its first commit is `c12791e`). The dated logs in `docs/` keep the old paths; the table is for reading them.
+
+| Before (under `crates/`) | Now |
+|---|---|
+| `core/src/{date,format,media,orientation,path,detection,analysis,state,view,pdq}.rs` (the types) | `model/src/` (the same names; `pdq.rs` is the PDQ record, the hasher is in `analysis`) |
+| `core/src/query.rs` | the query's types in `model/src/query.rs`, its SQL in `catalog/src/query.rs` |
+| `core/src/catalog.rs` | `catalog/src/lib.rs` (the readers and writers are `catalog/src/browse/`, `writes.rs`, `dups.rs`) |
+| `core/src/browse.rs`, `browse/` | `catalog/src/browse.rs`, `catalog/src/browse/` |
+| `core/src/analyze.rs`, `borders.rs`, `pdq.rs` | `analysis/src/` (the same names) |
+| `core/src/pdq_index.rs` | `dedup/src/pdq_index.rs` |
+| `core/src/decode.rs`, `codecs.rs`, `pixels.rs`, `resize.rs`, `animation.rs` | `codec/src/` (the same names); the animation player is `render/src/player.rs` |
+| `core/src/maker.rs`, `display.rs` | `render/src/` (the same names) |
+| `core/src/rotate.rs`, `crop.rs`, `rewrite.rs` | `edit/src/` (the same names) |
+| `core/src/container.rs` | `container/src/lib.rs` |
+| `core/src/metadata.rs` | `metadata/src/lib.rs` |
+| `core/src/video.rs` | `video/src/lib.rs` |
+| `core/src/layout.rs` | `client/src/layout.rs` |
+| `core/src/thumbs.rs` | `library/src/thumbs.rs` (the pass); the cache is `thumbcache` |
+| `core/src/verbatim.rs` | `platform/src/verbatim.rs` |
+| `core/src/yandex.rs` | `app/src/yandex.rs` (the search); the HTTP client is `yandex` |
+| `core/examples/stage_times.rs` | `analysis/examples/stage_times.rs` |
+| `ingest/src/{import,scan,runner,writeback,borders,crop,thumbs,dups}.rs` | `library/src/` (the same names); `borders` and `dups` reports print in `cli/src/` |
+| `ingest/src/pipeline.rs`, `control.rs` | `jobs/src/` (the same names) |
+| `ingest/src/cli.rs` | `cli/src/lib.rs` |
+| `ingest/tests/*` | `library/tests/*` |
+| `desktop/src/loader.rs` | `app/src/reader.rs` (the catalog reads off the UI thread) |
+| `desktop/src/state.rs` | `app/src/images.rs` (the image work behind the providers) |
+| `desktop/src/yandex.rs`, `library.rs`, `animation.rs` | `desktop/src/` (the Qt bridges), with the logic in `app/src/yandex.rs`, `app/src/library.rs` and `render/src/player.rs` |
+| `desktop/src/*` (the rest), `gallery/src/main.rs`, `testkit`, `bench` | the same paths |
 
 ## Build
 

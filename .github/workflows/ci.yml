@@ -52,7 +52,7 @@ jobs:
         with:
           tool: just,cargo-deny,cargo-machete
 
-      - name: Qt ${{ env.QT_VERSION }} (at the path the Justfile names: C:/Qt/6.12.0/msvc2022_64)
+      - name: "Qt ${{ env.QT_VERSION }} (at the path the Justfile names: C:/Qt/6.12.0/msvc2022_64)"
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}

@@ -40,7 +40,7 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0 # the screenshot comparison builds the PR's base commit
 
@@ -102,7 +102,7 @@ jobs:
 
       - name: Screenshot report
         if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: screenshots
           path: |
@@ -113,10 +113,10 @@ jobs:
   linux:
     name: Linux (crates without Qt)
     if: github.event_name != 'schedule'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # TEMPORARY V3 probe (S-17.7 plan). Remove in the commit after the run.
       - name: TEMPORARY device probe
@@ -170,10 +170,10 @@ jobs:
   nightly:
     name: Nightly (fuzz smoke, instruction counts)
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - uses: dtolnay/rust-toolchain@stable
 

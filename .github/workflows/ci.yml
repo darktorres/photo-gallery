@@ -89,6 +89,12 @@ jobs:
         run: choco install exiftool -y --no-progress
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
+          # is what the next run needs (the default saves nothing from a failed job).
+          cache-on-failure: true
+          # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
+          cache-workspace-crates: true
 
       - name: Lint (formatting, clippy, dependencies, Python, Markdown, QML)
         run: just lint
@@ -157,6 +163,12 @@ jobs:
         run: sudo apt-get install -y -qq libimage-exiftool-perl ffmpeg
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
+          # is what the next run needs (the default saves nothing from a failed job).
+          cache-on-failure: true
+          # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
+          cache-workspace-crates: true
 
       - name: Build and test the crates that need no Qt
         env:
@@ -201,6 +213,16 @@ jobs:
           tool: just
 
       - uses: Swatinem/rust-cache@v2
+        with:
+          # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
+          # is what the next run needs (the default saves nothing from a failed job).
+          cache-on-failure: true
+          # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
+          cache-workspace-crates: true
+          # cargo-fuzz is installed with `cargo install` (fuzz-smoke.sh): keep it, so it isn't rebuilt each night.
+          cache-all-crates: true
+          # fuzz/ is its own workspace, so its build (the sanitizer builds) goes to fuzz/target, which is not cached by default.
+          cache-directories: fuzz/target
 
       # Same package list as the linux job (keep the two in sync, and with tools/profiling/wsl-setup.sh).
       - name: System packages (cached)
@@ -218,9 +240,16 @@ jobs:
       - name: System libraries
         run: bash tools/profiling/wsl-setup.sh
 
+      # The scripts build in a clone under $HOME by default, which rust-cache does not see, so each night compiled from
+      # nothing. Pointing them at the checkout puts their builds where the cache keeps them. The checkout is at the
+      # commit they test (both scripts reset their clone to HEAD).
       - name: Fuzz smoke test (60 s per target, S-18.3)
+        env:
+          PG_FUZZ_CLONE: ${{ github.workspace }}
         run: bash tools/fuzz-smoke.sh 60
 
       - name: Instruction counts against the baseline (S-16.2; informational until the baseline is measured)
         continue-on-error: true
+        env:
+          PG_BENCH_CLONE: ${{ github.workspace }}
         run: bash tools/perf-check.sh

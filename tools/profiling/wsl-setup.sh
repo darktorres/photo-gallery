@@ -10,10 +10,10 @@ export DEBIAN_FRONTEND=noninteractive
 # A distro with foreign architectures enabled gets 404s for their indexes; amd64's still update.
 $SUDO apt-get update -qq || echo "apt-get update: some indexes failed (ignored)"
 # libssl-dev: ureq's native-tls is OpenSSL on Linux. libclang-dev: bindgen, for ffmpeg-sys-next. ffmpeg: the command
-# the video tests run (pg_library's video tests look for it on PATH).
-$SUDO apt-get install -y -qq valgrind build-essential cmake nasm clang libclang-dev pkg-config git libssl-dev python3 \
-    ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev \
-    >/dev/null
+# the video tests run (pg_library's video tests look for it on PATH). The list is apt-packages.txt, which CI installs
+# from too (.github/workflows/ci.yml).
+mapfile -t packages < <(grep -v '^#' "$REPO/tools/profiling/apt-packages.txt" | grep -v '^$')
+$SUDO apt-get install -y -qq "${packages[@]}" >/dev/null
 
 [ -x "$HOME/.cargo/bin/rustup" ] || curl -sSf https://sh.rustup.rs | sh -s -- -y --profile minimal >/dev/null
 . "$HOME/.cargo/env"

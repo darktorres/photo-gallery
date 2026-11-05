@@ -1,14 +1,21 @@
 # CI (S-15). Three jobs: `windows` (the app: lint, tests, the QML tests, a deploy smoke test, the screenshot comparison),
-# `linux` (the crates that build without Qt: tests, the wasm32 check, the supply-chain checks), and `nightly` (the fuzz
-# smoke test and the instruction-count gate). Every command is one the Justfile or tools/ has, so a failure here
-# reproduces locally.
+# `linux` (the crates that build without Qt: clippy and tests, the wasm32 check, the supply-chain checks, the Python and
+# Markdown lints), and `nightly` (the fuzz smoke test and the instruction-count gate).
 #
-# Not verified: this file was written without running it on a runner. The first run is the check. Two things it needs
-# from outside the repository:
-#   - Qt 6.12.0 (msvc2022_64), installed at C:\Qt (the Justfile's path, .cargo/config.toml's QMAKE).
-#   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01), downloaded from the URL in FFMPEG_URL below.
-#     FFMPEG_DIR is set from it, which overrides the Windows path in .cargo/config.toml.
+# The steps run the Justfile's recipes and tools/ scripts, except the Linux job's cargo calls, which name the crates that
+# build without Qt. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
+# comment; .github/dependabot.yml proposes updates. The Linux packages are in tools/profiling/apt-packages.txt.
+#
+# Inputs from outside the repository, and what each one is pinned to:
+#   - Qt 6.12.0 (msvc2022_64), installed by jurplel/install-qt-action at C:\Qt\6.12.0\msvc2022_64 (the Justfile's path and
+#     .cargo/config.toml's QMAKE).
+#   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01): FFMPEG_URL, checked against FFMPEG_SHA256 (GitHub's
+#     digest of the release asset). FFMPEG_DIR is set from it, which overrides the Windows path in .cargo/config.toml.
+#   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in tools/profiling/apt-packages.txt.
+#
 # The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
+# The instruction-count gate is required, so a regression fails the nightly. It also needs the catalog benches' data
+# (PG_BENCH_DATA, ~/pg-bench), which CI does not have yet, so that step is expected to fail until it does.
 name: CI
 
 on:
@@ -23,7 +30,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # Scheduled runs have their own group: a nightly that runs for hours must not hold up the runs for pushes to main.
+  group: ci-${{ github.event_name == 'schedule' && 'nightly' || github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
@@ -31,6 +39,10 @@ env:
   QT_VERSION: "6.12.0"
   # The BtbN build named by the release tag, which is also the FFmpeg version the tests use (see the header).
   FFMPEG_URL: "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-30-13-01/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
+  # The archive's SHA-256. A download that does not match fails the job, and the archive is not cached.
+  FFMPEG_SHA256: "7c09a4c6bd73a5013963f06b1c6175326605cbc2585444ebe0f740ef4f35b4c9"
+  # Pinned, so a new ExifTool release does not change the metadata tests unasked.
+  EXIFTOOL_VERSION: "13.59.0"
   # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::missing_tool).
   PG_REQUIRE_TOOLS: "1"
 
@@ -41,22 +53,23 @@ jobs:
     runs-on: windows-2025
     timeout-minutes: 90
     steps:
-      - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0 # the screenshot comparison builds the PR's base commit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-          # `just lint` checks the shared model and client for wasm32 (the Justfile's lint recipe).
-          targets: wasm32-unknown-unknown
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show
 
-      - uses: taiki-e/install-action@v2
+      - name: Lock file is current (nothing below may change it)
+        shell: pwsh
+        run: |
+          cargo metadata --locked --format-version 1 > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           tool: just,cargo-deny,cargo-machete
 
       - name: "Qt ${{ env.QT_VERSION }} (at the path the Justfile names: C:/Qt/6.12.0/msvc2022_64)"
-        uses: jurplel/install-qt-action@v4
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
         with:
           version: ${{ env.QT_VERSION }}
           # aqtinstall's latest release, 3.3.0, cannot install Qt 6.11 or later on Windows x64: Qt split that repository
@@ -70,7 +83,7 @@ jobs:
           cache: true
 
       - name: FFmpeg archive (cached; keyed on the URL, which names the build)
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ${{ runner.temp }}\ffmpeg.zip
           key: ffmpeg-${{ env.FFMPEG_URL }}
@@ -78,19 +91,26 @@ jobs:
       - name: FFmpeg (shared build, for pg-video and its tests)
         shell: pwsh
         run: |
-          if (-not (Test-Path "$env:RUNNER_TEMP\ffmpeg.zip")) {
-            Invoke-WebRequest -Uri $env:FFMPEG_URL -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          $zip = "$env:RUNNER_TEMP\ffmpeg.zip"
+          if (-not (Test-Path $zip)) {
+            Invoke-WebRequest -Uri $env:FFMPEG_URL -OutFile $zip
           }
-          Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
+          $hash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLower()
+          if ($hash -ne $env:FFMPEG_SHA256) {
+            # Removed, so the cache step does not save it.
+            Remove-Item $zip
+            throw "FFmpeg archive has SHA-256 $hash, expected $env:FFMPEG_SHA256"
+          }
+          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
           $root = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName
           "FFMPEG_DIR=$root" >> $env:GITHUB_ENV
           "$root\bin" >> $env:GITHUB_PATH
 
       - name: ExifTool (the metadata tests)
         shell: pwsh
-        run: choco install exiftool -y --no-progress
+        run: choco install exiftool --version=${{ env.EXIFTOOL_VERSION }} -y --no-progress
 
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
           # is what the next run needs (the default saves nothing from a failed job).
@@ -117,11 +137,14 @@ jobs:
         if: github.event_name == 'pull_request'
         continue-on-error: true # informational until it is stable (plan S-15)
         shell: pwsh
-        run: just shots -Base "origin/$env:GITHUB_BASE_REF"
+        run: |
+          # The base branch, which the comparison looks up by its commit. A shallow fetch: the checkout is one commit deep.
+          git fetch --no-tags --depth=1 origin "+refs/heads/${env:GITHUB_BASE_REF}:refs/remotes/origin/${env:GITHUB_BASE_REF}"
+          just shots -Base "origin/$env:GITHUB_BASE_REF"
 
       - name: Screenshot report
         if: always() && github.event_name == 'pull_request'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: screenshots
           path: |
@@ -135,25 +158,30 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 60
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show
 
-      - uses: taiki-e/install-action@v2
+      - name: Lock file is current (nothing below may change it)
+        run: cargo metadata --locked --format-version 1 >/dev/null
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           tool: just,cargo-deny,cargo-machete
 
-      # The package list repeats the apt line in tools/profiling/wsl-setup.sh; the script still installs anything missing.
+      - name: Package list (tools/profiling/apt-packages.txt)
+        id: apt
+        run: echo "packages=$(grep -v '^#' tools/profiling/apt-packages.txt | xargs)" >> "$GITHUB_OUTPUT"
+
       - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: valgrind build-essential cmake nasm clang libclang-dev pkg-config git libssl-dev python3 ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev libimage-exiftool-perl
+          packages: ${{ steps.apt.outputs.packages }}
           version: 1
 
       - name: gungraun-runner (cached; wsl-setup.sh builds it only when missing)
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cargo/bin/gungraun-runner
           key: gungraun-runner-${{ hashFiles('Cargo.lock') }}
@@ -161,30 +189,27 @@ jobs:
       - name: System libraries (FFmpeg, libclang, valgrind for the benches)
         run: bash tools/profiling/wsl-setup.sh
 
-      - name: ExifTool and ffmpeg (the metadata and video tests)
-        run: sudo apt-get install -y -qq libimage-exiftool-perl ffmpeg
-
-      - uses: Swatinem/rust-cache@v2
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
           # is what the next run needs (the default saves nothing from a failed job).
           cache-on-failure: true
           # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
           cache-workspace-crates: true
+          # Off: this step runs after the gungraun-runner cache is restored, and rust-cache's save removes the binaries
+          # it found in ~/.cargo/bin when it restored, which would take gungraun-runner out before its cache is saved.
+          cache-bin: false
 
       - name: Build and test the crates that need no Qt
-        env:
-          FFMPEG_DIR: /home/runner/.local/share/pg-bench/ffmpeg
         run: |
+          export FFMPEG_DIR="$HOME/.local/share/pg-bench/ffmpeg"
           LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
           export LIBCLANG_PATH
           cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings
           cargo test --workspace --exclude pg-desktop --exclude pg-gallery
 
       - name: wasm32 (the shared model and the client stay free of platform code)
-        run: |
-          rustup target add wasm32-unknown-unknown
-          cargo check -p pg-model -p pg-client --target wasm32-unknown-unknown
+        run: cargo check -p pg-model -p pg-client --target wasm32-unknown-unknown
 
       - name: Supply chain (licences, advisories, unused dependencies)
         run: |
@@ -206,15 +231,23 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 240
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show
 
-      - uses: taiki-e/install-action@v2
+      - name: Lock files are current (the root's and fuzz/'s)
+        run: |
+          cargo metadata --locked --format-version 1 >/dev/null
+          cargo metadata --locked --format-version 1 --manifest-path fuzz/Cargo.toml >/dev/null
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           tool: just
 
-      - uses: Swatinem/rust-cache@v2
+      # This is the first cache step, so its post step runs last: the gungraun-runner cache below is saved before
+      # rust-cache removes the binaries it found when it restored. cache-bin stays on, which keeps cargo-fuzz (below).
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
           # is what the next run needs (the default saves nothing from a failed job).
@@ -226,15 +259,18 @@ jobs:
           # fuzz/ is its own workspace, so its build (the sanitizer builds) goes to fuzz/target, which is not cached by default.
           cache-directories: fuzz/target
 
-      # Same package list as the linux job (keep the two in sync, and with tools/profiling/wsl-setup.sh).
+      - name: Package list (tools/profiling/apt-packages.txt)
+        id: apt
+        run: echo "packages=$(grep -v '^#' tools/profiling/apt-packages.txt | xargs)" >> "$GITHUB_OUTPUT"
+
       - name: System packages (cached)
-        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
         with:
-          packages: valgrind build-essential cmake nasm clang libclang-dev pkg-config git libssl-dev python3 ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev libimage-exiftool-perl
+          packages: ${{ steps.apt.outputs.packages }}
           version: 1
 
       - name: gungraun-runner (cached; wsl-setup.sh builds it only when missing)
-        uses: actions/cache@v6
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
           path: ~/.cargo/bin/gungraun-runner
           key: gungraun-runner-${{ hashFiles('Cargo.lock') }}
@@ -250,8 +286,15 @@ jobs:
           PG_FUZZ_CLONE: ${{ github.workspace }}
         run: bash tools/fuzz-smoke.sh 60
 
-      - name: Instruction counts against the baseline (S-16.2; informational until the baseline is measured)
-        continue-on-error: true
+      - name: Fuzz crashes (kept when the fuzz run fails)
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: fuzz-artifacts
+          path: fuzz/artifacts/
+          if-no-files-found: ignore
+
+      - name: Instruction counts against the baseline (S-16.2, required)
         env:
           PG_BENCH_CLONE: ${{ github.workspace }}
         run: bash tools/perf-check.sh

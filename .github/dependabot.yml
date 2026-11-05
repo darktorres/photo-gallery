@@ -1,0 +1,8 @@
+# Weekly pull requests that update the actions in .github/workflows: the commit each one is pinned to, and the tag named
+# in its comment.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

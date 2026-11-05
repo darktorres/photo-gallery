@@ -6,9 +6,8 @@
 # Not verified: this file was written without running it on a runner. The first run is the check. Two things it needs
 # from outside the repository:
 #   - Qt 6.12.0 (msvc2022_64), installed at C:\Qt (the Justfile's path, .cargo/config.toml's QMAKE).
-#   - FFmpeg 9.0 shared build (the BtbN GPL build tools/ffmpeg-9.0/SOURCE.txt names). Its URL is the repository variable
-#     FFMPEG_URL, which must be set in the repository settings; the job fails without it. FFMPEG_DIR is set from it,
-#     which overrides the Windows path in .cargo/config.toml.
+#   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01), downloaded from the URL in FFMPEG_URL below.
+#     FFMPEG_DIR is set from it, which overrides the Windows path in .cargo/config.toml.
 # The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
 name: CI
 
@@ -30,6 +29,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   QT_VERSION: "6.12.0"
+  # The BtbN build named by the release tag, which is also the FFmpeg version the tests use (see the header).
+  FFMPEG_URL: "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-30-13-01/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
   # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::missing_tool).
   PG_REQUIRE_TOOLS: "1"
 
@@ -65,13 +66,18 @@ jobs:
           modules: qtmultimedia
           cache: true
 
+      - name: FFmpeg archive (cached; keyed on the URL, which names the build)
+        uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}\ffmpeg.zip
+          key: ffmpeg-${{ env.FFMPEG_URL }}
+
       - name: FFmpeg (shared build, for pg-video and its tests)
         shell: pwsh
-        env:
-          FFMPEG_URL: ${{ vars.FFMPEG_URL }}
         run: |
-          if (-not $env:FFMPEG_URL) { Write-Error "repository variable FFMPEG_URL is not set"; exit 1 }
-          Invoke-WebRequest -Uri $env:FFMPEG_URL -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          if (-not (Test-Path "$env:RUNNER_TEMP\ffmpeg.zip")) {
+            Invoke-WebRequest -Uri $env:FFMPEG_URL -OutFile "$env:RUNNER_TEMP\ffmpeg.zip"
+          }
           Expand-Archive -Path "$env:RUNNER_TEMP\ffmpeg.zip" -DestinationPath "$env:RUNNER_TEMP\ffmpeg"
           $root = (Get-ChildItem "$env:RUNNER_TEMP\ffmpeg" -Directory | Select-Object -First 1).FullName
           "FFMPEG_DIR=$root" >> $env:GITHUB_ENV
@@ -136,6 +142,19 @@ jobs:
         with:
           tool: just,cargo-deny,cargo-machete
 
+      # The package list repeats the apt line in tools/profiling/wsl-setup.sh; the script still installs anything missing.
+      - name: System packages (cached)
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          packages: valgrind build-essential cmake nasm clang libclang-dev pkg-config git libssl-dev python3 ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev libimage-exiftool-perl
+          version: 1
+
+      - name: gungraun-runner (cached; wsl-setup.sh builds it only when missing)
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/gungraun-runner
+          key: gungraun-runner-${{ hashFiles('Cargo.lock') }}
+
       - name: System libraries (FFmpeg, libclang, valgrind for the benches)
         run: bash tools/profiling/wsl-setup.sh
 
@@ -165,10 +184,11 @@ jobs:
 
       - name: Python and Markdown
         run: |
-          python -m pip install --quiet ruff
+          # The versions the local tools run (the Justfile's lint uses whatever is installed); bump both together.
+          python -m pip install --quiet ruff==0.17.3
           ruff format --check .
           ruff check .
-          npm install --global markdownlint-cli
+          npm install --global markdownlint-cli@0.50.0
           markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
 
   nightly:
@@ -184,6 +204,21 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: just
+
+      - uses: Swatinem/rust-cache@v2
+
+      # Same package list as the linux job (keep the two in sync, and with tools/profiling/wsl-setup.sh).
+      - name: System packages (cached)
+        uses: awalsh128/cache-apt-pkgs-action@v1.6.3
+        with:
+          packages: valgrind build-essential cmake nasm clang libclang-dev pkg-config git libssl-dev python3 ffmpeg libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev libavfilter-dev libavdevice-dev libimage-exiftool-perl
+          version: 1
+
+      - name: gungraun-runner (cached; wsl-setup.sh builds it only when missing)
+        uses: actions/cache@v6
+        with:
+          path: ~/.cargo/bin/gungraun-runner
+          key: gungraun-runner-${{ hashFiles('Cargo.lock') }}
 
       - name: System libraries
         run: bash tools/profiling/wsl-setup.sh

@@ -41,7 +41,7 @@ UPSAMPLING_WITH_INTERPOLATION = 1 << 5  # NVJPEG_FLAGS_*
 
 
 class Image_t(C.Structure):  # nvjpegImage_t
-    _fields_ = [("channel", C.c_void_p * 4), ("pitch", C.c_size_t * 4)]  # noqa: RUF012 (ctypes reads it)
+    _fields_ = [("channel", C.c_void_p * 4), ("pitch", C.c_size_t * 4)]
 
 
 def load_nvjpeg():

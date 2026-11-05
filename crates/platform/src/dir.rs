@@ -144,15 +144,16 @@ fn check_drive<F: RootFacts>(facts: &F, volume_root: &[Unit]) -> Result<(), Refu
 /// The path after `\\?\` when it names a drive letter (`\\?\D:\...`); `None` for anything else, including UNC.
 fn local_drive_path(real: &[Unit]) -> Option<&[Unit]> {
     let rest = real.strip_prefix(&units_of(br"\\?\")[..])?;
-    let letter = u8::try_from(*rest.first()?).ok()?;
+    let letter = char::from_u32(u32::from(*rest.first()?))?;
     let local = letter.is_ascii_alphabetic() && rest.get(1) == Some(&Unit::from(b':')) && rest.get(2) == Some(&SEP);
     local.then_some(rest)
 }
 
 /// Two volume roots are the same volume (Windows paths compare without case).
 fn same_path(a: &[Unit], b: &[Unit]) -> bool {
+    // ASCII upper case to lower case; any other unit is itself. `Unit` is u8 on Unix and u16 on Windows.
     fn fold(u: Unit) -> Unit {
-        u8::try_from(u).map_or(u, |c| Unit::from(c.to_ascii_lowercase()))
+        if (u32::from(b'A')..=u32::from(b'Z')).contains(&u32::from(u)) { u + 32 } else { u }
     }
     a.len() == b.len() && a.iter().zip(b).all(|(x, y)| fold(*x) == fold(*y))
 }
@@ -312,8 +313,10 @@ pub fn check_fs_type(f_type: i64) -> Result<(), Refused> {
     }
 }
 
-/// The `f_type` of the file system holding `path` (`statfs`).
+/// The `f_type` of the file system holding `path` (`statfs`). `f_type` is `i64` on 64-bit Linux, where the conversion
+/// below is the identity, so the lint is allowed rather than the conversion dropped (it is needed on 32-bit).
 #[cfg(target_os = "linux")]
+#[allow(clippy::useless_conversion)]
 fn linux_fs_type(path: &[Unit]) -> io::Result<i64> {
     let c = std::ffi::CString::new(path).map_err(|_| io::Error::other("the path has a NUL"))?;
     let mut st = std::mem::MaybeUninit::<libc::statfs>::uninit();

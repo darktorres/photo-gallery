@@ -74,7 +74,7 @@ use cxx_qt_lib::QImage;
 use ffi::{ImageKind, PixelFormat, Pixels};
 
 use pg_app::Upload;
-use pg_model::image::{ImageKey, ImageRequest, View};
+use pg_model::image::{ImageKey, ImageRequest};
 use pg_model::turns::Turns;
 
 use crate::app;
@@ -118,51 +118,29 @@ fn upload(img: Upload) -> Pixels {
     }
 }
 
-fn size(s: &str) -> Option<(usize, usize)> {
-    let (w, h) = s.split_once('x')?;
-    Some((w.parse().ok()?, h.parse().ok()?))
-}
-
-/// What follows the key in `image://full/…`.
-fn full_view(rest: &str) -> Option<View> {
-    if rest == "full" {
-        return Some(View::Full);
+/// The `image://` name `kind` is registered under.
+fn provider(kind: ImageKind) -> &'static str {
+    match kind {
+        ImageKind::Thumb => "thumb",
+        ImageKind::Thumbhash => "thumbhash",
+        ImageKind::Full => "full",
+        _ => "",
     }
-    let Some(region) = rest.strip_prefix("region/") else { return size(rest).map(|(w, h)| View::Fit(w, h)) };
-    let (r, out) = region.split_once('/')?;
-    let mut r = r.split(',').map(str::parse::<f64>);
-    let (Some(Ok(x)), Some(Ok(y)), Some(Ok(w)), Some(Ok(h)), None) = (r.next(), r.next(), r.next(), r.next(), r.next())
-    else {
-        return None;
-    };
-    let (ow, oh) = size(out)?;
-    let ok = (0.0..1.0).contains(&x) && (0.0..1.0).contains(&y) && w > 0.0 && h > 0.0;
-    ok.then_some(View::Region((x, y, w.min(1.0 - x), h.min(1.0 - y)), ow.min(16384), oh.min(16384)))
 }
 
-/// The request a provider of `kind` makes for `key`, from what follows the key in its URL (`rest`).
-fn request(kind: ImageKind, key: ImageKey, rest: &str) -> anyhow::Result<ImageRequest> {
-    Ok(match kind {
-        ImageKind::Thumb => {
-            let height = rest.parse::<u32>().context("bad height")?;
-            ImageRequest::Thumb { key, height: height.clamp(16, 2048) }
-        }
-        ImageKind::Thumbhash => ImageRequest::Thumbhash { key },
-        ImageKind::Full => ImageRequest::Full { key, view: full_view(rest).context("bad view")? },
-        _ => anyhow::bail!("an unknown provider"),
-    })
-}
-
+/// The image a request for `kind` and `id` (the URL's part after the provider's name, `pg_model::image`) asks for.
 fn load_image(kind: ImageKind, id: &str) -> Pixels {
-    let (key, rest) = id.split_once('/').unwrap_or((id, ""));
-    let Some(key) = ImageKey::parse(key) else { return failed() };
-    let result = request(kind, key, rest).and_then(|request| match request {
+    let Some(request) = ImageRequest::parse(provider(kind), id) else {
+        eprintln!("image {kind:?} {id}: not a request");
+        return failed();
+    };
+    let result = match request {
         ImageRequest::Thumb { key, height } => thumbnail(key, height),
         ImageRequest::Thumbhash { key } => app::get().placeholder(key.file).map(upload).map_err(anyhow::Error::from),
         ImageRequest::Full { key, view } => {
             app::get().full_image(key.file, view).map(upload).map_err(anyhow::Error::from)
         }
-    });
+    };
     result.unwrap_or_else(|e| {
         eprintln!("image {kind:?} {id}: {e:#}");
         failed()

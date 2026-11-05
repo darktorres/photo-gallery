@@ -4,4 +4,5 @@ AnimationPlayer 1.0 AnimationPlayer.qml
 Viewport 1.0 Viewport.qml
 Settings 1.0 Settings.qml
 KeyMap 1.0 KeyMap.qml
+Shell 1.0 Shell.qml
 Words 1.0 Words.qml

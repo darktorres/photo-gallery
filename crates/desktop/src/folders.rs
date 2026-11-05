@@ -1,4 +1,4 @@
-//! The folder tree (merged across drives, `pg_catalog::browse::read::folder_tree`) as a flat list model: each visible
+//! The folder tree (merged across drives, read by `pg_app`'s session) as a flat list model: each visible
 //! node is a row with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All".
 //!
 //! The tree is read off the GUI thread (the app's catalog reader): `reload` asks, `loaded` says it's shown. Until the
@@ -107,11 +107,6 @@ pub mod qobject {
         /// Whether the tree has a merged path (`"` = "All"), shown or under a collapsed folder.
         #[qinvokable]
         fn contains(self: &FolderModel, merged: &QString) -> bool;
-
-        /// The folder to show at start: the saved one when the tree has it (its merged path, as the saved one spells
-        /// it), else `""` (All folders). Call it once the tree is in (`loaded`).
-        #[qinvokable]
-        fn restore(self: &FolderModel) -> QString;
     }
 }
 
@@ -119,8 +114,6 @@ use core::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_app::Kind;
-use pg_catalog::browse;
 use pg_client::tree::Tree;
 use pg_model::tree::FolderTree;
 
@@ -196,7 +189,7 @@ impl qobject::FolderModel {
             this.generation
         };
         let model = self.qt_thread();
-        crate::app::get().session().submit(Kind::Tree, browse::read::folder_tree, move |tree| {
+        crate::app::get().session().tree(move |tree| {
             let tree = tree.unwrap_or_else(|e| {
                 eprintln!("folder tree: {e:#}");
                 FolderTree::default()
@@ -265,9 +258,5 @@ impl qobject::FolderModel {
 
     fn row_of(&self, merged: &QString) -> i32 {
         self.tree.row_of_path(&merged.to_string()).map_or(-1, |r| r as i32)
-    }
-
-    fn restore(&self) -> QString {
-        QString::from(&crate::app::get().restore(self.tree.folders()).unwrap_or_default())
     }
 }

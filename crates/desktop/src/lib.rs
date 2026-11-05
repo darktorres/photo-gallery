@@ -5,6 +5,7 @@ mod animation;
 mod app;
 mod app_icon;
 mod command_line;
+mod deadline;
 mod facet_choices;
 mod filters;
 mod folders;
@@ -13,14 +14,15 @@ mod gpu_device;
 mod gui_app;
 mod keymap;
 mod library;
+mod listing;
 #[cfg(debug_assertions)]
 mod live_reload;
 mod panic_log;
 mod providers;
 mod screenshot;
 mod settings;
+mod shell;
 mod trace;
-mod view;
 mod viewport;
 mod words;
 
@@ -49,7 +51,7 @@ pub fn run(args: &[OsString]) {
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap_bytes =
-        std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_thumbcache::parse_cap_gb(&s) {
+        std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_app::reexport::parse_thumb_cap_gb(&s) {
             Ok(bytes) => Some(bytes),
             Err(e) => {
                 panic_log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));

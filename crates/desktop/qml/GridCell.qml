@@ -26,7 +26,10 @@ Item {
     // The row's version: the values are read again when it changes (a version of -1 reads nothing).
     required property int version
     required property real rowHeight
-    required property int thumbHeight
+    // The image URLs, made by the model (the grammar is Rust's: pg_model::image): the thumbnail at the thumbnail height,
+    // and the placeholder (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS).
+    required property string itemThumbUrl
+    required property string itemThumbhashUrl
     required property bool showBorders
     required property int current
 
@@ -51,7 +54,7 @@ Item {
     // ThumbHash placeholder (from the import) until the thumbnail arrives.
     Image {
         anchors.fill: parent
-        source: "image://thumbhash/" + cell.key
+        source: cell.itemThumbhashUrl
         asynchronous: true
         smooth: true
         visible: thumb.status !== Image.Ready
@@ -62,7 +65,7 @@ Item {
         // Files not imported yet have no size: their cell is square until they are.
         fillMode: Image.PreserveAspectCrop
         clip: true
-        source: "image://thumb/" + cell.key + "/" + cell.thumbHeight
+        source: cell.itemThumbUrl
         asynchronous: true
         retainWhileLoading: true
         smooth: true

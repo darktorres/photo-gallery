@@ -1,64 +1,73 @@
-//! The server's preferences (`gallery.json`): the choices about the library as a whole, saved atomically. The client's
-//! (the window's Real Size, the borders shown, the row height) belong to each front end and are not here.
-
-use std::path::PathBuf;
-use std::sync::Mutex;
+//! The preferences (`gallery.json`): every choice the app remembers across runs, the front ends' included, saved atomically
+//! beside the catalog folder (so they outlive a catalog rebuild). The window's Real Size, the borders shown and the row
+//! height are here with the library's write-back and the Yandex folder. The last file selected is here too: it is a
+//! file's id in the catalog, so after a rebuild it may name another file (or none).
 
 use serde::{Deserialize, Serialize};
 
-use crate::app::Note;
-
-/// The preferences file's content. Fields missing from an older file take their defaults; fields this version doesn't
-/// know (a front end's, from before the split) are ignored.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+/// The preferences file's content. Fields missing from a file take their defaults; fields the file has that this version
+/// doesn't know are ignored.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Prefs {
     /// Write ratings and turns into the files too (on by default); off keeps them in the catalog only.
     pub write_back: bool,
     /// The folder Yandex results were last saved into, empty before the first save.
     pub yandex_folder: String,
+    /// The viewer opens images at 1:1 instead of fitted (ImageRater's Real Size), across images and runs.
+    pub real_size: bool,
+    /// The grid and the viewer show what cropping the borders would cut (B).
+    pub show_borders: bool,
+    /// The grid's row height in logical pixels.
+    pub row_height: f64,
+    /// The id of the file selected (or open in the viewer) last, -1 for none.
+    pub last_file: i64,
 }
 
 impl Default for Prefs {
     fn default() -> Prefs {
-        Prefs { write_back: true, yandex_folder: String::new() }
+        Prefs {
+            write_back: true,
+            yandex_folder: String::new(),
+            real_size: false,
+            show_borders: false,
+            row_height: 220.0,
+            last_file: -1,
+        }
     }
 }
 
-pub(crate) struct Store {
-    path: PathBuf,
-    current: Mutex<Prefs>,
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-impl Store {
-    /// Read the file (the defaults when there is none). One that doesn't parse is kept aside, not overwritten by the
-    /// next save: its content (the Yandex folder, the write-back setting) can be copied back by hand. The note says so.
-    pub(crate) fn load(path: PathBuf) -> (Store, Option<Note>) {
-        let (prefs, note) = match std::fs::read(&path) {
-            Ok(bytes) => match serde_json::from_slice::<Prefs>(&bytes) {
-                Ok(prefs) => (prefs, None),
-                Err(e) => {
-                    let bad = path.with_extension("json.bad");
-                    let kept = std::fs::rename(&path, &bad).map(|()| bad).map_err(|r| r.to_string());
-                    (Prefs::default(), Some(Note::PrefsUnreadable { path: path.clone(), error: e.to_string(), kept }))
-                }
-            },
-            Err(_) => (Prefs::default(), None),
-        };
-        (Store { path, current: Mutex::new(prefs) }, note)
+    /// The file's text, pinned: the field names, their order and the number formats are the format on disk.
+    const GOLDEN: &str = r#"{
+  "write_back": true,
+  "yandex_folder": "",
+  "real_size": false,
+  "show_borders": false,
+  "row_height": 220.0,
+  "last_file": -1
+}"#;
+
+    #[test]
+    fn the_defaults_are_written_as_the_golden_text() {
+        assert_eq!(serde_json::to_string_pretty(&Prefs::default()).unwrap(), GOLDEN);
     }
 
-    pub(crate) fn get(&self) -> Prefs {
-        self.current.lock().unwrap().clone()
+    #[test]
+    fn the_golden_text_reads_back_to_the_defaults() {
+        assert_eq!(serde_json::from_str::<Prefs>(GOLDEN).unwrap(), Prefs::default());
     }
 
-    /// Change the preferences and save them, written to a temp file and renamed, so a crash never leaves half a file. The
-    /// change is kept in memory even when the save fails; the error says why it wasn't written.
-    pub(crate) fn update(&self, change: impl FnOnce(&mut Prefs)) -> std::io::Result<()> {
-        let mut current = self.current.lock().unwrap();
-        change(&mut current);
-        let json = serde_json::to_vec_pretty(&*current).map_err(std::io::Error::other)?;
-        let temp = self.path.with_extension("json.tmp");
-        std::fs::write(&temp, json).and_then(|()| std::fs::rename(&temp, &self.path))
+    #[test]
+    fn a_changed_value_is_written_as_its_own_text() {
+        let prefs = Prefs { real_size: true, row_height: 333.5, last_file: 42, ..Prefs::default() };
+        let text = serde_json::to_string(&prefs).unwrap();
+        assert_eq!(
+            text,
+            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":333.5,"last_file":42}"#
+        );
     }
 }

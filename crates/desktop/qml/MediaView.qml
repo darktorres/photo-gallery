@@ -13,7 +13,7 @@ Item {
 
     // Whether the turns swap the picture's width and height (the Viewport's swapsAxes, called by the viewer).
     required property bool swapsAxes
-    required property string kind
+    required property int kind
     required property bool still
     required property bool zen
     required property bool playsVideo
@@ -44,7 +44,7 @@ Item {
 
     // Play or pause the video or animation shown.
     function togglePlay() {
-        if (kind === "animated")
+        if (kind === GalleryModel.Animated)
             animPlayer.playing = !animPlayer.playing
         else if (player.playbackState === MediaPlayer.PlayingState)
             player.pause()
@@ -111,7 +111,7 @@ Item {
         duration: player.duration
         seekable: player.seekable
         onSeekAsked: (ms) => player.position = ms
-        showTransport: media.kind === "video" && !media.zen
+        showTransport: media.kind === GalleryModel.Video && !media.zen
         barHeight: media.barHeight
         muted: media.muted
         volume: media.volume

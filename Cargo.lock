@@ -1621,18 +1621,11 @@ dependencies = [
  "cxx-qt-build",
  "cxx-qt-lib",
  "pg-app",
- "pg-catalog",
  "pg-client",
- "pg-jobs",
- "pg-library",
  "pg-model",
  "pg-platform",
  "pg-render",
- "pg-thumbcache",
  "pg-trace",
- "pg-yandex",
- "serde",
- "serde_json",
 ]
 
 [[package]]

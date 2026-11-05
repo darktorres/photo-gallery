@@ -15,8 +15,6 @@ import pg.gallery
 Pane {
     id: bar
 
-    // The query as JSON (query::Query), for the grid's model and the saved views; set it to replace the query.
-    property alias query: filters.query
     // How many facets filter; files in the folder, unfiltered, and those the query keeps (countFacets()).
     readonly property int active: filters.active
     readonly property int total: filters.total
@@ -32,9 +30,18 @@ Pane {
 
     // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
     function countFacets(folder: string, recursive: bool) { filters.countFacets(folder, recursive) }
+    // The listing's query changed outside the bar (a saved view was applied): the fields show it again.
+    function reloadQuery() { filters.reload() }
 
-    // Filters.duplicates and Filters.borderMarked, in the boxes' order (-1 either way, then 1 and 0). The list facets'
-    // choices are FacetChoices rows, made in the flow below.
+    // The list facets, by index: the order of pg_client::facets::Facet (pinned by tests/facets.rs). A FacetChoices row
+    // set is made for each, in the flow below.
+    readonly property int facetTypes: 0
+    readonly property int facetOrientations: 1
+    readonly property int facetStatus: 2
+    readonly property int facetBorders: 3
+    readonly property int facetRatings: 4
+    readonly property int facetExts: 5
+    // The duplicates and review boxes, in their order (Filters.duplicatesIndex, borderMarkedIndex).
     readonly property list<string> duplicateChoices: ["Any", "Has duplicates", "No duplicates"]
     readonly property list<string> reviewChoices: ["Any", "Not marked", "Marked not a border"]
 
@@ -70,13 +77,14 @@ Pane {
     // One end of a range.
     component Bound: TextField {
         id: field
-        required property string facet
-        required property string end
+        // The field (input.rs Field::ALL) and the end (Edge: 0 the low end, 1 the high end), as the core numbers them.
+        required property int facet
+        required property int end
         property bool isDate: false
         readonly property bool bad: !filters.boundValid(facet, text)
         function reload() { text = filters.bound(facet, end) }
         Layout.preferredWidth: isDate ? 96 : 60
-        placeholderText: isDate ? "YYYY-MM-DD" : end
+        placeholderText: isDate ? "YYYY-MM-DD" : (end === 0 ? "min" : "max")
         selectByMouse: true
         font.pixelSize: 12
         color: bad ? Theme.invalidText : palette.text
@@ -100,16 +108,33 @@ Pane {
         active: bar.opened
         sourceComponent: Component {
             Flow {
+                id: choiceRows
                 spacing: 14
 
                 // The rows of each list facet (facet_choices.rs): a chip reads its row's key, label, count and chosen.
-                // They follow the query and the counts, so no binding needs a revision.
-                FacetChoices { id: typeChoices; facet: "types"; query: filters.query; counts: filters.counts }
-                FacetChoices { id: ratingChoices; facet: "ratings"; query: filters.query; counts: filters.counts }
-                FacetChoices { id: extChoices; facet: "exts"; query: filters.query; counts: filters.counts }
-                FacetChoices { id: shapeChoices; facet: "orientations"; query: filters.query; counts: filters.counts }
-                FacetChoices { id: statusChoices; facet: "status"; query: filters.query; counts: filters.counts }
-                FacetChoices { id: borderChoices; facet: "borders"; query: filters.query; counts: filters.counts }
+                // They read the query and the counts themselves; each change to either asks for the rows again.
+                FacetChoices { id: typeChoices; facet: bar.facetTypes }
+                FacetChoices { id: ratingChoices; facet: bar.facetRatings }
+                FacetChoices { id: extChoices; facet: bar.facetExts }
+                FacetChoices { id: shapeChoices; facet: bar.facetOrientations }
+                FacetChoices { id: statusChoices; facet: bar.facetStatus }
+                FacetChoices { id: borderChoices; facet: bar.facetBorders }
+
+                function refreshChoices() {
+                    typeChoices.refresh()
+                    ratingChoices.refresh()
+                    extChoices.refresh()
+                    shapeChoices.refresh()
+                    statusChoices.refresh()
+                    borderChoices.refresh()
+                }
+
+                Connections {
+                    target: filters
+                    function onEdited() { choiceRows.refreshChoices() }
+                    function onLoaded() { choiceRows.refreshChoices() }
+                    function onCounted() { choiceRows.refreshChoices() }
+                }
 
                 RowLayout {
                     spacing: 4
@@ -118,7 +143,7 @@ Pane {
                         model: typeChoices
                         delegate: Chip {
                             text: label + "  " + bar.count(count)
-                            onClicked: filters.toggle("types", key)
+                            onClicked: filters.toggle(bar.facetTypes, key)
                         }
                     }
                 }
@@ -131,7 +156,7 @@ Pane {
                         delegate: Chip {
                             required property int index
                             text: Ratings.symbol(index) + (index === 0 ? " Unrated" : "")
-                            onClicked: filters.toggle("ratings", key)
+                            onClicked: filters.toggle(bar.facetRatings, key)
                         }
                     }
                 }
@@ -143,7 +168,7 @@ Pane {
                         model: extChoices
                         delegate: Chip {
                             text: label + "  " + bar.count(count)
-                            onClicked: filters.toggle("exts", key)
+                            onClicked: filters.toggle(bar.facetExts, key)
                         }
                     }
                 }
@@ -155,7 +180,7 @@ Pane {
                         model: shapeChoices
                         delegate: Chip {
                             text: label
-                            onClicked: filters.toggle("orientations", key)
+                            onClicked: filters.toggle(bar.facetOrientations, key)
                         }
                     }
                 }
@@ -163,24 +188,24 @@ Pane {
                 RowLayout {
                     spacing: 4
                     Caption { text: "Size (MB)" }
-                    Bound { facet: "size_mb"; end: "min" }
-                    Bound { facet: "size_mb"; end: "max" }
+                    Bound { facet: 0; end: 0 }
+                    Bound { facet: 0; end: 1 }
                     Caption { text: "Megapixels" }
-                    Bound { facet: "megapixels"; end: "min" }
-                    Bound { facet: "megapixels"; end: "max" }
+                    Bound { facet: 1; end: 0 }
+                    Bound { facet: 1; end: 1 }
                     Caption { text: "Duration (s)" }
-                    Bound { facet: "duration_s"; end: "min" }
-                    Bound { facet: "duration_s"; end: "max" }
+                    Bound { facet: 2; end: 0 }
+                    Bound { facet: 2; end: 1 }
                 }
 
                 RowLayout {
                     spacing: 4
                     Caption { text: "Taken" }
-                    Bound { facet: "taken"; end: "from"; isDate: true }
-                    Bound { facet: "taken"; end: "to"; isDate: true }
+                    Bound { facet: 3; end: 0; isDate: true }
+                    Bound { facet: 3; end: 1; isDate: true }
                     Caption { text: "Modified" }
-                    Bound { facet: "modified"; end: "from"; isDate: true }
-                    Bound { facet: "modified"; end: "to"; isDate: true }
+                    Bound { facet: 4; end: 0; isDate: true }
+                    Bound { facet: 4; end: 1; isDate: true }
                 }
 
                 RowLayout {
@@ -188,8 +213,8 @@ Pane {
                     Caption { text: "Duplicates" }
                     ComboBox {
                         model: bar.duplicateChoices
-                        currentIndex: filters.duplicates < 0 ? 0 : filters.duplicates > 0 ? 1 : 2
-                        onActivated: (i) => filters.duplicates = i === 0 ? -1 : i === 1 ? 1 : 0
+                        currentIndex: filters.duplicatesIndex
+                        onActivated: (i) => filters.setDuplicatesIndex(i)
                         font.pixelSize: 12
                         Layout.preferredWidth: 140
                     }
@@ -198,7 +223,7 @@ Pane {
                         model: statusChoices
                         delegate: Chip {
                             text: label
-                            onClicked: filters.toggle("status", key)
+                            onClicked: filters.toggle(bar.facetStatus, key)
                         }
                     }
                 }
@@ -210,14 +235,14 @@ Pane {
                         model: borderChoices
                         delegate: Chip {
                             text: label + "  " + bar.count(count)
-                            onClicked: filters.toggle("borders", key)
+                            onClicked: filters.toggle(bar.facetBorders, key)
                         }
                     }
                     Caption { text: "Review" }
                     ComboBox {
                         model: bar.reviewChoices
-                        currentIndex: filters.borderMarked + 1
-                        onActivated: (i) => filters.borderMarked = i - 1
+                        currentIndex: filters.borderMarkedIndex
+                        onActivated: (i) => filters.setBorderMarkedIndex(i)
                         font.pixelSize: 12
                         Layout.preferredWidth: 170
                     }

@@ -1,21 +1,25 @@
-# Screenshot comparison (S-14.1, `just shots`): the working tree's gallery.exe against a base commit's, over the
-# test-hook matrix, on one fixture, pixel by pixel. Exit code 1 when anything differs (or a run fails).
+# Screenshot comparison (S-14.1, `just shots`): the working tree's gallery.exe against a reference recorded from a base
+# commit, over the test-hook matrix, on one fixture, pixel by pixel. Exit code 1 when anything differs unexpectedly
+# (or a run fails).
 #
-#   just shots                  # working tree against HEAD
-#   just shots <commit>         # working tree against another commit
-#   just shots -Self            # the working tree against itself: the matrix's own determinism
+#   just shots -Record <commit>     # build <commit> once and record its screenshots as a reference
+#   just shots                      # working tree against the reference (the only one, or -Base <commit>)
+#   just shots -Expect apply-view   # these scenarios are declared to differ: reported, not failures
+#   just shots -Self                # the working tree against itself: the matrix's own determinism
 #   just shots -Only view0,apply-view
 #
 # How it works:
-# - The base is a detached scratch worktree at target\shots\base, built into target\shots\base-target, so the
-#   working tree's own build (target\) is not touched. The working tree builds into target\ as usual.
+# - A reference is tools/shots/reference/<sha10>/: one PNG per scenario and manifest.json, which holds the full commit,
+#   the fixture's hash, the Qt folder, the wait, and each scenario's crop hashes and settle line. It is recorded once,
+#   from a scratch worktree at target\shots\base (built into target\shots\base-target). A comparison builds only the
+#   working tree, so the base is not built again. Recording over an existing reference replaces it.
 # - The fixture (tools/shots/fixture.py): a synthetic library (target\shots\library, made once; delete it to make
 #   another) and, per side, a catalog built by that side's own binary (scan, import, thumbnails at 120 and 220
-#   px) and saved as a template.
+#   px) and saved as a template. A comparison refuses a reference whose fixture hash differs from the library's.
 # - Each run starts from a copy of its side's template catalog, fresh preferences, and the library as it was
 #   made: the turn and rating keys write into the original files, so Restore-Library puts them back in place
 #   (same file, so the catalog's identity holds; the timestamp is put back too).
-# - A difference is written as a diff image (the base's pixels, with the differing ones red) under
+# - A difference is written as a diff image (the reference's pixels, with the differing ones red) under
 #   target\shots\diff. Each run's log and output stay under target\shots\runs\<side>\<scenario>\.
 #
 # The matrix is the hooks of crates/desktop/qml/TestHooks.qml, each alone, plus a few together. A run's screenshot
@@ -25,14 +29,17 @@
 
 [CmdletBinding()]
 param(
-    [string]$Base = "HEAD",
+    [string]$Record = "",
+    [string]$Base = "",
     [switch]$Self,
     [double]$Wait = 10,
     [string]$Only = "",
+    [string]$Expect = "",
     [string]$Python = "C:\Python312\python.exe"
 )
 
 $ErrorActionPreference = "Stop"
+if ($Record -and $Self) { throw "-Record and -Self do not go together" }
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Shots = Join-Path $Repo "target\shots"
 $Library = Join-Path $Shots "library"
@@ -40,6 +47,7 @@ $Pristine = Join-Path $Shots "library-pristine"
 $VenvPython = Join-Path $Shots "venv\Scripts\python.exe"
 $FixturePy = Join-Path $PSScriptRoot "shots\fixture.py"
 $Requirements = Join-Path $PSScriptRoot "shots\requirements.txt"
+$RefRoot = Join-Path $PSScriptRoot "shots\reference"
 
 # The Qt and FFmpeg folders, from .cargo/config.toml (the same ones the build uses).
 $config = Get-Content (Join-Path $Repo ".cargo\config.toml") -Raw
@@ -79,6 +87,7 @@ if ($onlyList.Count -gt 0) {
     foreach ($name in @($Scenarios.Keys)) { if ($name -notin $onlyList) { $Scenarios.Remove($name) } }
     if ($Scenarios.Count -eq 0) { throw "no scenario matches -Only ($Only)" }
 }
+$expectList = @($Expect -split "," | Where-Object { $_ })
 
 function Build-Gallery([string]$Tree, [string]$TargetDir) {
     Push-Location $Tree
@@ -134,6 +143,18 @@ function Restore-Library {
     }
 }
 
+# The fixture's identity: the pristine library's files and the generator. A reference is only comparable with a
+# library made the same way, so a comparison checks this against the reference's manifest.
+function Get-FixtureHash {
+    $lines = @(foreach ($file in Get-ChildItem -Recurse -File $Pristine | Sort-Object FullName) {
+            $rel = $file.FullName.Substring($Pristine.Length)
+            "$rel $((Get-FileHash $file.FullName -Algorithm SHA256).Hash)"
+        })
+    $lines += "fixture.py $((Get-FileHash $FixturePy -Algorithm SHA256).Hash)"
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes(($lines -join "`n"))
+    return [System.BitConverter]::ToString([System.Security.Cryptography.SHA256]::HashData($bytes)) -replace "-", ""
+}
+
 function New-Template([string]$Exe, [string]$Dir) {
     if (Test-Path $Dir) { Remove-Item -Recurse -Force $Dir }
     $catalog = Join-Path $Dir "catalog"
@@ -177,6 +198,58 @@ function Invoke-Shot([string]$Exe, [string]$Side, [string]$Name, [string]$Hooks,
     $settle = (Get-Content "$png.settle.txt" -ErrorAction SilentlyContinue) -join " "
     if (-not (Test-Path $png)) { return @{ Png = $null; Crops = $crops; Note = "exit $($proc.ExitCode), no screenshot"; Settle = $settle } }
     return @{ Png = $png; Crops = $crops; Note = ""; Settle = $settle }
+}
+
+# One side of the matrix: its template catalog from its own binary, then each scenario.
+function Run-Side([string]$Exe, [string]$Side) {
+    $template = New-Template $Exe (Join-Path $Shots "sides\$Side")
+    $out = @()
+    foreach ($name in $Scenarios.Keys) {
+        Write-Host "[$Side] $name"
+        $shot = Invoke-Shot $Exe $Side $name $Scenarios[$name] $template $Wait
+        $out += [pscustomobject]@{ Scenario = $name; Png = $shot.Png; Crops = $shot.Crops; Note = $shot.Note; Settle = $shot.Settle }
+    }
+    return ,$out
+}
+
+# The reference to compare with: the only one recorded, or the one for -Base.
+function Resolve-Reference {
+    $refs = @(Get-ChildItem -Directory $RefRoot -ErrorAction SilentlyContinue | Where-Object { Test-Path (Join-Path $_.FullName "manifest.json") })
+    if ($refs.Count -eq 0) { throw "no reference recorded: run just shots -Record <commit>" }
+    if (-not $Base) {
+        if ($refs.Count -gt 1) { throw "several references ($(($refs.Name) -join ', ')): pass -Base <commit>" }
+        return $refs[0].FullName
+    }
+    $sha = (& git -C $Repo rev-parse --verify "$Base^{commit}").Trim()
+    if ($LASTEXITCODE) { throw "no commit $Base" }
+    $dir = Join-Path $RefRoot $sha.Substring(0, 10)
+    if (-not (Test-Path (Join-Path $dir "manifest.json"))) { throw "no reference for ${Base}: record it with just shots -Record $Base" }
+    return $dir
+}
+
+# Write a reference from the base side's results. Every scenario must have settled and produced a screenshot.
+function Save-Reference([string]$Sha, [object[]]$Results) {
+    foreach ($r in $Results) {
+        if (-not $r.Png -or $r.Settle -like "timed out*") { throw "cannot record $($r.Scenario): $($r.Note) $($r.Settle)" }
+    }
+    $dir = Join-Path $RefRoot $Sha.Substring(0, 10)
+    if (Test-Path $dir) { Remove-Item -Recurse -Force $dir }
+    New-Item -ItemType Directory -Force $dir | Out-Null
+    $rows = @()
+    foreach ($r in $Results) {
+        Copy-Item $r.Png (Join-Path $dir "$($r.Scenario).png")
+        $rows += [ordered]@{ scenario = $r.Scenario; crops = $r.Crops; settle = $r.Settle }
+    }
+    $manifest = [ordered]@{
+        commit = $Sha
+        recorded = (Get-Date -Format "yyyy-MM-dd")
+        fixture = (Get-FixtureHash)
+        qt = $qmake
+        wait = $Wait
+        scenarios = $rows
+    }
+    $manifest | ConvertTo-Json -Depth 5 | Set-Content -Path (Join-Path $dir "manifest.json") -Encoding utf8
+    return $dir
 }
 
 # The pixel comparison: System.Drawing, 32-bit ARGB on both sides, read as one int per pixel. Returns the number of
@@ -229,15 +302,17 @@ if (-not (Test-Path $VenvPython)) {
 & $VenvPython -m pip install --quiet -r $Requirements | Out-Host
 if ($LASTEXITCODE) { throw "pip install failed" }
 
-# 2. The two binaries.
+# 2. The binaries: the working tree's always; the base's only when recording, and the reference is read otherwise.
 $currentExe = Build-Gallery $Repo $null
-if ($Self) {
-    $baseLabel = "working tree"
-    $baseExe = $currentExe
-} else {
-    $worktree = Update-BaseWorktree $Base
-    $baseLabel = "$Base ($($worktree.Sha.Substring(0, 10)))"
+$refDir = $null
+$manifest = $null
+if ($Record) {
+    $worktree = Update-BaseWorktree $Record
     $baseExe = Build-Gallery $worktree.Tree (Join-Path $Shots "base-target")
+} elseif (-not $Self) {
+    $refDir = Resolve-Reference
+    $manifest = Get-Content (Join-Path $refDir "manifest.json") -Raw | ConvertFrom-Json
+    if ($manifest.qt -ne $qmake) { Write-Warning "the reference was recorded with Qt at $($manifest.qt); this tree uses $qmake" }
 }
 
 # 3. The library, made once, and its pristine copy for Restore-Library.
@@ -248,18 +323,36 @@ if (-not (Test-Path $Library)) {
 if (-not (Test-Path $Pristine)) {
     Copy-Item -Recurse $Library $Pristine
 }
+$fixtureHash = Get-FixtureHash
+if ($manifest -and $manifest.fixture -ne $fixtureHash) {
+    throw "the fixture changed since $($manifest.commit.Substring(0, 10)) was recorded; re-record it with just shots -Record $($manifest.commit)"
+}
 
-# 4. Per side: a template catalog from that side's binary, then the matrix.
-$sides = [ordered]@{ base = $baseExe; current = $currentExe }
-$results = @()
-foreach ($side in $sides.Keys) {
-    $template = New-Template $sides[$side] (Join-Path $Shots "sides\$side")
-    foreach ($name in $Scenarios.Keys) {
-        Write-Host "[$side] $name"
-        $shot = Invoke-Shot $sides[$side] $side $name $Scenarios[$name] $template $Wait
-        $results += [pscustomobject]@{ Side = $side; Scenario = $name; Png = $shot.Png; Crops = $shot.Crops; Note = $shot.Note; Settle = $shot.Settle }
+if ($Record) {
+    # The reference: the base commit's own screenshots of the matrix, recorded once.
+    $baseResults = Run-Side $baseExe "base"
+    $dir = Save-Reference $worktree.Sha $baseResults
+    Write-Host "recorded $($baseResults.Count) scenarios of $($worktree.Sha.Substring(0, 10)) in $dir"
+    exit 0
+}
+
+# 4. The sides to compare: the base is the reference, or the working tree itself with -Self.
+if ($Self) {
+    $baseLabel = "working tree (-Self)"
+    $baseResults = Run-Side $currentExe "base"
+} else {
+    $baseLabel = "$($manifest.commit.Substring(0, 10)) (recorded $($manifest.recorded))"
+    $baseResults = foreach ($name in $Scenarios.Keys) {
+        $ref = $manifest.scenarios | Where-Object { $_.scenario -eq $name }
+        $png = Join-Path $refDir "$name.png"
+        if ($ref -and (Test-Path $png)) {
+            [pscustomobject]@{ Scenario = $name; Png = $png; Crops = $ref.crops; Note = ""; Settle = $ref.settle }
+        } else {
+            [pscustomobject]@{ Scenario = $name; Png = $null; Crops = ""; Note = "not in the reference"; Settle = "" }
+        }
     }
 }
+$currentResults = Run-Side $currentExe "current"
 
 # 5. The comparison, scenario by scenario.
 $diffDir = Join-Path $Shots "diff"
@@ -268,8 +361,8 @@ New-Item -ItemType Directory -Force $diffDir | Out-Null
 $report = @()
 $failed = 0
 foreach ($name in $Scenarios.Keys) {
-    $b = $results | Where-Object { $_.Side -eq "base" -and $_.Scenario -eq $name }
-    $c = $results | Where-Object { $_.Side -eq "current" -and $_.Scenario -eq $name }
+    $b = $baseResults | Where-Object { $_.Scenario -eq $name }
+    $c = $currentResults | Where-Object { $_.Scenario -eq $name }
     if (-not $b.Png -or -not $c.Png) {
         $status = "MISSING"; $detail = "base: $($b.Note) current: $($c.Note)"
     } elseif ($b.Settle -like "timed out*" -or $c.Settle -like "timed out*") {
@@ -286,7 +379,12 @@ foreach ($name in $Scenarios.Keys) {
             if (-not $cropsSame) { $detail += "; crops differ" }
         }
     }
-    if ($status -ne "same") { $failed++ }
+    # A declared difference is reported as such; one that no longer differs means the declaration is stale.
+    if ($expectList -contains $name) {
+        if ($status -eq "DIFFERENT") { $status = "DECLARED"; $detail += " (declared with -Expect)" }
+        elseif ($status -eq "same") { $status = "NOT-SEEN"; $detail = "declared to differ, but identical" }
+    }
+    if ($status -notin @("same", "DECLARED")) { $failed++ }
     $report += [pscustomobject]@{ Scenario = $name; Result = $status; Detail = $detail }
 }
 
@@ -298,4 +396,4 @@ if ($failed -gt 0) {
     Write-Host "$failed of $($Scenarios.Count) scenarios differ or did not run; diffs in $diffDir"
     exit 1
 }
-Write-Host "all $($Scenarios.Count) scenarios identical"
+Write-Host "all $($Scenarios.Count) scenarios as expected"

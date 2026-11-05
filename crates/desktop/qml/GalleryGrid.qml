@@ -9,11 +9,11 @@ import pg.gallery
 
 Item {
     id: root
-    // The gallery model (made by Main), the gap between cells, the selection, the thumbnail height and the borders.
+    // The gallery model (made by Main, which also gives it the thumbnail height), the gap between cells, the selection
+    // and the borders.
     required property GalleryModel gallery
     required property real gap
     required property int current
-    required property int thumbHeight
     required property bool showBorders
     // The empty-list message: no library folders, a filter that matches nothing, or an import under way.
     required property bool noFolders
@@ -75,7 +75,6 @@ Item {
 
         delegate: GridRow {
             gap: root.gap
-            thumbHeight: root.thumbHeight
             showBorders: root.showBorders
             current: root.current
             settling: root.settling

@@ -7,7 +7,7 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     /// The catalog folder: `catalog.sqlite`, and the thumbnail cache beside it.
     pub catalog_dir: PathBuf,
-    /// The server's preferences (`gallery.json`).
+    /// The preferences (`gallery.json`).
     pub prefs_path: PathBuf,
     /// The thumbnail cache's cap in bytes; `None` keeps the cap the cache has.
     pub thumb_cap_bytes: Option<i64>,

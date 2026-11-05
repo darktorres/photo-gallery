@@ -52,12 +52,17 @@ struct Busy {
     // still to write into the files (or a failure that stops them: that stays, and the log says so).
     int jobs = 0;
     int writes = 0;
+    // The core's pauses still to run (Shell.pending): a debounce, the session, the layout or the thumbnails to come.
+    int deadlines = 0;
 
-    bool idle() const { return loading == 0 && pending == 0 && animating == 0 && jobs == 0 && writes == 0; }
+    bool idle() const {
+        return loading == 0 && pending == 0 && animating == 0 && jobs == 0 && writes == 0 && deadlines == 0;
+    }
     QString text() const {
         QString text = QStringLiteral("%1 image(s) seen, %2 loading; %3 timer(s) seen, %4 pending; %5 animating; "
-                                      "library job running: %6, writes pending: %7")
-                           .arg(images).arg(loading).arg(timers).arg(pending).arg(animating).arg(jobs).arg(writes);
+                                      "library job running: %6, writes pending: %7; core pauses pending: %8")
+                           .arg(images).arg(loading).arg(timers).arg(pending).arg(animating).arg(jobs).arg(writes)
+                           .arg(deadlines);
         if (!animating_owners.isEmpty())
             text += " (" + animating_owners.join(", ") + ")";
         return text;
@@ -66,6 +71,12 @@ struct Busy {
 
 Busy busy_of(QQuickWindow* window) {
     Busy busy;
+    // The window's core (Main.qml's `shellCore`): its pending pauses are asked through its invokable.
+    if (QObject* core = window->property("shellCore").value<QObject*>()) {
+        bool pending = false;
+        if (QMetaObject::invokeMethod(core, "pending", Q_RETURN_ARG(bool, pending)) && pending)
+            ++busy.deadlines;
+    }
     for (QObject* object : window->findChildren<QObject*>()) {
         if (object->inherits("QQuickImageBase")) {
             ++busy.images;

@@ -1,9 +1,9 @@
 //! The grid model: the files of the open folder, laid out in justified rows (`pg_client::layout`). QML sees one
 //! list row per layout row (virtualized by ListView) and asks for each item's file id and size by index. The
-//! model holds a compact entry per file (`browse::read::Entry`); a file's path and size are read when it is shown
-//! (`browse::read::details`), for the selection and the viewer's file.
+//! model holds a compact entry per file (`pg_model::grid::Entry`); a file's path and size are read when it is shown
+//! (`App::details`), for the selection and the viewer's file.
 //!
-//! The files are listed off the GUI thread (the app's catalog reader): `openFolder` asks, and the list arrives
+//! The files are listed off the GUI thread (the app's catalog reader): `openList` asks (the listing says what), and the list arrives
 //! later (`loaded`).
 //! So that nothing is renumbered under the user, the model keeps the items QML holds: the selection (`current`)
 //! moves with its file when a new list arrives, and while the viewer is open (`viewing`) an arriving list waits
@@ -33,6 +33,15 @@ pub mod qobject {
         type QList_i32 = cxx_qt_lib::QList<i32>;
     }
 
+    /// What the viewer shows of its item (`viewedKind`): a still, an animation or a video. QML compares it by name
+    /// (`GalleryModel.Video`); the key map takes it as its value, the position here (`keymap.rs`).
+    #[qenum(GalleryModel)]
+    enum MediaKind {
+        Image,
+        Animated,
+        Video,
+    }
+
     extern "RustQt" {
         #[qobject]
         #[base = QAbstractListModel]
@@ -42,7 +51,7 @@ pub mod qobject {
         /// with the revision (`bump_revision`).
         #[qproperty(i32, croppable, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, revision, READ, WRITE, NOTIFY, FINAL)]
-        /// A list asked for (`openFolder`) hasn't arrived yet; the one shown stays meanwhile.
+        /// A list asked for (`openList`) hasn't arrived yet; the one shown stays meanwhile.
         #[qproperty(bool, loading, READ, WRITE, NOTIFY, FINAL)]
         /// The list asked for has arrived and waits under the viewer (`Grid::is_held`): it is loaded, not shown, so
         /// it is not "loading" to the user. QML reads `loading && !holding`.
@@ -65,9 +74,13 @@ pub mod qobject {
         #[qproperty(i32, viewed_rating, cxx_name = "viewedRating", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_full_width, cxx_name = "viewedFullWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_full_height, cxx_name = "viewedFullHeight", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(QString, viewed_kind, cxx_name = "viewedKind", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(MediaKind, viewed_kind, cxx_name = "viewedKind", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QUrl, viewed_file_url, cxx_name = "viewedFileUrl", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(QString, viewed_full_url, cxx_name = "viewedFullUrl", READ, WRITE, NOTIFY, FINAL)]
+        /// The thumbnails' height in device pixels (QML's, from the screen's scale): the thumbnail URLs are made for it,
+        /// so a change makes every row read them again (`setThumbHeight`).
+        #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, WRITE = set_thumb_height, FINAL)]
         #[qproperty(QString, viewed_file_path, cxx_name = "viewedFilePath", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, viewed_info, cxx_name = "viewedInfo", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QRectF, viewed_border_box, cxx_name = "viewedBorderBox", READ, WRITE, NOTIFY, FINAL)]
@@ -144,20 +157,12 @@ pub mod qobject {
         #[inherit]
         fn index(self: &GalleryModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
-        /// Show the files of a merged folder (`""` = everything), with or without its subfolders, that pass the
-        /// filters (`query::Query` as JSON), in an order (`query::Sort` as JSON): `view::View`'s and
-        /// `filters::Filters`'. The list arrives later (`loaded`). With `keep` (the same folder, refreshed), the
-        /// selection and `anchor` stay with their files; otherwise the selection is cleared.
+        /// Show the files the listing asks for (`listing.rs`: a merged folder, with or without its subfolders, that
+        /// pass the filters, in an order). The list arrives later (`loaded`). With `keep` (the same listing, refreshed),
+        /// the selection and `anchor` stay with their files; otherwise the selection is cleared.
         #[qinvokable]
-        #[cxx_name = "openFolder"]
-        fn open_folder(
-            self: Pin<&mut GalleryModel>,
-            merged: &QString,
-            recursive: bool,
-            query: &QString,
-            sort: &QString,
-            keep: bool,
-        );
+        #[cxx_name = "openList"]
+        fn open_list(self: Pin<&mut GalleryModel>, keep: bool);
 
         /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
         #[qinvokable]
@@ -176,10 +181,8 @@ pub mod qobject {
         #[qinvokable]
         fn aspect(self: &GalleryModel, item: i32) -> f64;
 
-        /// The URL of a full-size view of a file (`image://full/<key>/<rest>`, `rest` as the providers parse it).
-        #[qinvokable]
-        #[cxx_name = "fullUrl"]
-        fn full_url(self: &GalleryModel, key: &QString, rest: &QString) -> QString;
+        /// The thumbnails' height changed: every row's thumbnail URLs are read again (`ROLE_THUMB_URLS`).
+        fn set_thumb_height(self: Pin<&mut GalleryModel>, height: i32);
 
         /// Turn a file by quarter turns (1 = clockwise, -1 = counterclockwise), losslessly, in the background.
         #[qinvokable]
@@ -219,7 +222,7 @@ pub mod qobject {
         fn set_border_marked(self: Pin<&mut GalleryModel>, item: i32, marked: bool);
 
         /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder at
-        /// `url`, in the background (`pg_library::crop`). Returns how many it asked for.
+        /// `url`, in the background (the library's crop pass). Returns how many it asked for.
         #[qinvokable]
         #[cxx_name = "saveCroppedCopies"]
         fn save_cropped_copies(self: &GalleryModel, url: &QUrl) -> i32;
@@ -248,8 +251,6 @@ use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QUrl,
     QVariant,
 };
-use pg_catalog::browse::{self};
-use pg_catalog::query::from_json;
 use pg_client::grid::{Arrival, Changed, Grid, Plan, Shape};
 use pg_client::layout;
 use pg_client::text::{self, FoundBorders};
@@ -257,12 +258,10 @@ use pg_model::details::Details;
 use pg_model::detection::Class;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_model::image::{ImageKey, Version};
-use pg_model::query::{Query, Sort};
+use pg_model::image::{ImageKey, ImageRequest, Version};
+use pg_model::query::MediaType;
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
-
-use pg_app::Kind as Load;
 
 /// A row's items, (first, count) as a point: one value, so a row changed or reused is given its items at once.
 const ROLE_SPAN: i32 = 256;
@@ -285,9 +284,13 @@ const ROLE_CONTENT_X: i32 = 265;
 const ROLE_CONTENT_Y: i32 = 266;
 const ROLE_CONTENT_WIDTH: i32 = 267;
 const ROLE_CONTENT_HEIGHT: i32 = 268;
+const ROLE_THUMB_URLS: i32 = 269;
+const ROLE_THUMBHASH_URLS: i32 = 270;
 /// The cells' roles, and their names in QML.
-const CELL_ROLES: [(i32, &str); 10] = [
+const CELL_ROLES: [(i32, &str); 12] = [
     (ROLE_KEYS, "keys"),
+    (ROLE_THUMB_URLS, "thumbUrls"),
+    (ROLE_THUMBHASH_URLS, "thumbhashUrls"),
     (ROLE_BADGES, "badges"),
     (ROLE_RATINGS, "ratings"),
     (ROLE_BORDERS_MARKED, "bordersMarked"),
@@ -317,10 +320,12 @@ pub struct GalleryRust {
     viewed_rating: i32,
     viewed_full_width: i32,
     viewed_full_height: i32,
-    viewed_kind: QString,
+    viewed_kind: qobject::MediaKind,
     viewed_player_turns: i32,
     viewed_file_url: QUrl,
+    viewed_full_url: QString,
     viewed_file_path: QString,
+    thumb_height: i32,
     viewed_info: QString,
     viewed_border_box: QRectF,
     viewed_rejected_top: f64,
@@ -353,10 +358,12 @@ impl Default for GalleryRust {
             viewed_rating: 0,
             viewed_full_width: 0,
             viewed_full_height: 0,
-            viewed_kind: QString::from("image"),
+            viewed_kind: qobject::MediaKind::Image,
             viewed_player_turns: 0,
             viewed_file_url: QUrl::default(),
+            viewed_full_url: QString::default(),
             viewed_file_path: QString::default(),
+            thumb_height: 0,
             viewed_info: QString::default(),
             viewed_border_box: QRectF::default(),
             viewed_rejected_top: -1.0,
@@ -379,7 +386,7 @@ impl GalleryRust {
             let found = memo.remove(at);
             memo.insert(0, found);
         } else {
-            let details = match crate::app::get().with_catalog(|c| browse::read::details(c, e.id)) {
+            let details = match crate::app::get().details(e.id) {
                 Ok(d) => d?,
                 Err(err) => {
                     eprintln!("reading {}: {err:#}", e.id.get());
@@ -407,6 +414,12 @@ impl qobject::GalleryModel {
             ROLE_HEIGHT => QVariant::from(&row.height),
             ROLE_VERSION => QVariant::from(&(self.grid.version(index.row() as usize) as i32)),
             ROLE_KEYS => QVariant::from(&items.map(|i| self.image_key(i as i32)).collect::<QStringList>()),
+            ROLE_THUMB_URLS => QVariant::from(
+                &items.map(|i| self.thumb_url(&self.image_key(i as i32), self.thumb_height)).collect::<QStringList>(),
+            ),
+            ROLE_THUMBHASH_URLS => {
+                QVariant::from(&items.map(|i| self.thumbhash_url(&self.image_key(i as i32))).collect::<QStringList>())
+            }
             ROLE_BADGES => QVariant::from(&items.map(|i| self.badge(i as i32)).collect::<QStringList>()),
             ROLE_RATINGS => QVariant::from(&items.map(|i| self.rating(i as i32)).collect::<QList<i32>>()),
             ROLE_BORDERS_MARKED => {
@@ -447,36 +460,24 @@ impl qobject::GalleryModel {
         self.grid.rows().len() as i32
     }
 
-    fn open_folder(
-        mut self: Pin<&mut Self>,
-        merged: &QString,
-        recursive: bool,
-        query: &QString,
-        sort: &QString,
-        keep: bool,
-    ) {
+    fn open_list(mut self: Pin<&mut Self>, keep: bool) {
         let loading = self.loading;
         let generation = self.as_mut().rust_mut().grid.request(keep, loading);
         // A list held for the viewer is stale now: the one asked for is loading.
         let holding = self.grid.is_held();
         self.as_mut().set_holding(holding);
         self.as_mut().set_loading(true);
-        let path = merged.to_string();
-        let (query, sort) = (from_json::<Query>(&query.to_string()), from_json::<Sort>(&sort.to_string()));
+        let pg_model::view::Listing { folder: path, recursive, sort, query } = crate::listing::get();
         let model = self.qt_thread();
         let shown = path.clone();
-        crate::app::get().session().submit(
-            Load::Grid,
-            move |c| browse::read::list_grid(c, &path, recursive, &query, sort),
-            move |entries| {
-                let entries = entries.unwrap_or_else(|e| {
-                    eprintln!("listing {shown}: {e:#}");
-                    Vec::new()
-                });
-                // Fails only when the model is gone (the window closing): nothing left to show it in.
-                let _ = model.queue(move |model| model.apply(generation, entries));
-            },
-        );
+        crate::app::get().session().grid(path, recursive, query, sort, move |entries| {
+            let entries = entries.unwrap_or_else(|e| {
+                eprintln!("listing {shown}: {e:#}");
+                Vec::new()
+            });
+            // Fails only when the model is gone (the window closing): nothing left to show it in.
+            let _ = model.queue(move |model| model.apply(generation, entries));
+        });
     }
 
     fn set_viewing_holding(mut self: Pin<&mut Self>, value: i32) {
@@ -493,7 +494,7 @@ impl qobject::GalleryModel {
         }
     }
 
-    /// Show a list `open_folder` asked for, unless a newer one was asked for since; while the viewer is open, when
+    /// Show a list `open_list` asked for, unless a newer one was asked for since; while the viewer is open, when
     /// it closes.
     fn apply(mut self: Pin<&mut Self>, generation: u64, entries: Vec<Entry>) {
         let viewing = self.viewing >= 0;
@@ -593,6 +594,21 @@ impl qobject::GalleryModel {
 
     /// Items changed (rated, turned, marked) without changing shape: the cells of their rows read them again (the
     /// cells' lists, then `ROLE_VERSION`).
+    /// The thumbnails' height changed: each row gets a new version and its cells' lists are read again (the URLs are
+    /// made for the new height), in the same order as `items_changed`.
+    fn set_thumb_height(mut self: Pin<&mut Self>, height: i32) {
+        if height == self.thumb_height {
+            return;
+        }
+        self.as_mut().rust_mut().thumb_height = height;
+        let rows = self.as_mut().rust_mut().grid.touch_all();
+        for row in 0..rows {
+            let index = self.index(row as i32, 0, &QModelIndex::default());
+            self.as_mut().data_changed(&index, &index, &QList::from(cell_roles().as_slice()));
+            self.as_mut().data_changed(&index, &index, &QList::from(&[ROLE_VERSION][..]));
+        }
+    }
+
     fn items_changed(mut self: Pin<&mut Self>, items: &[usize]) {
         let rows = self.as_mut().rust_mut().grid.touch(items);
         for row in rows {
@@ -646,7 +662,9 @@ impl qobject::GalleryModel {
     fn refresh_viewed(mut self: Pin<&mut Self>) {
         let item = self.viewing;
         let key = self.image_key(item);
+        let full = self.full_url(&key);
         self.as_mut().set_viewed_key(key);
+        self.as_mut().set_viewed_full_url(full);
         let neighbours = self.keys_around(item, 4);
         self.as_mut().set_viewed_neighbour_keys(neighbours);
         let turns = self.pending_turns(item);
@@ -657,7 +675,7 @@ impl qobject::GalleryModel {
         self.as_mut().set_viewed_full_width(width);
         let height = self.full_height(item);
         self.as_mut().set_viewed_full_height(height);
-        let kind = self.media_type(item);
+        let kind = self.media_kind(item);
         self.as_mut().set_viewed_kind(kind);
         let player_turns = self.player_turns(item);
         self.as_mut().set_viewed_player_turns(player_turns);
@@ -723,8 +741,22 @@ impl qobject::GalleryModel {
             .collect()
     }
 
-    fn full_url(&self, key: &QString, rest: &QString) -> QString {
-        QString::from(&format!("image://full/{key}/{rest}"))
+    /// The URL of the full-size image of a file, the loupe's and the 1:1 view's (`image://full/<key>/full`).
+    fn full_url(&self, key: &QString) -> QString {
+        crate::viewport::full_url(key, pg_model::image::View::Full)
+    }
+
+    /// The URL of a file's thumbnail at a device-pixel height (`image://thumb/<key>/<height>`), or empty when the key
+    /// doesn't read.
+    fn thumb_url(&self, key: &QString, height: i32) -> QString {
+        // The request's own grammar: the height is clamped to the thumbnails there is (`ImageRequest::parse`).
+        let id = format!("{key}/{height}");
+        ImageRequest::parse("thumb", &id).map_or_else(QString::default, |r| QString::from(&r.url()))
+    }
+
+    /// The URL of a file's placeholder (`image://thumbhash/<key>`), or empty when the key doesn't read.
+    fn thumbhash_url(&self, key: &QString) -> QString {
+        ImageRequest::parse("thumbhash", &key.to_string()).map_or_else(QString::default, |r| QString::from(&r.url()))
     }
 
     /// Upright size in pixels, as shown (pending turns included); 0 before the import.
@@ -885,12 +917,16 @@ impl qobject::GalleryModel {
 
     /// How many of the listed files have borders found (and not marked): what `saveCroppedCopies` crops.
     fn bordered_count(&self) -> i32 {
-        self.grid.entries().iter().filter(|e| e.borders == Borders::Found).count() as i32
+        i32::try_from(self.grid.bordered()).unwrap_or(i32::MAX)
     }
 
-    /// `image`, `animated` or `video` (`query::MediaType`): what the viewer shows it with.
-    fn media_type(&self, item: i32) -> QString {
-        QString::from(self.grid.item(item).map_or("image", |e| e.media_type().key()))
+    /// What the viewer shows the item with (`viewedKind`): its media type.
+    fn media_kind(&self, item: i32) -> qobject::MediaKind {
+        match self.grid.item(item).map(|e| e.media_type()) {
+            Some(MediaType::Animated) => qobject::MediaKind::Animated,
+            Some(MediaType::Video) => qobject::MediaKind::Video,
+            Some(MediaType::Image) | None => qobject::MediaKind::Image,
+        }
     }
 
     /// The file as a URL, for Qt's player (videos).
@@ -945,7 +981,7 @@ fn cell_roles() -> Vec<i32> {
 
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).
 fn fresh_entry(id: FileId) -> Option<Entry> {
-    match crate::app::get().with_catalog(|c| browse::read::entry(c, id)) {
+    match crate::app::get().entry(id) {
         Ok(found) => found,
         Err(e) => {
             eprintln!("reloading {}: {e:#}", id.get());

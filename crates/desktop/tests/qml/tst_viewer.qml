@@ -15,6 +15,7 @@ TestCase {
 
     Settings { id: settingsStub }
     GalleryModel { id: galleryStub }
+    Shell { id: shellStub }
 
     Component {
         id: viewerC
@@ -22,6 +23,7 @@ TestCase {
             width: 800
             height: 600
             gallery: galleryStub
+            onStepRequested: (d) => stepTo(shellStub.viewerStep(index, d))
             settings: settingsStub
             fullUrl: ""
             showBorders: false
@@ -36,6 +38,7 @@ TestCase {
 
     // A viewer showing `index` of `count` items, with its signals spied on.
     function viewer(index, count) {
+        shellStub.count = count
         const v = createTemporaryObject(viewerC, tc, { index: index, count: count })
         verify(v !== null)
         movedSpy.target = v

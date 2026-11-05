@@ -42,8 +42,9 @@ TestCase {
                 contentY: tc.perCell(() => 0)
                 contentWidth: tc.perCell(() => 100)
                 contentHeight: tc.perCell(() => 100)
+                thumbUrls: tc.perCell((i) => "image://thumb/k" + i + "/100")
+                thumbhashUrls: tc.perCell((i) => "image://thumbhash/k" + i)
                 gap: 4
-                thumbHeight: 100
                 showBorders: false
                 current: -1
                 settling: list.rowSettling

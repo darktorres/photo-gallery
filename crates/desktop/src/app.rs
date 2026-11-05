@@ -63,7 +63,7 @@ fn note_text(note: &Note) -> String {
             )
         }
         Note::Thumbs(event) => {
-            use pg_thumbcache::Event;
+            use pg_app::reexport::ThumbEvent as Event;
             match event {
                 Event::TotalsFixed { kept, actual } => {
                     format!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed")

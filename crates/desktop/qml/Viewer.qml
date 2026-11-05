@@ -42,7 +42,7 @@ Rectangle {
     readonly property int fw: gallery.viewedFullWidth
     readonly property int fh: gallery.viewedFullHeight
     // image, animated or video (query::MediaType). Only still images zoom.
-    readonly property string kind: gallery.viewedKind
+    readonly property int kind: gallery.viewedKind
     // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
     readonly property int playerTurns: gallery.viewedPlayerTurns
     // The file, for the players; a line about it for the bar.
@@ -61,18 +61,18 @@ Rectangle {
     required property bool showBorders
     // Real Size (Z): open images at 1:1 instead of fitted.
     required property Settings settings
-    // The full-size image's URL (GalleryModel.fullUrl, made by Main): the loupe's and the 1:1 view's.
+    // The full-size image's URL (GalleryModel.viewedFullUrl, given by Main): the loupe's and the 1:1 view's.
     required property string fullUrl
 
     final property bool loupe: false    // L: 10× loupe under the cursor
     final property bool zen: false      // H or a tap: nothing over the picture
     readonly property real dpr: Screen.devicePixelRatio
 
-    readonly property bool still: kind === "image"
+    readonly property bool still: kind === GalleryModel.Image
     readonly property bool hasBorders: still && borderBox.width > 0
     readonly property bool zoomable: fw > 0 && fh > 0 && still
-    readonly property bool playsVideo: visible && kind === "video"
-    readonly property bool playsAnimation: visible && kind === "animated"
+    readonly property bool playsVideo: visible && kind === GalleryModel.Video
+    readonly property bool playsAnimation: visible && kind === GalleryModel.Animated
     // Sound, for the session.
     property bool muted: false
     property real volume: 1
@@ -95,6 +95,9 @@ Rectangle {
 
     // Show another item (-1: close), rate the shown one, turn it by quarter turns (1 = clockwise): the window does it.
     signal moved(int index)
+    // A step by d through the list: the window answers with where it lands (the core clamps it, Shell.viewerStep),
+    // which comes back to `stepTo`.
+    signal stepRequested(int d)
     signal rated(int index, int rating)
     signal turned(int index, int turns)
     // B: show or hide the borders (the window keeps the setting); N: mark the shown item's as not a border, or not.
@@ -143,7 +146,11 @@ Rectangle {
     }
 
     function step(d: int) {
-        const n = Math.max(0, Math.min(count - 1, index + d))
+        stepRequested(d)
+    }
+
+    // The item the step lands on (`n`): the viewer moves there, unless the step stays on the item it is on.
+    function stepTo(n: int) {
         if (n !== index) {
             moved(n)
             resetView()

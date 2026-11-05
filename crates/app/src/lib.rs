@@ -6,8 +6,8 @@
 //! The pieces: [`app`] (the owner: connections, the thumbnail cache, the preferences, the reader, the library),
 //! [`images`] (thumbnails, placeholders, the viewer's original), [`reader`] (the catalog reads off the UI thread),
 //! [`library`] (the folders, the scan and the write-back), [`edit`] (ratings and marks), [`views`] (the place the grid
-//! shows, the saved views), [`yandex`] (the reverse image search and saving its results), [`prefs`] (the server's
-//! preferences), [`pool`] (bounded pools of connections and makers), and [`error`].
+//! shows, the saved views), [`yandex`] (the reverse image search and saving its results), [`prefs`] (the preferences),
+//! [`store`] (the JSON file they are kept in), [`pool`] (bounded pools of connections and makers), and [`error`].
 
 pub mod app;
 pub mod config;
@@ -18,6 +18,8 @@ pub mod library;
 pub mod pool;
 pub mod prefs;
 pub mod reader;
+pub mod reexport;
+pub mod store;
 pub mod views;
 pub mod yandex;
 

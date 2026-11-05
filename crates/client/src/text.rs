@@ -4,7 +4,7 @@
 //! the desktop maps the job's values in. Nothing here reads the catalog.
 
 use pg_model::detection::Class;
-use pg_model::query::{DateRange, MediaType, Query, Range, RatingFilter};
+use pg_model::query::{BorderFacet, Choice, DateRange, MediaType, Query, Range, RatingFilter, Shape, Status};
 
 use crate::input::day_text;
 
@@ -22,27 +22,56 @@ pub fn timecode(seconds: u64) -> String {
     if h > 0 { format!("{h}:{m:02}:{s:02}") } else { format!("{m}:{s:02}") }
 }
 
-/// How the filter bar names a value of a list facet.
-pub fn facet_label(facet: &str, value: &str) -> String {
-    match (facet, value) {
-        ("types", "image") => "Image",
-        ("types", "animated") => "Animated",
-        ("types", "video") => "Video",
-        ("orientations", "landscape") => "Landscape",
-        ("orientations", "portrait") => "Portrait",
-        ("orientations", "square") => "Square",
-        ("status", "imported") => "Imported",
-        ("status", "pending") => "Not imported yet",
-        ("status", "failed") => "Unreadable",
-        ("borders", "none") => "None",
-        ("borders", "black") => "Black",
-        ("borders", "white") => "White",
-        ("borders", "color") => "Colored",
-        ("borders", "blur") => "Blurred bars",
-        ("exts", "") => "(none)",
-        (_, other) => other,
+/// How the filter bar names a media type.
+pub fn type_label(media: MediaType) -> &'static str {
+    match media {
+        MediaType::Image => "Image",
+        MediaType::Animated => "Animated",
+        MediaType::Video => "Video",
     }
-    .to_string()
+}
+
+/// How the filter bar names a shape (an orientation).
+pub fn shape_label(shape: Shape) -> &'static str {
+    match shape {
+        Shape::Landscape => "Landscape",
+        Shape::Portrait => "Portrait",
+        Shape::Square => "Square",
+    }
+}
+
+/// How the filter bar names an import status.
+pub fn status_label(status: Status) -> &'static str {
+    match status {
+        Status::Imported => "Imported",
+        Status::Pending => "Not imported yet",
+        Status::Failed => "Unreadable",
+    }
+}
+
+/// How the filter bar names a borders value.
+pub fn border_label(border: BorderFacet) -> &'static str {
+    match border {
+        BorderFacet::None => "None",
+        BorderFacet::Black => "Black",
+        BorderFacet::White => "White",
+        BorderFacet::Color => "Colored",
+        BorderFacet::Blur => "Blurred bars",
+    }
+}
+
+/// How the filter bar names a value a list facet chooses: its label, the extension's name (`(none)` for the empty one),
+/// or the rating's number.
+pub fn choice_label(choice: &Choice) -> String {
+    match choice {
+        Choice::Type(media) => type_label(*media).to_string(),
+        Choice::Ext(ext) if ext.is_empty() => "(none)".to_string(),
+        Choice::Ext(ext) => ext.clone(),
+        Choice::Rating(rating) => u8::from(*rating).to_string(),
+        Choice::Shape(shape) => shape_label(*shape).to_string(),
+        Choice::Status(status) => status_label(*status).to_string(),
+        Choice::Border(border) => border_label(*border).to_string(),
+    }
 }
 
 /// What `q` keeps, in one line: "all files" when it filters nothing.
@@ -52,7 +81,7 @@ pub fn describe(q: &Query) -> String {
     let days = |r: &DateRange| format!("{} – {}", day_text(r.from), day_text(r.to));
     let mut parts: Vec<String> = Vec::new();
     if !q.types.is_empty() {
-        parts.push(q.types.iter().map(|t| facet_label("types", t.key())).collect::<Vec<_>>().join(", "));
+        parts.push(q.types.iter().map(|t| type_label(*t)).collect::<Vec<_>>().join(", "));
     }
     if !q.exts.is_empty() {
         parts.push(q.exts.join(", "));
@@ -90,12 +119,10 @@ pub fn describe(q: &Query) -> String {
         parts.push(if d { "with duplicates" } else { "without duplicates" }.to_string());
     }
     if !q.status.is_empty() {
-        parts.push(
-            q.status.iter().map(|s| facet_label("status", s.key()).to_lowercase()).collect::<Vec<_>>().join(", "),
-        );
+        parts.push(q.status.iter().map(|s| status_label(*s).to_lowercase()).collect::<Vec<_>>().join(", "));
     }
     if !q.borders.is_empty() {
-        let values: Vec<String> = q.borders.iter().map(|b| facet_label("borders", b.key()).to_lowercase()).collect();
+        let values: Vec<String> = q.borders.iter().map(|b| border_label(*b).to_lowercase()).collect();
         parts.push(format!("borders: {}", values.join(", ")));
     }
     if let Some(m) = q.border_marked {

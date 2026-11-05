@@ -1,5 +1,5 @@
 //! `AnimationPlayer`: plays an animated GIF, APNG or WebP into a `VideoOutput`'s sink, so animations show like
-//! videos (same fit and turns) while looping as they should (`pg_codec::animation` says why not Qt's player). The
+//! videos (same fit and turns) while looping as they should (the animation decoder's own notes say why not Qt's player). The
 //! loop itself is `pg_render::player`'s; this file is the Qt side: the source and the sink, and the thread-safety of
 //! the frame sink's calls.
 

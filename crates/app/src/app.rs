@@ -1,5 +1,5 @@
 //! The application: what the front ends share. It owns the catalog connections (a keeper, and a pool the image and read
-//! work borrows from), the thumbnail cache, the thumbnail makers, the server's preferences, the catalog reader, and the
+//! work borrows from), the thumbnail cache, the thumbnail makers, the preferences, the catalog reader, and the
 //! library (the scan and the write-back). The front end holds one `App` for the process; nothing here is a `static`.
 //!
 //! Shutdown has an order, which the owner follows (`stop`, then drop what borrows the app, then `shutdown`): background
@@ -22,8 +22,9 @@ use crate::error::{Error, Result, failed};
 use crate::images::Decoded;
 use crate::library::Library;
 use crate::pool::Pool;
-use crate::prefs::{Prefs, Store};
+use crate::prefs::Prefs;
 use crate::reader::{Reader, Session};
+use crate::store::JsonStore;
 
 /// What the user should hear about, besides the results of what they asked for. Printed or shown by the front end.
 #[derive(Clone, Debug)]
@@ -51,7 +52,7 @@ pub struct App {
     pub(crate) thumbs: &'static ThumbCache,
     /// The last full-size decode (`images::full_image`).
     pub(crate) last_decode: Mutex<Option<Decoded>>,
-    prefs: Store,
+    prefs: JsonStore<Prefs>,
     reader: Arc<Reader>,
     session: Session,
     pub(crate) library_cell: OnceLock<Library>,
@@ -80,9 +81,9 @@ impl App {
                 ThumbCache::disabled()
             });
         let thumbs: &'static ThumbCache = Box::leak(Box::new(thumbs));
-        let (prefs, note) = Store::load(config.prefs_path.clone());
-        if let Some(note) = note {
-            notes.publish(note);
+        let (prefs, unreadable) = JsonStore::open(config.prefs_path.clone());
+        if let Some(u) = unreadable {
+            notes.publish(Note::PrefsUnreadable { path: config.prefs_path.clone(), error: u.error, kept: u.kept });
         }
         let reader = Reader::start(catalog_path);
         Ok(App {
@@ -128,7 +129,7 @@ impl App {
     }
 
     /// Run `f` with a catalog connection: an idle one, or one opened for it (and kept for the next borrower, up to a few).
-    pub fn with_catalog<R>(&self, f: impl FnOnce(&Catalog) -> pg_catalog::Result<R>) -> Result<R> {
+    pub(crate) fn with_catalog<R>(&self, f: impl FnOnce(&Catalog) -> pg_catalog::Result<R>) -> Result<R> {
         let path = self.config.catalog_path();
         self.catalogs.with(|| Catalog::open(&path).map_err(Error::from), |c| f(c).map_err(Error::from))
     }

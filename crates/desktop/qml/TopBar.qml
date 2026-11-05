@@ -23,7 +23,7 @@ ToolBar {
     // The grid's row height, which the size slider shows.
     required property real rowHeight
 
-    // The sort box's names (the keys are Main's sortKeys, in the same order).
+    // The sort box's names (its keys are pg_client::sort::KEYS, in the same order).
     readonly property list<string> sortNames: ["By name", "By file size", "By date modified", "By date taken",
         "By megapixels", "By duration", "By border depth"]
     // The sort box's index, and its text (the save-view dialog says it).
@@ -42,7 +42,7 @@ ToolBar {
 
     // Opens the saved views menu (the test hook --menu=views).
     function openViewsMenu() {
-        viewsButton.clicked()
+        viewsMenu.open()
     }
 
     anchors.left: parent.left
@@ -102,43 +102,13 @@ ToolBar {
             Layout.preferredWidth: 32
         }
         // Saved views (ImageRater's bookmarks): a folder with its subfolders, filters and sort, by name.
-        Button {
-            id: viewsButton
-            text: "Views ▾"
-            onClicked: viewsMenu.popup(viewsButton, 0, viewsButton.height)
-            Menu {
-                id: viewsMenu
-                Instantiator {
-                    model: bar.savedViews
-                    delegate: MenuItem {
-                        required property string modelData
-                        text: modelData
-                        onTriggered: bar.viewChosen(modelData)
-                    }
-                    onObjectAdded: (i, o) => viewsMenu.insertItem(i, o as MenuItem)
-                    onObjectRemoved: (i, o) => viewsMenu.removeItem(o as MenuItem)
-                }
-                MenuSeparator {}
-                MenuItem {
-                    text: "Save current view…"
-                    onTriggered: bar.saveViewRequested()
-                }
-                Menu {
-                    id: deleteMenu
-                    title: "Delete view"
-                    enabled: bar.hasSavedViews
-                    Instantiator {
-                        model: bar.savedViews
-                        delegate: MenuItem {
-                            required property string modelData
-                            text: modelData
-                            onTriggered: bar.viewDeleteRequested(modelData)
-                        }
-                        onObjectAdded: (i, o) => deleteMenu.insertItem(i, o as MenuItem)
-                        onObjectRemoved: (i, o) => deleteMenu.removeItem(o as MenuItem)
-                    }
-                }
-            }
+        ViewsMenu {
+            id: viewsMenu
+            savedViews: bar.savedViews
+            hasSavedViews: bar.hasSavedViews
+            onViewChosen: (name) => bar.viewChosen(name)
+            onViewDeleteRequested: (name) => bar.viewDeleteRequested(name)
+            onSaveViewRequested: bar.saveViewRequested()
         }
         Item { Layout.fillWidth: true }
         Button {

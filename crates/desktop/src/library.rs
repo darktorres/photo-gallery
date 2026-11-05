@@ -82,10 +82,8 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
 use cxx_qt::Threading;
 use cxx_qt_lib::{QString, QStringList, QUrl};
+use pg_app::reexport::{Change, Notice, Phase, Progress};
 use pg_client::text;
-use pg_jobs::control::{Phase, Progress};
-use pg_library::Change;
-use pg_library::runner::Notice;
 
 use crate::app;
 

@@ -42,9 +42,11 @@ pub mod qobject {
 }
 
 use std::ffi::OsString;
+use std::path::Path;
 use std::sync::OnceLock;
 
 use cxx_qt_lib::{QString, QStringList, QUrl};
+use pg_model::query::{Query, Sort};
 
 #[derive(Default)]
 pub struct CommandLineRust;
@@ -77,6 +79,36 @@ fn args() -> &'static [(String, String)] {
 /// The value of `--name=…` (the first, if given twice).
 pub fn value(name: &str) -> Option<&'static str> {
     args().iter().find(|(n, _)| n == name).map(|(_, v)| v.as_str())
+}
+
+/// What the options that shape the first list ask for (`--query`, `--sort`, `--apply-view`), read here from the same
+/// arguments. A JSON value that doesn't read is the default, as it always was.
+pub struct StartOptions {
+    pub query: Option<Query>,
+    pub sort: Option<Sort>,
+    pub apply_view: Option<String>,
+}
+
+pub fn start_options() -> StartOptions {
+    StartOptions {
+        query: value("query").map(pg_app::views::query_from_json),
+        sort: value("sort").map(pg_app::views::sort_from_json),
+        apply_view: value("apply-view").map(str::to_owned),
+    }
+}
+
+/// Where a Yandex search or save gets its calls. The real client, unless `--yandex-fixture=<dir>` names a recorded
+/// session (`pg_app::yandex::replay`'s folder: `upload.json`, `other_sizes.html`, `similar-N.json`, `downloads.tsv`),
+/// which then answers in its place and sends nothing. Only that flag selects it; the default is never the fixture,
+/// because a search sends the photo to Yandex.
+pub fn yandex_source() -> pg_app::yandex::Factory {
+    match value("yandex-fixture") {
+        Some(dir) => {
+            eprintln!("yandex: --yandex-fixture: answering from the recorded session in {dir}; nothing is sent");
+            pg_app::yandex::replay(Path::new(dir))
+        }
+        None => pg_app::yandex::client(),
+    }
 }
 
 /// `keys` split as `CommandLine.keys` does.

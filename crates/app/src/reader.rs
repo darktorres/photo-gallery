@@ -19,6 +19,16 @@ use std::sync::{Arc, Condvar, Mutex};
 use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
+use pg_catalog::browse;
+use pg_catalog::browse::read::Facets;
+use pg_model::details::Details;
+use pg_model::grid::Entry;
+use pg_model::ids::FileId;
+use pg_model::query::{Query, Sort};
+use pg_model::tree::FolderTree;
+
+use crate::app::App;
+use crate::error::{Error, Result};
 
 /// What a request is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -137,7 +147,7 @@ impl Session {
     /// Run `read` on the reader thread and give `deliver` its result there, replacing this session's `kind` request not
     /// yet started, and interrupting its `kind` request running. `deliver` is not called when the read was cut short (by
     /// a newer one, by `stop`).
-    pub fn submit<T: 'static>(
+    pub(crate) fn submit<T: 'static>(
         &self,
         kind: Kind,
         read: impl FnOnce(&Catalog) -> pg_catalog::Result<T> + Send + 'static,
@@ -168,5 +178,54 @@ impl Session {
             reader.cancel.store(true, Ordering::Relaxed);
         }
         reader.wake.notify_one();
+    }
+
+    /// The folder tree, merged across drives (its kind's newest request, as with `submit`).
+    pub fn tree(&self, deliver: impl FnOnce(Result<FolderTree>) + Send + 'static) {
+        self.submit(Kind::Tree, browse::read::folder_tree, move |r| deliver(r.map_err(Error::from)));
+    }
+
+    /// The files of `folder` (a merged path; `""` for all folders, with or without `recursive`), filtered by `query` and
+    /// sorted by `sort`: what the grid shows.
+    pub fn grid(
+        &self,
+        folder: String,
+        recursive: bool,
+        query: Query,
+        sort: Sort,
+        deliver: impl FnOnce(Result<Vec<Entry>>) + Send + 'static,
+    ) {
+        self.submit(
+            Kind::Grid,
+            move |c| browse::read::list_grid(c, &folder, recursive, &query, sort),
+            move |r| deliver(r.map_err(Error::from)),
+        );
+    }
+
+    /// The filter bar's counts: the files of `folder` in all, and the ones `query` matches.
+    pub fn facets(
+        &self,
+        folder: String,
+        recursive: bool,
+        query: Query,
+        deliver: impl FnOnce(Result<Facets>) + Send + 'static,
+    ) {
+        self.submit(
+            Kind::Facets,
+            move |c| browse::read::facets(c, &folder, recursive, &query),
+            move |r| deliver(r.map_err(Error::from)),
+        );
+    }
+}
+
+impl App {
+    /// A file's details, read now; `None` when the file is gone from the catalog.
+    pub fn details(&self, file_id: FileId) -> Result<Option<Details>> {
+        self.with_catalog(|c| browse::read::details(c, file_id))
+    }
+
+    /// A file's grid entry as the catalog has it now; `None` when it is gone.
+    pub fn entry(&self, file_id: FileId) -> Result<Option<Entry>> {
+        self.with_catalog(|c| browse::read::entry(c, file_id))
     }
 }

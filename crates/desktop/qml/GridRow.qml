@@ -26,10 +26,11 @@ Item {
     required property var contentY
     required property var contentWidth
     required property var contentHeight
-    // From the grid: the gap, the thumbnail height, the borders and selection, and whether the view is settling (moved,
-    // see GalleryGrid).
+    // The image URLs of the cells (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS): made by the model at the thumbnail height.
+    required property var thumbUrls
+    required property var thumbhashUrls
+    // From the grid: the gap, the borders and selection, and whether the view is settling (moved, see GalleryGrid).
     required property real gap
-    required property int thumbHeight
     required property bool showBorders
     required property int current
     required property bool settling
@@ -61,6 +62,8 @@ Item {
     property list<real> shownContentY
     property list<real> shownContentWidth
     property list<real> shownContentHeight
+    property list<string> shownThumbUrls
+    property list<string> shownThumbhashUrls
     property int shownVersion: -1
     property bool pooled: false
     readonly property bool live: !pooled && !rowItem.settling
@@ -79,6 +82,8 @@ Item {
         shownContentY = contentY
         shownContentWidth = contentWidth
         shownContentHeight = contentHeight
+        shownThumbUrls = thumbUrls
+        shownThumbhashUrls = thumbhashUrls
         const first = span.x
         const count = span.y
         if (cellsFirst !== first || cellsCount !== count) {
@@ -120,7 +125,8 @@ Item {
                 itemContentHeight: rowItem.shownContentHeight[index]
                 version: rowItem.cellsVersion
                 rowHeight: rowItem.rowHeight
-                thumbHeight: rowItem.thumbHeight
+                itemThumbUrl: rowItem.shownThumbUrls[index]
+                itemThumbhashUrl: rowItem.shownThumbhashUrls[index]
                 showBorders: rowItem.showBorders
                 current: rowItem.current
                 onCellClicked: (itemIndex) => rowItem.cellClicked(itemIndex)

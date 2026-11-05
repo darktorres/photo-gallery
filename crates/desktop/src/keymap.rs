@@ -1,7 +1,8 @@
-//! The key map's Qt glue (`pg_client::keys`): Qt's key codes and modifiers become the front end's `Key` and `Mods`, and the
-//! action comes back as a code the QML switches on, with its argument (a rating) from a second call. The codes are the
-//! positions in each QML file's `enum` of the same name, so the two lists are kept in the same order. The map and the
-//! hint lines are pg-client's.
+//! The key map's Qt glue (`pg_client::keys`): Qt's key codes and modifiers become the front end's `Key` and `Mods`. The grid's
+//! keys are decided in `Shell` (`grid_key`, `code_of`: the grid's action, as the `GridAction` code Main.qml switches on).
+//! The viewer's and the Yandex panels' actions come back as codes the QML switches on, with the argument (a rating) from a
+//! second call. The codes are the positions in each QML file's `enum` of the same name, so the two lists are kept in the
+//! same order. The map and the hint lines are pg-client's.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -17,26 +18,16 @@ pub mod qobject {
     }
 
     unsafe extern "RustQt" {
-        /// The grid's action for a key press (Qt's key code and modifiers): a `GridAction` code, or -1 for none.
-        #[qinvokable]
-        #[cxx_name = "gridAction"]
-        fn grid_action(self: &KeyMap, key: i32, modifiers: i32, has_current: bool) -> i32;
-
-        /// The argument of the grid's action (the rating of `GridAction.Rate`), 0 for the others.
-        #[qinvokable]
-        #[cxx_name = "gridArg"]
-        fn grid_arg(self: &KeyMap, key: i32, modifiers: i32, has_current: bool) -> i32;
-
-        /// The viewer's action for a key press, for what it shows (`kind`: "image", "animated" or "video"): a
-        /// `ViewerAction` code, or -1 for none.
+        /// The viewer's action for a key press, for what it shows (`kind`: a `GalleryModel.MediaKind` value, passed as
+        /// its number): a `ViewerAction` code, or -1 for none.
         #[qinvokable]
         #[cxx_name = "viewerAction"]
-        fn viewer_action(self: &KeyMap, key: i32, modifiers: i32, kind: &QString, has_borders: bool) -> i32;
+        fn viewer_action(self: &KeyMap, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32;
 
         /// The argument of the viewer's action (the rating of `ViewerAction.Rate`), 0 for the others.
         #[qinvokable]
         #[cxx_name = "viewerArg"]
-        fn viewer_arg(self: &KeyMap, key: i32, modifiers: i32, kind: &QString, has_borders: bool) -> i32;
+        fn viewer_arg(self: &KeyMap, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32;
 
         #[qinvokable]
         #[cxx_name = "gridHint"]
@@ -44,7 +35,7 @@ pub mod qobject {
 
         #[qinvokable]
         #[cxx_name = "viewerHint"]
-        fn viewer_hint(self: &KeyMap, kind: &QString, has_borders: bool) -> QString;
+        fn viewer_hint(self: &KeyMap, kind: i32, has_borders: bool) -> QString;
 
         /// The Yandex panels' action for a key press: a `PanelAction` code, or -1 for none.
         #[qinvokable]
@@ -106,15 +97,17 @@ fn mods_of(modifiers: i32) -> Mods {
     Mods { ctrl: modifiers & MOD_CTRL != 0, shift: modifiers & MOD_SHIFT != 0 }
 }
 
-fn media_of(kind: &QString) -> Media {
-    match kind.to_string().as_str() {
-        "video" => Media::Video,
-        "animated" => Media::Animated,
+/// The media a `GalleryModel.MediaKind` value is (its position in that enum, gallery.rs): 0 a still, 1 an animation, 2 a
+/// video.
+fn media_of(kind: i32) -> Media {
+    match kind {
+        1 => Media::Animated,
+        2 => Media::Video,
         _ => Media::Still,
     }
 }
 
-fn shown_of(kind: &QString, has_borders: bool) -> Shown {
+fn shown_of(kind: i32, has_borders: bool) -> Shown {
     let media = media_of(kind);
     Shown { has_borders, still: media == Media::Still, video: media == Media::Video }
 }
@@ -183,31 +176,28 @@ fn viewer_code(action: Viewer) -> (i32, i32) {
     }
 }
 
-/// The grid's code and argument for a key press; (-1, 0) when the grid doesn't use it.
-fn grid_of(key: i32, modifiers: i32, has_current: bool) -> (i32, i32) {
-    key_of(key).and_then(|k| keys::grid(k, mods_of(modifiers), has_current)).map_or((-1, 0), grid_code)
+/// The grid's action for a key press, as the key map decides it (`None` when the grid doesn't use the key).
+pub(crate) fn grid_key(key: i32, modifiers: i32, has_current: bool) -> Option<Grid> {
+    key_of(key).and_then(|k| keys::grid(k, mods_of(modifiers), has_current))
+}
+
+/// The code and argument of a grid action, as QML's `GridAction` enum lists it (for `Shell`'s `gridAction` signal).
+pub(crate) fn code_of(action: Grid) -> (i32, i32) {
+    grid_code(action)
 }
 
 /// The viewer's code and argument for a key press; (-1, 0) when the viewer doesn't use it.
-fn viewer_of(key: i32, modifiers: i32, kind: &QString, has_borders: bool) -> (i32, i32) {
+fn viewer_of(key: i32, modifiers: i32, kind: i32, has_borders: bool) -> (i32, i32) {
     let shown = shown_of(kind, has_borders);
     key_of(key).and_then(|k| keys::viewer(k, mods_of(modifiers), shown)).map_or((-1, 0), viewer_code)
 }
 
 impl qobject::KeyMap {
-    fn grid_action(&self, key: i32, modifiers: i32, has_current: bool) -> i32 {
-        grid_of(key, modifiers, has_current).0
-    }
-
-    fn grid_arg(&self, key: i32, modifiers: i32, has_current: bool) -> i32 {
-        grid_of(key, modifiers, has_current).1
-    }
-
-    fn viewer_action(&self, key: i32, modifiers: i32, kind: &QString, has_borders: bool) -> i32 {
+    fn viewer_action(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
         viewer_of(key, modifiers, kind, has_borders).0
     }
 
-    fn viewer_arg(&self, key: i32, modifiers: i32, kind: &QString, has_borders: bool) -> i32 {
+    fn viewer_arg(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
         viewer_of(key, modifiers, kind, has_borders).1
     }
 
@@ -219,7 +209,71 @@ impl qobject::KeyMap {
         key_of(key).and_then(keys::panel).map_or(-1, panel_code)
     }
 
-    fn viewer_hint(&self, kind: &QString, has_borders: bool) -> QString {
+    fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
         QString::from(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The names of the enum `name` in a QML file, in order: `enum <name> { A, B, … }`.
+    fn qml_enum(source: &str, name: &str) -> Vec<String> {
+        let head = format!("enum {name} {{");
+        let rest = &source[source.find(&head).expect("the enum is in the file") + head.len()..];
+        let body = &rest[..rest.find('}').expect("the enum closes")];
+        body.split(',').map(str::trim).filter(|s| !s.is_empty()).map(String::from).collect()
+    }
+
+    /// The codes are the QML enums' positions, so each action's code must name it in the QML list.
+    #[test]
+    fn the_viewer_codes_are_the_qml_enum() {
+        let expected = [
+            ("Close", Viewer::Close),
+            ("StepBack", Viewer::Step { forward: false }),
+            ("StepForward", Viewer::Step { forward: true }),
+            ("Rate", Viewer::Rate(0)),
+            ("TurnForward", Viewer::Turn { forward: true }),
+            ("TurnBack", Viewer::Turn { forward: false }),
+            ("RealSize", Viewer::RealSize),
+            ("ZoomIn", Viewer::ZoomIn),
+            ("ZoomOut", Viewer::ZoomOut),
+            ("Loupe", Viewer::Loupe),
+            ("Borders", Viewer::Borders),
+            ("MarkBorder", Viewer::MarkBorder),
+            ("Hide", Viewer::Hide),
+            ("PlayPause", Viewer::PlayPause),
+            ("Mute", Viewer::Mute),
+        ];
+        let names = qml_enum(include_str!("../qml/Viewer.qml"), "ViewerAction");
+        assert_eq!(names, expected.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>());
+        for (name, action) in expected {
+            assert_eq!(names[viewer_code(action).0 as usize], name);
+        }
+    }
+
+    #[test]
+    fn the_panel_codes_are_the_qml_enums() {
+        let expected = [
+            ("Close", Panel::Close),
+            ("StepBack", Panel::Step { forward: false }),
+            ("StepForward", Panel::Step { forward: true }),
+            ("Pick", Panel::Pick),
+        ];
+        for source in [include_str!("../qml/YandexPanel.qml"), include_str!("../qml/YandexPreview.qml")] {
+            let names = qml_enum(source, "PanelAction");
+            assert_eq!(names, expected.iter().map(|(n, _)| n.to_string()).collect::<Vec<_>>());
+            for (name, action) in expected {
+                assert_eq!(names[panel_code(action) as usize], name);
+            }
+        }
+    }
+
+    #[test]
+    fn a_media_kind_value_is_its_media() {
+        assert_eq!(media_of(0), Media::Still);
+        assert_eq!(media_of(1), Media::Animated);
+        assert_eq!(media_of(2), Media::Video);
     }
 }

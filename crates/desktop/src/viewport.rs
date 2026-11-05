@@ -104,8 +104,22 @@ use core::pin::Pin;
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::QString;
 use pg_client::viewport::View;
+use pg_model::image::{self, ImageKey, ImageRequest};
 use pg_model::orientation::turns_swap;
 use pg_model::turns::Turns;
+
+/// A device-pixel count as the model's `usize` (a view's size is never negative).
+fn px(n: i64) -> usize {
+    usize::try_from(n).unwrap_or(0)
+}
+
+/// The `image://full/` URL of `view` of the file `key` names, or empty when the key doesn't read.
+pub(crate) fn full_url(key: &QString, view: image::View) -> QString {
+    match ImageKey::parse(&key.to_string()) {
+        Some(key) => QString::from(&ImageRequest::Full { key, view }.url()),
+        None => QString::default(),
+    }
+}
 
 /// The view, and the values of its properties (kept in step by `sync`, so the bindings update).
 pub struct ViewportRust {
@@ -200,22 +214,14 @@ impl qobject::Viewport {
     }
 
     fn fit_source(&self, key: &QString) -> QString {
-        let key = key.to_string();
-        if key.is_empty() {
-            return QString::default();
-        }
         let (w, h) = self.view.fit_px();
-        QString::from(&format!("image://full/{key}/{w}x{h}"))
+        full_url(key, image::View::Fit(px(w), px(h)))
     }
 
     fn region_source(&self, key: &QString) -> QString {
-        let key = key.to_string();
         match self.view.region() {
-            Some(r) if !key.is_empty() => QString::from(&format!(
-                "image://full/{key}/region/{},{},{},{}/{}x{}",
-                r.x, r.y, r.w, r.h, r.px_w, r.px_h
-            )),
-            _ => QString::default(),
+            Some(r) => full_url(key, image::View::Region((r.x, r.y, r.w, r.h), px(r.px_w), px(r.px_h))),
+            None => QString::default(),
         }
     }
 

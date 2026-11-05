@@ -1,7 +1,7 @@
 //! Panics in the app. A GUI program has no console, so the default hook's message goes nowhere: a panic on the
 //! UI thread or in an image provider (where it aborts: it can't unwind into Qt) closes the window without a word.
 //! The hook appends the message and a backtrace to `gallery.log` beside the catalog folder (with `gallery.json`).
-//! A panic that ends the process also shows a box with where the log is. A panic that `pg_jobs::panics::catch` catches is only
+//! A panic that ends the process also shows a box with where the log is. A panic that the background work catches is only
 //! logged: its caller reports it in the status line, and the app goes on.
 //!
 //! Crashes that aren't panics (an access violation in Qt or libjpeg-turbo) still end without a trace: that needs
@@ -22,7 +22,7 @@ pub fn install(log: PathBuf) {
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         default_hook(info);
-        let caught = pg_jobs::panics::caught();
+        let caught = pg_app::reexport::panic_caught();
         let report = report(info);
         let written = append(&log, &report);
         let where_ = match written {

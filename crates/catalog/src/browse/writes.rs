@@ -48,7 +48,7 @@ pub fn session_set_many(catalog: &Catalog, values: &[(&str, &str)]) -> Result<()
 mod tests {
     use super::*;
     use crate::browse::fixtures::{by, library};
-    use crate::browse::read::views;
+    use crate::browse::read::{session_get, views};
     use pg_model::query::{MediaType, Query, RatingFilter, SortKey};
 
     #[test]
@@ -63,5 +63,18 @@ mod tests {
         };
         save_view(&c, &v).unwrap();
         assert_eq!(views(&c).unwrap(), [v]);
+    }
+
+    // The place's keys are stored as text and read back as they were written, several in one transaction, and a
+    // replaced key keeps its last value.
+    #[test]
+    fn session_keys_read_back_as_written() {
+        let c = library();
+        session_set_many(&c, &[("folder", "p\\q"), ("recursive", "false"), ("sort", "{}")]).unwrap();
+        session_set(&c, "sort", "{\"key\":\"size\"}").unwrap();
+        assert_eq!(session_get(&c, "folder").unwrap().as_deref(), Some("p\\q"));
+        assert_eq!(session_get(&c, "recursive").unwrap().as_deref(), Some("false"));
+        assert_eq!(session_get(&c, "sort").unwrap().as_deref(), Some("{\"key\":\"size\"}"));
+        assert_eq!(session_get(&c, "query").unwrap(), None);
     }
 }

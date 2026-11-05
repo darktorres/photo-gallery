@@ -4,8 +4,9 @@
 //   --viewer-keys=<keys>  e.g. "LB" (loupe, borders); also H (zen), K (play/pause), + (zoom in), 1 (1:1), < > (turn
 //                         left, right), N (not a border), digits after "r" rate
 //   --zoom=<factor>  zoom the viewer to this many device px per image px
-//   --menu=views  open the views menu   --apply-view=<name>  open a saved view
-//   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort   --filters=1  open the bar
+//   --menu=views  open the views menu   --apply-view=<name>  open a saved view (read by the start, in Rust)
+//   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort (both read by the start, in Rust)
+//   --filters=1  open the bar
 //   --library=1  open the library folders   --save-view=1  open the save-view dialog
 //   --find-similar=<path>  search Yandex for the file (it is uploaded: a path that isn't a still image only shows
 //                          the panel with its error)
@@ -18,8 +19,8 @@
 //                       library job or write pending, no frame for a while), and quit; --wait=<s> is the most to wait
 //                       for that, 10 by default (src/screenshot.rs)
 // The options are read here. What they do to the window is signalled to Main, which makes the calls on the viewer and
-// the Rust objects. --query, --sort, --apply-view, --filters and --borders shape the first list (Main reads
-// them before it loads); the others act once the first list is shown (run, from started()).
+// the Rust objects. --query, --sort and --apply-view shape the first list in Rust (listing::start); --filters and
+// --borders are shown from the start by Main; the others act once the first list is shown (run, from startHooks()).
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -58,12 +59,8 @@ Item {
     // The rating keys (--viewer-keys): "r3" rates 3.
     readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
-    readonly property bool hasQuery: commandLine.has("query")
-    readonly property string queryJson: hasQuery ? commandLine.text("query") : ""
-    readonly property bool hasSort: commandLine.has("sort")
-    readonly property string sortJson: hasSort ? commandLine.text("sort") : ""
+    // --apply-view is read by the window's start (listing::start); the session it leaves is saved once the start is over.
     readonly property bool hasApplyView: commandLine.has("apply-view")
-    readonly property string applyViewName: hasApplyView ? commandLine.text("apply-view") : ""
     readonly property bool hasFilters: commandLine.has("filters")
     readonly property bool hasBorders: commandLine.has("borders")
     // The result the Yandex panel shows at full size (-1: none). It counts only with --find-similar, which makes the panel.
@@ -77,7 +74,7 @@ Item {
         onTriggered: hooks.viewsMenuRequested()
     }
 
-    // The hooks that run once the first list is shown (Main's started(), before the library job starts).
+    // The hooks that run once the first list is shown (Main's startHooks(), before the library job starts).
     function run() {
         if (commandLine.has("size")) sizeRequested(commandLine.number("size", rowHeight))
         if (commandLine.has("select")) selectRequested(commandLine.number("select", -1))
@@ -105,7 +102,7 @@ Item {
         if (commandLine.has("find-similar")) similarRequested(commandLine.text("find-similar"))
     }
 
-    // The hooks that run after the library job has started (Main's started()).
+    // The hooks that run after the library job has started (Main's startHooks()).
     function runAfterLibraryStart() {
         if (commandLine.has("add-folder")) addFolderRequested(commandLine.url("add-folder"))
         if (commandLine.has("save-crops")) saveCropsRequested(commandLine.url("save-crops"))

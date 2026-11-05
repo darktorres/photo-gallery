@@ -18,6 +18,7 @@ fn main() {
                 "qml/YandexPreview.qml",
                 "qml/ResultTile.qml",
                 "qml/TopBar.qml",
+                "qml/ViewsMenu.qml",
                 "qml/StatusBar.qml",
                 "qml/FolderTree.qml",
                 "qml/GalleryGrid.qml",
@@ -44,6 +45,7 @@ fn main() {
         "src/animation.rs",
         "src/app_icon.rs",
         "src/command_line.rs",
+        "src/deadline.rs",
         "src/facet_choices.rs",
         "src/filters.rs",
         "src/folders.rs",
@@ -54,14 +56,15 @@ fn main() {
         "src/providers.rs",
         "src/screenshot.rs",
         "src/settings.rs",
+        "src/shell.rs",
         "src/trace.rs",
-        "src/view.rs",
         "src/keymap.rs",
         "src/viewport.rs",
         "src/words.rs",
         "src/yandex.rs",
     ])
     .cpp_file("cpp/app_icon.cpp")
+    .cpp_file("cpp/deadline.cpp")
     .cpp_file("cpp/frame_sink.cpp")
     .cpp_file("cpp/gpu_device.cpp")
     .cpp_file("cpp/gui_app.cpp")

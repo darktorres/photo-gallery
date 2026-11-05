@@ -126,10 +126,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QUrl, QVariant};
-use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status};
+use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status, YandexError};
 use pg_client::picks::Picks;
 use pg_client::text;
-use pg_yandex::YandexError;
 
 /// The status line when a search or a save stops at an internal error (the panic is in the log).
 const INTERNAL_STOP: &str = "Stopped by an internal error; the details are in gallery.log.";
@@ -248,7 +247,7 @@ impl qobject::YandexSearch {
     fn search(mut self: Pin<&mut Self>, path: &QString) {
         let path = path.to_string();
         self.as_mut().ensure_pump();
-        if !self.search.start(Path::new(&path)) {
+        if !self.search.start(Path::new(&path), crate::command_line::yandex_source()) {
             return;
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
@@ -421,7 +420,7 @@ impl qobject::YandexSearch {
         let files = hits.len();
         self.as_mut().ensure_pump();
         // The app refuses an empty pick, a search or a save already running, and remembers the folder when it saves.
-        if !self.search.save(crate::app::get(), hits, PathBuf::from(folder)) {
+        if !self.search.save(crate::app::get(), hits, PathBuf::from(folder), crate::command_line::yandex_source()) {
             return;
         }
         self.as_mut().set_busy(true);

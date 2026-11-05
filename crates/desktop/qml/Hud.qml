@@ -14,7 +14,7 @@ Item {
 
     required property int index
     required property int count
-    required property string kind
+    required property int kind
     required property bool hasBorders
     required property bool still
     required property bool zoomable
@@ -88,7 +88,7 @@ Item {
             + (hud.loupe ? "   [loupe 10×]" : "")
             + (hud.turns !== 0 ? "   — turning…" : "")
             + (hud.fitFailed ? "   — original unavailable" : "")
-            + (hud.kind === "video" && hud.playerError !== "" ? "   — " + hud.playerError : "")
+            + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? "   — " + hud.playerError : "")
     }
 
     RatingBar {

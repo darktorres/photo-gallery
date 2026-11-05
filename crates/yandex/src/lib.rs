@@ -51,6 +51,9 @@ pub enum YandexError {
     /// A response that did not have the data we read.
     #[error("unexpected Yandex response: {0}")]
     Unexpected(&'static str),
+    /// A recorded session (`pg_app::yandex`'s fixture) that can't answer: why. Never made by the client.
+    #[error("recorded Yandex session: {0}")]
+    Recorded(String),
 }
 
 /// The ids Yandex gives an upload. `orig_url` is the uploaded photo on Yandex's CDN.
@@ -104,9 +107,22 @@ pub struct Similar {
     pub stopped: Option<YandexError>,
 }
 
+/// The ids in an upload's answer (JSON), which the result requests need.
+pub fn parse_upload(body: &str) -> Result<Upload, YandexError> {
+    let v: Value = serde_json::from_str(body).map_err(|_| YandexError::Unexpected("upload is not JSON"))?;
+    let cbir_id = v["cbir_id"].as_str().ok_or(YandexError::Unexpected("upload has no cbir_id"))?;
+    let orig_url = v["sizes"]["orig"]["path"].as_str().ok_or(YandexError::Unexpected("upload has no original URL"))?;
+    Ok(Upload { cbir_id: cbir_id.to_string(), orig_url: orig_url.to_string() })
+}
+
+/// Whether a response body is Yandex's anti-robot page (a captcha), whatever its status.
+pub fn is_captcha_page(body: &str) -> bool {
+    body.contains("showcaptcha")
+}
+
 /// Reads the pages `fetch` gives, from page 0 up to `max_pages`, as [`Client::similar`] does. A failure on page 0 is
 /// the error; one on a later page stops the list with the items read so far.
-fn read_similar_pages(
+pub fn read_similar_pages(
     max_pages: u32,
     mut fetch: impl FnMut(u32) -> Result<SimilarPage, YandexError>,
 ) -> Result<Similar, YandexError> {
@@ -149,12 +165,7 @@ impl Client {
     pub fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {
         self.pace();
         let req = self.agent.post(UPLOAD_URL).set("User-Agent", USER_AGENT).set("Cookie", &self.yp);
-        let body = read_response(req.send_bytes(image))?;
-        let v: Value = serde_json::from_str(&body).map_err(|_| YandexError::Unexpected("upload is not JSON"))?;
-        let cbir_id = v["cbir_id"].as_str().ok_or(YandexError::Unexpected("upload has no cbir_id"))?;
-        let orig_url =
-            v["sizes"]["orig"]["path"].as_str().ok_or(YandexError::Unexpected("upload has no original URL"))?;
-        Ok(Upload { cbir_id: cbir_id.to_string(), orig_url: orig_url.to_string() })
+        parse_upload(&read_response(req.send_bytes(image))?)
     }
 
     /// The same image at other resolutions, largest first. One request.
@@ -266,7 +277,7 @@ pub fn claimed_format(content_type: &str, url: &str) -> Option<Format> {
 }
 
 /// The format of a downloaded file, from its bytes: one of the kinds the search returns. Anything else is not an image.
-fn sniffed(bytes: &[u8]) -> Result<Format, YandexError> {
+pub fn sniffed(bytes: &[u8]) -> Result<Format, YandexError> {
     match Format::sniff(bytes) {
         Some(format @ (Format::Jpeg | Format::Png | Format::Webp | Format::Gif | Format::Bmp)) => Ok(format),
         _ => Err(YandexError::Unexpected("the result is not an image")),
@@ -279,14 +290,14 @@ fn read_response(result: Result<ureq::Response, ureq::Error>) -> Result<String, 
         Ok(resp) => resp.into_string().map_err(|e| YandexError::Transport(e.to_string()))?,
         Err(ureq::Error::Status(code, resp)) => {
             let body = resp.into_string().unwrap_or_default();
-            if body.contains("showcaptcha") {
+            if is_captcha_page(&body) {
                 return Err(YandexError::Captcha);
             }
             return Err(YandexError::Status(code));
         }
         Err(e) => return Err(YandexError::Transport(e.to_string())),
     };
-    if body.contains("showcaptcha") {
+    if is_captcha_page(&body) {
         return Err(YandexError::Captcha);
     }
     Ok(body)

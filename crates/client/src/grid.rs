@@ -7,7 +7,7 @@
 
 use std::ops::Range;
 
-use pg_model::grid::Entry;
+use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;
 
@@ -130,6 +130,14 @@ pub struct Grid {
     edited: Vec<FileId>,
     /// Files were turned while the list was loading: the list may predate the turns, so turns are read again.
     turned: bool,
+    /// How many entries are bordered (`is_bordered`), kept as the entries change (`swap_entries`, `edit`,
+    /// `refresh_turned`), so the bar's count is not a scan per change.
+    bordered: usize,
+}
+
+/// Whether an entry counts as bordered: its borders are found and not marked as not a border (what cropping cuts).
+fn is_bordered(entry: &Entry) -> bool {
+    entry.borders == Borders::Found
 }
 
 impl Grid {
@@ -268,6 +276,14 @@ impl Grid {
         rows
     }
 
+    /// Every row gets a new version, for a change that every row's items must be read again for (the thumbnails'
+    /// height): returns the number of rows.
+    pub fn touch_all(&mut self) -> usize {
+        let version = self.new_version();
+        self.versions.fill(version);
+        self.rows.len()
+    }
+
     /// Asks for a list: a new generation, which the list must still have to be shown. A refresh of the folder
     /// shown keeps the selection, unless a folder change is still on its way (`loading`): a refresh asked meanwhile
     /// mustn't keep a selection made in another folder.
@@ -324,7 +340,13 @@ impl Grid {
 
     /// Puts a list in as the items, and returns the ones it replaces (the layout compares them, `Changed::List`).
     pub fn swap_entries(&mut self, entries: Vec<Entry>) -> Vec<Entry> {
+        self.bordered = entries.iter().filter(|e| is_bordered(e)).count();
         std::mem::replace(&mut self.entries, entries)
+    }
+
+    /// How many of the items are bordered (found and not marked): what cropping them would cut.
+    pub fn bordered(&self) -> usize {
+        self.bordered
     }
 
     /// Changes an item the user edited (rated, turned, marked). While the list loads, the file is noted, so it is
@@ -332,9 +354,21 @@ impl Grid {
     pub fn edit(&mut self, item: i32, loading: bool, change: impl FnOnce(&mut Entry)) {
         let Some(e) = usize::try_from(item).ok().and_then(|i| self.entries.get_mut(i)) else { return };
         let id = e.id;
-        change(e);
+        let before = is_bordered(e);
+        change(&mut *e);
+        let after = is_bordered(e);
+        self.count_bordered(before, after);
         if loading {
             self.edited.push(id);
+        }
+    }
+
+    /// One entry's bordered state went from `before` to `after`.
+    fn count_bordered(&mut self, before: bool, after: bool) {
+        match (before, after) {
+            (false, true) => self.bordered += 1,
+            (true, false) => self.bordered -= 1,
+            _ => {}
         }
     }
 
@@ -363,6 +397,8 @@ impl Grid {
                 continue;
             }
             turned.reshaped |= fresh.aspect() != self.entries[i].aspect();
+            let (before, after) = (is_bordered(&self.entries[i]), is_bordered(&fresh));
+            self.count_bordered(before, after);
             self.entries[i] = fresh;
             turned.changed.push(i);
         }

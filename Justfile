@@ -53,9 +53,10 @@ lint: && lint-qml
     ruff check .
     markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"
 
-# Screenshot comparison: the test-hook matrix on one fixture, the working tree against HEAD (or the commit given),
-# pixel by pixel (tools/compare-shots.ps1). `just shots -Self` runs the working tree against itself; `-Only a,b`
-# runs some scenarios. Builds two binaries: the first run is slow.
+# Screenshot comparison: the test-hook matrix on one fixture, the working tree against a recorded reference, pixel by
+# pixel (tools/compare-shots.ps1). `just shots -Record <commit>` builds that commit and records its screenshots under
+# tools/shots/reference (once); `just shots` then builds only the working tree. `-Expect a,b` declares scenarios
+# that are expected to differ; `-Self` runs the working tree against itself; `-Only a,b` runs some scenarios.
 shots *args:
     pwsh -NoLogo -NoProfile -File tools/compare-shots.ps1 {{ args }}
 

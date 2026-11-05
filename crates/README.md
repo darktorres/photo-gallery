@@ -43,7 +43,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   picks, input, keys, text and the folder tree.
 - `app` (`pg-app`): the UI-free application layer the front ends share: opens the app from a `Config`, reads what the
   window shows (`reader.rs`, off the UI thread), edits, preferences (`gallery.json`), saved views, the library, the
-  Yandex search, and reports through a notes bus.
+  Yandex search (its source is the client, or a recorded session that `--yandex-fixture` names), the re-exports the
+  front end names (`reexport.rs`), and reports through a notes bus.
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports.
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
@@ -60,8 +61,10 @@ The internal dependencies (normal ones, from `cargo metadata`) only point down t
 above it:
 
 - `model`, `platform` and `container` depend on no crate here. `client` and `yandex` depend on `model` alone.
-- `desktop` is the only crate that links Qt; it depends on `app`, the UI-free layer the front ends share, and `app`
-  does not depend on it. `cli` is the command line beside it, and `gallery` depends on `cli` and `desktop` (the latter
+- `desktop` is the only crate that links Qt. It depends on `app`, the UI-free layer the front ends share, and on
+  `client`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
+  `thumbcache`, `yandex` or `codec` (R-96). It reaches what it needs of them through `app`'s typed methods and
+  `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on `cli` and `desktop` (the latter
   behind its `desktop` feature).
 - External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
   `catalog`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in `codec` (plus the
@@ -154,9 +157,9 @@ that the compiler sees the module's types (`vendor/README.md`).
 ## Run
 
 The catalog lives in `D:\PhotoGallery\catalog` (`PG_CATALOG_DIR`, or `--catalog-dir` on the command line, to
-change it). The app's preferences (write-back, Real Size, row height) are in `gallery.json` beside the catalog
-folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they survive rebuilding the catalog.
-Saved views and where you were (folder, filters, sort, selected file) are in the catalog.
+change it). The app's preferences (write-back, Real Size, borders, row height, the last file selected) are in `gallery.json`
+beside the catalog folder (`D:\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they survive rebuilding the
+catalog. Saved views and where you were (folder, subfolders, filters, sort) are in the catalog.
 
 The catalog schema is one baseline (`crates/catalog/src/lib.rs`). Until the first catalog worth keeping, schema changes edit it in
 place, with no new version: a catalog made before a change is copied into one in the new layout when it is opened

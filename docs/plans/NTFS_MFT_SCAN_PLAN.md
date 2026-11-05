@@ -38,7 +38,7 @@ Which source a scan uses:
 
 - **The root's file system isn't NTFS (`GetVolumeInformationByHandleW`) → refuse it with a message,** when it is
   added and when it is scanned. Z: (Google Drive's virtual drive, presented as FAT32) returns `FileId == 0` for
-  every entry, so today it scans silently as empty.
+  every entry, so it scanned silently as empty. Done in S-17.7 step 1: `check_root` refuses it when it is added and when it is scanned.
 - **Local NTFS:**
   - stored journal position valid (same journal ID, USN ≥ `LowestValidUsn`) → **journal pass**;
   - otherwise, or a root new to the volume → **full MFT read** (elevation available), else the walker.

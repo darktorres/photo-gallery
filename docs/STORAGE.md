@@ -7,17 +7,17 @@ known to behave; none of it was tested against this code.
 
 ## What assumes NTFS
 
-The scanner (`crates/library/src/scan.rs`, the call in `crates/platform/src/dir.rs`) lists folders with
-`GetFileInformationByHandleEx(FileIdBothDirectoryInfo)` and takes each entry's 64-bit `FileId` as the file's
-identity: `files(volume, file_ref)` is `UNIQUE` (`crates/catalog/src/lib.rs:107,123`), and the scan upserts on it (`ON CONFLICT(volume, file_ref)`,
-`crates/catalog/src/lib.rs:1263`), so a moved or renamed file keeps its row and its analysis. `volume` is the root's
-`dwVolumeSerialNumber`.
+The scanner (`crates/scan/src/lib.rs`; the listing is in `crates/platform/src/dir.rs`) lists folders with
+`GetFileInformationByHandleEx(FileIdBothDirectoryInfo)` and takes each entry's file ID as the file's identity:
+`files(volume, file_ref)` is `UNIQUE` (`crates/catalog/src/lib.rs`), and the scan upserts on it (`ON CONFLICT(volume,
+file_ref)`), so a moved or renamed file keeps its row and its analysis. `volume` is the root's 64-bit `FileIdInfo`
+serial number, not the 32-bit `dwVolumeSerialNumber`: two volumes can share the low 32 bits (S-17.7 decision 1).
 
 The passes over the originals (import, thumbnails) read in on-disk order, `ORDER BY f.volume, f.file_ref &
 0xFFFFFFFFFFFF` (`crates/catalog/src/lib.rs:699,1043`, `crates/thumbcache/src/lib.rs:667`): the low 48 bits of an NTFS file ID are its MFT record
 number. Reads go through `pipeline::run` with 8 readers (`crates/jobs/src/pipeline.rs:46`) using plain `std::fs::File` reads.
 
-Entries are skipped when they are reparse points or have `FileId == 0` (`scan.rs:46`).
+A reparse point is not followed. A file with a row keeps it, and gets no content from the listing; a folder is not descended, so its files are kept and not marked missing. An entry with `FileId == 0` makes its folder unreadable, which is reported with the other unreadable folders (S-17.7 decisions 9 and 10).
 
 ## Drive kinds (on NTFS)
 
@@ -35,13 +35,28 @@ either gives ~3× path order).
 
 | File system | What goes wrong | Severity |
 |---|---|---|
-| FAT32 / exFAT (SD cards, USB sticks) | The file ID is derived from the directory entry's position, so it isn't stable: a moved file becomes a new row and the old one is marked missing (analysis redone). FAT stores local time, which Windows converts with the *current* DST offset, so every mtime shifts by an hour at each DST change: every file goes pending again (the triggers in `crates/catalog/src/lib.rs`) and the library re-imports twice a year. | Wasted work |
-| ReFS | File IDs are 128-bit. When one doesn't fit, the 64-bit `FileId` is a sentinel, so distinct files would collide on `(volume, file_ref)` and the upsert would overwrite one with another. | Wrong catalog |
-| SMB shares without file IDs (some NAS / Samba setups) | `FileId` is 0 and `scan.rs:46` drops the entry silently, not even counted in `ScanStats::errors`: whole folders could be missing with nothing reported. | Silent omission |
-| OneDrive / cloud-synced folders (on NTFS) | Their files are reparse points (cloud tags) even when local, and `scan.rs:46` skips every reparse point (meant for junctions and symlinks), so the folder scans as empty. | Silent omission |
+| FAT32 / exFAT (SD cards, USB sticks) | Refused when added or scanned (not NTFS). The file ID comes from the directory entry, so it is not stable, and FAT's local-time mtimes shift by an hour at each DST change. | Refused |
+| ReFS | Refused when added or scanned (not NTFS). Its file IDs are 128-bit, and the 64-bit `FileId` collides when one doesn't fit. | Refused |
+| SMB shares without file IDs (some NAS / Samba setups) | `FileId` is 0. The folder is unreadable and reported with the other unreadable folders, not dropped silently (S-17.7 decision 10). | Reported |
+| OneDrive / cloud-synced folders (on NTFS) | Their files are reparse points (cloud tags) even when local. A placeholder file keeps its row and gets no content from the listing. A folder of placeholders is not descended, so its files are kept but not refreshed, and the scan counts the reparse points it indexed without following (S-17.7 decision 9). | Kept, not refreshed |
 
 On the non-NTFS volumes, masking to 48 bits makes the read order meaningless, which is harmless: queue depth
 still helps.
+
+## Linux
+
+The identity is `(st_dev, st_ino)`. `st_dev` is kept whole, 64 bits, per entry, because a mount has a device of its
+own (`/` and `/proc` are two devices in the tests). The Linux tests run in CI on each commit (the Linux job runs the
+catalog, scan and platform tests).
+
+- **Birth time** is `statx` btime (`std::fs::Metadata::created()`). A file system that gives none (drvfs) gives NULL,
+  and NULL matches any creation time: the file is still the same file by its identity (S-17.7 decision 2).
+- **Refused:** NFS, CIFS and SMB roots, by their `statfs` magic numbers (`check_fs_type`). Their inode numbers come
+  from the server and can be unstable or duplicated. Every other type is accepted, `9p` (WSL's drvfs) included. The
+  other Unix systems refuse every root (`check_root` fails closed).
+- **Bind mounts:** a folder whose identity is already on the walk's path is not descended and is counted as a loop
+  (`ScanStats::loops`, S-17.7 decision 11).
+- **Not measured:** the wall-clock scan benchmark and the perf ledger (S-17.7 step 8) were not run for this change.
 
 ## If support is ever needed
 
@@ -54,7 +69,7 @@ still helps.
 5. Reparse points: skip by tag (junctions `IO_REPARSE_TAG_MOUNT_POINT`, symlinks `IO_REPARSE_TAG_SYMLINK`), which
    `FILE_ID_BOTH_DIR_INFO` carries in `EaSize` when the reparse attribute is set, instead of skipping all of
    them. This one matters on NTFS too, for OneDrive folders.
-6. Count entries dropped for `FileId == 0` as errors, so an omission is at least visible.
+6. Count entries dropped for `FileId == 0` as errors, so an omission is at least visible. (Done in S-17.7: the folder is unreadable and reported.)
 
 ## Reading the MFT instead of listing folders (proposed, 2026-11-01)
 

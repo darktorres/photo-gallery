@@ -108,6 +108,8 @@ pub enum Message {
     ChangesUnwritten { count: usize, error: String },
     UnreadableFolders { root: String, count: String },
     ScanFailed { root: String, error: String },
+    RootRefused { root: String, reason: String },
+    ScanNote { root: String, kind: String, count: String },
     RoundPanicked { message: String },
     CacheFull { height: String, made: String },
     CroppedSaved { count: usize, folder: String },
@@ -183,6 +185,8 @@ impl Message {
             Message::ChangesUnwritten { .. } => "changes-unwritten",
             Message::UnreadableFolders { .. } => "unreadable-folders",
             Message::ScanFailed { .. } => "scan-failed",
+            Message::RootRefused { .. } => "root-refused",
+            Message::ScanNote { .. } => "scan-note",
             Message::RoundPanicked { .. } => "round-panicked",
             Message::CacheFull { .. } => "cache-full",
             Message::CroppedSaved { .. } => "cropped-saved",
@@ -285,6 +289,15 @@ impl Message {
                 a.set("root", root.as_str());
                 a.set("error", error.as_str());
             }
+            Message::RootRefused { root, reason } => {
+                a.set("root", root.as_str());
+                a.set("reason", reason.as_str());
+            }
+            Message::ScanNote { root, kind, count } => {
+                a.set("root", root.as_str());
+                a.set("kind", kind.as_str());
+                a.set("count", count.as_str());
+            }
             Message::RoundPanicked { message } => {
                 a.set("message", message.as_str());
             }
@@ -377,6 +390,8 @@ impl Message {
             Message::ChangesUnwritten { count: 1, error: s() },
             Message::UnreadableFolders { root: s(), count: s() },
             Message::ScanFailed { root: s(), error: s() },
+            Message::RootRefused { root: s(), reason: s() },
+            Message::ScanNote { root: s(), kind: s(), count: s() },
             Message::RoundPanicked { message: s() },
             Message::CacheFull { height: s(), made: s() },
             Message::CroppedSaved { count: 1, folder: s() },
@@ -726,6 +741,17 @@ pub fn unreadable_folders(root: &str, count: u64) -> String {
 /// A scan that failed.
 pub fn scan_failed(root: &str, error: &str) -> String {
     render(&Message::ScanFailed { root: root.to_string(), error: error.to_string() })
+}
+
+/// A folder in the library that the scanner refuses (not on a local NTFS disk, or on a network file system).
+pub fn root_refused(root: &str, reason: &str) -> String {
+    render(&Message::RootRefused { root: root.to_string(), reason: reason.to_string() })
+}
+
+/// What a scan of a folder counted: `kind` is the note's kind (`duplicates`, `reparse`, `ambiguous`, `unpaired`,
+/// `replaced`, `rebound`), `count` how many.
+pub fn scan_note(root: &str, kind: &str, count: u64) -> String {
+    render(&Message::ScanNote { root: root.to_string(), kind: kind.to_string(), count: count.to_string() })
 }
 
 /// A round of the job that panicked (caught).

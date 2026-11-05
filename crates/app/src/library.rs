@@ -156,6 +156,10 @@ impl App {
     /// normalized folder and whether it was new; a folder already in the library is rescanned.
     pub fn add_folder(&self, path: &str) -> Result<(String, bool)> {
         let root = normalize_path(std::path::Path::new(path)).map_err(failed)?;
+        // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
+        if let Err(refused) = pg_scan::check_folder(PathRules::NATIVE, &root) {
+            return Err(failed(format!("{} can't be added: {refused}", PathRules::NATIVE.display(&root))));
+        }
         let added = self.with_catalog(|c| c.add_root(&root))?;
         if let Some(library) = self.library_cell.get() {
             library.scan(vec![root.clone()]);

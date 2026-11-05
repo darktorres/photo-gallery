@@ -303,6 +303,11 @@ enum Op {
         new_mtime: i64,
         reply: Sender<Result<()>>,
     },
+    /// The file's thumbnails are dropped: its content was replaced (S-17.7 decision 7).
+    Forget {
+        file_id: FileId,
+        reply: Sender<Result<()>>,
+    },
     /// A pass read from `snapshot` went through all of its work: every file is checked up to `through`.
     Checked {
         snapshot: Snapshot,
@@ -429,6 +434,16 @@ impl ThumbCache {
         }
         let (reply, answer) = mpsc::channel();
         self.send(Op::Retag { file_id, old_mtime, new_mtime, reply })?;
+        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+    }
+
+    /// Drop the thumbnails of a file whose content was replaced under its id (the catalog's pairing says which). Waits.
+    pub fn forget(&self, file_id: FileId) -> Result<()> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let (reply, answer) = mpsc::channel();
+        self.send(Op::Forget { file_id, reply })?;
         answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
     }
 
@@ -795,6 +810,13 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Even
                     "UPDATE entries SET mtime = ?3 WHERE file_id = ?1 AND mtime = ?2",
                     params![file_id.get(), old_mtime, new_mtime],
                 )
+                .map(drop)
+                .map_err(anyhow::Error::from);
+            let _ = reply.send(done);
+        }
+        Op::Forget { file_id, reply } => {
+            let done = conn
+                .execute("DELETE FROM entries WHERE file_id = ?1", params![file_id.get()])
                 .map(drop)
                 .map_err(anyhow::Error::from);
             let _ = reply.send(done);

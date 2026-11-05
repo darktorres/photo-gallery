@@ -27,14 +27,18 @@ impl FileId {
 /// catalog reads its files in (`files.file_ref & 0xFFFFFFFFFFFF` in SQL: a locality order, a heuristic that is
 /// harmless where the file system doesn't follow it). An inode can be reused after a file is deleted; the size and
 /// mtime the catalog also keeps tell the scanner when a row is a different file.
-#[derive(Clone, Copy, PartialEq, Eq, Hash, Debug)]
+///
+/// The volume is 64 bits on both platforms: the NTFS `FileIdInfo` serial, or the Unix device number whole. A 32-bit
+/// serial is not unique (two NTFS volumes on one machine can share its low 32 bits), so a catalog from before the
+/// 64-bit volume is moved aside and rebuilt, not converted (S-17.7 decision 1).
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct FileIdentity {
-    pub volume: u32,
+    pub volume: u64,
     pub file_index: u64,
 }
 
 impl FileIdentity {
-    pub const fn new(volume: u32, file_index: u64) -> FileIdentity {
+    pub const fn new(volume: u64, file_index: u64) -> FileIdentity {
         FileIdentity { volume, file_index }
     }
 }

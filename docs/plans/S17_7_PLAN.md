@@ -1,6 +1,6 @@
 # Plan: S-17.7, file identity across device renumbering
 
-Written against `main` at 9f2b4a1. Depends on S-17.3/5 (`docs/plans/S17_REMAINDERS_PLAN.md`); see Sequencing. The refactor plan is `docs/REFACTOR_DESIGN.md`.
+Written against `main` at 53ff12c. Depends on S-17.3/5 (`docs/plans/S17_REMAINDERS_PLAN.md`); see Sequencing. The refactor plan is `docs/REFACTOR_DESIGN.md`.
 
 Status: decisions settled (open questions O1 to O7 are answered in Decisions and at the end). Implementation not started.
 
@@ -14,7 +14,7 @@ When the number changes, every file gets an identity miss. Ratings, rotation and
 
 ## Verified facts
 
-Probe scripts are in `docs/plans/probes/` and their results in `docs/plans/S17_7_PROBES.md`. The scripts are committed with step 1.
+Probe scripts are in `docs/plans/probes/` and their results in `docs/plans/S17_7_PROBES.md`. The scripts are committed (`8904aac`).
 
 Windows (NTFS on D:):
 
@@ -87,7 +87,8 @@ WSL (ext4 `$HOME`; `/mnt/d` is `9p`):
    - `rotation` = 0; delete the file's `analysis`, `pdq_pairs` and `border_marks` rows.
    - Delete the file's thumbnail entries in `thumbs.sqlite`, after the catalog transaction commits (it is a separate file, so the two cannot share a transaction). A crash between the two leaves stale thumbnails and no rating is affected; the next scan of that file re-keys it.
    - Delete the `file_ratings` row, so the first sync treats the file as having no known rating.
-   - Delete queued content writes (rotation and the like) and their temp files. Keep queued **rating** writes, so the rating still reaches the new file. The write queue's kind column is read in step 6.
+   - Delete the queued content writes (`file_writes` rows of kind `rotation`, `catalog/src/lib.rs:272`) and their temp files.
+   - Keep the queued **rating** writes, so the rating still reaches the new file. A rating row can also carry a `temp` (`writeback/src/lib.rs:289` records one for every non-video write, rating included). That temp is the old file's content with the old file's rating, so copying it in would put the old bytes into the new file. Delete the temp file and set `temp` and `temp_value` to NULL on the row. It keeps `value` and is written again from the new file.
    - Keep `ratings`. Set `size`, `mtime`, `created`, `last_scan` and `missing = 0`, and let the existing `UPDATE OF` triggers fire for the changed columns (`catalog/src/lib.rs:320-331`).
 
 8. **Ratings.**
@@ -113,12 +114,12 @@ Not built, on purpose: a fallback identity for FAT32, exFAT or ReFS; repointing 
 
 Each step is a commit, made when asked.
 
-1. **Refusal, zero ID, listing seam (decisions 6, 10 and 13).** `crates/platform/src/dir.rs` (`check_root`, `RootFacts`), `crates/scan/src/lib.rs` (`scan`, `list`, the `Listing` trait), `crates/app/src/library.rs` (`add_folder`), `crates/cli/src/lib.rs` (the add and scan loops), and the notices (`runner.rs`, `text.rs`, `text.ftl`, `desktop/src/library.rs`). The probe files are committed with this step. Docs: `docs/STORAGE.md` (the NTFS decision is enforced; the SMB row at `:32`; the stale `crates/library/src/scan.rs` references at `:10, 20, 41`; the SMB and ReFS rows at `:38-40`); `docs/plans/NTFS_MFT_SCAN_PLAN.md:39-41` says `Z:` scans silently as empty, which this step's refusal changes.
+1. **Refusal, zero ID, listing seam (decisions 6, 10 and 13).** `crates/platform/src/dir.rs` (`check_root`, `RootFacts`), `crates/scan/src/lib.rs` (`scan`, `list`, the `Listing` trait), `crates/app/src/library.rs` (`add_folder`), `crates/cli/src/lib.rs` (the add and scan loops), and the notices (`runner.rs`, `text.rs`, `text.ftl`, `desktop/src/library.rs`). Docs: `docs/STORAGE.md` (the NTFS decision is enforced; the SMB row at `:32`; the stale `crates/library/src/scan.rs` references at `:10, 20, 41`; the SMB and ReFS rows at `:38-40`); `docs/plans/NTFS_MFT_SCAN_PLAN.md:39-41` says `Z:` scans silently as empty, which this step's refusal changes.
 2. **Reparse entries indexed (decision 9).** `crates/scan/src/lib.rs` (`list`, the skip set), and the reparse notice. No schema change.
 3. **Schema, volume `u64`, catalog move-aside (decisions 1 and 3).** One commit, described in decision 3. Touches `BASELINE` (`catalog/src/lib.rs:113`, `files` at `:126-145`), `LAYOUT_CHECK` and `LAYOUT_PARTS`, `FILLED` if it needs the new columns, and the move-aside in `prepare`. Also `crates/model/src/ids.rs`, `dir.rs` (`volume_serial` returns `u64`), `scan/src/lib.rs`, `catalog/src/lib.rs` (`upsert_file`, `known`, `thumb_sources`, the `ORDER BY volume` reads, `fixture.rs:55`), and `thumbcache/src/lib.rs:672`. `dir.rs` provides `created` on both platforms: `CreationTime` on Windows and `statx` birth time on Linux (NULL where unsupported; a `statx` error maps to NULL, never to a failed scan).
 4. **Per-entry device and the recursive walk (decision 11).** `dir.rs` (`Entry.volume`), `scan/src/lib.rs` (the walk and the ancestor list).
 5. **Upsert: hits, backfill, displacement (decision 2).** `catalog/src/lib.rs` upsert (around `:1385-1436`): `RETURNING id`, `created` written and compared in `same`, the `unpaired` marks.
-6. **Pairing, replacement reset, rating rules (decisions 4, 7 and 8).** `pg_scan::scan` and the catalog pairing functions. `under_root!` and `under_params` (`catalog/src/lib.rs:88-111`) scope the pairing to the root. Read the write-queue kind column before deciding which queued writes survive a replacement.
+6. **Pairing, replacement reset, rating rules (decisions 4, 7 and 8).** `pg_scan::scan` and the catalog pairing functions. `under_root!` and `under_params` (`catalog/src/lib.rs:88-111`) scope the pairing to the root. Apply the queued-write rules of decision 7 (the kind column is `rating` or `rotation`).
 7. **Duplicates, stats, notices (decisions 5 and 12).**
 8. **Bench, ledger and docs.** Commit the wall-clock scan bench first. Then run `just perf --update` and commit the baseline separately (`wsl-bench.sh` benches committed HEAD, so the order matters). Update `docs/REFACTOR_PLAN.md` S-17.7 (row 824) and `docs/STORAGE.md` (a Linux section).
 
@@ -130,7 +131,7 @@ Each step lands with its tests.
   - `check_root` through `RootFacts` fakes: a remote drive is refused; a removable drive is refused; `DRIVE_FIXED` with FAT32 is refused; `NTFS` is allowed; each API error is refused; a reparse root is refused; a final path on another volume or a remote drive is refused.
   - A real UNC string is refused before any API call (no share needed).
   - The `Z:` test uses `testkit::missing_tool`, not a silent skip (CI sets `PG_REQUIRE_TOOLS`).
-  - Linux: `statfs` results for NFS, CIFS and SMB are refused through a fake; local types and `9p` are accepted.
+  - Linux: `statfs` results for NFS, CIFS and SMB are refused through a fake; local types and `9p` are accepted. The refused `f_type` values are `NFS_SUPER_MAGIC` 0x6969, `CIFS_SUPER_MAGIC` 0xFF534D42, `SMB2_SUPER_MAGIC` 0xFE534D42 and `SMB_SUPER_MAGIC` 0x517B; `9p` is `V9FS_MAGIC` 0x01021997 (checked against the kernel headers, see Not verified).
   - A zero-ID entry from a fake `Listing`: the folder is unreadable and its siblings are not updated.
   - CLI: three roots, the middle one refused: the first and third are added and scanned.
   - The runner maps a refusal to `RootRefused`, not `ScanFailed`.
@@ -198,6 +199,4 @@ Each step lands with its tests.
 
 ## Not verified yet
 
-- The trigger that replaces `/mnt/d`'s mount (the mechanism is known; the design does not depend on it).
-- The write-queue kind column (step 6).
-- The `statfs` magic numbers for NFS, CIFS and SMB are to be checked against the kernel headers in step 1.
+- The trigger that replaces `/mnt/d`'s mount. The mechanism is known (each drvfs mount has its own device number). Not reproduced: within boot `229876ad`, `/mnt/d` went from 160 to 195 and `/mnt/c` from 159 to 194, and the kernel log shows no 9p event. The design does not depend on it.

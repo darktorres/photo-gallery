@@ -255,6 +255,11 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let mut normalized = Vec::new();
                 for root in roots {
                     let root = pg_scan::normalize_path(Path::new(&root))?;
+                    // A refused folder is not added; the other folders still are.
+                    if let Err(refused) = pg_scan::check_folder(rules, &root) {
+                        println!("{} is not added: {refused}", rules.display(&root));
+                        continue;
+                    }
                     if !catalog.add_root(&root)? {
                         println!("{} is already in the library", rules.display(&root));
                     }
@@ -264,7 +269,17 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             };
             for root in roots {
                 let name = rules.display(&root);
-                let s = pg_scan::scan(&mut catalog, &root, ctl)?;
+                let s = match pg_scan::scan(&mut catalog, &root, ctl) {
+                    Ok(s) => s,
+                    // A refused folder is reported and the others are still scanned; any other error stops the command.
+                    Err(e) => match e.downcast_ref::<pg_platform::dir::Refused>() {
+                        Some(refused) => {
+                            println!("{name}: not scanned, {refused}");
+                            continue;
+                        }
+                        None => return Err(e),
+                    },
+                };
                 println!(
                     "{name}: {} files in {} folders, {} new or changed, {} now missing, {} unreadable folders ({:.1} s)",
                     s.files,
@@ -275,6 +290,35 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     start.elapsed().as_secs_f64()
                 );
                 print_failures("skipped", &s.failures);
+                // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision 7).
+                if !s.replaced_ids.is_empty() {
+                    let cache =
+                        ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, None, Arc::new(Bus::new(16)))?;
+                    for id in &s.replaced_ids {
+                        if let Err(e) = cache.forget(*id) {
+                            println!("{name}: a replaced file's thumbnail wasn't deleted: {e:#}");
+                        }
+                    }
+                }
+                for temp in &s.temps {
+                    match std::fs::remove_file(temp) {
+                        Ok(()) => {}
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(e) => println!("{name}: can't delete {temp}: {e}"),
+                    }
+                }
+                // The same notes the app shows, counted; a zero is not said.
+                let notes = [
+                    ("skipped as duplicates (another path to the same file)", s.duplicates),
+                    ("indexed without following (links or placeholders)", s.skipped_reparse),
+                    ("matched more than one earlier row, so nothing was carried over", s.ambiguous as u64),
+                    ("missing, with data and no file found for them", s.unpaired_with_data as u64),
+                    ("replaced by new files with the same name; content reset", s.replaced as u64),
+                    ("found under a new identity; their data was kept", s.rebound as u64),
+                ];
+                for (what, count) in notes.iter().filter(|(_, count)| *count > 0) {
+                    println!("  {count} {what}");
+                }
             }
         }
         Command::Remove { root } => {

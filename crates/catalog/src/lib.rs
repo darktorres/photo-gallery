@@ -45,8 +45,8 @@ use pg_model::turns::Turns;
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
 ///
 /// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit
-/// the baseline in place, without a new version, and a catalog made before the edit is copied into a new one when
-/// it is opened ([`rebuild`]). From then on the baseline is frozen and every change is a migration.
+/// the baseline in place, without a new version, and a catalog made before the edit is moved aside when it is
+/// opened ([`move_aside`]; a scan rebuilds it). From then on the baseline is frozen and every change is a migration.
 const BASELINE_VERSION: i64 = 1;
 const MIGRATIONS: &[&str] = &[];
 
@@ -91,6 +91,17 @@ macro_rules! under_root {
     };
 }
 
+/// The data a row can hold that a pairing would lose (S-17.7 decision 4): a rotation, a rating, the file's own rating,
+/// an analysis or a queued write. Inside a statement over `files`.
+macro_rules! has_children {
+    () => {
+        "(files.rotation <> 0 OR EXISTS (SELECT 1 FROM ratings WHERE file_id = files.id)
+          OR EXISTS (SELECT 1 FROM file_ratings WHERE file_id = files.id)
+          OR EXISTS (SELECT 1 FROM analysis WHERE file_id = files.id)
+          OR EXISTS (SELECT 1 FROM file_writes WHERE file_id = files.id))"
+    };
+}
+
 /// The parameters of [`under_root`] for `root` under `rules`: the root's bytes, and the bounds of its subtree. A
 /// drive's root already ends with a separator, so its subtree starts there.
 fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> [Vec<u8>; 3] {
@@ -110,6 +121,9 @@ fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> [Vec<u8>; 3] 
     [bytes, lo, hi]
 }
 
+mod pair;
+pub use pair::Pairing;
+
 const BASELINE: &str = concat!(
     r"
 CREATE TABLE scans(
@@ -125,8 +139,14 @@ CREATE TABLE folders(
 );
 CREATE TABLE files(
     id        INTEGER PRIMARY KEY,
-    volume    INTEGER NOT NULL,  -- volume serial number
-    file_ref  INTEGER NOT NULL,  -- NTFS file ID; the low 48 bits are the MFT record number
+    -- The identity: the volume's 64-bit serial (Windows) or device number (Unix), and the file ID. NULL for a
+    -- displaced row (its file is another one now, or it is gone): it keeps its id, folder, name, ratings and content,
+    -- and waits to be paired (`unpaired`). Two NULLs are not equal, so the UNIQUE holds for any number of them.
+    volume    INTEGER,
+    file_ref  INTEGER,           -- NTFS file ID; the low 48 bits are the MFT record number
+    -- The creation time (FILETIME ticks), where the file system gives one; NULL where it doesn't (drvfs). Two
+    -- values agree when either is NULL or they are equal: see the scanner's identity rules (S-17.7 decision 2).
+    created   INTEGER,
     folder_id INTEGER NOT NULL REFERENCES folders(id),
     name      BLOB NOT NULL,     -- the file name as the OS has it (Name bytes)
     ext       TEXT NOT NULL,     -- the name's last extension, lower case (media::Ext)
@@ -141,9 +161,14 @@ CREATE TABLE files(
     pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
     seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers
     changed   INTEGER NOT NULL DEFAULT 0,  -- meta.seq at its last user-visible change (changes_since): kept by triggers
+    -- Not yet resolved by the scanner's pairing: a row made for a file it has not seen before, or a displaced row. The
+    -- pairing runs at the end of every scan of its root and clears the flag from the rows it leaves as new files.
+    unpaired  INTEGER NOT NULL DEFAULT 0,
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
+-- A file's identity from its file ID alone: the pairing's candidates on another volume (decision 4, tier 2).
+CREATE INDEX files_ref ON files(file_ref);
 CREATE INDEX folders_key ON folders(key);
 -- The grid's name order and every folder's files (a range of keys: browse::read::scope).
 CREATE INDEX files_order ON files(order_key) WHERE missing = 0;
@@ -420,6 +445,7 @@ END;
 /// thumbnail is made from): an earlier catalog has the same names, so only their text tells it apart.
 const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name = 'meta')
      + (SELECT count(*) FROM pragma_table_info('files') WHERE name IN ('order_key', 'pending', 'seq', 'changed'))
+     + (SELECT count(*) = 2 FROM pragma_table_info('files') WHERE name IN ('created', 'unpaired'))
      + (SELECT count(*) FROM pragma_table_info('analysis') WHERE name IN ('rotation', 'kind', 'borders_due', 'pdq_dihedral'))
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'table' AND name IN ('border_sides', 'border_marks'))
      + (SELECT count(*) FROM pragma_table_info('roots') WHERE name = 'id' AND pk = 1)
@@ -431,37 +457,9 @@ const LAYOUT_CHECK: &str = "SELECT (SELECT count(*) FROM sqlite_schema WHERE typ
      + (SELECT count(*) FROM sqlite_schema WHERE type = 'trigger' AND name IN ('ratings_stamp_insert',
         'ratings_stamp_update', 'ratings_stamp_delete', 'border_marks_stamp_insert', 'border_marks_stamp_delete',
         'file_writes_stamp_insert', 'file_writes_stamp_update', 'file_writes_stamp_delete'))";
-const LAYOUT_PARTS: i64 = 25;
-
-/// The tables [`rebuild`] copies, each after those it refers to.
-const CARRIED: &[&str] = &[
-    "meta",
-    "scans",
-    "folders",
-    "files",
-    "analysis",
-    "border_sides",
-    "border_marks",
-    "pdq_pairs",
-    "roots",
-    "ratings",
-    "file_ratings",
-    "file_writes",
-    "views",
-    "session",
-];
-
-/// Columns an earlier layout may lack, and what [`rebuild`] makes them from (`o` is the old row). An analysis of
-/// the current version was made with the file's rotation as it is: a turn used to zero the version.
-const FILLED: &[(&str, &str, &str)] = &[
-    ("analysis", "rotation", "(SELECT rotation FROM old.files WHERE id = o.file_id)"),
-    ("analysis", "kind", "(SELECT kind FROM old.files WHERE id = o.file_id)"),
-    // A root kept its row when the earlier layout had no id: the row number stands for it.
-    ("roots", "id", "o.rowid"),
-    // The keys are made from the paths and names by `rekey`, once the rows are copied.
-    ("folders", "key", "X''"),
-    ("files", "order_key", "X''"),
-];
+/// The parts [`LAYOUT_CHECK`] counts when the catalog is in the current layout (26: `files.created` and
+/// `files.unpaired` with the nullable identity; the S-17.7 layout, which the earlier catalogs can't be converted to).
+const LAYOUT_PARTS: i64 = 26;
 
 /// A library folder: the user added it, and a rescan walks it again.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -554,144 +552,36 @@ fn current_layout(conn: &Connection) -> Result<bool> {
     Ok(conn.query_row(LAYOUT_CHECK, [], |r| r.get::<_, i64>(0))? == LAYOUT_PARTS)
 }
 
-/// Replace the catalog at `path`, made with an earlier layout, by a copy in the current one: every row of every
-/// table, with the same ids (so the thumbnail cache still matches), and the columns it lacks made from the others
-/// ([`FILLED`]). The triggers and the import version check then mark what the import has to do again. Built
-/// beside it and moved over it once complete, so a failure leaves the old catalog's rows as they were (it is left
-/// out of WAL mode). No connection to it may be open, here or in another process.
-fn rebuild(path: &Path, rules: PathRules) -> Result<()> {
-    let with_suffix = |suffix: &str| {
-        let mut p = path.as_os_str().to_owned();
-        p.push(suffix);
-        std::path::PathBuf::from(p)
-    };
-    const IN_USE: &str = "another program has it open: close it and start again";
-    // Out of WAL mode, which takes every other connection being closed, and leaves it one file.
-    {
-        let old = Connection::open(path)?;
-        old.busy_timeout(std::time::Duration::from_secs(1))?;
-        let mode: String = old.query_row("PRAGMA journal_mode = DELETE", [], |r| r.get(0)).context(IN_USE)?;
-        if !mode.eq_ignore_ascii_case("delete") {
-            return Err(Error::Other(anyhow!(IN_USE)));
-        }
-    }
-    let new_path = with_suffix(".rebuild");
-    for leftover in [new_path.clone(), with_suffix(".rebuild-journal")] {
-        if leftover.exists() {
-            std::fs::remove_file(&leftover).with_context(|| format!("deleting {}", leftover.display()))?;
-        }
-    }
-    let built = build_copy(path, &new_path, rules);
-    if built.is_err() {
-        let _ = std::fs::remove_file(&new_path);
-    }
-    built?;
-    // A WAL beside the new file would be read into it. Any is the old catalog's, left behind when it was closed.
-    for side in [with_suffix("-wal"), with_suffix("-shm")] {
-        match std::fs::remove_file(&side) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                return Err(anyhow::Error::from(e).context(format!("deleting {}: {IN_USE}", side.display())).into());
-            }
-        }
-    }
-    // Windows refuses to move over a file another program has open.
-    std::fs::rename(&new_path, path).with_context(|| format!("moving {} over it; {IN_USE}", new_path.display()))?;
+/// Record the rules a new catalog's paths are stored under (`meta.path_rules`).
+fn record_rules(conn: &Connection, rules: PathRules) -> Result<()> {
+    conn.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [rules_name(rules)])?;
     Ok(())
 }
 
-/// [`rebuild`]'s copy of the catalog at `path`, made at `new_path`, under `rules`.
-fn build_copy(path: &Path, new_path: &Path, rules: PathRules) -> Result<()> {
-    let new = Connection::open(new_path)?;
-    migrate(&new, BASELINE, MIGRATIONS)?;
-    new.execute(
-        "ATTACH DATABASE ?1 AS old",
-        [path
-            .to_str()
-            .with_context(|| format!("{} has no UTF-8 form, which SQLite needs to attach it", path.display()))?],
-    )?;
-    let tx = new.unchecked_transaction()?;
-    for table in CARRIED {
-        copy_table(&tx, table)?;
-    }
-    rekey(&tx, rules)?;
-    tx.commit()?;
-    new.execute("DETACH DATABASE old", [])?;
-    Ok(())
-}
-
-/// Make the keys the rules order by, for the copied rows: each folder's key from its path, and each file's order key
-/// from its folder's key and its name. An earlier layout's keys were made by its own rules, so none is kept.
-fn rekey(tx: &Transaction, rules: PathRules) -> Result<()> {
-    let folders: Vec<(i64, Vec<u8>)> = {
-        let mut stmt = tx.prepare("SELECT id, path FROM folders")?;
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+/// Move the catalog at `path`, with its `-wal` and `-shm` files, to `*.pre-s17-7` beside it (a number follows that
+/// suffix when it is taken). Nothing is deleted: the user removes the moved files when they are no longer wanted. No
+/// connection to the catalog may be open. The thumbnail cache needs no move: it is reset by the new catalog's id.
+fn move_aside(path: &Path) -> Result<()> {
+    const PARTS: [&str; 3] = ["", "-wal", "-shm"];
+    let with = |suffix: &str| -> std::path::PathBuf {
+        let mut name = path.as_os_str().to_owned();
+        name.push(suffix);
+        std::path::PathBuf::from(name)
     };
-    let mut keys = std::collections::BTreeMap::new();
-    for (id, path) in folders {
-        let parts = rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
-        let key = rules.folder_key(&parts.parts);
-        tx.execute("UPDATE folders SET key = ?2 WHERE id = ?1", params![id, key])?;
-        keys.insert(id, key);
-    }
-    let files: Vec<(i64, i64, Vec<u8>)> = {
-        let mut stmt = tx.prepare("SELECT id, folder_id, name FROM files")?;
-        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?
+    let mut n = 0u32;
+    let base = loop {
+        let base = if n == 0 { ".pre-s17-7".to_string() } else { format!(".pre-s17-7.{n}") };
+        if PARTS.iter().all(|part| !with(&format!("{base}{part}")).exists()) {
+            break base;
+        }
+        n += 1;
     };
-    let mut update = tx.prepare("UPDATE files SET order_key = ?2 WHERE id = ?1")?;
-    for (id, folder, name) in files {
-        let folder_key = keys.get(&folder).ok_or_else(|| anyhow!("a file's folder {folder} is not in the catalog"))?;
-        update.execute(params![id, rules.order_key(folder_key, &Name::from_raw(&name))])?;
-    }
-    Ok(())
-}
-
-/// Copy the attached `old` catalog's `table` into the same table of this one, if it has it, and check that every
-/// row came.
-fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
-    // (name, NOT NULL without a default, declared type) of each column.
-    let columns = |schema: &str| -> Result<Vec<(String, bool, String)>> {
-        let mut stmt =
-            tx.prepare(r#"SELECT name, "notnull" AND dflt_value IS NULL, type FROM pragma_table_info(?1, ?2)"#)?;
-        let rows = stmt.query_map([table, schema], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
-    };
-    let old = columns("old")?;
-    if old.is_empty() {
-        return Ok(());
-    }
-    let (mut into, mut from) = (Vec::new(), Vec::new());
-    for (column, required, declared) in columns("main")? {
-        let source = if old.iter().any(|(c, _, _)| *c == column) {
-            // The paths and names are bytes now: an earlier layout kept them as text, which is copied as its bytes.
-            if declared.eq_ignore_ascii_case("BLOB") {
-                format!(r#"CAST(o."{column}" AS BLOB)"#)
-            } else {
-                format!(r#"o."{column}""#)
-            }
-        } else if let Some((_, _, made)) = FILLED.iter().find(|(t, c, _)| *t == table && *c == column) {
-            (*made).to_string()
-        } else if required {
-            return Err(Error::Other(anyhow!("{table}.{column}: not in this catalog, and nothing to make it from")));
-        } else {
-            continue;
-        };
-        into.push(format!(r#""{column}""#));
-        from.push(source);
-    }
-    // The baseline's own meta rows give way to the catalog's (its id first of all).
-    let verb = if table == "meta" { "INSERT OR REPLACE" } else { "INSERT" };
-    tx.execute(
-        &format!(r#"{verb} INTO main."{table}" ({}) SELECT {} FROM old."{table}" o"#, into.join(", "), from.join(", ")),
-        [],
-    )
-    .with_context(|| format!("copying {table}"))?;
-    let count = |schema: &str| -> Result<i64> {
-        Ok(tx.query_row(&format!(r#"SELECT count(*) FROM {schema}."{table}""#), [], |r| r.get(0))?)
-    };
-    if table != "meta" && count("main")? != count("old")? {
-        return Err(Error::Other(anyhow!("copying {table}: {} rows of {}", count("main")?, count("old")?)));
+    for part in PARTS {
+        let from = with(part);
+        if from.exists() {
+            std::fs::rename(&from, with(&format!("{base}{part}")))
+                .with_context(|| format!("can't move {} aside", from.display()))?;
+        }
     }
     Ok(())
 }
@@ -831,6 +721,8 @@ pub struct ScannedFile<'a> {
     pub ext: Ext,
     pub size: u64,
     pub mtime: i64,
+    /// Its creation time (FILETIME ticks), where the listing gives one (S-17.7 decision 2).
+    pub created: Option<i64>,
 }
 
 /// A folder's row, with its part of its files' order key (`path::folder_key`).
@@ -887,25 +779,26 @@ impl Catalog {
         Ok(())
     }
 
-    /// Prepare the catalog at `path` for this build, creating it when new: one made with an earlier layout is copied
-    /// into the current one first (`rebuild`, seconds for 190k files), and its version marks are set to `versions`.
-    /// The library calls this once, before anything else opens the catalog.
+    /// Prepare the catalog at `path` for this build, creating it when new. One made with an earlier layout is moved
+    /// aside (`move_aside`) and a new one is made in its place, which the next scan fills: its identities can't be
+    /// converted (S-17.7 decision 1). Its version marks are set to `versions`. The library calls this once, before
+    /// anything else opens the catalog.
     pub fn prepare(path: &Path, versions: Versions, rules: PathRules) -> Result<Catalog> {
         // A new catalog records its rules; an existing one must have been made under them.
         let created = !path.exists();
         let mut conn = connect(path)?;
         if created {
-            conn.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [rules_name(rules)])?;
+            record_rules(&conn, rules)?;
         }
         check_rules(&conn, path, rules)?;
         if !current_layout(&conn)? {
             drop(conn);
-            rebuild(path, rules)
-                .with_context(|| format!("catalog {}: copying it into the current layout", path.display()))?;
+            move_aside(path).with_context(|| format!("catalog {}: moving it aside", path.display()))?;
             conn = connect(path)?;
+            record_rules(&conn, rules)?;
             if !current_layout(&conn)? {
                 return Err(Error::Other(anyhow!(
-                    "catalog {}: still not in the current layout after copying it",
+                    "catalog {}: the new catalog is not in the current layout",
                     path.display()
                 )));
             }
@@ -1339,12 +1232,11 @@ impl Catalog {
 }
 
 impl Tx<'_> {
-    /// The writer of the scan `scan`, in this transaction.
-    pub fn scan_writer(&self, scan: i64) -> Result<ScanWriter<'_>> {
-        ScanWriter::new(&self.inner, scan, self.rules)
+    /// The writer of the scan `scan` of `root`, in this transaction.
+    pub fn scan_writer(&self, scan: i64, root: &RulePath) -> Result<ScanWriter<'_>> {
+        ScanWriter::new(&self.inner, scan, self.rules, root)
     }
 
-    /// The writer of the import's analyses, in this transaction.
     /// The writer of the analyses, in this transaction. `import` is the build's IMPORT_VERSION (`Versions::import`),
     /// which the failures it stores are made against.
     pub fn analysis_writer(&self, import: i64) -> Result<AnalysisWriter<'_>> {
@@ -1362,38 +1254,93 @@ impl Tx<'_> {
     }
 }
 
+/// What recording a file did ([`ScanWriter::upsert_file`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Recorded {
+    /// Recorded as it was: only marked seen by this scan.
+    Same,
+    /// A new file, moved, renamed, rewritten, back from missing, or the file that now has an identity another row had.
+    Changed,
+    /// The identity is a row of another root, which this scan doesn't write (S-17.7 decision 5).
+    Foreign,
+}
+
+/// The row a file's identity has, as the scan needs it.
+struct Hit {
+    id: i64,
+    folder_id: i64,
+    /// The same folder, name, kind, size, mtime, order key, and not missing: nothing to write but the scan's mark.
+    same: bool,
+    created: Option<i64>,
+}
+
+/// Write a file as a new row (or, on its identity, the same file's changed fields): unpaired, as `ScanWriter::file` says.
+fn write_file(file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, scan: i64, key: &[u8]) -> Result<usize> {
+    let (volume, file_ref) = (f.identity.volume as i64, f.identity.file_index as i64);
+    let (ext, kind) = (f.ext.name(), f.ext.kind().key());
+    Ok(file.execute(params![
+        volume,
+        file_ref,
+        f.created,
+        folder.id.get(),
+        f.name.as_bytes(),
+        ext,
+        kind,
+        f.size as i64,
+        f.mtime,
+        scan,
+        key
+    ])?)
+}
+
 /// The scan's writes.
 pub struct ScanWriter<'tx> {
     scan: i64,
     rules: PathRules,
+    /// The scanned root's subtree (`under_params`): a row's folder is in it when it is `?1` or between `?2` and `?3`.
+    under: [Vec<u8>; 3],
     folder_id: Statement<'tx>,
     new_folder: Statement<'tx>,
     known: Statement<'tx>,
+    in_root: Statement<'tx>,
     seen: Statement<'tx>,
+    seen_identity: Statement<'tx>,
+    backfill: Statement<'tx>,
+    displace: Statement<'tx>,
     file: Statement<'tx>,
     /// The order key of the file being recorded.
     key: Vec<u8>,
 }
 
 impl<'tx> ScanWriter<'tx> {
-    pub fn new(tx: &'tx Transaction, scan: i64, rules: PathRules) -> Result<ScanWriter<'tx>> {
+    pub fn new(tx: &'tx Transaction, scan: i64, rules: PathRules, root: &RulePath) -> Result<ScanWriter<'tx>> {
         Ok(ScanWriter {
             scan,
             rules,
+            under: under_params(rules, root),
             folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
             new_folder: tx.prepare("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
             known: tx.prepare(
-                "SELECT id, folder_id, name, ext, kind, size, mtime, missing, order_key FROM files
+                "SELECT id, folder_id, name, ext, kind, size, mtime, missing, order_key, created FROM files
                  WHERE volume = ?1 AND file_ref = ?2",
             )?,
+            in_root: tx.prepare(
+                "SELECT EXISTS(SELECT 1 FROM folders WHERE id = ?4 AND (path = ?1 OR (path >= ?2 AND path < ?3)))",
+            )?,
             seen: tx.prepare("UPDATE files SET last_scan = ?2 WHERE id = ?1")?,
+            seen_identity: tx.prepare("UPDATE files SET last_scan = ?3 WHERE volume = ?1 AND file_ref = ?2")?,
+            backfill: tx.prepare("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
+            displace: tx
+                .prepare("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
+            // A new row is unpaired: the pairing at the end of the scan decides what it is (S-17.7 decision 4).
             file: tx.prepare(
-                "INSERT INTO files(volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+                "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime, last_scan,
+                    order_key, unpaired)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)
                  ON CONFLICT(volume, file_ref) DO UPDATE SET
                     folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
                     size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
-                    order_key = excluded.order_key",
+                    order_key = excluded.order_key, created = coalesce(files.created, excluded.created)",
             )?,
             key: Vec::new(),
         })
@@ -1410,17 +1357,18 @@ impl<'tx> ScanWriter<'tx> {
         Ok(Folder { id: FolderId::new(id), key })
     }
 
-    /// Record a file the scan found, by identity: a moved or renamed file keeps its row (and its analysis).
-    /// Whether the catalog changed: a new file, or one moved, renamed, rewritten or back from missing. A file
-    /// recorded as it is is only marked seen by this scan.
-    pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<bool> {
-        let ScanWriter { scan, known, seen, file, key, .. } = self;
+    /// Record a file the scan found, by identity (S-17.7 decision 2). A file moved or renamed keeps its row, and so
+    /// does one whose `created` is unknown on either side. A hit whose `created` differs is a different file: the row
+    /// is displaced (it keeps its id, folder, name, ratings and content, and loses its identity), and a new row is
+    /// made for the identity. A new row is `unpaired` until the pairing at the end of the scan.
+    pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<Recorded> {
+        let ScanWriter { scan, under, known, in_root, seen, backfill, displace, file, key, .. } = self;
         key.clear();
         key.extend_from_slice(&folder.key);
         f.name.push_name_key(key);
-        let (volume, file_ref, size) = (f.identity.volume, f.identity.file_index as i64, f.size as i64);
-        let (ext, kind) = (f.ext.name(), f.ext.kind().key());
-        let row = known
+        let (volume, file_ref) = (f.identity.volume as i64, f.identity.file_index as i64);
+        let (ext, kind, size) = (f.ext.name(), f.ext.kind().key(), f.size as i64);
+        let hit = known
             .query_row(params![volume, file_ref], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
                     && r.get_ref(2)?.as_blob()? == f.name.as_bytes()
@@ -1430,27 +1378,37 @@ impl<'tx> ScanWriter<'tx> {
                     && r.get::<_, i64>(6)? == f.mtime
                     && r.get::<_, i64>(7)? == 0
                     && r.get_ref(8)?.as_blob()? == &key[..];
-                Ok((r.get::<_, i64>(0)?, same))
+                Ok(Hit { id: r.get(0)?, folder_id: r.get(1)?, same, created: r.get(9)? })
             })
             .optional()?;
-        if let Some((id, true)) = row {
-            seen.execute(params![id, *scan])?;
-            return Ok(false);
+        let Some(hit) = hit else {
+            write_file(file, f, folder, *scan, &key[..])?;
+            return Ok(Recorded::Changed);
+        };
+        if !in_root.query_row(params![under[0], under[1], under[2], hit.folder_id], |r| r.get::<_, bool>(0))? {
+            return Ok(Recorded::Foreign);
         }
-        // `pending` and `seq` follow from the triggers.
-        file.execute(params![
-            volume,
-            file_ref,
-            folder.id.get(),
-            f.name.as_bytes(),
-            ext,
-            kind,
-            size,
-            f.mtime,
-            *scan,
-            &key[..]
-        ])?;
-        Ok(true)
+        if matches!((hit.created, f.created), (Some(a), Some(b)) if a != b) {
+            displace.execute(params![hit.id])?;
+            write_file(file, f, folder, *scan, &key[..])?;
+            return Ok(Recorded::Changed);
+        }
+        if hit.created.is_none() && f.created.is_some() {
+            backfill.execute(params![hit.id, f.created])?;
+        }
+        if hit.same {
+            seen.execute(params![hit.id, *scan])?;
+            return Ok(Recorded::Same);
+        }
+        write_file(file, f, folder, *scan, &key[..])?;
+        Ok(Recorded::Changed)
+    }
+
+    /// Mark the row with this identity as seen by this scan, changing nothing else. A reparse point is recorded this
+    /// way: its listing gives no content to analyze, and a row that is there is kept (S-17.7 decision 9).
+    pub fn seen_identity(&mut self, identity: FileIdentity) -> Result<()> {
+        self.seen_identity.execute(params![identity.volume as i64, identity.file_index as i64, self.scan])?;
+        Ok(())
     }
 }
 
@@ -1739,8 +1697,8 @@ mod tests {
     // is the layout, not the catalog's tables.
 
     #[test]
-    fn an_earlier_layout_is_copied_into_the_current_one() {
-        let dir = test_folder(SCRATCH, "rebuild");
+    fn an_earlier_layout_is_moved_aside_and_a_new_catalog_is_made() {
+        let dir = test_folder(SCRATCH, "move-aside");
         let path = dir.join("catalog.sqlite");
         let old = Connection::open(&path).unwrap();
         old.execute_batch(BEFORE_ORDER_KEY).unwrap();
@@ -1768,44 +1726,23 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), RULES).unwrap();
         let disk = raw::on_disk(&path);
         assert!(current_layout(&disk).unwrap());
-        assert!(!dir.join("catalog.sqlite.rebuild").exists());
-        let rows = |sql: &str| -> Vec<String> {
-            let mut stmt = disk.prepare(sql).unwrap();
-            stmt.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
+        let count = |conn: &Connection, table: &str| -> i64 {
+            conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0)).unwrap()
         };
-        // The user's own: the library, ratings, the queued turn, views and session, with the same file ids.
-        assert_eq!(rows("SELECT CAST(path AS TEXT) FROM roots"), [r"D:\p"]);
-        // The row number of the old layout is the root's id now.
-        assert_eq!(rows("SELECT id || ' ' || path FROM roots"), [r"1 D:\p"]);
-        assert_eq!(rows("SELECT file_id || ':' || rating FROM ratings ORDER BY 1"), ["11:4", "13:1"]);
-        assert_eq!(rows("SELECT file_id || ':' || value FROM file_ratings"), ["11:4"]);
-        assert_eq!(rows("SELECT file_id || kind || value FROM file_writes"), ["12rotation1"]);
-        assert_eq!(rows("SELECT name FROM views"), ["best"]);
-        assert_eq!(rows("SELECT value FROM session"), ["p"]);
-        assert_eq!(rows("SELECT a || '-' || b FROM pdq_pairs"), ["11-12"]);
-        // What the layout added: the order keys as the scanner writes them, and each analysis's rotation and kind.
-        let keys: Vec<(Vec<u8>, String, String)> = {
-            let mut stmt = disk
-                .prepare("SELECT f.order_key, CAST(fo.path AS TEXT), CAST(f.name AS TEXT) FROM files f JOIN folders fo ON fo.id = f.folder_id")
-                .unwrap();
-            stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
-        };
-        for (key, folder, name) in keys {
-            assert_eq!(key, pg_model::path::order_key_of(&folder, &name), "{name}");
-        }
-        assert_eq!(
-            rows("SELECT file_id || ':' || rotation || kind FROM analysis ORDER BY 1"),
-            ["11:0image", "12:1image", "14:0image"]
-        );
-        // Analyses made from the file as it is stand; the file without one and the one changed since are pending.
-        assert_eq!(rows("SELECT id || ':' || pending FROM files ORDER BY id"), ["11:0", "12:0", "13:1", "14:1"]);
+        // The new catalog is empty: the scan fills it. The earlier one is kept whole, rows and all, beside it.
+        assert_eq!(count(&disk, "files"), 0);
+        assert_eq!(count(&disk, "roots"), 0);
+        let moved = raw::on_disk(&dir.join("catalog.sqlite.pre-s17-7"));
+        assert_eq!(count(&moved, "files"), 4);
+        assert_eq!(count(&moved, "roots"), 1);
+        drop(moved);
         drop(disk);
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn a_catalog_with_the_earlier_source_trigger_or_view_is_copied_into_the_current_layout() {
+    fn a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside() {
         let dir = test_folder(SCRATCH, "layout_source");
         let path = dir.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), RULES).unwrap());
@@ -1816,8 +1753,11 @@ mod tests {
             fresh.query_row("SELECT sql FROM sqlite_schema WHERE name = ?1", [name], |r| r.get(0)).unwrap()
         };
         let (trigger, view) = (text("files_source_changed"), text("thumb_sources"));
-        let old_trigger =
-            trigger.replace(", size ON files", " ON files").replace("\n    OR old.size IS NOT new.size", "");
+        let old_trigger = trigger.replace(", size ON files", " ON files").replace(
+            "
+    OR old.size IS NOT new.size",
+            "",
+        );
         let old_view = view.replace("f.size, f.missing", "f.missing");
         assert!(old_trigger != trigger && old_view != view);
         fresh
@@ -1833,50 +1773,47 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), RULES).unwrap();
         let disk = raw::on_disk(&path);
         assert!(current_layout(&disk).unwrap());
-        let copied: String = disk
+        let current: String = disk
             .query_row(
                 "SELECT group_concat(sql, ' ') FROM sqlite_schema WHERE name IN ('files_source_changed', 'thumb_sources')",
                 [],
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(copied.contains("old.size IS NOT new.size") && copied.contains("f.size, f.missing"), "{copied}");
+        assert!(current.contains("old.size IS NOT new.size") && current.contains("f.size, f.missing"), "{current}");
+        assert!(dir.join("catalog.sqlite.pre-s17-7").exists());
         drop(disk);
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
-    fn a_catalog_that_cant_be_copied_is_left_as_it_was() {
-        let dir = test_folder(SCRATCH, "rebuild-fails");
+    fn a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name() {
+        let dir = test_folder(SCRATCH, "move-aside-twice");
         let path = dir.join("catalog.sqlite");
-        // Files without the columns the current layout needs, and no way to make them.
-        let conn = Connection::open(&path).unwrap();
-        conn.execute_batch(
-            "CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL); INSERT INTO meta VALUES ('path_rules', 'windows');
-             CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
-             PRAGMA user_version = 1;",
-        )
-        .unwrap();
-        drop(conn);
-        let e = Catalog::prepare(&path, versions(), RULES).err().expect("refused");
-        assert!(format!("{e:#}").contains("files.volume"), "{e:#}");
-        let conn = Connection::open(&path).unwrap();
-        assert_eq!(conn.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
-        drop(conn);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    #[test]
-    fn a_catalog_open_elsewhere_isnt_copied() {
-        let dir = test_folder(SCRATCH, "rebuild-open");
-        let path = dir.join("catalog.sqlite");
-        let other = Connection::open(&path).unwrap();
-        other.execute_batch(BEFORE_ORDER_KEY).unwrap();
-        let e = Catalog::prepare(&path, versions(), RULES).err().expect("refused");
-        assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
-        drop(other);
-        assert!(Catalog::prepare(&path, versions(), RULES).is_ok(), "copied once nothing else has it open");
+        // Files without the columns the current layout needs.
+        let old_layout = |path: &Path| {
+            let conn = Connection::open(path).unwrap();
+            conn.execute_batch(
+                "CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL); INSERT INTO meta VALUES ('path_rules', 'windows');
+                 CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
+                 PRAGMA user_version = 1;",
+            )
+            .unwrap();
+        };
+        old_layout(&path);
+        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        let moved = raw::on_disk(&dir.join("catalog.sqlite.pre-s17-7"));
+        assert_eq!(moved.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
+        drop(moved);
+        // Another one moved aside later keeps the first: the new catalog made in the first one's place goes first.
+        for part in ["", "-wal", "-shm"] {
+            let _ = std::fs::remove_file(dir.join(format!("catalog.sqlite{part}")));
+        }
+        old_layout(&path);
+        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        assert!(dir.join("catalog.sqlite.pre-s17-7.1").exists());
+        assert!(dir.join("catalog.sqlite.pre-s17-7").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -2017,15 +1954,12 @@ mod tests {
     /// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
     fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) -> bool {
         let tx = c.tx().unwrap();
-        let mut writer = tx.scan_writer(scan).unwrap();
+        let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
         let folder = writer.folder(&p(r"D:\x")).unwrap();
         let ext = Ext::of_name(name).unwrap();
-        let changed = writer
-            .upsert_file(
-                &folder,
-                &ScannedFile { identity: FileIdentity::new(1, 7), name: &Name::from(name), ext, size, mtime },
-            )
-            .unwrap();
+        let file =
+            ScannedFile { identity: FileIdentity::new(1, 7), name: &Name::from(name), ext, size, mtime, created: None };
+        let changed = writer.upsert_file(&folder, &file).unwrap() == Recorded::Changed;
         drop(writer);
         tx.commit().unwrap();
         changed
@@ -2059,6 +1993,64 @@ mod tests {
         assert!(scanned(&mut c, scans[7], "b.jpg", 11, 101));
         assert_eq!(raw::file_row(&c).5, key("b.jpg"));
         assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
+    }
+
+    /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
+    fn found_as(c: &mut Catalog, scan: i64, identity: FileIdentity, created: Option<i64>) -> Recorded {
+        let tx = c.tx().unwrap();
+        let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
+        let folder = writer.folder(&p(r"D:\x")).unwrap();
+        let file = ScannedFile {
+            identity,
+            name: &Name::from("a.jpg"),
+            ext: Ext::of_name("a.jpg").unwrap(),
+            size: 10,
+            mtime: 100,
+            created,
+        };
+        let recorded = writer.upsert_file(&folder, &file).unwrap();
+        drop(writer);
+        tx.commit().unwrap();
+        recorded
+    }
+
+    #[test]
+    fn a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again() {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+        let (volume, file) = (u64::MAX - 1, u64::MAX);
+        assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Changed);
+        let stored: (i64, i64) =
+            c.conn.query_row("SELECT volume, file_ref FROM files", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!((stored.0 as u64, stored.1 as u64), (volume, file));
+        // The same identity read back from the catalog is the same file: no new row.
+        assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Same);
+    }
+
+    #[test]
+    fn a_creation_time_fills_in_once_and_a_different_one_is_a_different_file() {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+        let identity = FileIdentity::new(1, 7);
+        // Unknown on the first scan (a file system that doesn't give it), then known: it is filled in.
+        assert_eq!(found_as(&mut c, scan, identity, None), Recorded::Changed);
+        assert_eq!(found_as(&mut c, scan, identity, Some(5)), Recorded::Same);
+        let created: Option<i64> =
+            c.conn.query_row("SELECT created FROM files WHERE volume = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(created, Some(5));
+        // A different creation time is a different file: the row is displaced, and a new row takes the identity.
+        assert_eq!(found_as(&mut c, scan, identity, Some(6)), Recorded::Changed);
+        let rows: i64 = c.conn.query_row("SELECT count(*) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 2);
+        let displaced: bool = c
+            .conn
+            .query_row(
+                "SELECT volume IS NULL AND unpaired = 1 AND created = 5 FROM files WHERE volume IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(displaced);
     }
 
     #[test]
@@ -2298,7 +2290,7 @@ mod tests {
         let files = files.into_iter().chain([("e.jpg", 1, Some([0, 90, 0, 0]))]);
         for (n, (name, orientation, cut)) in files.enumerate() {
             let tx = c.tx().unwrap();
-            let mut writer = tx.scan_writer(scan).unwrap();
+            let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
             let folder = writer.folder(&p(r"D:\x")).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let file = ScannedFile {
@@ -2307,6 +2299,7 @@ mod tests {
                 ext,
                 size: 10,
                 mtime: 100,
+                created: None,
             };
             writer.upsert_file(&folder, &file).unwrap();
             drop(writer);
@@ -2414,12 +2407,15 @@ mod tests {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
             let tx = c.tx().unwrap();
-            let mut writer = tx.scan_writer(scan).unwrap();
+            let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
             let folder = writer.folder(&p(folder)).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let identity = FileIdentity::new(1, file_ref);
             writer
-                .upsert_file(&folder, &ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1 })
+                .upsert_file(
+                    &folder,
+                    &ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1, created: None },
+                )
                 .unwrap();
             drop(writer);
             tx.commit().unwrap();

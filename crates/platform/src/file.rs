@@ -49,11 +49,21 @@ pub fn last_write_time(meta: &Metadata) -> i64 {
     meta.last_write_time() as i64
 }
 
+/// From 1601-01-01 to 1970-01-01, in 100 ns ticks.
+#[cfg(unix)]
+const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
+
 /// Elsewhere, the same count from the Unix time.
 #[cfg(unix)]
 pub fn last_write_time(meta: &Metadata) -> i64 {
     use std::os::unix::fs::MetadataExt;
-    /// From 1601-01-01 to 1970-01-01, in 100 ns ticks.
-    const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
     meta.mtime() * 10_000_000 + meta.mtime_nsec() / 100 + UNIX_EPOCH_TICKS
+}
+
+/// The birth time in FILETIME ticks, where the file system gives one (`statx` with `STATX_BTIME`, which std asks for in
+/// its metadata calls). `None` when it doesn't (drvfs, older kernels) or when the time is before 1970.
+#[cfg(unix)]
+pub fn created_time(meta: &Metadata) -> Option<i64> {
+    let since = meta.created().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
+    Some(UNIX_EPOCH_TICKS + since.as_secs() as i64 * 10_000_000 + i64::from(since.subsec_nanos() / 100))
 }

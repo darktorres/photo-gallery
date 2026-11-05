@@ -53,6 +53,37 @@ struct Inner {
     changes: Arc<Bus<Change>>,
 }
 
+/// What a scan counted (`Notice::ScanNote`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ScanNote {
+    /// Files skipped because another path (a hard link) or another folder of the library holds them.
+    Duplicates,
+    /// Reparse points (links, cloud placeholders) indexed without being followed.
+    SkippedReparse,
+    /// Files whose old row could not be told apart from another (nothing was bound).
+    Ambiguous,
+    /// Rows of files that went missing, kept with their ratings, whose new file wasn't found.
+    UnpairedWithData,
+    /// Rows whose file was replaced by another with the same name: their content was reset.
+    Replaced,
+    /// Rows whose file was found again under a new identity (a renumbered drive, or a move while closed).
+    Rebound,
+}
+
+impl ScanNote {
+    /// The kind the app words the note by.
+    pub fn kind(self) -> &'static str {
+        match self {
+            ScanNote::Duplicates => "duplicates",
+            ScanNote::SkippedReparse => "reparse",
+            ScanNote::Ambiguous => "ambiguous",
+            ScanNote::UnpairedWithData => "unpaired",
+            ScanNote::Replaced => "replaced",
+            ScanNote::Rebound => "rebound",
+        }
+    }
+}
+
 /// Something the job tells the user: a problem it ran into, or how a job asked for went. The job says what happened
 /// in values; the app words it.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -61,6 +92,10 @@ pub enum Notice {
     UnreadableFolders { root: String, count: u64 },
     /// A scan that failed. Its batches before the error are in.
     ScanFailed { root: String, error: String },
+    /// A folder the scanner refuses (decisions 6 and 13); it stays in the library until it is removed.
+    RootRefused { root: String, reason: String },
+    /// What a scan of a folder counted that the user may want to know, `count` of them (S-17.7 decision 12).
+    ScanNote { root: String, note: ScanNote, count: u64 },
     /// A round that failed.
     RoundFailed { error: String },
     /// A round that panicked (caught): the job goes on with the next request.
@@ -345,20 +380,56 @@ impl Pass<Cx<'_>> for Scans {
             }
             match pg_scan::scan(cx.catalog, &path, &cx.inner.ctl) {
                 Ok(s) => {
+                    let root = rules.display(&path);
                     // A scan stopped early has committed what it recorded so far.
-                    if s.changed > 0 || s.missing > 0 {
+                    if s.changed > 0 || s.missing > 0 || s.rebound > 0 || s.replaced > 0 {
                         cx.inner.scanned();
+                    }
+                    // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision
+                    // 7). Both come after the catalog's commit, which the scan made.
+                    for id in &s.replaced_ids {
+                        if let Err(e) = cx.inner.thumbs.forget(*id) {
+                            cx.inner.notify(Notice::ScanFailed { root: root.clone(), error: format!("{e:#}") });
+                        }
+                    }
+                    for temp in &s.temps {
+                        match std::fs::remove_file(temp) {
+                            Ok(()) => {}
+                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                            Err(e) => cx.inner.notify(Notice::ScanFailed {
+                                root: root.clone(),
+                                error: format!("can't delete {temp}: {e}"),
+                            }),
+                        }
                     }
                     if !s.complete {
                         cx.inner.queue.lock().unwrap().scans.push_front(path);
                         return Ok(Step::Preempted);
                     }
                     if s.errors > 0 {
-                        cx.inner.notify(Notice::UnreadableFolders { root: rules.display(&path), count: s.errors });
+                        cx.inner.notify(Notice::UnreadableFolders { root: root.clone(), count: s.errors });
+                    }
+                    let counts = [
+                        (ScanNote::Duplicates, s.duplicates),
+                        (ScanNote::SkippedReparse, s.skipped_reparse),
+                        (ScanNote::Ambiguous, s.ambiguous as u64),
+                        (ScanNote::UnpairedWithData, s.unpaired_with_data as u64),
+                        (ScanNote::Replaced, s.replaced as u64),
+                        (ScanNote::Rebound, s.rebound as u64),
+                    ];
+                    for (note, count) in counts {
+                        if count > 0 {
+                            cx.inner.notify(Notice::ScanNote { root: root.clone(), note, count });
+                        }
                     }
                 }
                 Err(e) => {
-                    cx.inner.notify(Notice::ScanFailed { root: rules.display(&path), error: format!("{e:#}") });
+                    let root = rules.display(&path);
+                    let notice = match e.downcast_ref::<pg_platform::dir::Refused>() {
+                        Some(refused) => Notice::RootRefused { root, reason: refused.reason.clone() },
+                        None => Notice::ScanFailed { root, error: format!("{e:#}") },
+                    };
+                    cx.inner.notify(notice);
                     // Its batches before the error are in.
                     cx.inner.scanned();
                 }

@@ -13,24 +13,36 @@ use pg_model::media::Kind;
 
 pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
     let conn = &catalog.conn;
-    let found = conn
+    let row = conn
         .prepare_cached(
-            "SELECT fo.path || '\\' || f.name, f.size, f.kind, a.format FROM files f
+            "SELECT fo.path, f.name, f.size, f.kind, a.format FROM files f
              JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
              WHERE f.id = ?1",
         )?
         .query_row([file_id.get()], |r| {
-            let format: Option<String> = r.get(3)?;
-            Ok(Details {
-                path: r.get(0)?,
-                size: r.get(1)?,
+            Ok((
+                r.get::<_, Vec<u8>>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, i64>(2)?,
+                r.get::<_, String>(3)?,
+                r.get::<_, Option<String>>(4)?,
+            ))
+        })
+        .optional()?;
+    let found = match row {
+        Some((folder, name, size, kind, format)) => {
+            let path = catalog.rules().display(&catalog.file_path_of(&folder, &name)?);
+            Some(Details {
+                path,
+                size,
                 // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
-                rating_in_file: r.get_ref(2)?.as_str()? == Kind::Image.key()
+                rating_in_file: kind == Kind::Image.key()
                     && format.as_deref().and_then(Format::from_name).is_none_or(pg_metadata::can_hold_rating),
                 border_sides: detection::Sides::new(),
             })
-        })
-        .optional()?;
+        }
+        None => None,
+    };
     match found {
         Some(d) => Ok(Some(Details { border_sides: border_sides(catalog, file_id)?, ..d })),
         None => Ok(None),

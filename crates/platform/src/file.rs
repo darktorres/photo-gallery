@@ -3,15 +3,18 @@
 use std::fs::{File, Metadata};
 use std::io;
 
-/// Open the file at a NUL-terminated UTF-16 path for reading, with every sharing mode and no flags: the call std
-/// makes, without std's conversion of the path into a new buffer for each file.
+use crate::native::NativePath;
+
+/// Open the file at `path` for reading, with every sharing mode and no flags: the call std makes, without std's
+/// conversion of the path into a new buffer for each file.
 #[cfg(windows)]
-pub fn open_read(path: &[u16]) -> io::Result<File> {
+pub fn open_read(path: &NativePath) -> io::Result<File> {
     use std::os::windows::io::{FromRawHandle, RawHandle};
     use windows_sys::Win32::Foundation::{GENERIC_READ, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{
         CreateFileW, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING,
     };
+    let path = path.units();
     debug_assert_eq!(path.last(), Some(&0));
     // SAFETY: `path` is NUL-terminated and outlives the call; the null pointers are optional arguments.
     let h = unsafe {
@@ -32,10 +35,11 @@ pub fn open_read(path: &[u16]) -> io::Result<File> {
     Ok(unsafe { File::from_raw_handle(h as RawHandle) })
 }
 
-/// Elsewhere, the same file, opened by its UTF-16 path decoded.
+/// Elsewhere, the same file, opened by its bytes.
 #[cfg(unix)]
-pub fn open_read(path: &[u16]) -> io::Result<File> {
-    File::open(String::from_utf16_lossy(path.strip_suffix(&[0]).unwrap_or(path)))
+pub fn open_read(path: &NativePath) -> io::Result<File> {
+    use std::os::unix::ffi::OsStrExt;
+    File::open(std::ffi::OsStr::from_bytes(path.units()))
 }
 
 /// A file's last write time in FILETIME ticks: 100 ns since 1601-01-01 UTC, as the catalog stores it.

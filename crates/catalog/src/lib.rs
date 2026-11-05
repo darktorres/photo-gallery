@@ -15,7 +15,7 @@ pub mod browse;
 pub mod dups;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
-pub mod query;
+pub use pg_query as query;
 pub mod writes;
 
 use std::path::Path;
@@ -26,7 +26,6 @@ use anyhow::{Context, anyhow};
 
 mod error;
 pub use error::{Error, Result};
-use rusqlite::functions::FunctionFlags;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Statement, Transaction, TransactionBehavior, params};
 
@@ -35,10 +34,11 @@ use pg_model::detection::Detection;
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
 use pg_model::media::{Ext, Kind};
+use pg_model::name::Name;
 use pg_model::orientation::Orientation;
-use pg_model::path::is_under;
 use pg_model::path::{FilePath, PathArena, PathRef, WorkList};
 use pg_model::rating::Rating;
+use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
@@ -83,31 +83,52 @@ macro_rules! has_borders {
     };
 }
 
-/// Folders equal to root ?1 or below it: path in [root\, root]), as ']' is the character after '\'.
+/// Folders equal to the root (?1) or below it: the paths from ?2 (the root and a separator) up to ?3 (the root and
+/// the separator's successor, so nothing sorts past the subtree). The bounds are made by [`under_params`].
 macro_rules! under_root {
     () => {
-        "SELECT id FROM folders WHERE path = ?1 OR (path >= ?1 || '\\' AND path < ?1 || ']')"
+        "SELECT id FROM folders WHERE path = ?1 OR (path >= ?2 AND path < ?3)"
     };
+}
+
+/// The parameters of [`under_root`] for `root` under `rules`: the root's bytes, and the bounds of its subtree. A
+/// drive's root already ends with a separator, so its subtree starts there.
+fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> [Vec<u8>; 3] {
+    let sep = rules.sep() as u8;
+    let bytes = rules.join(root);
+    let (lo, hi) = if bytes.last() == Some(&sep) {
+        let mut hi = bytes[..bytes.len() - 1].to_vec();
+        hi.push(sep + 1);
+        (bytes.clone(), hi)
+    } else {
+        let mut lo = bytes.clone();
+        lo.push(sep);
+        let mut hi = bytes.clone();
+        hi.push(sep + 1);
+        (lo, hi)
+    };
+    [bytes, lo, hi]
 }
 
 const BASELINE: &str = concat!(
     r"
 CREATE TABLE scans(
     id       INTEGER PRIMARY KEY,
-    root     TEXT NOT NULL,
+    root     BLOB NOT NULL,      -- the folder as stored (Name bytes, PathRules::join)
     started  INTEGER NOT NULL,   -- Unix seconds
     finished INTEGER
 );
 CREATE TABLE folders(
     id   INTEGER PRIMARY KEY,
-    path TEXT NOT NULL UNIQUE    -- absolute, no trailing backslash
+    path BLOB NOT NULL UNIQUE,   -- absolute, no trailing separator (PathRules::join)
+    key  BLOB NOT NULL           -- the folder's key (PathRules::folder_key): the lookup by folder
 );
 CREATE TABLE files(
     id        INTEGER PRIMARY KEY,
     volume    INTEGER NOT NULL,  -- volume serial number
     file_ref  INTEGER NOT NULL,  -- NTFS file ID; the low 48 bits are the MFT record number
     folder_id INTEGER NOT NULL REFERENCES folders(id),
-    name      TEXT NOT NULL,
+    name      BLOB NOT NULL,     -- the file name as the OS has it (Name bytes)
     ext       TEXT NOT NULL,     -- the name's last extension, lower case (media::Ext)
     kind      TEXT NOT NULL,     -- media::Kind::key, from the extension: 'image' | 'video'
     size      INTEGER NOT NULL,
@@ -123,6 +144,7 @@ CREATE TABLE files(
     UNIQUE(volume, file_ref)
 );
 CREATE INDEX files_folder ON files(folder_id, name);
+CREATE INDEX folders_key ON folders(key);
 -- The grid's name order and every folder's files (a range of keys: browse::read::scope).
 CREATE INDEX files_order ON files(order_key) WHERE missing = 0;
 -- The folder tree's counts, from the index alone.
@@ -225,7 +247,7 @@ CREATE VIEW thumb_clock AS SELECT value AS seq FROM meta WHERE key = 'seq';
 -- The library: folders the user added, which a rescan walks again. None is inside another.
 CREATE TABLE roots(
     id    INTEGER PRIMARY KEY,
-    path  TEXT NOT NULL UNIQUE,  -- absolute, no trailing backslash
+    path  BLOB NOT NULL UNIQUE,  -- absolute, no trailing separator (PathRules::join)
     added INTEGER NOT NULL       -- Unix seconds
 );
 
@@ -432,23 +454,50 @@ const CARRIED: &[&str] = &[
 /// Columns an earlier layout may lack, and what [`rebuild`] makes them from (`o` is the old row). An analysis of
 /// the current version was made with the file's rotation as it is: a turn used to zero the version.
 const FILLED: &[(&str, &str, &str)] = &[
-    ("files", "order_key", "pg_order_key((SELECT path FROM old.folders WHERE id = o.folder_id), o.name)"),
     ("analysis", "rotation", "(SELECT rotation FROM old.files WHERE id = o.file_id)"),
     ("analysis", "kind", "(SELECT kind FROM old.files WHERE id = o.file_id)"),
     // A root kept its row when the earlier layout had no id: the row number stands for it.
     ("roots", "id", "o.rowid"),
+    // The keys are made from the paths and names by `rekey`, once the rows are copied.
+    ("folders", "key", "X''"),
+    ("files", "order_key", "X''"),
 ];
 
 /// A library folder: the user added it, and a rescan walks it again.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Root {
     pub id: RootId,
-    /// Absolute, with no trailing backslash.
-    pub path: String,
+    /// Absolute, with no trailing separator.
+    pub path: RulePath,
 }
 
 pub struct Catalog {
     conn: Connection,
+    /// The path rules the catalog's paths are stored under (`meta.path_rules`, checked when it opens).
+    rules: PathRules,
+}
+
+/// The `meta.path_rules` value of a rule set.
+fn rules_name(rules: PathRules) -> &'static str {
+    match rules {
+        PathRules::Windows => "windows",
+        PathRules::Posix => "posix",
+    }
+}
+
+/// Refuse a catalog whose paths were stored under other rules, or before the rules were recorded (no row): its
+/// bytes don't read under these. Its way forward is to be rebuilt: deleted and scanned again.
+fn check_rules(conn: &Connection, path: &Path, rules: PathRules) -> Result<()> {
+    let found: Option<String> =
+        conn.query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0)).optional()?;
+    if found.as_deref() == Some(rules_name(rules)) {
+        return Ok(());
+    }
+    let detail = match &found {
+        Some(f) => format!("made with the {f} path rules"),
+        None => "made before its path rules were recorded".to_string(),
+    };
+    Err(Error::PathRules { path: path.display().to_string(), detail, wanted: rules_name(rules) })
 }
 
 /// The versions of the analyses the build makes, which `files.pending` and `analysis.borders_due` are kept against
@@ -510,7 +559,7 @@ fn current_layout(conn: &Connection) -> Result<bool> {
 /// ([`FILLED`]). The triggers and the import version check then mark what the import has to do again. Built
 /// beside it and moved over it once complete, so a failure leaves the old catalog's rows as they were (it is left
 /// out of WAL mode). No connection to it may be open, here or in another process.
-fn rebuild(path: &Path) -> Result<()> {
+fn rebuild(path: &Path, rules: PathRules) -> Result<()> {
     let with_suffix = |suffix: &str| {
         let mut p = path.as_os_str().to_owned();
         p.push(suffix);
@@ -532,7 +581,7 @@ fn rebuild(path: &Path) -> Result<()> {
             std::fs::remove_file(&leftover).with_context(|| format!("deleting {}", leftover.display()))?;
         }
     }
-    let built = build_copy(path, &new_path);
+    let built = build_copy(path, &new_path, rules);
     if built.is_err() {
         let _ = std::fs::remove_file(&new_path);
     }
@@ -552,36 +601,60 @@ fn rebuild(path: &Path) -> Result<()> {
     Ok(())
 }
 
-/// [`rebuild`]'s copy of the catalog at `path`, made at `new_path`.
-fn build_copy(path: &Path, new_path: &Path) -> Result<()> {
+/// [`rebuild`]'s copy of the catalog at `path`, made at `new_path`, under `rules`.
+fn build_copy(path: &Path, new_path: &Path, rules: PathRules) -> Result<()> {
     let new = Connection::open(new_path)?;
     migrate(&new, BASELINE, MIGRATIONS)?;
-    new.create_scalar_function(
-        "pg_order_key",
-        2,
-        FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
-        |ctx| {
-            let text = |i| ctx.get_raw(i).as_str().map_err(|e| rusqlite::Error::UserFunctionError(e.into()));
-            Ok(pg_model::path::order_key_of(text(0)?, text(1)?))
-        },
+    new.execute(
+        "ATTACH DATABASE ?1 AS old",
+        [path
+            .to_str()
+            .with_context(|| format!("{} has no UTF-8 form, which SQLite needs to attach it", path.display()))?],
     )?;
-    new.execute("ATTACH DATABASE ?1 AS old", [path.to_string_lossy()])?;
     let tx = new.unchecked_transaction()?;
     for table in CARRIED {
         copy_table(&tx, table)?;
     }
+    rekey(&tx, rules)?;
     tx.commit()?;
     new.execute("DETACH DATABASE old", [])?;
+    Ok(())
+}
+
+/// Make the keys the rules order by, for the copied rows: each folder's key from its path, and each file's order key
+/// from its folder's key and its name. An earlier layout's keys were made by its own rules, so none is kept.
+fn rekey(tx: &Transaction, rules: PathRules) -> Result<()> {
+    let folders: Vec<(i64, Vec<u8>)> = {
+        let mut stmt = tx.prepare("SELECT id, path FROM folders")?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?.collect::<rusqlite::Result<_>>()?
+    };
+    let mut keys = std::collections::BTreeMap::new();
+    for (id, path) in folders {
+        let parts = rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+        let key = rules.folder_key(&parts.parts);
+        tx.execute("UPDATE folders SET key = ?2 WHERE id = ?1", params![id, key])?;
+        keys.insert(id, key);
+    }
+    let files: Vec<(i64, i64, Vec<u8>)> = {
+        let mut stmt = tx.prepare("SELECT id, folder_id, name FROM files")?;
+        stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?.collect::<rusqlite::Result<_>>()?
+    };
+    let mut update = tx.prepare("UPDATE files SET order_key = ?2 WHERE id = ?1")?;
+    for (id, folder, name) in files {
+        let folder_key = keys.get(&folder).ok_or_else(|| anyhow!("a file's folder {folder} is not in the catalog"))?;
+        update.execute(params![id, rules.order_key(folder_key, &Name::from_raw(&name))])?;
+    }
     Ok(())
 }
 
 /// Copy the attached `old` catalog's `table` into the same table of this one, if it has it, and check that every
 /// row came.
 fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
-    // (name, NOT NULL without a default) of each column.
-    let columns = |schema: &str| -> Result<Vec<(String, bool)>> {
-        let mut stmt = tx.prepare(r#"SELECT name, "notnull" AND dflt_value IS NULL FROM pragma_table_info(?1, ?2)"#)?;
-        let rows = stmt.query_map([table, schema], |r| Ok((r.get(0)?, r.get(1)?)))?;
+    // (name, NOT NULL without a default, declared type) of each column.
+    let columns = |schema: &str| -> Result<Vec<(String, bool, String)>> {
+        let mut stmt =
+            tx.prepare(r#"SELECT name, "notnull" AND dflt_value IS NULL, type FROM pragma_table_info(?1, ?2)"#)?;
+        let rows = stmt.query_map([table, schema], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
         Ok(rows.collect::<rusqlite::Result<_>>()?)
     };
     let old = columns("old")?;
@@ -589,9 +662,14 @@ fn copy_table(tx: &Transaction, table: &str) -> Result<()> {
         return Ok(());
     }
     let (mut into, mut from) = (Vec::new(), Vec::new());
-    for (column, required) in columns("main")? {
-        let source = if old.iter().any(|(c, _)| *c == column) {
-            format!(r#"o."{column}""#)
+    for (column, required, declared) in columns("main")? {
+        let source = if old.iter().any(|(c, _, _)| *c == column) {
+            // The paths and names are bytes now: an earlier layout kept them as text, which is copied as its bytes.
+            if declared.eq_ignore_ascii_case("BLOB") {
+                format!(r#"CAST(o."{column}" AS BLOB)"#)
+            } else {
+                format!(r#"o."{column}""#)
+            }
         } else if let Some((_, _, made)) = FILLED.iter().find(|(t, c, _)| *t == table && *c == column) {
             (*made).to_string()
         } else if required {
@@ -712,7 +790,7 @@ fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound: usize) ->
             folder = Some(conn.prepare_cached(FOLDER_PATH)?);
         }
         let Some(folder) = folder.as_mut() else { unreachable!("made above") };
-        let path = list.file(r.get(1)?, r.get_ref(2)?.as_str()?, |arena| folder_path(folder, r, arena))?;
+        let path = list.file(r.get(1)?, r.get_ref(2)?.as_blob()?, |arena| folder_path(folder, r, arena))?;
         list.items.push(WorkItem {
             id: FileId::new(r.get(0)?),
             path,
@@ -742,13 +820,13 @@ pub(crate) fn folder_path(
     arena: &mut PathArena,
 ) -> rusqlite::Result<PathRef> {
     let id: i64 = r.get(1)?;
-    folder.query_row([id], |f| Ok(arena.push(f.get_ref(0)?.as_str()?)))
+    folder.query_row([id], |f| Ok(arena.push(f.get_ref(0)?.as_blob()?)))
 }
 
 /// A file as the scanner saw it.
 pub struct ScannedFile<'a> {
     pub identity: FileIdentity,
-    pub name: &'a str,
+    pub name: &'a Name,
     /// Its last extension (`Ext::of_name`), which also says its kind.
     pub ext: Ext,
     pub size: u64,
@@ -812,11 +890,18 @@ impl Catalog {
     /// Prepare the catalog at `path` for this build, creating it when new: one made with an earlier layout is copied
     /// into the current one first (`rebuild`, seconds for 190k files), and its version marks are set to `versions`.
     /// The library calls this once, before anything else opens the catalog.
-    pub fn prepare(path: &Path, versions: Versions) -> Result<Catalog> {
+    pub fn prepare(path: &Path, versions: Versions, rules: PathRules) -> Result<Catalog> {
+        // A new catalog records its rules; an existing one must have been made under them.
+        let created = !path.exists();
         let mut conn = connect(path)?;
+        if created {
+            conn.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [rules_name(rules)])?;
+        }
+        check_rules(&conn, path, rules)?;
         if !current_layout(&conn)? {
             drop(conn);
-            rebuild(path).with_context(|| format!("catalog {}: copying it into the current layout", path.display()))?;
+            rebuild(path, rules)
+                .with_context(|| format!("catalog {}: copying it into the current layout", path.display()))?;
             conn = connect(path)?;
             if !current_layout(&conn)? {
                 return Err(Error::Other(anyhow!(
@@ -828,7 +913,7 @@ impl Catalog {
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
         crate::query::register_functions(&conn)?;
-        Ok(Catalog { conn })
+        Ok(Catalog { conn, rules })
     }
 
     /// Open a catalog this process has prepared ([`Catalog::prepare`], which makes it, brings it to the current layout
@@ -836,7 +921,7 @@ impl Catalog {
     /// app's threads, the background job, the writer), which would otherwise check the layout and the marks again
     /// each time. An error if the catalog isn't there, or its schema isn't this build's (another program changed it
     /// since).
-    pub fn open(path: &Path) -> Result<Catalog> {
+    pub fn open(path: &Path, rules: PathRules) -> Result<Catalog> {
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(path, flags).with_context(|| format!("catalog {}", path.display()))?;
         conn.execute_batch(SETTINGS)?;
@@ -848,8 +933,14 @@ impl Catalog {
                 path.display()
             )));
         }
+        check_rules(&conn, path, rules)?;
         crate::query::register_functions(&conn)?;
-        Ok(Catalog { conn })
+        Ok(Catalog { conn, rules })
+    }
+
+    /// The path rules the catalog's paths are stored under.
+    pub fn rules(&self) -> PathRules {
+        self.rules
     }
 
     /// Whether the file can't be written: it is missing from the catalog, or no longer listed.
@@ -862,24 +953,34 @@ impl Catalog {
     }
 
     /// The folder the file is in, as the catalog has it; `None` if there is no such file.
-    pub fn file_folder(&self, file_id: FileId) -> Option<String> {
-        self.conn
+    pub fn file_folder(&self, file_id: FileId) -> Option<RulePath> {
+        let bytes: Vec<u8> = self
+            .conn
             .query_row(
                 "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
                 [file_id.get()],
                 |r| r.get(0),
             )
-            .ok()
+            .ok()?;
+        self.rules.parse_bytes(&bytes)
     }
 
     /// What a queued write needs of its file: its path, its analyzed format, and its kind (`files.kind`).
-    pub fn write_target(&self, file_id: FileId) -> Result<(String, Option<String>, String)> {
-        Ok(self.conn.query_row(
-            "SELECT fo.path || '\\' || f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
+    pub fn write_target(&self, file_id: FileId) -> Result<(RulePath, Option<String>, String)> {
+        let (folder, name, format, kind): (Vec<u8>, Vec<u8>, Option<String>, String) = self.conn.query_row(
+            "SELECT fo.path, f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
              LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
             [file_id.get()],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
-        )?)
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+        )?;
+        Ok((self.file_path_of(&folder, &name)?, format, kind))
+    }
+
+    /// A file's path from its folder's stored bytes and its name's: the folder, the separator, the name.
+    fn file_path_of(&self, folder: &[u8], name: &[u8]) -> Result<RulePath> {
+        let mut parts = self.rules.parse_bytes(folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
+        parts.parts.push(Name::from_raw(name));
+        Ok(parts)
     }
 
     /// The id made with the catalog (`meta.catalog_id`).
@@ -896,8 +997,8 @@ impl Catalog {
         self.conn.progress_handler(1000, Some(move || cancel.load(Ordering::Relaxed)));
     }
 
-    pub fn begin_scan(&self, root: &str) -> Result<i64> {
-        self.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [root])?;
+    pub fn begin_scan(&self, root: &RulePath) -> Result<i64> {
+        self.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [self.rules.join(root)])?;
         Ok(self.conn.last_insert_rowid())
     }
 
@@ -909,10 +1010,11 @@ impl Catalog {
     /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions). Files in
     /// `unreadable` folders (and their subfolders) are left as they are: the scan couldn't list them, so it saw
     /// nothing there to compare with (R-45).
-    pub fn mark_missing(&self, root: &str, scan: i64, unreadable: &[String]) -> Result<usize> {
-        let under = |path: &str| -> Result<Vec<i64>> {
+    pub fn mark_missing(&self, root: &RulePath, scan: i64, unreadable: &[RulePath]) -> Result<usize> {
+        let under = |path: &RulePath| -> Result<Vec<i64>> {
             let mut stmt = self.conn.prepare(under_root!())?;
-            Ok(stmt.query_map([path], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+            let [p1, p2, p3] = under_params(self.rules, path);
+            Ok(stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
         };
         let mut skipped = std::collections::BTreeSet::new();
         for path in unreadable {
@@ -933,28 +1035,36 @@ impl Catalog {
     /// The library folders, by path, with their ids.
     pub fn roots(&self) -> Result<Vec<Root>> {
         let mut stmt = self.conn.prepare("SELECT id, path FROM roots ORDER BY path")?;
-        let rows = stmt.query_map([], |r| Ok(Root { id: RootId::new(r.get(0)?), path: r.get(1)? }))?;
-        Ok(rows.collect::<rusqlite::Result<_>>()?)
+        let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
+        let mut roots = Vec::new();
+        for row in rows {
+            let (id, bytes) = row?;
+            let path = self.rules.parse_bytes(&bytes).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
+            roots.push(Root { id: RootId::new(id), path });
+        }
+        Ok(roots)
     }
 
     /// The id of a library folder, by its path; `None` when the path is not one.
-    pub fn root_id(&self, path: &str) -> Result<Option<RootId>> {
-        let id: Option<i64> =
-            self.conn.query_row("SELECT id FROM roots WHERE path = ?1", [path], |r| r.get(0)).optional()?;
+    pub fn root_id(&self, path: &RulePath) -> Result<Option<RootId>> {
+        let id: Option<i64> = self
+            .conn
+            .query_row("SELECT id FROM roots WHERE path = ?1", [self.rules.join(path)], |r| r.get(0))
+            .optional()?;
         Ok(id.map(RootId::new))
     }
 
     /// Add a folder to the library. A folder already inside the library adds nothing (returns false); one that
     /// contains library folders replaces them.
-    pub fn add_root(&self, root: &str) -> Result<bool> {
+    pub fn add_root(&self, root: &RulePath) -> Result<bool> {
         let roots = self.roots()?;
-        if roots.iter().any(|r| is_under(root, &r.path)) {
+        if roots.iter().any(|r| self.rules.is_under(root, &r.path)) {
             return Ok(false);
         }
-        for r in roots.iter().filter(|r| is_under(&r.path, root)) {
+        for r in roots.iter().filter(|r| self.rules.is_under(&r.path, root)) {
             self.conn.execute("DELETE FROM roots WHERE id = ?1", [r.id.get()])?;
         }
-        self.conn.execute("INSERT INTO roots(path, added) VALUES (?1, unixepoch())", [root])?;
+        self.conn.execute("INSERT INTO roots(path, added) VALUES (?1, unixepoch())", [self.rules.join(root)])?;
         Ok(true)
     }
 
@@ -963,13 +1073,15 @@ impl Catalog {
     /// nothing changed, when `root` is not a library folder.
     pub fn remove_root(&self, root: RootId) -> Result<Option<usize>> {
         let tx = self.conn.unchecked_transaction()?;
-        let path: Option<String> =
+        let path: Option<Vec<u8>> =
             tx.query_row("SELECT path FROM roots WHERE id = ?1", [root.get()], |r| r.get(0)).optional()?;
         let Some(path) = path else { return Ok(None) };
+        let path = self.rules.parse_bytes(&path).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
         tx.execute("DELETE FROM roots WHERE id = ?1", [root.get()])?;
+        let [p1, p2, p3] = under_params(self.rules, &path);
         let n = tx.execute(
             concat!("UPDATE files SET missing = 1 WHERE missing = 0 AND folder_id IN (", under_root!(), ")"),
-            [path.as_str()],
+            params![p1, p2, p3],
         )?;
         tx.commit()?;
         Ok(Some(n))
@@ -1049,28 +1161,40 @@ impl Catalog {
     }
 
     /// The present file at an absolute path (Windows paths: any case).
-    pub fn file_by_path(&self, path: &str) -> Result<Option<FileId>> {
-        let Some((folder, name)) = path.rsplit_once('\\') else { return Ok(None) };
-        Ok(self
-            .conn
-            .prepare_cached(
-                "SELECT f.id FROM files f JOIN folders d ON d.id = f.folder_id
-                 WHERE lower(d.path) = lower(?1) AND lower(f.name) = lower(?2) AND f.missing = 0",
-            )?
-            .query_row([folder, name], |r| r.get::<_, i64>(0))
-            .optional()?
-            .map(FileId::new))
+    pub fn file_by_path(&self, path: &RulePath) -> Result<Option<FileId>> {
+        let Some((folder, name)) = self.rules.split_file_name(path) else { return Ok(None) };
+        let key = self.rules.folder_key(&folder.parts);
+        let name_key = name.name_key();
+        // The files of the folder's key (every drive's copy of it), then the one at this path by the rules: the same
+        // drive, and a name equal by key, which is case-insensitive where the rules are (SQLite's lower() is ASCII).
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT f.id, f.name, fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id
+             WHERE fo.key = ?1 AND f.missing = 0",
+        )?;
+        let rows =
+            stmt.query_map([key], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?, r.get::<_, Vec<u8>>(2)?)))?;
+        for row in rows {
+            let (id, stored_name, stored_folder) = row?;
+            let same_folder = self.rules.parse_bytes(&stored_folder).is_some_and(|f| self.rules.same(&f, &folder));
+            let mut stored_key = Vec::new();
+            Name::from_raw(&stored_name).push_name_key(&mut stored_key);
+            if same_folder && stored_key == name_key {
+                return Ok(Some(FileId::new(id)));
+            }
+        }
+        Ok(None)
     }
 
-    /// The present files in a folder and its subfolders (an absolute path in the catalog's case, without a
-    /// trailing backslash).
-    pub fn files_under(&self, folder: &str) -> Result<Vec<FileId>> {
+    /// The present files in a folder and its subfolders (a path in the catalog's case, without a trailing
+    /// separator).
+    pub fn files_under(&self, folder: &RulePath) -> Result<Vec<FileId>> {
         let mut stmt = self.conn.prepare(concat!(
             "SELECT id FROM files WHERE missing = 0 AND folder_id IN (",
             under_root!(),
             ")"
         ))?;
-        let ids: Vec<i64> = stmt.query_map([folder], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
+        let [p1, p2, p3] = under_params(self.rules, folder);
+        let ids: Vec<i64> = stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?;
         Ok(ids.into_iter().map(FileId::new).collect())
     }
 
@@ -1097,7 +1221,7 @@ impl Catalog {
         Ok(self
             .conn
             .prepare_cached(
-                "SELECT (SELECT path FROM folders WHERE id = f.folder_id) || '\\' || f.name, f.size, f.mtime,
+                "SELECT (SELECT path FROM folders WHERE id = f.folder_id), f.name, f.size, f.mtime,
                         a.format, a.orientation, a.width, a.height, a.cut_left, a.cut_top, a.cut_right, a.cut_bottom
                  FROM files f JOIN analysis a ON a.file_id = f.id
                  WHERE f.id = ?1 AND f.missing = 0 AND f.pending = 0 AND a.borders_due = 0
@@ -1107,20 +1231,22 @@ impl Catalog {
             )?
             .query_row([file_id.get()], |r| {
                 let (orientation, w, h): (Orientation, u32, u32) =
-                    (Orientation::from_tag(r.get(4)?), r.get(5)?, r.get(6)?);
+                    (Orientation::from_tag(r.get(5)?), r.get(6)?, r.get(7)?);
                 let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
-                let format = r.get_ref(3)?.as_str()?;
+                let format = r.get_ref(4)?.as_str()?;
                 let format = Format::from_name(format).ok_or_else(|| {
-                    rusqlite::Error::FromSqlConversionFailure(3, Type::Text, format!("unknown format {format}").into())
+                    rusqlite::Error::FromSqlConversionFailure(4, Type::Text, format!("unknown format {format}").into())
                 })?;
+                let (folder, name) = (r.get_ref(0)?.as_blob()?, r.get_ref(1)?.as_blob()?);
+                let path = self.rules.sep() as u8;
                 Ok(CropSource {
-                    path: paths.push(r.get_ref(0)?.as_str()?),
-                    size: r.get(1)?,
-                    mtime: r.get(2)?,
+                    path: paths.push_parts(&[folder, &[path], name]),
+                    size: r.get(2)?,
+                    mtime: r.get(3)?,
                     format,
                     width,
                     height,
-                    cut: [r.get(7)?, r.get(8)?, r.get(9)?, r.get(10)?],
+                    cut: [r.get(8)?, r.get(9)?, r.get(10)?, r.get(11)?],
                 })
             })
             .optional()?)
@@ -1144,12 +1270,13 @@ impl Catalog {
     }
 
     /// Where a file is: its folder and name, as Windows spells it.
-    pub fn file_path(&self, file_id: FileId) -> Result<String> {
-        Ok(self.conn.query_row(
-            "SELECT fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+    pub fn file_path(&self, file_id: FileId) -> Result<RulePath> {
+        let (folder, name): (Vec<u8>, Vec<u8>) = self.conn.query_row(
+            "SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
             [file_id.get()],
-            |r| r.get(0),
-        )?)
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )?;
+        self.file_path_of(&folder, &name)
     }
 
     /// Give back this connection's page cache (the reader does it after each list it made).
@@ -1201,19 +1328,20 @@ const DELETE_FILE_RATING: &str = "DELETE FROM file_ratings WHERE file_id = ?1";
 /// their writes commits together, with `commit`.
 pub struct Tx<'c> {
     inner: Transaction<'c>,
+    rules: PathRules,
 }
 
 impl Catalog {
     /// Begin a transaction on the catalog (see [`Tx`]).
     pub fn tx(&mut self) -> Result<Tx<'_>> {
-        Ok(Tx { inner: self.conn.transaction()? })
+        Ok(Tx { inner: self.conn.transaction()?, rules: self.rules })
     }
 }
 
 impl Tx<'_> {
     /// The writer of the scan `scan`, in this transaction.
     pub fn scan_writer(&self, scan: i64) -> Result<ScanWriter<'_>> {
-        ScanWriter::new(&self.inner, scan)
+        ScanWriter::new(&self.inner, scan, self.rules)
     }
 
     /// The writer of the import's analyses, in this transaction.
@@ -1237,6 +1365,7 @@ impl Tx<'_> {
 /// The scan's writes.
 pub struct ScanWriter<'tx> {
     scan: i64,
+    rules: PathRules,
     folder_id: Statement<'tx>,
     new_folder: Statement<'tx>,
     known: Statement<'tx>,
@@ -1247,11 +1376,12 @@ pub struct ScanWriter<'tx> {
 }
 
 impl<'tx> ScanWriter<'tx> {
-    pub fn new(tx: &'tx Transaction, scan: i64) -> Result<ScanWriter<'tx>> {
+    pub fn new(tx: &'tx Transaction, scan: i64, rules: PathRules) -> Result<ScanWriter<'tx>> {
         Ok(ScanWriter {
             scan,
+            rules,
             folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
-            new_folder: tx.prepare("INSERT INTO folders(path) VALUES (?1) RETURNING id")?,
+            new_folder: tx.prepare("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
             known: tx.prepare(
                 "SELECT id, folder_id, name, ext, kind, size, mtime, missing, order_key FROM files
                  WHERE volume = ?1 AND file_ref = ?2",
@@ -1270,11 +1400,12 @@ impl<'tx> ScanWriter<'tx> {
     }
 
     /// The folder's row, made if it's new.
-    pub fn folder(&mut self, path: &str) -> Result<Folder> {
-        let key = pg_model::path::folder_key(pg_model::path::merged_path(path));
-        let id: i64 = match self.folder_id.query_row([path], |r| r.get(0)).optional()? {
+    pub fn folder(&mut self, path: &RulePath) -> Result<Folder> {
+        let key = self.rules.folder_key(&path.parts);
+        let bytes = self.rules.join(path);
+        let id: i64 = match self.folder_id.query_row([&bytes], |r| r.get(0)).optional()? {
             Some(id) => id,
-            None => self.new_folder.query_row([path], |r| r.get(0))?,
+            None => self.new_folder.query_row(params![bytes, key], |r| r.get(0))?,
         };
         Ok(Folder { id: FolderId::new(id), key })
     }
@@ -1286,13 +1417,13 @@ impl<'tx> ScanWriter<'tx> {
         let ScanWriter { scan, known, seen, file, key, .. } = self;
         key.clear();
         key.extend_from_slice(&folder.key);
-        pg_model::path::push_name_key(key, f.name);
+        f.name.push_name_key(key);
         let (volume, file_ref, size) = (f.identity.volume, f.identity.file_index as i64, f.size as i64);
         let (ext, kind) = (f.ext.name(), f.ext.kind().key());
         let row = known
             .query_row(params![volume, file_ref], |r| {
                 let same = r.get::<_, i64>(1)? == folder.id.get()
-                    && r.get_ref(2)?.as_str()? == f.name
+                    && r.get_ref(2)?.as_blob()? == f.name.as_bytes()
                     && r.get_ref(3)?.as_str()? == ext
                     && r.get_ref(4)?.as_str()? == kind
                     && r.get::<_, i64>(5)? == size
@@ -1307,7 +1438,18 @@ impl<'tx> ScanWriter<'tx> {
             return Ok(false);
         }
         // `pending` and `seq` follow from the triggers.
-        file.execute(params![volume, file_ref, folder.id.get(), f.name, ext, kind, size, f.mtime, *scan, &key[..]])?;
+        file.execute(params![
+            volume,
+            file_ref,
+            folder.id.get(),
+            f.name.as_bytes(),
+            ext,
+            kind,
+            size,
+            f.mtime,
+            *scan,
+            &key[..]
+        ])?;
         Ok(true)
     }
 }
@@ -1554,12 +1696,22 @@ mod tests {
         Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION }
     }
 
+    /// A path under the tests' rules.
+    fn p(text: &str) -> RulePath {
+        RULES.parse(text).expect("a test path")
+    }
+
+    /// The rules the tests of this module open their catalogs under: the Windows ones, as the app has them.
+    const RULES: PathRules = PathRules::Windows;
+
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = r"D:\PhotoGallery\scratch_catalog";
 
     /// The layout before the order key (2026-10-31), as the catalogs made with it have it.
     const BEFORE_ORDER_KEY: &str = r"
         PRAGMA journal_mode = WAL;
+        CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL);
+        INSERT INTO meta(key, value) VALUES ('path_rules', 'windows');
         CREATE TABLE scans(id INTEGER PRIMARY KEY, root TEXT NOT NULL, started INTEGER NOT NULL, finished INTEGER);
         CREATE TABLE folders(id INTEGER PRIMARY KEY, path TEXT NOT NULL UNIQUE);
         CREATE TABLE files(id INTEGER PRIMARY KEY, volume INTEGER NOT NULL, file_ref INTEGER NOT NULL,
@@ -1613,7 +1765,7 @@ mod tests {
         .unwrap();
         drop(old);
 
-        let c = Catalog::prepare(&path, versions()).unwrap();
+        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
         let disk = raw::on_disk(&path);
         assert!(current_layout(&disk).unwrap());
         assert!(!dir.join("catalog.sqlite.rebuild").exists());
@@ -1622,7 +1774,7 @@ mod tests {
             stmt.query_map([], |r| r.get(0)).unwrap().map(Result::unwrap).collect()
         };
         // The user's own: the library, ratings, the queued turn, views and session, with the same file ids.
-        assert_eq!(rows("SELECT path FROM roots"), [r"D:\p"]);
+        assert_eq!(rows("SELECT CAST(path AS TEXT) FROM roots"), [r"D:\p"]);
         // The row number of the old layout is the root's id now.
         assert_eq!(rows("SELECT id || ' ' || path FROM roots"), [r"1 D:\p"]);
         assert_eq!(rows("SELECT file_id || ':' || rating FROM ratings ORDER BY 1"), ["11:4", "13:1"]);
@@ -1634,7 +1786,7 @@ mod tests {
         // What the layout added: the order keys as the scanner writes them, and each analysis's rotation and kind.
         let keys: Vec<(Vec<u8>, String, String)> = {
             let mut stmt = disk
-                .prepare("SELECT f.order_key, fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id")
+                .prepare("SELECT f.order_key, CAST(fo.path AS TEXT), CAST(f.name AS TEXT) FROM files f JOIN folders fo ON fo.id = f.folder_id")
                 .unwrap();
             stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?))).unwrap().map(Result::unwrap).collect()
         };
@@ -1656,7 +1808,7 @@ mod tests {
     fn a_catalog_with_the_earlier_source_trigger_or_view_is_copied_into_the_current_layout() {
         let dir = test_folder(SCRATCH, "layout_source");
         let path = dir.join("catalog.sqlite");
-        drop(Catalog::prepare(&path, versions()).unwrap());
+        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
         let fresh = raw::on_disk(&path);
         assert!(current_layout(&fresh).unwrap());
         // The same names and counts, the text before the size was added: the layout check must refuse it.
@@ -1678,7 +1830,7 @@ mod tests {
         assert!(!current_layout(&earlier).unwrap());
         drop(earlier);
 
-        let c = Catalog::prepare(&path, versions()).unwrap();
+        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
         let disk = raw::on_disk(&path);
         assert!(current_layout(&disk).unwrap());
         let copied: String = disk
@@ -1701,12 +1853,13 @@ mod tests {
         // Files without the columns the current layout needs, and no way to make them.
         let conn = Connection::open(&path).unwrap();
         conn.execute_batch(
-            "CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
+            "CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL); INSERT INTO meta VALUES ('path_rules', 'windows');
+             CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
              PRAGMA user_version = 1;",
         )
         .unwrap();
         drop(conn);
-        let e = Catalog::prepare(&path, versions()).err().expect("refused");
+        let e = Catalog::prepare(&path, versions(), RULES).err().expect("refused");
         assert!(format!("{e:#}").contains("files.volume"), "{e:#}");
         let conn = Connection::open(&path).unwrap();
         assert_eq!(conn.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
@@ -1720,33 +1873,78 @@ mod tests {
         let path = dir.join("catalog.sqlite");
         let other = Connection::open(&path).unwrap();
         other.execute_batch(BEFORE_ORDER_KEY).unwrap();
-        let e = Catalog::prepare(&path, versions()).err().expect("refused");
+        let e = Catalog::prepare(&path, versions(), RULES).err().expect("refused");
         assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         drop(other);
-        assert!(Catalog::prepare(&path, versions()).is_ok(), "copied once nothing else has it open");
+        assert!(Catalog::prepare(&path, versions(), RULES).is_ok(), "copied once nothing else has it open");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
     fn catalogs_have_their_own_id() {
         let (a, b) = (
-            Catalog::prepare(Path::new(":memory:"), versions()).unwrap(),
-            Catalog::prepare(Path::new(":memory:"), versions()).unwrap(),
+            Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap(),
+            Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap(),
         );
         assert_eq!(a.catalog_id().unwrap().len(), 32);
         assert_ne!(a.catalog_id().unwrap(), b.catalog_id().unwrap());
     }
 
     #[test]
+    fn a_catalog_made_under_other_rules_or_with_none_recorded_is_refused() {
+        let dir = test_folder(SCRATCH, "path-rules");
+        let path = dir.join("catalog.sqlite");
+        drop(Catalog::prepare(&path, versions(), PathRules::Windows).unwrap());
+        // Another build's rules: its paths would read as other paths.
+        let e = Catalog::open(&path, PathRules::Posix).err().expect("refused");
+        assert!(matches!(e, Error::PathRules { .. }), "{e:?}");
+        assert!(e.to_string().contains("rebuild it"), "{e}");
+        assert!(Catalog::prepare(&path, versions(), PathRules::Posix).is_err());
+        // A catalog whose rules were never recorded.
+        raw::on_disk(&path).execute("DELETE FROM meta WHERE key = 'path_rules'", []).unwrap();
+        assert!(matches!(Catalog::open(&path, PathRules::Windows), Err(Error::PathRules { .. })));
+        assert!(matches!(Catalog::prepare(&path, versions(), PathRules::Windows), Err(Error::PathRules { .. })));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn posix_paths_are_bytes_under_case_sensitive_rules() {
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), PathRules::Posix).unwrap();
+        let rules = c.rules();
+        raw::add_scan(&c, 1, "/photos");
+        raw::add_folder(&c, 1, "/photos");
+        raw::add_folder(&c, 2, "/photos/Pics");
+        raw::add_folder(&c, 3, "/photos/pics");
+        fixture::insert(
+            &c,
+            &[
+                fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100),
+                fixture::File::new(FileId::new(2), FolderId::new(2), "b.jpg", 10, 100),
+                fixture::File::new(FileId::new(3), FolderId::new(3), "b.jpg", 10, 100),
+            ],
+        );
+        let root = |text: &str| rules.parse(text).expect("a test path");
+        assert!(c.add_root(&root("/photos")).unwrap());
+        assert!(!c.add_root(&root("/photos/Pics")).unwrap(), "inside a root");
+        assert!(c.add_root(&root("/Photos/x")).unwrap(), "case is significant on POSIX");
+        assert_eq!(rules.display(&c.file_path(FileId::new(2)).unwrap()), "/photos/Pics/b.jpg");
+        // Folders that differ only in case are two folders, and their files are two files.
+        assert_eq!(c.file_by_path(&root("/photos/Pics/b.jpg")).unwrap(), Some(FileId::new(2)));
+        assert_eq!(c.file_by_path(&root("/photos/pics/b.jpg")).unwrap(), Some(FileId::new(3)));
+        assert_eq!(c.files_under(&root("/photos/Pics")).unwrap().len(), 1);
+    }
+
+    #[test]
     fn roots_never_nest() {
-        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        assert!(c.add_root(r"D:\a\b").unwrap());
-        assert!(c.add_root(r"D:\a\bc").unwrap());
-        assert!(!c.add_root(r"d:\A\b\c").unwrap(), "inside an existing root");
-        assert!(c.add_root(r"D:\a").unwrap(), "replaces both");
-        let paths = |c: &Catalog| c.roots().unwrap().into_iter().map(|r| r.path).collect::<Vec<_>>();
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        assert!(c.add_root(&p(r"D:\a\b")).unwrap());
+        assert!(c.add_root(&p(r"D:\a\bc")).unwrap());
+        assert!(!c.add_root(&p(r"d:\A\b\c")).unwrap(), "inside an existing root");
+        assert!(c.add_root(&p(r"D:\a")).unwrap(), "replaces both");
+        let paths =
+            |c: &Catalog| c.roots().unwrap().into_iter().map(|r| c.rules().display(&r.path)).collect::<Vec<_>>();
         assert_eq!(paths(&c), [r"D:\a"]);
-        let id = c.root_id(r"D:\a").unwrap().expect("a library folder has an id");
+        let id = c.root_id(&p(r"D:\a")).unwrap().expect("a library folder has an id");
         assert_eq!(c.remove_root(id).unwrap(), Some(0));
         assert!(paths(&c).is_empty());
         assert_eq!(c.remove_root(id).unwrap(), None, "not a library folder any more");
@@ -1754,7 +1952,7 @@ mod tests {
 
     #[test]
     fn cancelled_until_cleared() {
-        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         c.cancel_when(cancel.clone());
         let run = || raw::slow_count(&c).map_err(Error::from);
@@ -1792,7 +1990,7 @@ mod tests {
 
     /// A catalog with one file in it.
     fn one_file() -> (Catalog, i64) {
-        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         raw::add_scan(&c, 1, "D:");
         raw::add_folder(&c, 1, r"D:\x");
         fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]);
@@ -1820,10 +2018,13 @@ mod tests {
     fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) -> bool {
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan).unwrap();
-        let folder = writer.folder(r"D:\x").unwrap();
+        let folder = writer.folder(&p(r"D:\x")).unwrap();
         let ext = Ext::of_name(name).unwrap();
         let changed = writer
-            .upsert_file(&folder, &ScannedFile { identity: FileIdentity::new(1, 7), name, ext, size, mtime })
+            .upsert_file(
+                &folder,
+                &ScannedFile { identity: FileIdentity::new(1, 7), name: &Name::from(name), ext, size, mtime },
+            )
             .unwrap();
         drop(writer);
         tx.commit().unwrap();
@@ -1832,10 +2033,10 @@ mod tests {
 
     #[test]
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.add_root(r"D:\x").unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        c.add_root(&p(r"D:\x")).unwrap();
         let key = |name| pg_model::path::order_key_of(r"D:\x", name);
-        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(r"D:\x").unwrap()).collect();
+        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(&p(r"D:\x")).unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
@@ -1862,9 +2063,9 @@ mod tests {
 
     #[test]
     fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.add_root(r"D:\x").unwrap();
-        let scan = c.begin_scan(r"D:\x").unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        c.add_root(&p(r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let stored = |c: &mut Catalog, item: &WorkItem| {
             let tx = c.tx().unwrap();
@@ -1899,7 +2100,7 @@ mod tests {
         // The scanner decides a file changed by its size and mtime, so a size change with the same mtime must reach
         // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
         use fixture::{File, insert};
-        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         raw::add_scan(&c, 1, r"D:\x");
         raw::add_folder(&c, 1, r"D:\x");
         insert(&c, &[File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]);
@@ -1912,7 +2113,7 @@ mod tests {
     #[test]
     fn thumb_sources_is_the_analysed_files_with_their_folders() {
         use fixture::{File, insert};
-        let c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         raw::add_scan(&c, 1, r"D:\x");
         raw::add_folder(&c, 1, r"D:\x");
         raw::add_folder(&c, 2, r"D:\x\sub");
@@ -1978,9 +2179,9 @@ mod tests {
         use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
         use pg_model::query::{BorderFacet, Query, Sort};
 
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.add_root(r"D:\x").unwrap();
-        let scan = c.begin_scan(r"D:\x").unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        c.add_root(&p(r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let item = next_work(&c);
         let solid = |edge| Side {
@@ -2088,9 +2289,9 @@ mod tests {
         use crate::browse;
         use pg_model::query::{Query, Sort, SortKey};
 
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        c.add_root(r"D:\x").unwrap();
-        let scan = c.begin_scan(r"D:\x").unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        c.add_root(&p(r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
         // 400 × 300 stored. b: none; c: 30 of 300 at the top (10%); d: 60 of 400 at the left (15%), but turned a
         // quarter (orientation 6), so 60 of the 400 upright rows; e: 90 at the top (30%), marked not a border.
         let files = [("b.jpg", 1, None), ("c.jpg", 1, Some([0, 30, 0, 0])), ("d.jpg", 6, Some([60, 0, 0, 0]))];
@@ -2098,9 +2299,15 @@ mod tests {
         for (n, (name, orientation, cut)) in files.enumerate() {
             let tx = c.tx().unwrap();
             let mut writer = tx.scan_writer(scan).unwrap();
-            let folder = writer.folder(r"D:\x").unwrap();
+            let folder = writer.folder(&p(r"D:\x")).unwrap();
             let ext = Ext::of_name(name).unwrap();
-            let file = ScannedFile { identity: FileIdentity::new(1, 10 + n as u64), name, ext, size: 10, mtime: 100 };
+            let file = ScannedFile {
+                identity: FileIdentity::new(1, 10 + n as u64),
+                name: &Name::from(name),
+                ext,
+                size: 10,
+                mtime: 100,
+            };
             writer.upsert_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
@@ -2141,8 +2348,8 @@ mod tests {
 
     #[test]
     fn pending_follows_what_the_analysis_was_made_from() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
-        let scan = c.begin_scan(r"D:\x").unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
         // New: pending.
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let first = next_work(&c);
@@ -2194,8 +2401,8 @@ mod tests {
         assert!(!due(&c, id));
         // Gone, then back: nothing to import, but the thumbnails look at it both times.
         let seq = raw::file_seq(&c, id);
-        let next = c.begin_scan(r"D:\x").unwrap();
-        c.mark_missing(r"D:\x", next, &[]).unwrap();
+        let next = c.begin_scan(&p(r"D:\x")).unwrap();
+        c.mark_missing(&p(r"D:\x"), next, &[]).unwrap();
         let gone = raw::file_seq(&c, id);
         scanned(&mut c, next, "a.mp4", 13, 103);
         assert_eq!(c.pending_import(false).unwrap().len(), 0);
@@ -2204,38 +2411,40 @@ mod tests {
 
     #[test]
     fn a_folder_the_scan_could_not_list_keeps_its_files() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
             let tx = c.tx().unwrap();
             let mut writer = tx.scan_writer(scan).unwrap();
-            let folder = writer.folder(folder).unwrap();
+            let folder = writer.folder(&p(folder)).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let identity = FileIdentity::new(1, file_ref);
-            writer.upsert_file(&folder, &ScannedFile { identity, name, ext, size: 1, mtime: 1 }).unwrap();
+            writer
+                .upsert_file(&folder, &ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1 })
+                .unwrap();
             drop(writer);
             tx.commit().unwrap();
         };
-        let first = c.begin_scan(r"D:\x").unwrap();
+        let first = c.begin_scan(&p(r"D:\x")).unwrap();
         put(&mut c, first, r"D:\x\ok", "a.jpg", 1);
         put(&mut c, first, r"D:\x\locked", "b.jpg", 2);
         put(&mut c, first, r"D:\x\locked\deep", "c.jpg", 3);
 
         // The next scan lists only D:\x\ok: D:\x\locked couldn't be read, so its files weren't seen, and aren't missing.
-        let next = c.begin_scan(r"D:\x").unwrap();
+        let next = c.begin_scan(&p(r"D:\x")).unwrap();
         put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
-        assert_eq!(c.mark_missing(r"D:\x", next, &[r"D:\x\locked".to_string()]).unwrap(), 0);
+        assert_eq!(c.mark_missing(&p(r"D:\x"), next, &[p(r"D:\x\locked")]).unwrap(), 0);
         assert_eq!(raw::missing_count(&c), 0);
 
         // Once it can be listed again, a scan that doesn't see its files marks them.
-        let later = c.begin_scan(r"D:\x").unwrap();
+        let later = c.begin_scan(&p(r"D:\x")).unwrap();
         put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
-        assert_eq!(c.mark_missing(r"D:\x", later, &[]).unwrap(), 2);
+        assert_eq!(c.mark_missing(&p(r"D:\x"), later, &[]).unwrap(), 2);
         assert_eq!(raw::missing_count(&c), 2);
     }
 
     #[test]
     fn files_marked_are_imported_again_once() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions()).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         raw::add_scan(&c, 1, "D:");
         raw::add_folder(&c, 1, r"D:\x");
         raw::add_folder(&c, 2, r"D:\x\y");
@@ -2253,11 +2462,11 @@ mod tests {
         assert!(c.pending_import(false).unwrap().is_empty());
 
         // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
-        let mut under = c.files_under(r"D:\x\y").unwrap();
+        let mut under = c.files_under(&p(r"D:\x\y")).unwrap();
         under.sort();
         assert_eq!(under, [FileId::new(2), FileId::new(4)]);
-        assert_eq!(c.files_under(r"D:\x").unwrap().len(), 3);
-        assert!(c.files_under(r"D:\q").unwrap().is_empty());
+        assert_eq!(c.files_under(&p(r"D:\x")).unwrap().len(), 3);
+        assert!(c.files_under(&p(r"D:\q")).unwrap().is_empty());
 
         // Marked: due, whatever their analysis, the missing one left; the change number doesn't move.
         let seq = raw::file_seq(&c, FileId::new(2));

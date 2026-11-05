@@ -43,22 +43,34 @@ pub fn file_state(catalog: &Catalog, file_id: FileId) -> Result<Option<FileState
 
 pub fn file_source(catalog: &Catalog, file_id: FileId) -> Result<Option<FileSource>> {
     let conn = &catalog.conn;
-    Ok(conn
+    let row = conn
         .prepare_cached(concat!(
-            "SELECT fo.path || '\\' || f.name, f.kind, a.poster_ms, ",
+            "SELECT fo.path, f.name, f.kind, a.poster_ms, ",
             file_state_columns!(),
             " FROM files f JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id
              WHERE f.id = ?1"
         ))?
         .query_row([file_id.get()], |r| {
-            let video = r.get_ref(1)?.as_str()? == Kind::Video.key();
-            Ok(FileSource {
-                path: r.get(0)?,
-                state: file_state_at(r, 3)?,
-                poster_ms: if video { Some(r.get::<_, Option<i64>>(2)?.unwrap_or(0)) } else { None },
-            })
+            Ok((
+                r.get::<_, Vec<u8>>(0)?,
+                r.get::<_, Vec<u8>>(1)?,
+                r.get::<_, String>(2)?,
+                r.get::<_, Option<i64>>(3)?,
+                file_state_at(r, 4)?,
+            ))
         })
-        .optional()?)
+        .optional()?;
+    Ok(match row {
+        Some((folder, name, kind, poster_ms, state)) => {
+            let video = kind == Kind::Video.key();
+            Some(FileSource {
+                path: catalog.rules().display(&catalog.file_path_of(&folder, &name)?),
+                state,
+                poster_ms: if video { Some(poster_ms.unwrap_or(0)) } else { None },
+            })
+        }
+        None => None,
+    })
 }
 
 pub fn placeholder(catalog: &Catalog, file_id: FileId) -> Result<Option<Placeholder>> {

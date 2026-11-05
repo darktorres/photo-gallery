@@ -30,7 +30,7 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     for g in found.groups.iter().take(show) {
         println!("\n{} files:", g.len());
         for id in g.iter().take(20) {
-            println!("  {}", catalog.file_path(*id)?);
+            println!("  {}", catalog.rules().display(&catalog.file_path(*id)?));
         }
     }
     Ok(())

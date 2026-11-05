@@ -5,6 +5,7 @@ mod borders;
 mod dups;
 
 use pg_model::ids::FileId;
+use pg_model::rules::{Path as RulePath, PathRules};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -20,8 +21,7 @@ use pg_thumbcache::ThumbCache;
 use pg_jobs::control::{Control, Event, Phase, Progress};
 use pg_jobs::events::Bus;
 use pg_jobs::pipeline;
-use pg_library::writeback::Writer;
-use pg_library::{import, scan, thumbs};
+use pg_writeback::Writer;
 
 #[derive(Parser)]
 #[command(name = "gallery", version, about = "Photo gallery. Without a command, opens the app.")]
@@ -236,30 +236,37 @@ fn phase_label(phase: &Phase) -> String {
     }
 }
 
+/// `text` as a path under the catalog's rules; text that is none is an error.
+fn rule_path(rules: PathRules, text: &str) -> Result<RulePath> {
+    rules.parse(text).ok_or_else(|| anyhow::anyhow!("{text} is not a path"))
+}
+
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     let catalog_path = cli.catalog_dir.join("catalog.sqlite");
-    let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions())?;
+    let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE)?;
+    let rules = catalog.rules();
     let start = Instant::now();
 
     match cli.command {
         Command::Scan { roots } => {
-            let roots = if roots.is_empty() {
+            let roots: Vec<RulePath> = if roots.is_empty() {
                 catalog.roots()?.into_iter().map(|r| r.path).collect()
             } else {
                 let mut normalized = Vec::new();
                 for root in roots {
-                    let root = scan::normalize_path(&root)?;
+                    let root = pg_scan::normalize_path(Path::new(&root))?;
                     if !catalog.add_root(&root)? {
-                        println!("{root} is already in the library");
+                        println!("{} is already in the library", rules.display(&root));
                     }
                     normalized.push(root);
                 }
                 normalized
             };
             for root in roots {
-                let s = scan::scan(&mut catalog, &root, ctl)?;
+                let name = rules.display(&root);
+                let s = pg_scan::scan(&mut catalog, &root, ctl)?;
                 println!(
-                    "{root}: {} files in {} folders, {} new or changed, {} now missing, {} unreadable folders ({:.1} s)",
+                    "{name}: {} files in {} folders, {} new or changed, {} now missing, {} unreadable folders ({:.1} s)",
                     s.files,
                     s.folders,
                     s.changed,
@@ -273,14 +280,18 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Remove { root } => {
             // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
             // the catalog's, and the catalog says whether it is a library folder.
-            let root = scan::normalize_path(&root).unwrap_or(root);
+            let root = match pg_scan::normalize_path(Path::new(&root)) {
+                Ok(path) => path,
+                Err(_) => rule_path(rules, &root)?,
+            };
+            let text = rules.display(&root);
             let removed = match catalog.root_id(&root)? {
                 Some(id) => catalog.remove_root(id)?,
                 None => None,
             };
             match removed {
-                Some(n) => println!("{root}: removed from the library, {n} files hidden"),
-                None => anyhow::bail!("{root}: not in the library"),
+                Some(n) => println!("{text}: removed from the library, {n} files hidden"),
+                None => anyhow::bail!("{text}: not in the library"),
             }
         }
         Command::Import { pipeline, retry_errors, again } => {
@@ -289,7 +300,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 println!("{marked} files to analyze again");
             }
             let opts = pipeline.options(Priority::Normal);
-            let s = import::import(&mut catalog, &opts, retry_errors, ctl)?;
+            let s = pg_import::import(&mut catalog, &opts, retry_errors, ctl)?;
             println!("{} files to import; the tier-1 index held {} hashes", s.pending, s.indexed);
             println!(
                 "imported {} files ({} failed{}), {} PDQ pairs, {:.1} s",
@@ -306,7 +317,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
             let (events, printer) = thumb_events();
             let cache = ThumbCache::open(&cli.catalog_dir, &catalog.catalog_id()?, cap, events)?;
-            let s = thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
+            let s = pg_thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
             println!(
                 "{} files needed a {height} px thumbnail; the cache held {:.2} GB",
@@ -343,7 +354,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         }
         Command::Status => {
             for root in catalog.roots()? {
-                println!("library: {}", root.path);
+                println!("library: {}", rules.display(&root.path));
             }
             let s = catalog.status()?;
             println!(
@@ -404,12 +415,12 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
 fn files_named(catalog: &Catalog, paths: &[String]) -> Result<Vec<FileId>> {
     let mut ids = Vec::new();
     for path in paths {
-        let real = scan::normalize_path(path)?;
+        let rule = pg_scan::normalize_path(Path::new(path))?;
         let before = ids.len();
-        if Path::new(&real).is_dir() {
-            ids.extend(catalog.files_under(&real)?);
+        if Path::new(path).is_dir() {
+            ids.extend(catalog.files_under(&rule)?);
         } else {
-            ids.extend(catalog.file_by_path(&real)?);
+            ids.extend(catalog.file_by_path(&rule)?);
         }
         if ids.len() == before {
             bail!("{path}: no file of the library there");
@@ -443,7 +454,7 @@ fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline:
 }
 
 /// The first failures a pass kept, one per line on stderr, under `what`.
-fn print_failures(what: &str, failures: &[pg_library::Failure]) {
+fn print_failures(what: &str, failures: &[pg_jobs::failure::Failure]) {
     for f in failures {
         eprintln!("{what}: {}: {}", f.path, f.error);
     }

@@ -6,8 +6,9 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{borders, crop, import, scan};
+use pg_library::{borders, crop};
 use pg_model::ids::FileId;
+use pg_model::rules::PathRules;
 
 /// A letterboxed picture (black bars at the top and bottom, the content between them).
 fn letterboxed() -> image::RgbImage {
@@ -38,7 +39,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "crop-roots");
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
 
@@ -49,11 +50,11 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
         let mut img = letterboxed();
         img.put_pixel(160, 120, image::Rgb(pixel));
         img.save(folder.join("a.png")).unwrap();
-        let root = scan::normalize_path(&folder.to_string_lossy()).unwrap();
+        let root = pg_scan::normalize_path(&folder).unwrap();
         c.add_root(&root).unwrap();
-        scan::scan(&mut c, &root, &ctl).unwrap();
+        pg_scan::scan(&mut c, &root, &ctl).unwrap();
     }
-    import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     borders::find(&mut c, &opts, &ctl).unwrap();
 
     let ids: Vec<FileId> = state::present_files(&c).into_iter().map(|(id, _)| id).collect();

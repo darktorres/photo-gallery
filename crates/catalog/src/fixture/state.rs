@@ -14,7 +14,8 @@ pub fn add_scan(c: &Catalog, id: i64, root: &str) {
 
 /// A folder row (see [`add_scan`]).
 pub fn add_folder(c: &Catalog, id: i64, path: &str) {
-    c.conn.execute("INSERT INTO folders(id, path) VALUES (?1, ?2)", params![id, path]).unwrap();
+    let (bytes, key) = super::folder_row(c, path);
+    c.conn.execute("INSERT INTO folders(id, path, key) VALUES (?1, ?2, ?3)", params![id, bytes, key]).unwrap();
 }
 
 /// An analysis row at version 1 for every file, with no pixel data: a stub for the tests that only need the row
@@ -41,33 +42,26 @@ pub fn change_mtime(c: &Catalog, id: FileId, mtime: i64) {
 
 /// The files the catalog lists and has not found missing, by name.
 pub fn present_files(c: &Catalog) -> Vec<(FileId, String)> {
-    let mut stmt = c.conn.prepare("SELECT id, name FROM files WHERE missing = 0 ORDER BY name").unwrap();
+    let mut stmt = c.conn.prepare("SELECT id, CAST(name AS TEXT) FROM files WHERE missing = 0 ORDER BY name").unwrap();
     stmt.query_map([], |r| Ok((FileId::new(r.get(0)?), r.get(1)?))).unwrap().map(Result::unwrap).collect()
 }
 
 /// The id of the file called `name`.
 pub fn file_id(c: &Catalog, name: &str) -> FileId {
-    FileId::new(c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name], |r| r.get(0)).unwrap())
+    FileId::new(c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0)).unwrap())
 }
 
-/// The id and the full path the database has for the file called `name`: its folder and its name, joined by a
-/// backslash.
+/// The id and the full path the database has for the file called `name` (its folder's path, the separator, the
+/// name, as the catalog's rules display it).
 pub fn file_and_path(c: &Catalog, name: &str) -> (FileId, String) {
-    let (id, path): (i64, String) = c
-        .conn
-        .query_row(
-            "SELECT f.id, fo.path || '\\' || f.name FROM files f JOIN folders fo ON fo.id = f.folder_id
-             WHERE f.name = ?1",
-            [name],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )
-        .unwrap();
-    (FileId::new(id), path)
+    let id: i64 = c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0)).unwrap();
+    let path = c.file_path(FileId::new(id)).unwrap();
+    (FileId::new(id), c.rules().display(&path))
 }
 
 /// The turn the file holds in the catalog (`files.rotation`), by name.
 pub fn file_rotation(c: &Catalog, name: &str) -> u8 {
-    c.conn.query_row("SELECT rotation FROM files WHERE name = ?1", [name], |r| r.get(0)).unwrap()
+    c.conn.query_row("SELECT rotation FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0)).unwrap()
 }
 
 /// Marks the file missing, as a scan that doesn't find it does.
@@ -85,7 +79,7 @@ pub fn borders_due(c: &Catalog, name: &str) -> i64 {
     c.conn
         .query_row(
             "SELECT a.borders_due FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = ?1",
-            [name],
+            [name.as_bytes()],
             |r| r.get(0),
         )
         .unwrap()
@@ -119,7 +113,7 @@ pub fn media_rows(c: &Catalog) -> Vec<MediaRow> {
     let mut stmt = c
         .conn
         .prepare(
-            "SELECT f.name, f.kind, a.width, a.height, a.duration_ms, a.poster_ms, a.pixel_hash IS NULL
+            "SELECT CAST(f.name AS TEXT), f.kind, a.width, a.height, a.duration_ms, a.poster_ms, a.pixel_hash IS NULL
              FROM files f JOIN analysis a ON a.file_id = f.id ORDER BY f.name",
         )
         .unwrap();
@@ -132,9 +126,11 @@ pub fn media_rows(c: &Catalog) -> Vec<MediaRow> {
 /// The capture time the analysis holds for the file called `name`, if it has one.
 pub fn taken_of(c: &Catalog, name: &str) -> Option<i64> {
     c.conn
-        .query_row("SELECT taken FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = ?1", [name], |r| {
-            r.get(0)
-        })
+        .query_row(
+            "SELECT taken FROM analysis a JOIN files f ON f.id = a.file_id WHERE f.name = ?1",
+            [name.as_bytes()],
+            |r| r.get(0),
+        )
         .unwrap()
 }
 

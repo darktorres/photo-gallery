@@ -3,8 +3,6 @@
 //! during the import (query-then-insert). Results are committed in batches: stopping at any point loses at most
 //! the current batch, and the next run picks up the rest from the catalog.
 
-use std::path::Path;
-
 use anyhow::Result;
 use pg_analysis::analyze::Analyzer;
 use pg_catalog::Catalog;
@@ -33,6 +31,7 @@ pub struct ImportStats {
 pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &Control) -> Result<ImportStats> {
     let work = catalog.pending_import(retry_errors)?;
     let items = &work.items;
+    let sep = catalog.rules().sep() as u8;
     let mut stats = ImportStats { pending: items.len(), indexed: 0, files: 0, failed: 0, pairs: 0, changed: 0 };
     // Most rounds (a new thumbnail height, a turn) have nothing to import: don't load every hash for them.
     if items.is_empty() {
@@ -49,7 +48,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analyzed>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.tx()?;
-        let mut writer = tx.analysis_writer(crate::versions().import)?;
+        let mut writer = tx.analysis_writer(pg_analysis::analyze::IMPORT_VERSION)?;
         for (i, result) in batch.drain(..) {
             let item = &items[i];
             match result {
@@ -92,7 +91,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
             let whole = item.kind != Kind::Video;
             if whole {
                 let [folder, name] = work.parts(item.path);
-                pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
+                pg_platform::names::set_file(wide, folder, name);
             }
             whole
         },
@@ -101,8 +100,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         Analyzer::new,
         |analyzer, i, bytes| {
             if video(i) {
-                let path = work.path(items[i].path);
-                pg_analysis::analyze::video(Path::new(&path), items[i].rotation, analyzer)
+                let path = work.path(items[i].path, sep);
+                pg_analysis::analyze::video(&pg_platform::names::path_buf(&path), items[i].rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, items[i].rotation)
             }

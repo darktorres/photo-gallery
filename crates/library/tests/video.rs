@@ -17,9 +17,9 @@ use pg_codec::animation;
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{import, scan, thumbs};
 use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
+use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 use pg_testkit::events::Quiet;
 use pg_thumbcache::ThumbCache;
@@ -170,13 +170,13 @@ fn videos() {
     assert_eq!(poster_ms(3_600_000), 10_000);
 
     // The library passes: scan, import, thumbnails.
-    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions()).unwrap();
+    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&media.to_string_lossy()).unwrap();
+    let root = pg_scan::normalize_path(&media).unwrap();
     catalog.add_root(&root).unwrap();
-    scan::scan(&mut catalog, &root, &ctl).unwrap();
+    pg_scan::scan(&mut catalog, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    let stats = import::import(&mut catalog, &opts, false, &ctl).unwrap();
+    let stats = pg_import::import(&mut catalog, &opts, false, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed), (6, 0));
     let rows = state::media_rows(&catalog);
     for (name, kind, w, h, duration, poster, no_pixel_hash) in &rows {
@@ -193,6 +193,6 @@ fn videos() {
 
     let (events, _quiet) = Quiet::bus();
     let cache = ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), events).unwrap();
-    let made = thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
+    let made = pg_thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }

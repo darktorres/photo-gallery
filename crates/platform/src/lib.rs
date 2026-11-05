@@ -8,6 +8,7 @@ pub mod clock;
 pub mod dir;
 pub mod file;
 pub mod message;
+pub mod names;
+pub mod native;
 pub mod priority;
 pub mod process;
-pub mod verbatim;

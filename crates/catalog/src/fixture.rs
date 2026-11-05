@@ -36,12 +36,21 @@ pub fn versions() -> crate::Versions {
     crate::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }
 }
 
+/// A folder's stored bytes and key, from its path text (as the tests write it) under the catalog's rules.
+pub(crate) fn folder_row(c: &Catalog, path: &str) -> (Vec<u8>, Vec<u8>) {
+    let path = c.rules().parse(path).expect("a test folder path");
+    (c.rules().join(&path), c.rules().folder_key(&path.parts))
+}
+
 /// Insert the files (scan 1 must exist).
 pub fn insert(catalog: &Catalog, files: &[File]) {
     let conn = &catalog.conn;
     for f in files {
-        let folder: String =
+        let folder: Vec<u8> =
             conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder.get()], |r| r.get(0)).unwrap();
+        let rules = catalog.rules();
+        let folder_parts = rules.parse_bytes(&folder).expect("a stored folder path");
+        let order_key = rules.order_key(&rules.folder_key(&folder_parts.parts), &pg_model::name::Name::from(f.name));
         conn.execute(
             "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
                                rotation, order_key)
@@ -50,14 +59,14 @@ pub fn insert(catalog: &Catalog, files: &[File]) {
                 f.id.get(),
                 f.file_ref,
                 f.folder.get(),
-                f.name,
+                f.name.as_bytes(),
                 pg_model::media::Ext::of_name(f.name).expect("a media file").name(),
                 f.kind,
                 f.size,
                 f.mtime,
                 f.missing,
                 f.rotation.get(),
-                pg_model::path::order_key_of(&folder, f.name)
+                order_key
             ],
         )
         .unwrap();

@@ -1,21 +1,23 @@
 //! Saving cropped copies (pg_edit::crop): each file's borders as the catalog has them (found, not marked as not a
-//! border), cut off into a copy at `<folder>\<library folder name>\<path inside it>`, with the original's
+//! border), cut off into a copy at `<folder>\<library folder place>\<path inside it>`, with the original's
 //! modification time. The originals are never written: a folder whose copies would land in the library is refused
 //! up front, and each file is checked to still be the one its borders were found in.
 
 use pg_model::ids::FileId;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
 use pg_catalog::{Catalog, CropSource};
 use pg_edit::crop::crop;
-use pg_model::path::{PathArena, PathRef, is_under};
-use pg_platform::verbatim::verbatim_wide;
+use pg_model::name::Name;
+use pg_model::path::{PathArena, PathRef};
+use pg_model::rules::Path as RulePath;
 
-use crate::writeback::{exiftool_program, stat};
 use pg_exiftool::ExifTool;
 use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
+use pg_platform::names::{path_buf, set_path, text_of};
+use pg_writeback::{exiftool_program, stat};
 
 pub struct Stats {
     pub saved: usize,
@@ -37,31 +39,42 @@ struct Job {
 
 /// Save cropped copies of `ids` under `folder`.
 pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
-    let folder = folder.to_string_lossy().trim_end_matches('\\').to_string();
-    let roots: Vec<String> = catalog.roots()?.into_iter().map(|r| r.path).collect();
+    let rules = catalog.rules();
+    // The folder is chosen by the user, and it is taken exactly: a lossy text form would write the copies into a
+    // different folder from the one named.
+    let folder = pg_platform::names::rule_path_of(folder).context("the folder for the copies isn't a path")?;
+    let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
     let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
     let mut paths = PathArena::default();
-    // Each job's copies' folder and its copy's path, made in these and then kept in the arena.
-    let (mut tree, mut out) = (String::new(), String::new());
     for &id in ids {
-        let source = catalog.crop_source(id, &mut paths)?;
-        // The deepest library folder holding it (library folders don't nest; a removed one can be inside another).
-        let root = source.as_ref().and_then(|s| {
-            let path = paths.get(s.path);
-            roots.iter().filter(|r| is_under(path, r)).max_by_key(|r| r.len())
-        });
-        let (Some(source), Some(root)) = (source, root) else {
+        let Some(source) = catalog.crop_source(id, &mut paths)? else {
             stats.skipped += 1;
             continue;
         };
-        tree.clear();
-        tree.extend([&*folder, "\\", &root_place(root)]);
-        if let Some(r) = roots.iter().find(|r| is_under(&tree, r) || is_under(r, &tree)) {
-            bail!("The copies of {root} would go into {tree}, in the library folder {r}: choose a folder outside it");
+        let path = rules.parse_bytes(paths.get(source.path)).context("a stored path doesn't parse")?;
+        // The deepest library folder holding it (library folders don't nest; a removed one can be inside another).
+        let Some(root) = roots.iter().filter(|r| rules.is_under(&path, r)).max_by_key(|r| r.parts.len()) else {
+            stats.skipped += 1;
+            continue;
+        };
+        // The copies' folder: the chosen folder, then the library folder's place (its drive as a part, so
+        // `D:\Photos\2019` is `D\Photos\2019`). Two library folders can't share a place, whatever their last names (R-48).
+        let tree = RulePath {
+            anchor: folder.anchor.clone(),
+            parts: folder.parts.iter().cloned().chain(place_of(root)).collect(),
+        };
+        if let Some(r) = roots.iter().find(|r| rules.is_under(&tree, r) || rules.is_under(r, &tree)) {
+            bail!(
+                "The copies of {} would go into {}, in the library folder {}: choose a folder outside it",
+                rules.display(root),
+                rules.display(&tree),
+                rules.display(r)
+            );
         }
-        out.clear();
-        out.extend([&*tree, &paths.get(source.path)[root.len()..]]);
+        let mut parts = tree.parts.clone();
+        parts.extend(path.parts[root.parts.len()..].iter().cloned());
+        let out = rules.join(&RulePath { anchor: tree.anchor.clone(), parts });
         let out = paths.push(&out);
         jobs.push(Job { id, source, out });
     }
@@ -74,13 +87,13 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
         &jobs,
-        |job, wide| {
-            verbatim_wide(&[paths.get(job.source.path)], wide);
+        |job, native| {
+            set_path(native, paths.get(job.source.path));
             true
         },
         opts,
         ctl,
-        || Ok(String::new()),
+        || Ok(Vec::new()),
         |temp, i, bytes| write_copy(&jobs[i], &paths, bytes, temp),
         |i, result, len| {
             done[i] = true;
@@ -91,8 +104,9 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
                     let (source, out) = (paths.get(job.source.path), paths.get(job.out));
-                    ExifTool::running(&mut exiftool, &exiftool_program())?.copy_tags(source, out)?;
-                    keep_time(source, out)?;
+                    ExifTool::running(&mut exiftool, &exiftool_program())?
+                        .copy_tags(text_of(source)?, text_of(out)?)?;
+                    keep_time(&path_buf(source), &path_buf(out))?;
                     Ok(true)
                 }
             });
@@ -102,7 +116,9 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    stats.error.get_or_insert_with(|| format!("{}: {e:#}", paths.get(job.source.path)));
+                    stats.error.get_or_insert_with(|| {
+                        format!("{}: {e:#}", String::from_utf8_lossy(paths.get(job.source.path)))
+                    });
                 }
             }
             Ok(true)
@@ -113,10 +129,11 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
     Ok(stats)
 }
 
-/// A library folder's place in the copies' folder: its whole path, without the colon (`D:\Photos\2019` is
-/// `D\Photos\2019`). Two library folders can't share a place, whatever their last names (R-48).
-fn root_place(root: &str) -> String {
-    root.trim_start_matches('\\').replace(':', "")
+/// A library folder's place in the copies' folder: its drive's letter as a part (none for a UNC or a Unix root),
+/// then its parts. Two library folders can't share a place.
+fn place_of(root: &RulePath) -> impl Iterator<Item = Name> + '_ {
+    let letter: Vec<u8> = root.anchor.as_bytes().iter().copied().filter(|&b| b != b':' && b != b'\\').collect();
+    (!letter.is_empty()).then(|| Name::from_raw(&letter)).into_iter().chain(root.parts.iter().cloned())
 }
 
 enum Written {
@@ -127,28 +144,31 @@ enum Written {
     Skipped,
 }
 
-/// Write `job`'s copy of the file read as `bytes`, through `temp` (a worker's buffer for the temporary path).
-fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut String) -> Result<Written> {
+/// Write `job`'s copy of the file read as `bytes`, through `temp` (a worker's buffer for the temporary path's bytes).
+fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) -> Result<Written> {
     let s = &job.source;
     let (source, out) = (paths.get(s.path), paths.get(job.out));
-    if stat(source)? != (s.size, s.mtime) || bytes.len() as i64 != s.size {
+    let (source_path, out_path) = (path_buf(source), path_buf(out));
+    if stat(&source_path)? != (s.size, s.mtime) || bytes.len() as i64 != s.size {
         return Ok(Written::Skipped);
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
-    if let Some(dir) = Path::new(out).parent() {
+    if let Some(dir) = out_path.parent() {
         std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
     temp.clear();
-    temp.extend([out, ".pg-crop"]);
-    std::fs::write(&*temp, &cropped.bytes).with_context(|| format!("writing {out}"))?;
-    keep_time(source, temp)?;
-    std::fs::rename(&*temp, out).with_context(|| format!("writing {out}"))?;
+    temp.extend_from_slice(out);
+    temp.extend_from_slice(b".pg-crop");
+    let temp_path: PathBuf = path_buf(temp);
+    std::fs::write(&temp_path, &cropped.bytes).with_context(|| format!("writing {}", out_path.display()))?;
+    keep_time(&source_path, &temp_path)?;
+    std::fs::rename(&temp_path, &out_path).with_context(|| format!("writing {}", out_path.display()))?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
 
 /// Give the copy at `copy` the original's modification time.
-fn keep_time(original: &str, copy: &str) -> Result<()> {
+fn keep_time(original: &Path, copy: &Path) -> Result<()> {
     let modified = std::fs::metadata(original)?.modified()?;
     std::fs::File::options().write(true).open(copy)?.set_modified(modified)?;
     Ok(())

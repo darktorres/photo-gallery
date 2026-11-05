@@ -6,8 +6,12 @@ import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Dialogs
 import QtQuick.Layouts
+import pg.gallery
 
 ModalOverlay {
+    Words {
+        id: words
+    }
     id: panel
     // The library's folders (library.roots), whether there are any, and whether the write-back setting is on.
     required property var roots
@@ -28,11 +32,9 @@ ModalOverlay {
         ColumnLayout {
             anchors.fill: parent
             spacing: 10
-            Label { text: "Library folders"; font.bold: true; font.pixelSize: 16 }
+            Label { text: words.text("ui-library-folders"); font.bold: true; font.pixelSize: 16 }
             Label {
-                text: "Images in these folders and their subfolders are imported in the background. "
-                    + "Removing a folder only hides its images: adding it back restores them, ratings "
-                    + "included."
+                text: words.text("ui-library-intro")
                 color: "#999999"
                 wrapMode: Text.Wrap
                 Layout.fillWidth: true
@@ -49,7 +51,7 @@ ModalOverlay {
                     width: ListView.view.width
                     Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
                     Button {
-                        text: "Remove"
+                        text: words.text("ui-remove")
                         flat: true
                         onClicked: panel.removeRequested(rootRow.modelData)
                     }
@@ -57,35 +59,33 @@ ModalOverlay {
                 Label {
                     anchors.centerIn: parent
                     visible: !panel.hasRoots
-                    text: "No folders yet."
+                    text: words.text("ui-no-folders-yet")
                     color: "#888888"
                 }
             }
             CheckBox {
-                text: "Write ratings and turns into the files too (where the format allows)"
+                text: words.text("ui-write-files")
                 checked: panel.writeBack
                 onToggled: panel.writeBackToggled(checked)
                 ToolTip.visible: hovered
-                ToolTip.text: "Ratings are always kept in the catalog. With this on, they also go into "
-                    + "the image files (XMP), so other programs see them; turns rotate the files "
-                    + "losslessly."
+                ToolTip.text: words.text("ui-write-files-tooltip")
             }
             RowLayout {
-                Button { text: "Add folder…"; onClicked: folderDialog.open() }
+                Button { text: words.text("ui-add-folder"); onClicked: folderDialog.open() }
                 Button {
-                    text: "Rescan all"
+                    text: words.text("ui-rescan-all")
                     enabled: panel.hasRoots
                     onClicked: panel.rescanRequested()
                 }
                 Item { Layout.fillWidth: true }
-                Button { text: "Close"; onClicked: panel.dismissed() }
+                Button { text: words.text("ui-close"); onClicked: panel.dismissed() }
             }
         }
     }
 
     FolderDialog {
         id: folderDialog
-        title: "Add a folder to the library"
+        title: words.text("ui-add-folder-title")
         onAccepted: panel.folderPicked(selectedFolder)
     }
 }

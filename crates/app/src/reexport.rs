@@ -6,8 +6,8 @@
 
 pub use pg_catalog::browse::read::Facets;
 pub use pg_jobs::control::{Phase, Progress};
+pub use pg_jobs::events::Change;
 pub use pg_jobs::panics::caught as panic_caught;
-pub use pg_library::Change;
 pub use pg_library::runner::Notice;
 pub use pg_thumbcache::Event as ThumbEvent;
 pub use pg_thumbcache::parse_cap_gb as parse_thumb_cap_gb;

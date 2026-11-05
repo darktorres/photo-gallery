@@ -49,7 +49,7 @@ fn copy_data() -> PathBuf {
 
 fn open_catalog() -> Catalog {
     let versions = Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION };
-    let catalog = Catalog::prepare(&copy_data().join("catalog.sqlite"), versions).unwrap();
+    let catalog = Catalog::prepare(&copy_data().join("catalog.sqlite"), versions, pg_model::rules::PathRules::NATIVE).unwrap();
     catalog.status().unwrap(); // reads the schema and the counts: the connection is warm before the measured code
     catalog
 }

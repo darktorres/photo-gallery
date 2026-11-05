@@ -4,8 +4,12 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
+import pg.gallery
 
 Button {
+    Words {
+        id: words
+    }
     id: views
 
     // The saved views, by name, and whether there are any (the delete menu is off without).
@@ -21,7 +25,7 @@ Button {
         views.clicked()
     }
 
-    text: "Views ▾"
+    text: words.text("ui-views")
     onClicked: viewsMenu.popup(views, 0, views.height)
 
     Menu {
@@ -38,12 +42,12 @@ Button {
         }
         MenuSeparator {}
         MenuItem {
-            text: "Save current view…"
+            text: words.text("ui-save-current-view")
             onTriggered: views.saveViewRequested()
         }
         Menu {
             id: deleteMenu
-            title: "Delete view"
+            title: words.text("ui-delete-view")
             enabled: views.hasSavedViews
             Instantiator {
                 model: views.savedViews

@@ -82,10 +82,16 @@ $Scenarios = [ordered]@{
     "save-crops"           = "--save-crops={RUN}\crops"
     "filters-view0"        = "--filters=1 --view=0"
 }
+# The pseudo-locale (S-19.3): every line of the front end in the pseudo-locale. No reference has it, so it is run on the
+# working tree only and its screenshot kept under target\shots\pseudo, for a look; it is not compared.
+$Pseudo = [ordered]@{
+    "pseudo-locale" = "--locale=pseudo"
+}
 $onlyList = @($Only -split "," | Where-Object { $_ })
 if ($onlyList.Count -gt 0) {
     foreach ($name in @($Scenarios.Keys)) { if ($name -notin $onlyList) { $Scenarios.Remove($name) } }
-    if ($Scenarios.Count -eq 0) { throw "no scenario matches -Only ($Only)" }
+    foreach ($name in @($Pseudo.Keys)) { if ($name -notin $onlyList) { $Pseudo.Remove($name) } }
+    if ($Scenarios.Count + $Pseudo.Count -eq 0) { throw "no scenario matches -Only ($Only)" }
 }
 $expectList = @($Expect -split "," | Where-Object { $_ })
 
@@ -201,12 +207,12 @@ function Invoke-Shot([string]$Exe, [string]$Side, [string]$Name, [string]$Hooks,
 }
 
 # One side of the matrix: its template catalog from its own binary, then each scenario.
-function Run-Side([string]$Exe, [string]$Side) {
+function Run-Side([string]$Exe, [string]$Side, $Map = $Scenarios) {
     $template = New-Template $Exe (Join-Path $Shots "sides\$Side")
     $out = @()
-    foreach ($name in $Scenarios.Keys) {
+    foreach ($name in $Map.Keys) {
         Write-Host "[$Side] $name"
-        $shot = Invoke-Shot $Exe $Side $name $Scenarios[$name] $template $Wait
+        $shot = Invoke-Shot $Exe $Side $name $Map[$name] $template $Wait
         $out += [pscustomobject]@{ Scenario = $name; Png = $shot.Png; Crops = $shot.Crops; Note = $shot.Note; Settle = $shot.Settle }
     }
     return ,$out
@@ -353,6 +359,13 @@ if ($Self) {
     }
 }
 $currentResults = Run-Side $currentExe "current"
+$pseudoResults = @()
+$pseudoDir = Join-Path $Shots "pseudo"
+if ($Pseudo.Count -gt 0) {
+    $pseudoResults = Run-Side $currentExe "pseudo" $Pseudo
+    New-Item -ItemType Directory -Force $pseudoDir | Out-Null
+    foreach ($p in $pseudoResults) { if ($p.Png) { Copy-Item $p.Png (Join-Path $pseudoDir "$($p.Scenario).png") -Force } }
+}
 
 # 5. The comparison, scenario by scenario.
 $diffDir = Join-Path $Shots "diff"
@@ -360,6 +373,11 @@ if (Test-Path $diffDir) { Remove-Item -Recurse -Force $diffDir }
 New-Item -ItemType Directory -Force $diffDir | Out-Null
 $report = @()
 $failed = 0
+foreach ($p in $pseudoResults) {
+    $shown = $p.Png -and $p.Settle -notlike "timed out*"
+    if (-not $shown) { $failed++ }
+    $report += [pscustomobject]@{ Scenario = $p.Scenario; Result = $(if ($shown) { "SHOWN" } else { "FAILED" }); Detail = "kept in $pseudoDir; not compared" }
+}
 foreach ($name in $Scenarios.Keys) {
     $b = $baseResults | Where-Object { $_.Scenario -eq $name }
     $c = $currentResults | Where-Object { $_.Scenario -eq $name }

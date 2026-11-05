@@ -36,9 +36,11 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
 - `yandex` (`pg-yandex`): Yandex Images reverse search: the upload, the two result lists and the downloads (the only
   HTTP client).
-- `library` (`pg-library`): the passes over the originals (scan, import, borders, thumbnails, cropped copies,
-  duplicates), the job (`runner`) that runs them in order, and the writer that puts ratings and turns into the files
-  (`writeback`).
+- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, the cropped copies, the
+  borders and the duplicates. Each pass that touches the files is its own crate, so its manifest shows what it may
+  reach: `scan` (`pg-scan`: the folder walk), `import` (`pg-import`: the analyses), `thumbs` (`pg-thumbs`: the
+  thumbnails) and `writeback` (`pg-writeback`: the ratings and turns into the files). Callers name these crates
+  directly; `pg-library` does not re-export them.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
   picks, input, keys, text and the folder tree.
 - `app` (`pg-app`): the UI-free application layer the front ends share: opens the app from a `Config`, reads what the

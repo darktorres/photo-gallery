@@ -21,3 +21,4 @@ specta = ["dep:specta"]
 # The laws of the pure types (tests/laws.rs), generated (S-18.2).
 [dev-dependencies]
 proptest.workspace = true
+serde_json.workspace = true

@@ -1,6 +1,6 @@
 //! The query a view filters by and the order it sorts in (PLAN §7): the data, and the edits a filter bar makes to it, as
 //! typed values. Facets combine with AND, the values inside one list facet with OR, and an empty facet filters nothing.
-//! The SQL is the catalog's (`pg_catalog::query`), and so is the JSON the views and the session store: the serde names
+//! The SQL is the query compiler's (`pg_query`), and so is the JSON the views and the session store: the serde names
 //! kept here are the stored ones. Text typed into a filter is read by the front end, which gives this module values.
 
 use serde::{Deserialize, Deserializer, Serialize};

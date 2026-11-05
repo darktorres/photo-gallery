@@ -25,6 +25,7 @@ use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
 use pg_model::query::{Query, Sort};
+use pg_model::rules::PathRules;
 use pg_model::tree::FolderTree;
 
 use crate::app::App;
@@ -113,7 +114,9 @@ impl Reader {
             // Opened by the first request, and again by the next one if that failed.
             let opened = match catalog.take() {
                 Some(c) => Ok(c),
-                None => Catalog::open(&self.catalog_path).inspect(|c| c.cancel_when(self.cancel.clone())),
+                None => {
+                    Catalog::open(&self.catalog_path, PathRules::NATIVE).inspect(|c| c.cancel_when(self.cancel.clone()))
+                }
             };
             job(opened.as_ref());
             // The pages a job read aren't kept for the next: listing the whole library (189,518 files) fills the page cache

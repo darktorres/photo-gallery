@@ -19,8 +19,8 @@ pub struct FolderNode {
     end: u32,
     /// The folder ids its spelling comes from: the smallest of its subtree (the first that reached it).
     first: i64,
-    /// One bit per drive letter it is on (A is bit 0).
-    drives: u32,
+    /// One bit per anchor it is on: the anchor's rank in `anchor_names` (see [`bit`]).
+    anchors: u64,
     pub depth: u32,
     /// Present files directly in this folder, and in it plus everything below.
     pub direct: i64,
@@ -37,6 +37,15 @@ pub struct FolderTree {
     paths: String,
     /// Each folder's `folder_key`, one after the other.
     keys: Vec<u8>,
+    /// The anchors the folders are on, in text order (`D:`, `E:`): a Windows drive's root as the path spells it.
+    /// A folder with no anchor (a UNC or a Unix path) is on none.
+    anchor_names: Vec<Box<str>>,
+}
+
+/// The bit of an anchor by its rank in text order. The 64th and later anchors share bit 63: no machine has that many
+/// drive letters, and a node that shares it shows each of them ([`FolderTree::anchors`]).
+fn bit(rank: usize) -> u64 {
+    1 << rank.min(63)
 }
 
 /// The folders a tree is made from: each one's merged path and key written once, into the tree's strings.
@@ -44,12 +53,15 @@ pub struct FolderTree {
 pub struct TreeBuilder {
     tree: FolderTree,
     rows: Vec<TreeRow>,
+    /// The anchors the rows name, interned in the order they came.
+    interned: Vec<Box<str>>,
 }
 
 struct TreeRow {
     id: i64,
     count: i64,
-    drive: u32,
+    /// Its anchor's index in `interned`.
+    anchor: Option<u32>,
     /// Its merged path's range in `paths`, and its key's in `keys`.
     path: (u32, u32),
     key: (u32, u32),
@@ -62,17 +74,28 @@ impl TreeBuilder {
             nodes: Vec::new(),
             paths: String::with_capacity(bytes),
             keys: Vec::with_capacity(bytes + components),
+            anchor_names: Vec::new(),
         };
-        TreeBuilder { tree, rows: Vec::with_capacity(rows) }
+        TreeBuilder { tree, rows: Vec::with_capacity(rows), interned: Vec::new() }
     }
 
     /// A folder (`folders.id`, `folders.path`) holding `count` present files. A drive root (no components) is in no
     /// node.
     pub fn add(&mut self, id: i64, path: &str, count: i64) {
         let merged = merged_path(path);
-        let drive = match path.as_bytes() {
-            [d, b':', ..] if merged.len() < path.len() => 1 << (d.to_ascii_uppercase() - b'A'),
-            _ => 0,
+        let anchor = match path.as_bytes() {
+            [d, b':', ..] if merged.len() < path.len() => {
+                let text = format!("{}:", char::from(d.to_ascii_uppercase()));
+                let index = match self.interned.iter().position(|a| **a == *text) {
+                    Some(index) => index,
+                    None => {
+                        self.interned.push(text.into());
+                        self.interned.len() - 1
+                    }
+                };
+                Some(index as u32)
+            }
+            _ => None,
         };
         let FolderTree { paths, keys, .. } = &mut self.tree;
         let path_start = paths.len() as u32;
@@ -88,7 +111,7 @@ impl TreeBuilder {
         let key_start = keys.len() as u32;
         push_folder_key(keys, merged);
         let row =
-            TreeRow { id, count, drive, path: (path_start, paths.len() as u32), key: (key_start, keys.len() as u32) };
+            TreeRow { id, count, anchor, path: (path_start, paths.len() as u32), key: (key_start, keys.len() as u32) };
         self.rows.push(row);
     }
 
@@ -96,9 +119,18 @@ impl TreeBuilder {
     /// parent's key is a prefix of its descendants', and a component's end (0x01) sorts below every other byte, so
     /// sorted keys are the tree's pre-order with children in key order: `p`, `p\sub`, `p-x`.
     pub fn build(self) -> FolderTree {
-        let TreeBuilder { mut tree, mut rows } = self;
+        let TreeBuilder { mut tree, mut rows, interned } = self;
         let key = |k: (u32, u32)| k.0 as usize..k.1 as usize;
         rows.sort_unstable_by(|a, b| tree.keys[key(a.key)].cmp(&tree.keys[key(b.key)]));
+        // The anchors in text order (a drive's letter, so `D:` before `E:`), and each interned anchor's rank.
+        let mut ranked: Vec<usize> = (0..interned.len()).collect();
+        ranked.sort_by(|&a, &b| interned[a].cmp(&interned[b]));
+        let mut rank = vec![0; interned.len()];
+        for (r, &a) in ranked.iter().enumerate() {
+            rank[a] = r;
+        }
+        tree.anchor_names = ranked.iter().map(|&a| interned[a].clone()).collect();
+        let row_bit = |row: &TreeRow| row.anchor.map_or(0, |a| bit(rank[a as usize]));
         // The nodes, counted: in this order each row adds the components past those it shares with the row before
         // it (whole components, each ending with 0x01, which none holds), as the stack below finds them open.
         let components = |k: &[u8]| k.iter().filter(|&&b| b == 0x01).count();
@@ -146,7 +178,7 @@ impl TreeBuilder {
                             parent: open.last().map_or(u32::MAX, |&p| p as u32),
                             end: 0,
                             first: row.id,
-                            drives: 0,
+                            anchors: 0,
                             depth: depth as u32,
                             direct: 0,
                             total: 0,
@@ -157,7 +189,7 @@ impl TreeBuilder {
                 };
                 let node = &mut tree.nodes[n];
                 node.total += row.count;
-                node.drives |= row.drive;
+                node.anchors |= row_bit(row);
                 // Spelled as the first folder that reached it (the old tree's order: by folder id).
                 if row.id < node.first {
                     (node.first, node.path_start, node.path_end, node.name_start) =
@@ -231,23 +263,22 @@ impl FolderTree {
         })
     }
 
-    /// The drives it is on, by letter: `D: E:`.
-    pub fn drives(&self, n: usize) -> String {
-        let bits = self.nodes[n].drives;
+    /// The anchors it is on, in text order: `D: E:`. Past 63 anchors a node shows every anchor of the shared bit 63.
+    pub fn anchors(&self, n: usize) -> String {
+        let bits = self.nodes[n].anchors;
         let mut text = String::new();
-        for letter in (0..26).filter(|i| bits & (1 << i) != 0) {
+        for (_, name) in self.anchor_names.iter().enumerate().filter(|(rank, _)| bits & bit(*rank) != 0) {
             if !text.is_empty() {
                 text.push(' ');
             }
-            text.push(char::from(b'A' + letter as u8));
-            text.push(':');
+            text.push_str(name);
         }
         text
     }
 
-    /// Whether it is on more than one drive.
-    pub fn merged(&self, n: usize) -> bool {
-        self.nodes[n].drives.count_ones() > 1
+    /// Whether it is on more than one anchor (a drive folder merged across drives).
+    pub fn multi_anchor(&self, n: usize) -> bool {
+        self.nodes[n].anchors.count_ones() > 1
     }
 
     /// Present files in every folder of the tree.
@@ -287,5 +318,23 @@ mod tests {
         assert_eq!(tree.paths.capacity(), bytes);
         assert_eq!(tree.keys.capacity(), bytes + 6);
         assert_eq!(tree.nodes.capacity(), tree.nodes.len());
+    }
+
+    /// A folder's anchors are the drives it is on, in text order; a folder on one anchor is not merged, and a UNC
+    /// folder is on none.
+    #[test]
+    fn a_folder_shows_each_anchor_it_is_on_in_text_order() {
+        let mut builder = TreeBuilder::default();
+        for (id, path) in [(1, r"E:\p"), (2, r"D:\p"), (3, r"F:\q"), (4, r"\\nas\share\p")] {
+            builder.add(id, path, 1);
+        }
+        let tree = builder.build();
+        let node = |merged: &str| (0..tree.len()).find(|&n| tree.merged_path(n) == merged).unwrap();
+        assert_eq!(tree.anchors(node("p")), "D: E:");
+        assert!(tree.multi_anchor(node("p")));
+        assert_eq!(tree.anchors(node("q")), "F:");
+        assert!(!tree.multi_anchor(node("q")));
+        assert_eq!(tree.anchors(node(r"nas\share\p")), "");
+        assert!(!tree.multi_anchor(node(r"nas\share\p")));
     }
 }

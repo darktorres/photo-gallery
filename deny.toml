@@ -63,7 +63,7 @@ deny = [
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
     # SQLite is pg-catalog's and the thumbnail cache's, and pg-bench's (the catalog benches).
-    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-thumbcache", "pg-bench"] },
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-thumbcache", "pg-bench"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
     # FFmpeg is linked by pg-video alone: a video's probe, frames and file hash.

@@ -6,8 +6,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts
+import pg.gallery
 
 ToolBar {
+    Words {
+        id: words
+    }
     id: bar
     // The selection's text (Main's selectionInfo).
     required property string selection
@@ -70,7 +74,7 @@ ToolBar {
         }
         Button {
             visible: bar.busy || bar.paused
-            text: bar.paused ? "Resume" : "Pause"
+            text: bar.paused ? words.text("ui-resume") : words.text("ui-pause")
             flat: true
             onClicked: bar.pauseToggled()
         }

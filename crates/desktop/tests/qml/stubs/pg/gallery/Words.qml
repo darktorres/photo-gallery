@@ -1,11 +1,16 @@
 // A stub of the Words facade (crates/desktop/src/words.rs, over pg_client's text): the rating symbols and the timecode,
-// with the same names and the same answers as the Rust (text::RATING_SYMBOLS, text::timecode).
+// with the same names and the same answers as the Rust (text::RATING_SYMBOLS, text::timecode). The front end's own
+// literals (text, phrase) answer with their ui.ftl id: these tests check the QML's logic, not its words.
 import QtQuick
 
 QtObject {
     readonly property var symbols: ["☆", "❌", "❔", "🔨", "✔️", "⭐"]
 
     function ratingSymbol(rating) { return symbols[Math.min(Math.max(rating, 0), 5)] }
+
+    function text(id) { return id }
+
+    function phrase(id, count, value, second) { return id }
 
     function timecode(seconds) {
         const h = Math.floor(seconds / 3600)

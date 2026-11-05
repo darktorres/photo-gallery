@@ -17,6 +17,7 @@ use std::sync::{Condvar, Mutex};
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
+use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
 
 use crate::control::Control;
@@ -71,12 +72,12 @@ impl Options {
 /// `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on
 /// `ctl`, and reading waits while `ctl` is paused.
 ///
-/// `read(item, wide)` writes the file's path into `wide`, as [`pg_platform::verbatim::verbatim_wide`] does, and returns
+/// `read(item, wide)` writes the file's path into `wide` ([`NativePath::set`]), and returns
 /// true; the reader's buffer is reused from file to file, so no path is made per file. An item it returns false
 /// for isn't read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded).
 pub fn run<T, S, R>(
     items: &[T],
-    read: impl Fn(&T, &mut Vec<u16>) -> bool + Sync,
+    read: impl Fn(&T, &mut NativePath) -> bool + Sync,
     opts: &Options,
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
@@ -102,7 +103,7 @@ where
             let (next, stop, read, pool) = (&next, &stop, &read, &pool);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
-                let mut wide = Vec::new();
+                let mut wide = NativePath::default();
                 while !stop.load(Ordering::Relaxed) && ctl.checkpoint() {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { break };
@@ -162,9 +163,9 @@ where
     })
 }
 
-/// Read the file at `path` (item `i`; NUL-terminated UTF-16) into a buffer from the pool, its size reserved in list
+/// Read the file at `path` (item `i`) into a buffer from the pool, its size reserved in list
 /// order. `None` once the pass stops.
-fn read_whole<'p>(pool: &'p Pool, i: usize, path: &[u16]) -> Option<std::io::Result<Lease<'p>>> {
+fn read_whole<'p>(pool: &'p Pool, i: usize, path: &NativePath) -> Option<std::io::Result<Lease<'p>>> {
     let mut file = match pg_platform::file::open_read(path).and_then(|f| Ok((f.metadata()?.len(), f))) {
         Ok((size, file)) => (file, size as usize),
         Err(e) => {
@@ -319,10 +320,21 @@ impl Pool {
 
 #[cfg(test)]
 mod tests {
-    use pg_platform::verbatim::verbatim_wide;
+    use pg_platform::native::{NativePath, Unit};
     use std::fs::File;
 
     use super::*;
+
+    /// `s` as the system takes it: UTF-16 units on Windows, bytes elsewhere.
+    #[cfg(windows)]
+    fn units(s: &str) -> Vec<Unit> {
+        s.encode_utf16().collect()
+    }
+
+    #[cfg(unix)]
+    fn units(s: &str) -> Vec<Unit> {
+        s.as_bytes().to_vec()
+    }
 
     /// What the pool holds: its bytes are the sum of its buffers' capacities, and there are no more buffers than
     /// slots.
@@ -451,7 +463,7 @@ mod tests {
         run(
             &paths,
             |p, wide| {
-                verbatim_wide(&[p], wide);
+                wide.set(&[&units(p)]);
                 true
             },
             &opts,
@@ -476,7 +488,6 @@ mod tests {
 
     /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
     #[test]
-    #[cfg_attr(not(windows), ignore = "S-17: the verbatim wide-path API is Windows-only")]
     fn files_open_as_std_opens_them() {
         let root = pg_testkit::test_folder(r"D:\PhotoGallery\scratch_rate", "pg-open");
         let mut dir = root.clone();
@@ -484,16 +495,16 @@ mod tests {
             dir.push("a-folder-name-of-forty-characters-long--");
         }
         std::fs::create_dir_all(&dir).unwrap();
-        let mut wide = Vec::new();
+        let mut wide = NativePath::default();
         for name in ["f.bin", "fotografía ñandú 写真.jpg"] {
             let path = dir.join(name);
             std::fs::write(&path, name.as_bytes()).unwrap();
-            verbatim_wide(&[path.to_str().unwrap()], &mut wide);
+            wide.set(&[&units(path.to_str().unwrap())]);
             let mut bytes = Vec::new();
             pg_platform::file::open_read(&wide).unwrap().read_to_end(&mut bytes).unwrap();
             assert_eq!(bytes, name.as_bytes());
         }
-        verbatim_wide(&[dir.join("missing.jpg").to_str().unwrap()], &mut wide);
+        wide.set(&[&units(dir.join("missing.jpg").to_str().unwrap())]);
         let ours = pg_platform::file::open_read(&wide).unwrap_err();
         let std = File::open(dir.join("missing.jpg")).unwrap_err();
         assert_eq!((ours.kind(), ours.raw_os_error()), (std.kind(), std.raw_os_error()));

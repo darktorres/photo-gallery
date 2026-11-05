@@ -3,10 +3,14 @@
 //! no administrator rights are needed. On Unix it is `std::fs::read_dir`, with the identity from the metadata. The
 //! library decides which entries it keeps.
 
+#[cfg(windows)]
+use crate::native::NativePath;
+use crate::native::Unit;
+
 /// A directory entry as the listing gives it. The name is borrowed from the lister's buffer until the next entry.
 pub struct Entry<'a> {
-    /// The name in UTF-16, as the file system stores it.
-    pub name: &'a [u16],
+    /// The name as the file system stores it: UTF-16 units on Windows, bytes elsewhere (exact in both).
+    pub name: &'a [Unit],
     /// A folder rather than a file.
     pub folder: bool,
     /// A reparse point (a junction or a symbolic link): a listing doesn't follow it.
@@ -21,9 +25,9 @@ pub struct Entry<'a> {
 
 /// What listing a folder needs, kept from one folder to the next, so a listing reuses its buffers.
 pub struct Lister {
-    /// The folder's path as NUL-terminated UTF-16.
+    /// The folder's path, as the call is given it.
     #[cfg(windows)]
-    wide: Vec<u16>,
+    wide: NativePath,
     /// The records, as u64s to keep them 8-byte aligned as they must be.
     #[cfg(windows)]
     buf: Vec<u64>,
@@ -32,7 +36,7 @@ pub struct Lister {
 #[cfg(windows)]
 impl Lister {
     pub fn new() -> Lister {
-        Lister { wide: Vec::new(), buf: vec![0; 8192] }
+        Lister { wide: NativePath::default(), buf: vec![0; 8192] }
     }
 }
 
@@ -57,7 +61,7 @@ pub use windows::Dir;
 #[cfg(windows)]
 mod windows {
     use super::{Entry, Lister};
-    use crate::verbatim::verbatim_wide;
+    use crate::native::{SEP, Unit};
     use std::io;
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{
@@ -92,12 +96,12 @@ mod windows {
     impl Lister {
         /// Open the folder `path` for listing. A drive root (`D:`) names the drive's current folder, so the path is
         /// opened with its trailing backslash, and in its verbatim form when long, which lifts the 260-character limit.
-        pub fn open(&mut self, path: &str) -> io::Result<Dir> {
-            verbatim_wide(&[path, "\\"], &mut self.wide);
+        pub fn open(&mut self, path: &[Unit]) -> io::Result<Dir> {
+            self.wide.set(&[path, &[SEP]]);
             // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.
             let h = unsafe {
                 CreateFileW(
-                    self.wide.as_ptr(),
+                    self.wide.units().as_ptr(),
                     FILE_LIST_DIRECTORY,
                     FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
                     std::ptr::null(),
@@ -140,7 +144,7 @@ mod windows {
                         let record = base.add(offset);
                         let info = &*record.cast::<FILE_ID_BOTH_DIR_INFO>();
                         let name_ptr = record.add(std::mem::offset_of!(FILE_ID_BOTH_DIR_INFO, FileName));
-                        (info, std::slice::from_raw_parts(name_ptr.cast::<u16>(), info.FileNameLength as usize / 2))
+                        (info, std::slice::from_raw_parts(name_ptr.cast::<Unit>(), info.FileNameLength as usize / 2))
                     };
                     each(Entry {
                         name,
@@ -163,7 +167,10 @@ mod windows {
 #[cfg(unix)]
 mod unix {
     use super::{Entry, Lister};
+    use crate::native::Unit;
+    use std::ffi::OsStr;
     use std::io;
+    use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::MetadataExt;
     use std::path::PathBuf;
 
@@ -178,8 +185,8 @@ mod unix {
     }
 
     impl Lister {
-        pub fn open(&mut self, path: &str) -> io::Result<Dir> {
-            let path = PathBuf::from(path);
+        pub fn open(&mut self, path: &[Unit]) -> io::Result<Dir> {
+            let path = PathBuf::from(OsStr::from_bytes(path));
             if !std::fs::metadata(&path)?.is_dir() {
                 return Err(io::Error::other(format!("{} is not a folder", path.display())));
             }
@@ -192,9 +199,9 @@ mod unix {
             for entry in std::fs::read_dir(&dir.0)? {
                 let entry = entry?;
                 let Ok(meta) = entry.metadata() else { continue };
-                let name: Vec<u16> = entry.file_name().to_string_lossy().encode_utf16().collect();
+                let name = entry.file_name();
                 each(Entry {
-                    name: &name,
+                    name: name.as_bytes(),
                     folder: meta.is_dir(),
                     reparse: meta.file_type().is_symlink(),
                     file_id: meta.ino(),

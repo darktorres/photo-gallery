@@ -54,7 +54,7 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         items,
         |item, wide| {
             let [folder, name] = work.parts(item.path);
-            pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
+            pg_platform::names::set_file(wide, folder, name);
             true
         },
         opts,

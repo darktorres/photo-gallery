@@ -13,7 +13,12 @@ use pg_model::query::{Query, Sort, SortKey};
 /// Files on two drives under the same merged folder, plus a subfolder: (id, folder, name, size, mtime,
 /// format, rating).
 pub(crate) fn library() -> crate::Catalog {
-    let c = crate::Catalog::prepare(std::path::Path::new(":memory:"), crate::fixture::versions()).unwrap();
+    let c = crate::Catalog::prepare(
+        std::path::Path::new(":memory:"),
+        crate::fixture::versions(),
+        pg_model::rules::PathRules::Windows,
+    )
+    .unwrap();
     raw::add_scan(&c, 1, "D:");
     raw::add_folder(&c, 1, r"D:\p");
     raw::add_folder(&c, 2, r"E:\p");

@@ -5,8 +5,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts
+import pg.gallery
 
 ToolBar {
+    Words {
+        id: words
+    }
     id: bar
     // The open folder ("" for all folders), whether subfolders are in, the sort's direction, and the saved views.
     required property string folder
@@ -24,8 +28,9 @@ ToolBar {
     required property real rowHeight
 
     // The sort box's names (its keys are pg_client::sort::KEYS, in the same order).
-    readonly property list<string> sortNames: ["By name", "By file size", "By date modified", "By date taken",
-        "By megapixels", "By duration", "By border depth"]
+    readonly property list<string> sortNames: [words.text("ui-sort-name"), words.text("ui-sort-file-size"),
+        words.text("ui-sort-modified"), words.text("ui-sort-taken"), words.text("ui-sort-megapixels"),
+        words.text("ui-sort-duration"), words.text("ui-sort-border-depth")]
     // The sort box's index, and its text (the save-view dialog says it).
     property alias sortIndex: sortBox.currentIndex
     readonly property string sortText: sortBox.currentText
@@ -54,17 +59,17 @@ ToolBar {
         anchors.rightMargin: 8
         spacing: 12
         Label {
-            text: bar.folder.length ? bar.folder : "All folders"
+            text: bar.folder.length ? bar.folder : words.text("ui-all-folders")
             font.bold: true
             elide: Text.ElideMiddle
             Layout.maximumWidth: 600
         }
         Label {
             color: "#999999"
-            text: bar.loading && bar.fileCount === 0 ? "Loading…"
-                : Qt.locale().toString(bar.fileCount)
-                  + (bar.filterActive > 0 ? " of " + Qt.locale().toString(bar.filterTotal) : "")
-                  + " files"
+            text: bar.loading && bar.fileCount === 0 ? words.text("ui-loading")
+                : bar.filterActive > 0
+                  ? words.phrase("ui-files-of", 0, Qt.locale().toString(bar.fileCount), Qt.locale().toString(bar.filterTotal))
+                  : words.phrase("ui-files", 0, Qt.locale().toString(bar.fileCount), "")
         }
         BusyIndicator {
             running: bar.loading
@@ -73,17 +78,17 @@ ToolBar {
             Layout.preferredHeight: 20
         }
         CheckBox {
-            text: "Include subfolders"
+            text: words.text("ui-include-subfolders")
             checked: bar.recursive
             onToggled: bar.recursiveToggled(checked)
         }
         Button {
-            text: "Filters" + (bar.filterActive > 0 ? " (" + bar.filterActive + ")" : "")
+            text: (bar.filterActive > 0 ? words.phrase("ui-filters-count", 0, ("" + (bar.filterActive)), "") : words.text("ui-filters"))
                 + (bar.filtersOpen ? " ▴" : " ▾")
             highlighted: bar.filterActive > 0
             onClicked: bar.filtersToggled()
             ToolTip.visible: hovered
-            ToolTip.text: "Filter by type, extension, rating, size, date, duplicates… (F)"
+            ToolTip.text: words.text("ui-filters-tooltip")
         }
         ComboBox {
             id: sortBox
@@ -97,8 +102,8 @@ ToolBar {
             onClicked: bar.descendingToggled()
             ToolTip.visible: hovered
             ToolTip.text: bar.descending
-                ? "Descending (click for ascending)"
-                : "Ascending (click for descending)"
+                ? words.text("ui-sort-descending")
+                : words.text("ui-sort-ascending")
             Layout.preferredWidth: 32
         }
         // Saved views (ImageRater's bookmarks): a folder with its subfolders, filters and sort, by name.
@@ -112,10 +117,10 @@ ToolBar {
         }
         Item { Layout.fillWidth: true }
         Button {
-            text: "Library…"
+            text: words.text("ui-library")
             onClicked: bar.libraryRequested()
         }
-        Label { text: "Size" }
+        Label { text: words.text("ui-size") }
         Slider {
             from: 60
             to: 800
@@ -123,6 +128,6 @@ ToolBar {
             onMoved: bar.sizeChosen(value)
             Layout.preferredWidth: 220
         }
-        Label { text: Math.round(bar.rowHeight) + " px"; Layout.preferredWidth: 50 }
+        Label { text: words.phrase("ui-pixels", 0, ("" + Math.round(bar.rowHeight)), ""); Layout.preferredWidth: 50 }
     }
 }

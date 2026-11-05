@@ -8,6 +8,9 @@ import QtQuick.Controls.Fusion
 import pg.gallery
 
 Item {
+    Words {
+        id: words
+    }
     id: hud
 
     anchors.fill: parent
@@ -84,11 +87,11 @@ Item {
         text: hud.info
             + (hud.rating > 0 ? "   " + Ratings.symbol(hud.rating) : "")
             + (hud.zoomable ? "   " + Math.round(hud.viewport.zoom * 100) + "%" : "")
-            + (hud.settings.realSize ? "   [real size]" : "")
-            + (hud.loupe ? "   [loupe 10×]" : "")
-            + (hud.turns !== 0 ? "   — turning…" : "")
-            + (hud.fitFailed ? "   — original unavailable" : "")
-            + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? "   — " + hud.playerError : "")
+            + (hud.settings.realSize ? "   " + words.text("ui-real-size") : "")
+            + (hud.loupe ? "   " + words.text("ui-loupe") : "")
+            + (hud.turns !== 0 ? "   " + words.text("ui-turning") : "")
+            + (hud.fitFailed ? "   " + words.text("ui-original-unavailable") : "")
+            + (hud.kind === GalleryModel.Video && hud.playerError !== "" ? "   " + words.phrase("ui-player-error", 0, hud.playerError, "") : "")
     }
 
     RatingBar {

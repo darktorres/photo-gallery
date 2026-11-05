@@ -34,7 +34,7 @@ use std::sync::mpsc::{self, Sender};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use pg_jobs::events::Bus;
 use pg_jobs::service::{Service, Waker, Woke};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
@@ -616,7 +616,12 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
     let conn = Connection::open(cache)?;
     // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
-    conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()])?;
+    conn.execute(
+        "ATTACH DATABASE ?1 AS cat",
+        [catalog
+            .to_str()
+            .with_context(|| format!("{} has no UTF-8 form, which SQLite needs to attach it", catalog.display()))?],
+    )?;
     let tx = conn.unchecked_transaction()?;
     let seq: i64 = tx.query_row("SELECT seq FROM cat.thumb_clock", [], |r| r.get(0))?;
     let (checked, evictions): (Option<i64>, i64) = tx
@@ -634,9 +639,9 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
         while let Some(r) = rows.next()? {
-            let name = r.get_ref(2)?.as_str()?;
+            let name = r.get_ref(2)?.as_blob()?;
             let path =
-                work.file(r.get(1)?, name, |arena| Ok::<_, rusqlite::Error>(arena.push(r.get_ref(7)?.as_str()?)))?;
+                work.file(r.get(1)?, name, |arena| Ok::<_, rusqlite::Error>(arena.push(r.get_ref(7)?.as_blob()?)))?;
             work.items.push(ThumbWork {
                 id: FileId::new(r.get(0)?),
                 path,
@@ -1340,7 +1345,8 @@ mod tests {
     /// A catalog in `dir` with four analyzed files: 1–3 present (3 turned once in the catalog), 4 missing.
     fn catalog_of_four(dir: &Path) -> (PathBuf, pg_catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
-        let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::fixture::versions()).unwrap();
+        let rules = pg_model::rules::PathRules::Windows;
+        let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::fixture::versions(), rules).unwrap();
         state::add_scan(&c, 1, "D:\\p");
         state::add_folder(&c, 1, "D:\\p");
         use pg_catalog::fixture::{File, insert};

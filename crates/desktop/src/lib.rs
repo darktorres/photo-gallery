@@ -41,6 +41,8 @@ pub fn run(args: &[OsString]) {
     trace::install();
     pg_trace::pg_stage_main();
     command_line::init(args);
+    // `--locale=pseudo` shows every line in the pseudo-locale (the screenshot matrix's pseudo-locale scenario, S-19.3).
+    pg_client::text::set_pseudo(command_line::value("locale") == Some("pseudo"));
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.

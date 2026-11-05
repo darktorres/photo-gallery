@@ -10,6 +10,10 @@ pub enum Error {
     /// A value read from a row that its column can't hold (a `FromSqlError`).
     #[error(transparent)]
     Value(#[from] rusqlite::types::FromSqlError),
+    /// The catalog stores its paths under other rules than this build's (or under none, before they were recorded):
+    /// its names and paths don't read as this build's. It is rebuilt: deleted, and scanned again.
+    #[error("catalog {path}: {detail}, this build uses the {wanted} path rules: rebuild it (delete it and scan again)")]
+    PathRules { path: String, detail: String, wanted: &'static str },
     #[error(transparent)]
     Io(#[from] std::io::Error),
     #[error(transparent)]

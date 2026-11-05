@@ -40,8 +40,13 @@ fn main() {
     }
 }
 
+/// Nothing to attach elsewhere: a program's standard streams are its caller's from the start.
+#[cfg(not(windows))]
+fn attach_console() {}
+
 /// Make stdout and stderr reach the console the command was typed in. A GUI-subsystem program starts without
 /// them unless they were redirected (a pipe or a file, which then stay as they are).
+#[cfg(windows)]
 fn attach_console() {
     use windows_sys::Win32::Foundation::{GENERIC_READ, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_SHARE_READ, FILE_SHARE_WRITE, OPEN_EXISTING};

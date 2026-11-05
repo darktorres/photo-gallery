@@ -14,6 +14,8 @@ workspace = true
 windows-sys.workspace = true
 
 [dependencies]
+anyhow.workspace = true
+pg-model = { path = "../model" }
 
 [dev-dependencies]
 pg-testkit = { path = "../testkit" }

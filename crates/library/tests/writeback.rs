@@ -16,15 +16,15 @@ use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
 use pg_jobs::events::Bus;
 use pg_jobs::pipeline::Options;
-use pg_library::writeback::Writer;
-use pg_library::{import, scan};
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
+use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 use pg_testkit::events::Quiet;
 use pg_thumbcache::ThumbCache;
+use pg_writeback::Writer;
 
 fn pattern(w: u32, h: u32) -> image::RgbImage {
     image::RgbImage::from_fn(w, h, |x, y| {
@@ -85,12 +85,12 @@ fn ratings_and_turns_reach_the_files() {
     let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "writeback", &["images"]);
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
-    scan::scan(&mut c, &root, &ctl).unwrap();
+    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     let before = ids(&c);
     assert_eq!(before.len(), files.len());
 
@@ -116,7 +116,7 @@ fn ratings_and_turns_reach_the_files() {
     }
     assert_eq!(c.status().unwrap().pending, 0, "a metadata write must not trigger a re-import");
     // Same files, same identities (written in place).
-    scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c), before);
     assert_eq!(c.status().unwrap().missing, 0);
 
@@ -155,9 +155,9 @@ fn ratings_and_turns_reach_the_files() {
             .collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
-    scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c), before);
-    import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     assert!(dims(&c).iter().all(|&d| d == (48, 64)), "re-imported upright sizes: {:?}", dims(&c));
     assert!(placeholder_turns(&c).iter().all(|&t| t == 0), "re-imported placeholders: {:?}", placeholder_turns(&c));
 
@@ -168,8 +168,8 @@ fn ratings_and_turns_reach_the_files() {
         .output()
         .unwrap();
     assert!(out.status.success());
-    scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     assert_eq!(state::rating_of(&c, FileId::new(before[0].0)), Some(2));
 
     drop(writer);
@@ -191,11 +191,11 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
-    scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
     // The file as the database has it, and the temp a write would have left beside it (writeback's temp_path).
     let (id, db_path) = state::file_and_path(&c, "b.png");
@@ -248,11 +248,11 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
-    scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
     // a.jpg: a scan has marked it missing, so its write is dropped. b.png was deleted outside the app while the
     // catalog still lists it: its write is tried, and each failure is counted (it isn't waited on as offline).
     let (marked, deleted) = (state::file_id(&c, "a.jpg"), state::file_id(&c, "b.png"));
@@ -290,11 +290,11 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir);
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
-    scan::scan(&mut c, &root, &ctl).unwrap();
-    import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
     // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
     // shows the turn pending (rotation 1).

@@ -238,7 +238,7 @@ fn flat(tree: &FolderTree) -> Vec<Flat> {
     (0..tree.len())
         .map(|n| {
             let node = tree.node(n);
-            let drives = tree.drives(n).split(' ').filter(|d| !d.is_empty()).map(String::from).collect();
+            let drives = tree.anchors(n).split(' ').filter(|d| !d.is_empty()).map(String::from).collect();
             let children = tree.children(Some(n)).count();
             let (path, name) = (tree.merged_path(n).to_string(), tree.name(n).to_string());
             (path, name, node.depth as usize, node.direct, node.total, drives, children)
@@ -259,7 +259,7 @@ fn check_tree(rows: &[(i64, String, i64)]) {
         assert_eq!(tree.find(tree.merged_path(n), &mut key), Some(n));
         assert_eq!(tree.find(&tree.merged_path(n).to_ascii_uppercase(), &mut key), Some(n), "{}", tree.merged_path(n));
         assert_eq!(tree.key(n), folder_key(tree.merged_path(n)));
-        assert_eq!(tree.merged(n), tree.drives(n).contains(' '));
+        assert_eq!(tree.multi_anchor(n), tree.anchors(n).contains(' '));
         if let Some(p) = tree.parent(n) {
             assert!(p < n && n < tree.subtree_end(p) && tree.children(Some(p)).any(|c| c == n));
         }
@@ -294,8 +294,11 @@ fn the_tree_is_built_as_before() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let c = crate::Catalog::open(std::path::Path::new(&path)).unwrap();
-    let rows: Vec<(i64, String, i64)> = raw::rows_of(&c, FOLDER_COUNTS, [], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)));
+    let c = crate::Catalog::open(std::path::Path::new(&path), pg_model::rules::PathRules::Windows).unwrap();
+    let rows: Vec<(i64, String, i64)> =
+        raw::rows_of(&c, &FOLDER_COUNTS.replace("(SELECT path FROM", "(SELECT CAST(path AS TEXT) FROM"), [], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        });
     check_tree(&rows);
     let tree = folder_tree(&c).unwrap();
     assert_eq!(flat(&tree), reference_tree(&rows));
@@ -427,11 +430,13 @@ fn folder_keys_are_made_as_before() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_names_sort_and_scope_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let c = crate::Catalog::open(std::path::Path::new(&path)).unwrap();
-    let files: Vec<(String, String)> =
-        raw::rows_of(&c, "SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id", [], |r| {
-            Ok((r.get(0)?, r.get(1)?))
-        });
+    let c = crate::Catalog::open(std::path::Path::new(&path), pg_model::rules::PathRules::Windows).unwrap();
+    let files: Vec<(String, String)> = raw::rows_of(
+        &c,
+        "SELECT CAST(fo.path AS TEXT), CAST(f.name AS TEXT) FROM files f JOIN folders fo ON fo.id = f.folder_id",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    );
     let mut by_key = files.clone();
     by_key.sort_by_cached_key(|(folder, name)| order_key_of(folder, name));
     for pair in by_key.windows(2) {
@@ -439,7 +444,7 @@ fn real_names_sort_and_scope_as_before() {
         assert_ne!(reference_order((&a.0, &a.1), (&b.0, &b.1)), std::cmp::Ordering::Greater, "{a:?}, {b:?}");
     }
     // Every folder against every scope, recursive and not: the old match (`in_scope`) and the key range.
-    let folders: Vec<String> = raw::rows_of(&c, "SELECT path FROM folders", [], |r| r.get(0));
+    let folders: Vec<String> = raw::rows_of(&c, "SELECT CAST(path AS TEXT) FROM folders", [], |r| r.get(0));
     let in_range = |scope_of: (&str, bool), folder: &str| {
         let (_, values) = scope(scope_of.0, scope_of.1);
         let key = order_key_of(folder, "a");

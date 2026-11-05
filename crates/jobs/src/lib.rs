@@ -4,6 +4,7 @@
 
 pub mod control;
 pub mod events;
+pub mod failure;
 pub mod panics;
 pub mod pipeline;
 pub mod schedule;

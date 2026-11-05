@@ -13,6 +13,9 @@ import QtQuick.Layouts
 import pg.gallery
 
 Pane {
+    Words {
+        id: words
+    }
     id: bar
 
     // How many facets filter; files in the folder, unfiltered, and those the query keeps (countFacets()).
@@ -42,8 +45,8 @@ Pane {
     readonly property int facetRatings: 4
     readonly property int facetExts: 5
     // The duplicates and review boxes, in their order (Filters.duplicatesIndex, borderMarkedIndex).
-    readonly property list<string> duplicateChoices: ["Any", "Has duplicates", "No duplicates"]
-    readonly property list<string> reviewChoices: ["Any", "Not marked", "Marked not a border"]
+    readonly property list<string> duplicateChoices: [words.text("ui-any"), words.text("ui-has-duplicates"), words.text("ui-no-duplicates")]
+    readonly property list<string> reviewChoices: [words.text("ui-any"), words.text("ui-not-marked"), words.text("ui-marked-not-a-border")]
 
     padding: 6
 
@@ -84,7 +87,7 @@ Pane {
         readonly property bool bad: !filters.boundValid(facet, text)
         function reload() { text = filters.bound(facet, end) }
         Layout.preferredWidth: isDate ? 96 : 60
-        placeholderText: isDate ? "YYYY-MM-DD" : (end === 0 ? "min" : "max")
+        placeholderText: isDate ? words.text("ui-date-format") : (end === 0 ? words.text("ui-min") : words.text("ui-max"))
         selectByMouse: true
         font.pixelSize: 12
         color: bad ? Theme.invalidText : palette.text
@@ -138,7 +141,7 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Type" }
+                    Caption { text: words.text("ui-type") }
                     Repeater {
                         model: typeChoices
                         delegate: Chip {
@@ -150,12 +153,12 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Rating" }
+                    Caption { text: words.text("ui-rating") }
                     Repeater {
                         model: ratingChoices
                         delegate: Chip {
                             required property int index
-                            text: Ratings.symbol(index) + (index === 0 ? " Unrated" : "")
+                            text: Ratings.symbol(index) + (index === 0 ? " " + words.text("ui-unrated") : "")
                             onClicked: filters.toggle(bar.facetRatings, key)
                         }
                     }
@@ -163,7 +166,7 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Extension" }
+                    Caption { text: words.text("ui-extension") }
                     Repeater {
                         model: extChoices
                         delegate: Chip {
@@ -175,7 +178,7 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Shape" }
+                    Caption { text: words.text("ui-shape") }
                     Repeater {
                         model: shapeChoices
                         delegate: Chip {
@@ -187,30 +190,30 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Size (MB)" }
+                    Caption { text: words.text("ui-size-mb") }
                     Bound { facet: 0; end: 0 }
                     Bound { facet: 0; end: 1 }
-                    Caption { text: "Megapixels" }
+                    Caption { text: words.text("ui-megapixels") }
                     Bound { facet: 1; end: 0 }
                     Bound { facet: 1; end: 1 }
-                    Caption { text: "Duration (s)" }
+                    Caption { text: words.text("ui-duration-s") }
                     Bound { facet: 2; end: 0 }
                     Bound { facet: 2; end: 1 }
                 }
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Taken" }
+                    Caption { text: words.text("ui-taken") }
                     Bound { facet: 3; end: 0; isDate: true }
                     Bound { facet: 3; end: 1; isDate: true }
-                    Caption { text: "Modified" }
+                    Caption { text: words.text("ui-modified") }
                     Bound { facet: 4; end: 0; isDate: true }
                     Bound { facet: 4; end: 1; isDate: true }
                 }
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Duplicates" }
+                    Caption { text: words.text("ui-duplicates") }
                     ComboBox {
                         model: bar.duplicateChoices
                         currentIndex: filters.duplicatesIndex
@@ -218,7 +221,7 @@ Pane {
                         font.pixelSize: 12
                         Layout.preferredWidth: 140
                     }
-                    Caption { text: "Import" }
+                    Caption { text: words.text("ui-import") }
                     Repeater {
                         model: statusChoices
                         delegate: Chip {
@@ -230,7 +233,7 @@ Pane {
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Borders" }
+                    Caption { text: words.text("ui-borders") }
                     Repeater {
                         model: borderChoices
                         delegate: Chip {
@@ -238,7 +241,7 @@ Pane {
                             onClicked: filters.toggle(bar.facetBorders, key)
                         }
                     }
-                    Caption { text: "Review" }
+                    Caption { text: words.text("ui-review") }
                     ComboBox {
                         model: bar.reviewChoices
                         currentIndex: filters.borderMarkedIndex
@@ -247,24 +250,22 @@ Pane {
                         Layout.preferredWidth: 170
                     }
                     Button {
-                        text: "Save cropped copies (" + bar.count(bar.croppable) + ")…"
+                        text: words.phrase("ui-save-crops", 0, bar.count(bar.croppable), "")
                         enabled: bar.croppable > 0
                         font.pixelSize: 12
                         onClicked: bar.saveCropsRequested()
                         ToolTip.visible: hovered
                         ToolTip.delay: 500
-                        ToolTip.text: "Copies of the listed files with their borders cut off, in a folder you choose "
-                            + "(the originals stay as they are). JPEGs are cropped losslessly; their left and top "
-                            + "cuts move inward to the next 8 or 16 px block."
+                        ToolTip.text: words.text("ui-crop-tooltip")
                     }
                 }
 
                 RowLayout {
                     spacing: 4
-                    Caption { text: "Name" }
+                    Caption { text: words.text("ui-name") }
                     TextField {
                         id: nameField
-                        placeholderText: "contains…"
+                        placeholderText: words.text("ui-contains")
                         selectByMouse: true
                         font.pixelSize: 12
                         Layout.preferredWidth: 160
@@ -279,7 +280,7 @@ Pane {
                         }
                     }
                     Button {
-                        text: "Clear"
+                        text: words.text("ui-clear")
                         enabled: filters.active > 0
                         font.pixelSize: 12
                         onClicked: filters.clear()

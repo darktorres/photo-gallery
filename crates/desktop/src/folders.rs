@@ -156,8 +156,8 @@ impl qobject::FolderModel {
             ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),
             ROLE_EXPANDED => QVariant::from(&self.tree.is_expanded(n)),
             ROLE_TOTAL => QVariant::from(&node.total),
-            ROLE_DRIVES => QVariant::from(&QString::from(&folders.drives(n))),
-            ROLE_MERGED => QVariant::from(&folders.merged(n)),
+            ROLE_DRIVES => QVariant::from(&QString::from(&folders.anchors(n))),
+            ROLE_MERGED => QVariant::from(&folders.multi_anchor(n)),
             _ => QVariant::default(),
         }
     }

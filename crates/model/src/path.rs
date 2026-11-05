@@ -115,11 +115,12 @@ pub fn is_under(path: &str, root: &str) -> bool {
     p == r || p.strip_prefix(&r).is_some_and(|rest| rest.starts_with('\\'))
 }
 
-/// Paths kept end to end in one `String`, each named by its range ([`PathRef`]). It grows by doubling, so a list
-/// of n paths makes about log₂ n allocations.
+/// Paths kept end to end in one buffer of bytes, each named by its range ([`PathRef`]). It grows by doubling, so a
+/// list of n paths makes about log₂ n allocations. Bytes, not text: a path is stored as the OS has it (`Name` bytes
+/// joined by the separator, `PathRules::join`), which need not be UTF-8.
 #[derive(Default, Debug)]
 pub struct PathArena {
-    text: String,
+    bytes: Vec<u8>,
 }
 
 /// A path in a [`PathArena`].
@@ -131,21 +132,21 @@ pub struct PathRef {
 
 impl PathArena {
     /// `path` added at the end.
-    pub fn push(&mut self, path: &str) -> PathRef {
+    pub fn push(&mut self, path: &[u8]) -> PathRef {
         self.push_parts(&[path])
     }
 
     /// The concatenation of `parts`, added at the end.
-    pub fn push_parts(&mut self, parts: &[&str]) -> PathRef {
-        let start = self.text.len();
+    pub fn push_parts(&mut self, parts: &[&[u8]]) -> PathRef {
+        let start = self.bytes.len();
         for part in parts {
-            self.text.push_str(part);
+            self.bytes.extend_from_slice(part);
         }
-        PathRef { start, end: self.text.len() }
+        PathRef { start, end: self.bytes.len() }
     }
 
-    pub fn get(&self, path: PathRef) -> &str {
-        &self.text[path.start..path.end]
+    pub fn get(&self, path: PathRef) -> &[u8] {
+        &self.bytes[path.start..path.end]
     }
 }
 
@@ -178,12 +179,12 @@ impl<T> WorkList<T> {
         }
     }
 
-    /// The path of the file `name` in folder `folder_id`. The folder's path is read by `read_folder` (into the
-    /// arena it is given) the first time it is asked for.
+    /// The path of the file `name` (its name's bytes) in folder `folder_id`. The folder's path is read by
+    /// `read_folder` (into the arena it is given) the first time it is asked for.
     pub fn file<E>(
         &mut self,
         folder_id: i64,
-        name: &str,
+        name: &[u8],
         read_folder: impl FnOnce(&mut PathArena) -> Result<PathRef, E>,
     ) -> Result<FilePath, E> {
         let k = usize::try_from(folder_id).unwrap_or(usize::MAX);
@@ -204,15 +205,16 @@ impl<T> WorkList<T> {
         Ok(FilePath { folder, name: self.names.push(name) })
     }
 
-    /// The file's folder and name.
-    pub fn parts(&self, path: FilePath) -> [&str; 2] {
+    /// The file's folder's path and its name, as bytes.
+    pub fn parts(&self, path: FilePath) -> [&[u8]; 2] {
         [self.folders.get(path.folder), self.names.get(path.name)]
     }
 
-    /// Its path, for messages and for the programs it is handed to (FFmpeg).
-    pub fn path(&self, path: FilePath) -> String {
+    /// Its path, joined by `sep` (the separator of its rules, `PathRules::sep`), for the programs it is handed to
+    /// and for messages through the rules' display.
+    pub fn path(&self, path: FilePath, sep: u8) -> Vec<u8> {
         let [folder, name] = self.parts(path);
-        [folder, "\\", name].concat()
+        [folder, &[sep][..], name].concat()
     }
 
     pub fn len(&self) -> usize {
@@ -251,14 +253,15 @@ mod tests {
     #[test]
     fn an_arena_gives_back_each_path() {
         let mut arena = PathArena::default();
-        let refs: Vec<PathRef> = (0..1000).map(|i| arena.push(&format!(r"D:\folder {i}\file {i}.jpg"))).collect();
-        let joined = arena.push_parts(&[r"E:\copies", r"\a.jpg"]);
+        let refs: Vec<PathRef> =
+            (0..1000).map(|i| arena.push(format!(r"D:\folder {i}\file {i}.jpg").as_bytes())).collect();
+        let joined = arena.push_parts(&[br"E:\copies", br"\a.jpg"]);
         for (i, r) in refs.iter().enumerate() {
-            assert_eq!(arena.get(*r), format!(r"D:\folder {i}\file {i}.jpg"));
+            assert_eq!(arena.get(*r), format!(r"D:\folder {i}\file {i}.jpg").as_bytes());
         }
-        assert_eq!(arena.get(joined), r"E:\copies\a.jpg");
-        let empty = arena.push("");
-        assert_eq!(arena.get(empty), "");
+        assert_eq!(arena.get(joined), br"E:\copies\a.jpg");
+        let empty = arena.push(b"");
+        assert_eq!(arena.get(empty), b"");
     }
 
     #[test]
@@ -266,9 +269,9 @@ mod tests {
         let mut list = WorkList::<()>::with_capacity(4, 3);
         let mut reads = 0;
         let mut add = |list: &mut WorkList<()>, folder: i64, name: &str| {
-            list.file(folder, name, |arena| {
+            list.file(folder, name.as_bytes(), |arena| {
                 reads += 1;
-                Ok::<_, ()>(arena.push(&format!(r"D:\f{folder}")))
+                Ok::<_, ()>(arena.push(format!(r"D:\f{folder}").as_bytes()))
             })
             .unwrap()
         };
@@ -279,9 +282,9 @@ mod tests {
         let d = add(&mut list, 9, "d.jpg");
         assert_eq!(reads, 3);
         assert_eq!(
-            [a, b, c, d].map(|p| list.path(p)),
-            [r"D:\f2\a.jpg", r"D:\f0\b.jpg", r"D:\f2\c.jpg", r"D:\f9\d.jpg"]
+            [a, b, c, d].map(|p| list.path(p, b'\\')),
+            [r"D:\f2\a.jpg", r"D:\f0\b.jpg", r"D:\f2\c.jpg", r"D:\f9\d.jpg"].map(|s| s.as_bytes().to_vec())
         );
-        assert_eq!(list.parts(c), [r"D:\f2", "c.jpg"]);
+        assert_eq!(list.parts(c), [r"D:\f2".as_bytes(), b"c.jpg"]);
     }
 }

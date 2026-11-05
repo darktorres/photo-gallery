@@ -50,13 +50,11 @@ impl Ext {
         Ext::matching(ext.chars())
     }
 
-    /// [`Ext::of_name`] of a name in UTF-16 (a directory listing's), read as `String::from_utf16_lossy` reads it
-    /// (an unpaired surrogate is U+FFFD), so the scanner decodes only the names it records.
-    pub fn of_name_utf16(name: &[u16]) -> Option<Ext> {
-        let dot = name.iter().rposition(|&u| u == u16::from(b'.'))?;
-        Ext::matching(
-            char::decode_utf16(name[dot + 1..].iter().copied()).map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER)),
-        )
+    /// [`Ext::of_name`] of a name's canonical bytes (`pg_model::name::Name`). An extension with no UTF-8 form (an
+    /// unpaired surrogate, a byte no valid sequence holds) is none the library holds, so it is `None`.
+    pub fn of_name_bytes(name: &[u8]) -> Option<Ext> {
+        let dot = name.iter().rposition(|&b| b == b'.')?;
+        Ext::matching(std::str::from_utf8(&name[dot + 1..]).ok()?.chars())
     }
 
     /// The extension whose name is `ext` in lower case, without making it: lowercased character by character, as
@@ -79,12 +77,11 @@ mod tests {
 
     #[test]
     fn extensions_by_name() {
-        let utf16 = |s: &str| s.encode_utf16().collect::<Vec<_>>();
         let names = ["a.mozjpeg.JPG", "README", "x.WebP", "clip.MP4", "notes.txt", "jpg", ".png", "a.", "a.jpg.txt"];
         let names = names.into_iter().chain(["clip.M\u{212A}V", "ΑΣ.ΣJPG", "İ.TIFF", "a.JPEG\u{0307}"]);
         for name in names {
             assert_eq!(Ext::of_name(name), reference(name), "{name}");
-            assert_eq!(Ext::of_name_utf16(&utf16(name)), reference(name), "{name}");
+            assert_eq!(Ext::of_name_bytes(name.as_bytes()), reference(name), "{name}");
         }
         assert_eq!(Ext::of_name("a.mozjpeg.JPG").map(Ext::name), Some("jpg"));
         assert_eq!(Ext::of_name("x.WebP").map(Ext::kind), Some(Kind::Image));
@@ -92,11 +89,11 @@ mod tests {
         assert_eq!(Ext::of_name("clip.M\u{212A}V").map(Ext::name), Some("mkv"));
         assert_eq!(Ext::of_name("README"), None);
         assert_eq!(Ext::of_name("jpg"), None);
-        // An unpaired surrogate before the dot is read as U+FFFD; the extension is still found.
-        let mut lone = vec![0xD800];
-        lone.extend(utf16(".Png"));
-        assert_eq!(Ext::of_name_utf16(&lone), reference(&String::from_utf16_lossy(&lone)));
-        assert_eq!(Ext::of_name_utf16(&lone).map(Ext::name), Some("png"));
+        // An unpaired surrogate (WTF-8: three bytes no UTF-8 sequence holds) before the dot leaves the extension
+        // found; one inside the extension is no extension the library holds.
+        let lone = [&[0xED, 0xA0, 0x80][..], b".Png"].concat();
+        assert_eq!(Ext::of_name_bytes(&lone).map(Ext::name), Some("png"));
+        assert_eq!(Ext::of_name_bytes(b"a.p\xED\xA0\x80"), None);
         for ext in IMAGE_EXTENSIONS.iter().chain(VIDEO_EXTENSIONS) {
             let e = Ext::of(ext).unwrap();
             assert_eq!((e.name(), Ext::of_name(&format!("a.{}", ext.to_uppercase()))), (*ext, Some(e)));

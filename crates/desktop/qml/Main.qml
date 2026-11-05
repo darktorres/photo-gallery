@@ -11,12 +11,15 @@ import QtQuick.Window
 import pg.gallery
 
 ApplicationWindow {
+    Words {
+        id: words
+    }
     id: win
     width: 1600
     height: 1000
     // Shown after the load, once it can be handed the app's D3D11 device (src/gpu_device.rs).
     visible: false
-    title: "Photo Gallery" + (shell.folder.length ? " — " + shell.folder : "")
+    title: shell.folder.length ? words.phrase("ui-window-title", 0, shell.folder, "") : words.text("ui-app-name")
     color: "#181818"
     palette {
         window: "#202020"
@@ -138,7 +141,7 @@ ApplicationWindow {
         active: false
         sourceComponent: Component {
             FolderDialog {
-                title: "Save cropped copies into"
+                title: words.text("ui-save-crops-into")
                 onAccepted: galleryModel.saveCroppedCopies(selectedFolder)
                 Component.onCompleted: open()
             }

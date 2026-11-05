@@ -18,22 +18,22 @@ use std::time::Duration;
 use anyhow::Result;
 use pg_catalog::Catalog;
 use pg_jobs::control::{Control, Progress};
-use pg_jobs::events::Bus;
+use pg_jobs::events::{Bus, Change};
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::path::is_under;
+use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
-use crate::{Change, borders, crop, import, scan, thumbs};
+use crate::{borders, crop};
 
 #[derive(Default)]
 struct Queue {
     /// Folders to scan, normalized.
-    scans: VecDeque<String>,
+    scans: VecDeque<RulePath>,
     /// Cropped copies to save: the files, and the folder.
     crops: VecDeque<(Vec<FileId>, PathBuf)>,
 }
@@ -157,7 +157,7 @@ impl Runner {
     }
 
     /// Scan these folders (normalized), then import and thumbnail what they hold.
-    pub fn scan(&self, roots: Vec<String>) {
+    pub fn scan(&self, roots: Vec<RulePath>) {
         {
             let mut q = self.inner.queue.lock().unwrap();
             for r in roots {
@@ -282,7 +282,7 @@ impl Inner {
     fn round(&self, conn: &mut Option<Catalog>) -> Result<Step> {
         let mut catalog = match conn.take() {
             Some(c) => c,
-            None => Catalog::open(&self.catalog_path)?,
+            None => Catalog::open(&self.catalog_path, PathRules::NATIVE)?,
         };
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };
@@ -333,30 +333,32 @@ struct Scans;
 
 impl Pass<Cx<'_>> for Scans {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let library: Vec<String> = cx.catalog.roots()?.into_iter().map(|r| r.path).collect();
+        let rules = cx.catalog.rules();
+        let library: Vec<RulePath> = cx.catalog.roots()?.into_iter().map(|r| r.path).collect();
         loop {
-            let Some(root) = cx.inner.queue.lock().unwrap().scans.pop_front() else {
+            let Some(path) = cx.inner.queue.lock().unwrap().scans.pop_front() else {
                 return Ok(Step::Done);
             };
-            if !library.iter().any(|l| is_under(&root, l)) {
+            // A folder asked for that is no longer in the library is skipped.
+            if !library.iter().any(|l| rules.is_under(&path, l)) {
                 continue;
             }
-            match scan::scan(cx.catalog, &root, &cx.inner.ctl) {
+            match pg_scan::scan(cx.catalog, &path, &cx.inner.ctl) {
                 Ok(s) => {
                     // A scan stopped early has committed what it recorded so far.
                     if s.changed > 0 || s.missing > 0 {
                         cx.inner.scanned();
                     }
                     if !s.complete {
-                        cx.inner.queue.lock().unwrap().scans.push_front(root);
+                        cx.inner.queue.lock().unwrap().scans.push_front(path);
                         return Ok(Step::Preempted);
                     }
                     if s.errors > 0 {
-                        cx.inner.notify(Notice::UnreadableFolders { root, count: s.errors });
+                        cx.inner.notify(Notice::UnreadableFolders { root: rules.display(&path), count: s.errors });
                     }
                 }
                 Err(e) => {
-                    cx.inner.notify(Notice::ScanFailed { root, error: format!("{e:#}") });
+                    cx.inner.notify(Notice::ScanFailed { root: rules.display(&path), error: format!("{e:#}") });
                     // Its batches before the error are in.
                     cx.inner.scanned();
                 }
@@ -370,7 +372,7 @@ struct Import;
 
 impl Pass<Cx<'_>> for Import {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let s = import::import(cx.catalog, &Options::new(Priority::BelowNormal), false, &cx.inner.ctl)?;
+        let s = pg_import::import(cx.catalog, &Options::new(Priority::BelowNormal), false, &cx.inner.ctl)?;
         if s.files > 0 {
             cx.inner.imported();
         }
@@ -399,7 +401,7 @@ impl Pass<Cx<'_>> for Thumbs {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
         let height = cx.inner.thumb_height.load(Ordering::Relaxed);
         let opts = Options::new(Priority::Idle);
-        let s = thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
+        let s = pg_thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
         if s.cache_full {
             cx.inner.notify(Notice::CacheFull { height, made: s.made });
         }

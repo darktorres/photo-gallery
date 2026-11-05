@@ -1,9 +1,10 @@
 #!/bin/bash
-# Clippy (-D warnings) on the crates that build here, on the committed HEAD of this checkout, in WSL's own clone (the
-# sync is wsl-bench.sh's: the same clone, reset to HEAD). The exclusions are listed beside the cargo command. From the repo:
+# Clippy (-D warnings), then the tests, on the crates that build here, on the committed HEAD of this checkout, in WSL's
+# own clone (the sync is wsl-bench.sh's: the same clone, reset to HEAD). The exclusions are listed beside the cargo
+# commands. From the repo:
 #   wsl -d Ubuntu-26.04 -u root -- bash tools/wsl-check.sh          (or `just wsl-check`)
-# The code that only builds on Linux (the callgrind benches, the platform's Unix paths) is checked here: `just lint`
-# on Windows never sees it.
+# The code that only builds on Linux (the callgrind benches, the platform's Unix paths, the Posix path rules) is checked
+# here: `just lint` on Windows never sees it. Uncommitted changes are not in this clone; commit first to check them.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
 CLONE=${PG_BENCH_CLONE:-$HOME/photo-gallery}
@@ -24,4 +25,5 @@ cd "$CLONE"
 # Excluded, and why. Remove each exclusion when its reason ends.
 #   pg-desktop, pg-gallery: they link Qt, which is Windows only (pg-gallery reaches it through its `desktop` feature).
 cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings
+cargo test --workspace --exclude pg-desktop --exclude pg-gallery
 echo "wsl-check: clean"

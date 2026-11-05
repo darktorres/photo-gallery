@@ -5,8 +5,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts
+import pg.gallery
 
 Dialog {
+    Words {
+        id: words
+    }
     id: dialog
     // The item the dialog is centred over (Main's page): a Loader doesn't parent a popup to an item.
     required property Item host
@@ -24,7 +28,7 @@ Dialog {
 
     parent: host
     anchors.centerIn: parent
-    title: "Save the current view"
+    title: words.text("ui-save-view-title")
     modal: true
     standardButtons: Dialog.Save | Dialog.Cancel
     onRequestsChanged: dialog.open()
@@ -36,14 +40,14 @@ Dialog {
 
     ColumnLayout {
         Label {
-            text: (dialog.folder.length ? dialog.folder : "All folders")
-                + (dialog.recursive ? " and subfolders" : "") + " · " + dialog.filters + " · "
+            text: (dialog.folder.length ? dialog.folder : words.text("ui-all-folders"))
+                + (dialog.recursive ? " " + words.text("ui-and-subfolders") : "") + " · " + dialog.filters + " · "
                 + dialog.sortName + (dialog.descending ? " ↓" : " ↑")
             color: "#999999"
         }
         TextField {
             id: viewName
-            placeholderText: "Name (one already saved is replaced)"
+            placeholderText: words.text("ui-view-name")
             Layout.preferredWidth: 400
             onAccepted: dialog.accept()
         }

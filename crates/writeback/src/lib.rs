@@ -28,10 +28,13 @@ use pg_jobs::service::{Service, Waker, Woke};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
+use pg_model::rules::{Path as RulePath, PathRules};
+
 use pg_model::write::WriteKind;
+use pg_platform::names::{path_buf, text_of};
 use pg_thumbcache::ThumbCache;
 
-use crate::Change;
+use pg_jobs::events::Change;
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
 const SETTLE_SECS: i64 = 2;
@@ -119,11 +122,12 @@ impl Inner {
         // One connection for every drain; after a drain that failed, a new one.
         let mut catalog: Option<Catalog> = None;
         while waker.wait(Some(IDLE_CHECK)) != Woke::Quit {
-            let drained = catalog.take().map_or_else(|| Catalog::open(&self.catalog_path), Ok).and_then(|c| {
-                self.drain(waker, &c, &mut exiftool)?;
-                catalog = Some(c);
-                Ok(())
-            });
+            let drained =
+                catalog.take().map_or_else(|| Catalog::open(&self.catalog_path, PathRules::NATIVE), Ok).and_then(|c| {
+                    self.drain(waker, &c, &mut exiftool)?;
+                    catalog = Some(c);
+                    Ok(())
+                });
             if let Err(e) = drained {
                 self.update_status(|s| s.error = Some(format!("{e:#}")));
             }
@@ -190,20 +194,20 @@ impl Inner {
 
     /// Whether the folder the file is in exists, so its drive is there.
     fn folder_present(&self, catalog: &Catalog, file_id: FileId) -> bool {
-        catalog.file_folder(file_id).is_some_and(|p| Path::new(&p).is_dir())
+        catalog.file_folder(file_id).is_some_and(|p| path_buf(&catalog.rules().join(&p)).is_dir())
     }
 
     /// A finishing copy that failed at the cap: its temp is discarded, and the job no longer counts as being written
     /// (`writes::abandon_temp`). The row stays, with its attempts and error, so the failure is still in the queue.
     fn give_up(&self, catalog: &Catalog, job: &Job) -> Result<()> {
         let Some((temp, _)) = &job.temp else { return Ok(()) };
-        let path = catalog.file_path(job.file_id)?;
+        let path = text_path(catalog, &catalog.file_path(job.file_id)?)?;
         let _ = std::fs::remove_file(temp);
         Ok(writes::abandon_temp(catalog, job, stat(&path).ok())?)
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {
-        let (path, format, kind) = catalog.write_target(job.file_id)?;
+        let (path_rule, format, kind) = catalog.write_target(job.file_id)?;
 
         // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog, and their ratings are
         // never queued (pg_catalog::writes::set_rating).
@@ -214,6 +218,8 @@ impl Inner {
             }
             return Ok(());
         }
+        // The queue and the programs take text: a file whose name has no UTF-8 form is not written.
+        let path = text_path(catalog, &path_rule)?;
 
         if let Some((temp, _)) = &job.temp {
             // Interrupted after the new content was complete: finish the copy. What the file held before is
@@ -235,7 +241,7 @@ impl Inner {
             .or_else(|| Format::sniff(&bytes))
             .context("unknown format")?;
         let before = stat(&path)?;
-        let temp = temp_path(&path);
+        let temp = temp_path(catalog.rules().sep(), &path);
         let _ = std::fs::remove_file(&temp);
 
         let pixels_changed = match job.kind {
@@ -321,16 +327,22 @@ impl Inner {
     }
 }
 
+/// The path of a file as text: the one the queue and the programs take. A name with no UTF-8 form is refused.
+fn text_path(catalog: &Catalog, path: &RulePath) -> Result<String> {
+    Ok(text_of(&catalog.rules().join(path))?.to_string())
+}
+
 /// Size and mtime (FILETIME, as the scanner records it).
-pub(crate) fn stat(path: &str) -> Result<(i64, i64)> {
-    let m = std::fs::metadata(path).with_context(|| format!("reading {path}"))?;
+pub fn stat(path: impl AsRef<Path>) -> Result<(i64, i64)> {
+    let path = path.as_ref();
+    let m = std::fs::metadata(path).with_context(|| format!("reading {}", path.display()))?;
     Ok((m.len() as i64, pg_platform::file::last_write_time(&m)))
 }
 
 /// Beside the original, so it is on the same drive; the scanner ignores the extension.
-fn temp_path(path: &str) -> String {
-    let (dir, name) = path.rsplit_once('\\').unwrap_or((".", path));
-    format!("{dir}\\.{name}.pg-write")
+fn temp_path(sep: char, path: &str) -> String {
+    let (dir, name) = path.rsplit_once(sep).unwrap_or((".", path));
+    format!("{dir}{sep}.{name}.pg-write")
 }
 
 /// Copy `temp` into the original in place (same file, same NTFS identity), then delete `temp`.
@@ -347,6 +359,6 @@ fn copy_into(temp: &Path, path: &str) -> Result<()> {
 }
 
 /// The ExifTool program: `PG_EXIFTOOL`, or `exiftool` on PATH. Read here, where the writes start it.
-pub(crate) fn exiftool_program() -> std::ffi::OsString {
+pub fn exiftool_program() -> std::ffi::OsString {
     std::env::var_os("PG_EXIFTOOL").unwrap_or_else(|| "exiftool".into())
 }

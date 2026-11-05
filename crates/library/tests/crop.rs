@@ -13,10 +13,11 @@ use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{borders, crop, import, scan};
+use pg_library::{borders, crop};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::path::PathArena;
+use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 
 const W: u32 = 320;
@@ -72,13 +73,13 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     }
     let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "crop", &["images/sub"]);
     let files = make_files(&dir);
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&dir.join("images").to_string_lossy()).unwrap();
+    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     c.add_root(&root).unwrap();
-    scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     for (id, _) in ids(&c) {
         assert!(
             c.crop_source(FileId::new(id), &mut PathArena::default()).unwrap().is_none(),

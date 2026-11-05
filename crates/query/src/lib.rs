@@ -8,7 +8,7 @@
 
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
-use rusqlite::types::Value;
+use rusqlite::types::{Value, ValueRef};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -95,7 +95,7 @@ fn media_sql(media: MediaType) -> &'static str {
 }
 
 /// The type of a row, for the counts (`browse::read::facets`).
-pub(crate) const MEDIA_CASE: &str =
+pub const MEDIA_CASE: &str =
     "CASE WHEN f.kind = 'video' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END";
 
 /// The condition of a shape's value.
@@ -134,7 +134,7 @@ fn border_sql(border: BorderFacet) -> &'static str {
 
 /// What `browse::read::facets` counts for borders: each value's condition summed, in `BorderFacet::iter()`'s order. A file
 /// with a black and a blurred side counts for both.
-pub(crate) const BORDER_SUMS: &str = concat!(
+pub const BORDER_SUMS: &str = concat!(
     "coalesce(sum(",
     border_none!(),
     "), 0), coalesce(sum(",
@@ -361,14 +361,15 @@ pub fn key_sql(sort: Sort) -> Option<&'static str> {
 
 /// SQL functions the conditions use, registered on every catalog connection (`Catalog::prepare`, `Catalog::open`).
 pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
-    // Whether a name contains a text, ignoring case as Windows does (Unicode, unlike SQLite's LIKE).
+    // Whether a name contains a text, ignoring case as Windows does (Unicode, unlike SQLite's LIKE). A name is its
+    // stored bytes (`files.name` is a BLOB); it is matched as its display text, so an unpaired surrogate is U+FFFD.
     conn.create_scalar_function(
         "pg_contains",
         2,
         FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC,
         |ctx| {
-            // Borrowed from SQLite: a NULL (or a blob) contains nothing.
-            let (Ok(name), Ok(_)) = (ctx.get_raw(0).as_str(), ctx.get_raw(1).as_str()) else {
+            // Borrowed from SQLite: a NULL (or a text, which is not a stored name) contains nothing.
+            let (ValueRef::Blob(name), Ok(_)) = (ctx.get_raw(0), ctx.get_raw(1).as_str()) else {
                 return Ok(false);
             };
             // The text is the statement's parameter: lowercased at the first row, and kept by SQLite with it for
@@ -376,7 +377,7 @@ pub fn register_functions(conn: &Connection) -> rusqlite::Result<()> {
             let needle = ctx.get_or_create_aux(1, |text| {
                 text.as_str().map(Needle::new).map_err(|e| Box::new(e) as Box<dyn std::error::Error + Send + Sync>)
             })?;
-            Ok(needle.found_in(name))
+            Ok(needle.found_in(&String::from_utf8_lossy(name)))
         },
     )
 }
@@ -467,7 +468,7 @@ mod tests {
         texts.extend(["σσ", "ΣΣΕ", "ος", "i\u{307}st", "STRASS", "ße_s", "kelvin"].map(String::from));
         let conn = Connection::open_in_memory().unwrap();
         register_functions(&conn).unwrap();
-        let mut stmt = conn.prepare("SELECT pg_contains(value, ?1) FROM json_each(?2)").unwrap();
+        let mut stmt = conn.prepare("SELECT pg_contains(CAST(value AS BLOB), ?1) FROM json_each(?2)").unwrap();
         let names_json = serde_json::to_string(&names).unwrap();
         for text in &texts {
             let want: Vec<bool> = names.iter().map(|n| n.to_lowercase().contains(&text.to_lowercase())).collect();
@@ -477,10 +478,14 @@ mod tests {
                 stmt.query_map((text, &names_json), |r| r.get(0)).unwrap().map(Result::unwrap).collect();
             assert_eq!(sql, want, "{text:?} through SQL");
         }
-        // A NULL or a blob contains nothing, and is found in nothing.
+        // A NULL contains nothing, and a text is not a stored name (the names are blobs): it is found in nothing.
+        // A blob is its bytes' display text.
         let one = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, bool>(0)).unwrap();
         assert!(!one("SELECT pg_contains(NULL, 'a')") && !one("SELECT pg_contains('a', NULL)"));
-        assert!(!one("SELECT pg_contains(x'61', 'a')") && one("SELECT pg_contains('Ab', 'a')"));
+        assert!(!one("SELECT pg_contains('Ab', 'a')"));
+        assert!(one("SELECT pg_contains(CAST('Ab' AS BLOB), 'a')") && !one("SELECT pg_contains(x'61', 'b')"));
+        // A surrogate (WTF-8, `ED A0 80` for U+D800) shows as U+FFFD, which the text can match.
+        assert!(one("SELECT pg_contains(x'61EDA080', char(65533))"));
     }
 
     #[test]

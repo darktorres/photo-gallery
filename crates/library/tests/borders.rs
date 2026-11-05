@@ -8,7 +8,8 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{borders, import, scan};
+use pg_library::borders;
+use pg_model::rules::PathRules;
 
 #[cfg(windows)]
 #[test]
@@ -24,12 +25,12 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
             .unwrap();
     }
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions()).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
-    let root = scan::normalize_path(&images.to_string_lossy()).unwrap();
-    scan::scan(&mut c, &root, &ctl).unwrap();
+    let root = pg_scan::normalize_path(&images).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    import::import(&mut c, &opts, false, &ctl).unwrap();
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     assert_eq!((state::borders_due(&c, "a.png"), state::borders_due(&c, "b.png")), (1, 1));
 
     // a.png is locked: the pass can't read it.

@@ -14,6 +14,7 @@ use std::sync::{Arc, Mutex, OnceLock};
 
 use pg_catalog::Catalog;
 use pg_jobs::events::{Bus, Subscription};
+use pg_model::rules::PathRules;
 use pg_render::maker::Maker;
 use pg_thumbcache::ThumbCache;
 
@@ -68,7 +69,7 @@ impl App {
         std::fs::create_dir_all(&config.catalog_dir)
             .map_err(|e| failed(format!("{}: {e}", config.catalog_dir.display())))?;
         let catalog_path = config.catalog_path();
-        let keeper = Catalog::prepare(&catalog_path, pg_library::versions())?;
+        let keeper = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE)?;
         let catalog_id = keeper.catalog_id()?;
         let notes: Arc<Bus<Note>> = Arc::new(Bus::new(64));
         let first_notes = notes.subscribe();
@@ -131,7 +132,8 @@ impl App {
     /// Run `f` with a catalog connection: an idle one, or one opened for it (and kept for the next borrower, up to a few).
     pub(crate) fn with_catalog<R>(&self, f: impl FnOnce(&Catalog) -> pg_catalog::Result<R>) -> Result<R> {
         let path = self.config.catalog_path();
-        self.catalogs.with(|| Catalog::open(&path).map_err(Error::from), |c| f(c).map_err(Error::from))
+        self.catalogs
+            .with(|| Catalog::open(&path, PathRules::NATIVE).map_err(Error::from), |c| f(c).map_err(Error::from))
     }
 
     /// Run `f` with a thumbnail maker (and its decoder): an idle one, or a new one.

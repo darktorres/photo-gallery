@@ -48,7 +48,8 @@ pub(crate) fn add_scan(c: &Catalog, id: i64, root: &str) {
 }
 
 pub(crate) fn add_folder(c: &Catalog, id: i64, path: &str) {
-    c.conn.execute("INSERT INTO folders(id, path) VALUES (?1, ?2)", params![id, path]).unwrap();
+    let (bytes, key) = super::folder_row(c, path);
+    c.conn.execute("INSERT INTO folders(id, path, key) VALUES (?1, ?2, ?3)", params![id, bytes, key]).unwrap();
 }
 
 pub(crate) fn set_missing(c: &Catalog, id: FileId) {
@@ -87,7 +88,7 @@ pub(crate) fn rotation_and_width(c: &Catalog, id: FileId) -> (i64, i64) {
 /// The only file's row as the scan leaves it: last scan, name, size, mtime, missing and order key.
 pub(crate) fn file_row(c: &Catalog) -> (i64, String, i64, i64, i64, Vec<u8>) {
     c.conn
-        .query_row("SELECT last_scan, name, size, mtime, missing, order_key FROM files", [], |r| {
+        .query_row("SELECT last_scan, CAST(name AS TEXT), size, mtime, missing, order_key FROM files", [], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
         })
         .unwrap()
@@ -108,7 +109,7 @@ pub(crate) fn thumb_source_seq(c: &Catalog, id: FileId) -> i64 {
 
 /// The files the thumbnail pass sees, with their folders.
 pub(crate) fn thumb_sources(c: &Catalog) -> Vec<(i64, String)> {
-    rows_of(c, "SELECT id, folder FROM thumb_sources ORDER BY id", [], |r| Ok((r.get(0)?, r.get(1)?)))
+    rows_of(c, "SELECT id, CAST(folder AS TEXT) FROM thumb_sources ORDER BY id", [], |r| Ok((r.get(0)?, r.get(1)?)))
 }
 
 pub(crate) fn thumb_clock(c: &Catalog) -> i64 {

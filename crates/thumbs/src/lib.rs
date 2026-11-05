@@ -8,11 +8,12 @@ use std::sync::Mutex;
 
 use anyhow::Result;
 use pg_catalog::Catalog;
+use pg_model::rules::PathRules;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
-use crate::{Failure, keep_failure};
 use pg_jobs::control::{Control, Phase};
+use pg_jobs::failure::{Failure, keep_failure};
 use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 200;
@@ -56,7 +57,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     }
     stats.cache_bytes = cache.totals()?.0 as u64;
     // To check each file against before its thumbnail is kept.
-    let catalog = Catalog::open(catalog_path)?;
+    let catalog = Catalog::open(catalog_path, PathRules::NATIVE)?;
+    let sep = catalog.rules().sep() as u8;
     let mut batch = Vec::with_capacity(BATCH);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
@@ -83,7 +85,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             let whole = item.poster_ms.is_none();
             if whole {
                 let [folder, name] = work.parts(item.path);
-                pg_platform::verbatim::verbatim_wide_file(folder, name, wide);
+                pg_platform::names::set_file(wide, folder, name);
             }
             whole
         },
@@ -96,9 +98,9 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             let made = match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
-                    let path = work.path(item.path);
+                    let path = work.path(item.path, sep);
                     maker
-                        .load_frame(Path::new(&path), at, item.source.rotation)
+                        .load_frame(&pg_platform::names::path_buf(&path), at, item.source.rotation)
                         .and_then(|()| maker.encode_frame_into(height as usize, &mut out))
                 }
                 None => maker.make_into(bytes, height as usize, item.source.rotation, &mut out),
@@ -138,7 +140,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 Err(e) => {
                     stats.failed += 1;
                     first_failed = Some(first_failed.map_or(item.seq, |s: i64| s.min(item.seq)));
-                    keep_failure(&mut stats.failures, work.path(item.path), format!("{e:#}"));
+                    let path = String::from_utf8_lossy(&work.path(item.path, sep)).into_owned();
+                    keep_failure(&mut stats.failures, path, format!("{e:#}"));
                 }
             }
             if batch.len() >= BATCH {

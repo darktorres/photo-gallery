@@ -45,8 +45,15 @@ def merged(path: str) -> str:
     return path.split(":", 1)[1].lstrip("\\") if ":" in path else path
 
 
+def text_of(stored: bytes | str) -> str:
+    # A folder's path is a BLOB of its name bytes (WTF-8 on Windows, S-17.3); a name with no unpaired surrogate is
+    # plain UTF-8, which is all this fixture makes.
+    return stored if isinstance(stored, str) else stored.decode("utf-8", "surrogatepass")
+
+
 def folder_path(conn: sqlite3.Connection, name: str) -> str:
-    matches = [p for (p,) in conn.execute("select path from folders") if p.replace("/", "\\").endswith(name)]
+    stored = [text_of(p) for (p,) in conn.execute("select path from folders")]
+    matches = [p for p in stored if p.replace("/", "\\").endswith(name)]
     if len(matches) != 1:
         sys.exit(f"expected one folder ending in {name}, found {matches}; import the library first")
     return merged(matches[0])

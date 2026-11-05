@@ -7,7 +7,6 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use pg_model::turns::Turns;
-use pg_platform::verbatim::verbatim;
 use std::path::Path;
 use std::sync::Once;
 
@@ -56,10 +55,11 @@ pub struct Probe {
 
 fn open(path: &Path) -> Result<ffmpeg::format::context::Input> {
     init();
-    // FFmpeg takes a path past the 260-character limit only in its verbatim form, so the callers' plain paths are made
-    // verbatim here.
-    let text = path.to_str().with_context(|| format!("{} is not Unicode", path.display()))?;
-    ffmpeg::format::input(Path::new(&*verbatim(text))).with_context(|| format!("opening {}", path.display()))
+    // FFmpeg takes UTF-8 paths, and one past the 260-character limit only in its verbatim form: `utf8_text` makes
+    // that form. A name with an unpaired surrogate has no UTF-8 form, and is refused as such.
+    let text = pg_platform::native::utf8_text(path)
+        .with_context(|| format!("{} has no UTF-8 form, which FFmpeg needs", path.display()))?;
+    ffmpeg::format::input(Path::new(&text)).with_context(|| format!("opening {}", path.display()))
 }
 
 /// The orientation (EXIF 1–8) that shows the stream as its display matrix asks. The matrix maps stored to shown

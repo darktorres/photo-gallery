@@ -9,6 +9,10 @@ workspace = true
 
 [dependencies]
 pg-library = { path = "../library" }
+pg-import = { path = "../import" }
+pg-scan = { path = "../scan" }
+pg-thumbs = { path = "../thumbs" }
+pg-writeback = { path = "../writeback" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-model = { path = "../model" }

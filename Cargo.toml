@@ -17,6 +17,7 @@ clap = { version = "4", features = ["derive", "env"] }
 crc32fast = "1"
 crossbeam-channel = "0.5"
 fast_image_resize = "6"
+fluent-bundle = "0.16"
 gif = "0.14"
 ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-scaling"] }
 gungraun = "0.20"
@@ -35,6 +36,7 @@ thiserror = "2"
 thumbhash = "0.1"
 tiff = "0.11"
 turbojpeg = { version = "1", features = ["cmake"] }
+unic-langid = "0.9"
 ureq = { version = "2", default-features = false, features = ["native-tls"] }
 weezl = "0.1"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }

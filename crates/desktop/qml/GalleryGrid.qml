@@ -8,6 +8,9 @@ import QtQuick.Controls.Fusion
 import pg.gallery
 
 Item {
+    Words {
+        id: words
+    }
     id: root
     // The gallery model (made by Main, which also gives it the thumbnail height), the gap between cells, the selection
     // and the borders.
@@ -89,9 +92,9 @@ Item {
     Label {
         anchors.centerIn: parent
         visible: root.gallery.count === 0 && !root.gallery.loading
-        text: root.noFolders ? "No folders in the library yet.\nAdd one with Library… (top right)."
-            : root.filtering ? "Nothing here matches the filters."
-            : root.importing ? "Nothing here yet: the library is being imported." : "No images here."
+        text: root.noFolders ? words.text("ui-no-folders")
+            : root.filtering ? words.text("ui-nothing-matches")
+            : root.importing ? words.text("ui-nothing-importing") : words.text("ui-no-images")
         horizontalAlignment: Text.AlignHCenter
         color: "#888888"
     }
@@ -141,8 +144,9 @@ Item {
             font.pixelSize: 12
             text: {
                 const f = gridBar.size < 1 ? Math.min(1, gridBar.position / (1 - gridBar.size)) : 0
-                return "file ≈ " + Qt.locale().toString(Math.round(f * (root.gallery.count - 1)) + 1)
-                    + " of " + Qt.locale().toString(root.gallery.count)
+                return words.phrase("ui-grid-position", 0,
+                    Qt.locale().toString(Math.round(f * (root.gallery.count - 1)) + 1),
+                    Qt.locale().toString(root.gallery.count))
             }
         }
     }

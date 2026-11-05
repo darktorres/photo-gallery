@@ -170,7 +170,7 @@ impl YandexSearchRust {
 /// What the user reads when a request fails.
 fn explain(e: &YandexError) -> String {
     match e {
-        YandexError::Captcha => text::YANDEX_CAPTCHA.to_string(),
+        YandexError::Captcha => text::render(&text::Message::YandexCaptcha),
         other => other.to_string(),
     }
 }
@@ -178,9 +178,9 @@ fn explain(e: &YandexError) -> String {
 fn phase_text(phase: Phase) -> String {
     match phase {
         Phase::Starting => "Starting…".to_string(),
-        Phase::Uploading => text::YANDEX_UPLOADING.to_string(),
-        Phase::OtherSizes => text::YANDEX_OTHER_SIZES.to_string(),
-        Phase::Similar => text::YANDEX_SIMILAR.to_string(),
+        Phase::Uploading => text::render(&text::Message::YandexUploading),
+        Phase::OtherSizes => text::render(&text::Message::YandexOtherSizes),
+        Phase::Similar => text::render(&text::Message::YandexSimilar),
         Phase::Saving { files } => format!("Saving {files} files…"),
         Phase::SavingFile { n, of } => format!("Saving {n} of {of}…"),
     }
@@ -188,7 +188,7 @@ fn phase_text(phase: Phase) -> String {
 
 fn search_error_text(e: SearchError) -> String {
     match e {
-        SearchError::NotStill => text::YANDEX_NOT_STILL.to_string(),
+        SearchError::NotStill => text::render(&text::Message::YandexNotStill),
         SearchError::Unreadable(e) => text::yandex_unreadable_photo(&e.to_string()),
         SearchError::Request(e) => explain(&e),
     }

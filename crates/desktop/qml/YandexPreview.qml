@@ -11,6 +11,9 @@ import QtQuick.Window
 import pg.gallery
 
 Rectangle {
+    Words {
+        id: words
+    }
     id: preview
 
     // The panel's actions, as the codes keymap.panelAction returns (the Rust side lists them in the same order).
@@ -104,8 +107,8 @@ Rectangle {
         Label {
             text: preview.item < 0 ? ""
                 : preview.item < preview.otherCount
-                    ? "Other size " + (preview.item + 1) + " of " + preview.otherCount
-                    : "Similar image " + (preview.item - preview.otherCount + 1) + " of " + preview.similarCount
+                    ? words.phrase("ui-other-size", 0, ("" + (preview.item + 1)), ("" + (preview.otherCount)))
+                    : words.phrase("ui-similar-image", 0, ("" + (preview.item - preview.otherCount + 1)), ("" + (preview.similarCount)))
             font.bold: true
         }
         // The file's own size once it is loaded; Yandex's until then.
@@ -115,26 +118,26 @@ Rectangle {
             color: Theme.bodyText
         }
         Label {
-            text: full.status === Image.Loading ? "Loading… " + Math.round(full.progress * 100) + "%"
-                : full.status === Image.Error ? "Can't load or decode it; saving may still work." : ""
+            text: full.status === Image.Loading ? words.phrase("ui-loading-percent", 0, ("" + Math.round(full.progress * 100)), "")
+                : full.status === Image.Error ? words.text("ui-cannot-decode") : ""
             color: full.status === Image.Error ? Theme.errorText : Theme.captionText
             Layout.fillWidth: true
             elide: Text.ElideRight
         }
         // No focus for the buttons: the arrow keys and Space stay the preview's.
         Button {
-            text: preview.picked ? "Picked ✓" : "Pick"
+            text: preview.picked ? words.text("ui-picked") : words.text("ui-pick")
             highlighted: preview.picked
             focusPolicy: Qt.NoFocus
             onClicked: preview.pickRequested(preview.item)
         }
         Button {
-            text: preview.actual ? "Fit" : "1:1"
+            text: preview.actual ? words.text("ui-fit") : "1:1"
             enabled: full.zoomable
             focusPolicy: Qt.NoFocus
             onClicked: preview.actual = !preview.actual
         }
-        Button { text: "Back"; focusPolicy: Qt.NoFocus; onClicked: preview.close() }
+        Button { text: words.text("ui-back"); focusPolicy: Qt.NoFocus; onClicked: preview.close() }
     }
 
     Flickable {

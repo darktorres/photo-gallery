@@ -56,7 +56,7 @@ Rectangle {
             font.pixelSize: 18
             onClicked: transport.playAsked()
             ToolTip.visible: hovered
-            ToolTip.text: "Play / pause (K)"
+            ToolTip.text: words.text("ui-play-pause")
         }
         Label { text: transport.time(transport.position); color: "#cccccc" }
         Slider {
@@ -78,7 +78,7 @@ Rectangle {
             font.pixelSize: 16
             onClicked: transport.muteAsked()
             ToolTip.visible: hovered
-            ToolTip.text: "Mute (M)"
+            ToolTip.text: words.text("ui-mute")
         }
         Slider {
             from: 0

@@ -6,8 +6,12 @@ pragma ComponentBehavior: Bound
 import QtQuick
 import QtQuick.Controls.Fusion
 import QtQuick.Layouts
+import pg.gallery
 
 Rectangle {
+    Words {
+        id: words
+    }
     id: bar
 
     required property bool still
@@ -37,7 +41,7 @@ Rectangle {
             visible: bar.still
             font.pixelSize: 22
             ToolTip.visible: hovered
-            ToolTip.text: "Find similar images on Yandex"
+            ToolTip.text: words.text("ui-find-similar-tooltip")
             onClicked: bar.findSimilarAsked()
         }
         // Borders found: marked as not a border while checked.
@@ -50,15 +54,15 @@ Rectangle {
             font.strikeout: bar.borderMarked
             ToolTip.visible: hovered
             ToolTip.text: bar.borderMarked
-                ? "Marked not a border: unmark (N)"
-                : "Not a border (N)"
+                ? words.text("ui-unmark-not-border")
+                : words.text("ui-not-a-border")
             onClicked: bar.borderMarkAsked(!bar.borderMarked)
         }
         ToolButton {
             text: "⟲"
             font.pixelSize: 22
             ToolTip.visible: hovered
-            ToolTip.text: "Turn left (R)"
+            ToolTip.text: words.text("ui-turn-left")
             onClicked: bar.turnAsked(-1)
         }
         Repeater {
@@ -69,8 +73,7 @@ Rectangle {
                 text: Ratings.symbol(index)
                 font.pixelSize: 22
                 ToolTip.visible: hovered
-                ToolTip.text: index === 0 ? "Unrated (0)"
-                    : index + (index === 1 ? " star" : " stars") + " (" + index + ")"
+                ToolTip.text: words.phrase("ui-stars", index, ("" + (index)), "")
                 background: Rectangle {
                     radius: width / 2
                     color: star.hovered ? "#40ffffff" : "transparent"
@@ -84,7 +87,7 @@ Rectangle {
             text: "⟳"
             font.pixelSize: 22
             ToolTip.visible: hovered
-            ToolTip.text: "Turn right (Shift+R)"
+            ToolTip.text: words.text("ui-turn-right")
             onClicked: bar.turnAsked(1)
         }
     }

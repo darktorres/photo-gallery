@@ -17,7 +17,7 @@ use pg_jobs::pipeline::{self, Options};
 use pg_model::detection::{self, Reason, Side};
 use pg_model::media::{Ext, Kind};
 use pg_model::turns::Turns;
-use pg_platform::verbatim::verbatim_wide;
+use pg_platform::native::set_os_str;
 
 pub struct ReportStats {
     pub files: usize,
@@ -74,7 +74,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     pipeline::run(
         &files,
         |file, wide| {
-            verbatim_wide(&[file], wide);
+            set_os_str(wide, std::ffi::OsStr::new(file));
             true
         },
         opts,
@@ -178,7 +178,11 @@ pub fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)>
         if verdict != "false_positive" {
             continue;
         }
-        match catalog.file_by_path(&path)? {
+        let found = match catalog.rules().parse(&path) {
+            Some(rule) => catalog.file_by_path(&rule)?,
+            None => None,
+        };
+        match found {
             Some(id) => {
                 catalog.set_border_mark(id, true)?;
                 marked += 1;

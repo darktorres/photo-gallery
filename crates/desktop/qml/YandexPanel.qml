@@ -13,6 +13,9 @@ import QtQuick.Layouts
 import pg.gallery
 
 Rectangle {
+    Words {
+        id: words
+    }
     id: panel
 
     signal closed()
@@ -55,7 +58,7 @@ Rectangle {
         spacing: 12
         Label { text: header.title + " (" + header.count + ")"; font.bold: true }
         Button {
-            text: header.picked === header.count ? "Select none" : "Select all"
+            text: header.picked === header.count ? words.text("ui-select-none") : words.text("ui-select-all")
             flat: true
             onClicked: yandex.setPicked(header.first, header.count, header.picked !== header.count)
         }
@@ -92,7 +95,7 @@ Rectangle {
 
     FolderDialog {
         id: saveDialog
-        title: "Save the picked images into"
+        title: words.text("ui-save-picked-into")
         onAccepted: yandex.download(selectedFolder)
     }
 
@@ -111,7 +114,7 @@ Rectangle {
             RowLayout {
                 Layout.fillWidth: true
                 spacing: 10
-                Label { text: "Find similar on Yandex"; font.bold: true; font.pixelSize: 16 }
+                Label { text: words.text("ui-find-similar-yandex"); font.bold: true; font.pixelSize: 16 }
                 BusyIndicator {
                     running: yandex.busy
                     visible: running
@@ -120,7 +123,7 @@ Rectangle {
                 }
                 Item { Layout.fillWidth: true }
                 Button {
-                    text: "Save " + yandex.pickedCount + (yandex.pickedCount === 1 ? " image…" : " images…")
+                    text: words.phrase("ui-save-picked", yandex.pickedCount, ("" + (yandex.pickedCount)), "")
                     enabled: yandex.pickedCount > 0 && !yandex.busy
                     onClicked: {
                         // The folder saved into last, or the photo's.
@@ -128,7 +131,7 @@ Rectangle {
                         saveDialog.open()
                     }
                 }
-                Button { text: "Close"; onClicked: panel.close() }
+                Button { text: words.text("ui-close"); onClicked: panel.close() }
             }
 
             // The status in full: wrapped, so nothing is cut off, and selectable so it can be copied.
@@ -148,7 +151,7 @@ Rectangle {
                     selectByMouse: true
                 }
                 Button {
-                    text: "Copy"
+                    text: words.text("ui-copy")
                     onClicked: {
                         statusText.selectAll()
                         statusText.copy()
@@ -170,7 +173,7 @@ Rectangle {
                     spacing: 12
 
                     GroupHeader {
-                        title: "Other sizes of this photo"
+                        title: words.text("ui-other-sizes")
                         count: yandex.otherCount
                         picked: yandex.otherPicked
                     }
@@ -189,7 +192,7 @@ Rectangle {
                     }
 
                     GroupHeader {
-                        title: "Similar images"
+                        title: words.text("ui-similar-images")
                         first: yandex.otherCount
                         count: yandex.similarCount
                         picked: yandex.similarPicked
@@ -209,7 +212,7 @@ Rectangle {
                     }
 
                     Label {
-                        text: "No results."
+                        text: words.text("ui-no-results")
                         color: Theme.hintText
                         visible: !yandex.busy && yandex.otherCount === 0 && yandex.similarCount === 0
                             && yandex.status === ""

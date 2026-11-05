@@ -76,7 +76,7 @@ perf *args:
 fuzz-smoke *args:
     wsl -d Ubuntu-26.04 -u root -- bash tools/fuzz-smoke.sh {{ args }}
 
-# Clippy (-D warnings) for every crate but the desktop, in WSL, where the Linux-only code compiles (tools/wsl-check.sh).
+# Clippy (-D warnings) and the tests for every crate but the desktop, in WSL, where the Linux-only code compiles (tools/wsl-check.sh).
 wsl-check:
     wsl -d Ubuntu-26.04 -u root -- bash tools/wsl-check.sh
 

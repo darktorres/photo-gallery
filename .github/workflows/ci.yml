@@ -128,12 +128,6 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      # TEMPORARY V3 probe (S-17.7 plan). Remove in the commit after the run.
-      - name: TEMPORARY device probe
-        run: |
-          for p in / /proc /dev/shm /tmp; do echo "$p st_dev=$(stat -c %d "$p") fs=$(stat -f -c %T "$p")"; done
-          grep -E ' /dev/shm | /tmp | /proc ' /proc/self/mountinfo || true
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt

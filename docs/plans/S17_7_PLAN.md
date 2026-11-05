@@ -34,7 +34,7 @@ WSL (ext4 `$HOME`; `/mnt/d` is `9p`):
 - ext4 birth time (`statx`) changes on rename-over and not on in-place rewrite.
 - drvfs has no birth time (`stat -c %w` prints `-`), so `created` is NULL there.
 - drvfs never reused an inode: 0 of 2000 delete-then-create cycles in an otherwise empty folder. The 95% upper bound is about 0.15% per cycle. This is evidence, not proof.
-- Distinct devices had distinct `st_dev`: `/` 2096, `/proc` 132, `/dev/shm` 137, `/tmp` 166, `/mnt/c` 159, `/mnt/d` 160. `/` and `/proc` are separate mounts on any Linux, so they are the two-device test pair (decision 11 and the tests).
+- Distinct devices had distinct `st_dev`: `/` 2096, `/proc` 132, `/dev/shm` 137, `/tmp` 166, `/mnt/c` 159, `/mnt/d` 160. On the GitHub runner `/` 66305, `/proc` 25, `/dev/shm` 27, and `/tmp` shares `/`'s device (66305). `/` and `/proc` are separate mounts on any Linux, so they are the two-device test pair (decision 11 and the tests).
 - Restarting `docker-desktop` did not change `/mnt/d`'s device number. The within-boot change is unexplained.
 
 ## Decisions
@@ -198,7 +198,6 @@ Each step lands with its tests.
 
 ## Not verified yet
 
-- The GitHub runner's `/dev/shm` and `/tmp` devices. The tests use `/` and `/proc`, which does not depend on the image.
 - The trigger that replaces `/mnt/d`'s mount (the mechanism is known; the design does not depend on it).
 - The write-queue kind column (step 6).
 - The `statfs` magic numbers for NFS, CIFS and SMB are to be checked against the kernel headers in step 1.

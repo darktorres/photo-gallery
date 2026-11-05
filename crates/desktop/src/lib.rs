@@ -5,6 +5,7 @@ mod animation;
 mod app;
 mod app_icon;
 mod command_line;
+mod controller;
 mod deadline;
 mod facet_choices;
 mod filters;
@@ -14,7 +15,6 @@ mod gpu_device;
 mod gui_app;
 mod keymap;
 mod library;
-mod listing;
 #[cfg(debug_assertions)]
 mod live_reload;
 mod panic_log;

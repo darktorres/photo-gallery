@@ -4,7 +4,6 @@
 import QtQuick
 import QtTest
 import pg.gallery
-import "../../qml"
 
 TestCase {
     id: tc

@@ -1,6 +1,6 @@
 //! The filter bar's query (PLAN §7): the files a `query::Query` keeps, edited through typed calls
 //! (`pg_model::query`'s editing API), so the QML never builds or reads it, and the counts next to the choices
-//! (`browse::read::facets`). The query is the listing's (`listing.rs`): this object edits it and shows its properties,
+//! (`browse::read::facets`). The query is the listing's (`controller.rs`): this object edits it and shows its properties,
 //! and the list facets' rows are `FacetChoices` (facet_choices.rs), which read the query and the counts directly. FilterBar.qml
 //! makes one and is the only QML that calls into it.
 
@@ -100,13 +100,12 @@ use pg_app::reexport::Facets;
 use pg_model::date::Day;
 use pg_model::query::{Query, parse_number};
 
-use pg_client::controller::listing::Event;
 use pg_client::facets::Facet;
 use pg_client::input::{Edge, Field, bound_is_valid, choice};
 use pg_client::text;
 
+use crate::controller;
 use crate::facet_choices::Counts;
-use crate::listing;
 
 pub struct FiltersRust {
     active: i32,
@@ -124,7 +123,7 @@ pub struct FiltersRust {
 impl Default for FiltersRust {
     /// The query the window starts with (the listing's).
     fn default() -> FiltersRust {
-        let q = listing::get().query;
+        let q = controller::listing().query;
         FiltersRust {
             active: q.active() as i32,
             name: QString::from(&q.name),
@@ -165,7 +164,7 @@ pub(crate) fn count(n: i64) -> i32 {
 impl qobject::Filters {
     /// After the query changed: the properties that show it, and the counts the choices show.
     fn sync(mut self: Pin<&mut Self>) {
-        let q = listing::get().query;
+        let q = controller::listing().query;
         let (name, duplicates_index, border_marked_index, description) = (
             QString::from(&q.name),
             duplicates_index(q.duplicates),
@@ -192,13 +191,13 @@ impl qobject::Filters {
     /// The user changed the query: the listing takes it (its policy, `listing::dispatch`), then the bar shows it and
     /// `edited` asks for the list after its pause. The session is saved when that list is shown, not per key.
     fn edit(mut self: Pin<&mut Self>, change: impl FnOnce(&mut Query)) {
-        let mut query = listing::get().query;
+        let mut query = controller::listing().query;
         change(&mut query);
         self.as_mut().set_query(query);
     }
 
     fn set_query(mut self: Pin<&mut Self>, query: Query) {
-        let _ = listing::dispatch(Event::QueryChanged(query));
+        controller::query_changed(query);
         self.as_mut().sync();
         self.edited();
     }
@@ -210,7 +209,7 @@ impl qobject::Filters {
 
     fn set_name_edited(self: Pin<&mut Self>, value: &QString) {
         let name = value.to_string().trim().to_string();
-        if name != listing::get().query.name {
+        if name != controller::listing().query.name {
             self.edit(|q| q.name = name);
         }
     }
@@ -221,7 +220,7 @@ impl qobject::Filters {
             2 => Some(false),
             _ => None,
         };
-        if duplicates != listing::get().query.duplicates {
+        if duplicates != controller::listing().query.duplicates {
             self.edit(|q| q.duplicates = duplicates);
         }
     }
@@ -232,7 +231,7 @@ impl qobject::Filters {
             2 => Some(true),
             _ => None,
         };
-        if marked != listing::get().query.border_marked {
+        if marked != controller::listing().query.border_marked {
             self.edit(|q| q.border_marked = marked);
         }
     }
@@ -245,7 +244,7 @@ impl qobject::Filters {
     }
 
     fn bound(&self, facet: i32, end: i32) -> QString {
-        let query = listing::get().query;
+        let query = controller::listing().query;
         let text = match (Field::from_index(facet), Edge::from_index(end)) {
             (Some(Field::Range(f)), Some(e)) => query.number(f, e.number()).map(|v| v.to_string()),
             (Some(Field::Day(f)), Some(e)) => query.day(f, e.day()).map(|d| d.to_string()),
@@ -268,7 +267,7 @@ impl qobject::Filters {
     }
 
     fn clear(mut self: Pin<&mut Self>) {
-        let _ = listing::dispatch(Event::QueryChanged(Query::default()));
+        controller::query_changed(Query::default());
         self.as_mut().sync();
         self.as_mut().loaded();
         self.edited();
@@ -280,7 +279,7 @@ impl qobject::Filters {
             this.generation += 1;
             this.generation
         };
-        let (path, query) = (folder.to_string(), listing::get().query);
+        let (path, query) = (folder.to_string(), controller::listing().query);
         let filters = self.qt_thread();
         let shown = path.clone();
         crate::app::get().session().facets(path, recursive, query, move |facets| {
@@ -300,7 +299,7 @@ impl qobject::Filters {
             return;
         }
         let (total, matching) = (count(facets.total), count(facets.matching));
-        publish_counts(&facets, &listing::get().query);
+        publish_counts(&facets, &controller::listing().query);
         self.as_mut().rust_mut().facets = facets;
         self.as_mut().set_total(total);
         self.as_mut().set_matching(matching);

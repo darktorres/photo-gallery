@@ -212,6 +212,10 @@ mod tests {
         let mut slot = match ExifTool::start(&program) {
             Ok(tool) => Some(tool),
             Err(_) => {
+                assert!(
+                    std::env::var_os("PG_REQUIRE_TOOLS").is_none(),
+                    "ExifTool not found, and PG_REQUIRE_TOOLS is set"
+                );
                 eprintln!("ExifTool not found: skipped");
                 return;
             }

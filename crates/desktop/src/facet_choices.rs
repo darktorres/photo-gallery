@@ -1,7 +1,7 @@
 //! One list facet of the filter bar as a model: a row per choice (a media type, a shape, an import status, a borders
 //! value, a rating, or an extension of the folder), with the choice's count (how many files choosing it would show,
 //! `countFacets()`, or 0 where the bar shows none) and whether the query has it. `facet` is the list's index in
-//! `pg_client::facets::Facet`. The query is the listing's (`listing.rs`) and the counts are the ones `Filters` last
+//! `pg_client::facets::Facet`. The query is the listing's (`controller.rs`) and the counts are the ones `Filters` last
 //! published (`set_counts`), both read here, typed: `refresh` rebuilds the rows, and the filter bar calls it when the
 //! query or the counts change.
 
@@ -71,7 +71,7 @@ use pg_client::input::key_of;
 use pg_client::text;
 use pg_model::query::{BorderFacet, Choice, MediaType, Query, RatingFilter, Shape, Status};
 
-use crate::listing;
+use crate::controller;
 
 const ROLE_KEY: i32 = 256;
 const ROLE_LABEL: i32 = 257;
@@ -164,7 +164,7 @@ impl qobject::FacetChoices {
     }
 
     fn refresh(mut self: Pin<&mut Self>) {
-        let query = listing::get().query;
+        let query = controller::listing().query;
         let counts = counts();
         let rows = Facet::from_index(self.facet).map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.

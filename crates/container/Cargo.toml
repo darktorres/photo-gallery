@@ -10,3 +10,6 @@ workspace = true
 # The file containers, walked without allocating (JPEG segments, extended XMP chunks, PNG and RIFF chunks, GIF blocks).
 # No dependencies: the walks are over bytes.
 [dependencies]
+
+[dev-dependencies]
+proptest.workspace = true

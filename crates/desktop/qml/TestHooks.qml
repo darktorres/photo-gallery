@@ -3,6 +3,7 @@
 //   --size=<px>  row height   --select=<n>  select item n   --view=<n>  open item n in the viewer
 //   --viewer-keys=<keys>  e.g. "LB" (loupe, borders); also H (zen), K (play/pause), + (zoom in), 1 (1:1), < > (turn
 //                         left, right), N (not a border), digits after "r" rate
+//   --grid-keys=<keys>  send the grid these keys, in order: L, R, U, D (left, right, up, down; the grid's steps)
 //   --zoom=<factor>  zoom the viewer to this many device px per image px
 //   --menu=views  open the views menu   --apply-view=<name>  open a saved view (read by the start, in Rust)
 //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort (both read by the start, in Rust)
@@ -50,12 +51,16 @@ Item {
     signal viewerSetZoomRequested(real zoom, real px, real py)
     signal viewerTurnRequested(int turns)
     signal viewerRateRequested(int rating)
+    // A key pressed on the grid, as the keyboard sends it (Shell.keyPressed).
+    signal gridKeyRequested(int key)
 
     // The command line, read by this component: CommandLine is stateless (the arguments are read once).
     CommandLine { id: commandLine }
 
     // A property, read afresh at each key: a list held in a variable over calls isn't compiled.
     readonly property list<string> viewerKeys: commandLine.keys("viewer-keys")
+    // The grid's keys (--grid-keys): L, R, U, D are left, right, up, down.
+    readonly property list<string> gridKeys: commandLine.keys("grid-keys")
     // The rating keys (--viewer-keys): "r3" rates 3.
     readonly property list<string> ratingKeys: ["r0", "r1", "r2", "r3", "r4", "r5"]
 
@@ -78,6 +83,13 @@ Item {
     function run() {
         if (commandLine.has("size")) sizeRequested(commandLine.number("size", rowHeight))
         if (commandLine.has("select")) selectRequested(commandLine.number("select", -1))
+        for (let k = 0; k < gridKeys.length; k++) {
+            const c = gridKeys[k]
+            if (c === "L") gridKeyRequested(Qt.Key_Left)
+            else if (c === "R") gridKeyRequested(Qt.Key_Right)
+            else if (c === "U") gridKeyRequested(Qt.Key_Up)
+            else if (c === "D") gridKeyRequested(Qt.Key_Down)
+        }
         if (commandLine.has("view")) {
             viewerShowRequested(commandLine.number("view", -1))
             for (let k = 0; k < viewerKeys.length; k++) {

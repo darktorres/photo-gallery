@@ -1,6 +1,7 @@
 //! The key map: what a key does in the grid and in the viewer, as actions the front end carries out, and the hint lines
 //! shown with them. The keys are the front end's own (`Key`), not a toolkit's codes: the desktop turns its codes into
 //! these. Each hint line is made from the same labels as the map's documentation, so they are written once.
+use serde::{Deserialize, Serialize};
 
 /// A key the front end can act on.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -32,7 +33,7 @@ pub struct Mods {
 }
 
 /// A grid action.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Grid {
     /// Ctrl +/−: the rows grow or shrink.
     Resize {

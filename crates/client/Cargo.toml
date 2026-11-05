@@ -11,7 +11,9 @@ workspace = true
 # the layout now (S-10.1); the rest of the desktop's logic moves in with the modules of S-10.
 [dependencies]
 pg-model = { path = "../model" }
+serde.workspace = true
 
 # The laws of the layout (tests/laws.rs), generated (S-18.2).
 [dev-dependencies]
 proptest.workspace = true
+serde_json.workspace = true

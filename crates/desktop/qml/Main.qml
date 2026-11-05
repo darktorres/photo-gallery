@@ -78,27 +78,21 @@ ApplicationWindow {
     }
     // The start's stages, for measuring it (src/trace.rs).
     Stages { id: stages }
-    // The window's policy (src/shell.rs, pg-client's controller): the start, what the first list selects, and the
-    // listing (where the grid looks, with or without subfolders, in what order, with the filter bar's query; remembered
-    // across runs, and in saved views, src/listing.rs). Its commands come back as these signals; the presentation of
-    // each is here.
-    // The shell emits these after its call (Shell.later), so a handler may call the shell back.
+    // The window's policy is the controller's (pg-client, held by Shell in src/shell.rs): the start, what the first list
+    // selects, the listing (where the grid looks, with or without subfolders, in what order, with the filter bar's
+    // query), the keys, the size and the pauses. Its commands come back as these signals; what is here is how each is
+    // shown. The shell emits them after its call (Shell.later), so a handler may call the shell back.
     Shell {
         id: shell
-        onOpenAll: shell.openFolder("")
         onListingChanged: win.showListing()
-        onSelectItem: (i) => win.restoreSelection(i)
         onStarted: {
             win.ready = true
             win.startHooks()
         }
-        onListDue: win.showListing()
         onRelayoutDue: win.relayout()
         onSessionDue: if (win.ready) appSettings.lastFile = galleryModel.fileId(viewerItem.visible ? viewerItem.index : win.current)
         onSaveRowHeight: (height) => appSettings.rowHeight = height
-        onSelectRequested: (i) => win.select(i)
-        onStepRequested: (dx, dy) => win.stepSelection(dx, dy)
-        onGridAction: (action, arg) => win.gridAction(action, arg)
+        onSelectRequested: (i) => win.scrollTo(i)
         onViewerRequested: (i) => viewerItem.show(i)
     }
     // The core, for the screenshot hook's settle check: its pending pauses are asked (cpp/screenshot.cpp).
@@ -115,17 +109,16 @@ ApplicationWindow {
         id: library
         onScanned: win.reloadAll()
         onImported: win.refreshGrid()
-        // Turned files changed in place: no renumbering, so the viewer can stay open.
-        onFilesChanged: galleryModel.refreshTurned()
+        // Turned files changed in place: no renumbering, so the viewer can stay open (the controller reads them again).
+        onFilesChanged: shell.filesChanged()
     }
     onThumbHeightChanged: library.setThumbHeight(thumbHeight)
     // The tree has been shown once: from then on a new tree (a scan) leaves its folders as the user left them.
     property bool treeShown: false
 
-    // The pauses (the thumbnails, the saved selection, the layout, the list after a query) are the core's
+    // The pauses (the thumbnails, the saved selection, the layout, the list after a query) are the controller's
     // (Shell.currentChanged, gridResized, queryEdited); their commands come back as Shell's signals above.
     onCurrentChanged: shell.currentChanged(current)
-    onRowHeightChanged: win.relayout()
     onClosing: shell.flush()
 
     // The counts next to the filter choices, and "N of M". Not needed (and not computed) while nothing filters
@@ -135,7 +128,7 @@ ApplicationWindow {
             filterBar.countFacets(shell.folder, shell.recursive)
     }
 
-    // The filters changed: the list is shown after a short pause (Shell.queryEdited; onListDue), so typing a number
+    // The filters changed: the list is shown after a short pause (Shell.queryEdited; the controller's pause opens the list), so typing a number
     // doesn't re-list at every key.
     onFiltersOpenChanged: updateFacets()
 
@@ -192,7 +185,7 @@ ApplicationWindow {
 
     // The folder tree is in. At the start, the open folder is shown in it (its parents expanded); after a scan it
     // is only found again, the tree left as the user left it. The folder listed is the view's (the saved one, or the
-    // applied view's): when the tree doesn't have it, the gate lists all folders (Shell.openAll).
+    // applied view's): when the tree doesn't have it, the controller lists all folders.
     function treeLoaded() {
         const first = !treeShown
         treeShown = true
@@ -204,10 +197,8 @@ ApplicationWindow {
                 tree.positionViewAtIndex(row, ListView.Contain)
             // Spelled as the tree spells it (paths match in any case): the list already shows it.
             const spelled = folderModel.mergedPath(row)
-            if (spelled !== shell.folder) {
+            if (spelled !== shell.folder)
                 shell.folder = spelled
-                shell.saveSession()
-            }
         } else if (shell.folder !== "" && folderModel.contains(shell.folder)) {
             // Under a folder the user collapsed.
             tree.currentIndex = -1
@@ -227,8 +218,7 @@ ApplicationWindow {
     // the viewer is open the new list waits for it to close (it could take away the pictures being rated, out of
     // "Unrated", and the viewer's place with them).
     function refreshGrid() {
-        galleryModel.openList(true)
-        updateFacets()
+        shell.reloadList()
     }
 
     function openFolder(row: int) {
@@ -250,13 +240,11 @@ ApplicationWindow {
         shell.openFolder(revealInTree(path))
     }
 
-    // The list the listing asks for, shown: the shell announces each change that opens one (listingChanged), and the
-    // filter bar's query after its pause. The facets, the sort box and the session follow it.
+    // The list the controller asked for is loading (the shell announces it: listingChanged). The facets and the sort box
+    // follow it; the session is saved by the controller.
     function showListing() {
-        galleryModel.openList(false)
         updateFacets()
         topBar.sortIndex = shell.sortIndex()
-        shell.saveSession()
     }
 
     // A saved view's listing is the shell's (it has announced it); the filter bar shows its query, the tree its folder.
@@ -268,11 +256,19 @@ ApplicationWindow {
         grid.takeFocus()
     }
 
+    // Show item i in the grid: its row, brought into view. The selection is the model's (the shell sets it).
+    function scrollTo(i: int) {
+        const row = galleryModel.rowOf(i)
+        if (row >= 0)
+            grid.positionAt(row, ListView.Contain)
+    }
+
+    // A selection the window makes itself (the test hooks, the viewer's close): set it, then show it.
     function select(i: int) {
         if (i < 0 || i >= galleryModel.count)
             return
         current = i
-        grid.positionAt(galleryModel.rowOf(i), ListView.Contain)
+        scrollTo(i)
     }
 
     // To the panel made when first needed (Yandex's Loader, below): what it is asked to do comes as a signal once it
@@ -297,29 +293,6 @@ ApplicationWindow {
         id: keymap
     }
 
-    // The start's selection (Shell.selectItem): the file the last session left.
-    function restoreSelection(i: int) {
-        current = i
-    }
-
-    // A step to a neighbour of the current item (Shell.stepRequested); the grid's layout resolves it.
-    function stepSelection(dx: int, dy: int) {
-        select(galleryModel.neighbor(current < 0 ? 0 : current, dx, dy))
-    }
-
-    // The grid's actions Shell sends for the current item: their codes are the positions in the enum below (keymap.rs
-    // lists the same codes). The others (the steps, first and last, the viewer, the size and the panels) are the core's.
-    enum GridAction { Grow, Shrink, Left, Right, Up, Down, First, Last, Open, Rate, TurnForward, TurnBack, Filters, Borders, MarkBorder }
-
-    function gridAction(action: int, arg: int) {
-        switch (action) {
-        case Main.Main.GridAction.Rate: galleryModel.setRating(current, arg); break
-        case Main.Main.GridAction.TurnForward: galleryModel.rotate(current, 1); break
-        case Main.Main.GridAction.TurnBack: galleryModel.rotate(current, -1); break
-        case Main.Main.GridAction.MarkBorder: galleryModel.setBorderMarked(current, !galleryModel.borderMarked(current)); break
-        }
-    }
-
     // The status bar's selection: the item's info and rating, or the key hints with none selected.
     readonly property string selectionInfo: win.current >= 0 ? galleryModel.selectionInfo : keymap.gridHint()
 
@@ -329,10 +302,9 @@ ApplicationWindow {
         viewer: viewerItem
         rowHeight: win.rowHeight
         onSizeRequested: (h) => shell.sizeChosen(h)
+        onGridKeyRequested: (key) => shell.keyPressed(key, 0)
         onSelectRequested: (i) => win.select(i)
-        onBorderMarkToggled: (i) => {
-            galleryModel.setBorderMarked(i, !galleryModel.borderMarked(i))
-        }
+        onBorderMarkToggled: (i) => shell.toggleBorderMark(i)
         onBordersRequested: shell.setShowBorders(true)
         onViewsMenuRequested: topBar.openViewsMenu()
         onLibraryPanelRequested: {
@@ -448,7 +420,7 @@ ApplicationWindow {
                 }
                 onCellDoubleClicked: (i) => viewerItem.show(i)
                 onSizeStepped: (factor) => shell.sizeStepped(factor)
-                onGridResized: shell.gridResized()
+                onGridResized: (width) => shell.gridResized(width)
             }
         }
 
@@ -470,10 +442,10 @@ ApplicationWindow {
                 if (!visible)
                     grid.takeFocus()
             }
-            onRated: (i, r) => galleryModel.setRating(i, r)
-            onTurned: (i, d) => galleryModel.rotate(i, d)
+            onRated: (i, r) => shell.rate(i, r)
+            onTurned: (i, d) => shell.turn(i, d)
             onBordersToggled: shell.toggleBorders()
-            onBorderMarkToggled: (i, m) => galleryModel.setBorderMarked(i, m)
+            onBorderMarkToggled: (i, m) => shell.setBorderMark(i, m)
             // The file the viewer is on is the one a session remembers (Shell.sessionDue).
             onIndexChanged: if (index >= 0) shell.currentChanged(index)
             onFindSimilar: (path) => win.findSimilar(path)
@@ -551,10 +523,12 @@ ApplicationWindow {
     // the tree and the files arrive later, in either order (treeLoaded, gridLoaded), and the second of them
     // finishes the start (started).
     Component.onCompleted: {
-        // The folder, subfolders, sort and query are the listing's and the filter bar's as they start (listing::start: the
-        // session's, then the test hooks' --sort, --query and --apply-view).
-        // The scale, the size and the borders as the user left them: the core holds them from here on (the thumbnails
-        // are sized from the scale before the library starts, in startHooks).
+        // The grid model takes the controller's model commands from here on.
+        galleryModel.registerModel()
+        // The folder, subfolders, sort and query are the listing's and the filter bar's as they start (the controller's
+        // start: the session's, then the test hooks' --sort, --query and --apply-view).
+        // The scale, the size and the borders as the user left them: the controller holds them from here on (the
+        // thumbnails are sized from the scale before the library starts, in startHooks).
         shell.setScale(Screen.devicePixelRatio)
         shell.sizeChosen(appSettings.rowHeight)
         shell.setShowBorders(appSettings.showBorders)
@@ -564,15 +538,14 @@ ApplicationWindow {
         relayout()
         folderModel.reload()
         // As it was left: whether the folder still exists is known once the tree is in (treeLoaded).
-        galleryModel.openList(true)
-        updateFacets()
+        shell.reloadList()
     }
 
     // The gate let the start through (Shell.started): run the test hooks, then start the background job (after the
     // first reads, which it would compete with for the disk).
     function startHooks() {
         stages.ready()
-        if (testHooks.hasApplyView) shell.saveSession()
+        if (testHooks.hasApplyView) shell.rememberListing()
         testHooks.run()
         library.start(thumbHeight)
         testHooks.runAfterLibraryStart()

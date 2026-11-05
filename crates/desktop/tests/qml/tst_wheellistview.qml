@@ -6,7 +6,7 @@
 // and a plain ListView does not scroll on one), so the handler's own routing is not covered here.
 import QtQuick
 import QtTest
-import "../../qml"
+import pg.gallery
 
 TestCase {
     id: tc

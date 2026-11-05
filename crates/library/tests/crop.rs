@@ -63,10 +63,11 @@ fn ids(c: &Catalog) -> Vec<(i64, String)> {
 }
 
 #[test]
+#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The TIFF's metadata is copied with it.
     if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
-        eprintln!("ExifTool not found: skipped");
+        pg_testkit::missing_tool("ExifTool");
         return;
     }
     let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "crop", &["images/sub"]);

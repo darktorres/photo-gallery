@@ -476,6 +476,7 @@ mod tests {
 
     /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.
     #[test]
+    #[cfg_attr(not(windows), ignore = "S-17: the verbatim wide-path API is Windows-only")]
     fn files_open_as_std_opens_them() {
         let root = pg_testkit::test_folder(r"D:\PhotoGallery\scratch_rate", "pg-open");
         let mut dir = root.clone();

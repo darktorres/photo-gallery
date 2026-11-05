@@ -31,7 +31,7 @@ Item {
     // The wheel with Ctrl: the row height is multiplied by `factor`.
     signal sizeStepped(real factor)
     // The list's width changed: the rows are laid out again.
-    signal gridResized()
+    signal gridResized(real width)
 
     // The first item of the topmost visible row, to keep the view anchored across relayouts.
     function topItem(): int {
@@ -65,7 +65,7 @@ Item {
         cacheBuffer: 1500
         reuseItems: true
         boundsBehavior: Flickable.StopAtBounds
-        onWidthChanged: root.gridResized()
+        onWidthChanged: root.gridResized(width)
         Keys.onPressed: (e) => root.keyPressed(e)
 
         WheelHandler {

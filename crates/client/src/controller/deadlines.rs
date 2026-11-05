@@ -3,9 +3,10 @@
 //! on a monotonic `now_ms` the host passes in (no clock is read here, so the tests run in virtual time). Arming a timer
 //! that is already armed moves its deadline (the pause starts again). The host runs one timer, set to `next_deadline`,
 //! and calls `handle_timeout` when it fires; a late or early call fires only the deadlines that are due.
+use serde::{Deserialize, Serialize};
 
 /// A pause the window waits out.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Timer {
     /// The filter bar's query rests: the list is shown (300 ms).
     ApplyQuery,

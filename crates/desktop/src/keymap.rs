@@ -1,5 +1,5 @@
 //! The key map's Qt glue (`pg_client::keys`): Qt's key codes and modifiers become the front end's `Key` and `Mods`. The grid's
-//! keys are decided in `Shell` (`grid_key`, `code_of`: the grid's action, as the `GridAction` code Main.qml switches on).
+//! keys are decided in `Shell` (`grid_key`: the grid's action for a key, which the controller carries out).
 //! The viewer's and the Yandex panels' actions come back as codes the QML switches on, with the argument (a rating) from a
 //! second call. The codes are the positions in each QML file's `enum` of the same name, so the two lists are kept in the
 //! same order. The map and the hint lines are pg-client's.
@@ -112,35 +112,11 @@ fn shown_of(kind: i32, has_borders: bool) -> Shown {
     Shown { has_borders, still: media == Media::Still, video: media == Media::Video }
 }
 
-// The codes: `GridAction` in Main.qml, `ViewerAction` in Viewer.qml and `PanelAction` in YandexPanel.qml list these
+// The codes: `ViewerAction` in Viewer.qml and `PanelAction` in YandexPanel.qml list these
 // names in this order. Each action's argument is its rating (0 for the actions without one).
 
-/// The grid's action as its code, with the argument.
-fn grid_code(action: Grid) -> (i32, i32) {
-    match action {
-        Grid::Resize { grow } => (if grow { 0 } else { 1 }, 0),
-        Grid::Step { dx, dy } => (
-            if dx < 0 {
-                2
-            } else if dx > 0 {
-                3
-            } else if dy < 0 {
-                4
-            } else {
-                5
-            },
-            0,
-        ),
-        Grid::First => (6, 0),
-        Grid::Last => (7, 0),
-        Grid::Open => (8, 0),
-        Grid::Rate(n) => (9, i32::from(n)),
-        Grid::Turn { forward } => (if forward { 10 } else { 11 }, 0),
-        Grid::Filters => (12, 0),
-        Grid::Borders => (13, 0),
-        Grid::MarkBorder => (14, 0),
-    }
-}
+// The codes: `ViewerAction` in Viewer.qml and `PanelAction` in YandexPanel.qml list these
+// names in this order. Each action's argument is its rating (0 for the actions without one).
 
 /// The Yandex panels' action as its code.
 fn panel_code(action: Panel) -> i32 {
@@ -179,11 +155,6 @@ fn viewer_code(action: Viewer) -> (i32, i32) {
 /// The grid's action for a key press, as the key map decides it (`None` when the grid doesn't use the key).
 pub(crate) fn grid_key(key: i32, modifiers: i32, has_current: bool) -> Option<Grid> {
     key_of(key).and_then(|k| keys::grid(k, mods_of(modifiers), has_current))
-}
-
-/// The code and argument of a grid action, as QML's `GridAction` enum lists it (for `Shell`'s `gridAction` signal).
-pub(crate) fn code_of(action: Grid) -> (i32, i32) {
-    grid_code(action)
 }
 
 /// The viewer's code and argument for a key press; (-1, 0) when the viewer doesn't use it.

@@ -30,6 +30,8 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   QT_VERSION: "6.12.0"
+  # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::missing_tool).
+  PG_REQUIRE_TOOLS: "1"
 
 jobs:
   windows:
@@ -80,12 +82,11 @@ jobs:
       - name: Lint (formatting, clippy, dependencies, Python, Markdown, QML)
         run: just lint
 
-      - name: Tests (Qt's bin on PATH; a skipped test fails the job)
+      - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
         shell: pwsh
         run: |
-          just test 2>&1 | Tee-Object -FilePath test.log
+          just test
           if ($LASTEXITCODE -ne 0) { exit 1 }
-          if (Select-String -Path test.log -Pattern 'SKIPPED' -Quiet) { Write-Error "a test was skipped"; exit 1 }
 
       - name: QML tests
         run: just qmltest
@@ -128,8 +129,8 @@ jobs:
       - name: System libraries (FFmpeg, libclang, valgrind for the benches)
         run: bash tools/profiling/wsl-setup.sh
 
-      - name: ExifTool (the metadata tests)
-        run: sudo apt-get install -y -qq libimage-exiftool-perl
+      - name: ExifTool and ffmpeg (the metadata and video tests)
+        run: sudo apt-get install -y -qq libimage-exiftool-perl ffmpeg
 
       - uses: Swatinem/rust-cache@v2
 

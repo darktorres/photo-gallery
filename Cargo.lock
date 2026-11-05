@@ -1519,6 +1519,7 @@ dependencies = [
  "pg-thumbcache",
  "pg-video",
  "pg-yandex",
+ "proptest",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
@@ -1578,6 +1579,8 @@ version = "0.1.0"
 dependencies = [
  "pg-model",
  "proptest",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -1603,6 +1606,9 @@ dependencies = [
 [[package]]
 name = "pg-container"
 version = "0.1.0"
+dependencies = [
+ "proptest",
+]
 
 [[package]]
 name = "pg-dedup"
@@ -1626,6 +1632,7 @@ dependencies = [
  "pg-platform",
  "pg-render",
  "pg-trace",
+ "serde_json",
 ]
 
 [[package]]

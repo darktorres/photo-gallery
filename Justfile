@@ -60,10 +60,11 @@ lint: && lint-qml
 shots *args:
     pwsh -NoLogo -NoProfile -File tools/compare-shots.ps1 {{ args }}
 
-# The QML tests (S-14.3): Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen. The viewer's
-# test runs against stubs of the pg.gallery types (tests/qml/stubs), so it checks Viewer.qml and nothing Rust.
+# The QML tests (S-14.3): Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen, against the
+# components staged as the pg.gallery module (tools/qmltest.ps1). The stubs stand in for the Rust types, so the tests
+# check the QML and nothing Rust.
 qmltest:
-    $env:PATH = "{{ qt }}/bin;" + $env:PATH; $env:QT_QPA_PLATFORM = "offscreen"; & "{{ qt }}/bin/qmltestrunner.exe" -input crates/desktop/tests/qml -import crates/desktop/tests/qml/stubs -import crates/desktop/qml -o target/qmltest.txt,txt; $code = $LASTEXITCODE; Get-Content target/qmltest.txt; exit $code
+    pwsh -NoLogo -NoProfile -File tools/qmltest.ps1 -Qt {{ qt }}
 
 # The instruction-count gate (S-16.2): the callgrind benches in WSL, compared with docs/perf/baseline.json at ±1%
 # (tools/perf-check.sh). After a change that should move the counts: `just perf --update`.

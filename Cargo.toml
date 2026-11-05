@@ -29,7 +29,7 @@ proptest = "1"
 quick-xml = "0.42"
 rusqlite = { version = "0.37", features = ["bundled", "collation", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+serde_json = { version = "1", features = ["float_roundtrip"] }
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2"
 thumbhash = "0.1"

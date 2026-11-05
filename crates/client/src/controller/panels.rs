@@ -1,9 +1,10 @@
 //! The window's panels (S-12.20): whether the filter bar is open, whether the borders are shown, and whether the viewer is
 //! open (the grid's keys are the viewer's while it is). A change reports what changed, so the desktop shows it and
 //! remembers the borders' setting; setting a flag to the value it has is no change. Nothing here calls Qt.
+use serde::{Deserialize, Serialize};
 
 /// A request about a panel.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     ToggleFilters,
     SetFiltersOpen(bool),
@@ -13,7 +14,7 @@ pub enum Event {
 }
 
 /// A panel's flag that changed, with its new value.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Change {
     FiltersOpen(bool),
     ShowBorders(bool),

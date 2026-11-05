@@ -75,9 +75,10 @@ fn wait_for_queue(c: &Catalog) {
 }
 
 #[test]
+#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn ratings_and_turns_reach_the_files() {
     if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
-        eprintln!("ExifTool not found: skipped");
+        pg_testkit::missing_tool("ExifTool");
         return;
     }
     // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
@@ -282,6 +283,7 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
 }
 
 #[test]
+#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // Its own folder, as the other tests here: run_folder keeps one folder per prefix.
     let dir = pg_testkit::run_folder(r"D:\PhotoGallery\scratch_rate", "finish");

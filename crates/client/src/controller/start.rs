@@ -5,9 +5,10 @@
 //!
 //! The listed folder is the view's, which is the saved one unless a saved view was applied: nothing here restores a
 //! folder, so a view's folder is never replaced by the session's (the `--apply-view` fix).
+use serde::{Deserialize, Serialize};
 
 /// What the desktop reports to the gate.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     /// The folder tree was loaded (at the start, and after each scan). `folder_known`: the listed folder is in the
     /// tree (collapsed or not); `""` (all folders) always is.
@@ -20,7 +21,7 @@ pub enum Event {
 }
 
 /// What the gate asks the desktop to do, in order.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {
     /// The listed folder is gone: list all folders. The start waits for that list.
     OpenAll,

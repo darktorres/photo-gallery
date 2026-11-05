@@ -1459,6 +1459,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(windows),
+        ignore = "S-17: on Linux a second open deletes a file another handle holds, so no refusal"
+    )]
     fn a_cache_of_another_catalog_starts_over() {
         let dir = test_folder(SCRATCH, "other-catalog");
         let cache = open(&dir, 12345);

@@ -3,8 +3,8 @@
 //! model holds a compact entry per file (`pg_model::grid::Entry`); a file's path and size are read when it is shown
 //! (`App::details`), for the selection and the viewer's file.
 //!
-//! The files are listed off the GUI thread (the app's catalog reader): `openList` asks (the listing says what), and the list arrives
-//! later (`loaded`).
+//! The files are listed off the GUI thread (the app's catalog reader): the controller's `OpenList` command asks (the
+//! listing says what), and the list arrives later (`loaded`).
 //! So that nothing is renumbered under the user, the model keeps the items QML holds: the selection (`current`)
 //! moves with its file when a new list arrives, and while the viewer is open (`viewing`) an arriving list waits
 //! for it to close. A rating or a turn made while a list was on its way is read again into it.
@@ -157,12 +157,11 @@ pub mod qobject {
         #[inherit]
         fn index(self: &GalleryModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
 
-        /// Show the files the listing asks for (`listing.rs`: a merged folder, with or without its subfolders, that
-        /// pass the filters, in an order). The list arrives later (`loaded`). With `keep` (the same listing, refreshed),
-        /// the selection and `anchor` stay with their files; otherwise the selection is cleared.
+        /// Make this model the one the window's controller carries its model commands out on (`post`). Called once,
+        /// when the window is made, before the controller's first list.
         #[qinvokable]
-        #[cxx_name = "openList"]
-        fn open_list(self: Pin<&mut GalleryModel>, keep: bool);
+        #[cxx_name = "registerModel"]
+        fn register_model(self: Pin<&mut GalleryModel>);
 
         /// Recompute the rows for a viewport width and a target row height (the runtime thumbnail size).
         #[qinvokable]
@@ -246,7 +245,7 @@ use core::pin::Pin;
 use std::cell::RefCell;
 use std::io::Write;
 
-use cxx_qt::{CxxQtType, Threading};
+use cxx_qt::{CxxQtThread, CxxQtType, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QUrl,
     QVariant,
@@ -301,6 +300,21 @@ const CELL_ROLES: [(i32, &str); 12] = [
     (ROLE_CONTENT_WIDTH, "contentWidth"),
     (ROLE_CONTENT_HEIGHT, "contentHeight"),
 ];
+
+thread_local! {
+    /// The model's thread handle, kept at `register`. Only the GUI thread touches it.
+    static MODEL: RefCell<Option<CxxQtThread<qobject::GalleryModel>>> = const { RefCell::new(None) };
+}
+
+/// Carry out `run` on the grid model, after the events already queued to it: the controller's model commands (rate,
+/// turn, list, border marks) come through here. Nothing runs before `register` (the window is not made yet).
+pub(crate) fn post(run: impl FnOnce(Pin<&mut qobject::GalleryModel>) + Send + 'static) {
+    MODEL.with(|model| {
+        if let Some(thread) = model.borrow().as_ref() {
+            let _ = thread.queue(run);
+        }
+    });
+}
 
 pub struct GalleryRust {
     count: i32,
@@ -460,14 +474,22 @@ impl qobject::GalleryModel {
         self.grid.rows().len() as i32
     }
 
-    fn open_list(mut self: Pin<&mut Self>, keep: bool) {
+    fn register_model(self: Pin<&mut Self>) {
+        let thread = self.qt_thread();
+        MODEL.with(|model| *model.borrow_mut() = Some(thread));
+    }
+
+    /// Show the files of `listing` (a merged folder, with or without its subfolders, that pass its query, in its
+    /// order). The list arrives later (`loaded`). With `keep` (the same listing, refreshed), the selection and `anchor`
+    /// stay with their files; otherwise the selection is cleared.
+    pub(crate) fn open_listing(mut self: Pin<&mut Self>, listing: pg_model::view::Listing, keep: bool) {
         let loading = self.loading;
         let generation = self.as_mut().rust_mut().grid.request(keep, loading);
         // A list held for the viewer is stale now: the one asked for is loading.
         let holding = self.grid.is_held();
         self.as_mut().set_holding(holding);
         self.as_mut().set_loading(true);
-        let pg_model::view::Listing { folder: path, recursive, sort, query } = crate::listing::get();
+        let pg_model::view::Listing { folder: path, recursive, sort, query } = listing;
         let model = self.qt_thread();
         let shown = path.clone();
         crate::app::get().session().grid(path, recursive, query, sort, move |entries| {
@@ -494,7 +516,7 @@ impl qobject::GalleryModel {
         }
     }
 
-    /// Show a list `open_list` asked for, unless a newer one was asked for since; while the viewer is open, when
+    /// Show a list `open_listing` asked for, unless a newer one was asked for since; while the viewer is open, when
     /// it closes.
     fn apply(mut self: Pin<&mut Self>, generation: u64, entries: Vec<Entry>) {
         let viewing = self.viewing >= 0;
@@ -619,7 +641,7 @@ impl qobject::GalleryModel {
     }
 
     /// The selection (`current`) changed, from QML or from a new list: its text is read again.
-    fn set_current_item(mut self: Pin<&mut Self>, value: i32) {
+    pub(crate) fn set_current_item(mut self: Pin<&mut Self>, value: i32) {
         if value == self.current {
             return;
         }
@@ -773,7 +795,7 @@ impl qobject::GalleryModel {
         self.grid.item(item).map_or(0, |i| i.pending_turns.get() as i32)
     }
 
-    fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
+    pub(crate) fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
         let Some(id) = self.grid.id_at(item) else { return };
         let turns = Turns::new(turns.rem_euclid(4) as u8);
         if turns == Turns::NONE {
@@ -799,7 +821,7 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
-    fn refresh_turned(mut self: Pin<&mut Self>) {
+    pub(crate) fn refresh_turned(mut self: Pin<&mut Self>) {
         // The list on its way may have been read before these turns were written: do it again when it arrives.
         let loading = self.loading;
         self.as_mut().rust_mut().grid.note_turns_written(loading);
@@ -828,7 +850,7 @@ impl qobject::GalleryModel {
         self.grid.item(item).and_then(|i| i.rating).map_or(0, |r| r.get() as i32)
     }
 
-    fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
+    pub(crate) fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
         let Some(id) = self.grid.id_at(item) else { return };
         let stars = rating.clamp(0, 5) as u8;
         // Zero stars is no rating: the catalog keeps no row for it.
@@ -861,11 +883,11 @@ impl qobject::GalleryModel {
         }
     }
 
-    fn border_marked(&self, item: i32) -> bool {
+    pub(crate) fn border_marked(&self, item: i32) -> bool {
         self.grid.item(item).is_some_and(|e| e.borders == Borders::Marked)
     }
 
-    fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
+    pub(crate) fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
         let Some(e) = self.grid.item(item).copied() else { return };
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
@@ -971,6 +993,16 @@ impl qobject::GalleryModel {
 
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
         self.grid.placement().neighbor(item, dx, dy)
+    }
+
+    /// Whether `item` is an item of the list (the selection can only be one of them).
+    pub(crate) fn is_item(&self, item: i32) -> bool {
+        (0..self.count).contains(&item)
+    }
+
+    /// The neighbour of the selection `dx` columns and `dy` rows away; the first item when none is selected.
+    pub(crate) fn neighbor_of_selection(&self, dx: i32, dy: i32) -> i32 {
+        self.neighbor(self.current.max(0), dx, dy)
     }
 }
 

@@ -4,9 +4,10 @@
 //! here. Facts about the list come in as events. Nothing here calls Qt.
 
 use crate::keys::Grid;
+use serde::{Deserialize, Serialize};
 
 /// A fact about the grid, reported by the desktop.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Event {
     /// A grid key, already decided by the key map (`keys::grid`) against the current item.
     Key(Grid),
@@ -17,7 +18,7 @@ pub enum Event {
 }
 
 /// What the desktop does for a key.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Command {
     /// Select this item and scroll it into view.
     Select(usize),

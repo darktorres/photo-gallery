@@ -6,9 +6,25 @@ use std::path::PathBuf;
 pub mod events;
 pub use pg_catalog::fixture;
 
-/// The base folder for a test's files: `PG_TEST_DIR`, or `default`.
+/// A test needs an external tool that is not installed: the test returns after this call. Without `PG_REQUIRE_TOOLS`
+/// it prints that it skipped and passes; with it (CI sets it) the test fails, so a missing tool can't pass silently.
+pub fn missing_tool(tool: &str) {
+    assert!(std::env::var_os("PG_REQUIRE_TOOLS").is_none(), "{tool} not found, and PG_REQUIRE_TOOLS is set");
+    eprintln!("{tool} not found: skipped");
+}
+
+/// The base folder for a test's files: `PG_TEST_DIR`, or the default. The default names a Windows folder on D: (the
+/// project's scratch, never C:); on other systems that path means nothing, so the folder is the temp folder under the
+/// same last name.
 fn base(default: &str) -> PathBuf {
-    std::env::var_os("PG_TEST_DIR").map_or_else(|| PathBuf::from(default), PathBuf::from)
+    if let Some(dir) = std::env::var_os("PG_TEST_DIR") {
+        return PathBuf::from(dir);
+    }
+    if cfg!(windows) {
+        return PathBuf::from(default);
+    }
+    let name = default.rsplit(['\\', '/']).next().unwrap_or("pg-test");
+    std::env::temp_dir().join(name)
 }
 
 /// A fresh folder for one test: `name-<process id>` under the base, emptied if it exists.

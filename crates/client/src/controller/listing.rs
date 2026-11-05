@@ -4,11 +4,12 @@
 
 use pg_model::query::Query;
 use pg_model::view::{Listing, SavedView};
+use serde::{Deserialize, Serialize};
 
 use crate::sort::sort_choice;
 
 /// A change to the listing: made by the user, or by the start.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
     /// Show a merged folder (`""` = all folders).
     OpenFolder(String),
@@ -25,7 +26,7 @@ pub enum Event {
 }
 
 /// What follows a change.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Command {
     /// List the files the listing asks for (shown from the top).
     OpenList,

@@ -48,6 +48,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy, rustfmt
+          # `just lint` checks the shared model and client for wasm32 (the Justfile's lint recipe).
+          targets: wasm32-unknown-unknown
 
       - uses: taiki-e/install-action@v2
         with:

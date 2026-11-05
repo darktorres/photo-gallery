@@ -56,6 +56,10 @@ jobs:
         uses: jurplel/install-qt-action@v4
         with:
           version: ${{ env.QT_VERSION }}
+          # aqtinstall's latest release, 3.3.0, cannot install Qt 6.11 or later on Windows x64: Qt split that repository
+          # by compiler, and 3.3.0 still looks for the old path (Updates.xml 404, "Failed to locate XML data"). Its master
+          # can (issue miurahr/aqtinstall#959). Pinned to the commit wiRedPanda's CI uses for Qt 6.12 on Windows x64.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
           arch: win64_msvc2022_64
           dir: C:\Qt
           modules: qtmultimedia

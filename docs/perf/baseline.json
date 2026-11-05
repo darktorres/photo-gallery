@@ -9,7 +9,5 @@
   "pg-bench/ir/catalog/pending_thumbs.at_height/callgrind.pending_thumbs.at_height.out": 46328133,
   "pg-bench/ir/catalog/tree.all/callgrind.tree.all.out": 3137101,
   "pg-bench/ir/per_file/analyze_jpeg.sample/callgrind.analyze_jpeg.sample.out": 60604034,
-  "pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out": 52045748,
-  "pg-core/ir/per_file/analyze_jpeg.sample/callgrind.analyze_jpeg.sample.out": 63523272,
-  "pg-core/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out": 50677681
+  "pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out": 52045748
 }

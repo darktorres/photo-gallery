@@ -9,9 +9,9 @@ REPO=$(cd "$(dirname "$0")/.." && pwd)
 CLONE=${PG_FUZZ_CLONE:-$HOME/photo-gallery-fuzz}
 SECONDS_EACH=${1:-60}
 
-[ -d "$CLONE/.git" ] || git clone -q "$REPO" "$CLONE"
-git -C "$CLONE" fetch -q "$REPO" HEAD
-git -C "$CLONE" checkout -q --force --detach FETCH_HEAD
+[ -d "$CLONE/.git" ] || git clone "$REPO" "$CLONE"
+git -C "$CLONE" fetch "$REPO" HEAD
+git -C "$CLONE" checkout --force --detach FETCH_HEAD
 echo "fuzz at $(git -C "$CLONE" log --oneline -1)"
 
 . "$HOME/.cargo/env"
@@ -22,7 +22,10 @@ LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V 
 export LIBCLANG_PATH
 
 cd "$CLONE/fuzz"
-for target in $(cargo fuzz list); do
+# Captured first: in a `for ... in $(cargo fuzz list)` a failing list runs no target and the script still exits 0.
+targets=$(cargo fuzz list)
+[ -n "$targets" ] || { echo "cargo fuzz list found no fuzz targets in $CLONE/fuzz" >&2; exit 1; }
+for target in $targets; do
     echo "== $target: ${SECONDS_EACH}s"
     cargo +nightly fuzz run "$target" -- -max_total_time="$SECONDS_EACH"
 done

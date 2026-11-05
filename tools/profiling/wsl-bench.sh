@@ -25,9 +25,9 @@ for layout in "$BENCH_DATA_SOURCE"/*/; do
     fi
 done
 
-[ -d "$CLONE/.git" ] || git clone -q "$REPO" "$CLONE"
-git -C "$CLONE" fetch -q "$REPO" HEAD
-git -C "$CLONE" checkout -q --force --detach FETCH_HEAD
+[ -d "$CLONE/.git" ] || git clone "$REPO" "$CLONE"
+git -C "$CLONE" fetch "$REPO" HEAD
+git -C "$CLONE" checkout --force --detach FETCH_HEAD
 echo "bench at $(git -C "$CLONE" log --oneline -1)"
 
 . "$HOME/.cargo/env"
@@ -39,6 +39,9 @@ LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V 
 export LIBCLANG_PATH
 
 cd "$CLONE"
+# Cleared first: gungraun writes into target/gungraun and nothing else removes older results, so a directory from an
+# earlier layout (ir/…, pg-core/…) would be read as a bench of this run by perf-compare.py.
+rm -rf "$CLONE/target/gungraun"
 # The Linux benches compile only here: `just lint` on Windows never sees them.
-cargo clippy -q -p pg-bench --benches -- -D warnings
-cargo bench -q -p pg-bench --bench ir -- "$@"
+cargo clippy -p pg-bench --benches -- -D warnings
+cargo bench -p pg-bench --bench ir -- "$@"

@@ -14,8 +14,9 @@
 #   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in tools/profiling/apt-packages.txt.
 #
 # The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
-# The instruction-count gate is required, so a regression fails the nightly. It also needs the catalog benches' data
-# (PG_BENCH_DATA, ~/pg-bench), which CI does not have yet, so that step is expected to fail until it does.
+# The instruction-count gate is required, so a regression fails the nightly. CI has no catalog data (the catalog benches
+# need PG_BENCH_DATA, ~/pg-bench, copied from D:), so the nightly runs the per-file benches and skips the catalog's
+# baseline entries by name (PG_BENCH_SKIP_CATALOG, tools/perf-check.sh). The catalog is gated where its data is (WSL).
 name: CI
 
 on:
@@ -118,6 +119,19 @@ jobs:
           # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
           cache-workspace-crates: true
 
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          # The screenshot fixture's venv is built from this Python (tools/compare-shots.ps1); ruff runs on it too.
+          python-version: "3.12"
+
+      - name: Ruff and markdownlint (the versions the Linux job pins)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet ruff==0.17.3
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          npm install --global markdownlint-cli@0.50.0
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Lint (formatting, clippy, dependencies, Python, Markdown, QML)
         run: just lint
 
@@ -133,14 +147,15 @@ jobs:
       - name: Deploy smoke test (the release build with Qt's DLLs and QML modules)
         run: just deploy
 
-      - name: Screenshot comparison against the PR's base
+      - name: Screenshot comparison against the committed reference
         if: github.event_name == 'pull_request'
         continue-on-error: true # informational until it is stable (plan S-15)
         shell: pwsh
         run: |
-          # The base branch, which the comparison looks up by its commit. A shallow fetch: the checkout is one commit deep.
-          git fetch --no-tags --depth=1 origin "+refs/heads/${env:GITHUB_BASE_REF}:refs/remotes/origin/${env:GITHUB_BASE_REF}"
-          just shots -Base "origin/$env:GITHUB_BASE_REF"
+          # Without -Base, the comparison uses the one reference under tools/shots/reference. A PR's base has none unless
+          # someone recorded one, so looking it up failed every run. -Python: the Python 3.12 that setup-python put on PATH.
+          just shots -Python python
+          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Screenshot report
         if: always() && github.event_name == 'pull_request'
@@ -294,7 +309,8 @@ jobs:
           path: fuzz/artifacts/
           if-no-files-found: ignore
 
-      - name: Instruction counts against the baseline (S-16.2, required)
+      - name: Instruction counts against the baseline (S-16.2, required; the per-file benches, see the header)
         env:
           PG_BENCH_CLONE: ${{ github.workspace }}
+          PG_BENCH_SKIP_CATALOG: "1"
         run: bash tools/perf-check.sh

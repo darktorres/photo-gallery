@@ -35,7 +35,7 @@ thumbhash = "0.1"
 tiff = "0.11"
 turbojpeg = { version = "1", features = ["cmake"] }
 unic-langid = "0.9"
-ureq = { version = "2", default-features = false, features = ["native-tls"] }
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
 weezl = "0.1"
 windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
 xxhash-rust = { version = "0.8", features = ["xxh3"] }

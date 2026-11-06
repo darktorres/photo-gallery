@@ -358,7 +358,7 @@ name = "pg-metadata"
 version = "0.1.0"
 dependencies = [
  "crc32fast",
- "miniz_oxide 0.8.9",
+ "miniz_oxide 0.9.1",
  "pg-container",
  "pg-model",
  "quick-xml",
@@ -601,7 +601,7 @@ dependencies = [
 [[package]]
 name = "turbojpeg-sys"
 version = "1.2.0"
-source = "git+https://github.com/darktorres/rust-turbojpeg?rev=afa4ea7fd13d43102404c98c8050be1fe2ae032b#afa4ea7fd13d43102404c98c8050be1fe2ae032b"
+source = "git+https://github.com/darktorres/rust-turbojpeg?rev=945d853b47a76f98fd97ac5ff43830997712caa2#945d853b47a76f98fd97ac5ff43830997712caa2"
 dependencies = [
  "anyhow",
  "cmake",

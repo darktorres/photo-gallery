@@ -21,7 +21,7 @@ gungraun = "0.20"
 image = { version = "0.25", default-features = false, features = ["png", "gif", "webp", "bmp", "tiff", "jpeg"] }
 image-webp = "0.2"
 libc = "0.2"
-miniz_oxide = "0.8"
+miniz_oxide = "0.9"
 pdqhash = "0.1"
 png = "0.18"
 proptest = "1"

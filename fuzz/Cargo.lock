@@ -172,7 +172,7 @@ version = "0.14.2"
 source = "git+https://github.com/darktorres/image-gif?rev=c79564c1cdf86e674b281f232aeffd706c325623#c79564c1cdf86e674b281f232aeffd706c325623"
 dependencies = [
  "color_quant",
- "weezl",
+ "weezl 0.1.12",
 ]
 
 [[package]]
@@ -337,7 +337,7 @@ dependencies = [
  "pg-model",
  "png",
  "turbojpeg",
- "weezl",
+ "weezl 0.2.1",
 ]
 
 [[package]]
@@ -582,7 +582,7 @@ dependencies = [
  "flate2",
  "half",
  "quick-error",
- "weezl",
+ "weezl 0.1.12",
  "zune-jpeg",
 ]
 
@@ -601,7 +601,7 @@ dependencies = [
 [[package]]
 name = "turbojpeg-sys"
 version = "1.2.0"
-source = "git+https://github.com/darktorres/rust-turbojpeg?rev=afa4ea7fd13d43102404c98c8050be1fe2ae032b#afa4ea7fd13d43102404c98c8050be1fe2ae032b"
+source = "git+https://github.com/darktorres/rust-turbojpeg?rev=945d853b47a76f98fd97ac5ff43830997712caa2#945d853b47a76f98fd97ac5ff43830997712caa2"
 dependencies = [
  "anyhow",
  "cmake",
@@ -620,6 +620,12 @@ name = "weezl"
 version = "0.1.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a28ac98ddc8b9274cb41bb4d9d4d5c425b6020c50c46f25559911905610b4a88"
+
+[[package]]
+name = "weezl"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d4ca08e5ef825b65b056d9efbd95c8750683f0a6d0466d02e96dc2e4e360f3d2"
 
 [[package]]
 name = "zerocopy"

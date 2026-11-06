@@ -1,0 +1,23 @@
+__pycache__/
+/target/
+# The JPEG decoder comparison is its own workspace (eval/jpeg-decoders).
+/eval/jpeg-decoders/target/
+# Large outputs (bench data, caches, screenshots) live outside the repo, at the paths in .env.
+*.npy
+# This machine's settings (paths and the like): copy .env.example to .env and fill it in.
+.env
+# What `just setup` fetches: the pinned FFmpeg build, and its download (tools/setup-ffmpeg.ps1).
+/.deps/
+# The install log of the aqtinstall tool that CI's Qt install writes when it runs locally.
+aqtinstall.log
+# Written by cxx-qt-build on every UI build (points qmlls at target/).
+.qmlls.ini
+# Logs of the Playwright MCP browser.
+.playwright-mcp/
+# The fuzz targets (fuzz/, S-18.1): the crate's build output, and what the fuzzer finds (corpus, crashes).
+/fuzz/target/
+/fuzz/corpus/
+/fuzz/artifacts/
+# Claude Code's per-user settings and its scheduled-task lock (the shared .claude/ files stay tracked).
+.claude/settings.local.json
+.claude/scheduled_tasks.lock

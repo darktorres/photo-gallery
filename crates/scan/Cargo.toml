@@ -1,0 +1,16 @@
+[package]
+name = "pg-scan"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The scanner: walks a folder tree and records each media file's identity, size and mtime. Its dependencies are the catalog, the job's control, the model and the platform's listing: no analysis, no codec.
+[dependencies]
+pg-catalog = { path = "../catalog" }
+pg-jobs = { path = "../jobs" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+anyhow.workspace = true

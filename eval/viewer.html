@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NDD Bake-off</title>
+<style>
+  /* Dark theme always; color-scheme also darkens native controls and scrollbars. */
+  :root {
+    color-scheme: dark;
+    --bg: #141413; --panel: #1e1e1c; --text: #ebebe8; --muted: #9b9b94; --line: #33332f;
+    --accent: #78a6ff; --chip: #2a2a27; --heat-l: 26%;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font: 14px/1.45 system-ui, "Segoe UI", sans-serif; background: var(--bg); color: var(--text); }
+  header {
+    position: sticky; top: 0; z-index: 5; background: var(--panel); border-bottom: 1px solid var(--line);
+    padding: 10px 16px; display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center;
+  }
+  h1 { font-size: 15px; margin: 0 8px 0 0; }
+  label { color: var(--muted); font-size: 12px; display: inline-flex; gap: 6px; align-items: center; }
+  select, input { font: inherit; color: var(--text); background: var(--bg); border: 1px solid var(--line); border-radius: 6px; padding: 3px 6px; }
+  input[type=number] { width: 72px; }
+  nav { display: flex; gap: 4px; flex-wrap: wrap; }
+  nav button {
+    font: inherit; border: 1px solid transparent; background: none; color: var(--muted);
+    padding: 4px 10px; border-radius: 6px; cursor: pointer;
+  }
+  nav button.active { color: var(--text); background: var(--chip); border-color: var(--line); }
+  .controls { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; }
+  main { padding: 16px; max-width: 1600px; margin: 0 auto; }
+  .hint { color: var(--muted); margin: 0 0 14px; }
+  h2 { font-size: 14px; margin: 22px 0 8px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; background: var(--panel); border: 1px solid var(--line); font-variant-numeric: tabular-nums; }
+  th, td { padding: 5px 10px; border-bottom: 1px solid var(--line); text-align: right; white-space: nowrap; }
+  th { font-weight: 600; color: var(--muted); font-size: 12px; }
+  th:first-child, td:first-child { text-align: left; }
+  td.best { font-weight: 700; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 520px), 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px; cursor: zoom-in; }
+  .card-head { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+  .score { font-weight: 700; padding: 1px 8px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+  .badge { font-size: 11px; padding: 1px 6px; border-radius: 999px; background: var(--chip); color: var(--muted); }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  figure { margin: 0; min-width: 0; }
+  figure img { width: 100%; height: 300px; object-fit: contain; background: var(--bg); border-radius: 6px; display: block; }
+  figcaption { font-size: 11px; color: var(--muted); margin-top: 4px; overflow-wrap: anywhere; }
+  figcaption b { color: var(--text); font-weight: 500; }
+  .sentinel { height: 1px; }
+  .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  .modal { position: fixed; inset: 0; background: rgba(0,0,0,.85); z-index: 10; display: none; padding: 16px; cursor: zoom-out; }
+  .modal.open { display: grid; grid-template-columns: 1fr 1fr; grid-template-rows: minmax(0, 1fr) auto; gap: 12px; }
+  .modal figure { display: flex; flex-direction: column; min-height: 0; }
+  .modal img { flex: 1; min-height: 0; width: 100%; object-fit: contain; }
+  .modal figcaption { color: #ccc; text-align: center; }
+  .modal.open.single { grid-template-columns: 1fr; }
+  /* Pair flip view: both images fitted to the same box, one visible at a time (Space / click swaps),
+     so same-framed copies line up and differences jump out. */
+  .modal .flip { align-items: stretch; gap: 8px; }
+  .modal .stack { position: relative; flex: 1; min-height: 0; cursor: pointer; }
+  .modal .stack img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+  .modal .stack img.off { visibility: hidden; }
+  .modal .flip figcaption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .side { display: inline-block; min-width: 1.6em; margin-right: 6px; padding: 0 6px; border-radius: 4px; font-weight: 700; color: #111; }
+  .side.a { background: hsl(200 80% 65%); }
+  .side.b { background: hsl(40 90% 60%); }
+  .badge.ok { background: hsl(130 45% var(--heat-l)); color: var(--text); }
+  .badge.bad { background: hsl(0 60% var(--heat-l)); color: var(--text); }
+  .stats { font-size: 11px; color: var(--muted); margin-left: auto; font-variant-numeric: tabular-nums; }
+  .diag { width: 100%; margin-top: 8px; border-radius: 6px; display: block; cursor: zoom-in; }
+  /* Hand marks on verifier pairs. */
+  .marks { display: flex; gap: 6px; align-items: center; margin-top: 8px; flex-wrap: wrap; }
+  .mk { font: inherit; font-size: 12px; padding: 4px 10px; border-radius: 6px; border: 1px solid var(--line); background: var(--panel); color: var(--text); cursor: pointer; }
+  .mk.same[aria-pressed="true"] { background: hsl(130 50% 32%); border-color: hsl(130 50% 40%); }
+  .mk.different[aria-pressed="true"] { background: hsl(0 60% 40%); border-color: hsl(0 60% 48%); }
+  .card.mark-same { box-shadow: 0 0 0 2px hsl(130 50% 40%); }
+  .card.mark-different { box-shadow: 0 0 0 2px hsl(0 60% 50%); }
+  .badge.warn { background: hsl(40 80% 30%); color: var(--text); }
+  .modal .marks { grid-column: 1 / -1; justify-content: center; margin: 0; cursor: default; }
+  .modal .marks .hint { margin: 0; color: #bbb; }
+  /* Groups page: each member's set (A-D) = which picture it is; marks are saved per pair. */
+  .side.set, .setchip { background: var(--set); }
+  .gcard { cursor: default; }
+  .gthumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+  .gtile { position: relative; }
+  .gtile img { width: 100%; height: 200px; object-fit: contain; background: var(--bg); border-radius: 6px; display: block; cursor: zoom-in; border: 3px solid transparent; }
+  .gthumbs.split .gtile img { border-color: var(--set); }
+  .setchip { position: absolute; top: 6px; left: 6px; font: inherit; font-size: 12px; font-weight: 700; color: #111; border: 0; border-radius: 4px; padding: 1px 7px; cursor: pointer; }
+  .gtile figcaption { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .mk.unsaved { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  @media (max-width: 700px) { .modal.open { grid-template-columns: 1fr; } figure img { height: 200px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>NDD Bake-off</h1>
+  <label id="run-wrap">Run <select id="run"></select></label>
+  <nav id="tabs"></nav>
+  <label id="model-wrap" hidden>Model <select id="model"></select></label>
+  <div class="controls" id="group-controls" hidden>
+    <label>Show <select id="gshow">
+      <option value="all">all</option>
+      <option value="unmarked">not fully marked</option>
+      <option value="marked">marked</option>
+      <option value="split">marked as several pictures</option>
+      <option value="merges">merges labeled folders</option>
+      <option value="conflicts">has aligned-but-different pairs</option>
+    </select></label>
+    <label>Min size <input id="gmin" type="number" min="2" value="2"></label>
+    <label>Sort <select id="gsort">
+      <option value="size">largest first</option>
+      <option value="conflicts">most conflicts first</option>
+    </select></label>
+    <label id="gcount"></label>
+  </div>
+  <div class="controls" id="pair-controls" hidden>
+    <label>Sort <select id="sort">
+      <option value="file">as written</option>
+      <option value="asc">score ↑</option>
+      <option value="desc">score ↓</option>
+    </select></label>
+    <label id="verdict-wrap" hidden>Show <select id="verdict">
+      <option value="all">all</option>
+      <option value="wrong">wrong only</option>
+      <option value="match">decided match</option>
+      <option value="unrelated">decided unrelated</option>
+      <option value="error">errors</option>
+      <option value="unmarked">not marked by me</option>
+      <option value="mark-same">I marked same</option>
+      <option value="mark-different">I marked different</option>
+      <option value="disagree">verifier disagrees with my mark</option>
+    </select></label>
+    <label id="label-wrap" hidden>Label <select id="label"></select></label>
+    <label>Score from <input id="min" type="number" step="0.01" placeholder="min"></label>
+    <label>to <input id="max" type="number" step="0.01" placeholder="max"></label>
+    <label id="count"></label>
+  </div>
+</header>
+<main>
+  <p class="hint" id="hint"></p>
+  <div id="content"></div>
+</main>
+<div class="modal" id="modal"></div>
+
+<script>
+const TABS = [
+  ["summary", "Summary", "All models side by side: labeled pairs, operating points, synthetic edits, and the verifier's decisions."],
+  ["benchmarks", "Benchmarks", "Speed: JPEG decode pipelines (bench_decode.py) and HDD read order on E: (bench_hdd.py)."],
+  ["misses", "Misses", "Labeled duplicate pairs (dups2/NNN) the model scores lowest: what it fails to see."],
+  ["hard_negatives", "Hardest negatives", "Pairs from similiar_but_not_dups the model scores highest: what fools it."],
+  ["review", "Flagged unlabeled", "Unlabeled pairs above the model's 95%-recall threshold, spread over the score range: real duplicates or false positives?"],
+  ["unpaired", "Loose dups2 pairings", "Best match for each loose dups2 file. “mutual” = each is the other's best match."],
+  ["verify", "Verifier", "verify.py: match (duplicate or variant) vs unrelated, for labeled duplicates and similiar_but_not_dups pairs (not scored: that folder mixes variants and different pictures). Diagnostic: reference (other image's frame outlined) · other aligned + color-mapped · residual (changed regions outlined). Score = embedding similarity."],
+  ["verify_cross", "Verifier: cross-group", "verify.py on pairs from two different dups2 groups (different pictures: should be unrelated). A “match” here is either a verifier false positive or a variant split across groups. Same diagnostic as the Verifier tab."],
+  ["verify_knn", "Verifier: k-NN candidates", "verify.py on what the pipeline would really check: each image's 10 nearest neighbors above the floor. Mark pairs “same picture” (incl. edits: retouch, recolor, crop, overlay) or “different picture” (another photo, another frame of the same shoot). Fastest: click a pair, then S / D to mark and move on. Marks are saved per image pair (pair_marks.json), shared by all verifier tabs and kept across reruns. Diagnostic: cyan = changed, green = moved (optical flow)."],
+];
+TABS.push(["groups", "Groups", "group.py: near-duplicate groups built from the verified k-NN pairs (multicut). Is each group one picture? If so, Save. If not, click the letter on each image (or open the group and press its letter) so each picture gets its own set, then Save: pairs within a set are marked “same picture”, pairs across sets “different” (pair_marks.json, shared with the verifier tabs). Click an image to flip through the group at full size."]);
+const VERIFY_TABS = ["verify", "verify_cross", "verify_knn"];
+const PAGE = 60;
+const state = { runs: [], run: null, tab: "summary", model: null, rows: [], view: [], shown: 0, marks: {}, open: -1,
+  side: 0, swapSide: null };
+// Same key as viewer.py's pair_key: marks are per unordered pair of images, across sets and reruns.
+const pairKey = (r) => [r.path_a, r.path_b].sort().join("|");
+const markOf = (r) => state.marks[pairKey(r)] ?? null;
+// The verifier's decision in mark terms ("match" = same picture, incl. edits).
+const decisionMark = (r) => ({ match: "same", unrelated: "different" })[r.decision] ?? null;
+const $ = (id) => document.getElementById(id);
+
+function el(tag, attrs = {}, ...children) {
+  const node = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === "class") node.className = v;
+    else if (k === "style") node.style.cssText = v;
+    else if (k.startsWith("on")) node.addEventListener(k.slice(2), v);
+    else node.setAttribute(k, v);
+  }
+  for (const c of children.flat()) node.append(c instanceof Node ? c : document.createTextNode(String(c)));
+  return node;
+}
+
+// Bumped by every render(). A response that arrives after the user switched tab, run or model is
+// dropped (Stale), so a slow earlier load can't overwrite the current page or its state.
+let renderGen = 0;
+class Stale extends Error {}
+
+async function api(path, params = {}) {
+  const gen = renderGen;
+  const r = await fetch(path + "?" + new URLSearchParams(params));
+  if (!r.ok) throw new Error(await r.text());
+  const data = await r.json();
+  if (gen !== renderGen) throw new Stale();
+  return data;
+}
+
+const fmt = (v, d = 3) => (v == null || Number.isNaN(v) ? "–" : Number(v).toFixed(d));
+const pct = (v) => (v == null ? "–" : (100 * v).toFixed(1) + "%");
+const heat = (v) => `background:hsl(${Math.round(120 * Math.max(0, Math.min(1, v)))} 55% var(--heat-l))`;
+const imgUrl = (path, size) => "/img?" + new URLSearchParams(size ? { path, size } : { path });
+const diagUrl = (id) => "/diag?" + new URLSearchParams({ run: state.run, model: state.model, kind: state.tab, id });
+
+// ---------- layout ----------
+
+function buildTabs() {
+  $("tabs").replaceChildren(...TABS.map(([key, label]) =>
+    el("button", { class: key === state.tab ? "active" : "", onclick: () => { state.tab = key; buildModelSelect(); render(); } }, label)));
+}
+
+function buildModelSelect() {
+  const run = state.runs.find((r) => r.name === state.run);
+  // Verifier tabs only offer models that have results for that tab.
+  const models = run?.models_by_kind?.[state.tab] ?? run?.models ?? [];
+  if (!models.includes(state.model)) state.model = models[0] ?? null;
+  $("model").replaceChildren(...models.map((m) => el("option", m === state.model ? { selected: "" } : {}, m)));
+}
+
+async function render() {
+  renderGen++;
+  buildTabs();
+  const [, , hint] = TABS.find(([k]) => k === state.tab);
+  $("hint").textContent = hint;
+  const isTables = state.tab === "summary" || state.tab === "benchmarks";
+  const isGroups = state.tab === "groups";
+  $("pair-controls").hidden = isTables || isGroups;
+  $("group-controls").hidden = !isGroups;
+  $("model-wrap").hidden = isTables;
+  $("verdict-wrap").hidden = !VERIFY_TABS.includes(state.tab);
+  $("label-wrap").hidden = !VERIFY_TABS.includes(state.tab);
+  $("content").replaceChildren(el("p", { class: "empty" }, "Loading…"));
+  try {
+    if (state.tab === "summary") await renderSummary();
+    else if (state.tab === "benchmarks") await renderBenchmarks();
+    else if (isGroups) await renderGroups();
+    else await loadPairs();
+  } catch (e) {
+    if (!(e instanceof Stale)) $("content").replaceChildren(el("p", { class: "empty" }, "Error: " + e.message));
+  }
+}
+
+// ---------- summary ----------
+
+function table(head, rows) {
+  return el("div", { class: "table-wrap" }, el("table", {},
+    el("thead", {}, el("tr", {}, head.map((h) => el("th", {}, h)))),
+    el("tbody", {}, rows)));
+}
+
+// Marks the best value per numeric column. better: "max" | "min" | null per column.
+function bestRow(models, values, better) {
+  return models.map((m, i) => el("tr", {}, el("td", {}, m), values[i].map((v, c) => {
+    const col = values.map((r) => r[c].raw).filter((x) => x != null);
+    const isBest = better[c] && v.raw != null && col.length > 1 &&
+      v.raw === (better[c] === "max" ? Math.max(...col) : Math.min(...col));
+    return el("td", isBest ? { class: "best" } : {}, v.text);
+  })));
+}
+
+async function renderSummary() {
+  const data = await api("/api/summary", { run: state.run });
+  const models = Object.keys(data);
+  if (!models.length) { $("content").replaceChildren(el("p", { class: "empty" }, "No results in this run yet.")); return; }
+  const out = [];
+
+  out.push(el("h2", {}, "Retrieval of the labeled partner"));
+  const first = data[models[0]].results;
+  out.push(el("p", { class: "hint" },
+    `${first.images.toLocaleString()} images · ${first.positive_pairs} labeled pairs in ${first.groups} groups · ` +
+    `${first.hard_negative_pairs.toLocaleString()} similiar_but_not_dups pairs (mostly matches since 2026-10-28) · ` +
+    (first.cross_group_pairs != null ? `${first.cross_group_pairs.toLocaleString()} cross-group pairs (true negatives) · ` : "") +
+    `${first.unpaired_files} loose dups2 files`));
+  const rk = Object.keys(first).filter((k) => k.startsWith("recall_at_"));
+  out.push(table(["model", "dim", "failed", ...rk.map((k) => "R@" + k.slice(10))],
+    bestRow(models, models.map((m) => {
+      const r = data[m].results;
+      return [{ text: r.dim, raw: null }, { text: r.failed_images, raw: null },
+        ...rk.map((k) => ({ text: fmt(r[k]), raw: r[k] }))];
+    }), [null, null, ...rk.map(() => "max")])));
+
+  for (const target of [0.9, 0.95]) {
+    out.push(el("h2", {}, `Threshold set for ${Math.round(target * 100)}% recall on labeled pairs`));
+    out.push(table(["model", "threshold", "recall", "loose dups2 with a partner", "flagged unlabeled pairs",
+      "similiar_but_not_dups flagged", "cross-group flagged (false positives)"],
+      bestRow(models, models.map((m) => {
+        const r = data[m].results;
+        const p = r.operating_points.find((o) => o.target_recall === target);
+        const cross = p.cross_group_pairs_flagged;
+        return [{ text: fmt(p.threshold), raw: null }, { text: fmt(p.recall), raw: null },
+          { text: pct(p.unpaired_with_partner), raw: p.unpaired_with_partner },
+          { text: p.flagged_pairs.toLocaleString(), raw: p.flagged_pairs },
+          { text: `${p.hard_negative_pairs_flagged} (${pct(p.hard_negative_pairs_flagged / r.hard_negative_pairs)})`, raw: null },
+          { text: cross == null ? "–" : `${cross} (${(100 * cross / r.cross_group_pairs).toFixed(3)}%)`, raw: cross ?? null }];
+      }), [null, null, "max", "min", null, "min"])));
+  }
+
+  const withSynth = models.filter((m) => data[m].synth);
+  if (withSynth.length) {
+    out.push(el("h2", {}, "Synthetic edits"));
+    out.push(el("p", { class: "hint" },
+      "Each cell: R@10 (original among the 10 nearest images) · share whose similarity clears the model's 95%-recall threshold (would be flagged). " +
+      "Color follows the second number. R@1 is not shown: exact duplicates of a sampled image already in the index tie or win rank 1. " +
+      "“8 rotations” = PDQ queried with all 8 rotations/mirrors."));
+    // A model whose synth rows carry a nested "dihedral" result (PDQ) gets a second column for it.
+    const cols = withSynth.flatMap((m) => data[m].synth.some((r) => r.dihedral)
+      ? [{ m, label: m }, { m, label: m + " (8 rotations)", pick: (r) => r.dihedral }]
+      : [{ m, label: m }]);
+    const transforms = data[withSynth[0]].synth.map((r) => r.transform);
+    out.push(table(["edit", ...cols.map((c) => c.label)], transforms.map((t) => el("tr", {}, el("td", {}, t),
+      cols.map((c) => {
+        const row = data[c.m].synth.find((x) => x.transform === t);
+        const r = row && c.pick ? c.pick(row) : row;
+        if (!r) return el("td", {}, "–");
+        const flagged = r.above_t95;
+        return el("td", { style: flagged == null ? "" : heat(flagged) }, `${fmt(r.r10, 2)} · ${fmt(flagged, 2)}`);
+      })))));
+  }
+
+  const bench = await api("/api/benchmarks", { run: state.run });
+  const verifyRuns = Object.entries(bench.verify);
+  if (verifyRuns.length) {
+    out.push(el("h2", {}, "Verifier decisions (verify.py)"));
+    out.push(el("p", { class: "hint" },
+      "Per pair set and label: how many pairs the verifier called match / unrelated / error. Duplicates should be match, " +
+      "cross-group pairs unrelated; similar-folder and unlabeled pairs have no ground truth. Browse them in the Verifier tabs."));
+    const rows = [];
+    for (const [name, v] of verifyRuns) {
+      for (const [label, c] of Object.entries(v.confusion)) {
+        const total = c.match + c.unrelated + c.error;
+        if (!total) continue;
+        const expected = { duplicate: "match", cross_group: "unrelated" }[label];
+        const right = expected ? c[expected] / total : null;
+        const mk = v.marks?.[label];
+        const agree = mk ? mk.agree / mk.marked : null;
+        rows.push(el("tr", {}, el("td", {}, name), el("td", {}, label.replaceAll("_", " ")),
+          el("td", {}, total.toLocaleString()), el("td", {}, c.match.toLocaleString()),
+          el("td", {}, c.unrelated.toLocaleString()), el("td", {}, c.error),
+          el("td", { style: right == null ? "" : heat(right) }, right == null ? "–" : pct(right)),
+          el("td", {}, mk ? mk.marked.toLocaleString() : "–"),
+          el("td", { style: agree == null ? "" : heat(agree) }, agree == null ? "–" : pct(agree)),
+          el("td", {}, `floor ${v.floor} · ${Math.round(v.seconds / 60)} min`)));
+      }
+    }
+    out.push(table(["result file", "label", "pairs", "match", "unrelated", "error", "correct (labels)",
+      "marked by you", "agrees with your marks", "run"], rows));
+  }
+  $("content").replaceChildren(...out);
+}
+
+// ---------- benchmarks ----------
+
+async function renderBenchmarks() {
+  const b = await api("/api/benchmarks", { run: state.run });
+  const out = [];
+  const num = (v, d = 0) => (v == null ? "–" : Number(v).toLocaleString(undefined, { maximumFractionDigits: d }));
+
+  out.push(el("h2", {}, "JPEG decode → 320×320 SSCD input"));
+  if (b.decode) {
+    const d = b.decode;
+    const multi = `img_s_${d.processes}proc`;
+    out.push(el("p", { class: "hint" },
+      `${d.count.toLocaleString()} random JPEGs (median ${d.median_mp.toFixed(2)} MP), files in RAM. ` +
+      "Cosine = SSCD fp16 embedding vs the same image through pil_full (the current harness). " +
+      "Index and query must use the same pipeline; a small shift that applies to every image is harmless."));
+    out.push(table(["pipeline", "img/s, 1 process", `img/s, ${d.processes} processes`, "failed",
+      "cosine min", "cosine p1", "cosine p50"],
+      bestRow(d.rows.map((r) => r.pipeline), d.rows.map((r) => [
+        { text: num(r.img_s_1proc), raw: r.img_s_1proc }, { text: num(r[multi]), raw: r[multi] },
+        { text: r.failed, raw: null }, { text: fmt(r.cos_min, 4), raw: null },
+        { text: fmt(r.cos_p1, 4), raw: null }, { text: fmt(r.cos_p50, 4), raw: null }]),
+        ["max", "max", null, null, null, null])));
+  } else {
+    out.push(el("p", { class: "empty" }, "No bench_decode.json in this run."));
+  }
+
+  out.push(el("h2", {}, "HDD read order (unbuffered reads, E:)"));
+  if (!b.hdd.length) out.push(el("p", { class: "empty" }, "No bench_hdd*.json in this run."));
+  // The dense run (close to a real full pass) first.
+  for (const h of [...b.hdd].sort((x, y) => (y.dense || 0) - (x.dense || 0))) {
+    const sample = h.dense ? `blocks of ${h.dense.toLocaleString()} consecutive files (close to a full pass)`
+      : `every ${h.stride}th file (sparse: every read pays a seek)`;
+    const L = h.layout;
+    out.push(el("h3", { style: "font-size:13px;margin:16px 0 6px" },
+      h.dense ? "Neighboring files (what a full pass does)" : "Scattered files (sparse sample)"));
+    out.push(el("p", { class: "hint" },
+      `${h.files.toLocaleString()} files under ${h.root}; each order reads its own sample: ${sample}. ` +
+      `Layout rank correlation: path↔physical ${L.spearman_path_vs_lcn.toFixed(3)}, MFT↔physical ${L.spearman_mft_vs_lcn.toFixed(3)}; ` +
+      `${pct(L.fragmented_files)} of files fragmented.`));
+    out.push(table(["order", "files", "files/s", "MB/s", "70M files at this rate"],
+      bestRow(h.rows.map((r) => r.order), h.rows.map((r) => [
+        { text: r.files.toLocaleString(), raw: null }, { text: num(r.files_s), raw: r.files_s },
+        { text: num(r.mb_s), raw: r.mb_s }, { text: (70e6 / r.files_s / 86400).toFixed(1) + " days", raw: null }]),
+        [null, "max", "max", null])));
+  }
+  $("content").replaceChildren(...out);
+}
+
+// ---------- pairs ----------
+
+async function loadPairs() {
+  if (!state.model) { $("content").replaceChildren(el("p", { class: "empty" }, "No models in this run.")); return; }
+  state.rows = await api("/api/pairs", { run: state.run, model: state.model, kind: state.tab });
+  if (VERIFY_TABS.includes(state.tab)) {
+    state.marks = await api("/api/marks", { run: state.run });
+    const current = $("label").value;
+    const labels = [...new Set(state.rows.map((r) => r.label))];
+    $("label").replaceChildren(el("option", { value: "all" }, "all"), ...labels.map((l) =>
+      el("option", l === current ? { value: l, selected: "" } : { value: l }, l.replaceAll("_", " "))));
+  }
+  applyFilters();
+}
+
+function applyFilters() {
+  const lo = parseFloat($("min").value), hi = parseFloat($("max").value);
+  let view = state.rows.map((r, i) => ({ ...r, i, s: parseFloat(r.similarity) }))
+    .filter((r) => (Number.isNaN(lo) || r.s >= lo) && (Number.isNaN(hi) || r.s <= hi));
+  const verdict = $("verdict").value;
+  if (VERIFY_TABS.includes(state.tab) && verdict !== "all") {
+    const keep = {
+      wrong: (r) => r.correct === "False",
+      unmarked: (r) => !markOf(r),
+      "mark-same": (r) => markOf(r) === "same",
+      "mark-different": (r) => markOf(r) === "different",
+      disagree: (r) => markOf(r) && markOf(r) !== decisionMark(r),
+    }[verdict] ?? ((r) => r.decision === verdict);
+    view = view.filter(keep);
+  }
+  const label = $("label").value;
+  if (VERIFY_TABS.includes(state.tab) && label && label !== "all") view = view.filter((r) => r.label === label);
+  if ($("sort").value === "asc") view.sort((a, b) => a.s - b.s);
+  if ($("sort").value === "desc") view.sort((a, b) => b.s - a.s);
+  state.view = view;
+  state.shown = 0;
+  $("count").textContent = `${view.length} of ${state.rows.length} pairs`;
+  $("content").replaceChildren(el("div", { class: "grid", id: "grid" }));
+  if (!view.length) $("content").replaceChildren(el("p", { class: "empty" }, "No pairs."));
+  else showMore();
+}
+
+function figure(path, size, thumb) {
+  const parts = path.split("/");
+  return el("figure", {},
+    el("img", { src: imgUrl(path, thumb), loading: "lazy", alt: parts.at(-1) }),
+    el("figcaption", {}, el("b", {}, parts.at(-1)), el("br"), parts.slice(0, -1).join("/") + " · " + size));
+}
+
+function card(r) {
+  const head = el("div", { class: "card-head" }, el("span", { class: "score", style: heat(r.s) }, fmt(r.s)));
+  if (r.mutual === "True") head.append(el("span", { class: "badge" }, "mutual"));
+  const body = [head, el("div", { class: "pair" }, figure(r.path_a, r.size_a, 480), figure(r.path_b, r.size_b, 480))];
+  if (r.decision) {
+    head.append(
+      el("span", { class: "badge" }, "label: " + r.label.replaceAll("_", " ")),
+      // Pairs without ground truth (similiar_but_not_dups) have an empty "correct".
+      el("span", { class: "badge" + (r.correct === "True" ? " ok" : r.correct === "False" ? " bad" : "") }, "→ " + r.decision),
+      el("span", { class: "stats" }, verifyStats(r)));
+    if (r.blob_frac) {
+      const src = diagUrl(r.id);
+      body.push(el("img", { class: "diag", src, loading: "lazy", alt: "diagnostic",
+        onclick: (e) => { e.stopPropagation(); openSingle(src); } }));
+    }
+    body.push(markButtons(r));
+  }
+  const node = el("div", { class: "card", onclick: () => openModal(r) }, ...body);
+  node.dataset.key = pairKey(r);
+  paintMark(node, r);
+  return node;
+}
+
+// ---------- hand marks ----------
+
+function markButtons(r) {
+  const button = (mark, text) => el("button", { class: "mk " + mark, "data-mark": mark, "aria-pressed": String(markOf(r) === mark),
+    onclick: (e) => { e.stopPropagation(); toggleMark(r, mark); } }, text);
+  return el("div", { class: "marks" },
+    button("same", "Same picture (S)"), button("different", "Different picture (D)"),
+    el("span", { class: "badge warn mark-disagree", hidden: "" }, "verifier disagrees"));
+}
+
+// Reflects a pair's mark on every element showing it (its grid card and, if open, the modal).
+function paintMark(node, r) {
+  const mark = markOf(r);
+  node.classList.toggle("mark-same", mark === "same");
+  node.classList.toggle("mark-different", mark === "different");
+  for (const b of node.querySelectorAll(".mk")) b.setAttribute("aria-pressed", String(b.dataset.mark === mark));
+  const warn = node.querySelector(".mark-disagree");
+  if (warn) warn.hidden = !(mark && mark !== decisionMark(r));
+}
+
+async function toggleMark(r, mark) {
+  const next = markOf(r) === mark ? null : mark;
+  const res = await fetch("/api/marks", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run: state.run, a: r.path_a, b: r.path_b, mark: next }),
+  });
+  if (!res.ok) { alert("Saving the mark failed: " + await res.text()); return false; }
+  if (next) state.marks[pairKey(r)] = next; else delete state.marks[pairKey(r)];
+  const key = pairKey(r);
+  for (const node of document.querySelectorAll(".card, .modal .marks")) {
+    if (node.dataset.key === key) paintMark(node, r);
+  }
+  return true;
+}
+
+function verifyStats(r) {
+  if (r.error) return r.error;
+  const parts = [`${r.inliers}/${r.matches} inliers`];
+  if (r.flipped === "True") parts.push("mirrored");
+  if (r.noise) parts.push(`noise ${fmt(r.noise, 4)}`, `blob ${pct(parseFloat(r.blob_frac))}`);
+  if (r.moved_frac) parts.push(`moved ${pct(parseFloat(r.moved_frac))}`);
+  return parts.join(" · ");
+}
+
+function openSingle(src) {
+  const m = $("modal");
+  m.replaceChildren(el("figure", {}, el("img", { src, alt: "diagnostic" })));
+  m.dataset.view = "single";
+  m.classList.add("open", "single");
+}
+
+// Infinite scroll: an empty element after the grid loads the next page once it comes within
+// 1500 px of the viewport. Observing a new one reports its state right away, so pages keep
+// loading until the window is filled.
+let loadNext = null;
+const scrollObserver = new IntersectionObserver((entries) => {
+  if (entries.some((e) => e.isIntersecting)) loadNext?.();
+}, { rootMargin: "0px 0px 1500px 0px" });
+
+function setSentinel(more) {
+  scrollObserver.disconnect();
+  document.querySelector(".sentinel")?.remove();
+  loadNext = more;
+  if (!more) return;
+  const s = el("div", { class: "sentinel" });
+  $("content").append(s);
+  scrollObserver.observe(s);
+}
+
+function showMore() {
+  $("grid").append(...state.view.slice(state.shown, state.shown + PAGE).map(card));
+  state.shown += PAGE;
+  setSentinel(state.shown < state.view.length ? showMore : null);
+}
+
+// Pair view: A and B stacked in one box, one visible at a time. Space or a click on the image swaps,
+// ← / → go to the previous / next pair, S / D mark (verifier tabs), Esc closes.
+function openModal(r) {
+  const m = $("modal");
+  state.open = state.view.indexOf(r);
+  const sides = [[r.path_a, r.size_a], [r.path_b, r.size_b]];
+  const imgs = sides.map(([path]) => el("img", { src: imgUrl(path), alt: path }));
+  const caption = el("figcaption");
+  const showSide = (i) => {
+    state.side = i;
+    imgs.forEach((img, k) => img.classList.toggle("off", k !== i));
+    const [path, size] = sides[i];
+    caption.replaceChildren(el("span", { class: "side " + "ab"[i] }, "AB"[i]), `${path} · ${size}`);
+  };
+  state.swapSide = () => showSide(1 - state.side);
+  const stack = el("div", { class: "stack", onclick: (e) => { e.stopPropagation(); state.swapSide(); } }, ...imgs);
+  m.replaceChildren(el("figure", { class: "flip" }, stack, caption));
+  showSide(0);
+
+  const bar = r.decision ? markButtons(r) : el("div", { class: "marks" });
+  bar.dataset.key = pairKey(r);
+  bar.addEventListener("click", (e) => e.stopPropagation());
+  bar.append(el("span", { class: "hint" }, `${state.open + 1} / ${state.view.length}` +
+    (r.decision ? ` · verifier: ${r.decision} · S same · D different (then next)` : "") +
+    " · Space swap A/B · ← → previous / next · Esc close"));
+  m.append(bar);
+  if (r.decision) paintMark(bar, r);
+  m.dataset.view = "pair";
+  m.classList.add("open", "single");
+
+  // Warm the cache for the next pair so → shows it at once.
+  const next = state.view[state.open + 1];
+  if (next) for (const path of [next.path_a, next.path_b]) new Image().src = imgUrl(path);
+}
+
+function openAt(i) {
+  if (i < 0 || i >= state.view.length) return;
+  // Keep the grid in step, so the card of the open pair is rendered (and repainted on marks).
+  while (state.shown <= i) showMore();
+  openModal(state.view[i]);
+}
+
+// ---------- groups ----------
+
+// view: filtered groups; open: index in view of the group in the modal; member / prev: shown and previously
+// shown image there (Space goes back, to compare any two).
+const gstate = { data: null, view: [], shown: 0, open: -1, member: 0, prev: null, imgs: [] };
+// Sets: as many as the group has images. Named A, B, C... (then 27, 28...), colored by the golden angle.
+const setName = (k) => (k < 26 ? String.fromCharCode(65 + k) : String(k + 1));
+const setStyle = (k) => `--set: hsl(${(200 + k * 137.5) % 360} 75% 65%)`;
+const keyOf = (a, b) => [a, b].sort().join("|");
+
+async function renderGroups() {
+  if (!state.model) { $("content").replaceChildren(el("p", { class: "empty" }, "No groups in this run: run group.py.")); return; }
+  const [data, marks] = await Promise.all([api("/api/groups", { run: state.run, model: state.model }),
+    api("/api/marks", { run: state.run })]);
+  state.marks = marks;
+  data.groups.forEach((g, k) => {
+    g.n = k + 1;
+    g.matches = g.edges.filter((e) => e[2] > 0).length;
+    g.conflicts = g.edges.length - g.matches;
+    g.shortcuts = g.edges.filter((e) => e[3] !== "verifier").length;
+    g.folders = [...new Set(g.labels.filter((l) => l.startsWith("dups2/")))];
+    g.sets = setsFromMarks(g);
+  });
+  gstate.data = data;
+  applyGroupFilters();
+}
+
+function memberPairs(g) {
+  const out = [];
+  for (let i = 0; i < g.members.length; i++) for (let j = i + 1; j < g.members.length; j++) out.push([i, j]);
+  return out;
+}
+
+// The saved marks as sets: images joined by "same" marks share a set; images without any mark go in A.
+function setsFromMarks(g) {
+  const parent = g.members.map((_, i) => i);
+  const find = (x) => (parent[x] === x ? x : (parent[x] = find(parent[x])));
+  const touched = g.members.map(() => false);
+  for (const [i, j] of memberPairs(g)) {
+    const m = state.marks[keyOf(g.members[i], g.members[j])];
+    if (m) touched[i] = touched[j] = true;
+    if (m === "same") parent[find(i)] = find(j);
+  }
+  const ids = new Map();
+  return g.members.map((_, i) => {
+    if (!touched[i]) return 0;
+    const root = find(i);
+    if (!ids.has(root)) ids.set(root, ids.size);
+    return ids.get(root);
+  });
+}
+
+function markStatus(g) {
+  const pairs = memberPairs(g);
+  const marked = pairs.filter(([i, j]) => state.marks[keyOf(g.members[i], g.members[j])]).length;
+  return { total: pairs.length, marked, done: marked === pairs.length };
+}
+
+function applyGroupFilters() {
+  if (!gstate.data) return;
+  const show = $("gshow").value, min = parseInt($("gmin").value, 10) || 2;
+  let view = gstate.data.groups.filter((g) => g.members.length >= min);
+  const keep = {
+    unmarked: (g) => !markStatus(g).done,
+    marked: (g) => markStatus(g).done,
+    split: (g) => markStatus(g).done && new Set(setsFromMarks(g)).size > 1,
+    merges: (g) => g.folders.length > 1,
+    conflicts: (g) => g.conflicts > 0,
+  }[show];
+  if (keep) view = view.filter(keep);
+  if ($("gsort").value === "conflicts") view = [...view].sort((a, b) => b.conflicts - a.conflicts || b.members.length - a.members.length);
+  gstate.view = view;
+  gstate.shown = 0;
+  $("gcount").textContent = `${view.length.toLocaleString()} of ${gstate.data.groups.length.toLocaleString()} groups`;
+  const s = gstate.data.score, lp = s.labeled_pairs;
+  const scoreLine = el("p", { class: "hint" },
+    `${gstate.data.args.method}: labeled pairs precision ${fmt(lp.precision, 4)} · recall ${fmt(lp.recall, 4)} · ` +
+    `labeled folders whole ${s.folders_whole}/${s.labeled_folders} · groups merging labeled folders: ` +
+    (s.groups_merging_folders.map((f) => f.join(" + ")).join(", ") || "none"));
+  if (!view.length) { $("content").replaceChildren(scoreLine, el("p", { class: "empty" }, "No groups.")); return; }
+  $("content").replaceChildren(scoreLine, el("div", { class: "grid", id: "ggrid", style: "grid-template-columns:1fr" }));
+  showMoreGroups();
+}
+
+function showMoreGroups() {
+  $("ggrid").append(...gstate.view.slice(gstate.shown, gstate.shown + PAGE).map(groupCard));
+  gstate.shown += PAGE;
+  setSentinel(gstate.shown < gstate.view.length ? showMoreGroups : null);
+}
+
+function groupCard(g) {
+  const st = markStatus(g);
+  const saved = setsFromMarks(g);
+  const savedSets = new Set(saved).size, nsets = new Set(g.sets).size;
+  const unsaved = !st.done || g.sets.some((s, i) => s !== saved[i]);
+  const head = el("div", { class: "card-head" },
+    el("span", { class: "badge" }, `#${g.n}`), el("b", {}, `${g.members.length} images`),
+    el("span", { class: "badge" }, `${g.matches} match edges` + (g.shortcuts ? ` (${g.shortcuts} by shortcut)` : "")),
+    g.conflicts ? el("span", { class: "badge warn" }, `${g.conflicts} aligned but different`) : "",
+    g.folders.length > 1 ? el("span", { class: "badge bad" }, "merges " + g.folders.join(" + ")) : "",
+    el("span", { class: "stats" }, st.done ? `✓ marked: ${savedSets === 1 ? "all same picture" : savedSets + " different pictures"}`
+      : st.marked ? `${st.marked} / ${st.total} pairs marked` : "not marked"));
+  const tiles = g.members.map((path, i) => el("figure", { class: "gtile", style: setStyle(g.sets[i]) },
+    el("img", { src: imgUrl(path, 320), loading: "lazy", alt: path.split("/").at(-1), onclick: () => openGroup(g, i) }),
+    el("button", { class: "setchip",
+      title: "Which picture this is: images in one set are the same picture. Click: next set (the ones in use, then a " +
+        "new one); Shift+click: previous",
+      onclick: (e) => { cycleSet(g, i, e.shiftKey ? -1 : 1); } }, setName(g.sets[i])),
+    el("figcaption", { title: path }, `${g.labels[i] || "–"} · ${g.sizes[i]}`)));
+  const node = el("div", { class: "card gcard" + (st.done ? (savedSets === 1 ? " mark-same" : " mark-different") : "") },
+    head, el("div", { class: "gthumbs" + (nsets > 1 ? " split" : "") }, tiles),
+    el("div", { class: "marks" },
+      el("button", { class: "mk same" + (unsaved ? " unsaved" : ""), onclick: () => saveGroup(g) },
+        nsets === 1 ? "Save: all same picture" : `Save: ${nsets} different pictures`),
+      st.marked ? el("button", { class: "mk", onclick: () => clearGroup(g) }, "Clear this group's marks") : ""));
+  g.node = node;
+  return node;
+}
+
+// Step image i through the sets in use plus one new set (at most one set per image).
+function cycleSet(g, i, step) {
+  const n = Math.min(g.members.length, Math.max(...g.sets) + 2);
+  g.sets[i] = (((g.sets[i] + step) % n) + n) % n;
+  repaintGroup(g);
+}
+
+function repaintGroup(g) {
+  if (g.node?.isConnected) g.node.replaceWith(groupCard(g));
+  updateGroupModal();
+}
+
+async function postMarks(items) {
+  const res = await fetch("/api/marks/bulk", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ run: state.run, marks: items }),
+  });
+  if (!res.ok) { alert("Saving the marks failed: " + await res.text()); return false; }
+  for (const [a, b, m] of items) {
+    if (m) state.marks[keyOf(a, b)] = m; else delete state.marks[keyOf(a, b)];
+  }
+  return true;
+}
+
+async function saveGroup(g) {
+  const items = memberPairs(g).map(([i, j]) => [g.members[i], g.members[j], g.sets[i] === g.sets[j] ? "same" : "different"]);
+  if (await postMarks(items)) repaintGroup(g);
+}
+
+async function clearGroup(g) {
+  if (await postMarks(memberPairs(g).map(([i, j]) => [g.members[i], g.members[j], null]))) {
+    g.sets = g.members.map(() => 0);
+    repaintGroup(g);
+  }
+}
+
+// Group view: one member at a time in a fixed box. ← / → (or a click) step through the group, Space returns to
+// the previously shown image, a letter (or 1-9) sets the image's set, Enter saves, PgUp / PgDn change group, Esc closes.
+function openGroup(g, i) {
+  const m = $("modal");
+  gstate.open = gstate.view.indexOf(g);
+  gstate.imgs = [];
+  gstate.prev = null;
+  gstate.stack = el("div", { class: "stack", onclick: (e) => { e.stopPropagation(); showMember(gstate.member + 1); } });
+  gstate.caption = el("figcaption");
+  gstate.bar = el("div", { class: "marks" });
+  gstate.bar.addEventListener("click", (e) => e.stopPropagation());
+  m.replaceChildren(el("figure", { class: "flip" }, gstate.stack, gstate.caption), gstate.bar);
+  m.dataset.view = "group";
+  m.classList.add("open", "single");
+  gstate.member = i;
+  showMember(i);
+}
+
+function openGroupAt(k) {
+  if (k < 0 || k >= gstate.view.length) return;
+  while (gstate.shown <= k) showMoreGroups();
+  openGroup(gstate.view[k], 0);
+}
+
+function showMember(i) {
+  const g = gstate.view[gstate.open], n = g.members.length;
+  i = (i + n) % n;
+  if (i !== gstate.member) gstate.prev = gstate.member;
+  gstate.member = i;
+  if (!gstate.imgs[i]) {
+    gstate.imgs[i] = el("img", { src: imgUrl(g.members[i]), alt: g.members[i] });
+    gstate.stack.append(gstate.imgs[i]);
+  }
+  gstate.imgs.forEach((img, k) => img?.classList.toggle("off", k !== i));
+  new Image().src = imgUrl(g.members[(i + 1) % n]);  // warm the cache for →
+  updateGroupModal();
+}
+
+function updateGroupModal() {
+  const m = $("modal");
+  if (gstate.open < 0 || m.dataset.view !== "group" || !m.classList.contains("open")) return;
+  const g = gstate.view[gstate.open], i = gstate.member;
+  const mine = g.edges.filter((e) => e[0] === i || e[1] === i);
+  const pos = mine.filter((e) => e[2] > 0).length;
+  gstate.caption.replaceChildren(el("span", { class: "side set", style: setStyle(g.sets[i]) }, setName(g.sets[i])),
+    `${i + 1} / ${g.members.length} · ${g.members[i]} · ${g.sizes[i]} · matched ${pos}, aligned-but-different ${mine.length - pos}`);
+  const nsets = new Set(g.sets).size;
+  gstate.bar.replaceChildren(el("span", { class: "hint" },
+    `Group #${g.n} (${gstate.open + 1} / ${gstate.view.length}) · ← → image · Space previous image · A–Z (or 1–9) set this image · ` +
+    `Enter save (${nsets === 1 ? "all same picture" : nsets + " different pictures"}) · PgUp / PgDn group · Esc close`));
+}
+
+function groupKey(e) {
+  const g = gstate.view[gstate.open];
+  if (!g) return;
+  const key = e.key.toLowerCase();
+  if (key === " ") {
+    e.preventDefault();
+    if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
+    if (!e.repeat && gstate.prev != null) showMember(gstate.prev);
+  } else if (key === "arrowright") { e.preventDefault(); showMember(gstate.member + 1); }
+  else if (key === "arrowleft") { e.preventDefault(); showMember(gstate.member - 1); }
+  else if (!e.ctrlKey && !e.altKey && !e.metaKey && /^([a-z]|[1-9])$/.test(key)) {
+    const k = /\d/.test(key) ? Number(key) - 1 : key.charCodeAt(0) - 97;
+    if (k < g.members.length) { g.sets[gstate.member] = k; repaintGroup(g); }
+  }
+  else if (key === "enter") { e.preventDefault(); saveGroup(g); }
+  else if (key === "pagedown") { e.preventDefault(); openGroupAt(gstate.open + 1); }
+  else if (key === "pageup") { e.preventDefault(); openGroupAt(gstate.open - 1); }
+}
+
+for (const id of ["gshow", "gmin", "gsort"]) $(id).addEventListener("change", applyGroupFilters);
+
+$("modal").addEventListener("click", () => $("modal").classList.remove("open"));
+document.addEventListener("keydown", async (e) => {
+  const m = $("modal");
+  if (e.key === "Escape") { m.classList.remove("open"); return; }
+  if (m.classList.contains("open") && m.dataset.view === "group" && !e.ctrlKey && !e.altKey && !e.metaKey) {
+    groupKey(e);
+    return;
+  }
+  // Swap, navigation and marking only while a pair is open in the modal.
+  if (!m.classList.contains("open") || m.dataset.view !== "pair" || e.ctrlKey || e.altKey || e.metaKey) return;
+  const r = state.view[state.open];
+  if (!r) return;
+  const key = e.key.toLowerCase();
+  if (key === " ") {
+    e.preventDefault();  // no page scroll
+    // A focused mark button would also be "clicked" by Space on key-up.
+    if (document.activeElement instanceof HTMLButtonElement) document.activeElement.blur();
+    if (!e.repeat) state.swapSide();
+  } else if (key === "arrowright") { e.preventDefault(); openAt(state.open + 1); }
+  else if (key === "arrowleft") { e.preventDefault(); openAt(state.open - 1); }
+  else if (r.decision && (key === "s" || key === "d")) {
+    e.preventDefault();
+    const mark = key === "s" ? "same" : "different";
+    // Marking moves on; pressing the key of the existing mark clears it and stays. Saving is async:
+    // move on only if the same pair is still open (the user may have browsed away meanwhile).
+    const at = state.open;
+    if (await toggleMark(r, mark) && markOf(r) === mark && state.open === at && m.classList.contains("open")) {
+      openAt(at + 1);
+    }
+  }
+});
+$("verdict").addEventListener("change", applyFilters);
+$("label").addEventListener("change", applyFilters);
+$("run").addEventListener("change", () => { state.run = $("run").value; buildModelSelect(); render(); });
+$("model").addEventListener("change", () => { state.model = $("model").value; render(); });
+for (const id of ["sort", "min", "max"]) $(id).addEventListener("change", applyFilters);
+
+(async () => {
+  state.runs = await api("/api/runs");
+  const preferred = state.runs.find((r) => r.models.length) ?? state.runs[0];
+  state.run = preferred?.name ?? null;
+  $("run").replaceChildren(...state.runs.map((r) => el("option", r.name === state.run ? { selected: "" } : {}, r.name)));
+  buildModelSelect();
+  render();
+})();
+</script>
+</body>
+</html>

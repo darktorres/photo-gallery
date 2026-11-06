@@ -1,0 +1,23 @@
+# The apt packages for the Linux side: the benches (WSL and CI), the crates that link FFmpeg and libclang, and the tools
+# the tests run (ExifTool, ffmpeg). One per line; tools/profiling/wsl-setup.sh and .github/workflows/ci.yml both install
+# from this list, so a package added here reaches both.
+valgrind
+build-essential
+cmake
+nasm
+clang
+libclang-dev
+pkg-config
+git
+libssl-dev
+python3
+ffmpeg
+libavcodec-dev
+libavformat-dev
+libavutil-dev
+libswscale-dev
+libswresample-dev
+libavfilter-dev
+libavdevice-dev
+libimage-exiftool-perl
+zstd

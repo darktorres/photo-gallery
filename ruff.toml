@@ -1,0 +1,43 @@
+# Lint config for the Python scripts (eval/, tools/). Run by `just lint`.
+target-version = "py312"
+line-length = 130
+src = ["eval", "tools"]  # their modules import each other as first-party (from common import ...)
+
+[lint]
+select = [
+    "E", "W", "F", "I", "B", "UP", "SIM", "C4", "PIE", "RUF", "PLE", "PLW",
+    "A",     # builtins shadowed by names
+    "ARG",   # unused function arguments
+    "ASYNC", # blocking calls inside async code
+    "BLE",   # blind `except Exception`
+    "DTZ",   # naive datetimes
+    "ERA",   # commented-out code
+    "FURB",  # modernised idioms
+    "G",     # logging calls
+    "ISC",   # implicit string concatenation
+    "LOG",   # logging misuse
+    "N",     # pep8-naming
+    "NPY",   # numpy pitfalls
+    "PERF",  # performance anti-patterns
+    "PGH",   # blanket `# type: ignore` / `# noqa`
+    "PLC",   # pylint conventions
+    "PTH",   # os.path -> pathlib
+    "RET",   # return-statement clarity
+    "RSE",   # raise syntax
+    "S",     # bandit security checks
+    "SLF",   # private member access
+    "TCH",   # imports only needed for type checking
+    "TRY",   # exception-handling hygiene
+]
+ignore = [
+    "E741",     # l, t, r, b for the four crop sides reads better than any longer name
+    "PLW2901",  # rebinding a loop/with variable (im = exif_transpose(im)) is the PIL idiom
+    "RUF001",   # × and – in printed text are intentional
+    "N812",     # the usual short aliases: F (torch.nn.functional), T (transforms), K/KF (kornia), C (ctypes)
+    "TRY003",  # long messages in exceptions are fine in scripts; the message is what gets read
+    "PLC0415",  # lazy imports keep optional GPU/codec dependencies out of the import path
+    "S101",     # assert is the check mechanism in these benchmark and verify scripts
+    "S311",     # random is for synthetic benchmark data, not for secrets
+    "S603",     # the tools shell out to git, ffmpeg and the build; their arguments are our own
+    "S607",     # same: tools are resolved from PATH on purpose
+]

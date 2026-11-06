@@ -1,0 +1,17 @@
+# Tests may panic: a failed assertion is a panic, and the panic lint (Cargo.toml) is for the code that ships.
+allow-panic-in-tests = true
+# Tests may print: a skipped test says so, and a test reports its counts. The print lints (Cargo.toml) are for the code that ships.
+allow-print-in-tests = true
+# Phase 3 (docs/CLIPPY_LEDGER.md): the panic-freedom lints, in test code only; the production code is held to them.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# std's hash maps are randomly seeded, so iterating one gives a different order on every run, and anything that
+# order reaches (a report, a list, a test) changes with it. Use BTreeMap/BTreeSet; if hashing is ever needed for
+# speed, a fixed-seed hasher.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "randomly seeded; use BTreeMap (or a fixed-seed hasher)" },
+    { path = "std::collections::HashSet", reason = "randomly seeded; use BTreeSet (or a fixed-seed hasher)" },
+    { path = "std::hash::RandomState", reason = "randomly seeded" },
+]

@@ -1,0 +1,36 @@
+[package]
+name = "pg-library"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The job that runs the passes in order (`runner`), the cropped copies (`crop`), the borders (`borders`) and the
+# duplicate report (`dups`). The passes that touch the files are their own crates, re-exported here under their old
+# names (`pg_library::scan`, `import`, `thumbs`, `writeback`) so that callers keep their paths; the runner runs them all,
+# so it depends on all of them. The tests dev-depend on the codecs and the renderer they check against.
+[dependencies]
+pg-analysis = { path = "../analysis" }
+pg-catalog = { path = "../catalog" }
+pg-dedup = { path = "../dedup" }
+pg-edit = { path = "../edit" }
+pg-exiftool = { path = "../exiftool" }
+pg-import = { path = "../import" }
+pg-jobs = { path = "../jobs" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+pg-scan = { path = "../scan" }
+pg-thumbcache = { path = "../thumbcache" }
+pg-thumbs = { path = "../thumbs" }
+pg-writeback = { path = "../writeback" }
+anyhow.workspace = true
+
+[dev-dependencies]
+image.workspace = true
+pg-codec = { path = "../codec" }
+pg-metadata = { path = "../metadata" }
+pg-render = { path = "../render" }
+pg-testkit = { path = "../testkit" }
+pg-video = { path = "../video" }

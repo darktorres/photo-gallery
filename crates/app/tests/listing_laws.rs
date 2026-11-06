@@ -1,0 +1,70 @@
+//! The saved listing reads back as it was saved (S-18.2): for every folder, recursion, sort and query, what
+//! `save_listing` writes, `listing` returns. The session is where the listing lives between starts.
+
+use std::sync::atomic::{AtomicU64, Ordering};
+
+use pg_app::{App, Config};
+use pg_model::query::{Query, Sort, SortKey};
+use pg_model::view::Listing;
+use proptest::prelude::*;
+
+static NEXT: AtomicU64 = AtomicU64::new(0);
+
+/// A fresh folder for one case, so every case starts with no catalog. The base is the temp folder's `scratch_listing`
+/// (`PG_TEST_DIR` overrides it, as in `pg_testkit`; pg-testkit itself is not a dependency here, it depends on pg-app).
+fn fresh_dir() -> std::path::PathBuf {
+    let n = NEXT.fetch_add(1, Ordering::Relaxed);
+    let base = std::env::var_os("PG_TEST_DIR")
+        .map_or_else(|| std::env::temp_dir().join("scratch_listing"), std::path::PathBuf::from);
+    // Earlier runs' folders go first (each run has its own process id, so they would pile up); a folder still held
+    // open is left, and the next case uses its own name anyway.
+    let _ = std::fs::remove_dir_all(&base);
+    let dir = base.join(format!("case-{}-{n}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    dir
+}
+
+fn key() -> impl Strategy<Value = SortKey> {
+    prop::sample::select(vec![
+        SortKey::Name,
+        SortKey::Size,
+        SortKey::Modified,
+        SortKey::Taken,
+        SortKey::Megapixels,
+        SortKey::Duration,
+    ])
+}
+
+proptest! {
+    // A few cases: each one opens a catalog.
+    #![proptest_config(ProptestConfig::with_cases(12))]
+
+    #[test]
+    fn the_saved_listing_reads_back(
+        folder in "[a-zA-Z0-9Σé \\:]{0,12}",
+        recursive in any::<bool>(),
+        sort_key in key(),
+        descending in any::<bool>(),
+        name in "[a-zA-Z ]{0,8}",
+        exts in prop::collection::vec("[a-z]{1,4}", 0..3),
+    ) {
+        let dir = fresh_dir();
+        let app = App::open(Config {
+            catalog_dir: dir.join("catalog"),
+            prefs_path: dir.join("gallery.json"),
+            thumb_cap_bytes: None,
+        })
+        .unwrap();
+        let listing = Listing {
+            folder,
+            recursive,
+            sort: Sort { key: sort_key, descending },
+            query: Query { name, exts, ..Query::default() },
+        };
+        app.save_listing(&listing).unwrap();
+        let back = app.listing();
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+        prop_assert_eq!(back, listing);
+    }
+}

@@ -1,0 +1,18 @@
+[package]
+name = "pg-import"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The import pass: analyzes the files the scan found (their size, pixels, pairs, video) into the catalog. Depends on the analysis and the dedup, not on the thumbnails or the writes.
+[dependencies]
+pg-analysis = { path = "../analysis" }
+pg-catalog = { path = "../catalog" }
+pg-dedup = { path = "../dedup" }
+pg-jobs = { path = "../jobs" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+anyhow.workspace = true

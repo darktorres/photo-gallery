@@ -1,0 +1,24 @@
+# clippy reads this file instead of the root clippy.toml, so the root's settings that apply to every crate are repeated
+# here: the hash-collection bans and allow-panic-in-tests and allow-print-in-tests. Keep them in step with the root file.
+allow-panic-in-tests = true
+allow-print-in-tests = true
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
+allow-indexing-slicing-in-tests = true
+
+# The shared model stays free of platform code, so the web client can build it (S-15): no clock, no threads, no files.
+# The wasm32 check proves it builds; these rules stop a host-only call from creeping in unnoticed.
+disallowed-types = [
+    { path = "std::collections::HashMap", reason = "randomly seeded; use BTreeMap (or a fixed-seed hasher)" },
+    { path = "std::collections::HashSet", reason = "randomly seeded; use BTreeSet (or a fixed-seed hasher)" },
+    { path = "std::hash::RandomState", reason = "randomly seeded" },
+    { path = "std::time::Instant", reason = "no clock in the shared model: time is an input (now_ms)" },
+    { path = "std::time::SystemTime", reason = "no clock in the shared model: time is an input (now_ms)" },
+]
+disallowed-methods = [
+    { path = "std::thread::spawn", reason = "no threads in the shared model" },
+    { path = "std::fs::read", reason = "no files in the shared model" },
+    { path = "std::fs::read_to_string", reason = "no files in the shared model" },
+    { path = "std::fs::write", reason = "no files in the shared model" },
+    { path = "std::fs::read_dir", reason = "no files in the shared model" },
+]

@@ -1,0 +1,8 @@
+# Build settings every machine shares. This machine's paths (Qt, LLVM, a FFmpeg elsewhere) go in `.env` (copy .env.example):
+# `just` reads it. A plain `cargo` command sees only this file and the real environment, so put `just setup` first, or set
+# the variable in the shell.
+[env]
+# FFmpeg 9.0 for pg-video's headers and DLLs (crates/video/build.rs): the pinned build that `just setup` fetches into
+# .deps/ffmpeg. `relative` resolves it against the folder holding .cargo, the repository root. A real environment variable
+# or `.env` overrides it (CI sets it to the same folder).
+FFMPEG_DIR = { value = ".deps/ffmpeg", relative = true }

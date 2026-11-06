@@ -1,0 +1,238 @@
+# CI (S-15). Two jobs: `windows` (the app: lint, tests, the QML tests, the screenshot comparison),
+# and `linux` (the crates that build without Qt: clippy and tests, the wasm32 check, the supply-chain checks, the Python
+# and Markdown lints).
+#
+# The steps run the Justfile's recipes and tools/ scripts, except the Linux job's cargo calls, which name the crates that
+# build without Qt. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
+# comment; .github/dependabot.yml proposes updates. The Linux packages are in tools/profiling/apt-packages.txt.
+#
+# Inputs from outside the repository, and what each one is pinned to:
+#   - Qt 6.12.0 (msvc2022_64), installed by jurplel/install-qt-action at C:\Qt\6.12.0\msvc2022_64. The Windows job sets
+#     QT_DIR to that folder, as a developer's .env does.
+#   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01): pinned in the Justfile, which `just setup` fetches and
+#     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
+#   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in tools/profiling/apt-packages.txt.
+#
+# The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  # Cargo draws its progress bar only on a terminal; the runner has none, so force it, at a fixed width.
+  CARGO_TERM_PROGRESS_WHEN: always
+  CARGO_TERM_PROGRESS_WIDTH: "100"
+  # Path packages (the workspace and the [patch] path crates) are compared by checksum, not mtime, so a fresh checkout does
+  # not rebuild them. The flag alone changes nothing: cargo also needs build.fingerprint = "content". Local builds do not
+  # set these. Both are unstable cargo settings, accepted by the pinned nightly (rust-toolchain.toml) without RUSTC_BOOTSTRAP.
+  CARGO_UNSTABLE_CHECKSUM_FRESHNESS: "true"
+  CARGO_BUILD_FINGERPRINT: "content"
+  QT_VERSION: "6.12.0"
+  # Pinned, so a new ExifTool release does not change the metadata tests unasked.
+  EXIFTOOL_VERSION: "13.59.0"
+  # A test that needs ExifTool or ffmpeg fails when it is missing, instead of skipping (pg_testkit::missing_tool).
+  PG_REQUIRE_TOOLS: "1"
+
+jobs:
+  windows:
+    name: Windows (app, Qt)
+    runs-on: windows-2025
+    timeout-minutes: 90
+    env:
+      # Diagnostic (temporary): why cargo rebuilds each unit. Each rebuilt unit logs "dirty:" with its reason.
+      CARGO_LOG: cargo::compiler::fingerprint=info
+      # The Qt kit installed below: where the Justfile's recipes and the desktop crate find qmake (a developer sets it in .env).
+      QT_DIR: 'C:\Qt\6.12.0\msvc2022_64'
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Lock file is current (nothing below may change it)
+        shell: pwsh
+        run: |
+          cargo metadata --locked --format-version 1 > $null
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
+        with:
+          tool: just,cargo-deny,cargo-machete
+
+      - name: "Qt ${{ env.QT_VERSION }} (at QT_DIR, C:\\Qt\\6.12.0\\msvc2022_64)"
+        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          # aqtinstall's latest release, 3.3.0, cannot install Qt 6.11 or later on Windows x64: Qt split that repository
+          # by compiler, and 3.3.0 still looks for the old path (Updates.xml 404, "Failed to locate XML data"). Its master
+          # can (issue miurahr/aqtinstall#959). Pinned to the commit wiRedPanda's CI uses for Qt 6.12 on Windows x64.
+          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
+          arch: win64_msvc2022_64
+          # The action installs to <dir>\Qt\<version>\<arch>, so dir is the drive root: C:\Qt\6.12.0\msvc2022_64.
+          dir: C:\
+          modules: qtmultimedia
+          cache: true
+
+      - name: FFmpeg archive (cached; keyed on the Justfile, which holds the pin)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .deps/downloads
+          key: ffmpeg-${{ hashFiles('Justfile') }}
+
+      - name: FFmpeg (the pinned shared build, for pg-video and its tests)
+        shell: pwsh
+        run: |
+          # `just setup` checks the archive against the pin, and a mismatch deletes it, so the cache step does not save it.
+          just setup
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          "$env:GITHUB_WORKSPACE\.deps\ffmpeg\bin" >> $env:GITHUB_PATH
+
+      - name: ExifTool (the metadata tests)
+        shell: pwsh
+        run: choco install exiftool --version=${{ env.EXIFTOOL_VERSION }} -y --no-progress
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
+          # is what the next run needs (the default saves nothing from a failed job).
+          cache-on-failure: true
+          # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
+          cache-workspace-crates: true
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          # The screenshot fixture's venv is built from this Python (tools/compare-shots.ps1); ruff runs on it too.
+          python-version: "3.12"
+
+      - name: Ruff and markdownlint (the versions the Linux job pins)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet ruff==0.17.3
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          npm install --global markdownlint-cli@0.50.0
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Lint (formatting, clippy, dependencies, Python, Markdown, QML)
+        run: just lint
+
+      - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
+        shell: pwsh
+        run: |
+          just test
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: QML tests
+        run: just qmltest
+
+      - name: Screenshot comparison against the committed reference
+        if: github.event_name == 'pull_request'
+        continue-on-error: true # informational until it is stable (plan S-15)
+        shell: pwsh
+        run: |
+          # Without -Base, the comparison uses the one reference under tools/shots/reference. A PR's base has none unless
+          # someone recorded one, so looking it up failed every run. -Python: the Python 3.12 that setup-python put on PATH.
+          just shots -Python python
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Screenshot report
+        if: always() && github.event_name == 'pull_request'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: screenshots
+          path: |
+            target/shots/report.txt
+            target/shots/diff/
+          if-no-files-found: ignore
+
+      # Diagnostic (temporary): one timeline per cargo --timings run (lint's clippy and doc, the tests, the shots' build),
+      # so this comes last. cargo writes each run to its own cargo-timing-<time>.html.
+      - name: Cargo timings report (diagnostic)
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: cargo-timings
+          path: target/cargo-timings/
+          if-no-files-found: ignore
+
+  linux:
+    name: Linux (crates without Qt)
+    runs-on: ubuntu-26.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Rust toolchain (rust-toolchain.toml)
+        run: rustup show
+
+      - name: Lock file is current (nothing below may change it)
+        run: cargo metadata --locked --format-version 1 >/dev/null
+
+      - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
+        with:
+          tool: just,cargo-deny,cargo-machete
+
+      - name: Package list (tools/profiling/apt-packages.txt)
+        id: apt
+        run: echo "packages=$(grep -v '^#' tools/profiling/apt-packages.txt | xargs)" >> "$GITHUB_OUTPUT"
+
+      - name: System packages (cached)
+        uses: awalsh128/cache-apt-pkgs-action@553a35bb8ebd9fcabcb1c9451aa4c98e1b4ca8a9 # v1.6.3
+        with:
+          packages: ${{ steps.apt.outputs.packages }}
+          version: 1
+
+      - name: gungraun-runner (cached; wsl-setup.sh builds it only when missing)
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: ~/.cargo/bin/gungraun-runner
+          key: gungraun-runner-${{ hashFiles('Cargo.lock') }}
+
+      - name: System libraries (FFmpeg, libclang, valgrind for the benches)
+        run: bash tools/profiling/wsl-setup.sh
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+        with:
+          # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
+          # is what the next run needs (the default saves nothing from a failed job).
+          cache-on-failure: true
+          # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
+          cache-workspace-crates: true
+          # Off: this step runs after the gungraun-runner cache is restored, and rust-cache's save removes the binaries
+          # it found in ~/.cargo/bin when it restored, which would take gungraun-runner out before its cache is saved.
+          cache-bin: false
+
+      - name: Build and test the crates that need no Qt
+        run: |
+          export FFMPEG_DIR="$HOME/.local/share/pg-bench/ffmpeg"
+          LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
+          export LIBCLANG_PATH
+          cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings
+          cargo test --workspace --exclude pg-desktop --exclude pg-gallery
+
+      - name: wasm32 (the shared model and the client stay free of platform code)
+        run: cargo check -p pg-model -p pg-client --target wasm32-unknown-unknown
+
+      - name: Supply chain (licences, advisories, unused dependencies)
+        run: |
+          cargo deny check
+          cargo machete crates
+
+      - name: Python and Markdown
+        run: |
+          # The versions the local tools run (the Justfile's lint uses whatever is installed); bump both together.
+          python -m pip install --quiet ruff==0.17.3
+          ruff format --check .
+          ruff check .
+          npm install --global markdownlint-cli@0.50.0
+          markdownlint --ignore target --ignore .playwright-mcp --ignore vendor docs "**/README.md"

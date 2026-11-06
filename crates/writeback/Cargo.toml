@@ -1,0 +1,21 @@
+[package]
+name = "pg-writeback"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The writer: puts the ratings and the turns into the files (ExifTool, the rotation edit) and keeps the queue of those writes. Its dependencies are the edit, the metadata and ExifTool.
+[dependencies]
+pg-analysis = { path = "../analysis" }
+pg-catalog = { path = "../catalog" }
+pg-edit = { path = "../edit" }
+pg-exiftool = { path = "../exiftool" }
+pg-jobs = { path = "../jobs" }
+pg-metadata = { path = "../metadata" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+pg-thumbcache = { path = "../thumbcache" }
+anyhow.workspace = true

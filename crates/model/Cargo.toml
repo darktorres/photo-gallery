@@ -1,0 +1,24 @@
+[package]
+name = "pg-model"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The domain data: pure and WASM-safe (no file, catalog, decoder or platform calls), so the web client can share it.
+[dependencies]
+arrayvec.workspace = true
+serde.workspace = true
+strum.workspace = true
+# The TypeScript types for the web client (S-04.8): the wire types of `query` derive `specta::Type` behind this feature.
+specta = { version = "=2.0.0-rc.27", optional = true, features = ["derive"] }
+
+[features]
+specta = ["dep:specta"]
+
+# The laws of the pure types (tests/laws.rs), generated (S-18.2).
+[dev-dependencies]
+proptest.workspace = true
+serde_json.workspace = true

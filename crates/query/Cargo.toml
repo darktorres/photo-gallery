@@ -1,0 +1,18 @@
+[package]
+name = "pg-query"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The query compiler: a `Query` (pg-model's) becomes the SQL of its conditions and their parameters, plus the SQL
+# functions those conditions call (registered on a connection by the catalog). It holds no connection and reads no
+# catalog state, so the catalog is the only crate that runs what it builds.
+[dependencies]
+pg-model = { path = "../model" }
+rusqlite.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+strum.workspace = true

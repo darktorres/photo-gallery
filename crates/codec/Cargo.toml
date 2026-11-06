@@ -1,0 +1,32 @@
+[package]
+name = "pg-codec"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The pixels in and out: the image decoders and encoders are linked here and nowhere else (deny.toml). No file or
+# catalog access; the caller gives the bytes.
+[dependencies]
+pg-model = { path = "../model" }
+anyhow.workspace = true
+fast_image_resize.workspace = true
+gif.workspace = true
+image.workspace = true
+image-webp.workspace = true
+png.workspace = true
+tiff.workspace = true
+turbojpeg.workspace = true
+zune-core.workspace = true
+zune-jpeg.workspace = true
+
+[features]
+# The test fixtures for the crates that test their files (`fixtures`).
+fixtures = []
+
+[dev-dependencies]
+crc32fast.workspace = true
+miniz_oxide.workspace = true
+pg-testkit = { path = "../testkit" }

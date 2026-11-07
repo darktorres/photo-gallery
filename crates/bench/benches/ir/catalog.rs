@@ -88,7 +88,6 @@ fn for_list(which: List) -> (Catalog, List) {
 #[bench::all_unrated(args = (List::AllUnrated), setup = for_list)]
 #[bench::folder_recursive(args = (List::FolderRecursive), setup = for_list)]
 #[bench::folder_flat(args = (List::FolderFlat), setup = for_list)]
-#[expect(clippy::panic, reason = "the layout's folders are literals: a path that does not parse is a bug in the bench")]
 fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
     let name = Sort::default();
     let unrated = Query { ratings: vec![RatingFilter::Unrated], ..Query::default() };
@@ -99,6 +98,8 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
         List::FolderRecursive => (r"PhotoGallery\synthetic\library", true, Query::default(), name),
         List::FolderFlat => (r"PhotoGallery\synthetic\library\folder-00", false, Query::default(), name),
     };
+    // The layout's folders are literals: a path that does not parse is a bug in the bench.
+    #[expect(clippy::panic, reason = "a folder literal that does not parse is a bug in the bench")]
     let Some(parsed) = RULES.parse(folder) else { panic!("a folder path of the layout: {folder}") };
     let folder = RULES.merge(&parsed);
     let entries = or_stop(browse::read::list_grid(&catalog, &folder, recursive, &query, sort), "the grid's list");

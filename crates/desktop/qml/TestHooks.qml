@@ -8,6 +8,7 @@
 //   --menu=views  open the views menu   --apply-view=<name>  open a saved view (read by the start, in Rust)
 //   --query=<json>  filter by a query::Query   --sort=<json>  order by a query::Sort (both read by the start, in Rust)
 //   --filters=1  open the bar
+//   --mascot=<n>  show this mascot (1 to 40) instead of a random one: the screenshots pin one
 //   --library=1  open the library folders   --save-view=1  open the save-view dialog
 //   --find-similar=<path>  search Yandex for the file (it is uploaded: a path that isn't a still image only shows
 //                          the panel with its error)
@@ -68,6 +69,8 @@ Item {
     readonly property bool hasApplyView: commandLine.has("apply-view")
     readonly property bool hasFilters: commandLine.has("filters")
     readonly property bool hasBorders: commandLine.has("borders")
+    // The mascot the window shows from the start (--mascot): 0 when not given, which is a random one.
+    readonly property int mascot: commandLine.number("mascot", 0)
     // The result the Yandex panel shows at full size (-1: none). It counts only with --find-similar, which makes the panel.
     readonly property int yandexPreview: commandLine.has("find-similar") && commandLine.has("yandex-preview")
         ? commandLine.number("yandex-preview", 0) : -1

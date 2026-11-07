@@ -89,6 +89,9 @@ $Scenarios = [ordered]@{
     "save-crops"           = "--save-crops={RUN}\crops"
     "filters-view0"        = "--filters=1 --view=0"
 }
+# Every run shows one fixed mascot (--mascot), not the random one a window picks, so the screenshots of a commit match its
+# reference. The reference is recorded again whenever this changes.
+$Mascot = 1
 # The pseudo-locale (S-19.3): every line of the front end in the pseudo-locale. No reference has it, so it is run on the
 # working tree only and its screenshot kept under target\shots\pseudo, for a look; it is not compared.
 $Pseudo = [ordered]@{
@@ -199,7 +202,7 @@ function Invoke-Shot([string]$Exe, [string]$Side, [string]$Name, [string]$Hooks,
     Restore-Library
     $hookArgs = $Hooks.Replace("{FIX}", $run).Replace("{RUN}", $run)
     $png = Join-Path $run "shot.png"
-    $line = "--screenshot=$png --wait=$Seconds $hookArgs".Trim()
+    $line = "--screenshot=$png --wait=$Seconds --mascot=$Mascot $hookArgs".Trim()
     $env:PG_CATALOG_DIR = Join-Path $run "catalog"
     $env:PG_PREFS = Join-Path $run "prefs.json"
     $proc = Start-Process -FilePath $Exe -ArgumentList $line -PassThru -NoNewWindow

@@ -399,6 +399,7 @@ ApplicationWindow {
                 // Under the tree, at the bottom of the column.
                 Mascot {
                     id: mascot
+                    pinned: testHooks.mascot
                     anchors.left: parent.left
                     anchors.right: parent.right
                     anchors.bottom: parent.bottom

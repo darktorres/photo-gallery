@@ -59,6 +59,19 @@ TestCase {
         verify(m.source.toString().endsWith("/resources/mascots/01.png"), m.source)
     }
 
+    function test_a_pinned_mascot_starts_on_its_number() {
+        const m = createTemporaryObject(mascotC, tc, { pinned: 7 })
+        verify(m !== null)
+        compare(m.number, 7)
+        verify(m.source.toString().endsWith("/resources/mascots/07.png"), m.source)
+    }
+
+    function test_a_pin_out_of_range_is_random_as_without_one() {
+        const m = createTemporaryObject(mascotC, tc, { pinned: 99 })
+        verify(m !== null)
+        verify(m.number >= 1 && m.number <= m.count)
+    }
+
     function test_right_click_before_the_first_wraps_to_the_last() {
         const m = createTemporaryObject(mascotC, tc)
         verify(m !== null)

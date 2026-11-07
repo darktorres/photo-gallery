@@ -11,6 +11,9 @@ Image {
     readonly property int count: 40
     // The mascot shown: 1 to count.
     property int number: 1
+    // The mascot to show from the start, instead of a random one (the screenshots pin one with --mascot=<n>). 0, or a
+    // number out of 1 to count, is random.
+    property int pinned: 0
 
     // Shows the mascot `d` places on (-1 the previous one, 1 the next), wrapping around.
     function step(d: int): void {
@@ -26,7 +29,7 @@ Image {
     mipmap: true
     source: "qrc:/qt/qml/pg/gallery/resources/mascots/" + (number < 10 ? "0" + number : "" + number) + ".png"
 
-    Component.onCompleted: number = Math.floor(Math.random() * count) + 1
+    Component.onCompleted: number = pinned >= 1 && pinned <= count ? pinned : Math.floor(Math.random() * count) + 1
 
     MouseArea {
         anchors.fill: parent

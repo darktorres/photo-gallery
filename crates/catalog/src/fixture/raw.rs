@@ -12,12 +12,24 @@ use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
+use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
-use rusqlite::{Connection, OptionalExtension, Params, Row, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Params, Row, params};
 
 /// A connection of the test's own to the catalog file at `path`.
 pub(crate) fn on_disk(path: &Path) -> Connection {
     Connection::open(path).unwrap()
+}
+
+/// The path rules a catalog file was made under, as its `meta.path_rules` row says, read through a read-only
+/// connection of the test's own (the way the real catalogs are read).
+pub(crate) fn recorded_rules(path: &Path) -> PathRules {
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY).unwrap();
+    let name: String = conn.query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0)).unwrap();
+    [PathRules::Windows, PathRules::Posix]
+        .into_iter()
+        .find(|&rules| crate::rules_name(rules) == name)
+        .unwrap_or_else(|| panic!("an unknown path rules name: {name:?}"))
 }
 
 /// Run `sql`, which the catalog itself runs, and map its rows: to check what the catalog's statements return.

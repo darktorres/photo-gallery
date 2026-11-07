@@ -1,6 +1,9 @@
 use super::tree::FOLDER_COUNTS;
 use super::*;
-use crate::browse::fixtures::{by, folder_of, ids, library, mixed_library, sorted_by_sqlite};
+use crate::browse::fixtures::{
+    by, folder_of, ids, library, mixed_library, sorted_by_sqlite, spelled, under_both_rules,
+};
+use crate::browse::writes::save_view;
 use crate::fixture;
 use crate::fixture::raw;
 use crate::query::condition;
@@ -19,10 +22,11 @@ use pg_model::rules::{Merged, PathRules};
 use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
+use pg_model::view::SavedView;
 use pg_model::write::WriteKind;
 use rusqlite::params_from_iter;
 
-/// A folder given as its Windows path text, merged: the test's own spelling of a folder.
+/// A folder given as its Windows path text, merged: the spelling the Windows-only tests use.
 fn folder(text: &str) -> Merged {
     let rules = PathRules::Windows;
     rules.merge(&rules.parse(text).unwrap())
@@ -89,6 +93,7 @@ fn the_cut_is_described_as_shown() {
     assert_eq!(e.shown_cut(), None);
 }
 
+// Windows-only: the anchor is a drive letter or the UNC root, which POSIX paths do not have.
 #[test]
 fn merged_folders_drop_the_anchor() {
     let names = |parts: &[&str]| -> Vec<Name> { parts.iter().map(|p| Name::from(*p)).collect() };
@@ -97,9 +102,8 @@ fn merged_folders_drop_the_anchor() {
     assert_eq!(folder(r"\\server\share\x").parts(), &names(&["server", "share", "x"])[..]);
 }
 
-#[test]
-fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
-    let c = library();
+fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rules: PathRules) {
+    let c = library(rules);
     raw::set_thumbhash(&c, FileId::new(1), &[1]);
     let state = || file_state(&c, FileId::new(1)).unwrap().unwrap();
     let turns = || placeholder(&c, FileId::new(1)).unwrap().unwrap().turns;
@@ -117,15 +121,20 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels() {
     // Being written into the file.
     assert!(!state().writing);
     let job = writes::Job { file_id: FileId::new(1), kind: WriteKind::Turns, value: 2, temp: None, attempts: 0 };
-    writes::record_temp(&c, &job, r"D:\p\b.jpg.tmp", 1).unwrap();
+    writes::record_temp(&c, &job, &spelled(rules, r"D:\p\b.jpg.tmp"), 1).unwrap();
     assert!(state().writing);
     assert_eq!(file_state(&c, FileId::new(99)).unwrap(), None);
     assert!(placeholder(&c, FileId::new(99)).unwrap().is_none());
 }
 
-#[test]
-fn ratings_and_orders() {
-    let c = library();
+under_both_rules!(
+    a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels,
+    a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels_windows,
+    a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels_posix
+);
+
+fn ratings_and_orders(rules: PathRules) {
+    let c = library(rules);
     let all = Query::default();
     let ratings = |r: &[u8]| Query {
         ratings: r.iter().map(|&n| RatingFilter::try_from(n).unwrap()).collect(),
@@ -147,7 +156,7 @@ fn ratings_and_orders() {
     assert_eq!(
         details(&c, FileId::new(2)).unwrap(),
         Some(Details {
-            path: r"E:\p\a.png".into(),
+            path: spelled(rules, r"E:\p\a.png"),
             size: 10,
             rating_in_file: true,
             border_sides: detection::Sides::new()
@@ -156,17 +165,20 @@ fn ratings_and_orders() {
     assert_eq!(details(&c, FileId::new(99)).unwrap(), None);
 }
 
-#[test]
-fn folders_in_the_trees_order() {
-    let c = library();
+under_both_rules!(ratings_and_orders, ratings_and_orders_windows, ratings_and_orders_posix);
+
+fn folders_in_the_trees_order(rules: PathRules) {
+    let c = library(rules);
     // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
-    raw::add_folder(&c, 4, r"D:\p-x");
+    raw::add_folder(&c, 4, &spelled(rules, r"D:\p-x"));
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(4), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
     let tree = folder_tree(&c).unwrap();
     let roots: Vec<String> = tree.children(None).map(|n| tree.name(n).display().into_owned()).collect();
     assert_eq!(roots, ["p", "p-x"]);
 }
+
+under_both_rules!(folders_in_the_trees_order, folders_in_the_trees_order_windows, folders_in_the_trees_order_posix);
 
 /// A node as compared: merged path, name, depth, direct and total counts, drives (upper case, by letter), and
 /// how many children, in pre-order.
@@ -269,38 +281,50 @@ fn flat(tree: &FolderTree) -> Vec<Flat> {
         .collect()
 }
 
-/// Builds a tree of these rows (under Windows rules), and checks it against the reference and its own structure.
-fn check_tree(rows: &[(i64, String, i64)]) {
-    let rules = PathRules::Windows;
+/// Builds a tree of these rows under `rules`, and checks it against its own structure; under Windows rules (whose
+/// drives merge) it is checked against the reference too.
+fn check_tree(rules: PathRules, rows: &[(i64, String, i64)]) {
     let mut builder = TreeBuilder::with_capacity(rules, rows.len(), 0, 0);
     for (id, path, count) in rows {
         builder.add(*id, &rules.parse(path).unwrap(), *count);
     }
     let tree = builder.build();
-    assert_eq!(flat(&tree), reference_tree(rows));
+    if rules == PathRules::Windows {
+        assert_eq!(flat(&tree), reference_tree(rows));
+    }
     let mut key = Vec::new();
     for n in 0..tree.len() {
         let merged = tree.merged(n);
         assert_eq!(tree.find(&merged, &mut key), Some(n), "{merged:?}");
-        let upper = Merged::from(
-            merged.parts().iter().map(|p| Name::from(p.display().to_ascii_uppercase().as_str())).collect::<Vec<_>>(),
-        );
-        assert_eq!(tree.find(&upper, &mut key), Some(n), "{merged:?}");
+        // Upper case finds the folder under Windows rules only: POSIX names are case-sensitive.
+        if rules == PathRules::Windows {
+            let upper = Merged::from(
+                merged
+                    .parts()
+                    .iter()
+                    .map(|p| Name::from(p.display().to_ascii_uppercase().as_str()))
+                    .collect::<Vec<_>>(),
+            );
+            assert_eq!(tree.find(&upper, &mut key), Some(n), "{merged:?}");
+        }
         assert_eq!(tree.key(n), rules.merged_key(&merged));
         assert_eq!(tree.multi_anchor(n), tree.anchors(n).contains(' '));
         if let Some(p) = tree.parent(n) {
             assert!(p < n && n < tree.subtree_end(p) && tree.children(Some(p)).any(|c| c == n));
         }
     }
-    assert_eq!(tree.find(&folder("no such folder"), &mut key), None);
+    assert_eq!(tree.find(&rules.merge(&rules.parse("no such folder").unwrap()), &mut key), None);
 }
 
+// Windows-only: the random paths are drive letters and UNC roots, and the reference is the Windows tree (the
+// drives merged).
 #[test]
 fn the_tree_is_built_as_before() {
     let named = [r"D:\p\Sub", r"E:\P\sub\x", r"E:\p", r"D:\p-x", r"d:\P", r"\\srv\share\a", r"D:\ΑΣ\b", r"E:\ας"];
     let named = named.into_iter().chain([r"D:\a\b", "D:\\a\\b\u{1}c", "D:", r"D:\İ", r"E:\i\u{307}"]);
     // A deeper folder first: its spelling of `p` wins over `E:\P`'s.
     check_tree(
+        PathRules::Windows,
         &named
             .enumerate()
             .map(|(i, p)| (i64::try_from(i).unwrap() + 1, p.to_string(), i64::try_from(i).unwrap() + 1))
@@ -321,24 +345,28 @@ fn the_tree_is_built_as_before() {
                 rows.push((id, path, count));
             }
         }
-        check_tree(&rows);
+        check_tree(PathRules::Windows, &rows);
     }
-    check_tree(&[]);
+    check_tree(PathRules::Windows, &[]);
 }
 
-/// On a real catalog (read-only): `PG_TEST_CATALOG=… cargo test -p pg-catalog real_tree -- --ignored`.
+/// On a real catalog (read-only, under the path rules it records):
+/// `PG_TEST_CATALOG=… cargo test -p pg-catalog real_tree -- --ignored`.
 #[test]
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_tree_is_built_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let c = crate::Catalog::open(std::path::Path::new(&path), pg_model::rules::PathRules::Windows).unwrap();
+    let rules = raw::recorded_rules(std::path::Path::new(&path));
+    let c = crate::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let rows: Vec<(i64, String, i64)> =
         raw::rows_of(&c, &FOLDER_COUNTS.replace("(SELECT path FROM", "(SELECT CAST(path AS TEXT) FROM"), [], |r| {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         });
-    check_tree(&rows);
+    check_tree(rules, &rows);
     let tree = folder_tree(&c).unwrap();
-    assert_eq!(flat(&tree), reference_tree(&rows));
+    if rules == PathRules::Windows {
+        assert_eq!(flat(&tree), reference_tree(&rows));
+    }
     eprintln!("{} folders, {} nodes, {} files", rows.len(), tree.len(), tree.total());
 }
 
@@ -407,6 +435,7 @@ fn random_file(rng: &mut Rng) -> (String, String) {
     (folder, part(rng))
 }
 
+// Windows-only: the order keys fold case per character and leave the drives out, and the cases named are Windows'.
 #[test]
 fn order_keys_sort_as_before() {
     let mut rng = Rng(0x9E37_79B9_7F4A_7C15);
@@ -432,6 +461,7 @@ fn order_keys_sort_as_before() {
 /// Folder keys are made per character: each part lower-cased character by character (a Σ is σ wherever it stands,
 /// where `str::to_lowercase` would make a final one ς), escaped, then 0x01. The writer stores these keys and the
 /// scope reads them, so the two agree.
+// Windows-only: the folder key lower-cases each character as Windows does (a POSIX key holds the exact bytes).
 #[test]
 fn folder_keys_are_made_per_character() {
     let rules = PathRules::Windows;
@@ -475,7 +505,11 @@ fn folder_keys_are_made_per_character() {
 #[ignore = "needs PG_TEST_CATALOG, a real catalog (opened read-only)"]
 fn real_names_sort_and_scope_as_before() {
     let path = std::env::var_os("PG_TEST_CATALOG").expect("PG_TEST_CATALOG");
-    let c = crate::Catalog::open(std::path::Path::new(&path), pg_model::rules::PathRules::Windows).unwrap();
+    let rules = raw::recorded_rules(std::path::Path::new(&path));
+    // The reference order and scopes below are Windows': per-character case folding, drives merged. A POSIX catalog
+    // is checked by the rule-generic tests instead.
+    assert_eq!(rules, PathRules::Windows, "the reference order and scopes are Windows'");
+    let c = crate::Catalog::open(std::path::Path::new(&path), rules).unwrap();
     let files: Vec<(String, String)> = raw::rows_of(
         &c,
         "SELECT CAST(fo.path AS TEXT), CAST(f.name AS TEXT) FROM files f JOIN folders fo ON fo.id = f.folder_id",
@@ -513,6 +547,7 @@ fn real_names_sort_and_scope_as_before() {
     eprintln!("{} files, {} folders: same order and scopes", files.len(), folders.len());
 }
 
+// Windows-only: the scopes are ranges of Windows keys, and the cases name drives, a UNC root and case folding.
 #[test]
 fn scopes_are_key_ranges() {
     let inside = |scope_of: (&str, bool), file: (&str, &str)| {
@@ -546,16 +581,15 @@ fn scopes_are_key_ranges() {
 }
 
 /// Sized by the count: an unfiltered list exactly, a filtered or sorted one without much slack.
-#[test]
-fn lists_are_made_at_their_size() {
-    let c = mixed_library();
-    let all = list_grid(&c, &folder(""), true, &Query::default(), Sort::default()).unwrap();
+fn lists_are_made_at_their_size(rules: PathRules) {
+    let c = mixed_library(rules);
+    let all = list_grid(&c, &folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
     assert_eq!(all.capacity(), all.len());
-    let sorted = list_grid(&c, &folder(""), true, &Query::default(), by(SortKey::Size, true)).unwrap();
+    let sorted = list_grid(&c, &folder_of(&c, ""), true, &Query::default(), by(SortKey::Size, true)).unwrap();
     assert_eq!(sorted.capacity(), sorted.len());
     let one = list_grid(
         &c,
-        &folder(""),
+        &folder_of(&c, ""),
         true,
         &Query { ratings: vec![RatingFilter::try_from(5).unwrap()], ..Query::default() },
         Sort::default(),
@@ -564,12 +598,17 @@ fn lists_are_made_at_their_size() {
     assert!(one.capacity() < all.len() * 3 / 4 || one.capacity() == one.len());
 }
 
-#[test]
-fn lists_read_the_order_index() {
-    let c = library();
+under_both_rules!(
+    lists_are_made_at_their_size,
+    lists_are_made_at_their_size_windows,
+    lists_are_made_at_their_size_posix
+);
+
+fn lists_read_the_order_index(rules: PathRules) {
+    let c = library(rules);
     for (text, recursive) in [("p", true), ("p", false), ("", true)] {
         for sort in [Sort::default(), by(SortKey::Name, true), by(SortKey::Taken, true)] {
-            let (scope, values) = scope(PathRules::Windows, &folder(text), recursive);
+            let (scope, values) = scope(c.rules(), &folder_of(&c, text), recursive);
             let unrated = condition(&Query { ratings: vec![RatingFilter::Unrated], ..Query::default() });
             let plan = raw::query_plan(
                 &c,
@@ -580,7 +619,7 @@ fn lists_read_the_order_index() {
             assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
         }
         // The list's size, from the index alone.
-        let (scope, values) = scope(PathRules::Windows, &folder(text), recursive);
+        let (scope, values) = scope(c.rules(), &folder_of(&c, text), recursive);
         let plan = raw::query_plan(
             &c,
             &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
@@ -592,9 +631,10 @@ fn lists_read_the_order_index() {
     assert!(plan.contains("COVERING INDEX files_present") && !plan.contains("TEMP B-TREE"), "{plan}");
 }
 
-#[test]
-fn facets_filter() {
-    let c = mixed_library();
+under_both_rules!(lists_read_the_order_index, lists_read_the_order_index_windows, lists_read_the_order_index_posix);
+
+fn facets_filter(rules: PathRules) {
+    let c = mixed_library(rules);
     let q = |f: &dyn Fn(&mut Query)| {
         let mut q = Query::default();
         f(&mut q);
@@ -637,9 +677,10 @@ fn facets_filter() {
     );
 }
 
-#[test]
-fn sorts_put_missing_values_last() {
-    let c = mixed_library();
+under_both_rules!(facets_filter, facets_filter_windows, facets_filter_posix);
+
+fn sorts_put_missing_values_last(rules: PathRules) {
+    let c = mixed_library(rules);
     let all = Query::default();
     assert_eq!(ids(&c, "", true, &all, by(SortKey::Megapixels, true)), [5, 2, 1, 3, 4, 6, 7, 8]);
     assert_eq!(ids(&c, "", true, &all, by(SortKey::Megapixels, false)), [6, 2, 1, 3, 4, 5, 7, 8]);
@@ -647,9 +688,14 @@ fn sorts_put_missing_values_last() {
     assert_eq!(ids(&c, "", true, &all, by(SortKey::Taken, true))[0], 1);
 }
 
-#[test]
-fn grid_lists_sort_as_sqlite_did() {
-    let c = mixed_library();
+under_both_rules!(
+    sorts_put_missing_values_last,
+    sorts_put_missing_values_last_windows,
+    sorts_put_missing_values_last_posix
+);
+
+fn grid_lists_sort_as_sqlite_did(rules: PathRules) {
+    let c = mixed_library(rules);
     // Ties: four 4×3 images, and no taken date or duration on most.
     for key in [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Taken, SortKey::Megapixels, SortKey::Duration]
     {
@@ -659,10 +705,10 @@ fn grid_lists_sort_as_sqlite_did() {
         }
     }
     // Each entry as read alone.
-    for e in list_grid(&c, &folder(""), true, &Query::default(), Sort::default()).unwrap() {
+    for e in list_grid(&c, &folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap() {
         assert_eq!(entry(&c, e.id).unwrap(), Some(e));
     }
-    let entries = list_grid(&c, &folder(""), true, &Query::default(), Sort::default()).unwrap();
+    let entries = list_grid(&c, &folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
     let get = |id: i64| *entries.iter().find(|e| e.id == FileId::new(id)).unwrap();
     let (clip, gif, broken) = (get(5), get(6), get(7));
     assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
@@ -672,21 +718,28 @@ fn grid_lists_sort_as_sqlite_did() {
     assert_eq!(entry(&c, FileId::new(99)).unwrap(), None);
 }
 
-#[test]
-fn facet_counts() {
-    let c = mixed_library();
+under_both_rules!(
+    grid_lists_sort_as_sqlite_did,
+    grid_lists_sort_as_sqlite_did_windows,
+    grid_lists_sort_as_sqlite_did_posix
+);
+
+fn facet_counts(rules: PathRules) {
+    let c = mixed_library(rules);
     let videos = Query { types: vec![MediaType::Video], ..Query::default() };
-    let f = facets(&c, &folder(""), true, &videos).unwrap();
+    let f = facets(&c, &folder_of(&c, ""), true, &videos).unwrap();
     assert_eq!((f.total, f.matching), (8, 1));
     // A facet's own choices are counted without it; the other facets apply.
     assert_eq!(f.types, [(MediaType::Image, 6), (MediaType::Animated, 1), (MediaType::Video, 1)]);
     assert_eq!(f.exts, [("mp4".to_string(), 1)]);
-    let f = facets(&c, &folder("p"), false, &Query::default()).unwrap();
+    let f = facets(&c, &folder_of(&c, "p"), false, &Query::default()).unwrap();
     assert_eq!(
         f.exts,
         [("jpg".to_string(), 3), ("gif".to_string(), 1), ("png".to_string(), 1), ("webp".to_string(), 1)]
     );
 }
+
+under_both_rules!(facet_counts, facet_counts_windows, facet_counts_posix);
 
 /// The facets as they were before the one pass: a statement per facet, each with its own scan of the folder. The
 /// reference the pass is checked against.
@@ -732,9 +785,8 @@ fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, que
     Ok(Facets { total, matching, types, exts, borders })
 }
 
-#[test]
-fn the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet() {
-    let c = mixed_library();
+fn the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet(rules: PathRules) {
+    let c = mixed_library(rules);
     let queries = [
         Query::default(),
         Query { types: vec![MediaType::Video], ..Query::default() },
@@ -750,7 +802,7 @@ fn the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet() {
     ];
     for query in &queries {
         for (text, recursive) in [("", true), ("p", false), ("p", true)] {
-            let merged = folder(text);
+            let merged = folder_of(&c, text);
             let one_pass = facets(&c, &merged, recursive, query).unwrap();
             let statements = facets_by_statements(&c, &merged, recursive, query).unwrap();
             assert_eq!(one_pass, statements, "{merged:?} recursive {recursive}: {query:?}");
@@ -758,18 +810,29 @@ fn the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet() {
     }
 }
 
+under_both_rules!(
+    the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet,
+    the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet_windows,
+    the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet_posix
+);
+
 /// A folder whose name ends in Σ lists its files: the writer keys it character by character (σ), and the scope reads
 /// that same key. (Before S-17.8 the scope lower-cased the name whole, to ς, and listed nothing.)
-#[test]
-fn a_folder_ending_in_sigma_lists_its_files() {
-    let c = library();
-    raw::add_folder(&c, 9, r"D:\ΑΣ");
+fn a_folder_ending_in_sigma_lists_its_files(rules: PathRules) {
+    let c = library(rules);
+    raw::add_folder(&c, 9, &spelled(rules, r"D:\ΑΣ"));
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(9), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "ΑΣ", false, &Query::default(), Sort::default()), [9]);
     assert_eq!(ids(&c, "ΑΣ", true, &Query::default(), Sort::default()), [9]);
     // A different folder: the lower-cased ς is not σ.
     assert_eq!(ids(&c, "ας", false, &Query::default(), Sort::default()), Vec::<i64>::new());
 }
+
+under_both_rules!(
+    a_folder_ending_in_sigma_lists_its_files,
+    a_folder_ending_in_sigma_lists_its_files_windows,
+    a_folder_ending_in_sigma_lists_its_files_posix
+);
 
 /// Posix folders are case-sensitive: `/photos/Pics` and `/photos/pics` are two folders, listed apart and both in the
 /// tree (the Windows-only keys merged them, and the tree dropped one).
@@ -794,4 +857,30 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
     let photos = tree.children(None).next().unwrap();
     let below: Vec<String> = tree.children(Some(photos)).map(|n| tree.name(n).display().into_owned()).collect();
     assert_eq!(below, ["Pics", "pics"]);
+}
+
+/// Windows folder keys fold case: a saved view spelled `P` is the folder `p`, its own files and the subfolder's. (The
+/// Posix twin, `posix_folders_are_case_sensitive_and_listed_apart`, keeps the cases apart.)
+#[test]
+fn a_saved_scope_matches_its_folder_whatever_the_case() {
+    let c = library(PathRules::Windows);
+    let view = SavedView {
+        name: "upper".into(),
+        folder: folder_of(&c, "P"),
+        recursive: true,
+        query: Query::default(),
+        sort: Sort::default(),
+    };
+    save_view(&c, &view).unwrap();
+    let saved = crate::browse::read::views(&c).unwrap().remove(0);
+    assert_eq!(saved.folder, folder_of(&c, "P"), "kept as it was saved");
+    let listed = |folder: &Merged, recursive: bool| -> Vec<i64> {
+        list_grid(&c, folder, recursive, &Query::default(), Sort::default())
+            .unwrap()
+            .iter()
+            .map(|e| e.id.get())
+            .collect()
+    };
+    assert_eq!(listed(&saved.folder, false), [2, 1, 3], "D:\\p and E:\\p, as p");
+    assert_eq!(listed(&saved.folder, true), [2, 1, 3, 4], "and D:\\p\\sub");
 }

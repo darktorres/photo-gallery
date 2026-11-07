@@ -252,4 +252,22 @@ mod tests {
         assert_eq!(shown(&t), ["", "a", r"a\b", r"a\d", "e"]);
         assert!(t.is_expanded(0));
     }
+
+    // A folder whose name has a lone surrogate is opened by its row, and it reveals that row: the folder it opens is its
+    // own parts, exactly (no text stands in for the name).
+    #[test]
+    fn a_folder_with_a_lone_surrogate_opens_and_reveals_by_its_row() {
+        let rules = PathRules::Windows;
+        let odd = pg_model::name::Name::from_wide(&[0x61, 0xD800]);
+        let mut path = rules.parse(r"D:").unwrap();
+        path.parts = vec![odd.clone()];
+        let mut b = TreeBuilder::with_capacity(rules, 2, 0, 0);
+        b.add(1, &path, 1);
+        let mut t = Tree::default();
+        t.replace(b.build());
+        let node = t.row(1).flatten().expect("the folder's row");
+        let opened = t.folders().merged(node);
+        assert_eq!(opened, Merged::from(vec![odd]));
+        assert_eq!(t.reveal(&opened), Some(1));
+    }
 }

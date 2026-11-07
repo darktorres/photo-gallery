@@ -298,20 +298,20 @@ fn replace(tx: &Transaction, id: i64, from: &Fresh, scan: i64, temps: &mut Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browse::fixtures::{spelled, under_both_rules};
     use pg_model::rules::PathRules;
 
-    const RULES: PathRules = PathRules::Windows;
-
-    fn p(text: &str) -> RulePath {
-        RULES.parse(text).expect("a test path")
+    fn p(rules: PathRules, text: &str) -> RulePath {
+        rules.parse(&spelled(rules, text)).expect("a test path")
     }
 
-    fn catalog() -> Catalog {
-        Catalog::prepare(std::path::Path::new(":memory:"), Versions { import: 1, borders: 1 }, RULES).unwrap()
+    fn catalog(rules: PathRules) -> Catalog {
+        Catalog::prepare(std::path::Path::new(":memory:"), Versions { import: 1, borders: 1 }, rules).unwrap()
     }
 
     fn begin(c: &Catalog) -> i64 {
-        c.begin_scan(&p(r"D:\x")).unwrap()
+        let rules = c.rules();
+        c.begin_scan(&p(rules, r"D:\x")).unwrap()
     }
 
     /// The scanner finding a file in D:\x with this identity, name, size and creation time (mtime 100).
@@ -324,9 +324,10 @@ mod tests {
         size: u64,
         created: Option<i64>,
     ) -> Recorded {
+        let rules = c.rules();
         let tx = c.tx().unwrap();
-        let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
-        let folder = writer.folder(&p(r"D:\x")).unwrap();
+        let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+        let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
         let file = ScannedFile {
             identity: FileIdentity::new(volume, file),
             name: &Name::from(name),
@@ -342,7 +343,8 @@ mod tests {
     }
 
     fn pair(c: &mut Catalog, scan: i64, clean: bool) -> Pairing {
-        c.pair(&p(r"D:\x"), scan, clean).unwrap()
+        let rules = c.rules();
+        c.pair(&p(rules, r"D:\x"), scan, clean).unwrap()
     }
 
     fn count(c: &Catalog) -> i64 {
@@ -358,9 +360,8 @@ mod tests {
             .unwrap()
     }
 
-    #[test]
-    fn a_file_on_another_volume_under_the_same_file_id_keeps_its_row() {
-        let mut c = catalog();
+    fn a_file_on_another_volume_under_the_same_file_id_keeps_its_row(rules: PathRules) {
+        let mut c = catalog(rules);
         let first = begin(&c);
         found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
         assert_eq!(pair(&mut c, first, true).rebound, 0);
@@ -379,9 +380,14 @@ mod tests {
         assert_eq!(kept, 1);
     }
 
-    #[test]
-    fn several_candidates_bind_nothing_and_count_as_one_ambiguous_row() {
-        let mut c = catalog();
+    under_both_rules!(
+        a_file_on_another_volume_under_the_same_file_id_keeps_its_row,
+        a_file_on_another_volume_under_the_same_file_id_keeps_its_row_windows,
+        a_file_on_another_volume_under_the_same_file_id_keeps_its_row_posix
+    );
+
+    fn several_candidates_bind_nothing_and_count_as_one_ambiguous_row(rules: PathRules) {
+        let mut c = catalog(rules);
         let first = begin(&c);
         found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
         found(&mut c, first, 3, 7, "a.jpg", 10, Some(5));
@@ -395,9 +401,14 @@ mod tests {
         assert_eq!(count(&c), 3);
     }
 
-    #[test]
-    fn a_file_renamed_while_closed_is_paired_on_a_clean_scan_only() {
-        let mut c = catalog();
+    under_both_rules!(
+        several_candidates_bind_nothing_and_count_as_one_ambiguous_row,
+        several_candidates_bind_nothing_and_count_as_one_ambiguous_row_windows,
+        several_candidates_bind_nothing_and_count_as_one_ambiguous_row_posix
+    );
+
+    fn a_file_renamed_while_closed_is_paired_on_a_clean_scan_only(rules: PathRules) {
+        let mut c = catalog(rules);
         let first = begin(&c);
         found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
         pair(&mut c, first, true);
@@ -416,9 +427,14 @@ mod tests {
         assert_eq!(row(&c, "b.jpg"), (id, Some(2), false));
     }
 
-    #[test]
-    fn a_file_saved_over_keeps_its_row_and_rating_but_loses_its_content() {
-        let mut c = catalog();
+    under_both_rules!(
+        a_file_renamed_while_closed_is_paired_on_a_clean_scan_only,
+        a_file_renamed_while_closed_is_paired_on_a_clean_scan_only_windows,
+        a_file_renamed_while_closed_is_paired_on_a_clean_scan_only_posix
+    );
+
+    fn a_file_saved_over_keeps_its_row_and_rating_but_loses_its_content(rules: PathRules) {
+        let mut c = catalog(rules);
         let first = begin(&c);
         found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
         pair(&mut c, first, true);
@@ -427,8 +443,11 @@ mod tests {
         c.conn.execute("INSERT INTO file_ratings(file_id, value) VALUES (?1, 4)", [id]).unwrap();
         c.conn
             .execute(
-                "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
-                 VALUES (?1, 'rating', 3, 0, 'D:\\x\\a.jpg.tmp', 3)",
+                &format!(
+                    "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
+                     VALUES (?1, 'rating', 3, 0, '{}', 3)",
+                    spelled(rules, r"D:\x\a.jpg.tmp")
+                ),
                 [id],
             )
             .unwrap();
@@ -442,7 +461,7 @@ mod tests {
         let paired = pair(&mut c, second, true);
         assert_eq!(paired.replaced, 1);
         assert_eq!(paired.replaced_ids, vec![FileId::new(id)]);
-        assert_eq!(paired.temps, vec![r"D:\x\a.jpg.tmp".to_string()]);
+        assert_eq!(paired.temps, vec![spelled(rules, r"D:\x\a.jpg.tmp")]);
         assert_eq!(count(&c), 1);
 
         let (size, created, file_ref): (i64, Option<i64>, i64) = c
@@ -471,9 +490,14 @@ mod tests {
         assert_eq!(rating, (3, true), "the queued rating stays, without its temp file");
     }
 
-    #[test]
-    fn a_displaced_row_with_data_is_counted_and_never_paired() {
-        let mut c = catalog();
+    under_both_rules!(
+        a_file_saved_over_keeps_its_row_and_rating_but_loses_its_content,
+        a_file_saved_over_keeps_its_row_and_rating_but_loses_its_content_windows,
+        a_file_saved_over_keeps_its_row_and_rating_but_loses_its_content_posix
+    );
+
+    fn a_displaced_row_with_data_is_counted_and_never_paired(rules: PathRules) {
+        let mut c = catalog(rules);
         let first = begin(&c);
         found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
         pair(&mut c, first, true);
@@ -491,9 +515,14 @@ mod tests {
         assert!(!row(&c, "b.jpg").2);
     }
 
-    #[test]
-    fn a_new_file_is_cleared_only_by_a_clean_scan() {
-        let mut c = catalog();
+    under_both_rules!(
+        a_displaced_row_with_data_is_counted_and_never_paired,
+        a_displaced_row_with_data_is_counted_and_never_paired_windows,
+        a_displaced_row_with_data_is_counted_and_never_paired_posix
+    );
+
+    fn a_new_file_is_cleared_only_by_a_clean_scan(rules: PathRules) {
+        let mut c = catalog(rules);
         let first = begin(&c);
         found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
         pair(&mut c, first, false);
@@ -504,4 +533,10 @@ mod tests {
         pair(&mut c, second, true);
         assert!(!row(&c, "a.jpg").2);
     }
+
+    under_both_rules!(
+        a_new_file_is_cleared_only_by_a_clean_scan,
+        a_new_file_is_cleared_only_by_a_clean_scan_windows,
+        a_new_file_is_cleared_only_by_a_clean_scan_posix
+    );
 }

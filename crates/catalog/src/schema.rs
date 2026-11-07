@@ -582,6 +582,7 @@ END;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browse::fixtures::under_both_rules;
     use pg_schema::Difference;
 
     fn version(conn: &Connection) -> i64 {
@@ -607,26 +608,30 @@ mod tests {
         assert_eq!(carried, tables);
     }
 
-    #[test]
-    fn migrations_apply_once_in_order_and_a_failed_one_rolls_back() {
+    fn migrations_apply_once_in_order_and_a_failed_one_rolls_back(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, &[], PathRules::Windows, BASELINE_VERSION).unwrap();
+        bring_to(&conn, BASELINE, &[], rules, BASELINE_VERSION).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION);
         // A later build adds two migrations: both run, in order, once.
         let later = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);"];
-        bring_to(&conn, BASELINE, &later, PathRules::Windows, BASELINE_VERSION + 2).unwrap();
-        bring_to(&conn, BASELINE, &later, PathRules::Windows, BASELINE_VERSION + 2).unwrap();
+        bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION + 2).unwrap();
+        bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION + 2).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
         assert_eq!(conn.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
         // A failed migration leaves the catalog at the last good version.
         let broken = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);", "NOT SQL"];
         let fresh = Connection::open_in_memory().unwrap();
-        assert!(bring_to(&fresh, BASELINE, &broken, PathRules::Windows, BASELINE_VERSION + 3).is_err());
+        assert!(bring_to(&fresh, BASELINE, &broken, rules, BASELINE_VERSION + 3).is_err());
         assert_eq!(version(&fresh), BASELINE_VERSION + 2);
     }
 
-    #[test]
-    fn expected_schemas_follow_the_version() {
+    under_both_rules!(
+        migrations_apply_once_in_order_and_a_failed_one_rolls_back,
+        migrations_apply_once_in_order_and_a_failed_one_rolls_back_windows,
+        migrations_apply_once_in_order_and_a_failed_one_rolls_back_posix
+    );
+
+    fn expected_schemas_follow_the_version(rules: PathRules) {
         let later = ["CREATE TABLE extra(x INTEGER);"];
         let at_one = expected_for(BASELINE, &later, BASELINE_VERSION).unwrap();
         let at_two = expected_for(BASELINE, &later, BASELINE_VERSION + 1).unwrap();
@@ -635,7 +640,13 @@ mod tests {
         assert!(expected_for(BASELINE, &later, 0).unwrap().is_empty());
         // A database at a version matches the expected schema of that version.
         let conn = Connection::open_in_memory().unwrap();
-        bring_to(&conn, BASELINE, &later, PathRules::Windows, BASELINE_VERSION).unwrap();
+        bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION).unwrap();
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(&at_one), None);
     }
+
+    under_both_rules!(
+        expected_schemas_follow_the_version,
+        expected_schemas_follow_the_version_windows,
+        expected_schemas_follow_the_version_posix
+    );
 }

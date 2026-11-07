@@ -48,15 +48,14 @@ pub fn session_set_many(catalog: &Catalog, values: &[(&str, &str)]) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::browse::fixtures::{by, library};
+    use crate::browse::fixtures::{by, library, under_both_rules};
     use crate::browse::read::{session_get, views};
     use pg_model::name::Name;
     use pg_model::query::{MediaType, Query, RatingFilter, SortKey};
     use pg_model::rules::{Merged, PathRules};
 
-    #[test]
-    fn views_keep_their_query() {
-        let c = library();
+    fn views_keep_their_query(rules: PathRules) {
+        let c = library(rules);
         let v = SavedView {
             name: "Unrated videos".into(),
             folder: Merged::from(vec![Name::from("p")]),
@@ -67,6 +66,8 @@ mod tests {
         save_view(&c, &v).unwrap();
         assert_eq!(views(&c).unwrap(), [v]);
     }
+
+    under_both_rules!(views_keep_their_query, views_keep_their_query_windows, views_keep_their_query_posix);
 
     // A folder holding a lone surrogate and a raw byte (no text holds either) is stored and read back exactly.
     #[test]
@@ -87,9 +88,8 @@ mod tests {
 
     // The place's keys are stored as text and read back as they were written, several in one transaction, and a
     // replaced key keeps its last value.
-    #[test]
-    fn session_keys_read_back_as_written() {
-        let c = library();
+    fn session_keys_read_back_as_written(rules: PathRules) {
+        let c = library(rules);
         session_set_many(&c, &[("folder", "p\\q"), ("recursive", "false"), ("sort", "{}")]).unwrap();
         session_set(&c, "sort", "{\"key\":\"size\"}").unwrap();
         assert_eq!(session_get(&c, "folder").unwrap().as_deref(), Some("p\\q"));
@@ -97,4 +97,10 @@ mod tests {
         assert_eq!(session_get(&c, "sort").unwrap().as_deref(), Some("{\"key\":\"size\"}"));
         assert_eq!(session_get(&c, "query").unwrap(), None);
     }
+
+    under_both_rules!(
+        session_keys_read_back_as_written,
+        session_keys_read_back_as_written_windows,
+        session_keys_read_back_as_written_posix
+    );
 }

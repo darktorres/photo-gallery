@@ -345,10 +345,11 @@ mod tests {
     use super::*;
     use crate::browse::fixtures::library;
     use crate::fixture::raw;
+    use pg_model::rules::PathRules;
 
     #[test]
     fn ratings_and_turns_queue_for_the_file() {
-        let c = library();
+        let c = library(PathRules::Windows);
         set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
         assert_eq!(raw::queued(&c, 2, "rating"), Some(3));
         // Back to what the file holds (nothing): nothing to write.
@@ -372,7 +373,7 @@ mod tests {
 
     #[test]
     fn a_job_is_taken_once_it_settles_and_done_applies_its_effect() {
-        let c = library();
+        let c = library(PathRules::Windows);
         set_rating(&c, FileId::new(1), Rating::new(3), true).unwrap();
         queue_rotation(&c, FileId::new(2), Turns::new(1)).unwrap();
         // Both are new: nothing is ready until they settle (a settle time of 0 takes them now).
@@ -395,7 +396,7 @@ mod tests {
 
     #[test]
     fn a_failure_waits_longer_and_an_offline_drive_does_not_count() {
-        let c = library();
+        let c = library(PathRules::Windows);
         set_rating(&c, FileId::new(1), Rating::new(3), true).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
         failed(&c, &job, "denied", false).unwrap();
@@ -414,14 +415,14 @@ mod tests {
 
     #[test]
     fn the_next_job_comes_off_the_queue_index() {
-        let c = library();
+        let c = library(PathRules::Windows);
         let plan = raw::query_plan(&c, NEXT_READY, [MAX_ATTEMPTS, 0]);
         assert!(plan.contains("file_writes_next") && !plan.contains("TEMP B-TREE"), "{plan}");
     }
 
     #[test]
     fn a_file_with_no_row_has_no_folder() {
-        let c = library();
+        let c = library(PathRules::Windows);
         assert!(c.file_folder(FileId::new(1)).unwrap().is_some());
         assert!(c.file_folder(FileId::new(999)).unwrap().is_none());
     }

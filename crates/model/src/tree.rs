@@ -178,7 +178,7 @@ impl TreeBuilder {
                 open.pop();
             }
             // The row's parts, with where each ends in its path and its key.
-            let path = &tree.paths[num::index(row.path.0)..num::index(row.path.1)];
+            let path = tree.paths.get(num::index(row.path.0)..num::index(row.path.1)).unwrap_or(&[]);
             let mut path_end = row.path.0;
             let mut key_end = row.key.0;
             let mut key_parts = row_key.split_inclusive(|&b| b == 0x01);

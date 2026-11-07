@@ -1481,6 +1481,7 @@ impl<'tx> BordersWriter<'tx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::raw;
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_analysis::borders::BORDERS_VERSION;
@@ -1492,13 +1493,10 @@ mod tests {
         Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION }
     }
 
-    /// A path under the tests' rules.
-    fn p(text: &str) -> RulePath {
-        RULES.parse(text).expect("a test path")
+    /// A path under `rules`, written as Windows spells it (see [`spelled`]).
+    fn p(rules: PathRules, text: &str) -> RulePath {
+        rules.parse(&spelled(rules, text)).expect("a test path")
     }
-
-    /// The rules the tests of this module open their catalogs under: the Windows ones, as the app has them.
-    const RULES: PathRules = PathRules::Windows;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).
     const SCRATCH: &str = "scratch_catalog";
@@ -1534,6 +1532,7 @@ mod tests {
     // The layout tests below read the file on disk through their own connection (`raw::on_disk`): what they check
     // is the layout, not the catalog's tables.
 
+    // Windows-only: the earlier layout is a Windows catalog, its rows are `D:\` paths recorded as `windows`.
     #[test]
     fn an_earlier_layout_is_moved_aside_and_a_new_catalog_is_made() {
         let dir = test_folder(SCRATCH, "move-aside").unwrap();
@@ -1561,7 +1560,7 @@ mod tests {
         .unwrap();
         drop(old);
 
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         let disk = raw::on_disk(&path);
         assert!(is_current(&disk).unwrap());
         let count = |conn: &Connection, table: &str| -> i64 {
@@ -1590,14 +1589,13 @@ mod tests {
 
     /// A catalog that differs from this build's schema only by an index it shouldn't have is rebuilt with its rows: the
     /// same files under the same ids, and the library folders.
-    #[test]
-    fn a_catalog_that_differs_keeps_its_rows() {
-        let dir = test_folder(SCRATCH, "keeps-rows").unwrap();
+    fn a_catalog_that_differs_keeps_its_rows(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("keeps-rows-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
-        raw::add_scan(&c, 1, r"D:\p");
-        raw::add_folder(&c, 1, r"D:\p");
-        raw::add_folder(&c, 2, r"D:\p\Sub");
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, r"D:\p"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\p"));
+        raw::add_folder(&c, 2, &spelled(rules, r"D:\p\Sub"));
         fixture::insert(
             &c,
             &[
@@ -1606,13 +1604,13 @@ mod tests {
             ],
         )
         .unwrap();
-        assert!(c.add_root(&RULES.parse(r"D:\p").expect("a test path")).unwrap());
+        assert!(c.add_root(&p(rules, r"D:\p")).unwrap());
         drop(c);
         let edited = Connection::open(&path).unwrap();
         edited.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
         drop(edited);
 
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
         let r = c.rebuilt().expect("moved aside");
         assert!(r.why.contains("extra_names"), "{}", r.why);
         assert_eq!(r.carried, Carried::Rows { files: 2, folders: 1 });
@@ -1632,13 +1630,21 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    under_both_rules!(
+        a_catalog_that_differs_keeps_its_rows,
+        a_catalog_that_differs_keeps_its_rows_windows,
+        a_catalog_that_differs_keeps_its_rows_posix
+    );
+
     /// A catalog from before the folders were typed kept its saved views' folders and the session's as text. They are
     /// carried as the typed folders (a view's stored bytes, the session's JSON), so they read as they were saved.
+    // Windows-only: before the folders were typed, the views and the session held backslash-separated Windows text,
+    // and that text is what this carries.
     #[test]
     fn text_folders_of_views_and_session_are_carried_typed() {
         let dir = test_folder(SCRATCH, "text-folders").unwrap();
         let path = dir.join("catalog.sqlite");
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         crate::browse::writes::session_set_many(&c, &[("folder", r"pinterest\a")]).unwrap();
         drop(c);
         let old = Connection::open(&path).unwrap();
@@ -1650,7 +1656,7 @@ mod tests {
         )
         .unwrap();
         drop(old);
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         let r = c.rebuilt().expect("moved aside");
         assert_eq!(r.carried, Carried::Rows { files: 0, folders: 0 });
         let saved = crate::browse::read::views(&c).unwrap();
@@ -1678,11 +1684,10 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside() {
-        let dir = test_folder(SCRATCH, "layout_source").unwrap();
+    fn a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("layout_source-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
         let fresh = raw::on_disk(&path);
         assert!(is_current(&fresh).unwrap());
         // The same names and counts, the text before the size was added: the layout check must refuse it.
@@ -1707,7 +1712,7 @@ mod tests {
         assert!(!is_current(&earlier).unwrap());
         drop(earlier);
 
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
         let disk = raw::on_disk(&path);
         assert!(is_current(&disk).unwrap());
         let current: String = disk
@@ -1724,22 +1729,28 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name() {
-        let dir = test_folder(SCRATCH, "move-aside-twice").unwrap();
+    under_both_rules!(
+        a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside,
+        a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside_windows,
+        a_catalog_with_the_earlier_source_trigger_or_view_is_moved_aside_posix
+    );
+
+    fn a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("move-aside-twice-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // Files without the columns the current layout needs.
         let old_layout = |path: &Path| {
             let conn = Connection::open(path).unwrap();
-            conn.execute_batch(
-                "CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL); INSERT INTO meta VALUES ('path_rules', 'windows');
+            conn.execute_batch(&format!(
+                "CREATE TABLE meta(key TEXT PRIMARY KEY, value ANY NOT NULL); INSERT INTO meta VALUES ('path_rules', '{}');
                  CREATE TABLE files(id INTEGER PRIMARY KEY, name TEXT); INSERT INTO files VALUES (1, 'x');
                  PRAGMA user_version = 1;",
-            )
+                rules_name(rules)
+            ))
             .unwrap();
         };
         old_layout(&path);
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
         let moved = raw::on_disk(&dir.join("catalog.sqlite.replaced"));
         assert_eq!(moved.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
         drop(moved);
@@ -1748,15 +1759,20 @@ mod tests {
             let _ = std::fs::remove_file(dir.join(format!("catalog.sqlite{part}")));
         }
         old_layout(&path);
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
         assert!(dir.join("catalog.sqlite.replaced.1").exists());
         assert!(dir.join("catalog.sqlite.replaced").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn an_earlier_layout_with_no_rules_recorded_is_rebuilt_not_refused() {
-        let dir = test_folder(SCRATCH, "move-aside-no-rules").unwrap();
+    under_both_rules!(
+        a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name,
+        a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name_windows,
+        a_catalog_of_an_unknown_layout_is_kept_whole_and_a_second_one_takes_a_new_name_posix
+    );
+
+    fn an_earlier_layout_with_no_rules_recorded_is_rebuilt_not_refused(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("move-aside-no-rules-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // An older build's catalog: no `path_rules` row, and the files without the current layout's columns.
         {
@@ -1768,25 +1784,32 @@ mod tests {
             )
             .unwrap();
         }
-        let c = Catalog::prepare(&path, versions(), RULES).expect("rebuilt, not refused");
+        let c = Catalog::prepare(&path, versions(), rules).expect("rebuilt, not refused");
         drop(c);
         let moved = raw::on_disk(&dir.join("catalog.sqlite.replaced"));
         assert_eq!(moved.query_row("SELECT name FROM files", [], |r| r.get::<_, String>(0)).unwrap(), "x");
         drop(moved);
         // The new catalog records its rules, so it opens again.
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn catalogs_have_their_own_id() {
+    under_both_rules!(
+        an_earlier_layout_with_no_rules_recorded_is_rebuilt_not_refused,
+        an_earlier_layout_with_no_rules_recorded_is_rebuilt_not_refused_windows,
+        an_earlier_layout_with_no_rules_recorded_is_rebuilt_not_refused_posix
+    );
+
+    fn catalogs_have_their_own_id(rules: PathRules) {
         let (a, b) = (
-            Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap(),
-            Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap(),
+            Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap(),
+            Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap(),
         );
         assert_eq!(a.catalog_id().unwrap().len(), 32);
         assert_ne!(a.catalog_id().unwrap(), b.catalog_id().unwrap());
     }
+
+    under_both_rules!(catalogs_have_their_own_id, catalogs_have_their_own_id_windows, catalogs_have_their_own_id_posix);
 
     #[test]
     fn a_catalog_made_under_other_rules_is_refused() {
@@ -1836,25 +1859,31 @@ mod tests {
         assert_eq!(c.files_under(&root("/photos/Pics")).unwrap().len(), 1);
     }
 
-    #[test]
-    fn roots_never_nest() {
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        assert!(c.add_root(&p(r"D:\a\b")).unwrap());
-        assert!(c.add_root(&p(r"D:\a\bc")).unwrap());
-        assert!(!c.add_root(&p(r"d:\A\b\c")).unwrap(), "inside an existing root");
-        assert!(c.add_root(&p(r"D:\a")).unwrap(), "replaces both");
+    fn roots_never_nest(rules: PathRules) {
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        assert!(c.add_root(&p(rules, r"D:\a\b")).unwrap());
+        assert!(c.add_root(&p(rules, r"D:\a\bc")).unwrap());
+        // The same folder spelled another way: on Windows another drive letter and case, which the root covers. POSIX
+        // names are case-sensitive, so there the spelling is the same path.
+        let same_folder = match rules {
+            PathRules::Windows => r"d:\A\b\c",
+            PathRules::Posix => "/a/b/c",
+        };
+        assert!(!c.add_root(&p(rules, same_folder)).unwrap(), "inside an existing root");
+        assert!(c.add_root(&p(rules, r"D:\a")).unwrap(), "replaces both");
         let paths =
             |c: &Catalog| c.roots().unwrap().into_iter().map(|r| c.rules().display(&r.path)).collect::<Vec<_>>();
-        assert_eq!(paths(&c), [r"D:\a"]);
-        let id = c.root_id(&p(r"D:\a")).unwrap().expect("a library folder has an id");
+        assert_eq!(paths(&c), [spelled(rules, r"D:\a")]);
+        let id = c.root_id(&p(rules, r"D:\a")).unwrap().expect("a library folder has an id");
         assert_eq!(c.remove_root(id).unwrap(), Some(0));
         assert!(paths(&c).is_empty());
         assert_eq!(c.remove_root(id).unwrap(), None, "not a library folder any more");
     }
 
-    #[test]
-    fn cancelled_until_cleared() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+    under_both_rules!(roots_never_nest, roots_never_nest_windows, roots_never_nest_posix);
+
+    fn cancelled_until_cleared(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let cancel = Arc::new(AtomicBool::new(false));
         c.cancel_when(cancel.clone()).unwrap();
         let run = || raw::slow_count(&c).map_err(Error::from);
@@ -1867,6 +1896,8 @@ mod tests {
         assert_eq!(run().unwrap(), 100_000);
     }
 
+    under_both_rules!(cancelled_until_cleared, cancelled_until_cleared_windows, cancelled_until_cleared_posix);
+
     /// Whether the catalog at `conn` is this build's schema at its version: the check [`Catalog::prepare`] makes.
     fn is_current(conn: &Connection) -> Result<bool> {
         Ok(mismatch(conn, current_version()?, current_expected()?)?.is_none())
@@ -1878,35 +1909,39 @@ mod tests {
     }
 
     /// A catalog prepared at `path`, then changed by `sql`, which is run on it as the file is (closed again).
-    fn edited(path: &Path, sql: &str) {
-        drop(Catalog::prepare(path, versions(), RULES).unwrap());
+    fn edited(rules: PathRules, path: &Path, sql: &str) {
+        drop(Catalog::prepare(path, versions(), rules).unwrap());
         raw::on_disk(path).execute_batch(sql).unwrap();
     }
 
-    #[test]
-    fn preparing_a_catalog_again_rebuilds_nothing() {
-        let dir = test_folder(SCRATCH, "prepare-twice").unwrap();
+    fn preparing_a_catalog_again_rebuilds_nothing(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("prepare-twice-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
-        let again = Catalog::prepare(&path, versions(), RULES).unwrap();
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
+        let again = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(again.rebuilt().is_none());
         drop(again);
         assert!(!dir.join("catalog.sqlite.replaced").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_changed_definition_with_the_same_names_is_moved_aside() {
+    under_both_rules!(
+        preparing_a_catalog_again_rebuilds_nothing,
+        preparing_a_catalog_again_rebuilds_nothing_windows,
+        preparing_a_catalog_again_rebuilds_nothing_posix
+    );
+
+    fn a_changed_definition_with_the_same_names_is_moved_aside(rules: PathRules) {
         // The same object names: an added column, an index on other columns, an object this build doesn't make.
         for (name, sql, named) in [
             ("edited-column", "ALTER TABLE files ADD COLUMN extra INTEGER;", "files"),
             ("edited-index", "DROP INDEX files_changed; CREATE INDEX files_changed ON files(name);", "files_changed"),
             ("edited-table", "CREATE TABLE extra(x INTEGER);", "extra"),
         ] {
-            let dir = test_folder(SCRATCH, name).unwrap();
+            let dir = test_folder(SCRATCH, &format!("{name}-{}", rules_name(rules))).unwrap();
             let path = dir.join("catalog.sqlite");
-            edited(&path, sql);
-            let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+            edited(rules, &path, sql);
+            let c = Catalog::prepare(&path, versions(), rules).unwrap();
             let why = rebuilt_why(&c).unwrap_or_else(|| panic!("{name}: not moved aside"));
             assert!(why.contains(named), "{name}: {why}");
             assert!(is_current(&raw::on_disk(&path)).unwrap());
@@ -1915,31 +1950,41 @@ mod tests {
         }
     }
 
-    #[test]
-    fn a_comment_in_a_stored_definition_is_not_a_schema_change() {
-        let dir = test_folder(SCRATCH, "comment-edit").unwrap();
+    under_both_rules!(
+        a_changed_definition_with_the_same_names_is_moved_aside,
+        a_changed_definition_with_the_same_names_is_moved_aside_windows,
+        a_changed_definition_with_the_same_names_is_moved_aside_posix
+    );
+
+    fn a_comment_in_a_stored_definition_is_not_a_schema_change(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("comment-edit-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         // A catalog whose `files` table was written with a comment in it: the same schema.
         let commented = BASELINE.replacen("CREATE TABLE files(", "CREATE TABLE files( -- an added comment\n", 1);
         assert_ne!(commented, BASELINE);
         let conn = Connection::open(&path).unwrap();
-        bring_to(&conn, &commented, MIGRATIONS, RULES, current_version().unwrap()).unwrap();
+        bring_to(&conn, &commented, MIGRATIONS, rules, current_version().unwrap()).unwrap();
         drop(conn);
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert!(c.rebuilt().is_none(), "a comment moved the catalog aside");
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_database_that_is_not_a_catalog_is_moved_aside_not_built_on() {
-        let dir = test_folder(SCRATCH, "foreign-database").unwrap();
+    under_both_rules!(
+        a_comment_in_a_stored_definition_is_not_a_schema_change,
+        a_comment_in_a_stored_definition_is_not_a_schema_change_windows,
+        a_comment_in_a_stored_definition_is_not_a_schema_change_posix
+    );
+
+    fn a_database_that_is_not_a_catalog_is_moved_aside_not_built_on(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("foreign-database-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         {
             let conn = Connection::open(&path).unwrap();
             conn.execute_batch("CREATE TABLE notes(x INTEGER); INSERT INTO notes VALUES (5);").unwrap();
         }
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
         let why = rebuilt_why(&c).expect("moved aside");
         assert!(why.contains("notes"), "{why}");
         let kept = raw::on_disk(&dir.join("catalog.sqlite.replaced"));
@@ -1949,50 +1994,70 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_file_that_is_not_a_database_is_moved_aside_unread() {
-        let dir = test_folder(SCRATCH, "not-a-database").unwrap();
+    under_both_rules!(
+        a_database_that_is_not_a_catalog_is_moved_aside_not_built_on,
+        a_database_that_is_not_a_catalog_is_moved_aside_not_built_on_windows,
+        a_database_that_is_not_a_catalog_is_moved_aside_not_built_on_posix
+    );
+
+    fn a_file_that_is_not_a_database_is_moved_aside_unread(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("not-a-database-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert_eq!(rebuilt_why(&c).as_deref(), Some("not a database"));
         assert_eq!(std::fs::read(dir.join("catalog.sqlite.replaced")).unwrap(), vec![b'x'; 8192]);
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn the_same_schema_under_another_application_id_is_moved_aside() {
-        let dir = test_folder(SCRATCH, "application-id").unwrap();
+    under_both_rules!(
+        a_file_that_is_not_a_database_is_moved_aside_unread,
+        a_file_that_is_not_a_database_is_moved_aside_unread_windows,
+        a_file_that_is_not_a_database_is_moved_aside_unread_posix
+    );
+
+    fn the_same_schema_under_another_application_id_is_moved_aside(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("application-id-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
         raw::on_disk(&path).pragma_update(None, "application_id", 7).unwrap();
-        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
         assert_eq!(rebuilt_why(&c).as_deref(), Some("application id 7, not a catalog's"));
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn open_refuses_a_catalog_changed_after_it_was_prepared() {
-        let dir = test_folder(SCRATCH, "changed-after-prepare").unwrap();
+    under_both_rules!(
+        the_same_schema_under_another_application_id_is_moved_aside,
+        the_same_schema_under_another_application_id_is_moved_aside_windows,
+        the_same_schema_under_another_application_id_is_moved_aside_posix
+    );
+
+    fn open_refuses_a_catalog_changed_after_it_was_prepared(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("changed-after-prepare-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
-        drop(Catalog::prepare(&path, versions(), RULES).unwrap());
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
         raw::on_disk(&path).execute_batch("CREATE TABLE extra(x INTEGER);").unwrap();
-        let e = Catalog::open(&path, RULES).err().expect("refused");
+        let e = Catalog::open(&path, rules).err().expect("refused");
         assert!(e.to_string().contains("extra"), "{e}");
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn two_preparations_of_one_catalog_move_it_aside_once() {
-        let dir = test_folder(SCRATCH, "concurrent-prepare").unwrap();
+    under_both_rules!(
+        open_refuses_a_catalog_changed_after_it_was_prepared,
+        open_refuses_a_catalog_changed_after_it_was_prepared_windows,
+        open_refuses_a_catalog_changed_after_it_was_prepared_posix
+    );
+
+    fn two_preparations_of_one_catalog_move_it_aside_once(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("concurrent-prepare-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
         let threads: Vec<_> = (0..2)
             .map(|_| {
                 let path = path.clone();
-                std::thread::spawn(move || Catalog::prepare(&path, versions(), RULES).map(|c| c.rebuilt().is_some()))
+                std::thread::spawn(move || Catalog::prepare(&path, versions(), rules).map(|c| c.rebuilt().is_some()))
             })
             .collect();
         let moved: Vec<bool> = threads.into_iter().map(|t| t.join().unwrap().unwrap()).collect();
@@ -2000,18 +2065,29 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
-    #[test]
-    fn a_memory_catalog_takes_no_lock_file() {
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+    under_both_rules!(
+        two_preparations_of_one_catalog_move_it_aside_once,
+        two_preparations_of_one_catalog_move_it_aside_once_windows,
+        two_preparations_of_one_catalog_move_it_aside_once_posix
+    );
+
+    fn a_memory_catalog_takes_no_lock_file(rules: PathRules) {
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         assert!(c.rebuilt().is_none());
         assert!(!Path::new(":memory:.lock").exists());
     }
 
-    /// A catalog with one file in it.
-    fn one_file() -> (Catalog, i64) {
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        raw::add_scan(&c, 1, "D:");
-        raw::add_folder(&c, 1, r"D:\x");
+    under_both_rules!(
+        a_memory_catalog_takes_no_lock_file,
+        a_memory_catalog_takes_no_lock_file_windows,
+        a_memory_catalog_takes_no_lock_file_posix
+    );
+
+    /// A catalog with one file in it, under `rules`.
+    fn one_file(rules: PathRules) -> (Catalog, i64) {
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, "D:"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
         fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]).unwrap();
         (c, 1)
     }
@@ -2035,9 +2111,10 @@ mod tests {
 
     /// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
     fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) -> bool {
+        let rules = c.rules();
         let tx = c.tx().unwrap();
-        let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
-        let folder = writer.folder(&p(r"D:\x")).unwrap();
+        let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+        let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
         let ext = Ext::of_name(name).unwrap();
         let file =
             ScannedFile { identity: FileIdentity::new(1, 7), name: &Name::from(name), ext, size, mtime, created: None };
@@ -2047,15 +2124,14 @@ mod tests {
         changed
     }
 
-    #[test]
-    fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        c.add_root(&p(r"D:\x")).unwrap();
+    fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
         let key = |name: &str| {
-            let folder = RULES.merge(&RULES.parse(r"D:\x").unwrap());
-            RULES.order_key(&RULES.merged_key(&folder), &Name::from(name))
+            let folder = rules.merge(&p(rules, r"D:\x"));
+            rules.order_key(&rules.merged_key(&folder), &Name::from(name))
         };
-        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(&p(r"D:\x")).unwrap()).collect();
+        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(&p(rules, r"D:\x")).unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
@@ -2080,11 +2156,18 @@ mod tests {
         assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
     }
 
+    under_both_rules!(
+        a_scan_tells_a_file_found_as_it_was_from_one_that_changed,
+        a_scan_tells_a_file_found_as_it_was_from_one_that_changed_windows,
+        a_scan_tells_a_file_found_as_it_was_from_one_that_changed_posix
+    );
+
     /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
     fn found_as(c: &mut Catalog, scan: i64, identity: FileIdentity, created: Option<i64>) -> Recorded {
+        let rules = c.rules();
         let tx = c.tx().unwrap();
-        let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
-        let folder = writer.folder(&p(r"D:\x")).unwrap();
+        let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+        let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
         let file = ScannedFile {
             identity,
             name: &Name::from("a.jpg"),
@@ -2099,10 +2182,9 @@ mod tests {
         recorded
     }
 
-    #[test]
-    fn a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+    fn a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         let (volume, file) = (u64::MAX - 1, u64::MAX);
         assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Changed);
         let stored: (i64, i64) =
@@ -2112,10 +2194,15 @@ mod tests {
         assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Same);
     }
 
-    #[test]
-    fn a_creation_time_fills_in_once_and_a_different_one_is_a_different_file() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+    under_both_rules!(
+        a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again,
+        a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again_windows,
+        a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again_posix
+    );
+
+    fn a_creation_time_fills_in_once_and_a_different_one_is_a_different_file(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         let identity = FileIdentity::new(1, 7);
         // Unknown on the first scan (a file system that doesn't give it), then known: it is filled in.
         assert_eq!(found_as(&mut c, scan, identity, None), Recorded::Changed);
@@ -2138,11 +2225,16 @@ mod tests {
         assert!(displaced);
     }
 
-    #[test]
-    fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        c.add_root(&p(r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+    under_both_rules!(
+        a_creation_time_fills_in_once_and_a_different_one_is_a_different_file,
+        a_creation_time_fills_in_once_and_a_different_one_is_a_different_file_windows,
+        a_creation_time_fills_in_once_and_a_different_one_is_a_different_file_posix
+    );
+
+    fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let stored = |c: &mut Catalog, item: &WorkItem| {
             let tx = c.tx().unwrap();
@@ -2154,7 +2246,7 @@ mod tests {
         // A write of the app's into it in progress: it may have been read part-written.
         writes::queue_rotation(&c, item.id, Turns::new(3)).unwrap();
         let job = writes::next_ready(&c, 0).unwrap().unwrap();
-        writes::record_temp(&c, &job, r"D:\x\a.jpg.tmp", 3).unwrap();
+        writes::record_temp(&c, &job, &spelled(rules, r"D:\x\a.jpg.tmp"), 3).unwrap();
         assert!(!stored(&mut c, &item));
         assert!(due(&c, item.id), "still due");
         writes::done(&c, &job, writes::WriteEffect::Nothing).unwrap();
@@ -2172,14 +2264,19 @@ mod tests {
         assert!(!due(&c, item.id));
     }
 
-    #[test]
-    fn a_size_change_alone_moves_the_file_in_the_thumbnail_source() {
+    under_both_rules!(
+        what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed,
+        what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed_windows,
+        what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed_posix
+    );
+
+    fn a_size_change_alone_moves_the_file_in_the_thumbnail_source(rules: PathRules) {
         // The scanner decides a file changed by its size and mtime, so a size change with the same mtime must reach
         // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
         use fixture::{File, insert};
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        raw::add_scan(&c, 1, r"D:\x");
-        raw::add_folder(&c, 1, r"D:\x");
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
         insert(&c, &[File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]).unwrap();
         raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
         let before = raw::thumb_source_seq(&c, FileId::new(1));
@@ -2187,13 +2284,18 @@ mod tests {
         assert!(raw::thumb_source_seq(&c, FileId::new(1)) > before);
     }
 
-    #[test]
-    fn thumb_sources_is_the_analysed_files_with_their_folders() {
+    under_both_rules!(
+        a_size_change_alone_moves_the_file_in_the_thumbnail_source,
+        a_size_change_alone_moves_the_file_in_the_thumbnail_source_windows,
+        a_size_change_alone_moves_the_file_in_the_thumbnail_source_posix
+    );
+
+    fn thumb_sources_is_the_analysed_files_with_their_folders(rules: PathRules) {
         use fixture::{File, insert};
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        raw::add_scan(&c, 1, r"D:\x");
-        raw::add_folder(&c, 1, r"D:\x");
-        raw::add_folder(&c, 2, r"D:\x\sub");
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 2, &spelled(rules, r"D:\x\sub"));
         insert(
             &c,
             &[
@@ -2209,7 +2311,7 @@ mod tests {
             &c,
             &raw::AnalysisRow { error: Some("unreadable"), ..raw::AnalysisRow::image(2, 10, 100) },
         );
-        assert_eq!(raw::thumb_sources(&c), [(1, r"D:\x".to_string()), (2, r"D:\x\sub".to_string())]);
+        assert_eq!(raw::thumb_sources(&c), [(1, spelled(rules, r"D:\x")), (2, spelled(rules, r"D:\x\sub"))]);
         // The clock is the catalog's change number, as the pass reads it.
         assert_eq!(raw::thumb_clock(&c), raw::meta_seq(&c));
         // The pass's shape over it, with a TEMP stub of the thumbnail cache's entries: a change number's range still
@@ -2224,6 +2326,12 @@ mod tests {
         let listed = raw::rows_of(&c, sql, [100, -1], |r| r.get::<_, i64>(0));
         assert_eq!(listed, [1]);
     }
+
+    under_both_rules!(
+        thumb_sources_is_the_analysed_files_with_their_folders,
+        thumb_sources_is_the_analysed_files_with_their_folders_windows,
+        thumb_sources_is_the_analysed_files_with_their_folders_posix
+    );
 
     /// The facts of a JPEG with no rating and stand-in hashes, for the analyses the tests store.
     fn a_jpeg() -> Media {
@@ -2251,15 +2359,14 @@ mod tests {
         work.items.remove(0)
     }
 
-    #[test]
-    fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector() {
+    fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector(rules: PathRules) {
         use crate::browse;
         use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
         use pg_model::query::{BorderFacet, Query, Sort};
 
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        c.add_root(&p(r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let item = next_work(&c);
         let solid = |edge| Side {
@@ -2363,22 +2470,27 @@ mod tests {
         assert_eq!(c.pending_borders().unwrap().len(), 1);
     }
 
-    #[test]
-    fn border_depth_sorts_by_the_largest_share_of_a_side_cut() {
+    under_both_rules!(
+        borders_are_looked_for_after_the_import_and_again_after_a_new_detector,
+        borders_are_looked_for_after_the_import_and_again_after_a_new_detector_windows,
+        borders_are_looked_for_after_the_import_and_again_after_a_new_detector_posix
+    );
+
+    fn border_depth_sorts_by_the_largest_share_of_a_side_cut(rules: PathRules) {
         use crate::browse;
         use pg_model::query::{Query, Sort, SortKey};
 
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        c.add_root(&p(r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         // 400 × 300 stored. b: none; c: 30 of 300 at the top (10%); d: 60 of 400 at the left (15%), but turned a
         // quarter (orientation 6), so 60 of the 400 upright rows; e: 90 at the top (30%), marked not a border.
         let files = [("b.jpg", 1, None), ("c.jpg", 1, Some([0, 30, 0, 0])), ("d.jpg", 6, Some([60, 0, 0, 0]))];
         let files = files.into_iter().chain([("e.jpg", 1, Some([0, 90, 0, 0]))]);
         for (n, (name, orientation, cut)) in files.enumerate() {
             let tx = c.tx().unwrap();
-            let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
-            let folder = writer.folder(&p(r"D:\x")).unwrap();
+            let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+            let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let file = ScannedFile {
                 identity: FileIdentity::new(1, 10 + u64::try_from(n).unwrap()),
@@ -2421,12 +2533,18 @@ mod tests {
                 browse::read::list_grid(&c, &pg_model::rules::Merged::default(), true, &Query::default(), sort)
                     .unwrap();
             let path = |id| browse::read::details(&c, id).unwrap().unwrap().path;
-            entries.iter().map(|e| path(e.id).rsplit('\\').next().unwrap().to_string()).collect()
+            entries.iter().map(|e| path(e.id).rsplit(['\\', '/']).next().unwrap().to_string()).collect()
         };
         // Without a border (none found, or marked) last, by name, either way.
         assert_eq!(names(false), ["c.jpg", "d.jpg", "b.jpg", "e.jpg"]);
         assert_eq!(names(true), ["d.jpg", "c.jpg", "b.jpg", "e.jpg"]);
     }
+
+    under_both_rules!(
+        border_depth_sorts_by_the_largest_share_of_a_side_cut,
+        border_depth_sorts_by_the_largest_share_of_a_side_cut_windows,
+        border_depth_sorts_by_the_largest_share_of_a_side_cut_posix
+    );
 
     /// Stores an import of `item` with `taken` as its time, as the import stores it.
     fn store_taken(c: &mut Catalog, item: &WorkItem, taken: Option<Taken>) {
@@ -2458,26 +2576,35 @@ mod tests {
         c.conn.query_row("SELECT unixepoch(?1, 'unixepoch', 'localtime')", [instant], |r| r.get(0)).unwrap()
     }
 
-    #[test]
-    fn a_camera_clock_is_kept_as_it_is() {
-        let (mut c, _) = one_file();
+    fn a_camera_clock_is_kept_as_it_is(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
         let item = next_work(&c);
         store_taken(&mut c, &item, Some(Taken::Wall(1_700_000_000)));
         assert_eq!(taken_columns(&c), (Some(1_700_000_000), None));
     }
 
-    #[test]
-    fn a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well() {
-        let (mut c, _) = one_file();
+    under_both_rules!(
+        a_camera_clock_is_kept_as_it_is,
+        a_camera_clock_is_kept_as_it_is_windows,
+        a_camera_clock_is_kept_as_it_is_posix
+    );
+
+    fn a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
         let item = next_work(&c);
         let instant = 1_714_557_600;
         store_taken(&mut c, &item, Some(Taken::Utc(instant)));
         assert_eq!(taken_columns(&c), (Some(local_of(&c, instant)), Some(instant)));
     }
 
-    #[test]
-    fn a_changed_zone_computes_utc_taken_times_again_from_their_instants() {
-        let (mut c, _) = one_file();
+    under_both_rules!(
+        a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well,
+        a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well_windows,
+        a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well_posix
+    );
+
+    fn a_changed_zone_computes_utc_taken_times_again_from_their_instants(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
         let item = next_work(&c);
         let instant = 1_714_557_600;
         store_taken(&mut c, &item, Some(Taken::Utc(instant)));
@@ -2495,9 +2622,14 @@ mod tests {
         assert_eq!(current.split(',').count(), 4);
     }
 
-    #[test]
-    fn a_camera_clock_is_not_changed_by_a_changed_zone() {
-        let (mut c, _) = one_file();
+    under_both_rules!(
+        a_changed_zone_computes_utc_taken_times_again_from_their_instants,
+        a_changed_zone_computes_utc_taken_times_again_from_their_instants_windows,
+        a_changed_zone_computes_utc_taken_times_again_from_their_instants_posix
+    );
+
+    fn a_camera_clock_is_not_changed_by_a_changed_zone(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
         let item = next_work(&c);
         store_taken(&mut c, &item, Some(Taken::Wall(1_700_000_000)));
         c.conn.execute("UPDATE meta SET value = 'another-zone' WHERE key = 'taken_zone'", []).unwrap();
@@ -2505,19 +2637,29 @@ mod tests {
         assert_eq!(taken_columns(&c), (Some(1_700_000_000), None));
     }
 
-    #[test]
-    fn prepare_records_the_zone_its_utc_times_were_computed_with() {
-        let c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+    under_both_rules!(
+        a_camera_clock_is_not_changed_by_a_changed_zone,
+        a_camera_clock_is_not_changed_by_a_changed_zone_windows,
+        a_camera_clock_is_not_changed_by_a_changed_zone_posix
+    );
+
+    fn prepare_records_the_zone_its_utc_times_were_computed_with(rules: PathRules) {
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let current: String = c.conn.query_row(TAKEN_ZONE_QUERY, [], |r| r.get(0)).unwrap();
         let stored: String =
             c.conn.query_row("SELECT value FROM meta WHERE key = 'taken_zone'", [], |r| r.get(0)).unwrap();
         assert_eq!(stored, current);
     }
 
-    #[test]
-    fn pending_follows_what_the_analysis_was_made_from() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        let scan = c.begin_scan(&p(r"D:\x")).unwrap();
+    under_both_rules!(
+        prepare_records_the_zone_its_utc_times_were_computed_with,
+        prepare_records_the_zone_its_utc_times_were_computed_with_windows,
+        prepare_records_the_zone_its_utc_times_were_computed_with_posix
+    );
+
+    fn pending_follows_what_the_analysis_was_made_from(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         // New: pending.
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let first = next_work(&c);
@@ -2569,21 +2711,26 @@ mod tests {
         assert!(!due(&c, id));
         // Gone, then back: nothing to import, but the thumbnails look at it both times.
         let seq = raw::file_seq(&c, id);
-        let next = c.begin_scan(&p(r"D:\x")).unwrap();
-        c.mark_missing(&p(r"D:\x"), next, &[]).unwrap();
+        let next = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        c.mark_missing(&p(rules, r"D:\x"), next, &[]).unwrap();
         let gone = raw::file_seq(&c, id);
         scanned(&mut c, next, "a.mp4", 13, 103);
         assert_eq!(c.pending_import(false).unwrap().len(), 0);
         assert!(seq < gone && gone < raw::file_seq(&c, id));
     }
 
-    #[test]
-    fn a_folder_the_scan_could_not_list_keeps_its_files() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
+    under_both_rules!(
+        pending_follows_what_the_analysis_was_made_from,
+        pending_follows_what_the_analysis_was_made_from_windows,
+        pending_follows_what_the_analysis_was_made_from_posix
+    );
+
+    fn a_folder_the_scan_could_not_list_keeps_its_files(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
             let tx = c.tx().unwrap();
-            let mut writer = tx.scan_writer(scan, &p(r"D:\x")).unwrap();
-            let folder = writer.folder(&p(folder)).unwrap();
+            let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+            let folder = writer.folder(&p(rules, folder)).unwrap();
             let ext = Ext::of_name(name).unwrap();
             let identity = FileIdentity::new(1, file_ref);
             writer
@@ -2595,32 +2742,37 @@ mod tests {
             drop(writer);
             tx.commit().unwrap();
         };
-        let first = c.begin_scan(&p(r"D:\x")).unwrap();
+        let first = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         put(&mut c, first, r"D:\x\ok", "a.jpg", 1);
         put(&mut c, first, r"D:\x\locked", "b.jpg", 2);
         put(&mut c, first, r"D:\x\locked\deep", "c.jpg", 3);
 
         // The next scan lists only D:\x\ok: D:\x\locked couldn't be read, so its files weren't seen, and aren't missing.
-        let next = c.begin_scan(&p(r"D:\x")).unwrap();
+        let next = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
-        assert_eq!(c.mark_missing(&p(r"D:\x"), next, &[p(r"D:\x\locked")]).unwrap(), 0);
+        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), next, &[p(rules, r"D:\x\locked")]).unwrap(), 0);
         assert_eq!(raw::missing_count(&c), 0);
 
         // Once it can be listed again, a scan that doesn't see its files marks them.
-        let later = c.begin_scan(&p(r"D:\x")).unwrap();
+        let later = c.begin_scan(&p(rules, r"D:\x")).unwrap();
         put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
-        assert_eq!(c.mark_missing(&p(r"D:\x"), later, &[]).unwrap(), 2);
+        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), later, &[]).unwrap(), 2);
         assert_eq!(raw::missing_count(&c), 2);
     }
 
-    #[test]
-    fn files_marked_are_imported_again_once() {
-        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
-        raw::add_scan(&c, 1, "D:");
-        raw::add_folder(&c, 1, r"D:\x");
-        raw::add_folder(&c, 2, r"D:\x\y");
-        raw::add_folder(&c, 3, r"D:\xy");
-        raw::add_folder(&c, 4, r"D:\x\y\z");
+    under_both_rules!(
+        a_folder_the_scan_could_not_list_keeps_its_files,
+        a_folder_the_scan_could_not_list_keeps_its_files_windows,
+        a_folder_the_scan_could_not_list_keeps_its_files_posix
+    );
+
+    fn files_marked_are_imported_again_once(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, "D:"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 2, &spelled(rules, r"D:\x\y"));
+        raw::add_folder(&c, 3, &spelled(rules, r"D:\xy"));
+        raw::add_folder(&c, 4, &spelled(rules, r"D:\x\y\z"));
         let files = [(1, 1, "a.jpg"), (2, 2, "b.jpg"), (3, 3, "c.jpg"), (4, 4, "d.jpg"), (5, 4, "e.jpg")];
         let files =
             files.map(|(id, folder, name)| fixture::File::new(FileId::new(id), FolderId::new(folder), name, 10, 100));
@@ -2633,11 +2785,11 @@ mod tests {
         assert!(c.pending_import(false).unwrap().is_empty());
 
         // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
-        let mut under = c.files_under(&p(r"D:\x\y")).unwrap();
+        let mut under = c.files_under(&p(rules, r"D:\x\y")).unwrap();
         under.sort();
         assert_eq!(under, [FileId::new(2), FileId::new(4)]);
-        assert_eq!(c.files_under(&p(r"D:\x")).unwrap().len(), 3);
-        assert!(c.files_under(&p(r"D:\q")).unwrap().is_empty());
+        assert_eq!(c.files_under(&p(rules, r"D:\x")).unwrap().len(), 3);
+        assert!(c.files_under(&p(rules, r"D:\q")).unwrap().is_empty());
 
         // Marked: due, whatever their analysis, the missing one left; the change number doesn't move.
         let seq = raw::file_seq(&c, FileId::new(2));
@@ -2653,9 +2805,14 @@ mod tests {
         assert!(c.pending_import(false).unwrap().is_empty());
     }
 
-    #[test]
-    fn a_new_import_version_redoes_everything() {
-        let (mut c, _) = one_file();
+    under_both_rules!(
+        files_marked_are_imported_again_once,
+        files_marked_are_imported_again_once_windows,
+        files_marked_are_imported_again_once_posix
+    );
+
+    fn a_new_import_version_redoes_everything(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
         let item = next_work(&c);
         analyzed(&mut c, &item);
         // As an older build left it: its import version, and analyses made by it.
@@ -2670,14 +2827,25 @@ mod tests {
         assert_eq!(raw::file_seq(&c, item.id), after);
     }
 
-    #[test]
-    fn a_round_with_nothing_to_import_reads_one_index() {
-        let (c, _) = one_file();
+    under_both_rules!(
+        a_new_import_version_redoes_everything,
+        a_new_import_version_redoes_everything_windows,
+        a_new_import_version_redoes_everything_posix
+    );
+
+    fn a_round_with_nothing_to_import_reads_one_index(rules: PathRules) {
+        let (c, _) = one_file(rules);
         let plan = raw::query_plan(&c, pending_import_sql(false), []);
         assert!(plan.contains("USING INDEX files_to_import") && !plan.contains("TEMP B-TREE"), "{plan}");
         let retry = raw::query_plan(&c, pending_import_sql(true), []);
         assert!(retry.contains("files_to_import") && retry.contains("analysis_failed"), "{retry}");
     }
+
+    under_both_rules!(
+        a_round_with_nothing_to_import_reads_one_index,
+        a_round_with_nothing_to_import_reads_one_index_windows,
+        a_round_with_nothing_to_import_reads_one_index_posix
+    );
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
         let stars = Rating::new(n).filter(|r| r.get() > 0);
@@ -2691,9 +2859,8 @@ mod tests {
         tx.commit().unwrap();
     }
 
-    #[test]
-    fn three_way_rating_sync() {
-        let (mut c, id) = one_file();
+    fn three_way_rating_sync(rules: PathRules) {
+        let (mut c, id) = one_file(rules);
         // First import of a file rated elsewhere (ImageRater, Explorer): adopted.
         sync_file(&mut c, id, Rating::new(4));
         assert_eq!(raw::rating(&c, id), Some(4));
@@ -2716,4 +2883,6 @@ mod tests {
         sync_file(&mut c, id, Rating::new(1));
         assert_eq!(raw::rating(&c, id), Some(3));
     }
+
+    under_both_rules!(three_way_rating_sync, three_way_rating_sync_windows, three_way_rating_sync_posix);
 }

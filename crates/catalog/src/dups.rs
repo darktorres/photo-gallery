@@ -132,6 +132,7 @@ mod tests {
     use super::*;
     use crate::browse::fixtures::mixed_library;
     use crate::fixture::raw;
+    use pg_model::rules::PathRules;
 
     /// The edges as sorted (low, high) pairs: the order within a group is not part of the edges' contract.
     fn pairs(edges: Vec<(FileId, FileId)>) -> Vec<(i64, i64)> {
@@ -148,7 +149,7 @@ mod tests {
 
     #[test]
     fn a_file_without_the_hash_is_in_no_group() {
-        let c = mixed_library();
+        let c = mixed_library(PathRules::Windows);
         // Files 1 and 3 share their bytes. No pixel hash is stored, so no file is in a pixel group (a video has none,
         // and GROUP BY would put every NULL in one group).
         assert_eq!(identical_groups(&c, Identity::File).unwrap(), (1, 2));
@@ -162,7 +163,7 @@ mod tests {
 
     #[test]
     fn the_pdq_bands_count_the_pairs_each_band_holds() {
-        let c = mixed_library();
+        let c = mixed_library(PathRules::Windows);
         // The pairs are 2–4 at distance 10 and 2–6 at 30.
         let bands = [(0, 10), (11, 30), (0, 100), (31, 40)];
         let counts = pdq_pairs_in_bands(&c, &bands).unwrap();

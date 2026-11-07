@@ -13,9 +13,11 @@ fn folders() -> impl Strategy<Value = Vec<String>> {
 }
 
 /// The folder a path names, merged (its drive dropped), under Windows rules.
+#[expect(clippy::panic, reason = "a test helper: a path it cannot parse is a bug in the test")]
 fn merged(path: &str) -> Merged {
     let rules = PathRules::Windows;
-    rules.merge(&rules.parse(path).unwrap())
+    let Some(parsed) = rules.parse(path) else { panic!("not a Windows path: {path}") };
+    rules.merge(&parsed)
 }
 
 proptest! {

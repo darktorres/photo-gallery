@@ -28,11 +28,12 @@ mod tests {
     use crate::browse::writes::save_view;
     use crate::writes::{queue_rotation, set_rating};
     use pg_model::rating::Rating;
+    use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
 
     #[test]
     fn each_user_visible_change_names_its_file() {
-        let c = library();
+        let c = library(PathRules::Windows);
         let (all, now) = changes_since(&c, 0).unwrap();
         assert!(all.len() >= 4, "every file the library made is a change: {all:?}");
         // Nothing has changed since `now`.

@@ -28,8 +28,10 @@ fn component() -> impl Strategy<Value = String> {
 }
 
 /// A Windows path's folder, merged (its anchor dropped), as the typed rules make it.
+#[expect(clippy::panic, reason = "a test helper: a path it cannot parse is a bug in the test")]
 fn merged_of(path: &str) -> Merged {
-    PathRules::Windows.merge(&PathRules::Windows.parse(path).unwrap())
+    let Some(parsed) = PathRules::Windows.parse(path) else { panic!("not a Windows path: {path}") };
+    PathRules::Windows.merge(&parsed)
 }
 
 /// The order key of the file `name` in the folder at `folder` (a Windows path), as the catalog stores it.

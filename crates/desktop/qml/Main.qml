@@ -259,12 +259,19 @@ ApplicationWindow {
 
     // To the panel made when first needed (Yandex's Loader, below): what it is asked to do comes as a signal once it
     // is made (a Loader not loading asynchronously makes its item at once).
-    signal similarAsked(path: string)
+    signal similarAsked(fileId: int)
+    // The command line's `--find-similar`: the photo is the path it names, not a catalog file.
+    signal similarCommandLineAsked()
 
-    // The viewer's "find similar": search Yandex for the photo's file.
-    function findSimilar(path: string) {
+    // The viewer's "find similar": search Yandex for the photo's file (by its id).
+    function findSimilar(fileId: int) {
         yandexLoader.active = true
-        similarAsked(path)
+        similarAsked(fileId)
+    }
+
+    function findSimilarFromCommandLine() {
+        yandexLoader.active = true
+        similarCommandLineAsked()
     }
 
     // The save-view dialog (saveViewLoader) opens each time this rises: made at the first ask, then kept.
@@ -297,7 +304,7 @@ ApplicationWindow {
             win.libraryOpen = true
         }
         onSaveViewDialogRequested: win.askSaveView()
-        onSimilarRequested: (path) => win.findSimilar(path)
+        onSimilarRequested: win.findSimilarFromCommandLine()
         onAddFolderRequested: (folder) => library.addFolder(folder)
         onSaveCropsRequested: (folder) => galleryModel.saveCroppedCopies(folder)
         onViewerShowRequested: (index) => viewerItem.show(index)
@@ -450,7 +457,7 @@ ApplicationWindow {
             onBorderMarkToggled: (i, m) => shell.setBorderMark(i, m)
             // The file the viewer is on is the one a session remembers (Shell.sessionDue).
             onIndexChanged: if (index >= 0) shell.currentChanged(index)
-            onFindSimilar: (path) => win.findSimilar(path)
+            onFindSimilar: (fileId) => win.findSimilar(fileId)
             onClosed: (i) => win.select(i)
         }
 
@@ -495,7 +502,8 @@ ApplicationWindow {
                     onClosed: viewerItem.visible ? viewerItem.forceActiveFocus() : grid.takeFocus()
                     Connections {
                         target: win
-                        function onSimilarAsked(path: string) { yandexPanel.show(path) }
+                        function onSimilarAsked(fileId: int) { yandexPanel.show(fileId) }
+                        function onSimilarCommandLineAsked() { yandexPanel.showCommandLine() }
                     }
                 }
             }

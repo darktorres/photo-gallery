@@ -992,14 +992,17 @@ impl Catalog {
         browse::read::file_state(self, file_id)
     }
 
-    /// Where a file is: its folder and name, as Windows spells it.
-    pub fn file_path(&self, file_id: FileId) -> Result<RulePath> {
-        let (folder, name): (Vec<u8>, Vec<u8>) = self.conn.query_row(
-            "SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
-            [file_id.get()],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        self.file_path_of(&folder, &name)
+    /// Where a file is: its folder and name, exact. `None` when the catalog has no such file.
+    pub fn file_path(&self, file_id: FileId) -> Result<Option<RulePath>> {
+        let row: Option<(Vec<u8>, Vec<u8>)> = self
+            .conn
+            .query_row(
+                "SELECT fo.path, f.name FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+                [file_id.get()],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .optional()?;
+        row.map(|(folder, name)| self.file_path_of(&folder, &name)).transpose()
     }
 
     /// Give back this connection's page cache (the reader does it after each list it made).
@@ -1852,7 +1855,7 @@ mod tests {
         assert!(c.add_root(&root("/photos")).unwrap());
         assert!(!c.add_root(&root("/photos/Pics")).unwrap(), "inside a root");
         assert!(c.add_root(&root("/Photos/x")).unwrap(), "case is significant on POSIX");
-        assert_eq!(rules.display(&c.file_path(FileId::new(2)).unwrap()), "/photos/Pics/b.jpg");
+        assert_eq!(rules.display(&c.file_path(FileId::new(2)).unwrap().unwrap()), "/photos/Pics/b.jpg");
         // Folders that differ only in case are two folders, and their files are two files.
         assert_eq!(c.file_by_path(&root("/photos/Pics/b.jpg")).unwrap(), Some(FileId::new(2)));
         assert_eq!(c.file_by_path(&root("/photos/pics/b.jpg")).unwrap(), Some(FileId::new(3)));
@@ -2532,8 +2535,10 @@ mod tests {
             let entries =
                 browse::read::list_grid(&c, &pg_model::rules::Merged::default(), true, &Query::default(), sort)
                     .unwrap();
-            let path = |id| browse::read::details(&c, id).unwrap().unwrap().path;
-            entries.iter().map(|e| path(e.id).rsplit(['\\', '/']).next().unwrap().to_string()).collect()
+            let name = |id| {
+                browse::read::details(&c, id).unwrap().unwrap().path.parts.last().map(|n| n.display().into_owned())
+            };
+            entries.iter().map(|e| name(e.id).unwrap_or_default()).collect()
         };
         // Without a border (none found, or marked) last, by name, either way.
         assert_eq!(names(false), ["c.jpg", "d.jpg", "b.jpg", "e.jpg"]);

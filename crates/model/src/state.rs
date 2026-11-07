@@ -3,6 +3,7 @@
 //! comparisons of these values.
 
 use crate::analysis::ThumbHash;
+use crate::rules;
 use crate::turns::Turns;
 
 /// What a file's images are made from, as the catalog has it now. What is made from the file (a thumbnail, a
@@ -26,7 +27,8 @@ pub struct FileState {
 /// What the image providers need to make a file's images.
 #[derive(Clone, PartialEq, Debug)]
 pub struct FileSource {
-    pub path: String,
+    /// The file's path, exact: what the image providers open (through the app's `file_path`).
+    pub path: rules::Path,
     pub state: FileState,
     /// For a video, the time of the frame that stands for it (`video::poster_ms`; 0 before the import).
     pub poster_ms: Option<i64>,

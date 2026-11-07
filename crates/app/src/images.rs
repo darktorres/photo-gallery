@@ -7,7 +7,6 @@
 //! A thumbnail made on a miss goes to the cache's writer once it is shown, moved there rather than copied ([`Keep`]):
 //! the front end hands it back with [`App::keep`] once it is done with the bytes.
 
-use std::path::Path;
 use std::sync::{Arc, PoisonError};
 use std::time::{Duration, Instant};
 
@@ -183,15 +182,16 @@ impl App {
                     }
                 }
             };
+            let path = crate::app::path_of(&src.path);
             let made = if let Some(at) = src.poster_ms {
                 // A video: its poster frame.
-                match self.with_maker(|m| Ok(m.load_frame(Path::new(&src.path), at, current.rotation)))? {
+                match self.with_maker(|m| Ok(m.load_frame(&path, at, current.rotation)))? {
                     Ok(()) => self.with_maker(|m| m.encode_frame(pg_model::num::index(height)))?,
                     Err(e) => return Ok(Found::Offline(failed(e), kept_smaller)),
                 }
             } else {
                 // Read into the maker, which keeps the buffer for the next file.
-                match self.with_maker(|m| Ok(m.read_file(Path::new(&src.path))))? {
+                match self.with_maker(|m| Ok(m.read_file(&path)))? {
                     Ok(()) => {}
                     Err(e) => return Ok(Found::Offline(failed(e), kept_smaller)),
                 }
@@ -297,11 +297,12 @@ impl App {
         }
         let (full, image) = if let Some(at) = src.poster_ms {
             // A video: its poster frame stands for it until it plays.
-            let frame = pg_video::frame(Path::new(&src.path), at, rotation).map_err(failed)?;
+            let frame = pg_video::frame(&crate::app::path_of(&src.path), at, rotation).map_err(failed)?;
             ((frame.width, frame.height), Arc::new(frame))
         } else {
             let decoded = self.with_maker(|m| {
-                m.read_file(Path::new(&src.path)).map_err(|e| anyhow::anyhow!("original unavailable: {e}"))?;
+                m.read_file(&crate::app::path_of(&src.path))
+                    .map_err(|e| anyhow::anyhow!("original unavailable: {e}"))?;
                 m.decode_file(min, rotation)
             })?;
             (

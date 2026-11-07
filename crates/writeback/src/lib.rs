@@ -206,9 +206,12 @@ impl Inner {
     /// (`writes::abandon_temp`). The row stays, with its attempts and error, so the failure is still in the queue.
     fn give_up(&self, catalog: &Catalog, job: &Job) -> Result<()> {
         let Some((temp, _)) = &job.temp else { return Ok(()) };
-        let path = text_path(catalog, &catalog.file_path(job.file_id)?)?;
+        let size = match catalog.file_path(job.file_id)? {
+            Some(path) => stat(path_buf(&catalog.rules().join(&path))).ok(),
+            None => None,
+        };
         let _ = std::fs::remove_file(temp);
-        Ok(writes::abandon_temp(catalog, job, stat(&path).ok())?)
+        Ok(writes::abandon_temp(catalog, job, size)?)
     }
 
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {

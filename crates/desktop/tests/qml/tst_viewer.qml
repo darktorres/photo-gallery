@@ -107,4 +107,12 @@ TestCase {
         keyClick(Qt.Key_Left)
         compare(movedSpy.signalArguments[movedSpy.count - 1][0], 0)
     }
+
+    // The players and the Yandex search go by the file's id, which the gallery gives the viewer (no path text).
+    function test_the_viewer_takes_its_file_id_from_the_gallery() {
+        galleryStub.viewedFileId = 42
+        const v = viewer(0, 3)
+        compare(v.fileId, 42)
+        galleryStub.viewedFileId = 0
+    }
 }

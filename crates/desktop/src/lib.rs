@@ -23,6 +23,7 @@ mod screenshot;
 mod settings;
 mod shell;
 mod trace;
+mod video_source;
 mod viewport;
 mod words;
 

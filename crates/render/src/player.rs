@@ -2,6 +2,7 @@
 //! [`Sink`] when its delay is over. Looping forever, as most viewers do in practice: a GIF's loop count isn't honoured.
 //! The sink is the caller's (the viewer's video sink, in the desktop); this module knows nothing of it.
 
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Condvar, Mutex, PoisonError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -32,7 +33,7 @@ pub struct Player<S: Sink> {
 impl<S: Sink> Player<S> {
     /// Plays the animation file at `path` into `sink`, from the start, paused or not. A file that can't be read or
     /// decoded shows nothing.
-    pub fn start(path: String, sink: Arc<S>, paused: bool) -> Player<S> {
+    pub fn start(path: PathBuf, sink: Arc<S>, paused: bool) -> Player<S> {
         let control: Shared = Arc::new((Mutex::new(Control { stop: false, paused }), Condvar::new()));
         let thread = std::thread::Builder::new()
             .name("animation".into())
@@ -67,7 +68,7 @@ impl<S: Sink> Drop for Player<S> {
 /// Loops over the animation's frames until stopped. Each frame is shown when the previous one's delay is over
 /// (decoding the next counts toward it). An unreadable file, or one whose first frame fails, shows nothing: the
 /// viewer keeps the poster.
-fn play(path: &str, sink: &impl Sink, control: &Shared) {
+fn play(path: &Path, sink: &impl Sink, control: &Shared) {
     let Ok(bytes) = std::fs::read(path) else { return };
     let bytes: Arc<[u8]> = bytes.into();
     let mut due = Instant::now();
@@ -149,7 +150,7 @@ mod tests {
         std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
 
         let sink = Arc::new(Record::default());
-        let player = Player::start(file.to_string_lossy().into_owned(), sink.clone(), false);
+        let player = Player::start(file.clone(), sink.clone(), false);
         // Three frames a pass, so seeing four shows the loop started again.
         wait_for(|| sink.presented.lock().unwrap().len() > 3);
         assert!(sink.presented.lock().unwrap().iter().all(|&size| size == (4, 4)));
@@ -165,5 +166,39 @@ mod tests {
         drop(player);
         assert!(sink.presented.lock().unwrap().is_empty());
         assert!(*sink.closed.lock().unwrap());
+    }
+
+    // A file whose name has no UTF-8 form (a lone surrogate on Windows, a raw byte on Unix) plays from its exact path.
+    #[test]
+    fn plays_a_file_whose_name_is_not_utf8() {
+        use std::ffi::OsString;
+        #[cfg(windows)]
+        let name = {
+            use std::os::windows::ffi::OsStringExt;
+            OsString::from_wide(&[
+                u16::from(b'x'),
+                0xD800,
+                u16::from(b'.'),
+                u16::from(b'g'),
+                u16::from(b'i'),
+                u16::from(b'f'),
+            ])
+        };
+        #[cfg(unix)]
+        let name = {
+            use std::os::unix::ffi::OsStringExt;
+            OsString::from_vec(b"x\xFF.gif".to_vec())
+        };
+        let dir = std::env::temp_dir().join(format!("pg-player-odd-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join(name);
+        std::fs::write(&file, pg_testkit::gif(3).unwrap()).unwrap();
+
+        let sink = Arc::new(Record::default());
+        let player = Player::start(file.clone(), sink.clone(), false);
+        wait_for(|| !sink.presented.lock().unwrap().is_empty());
+        assert!(sink.presented.lock().unwrap().iter().all(|&size| size == (4, 4)));
+        drop(player);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

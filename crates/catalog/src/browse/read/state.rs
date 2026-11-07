@@ -64,7 +64,7 @@ pub fn file_source(catalog: &Catalog, file_id: FileId) -> Result<Option<FileSour
         Some((folder, name, kind, poster_ms, state)) => {
             let video = kind == Kind::Video.key();
             Some(FileSource {
-                path: catalog.rules().display(&catalog.file_path_of(&folder, &name)?),
+                path: catalog.file_path_of(&folder, &name)?,
                 state,
                 poster_ms: if video { Some(poster_ms.unwrap_or(0)) } else { None },
             })

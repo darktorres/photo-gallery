@@ -1,6 +1,7 @@
 module pg.gallery
 GalleryModel 1.0 GalleryModel.qml
 AnimationPlayer 1.0 AnimationPlayer.qml
+VideoSource 1.0 VideoSource.qml
 Viewport 1.0 Viewport.qml
 Settings 1.0 Settings.qml
 KeyMap 1.0 KeyMap.qml

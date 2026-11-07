@@ -54,9 +54,15 @@ pub mod qobject {
     unsafe extern "RustQt" {
         fn set_preview_item(self: Pin<&mut YandexSearch>, value: i32);
 
-        /// Upload the photo at the local file `path` and read its other sizes and similar images.
+        /// Upload the catalog's file `file_id` (the photo) and read its other sizes and similar images.
         #[qinvokable]
-        fn search(self: Pin<&mut YandexSearch>, path: &QString);
+        #[cxx_name = "searchFile"]
+        fn search_file(self: Pin<&mut YandexSearch>, file_id: i64);
+
+        /// Upload the photo the command line names (`--find-similar=<path>`), as `searchFile` does for a catalog file.
+        #[qinvokable]
+        #[cxx_name = "searchCommandLine"]
+        fn search_command_line(self: Pin<&mut YandexSearch>);
 
         #[qinvokable]
         #[cxx_override]
@@ -129,6 +135,7 @@ use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex
 use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status, YandexError};
 use pg_client::picks::Picks;
 use pg_client::text;
+use pg_model::ids::FileId;
 
 /// The status line when a search or a save stops at an internal error (the panic is in the log).
 const INTERNAL_STOP: &str = "Stopped by an internal error; the details are in gallery.log.";
@@ -249,10 +256,23 @@ fn qt_int(n: usize) -> i32 {
 }
 
 impl qobject::YandexSearch {
-    fn search(mut self: Pin<&mut Self>, path: &QString) {
-        let path = path.to_string();
+    fn search_file(self: Pin<&mut Self>, file_id: i64) {
+        match crate::app::get().file_path(FileId::new(file_id)) {
+            Ok(path) => self.search_photo(&path),
+            Err(err) => crate::panic_log::note(&format!("yandex: file {file_id}: {err:#}")),
+        }
+    }
+
+    fn search_command_line(self: Pin<&mut Self>) {
+        if let Some(path) = crate::command_line::path("find-similar") {
+            self.search_photo(path);
+        }
+    }
+
+    /// Start a search for the photo at `path`. The app refuses one already running, and nothing shows then.
+    fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
         self.as_mut().ensure_pump();
-        if !self.search.start(Path::new(&path), crate::command_line::yandex_source()) {
+        if !self.search.start(path, crate::command_line::yandex_source()) {
             return;
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.

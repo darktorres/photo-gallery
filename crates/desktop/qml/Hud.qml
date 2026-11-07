@@ -31,7 +31,6 @@ Item {
     // A line about the item, from the gallery.
     required property string info
     required property string playerError
-    required property string filePath
     required property Settings settings
     required property Viewport viewport
 

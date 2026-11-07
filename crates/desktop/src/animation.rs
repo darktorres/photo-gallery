@@ -6,8 +6,6 @@
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
 
         include!(<QtMultimedia/QVideoSink>);
         type QVideoSink;
@@ -33,15 +31,15 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        /// The file played (a path); empty stops.
-        #[qproperty(QString, source, READ, WRITE = set_source_and_play, NOTIFY, FINAL)]
+        /// The catalog's file played (its id); 0 stops. The file's path is the app's (`App::file_path`).
+        #[qproperty(i64, file_id, cxx_name = "fileId", READ, WRITE = set_file_id_and_play, NOTIFY, FINAL)]
         /// False pauses.
         #[qproperty(bool, playing, READ, WRITE = set_playing_and_apply, NOTIFY, FINAL)]
         type AnimationPlayer = super::AnimationPlayerRust;
     }
 
     unsafe extern "RustQt" {
-        fn set_source_and_play(self: Pin<&mut AnimationPlayer>, source: QString);
+        fn set_file_id_and_play(self: Pin<&mut AnimationPlayer>, file_id: i64);
         fn set_playing_and_apply(self: Pin<&mut AnimationPlayer>, playing: bool);
 
         /// Where the frames go: a `VideoOutput`'s `videoSink`.
@@ -56,11 +54,11 @@ use std::sync::Arc;
 
 use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
-use cxx_qt_lib::QString;
+use pg_model::ids::FileId;
 use pg_render::player::{Player, Sink};
 
 pub struct AnimationPlayerRust {
-    source: QString,
+    file_id: i64,
     playing: bool,
     sink: Option<UniquePtr<qobject::SinkRef>>,
     worker: Option<Player<Frames>>,
@@ -68,17 +66,17 @@ pub struct AnimationPlayerRust {
 
 impl Default for AnimationPlayerRust {
     fn default() -> Self {
-        Self { source: QString::default(), playing: true, sink: None, worker: None }
+        Self { file_id: 0, playing: true, sink: None, worker: None }
     }
 }
 
 impl qobject::AnimationPlayer {
-    fn set_source_and_play(mut self: Pin<&mut Self>, source: QString) {
-        if source == self.source {
+    fn set_file_id_and_play(mut self: Pin<&mut Self>, file_id: i64) {
+        if file_id == self.file_id {
             return;
         }
-        self.as_mut().rust_mut().source = source;
-        self.as_mut().source_changed();
+        self.as_mut().rust_mut().file_id = file_id;
+        self.as_mut().file_id_changed();
         if !self.playing {
             self.as_mut().rust_mut().playing = true;
             self.as_mut().playing_changed();
@@ -106,14 +104,21 @@ impl qobject::AnimationPlayer {
         self.restart();
     }
 
-    /// Stops the animation playing, then starts the source, if any.
+    /// Stops the animation playing, then starts the file, if any.
     fn restart(mut self: Pin<&mut Self>) {
         self.as_mut().rust_mut().worker = None;
-        let path = self.source.to_string();
-        if path.is_empty() {
+        let file_id = self.file_id;
+        if file_id <= 0 {
             return;
         }
         let Some(sink) = &self.sink else { return };
+        let path = match crate::app::get().file_path(FileId::new(file_id)) {
+            Ok(path) => path,
+            Err(err) => {
+                crate::panic_log::note(&format!("animation {file_id}: {err:#}"));
+                return;
+            }
+        };
         let (frames, paused) = (Arc::new(Frames(sink.frame_sink())), !self.playing);
         self.as_mut().rust_mut().worker = Some(Player::start(path, frames, paused));
     }

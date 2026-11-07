@@ -11,7 +11,6 @@ use crate::writes::{self, queue_rotation};
 use crate::{Catalog, Result};
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::date::Day;
-use pg_model::details::Details;
 use pg_model::detection;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::{FileId, FolderId};
@@ -153,15 +152,10 @@ fn ratings_and_orders(rules: PathRules) {
     let bmp = details(&c, FileId::new(4)).unwrap().unwrap();
     assert!(!bmp.rating_in_file, "BMP keeps its rating in the catalog");
     assert!(details(&c, FileId::new(1)).unwrap().unwrap().rating_in_file);
-    assert_eq!(
-        details(&c, FileId::new(2)).unwrap(),
-        Some(Details {
-            path: spelled(rules, r"E:\p\a.png"),
-            size: 10,
-            rating_in_file: true,
-            border_sides: detection::Sides::new()
-        })
-    );
+    let found = details(&c, FileId::new(2)).unwrap().unwrap();
+    assert_eq!(rules.display(&found.path), spelled(rules, r"E:\p\a.png"));
+    assert_eq!((found.size, found.rating_in_file), (10, true));
+    assert_eq!(found.border_sides, detection::Sides::new());
     assert_eq!(details(&c, FileId::new(99)).unwrap(), None);
 }
 
@@ -884,3 +878,18 @@ fn a_saved_scope_matches_its_folder_whatever_the_case() {
     assert_eq!(listed(&saved.folder, false), [2, 1, 3], "D:\\p and E:\\p, as p");
     assert_eq!(listed(&saved.folder, true), [2, 1, 3, 4], "and D:\\p\\sub");
 }
+
+fn a_file_keeps_its_exact_name(rules: PathRules) {
+    let c = library(rules);
+    // A name with no UTF-8 form: a lone surrogate (WTF-8, as Windows holds it; the same bytes are a non-UTF-8 name
+    // on Unix). The path the readers give is that name, exactly.
+    let name = Name::from_raw(b"x\xED\xA0\x80.jpg");
+    c.conn.execute("UPDATE files SET name = ?1 WHERE id = 1", [name.as_bytes()]).unwrap();
+    let path = c.file_path(FileId::new(1)).unwrap().unwrap();
+    assert_eq!(path.parts.last(), Some(&name));
+    assert_eq!(file_source(&c, FileId::new(1)).unwrap().unwrap().path, path);
+    assert_eq!(details(&c, FileId::new(1)).unwrap().unwrap().path, path);
+    assert_eq!(c.file_path(FileId::new(99)).unwrap(), None);
+}
+
+under_both_rules!(a_file_keeps_its_exact_name, a_file_keeps_its_exact_name_windows, a_file_keeps_its_exact_name_posix);

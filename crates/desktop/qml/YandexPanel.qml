@@ -20,12 +20,23 @@ Rectangle {
 
     signal closed()
 
-    function show(path: string) {
+    // The viewer's photo: the catalog's file, by its id.
+    function show(fileId: int) {
+        openPanel()
+        yandex.searchFile(fileId)
+    }
+
+    // The command line's photo (`--find-similar`).
+    function showCommandLine() {
+        openPanel()
+        yandex.searchCommandLine()
+    }
+
+    function openPanel() {
         preview.visible = false
         visible = true
         // The keys come here (Escape closes), not to the viewer's photo stepping behind.
         forceActiveFocus()
-        yandex.search(path)
     }
 
     function close() {

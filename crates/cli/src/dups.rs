@@ -30,7 +30,9 @@ pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()>
     for g in found.groups.iter().take(show) {
         println!("\n{} files:", g.len());
         for id in g.iter().take(20) {
-            println!("  {}", catalog.rules().display(&catalog.file_path(*id)?));
+            let path =
+                catalog.file_path(*id)?.ok_or_else(|| anyhow::anyhow!("file {} is not in the catalog", id.get()))?;
+            println!("  {}", catalog.rules().display(&path));
         }
     }
     Ok(())

@@ -61,7 +61,7 @@ pub fn file_id(c: &Catalog, name: &str) -> Result<FileId> {
 /// name, as the catalog's rules display it).
 pub fn file_and_path(c: &Catalog, name: &str) -> Result<(FileId, String)> {
     let id: i64 = c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0))?;
-    let path = c.file_path(FileId::new(id))?;
+    let path = c.file_path(FileId::new(id))?.ok_or_else(|| anyhow::anyhow!("file {id} is not in the catalog"))?;
     Ok((FileId::new(id), c.rules().display(&path)))
 }
 

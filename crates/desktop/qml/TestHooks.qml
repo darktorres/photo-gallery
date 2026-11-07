@@ -43,7 +43,7 @@ Item {
     signal viewsMenuRequested()
     signal libraryPanelRequested()
     signal saveViewDialogRequested()
-    signal similarRequested(string path)
+    signal similarRequested()
     signal addFolderRequested(url folder)
     signal saveCropsRequested(url folder)
     // The viewer's calls (its functions), made by Main.
@@ -116,7 +116,7 @@ Item {
         if (commandLine.text("menu") === "views") menuTimer.start()
         if (commandLine.has("library")) libraryPanelRequested()
         if (commandLine.has("save-view")) saveViewDialogRequested()
-        if (commandLine.has("find-similar")) similarRequested(commandLine.text("find-similar"))
+        if (commandLine.has("find-similar")) similarRequested()
     }
 
     // The hooks that run after the library job has started (Main's startHooks()).

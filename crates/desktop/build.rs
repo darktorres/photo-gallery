@@ -82,6 +82,7 @@ fn main() -> Result<(), String> {
         "src/shell.rs",
         "src/trace.rs",
         "src/keymap.rs",
+        "src/video_source.rs",
         "src/viewport.rs",
         "src/words.rs",
         "src/yandex.rs",
@@ -93,6 +94,7 @@ fn main() -> Result<(), String> {
     .cpp_file("cpp/gui_app.cpp")
     .cpp_file("cpp/providers.cpp")
     .cpp_file("cpp/screenshot.cpp")
+    .cpp_file("cpp/video_source.cpp")
     // The window icon, set in app_icon.cpp (drawn by tools/make_icon.py), and the mascots Mascot.qml picks from.
     .qrc_resources(resources);
     // Debug builds read the QML from the source folder and reload it when it changes (src/live_reload.rs).

@@ -76,12 +76,11 @@ pub mod qobject {
         #[qproperty(i32, viewed_full_height, cxx_name = "viewedFullHeight", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(MediaKind, viewed_kind, cxx_name = "viewedKind", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(QUrl, viewed_file_url, cxx_name = "viewedFileUrl", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i64, viewed_file_id, cxx_name = "viewedFileId", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, viewed_full_url, cxx_name = "viewedFullUrl", READ, WRITE, NOTIFY, FINAL)]
         /// The thumbnails' height in device pixels (QML's, from the screen's scale): the thumbnail URLs are made for it,
         /// so a change makes every row read them again (`setThumbHeight`).
         #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, WRITE = set_thumb_height, FINAL)]
-        #[qproperty(QString, viewed_file_path, cxx_name = "viewedFilePath", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, viewed_info, cxx_name = "viewedInfo", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QRectF, viewed_border_box, cxx_name = "viewedBorderBox", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(f64, viewed_rejected_top, cxx_name = "viewedRejectedTop", READ, WRITE, NOTIFY, FINAL)]
@@ -260,6 +259,7 @@ use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, ImageRequest, Version};
 use pg_model::query::MediaType;
 use pg_model::rating::Rating;
+use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 
 /// A row's items, (first, count) as a point: one value, so a row changed or reused is given its items at once.
@@ -336,9 +336,8 @@ pub struct GalleryRust {
     viewed_full_height: i32,
     viewed_kind: qobject::MediaKind,
     viewed_player_turns: i32,
-    viewed_file_url: QUrl,
+    viewed_file_id: i64,
     viewed_full_url: QString,
-    viewed_file_path: QString,
     thumb_height: i32,
     viewed_info: QString,
     viewed_border_box: QRectF,
@@ -374,9 +373,8 @@ impl Default for GalleryRust {
             viewed_full_height: 0,
             viewed_kind: qobject::MediaKind::Image,
             viewed_player_turns: 0,
-            viewed_file_url: QUrl::default(),
+            viewed_file_id: 0,
             viewed_full_url: QString::default(),
-            viewed_file_path: QString::default(),
             thumb_height: 0,
             viewed_info: QString::default(),
             viewed_border_box: QRectF::default(),
@@ -703,10 +701,8 @@ impl qobject::GalleryModel {
         self.as_mut().set_viewed_kind(kind);
         let player_turns = self.player_turns(item);
         self.as_mut().set_viewed_player_turns(player_turns);
-        let file_url = self.file_url(item);
-        self.as_mut().set_viewed_file_url(file_url);
-        let file_path = self.file_path(item);
-        self.as_mut().set_viewed_file_path(file_path);
+        let file_id = self.file_id(item);
+        self.as_mut().set_viewed_file_id(file_id);
         let info = self.info(item);
         self.as_mut().set_viewed_info(info);
         let border_box = self.border_box(item);
@@ -959,18 +955,6 @@ impl qobject::GalleryModel {
         }
     }
 
-    /// The file as a URL, for Qt's player (videos).
-    fn file_url(&self, item: i32) -> QUrl {
-        // fromUserInput makes a local path a file URL, escaping what URLs reserve (names here contain '#').
-        self.with_details(item, |_, d| QUrl::from_user_input(&QString::from(&d.path), &QString::default()))
-            .unwrap_or_default()
-    }
-
-    /// The file's path (for `AnimationPlayer`), or `""`.
-    fn file_path(&self, item: i32) -> QString {
-        self.with_details(item, |_, d| QString::from(&d.path)).unwrap_or_default()
-    }
-
     /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the turns not
     /// yet written. (A video's own rotation tag is applied by the player.)
     fn player_turns(&self, item: i32) -> i32 {
@@ -987,7 +971,8 @@ impl qobject::GalleryModel {
                 _ => None,
             };
             let kept = e.rating.is_some() && !d.rating_in_file;
-            QString::from(&text::info(&d.path, e.shown_size(), u64::try_from(d.size).unwrap_or(0), kept, borders))
+            let path = PathRules::NATIVE.display(&d.path);
+            QString::from(&text::info(&path, e.shown_size(), u64::try_from(d.size).unwrap_or(0), kept, borders))
         })
         .unwrap_or_default()
     }

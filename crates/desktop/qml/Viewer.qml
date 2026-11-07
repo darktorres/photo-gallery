@@ -45,9 +45,8 @@ Rectangle {
     readonly property int kind: gallery.viewedKind
     // Videos and animations: Qt's players show the file as stored, so the catalog's turns are added here.
     readonly property int playerTurns: gallery.viewedPlayerTurns
-    // The file, for the players; a line about it for the bar.
-    readonly property url fileUrl: gallery.viewedFileUrl
-    readonly property string filePath: gallery.viewedFilePath
+    // The file (its catalog id), for the players and the Yandex search; a line about it for the bar.
+    readonly property int fileId: gallery.viewedFileId
     readonly property string info: gallery.viewedInfo
     // Its borders: what is left without them, as fractions of the image as shown (empty: none found); where a
     // rejected candidate would have cut at each edge (a fraction from that edge, -1: none); whether they are marked as
@@ -103,8 +102,8 @@ Rectangle {
     // B: show or hide the borders (the window keeps the setting); N: mark the shown item's as not a border, or not.
     signal bordersToggled()
     signal borderMarkToggled(int index, bool marked)
-    // The bar's "find similar" button: the photo's file, for the Yandex panel (Main.qml).
-    signal findSimilar(string path)
+    // The bar's "find similar" button: the photo's file (its id), for the Yandex panel (Main.qml).
+    signal findSimilar(int fileId)
 
     // The view (Rust: pg_client's View, behind the Viewport object): `zoom` device pixels per image pixel, the image's
     // top-left corner at (ox, oy) in logical pixels, fitted to the window or not. The numbers are the Viewport's; this
@@ -395,8 +394,7 @@ Rectangle {
                         fw: viewer.fw
                         fh: viewer.fh
                         playerTurns: viewer.playerTurns
-                        fileUrl: viewer.fileUrl
-                        filePath: viewer.filePath
+                        fileId: viewer.fileId
                         muted: viewer.muted
                         volume: viewer.volume
                         barHeight: hud.barHeight
@@ -477,14 +475,13 @@ Rectangle {
                     borderMarked: viewer.borderMarked
                     info: viewer.info
                     playerError: viewer.playerError
-                    filePath: viewer.filePath
                     settings: viewer.settings
                     viewport: viewportItem
                     onCloseAsked: viewer.close()
                     onRateAsked: (r) => viewer.rate(r)
                     onTurnAsked: (d) => viewer.turn(d)
                     onBorderMarkAsked: (marked) => viewer.borderMarkToggled(viewer.index, marked)
-                    onFindSimilarAsked: viewer.findSimilar(viewer.filePath)
+                    onFindSimilarAsked: viewer.findSimilar(viewer.fileId)
                 }
 
                 // The rating just given, for half a second (over the next picture).

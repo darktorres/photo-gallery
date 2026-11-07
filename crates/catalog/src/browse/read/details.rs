@@ -32,9 +32,8 @@ pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
         .optional()?;
     let found = match row {
         Some((folder, name, size, kind, format)) => {
-            let path = catalog.rules().display(&catalog.file_path_of(&folder, &name)?);
             Some(Details {
-                path,
+                path: catalog.file_path_of(&folder, &name)?,
                 size,
                 // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
                 rating_in_file: kind == Kind::Image.key()

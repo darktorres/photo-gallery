@@ -24,8 +24,8 @@ Item {
     // Each change asks for a play or pause (Viewer.playRequests counts them).
     required property int playRequests
     onPlayRequestsChanged: togglePlay()
-    required property url fileUrl
-    required property string filePath
+    // The file (its catalog id): a video plays it as a device (VideoSource), an animation is read by AnimationPlayer.
+    required property int fileId
     required property bool muted
     required property real volume
     // The height of the rating bar, which the transport sits above.
@@ -52,6 +52,18 @@ Item {
             player.play()
     }
 
+    // The video's file, played as a device (src/video_source.rs): it is opened when the video is shown and stopped when
+    // it isn't. The player's own source is only what the device sets.
+    function openVideo() {
+        if (media.playsVideo)
+            video.play(media.fileId)
+        else
+            video.stop()
+    }
+    onPlaysVideoChanged: openVideo()
+    onFileIdChanged: openVideo()
+    Component.onCompleted: openVideo()
+
     // Fitted (up or down), turned by the catalog's turns.
     Item {
         visible: !media.still && media.playScale > 0
@@ -73,7 +85,6 @@ Item {
 
     MediaPlayer {
         id: player
-        source: media.playsVideo ? media.fileUrl : Qt.url("")
         videoOutput: videoOut
         audioOutput: AudioOutput {
             muted: media.muted
@@ -86,14 +97,17 @@ Item {
                 play()
         }
         onErrorChanged: media.playerFailed(errorString)
-        // Made for a video already shown: its source was set before the handler above.
-        Component.onCompleted: if (media.playsVideo) play()
+    }
+
+    VideoSource {
+        id: video
+        Component.onCompleted: attach(player)
     }
 
     AnimationPlayer {
         id: animPlayer
-        source: media.playsAnimation ? media.filePath : ""
-        onSourceChanged: media.sourceSwitched()
+        fileId: media.playsAnimation ? media.fileId : 0
+        onFileIdChanged: media.sourceSwitched()
         Component.onCompleted: setSink(videoOut.videoSink)
     }
 

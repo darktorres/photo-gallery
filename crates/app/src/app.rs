@@ -14,7 +14,8 @@ use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use pg_catalog::Catalog;
 use pg_jobs::events::{Bus, Subscription};
-use pg_model::rules::PathRules;
+use pg_model::ids::FileId;
+use pg_model::rules::{Path as RulePath, PathRules};
 use pg_render::maker::Maker;
 use pg_thumbcache::ThumbCache;
 
@@ -39,6 +40,12 @@ pub enum Note {
     /// The catalog didn't match this build's schema, so it was moved aside (its `kept` file) and a new one made from this
     /// build's schema, which took the old rows ([`pg_catalog::Carried`]) or none, with the reason said.
     CatalogRebuilt(pg_catalog::Rebuilt),
+}
+
+/// A catalog path as the system holds it: the catalogs are opened under the native rules (`with_catalog`), so their
+/// paths are the native ones.
+pub(crate) fn path_of(path: &RulePath) -> PathBuf {
+    pg_platform::names::path_buf(&PathRules::NATIVE.join(path))
 }
 
 /// Idle catalog connections kept for the next borrower; more are closed when returned.
@@ -142,6 +149,14 @@ impl App {
             .with(|| Catalog::open(&path, PathRules::NATIVE).map_err(Error::from), |c| f(c).map_err(Error::from))
     }
 
+    /// A file's path as the system holds it, for the programs that open the file (std, FFmpeg, the animation player).
+    /// The catalog's paths are exact, so this is where they become a `PathBuf`. `UnknownFile` when the catalog has no
+    /// such file.
+    pub fn file_path(&self, file_id: FileId) -> Result<PathBuf> {
+        let path = self.with_catalog(|c| c.file_path(file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
+        Ok(path_of(&path))
+    }
+
     /// Run `f` with a thumbnail maker (and its decoder): an idle one, or a new one.
     pub(crate) fn with_maker<R>(&self, f: impl FnOnce(&mut Maker) -> anyhow::Result<R>) -> Result<R> {
         self.makers.with(|| Maker::new().map_err(failed), |m| f(m).map_err(failed))
@@ -184,4 +199,19 @@ fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, notes: Arc<Bus<N
         })
         .map_err(|e| failed(format!("can't start the thumbnail event forwarder: {e}")))?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // A catalog path becomes the exact system path, a name with no UTF-8 form included.
+    #[test]
+    fn a_catalog_path_is_the_exact_system_path() {
+        // A lone surrogate (WTF-8 on Windows; the same bytes are a non-UTF-8 name on Unix).
+        let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
+        let path = PathRules::NATIVE.parse_bytes(text).unwrap();
+        assert_eq!(PathRules::NATIVE.join(&path), text);
+        assert_eq!(path_of(&path), pg_platform::names::path_buf(text));
+    }
 }

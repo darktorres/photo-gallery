@@ -1465,6 +1465,7 @@ dependencies = [
  "pg-jobs",
  "pg-library",
  "pg-model",
+ "pg-platform",
  "pg-render",
  "pg-scan",
  "pg-thumbcache",

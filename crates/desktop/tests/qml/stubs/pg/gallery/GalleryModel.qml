@@ -14,8 +14,7 @@ QtObject {
     property int viewedFullHeight: 0
     property int viewedKind: GalleryModel.Image
     property int viewedPlayerTurns: 0
-    property url viewedFileUrl: ""
-    property string viewedFilePath: ""
+    property int viewedFileId: 0
     property string viewedInfo: ""
     property rect viewedBorderBox: Qt.rect(0, 0, 0, 0)
     property real viewedRejectedTop: 0

@@ -71,6 +71,8 @@ Item {
     readonly property bool hasBorders: commandLine.has("borders")
     // The mascot the window shows from the start (--mascot): 0 when not given, which is a random one.
     readonly property int mascot: commandLine.number("mascot", 0)
+    // The window is being photographed (--screenshot): its text carets are not drawn, since they blink.
+    readonly property bool screenshot: commandLine.has("screenshot")
     // The result the Yandex panel shows at full size (-1: none). It counts only with --find-similar, which makes the panel.
     readonly property int yandexPreview: commandLine.has("find-similar") && commandLine.has("yandex-preview")
         ? commandLine.number("yandex-preview", 0) : -1

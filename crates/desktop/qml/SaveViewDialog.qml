@@ -22,6 +22,9 @@ Dialog {
     required property bool descending
     required property string filters
     required property string sortName
+    // Whether the name field draws its caret. Off when the window is photographed (--screenshot): the caret blinks, so a
+    // shot would have it or not.
+    property bool caret: true
 
     // The name typed, when the dialog is accepted.
     signal saved(string name)
@@ -47,6 +50,7 @@ Dialog {
         }
         TextField {
             id: viewName
+            cursorVisible: dialog.caret
             placeholderText: words.text("ui-view-name")
             Layout.preferredWidth: 400
             onAccepted: dialog.accept()

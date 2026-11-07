@@ -514,6 +514,7 @@ ApplicationWindow {
                     descending: shell.descending
                     filters: filterBar.description
                     sortName: topBar.sortText
+                    caret: !testHooks.screenshot
                     onSaved: (name) => shell.saveView(name)
                     onClosed: grid.takeFocus()
                 }

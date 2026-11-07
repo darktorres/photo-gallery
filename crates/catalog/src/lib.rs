@@ -1639,6 +1639,32 @@ mod tests {
         a_catalog_that_differs_keeps_its_rows_posix
     );
 
+    // Unix: a catalog in a folder whose name has no UTF-8 form is rebuilt with its rows, as the old file is attached
+    // by its exact bytes.
+    #[cfg(unix)]
+    #[test]
+    fn a_catalog_in_a_folder_with_a_name_that_is_not_utf8_keeps_its_rows() {
+        use std::os::unix::ffi::OsStringExt;
+        let base = test_folder(SCRATCH, "odd-folder-name").unwrap();
+        let dir = base.join(std::ffi::OsString::from_vec(b"odd-\xFF".to_vec()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("catalog.sqlite");
+        let rules = PathRules::Posix;
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        raw::add_scan(&c, 1, "/p");
+        raw::add_folder(&c, 1, "/p");
+        fixture::insert(&c, &[fixture::File::new(FileId::new(11), FolderId::new(1), "B.jpg", 100, 5)]).unwrap();
+        assert!(c.add_root(&p(rules, "/p")).unwrap());
+        drop(c);
+        let edited = Connection::open(&path).unwrap();
+        edited.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
+        drop(edited);
+
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        let r = c.rebuilt().expect("moved aside");
+        assert_eq!(r.carried, Carried::Rows { files: 1, folders: 1 });
+    }
+
     /// A catalog from before the folders were typed kept its saved views' folders and the session's as text. They are
     /// carried as the typed folders (a view's stored bytes, the session's JSON), so they read as they were saved.
     // Windows-only: before the folders were typed, the views and the session held backslash-separated Windows text,

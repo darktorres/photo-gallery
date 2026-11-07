@@ -192,9 +192,10 @@ ApplicationWindow {
     // The folder model works out the listed folder's row (-1: under a folder the user collapsed; -2: not in the tree).
     // The shell keeps the folder as the tree spells it and tells the controller whether the folder is known.
     function treeLoaded() {
+        // The view is placed once, on the first tree; the model opens the folders above the listed one then (treeLoaded).
         const first = !treeShown
         treeShown = true
-        const row = folderModel.revealListing(first)
+        const row = folderModel.treeLoaded()
         if (row >= 0) {
             tree.currentIndex = row
             if (first)
@@ -216,10 +217,6 @@ ApplicationWindow {
     // "Unrated", and the viewer's place with them).
     function refreshGrid() {
         shell.reloadList()
-    }
-
-    function openFolder(row: int) {
-        shell.openFolderRow(row)
     }
 
     // The list the controller asked for is loading (the shell announces it: listingChanged). The facets and the sort box
@@ -398,7 +395,7 @@ ApplicationWindow {
                     folders: folderModel
                     onToggleRequested: (row) => folderModel.toggle(row)
                     onFolderOpened: (row) => {
-                        win.openFolder(row)
+                        shell.openFolderRow(row)
                         grid.takeFocus()
                     }
                 }

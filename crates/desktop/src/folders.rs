@@ -91,6 +91,12 @@ pub mod qobject {
         #[qinvokable]
         fn toggle(self: Pin<&mut FolderModel>, row: i32);
 
+        /// The tree arrived (`loaded`): the row of the listed folder. The first arrival opens the folders above it (the
+        /// start's reveal).
+        #[qinvokable]
+        #[cxx_name = "treeLoaded"]
+        fn tree_loaded(self: Pin<&mut FolderModel>) -> i32;
+
         /// The row of the listed folder once the tree is in: `first` opens the folders above it (the start's reveal).
         /// The row, or -1 for a folder under one the user collapsed, or -2 for a folder the tree doesn't have.
         #[qinvokable]
@@ -128,6 +134,8 @@ pub struct FolderRust {
     ready: bool,
     /// The latest tree asked for; older ones arriving are dropped.
     generation: u64,
+    /// The tree has been shown once: its first arrival opens the folders above the listed one (`tree_loaded`).
+    shown: bool,
 }
 
 thread_local! {
@@ -262,6 +270,12 @@ impl qobject::FolderModel {
         }
         let index = self.index(row, 0, &root);
         self.data_changed(&index, &index);
+    }
+
+    fn tree_loaded(mut self: Pin<&mut Self>) -> i32 {
+        let first = !self.shown;
+        self.as_mut().rust_mut().shown = true;
+        self.reveal_listing(first)
     }
 
     fn reveal_listing(mut self: Pin<&mut Self>, first: bool) -> i32 {

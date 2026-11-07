@@ -162,8 +162,17 @@ pub(crate) const CARRIED: &[&str] = &[
 /// were stored under (the caller has checked they are this build's): a saved view or the session that kept its folder
 /// as text (before the folders were typed) is converted to the typed form as it is copied.
 pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, rules: PathRules) -> Result<()> {
-    let text = old.to_str().ok_or_else(|| Error::Other(anyhow!("{}: a path that is not text", old.display())))?;
-    conn.execute("ATTACH DATABASE ?1 AS carried", [text]).context("attaching the old catalog")?;
+    // Unix: the path's bytes, bound as a BLOB (SQLite takes it as the file name, whatever it holds). Windows: SQLite
+    // takes text, so a path with no UTF-8 form can't be attached until the junction alias (Unit E).
+    #[cfg(unix)]
+    let bound: Vec<u8> = {
+        use std::os::unix::ffi::OsStrExt;
+        old.as_os_str().as_bytes().to_vec()
+    };
+    #[cfg(windows)]
+    let bound: String =
+        old.to_str().ok_or_else(|| Error::Other(anyhow!("{}: a path that is not text", old.display())))?.to_string();
+    conn.execute("ATTACH DATABASE ?1 AS carried", [bound]).context("attaching the old catalog")?;
     let copied = copy_tables(conn, rules);
     conn.execute_batch("DETACH DATABASE carried")?;
     copied

@@ -91,6 +91,7 @@ fn main() -> Result<(), String> {
     ])
     .cpp_file("cpp/app_icon.cpp")
     .cpp_file("cpp/deadline.cpp")
+    .cpp_file("cpp/picker.cpp")
     .cpp_file("cpp/frame_sink.cpp")
     .cpp_file("cpp/gpu_device.cpp")
     .cpp_file("cpp/gui_app.cpp")

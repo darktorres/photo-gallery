@@ -12,9 +12,10 @@ use pg_model::view::SavedView;
 /// Save a view, replacing one of the same name.
 pub fn save_view(catalog: &Catalog, v: &SavedView) -> Result<()> {
     let conn = &catalog.conn;
+    let folder = catalog.rules().join_merged(&v.folder);
     conn.execute(
         "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![v.name, v.folder, v.recursive, to_json(&v.query), to_json(&v.sort)],
+        params![v.name, folder, v.recursive, to_json(&v.query), to_json(&v.sort)],
     )?;
     Ok(())
 }
@@ -49,17 +50,36 @@ mod tests {
     use super::*;
     use crate::browse::fixtures::{by, library};
     use crate::browse::read::{session_get, views};
+    use pg_model::name::Name;
     use pg_model::query::{MediaType, Query, RatingFilter, SortKey};
+    use pg_model::rules::{Merged, PathRules};
 
     #[test]
     fn views_keep_their_query() {
         let c = library();
         let v = SavedView {
             name: "Unrated videos".into(),
-            folder: "p".into(),
+            folder: Merged::from(vec![Name::from("p")]),
             recursive: true,
             query: Query { types: vec![MediaType::Video], ratings: vec![RatingFilter::Unrated], ..Query::default() },
             sort: by(SortKey::Size, true),
+        };
+        save_view(&c, &v).unwrap();
+        assert_eq!(views(&c).unwrap(), [v]);
+    }
+
+    // A folder holding a lone surrogate and a raw byte (no text holds either) is stored and read back exactly.
+    #[test]
+    fn a_saved_view_keeps_a_folder_with_odd_names() {
+        let c =
+            Catalog::prepare(std::path::Path::new(":memory:"), crate::fixture::versions(), PathRules::Posix).unwrap();
+        let folder = Merged::from(vec![Name::from_raw(b"x\xFF"), Name::from_wide(&[0x61, 0xD800])]);
+        let v = SavedView {
+            name: "odd".into(),
+            folder,
+            recursive: true,
+            query: Query::default(),
+            sort: by(SortKey::Name, false),
         };
         save_view(&c, &v).unwrap();
         assert_eq!(views(&c).unwrap(), [v]);

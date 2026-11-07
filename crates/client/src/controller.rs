@@ -5,6 +5,7 @@
 //! (tests/replay.rs). The desktop keeps the one controller on the GUI thread and carries the commands out (desktop
 //! `controller.rs`, `shell.rs`).
 
+use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
 
@@ -76,7 +77,7 @@ pub enum Event {
     },
     /// The folder the window spelled (its canonical name): the listing's folder is replaced, nothing is listed, and the
     /// session is remembered.
-    FolderSpelled(String),
+    FolderSpelled(Merged),
     /// Remember the listing for the next start (the start's test hooks ask for it).
     RememberListing,
     /// The list is read again, the selection kept (the files changed on disk).
@@ -245,7 +246,9 @@ impl Controller {
         let mut out = Vec::new();
         for command in self.start.update(event) {
             match command {
-                start::Command::OpenAll => out.extend(self.listing_event(listing::Event::OpenFolder(String::new()))),
+                start::Command::OpenAll => {
+                    out.extend(self.listing_event(listing::Event::OpenFolder(Merged::default())))
+                }
                 start::Command::Select(i) => out.push(Command::RestoreSelection(i)),
                 start::Command::Started => out.push(Command::Started),
             }

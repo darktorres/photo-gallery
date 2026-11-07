@@ -1,9 +1,10 @@
-//! The folder tree (merged across drives, read by `pg_app`'s session) as a flat list model: each visible
-//! node is a row with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All".
+//! The folder tree (merged across drives, read by `pg_app`'s session) as a flat list model: each visible node is a row
+//! with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All".
 //!
-//! The tree is read off the GUI thread (the app's catalog reader): `reload` asks, `loaded` says it's shown. Until the
-//! first one, only "All" is there (`ready` is false). `restore` says which folder to show at start. Paths match as
-//! Windows matches them, ignoring case: the tree keeps the case of one drive's folder, the session another's.
+//! The tree is read off the GUI thread (the app's catalog reader): `reload` asks, `apply` shows it. Until the first one,
+//! only "All" is there (`ready` is false). The tree itself is kept on the GUI thread (`TREE`, beside the controller), so
+//! the rows, the reveal of the listed folder and the spelling of a row's folder are read here and never passed as text:
+//! QML names a row by its number, and the folders go by value.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -90,32 +91,24 @@ pub mod qobject {
         #[qinvokable]
         fn toggle(self: Pin<&mut FolderModel>, row: i32);
 
-        /// The merged path of a row (`""` for "All").
+        /// The row of the listed folder once the tree is in: `first` opens the folders above it (the start's reveal).
+        /// The row, or -1 for a folder under one the user collapsed, or -2 for a folder the tree doesn't have.
         #[qinvokable]
-        #[cxx_name = "mergedPath"]
-        fn merged_path(self: &FolderModel, row: i32) -> QString;
-
-        /// The visible row of a merged path (`""` = "All"), or -1.
-        #[qinvokable]
-        #[cxx_name = "rowOf"]
-        fn row_of(self: &FolderModel, merged: &QString) -> i32;
-
-        /// Expand the folders above a merged path so it shows; its row, or -1 if there is no such folder.
-        #[qinvokable]
-        fn reveal(self: Pin<&mut FolderModel>, merged: &QString) -> i32;
-
-        /// Whether the tree has a merged path (`"` = "All"), shown or under a collapsed folder.
-        #[qinvokable]
-        fn contains(self: &FolderModel, merged: &QString) -> bool;
+        #[cxx_name = "revealListing"]
+        fn reveal_listing(self: Pin<&mut FolderModel>, first: bool) -> i32;
     }
 }
 
 use core::pin::Pin;
+use std::cell::RefCell;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_client::tree::Tree;
+use pg_model::rules::Merged;
 use pg_model::tree::FolderTree;
+
+use crate::controller;
 
 const ROLE_NAME: i32 = 256;
 const ROLE_DEPTH: i32 = 257;
@@ -133,38 +126,73 @@ fn row_index(row: usize) -> i32 {
 #[derive(Default)]
 pub struct FolderRust {
     ready: bool,
-    /// The folders as shown: which are expanded, and the rows that follow.
-    tree: Tree,
     /// The latest tree asked for; older ones arriving are dropped.
     generation: u64,
 }
 
+thread_local! {
+    /// The folder tree as shown: which folders are open, and the rows that follow (GUI thread only, beside the
+    /// controller). Each borrow is one read or one change; none calls back into another.
+    static TREE: RefCell<Tree> = RefCell::new(Tree::default());
+}
+
+/// The tree as shown, read.
+fn with<T>(read: impl FnOnce(&Tree) -> T) -> T {
+    TREE.with(|tree| read(&tree.borrow()))
+}
+
+/// The tree as shown, changed.
+fn with_mut<T>(change: impl FnOnce(&mut Tree) -> T) -> T {
+    TREE.with(|tree| change(&mut tree.borrow_mut()))
+}
+
+/// The folder a row shows, merged (the empty folder for "All", and for a row the tree doesn't have).
+pub(crate) fn merged_at(row: i32) -> Merged {
+    with(|tree| match tree.row(row) {
+        Some(Some(n)) => tree.folders().merged(n),
+        _ => Merged::default(),
+    })
+}
+
+/// The listed folder as the tree spells it, when the tree shows it under another spelling (the start's spelled-folder
+/// step: the folder is kept as the tree has it). `None` when the folder isn't shown or is spelled the same.
+pub(crate) fn spelling_of(folder: &Merged) -> Option<Merged> {
+    with(|tree| {
+        tree.row_of_path(folder)?;
+        let n = tree.find(folder)?;
+        let spelled = tree.folders().merged(n);
+        (spelled != *folder).then_some(spelled)
+    })
+}
+
 impl qobject::FolderModel {
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let Some(v) = self.tree.row(index.row()) else { return QVariant::default() };
-        let Some(n) = v else {
-            return match role {
-                ROLE_NAME => QVariant::from(&QString::from("All folders")),
-                ROLE_DEPTH => QVariant::from(&0i32),
-                ROLE_EXPANDABLE | ROLE_EXPANDED => QVariant::from(&false),
-                ROLE_TOTAL => QVariant::from(&self.tree.folders().total()),
-                ROLE_DRIVES => QVariant::from(&QString::default()),
-                ROLE_MERGED => QVariant::from(&false),
-                _ => QVariant::default(),
+        with(|tree| {
+            let Some(v) = tree.row(index.row()) else { return QVariant::default() };
+            let Some(n) = v else {
+                return match role {
+                    ROLE_NAME => QVariant::from(&QString::from("All folders")),
+                    ROLE_DEPTH => QVariant::from(&0i32),
+                    ROLE_EXPANDABLE | ROLE_EXPANDED => QVariant::from(&false),
+                    ROLE_TOTAL => QVariant::from(&tree.folders().total()),
+                    ROLE_DRIVES => QVariant::from(&QString::default()),
+                    ROLE_MERGED => QVariant::from(&false),
+                    _ => QVariant::default(),
+                };
             };
-        };
-        let folders = self.tree.folders();
-        let Some(node) = folders.node(n) else { return QVariant::default() };
-        match role {
-            ROLE_NAME => QVariant::from(&QString::from(folders.name(n))),
-            ROLE_DEPTH => QVariant::from(&(i32::try_from(node.depth).unwrap_or(i32::MAX))),
-            ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),
-            ROLE_EXPANDED => QVariant::from(&self.tree.is_expanded(n)),
-            ROLE_TOTAL => QVariant::from(&node.total),
-            ROLE_DRIVES => QVariant::from(&QString::from(&folders.anchors(n))),
-            ROLE_MERGED => QVariant::from(&folders.multi_anchor(n)),
-            _ => QVariant::default(),
-        }
+            let folders = tree.folders();
+            let Some(node) = folders.node(n) else { return QVariant::default() };
+            match role {
+                ROLE_NAME => QVariant::from(&QString::from(folders.name(n).display().as_ref())),
+                ROLE_DEPTH => QVariant::from(&(i32::try_from(node.depth).unwrap_or(i32::MAX))),
+                ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),
+                ROLE_EXPANDED => QVariant::from(&tree.is_expanded(n)),
+                ROLE_TOTAL => QVariant::from(&node.total),
+                ROLE_DRIVES => QVariant::from(&QString::from(&folders.anchors(n))),
+                ROLE_MERGED => QVariant::from(&folders.multi_anchor(n)),
+                _ => QVariant::default(),
+            }
+        })
     }
 
     fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
@@ -184,7 +212,7 @@ impl qobject::FolderModel {
     }
 
     fn row_count(&self, _parent: &QModelIndex) -> i32 {
-        i32::try_from(self.tree.rows().len()).unwrap_or(i32::MAX)
+        i32::try_from(with(|tree| tree.rows().len())).unwrap_or(i32::MAX)
     }
 
     fn reload(mut self: Pin<&mut Self>) {
@@ -209,7 +237,7 @@ impl qobject::FolderModel {
             return;
         }
         self.as_mut().begin_reset_model();
-        self.as_mut().rust_mut().tree.replace(tree);
+        with_mut(|shown| shown.replace(tree));
         self.as_mut().end_reset_model();
         self.as_mut().set_ready(true);
         pg_trace::pg_stage_tree_shown();
@@ -219,50 +247,40 @@ impl qobject::FolderModel {
     fn toggle(mut self: Pin<&mut Self>, row: i32) {
         let Ok(at) = usize::try_from(row) else { return };
         // The rows it inserts or removes are the ones the tree says, from before the change.
-        let Some(plan) = self.tree.plan_toggle(at) else { return };
+        let Some(plan) = with(|tree| tree.plan_toggle(at)) else { return };
         let root = QModelIndex::default();
         let (Ok(first), Ok(end)) = (i32::try_from(plan.rows.start), i32::try_from(plan.rows.end)) else { return };
         let last = end - 1;
         if plan.expand {
             self.as_mut().begin_insert_rows(&root, first, last);
-            self.as_mut().rust_mut().tree.toggle(at);
+            with_mut(|tree| tree.toggle(at));
             self.as_mut().end_insert_rows();
         } else {
             self.as_mut().begin_remove_rows(&root, first, last);
-            self.as_mut().rust_mut().tree.toggle(at);
+            with_mut(|tree| tree.toggle(at));
             self.as_mut().end_remove_rows();
         }
         let index = self.index(row, 0, &root);
         self.data_changed(&index, &index);
     }
 
-    fn merged_path(&self, row: i32) -> QString {
-        match self.tree.row(row) {
-            Some(Some(n)) => QString::from(self.tree.folders().merged_path(n)),
-            _ => QString::default(),
-        }
-    }
-
-    fn reveal(mut self: Pin<&mut Self>, merged: &QString) -> i32 {
-        let merged = merged.to_string();
-        if let Some(row) = self.tree.row_of_path(&merged) {
+    fn reveal_listing(mut self: Pin<&mut Self>, first: bool) -> i32 {
+        let folder = controller::listing().folder;
+        let shown = with(|tree| tree.row_of_path(&folder));
+        let row = match shown {
+            Some(row) => Some(row),
+            // Opening the folders above it changes the rows: a reset, as the model's rows are read again.
+            None if first && with(|tree| tree.find(&folder)).is_some() => {
+                self.as_mut().begin_reset_model();
+                let row = with_mut(|tree| tree.reveal(&folder));
+                self.as_mut().end_reset_model();
+                row
+            }
+            None => None,
+        };
+        if let Some(row) = row {
             return row_index(row);
         }
-        if self.tree.find(&merged).is_none() {
-            return -1;
-        }
-        self.as_mut().begin_reset_model();
-        let row = self.as_mut().rust_mut().tree.reveal(&merged);
-        self.as_mut().end_reset_model();
-        row.map_or(-1, row_index)
-    }
-
-    fn contains(&self, merged: &QString) -> bool {
-        let merged = merged.to_string();
-        merged.is_empty() || self.tree.find(&merged).is_some()
-    }
-
-    fn row_of(&self, merged: &QString) -> i32 {
-        self.tree.row_of_path(&merged.to_string()).map_or(-1, row_index)
+        if with(|tree| tree.find(&folder)).is_some() { -1 } else { -2 }
     }
 }

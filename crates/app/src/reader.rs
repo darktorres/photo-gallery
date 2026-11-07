@@ -25,7 +25,7 @@ use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
 use pg_model::query::{Query, Sort};
-use pg_model::rules::PathRules;
+use pg_model::rules::{Merged, PathRules};
 use pg_model::tree::FolderTree;
 
 use crate::app::App;
@@ -189,11 +189,11 @@ impl Session {
         self.submit(Kind::Tree, browse::read::folder_tree, move |r| deliver(r.map_err(Error::from)));
     }
 
-    /// The files of `folder` (a merged path; `""` for all folders, with or without `recursive`), filtered by `query` and
-    /// sorted by `sort`: what the grid shows.
+    /// The files of `folder` (merged; the empty folder for all folders, with or without `recursive`), filtered by `query`
+    /// and sorted by `sort`: what the grid shows.
     pub fn grid(
         &self,
-        folder: String,
+        folder: Merged,
         recursive: bool,
         query: Query,
         sort: Sort,
@@ -209,7 +209,7 @@ impl Session {
     /// The filter bar's counts: the files of `folder` in all, and the ones `query` matches.
     pub fn facets(
         &self,
-        folder: String,
+        folder: Merged,
         recursive: bool,
         query: Query,
         deliver: impl FnOnce(Result<Facets>) + Send + 'static,

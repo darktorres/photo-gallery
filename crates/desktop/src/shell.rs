@@ -22,9 +22,9 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        /// The merged folder shown (`""` = all folders). Setting it only spells it (the tree's spelling, which the
-        /// controller remembers); to show a folder, `openFolder`.
-        #[qproperty(QString, folder, READ, WRITE = set_folder, NOTIFY, FINAL)]
+        /// The folder shown, as its parts joined for display (the title, the top bar): `""` for all folders. Display only:
+        /// the listing is the controller's, and a folder is shown by its row (`openFolderRow`).
+        #[qproperty(QString, folder, READ, NOTIFY, FINAL)]
         /// With the files of its subfolders (`setRecursive`).
         #[qproperty(bool, recursive, READ, NOTIFY, FINAL)]
         /// Which way the files are ordered (the key is the sort box's, `sortIndex`); `toggleDescending` turns it.
@@ -197,12 +197,11 @@ pub mod qobject {
         #[cxx_name = "listingChanged"]
         fn listing_changed(self: Pin<&mut Shell>);
 
-        fn set_folder(self: Pin<&mut Shell>, value: &QString);
-
-        /// Show a merged folder (`""` = all folders), with the current subfolders, sort and query.
+        /// Show the folder of a tree row (row 0, or a row the tree doesn't have, is all folders), with the current
+        /// subfolders, sort and query.
         #[qinvokable]
-        #[cxx_name = "openFolder"]
-        fn open_folder(self: Pin<&mut Shell>, folder: &QString);
+        #[cxx_name = "openFolderRow"]
+        fn open_folder_row(self: Pin<&mut Shell>, row: i32);
 
         #[qinvokable]
         #[cxx_name = "setRecursive"]
@@ -253,9 +252,10 @@ use pg_client::controller::panels;
 use pg_client::controller::prefs;
 use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
+use pg_model::rules::PathRules;
 use pg_model::view::SavedView;
 
-use crate::{app, controller, deadline, gallery, keymap};
+use crate::{app, controller, deadline, folders, gallery, keymap};
 
 /// The properties the shell mirrors from the controller. Everything else is the controller's.
 pub struct ShellRust {
@@ -276,7 +276,7 @@ impl Default for ShellRust {
         let listing = controller::listing();
         let prefs = controller::with(|c| *c.prefs());
         ShellRust {
-            folder: QString::from(&listing.folder),
+            folder: QString::from(&PathRules::NATIVE.display_merged(&listing.folder)),
             recursive: listing.recursive,
             descending: listing.sort.descending,
             saved_views: view_names(),
@@ -307,7 +307,12 @@ fn view_names() -> QStringList {
 }
 
 impl qobject::Shell {
-    fn tree_loaded(self: Pin<&mut Self>, folder_known: bool) {
+    /// The folder tree is in. The listed folder is kept as the tree spells it, when the tree shows it under another
+    /// spelling (the controller remembers that), and then the start is told whether the folder is known.
+    fn tree_loaded(mut self: Pin<&mut Self>, folder_known: bool) {
+        if let Some(spelled) = folders::spelling_of(&controller::listing().folder) {
+            self.as_mut().dispatch(Event::FolderSpelled(spelled));
+        }
         self.dispatch(Event::TreeLoaded { folder_known });
     }
 
@@ -429,12 +434,8 @@ impl qobject::Shell {
         self.dispatch(Event::Timeout);
     }
 
-    fn set_folder(self: Pin<&mut Self>, value: &QString) {
-        self.dispatch(Event::FolderSpelled(value.to_string()));
-    }
-
-    fn open_folder(self: Pin<&mut Self>, folder: &QString) {
-        self.dispatch(Event::Listing(ListingEvent::OpenFolder(folder.to_string())));
+    fn open_folder_row(self: Pin<&mut Self>, row: i32) {
+        self.dispatch(Event::Listing(ListingEvent::OpenFolder(folders::merged_at(row))));
     }
 
     fn set_recursive(self: Pin<&mut Self>, on: bool) {
@@ -505,7 +506,7 @@ impl qobject::Shell {
     /// Copy the listing into the properties, notifying those that changed.
     fn mirror(mut self: Pin<&mut Self>) {
         let listing = controller::listing();
-        let folder = QString::from(&listing.folder);
+        let folder = QString::from(&PathRules::NATIVE.display_merged(&listing.folder));
         if self.folder != folder {
             self.as_mut().rust_mut().folder = folder;
             self.as_mut().folder_changed();

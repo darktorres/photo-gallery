@@ -4,11 +4,23 @@
 use std::sync::atomic::{AtomicU64, Ordering};
 
 use pg_app::{App, Config};
+use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
+use pg_model::rules::Merged;
 use pg_model::view::Listing;
 use proptest::prelude::*;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
+
+/// A merged folder: any number of parts, text and the names a text can't hold (a lone surrogate, a raw byte).
+fn folder() -> impl Strategy<Value = Merged> {
+    let part = prop_oneof![
+        "[a-zA-Z0-9Σé ]{1,8}".prop_map(|s| Name::from(s.as_str())),
+        Just(Name::from_wide(&[0x61, 0xD800])),
+        Just(Name::from_raw(b"x\xFF")),
+    ];
+    prop::collection::vec(part, 0..4).prop_map(Merged::from)
+}
 
 /// A fresh folder for one case, so every case starts with no catalog. The base is the temp folder's `scratch_listing`
 /// (`PG_TEST_DIR` overrides it, as in `pg_testkit`; pg-testkit itself is not a dependency here, it depends on pg-app).
@@ -41,7 +53,7 @@ proptest! {
 
     #[test]
     fn the_saved_listing_reads_back(
-        folder in "[a-zA-Z0-9Σé \\:]{0,12}",
+        folder in folder(),
         recursive in any::<bool>(),
         sort_key in key(),
         descending in any::<bool>(),

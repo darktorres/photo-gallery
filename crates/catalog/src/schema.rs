@@ -8,7 +8,7 @@ use std::sync::OnceLock;
 use anyhow::{Context, anyhow};
 use pg_model::rules::PathRules;
 use pg_schema::Schema;
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::{Error, Result, write_transaction};
 
@@ -158,16 +158,18 @@ pub(crate) const CARRIED: &[&str] = &[
 /// seeds are overwritten with the old values, except `path_rules`, which is this build's; a key the old file has and the
 /// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
 /// would rewrite the copied rows' `pending` and `seq`, and are made again from their own text after it. All of it is one
-/// transaction: a failure copies nothing, and the old file is not changed.
-pub(crate) fn carry_rows(conn: &mut Connection, old: &Path) -> Result<()> {
+/// transaction: a failure copies nothing, and the old file is not changed. `rules` are the rules the old file's paths
+/// were stored under (the caller has checked they are this build's): a saved view or the session that kept its folder
+/// as text (before the folders were typed) is converted to the typed form as it is copied.
+pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, rules: PathRules) -> Result<()> {
     let text = old.to_str().ok_or_else(|| Error::Other(anyhow!("{}: a path that is not text", old.display())))?;
     conn.execute("ATTACH DATABASE ?1 AS carried", [text]).context("attaching the old catalog")?;
-    let copied = copy_tables(conn);
+    let copied = copy_tables(conn, rules);
     conn.execute_batch("DETACH DATABASE carried")?;
     copied
 }
 
-fn copy_tables(conn: &mut Connection) -> Result<()> {
+fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     let triggers: Vec<(String, String)> = conn
         .prepare("SELECT name, sql FROM main.sqlite_schema WHERE type = 'trigger'")?
         .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
@@ -176,6 +178,8 @@ fn copy_tables(conn: &mut Connection) -> Result<()> {
     for (name, _) in &triggers {
         tx.execute_batch(&format!("DROP TRIGGER main.\"{name}\""))?;
     }
+    // The saved views' folders were text before they were typed (the stored form is the rules' bytes now).
+    let text_folders = column_type(&tx, "carried", "views", "folder")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
     for table in CARRIED {
         let new_columns = table_columns(&tx, "main", table)?;
         let old_columns = table_columns(&tx, "carried", table)?;
@@ -197,6 +201,9 @@ fn copy_tables(conn: &mut Connection) -> Result<()> {
             tx.execute(&format!("INSERT INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"), [])?;
         }
     }
+    if text_folders {
+        convert_text_folders(&tx, rules)?;
+    }
     for (_, sql) in &triggers {
         tx.execute_batch(sql)?;
     }
@@ -204,9 +211,44 @@ fn copy_tables(conn: &mut Connection) -> Result<()> {
     Ok(())
 }
 
+/// The saved views' folders and the session's `folder`, copied as text from a catalog before S-17.8: each becomes the
+/// typed form (a view's folder is the rules' stored bytes, the session's is the JSON of the folder). The text is
+/// split by the rules, so a folder that the old text named is the same folder; a NUL in it is refused, and the copy
+/// is rolled back with the rest.
+fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Result<()> {
+    let views: Vec<(String, Vec<u8>)> = tx
+        .prepare("SELECT name, CAST(folder AS BLOB) FROM main.views")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    for (name, text) in views {
+        let folder = rules
+            .parse_merged(&text)
+            .ok_or_else(|| Error::Other(anyhow!("saved view {name:?}: a NUL in its folder")))?;
+        tx.execute(
+            "UPDATE main.views SET folder = ?1 WHERE name = ?2",
+            rusqlite::params![rules.join_merged(&folder), name],
+        )?;
+    }
+    let session: Option<Vec<u8>> = tx
+        .query_row("SELECT CAST(value AS BLOB) FROM main.session WHERE key = 'folder'", [], |r| r.get(0))
+        .optional()?;
+    if let Some(text) = session {
+        let folder =
+            rules.parse_merged(&text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?;
+        tx.execute("UPDATE main.session SET value = ?1 WHERE key = 'folder'", [crate::query::to_json(&folder)])?;
+    }
+    Ok(())
+}
+
 /// The column names of `table` in `schema` (`main` or an attached database); none when the table isn't there.
 fn table_columns(conn: &Connection, schema: &str, table: &str) -> rusqlite::Result<Vec<String>> {
     conn.prepare("SELECT name FROM pragma_table_info(?1, ?2)")?.query_map([table, schema], |r| r.get(0))?.collect()
+}
+
+/// The declared type of `table.column` in `schema`; `None` when the column isn't there.
+fn column_type(conn: &Connection, schema: &str, table: &str, column: &str) -> rusqlite::Result<Option<String>> {
+    conn.query_row("SELECT type FROM pragma_table_info(?1, ?2) WHERE name = ?3", [table, schema, column], |r| r.get(0))
+        .optional()
 }
 
 pub(crate) const BASELINE: &str = concat!(
@@ -401,12 +443,13 @@ CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
 -- Saved views (ImageRater's bookmarks): a folder, the filters and an order.
 CREATE TABLE views(
     name      TEXT PRIMARY KEY,
-    folder    TEXT NOT NULL,     -- merged path (path::merged_path); '' = all folders
+    folder    BLOB NOT NULL,     -- the merged folder's parts, joined (PathRules::join_merged); empty = all folders
     recursive INTEGER NOT NULL,
     query     TEXT NOT NULL,     -- query::Query as JSON
     sort      TEXT NOT NULL      -- query::Sort as JSON
 );
--- Where the user was (the open view and the selected file), restored at start.
+-- Where the user was (the open view and the selected file), restored at start. `folder` is the JSON of the listing's
+-- merged folder (an array of its parts, `[]` for all folders).
 CREATE TABLE session(
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL

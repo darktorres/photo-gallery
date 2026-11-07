@@ -4,7 +4,7 @@
 
 use rusqlite::types::Value;
 
-use pg_model::path::scope_keys;
+use pg_model::rules::{Merged, PathRules};
 
 mod changes;
 mod details;
@@ -22,10 +22,11 @@ pub use state::*;
 pub use tree::*;
 pub use views::*;
 
-/// The files of a merged folder (optionally with everything below it), as a range of order keys: a condition
-/// on `f` and the values it binds, which the `files_order` index answers.
-fn scope(merged: &str, recursive: bool) -> (String, Vec<Value>) {
-    let (lo, hi) = scope_keys(merged, recursive);
+/// The files of a folder (optionally with everything below it), as a range of order keys under `rules`: a condition
+/// on `f` and the values it binds, which the `files_order` index answers. The range is the one the writer's keys make
+/// ([`PathRules::scope_keys`]), so a folder is found by the same case rule it was stored under.
+fn scope(rules: PathRules, folder: &Merged, recursive: bool) -> (String, Vec<Value>) {
+    let (lo, hi) = rules.scope_keys(folder.parts(), recursive);
     let mut values = vec![Value::Blob(lo)];
     let mut sql = "f.order_key >= ?".to_string();
     if let Some(hi) = hi {

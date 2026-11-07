@@ -10,14 +10,14 @@
 
 use std::path::{Path, PathBuf};
 
-use pg_catalog::browse::{self, read::Facets};
-use pg_model::grid::Entry;
-use pg_model::tree::FolderTree;
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
+use pg_catalog::browse::{self, read::Facets};
 use pg_catalog::{Catalog, Versions, WorkItem};
+use pg_model::grid::Entry;
 use pg_model::path::WorkList;
 use pg_model::query::{Query, RatingFilter, Sort, SortKey};
+use pg_model::tree::FolderTree;
 use pg_thumbcache::{self as thumbs, Pending};
 
 const DATA: &str = match option_env!("PG_BENCH_DATA") {
@@ -98,7 +98,8 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
         List::FolderRecursive => (r"PhotoGallery\synthetic\library", true, Query::default(), name),
         List::FolderFlat => (r"PhotoGallery\synthetic\library\folder-00", false, Query::default(), name),
     };
-    let entries = or_stop(browse::read::list_grid(&catalog, folder, recursive, &query, sort), "the grid's list");
+    let folder = RULES.merge(&RULES.parse(folder).expect("a folder path of the layout"));
+    let entries = or_stop(browse::read::list_grid(&catalog, &folder, recursive, &query, sort), "the grid's list");
     (catalog, black_box(entries))
 }
 
@@ -114,7 +115,10 @@ fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn facets(catalog: Catalog) -> (Catalog, Facets) {
-    let facets = or_stop(browse::read::facets(&catalog, "", true, &Query::default()), "the facets");
+    let facets = or_stop(
+        browse::read::facets(&catalog, &pg_model::rules::Merged::default(), true, &Query::default()),
+        "the facets",
+    );
     (catalog, black_box(facets))
 }
 
@@ -130,7 +134,10 @@ fn pending_import(catalog: Catalog) -> (Catalog, WorkList<WorkItem>) {
 #[library_benchmark]
 #[bench::at_height(setup = copy_data)]
 fn pending_thumbs(run: PathBuf) -> Pending {
-    black_box(or_stop(thumbs::pending_in(&run.join("thumbs.sqlite"), &run.join("catalog.sqlite"), THUMB_HEIGHT), "the thumbnail pass's check"))
+    black_box(or_stop(
+        thumbs::pending_in(&run.join("thumbs.sqlite"), &run.join("catalog.sqlite"), THUMB_HEIGHT),
+        "the thumbnail pass's check",
+    ))
 }
 
 library_benchmark_group!(name = catalog, benchmarks = [list, tree, facets, pending_import, pending_thumbs]);

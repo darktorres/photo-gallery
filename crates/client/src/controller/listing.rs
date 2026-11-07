@@ -3,6 +3,7 @@
 //! and remembers the session, except a sort choice that isn't one (it changes nothing).
 
 use pg_model::query::Query;
+use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
 
@@ -11,8 +12,8 @@ use crate::sort::sort_choice;
 /// A change to the listing: made by the user, or by the start.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
-    /// Show a merged folder (`""` = all folders).
-    OpenFolder(String),
+    /// Show a merged folder (the empty folder = all folders).
+    OpenFolder(Merged),
     /// With, or without, the files of its subfolders.
     Recursive(bool),
     /// The sort box's choice (`pg_client::sort`).

@@ -9,6 +9,7 @@ The view's folder differs from the session's on purpose: `--apply-view=alpha` mu
 """
 
 import argparse
+import json
 import sqlite3
 import subprocess
 import sys
@@ -59,16 +60,31 @@ def folder_path(conn: sqlite3.Connection, name: str) -> str:
     return merged(matches[0])
 
 
+def merged_parts_json(merged_text: str) -> str:
+    # The session's folder is the JSON of the folder's parts (pg_model's Merged: an array of names), not its text.
+    return json.dumps([part for part in merged_text.split("\\") if part], separators=(",", ":"))
+
+
+def typed_folders(conn: sqlite3.Connection) -> bool:
+    # The layout S-17.8 made: a saved view's folder is a BLOB (the stored bytes of its parts), and the session's
+    # folder is the JSON of its parts. An older catalog keeps both as text (the same fixture serves both builds).
+    columns = conn.execute("pragma table_info(views)").fetchall()
+    return any(name == "folder" and kind.upper() == "BLOB" for _, name, kind, *_ in columns)
+
+
 def views(catalog: Path) -> None:
     conn = sqlite3.connect(catalog)
     alpha = folder_path(conn, "folder-00")
     beta = folder_path(conn, "folder-01")
+    typed = typed_folders(conn)
+    view_folder = alpha.encode("utf-8") if typed else alpha
+    session_folder = merged_parts_json(beta) if typed else beta
     conn.execute(
         "insert or replace into views(name, folder, recursive, query, sort) values (?, ?, ?, ?, ?)",
-        ("alpha", alpha, 1, "{}", '{"key":"name","descending":true}'),
+        ("alpha", view_folder, 1, "{}", '{"key":"name","descending":true}'),
     )
     session = [
-        ("folder", beta),
+        ("folder", session_folder),
         ("recursive", "false"),
         ("query", "{}"),
         ("sort", '{"key":"name","descending":false}'),

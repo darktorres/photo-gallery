@@ -4,12 +4,14 @@
 use serde::{Deserialize, Serialize};
 
 use crate::query::{Query, Sort};
+use crate::rules::Merged;
 
-/// Where the grid looks: the folder shown (`""` for all folders), with its subfolders, in what order, filtered by what.
+/// Where the grid looks: the folder shown (the empty folder for all folders), with its subfolders, in what order,
+/// filtered by what.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct Listing {
-    /// Merged path; `""` for all folders.
-    pub folder: String,
+    /// The folder, merged; empty for all folders.
+    pub folder: Merged,
     pub recursive: bool,
     pub sort: Sort,
     /// The filter bar's query (`Query` as JSON in the catalog; empty when none).
@@ -20,8 +22,8 @@ pub struct Listing {
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct SavedView {
     pub name: String,
-    /// Merged path; `""` for all folders.
-    pub folder: String,
+    /// The folder, merged; empty for all folders.
+    pub folder: Merged,
     pub recursive: bool,
     pub query: Query,
     pub sort: Sort,

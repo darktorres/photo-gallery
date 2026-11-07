@@ -13,6 +13,7 @@ use super::grid::FILE_JOINS;
 use super::scope;
 use crate::query::{Facet, MEDIA_CASE, border_counts, condition_without};
 use pg_model::query::{BorderFacet, MediaType, Query};
+use pg_model::rules::Merged;
 
 /// What the filter bar shows next to its choices, for a view's folder.
 #[derive(Default, Debug, PartialEq)]
@@ -33,9 +34,9 @@ pub struct Facets {
 /// (`condition_without`), so a file is counted in every condition it passes: the pass sums each condition per
 /// (type, extension), and the counts are sums of those. One scan where five statements read the folder's rows, and
 /// the joins, five times.
-pub fn facets(catalog: &Catalog, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
+pub fn facets(catalog: &Catalog, folder: &Merged, recursive: bool, query: &Query) -> Result<Facets> {
     let conn = &catalog.conn;
-    let (scope, scope_values) = scope(merged, recursive);
+    let (scope, scope_values) = scope(catalog.rules(), folder, recursive);
     let all = condition_without(query, None);
     let types = condition_without(query, Some(Facet::Types));
     let exts = condition_without(query, Some(Facet::Exts));

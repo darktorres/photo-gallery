@@ -14,6 +14,7 @@ use pg_model::media::Ext;
 use pg_model::orientation::Orientation;
 use pg_model::query::{Query, Sort};
 use pg_model::rating::Rating;
+use pg_model::rules::Merged;
 use pg_model::turns::Turns;
 
 /// What an `Entry` is read from (`entry_from_row`), with `f` the file. Macros for the statements that are constants,
@@ -103,9 +104,9 @@ pub(super) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
 ///
 /// The list is sized by a count of the scope's files, read from the `files_order` index alone in the same read
 /// transaction (the background job writes meanwhile): exact without filters, an upper bound with them.
-pub fn list_grid(catalog: &Catalog, merged: &str, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
+pub fn list_grid(catalog: &Catalog, folder: &Merged, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
     let conn = &catalog.conn;
-    let (scope, mut values) = scope(merged, recursive);
+    let (scope, mut values) = scope(catalog.rules(), folder, recursive);
     let tx = conn.unchecked_transaction()?;
     let bound: usize = tx.query_row(
         &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),

@@ -32,7 +32,7 @@ Pane {
     signal saveCropsRequested()
 
     // Count a merged folder's files (`""` = all folders), with or without its subfolders, for the counts.
-    function countFacets(folder: string, recursive: bool) { filters.countFacets(folder, recursive) }
+    function countFacets() { filters.countFacets() }
     // The listing's query changed outside the bar (a saved view was applied): the fields show it again.
     function reloadQuery() { filters.reload() }
 

@@ -1,12 +1,16 @@
 //! The folder tree, merged across drives (PLAN §7): its nodes in key order, each with its count and size, and the
-//! lookups the tree panel makes of it. Built from the folders' rows (`TreeBuilder`); the catalog reads the rows.
+//! lookups the tree panel makes of it. Built from the folders' paths (`TreeBuilder`); the catalog reads the rows. The
+//! paths are typed ([`crate::rules::Path`]): a folder's parts and its key come from the rules the tree is built under.
 
-use crate::path::{components, merged_path, push_folder_key};
+use crate::name::Name;
+use crate::num;
+use crate::rules::{Merged, Path, PathRules};
 
-/// A folder of the merged tree. Its strings are in its [`FolderTree`].
+/// A folder of the merged tree. Its bytes are in its [`FolderTree`].
 #[derive(Clone, Debug)]
 pub struct FolderNode {
-    /// Its merged path, `tree.paths[path_start..path_end]`, whose last component (its name) starts at `name_start`.
+    /// Its parts, `tree.paths[path_start..path_end]` joined by the separator, whose last part (its name) starts at
+    /// `name_start`.
     path_start: u32,
     path_end: u32,
     name_start: u32,
@@ -28,18 +32,31 @@ pub struct FolderNode {
 }
 
 /// The merged tree of every folder holding present files, with their ancestors: nodes in pre-order, a node's
-/// children in `folder_key` order (the grid's), so the nodes are also in key order. Merged paths and keys are ranges
-/// of two strings, which makes the whole tree a handful of allocations.
-#[derive(Clone, Debug, Default)]
+/// children in `folder_key` order (the grid's), so the nodes are also in key order. Paths and keys are ranges of two
+/// byte strings, which makes the whole tree a handful of allocations.
+#[derive(Clone, Debug)]
 pub struct FolderTree {
+    rules: PathRules,
     nodes: Vec<FolderNode>,
-    /// Each folder's merged path, its components joined by `\`, one after the other.
-    paths: String,
+    /// Each folder's parts, joined by the separator, one after the other.
+    paths: Vec<u8>,
     /// Each folder's `folder_key`, one after the other.
     keys: Vec<u8>,
-    /// The anchors the folders are on, in text order (`D:`, `E:`): a Windows drive's root as the path spells it.
-    /// A folder with no anchor (a UNC or a Unix path) is on none.
-    anchor_names: Vec<Box<str>>,
+    /// The anchors the folders are on, in text order (`D:`, `E:`): a Windows drive's root, uppercased. A folder with
+    /// no anchor (a UNC or a Unix path) is on none.
+    anchor_names: Vec<Name>,
+}
+
+impl Default for FolderTree {
+    fn default() -> Self {
+        FolderTree {
+            rules: PathRules::NATIVE,
+            nodes: Vec::new(),
+            paths: Vec::new(),
+            keys: Vec::new(),
+            anchor_names: Vec::new(),
+        }
+    }
 }
 
 /// The bit of an anchor by its rank in text order. The 64th and later anchors share bit 63: no machine has that many
@@ -55,13 +72,13 @@ fn node_u32(n: usize) -> u32 {
     u32::try_from(n).unwrap_or(u32::MAX)
 }
 
-/// The folders a tree is made from: each one's merged path and key written once, into the tree's strings.
+/// The folders a tree is made from: each one's parts and key written once, into the tree's bytes.
 #[derive(Default)]
 pub struct TreeBuilder {
     tree: FolderTree,
     rows: Vec<TreeRow>,
     /// The anchors the rows name, interned in the order they came.
-    interned: Vec<Box<str>>,
+    interned: Vec<Name>,
 }
 
 struct TreeRow {
@@ -69,34 +86,38 @@ struct TreeRow {
     count: i64,
     /// Its anchor's index in `interned`.
     anchor: Option<u32>,
-    /// Its merged path's range in `paths`, and its key's in `keys`.
+    /// Its parts' range in `paths`, and its key's in `keys`.
     path: (u32, u32),
     key: (u32, u32),
 }
 
 impl TreeBuilder {
-    /// Room for `rows` folders whose paths are `bytes` long with `components` components in all.
-    pub fn with_capacity(rows: usize, bytes: usize, components: usize) -> TreeBuilder {
+    /// Room for `rows` folders under `rules`, whose parts are `bytes` long in all with `components` components.
+    pub fn with_capacity(rules: PathRules, rows: usize, bytes: usize, components: usize) -> TreeBuilder {
         let tree = FolderTree {
+            rules,
             nodes: Vec::new(),
-            paths: String::with_capacity(bytes),
+            paths: Vec::with_capacity(bytes),
             keys: Vec::with_capacity(bytes + components),
             anchor_names: Vec::new(),
         };
         TreeBuilder { tree, rows: Vec::with_capacity(rows), interned: Vec::new() }
     }
 
-    /// A folder (`folders.id`, `folders.path`) holding `count` present files. A drive root (no components) is in no
-    /// node.
-    pub fn add(&mut self, id: i64, path: &str, count: i64) {
-        let merged = merged_path(path);
-        let anchor = match path.as_bytes() {
-            [d, b':', ..] if merged.len() < path.len() => {
-                let text = format!("{}:", char::from(d.to_ascii_uppercase()));
-                let index = match self.interned.iter().position(|a| **a == *text) {
+    /// A folder (`folders.id`, its path) holding `count` present files. A drive root (no parts) is in no node. Only a
+    /// drive counts as an anchor: a UNC root or a Unix path's empty anchor is on none.
+    pub fn add(&mut self, id: i64, path: &Path, count: i64) {
+        if path.parts.is_empty() {
+            return;
+        }
+        let rules = self.tree.rules;
+        let anchor = match (rules, path.anchor.as_bytes()) {
+            (PathRules::Windows, &[d, b':']) if d.is_ascii_alphabetic() => {
+                let text = Name::from(format!("{}:", char::from(d.to_ascii_uppercase())).as_str());
+                let index = match self.interned.iter().position(|a| *a == text) {
                     Some(index) => index,
                     None => {
-                        self.interned.push(text.into());
+                        self.interned.push(text);
                         self.interned.len() - 1
                     }
                 };
@@ -106,17 +127,9 @@ impl TreeBuilder {
         };
         let FolderTree { paths, keys, .. } = &mut self.tree;
         let path_start = paths.len();
-        for (i, part) in components(merged).enumerate() {
-            if i > 0 {
-                paths.push('\\');
-            }
-            paths.push_str(part);
-        }
-        if paths.len() == path_start {
-            return;
-        }
+        rules.push_parts(paths, &path.parts);
         let key_start = keys.len();
-        push_folder_key(keys, merged);
+        rules.push_folder_key(keys, &path.parts);
         // The strings are addressed by `u32` offsets: a folder past them is left out of the tree.
         let range = |start: usize, end: usize| u32::try_from(start).ok().zip(u32::try_from(end).ok());
         let (Some(path), Some(key)) = (range(path_start, paths.len()), range(key_start, keys.len())) else { return };
@@ -126,11 +139,11 @@ impl TreeBuilder {
     /// The tree: the rows sorted by key once, then the nodes made in that order with a stack of the open ones. A
     /// parent's key is a prefix of its descendants', and a component's end (0x01) sorts below every other byte, so
     /// sorted keys are the tree's pre-order with children in key order: `p`, `p\sub`, `p-x`.
-    #[expect(clippy::string_slice, reason = "every cut falls between whole pushed parts, so on a char boundary")]
     pub fn build(self) -> FolderTree {
         let TreeBuilder { mut tree, mut rows, interned } = self;
+        let sep = tree.rules.sep_byte();
         // Every row's range was cut from `keys` when it was added.
-        let key = |k: (u32, u32)| tree.keys.get(crate::num::index(k.0)..crate::num::index(k.1)).unwrap_or_default();
+        let key = |k: (u32, u32)| tree.keys.get(num::index(k.0)..num::index(k.1)).unwrap_or_default();
         rows.sort_unstable_by(|a, b| key(a.key).cmp(key(b.key)));
         // The anchors in text order (a drive's letter, so `D:` before `E:`), and each interned anchor's rank: how
         // many of them sort before it (they are distinct).
@@ -138,7 +151,7 @@ impl TreeBuilder {
         let mut anchor_names = interned;
         anchor_names.sort();
         tree.anchor_names = anchor_names;
-        let row_bit = |row: &TreeRow| row.anchor.and_then(|a| rank.get(crate::num::index(a))).map_or(0, |&r| bit(r));
+        let row_bit = |row: &TreeRow| row.anchor.and_then(|a| rank.get(num::index(a))).map_or(0, |&r| bit(r));
         // The nodes, counted: in this order each row adds the components past those it shares with the row before
         // it (whole components, each ending with 0x01, which none holds), as the stack below finds them open.
         let components = |k: &[u8]| k.iter().filter(|&&b| b == 0x01).count();
@@ -164,12 +177,12 @@ impl TreeBuilder {
                 node.end = end;
                 open.pop();
             }
-            // The row's components, with where each ends in its path and its key.
-            let path = &tree.paths[crate::num::index(row.path.0)..crate::num::index(row.path.1)];
+            // The row's parts, with where each ends in its path and its key.
+            let path = &tree.paths[num::index(row.path.0)..num::index(row.path.1)];
             let mut path_end = row.path.0;
             let mut key_end = row.key.0;
             let mut key_parts = row_key.split_inclusive(|&b| b == 0x01);
-            for (depth, part) in path.split('\\').enumerate() {
+            for (depth, part) in path.split(|&b| b == sep).enumerate() {
                 let name_start = path_end + u32::from(depth > 0);
                 path_end = name_start + node_u32(part.len());
                 key_end += node_u32(key_parts.next().map_or(0, <[u8]>::len));
@@ -221,6 +234,11 @@ impl TreeBuilder {
 }
 
 impl FolderTree {
+    /// The rules the tree was built under: its parts, keys and anchors follow them.
+    pub fn rules(&self) -> PathRules {
+        self.rules
+    }
+
     pub fn len(&self) -> usize {
         self.nodes.len()
     }
@@ -234,18 +252,19 @@ impl FolderTree {
         self.nodes.get(n)
     }
 
-    /// Its merged path, as one of its drives spells it; empty for a node past the tree's end.
-    #[expect(clippy::string_slice, reason = "the builder cut the range between whole parts, so on a char boundary")]
-    pub fn merged_path(&self, n: usize) -> &str {
-        let Some(node) = self.nodes.get(n) else { return "" };
-        &self.paths[crate::num::index(node.path_start)..crate::num::index(node.path_end)]
+    /// Its folder, as one of its drives spells it: its parts, the anchor dropped. The empty folder for a node past the
+    /// tree's end.
+    pub fn merged(&self, n: usize) -> Merged {
+        let Some(node) = self.nodes.get(n) else { return Merged::default() };
+        let bytes = self.paths.get(num::index(node.path_start)..num::index(node.path_end)).unwrap_or_default();
+        let sep = self.rules.sep_byte();
+        bytes.split(|&b| b == sep).filter(|p| !p.is_empty()).map(Name::from_raw).collect::<Vec<Name>>().into()
     }
 
-    /// Its path's last component; empty for a node past the tree's end.
-    #[expect(clippy::string_slice, reason = "the builder cut the range between whole parts, so on a char boundary")]
-    pub fn name(&self, n: usize) -> &str {
-        let Some(node) = self.nodes.get(n) else { return "" };
-        &self.paths[crate::num::index(node.name_start)..crate::num::index(node.path_end)]
+    /// Its last part (its name); the empty name for a node past the tree's end.
+    pub fn name(&self, n: usize) -> Name {
+        let Some(node) = self.nodes.get(n) else { return Name::from("") };
+        Name::from_raw(self.paths.get(num::index(node.name_start)..num::index(node.path_end)).unwrap_or_default())
     }
 
     /// Its `folder_key`; empty for a node past the tree's end.
@@ -255,17 +274,17 @@ impl FolderTree {
 
     /// A node's `folder_key`: the range the builder cut from `keys`.
     fn node_key(&self, node: &FolderNode) -> &[u8] {
-        self.keys.get(crate::num::index(node.key_start)..crate::num::index(node.key_end)).unwrap_or_default()
+        self.keys.get(num::index(node.key_start)..num::index(node.key_end)).unwrap_or_default()
     }
 
     pub fn parent(&self, n: usize) -> Option<usize> {
         let p = self.nodes.get(n)?.parent;
-        (p != u32::MAX).then_some(crate::num::index(p))
+        (p != u32::MAX).then_some(num::index(p))
     }
 
     /// The node after its last descendant; the tree's end for a node past it.
     pub fn subtree_end(&self, n: usize) -> usize {
-        self.nodes.get(n).map_or(self.nodes.len(), |node| crate::num::index(node.end))
+        self.nodes.get(n).map_or(self.nodes.len(), |node| num::index(node.end))
     }
 
     pub fn has_children(&self, n: usize) -> bool {
@@ -291,7 +310,7 @@ impl FolderTree {
             if !text.is_empty() {
                 text.push(' ');
             }
-            text.push_str(name);
+            text.push_str(&name.display());
         }
         text
     }
@@ -306,10 +325,10 @@ impl FolderTree {
         self.children(None).filter_map(|n| self.nodes.get(n)).map(|node| node.total).sum()
     }
 
-    /// The node of a merged path, in any case (`key` holds its key meanwhile).
-    pub fn find(&self, merged: &str, key: &mut Vec<u8>) -> Option<usize> {
+    /// The node of a folder, in any case (`key` holds its key meanwhile).
+    pub fn find(&self, folder: &Merged, key: &mut Vec<u8>) -> Option<usize> {
         key.clear();
-        push_folder_key(key, merged);
+        self.rules.push_folder_key(key, folder.parts());
         self.find_key(key)
     }
 
@@ -329,9 +348,9 @@ mod tests {
     fn the_strings_and_nodes_are_sized_up_front() {
         let rows = [(1, r"D:\p\sub", 2), (2, r"E:\p", 1), (3, r"D:\p-x", 4)];
         let bytes: usize = rows.iter().map(|r| r.1.len()).sum();
-        let mut builder = TreeBuilder::with_capacity(rows.len(), bytes, 6);
+        let mut builder = TreeBuilder::with_capacity(PathRules::Windows, rows.len(), bytes, 6);
         for (id, path, count) in rows {
-            builder.add(id, path, count);
+            builder.add(id, &PathRules::Windows.parse(path).unwrap(), count);
         }
         let tree = builder.build();
         assert_eq!(tree.len(), 3);
@@ -344,17 +363,37 @@ mod tests {
     /// folder is on none.
     #[test]
     fn a_folder_shows_each_anchor_it_is_on_in_text_order() {
-        let mut builder = TreeBuilder::default();
+        let mut builder = TreeBuilder::with_capacity(PathRules::Windows, 4, 0, 0);
         for (id, path) in [(1, r"E:\p"), (2, r"D:\p"), (3, r"F:\q"), (4, r"\\nas\share\p")] {
-            builder.add(id, path, 1);
+            builder.add(id, &PathRules::Windows.parse(path).unwrap(), 1);
         }
         let tree = builder.build();
-        let node = |merged: &str| (0..tree.len()).find(|&n| tree.merged_path(n) == merged).unwrap();
+        let node = |folder: &str| {
+            (0..tree.len()).find(|&n| PathRules::Windows.display_merged(&tree.merged(n)) == folder).unwrap()
+        };
         assert_eq!(tree.anchors(node("p")), "D: E:");
         assert!(tree.multi_anchor(node("p")));
         assert_eq!(tree.anchors(node("q")), "F:");
         assert!(!tree.multi_anchor(node("q")));
         assert_eq!(tree.anchors(node(r"nas\share\p")), "");
         assert!(!tree.multi_anchor(node(r"nas\share\p")));
+    }
+
+    /// A node's folder and name come back exactly, with a lone surrogate, and `find` takes the typed folder in any case.
+    #[test]
+    fn a_node_gives_back_its_folder_and_name_exactly() {
+        let wide = Name::from_wide(&[0x61, 0xD800]);
+        let folder = Merged::from(vec![Name::from("Pics"), wide.clone()]);
+        let mut builder = TreeBuilder::with_capacity(PathRules::Posix, 1, 0, 0);
+        let path = Path { anchor: Name::from(""), parts: folder.parts().to_vec() };
+        builder.add(7, &path, 3);
+        let tree = builder.build();
+        // Two nodes: `Pics` (depth 0) and `Pics\<wide>` (depth 1, the folder itself).
+        assert_eq!(tree.len(), 2);
+        assert_eq!(tree.merged(1), folder);
+        assert_eq!(tree.name(1), wide);
+        let mut key = Vec::new();
+        assert_eq!(tree.find(&folder, &mut key), Some(1));
+        assert_eq!(tree.find(&Merged::from(vec![Name::from("pics")]), &mut key), None);
     }
 }

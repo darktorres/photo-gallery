@@ -27,6 +27,31 @@ pub struct Path {
     pub parts: Vec<Name>,
 }
 
+/// A folder as the tree and the catalog hold it (S-17.8): its parts, the anchor (the drive, or the UNC root) dropped.
+/// The same folder on two drives is one `Merged`. The empty `Merged` is every folder: with `recursive` the whole
+/// library, without it the files directly in the drive roots. Serialises as the array of its parts.
+#[derive(Clone, PartialEq, Eq, Hash, Debug, Default, serde::Serialize, serde::Deserialize)]
+#[serde(transparent)]
+pub struct Merged(Vec<Name>);
+
+impl Merged {
+    /// The parts, from the top.
+    pub fn parts(&self) -> &[Name] {
+        &self.0
+    }
+
+    /// Whether it is the empty folder (every folder).
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl From<Vec<Name>> for Merged {
+    fn from(parts: Vec<Name>) -> Merged {
+        Merged(parts)
+    }
+}
+
 impl PathRules {
     /// The rules of this platform.
     pub const NATIVE: PathRules = if cfg!(windows) { PathRules::Windows } else { PathRules::Posix };
@@ -81,19 +106,64 @@ impl PathRules {
     /// A path's bytes, as the catalog stores them: the anchor, the root separator, then the parts joined by the
     /// separator. [`PathRules::parse_bytes`] reads them back.
     pub fn join(self, path: &Path) -> Vec<u8> {
-        let sep = self.sep_byte();
-        let mut out = Vec::with_capacity(
-            path.anchor.as_bytes().len() + 1 + path.parts.iter().map(|p| p.as_bytes().len() + 1).sum::<usize>(),
-        );
+        let mut out = Vec::with_capacity(path.anchor.as_bytes().len() + 1);
         out.extend_from_slice(path.anchor.as_bytes());
-        out.push(sep);
-        for (i, part) in path.parts.iter().enumerate() {
+        out.push(self.sep_byte());
+        self.push_parts(&mut out, &path.parts);
+        out
+    }
+
+    /// The parts appended to `out`, joined by the separator (no anchor, no root separator).
+    pub(crate) fn push_parts(self, out: &mut Vec<u8>, parts: &[Name]) {
+        let sep = self.sep_byte();
+        for (i, part) in parts.iter().enumerate() {
             if i > 0 {
                 out.push(sep);
             }
             out.extend_from_slice(part.as_bytes());
         }
+    }
+
+    /// The folder a path names, its anchor dropped (see [`Merged`]).
+    pub fn merge(self, path: &Path) -> Merged {
+        Merged(path.parts.clone())
+    }
+
+    /// A folder's stored form: its parts joined by the separator, with no anchor. The empty folder is the empty
+    /// bytes. [`PathRules::parse_merged`] reads them back.
+    pub fn join_merged(self, folder: &Merged) -> Vec<u8> {
+        let mut out = Vec::new();
+        self.push_parts(&mut out, &folder.0);
         out
+    }
+
+    /// The folder a stored form ([`PathRules::join_merged`]) names. Empty parts (doubled separators) are dropped.
+    /// `None` for a NUL, which no name holds.
+    pub fn parse_merged(self, bytes: &[u8]) -> Option<Merged> {
+        if bytes.contains(&0) {
+            return None;
+        }
+        let sep = self.sep_byte();
+        let parts = bytes.split(|&b| b == sep).filter(|p| !p.is_empty()).map(Name::from_raw).collect();
+        Some(Merged(parts))
+    }
+
+    /// A folder's parts joined by the separator, for display only (the title, the Hud, messages): lossy.
+    pub fn display_merged(self, folder: &Merged) -> String {
+        let sep = self.sep();
+        let mut out = String::new();
+        for (i, part) in folder.0.iter().enumerate() {
+            if i > 0 {
+                out.push(sep);
+            }
+            out.push_str(&part.display());
+        }
+        out
+    }
+
+    /// The folder's key ([`PathRules::folder_key`] of its parts), as the tree and the catalog store it.
+    pub fn merged_key(self, folder: &Merged) -> Vec<u8> {
+        self.folder_key(&folder.0)
     }
 
     /// The path in UTF-16, as the Windows API takes it (no NUL): exact, unpaired surrogates included. On Posix it is
@@ -290,6 +360,82 @@ mod tests {
         let (folder, name) = PathRules::Windows.split_file_name(&file).unwrap();
         assert_eq!(PathRules::Windows.display(&folder), r"D:\a");
         assert_eq!(name, Name::from("b.jpg"));
+    }
+
+    /// The order key of the file at `text` (a Windows path), as the catalog stores it.
+    fn file_key(text: &str) -> Vec<u8> {
+        let path = PathRules::Windows.parse(text).unwrap();
+        let (folder, name) = PathRules::Windows.split_file_name(&path).unwrap();
+        PathRules::Windows.order_key(&PathRules::Windows.folder_key(&folder.parts), &name)
+    }
+
+    #[test]
+    fn a_folder_scope_is_its_own_files_or_those_and_its_subfolders() {
+        let within = |key: &[u8], (lo, hi): &(Vec<u8>, Option<Vec<u8>>)| {
+            key >= lo.as_slice() && hi.as_ref().is_none_or(|hi| key < hi.as_slice())
+        };
+        let direct = file_key(r"E:\pinterest\a.jpg");
+        let sub = file_key(r"D:\pinterest\sub\a.jpg");
+        let sibling = file_key(r"D:\pinterest-x\a.jpg");
+        let own = PathRules::Windows.scope_keys(&names(&["pinterest"]), false);
+        assert!(within(&direct, &own) && !within(&sub, &own) && !within(&sibling, &own));
+        let tree = PathRules::Windows.scope_keys(&names(&["pinterest"]), true);
+        assert!(within(&direct, &tree) && within(&sub, &tree) && !within(&sibling, &tree));
+    }
+
+    #[test]
+    fn a_final_sigma_folder_scopes_its_files_under_the_writers_key() {
+        // The writer stores a folder's key per character (Σ is σ, never ς); the scope reads it the same way.
+        let file = file_key(r"D:\ΑΣ\a.jpg");
+        let (lo, hi) = PathRules::Windows.scope_keys(&names(&["ΑΣ"]), false);
+        assert!(file >= lo && hi.is_some_and(|hi| file < hi));
+    }
+
+    #[test]
+    fn the_empty_merged_folder_is_every_folder_with_recursive_and_the_drive_roots_without() {
+        let empty = Merged::default();
+        assert!(empty.is_empty());
+        let (lo, hi) = PathRules::Windows.scope_keys(empty.parts(), true);
+        assert!(lo.is_empty() && hi.is_none());
+        let (lo, hi) = PathRules::Windows.scope_keys(empty.parts(), false);
+        let root_file = file_key(r"D:\a.jpg");
+        let sub_file = file_key(r"D:\a\b.jpg");
+        assert!(root_file >= lo && root_file < hi.clone().unwrap() && sub_file >= hi.unwrap());
+    }
+
+    #[test]
+    fn a_merged_folder_is_its_parts_without_the_drive_and_joins_back_exactly() {
+        let path = PathRules::Windows.parse(r"E:\pinterest\a").unwrap();
+        let merged = PathRules::Windows.merge(&path);
+        assert_eq!(merged.parts(), names(&["pinterest", "a"]).as_slice());
+        let stored = PathRules::Windows.join_merged(&merged);
+        assert_eq!(stored, br"pinterest\a");
+        assert_eq!(PathRules::Windows.parse_merged(&stored), Some(merged.clone()));
+        assert_eq!(PathRules::Windows.display_merged(&merged), r"pinterest\a");
+        assert_eq!(PathRules::Windows.merged_key(&merged), PathRules::Windows.folder_key(&names(&["pinterest", "a"])));
+        assert_eq!(PathRules::Windows.join_merged(&Merged::default()), b"");
+        assert_eq!(PathRules::Windows.parse_merged(b""), Some(Merged::default()));
+        assert_eq!(PathRules::Windows.parse_merged(b"a\\\\b\\"), Some(Merged::from(names(&["a", "b"]))));
+        assert_eq!(PathRules::Windows.parse_merged(b"a\0b"), None);
+    }
+
+    #[test]
+    fn a_merged_folder_keeps_a_lone_surrogate_and_a_raw_byte_exactly() {
+        let wide = Name::from_wide(&[0x61, 0xD800]);
+        let raw = Name::from_raw(b"x\xFF");
+        let merged = Merged::from(vec![wide.clone(), raw.clone()]);
+        let stored = PathRules::Posix.join_merged(&merged);
+        assert_eq!(stored, [wide.as_bytes(), &b"/"[..], raw.as_bytes()].concat());
+        assert_eq!(PathRules::Posix.parse_merged(&stored), Some(merged));
+    }
+
+    #[test]
+    fn a_merged_folder_round_trips_through_json_as_the_array_of_its_parts() {
+        let merged = Merged::from(vec![Name::from("pics"), Name::from_wide(&[0xD800])]);
+        let json = serde_json::to_string(&merged).unwrap();
+        assert_eq!(json, r#"["pics",{"b":"eda080"}]"#);
+        assert_eq!(serde_json::from_str::<Merged>(&json).unwrap(), merged);
+        assert_eq!(serde_json::to_string(&Merged::default()).unwrap(), "[]");
     }
 }
 

@@ -6,6 +6,7 @@
 use std::cell::RefCell;
 use std::ops::Range;
 
+use pg_model::rules::Merged;
 use pg_model::tree::FolderTree;
 
 /// A visible row: `None` is "All".
@@ -83,17 +84,17 @@ impl Tree {
         self.show_all();
     }
 
-    /// The node of a merged path (`""` is "All", not a node), in any case.
-    pub fn find(&self, merged: &str) -> Option<usize> {
-        self.tree.find(merged, &mut self.key.borrow_mut())
+    /// The node of a folder (the empty folder is "All", not a node), in any case.
+    pub fn find(&self, folder: &Merged) -> Option<usize> {
+        self.tree.find(folder, &mut self.key.borrow_mut())
     }
 
-    /// The row a merged path shows on (`""` = "All"), if it shows.
-    pub fn row_of_path(&self, merged: &str) -> Option<usize> {
-        if merged.is_empty() {
+    /// The row a folder shows on (the empty folder is "All", row 0), if it shows.
+    pub fn row_of_path(&self, folder: &Merged) -> Option<usize> {
+        if folder.is_empty() {
             return Some(0);
         }
-        self.visible.binary_search(&Some(self.find(merged)?)).ok()
+        self.visible.binary_search(&Some(self.find(folder)?)).ok()
     }
 
     /// What toggling the folder on `row` would do, without doing it: `None` for "All" and for a folder with no
@@ -124,12 +125,12 @@ impl Tree {
         }
     }
 
-    /// Opens the folders above a merged path so it shows: its row, or `None` when there is no such folder.
-    pub fn reveal(&mut self, merged: &str) -> Option<usize> {
-        if let Some(row) = self.row_of_path(merged) {
+    /// Opens the folders above a folder so it shows: its row, or `None` when there is no such folder.
+    pub fn reveal(&mut self, folder: &Merged) -> Option<usize> {
+        if let Some(row) = self.row_of_path(folder) {
             return Some(row);
         }
-        let n = self.find(merged)?;
+        let n = self.find(folder)?;
         let mut above = self.tree.parent(n);
         while let Some(p) = above {
             if let Some(open) = self.expanded.get_mut(p) {
@@ -138,7 +139,7 @@ impl Tree {
             above = self.tree.parent(p);
         }
         self.show_all();
-        self.row_of_path(merged)
+        self.row_of_path(folder)
     }
 
     /// The visible rows from the expansion: "All", then the tree.
@@ -177,21 +178,28 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::rules::PathRules;
     use pg_model::tree::TreeBuilder;
+
+    /// A folder given as its Windows path text, merged.
+    fn folder(text: &str) -> Merged {
+        PathRules::Windows.merge(&PathRules::Windows.parse(text).unwrap())
+    }
 
     /// The folders `D:\a`, `D:\a\b`, `D:\a\b\c`, `D:\a\d` and `D:\e` (merged: `a`, `a\b`, `a\b\c`, `a\d`, `e`), as
     /// nodes 0..5 in pre-order.
     fn tree() -> FolderTree {
-        let mut b = TreeBuilder::default();
+        let mut b = TreeBuilder::with_capacity(PathRules::Windows, 5, 0, 0);
         for (id, path) in [(1, r"D:\a"), (2, r"D:\a\b"), (3, r"D:\a\b\c"), (4, r"D:\a\d"), (5, r"D:\e")] {
-            b.add(id, path, 1);
+            b.add(id, &PathRules::Windows.parse(path).unwrap(), 1);
         }
         b.build()
     }
 
     /// The visible rows as the merged paths they show (`""` for "All").
     fn shown(t: &Tree) -> Vec<String> {
-        t.rows().iter().map(|r| r.map_or(String::new(), |n| t.folders().merged_path(n).to_string())).collect()
+        let rules = t.folders().rules();
+        t.rows().iter().map(|r| r.map_or(String::new(), |n| rules.display_merged(&t.folders().merged(n)))).collect()
     }
 
     #[test]
@@ -227,12 +235,12 @@ mod tests {
     fn reveal_opens_the_folders_above_and_gives_its_row() {
         let mut t = Tree::default();
         t.replace(tree());
-        assert_eq!(t.reveal(r"a\b\c"), Some(3));
+        assert_eq!(t.reveal(&folder(r"a\b\c")), Some(3));
         assert_eq!(shown(&t), ["", "a", r"a\b", r"a\b\c", r"a\d", "e"]);
         // Any case; a folder that isn't there; "All".
-        assert_eq!(t.row_of_path(r"A\D"), Some(4));
-        assert_eq!(t.reveal(r"nope"), None);
-        assert_eq!(t.reveal(""), Some(0));
+        assert_eq!(t.row_of_path(&folder(r"A\D")), Some(4));
+        assert_eq!(t.reveal(&folder("nope")), None);
+        assert_eq!(t.reveal(&Merged::default()), Some(0));
     }
 
     #[test]

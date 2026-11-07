@@ -1,9 +1,10 @@
 //! Laws of the path keys (S-18.2), checked over generated names and folders against the spec the code's docs state
-//! (`pg_model::path`): a name's key orders names case-insensitively, then exactly; a folder's key orders folders
+//! (`pg_model::rules`): a name's key orders names case-insensitively, then exactly; a folder's key orders folders
 //! component by component; the drive is not part of a folder's key. The reference comparator is the spec itself,
 //! written out, not the key functions.
 
-use pg_model::path::{folder_key, merged_path, name_key, order_key_of};
+use pg_model::name::Name;
+use pg_model::rules::{Merged, PathRules};
 use proptest::prelude::*;
 
 /// Name characters: ASCII, the Σ and ς the final-sigma rule touches, İ and ẞ (lower case of two letters), a
@@ -26,18 +27,29 @@ fn component() -> impl Strategy<Value = String> {
     "[a-zA-Z0-9Σσς ]{1,6}"
 }
 
+/// A Windows path's folder, merged (its anchor dropped), as the typed rules make it.
+fn merged_of(path: &str) -> Merged {
+    PathRules::Windows.merge(&PathRules::Windows.parse(path).unwrap())
+}
+
+/// The order key of the file `name` in the folder at `folder` (a Windows path), as the catalog stores it.
+fn order_key_in(folder: &str, name: &str) -> Vec<u8> {
+    let folder = merged_of(folder);
+    PathRules::Windows.order_key(&PathRules::Windows.merged_key(&folder), &Name::from(name))
+}
+
 proptest! {
     // The name key orders names as the spec does: byte order of the key is the order of (lower case, exact name).
     #[test]
     fn name_keys_order_as_the_spec_does(a in name(), b in name()) {
-        prop_assert_eq!(name_key(&a).cmp(&name_key(&b)), reference(&a).cmp(&reference(&b)));
+        prop_assert_eq!(Name::from(a.as_str()).name_key().cmp(&Name::from(b.as_str()).name_key()), reference(&a).cmp(&reference(&b)));
     }
 
     // Distinct names give distinct keys: the exact name ends the key, so the order is total (names that differ only
     // in case are still two entries, in a fixed order).
     #[test]
     fn distinct_names_have_distinct_keys(a in name(), b in name()) {
-        prop_assert_eq!(a == b, name_key(&a) == name_key(&b));
+        prop_assert_eq!(a == b, Name::from(a.as_str()).name_key() == Name::from(b.as_str()).name_key());
     }
 
     // A folder is a key prefix of its subfolders: the folder's files and subfolders come first, then the next name.
@@ -45,7 +57,7 @@ proptest! {
     fn a_folder_key_is_a_prefix_of_its_subfolders(parts in prop::collection::vec(component(), 1..4), sub in component()) {
         let merged = parts.join("\\");
         let below = format!("{merged}\\{sub}");
-        prop_assert!(folder_key(&below).starts_with(&folder_key(&merged)));
+        prop_assert!(PathRules::Windows.merged_key(&merged_of(&below)).starts_with(&PathRules::Windows.merged_key(&merged_of(&merged))));
     }
 
     // The drive is not part of the key: every drive's copy of a folder is one folder, and its files have one order key.
@@ -54,7 +66,7 @@ proptest! {
         let path = parts.join("\\");
         let here = format!("D:\\{path}");
         let there = format!("{d}:\\{path}");
-        prop_assert_eq!(merged_path(&here), path.as_str());
-        prop_assert_eq!(order_key_of(&here, &n), order_key_of(&there, &n));
+        prop_assert_eq!(PathRules::Windows.display_merged(&merged_of(&here)), path.as_str());
+        prop_assert_eq!(order_key_in(&here, &n), order_key_in(&there, &n));
     }
 }

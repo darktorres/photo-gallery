@@ -128,7 +128,7 @@ ApplicationWindow {
     // and the bar is closed.
     function updateFacets() {
         if (filtersOpen || filterBar.active > 0)
-            filterBar.countFacets(shell.folder, shell.recursive)
+            filterBar.countFacets()
     }
 
     // The filters changed: the list is shown after a short pause (Shell.queryEdited; the controller's pause opens the list), so typing a number
@@ -189,26 +189,20 @@ ApplicationWindow {
     // The folder tree is in. At the start, the open folder is shown in it (its parents expanded); after a scan it
     // is only found again, the tree left as the user left it. The folder listed is the view's (the saved one, or the
     // applied view's): when the tree doesn't have it, the controller lists all folders.
+    // The folder model works out the listed folder's row (-1: under a folder the user collapsed; -2: not in the tree).
+    // The shell keeps the folder as the tree spells it and tells the controller whether the folder is known.
     function treeLoaded() {
         const first = !treeShown
         treeShown = true
-        const row = first ? folderModel.reveal(shell.folder) : folderModel.rowOf(shell.folder)
-        const known = shell.folder === "" || row >= 0 || folderModel.contains(shell.folder)
+        const row = folderModel.revealListing(first)
         if (row >= 0) {
             tree.currentIndex = row
             if (first)
                 tree.positionViewAtIndex(row, ListView.Contain)
-            // Spelled as the tree spells it (paths match in any case): the list already shows it.
-            const spelled = folderModel.mergedPath(row)
-            if (spelled !== shell.folder)
-                shell.folder = spelled
-        } else if (shell.folder !== "" && folderModel.contains(shell.folder)) {
-            // Under a folder the user collapsed.
-            tree.currentIndex = -1
         } else {
-            tree.currentIndex = 0
+            tree.currentIndex = row === -1 ? -1 : 0
         }
-        shell.treeLoaded(known)
+        shell.treeLoaded(row !== -2)
     }
 
     // The folder tree changed (a scan): read it again, and the open folder's files.
@@ -225,22 +219,7 @@ ApplicationWindow {
     }
 
     function openFolder(row: int) {
-        shell.openFolder(folderModel.mergedPath(row))
-    }
-
-    // Show a path in the tree (its parents expanded), and return the merged folder to list for it: `""` (all) when the
-    // tree doesn't have it yet, which is listed once the tree is in (treeLoaded).
-    function revealInTree(path: string): string {
-        const row = folderModel.reveal(path)
-        tree.currentIndex = Math.max(row, 0)
-        if (row >= 0)
-            tree.positionViewAtIndex(row, ListView.Contain)
-        return row >= 0 ? folderModel.mergedPath(row) : folderModel.ready ? "" : path
-    }
-
-    // Open a folder by path, showing it in the tree too. Before the tree is in, it is shown when it arrives.
-    function goTo(path: string) {
-        shell.openFolder(revealInTree(path))
+        shell.openFolderRow(row)
     }
 
     // The list the controller asked for is loading (the shell announces it: listingChanged). The facets and the sort box
@@ -255,7 +234,11 @@ ApplicationWindow {
         if (!shell.applyView(name))
             return
         filterBar.reloadQuery()
-        revealInTree(shell.folder)
+        // The applied view's folder is shown in the tree (its parents expanded), when the tree has it.
+        const row = folderModel.revealListing(true)
+        tree.currentIndex = Math.max(row, 0)
+        if (row >= 0)
+            tree.positionViewAtIndex(row, ListView.Contain)
         grid.takeFocus()
     }
 

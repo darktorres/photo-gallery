@@ -294,13 +294,18 @@ mod tests {
         assert_eq!(Name::from_wtf8(b"a\xFF"), None);
     }
 
+    /// The name key of text is pinned: 0x00, the name with each character lowered alone, 0x00, the exact bytes. So a Σ
+    /// is σ wherever it stands (never the final ς of `str::to_lowercase`); İ lowers to two characters, ẞ to ß.
     #[test]
-    fn the_name_key_is_the_string_key_for_valid_text() {
-        for s in ["Plain.JPG", "Σίσυφος", "İstanbul", "ẞ", "a\u{1}b\u{2}c", "😀 x"] {
-            let mut key = Vec::new();
-            Name::from(s).push_name_key(&mut key);
-            assert_eq!(key, crate::path::name_key(s), "{s:?}");
-        }
+    fn the_name_key_of_text_is_pinned() {
+        let key = |s: &str| Name::from(s).name_key();
+        let pinned = |lower: &str, exact: &str| [&[0x00][..], lower.as_bytes(), &[0x00], exact.as_bytes()].concat();
+        assert_eq!(key("Plain.JPG"), pinned("plain.jpg", "Plain.JPG"));
+        assert_eq!(key("Σίσυφος"), pinned("σίσυφος", "Σίσυφος"));
+        assert_eq!(key("İstanbul"), pinned("i\u{307}stanbul", "İstanbul"));
+        assert_eq!(key("ẞ"), pinned("ß", "ẞ"));
+        assert_eq!(key("a\u{1}b\u{2}c"), pinned("a\u{1}b\u{2}c", "a\u{1}b\u{2}c"));
+        assert_eq!(key("😀 x"), pinned("😀 x", "😀 x"));
     }
 
     #[test]

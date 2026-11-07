@@ -1,6 +1,6 @@
 use super::tree::FOLDER_COUNTS;
 use super::*;
-use crate::browse::fixtures::{by, ids, library, mixed_library, sorted_by_sqlite};
+use crate::browse::fixtures::{by, folder_of, ids, library, mixed_library, sorted_by_sqlite};
 use crate::fixture;
 use crate::fixture::raw;
 use crate::query::condition;
@@ -13,14 +13,26 @@ use pg_model::detection;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::{FileId, FolderId};
 use pg_model::media::Ext;
-use pg_model::path::folder_key;
-use pg_model::path::{components, merged_path, name_key, order_key, order_key_of};
+use pg_model::name::Name;
 use pg_model::query::{BorderFacet, DateRange, MediaType, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
+use pg_model::rules::{Merged, PathRules};
 use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
 use rusqlite::params_from_iter;
+
+/// A folder given as its Windows path text, merged: the test's own spelling of a folder.
+fn folder(text: &str) -> Merged {
+    let rules = PathRules::Windows;
+    rules.merge(&rules.parse(text).unwrap())
+}
+
+/// The order key of the file `name` in the folder at `folder_text` (a Windows path), as the catalog stores it.
+fn order_key_of(folder_text: &str, name: &str) -> Vec<u8> {
+    let rules = PathRules::Windows;
+    rules.order_key(&rules.merged_key(&folder(folder_text)), &Name::from(name))
+}
 
 /// No image gives a longer ThumbHash than `THUMBHASH_MAX`, and some give one that long: every aspect, with alpha
 /// and without.
@@ -78,10 +90,11 @@ fn the_cut_is_described_as_shown() {
 }
 
 #[test]
-fn merged_paths() {
-    assert_eq!(merged_path(r"E:\pinterest\a"), r"pinterest\a");
-    assert_eq!(merged_path("D:"), "");
-    assert_eq!(merged_path(r"\\server\share\x"), r"\\server\share\x");
+fn merged_folders_drop_the_anchor() {
+    let names = |parts: &[&str]| -> Vec<Name> { parts.iter().map(|p| Name::from(*p)).collect() };
+    assert_eq!(folder(r"E:\pinterest\a").parts(), &names(&["pinterest", "a"])[..]);
+    assert!(folder("D:").is_empty());
+    assert_eq!(folder(r"\\server\share\x").parts(), &names(&["server", "share", "x"])[..]);
 }
 
 #[test]
@@ -151,7 +164,7 @@ fn folders_in_the_trees_order() {
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(4), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
     let tree = folder_tree(&c).unwrap();
-    let roots: Vec<&str> = tree.children(None).map(|n| tree.name(n)).collect();
+    let roots: Vec<String> = tree.children(None).map(|n| tree.name(n).display().into_owned()).collect();
     assert_eq!(roots, ["p", "p-x"]);
 }
 
@@ -161,7 +174,6 @@ type Flat = (String, String, usize, i64, i64, Vec<String>, usize);
 
 /// The tree as it was built before (kept as the reference): rows (folder id, path, present files) taken in
 /// folder id order, nodes found by their lowercased merged path, children sorted by their name's key.
-#[expect(clippy::string_slice, reason = "the cuts are at ASCII bytes: a drive's two, and the separators")]
 fn reference_tree(rows: &[(i64, String, i64)]) -> Vec<Flat> {
     struct Node {
         name: String,
@@ -172,22 +184,29 @@ fn reference_tree(rows: &[(i64, String, i64)]) -> Vec<Flat> {
         total: i64,
         drives: String,
     }
+    let rules = PathRules::Windows;
     let mut rows = rows.to_vec();
     rows.sort_by_key(|r| r.0);
     let (mut nodes, mut roots) = (Vec::<Node>::new(), Vec::<usize>::new());
-    let mut by_key: std::collections::BTreeMap<String, usize> = Default::default();
+    // A node is one folder by its key, which lower-cases each character alone (the rules' key, as the writer stores).
+    let mut by_key: std::collections::BTreeMap<Vec<u8>, usize> = Default::default();
     for (_, path, count) in &rows {
-        let drive = if merged_path(path).len() < path.len() { &path[..2] } else { "" };
+        let parsed = rules.parse(path).unwrap();
+        // The drive a folder is on, as the path spells it ("D:"); a UNC root is no drive.
+        let drive = match parsed.anchor.as_bytes() {
+            [_, b':'] => parsed.anchor.display().into_owned(),
+            _ => String::new(),
+        };
         let mut parent: Option<usize> = None;
         let mut merged = String::new();
-        for (depth, part) in components(merged_path(path)).enumerate() {
+        for (depth, part) in parsed.parts.iter().enumerate() {
             if !merged.is_empty() {
                 merged.push('\\');
             }
-            merged.push_str(part);
-            let id = *by_key.entry(merged.to_lowercase()).or_insert_with(|| {
+            merged.push_str(&part.display());
+            let id = *by_key.entry(rules.folder_key(&parsed.parts[..=depth])).or_insert_with(|| {
                 nodes.push(Node {
-                    name: part.to_string(),
+                    name: part.display().into_owned(),
                     merged_path: merged.clone(),
                     depth,
                     children: Vec::new(),
@@ -204,11 +223,11 @@ fn reference_tree(rows: &[(i64, String, i64)]) -> Vec<Flat> {
             });
             let node = &mut nodes[id];
             node.total += count;
-            if !drive.is_empty() && !node.drives.split(' ').any(|d| d.eq_ignore_ascii_case(drive)) {
+            if !drive.is_empty() && !node.drives.split(' ').any(|d| d.eq_ignore_ascii_case(&drive)) {
                 if !node.drives.is_empty() {
                     node.drives.push(' ');
                 }
-                node.drives.push_str(drive);
+                node.drives.push_str(&drive);
             }
             parent = Some(id);
         }
@@ -216,7 +235,7 @@ fn reference_tree(rows: &[(i64, String, i64)]) -> Vec<Flat> {
             nodes[p].direct += count;
         }
     }
-    let names: Vec<Vec<u8>> = nodes.iter().map(|n| folder_key(&n.name)).collect();
+    let names: Vec<Vec<u8>> = nodes.iter().map(|n| rules.folder_key(&[Name::from(n.name.as_str())])).collect();
     roots.sort_by(|&a, &b| names[a].cmp(&names[b]));
     for node in &mut nodes {
         node.children.sort_by(|&a, &b| names[a].cmp(&names[b]));
@@ -243,31 +262,37 @@ fn flat(tree: &FolderTree) -> Vec<Flat> {
             let node = tree.node(n)?;
             let drives = tree.anchors(n).split(' ').filter(|d| !d.is_empty()).map(String::from).collect();
             let children = tree.children(Some(n)).count();
-            let (path, name) = (tree.merged_path(n).to_string(), tree.name(n).to_string());
+            let path = tree.rules().display_merged(&tree.merged(n));
+            let name = tree.name(n).display().into_owned();
             Some((path, name, pg_model::num::index(node.depth), node.direct, node.total, drives, children))
         })
         .collect()
 }
 
-/// Builds a tree of these rows, and checks it against the reference and its own structure.
+/// Builds a tree of these rows (under Windows rules), and checks it against the reference and its own structure.
 fn check_tree(rows: &[(i64, String, i64)]) {
-    let mut builder = TreeBuilder::default();
+    let rules = PathRules::Windows;
+    let mut builder = TreeBuilder::with_capacity(rules, rows.len(), 0, 0);
     for (id, path, count) in rows {
-        builder.add(*id, path, *count);
+        builder.add(*id, &rules.parse(path).unwrap(), *count);
     }
     let tree = builder.build();
     assert_eq!(flat(&tree), reference_tree(rows));
     let mut key = Vec::new();
     for n in 0..tree.len() {
-        assert_eq!(tree.find(tree.merged_path(n), &mut key), Some(n));
-        assert_eq!(tree.find(&tree.merged_path(n).to_ascii_uppercase(), &mut key), Some(n), "{}", tree.merged_path(n));
-        assert_eq!(tree.key(n), folder_key(tree.merged_path(n)));
+        let merged = tree.merged(n);
+        assert_eq!(tree.find(&merged, &mut key), Some(n), "{merged:?}");
+        let upper = Merged::from(
+            merged.parts().iter().map(|p| Name::from(p.display().to_ascii_uppercase().as_str())).collect::<Vec<_>>(),
+        );
+        assert_eq!(tree.find(&upper, &mut key), Some(n), "{merged:?}");
+        assert_eq!(tree.key(n), rules.merged_key(&merged));
         assert_eq!(tree.multi_anchor(n), tree.anchors(n).contains(' '));
         if let Some(p) = tree.parent(n) {
             assert!(p < n && n < tree.subtree_end(p) && tree.children(Some(p)).any(|c| c == n));
         }
     }
-    assert_eq!(tree.find("no such folder", &mut key), None);
+    assert_eq!(tree.find(&folder("no such folder"), &mut key), None);
 }
 
 #[test]
@@ -320,7 +345,7 @@ fn real_tree_is_built_as_before() {
 #[test]
 fn name_order() {
     use std::cmp::Ordering::*;
-    let cmp = |a: &str, b: &str| name_key(a).cmp(&name_key(b));
+    let cmp = |a: &str, b: &str| Name::from(a).name_key().cmp(&Name::from(b).name_key());
     // Case-insensitively first (Unicode, unlike SQLite's NOCASE), then exactly, so the order is total.
     assert_eq!(cmp("a.jpg", "B.jpg"), Less);
     assert_eq!(cmp("Ä.jpg", "b.jpg"), Greater);
@@ -332,17 +357,22 @@ fn name_order() {
     assert_eq!(cmp("same", "same"), Equal);
 }
 
-/// The order before the key (kept as the reference): folders by their lowercased merged path component by
-/// component (the scope's sort), then names by the PATH collation (characters lowercased one by one, then
-/// bytes). Empty components are dropped, as the tree did.
+/// The order before the key (kept as the reference): folders by their parts, each lower-cased character by character
+/// (the scope's sort), then names by the PATH collation (characters lowercased one by one, then bytes). Empty parts
+/// are dropped, as the tree did.
 fn reference_order(a: (&str, &str), b: (&str, &str)) -> std::cmp::Ordering {
-    let folder = |p: &str| -> Vec<String> {
-        merged_path(p).to_lowercase().split('\\').filter(|c| !c.is_empty()).map(String::from).collect()
-    };
+    let parts_of = |p: &str| -> Vec<Vec<u8>> { folder(p).parts().iter().map(lower).collect() };
     let collation = |a: &str, b: &str| {
         a.chars().flat_map(char::to_lowercase).cmp(b.chars().flat_map(char::to_lowercase)).then_with(|| a.cmp(b))
     };
-    folder(a.0).cmp(&folder(b.0)).then_with(|| collation(a.1, b.1))
+    parts_of(a.0).cmp(&parts_of(b.0)).then_with(|| collation(a.1, b.1))
+}
+
+/// A name's lower case, character by character, as the keys hold it.
+fn lower(part: &Name) -> Vec<u8> {
+    let mut out = Vec::new();
+    part.push_lower(&mut out);
+    out
 }
 
 /// A small xorshift: the same cases on every run, without a dependency.
@@ -394,17 +424,21 @@ fn order_keys_sort_as_before() {
     before((r"E:\P", "a.jpg"), (r"D:\p", "b.jpg"));
     before((r"D:\ας", "a"), (r"D:\ασ", "a"));
     before((r"D:\a\b", "z"), ("D:\\a\\b\u{1}c", "a"));
-    // A final Σ in a folder name lowercases to ς, as the whole path did.
-    assert_eq!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ας", "a"));
+    // A final Σ in a folder name is σ, character by character (S-17.2): `ΑΣ` is not `ας`, and it lists its own files.
+    assert_eq!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ασ", "a"));
+    assert_ne!(order_key_of(r"D:\ΑΣ", "a"), order_key_of(r"E:\ας", "a"));
 }
 
-/// Folder keys as they were made, each component through `str::to_lowercase`: stored keys don't change.
+/// Folder keys are made per character: each part lower-cased character by character (a Σ is σ wherever it stands,
+/// where `str::to_lowercase` would make a final one ς), escaped, then 0x01. The writer stores these keys and the
+/// scope reads them, so the two agree.
 #[test]
-fn folder_keys_are_made_as_before() {
-    let reference = |merged: &str| -> Vec<u8> {
+fn folder_keys_are_made_per_character() {
+    let rules = PathRules::Windows;
+    let reference = |parts: &[Name]| -> Vec<u8> {
         let mut key = Vec::new();
-        for part in components(merged) {
-            for b in part.to_lowercase().bytes() {
+        for part in parts {
+            for b in lower(part) {
                 match b {
                     0x01 => key.extend([0x02, 0x02]),
                     0x02 => key.extend([0x02, 0x03]),
@@ -425,14 +459,13 @@ fn folder_keys_are_made_as_before() {
     ];
     let mut rng = Rng(0x2545_F491_4F6C_DD1D);
     let random = (0..400).map(|_| random_file(&mut rng).0);
-    for folder in merged.into_iter().map(String::from).chain(random) {
-        assert_eq!(folder_key(merged_path(&folder)), reference(merged_path(&folder)), "{folder:?}");
+    for text in merged.into_iter().map(String::from).chain(random) {
+        let parts = folder(&text).parts().to_vec();
+        assert_eq!(rules.folder_key(&parts), reference(&parts), "{text:?}");
     }
     for name in ["a.JPG", "ΑΣ.jpg", "\u{130}.png", ""] {
-        // Made at its exact size (`Vec::with_capacity` gives exactly what it is asked for).
-        let key = order_key(b"k\x01", name);
-        assert_eq!(key, [&b"k\x01"[..], &name_key(name)].concat());
-        assert_eq!(key.capacity(), key.len());
+        let key = rules.order_key(b"k\x01", &Name::from(name));
+        assert_eq!(key, [&b"k\x01"[..], &Name::from(name).name_key()].concat());
     }
 }
 
@@ -455,26 +488,25 @@ fn real_names_sort_and_scope_as_before() {
         let (a, b) = (&pair[0], &pair[1]);
         assert_ne!(reference_order((&a.0, &a.1), (&b.0, &b.1)), std::cmp::Ordering::Greater, "{a:?}, {b:?}");
     }
-    // Every folder against every scope, recursive and not: the old match (`in_scope`) and the key range.
+    // Every folder against every scope, recursive and not: the old match (the parts, each lower-cased) and the key range.
     let folders: Vec<String> = raw::rows_of(&c, "SELECT CAST(path AS TEXT) FROM folders", [], |r| r.get(0));
-    let in_range = |scope_of: (&str, bool), folder: &str| {
-        let (_, values) = scope(scope_of.0, scope_of.1);
-        let key = order_key_of(folder, "a");
+    let in_range = |scope_text: &str, recursive: bool, folder_text: &str| {
+        let (_, values) = scope(c.rules(), &folder_of(&c, scope_text), recursive);
+        let key = order_key_of(folder_text, "a");
         let blob = |v: &Value| match v {
             Value::Blob(b) => b.clone(),
             _ => unreachable!(),
         };
         key >= blob(&values[0]) && values.get(1).is_none_or(|hi| key < blob(hi))
     };
+    let lower_parts = |text: &str| -> Vec<Vec<u8>> { folder(text).parts().iter().map(lower).collect() };
     for scope_folder in &folders {
-        let merged = merged_path(scope_folder).to_lowercase();
-        for folder in &folders {
-            let m = merged_path(folder).to_lowercase();
+        let merged = lower_parts(scope_folder);
+        for folder_text in &folders {
+            let m = lower_parts(folder_text);
             for recursive in [false, true] {
-                let before = m == merged
-                    || (recursive
-                        && (merged.is_empty() || m.strip_prefix(&merged).is_some_and(|rest| rest.starts_with('\\'))));
-                assert_eq!(in_range((&merged, recursive), folder), before, "{folder} in {merged} ({recursive})");
+                let before = m == merged || (recursive && (merged.is_empty() || m.starts_with(&merged)));
+                assert_eq!(in_range(scope_folder, recursive, folder_text), before, "{folder_text} in {scope_folder}");
             }
         }
     }
@@ -484,7 +516,7 @@ fn real_names_sort_and_scope_as_before() {
 #[test]
 fn scopes_are_key_ranges() {
     let inside = |scope_of: (&str, bool), file: (&str, &str)| {
-        let (sql, values) = scope(scope_of.0, scope_of.1);
+        let (sql, values) = scope(PathRules::Windows, &folder(scope_of.0), scope_of.1);
         let key = order_key_of(file.0, file.1);
         let bound = |v: &Value| match v {
             Value::Blob(b) => b.clone(),
@@ -517,13 +549,13 @@ fn scopes_are_key_ranges() {
 #[test]
 fn lists_are_made_at_their_size() {
     let c = mixed_library();
-    let all = list_grid(&c, "", true, &Query::default(), Sort::default()).unwrap();
+    let all = list_grid(&c, &folder(""), true, &Query::default(), Sort::default()).unwrap();
     assert_eq!(all.capacity(), all.len());
-    let sorted = list_grid(&c, "", true, &Query::default(), by(SortKey::Size, true)).unwrap();
+    let sorted = list_grid(&c, &folder(""), true, &Query::default(), by(SortKey::Size, true)).unwrap();
     assert_eq!(sorted.capacity(), sorted.len());
     let one = list_grid(
         &c,
-        "",
+        &folder(""),
         true,
         &Query { ratings: vec![RatingFilter::try_from(5).unwrap()], ..Query::default() },
         Sort::default(),
@@ -535,9 +567,9 @@ fn lists_are_made_at_their_size() {
 #[test]
 fn lists_read_the_order_index() {
     let c = library();
-    for (folder, recursive) in [("p", true), ("p", false), ("", true)] {
+    for (text, recursive) in [("p", true), ("p", false), ("", true)] {
         for sort in [Sort::default(), by(SortKey::Name, true), by(SortKey::Taken, true)] {
-            let (scope, values) = scope(folder, recursive);
+            let (scope, values) = scope(PathRules::Windows, &folder(text), recursive);
             let unrated = condition(&Query { ratings: vec![RatingFilter::Unrated], ..Query::default() });
             let plan = raw::query_plan(
                 &c,
@@ -548,7 +580,7 @@ fn lists_read_the_order_index() {
             assert!(!plan.contains("TEMP B-TREE"), "sorted: {plan}");
         }
         // The list's size, from the index alone.
-        let (scope, values) = scope(folder, recursive);
+        let (scope, values) = scope(PathRules::Windows, &folder(text), recursive);
         let plan = raw::query_plan(
             &c,
             &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
@@ -627,10 +659,10 @@ fn grid_lists_sort_as_sqlite_did() {
         }
     }
     // Each entry as read alone.
-    for e in list_grid(&c, "", true, &Query::default(), Sort::default()).unwrap() {
+    for e in list_grid(&c, &folder(""), true, &Query::default(), Sort::default()).unwrap() {
         assert_eq!(entry(&c, e.id).unwrap(), Some(e));
     }
-    let entries = list_grid(&c, "", true, &Query::default(), Sort::default()).unwrap();
+    let entries = list_grid(&c, &folder(""), true, &Query::default(), Sort::default()).unwrap();
     let get = |id: i64| *entries.iter().find(|e| e.id == FileId::new(id)).unwrap();
     let (clip, gif, broken) = (get(5), get(6), get(7));
     assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
@@ -644,12 +676,12 @@ fn grid_lists_sort_as_sqlite_did() {
 fn facet_counts() {
     let c = mixed_library();
     let videos = Query { types: vec![MediaType::Video], ..Query::default() };
-    let f = facets(&c, "", true, &videos).unwrap();
+    let f = facets(&c, &folder(""), true, &videos).unwrap();
     assert_eq!((f.total, f.matching), (8, 1));
     // A facet's own choices are counted without it; the other facets apply.
     assert_eq!(f.types, [(MediaType::Image, 6), (MediaType::Animated, 1), (MediaType::Video, 1)]);
     assert_eq!(f.exts, [("mp4".to_string(), 1)]);
-    let f = facets(&c, "p", false, &Query::default()).unwrap();
+    let f = facets(&c, &folder("p"), false, &Query::default()).unwrap();
     assert_eq!(
         f.exts,
         [("jpg".to_string(), 3), ("gif".to_string(), 1), ("png".to_string(), 1), ("webp".to_string(), 1)]
@@ -658,11 +690,11 @@ fn facet_counts() {
 
 /// The facets as they were before the one pass: a statement per facet, each with its own scan of the folder. The
 /// reference the pass is checked against.
-fn facets_by_statements(catalog: &Catalog, merged: &str, recursive: bool, query: &Query) -> Result<Facets> {
+fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, query: &Query) -> Result<Facets> {
     use crate::query::{Facet, MEDIA_CASE, border_sql, condition_without};
     use strum::IntoEnumIterator;
     let conn = &catalog.conn;
-    let (scope, scope_values) = scope(merged, recursive);
+    let (scope, scope_values) = scope(catalog.rules(), merged, recursive);
     let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
         let cond = condition_without(query, skip);
         let sql = format!(
@@ -717,10 +749,49 @@ fn the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet() {
         Query { exts: vec!["jpg".into(), "png".into()], name: "a".into(), ..Query::default() },
     ];
     for query in &queries {
-        for (merged, recursive) in [("", true), ("p", false), ("p", true)] {
-            let one_pass = facets(&c, merged, recursive, query).unwrap();
-            let statements = facets_by_statements(&c, merged, recursive, query).unwrap();
+        for (text, recursive) in [("", true), ("p", false), ("p", true)] {
+            let merged = folder(text);
+            let one_pass = facets(&c, &merged, recursive, query).unwrap();
+            let statements = facets_by_statements(&c, &merged, recursive, query).unwrap();
             assert_eq!(one_pass, statements, "{merged:?} recursive {recursive}: {query:?}");
         }
     }
+}
+
+/// A folder whose name ends in Σ lists its files: the writer keys it character by character (σ), and the scope reads
+/// that same key. (Before S-17.8 the scope lower-cased the name whole, to ς, and listed nothing.)
+#[test]
+fn a_folder_ending_in_sigma_lists_its_files() {
+    let c = library();
+    raw::add_folder(&c, 9, r"D:\ΑΣ");
+    fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(9), "z.jpg", 1, 1)]).unwrap();
+    assert_eq!(ids(&c, "ΑΣ", false, &Query::default(), Sort::default()), [9]);
+    assert_eq!(ids(&c, "ΑΣ", true, &Query::default(), Sort::default()), [9]);
+    // A different folder: the lower-cased ς is not σ.
+    assert_eq!(ids(&c, "ας", false, &Query::default(), Sort::default()), Vec::<i64>::new());
+}
+
+/// Posix folders are case-sensitive: `/photos/Pics` and `/photos/pics` are two folders, listed apart and both in the
+/// tree (the Windows-only keys merged them, and the tree dropped one).
+#[test]
+fn posix_folders_are_case_sensitive_and_listed_apart() {
+    let c = Catalog::prepare(std::path::Path::new(":memory:"), fixture::versions(), PathRules::Posix).unwrap();
+    raw::add_scan(&c, 1, "/");
+    raw::add_folder(&c, 1, "/photos/Pics");
+    raw::add_folder(&c, 2, "/photos/pics");
+    fixture::insert(
+        &c,
+        &[
+            fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 1),
+            fixture::File::new(FileId::new(2), FolderId::new(2), "b.jpg", 1, 1),
+        ],
+    )
+    .unwrap();
+    assert_eq!(ids(&c, "photos/Pics", false, &Query::default(), Sort::default()), [1]);
+    assert_eq!(ids(&c, "photos/pics", false, &Query::default(), Sort::default()), [2]);
+    assert_eq!(ids(&c, "photos", true, &Query::default(), Sort::default()), [1, 2]);
+    let tree = folder_tree(&c).unwrap();
+    let photos = tree.children(None).next().unwrap();
+    let below: Vec<String> = tree.children(Some(photos)).map(|n| tree.name(n).display().into_owned()).collect();
+    assert_eq!(below, ["Pics", "pics"]);
 }

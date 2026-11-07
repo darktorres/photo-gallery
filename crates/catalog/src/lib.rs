@@ -258,7 +258,7 @@ fn make_replacement(path: &Path, rules: PathRules, from: Option<&Path>) -> Resul
         .with_context(|| format!("catalog {}", path.display()))?;
     let counts = match from {
         Some(old) => {
-            carry_rows(&mut conn, old)?;
+            carry_rows(&mut conn, old, rules)?;
             let count = |table: &str| -> rusqlite::Result<i64> {
                 conn.query_row(&format!("SELECT count(*) FROM {table}"), [], |r| r.get(0))
             };
@@ -1632,6 +1632,35 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A catalog from before the folders were typed kept its saved views' folders and the session's as text. They are
+    /// carried as the typed folders (a view's stored bytes, the session's JSON), so they read as they were saved.
+    #[test]
+    fn text_folders_of_views_and_session_are_carried_typed() {
+        let dir = test_folder(SCRATCH, "text-folders").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        crate::browse::writes::session_set_many(&c, &[("folder", r"pinterest\a")]).unwrap();
+        drop(c);
+        let old = Connection::open(&path).unwrap();
+        old.execute_batch(
+            r"DROP TABLE views;
+              CREATE TABLE views(name TEXT PRIMARY KEY, folder TEXT NOT NULL, recursive INTEGER NOT NULL,
+                                 query TEXT NOT NULL, sort TEXT NOT NULL);
+              INSERT INTO views VALUES ('old', 'pinterest\a', 1, '{}', '{}');",
+        )
+        .unwrap();
+        drop(old);
+        let c = Catalog::prepare(&path, versions(), RULES).unwrap();
+        let r = c.rebuilt().expect("moved aside");
+        assert_eq!(r.carried, Carried::Rows { files: 0, folders: 0 });
+        let saved = crate::browse::read::views(&c).unwrap();
+        assert_eq!(saved.len(), 1);
+        assert_eq!(saved[0].folder, pg_model::rules::Merged::from(vec![Name::from("pinterest"), Name::from("a")]));
+        assert_eq!(crate::browse::read::session_get(&c, "folder").unwrap().as_deref(), Some(r#"["pinterest","a"]"#));
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Rows stored under other rules are not carried into a catalog of these: their paths don't read as its own.
     #[test]
     fn rows_of_other_rules_are_not_carried_over() {
@@ -2022,7 +2051,10 @@ mod tests {
     fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed() {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), RULES).unwrap();
         c.add_root(&p(r"D:\x")).unwrap();
-        let key = |name| pg_model::path::order_key_of(r"D:\x", name);
+        let key = |name: &str| {
+            let folder = RULES.merge(&RULES.parse(r"D:\x").unwrap());
+            RULES.order_key(&RULES.merged_key(&folder), &Name::from(name))
+        };
         let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(&p(r"D:\x")).unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
@@ -2285,7 +2317,7 @@ mod tests {
 
         // The grid's entry, the filters and the sort.
         let list = |c: &Catalog, q: Query| -> Vec<pg_model::grid::Entry> {
-            browse::read::list_grid(c, "", true, &q, Sort::default()).unwrap()
+            browse::read::list_grid(c, &pg_model::rules::Merged::default(), true, &q, Sort::default()).unwrap()
         };
         let entry = list(&c, Query::default()).remove(0);
         assert_eq!(entry.borders, pg_model::grid::Borders::Found);
@@ -2294,7 +2326,8 @@ mod tests {
         let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
         assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
         assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
-        let counts = browse::read::facets(&c, "", true, &Query::default()).unwrap().borders;
+        let counts =
+            browse::read::facets(&c, &pg_model::rules::Merged::default(), true, &Query::default()).unwrap().borders;
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
 
@@ -2384,7 +2417,9 @@ mod tests {
         }
         let names = |descending: bool| -> Vec<String> {
             let sort = Sort { key: SortKey::Borders, descending };
-            let entries = browse::read::list_grid(&c, "", true, &Query::default(), sort).unwrap();
+            let entries =
+                browse::read::list_grid(&c, &pg_model::rules::Merged::default(), true, &Query::default(), sort)
+                    .unwrap();
             let path = |id| browse::read::details(&c, id).unwrap().unwrap().path;
             entries.iter().map(|e| path(e.id).rsplit('\\').next().unwrap().to_string()).collect()
         };

@@ -52,7 +52,7 @@ mod tests {
             &c,
             &pg_model::view::SavedView {
                 name: "v".into(),
-                folder: "p".into(),
+                folder: pg_model::rules::Merged::from(vec![pg_model::name::Name::from("p")]),
                 recursive: true,
                 query: Default::default(),
                 sort: Default::default(),

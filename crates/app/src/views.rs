@@ -5,6 +5,7 @@
 use pg_catalog::browse;
 use pg_catalog::query::{from_json, to_json};
 use pg_model::query::{Query, Sort};
+use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 
 use crate::app::App;
@@ -29,7 +30,7 @@ impl App {
     /// Where the user was at the last save: the defaults where nothing was saved.
     pub fn listing(&self) -> Listing {
         Listing {
-            folder: self.session_value("folder").unwrap_or_default(),
+            folder: from_json::<Merged>(&self.session_value("folder").unwrap_or_default()),
             recursive: self.session_value("recursive").is_none_or(|r| r == "true"),
             sort: from_json::<Sort>(&self.session_value("sort").unwrap_or_default()),
             query: from_json::<Query>(&self.session_value("query").unwrap_or_default()),
@@ -38,11 +39,11 @@ impl App {
 
     /// Remember the listing for the next start.
     pub fn save_listing(&self, listing: &Listing) -> Result<()> {
-        let folder = listing.folder.as_str();
+        let folder = to_json(&listing.folder);
         let recursive = listing.recursive.to_string();
         let query = to_json(&listing.query);
         let sort = to_json(&listing.sort);
-        let values = [("folder", folder), ("recursive", &*recursive), ("query", &*query), ("sort", &*sort)];
+        let values = [("folder", &*folder), ("recursive", &*recursive), ("query", &*query), ("sort", &*sort)];
         self.with_catalog(|c| browse::writes::session_set_many(c, &values))
     }
 

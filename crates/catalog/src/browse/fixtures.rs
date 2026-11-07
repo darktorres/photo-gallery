@@ -42,8 +42,16 @@ pub(crate) fn library() -> crate::Catalog {
     c
 }
 
+/// The ids of a folder's list, the folder given as its path text (`""` for all folders) under the catalog's rules.
 pub(crate) fn ids(c: &crate::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
-    list_grid(c, folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
+    let folder = folder_of(c, folder);
+    list_grid(c, &folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()
+}
+
+/// A folder given as its path text (`""` for all folders), merged under the catalog's rules.
+pub(crate) fn folder_of(c: &crate::Catalog, text: &str) -> pg_model::rules::Merged {
+    let rules = c.rules();
+    rules.merge(&rules.parse(text).unwrap())
 }
 
 pub(crate) fn by(key: SortKey, descending: bool) -> Sort {

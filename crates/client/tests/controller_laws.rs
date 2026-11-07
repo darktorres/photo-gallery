@@ -2,15 +2,23 @@
 //! so it holds however the sub-machines are combined: the start gate's order, the one pause per debounce, the size's
 //! clamps and thumbnails, the grid's actions without a current item, and the events' serde round trip (the recordings).
 
+use pg_client::controller::listing as listing_event;
 use pg_client::controller::prefs::{self, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT};
 use pg_client::controller::{Command, Controller, Event};
 use pg_client::keys::Grid;
-use pg_model::query::{Query, Sort};
-use pg_model::view::Listing;
+use pg_model::name::Name;
+use pg_model::query::{Query, Sort, SortKey};
+use pg_model::rules::Merged;
+use pg_model::view::{Listing, SavedView};
 use proptest::prelude::*;
 
-fn listing(folder: &str) -> Listing {
-    Listing { folder: folder.to_string(), recursive: false, sort: Sort::default(), query: Query::default() }
+/// A folder given as its path text, one part a `\`-separated component (the test's own spelling).
+fn folder(text: &str) -> Merged {
+    Merged::from(text.split('\\').filter(|p| !p.is_empty()).map(Name::from).collect::<Vec<_>>())
+}
+
+fn listing(text: &str) -> Listing {
+    Listing { folder: folder(text), recursive: false, sort: Sort::default(), query: Query::default() }
 }
 
 fn size_event() -> impl Strategy<Value = prefs::Event> {
@@ -102,7 +110,7 @@ proptest! {
             Command::OpenList { listing, .. } => Some(listing.folder.clone()),
             _ => None,
         });
-        prop_assert_eq!(all, Some(String::new()));
+        prop_assert_eq!(all, Some(Merged::default()));
         prop_assert!(!c.started());
     }
 
@@ -124,14 +132,26 @@ proptest! {
         }
     }
 
-    /// Events and commands survive the JSON a recording stores them in, unchanged.
+    /// Events and commands survive the JSON a recording stores them in, unchanged, folders included: one with a lone
+    /// surrogate and one with a raw byte, which no text holds.
     #[test]
     fn events_round_trip_through_json(size in size_event(), item in 0usize..100, index in any::<bool>()) {
+        let odd = Merged::from(vec![Name::from_wide(&[0x61, 0xD800]), Name::from_raw(b"x\xFF")]);
+        let view = SavedView {
+            name: "odd".into(),
+            folder: odd.clone(),
+            recursive: index,
+            query: Query::default(),
+            sort: Sort { key: SortKey::Name, descending: index },
+        };
         let events = [
             Event::Size(size),
             Event::CurrentChanged(index.then_some(item)),
             Event::Key(Grid::Step { dx: -1, dy: 2 }),
             Event::SetBorderMark { item, marked: index },
+            Event::Listing(listing_event::Event::OpenFolder(odd.clone())),
+            Event::Listing(listing_event::Event::ViewApplied(view)),
+            Event::FolderSpelled(odd),
         ];
         for event in events {
             let text = serde_json::to_string(&event).expect("an event serialises");

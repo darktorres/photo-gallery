@@ -83,12 +83,12 @@ pub mod qobject {
         #[qinvokable]
         fn clear(self: Pin<&mut Filters>);
 
-        /// Count a merged folder's files (`""` = all folders), with or without its subfolders: `total`, `matching`,
-        /// the types', extensions' and borders' counts. Counted off the GUI thread; they change when the counts are in
-        /// (`counted`).
+        /// Count the files of the listed folder (the controller's listing: its folder, with or without its subfolders):
+        /// `total`, `matching`, the types', extensions' and borders' counts. Counted off the GUI thread; they change when
+        /// the counts are in (`counted`).
         #[qinvokable]
         #[cxx_name = "countFacets"]
-        fn count_facets(self: Pin<&mut Filters>, folder: &QString, recursive: bool);
+        fn count_facets(self: Pin<&mut Filters>);
     }
 }
 
@@ -99,6 +99,7 @@ use cxx_qt_lib::QString;
 use pg_app::reexport::Facets;
 use pg_model::date::Day;
 use pg_model::query::{Query, parse_number};
+use pg_model::rules::PathRules;
 
 use pg_client::facets::Facet;
 use pg_client::input::{Edge, Field, bound_is_valid, choice};
@@ -273,16 +274,16 @@ impl qobject::Filters {
         self.edited();
     }
 
-    fn count_facets(mut self: Pin<&mut Self>, folder: &QString, recursive: bool) {
+    fn count_facets(mut self: Pin<&mut Self>) {
         let generation = {
             let mut this = self.as_mut().rust_mut();
             this.generation += 1;
             this.generation
         };
-        let (path, query) = (folder.to_string(), controller::listing().query);
+        let listing = controller::listing();
         let filters = self.qt_thread();
-        let shown = path.clone();
-        crate::app::get().session().facets(path, recursive, query, move |facets| {
+        let shown = PathRules::NATIVE.display_merged(&listing.folder);
+        crate::app::get().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
             let facets = facets.unwrap_or_else(|e| {
                 crate::panic_log::note(&format!("facets of {shown}: {e:#}"));
                 Facets::default()

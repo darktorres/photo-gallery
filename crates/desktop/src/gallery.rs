@@ -491,10 +491,10 @@ impl qobject::GalleryModel {
         let holding = self.grid.is_held();
         self.as_mut().set_holding(holding);
         self.as_mut().set_loading(true);
-        let pg_model::view::Listing { folder: path, recursive, sort, query } = listing;
+        let pg_model::view::Listing { folder, recursive, sort, query } = listing;
         let model = self.qt_thread();
-        let shown = path.clone();
-        crate::app::get().session().grid(path, recursive, query, sort, move |entries| {
+        let shown = pg_model::rules::PathRules::NATIVE.display_merged(&folder);
+        crate::app::get().session().grid(folder, recursive, query, sort, move |entries| {
             let entries = entries.unwrap_or_else(|e| {
                 crate::panic_log::note(&format!("listing {shown}: {e:#}"));
                 Vec::new()

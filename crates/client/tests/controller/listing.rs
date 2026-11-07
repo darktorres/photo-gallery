@@ -1,21 +1,28 @@
 //! The listing's policy by traces: each change, applied to a listing, gives the listing it must and the commands.
 
 use pg_client::controller::listing::{Command, Event, update};
+use pg_model::name::Name;
 use pg_model::query::{Query, Sort, SortKey};
+use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 
 const OPEN: [Command; 2] = [Command::OpenList, Command::SaveSession];
 
+/// A folder given as its path text, one part per `\`-separated component.
+fn folder(text: &str) -> Merged {
+    Merged::from(text.split('\\').filter(|p| !p.is_empty()).map(Name::from).collect::<Vec<_>>())
+}
+
 /// The listing the traces start from: its sort is the sort box's first choice, name ascending.
 fn start() -> Listing {
     let sort = Sort { key: SortKey::Name, descending: false };
-    Listing { folder: "alpha".into(), recursive: false, sort, query: Query::default() }
+    Listing { folder: folder("alpha"), recursive: false, sort, query: Query::default() }
 }
 
 #[test]
 fn every_change_that_applies_opens_the_list_and_saves_the_session() {
     let cases = [
-        Event::OpenFolder("beta".into()),
+        Event::OpenFolder(folder("beta")),
         Event::Recursive(true),
         Event::SortChoice(2),
         Event::DescendingToggled,
@@ -30,8 +37,8 @@ fn every_change_that_applies_opens_the_list_and_saves_the_session() {
 #[test]
 fn a_folder_is_the_one_shown() {
     let mut listing = start();
-    update(&mut listing, Event::OpenFolder(String::new()));
-    assert_eq!(listing.folder, "");
+    update(&mut listing, Event::OpenFolder(Merged::default()));
+    assert!(listing.folder.is_empty());
 }
 
 #[test]
@@ -74,7 +81,7 @@ fn a_saved_view_replaces_the_listing_whole() {
     let mut listing = start();
     let view = SavedView {
         name: "gamma view".into(),
-        folder: "gamma".into(),
+        folder: folder("gamma"),
         recursive: true,
         query: Query { name: "cat".into(), ..Query::default() },
         sort: Sort { key: SortKey::Size, descending: true },

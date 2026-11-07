@@ -134,6 +134,10 @@ or deleted. Finding it needs a full-set run.
   (`png `), refuses it ("Can't create PNG files from scratch"), so the write fails with an error and leaves no copy.
   Its argument file lines are absolute paths: a relative name starting with `#` is a comment and one starting with `-`
   is an option. Windows can't hold any of these names; its surrogate names were probed separately (above).
+  A `#[CSTR]` line (ExifTool's C-escape form, `\n`, `\r`, `\t`, `\"`, `\\`) carries the same names except those with
+  `$` or `@`, which it rewrites (probed on both: WSL 13.50 and Windows 13.60). So it isn't a route for every name, and
+  the code doesn't use it: a plain line carries `$` and `@` exactly, and the argument route carries the rest on Unix.
+  On Windows the argument route can't carry a lone surrogate (Windows' argv is lossy), so the plain line is its route.
 - **HDD read, path order (robocopy E:→D:): 70 MB/s, ~410 files/s** (consistent with the 557 files/s
   above, as robocopy also writes).
 - **The harness embeds at only 80–117 img/s against 410 img/s of GPU capacity**, so decoding

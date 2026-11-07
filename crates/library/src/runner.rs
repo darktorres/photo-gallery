@@ -407,7 +407,7 @@ impl Pass<Cx<'_>> for Scans {
                             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                             Err(e) => cx.inner.notify(Notice::ScanFailed {
                                 root: root.clone(),
-                                error: format!("can't delete {}: {e}", disk.display()),
+                                error: format!("can't delete {}: {e}", cx.catalog.rules().display(temp)),
                             }),
                         }
                     }

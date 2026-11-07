@@ -236,6 +236,20 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     assert_eq!(ids(&c).unwrap(), before);
     assert_eq!(std::fs::read_dir(&images).unwrap().count(), 2);
 
+    // A turn of the JPEG is written in place: its pixels are turned, and it keeps its rating. The clip's bytes are
+    // left as they were (a video's turn stays in the catalog).
+    pg_catalog::writes::queue_rotation(&c, FileId::new(jpeg_id), Turns::new(1)).unwrap();
+    writer.wake();
+    wait_for_queue(&c).unwrap();
+    assert_eq!(writer.status().error, None);
+    let turned = std::fs::read(&jpeg).unwrap();
+    let now =
+        pg_render::display::decode(&mut Decoder::new().unwrap(), &turned, MinSize::Full, Turns::NONE).unwrap().image;
+    assert_eq!((now.width, now.height), (48, 64), "the JPEG is turned in place");
+    assert_eq!(Meta::read(&turned, Format::Jpeg, &mut MetaScratch::default()).rating, Some(4));
+    let clip = include_bytes!("../../video/tests/sample.mp4");
+    assert_eq!(std::fs::read(images.join(pg_platform::names::path_buf(video_name))).unwrap(), clip.as_slice());
+
     drop(writer);
     drop(c);
     let _ = std::fs::remove_dir_all(&images);

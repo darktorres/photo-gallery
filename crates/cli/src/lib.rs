@@ -334,7 +334,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     match std::fs::remove_file(&disk) {
                         Ok(()) => {}
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => println!("{name}: can't delete {}: {e}", disk.display()),
+                        Err(e) => println!("{name}: can't delete {}: {e}", rules.display(temp)),
                     }
                 }
                 // The same notes the app shows, counted; a zero is not said.

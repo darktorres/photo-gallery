@@ -1468,6 +1468,7 @@ dependencies = [
  "pg-platform",
  "pg-render",
  "pg-scan",
+ "pg-testkit",
  "pg-thumbcache",
  "pg-video",
  "pg-writeback",

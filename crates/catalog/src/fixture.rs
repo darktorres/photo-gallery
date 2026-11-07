@@ -15,7 +15,8 @@ use rusqlite::params;
 pub struct File {
     pub id: FileId,
     pub folder: FolderId,
-    pub name: &'static str,
+    /// The name's exact bytes (a name with no UTF-8 form is one of these too).
+    pub name: &'static [u8],
     pub kind: &'static str,
     pub size: i64,
     pub mtime: i64,
@@ -27,6 +28,11 @@ pub struct File {
 impl File {
     /// An image present on volume 1, its file reference its id.
     pub fn new(id: FileId, folder: FolderId, name: &'static str, size: i64, mtime: i64) -> File {
+        File::named(id, folder, name.as_bytes(), size, mtime)
+    }
+
+    /// [`File::new`] for a name given as its exact bytes, which a `&str` can't hold (a lone surrogate, a raw byte).
+    pub fn named(id: FileId, folder: FolderId, name: &'static [u8], size: i64, mtime: i64) -> File {
         File { id, folder, name, kind: "image", size, mtime, file_ref: id.get(), missing: false, rotation: Turns::NONE }
     }
 }
@@ -47,13 +53,16 @@ pub(crate) fn folder_row(c: &Catalog, path: &str) -> anyhow::Result<(Vec<u8>, Ve
 pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
     let conn = &catalog.conn;
     for f in files {
-        let folder: Vec<u8> = conn
-            .query_row("SELECT path FROM folders WHERE id = ?1", [f.folder.get()], |r| r.get(0))
-            .with_context(|| format!("the folder {} of {}", f.folder.get(), f.name))?;
+        let folder: Vec<u8> =
+            conn.query_row("SELECT path FROM folders WHERE id = ?1", [f.folder.get()], |r| r.get(0)).with_context(
+                || format!("the folder {} of {}", f.folder.get(), pg_model::name::Name::from_raw(f.name).display()),
+            )?;
         let rules = catalog.rules();
         let folder_parts = rules.parse_bytes(&folder).ok_or_else(|| anyhow!("a stored folder path has a NUL"))?;
-        let order_key = rules.order_key(&rules.folder_key(&folder_parts.parts), &pg_model::name::Name::from(f.name));
-        let ext = pg_model::media::Ext::of_name(f.name).ok_or_else(|| anyhow!("{} is not a media file", f.name))?;
+        let name = pg_model::name::Name::from_raw(f.name);
+        let order_key = rules.order_key(&rules.folder_key(&folder_parts.parts), &name);
+        let ext = pg_model::media::Ext::of_name_bytes(f.name)
+            .ok_or_else(|| anyhow!("{} is not a media file", name.display()))?;
         conn.execute(
             "INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, missing,
                                rotation, order_key)
@@ -62,7 +71,7 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
                 f.id.get(),
                 f.file_ref,
                 f.folder.get(),
-                f.name.as_bytes(),
+                f.name,
                 ext.name(),
                 f.kind,
                 f.size,
@@ -72,7 +81,7 @@ pub fn insert(catalog: &Catalog, files: &[File]) -> anyhow::Result<()> {
                 order_key
             ],
         )
-        .with_context(|| format!("insert {}", f.name))?;
+        .with_context(|| format!("insert {}", name.display()))?;
     }
     Ok(())
 }

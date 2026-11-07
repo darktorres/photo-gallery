@@ -29,4 +29,6 @@ thiserror.workspace = true
 thumbhash.workspace = true
 
 [dev-dependencies]
+pg-catalog = { path = "../catalog", features = ["fixture"] }
+pg-testkit = { path = "../testkit" }
 proptest.workspace = true

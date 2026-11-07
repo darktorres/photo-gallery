@@ -214,4 +214,33 @@ mod tests {
         assert_eq!(PathRules::NATIVE.join(&path), text);
         assert_eq!(path_of(&path), pg_platform::names::path_buf(text));
     }
+
+    // A file the catalog holds opens by its exact path, through the app's catalog connections: a folder and a name with
+    // no UTF-8 form (a lone surrogate on Windows, a raw byte on Unix).
+    #[test]
+    fn a_file_of_the_catalog_opens_by_its_exact_path() {
+        use pg_catalog::fixture::{self, File};
+        use pg_model::ids::FolderId;
+        let dir = pg_testkit::test_folder("scratch_app", "file-path").unwrap();
+        let app = App::open(Config {
+            catalog_dir: dir.join("catalog"),
+            prefs_path: dir.join("gallery.json"),
+            thumb_cap_bytes: None,
+        })
+        .unwrap();
+        let folder = if cfg!(windows) { r"D:\a" } else { "/a" };
+        let name: &'static [u8] = b"x\xED\xA0\x80.jpg";
+        app.with_catalog(|c| {
+            fixture::state::add_scan(c, 1, folder).unwrap();
+            fixture::state::add_folder(c, 1, folder).unwrap();
+            fixture::insert(c, &[File::named(FileId::new(1), FolderId::new(1), name, 10, 0)]).unwrap();
+            Ok(())
+        })
+        .unwrap();
+        let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
+        assert_eq!(app.file_path(FileId::new(1)).unwrap(), pg_platform::names::path_buf(text));
+        assert!(matches!(app.file_path(FileId::new(2)), Err(Error::UnknownFile(2))));
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

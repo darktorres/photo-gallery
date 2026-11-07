@@ -401,12 +401,13 @@ impl Pass<Cx<'_>> for Scans {
                         }
                     }
                     for temp in &s.temps {
-                        match std::fs::remove_file(temp) {
+                        let disk = pg_platform::names::path_buf(&cx.catalog.rules().join(temp));
+                        match std::fs::remove_file(&disk) {
                             Ok(()) => {}
                             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                             Err(e) => cx.inner.notify(Notice::ScanFailed {
                                 root: root.clone(),
-                                error: format!("can't delete {temp}: {e}"),
+                                error: format!("can't delete {}: {e}", disk.display()),
                             }),
                         }
                     }

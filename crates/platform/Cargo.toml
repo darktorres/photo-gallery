@@ -17,7 +17,6 @@ windows-sys.workspace = true
 libc.workspace = true
 
 [dependencies]
-anyhow.workspace = true
 pg-model = { path = "../model" }
 
 [dev-dependencies]

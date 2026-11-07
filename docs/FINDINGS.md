@@ -118,10 +118,12 @@ or deleted. Finding it needs a full-set run.
     count costs nothing from 32 slots on, and 240 MB is still the knee, so both defaults are those. A first try
     on the 1,000 files was dropped: its third round ran 30% slower in every configuration, from some other load
     on the machine.
-- **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and FFmpeg and the
-  scanner's `CreateFileW` are handed the verbatim form (`crates/platform/src/native.rs`, `\\?\UNC\` for a share). ExifTool
-  gets the plain path, as `\\?\` isn't a path it reads, and its own long-name support (the `WindowsLongPath`
-  API option) isn't turned on: whether its writes reach such a file is untested.
+- **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and the scanner's `CreateFileW` is
+  handed the verbatim form (`crates/platform/src/native.rs`, `\\?\UNC\` for a share). FFmpeg reads its files through
+  std (`crates/video/src/ffi.rs`), so it gets the long form too. ExifTool gets the plain path, as `\\?\` isn't a path
+  it reads. Probed (ExifTool 13.60, a 375-character path): from the command line, a write and a read reach such a
+  file with the plain path, and with `WindowsLongPath=1` too; through the stay-open argument file, with the plain path.
+  The option isn't turned on.
 - **HDD read, path order (robocopy E:→D:): 70 MB/s, ~410 files/s** (consistent with the 557 files/s
   above, as robocopy also writes).
 - **The harness embeds at only 80–117 img/s against 410 img/s of GPU capacity**, so decoding

@@ -330,10 +330,11 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     let _ = printer.join();
                 }
                 for temp in &s.temps {
-                    match std::fs::remove_file(temp) {
+                    let disk = pg_platform::names::path_buf(&rules.join(temp));
+                    match std::fs::remove_file(&disk) {
                         Ok(()) => {}
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => println!("{name}: can't delete {temp}: {e}"),
+                        Err(e) => println!("{name}: can't delete {}: {e}", disk.display()),
                     }
                 }
                 // The same notes the app shows, counted; a zero is not said.

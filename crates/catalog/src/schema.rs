@@ -189,6 +189,9 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     }
     // The saved views' folders were text before they were typed (the stored form is the rules' bytes now).
     let text_folders = column_type(&tx, "carried", "views", "folder")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
+    // The queued writes' temp files were text too: a TEXT value stays TEXT in the BLOB column, so it is cast.
+    let text_temps =
+        column_type(&tx, "carried", "file_writes", "temp")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
     for table in CARRIED {
         let new_columns = table_columns(&tx, "main", table)?;
         let old_columns = table_columns(&tx, "carried", table)?;
@@ -212,6 +215,9 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     }
     if text_folders {
         convert_text_folders(&tx, rules)?;
+    }
+    if text_temps {
+        tx.execute("UPDATE main.file_writes SET temp = CAST(temp AS BLOB) WHERE temp IS NOT NULL", [])?;
     }
     for (_, sql) in &triggers {
         tx.execute_batch(sql)?;
@@ -434,6 +440,7 @@ CREATE TABLE file_ratings(
 -- the rating, or the quarter turns clockwise still to apply. `temp` is set once the new content is complete
 -- beside the original, carrying `temp_value`; a row with it set is finished by copying it in (the file keeps its
 -- NTFS identity). The user may change `value` meanwhile: what is left after `temp_value` is written stays queued.
+-- `temp` is the temp file's path as the rules join it (the bytes, like `files`' folder), not text.
 CREATE TABLE file_writes(
     file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
     kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
@@ -441,7 +448,7 @@ CREATE TABLE file_writes(
     queued   INTEGER NOT NULL,  -- Unix seconds
     attempts INTEGER NOT NULL DEFAULT 0,
     error    TEXT,
-    temp       TEXT,
+    temp       BLOB,
     temp_value INTEGER,
     PRIMARY KEY(file_id, kind)
 );

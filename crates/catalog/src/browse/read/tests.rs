@@ -120,7 +120,8 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rule
     // Being written into the file.
     assert!(!state().writing);
     let job = writes::Job { file_id: FileId::new(1), kind: WriteKind::Turns, value: 2, temp: None, attempts: 0 };
-    writes::record_temp(&c, &job, &spelled(rules, r"D:\p\b.jpg.tmp"), 1).unwrap();
+    let temp = rules.parse(&spelled(rules, r"D:\p\b.jpg.tmp")).unwrap();
+    writes::record_temp(&c, &job, &temp, 1).unwrap();
     assert!(state().writing);
     assert_eq!(file_state(&c, FileId::new(99)).unwrap(), None);
     assert!(placeholder(&c, FileId::new(99)).unwrap().is_none());

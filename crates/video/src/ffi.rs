@@ -20,8 +20,11 @@ mod generated {
 }
 pub(crate) use generated::*;
 
-use std::ffi::{CStr, CString, c_char, c_int};
+use std::ffi::{CStr, CString, OsStr, c_char, c_int, c_void};
+use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::path::Path;
 #[cfg(windows)]
 use std::path::PathBuf;
 use std::ptr;
@@ -60,6 +63,19 @@ pub(crate) struct Api {
     pub(crate) avformat_seek_file: unsafe extern "C" fn(*mut AVFormatContext, c_int, i64, i64, i64, c_int) -> c_int,
     pub(crate) av_find_best_stream:
         unsafe extern "C" fn(*mut AVFormatContext, AVMediaType, c_int, c_int, *mut *const AVCodec, c_int) -> c_int,
+    pub(crate) avformat_alloc_context: unsafe extern "C" fn() -> *mut AVFormatContext,
+    pub(crate) avio_alloc_context: unsafe extern "C" fn(
+        *mut u8,
+        c_int,
+        c_int,
+        *mut c_void,
+        Option<ReadCallback>,
+        Option<WriteCallback>,
+        Option<SeekCallback>,
+    ) -> *mut AVIOContext,
+    pub(crate) avio_context_free: unsafe extern "C" fn(*mut *mut AVIOContext),
+    pub(crate) av_malloc: unsafe extern "C" fn(usize) -> *mut c_void,
+    pub(crate) av_free: unsafe extern "C" fn(*mut c_void),
     pub(crate) av_packet_alloc: unsafe extern "C" fn() -> *mut AVPacket,
     pub(crate) av_packet_free: unsafe extern "C" fn(*mut *mut AVPacket),
     pub(crate) av_packet_unref: unsafe extern "C" fn(*mut AVPacket),
@@ -77,6 +93,13 @@ pub(crate) struct Api {
     pub(crate) sws_scale_frame: unsafe extern "C" fn(*mut SwsContext, *mut AVFrame, *const AVFrame) -> c_int,
     pub(crate) sws_free_context: unsafe extern "C" fn(*mut *mut SwsContext),
 }
+
+/// FFmpeg's read callback of a custom I/O context: the next bytes into `buf`, or a negative error.
+type ReadCallback = unsafe extern "C" fn(*mut c_void, *mut u8, c_int) -> c_int;
+/// FFmpeg's write callback (not used: the input is read only; the context is made without one).
+type WriteCallback = unsafe extern "C" fn(*mut c_void, *const u8, c_int) -> c_int;
+/// FFmpeg's seek callback: the new position, or a negative error. `whence` may carry `AVSEEK_FORCE`.
+type SeekCallback = unsafe extern "C" fn(*mut c_void, i64, c_int) -> i64;
 
 static API: OnceLock<Result<Api, String>> = OnceLock::new();
 
@@ -110,6 +133,11 @@ fn load() -> Result<Api, String> {
             av_read_frame: sym(f, "av_read_frame")?,
             avformat_seek_file: sym(f, "avformat_seek_file")?,
             av_find_best_stream: sym(f, "av_find_best_stream")?,
+            avformat_alloc_context: sym(f, "avformat_alloc_context")?,
+            avio_alloc_context: sym(f, "avio_alloc_context")?,
+            avio_context_free: sym(f, "avio_context_free")?,
+            av_malloc: sym(u, "av_malloc")?,
+            av_free: sym(u, "av_free")?,
             av_packet_alloc: sym(c, "av_packet_alloc")?,
             av_packet_free: sym(c, "av_packet_free")?,
             av_packet_unref: sym(c, "av_packet_unref")?,
@@ -248,25 +276,155 @@ fn dict_get(api: &Api, dict: *const AVDictionary, key: &str) -> Option<String> {
     }
 }
 
+/// The size of the buffer FFmpeg reads a file through (its own file protocol uses 32 KiB; a larger one saves calls).
+const IO_BUFFER: usize = 256 * 1024;
+/// `AVSEEK_SIZE` and `AVSEEK_FORCE`: macros in the headers, which bindgen doesn't emit (as `NOPTS_VALUE`).
+const AVSEEK_SIZE: c_int = 0x10000;
+const AVSEEK_FORCE: c_int = 0x20000;
+const SEEK_SET: c_int = 0;
+const SEEK_CUR: c_int = 1;
+const SEEK_END: c_int = 2;
+/// FFmpeg's error codes: `AVERROR_EOF` is `-FFERRTAG('E','O','F',' ')` (the tag's four bytes, little-endian, as one
+/// number; a test checks it), and `AVERROR(EIO)` is the errno negated.
+const AVERROR_EOF: c_int = -541_478_725;
+const AVERROR_EIO: c_int = -5;
+
+/// The file an [`Input`] reads, through FFmpeg's I/O callbacks: its bytes as the file system has them, whatever the
+/// file's name is. Owned by the `Input` (the callbacks point at it).
+struct Source {
+    file: std::fs::File,
+    len: u64,
+}
+
+/// FFmpeg's read callback: the next bytes of the file. Rust panics must not unwind into FFmpeg, so a panic is caught
+/// and reported as an I/O error.
+unsafe extern "C" fn read_source(opaque: *mut c_void, buf: *mut u8, size: c_int) -> c_int {
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: `opaque` is the `Source` that `Input::open` gave this context, alive until the context is freed;
+        // `buf` is `size` bytes of FFmpeg's buffer, valid for this call.
+        let source = unsafe { &mut *opaque.cast::<Source>() };
+        // SAFETY: FFmpeg gives `size` bytes at `buf` for this call (none if the size is negative).
+        let out = unsafe { std::slice::from_raw_parts_mut(buf, usize::try_from(size).unwrap_or(0)) };
+        match source.file.read(out) {
+            Ok(0) => AVERROR_EOF,
+            Ok(n) => c_int::try_from(n).unwrap_or(AVERROR_EIO),
+            Err(_) => AVERROR_EIO,
+        }
+    }))
+    .unwrap_or(AVERROR_EIO)
+}
+
+/// FFmpeg's seek callback. `AVSEEK_SIZE` asks for the file's length; `AVSEEK_FORCE` is a hint the file protocol takes
+/// and this one doesn't need, so it is masked off.
+unsafe extern "C" fn seek_source(opaque: *mut c_void, offset: i64, whence: c_int) -> i64 {
+    catch_unwind(AssertUnwindSafe(|| {
+        // SAFETY: as in `read_source`.
+        let source = unsafe { &mut *opaque.cast::<Source>() };
+        let whence = whence & !AVSEEK_FORCE;
+        if whence == AVSEEK_SIZE {
+            return i64::try_from(source.len).unwrap_or(-1);
+        }
+        let from = match whence {
+            SEEK_SET => match u64::try_from(offset) {
+                Ok(pos) => SeekFrom::Start(pos),
+                Err(_) => return -1,
+            },
+            SEEK_CUR => SeekFrom::Current(offset),
+            SEEK_END => SeekFrom::End(offset),
+            _ => return -1,
+        };
+        source.file.seek(from).ok().and_then(|pos| i64::try_from(pos).ok()).unwrap_or(-1)
+    }))
+    .unwrap_or(-1)
+}
+
+/// The name FFmpeg's format probe reads: `pg-video`, with the file's extension when it is ASCII. The name is never a
+/// path (the file is read through the I/O), so the file's own name stays out of FFmpeg.
+fn hint_name(path: &Path) -> CString {
+    let ext = path
+        .extension()
+        .and_then(OsStr::to_str)
+        .filter(|e| !e.is_empty() && e.bytes().all(|b| b.is_ascii_alphanumeric()));
+    let name = match ext {
+        Some(ext) => format!("pg-video.{ext}"),
+        None => "pg-video".to_string(),
+    };
+    CString::new(name).unwrap_or_default()
+}
+
+/// Frees a custom I/O context, its buffer and the source it read (FFmpeg doesn't free a custom context's I/O: it is
+/// ours). FFmpeg may have replaced the buffer, and the context's field says which one it is.
+fn free_io(api: &Api, mut io: *mut AVIOContext, source: *mut Source) {
+    // SAFETY: `io` is the context `open` made, freed once here; its buffer is the one FFmpeg holds in the field.
+    unsafe {
+        (api.av_free)((*io).buffer.cast());
+        (api.avio_context_free)(&mut io);
+        // SAFETY: `source` came from `Box::into_raw` in `open`, and no callback runs after the context is freed.
+        drop(Box::from_raw(source));
+    }
+}
+
 /// An opened file, closed on drop.
 pub(crate) struct Input {
     ptr: *mut AVFormatContext,
+    /// FFmpeg's I/O over `source`, freed on drop after the format context.
+    io: *mut AVIOContext,
+    source: *mut Source,
     api: &'static Api,
 }
 
 impl Input {
-    /// Opens `path` (UTF-8) and reads its stream information.
-    pub(crate) fn open(path: &str) -> Result<Self> {
+    /// Opens the file at `path` and reads its stream information. The file is read through a handle of its own, so
+    /// its bytes are the file's, whatever the name (a lone surrogate, a raw byte) and however long the path.
+    pub(crate) fn open(path: &Path) -> Result<Self> {
         let api = api()?;
-        let cpath = CString::new(path)?;
-        let mut ptr = ptr::null_mut();
-        // SAFETY: `ptr` receives the context (freed by Input's drop), and `cpath` is NUL-terminated and outlives the call.
-        let ret = unsafe { (api.avformat_open_input)(&mut ptr, cpath.as_ptr(), ptr::null(), ptr::null_mut()) };
+        let file = std::fs::File::open(path)?;
+        let len = file.metadata()?.len();
+        let source = Box::into_raw(Box::new(Source { file, len }));
+        // SAFETY: `av_malloc` gives a buffer of `IO_BUFFER` bytes; the I/O context takes it over (see `free_io`).
+        let buffer = unsafe { (api.av_malloc)(IO_BUFFER) }.cast::<u8>();
+        if buffer.is_null() {
+            // SAFETY: `source` came from `Box::into_raw` above, and nothing else holds it.
+            unsafe { drop(Box::from_raw(source)) };
+            bail!("out of memory");
+        }
+        let size = c_int::try_from(IO_BUFFER).unwrap_or(c_int::MAX);
+        // SAFETY: `buffer` is `size` bytes; `source` is the opaque pointer the callbacks read, alive while the context is
+        // (`free_io` frees both, after the context). The context has no write callback: the input is read only.
+        let io = unsafe {
+            (api.avio_alloc_context)(buffer, size, 0, source.cast(), Some(read_source), None, Some(seek_source))
+        };
+        if io.is_null() {
+            // SAFETY: the context failed without taking the buffer, so the buffer and the source are still ours.
+            unsafe {
+                (api.av_free)(buffer.cast());
+                drop(Box::from_raw(source));
+            }
+            bail!("out of memory");
+        }
+        // SAFETY: a new format context, not yet opened.
+        let ctx = unsafe { (api.avformat_alloc_context)() };
+        if ctx.is_null() {
+            free_io(api, io, source);
+            bail!("out of memory");
+        }
+        // SAFETY: `ctx` is the context made above, not opened yet; its I/O is `io`, and the custom-I/O flag keeps
+        // FFmpeg from closing it.
+        unsafe {
+            (*ctx).pb = io;
+            (*ctx).flags |= c_int::try_from(AVFMT_FLAG_CUSTOM_IO).unwrap_or_default();
+        }
+        let mut ptr = ctx;
+        let name = hint_name(path);
+        // SAFETY: `ptr` receives the opened context; `name` is NUL-terminated and outlives the call. On failure FFmpeg
+        // frees the context and sets `ptr` to null, so only the I/O is left to free.
+        let ret = unsafe { (api.avformat_open_input)(&mut ptr, name.as_ptr(), ptr::null(), ptr::null_mut()) };
         if ret < 0 {
+            free_io(api, io, source);
             bail!("{}", error_text(ret));
         }
-        let input = Self { ptr, api };
-        // SAFETY: `input.ptr` is the context avformat_open_input made; it's freed by Input's drop either way.
+        let input = Self { ptr, io, source, api };
+        // SAFETY: `input.ptr` is the open context; its drop closes it.
         let ret = unsafe { (api.avformat_find_stream_info)(input.ptr, ptr::null_mut()) };
         if ret < 0 {
             bail!("{}", error_text(ret));
@@ -322,8 +480,9 @@ impl Input {
 
 impl Drop for Input {
     fn drop(&mut self) {
-        // SAFETY: `self.ptr` came from avformat_open_input and is closed once, here.
+        // SAFETY: `self.ptr` came from avformat_open_input and is closed once, here (it doesn't close the custom I/O).
         unsafe { (self.api.avformat_close_input)(&mut self.ptr) }
+        free_io(self.api, self.io, self.source);
     }
 }
 
@@ -646,5 +805,15 @@ impl Drop for Scaler {
     fn drop(&mut self) {
         // SAFETY: `ptr` came from sws_alloc_context and is freed once, here.
         unsafe { (self.api.sws_free_context)(&mut self.ptr) }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_end_of_file_code_is_ffmpegs_tag() {
+        assert_eq!(AVERROR_EOF, -c_int::from_le_bytes(*b"EOF "));
     }
 }

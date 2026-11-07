@@ -63,11 +63,8 @@ pub struct Probe {
 
 fn open(path: &Path) -> Result<Input> {
     init();
-    // FFmpeg takes UTF-8 paths, and one past the 260-character limit only in its verbatim form: `utf8_text` makes
-    // that form. A name with an unpaired surrogate has no UTF-8 form, and is refused as such.
-    let text = pg_platform::native::utf8_text(path)
-        .with_context(|| format!("{} has no UTF-8 form, which FFmpeg needs", path.display()))?;
-    Input::open(&text).with_context(|| format!("opening {}", path.display()))
+    // The file is read through a handle of its own (ffi.rs): its name is whatever the system holds, however long.
+    Input::open(path).with_context(|| format!("opening {}", path.display()))
 }
 
 /// The orientation (EXIF 1–8) that shows the stream as its display matrix asks. The matrix maps stored to shown
@@ -268,6 +265,7 @@ fn to_rgb(mut src: Frame, out: &mut Rgb) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
 
     /// The eight matrices ffmpeg writes for `-display_rotation` and `-display_hflip`/`-display_vflip`, with the
     /// orientation that shows the picture as ffmpeg's own autorotate does (checked on a four-colour clip).
@@ -291,5 +289,51 @@ mod tests {
         // Scaled and slightly off (a muxer's rounding) still snaps to the nearest quarter turn.
         assert_eq!(matrix_orientation([2 * ONE, -ONE / 50, 0, 0, -2 * ONE, 0, 0, 0, 1 << 30]).get(), 4);
         assert_eq!(matrix_orientation([0; 9]).get(), 1);
+    }
+
+    /// The sample clip (tools/make_test_video.py): 64x48, six frames, H.264.
+    const SAMPLE: &[u8] = include_bytes!("../tests/sample.mp4");
+
+    /// A fresh folder for one test (under the system's temp folder), emptied if it is left from an earlier run.
+    fn scratch_dir(test: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("pg-video-{test}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The sample under `name`, a name the system holds exactly (on Windows a lone surrogate, on Unix a raw byte: FFmpeg
+    /// can't be given either by path).
+    fn sample_named(dir: &Path, name: &[u8]) -> PathBuf {
+        let path = dir.join(pg_platform::names::path_buf(name));
+        std::fs::write(&path, SAMPLE).unwrap();
+        path
+    }
+
+    /// A video whose name has no UTF-8 form is read as the same video: the probe and a frame (which seeks) agree with
+    /// the ordinary name's, so the reader's bytes are the file's.
+    #[test]
+    fn a_video_with_a_name_that_is_not_utf8_is_read_as_its_own_bytes() {
+        let dir = scratch_dir("names");
+        let plain = sample_named(&dir, b"plain.mp4");
+        let odd = sample_named(&dir, if cfg!(windows) { b"odd\xED\xA0\x80.mp4" } else { b"odd\xFF.mp4" });
+        let (a, b) = (probe(&plain).unwrap(), probe(&odd).unwrap());
+        assert_eq!((a.width, a.height, a.frames), (64, 48, 6));
+        assert_eq!((b.width, b.height, b.frames), (a.width, a.height, a.frames));
+        let (fa, fb) = (frame(&plain, 500, Turns::NONE).unwrap(), frame(&odd, 500, Turns::NONE).unwrap());
+        assert_eq!((fb.width, fb.height), (64, 48));
+        assert_eq!(fa.pixels, fb.pixels, "the same frame, read from the same bytes");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A file that is not a video, and a file that isn't there, are errors (the reader's open fails cleanly).
+    #[test]
+    fn a_file_that_is_not_a_video_or_is_missing_is_an_error() {
+        let dir = scratch_dir("errors");
+        let junk = dir.join("junk.mp4");
+        std::fs::write(&junk, b"not a video at all ".repeat(64)).unwrap();
+        assert!(probe(&junk).is_err());
+        assert!(probe(&dir.join("missing.mp4")).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

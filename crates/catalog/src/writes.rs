@@ -14,6 +14,7 @@ use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::orientation::turns_swap;
 use pg_model::rating::Rating;
+use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
 
@@ -30,7 +31,7 @@ pub struct Job {
     /// The rating, or the quarter turns still to write (0 to 3).
     pub value: i64,
     /// Set once the new content is complete: its path, and the value it carries.
-    pub temp: Option<(String, i64)>,
+    pub temp: Option<(RulePath, i64)>,
     /// Failed attempts so far.
     pub attempts: i64,
 }
@@ -139,8 +140,18 @@ pub fn next_ready(catalog: &Catalog, settle_secs: i64) -> Result<Option<Job>> {
     let job = conn
         .query_row(NEXT_READY, params![MAX_ATTEMPTS, settle_secs], |r| {
             let kind: String = r.get(1)?;
-            let temp: Option<String> = r.get(3)?;
+            let temp: Option<Vec<u8>> = r.get(3)?;
             let temp_value: Option<i64> = r.get(4)?;
+            // The temp's path is the rules' bytes (`record_temp`); one that doesn't parse is a damaged row.
+            let temp = match temp {
+                Some(bytes) => Some(
+                    catalog
+                        .rules()
+                        .parse_bytes(&bytes)
+                        .ok_or_else(|| rusqlite::Error::InvalidColumnType(3, "temp".into(), Type::Blob))?,
+                ),
+                None => None,
+            };
             Ok(Job {
                 file_id: FileId::new(r.get(0)?),
                 kind: WriteKind::from_key(&kind)
@@ -188,11 +199,12 @@ pub fn recent_errors(catalog: &Catalog, limit: usize) -> Result<Vec<String>> {
 
 /// The new content of a job is complete at `temp`, carrying `value`. The copy into the file comes next; until `done`,
 /// readers see the file as being written (`pg_model::state::FileState::writing`).
-pub fn record_temp(catalog: &Catalog, job: &Job, temp: &str, value: i64) -> Result<()> {
+pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, value: i64) -> Result<()> {
     let conn = &catalog.conn;
+    let bytes = catalog.rules().join(temp);
     conn.execute(
         "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
-        params![job.file_id.get(), job.kind.key(), temp, value],
+        params![job.file_id.get(), job.kind.key(), bytes, value],
     )?;
     Ok(())
 }

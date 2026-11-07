@@ -55,6 +55,17 @@ impl Name {
         Name(bytes.into())
     }
 
+    /// This name with ASCII `prefix` and `suffix` around it: the same bytes in the middle, so a name with no UTF-8 form
+    /// keeps its exact bytes (WTF-8 on Windows stays canonical, since ASCII joins nothing). Used for a file's temp name.
+    pub fn with_affixes(&self, prefix: &str, suffix: &str) -> Name {
+        debug_assert!(prefix.is_ascii() && suffix.is_ascii(), "affixes are ASCII");
+        let mut bytes = Vec::with_capacity(prefix.len() + self.0.len() + suffix.len());
+        bytes.extend_from_slice(prefix.as_bytes());
+        bytes.extend_from_slice(&self.0);
+        bytes.extend_from_slice(suffix.as_bytes());
+        Name(bytes.into())
+    }
+
     /// The canonical bytes of a Windows name (WTF-8), or `None` when they are not in that form (a byte that is in no
     /// valid sequence, or a surrogate pair written as two surrogates). A catalog read back through this is exact.
     pub fn from_wtf8(bytes: &[u8]) -> Option<Name> {
@@ -277,6 +288,17 @@ mod tests {
         assert_eq!(lone.as_bytes(), &[0x61, 0xED, 0xA0, 0x80, 0x62]);
         assert_eq!(lone.to_wide(), vec![0x61, 0xD800, 0x62]);
         assert_eq!(lone.display(), "a\u{FFFD}\u{FFFD}\u{FFFD}b");
+    }
+
+    /// A temp name keeps the original's exact bytes between its ASCII affixes, a lone surrogate included, and stays
+    /// canonical WTF-8 (what `Name::from_wtf8` reads back).
+    #[test]
+    fn with_affixes_keeps_the_bytes_between_ascii_affixes() {
+        let lone = Name::from_wide(&[0x61, 0xD800, 0x62, 0x2E, 0x6A, 0x70, 0x67]);
+        let temp = lone.with_affixes(".", ".pg-write");
+        assert_eq!(temp.as_bytes(), b".a\xED\xA0\x80b.jpg.pg-write");
+        assert_eq!(Name::from_wtf8(temp.as_bytes()), Some(temp));
+        assert_eq!(Name::from("a.jpg").with_affixes(".", ".pg-write"), Name::from(".a.jpg.pg-write"));
     }
 
     #[test]

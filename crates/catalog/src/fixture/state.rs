@@ -47,8 +47,12 @@ pub fn change_mtime(c: &Catalog, id: FileId, mtime: i64) -> Result<()> {
 
 /// The files the catalog lists and has not found missing, by name.
 pub fn present_files(c: &Catalog) -> Result<Vec<(FileId, String)>> {
-    let mut stmt = c.conn.prepare("SELECT id, CAST(name AS TEXT) FROM files WHERE missing = 0 ORDER BY name")?;
-    let rows = stmt.query_map([], |r| Ok((FileId::new(r.get(0)?), r.get(1)?)))?;
+    let mut stmt = c.conn.prepare("SELECT id, name FROM files WHERE missing = 0 ORDER BY name")?;
+    // A name with no UTF-8 form is shown lossily (its display form), so the listing never fails on one.
+    let rows = stmt.query_map([], |r| {
+        let name: Vec<u8> = r.get(1)?;
+        Ok((FileId::new(r.get(0)?), pg_model::name::Name::from_raw(&name).display().into_owned()))
+    })?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
@@ -59,10 +63,10 @@ pub fn file_id(c: &Catalog, name: &str) -> Result<FileId> {
 
 /// The id and the full path the database has for the file called `name` (its folder's path, the separator, the
 /// name, as the catalog's rules display it).
-pub fn file_and_path(c: &Catalog, name: &str) -> Result<(FileId, String)> {
+pub fn file_and_path(c: &Catalog, name: &str) -> Result<(FileId, pg_model::rules::Path)> {
     let id: i64 = c.conn.query_row("SELECT id FROM files WHERE name = ?1", [name.as_bytes()], |r| r.get(0))?;
     let path = c.file_path(FileId::new(id))?.ok_or_else(|| anyhow::anyhow!("file {id} is not in the catalog"))?;
-    Ok((FileId::new(id), c.rules().display(&path)))
+    Ok((FileId::new(id), path))
 }
 
 /// The turn the file holds in the catalog (`files.rotation`), by name.
@@ -153,15 +157,20 @@ pub fn writes_queued(c: &Catalog, id: FileId) -> Result<i64> {
 /// last error.
 pub struct WriteRow {
     pub attempts: i64,
-    pub temp: Option<String>,
+    pub temp: Option<pg_model::rules::Path>,
     pub error: Option<String>,
 }
 
 /// The file's write row (it must be in the queue: an error otherwise).
 pub fn write_row(c: &Catalog, id: FileId) -> Result<WriteRow> {
-    Ok(c.conn.query_row("SELECT attempts, temp, error FROM file_writes WHERE file_id = ?1", [id.get()], |r| {
-        Ok(WriteRow { attempts: r.get(0)?, temp: r.get(1)?, error: r.get(2)? })
-    })?)
+    let (attempts, temp, error): (i64, Option<Vec<u8>>, Option<String>) =
+        c.conn.query_row("SELECT attempts, temp, error FROM file_writes WHERE file_id = ?1", [id.get()], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+        })?;
+    let temp = temp
+        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or_else(|| anyhow::anyhow!("a temp path that doesn't parse")))
+        .transpose()?;
+    Ok(WriteRow { attempts, temp, error })
 }
 
 /// Queues a write of `kind` (`rating` or `rotation`) with `value` for the file, as a change made by hand.
@@ -174,10 +183,16 @@ pub fn queue_write(c: &Catalog, id: FileId, kind: &str, value: i64) -> Result<()
 }
 
 /// Queues a write whose copy was finished when the app stopped: its temp file `temp` is beside the original.
-pub fn queue_finished_copy(c: &Catalog, id: FileId, kind: &str, value: i64, temp: &str) -> Result<()> {
+pub fn queue_finished_copy(
+    c: &Catalog,
+    id: FileId,
+    kind: &str,
+    value: i64,
+    temp: &pg_model::rules::Path,
+) -> Result<()> {
     c.conn.execute(
         "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, ?2, ?3, 0, ?4, ?3)",
-        params![id.get(), kind, value, temp],
+        params![id.get(), kind, value, c.rules().join(temp)],
     )?;
     Ok(())
 }

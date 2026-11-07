@@ -187,7 +187,7 @@ pub struct ScanStats {
     /// The replaced rows, whose thumbnails the caller deletes.
     pub replaced_ids: Vec<FileId>,
     /// The temp files of queued writes dropped with a replacement, which the caller deletes.
-    pub temps: Vec<String>,
+    pub temps: Vec<RulePath>,
 }
 
 /// Whether the folder `root` may be scanned for its identities (decisions 6 and 13). The scan makes this check first, and

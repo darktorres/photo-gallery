@@ -16,7 +16,7 @@ use pg_model::rules::Path as RulePath;
 use pg_exiftool::ExifTool;
 use pg_jobs::control::{Control, Phase};
 use pg_jobs::pipeline::{self, Options};
-use pg_platform::names::{path_buf, set_path, text_of};
+use pg_platform::names::{path_buf, set_path};
 use pg_writeback::{exiftool_program, stat};
 
 pub struct Stats {
@@ -106,10 +106,9 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Written::Skipped => Ok(false),
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
-                    let (source, out) = (paths.get(job.source.path), paths.get(job.out));
-                    ExifTool::running(&mut exiftool, &exiftool_program())?
-                        .copy_tags(text_of(source)?, text_of(out)?)?;
-                    keep_time(&path_buf(source), &path_buf(out))?;
+                    let (source, out) = (path_buf(paths.get(job.source.path)), path_buf(paths.get(job.out)));
+                    ExifTool::running(&mut exiftool, &exiftool_program())?.copy_tags(&source, &out)?;
+                    keep_time(&source, &out)?;
                     Ok(true)
                 }
             });

@@ -29,7 +29,7 @@ pub struct Pairing {
     /// The rows whose content state was reset: their thumbnails are deleted by the caller, after the commit.
     pub replaced_ids: Vec<FileId>,
     /// The temp files of queued writes that were dropped with a replacement: deleted by the caller, after the commit.
-    pub temps: Vec<String>,
+    pub temps: Vec<RulePath>,
 }
 
 /// A fresh row, as the pairing reads it.
@@ -139,7 +139,7 @@ impl Catalog {
                 match ids.as_slice() {
                     [] => {}
                     [only] => {
-                        replace(&tx, *only, f, scan, &mut out.temps)?;
+                        replace(&tx, self.rules, *only, f, scan, &mut out.temps)?;
                         out.replaced += 1;
                         out.replaced_ids.push(FileId::new(*only));
                     }
@@ -258,11 +258,22 @@ fn rebind(tx: &Transaction, id: i64, from: &Fresh, scan: i64) -> Result<()> {
 /// (decision 7): the rotation and its queued turns, the analysis and what hangs off it, the file's own rating. The
 /// queued ratings stay, without their temp files, which hold the old file's bytes; the rating row's `value` is written
 /// again from the new file. The temp files to delete go to `temps`.
-fn replace(tx: &Transaction, id: i64, from: &Fresh, scan: i64, temps: &mut Vec<String>) -> Result<()> {
+fn replace(
+    tx: &Transaction,
+    rules: PathRules,
+    id: i64,
+    from: &Fresh,
+    scan: i64,
+    temps: &mut Vec<RulePath>,
+) -> Result<()> {
     {
         let mut stmt = tx.prepare("SELECT temp FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL")?;
-        for temp in stmt.query_map([id], |r| r.get::<_, String>(0))? {
-            temps.push(temp?);
+        for bytes in stmt.query_map([id], |r| r.get::<_, Vec<u8>>(0))? {
+            let bytes = bytes?;
+            let temp = rules
+                .parse_bytes(&bytes)
+                .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("a queued temp path that doesn't parse")))?;
+            temps.push(temp);
         }
     }
     tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation'", [id])?;
@@ -441,14 +452,12 @@ mod tests {
         let (id, _, _) = row(&c, "a.jpg");
         // The file's own rating, a queued rating whose temp file holds the old bytes, and a queued rotation.
         c.conn.execute("INSERT INTO file_ratings(file_id, value) VALUES (?1, 4)", [id]).unwrap();
+        let temp = rules.join(&p(rules, r"D:\x\a.jpg.tmp"));
         c.conn
             .execute(
-                &format!(
-                    "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
-                     VALUES (?1, 'rating', 3, 0, '{}', 3)",
-                    spelled(rules, r"D:\x\a.jpg.tmp")
-                ),
-                [id],
+                "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
+                 VALUES (?1, 'rating', 3, 0, ?2, 3)",
+                rusqlite::params![id, temp],
             )
             .unwrap();
         c.conn
@@ -461,7 +470,7 @@ mod tests {
         let paired = pair(&mut c, second, true);
         assert_eq!(paired.replaced, 1);
         assert_eq!(paired.replaced_ids, vec![FileId::new(id)]);
-        assert_eq!(paired.temps, vec![spelled(rules, r"D:\x\a.jpg.tmp")]);
+        assert_eq!(paired.temps, vec![p(rules, r"D:\x\a.jpg.tmp")]);
         assert_eq!(count(&c), 1);
 
         let (size, created, file_ref): (i64, Option<i64>, i64) = c

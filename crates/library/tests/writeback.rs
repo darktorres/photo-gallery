@@ -181,6 +181,63 @@ fn ratings_and_turns_reach_the_files() {
     quiet.check();
 }
 
+/// A JPEG and a video whose names have no UTF-8 form (a lone surrogate on Windows, a raw byte on Unix) are imported, and
+/// the rating reaches the JPEG in place: the write goes by the exact name, the files keep their identities, and the
+/// folder holds no other file. Needs ExifTool; skipped without it.
+#[test]
+fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
+    if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
+        pg_testkit::missing_tool("ExifTool");
+        return;
+    }
+    let dir = pg_testkit::run_folder_with("scratch_writeback", "odd-names", &["images"]).unwrap();
+    let (jpeg_name, video_name): (&[u8], &[u8]) = if cfg!(windows) {
+        (b"odd\xED\xA0\x80.jpg", b"clip\xED\xA0\x80.mp4")
+    } else {
+        (b"odd\xFF.jpg", b"clip\xFF.mp4")
+    };
+    let images = dir.join("images");
+    let jpeg = images.join(pg_platform::names::path_buf(jpeg_name));
+    let mut bytes = Cursor::new(Vec::new());
+    pattern(64, 48).write_to(&mut bytes, image::ImageFormat::Jpeg).unwrap();
+    std::fs::write(&jpeg, bytes.get_ref()).unwrap();
+    // The clip from the video crate's tests: 64x48, six frames.
+    std::fs::write(
+        images.join(pg_platform::names::path_buf(video_name)),
+        include_bytes!("../../video/tests/sample.mp4"),
+    )
+    .unwrap();
+
+    let catalog_path = dir.join("catalog.sqlite");
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let ctl = Control::new();
+    let root = pg_scan::normalize_path(&images).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    let before = ids(&c).unwrap();
+    assert_eq!(before.len(), 2, "both imported: {before:?}");
+    let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
+
+    let (events, quiet) = Quiet::bus();
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    pg_catalog::writes::set_rating(&c, FileId::new(jpeg_id), Rating::new(4), true).unwrap();
+    writer.wake();
+    wait_for_queue(&c).unwrap();
+    assert_eq!(writer.status().error, None);
+    assert_eq!(Meta::read(&std::fs::read(&jpeg).unwrap(), Format::Jpeg, &mut MetaScratch::default()).rating, Some(4));
+    // Written in place: the same identities, and no other file beside them.
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    assert_eq!(ids(&c).unwrap(), before);
+    assert_eq!(std::fs::read_dir(&images).unwrap().count(), 2);
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(&images);
+    quiet.check();
+}
+
 /// A finishing copy whose original is locked (another program has it open without sharing) fails at every try. The
 /// queue waits longer between the tries, gives up at MAX_ATTEMPTS, and discards the temp: the file then isn't shown as
 /// being written, and the failure stays in the queue. Without the give-up, the job was retried at once, forever.
@@ -200,11 +257,10 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
-    // The file as the database has it, and the temp a write would have left beside it (writeback's temp_path).
+    // The file as the database has it, and the temp a write would have left beside it (writeback's temp_of).
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let (folder, name) = db_path.rsplit_once('\\').unwrap();
-    let temp = format!("{folder}\\.{name}.pg-write");
-    std::fs::copy(&files[1].0, &temp).unwrap();
+    let temp = pg_writeback::temp_of(&db_path);
+    std::fs::copy(&files[1].0, pg_platform::names::path_buf(&c.rules().join(&temp))).unwrap();
     state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
 
     // Locked: the copy into the original can't open it.
@@ -226,7 +282,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
         assert!(start.elapsed() < Duration::from_secs(120), "not given up at {} attempts", row.attempts);
         std::thread::sleep(Duration::from_millis(200));
     }
-    assert!(!Path::new(&temp).exists(), "the temp is still on disk");
+    assert!(!pg_platform::names::path_buf(&c.rules().join(&temp)).exists(), "the temp is still on disk");
     assert!(writer.status().error.is_some());
     let error = state::write_row(&c, id).unwrap().error;
     assert!(error.is_some(), "the failure is gone from the queue");
@@ -302,9 +358,8 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // A turn of b.png whose copy was complete when the app stopped: its temp is beside it, and the analysis still
     // shows the turn pending (rotation 1).
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
-    let (folder, name) = db_path.rsplit_once('\\').unwrap();
-    let temp = format!("{folder}\\.{name}.pg-write");
-    std::fs::copy(&files[1].0, &temp).unwrap();
+    let temp = pg_writeback::temp_of(&db_path);
+    std::fs::copy(&files[1].0, pg_platform::names::path_buf(&c.rules().join(&temp))).unwrap();
     state::set_analysis_rotation(&c, id, 1).unwrap();
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 

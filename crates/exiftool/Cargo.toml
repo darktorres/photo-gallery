@@ -12,3 +12,6 @@ workspace = true
 [dependencies]
 anyhow.workspace = true
 pg-platform = { path = "../platform" }
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }

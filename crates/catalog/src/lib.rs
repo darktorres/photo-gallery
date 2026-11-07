@@ -1696,6 +1696,44 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A catalog from before the queued writes' temps were bytes keeps them: a copy that was finished when the app
+    /// stopped is still the job it was, with its temp at the same path.
+    #[test]
+    fn a_queued_temp_from_before_it_was_bytes_is_carried_and_read_back() {
+        let dir = test_folder(SCRATCH, "text-temps").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
+        raw::add_scan(&c, 1, r"D:\p");
+        raw::add_folder(&c, 1, r"D:\p");
+        fixture::insert(&c, &[fixture::File::new(FileId::new(1), FolderId::new(1), "a.jpg", 1, 5)]).unwrap();
+        drop(c);
+        let old = Connection::open(&path).unwrap();
+        old.execute_batch(
+            r"DROP TABLE file_writes;
+              CREATE TABLE file_writes(
+                  file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                  kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
+                  value    INTEGER NOT NULL,
+                  queued   INTEGER NOT NULL,
+                  attempts INTEGER NOT NULL DEFAULT 0,
+                  error    TEXT,
+                  temp       TEXT,
+                  temp_value INTEGER,
+                  PRIMARY KEY(file_id, kind));
+              INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value)
+                  VALUES (1, 'rating', 3, 0, 'D:\p\.a.jpg.pg-write', 3);",
+        )
+        .unwrap();
+        drop(old);
+        let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
+        assert!(c.rebuilt().is_some(), "moved aside");
+        let job = crate::writes::next_ready(&c, 0).unwrap().expect("the queued copy");
+        let temp = PathRules::Windows.parse(r"D:\p\.a.jpg.pg-write").unwrap();
+        assert_eq!(job.temp, Some((temp, 3)));
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Rows stored under other rules are not carried into a catalog of these: their paths don't read as its own.
     #[test]
     fn rows_of_other_rules_are_not_carried_over() {
@@ -2275,7 +2313,8 @@ mod tests {
         // A write of the app's into it in progress: it may have been read part-written.
         writes::queue_rotation(&c, item.id, Turns::new(3)).unwrap();
         let job = writes::next_ready(&c, 0).unwrap().unwrap();
-        writes::record_temp(&c, &job, &spelled(rules, r"D:\x\a.jpg.tmp"), 3).unwrap();
+        let temp = rules.parse(&spelled(rules, r"D:\x\a.jpg.tmp")).unwrap();
+        writes::record_temp(&c, &job, &temp, 3).unwrap();
         assert!(!stored(&mut c, &item));
         assert!(due(&c, item.id), "still due");
         writes::done(&c, &job, writes::WriteEffect::Nothing).unwrap();

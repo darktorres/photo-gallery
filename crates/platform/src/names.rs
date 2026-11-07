@@ -85,14 +85,6 @@ pub fn rule_path_of(path: &Path) -> Option<pg_model::rules::Path> {
     pg_model::rules::PathRules::NATIVE.parse_bytes(&canonical_of(path))
 }
 
-/// The canonical bytes as text, for the programs that take text (ExifTool's stdin protocol, FFmpeg's `open`) and for the
-/// queues that store text. Valid UTF-8 is exactly what has a UTF-8 form: a Windows name with an unpaired surrogate is
-/// refused, not written back lossily.
-pub fn text_of(canonical: &[u8]) -> anyhow::Result<&str> {
-    std::str::from_utf8(canonical)
-        .map_err(|_| anyhow::anyhow!("{} has no UTF-8 form, which this step needs", String::from_utf8_lossy(canonical)))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

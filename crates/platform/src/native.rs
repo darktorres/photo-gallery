@@ -2,10 +2,10 @@
 //! converts lossily: a name the system holds (an unpaired surrogate on NTFS, any bytes on Unix) reaches the system,
 //! and the library, unchanged.
 //!
-//! A [`NativePath`] is what a system call is given. On Windows it is NUL-terminated, and in the verbatim form (`\\?\`)
-//! past the 260-character limit: std makes that form for its own calls, but FFmpeg and the direct Win32 calls (the
-//! scanner's `CreateFileW`) don't, so it is made here. ExifTool takes the plain path, as a `\\?\` path isn't one it
-//! reads (its own long-name support is a separate option, FINDINGS "I/O").
+//! A [`NativePath`] is what a direct Win32 call is given (the scanner's `CreateFileW`). On Windows it is NUL-terminated,
+//! and in the verbatim form (`\\?\`) past the 260-character limit: std makes that form for its own calls, so it is made
+//! here only for the direct ones. FFmpeg reads its files through std (ffi.rs), and ExifTool takes the plain path, as a
+//! `\\?\` path isn't one it reads (its own long-name support is a separate option, FINDINGS "I/O").
 
 /// One unit of a native name or path: a UTF-16 unit on Windows, a byte elsewhere.
 #[cfg(windows)]
@@ -40,24 +40,6 @@ impl NativePath {
     /// The units the call is given: NUL-terminated on Windows.
     pub fn units(&self) -> &[Unit] {
         &self.0
-    }
-}
-
-/// `path` as the UTF-8 text FFmpeg takes, in the verbatim form when it is long (Windows). `None` when it has no UTF-8
-/// form, which is so for a name with an unpaired surrogate: FFmpeg can't open that file.
-pub fn utf8_text(path: &std::path::Path) -> Option<String> {
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        let units: Vec<u16> = path.as_os_str().encode_wide().collect();
-        let mut native = NativePath::default();
-        native.set(&[&units]);
-        let (_nul, units) = native.units().split_last()?;
-        String::from_utf16(units).ok()
-    }
-    #[cfg(unix)]
-    {
-        path.to_str().map(str::to_string)
     }
 }
 

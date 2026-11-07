@@ -31,7 +31,7 @@ use pg_model::media::Kind;
 use pg_model::rules::{Path as RulePath, PathRules};
 
 use pg_model::write::WriteKind;
-use pg_platform::names::{path_buf, text_of};
+use pg_platform::names::path_buf;
 use pg_thumbcache::ThumbCache;
 
 use pg_jobs::events::Change;
@@ -156,7 +156,7 @@ impl Inner {
             // the status line says why.
             if catalog.file_gone(job.file_id)? {
                 if let Some((temp, _)) = &job.temp {
-                    let _ = std::fs::remove_file(temp);
+                    let _ = std::fs::remove_file(path_buf(&catalog.rules().join(temp)));
                 }
                 writes::drop_gone(catalog, &job)?;
                 let message = format!(
@@ -210,7 +210,7 @@ impl Inner {
             Some(path) => stat(path_buf(&catalog.rules().join(&path))).ok(),
             None => None,
         };
-        let _ = std::fs::remove_file(temp);
+        let _ = std::fs::remove_file(path_buf(&catalog.rules().join(temp)));
         Ok(writes::abandon_temp(catalog, job, size)?)
     }
 
@@ -226,13 +226,15 @@ impl Inner {
             }
             return Ok(());
         }
-        // The queue and the programs take text: a file whose name has no UTF-8 form is not written.
-        let path = text_path(catalog, &path_rule)?;
+        // The file on disk, and its path as the messages show it.
+        let rules = catalog.rules();
+        let path = path_buf(&rules.join(&path_rule));
+        let shown = rules.display(&path_rule);
 
         if let Some((temp, _)) = &job.temp {
             // Interrupted after the new content was complete: finish the copy. What the file held before is
             // unknown now, so its analysis is redone rather than carried over.
-            copy_into(Path::new(temp), &path)?;
+            copy_into(&path_buf(&rules.join(temp)), &path)?;
             let after = stat(&path)?;
             let rewrite = Rewrite { before: (-1, -1), after, metadata_only: None };
             writes::done(catalog, job, Self::rewrote(job, rewrite))?;
@@ -242,25 +244,26 @@ impl Inner {
             return Ok(());
         }
 
-        let bytes = std::fs::read(&path).with_context(|| format!("reading {path}"))?;
+        let bytes = std::fs::read(&path).with_context(|| format!("reading {}", path.display()))?;
         let format = format
             .as_deref()
             .and_then(Format::from_name)
             .or_else(|| Format::sniff(&bytes))
             .context("unknown format")?;
         let before = stat(&path)?;
-        let temp = temp_path(catalog.rules().sep(), &path);
+        let temp_rule = temp_of(&path_rule);
+        let temp = path_buf(&rules.join(&temp_rule));
         let _ = std::fs::remove_file(&temp);
 
         let pixels_changed = match job.kind {
             WriteKind::Rating => {
-                let rating = u8::try_from(job.value).with_context(|| format!("{path}: no rating is {}", job.value))?;
+                let rating = u8::try_from(job.value).with_context(|| format!("{shown}: no rating is {}", job.value))?;
                 let tool = ExifTool::running(exiftool, &exiftool_program())?;
                 tool.write_rating(&path, &temp, rating)?;
                 let written = std::fs::read(&temp)?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
                     let _ = std::fs::remove_file(&temp);
-                    bail!("{path}: the rating didn't read back after writing it");
+                    bail!("{shown}: the rating didn't read back after writing it");
                 }
                 false
             }
@@ -285,7 +288,7 @@ impl Inner {
                     Outcome::Catalog => return self.keep_turn_in_catalog(catalog, job),
                 };
                 if let Some(new) = new {
-                    std::fs::write(&temp, new).with_context(|| format!("writing {temp}"))?;
+                    std::fs::write(&temp, new).with_context(|| format!("writing {}", temp.display()))?;
                 }
                 true
             }
@@ -293,9 +296,9 @@ impl Inner {
 
         // Step 2: the new content is complete; record it, then copy it in. From here until `done` records the write,
         // readers know the file may be part-written (pg_model::state::FileState::writing).
-        writes::record_temp(catalog, job, &temp, job.value)?;
+        writes::record_temp(catalog, job, &temp_rule, job.value)?;
         let new_hash = if pixels_changed { None } else { Some(file_hash(&std::fs::read(&temp)?)) };
-        copy_into(Path::new(&temp), &path)?;
+        copy_into(&temp, &path)?;
         let after = stat(&path)?;
         let rewrite = Rewrite { before, after, metadata_only: new_hash };
         writes::done(catalog, job, Self::rewrote(job, rewrite))?;
@@ -341,11 +344,6 @@ fn job_turns(job: &Job) -> Turns {
     Turns::new(u8::try_from(job.value.rem_euclid(4)).unwrap_or(u8::MAX))
 }
 
-/// The path of a file as text: the one the queue and the programs take. A name with no UTF-8 form is refused.
-fn text_path(catalog: &Catalog, path: &RulePath) -> Result<String> {
-    Ok(text_of(&catalog.rules().join(path))?.to_string())
-}
-
 /// Size and mtime (FILETIME, as the scanner records it).
 pub fn stat(path: impl AsRef<Path>) -> Result<(i64, i64)> {
     let path = path.as_ref();
@@ -353,17 +351,23 @@ pub fn stat(path: impl AsRef<Path>) -> Result<(i64, i64)> {
     Ok((i64::try_from(m.len())?, pg_platform::file::last_write_time(&m)))
 }
 
-/// Beside the original, so it is on the same drive; the scanner ignores the extension.
-fn temp_path(sep: char, path: &str) -> String {
-    let (dir, name) = path.rsplit_once(sep).unwrap_or((".", path));
-    format!("{dir}{sep}.{name}.pg-write")
+/// The temp file of a file: beside the original, so it is on the same drive, named by the original's name with a dot in
+/// front and `.pg-write` after it (the scanner ignores the extension). Its parts are the original's, but the last.
+pub fn temp_of(path: &RulePath) -> RulePath {
+    let mut temp = path.clone();
+    if let Some(name) = temp.parts.pop() {
+        temp.parts.push(name.with_affixes(".", ".pg-write"));
+    }
+    temp
 }
 
 /// Copy `temp` into the original in place (same file, same NTFS identity), then delete `temp`.
-fn copy_into(temp: &Path, path: &str) -> Result<()> {
+fn copy_into(temp: &Path, path: &Path) -> Result<()> {
     let data = std::fs::read(temp).with_context(|| format!("reading {}", temp.display()))?;
-    let mut file =
-        std::fs::OpenOptions::new().write(true).open(path).with_context(|| format!("opening {path} for writing"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .open(path)
+        .with_context(|| format!("opening {} for writing", path.display()))?;
     file.write_all(&data)?;
     file.set_len(u64::try_from(data.len())?)?;
     file.sync_all()?;

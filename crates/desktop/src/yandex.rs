@@ -21,8 +21,6 @@ pub mod qobject {
         type QList_i32 = cxx_qt_lib::QList<i32>;
         include!("cxx-qt-lib/qstring.h");
         type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qurl.h");
-        type QUrl = cxx_qt_lib::QUrl;
     }
 
     extern "RustQt" {
@@ -114,24 +112,26 @@ pub mod qobject {
         #[cxx_name = "setPicked"]
         fn set_picked(self: Pin<&mut YandexSearch>, first: i32, count: i32, picked: bool);
 
-        /// Where the save dialog opens: the folder saved into last, while it exists, or else the photo's folder.
+        /// Before the save dialog opens: where it starts (the folder saved into last, while it exists, or else the photo's
+        /// folder), for the folder picker (`FolderPicker`, purpose 2).
         #[qinvokable]
-        #[cxx_name = "startFolder"]
-        fn start_folder(self: &YandexSearch) -> QUrl;
+        #[cxx_name = "prepareSave"]
+        fn prepare_save(self: &YandexSearch);
 
-        /// Save the picked results into `folder`, a file URL.
+        /// Save the picked results into the folder the picker chose for them (`FolderPicker`, purpose 2).
         #[qinvokable]
-        fn download(self: Pin<&mut YandexSearch>, folder: &QUrl);
+        #[cxx_name = "downloadPicked"]
+        fn download_picked(self: Pin<&mut YandexSearch>);
     }
 }
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::pin::Pin;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QUrl, QVariant};
+use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status, YandexError};
 use pg_client::picks::Picks;
 use pg_client::text;
@@ -232,22 +232,6 @@ fn status_text(status: Status) -> String {
         Status::Saved(saved) => saved_text(saved),
         Status::Stopped => INTERNAL_STOP.to_string(),
     }
-}
-
-/// `file:///C:/a/b`: a local path as a URL, for the folder dialog. `%`, `#` and `?` are escaped, or the URL would read
-/// them as an escape, a fragment and a query.
-fn file_url(path: &Path) -> String {
-    let mut url = "file:///".to_string();
-    for c in path.to_string_lossy().chars() {
-        match c {
-            '\\' => url.push('/'),
-            '%' => url.push_str("%25"),
-            '#' => url.push_str("%23"),
-            '?' => url.push_str("%3F"),
-            c => url.push(c),
-        }
-    }
-    url
 }
 
 /// A count or a row as Qt's int, saturating: a Qt model holds no more rows than an int counts.
@@ -438,31 +422,20 @@ impl qobject::YandexSearch {
         self.picks_changed();
     }
 
-    fn start_folder(&self) -> QUrl {
-        self.search.start_folder(crate::app::get()).map_or_else(QUrl::default, |f| QUrl::from(&file_url(&f)))
+    fn prepare_save(&self) {
+        crate::picker::set_start(self.search.start_folder(crate::app::get()));
     }
 
-    fn download(mut self: Pin<&mut Self>, folder: &QUrl) {
-        let folder = folder.to_local_file().map_or_else(|| folder.to_qstring().to_string(), |p| p.to_string());
+    fn download_picked(mut self: Pin<&mut Self>) {
+        let Some(folder) = crate::picker::take(crate::picker::Purpose::YandexSave) else { return };
         let hits: Vec<Hit> = self.picks.indices().filter_map(|i| self.hits.get(i).cloned()).collect();
         let files = hits.len();
         self.as_mut().ensure_pump();
         // The app refuses an empty pick, a search or a save already running, and remembers the folder when it saves.
-        if !self.search.save(crate::app::get(), hits, PathBuf::from(folder), crate::command_line::yandex_source()) {
+        if !self.search.save(crate::app::get(), hits, folder, crate::command_line::yandex_source()) {
             return;
         }
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from(&status_text(Status::Working(Phase::Saving { files }))));
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn file_url_escapes_what_a_url_would_misread() {
-        assert_eq!(file_url(Path::new(r"C:\a b\c")), "file:///C:/a b/c");
-        assert_eq!(file_url(Path::new(r"D:\100% #1?\x")), "file:///D:/100%25 %231%3F/x");
     }
 }

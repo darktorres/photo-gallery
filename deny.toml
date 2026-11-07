@@ -64,8 +64,8 @@ deny = [
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
     # SQLite is pg-catalog's and the thumbnail cache's, pg-schema's (the shared schema check), and pg-bench's (the catalog
-    # benches).
-    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-schema", "pg-thumbcache", "pg-bench"] },
+    # benches). pg-library's dev-dependency is its writeback test, which writes an older catalog's row by hand.
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-schema", "pg-thumbcache", "pg-bench", "pg-library"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
 ]

@@ -8,7 +8,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import pg.gallery
 
@@ -104,10 +103,22 @@ Rectangle {
     // The results are its rows, and its state comes across when it changes (the change pump, src/yandex.rs).
     YandexSearch { id: yandex }
 
-    FolderDialog {
+    // Where the picked results are saved: the picker asks for the folder, then they are saved into it (`done`).
+    FolderPicker {
+        id: savePicker
+        onDone: yandex.downloadPicked()
+        onOpenInApp: saveDialog.open = true
+    }
+    FolderPickerDialog {
         id: saveDialog
-        title: words.text("ui-save-picked-into")
-        onAccepted: yandex.download(selectedFolder)
+        z: 100
+        names: savePicker.names
+        here: savePicker.here
+        onGoUp: savePicker.up()
+        onOpenRow: (row) => savePicker.enter(row)
+        onChooseRow: (row) => savePicker.choose(row)
+        onChooseHere: savePicker.chooseHere()
+        onCancelled: savePicker.cancel()
     }
 
     Pane {
@@ -137,9 +148,9 @@ Rectangle {
                     text: words.phrase("ui-save-picked", yandex.pickedCount, ("" + (yandex.pickedCount)), "")
                     enabled: yandex.pickedCount > 0 && !yandex.busy
                     onClicked: {
-                        // The folder saved into last, or the photo's.
-                        saveDialog.currentFolder = yandex.startFolder()
-                        saveDialog.open()
+                        // The picker opens in the folder saved into last, or the photo's.
+                        yandex.prepareSave()
+                        savePicker.pick(2)
                     }
                 }
                 Button { text: words.text("ui-close"); onClicked: panel.close() }

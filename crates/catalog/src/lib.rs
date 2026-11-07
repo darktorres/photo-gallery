@@ -40,6 +40,7 @@ use pg_model::path::{FilePath, PathArena, PathRef, WorkList};
 use pg_model::rating::Rating;
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
+use pg_platform::sqlite::sqlite_path;
 
 // SQL used in more than one statement is a macro, so every statement is a constant (`concat!`), none made at run
 // time.
@@ -248,11 +249,17 @@ fn rebuild(old: Connection, path: &Path, rules: PathRules, why: String, readable
     Ok(Rebuilt { kept, why, carried })
 }
 
+/// The file SQLite opens for the catalog at `path`: the path itself, or on Windows an alias for a folder whose name has
+/// no UTF-8 form (`pg_platform::sqlite`).
+fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
+    sqlite_path(path).with_context(|| format!("catalog {}", path.display()))
+}
+
 /// Make the catalog file `path` in this build's layout, with the rows of `from` copied into it when given
 /// ([`carry_rows`]). Returns its file and library folder counts (zero without `from`). The file is closed, with its
 /// changes in the main file.
 fn make_replacement(path: &Path, rules: PathRules, from: Option<&Path>) -> Result<(i64, i64)> {
-    let mut conn = Connection::open(path).with_context(|| format!("catalog {}", path.display()))?;
+    let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
     conn.execute_batch(SETTINGS)?;
     bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version()?)
         .with_context(|| format!("catalog {}", path.display()))?;
@@ -583,7 +590,7 @@ impl Catalog {
     pub fn prepare(path: &Path, versions: Versions, rules: PathRules) -> Result<Catalog> {
         let _lock = if path == Path::new(":memory:") { None } else { Some(take_lock(path)?) };
         let current = current_version()?;
-        let mut conn = Connection::open(path).with_context(|| format!("catalog {}", path.display()))?;
+        let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         let version = version_of(&conn)?;
         let why = match version {
             None => Some("not a database".to_string()),
@@ -599,7 +606,7 @@ impl Catalog {
         let mut rebuilt = None;
         if let Some(why) = why {
             rebuilt = Some(rebuild(conn, path, rules, why, version.is_some())?);
-            conn = Connection::open(path).with_context(|| format!("catalog {}", path.display()))?;
+            conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         }
         conn.execute_batch(SETTINGS)?;
         bring_to(&conn, BASELINE, MIGRATIONS, rules, current).with_context(|| format!("catalog {}", path.display()))?;
@@ -624,7 +631,8 @@ impl Catalog {
     /// build's (another program changed it since it was prepared).
     pub fn open(path: &Path, rules: PathRules) -> Result<Catalog> {
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
-        let conn = Connection::open_with_flags(path, flags).with_context(|| format!("catalog {}", path.display()))?;
+        let conn = Connection::open_with_flags(db_file(path)?, flags)
+            .with_context(|| format!("catalog {}", path.display()))?;
         conn.execute_batch(SETTINGS)?;
         let current = current_version()?;
         let version = pg_schema::user_version(&conn)?;
@@ -1731,6 +1739,41 @@ mod tests {
         let temp = PathRules::Windows.parse(r"D:\p\.a.jpg.pg-write").unwrap();
         assert_eq!(job.temp, Some((temp, 3)));
         drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// On Windows, a catalog in a folder whose name has no UTF-8 form is opened, and rebuilt with its rows carried (the
+    /// carry attaches the old file by name): every SQLite call goes through the folder's alias (`pg_platform::sqlite`).
+    #[cfg(windows)]
+    #[test]
+    fn a_catalog_in_a_folder_without_a_utf8_name_is_opened_and_carried_through_an_alias() {
+        let dir = test_folder(SCRATCH, "odd-folder").unwrap();
+        let folder = dir.join(pg_platform::names::path_buf(b"cat\xED\xA0\x80"));
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = folder.join("catalog.sqlite");
+        drop(Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap());
+        drop(Catalog::open(&path, PathRules::NATIVE).unwrap());
+        // The layout of before the queued temps were bytes: the rebuild carries the old file's rows, attached by name.
+        let old = Connection::open(sqlite_path(&path).unwrap()).unwrap();
+        old.execute_batch(
+            r"DROP TABLE file_writes;
+              CREATE TABLE file_writes(
+                  file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+                  kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
+                  value    INTEGER NOT NULL,
+                  queued   INTEGER NOT NULL,
+                  attempts INTEGER NOT NULL DEFAULT 0,
+                  error    TEXT,
+                  temp       TEXT,
+                  temp_value INTEGER,
+                  PRIMARY KEY(file_id, kind));",
+        )
+        .unwrap();
+        drop(old);
+        let c = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+        assert!(c.rebuilt().is_some(), "moved aside, and its rows carried");
+        drop(c);
+        assert!(folder.join("catalog.sqlite").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

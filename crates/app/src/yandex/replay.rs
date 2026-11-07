@@ -179,7 +179,7 @@ mod tests {
         let folder = dir.join("saved");
         std::fs::create_dir_all(&folder).unwrap();
         let hits: Vec<Hit> = found.similar.into_iter().take(1).collect();
-        let saved: Saved = save_all(&hits, "IMG_1234", &folder, &source, &shared, &changes);
+        let saved: Saved = save_all(&hits, std::ffi::OsStr::new("IMG_1234"), &folder, &source, &shared, &changes);
         assert_eq!((saved.written, saved.failed), (1, 0));
         let written = std::fs::read(folder.join("IMG_1234 (yandex similar 1).png")).unwrap();
         assert_eq!(written, b"\x89PNG\r\n\x1a\nresult one");

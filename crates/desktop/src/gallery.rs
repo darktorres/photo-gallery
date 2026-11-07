@@ -25,8 +25,6 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
-        include!("cxx-qt-lib/qurl.h");
-        type QUrl = cxx_qt_lib::QUrl;
         include!("cxx-qt-lib/qrectf.h");
         type QRectF = cxx_qt_lib::QRectF;
         include!("cxx-qt-lib/qlist.h");
@@ -219,11 +217,12 @@ pub mod qobject {
         #[cxx_name = "setBorderMarked"]
         fn set_border_marked(self: Pin<&mut GalleryModel>, item: i32, marked: bool);
 
-        /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder at
-        /// `url`, in the background (the library's crop pass). Returns how many it asked for.
+        /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder the picker
+        /// chose for them (`FolderPicker`, purpose 1), in the background (the library's crop pass). Returns how many it
+        /// asked for.
         #[qinvokable]
-        #[cxx_name = "saveCroppedCopies"]
-        fn save_cropped_copies(self: &GalleryModel, url: &QUrl) -> i32;
+        #[cxx_name = "saveCroppedCopiesPicked"]
+        fn save_cropped_copies_picked(self: &GalleryModel) -> i32;
 
         /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file
         /// (the QML adds the rating's symbol), and the borders found.
@@ -246,8 +245,7 @@ use std::io::Write;
 
 use cxx_qt::{CxxQtThread, CxxQtType, Threading};
 use cxx_qt_lib::{
-    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QUrl,
-    QVariant,
+    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QVariant,
 };
 use pg_client::grid::{Arrival, Changed, Grid, Plan, Shape};
 use pg_client::layout;
@@ -930,13 +928,13 @@ impl qobject::GalleryModel {
         .unwrap_or(-1.0)
     }
 
-    fn save_cropped_copies(&self, url: &QUrl) -> i32 {
+    fn save_cropped_copies_picked(&self) -> i32 {
+        let Some(folder) = crate::picker::take(crate::picker::Purpose::SaveCrops) else { return 0 };
         let ids: Vec<FileId> =
             self.grid.entries().iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
-        let folder = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
         let n = qt_int(ids.len());
         if n > 0 {
-            crate::app::get().save_crops(ids, std::path::PathBuf::from(folder.replace('/', "\\")));
+            crate::app::get().save_crops(ids, folder);
         }
         n
     }

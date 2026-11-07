@@ -11,6 +11,7 @@ workspace = true
 # thread priorities, the child processes, the clock, the message box, and the verbatim paths Win32 takes. Windows is
 # the target; each function has a portable fallback so the library crates build on Unix too (the WSL checks).
 [target.'cfg(windows)'.dependencies]
+windows.workspace = true
 windows-sys.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

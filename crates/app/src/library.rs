@@ -10,22 +10,17 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+use pg_catalog::Root;
 use pg_jobs::control::Progress;
 use pg_jobs::events::{Bus, Change};
 use pg_library::runner::{Generation, Messages, Runner};
-use pg_model::ids::FileId;
+use pg_model::ids::{FileId, RootId};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_scan::normalize_path;
 use pg_writeback::{WriteStatus, Writer};
 
 use crate::app::App;
 use crate::error::{Error, Result, failed};
-
-/// A folder's path under the library's rules (the native ones, which the library's catalog is made with), from the
-/// text a folder was given as.
-fn parse_folder(text: &str) -> Result<RulePath> {
-    PathRules::NATIVE.parse(text).ok_or_else(|| failed(format!("{text} is not a folder path")))
-}
 
 /// How long a stop waits for the job's file (or batch) in progress. A file that takes longer to read is left to end
 /// with the process, and its last changes are merged at the next open.
@@ -148,18 +143,15 @@ impl App {
         }
     }
 
-    /// The library's folder paths, as the catalog has them.
-    pub fn roots(&self) -> Result<Vec<String>> {
-        self.with_catalog(|c| {
-            let rules = c.rules();
-            Ok(c.roots()?.into_iter().map(|r| rules.display(&r.path)).collect())
-        })
+    /// The library's folders, each with its id and its path (under the catalog's rules), as the catalog has them.
+    pub fn roots(&self) -> Result<Vec<Root>> {
+        self.with_catalog(|c| c.roots())
     }
 
-    /// Add a folder to the library (its path as given, a local path or a URL's): normalized, and scanned. Returns the
-    /// normalized folder and whether it was new; a folder already in the library is rescanned.
-    pub fn add_folder(&self, path: &str) -> Result<(String, bool)> {
-        let root = normalize_path(std::path::Path::new(path)).map_err(failed)?;
+    /// Add a folder to the library, at the path given (exact): normalized, and scanned. Returns the normalized folder's
+    /// display path and whether it was new; a folder already in the library is rescanned.
+    pub fn add_folder(&self, path: &std::path::Path) -> Result<(String, bool)> {
+        let root = normalize_path(path).map_err(failed)?;
         // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
         if let Err(refused) = pg_scan::check_folder(PathRules::NATIVE, &root) {
             return Err(failed(format!("{} can't be added: {refused}", PathRules::NATIVE.display(&root))));
@@ -171,13 +163,10 @@ impl App {
         Ok((PathRules::NATIVE.display(&root), added))
     }
 
-    /// Remove a folder from the library. A scan of it in progress stops; the files it had stay until the next scan.
-    pub fn remove_folder(&self, path: &str) -> Result<()> {
-        let rule = parse_folder(path)?;
-        self.with_catalog(|c| match c.root_id(&rule)? {
-            Some(id) => c.remove_root(id).map(|_| ()),
-            None => Ok(()),
-        })?;
+    /// Remove a folder from the library, by its id (from [`App::roots`]). A scan of it in progress stops; the files it
+    /// had stay until the next scan.
+    pub fn remove_folder(&self, id: RootId) -> Result<()> {
+        self.with_catalog(|c| c.remove_root(id).map(|_| ()))?;
         if let Some(library) = self.library_cell.get() {
             library.scan(Vec::new());
         }

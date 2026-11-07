@@ -59,12 +59,10 @@ ui-write-files-tooltip = Ratings are always kept in the catalog. With this on, t
 ui-add-folder = Add folder…
 ui-rescan-all = Rescan all
 ui-close = Close
-ui-add-folder-title = Add a folder to the library
 
 # The window and its dialogs
 ui-app-name = Photo Gallery
 ui-window-title = Photo Gallery — { $text }
-ui-save-crops-into = Save cropped copies into
 ui-save-view-title = Save the current view
 ui-all-folders = All folders
 ui-and-subfolders = and subfolders
@@ -119,7 +117,13 @@ ui-delete-view = Delete view
 # The Yandex panel and preview
 ui-select-none = Select none
 ui-select-all = Select all
-ui-save-picked-into = Save the picked images into
+
+# The app's own folder dialog (where the system's dialog is not used)
+ui-choose-folder-title = Choose a folder
+ui-folder-up = Up
+ui-choose = Choose
+ui-choose-here = Choose this folder
+ui-cancel = Cancel
 ui-find-similar-yandex = Find similar on Yandex
 ui-save-picked = Save { $text } { $count ->
     [one] image…

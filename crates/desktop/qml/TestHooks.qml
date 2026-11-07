@@ -16,7 +16,7 @@
 //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
 //   --borders  show the borders (as B does) from the start
 //   --save-crops=<folder>  save cropped copies of the listed files with borders found
-//                        (GalleryModel.saveCroppedCopies)
+//                        (GalleryModel.saveCroppedCopiesPicked)
 //   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
 //                       library job or write pending, no frame for a while), and quit; --wait=<s> is the most to wait
 //                       for that, 10 by default (src/screenshot.rs)
@@ -44,8 +44,8 @@ Item {
     signal libraryPanelRequested()
     signal saveViewDialogRequested()
     signal similarRequested()
-    signal addFolderRequested(url folder)
-    signal saveCropsRequested(url folder)
+    signal addFolderRequested()
+    signal saveCropsRequested()
     // The viewer's calls (its functions), made by Main.
     signal viewerShowRequested(int index)
     signal viewerPlayRequested()
@@ -121,7 +121,7 @@ Item {
 
     // The hooks that run after the library job has started (Main's startHooks()).
     function runAfterLibraryStart() {
-        if (commandLine.has("add-folder")) addFolderRequested(commandLine.url("add-folder"))
-        if (commandLine.has("save-crops")) saveCropsRequested(commandLine.url("save-crops"))
+        if (commandLine.has("add-folder")) addFolderRequested()
+        if (commandLine.has("save-crops")) saveCropsRequested()
     }
 }

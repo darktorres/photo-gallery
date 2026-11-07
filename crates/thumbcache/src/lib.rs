@@ -42,6 +42,7 @@ use pg_jobs::service::{Service, Waker, Woke};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use pg_model::path::{FilePath, WorkList};
+use pg_platform::sqlite::{attach_bytes, sqlite_path};
 use pg_schema::Schema;
 
 pub const FORMAT_JPEG: &str = "jpeg";
@@ -503,7 +504,7 @@ impl ThumbCache {
         }
         // Read-write, as the other connections are: a read-only one can't merge the WAL when it closes last, and
         // would leave the WAL and its index behind.
-        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let conn = Connection::open_with_flags(sqlite_path(&path)?, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         Ok(Some(conn.query_row("SELECT t.bytes, t.count, l.cap FROM totals t, limits l", [], |r| {
             Ok(Usage { bytes: r.get(0)?, count: r.get(1)?, cap: r.get(2)? })
@@ -642,7 +643,7 @@ fn judge(path: &Path, catalog_id: &str) -> Result<Found> {
     if !path.exists() {
         return Ok(Found::New);
     }
-    let conn = Connection::open(path)?;
+    let conn = Connection::open(sqlite_path(path)?)?;
     let schema = match Schema::read(&conn, SEEDS) {
         Ok(schema) => schema,
         Err(e) if e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) => {
@@ -699,7 +700,10 @@ fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<
     if why.is_some() {
         // Sidecars first: a `-wal` left beside a new file would be replayed into it.
         for suffix in ["-wal", "-shm", "-journal", ""] {
-            let file = PathBuf::from(format!("{}{suffix}", path.display()));
+            // The sidecar's name is the file's own units with the suffix (not its display form, which is lossy).
+            let mut name = path.as_os_str().to_owned();
+            name.push(suffix);
+            let file = PathBuf::from(name);
             match std::fs::remove_file(&file) {
                 Ok(()) => {}
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -721,7 +725,7 @@ fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<
 /// A connection to the cache file, made with its layout if it is new (for catalog `catalog_id`), and the cap set if one
 /// is given and the file has the table for it. The file was judged by [`judge`] first, so only a new one is made here.
 fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
-    let mut conn = Connection::open(path)?;
+    let mut conn = Connection::open(sqlite_path(path)?)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     // auto_vacuum must be set before the first table exists.
     conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
@@ -757,16 +761,11 @@ fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Co
 /// list are one moment's. With a `checked` number no later than the catalog's (a catalog restored from a copy
 /// would be behind), only the files changed since are read, through `files_seq`; otherwise every file.
 pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> {
-    let conn = Connection::open(cache)?;
+    let conn = Connection::open(sqlite_path(cache)?)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
-    conn.execute(
-        "ATTACH DATABASE ?1 AS cat",
-        [catalog
-            .to_str()
-            .with_context(|| format!("{} has no UTF-8 form, which SQLite needs to attach it", catalog.display()))?],
-    )?;
+    conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(catalog)?])?;
     let tx = conn.unchecked_transaction()?;
     let seq: i64 = tx.query_row("SELECT seq FROM cat.thumb_clock", [], |r| r.get(0))?;
     let (checked, evictions): (Option<i64>, i64) = tx
@@ -832,7 +831,7 @@ fn with_reader<R>(path: &Path, f: impl FnOnce(&Connection) -> Result<R>) -> Resu
         if let Some((_, conn)) = readers.iter().find(|(p, _)| p == path) {
             return f(conn);
         }
-        let conn = Connection::open(path)?;
+        let conn = Connection::open(sqlite_path(path)?)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(CONNECTION_PRAGMAS)?;
         conn.execute_batch("PRAGMA query_only = ON;")?;
@@ -1682,13 +1681,27 @@ mod tests {
         assert_eq!(ids(&behind), vec![2, 1]);
     }
 
+    /// On Windows, a cache in a folder whose name has no UTF-8 form is made, and opened again through the folder's alias
+    /// (`pg_platform::sqlite`): the file is in the folder itself.
+    #[cfg(windows)]
+    #[test]
+    fn a_cache_in_a_folder_without_a_utf8_name_is_opened_through_an_alias() {
+        let dir = test_folder(SCRATCH, "odd-folder").unwrap();
+        let folder = dir.join(pg_platform::names::path_buf(b"cache\xED\xA0\x80"));
+        std::fs::create_dir_all(&folder).unwrap();
+        drop(open(&folder, 1 << 30));
+        assert!(cache_path(&folder).exists(), "the cache file is in the folder");
+        drop(open(&folder, 1 << 30));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     #[test]
     fn a_pass_after_a_complete_one_reads_the_changed_files() {
         let dir = test_folder(SCRATCH, "seq-plan").unwrap();
         let (catalog, _c) = catalog_of_four(&dir);
         drop(open(&dir, 1 << 30));
         let conn = Connection::open(cache_path(&dir)).unwrap();
-        conn.execute("ATTACH DATABASE ?1 AS cat", [catalog.to_string_lossy()]).unwrap();
+        conn.execute("ATTACH DATABASE ?1 AS cat", [attach_bytes(&catalog).unwrap()]).unwrap();
         let plan: Vec<String> = conn
             .prepare(&format!("EXPLAIN QUERY PLAN {}", pending_sql(true)))
             .unwrap()

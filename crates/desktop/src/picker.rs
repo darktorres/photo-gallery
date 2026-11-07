@@ -1,0 +1,272 @@
+//! The folder pickers: the folder the user picks for a library folder, for the copies of cropped photos, or for a Yandex
+//! save. On Windows the system's dialog opens (`pg_platform::picker`); on the other systems the app's own does
+//! (`FolderPickerDialog.qml`, over the folders listed here). Either way the chosen folder is kept here, exact, and the
+//! screen only learns that one was chosen for a purpose (`done`): the action that purpose names takes it (`take`). So
+//! the path never crosses to QML as text.
+
+#[cxx_qt::bridge]
+pub mod qobject {
+    unsafe extern "C++" {
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
+        include!("cxx-qt-lib/qstringlist.h");
+        type QStringList = cxx_qt_lib::QStringList;
+    }
+
+    extern "RustQt" {
+        #[qobject]
+        #[qml_element]
+        /// Whether the system's dialog is used (Windows). Otherwise `openInApp` asks QML to show the app's own dialog.
+        #[qproperty(bool, native, READ, FINAL)]
+        /// The app's dialog: the folders of the folder it is in (display names, in order).
+        #[qproperty(QStringList, names, READ, WRITE, NOTIFY, FINAL)]
+        /// The app's dialog: the folder it is in (display text).
+        #[qproperty(QString, here, READ, WRITE, NOTIFY, FINAL)]
+        type FolderPicker = super::PickerRust;
+    }
+
+    unsafe extern "RustQt" {
+        /// A folder was chosen for `purpose` (see `Purpose`): the action takes it.
+        #[qsignal]
+        fn done(self: Pin<&mut FolderPicker>, purpose: i32);
+
+        /// The app's own dialog should open for `purpose` (not on Windows, where the system's does).
+        #[qsignal]
+        #[cxx_name = "openInApp"]
+        fn open_in_app(self: Pin<&mut FolderPicker>, purpose: i32);
+
+        /// Pick a folder for `purpose`: the system's dialog, or the app's (`openInApp`).
+        #[qinvokable]
+        fn pick(self: Pin<&mut FolderPicker>, purpose: i32);
+
+        /// The folder from the command line for `purpose` (`--add-folder=…` for 0, `--save-crops=…` for 1), chosen as the
+        /// dialog would choose it (`done`), with no dialog.
+        #[qinvokable]
+        #[cxx_name = "chooseCommandLine"]
+        fn choose_command_line(self: Pin<&mut FolderPicker>, purpose: i32);
+
+        /// The app's dialog: open the listed folder at `row`.
+        #[qinvokable]
+        fn enter(self: Pin<&mut FolderPicker>, row: i32);
+
+        /// The app's dialog: the folder above the one it is in.
+        #[qinvokable]
+        fn up(self: Pin<&mut FolderPicker>);
+
+        /// The app's dialog: choose the listed folder at `row`.
+        #[qinvokable]
+        fn choose(self: Pin<&mut FolderPicker>, row: i32);
+
+        /// The app's dialog: choose the folder it is in.
+        #[qinvokable]
+        #[cxx_name = "chooseHere"]
+        fn choose_here(self: Pin<&mut FolderPicker>);
+
+        /// The app's dialog: closed without a choice.
+        #[qinvokable]
+        fn cancel(self: Pin<&mut FolderPicker>);
+    }
+}
+
+use core::pin::Pin;
+use std::cell::RefCell;
+use std::path::{Path, PathBuf};
+
+use cxx_qt_lib::{QString, QStringList};
+
+/// What a chosen folder is for. The code is what QML passes (`pick`, `done`, `openInApp`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Purpose {
+    /// A folder added to the library.
+    AddFolder,
+    /// The folder the cropped copies are saved into.
+    SaveCrops,
+    /// The folder the Yandex pictures are saved into.
+    YandexSave,
+}
+
+impl Purpose {
+    fn code(self) -> i32 {
+        match self {
+            Purpose::AddFolder => 0,
+            Purpose::SaveCrops => 1,
+            Purpose::YandexSave => 2,
+        }
+    }
+
+    fn from_code(code: i32) -> Option<Purpose> {
+        [Purpose::AddFolder, Purpose::SaveCrops, Purpose::YandexSave].into_iter().find(|p| p.code() == code)
+    }
+}
+
+/// The folder chosen and not yet taken, with its purpose.
+type Chosen = (Purpose, PathBuf);
+
+/// The app's dialog: the purpose, the folder it is in, and the folders in it, in order.
+struct Listing {
+    purpose: Purpose,
+    here: PathBuf,
+    folders: Vec<PathBuf>,
+}
+
+thread_local! {
+    // GUI thread only, like the other Qt-facing state (`crate::controller`).
+    static CHOSEN: RefCell<Option<Chosen>> = const { RefCell::new(None) };
+    static LISTING: RefCell<Option<Listing>> = const { RefCell::new(None) };
+    static START: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
+}
+
+/// The folder chosen for `purpose`, taken (it is then none). None when no folder was chosen for it.
+pub fn take(purpose: Purpose) -> Option<PathBuf> {
+    CHOSEN.with(|chosen| {
+        let mut chosen = chosen.borrow_mut();
+        match chosen.take() {
+            Some((p, path)) if p == purpose => Some(path),
+            other => {
+                *chosen = other;
+                None
+            }
+        }
+    })
+}
+
+/// Set the folder the next dialog opens in (taken by it), for a screen that knows one (the Yandex save's: the folder
+/// saved into last, or the photo's). Without one, the dialog opens in the user's folder.
+pub fn set_start(path: Option<PathBuf>) {
+    START.with(|start| *start.borrow_mut() = path);
+}
+
+/// The folder the dialog opens in: the one set for it (`set_start`, taken), else the user's folder.
+fn start_for() -> Option<PathBuf> {
+    START
+        .with(|start| start.borrow_mut().take())
+        .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
+}
+
+/// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own).
+fn folders_in(dir: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
+    let mut folders: Vec<PathBuf> =
+        entries.filter_map(Result::ok).filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()).collect();
+    folders.sort();
+    folders
+}
+
+/// The display names of the listing's folders (the names as text: a dialog shows them, and the path is kept apart).
+fn names_of(folders: &[PathBuf]) -> QStringList {
+    folders.iter().map(|p| QString::from(p.file_name().unwrap_or_default().to_string_lossy().as_ref())).collect()
+}
+
+pub struct PickerRust {
+    native: bool,
+    names: QStringList,
+    here: QString,
+}
+
+impl Default for PickerRust {
+    fn default() -> Self {
+        PickerRust { native: cfg!(windows), names: QStringList::default(), here: QString::default() }
+    }
+}
+
+impl qobject::FolderPicker {
+    fn pick(mut self: Pin<&mut Self>, purpose: i32) {
+        let Some(purpose) = Purpose::from_code(purpose) else { return };
+        let start = start_for();
+        if cfg!(windows) {
+            // The system's dialog runs its own loop: nothing is borrowed from the app across the call.
+            match pg_platform::picker::pick_folder(start.as_deref()) {
+                Ok(Some(path)) => {
+                    CHOSEN.with(|chosen| *chosen.borrow_mut() = Some((purpose, path)));
+                    self.done(purpose.code());
+                }
+                Ok(None) => {}
+                Err(e) => crate::panic_log::note(&format!("folder picker: {e}")),
+            }
+            return;
+        }
+        let here = start.unwrap_or_else(|| PathBuf::from("/"));
+        let folders = folders_in(&here);
+        let names = names_of(&folders);
+        self.as_mut().set_here(QString::from(here.to_string_lossy().as_ref()));
+        self.as_mut().set_names(names);
+        LISTING.with(|listing| *listing.borrow_mut() = Some(Listing { purpose, here, folders }));
+        self.open_in_app(purpose.code());
+    }
+
+    fn choose_command_line(self: Pin<&mut Self>, purpose: i32) {
+        let Some(purpose) = Purpose::from_code(purpose) else { return };
+        let name = match purpose {
+            Purpose::AddFolder => "add-folder",
+            Purpose::SaveCrops => "save-crops",
+            Purpose::YandexSave => return,
+        };
+        if let Some(path) = crate::command_line::path(name) {
+            self.choose_path((purpose, path.to_path_buf()));
+        }
+    }
+
+    fn enter(mut self: Pin<&mut Self>, row: i32) {
+        let Some(next) = LISTING.with(|listing| {
+            let listing = listing.borrow();
+            let listing = listing.as_ref()?;
+            listing.folders.get(usize::try_from(row).ok()?).cloned()
+        }) else {
+            return;
+        };
+        self.as_mut().show_folder(next);
+    }
+
+    fn up(mut self: Pin<&mut Self>) {
+        let parent =
+            LISTING.with(|listing| listing.borrow().as_ref().and_then(|l| l.here.parent().map(Path::to_path_buf)));
+        if let Some(parent) = parent {
+            self.as_mut().show_folder(parent);
+        }
+    }
+
+    fn choose(self: Pin<&mut Self>, row: i32) {
+        let chosen = LISTING.with(|listing| {
+            let listing = listing.borrow();
+            let listing = listing.as_ref()?;
+            Some((listing.purpose, listing.folders.get(usize::try_from(row).ok()?)?.clone()))
+        });
+        if let Some(chosen) = chosen {
+            self.choose_path(chosen);
+        }
+    }
+
+    fn choose_here(self: Pin<&mut Self>) {
+        let chosen = LISTING.with(|listing| listing.borrow().as_ref().map(|l| (l.purpose, l.here.clone())));
+        if let Some(chosen) = chosen {
+            self.choose_path(chosen);
+        }
+    }
+
+    fn cancel(self: Pin<&mut Self>) {
+        LISTING.with(|listing| *listing.borrow_mut() = None);
+    }
+
+    /// The app's dialog now shows `folder` (and its folders).
+    fn show_folder(mut self: Pin<&mut Self>, folder: PathBuf) {
+        let folders = folders_in(&folder);
+        let names = names_of(&folders);
+        self.as_mut().set_here(QString::from(folder.to_string_lossy().as_ref()));
+        self.as_mut().set_names(names);
+        LISTING.with(|listing| {
+            if let Some(listing) = listing.borrow_mut().as_mut() {
+                listing.here = folder;
+                listing.folders = folders;
+            }
+        });
+    }
+
+    /// `chosen` is the folder for its purpose: kept for the action, which is told by `done`. The app's dialog is closed.
+    fn choose_path(mut self: Pin<&mut Self>, chosen: Chosen) {
+        let purpose = chosen.0;
+        CHOSEN.with(|slot| *slot.borrow_mut() = Some(chosen));
+        LISTING.with(|listing| *listing.borrow_mut() = None);
+        self.as_mut().set_names(QStringList::default());
+        self.done(purpose.code());
+    }
+}

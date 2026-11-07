@@ -5,12 +5,15 @@
 //! formats text or prints. The files go into the folder the user picks, named after the photo (`IMG_1234 (yandex
 //! 1920x1080).jpg`), and that folder is remembered in the preferences (`yandex_folder`) for the next save.
 
+use std::ffi::{OsStr, OsString};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use pg_jobs::events::{Bus, Subscription};
+use pg_model::rules::PathRules;
+use pg_platform::names::{path_buf, rule_path_of};
 pub use pg_yandex::YandexError;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Download, OtherSize, Similar, Upload};
 
@@ -269,33 +272,43 @@ fn find_similar<S: Source + ?Sized>(
     Ok((found, note))
 }
 
-/// A file name without characters that Windows refuses in names.
-fn sanitize(name: &str) -> String {
-    let clean: String = name.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
-    let clean = clean.trim();
-    if clean.is_empty() { "image".to_string() } else { clean.to_string() }
+/// The photo's stem as a saved file's: `stem` kept exactly, then ` (<suffix>)`. The suffix is text the search returns, so
+/// the characters Windows refuses in names become `_`.
+fn saved_stem(stem: &OsStr, suffix: &str) -> OsString {
+    let clean: String = suffix.chars().map(|c| if "\\/:*?\"<>|".contains(c) { '_' } else { c }).collect();
+    let mut name = stem.to_os_string();
+    name.push(format!(" ({})", clean.trim()));
+    name
 }
 
-/// `folder/stem.ext`, or with ` (2)`, ` (3)`… before the extension when that name is taken.
-fn unique_path(folder: &Path, stem: &str, ext: &str) -> PathBuf {
-    let mut path = folder.join(format!("{stem}.{ext}"));
+/// `folder/<stem>.<ext>`, or with ` (2)`, ` (3)`… after the stem when that name is taken.
+fn unique_path(folder: &Path, stem: &OsStr, ext: &str) -> PathBuf {
+    let named = |n: u32| {
+        let mut name = stem.to_os_string();
+        if n > 1 {
+            name.push(format!(" ({n})"));
+        }
+        name.push(format!(".{ext}"));
+        folder.join(name)
+    };
+    let mut path = named(1);
     let mut n = 2;
     while path.exists() {
-        path = folder.join(format!("{stem} ({n}).{ext}"));
+        path = named(n);
         n += 1;
     }
     path
 }
 
-/// The file-name stem of the photo: `IMG_1234` for `IMG_1234.jpg`.
-fn stem_of(photo: &Path) -> String {
-    photo.file_stem().map_or_else(|| "image".into(), |s| s.to_string_lossy().into_owned())
+/// The file-name stem of the photo, kept exactly: `IMG_1234` for `IMG_1234.jpg`.
+fn stem_of(photo: &Path) -> OsString {
+    photo.file_stem().map_or_else(|| OsString::from("image"), OsStr::to_os_string)
 }
 
 /// Downloads one hit into `folder`, named `<stem> (<suffix>)` so it sorts next to the photo.
-fn save_one<S: Source + ?Sized>(source: &S, hit: &Hit, stem: &str, folder: &Path) -> Result<(), SaveFailure> {
+fn save_one<S: Source + ?Sized>(source: &S, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
     let file = source.download(&hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
-    let path = unique_path(folder, &sanitize(&format!("{stem} ({})", hit.suffix)), file.format.extension());
+    let path = unique_path(folder, &saved_stem(stem, &hit.suffix), file.format.extension());
     std::fs::write(&path, &file.bytes).map_err(|error| SaveFailure::Write { url: hit.url.clone(), path, error })
 }
 
@@ -319,7 +332,7 @@ fn save_refused(hits: &[Hit], folder: &Path, error: YandexError) -> Saved {
 /// Downloads every hit into `folder`, one at a time (these are CDN files, so the client paces nothing here).
 fn save_all<S: Source + ?Sized>(
     hits: &[Hit],
-    stem: &str,
+    stem: &OsStr,
     folder: &Path,
     source: &S,
     shared: &Mutex<Shared>,
@@ -392,8 +405,8 @@ impl Search {
     /// Where the save dialog opens: the folder saved into last (`yandex_folder`) while it exists, or else the photo's
     /// folder. None when there is neither.
     pub fn start_folder(&self, app: &App) -> Option<PathBuf> {
-        let last = PathBuf::from(app.prefs().yandex_folder);
-        if !last.as_os_str().is_empty() && last.is_dir() {
+        let last = app.prefs().yandex_folder.map(|folder| path_buf(&PathRules::NATIVE.join(&folder)));
+        if let Some(last) = last.filter(|last| last.is_dir()) {
             return Some(last);
         }
         let photo = lock(&self.shared).photo.clone();
@@ -420,8 +433,9 @@ impl Search {
         self.changes.publish(());
         // A preferences file that can't be written keeps the folder in memory for this run; the save goes on. The app
         // reports that failure through its notes when it can be reported.
-        let chosen = folder.to_string_lossy().into_owned();
-        let _ = app.update_prefs(|p| p.yandex_folder = chosen);
+        if let Some(chosen) = rule_path_of(&folder) {
+            let _ = app.update_prefs(|p| p.yandex_folder = Some(chosen));
+        }
         let shared = self.shared.clone();
         let changes = self.changes.clone();
         thread::spawn(move || {
@@ -447,10 +461,32 @@ impl Search {
 mod tests {
     use super::*;
 
+    /// A stem that is no UTF-8: a lone surrogate on Windows, a raw `0xFF` byte on Unix.
+    fn odd_stem() -> OsString {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            OsString::from_wide(&[u16::from(b'I'), 0xD800])
+        }
+        #[cfg(not(windows))]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            OsString::from_vec(b"IMG_\xFF".to_vec())
+        }
+    }
+
     #[test]
     fn saved_names_follow_the_photo() {
         let folder = std::env::temp_dir();
-        let name = sanitize(&format!("{} ({})", "IMG_1234", "yandex 1920x1080"));
-        assert_eq!(unique_path(&folder, &name, "jpg"), folder.join("IMG_1234 (yandex 1920x1080).jpg"));
+        let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
+        assert_eq!(unique_path(&folder, &stem, "jpg"), folder.join("IMG_1234 (yandex 1920x1080).jpg"));
+    }
+
+    #[test]
+    fn the_photos_stem_is_kept_exactly_and_only_the_suffix_is_cleaned() {
+        let stem = odd_stem();
+        let mut expected = stem.clone();
+        expected.push(" (a_b_c)");
+        assert_eq!(saved_stem(&stem, "a/b:c"), expected);
     }
 }

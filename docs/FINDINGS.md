@@ -131,7 +131,7 @@ or deleted. Finding it needs a full-set run.
   a quote, `[CSTR]` and raw bytes all come through. The process-argument route carries a name's bytes exactly, and
   `crates/exiftool/src/lib.rs` (`needs_argv`) sends the names the argument file can't carry through it. But a name
   ending in whitespace still can't be written by either route: ExifTool takes the file's type from its extension
-  (`png `), refuses it ("Can't create PNG files from scratch"), so the write fails with an error and leaves no copy.
+  (`png`, followed by a space), refuses it ("Can't create PNG files from scratch"), so the write fails with an error and leaves no copy.
   Its argument file lines are absolute paths: a relative name starting with `#` is a comment and one starting with `-`
   is an option. Windows can't hold any of these names; its surrogate names were probed separately (above).
   A `#[CSTR]` line (ExifTool's C-escape form, `\n`, `\r`, `\t`, `\"`, `\\`) carries the same names except those with

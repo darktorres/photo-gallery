@@ -502,6 +502,24 @@ mod tests {
         assert!(one("SELECT pg_contains(x'61EDA080', char(65533))"));
     }
 
+    /// A name that is no UTF-8 is matched as its display text: its valid parts are found, and its bad bytes show as
+    /// U+FFFD. A query is text, so it can't name the bad bytes; it can find the text on either side of them only when
+    /// they are not between the two halves it asks for (`o.j` is not in `photo` + the bad bytes + `.jpg`).
+    #[test]
+    fn a_name_that_is_no_utf8_is_matched_by_its_valid_parts() {
+        let conn = Connection::open_in_memory().unwrap();
+        register_functions(&conn).unwrap();
+        let found = |name: &[u8], text: &str| -> bool {
+            conn.query_row("SELECT pg_contains(?1, ?2)", (name, text), |r| r.get::<_, bool>(0)).unwrap()
+        };
+        // A lone surrogate (WTF-8 `ED A0 80`) between `photo` and `.jpg`, and a raw `0xFF` byte after `IMG_`.
+        let surrogate: &[u8] = b"photo\xED\xA0\x80.jpg";
+        assert!(found(surrogate, "photo") && found(surrogate, ".jpg"));
+        assert!(found(surrogate, "\u{FFFD}") && !found(surrogate, "o.j"));
+        let raw: &[u8] = b"IMG_\xFF";
+        assert!(found(raw, "img_") && found(raw, "\u{FFFD}"));
+    }
+
     #[test]
     fn json_round_trips() {
         let q = Query {

@@ -12,8 +12,6 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
-        include!("cxx-qt-lib/qurl.h");
-        type QUrl = cxx_qt_lib::QUrl;
     }
 
     extern "RustQt" {
@@ -54,13 +52,16 @@ pub mod qobject {
         #[qinvokable]
         fn start(self: Pin<&mut Library>, thumb_height: i32);
 
+        /// Add the folder the picker chose for adding a folder (`FolderPicker`, purpose 0). The choice is taken here, not
+        /// passed through QML.
         #[qinvokable]
-        #[cxx_name = "addFolder"]
-        fn add_folder(self: Pin<&mut Library>, url: &QUrl);
+        #[cxx_name = "addPicked"]
+        fn add_picked(self: Pin<&mut Library>);
 
+        /// Remove the library folder at `row` (its row in `roots`).
         #[qinvokable]
         #[cxx_name = "removeFolder"]
-        fn remove_folder(self: Pin<&mut Library>, path: &QString);
+        fn remove_folder(self: Pin<&mut Library>, row: i32);
 
         /// Scan every library folder again (new, changed, moved and deleted files).
         #[qinvokable]
@@ -80,12 +81,17 @@ pub mod qobject {
 use core::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 
-use cxx_qt::Threading;
-use cxx_qt_lib::{QString, QStringList, QUrl};
+use std::path::Path;
+
+use cxx_qt::{CxxQtType, Threading};
+use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Change, Notice, Phase, Progress};
 use pg_client::text;
+use pg_model::ids::RootId;
+use pg_model::rules::PathRules;
 
 use crate::app;
+use crate::picker::{self, Purpose};
 
 /// The library, once `start` has started it: what the change pump and the folder operations read.
 static LIBRARY: OnceLock<&'static pg_app::Library> = OnceLock::new();
@@ -132,6 +138,8 @@ fn lock(shared: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
 #[derive(Default)]
 pub struct LibraryRust {
     roots: QStringList,
+    /// The catalog's id of each folder in `roots`, row for row: what removing a row removes.
+    root_ids: Vec<RootId>,
     busy: bool,
     paused: bool,
     status: QString,
@@ -178,12 +186,14 @@ impl qobject::Library {
         self.set_message(QString::from(&text));
     }
 
-    fn load_roots(self: Pin<&mut Self>) {
+    fn load_roots(mut self: Pin<&mut Self>) {
         let roots = app::get().roots().unwrap_or_else(|e| {
             crate::panic_log::note(&format!("library: {e}"));
             Vec::new()
         });
-        self.set_roots(roots.iter().map(QString::from).collect());
+        let texts: QStringList = roots.iter().map(|r| QString::from(&PathRules::NATIVE.display(&r.path))).collect();
+        self.as_mut().rust_mut().root_ids = roots.iter().map(|r| r.id).collect();
+        self.set_roots(texts);
     }
 
     fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
@@ -304,9 +314,15 @@ impl qobject::Library {
         }
     }
 
-    fn add_folder(mut self: Pin<&mut Self>, url: &QUrl) {
-        let path = url.to_local_file().map_or_else(|| url.to_qstring().to_string(), |p| p.to_string());
-        match app::get().add_folder(&path) {
+    fn add_picked(mut self: Pin<&mut Self>) {
+        if let Some(path) = picker::take(Purpose::AddFolder) {
+            self.as_mut().add_path(&path);
+        }
+    }
+
+    /// Add the folder at `path` (exact), and say so when it was already there.
+    fn add_path(mut self: Pin<&mut Self>, path: &Path) {
+        match app::get().add_folder(path) {
             Ok((root, added)) => {
                 // A folder already in the library is rescanned (the app scans it either way).
                 if !added {
@@ -318,8 +334,11 @@ impl qobject::Library {
         }
     }
 
-    fn remove_folder(mut self: Pin<&mut Self>, path: &QString) {
-        match app::get().remove_folder(&path.to_string()) {
+    fn remove_folder(mut self: Pin<&mut Self>, row: i32) {
+        let Some(id) = usize::try_from(row).ok().and_then(|r| self.rust().root_ids.get(r).copied()) else {
+            return;
+        };
+        match app::get().remove_folder(id) {
             Ok(()) => {
                 self.as_mut().load_roots();
                 self.scanned();

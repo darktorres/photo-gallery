@@ -6,7 +6,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
-import QtQuick.Dialogs
 import QtQuick.Window
 import pg.gallery
 
@@ -135,21 +134,44 @@ ApplicationWindow {
     // doesn't re-list at every key.
     onFiltersOpenChanged: updateFacets()
 
-    // Where the filter bar's "Save cropped copies" puts them: made when asked for, and opened as it is made.
-    Loader {
-        id: cropDialog
-        active: false
-        sourceComponent: Component {
-            FolderDialog {
-                title: words.text("ui-save-crops-into")
-                onAccepted: galleryModel.saveCroppedCopies(selectedFolder)
-                Component.onCompleted: open()
-            }
-        }
+    // The folder pickers: the system's dialog where it is used, else the app's own (FolderPickerDialog). Each picker is
+    // told when its folder is chosen (`done`), and then its action takes the folder.
+    FolderPicker {
+        id: addPicker
+        onDone: library.addPicked()
+        onOpenInApp: addDialog.open = true
     }
+    FolderPickerDialog {
+        id: addDialog
+        z: 100
+        names: addPicker.names
+        here: addPicker.here
+        onGoUp: addPicker.up()
+        onOpenRow: (row) => addPicker.enter(row)
+        onChooseRow: (row) => addPicker.choose(row)
+        onChooseHere: addPicker.chooseHere()
+        onCancelled: addPicker.cancel()
+    }
+    FolderPicker {
+        id: cropPicker
+        onDone: galleryModel.saveCroppedCopiesPicked()
+        onOpenInApp: cropDialog.open = true
+    }
+    FolderPickerDialog {
+        id: cropDialog
+        z: 100
+        names: cropPicker.names
+        here: cropPicker.here
+        onGoUp: cropPicker.up()
+        onOpenRow: (row) => cropPicker.enter(row)
+        onChooseRow: (row) => cropPicker.choose(row)
+        onChooseHere: cropPicker.chooseHere()
+        onCancelled: cropPicker.cancel()
+    }
+
+    // Where the filter bar's "Save cropped copies" puts them: the folder is asked for, then they are made.
     function askSaveCrops() {
-        cropDialog.active = false
-        cropDialog.active = true
+        cropPicker.pick(1)
     }
 
     function relayout() {
@@ -302,8 +324,8 @@ ApplicationWindow {
         }
         onSaveViewDialogRequested: win.askSaveView()
         onSimilarRequested: win.findSimilarFromCommandLine()
-        onAddFolderRequested: (folder) => library.addFolder(folder)
-        onSaveCropsRequested: (folder) => galleryModel.saveCroppedCopies(folder)
+        onAddFolderRequested: addPicker.chooseCommandLine(0)
+        onSaveCropsRequested: cropPicker.chooseCommandLine(1)
         onViewerShowRequested: (index) => viewerItem.show(index)
         onViewerPlayRequested: viewerItem.togglePlay()
         onViewerSetZoomRequested: (z, px, py) => viewerItem.setZoom(z, px, py)
@@ -474,8 +496,8 @@ ApplicationWindow {
                         win.libraryOpen = false
                     }
                     onHidden: grid.takeFocus()
-                    onFolderPicked: (folder) => library.addFolder(folder)
-                    onRemoveRequested: (path) => library.removeFolder(path)
+                    onAddRequested: addPicker.pick(0)
+                    onRemoveRequested: (row) => library.removeFolder(row)
                     onRescanRequested: library.rescan()
                     onWriteBackToggled: (on) => {
                         appSettings.writeBack = on

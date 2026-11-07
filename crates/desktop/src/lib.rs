@@ -18,6 +18,7 @@ mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
 mod panic_log;
+mod picker;
 mod providers;
 mod screenshot;
 mod settings;

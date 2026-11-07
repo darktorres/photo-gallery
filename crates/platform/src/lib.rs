@@ -10,6 +10,8 @@ pub mod file;
 pub mod message;
 pub mod names;
 pub mod native;
+pub mod picker;
 pub mod priority;
 pub mod process;
+pub mod sqlite;
 pub mod volume;

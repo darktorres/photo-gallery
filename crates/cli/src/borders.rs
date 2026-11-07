@@ -29,21 +29,24 @@ pub struct ReportStats {
 }
 
 /// The image files at `paths` (files, or folders searched recursively), sorted.
-fn image_files(paths: &[PathBuf]) -> Result<Vec<String>> {
-    fn walk(dir: &Path, out: &mut Vec<String>) -> Result<()> {
+fn image_files(paths: &[PathBuf]) -> Result<Vec<PathBuf>> {
+    fn walk(dir: &Path, out: &mut Vec<PathBuf>) -> Result<()> {
         for entry in std::fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
             let entry = entry?;
             let path = entry.path();
             if entry.file_type()?.is_dir() {
                 walk(&path, out)?;
             } else if is_image(&path) {
-                out.push(path.to_string_lossy().into_owned());
+                out.push(path);
             }
         }
         Ok(())
     }
+    // The extension is read from the name's own bytes, so a name with no UTF-8 form is still judged by its extension.
     fn is_image(path: &Path) -> bool {
-        path.file_name().and_then(|n| n.to_str()).and_then(Ext::of_name).map(Ext::kind) == Some(Kind::Image)
+        let ext =
+            path.file_name().and_then(|name| Ext::of_name_bytes(&pg_platform::names::canonical_of(Path::new(name))));
+        ext.map(Ext::kind) == Some(Kind::Image)
     }
     let mut out = Vec::new();
     for p in paths {
@@ -51,7 +54,7 @@ fn image_files(paths: &[PathBuf]) -> Result<Vec<String>> {
         if p.is_dir() {
             walk(&p, &mut out)?;
         } else {
-            out.push(p.to_string_lossy().into_owned());
+            out.push(p);
         }
     }
     out.sort();
@@ -74,7 +77,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     pipeline::run(
         &files,
         |file, wide| {
-            set_os_str(wide, std::ffi::OsStr::new(file));
+            set_os_str(wide, file.as_os_str());
             true
         },
         opts,
@@ -83,7 +86,8 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
         |analyzer, _, bytes| analyzer.borders(bytes, Turns::NONE),
         |i, result, len| {
             ctl.add(len, result.is_err());
-            let path = field(files.get(i).context("the pipeline gave a file past the list")?);
+            // The report is text: a file's name with no UTF-8 form shows with U+FFFD in its row.
+            let path = field(&files.get(i).context("the pipeline gave a file past the list")?.to_string_lossy());
             let row = match result {
                 Err(e) => {
                     stats.errors += 1;

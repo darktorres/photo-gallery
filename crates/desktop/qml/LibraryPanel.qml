@@ -4,7 +4,6 @@ pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
-import QtQuick.Dialogs
 import QtQuick.Layouts
 import pg.gallery
 
@@ -18,8 +17,9 @@ ModalOverlay {
     required property bool hasRoots
     required property bool writeBack
 
-    signal folderPicked(url folder)
-    signal removeRequested(string path)
+    // Add a folder (Main asks the picker, then the library takes what it chose).
+    signal addRequested()
+    signal removeRequested(int row)
     signal rescanRequested()
     signal writeBackToggled(bool on)
 
@@ -48,12 +48,13 @@ ModalOverlay {
                 delegate: RowLayout {
                     id: rootRow
                     required property string modelData
+                    required property int index
                     width: ListView.view.width
                     Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
                     Button {
                         text: words.text("ui-remove")
                         flat: true
-                        onClicked: panel.removeRequested(rootRow.modelData)
+                        onClicked: panel.removeRequested(rootRow.index)
                     }
                 }
                 Label {
@@ -71,7 +72,7 @@ ModalOverlay {
                 ToolTip.text: words.text("ui-write-files-tooltip")
             }
             RowLayout {
-                Button { text: words.text("ui-add-folder"); onClicked: folderDialog.open() }
+                Button { text: words.text("ui-add-folder"); onClicked: panel.addRequested() }
                 Button {
                     text: words.text("ui-rescan-all")
                     enabled: panel.hasRoots
@@ -81,11 +82,5 @@ ModalOverlay {
                 Button { text: words.text("ui-close"); onClicked: panel.dismissed() }
             }
         }
-    }
-
-    FolderDialog {
-        id: folderDialog
-        title: words.text("ui-add-folder-title")
-        onAccepted: panel.folderPicked(selectedFolder)
     }
 }

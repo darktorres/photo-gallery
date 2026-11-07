@@ -20,6 +20,7 @@ pg-analysis = { path = "../analysis", optional = true }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-query = { path = "../query" }
+pg-platform = { path = "../platform" }
 pg-schema = { path = "../schema" }
 rusqlite.workspace = true
 strum.workspace = true

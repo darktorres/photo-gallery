@@ -81,9 +81,9 @@ impl PipelineArgs {
 enum Command {
     /// Add folders to the library and record their image files (identity, size, mtime); files no longer there
     /// are marked missing. Without folders, rescans the whole library.
-    Scan { roots: Vec<String> },
+    Scan { roots: Vec<PathBuf> },
     /// Take a folder out of the library (its files are hidden, not deleted from the catalog).
-    Remove { root: String },
+    Remove { root: PathBuf },
     /// Analyze every new or changed file: hashes, PDQ (+ tier-1 pairs), dimensions, ThumbHash.
     Import {
         #[command(flatten)]
@@ -94,7 +94,7 @@ enum Command {
         /// Analyze these files, and the files under these folders, again, whatever their analysis: after a fix to
         /// what the import reads, which does not bump IMPORT_VERSION.
         #[arg(long, num_args = 1.., value_name = "PATH")]
-        again: Vec<String>,
+        again: Vec<PathBuf>,
     },
     /// Thumbnails at the given grid height for every imported file (the app does this in the background).
     Thumbs {
@@ -260,9 +260,11 @@ fn phase_label(phase: &Phase) -> String {
     }
 }
 
-/// `text` as a path under the catalog's rules; text that is none is an error.
-fn rule_path(rules: PathRules, text: &str) -> Result<RulePath> {
-    rules.parse(text).ok_or_else(|| anyhow::anyhow!("{text} is not a path"))
+/// `path` as a path under the catalog's rules, from its exact bytes; a path that is none is an error.
+fn rule_path_of(rules: PathRules, path: &Path) -> Result<RulePath> {
+    rules
+        .parse_bytes(&pg_platform::names::canonical_of(path))
+        .ok_or_else(|| anyhow::anyhow!("{} is not a path", path.display()))
 }
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
@@ -281,7 +283,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             } else {
                 let mut normalized = Vec::new();
                 for root in roots {
-                    let root = pg_scan::normalize_path(Path::new(&root))?;
+                    let root = pg_scan::normalize_path(&root)?;
                     // A refused folder is not added; the other folders still are.
                     if let Err(refused) = pg_scan::check_folder(rules, &root) {
                         println!("{} is not added: {refused}", rules.display(&root));
@@ -355,9 +357,9 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Remove { root } => {
             // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
             // the catalog's, and the catalog says whether it is a library folder.
-            let root = match pg_scan::normalize_path(Path::new(&root)) {
+            let root = match pg_scan::normalize_path(&root) {
                 Ok(path) => path,
-                Err(_) => rule_path(rules, &root)?,
+                Err(_) => rule_path_of(rules, &root)?,
             };
             let text = rules.display(&root);
             let removed = match catalog.root_id(&root)? {
@@ -487,18 +489,18 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
 
 /// The present files of the catalog at these paths, each a file or a folder (its files and its subfolders'), each
 /// once. Fails, before anything is done, on a path that holds none.
-fn files_named(catalog: &Catalog, paths: &[String]) -> Result<Vec<FileId>> {
+fn files_named(catalog: &Catalog, paths: &[PathBuf]) -> Result<Vec<FileId>> {
     let mut ids = Vec::new();
     for path in paths {
-        let rule = pg_scan::normalize_path(Path::new(path))?;
+        let rule = pg_scan::normalize_path(path)?;
         let before = ids.len();
-        if Path::new(path).is_dir() {
+        if path.is_dir() {
             ids.extend(catalog.files_under(&rule)?);
         } else {
             ids.extend(catalog.file_by_path(&rule)?);
         }
         if ids.len() == before {
-            bail!("{path}: no file of the library there");
+            bail!("{}: no file of the library there", path.display());
         }
     }
     ids.sort_unstable();

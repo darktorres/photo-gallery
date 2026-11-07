@@ -4,8 +4,9 @@
 //!
 //! The file names go to ExifTool as their own bytes. Each argument is one line of its argument file, which carries
 //! every name the probe tried (a leading space, a `#`, a raw non-UTF-8 byte, a lone surrogate on Windows), except one
-//! with a line break: a line can't hold that, so a command with such a name runs ExifTool once, with the names as its
-//! process arguments (exact on Unix; Windows can't hold such a name).
+//! with a line break or ending in whitespace: ExifTool reads such a line wrongly (see `needs_argv`), so a command with
+//! such a name runs ExifTool once, with the names as its process arguments (exact on Unix; Windows can't hold such a
+//! name).
 
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
@@ -96,9 +97,9 @@ impl ExifTool {
         Ok((stdout, stderr))
     }
 
-    /// One command: on the argument file, or as one process when an argument has a line break.
+    /// One command: on the argument file, or as one process when an argument needs the argument route (`needs_argv`).
     fn exec(&mut self, args: &[&OsStr]) -> Result<(String, String)> {
-        if breaks_a_line(args) {
+        if needs_argv(args) {
             return oneshot(&self.program, args);
         }
         let bytes: Vec<&[u8]> = args.iter().map(|a| a.as_encoded_bytes()).collect();
@@ -161,9 +162,17 @@ impl ExifTool {
     }
 }
 
-/// Whether an argument has a line break: an argument file's line can't carry it.
-fn breaks_a_line(args: &[&OsStr]) -> bool {
-    args.iter().any(|a| a.as_encoded_bytes().contains(&b'\n'))
+/// Whether an argument can't go through the argument file as it is. ExifTool reads a line break in an argument as the
+/// end of the argument, and drops the whitespace at its end, so a name with either fails there ("File not found", or
+/// "Can't create PNG files from scratch"). Probed on ExifTool 13.50 (WSL): a leading space or tab, and a CR, tab or
+/// space inside a name, come through. Such an argument takes the argument route, which hands ExifTool the exact bytes on
+/// Unix. A name ending in whitespace still can't be written by either route: ExifTool takes the type from the extension,
+/// which then ends in whitespace (refused by the test of that name).
+fn needs_argv(args: &[&OsStr]) -> bool {
+    args.iter().any(|a| {
+        let bytes = a.as_encoded_bytes();
+        bytes.contains(&b'\n') || bytes.last().is_some_and(|b| matches!(b, b' ' | b'\t' | b'\r' | 0x0b | 0x0c))
+    })
 }
 
 /// One ExifTool run with `args` as its process arguments (the names exact, on Unix). Its own process: the kept one is
@@ -278,7 +287,8 @@ mod tests {
 
     /// The names the file tests write a file as: spaces, a leading space, a `#` or `-`, a quote, a `[CSTR]` look-alike
     /// and a lone surrogate (its bytes are raw bytes on Unix); and, on Unix only, a raw non-UTF-8 byte, a line break (the
-    /// argument route) and a double quote, which Windows can't hold in a name.
+    /// argument route), a carriage return inside a name, and a double quote, which Windows can't hold in a name. A name
+    /// ending in whitespace is refused instead (`a_name_whose_extension_ends_in_whitespace_is_refused`).
     fn names() -> Vec<Vec<u8>> {
         let common = [
             b"plain.png".to_vec(),
@@ -291,7 +301,8 @@ mod tests {
             b"w\xed\xa0\x80.png".to_vec(),
         ];
         #[cfg(unix)]
-        let unix_only = vec![b"raw\xff.png".to_vec(), b"nl\nname.png".to_vec(), b"q\"uote.png".to_vec()];
+        let unix_only =
+            vec![b"raw\xff.png".to_vec(), b"nl\nname.png".to_vec(), b"cr\rname.png".to_vec(), b"q\"uote.png".to_vec()];
         #[cfg(windows)]
         let unix_only: Vec<Vec<u8>> = Vec::new();
         common.into_iter().chain(unix_only).collect()
@@ -323,11 +334,16 @@ mod tests {
         assert_eq!(answer, "ab\u{FFFD}\n");
     }
 
-    /// Only a line break needs the argument route.
+    /// A name with a line break, or ending in whitespace, takes the argument route; the others go through the argument
+    /// file as they are (the probe's cases, on either side of the rule).
     #[test]
-    fn a_line_break_takes_the_argument_route() {
-        assert!(breaks_a_line(&[OsStr::new("-o"), OsStr::new("a\nb.jpg")]));
-        assert!(!breaks_a_line(&[OsStr::new("-o"), OsStr::new("a b.jpg"), OsStr::new("#c'd\"e.jpg")]));
+    fn a_name_the_argument_file_cannot_carry_takes_the_argument_route() {
+        for name in ["a\nb.jpg", "a.jpg\n", "a.jpg ", "a.jpg\t", "a.jpg\r", "a.jpg\x0b", "a.jpg\x0c"] {
+            assert!(needs_argv(&[OsStr::new("-o"), OsStr::new(name)]), "{name:?} takes the argument route");
+        }
+        for name in ["a b.jpg", " lead.jpg", "a\rb.jpg", "a\tb.jpg", "#c'd\"e.jpg", "-dash.jpg", "[CSTR]x.jpg"] {
+            assert!(!needs_argv(&[OsStr::new("-o"), OsStr::new(name)]), "{name:?} goes through the argument file");
+        }
     }
 
     /// A process that died is replaced by the next command, instead of failing every later write. Needs
@@ -366,6 +382,28 @@ mod tests {
             tool.write_rating(&path, &out, 4).unwrap_or_else(|e| panic!("{}: {e:#}", path.display()));
             let written = std::fs::read(&out).unwrap();
             assert!(rated_4(&written), "{}: the written copy has no rating 4", path.display());
+            assert_eq!(std::fs::read(&path).unwrap(), source, "{}: the original changed", path.display());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A name whose last byte is whitespace or a CR can't be written by either route: the argument file trims it, and
+    /// the argument route passes the exact bytes, but ExifTool then takes the type from the extension (`png `), which it
+    /// doesn't write. The write fails with an error, no copy is left beside the original, and the original is unchanged.
+    /// Unix only (Windows can't hold such a name). Needs ExifTool; skipped without it.
+    #[cfg(unix)]
+    #[test]
+    fn a_name_whose_extension_ends_in_whitespace_is_refused_and_leaves_no_copy() {
+        let program = OsString::from("exiftool");
+        let Some(mut tool) = start_or_skip(&program) else { return };
+        let dir = pg_testkit::test_folder("scratch_exiftool", "refused").unwrap();
+        let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
+        for name in [&b"trail.png "[..], &b"endcr.png\r"[..], &b"trailtab.png\t"[..]] {
+            let path = dir.join(pg_platform::names::path_buf(name));
+            std::fs::write(&path, &source).unwrap();
+            let out = dir.join("refused-out.png");
+            assert!(tool.write_rating(&path, &out, 4).is_err(), "{}: written", path.display());
+            assert!(!out.exists(), "{}: a copy was left", path.display());
             assert_eq!(std::fs::read(&path).unwrap(), source, "{}: the original changed", path.display());
         }
         let _ = std::fs::remove_dir_all(&dir);

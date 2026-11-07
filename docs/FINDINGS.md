@@ -124,6 +124,16 @@ or deleted. Finding it needs a full-set run.
   it reads. Probed (ExifTool 13.60, a 375-character path): from the command line, a write and a read reach such a
   file with the plain path, and with `WindowsLongPath=1` too; through the stay-open argument file, with the plain path.
   The option isn't turned on.
+- **ExifTool's argument file and odd names.** Probed in WSL (Ubuntu-26.04, ExifTool 13.50), with absolute paths, as a
+  rating write (`-charset filename=utf8`, `-XMP:Rating=4 -o out in`) through `-@`. The argument file carries a name
+  exactly, except one with a line break (split at it) or one ending in a space, tab, vertical tab, form feed or CR
+  (trimmed: "Can't create PNG files from scratch"). A leading space or tab, a space, tab or CR inside a name, `#`, `-`,
+  a quote, `[CSTR]` and raw bytes all come through. The process-argument route carries a name's bytes exactly, and
+  `crates/exiftool/src/lib.rs` (`needs_argv`) sends the names the argument file can't carry through it. But a name
+  ending in whitespace still can't be written by either route: ExifTool takes the file's type from its extension
+  (`png `), refuses it ("Can't create PNG files from scratch"), so the write fails with an error and leaves no copy.
+  Its argument file lines are absolute paths: a relative name starting with `#` is a comment and one starting with `-`
+  is an option. Windows can't hold any of these names; its surrogate names were probed separately (above).
 - **HDD read, path order (robocopy E:→D:): 70 MB/s, ~410 files/s** (consistent with the 557 files/s
   above, as robocopy also writes).
 - **The harness embeds at only 80–117 img/s against 410 img/s of GPU capacity**, so decoding

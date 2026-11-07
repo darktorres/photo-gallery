@@ -1,11 +1,13 @@
 //! Helpers for the crates' tests. Tests write their files under `PG_TEST_DIR` when it is set, and under the temp folder
 //! otherwise, in the folder each test names. Set `PG_TEST_DIR` to keep the files off the system drive.
 
+use std::ffi::OsStr;
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 
 pub mod events;
+pub mod held;
 pub use pg_catalog::fixture;
 
 /// A test needs an external tool that is not installed: the test returns after this call. Without `PG_REQUIRE_TOOLS`
@@ -16,15 +18,38 @@ pub fn missing_tool(tool: &str) {
     eprintln!("{tool} not found: skipped");
 }
 
+/// A test that can't check what it is for in this environment (the reason says what) returns after this call: it
+/// passes, with the reason on stderr where the test runner prints it.
+#[expect(clippy::print_stderr, reason = "a skipped test says so on stderr, where the test runner prints it")]
+pub fn skip(reason: &str) {
+    eprintln!("skipped: {reason}");
+}
+
 /// The base folder for a test's files: `PG_TEST_DIR` when it is set, else the temp folder's `scratch` folder. The name
 /// is a plain folder name (`"scratch_rate"`): no test writes to a drive it was not told about.
 fn base(scratch: &str) -> PathBuf {
     if let Some(dir) = std::env::var_os("PG_TEST_DIR") {
         // `.env` writes paths with forward slashes, and the verbatim (`\\?\`) paths that pg-platform opens are not
         // normalized: a test's folders need the native separator, as the paths the app itself is given have.
-        return PathBuf::from(dir.to_string_lossy().replace('/', std::path::MAIN_SEPARATOR_STR));
+        return native_separators(&dir);
     }
     std::env::temp_dir().join(scratch)
+}
+
+/// `dir` with its forward slashes made the native separator. On Windows this is done on the UTF-16 units, so every other
+/// unit is kept, a lone surrogate included. On Unix a forward slash is already the separator: the path is kept as it is.
+#[cfg(windows)]
+fn native_separators(dir: &OsStr) -> PathBuf {
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    let units: Vec<u16> =
+        dir.encode_wide().map(|unit| if unit == u16::from(b'/') { u16::from(b'\\') } else { unit }).collect();
+    PathBuf::from(std::ffi::OsString::from_wide(&units))
+}
+
+/// `dir` as it is: on Unix a forward slash is the separator, and every other byte is kept.
+#[cfg(not(windows))]
+fn native_separators(dir: &OsStr) -> PathBuf {
+    PathBuf::from(dir)
 }
 
 /// A fresh folder for one test: `name-<process id>` under the base, emptied if it exists. Fails if it can't be made.

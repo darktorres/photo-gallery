@@ -1,6 +1,6 @@
-//! The borders pass on real files: a file that can't be read stays due for the next pass, so it is looked at
-//! again once it can be read. It locks the file by a sharing mode, which only Windows has, so the file is Windows only.
-#![cfg(windows)]
+//! The borders pass on real files: a file that can't be read stays due for the next pass, so it is looked at again once
+//! it can be read. Another program holds the file (pg_testkit::held): on Windows it is open without sharing, on Unix it
+//! has no read permission, and the hold lets go before the next pass.
 
 use std::path::Path;
 
@@ -10,12 +10,10 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_library::borders;
 use pg_model::rules::PathRules;
+use pg_testkit::held::{Access, hold};
 
-#[cfg(windows)]
 #[test]
 fn an_unreadable_file_stays_due_for_the_next_pass() {
-    use std::os::windows::fs::OpenOptionsExt;
-
     let dir = pg_testkit::run_folder("scratch_borders", "borders").unwrap();
     let images = dir.join("images");
     std::fs::create_dir_all(&images).unwrap();
@@ -35,8 +33,12 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     assert_eq!((state::borders_due(&c, "a.png").unwrap(), state::borders_due(&c, "b.png").unwrap()), (1, 1));
 
-    // a.png is locked: the pass can't read it.
-    let lock = std::fs::OpenOptions::new().read(true).write(true).share_mode(0).open(images.join("a.png")).unwrap();
+    // a.png is held: the pass can't read it. Where the permissions don't stop this process (root), there is nothing to
+    // test.
+    let Some(lock) = hold(&images.join("a.png"), Access::Read).unwrap() else {
+        pg_testkit::skip("the permissions don't stop this process from reading (root)");
+        return;
+    };
     let stats = borders::find(&mut c, &opts, &ctl).unwrap();
     assert_eq!(stats.failed, 1);
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 1, "an unreadable file must stay due");

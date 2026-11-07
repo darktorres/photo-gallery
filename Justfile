@@ -124,9 +124,14 @@ perf *args:
 fuzz-smoke *args:
     wsl -d {{ wsl_distro }} -u root -- bash tools/fuzz-smoke.sh {{ args }}
 
-# Clippy (-D warnings) and the tests for every crate but the desktop, in WSL, where the Linux-only code compiles (tools/wsl-check.sh).
+# Clippy (-D warnings) and the tests of the whole workspace, in WSL, on the committed HEAD: the Linux-only code compiles
+# and runs there (tools/wsl-check.sh). `just wsl-check-tree` checks the working tree instead, uncommitted changes included.
 wsl-check:
     wsl -d {{ wsl_distro }} -u root -- bash tools/wsl-check.sh
+
+# The same checks on the working tree, uncommitted changes included (tools/wsl-check.sh --working-tree).
+wsl-check-tree:
+    wsl -d {{ wsl_distro }} -u root -- bash tools/wsl-check.sh --working-tree
 
 # qmllint and the QML compiler on the QML, failing on any warning or anything not compiled to C++. Uses the
 # pg.gallery types of the last build, so build first.

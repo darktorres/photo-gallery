@@ -1,8 +1,7 @@
 //! Write-back on real files: ratings into each format, lossless turns, file identity kept, no re-import after a
 //! metadata write, and a rating changed by another program adopted. Needs ExifTool (skipped without it).
 //!
-//! Files are made in a scratch folder (`PG_TEST_DIR`, default `D:\PhotoGallery\scratch_rate`, never C:), never
-//! in a dataset.
+//! Files are made in a scratch folder (`PG_TEST_DIR`, or the temp folder's `scratch_rate`), never in a dataset.
 
 use std::io::Cursor;
 use std::path::Path;
@@ -24,6 +23,7 @@ use pg_model::rating::Rating;
 use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 use pg_testkit::events::Quiet;
+use pg_testkit::held::{Access, hold};
 use pg_thumbcache::ThumbCache;
 use pg_writeback::Writer;
 
@@ -77,14 +77,13 @@ fn wait_for_queue(c: &Catalog) -> anyhow::Result<()> {
 }
 
 #[test]
-#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn ratings_and_turns_reach_the_files() {
     if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
         pg_testkit::missing_tool("ExifTool");
         return;
     }
     // Earlier runs' folders go first, and this run's thumbnail cache stays open to the end, so it can't remove its own.
-    let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "writeback", &["images"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_rate", "writeback", &["images"]).unwrap();
     let files = make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
@@ -256,14 +255,12 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     quiet.check();
 }
 
-/// A finishing copy whose original is locked (another program has it open without sharing) fails at every try. The
-/// queue waits longer between the tries, gives up at MAX_ATTEMPTS, and discards the temp: the file then isn't shown as
-/// being written, and the failure stays in the queue. Without the give-up, the job was retried at once, forever.
-#[cfg(windows)]
+/// A finishing copy whose original is held against writes (another program has it open without sharing on Windows, and
+/// the original is read-only on Unix) fails at every try. The queue waits longer between the tries, gives up at
+/// MAX_ATTEMPTS, and discards the temp: the file then isn't shown as being written, and the failure stays in the queue.
+/// Without the give-up, the job was retried at once, forever.
 #[test]
 fn a_finishing_copy_that_keeps_failing_is_given_up() {
-    use std::os::windows::fs::OpenOptionsExt;
-
     // Its own folder: run_folder keeps one folder per prefix, and this test runs beside the others in the binary.
     let dir = pg_testkit::run_folder("scratch_rate", "giveup").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
@@ -281,8 +278,12 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     std::fs::copy(&files[1].0, pg_platform::names::path_buf(&c.rules().join(&temp))).unwrap();
     state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
 
-    // Locked: the copy into the original can't open it.
-    let _lock = std::fs::OpenOptions::new().read(true).write(true).share_mode(0).open(&files[1].0).unwrap();
+    // Held against writes: the copy into the original can't open it. Where the permissions don't stop this process
+    // (root), there is nothing to test.
+    let Some(_held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
+        pg_testkit::skip("the permissions don't stop this process from writing (root)");
+        return;
+    };
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
@@ -311,7 +312,7 @@ fn a_finishing_copy_that_keeps_failing_is_given_up() {
     let attempts = state::write_row(&c, id).unwrap().attempts;
     assert_eq!(attempts, 5);
 
-    drop(_lock);
+    drop(_held);
     drop(writer);
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));
@@ -360,7 +361,6 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
 }
 
 #[test]
-#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // Its own folder, as the other tests here: run_folder keeps one folder per prefix.
     let dir = pg_testkit::run_folder("scratch_rate", "finish").unwrap();

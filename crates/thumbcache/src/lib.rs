@@ -278,6 +278,8 @@ struct Store {
     path: PathBuf,
     inbox: Arc<Inbox>,
     writer: Service,
+    /// The shared hold on the file (`pg_schema::Live`), for as long as the cache is open.
+    _live: pg_schema::Live,
 }
 
 /// The writer's queue: the ops not yet done, in order, and whether more are taken. The writer is woken after each push.
@@ -379,7 +381,7 @@ impl ThumbCache {
             bail!("a thumbnail cache cap of {cap} bytes");
         }
         let path = cache_path(dir);
-        let (mut conn, started_over) = open_writer(&path, catalog_id, cap_bytes)?;
+        let (mut conn, started_over, live) = open_writer(&path, catalog_id, cap_bytes)?;
         if let Some(why) = started_over {
             events.publish(Event::StartedOver { why });
         }
@@ -390,7 +392,7 @@ impl ThumbCache {
         let body = inbox.clone();
         let writer = Service::start("thumbnail cache", move |waker| write_loop(conn, &body, &events, waker))
             .context("start the thumbnail cache writer")?;
-        Ok(ThumbCache { store: Some(Store { path, inbox, writer }) })
+        Ok(ThumbCache { store: Some(Store { path, inbox, writer, _live: live }) })
     }
 
     /// A cache that keeps nothing, for when the file can't be opened: a cache must never keep the app from
@@ -683,19 +685,41 @@ fn judge(path: &Path, catalog_id: &str) -> Result<Found> {
     })
 }
 
-/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given, and why the file was
-/// started over (`None`: it was kept, or it is new). A file this build can't use (of another catalog or layout) is
-/// deleted with its sidecars and made anew, keeping its cap. A file that is not a thumbnail cache is refused and left
-/// alone. The lock beside the file is held while it is judged and changed.
-fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<(Connection, Option<String>)> {
+/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given, why the file was
+/// started over (`None`: it was kept, or it is new), and the shared hold on the file (`pg_schema::Live`), kept for as
+/// long as the connection is. A file this build can't use (of another catalog or layout) is deleted with its sidecars
+/// and made anew, keeping its cap: that needs the exclusive hold, so no other program or connection has the file open
+/// (a start over is refused otherwise, and nothing is deleted). A file that is not a thumbnail cache is refused and
+/// left alone. The lock beside the file is held while it is judged and changed.
+fn open_writer(
+    path: &Path,
+    catalog_id: &str,
+    cap_bytes: Option<i64>,
+) -> Result<(Connection, Option<String>, pg_schema::Live)> {
     let _lock = pg_schema::Lock::take(path)
         .with_context(|| format!("{}: its lock file", path.display()))?
         .ok_or_else(|| anyhow!("{}: another process is changing it", path.display()))?;
     let (why, cap) = match judge(path, catalog_id)? {
-        Found::Usable => return Ok((open_file(path, catalog_id, cap_bytes)?, None)),
+        Found::Usable => return Ok((open_file(path, catalog_id, cap_bytes)?, None, hold_shared(path)?)),
         Found::New => (None, None),
         Found::Stale { why, cap } => (Some(why), cap),
         Found::Foreign { why } => bail!("{}: {why}, so it is left alone", path.display()),
+    };
+    // Taken before anything is removed, and kept until the new file is made: the exclusive hold says nothing else has
+    // the file open. Without it, the file is not touched.
+    let exclusive = if why.is_some() {
+        let held = pg_schema::Live::exclusive(path)
+            .with_context(|| format!("{}: its open marker", path.display()))?
+            .ok_or_else(|| {
+                anyhow!(
+                    "{}: made for another catalog or layout, and can't be started over while another program has it \
+                     open",
+                    path.display()
+                )
+            })?;
+        Some(held)
+    } else {
+        None
     };
     if why.is_some() {
         // Sidecars first: a `-wal` left beside a new file would be replayed into it.
@@ -719,7 +743,17 @@ fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<
     if !matches!(judge(path, catalog_id)?, Found::Usable) {
         bail!("{}: not usable even when made anew", path.display());
     }
-    Ok((conn, why))
+    // The file is made: the exclusive hold gives way to the shared one the connection keeps.
+    drop(exclusive);
+    let live = hold_shared(path)?;
+    Ok((conn, why, live))
+}
+
+/// The shared hold a cache keeps while it is open (`pg_schema::Live`): it waits for a start over in progress to finish.
+fn hold_shared(path: &Path) -> Result<pg_schema::Live> {
+    pg_schema::Live::shared(path)
+        .with_context(|| format!("{}: its open marker", path.display()))?
+        .ok_or_else(|| anyhow!("{}: another process is starting it over", path.display()))
 }
 
 /// A connection to the cache file, made with its layout if it is new (for catalog `catalog_id`), and the cap set if one
@@ -1737,10 +1771,6 @@ mod tests {
     }
 
     #[test]
-    #[cfg_attr(
-        not(windows),
-        ignore = "S-17: on Linux a second open deletes a file another handle holds, so no refusal"
-    )]
     fn a_cache_of_another_catalog_starts_over() {
         let dir = test_folder(SCRATCH, "other-catalog").unwrap();
         let cache = open(&dir, 12345);

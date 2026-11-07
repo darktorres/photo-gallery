@@ -138,6 +138,9 @@ pub struct Catalog {
     rules: PathRules,
     /// The catalog this build moved aside to make this one, when [`Catalog::prepare`] made one.
     rebuilt: Option<Rebuilt>,
+    /// The shared hold on the file (`pg_schema::Live`) for as long as the catalog is open: a rebuild elsewhere waits
+    /// for it to go. `None` for `:memory:`. Declared after `conn`, so it is released after the connection closes.
+    _live: Option<pg_schema::Live>,
 }
 
 /// A catalog that [`Catalog::prepare`] moved aside, and why: its schema differed from this build's, or it was not a
@@ -314,6 +317,26 @@ fn take_lock(path: &Path) -> Result<pg_schema::Lock> {
     pg_schema::Lock::take(path)
         .with_context(|| format!("catalog {}: its lock file", path.display()))?
         .ok_or_else(|| Error::Other(anyhow!("catalog {}: another process is preparing it", path.display())))
+}
+
+/// The exclusive hold a change to the catalog file needs (`pg_schema::Live`): no other process or connection may have
+/// it open. Fails without waiting, with the catalog as it was.
+fn take_exclusive(path: &Path) -> Result<pg_schema::Live> {
+    pg_schema::Live::exclusive(path)
+        .with_context(|| format!("catalog {}: its open marker", path.display()))?
+        .ok_or_else(|| {
+            Error::Other(anyhow!(
+                "catalog {}: another program or connection has it open, so it can't be changed until it is closed",
+                path.display()
+            ))
+        })
+}
+
+/// The shared hold a catalog keeps while it is open (`pg_schema::Live`). It waits for a change in progress to finish.
+fn take_shared(path: &Path) -> Result<pg_schema::Live> {
+    pg_schema::Live::shared(path)
+        .with_context(|| format!("catalog {}: its open marker", path.display()))?
+        .ok_or_else(|| Error::Other(anyhow!("catalog {}: another program is changing it", path.display())))
 }
 
 /// Move the catalog at `path`, with its `-wal`, `-shm` and `-journal` files, aside to the first free name beside it:
@@ -586,9 +609,12 @@ impl Catalog {
     /// their ids (`carry_rows`), and the old file is moved aside (`move_aside`; see [`Catalog::rebuilt`]). A row the
     /// copy can't take (a column the new layout needs that the old one lacks) fails the copy, and the new catalog is
     /// made empty, with the reason said. A catalog of this build's schema at an earlier version is migrated forward.
-    /// Its version marks are set to `versions`. The library calls this once, before anything else opens the catalog.
+    /// Its version marks are set to `versions`. The library calls this once, before anything else opens the catalog. A
+    /// change to the file (a rebuild, or a migration) needs no other process or connection to have it open: otherwise
+    /// it fails with the catalog untouched, and the one that has it open is left as it is.
     pub fn prepare(path: &Path, versions: Versions, rules: PathRules) -> Result<Catalog> {
-        let _lock = if path == Path::new(":memory:") { None } else { Some(take_lock(path)?) };
+        let memory = path == Path::new(":memory:");
+        let _lock = if memory { None } else { Some(take_lock(path)?) };
         let current = current_version()?;
         let mut conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         let version = version_of(&conn)?;
@@ -603,6 +629,10 @@ impl Catalog {
             }
             Some(found) => mismatch(&conn, found, &expected(found)?)?,
         };
+        // A change to the file is made with the exclusive hold, which is kept through it (`take_exclusive` fails with
+        // nothing moved when another holds the file). A catalog that needs no change is only held shared, below.
+        let changes = why.is_some() || version.is_some_and(|found| found != current);
+        let exclusive = if memory || !changes { None } else { Some(take_exclusive(path)?) };
         let mut rebuilt = None;
         if let Some(why) = why {
             rebuilt = Some(rebuild(conn, path, rules, why, version.is_some())?);
@@ -621,7 +651,11 @@ impl Catalog {
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
         crate::query::register_functions(&conn)?;
-        Ok(Catalog { conn, rules, rebuilt })
+        // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
+        // come in meanwhile, since the preparer's lock is still held).
+        drop(exclusive);
+        let live = if memory { None } else { Some(take_shared(path)?) };
+        Ok(Catalog { conn, rules, rebuilt, _live: live })
     }
 
     /// Open a catalog this process has prepared ([`Catalog::prepare`], which makes it, brings it to this build's schema
@@ -630,6 +664,8 @@ impl Catalog {
     /// expected schema, and is not repeated for the marks. An error if the catalog isn't there, or its schema isn't this
     /// build's (another program changed it since it was prepared).
     pub fn open(path: &Path, rules: PathRules) -> Result<Catalog> {
+        // Held before the file is looked at: a rebuild in progress is waited for, not read half-made.
+        let live = if path == Path::new(":memory:") { None } else { Some(take_shared(path)?) };
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(db_file(path)?, flags)
             .with_context(|| format!("catalog {}", path.display()))?;
@@ -647,7 +683,7 @@ impl Catalog {
         }
         check_rules(&conn, path, rules)?;
         crate::query::register_functions(&conn)?;
-        Ok(Catalog { conn, rules, rebuilt: None })
+        Ok(Catalog { conn, rules, rebuilt: None, _live: live })
     }
 
     /// The path rules the catalog's paths are stored under.
@@ -1542,6 +1578,27 @@ mod tests {
 
     // The layout tests below read the file on disk through their own connection (`raw::on_disk`): what they check
     // is the layout, not the catalog's tables.
+
+    /// A catalog another connection has open is not moved aside: its rebuild is refused, with the file as it was, and it
+    /// is rebuilt once that connection has closed. The edit to the file is made on a raw connection, which holds nothing.
+    #[test]
+    fn a_catalog_another_connection_has_open_is_not_moved_aside() {
+        let dir = test_folder(SCRATCH, "open-elsewhere").unwrap();
+        let path = dir.join("catalog.sqlite");
+        let open = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+        let edited = Connection::open(&path).unwrap();
+        edited.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
+        drop(edited);
+
+        let err = Catalog::prepare(&path, versions(), PathRules::NATIVE).err().expect("refused");
+        assert!(format!("{err:#}").contains("has it open"), "{err:#}");
+        assert!(path.exists(), "the catalog is where it was");
+        assert!(!dir.join("catalog.sqlite.replaced").exists(), "nothing was moved aside");
+        drop(open);
+
+        let c = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+        assert!(c.rebuilt().is_some(), "moved aside once nothing has it open");
+    }
 
     // Windows-only: the earlier layout is a Windows catalog, its rows are `D:\` paths recorded as `windows`.
     #[test]

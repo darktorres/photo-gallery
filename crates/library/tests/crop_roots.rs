@@ -37,7 +37,6 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 }
 
 #[test]
-#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder("scratch_rate", "crop-roots").unwrap();
     let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();

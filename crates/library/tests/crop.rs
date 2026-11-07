@@ -2,11 +2,10 @@
 //! with the original's modification time; originals untouched; marked files and changed files skipped; a folder
 //! whose copies would land in the library refused.
 //!
-//! Files are made in a scratch folder (`PG_TEST_DIR`, default `D:\PhotoGallery\scratch_rate`, never C:), never
-//! in a dataset.
+//! Files are made in a scratch folder (`PG_TEST_DIR`, or the temp folder's `scratch_rate`), never in a dataset.
 
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Component, Path, PathBuf};
 
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -49,7 +48,7 @@ fn make_files(dir: &Path) -> anyhow::Result<Vec<String>> {
         ("b.png", image::ImageFormat::Png),
         ("c.webp", image::ImageFormat::WebP),
         ("d.tif", image::ImageFormat::Tiff),
-        (r"sub\e.bmp", image::ImageFormat::Bmp),
+        ("sub/e.bmp", image::ImageFormat::Bmp),
     ] {
         let mut bytes = Cursor::new(Vec::new());
         img.write_to(&mut bytes, format)?;
@@ -64,15 +63,28 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
     Ok(state::present_files(c)?.into_iter().map(|(id, name)| (id.get(), name)).collect())
 }
 
+/// The place under `out` of the copies of the library folder `root`, as `crop::save` puts them: the drive's letter as a
+/// part (none on Unix, where the root is no part), then the folder's parts.
+fn place_in(out: &Path, root: &Path) -> PathBuf {
+    root.components().fold(out.to_path_buf(), |place, part| match part {
+        Component::Prefix(prefix) => {
+            let letter: String =
+                prefix.as_os_str().to_string_lossy().chars().filter(|&c| c != ':' && c != '\\').collect();
+            if letter.is_empty() { place } else { place.join(letter) }
+        }
+        Component::Normal(name) => place.join(name),
+        Component::RootDir | Component::CurDir | Component::ParentDir => place,
+    })
+}
+
 #[test]
-#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     // The TIFF's metadata is copied with it.
     if std::process::Command::new("exiftool").arg("-ver").output().is_err() {
         pg_testkit::missing_tool("ExifTool");
         return;
     }
-    let dir = pg_testkit::run_folder_with(r"D:\PhotoGallery\scratch_rate", "crop", &["images/sub"]).unwrap();
+    let dir = pg_testkit::run_folder_with("scratch_rate", "crop", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
     let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
     let ctl = Control::new();
@@ -123,9 +135,8 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     std::fs::write(webp, &changed).unwrap();
 
     let out = dir.join("out");
-    // The copies of the library folder `images`: under the copies' folder, in the library folder's place (its path,
-    // without the colon).
-    let copies = out.join(dir.join("images").to_string_lossy().replace(':', ""));
+    // The copies of the library folder `images`: under the copies' folder, in the library folder's place.
+    let copies = place_in(&out, &dir.join("images"));
     let s = crop::save(&c, &all, &out, &opts, &ctl).unwrap();
     assert_eq!((s.saved, s.skipped, s.failed), (3, 2, 0), "{:?}", s.error);
     assert!(s.remaining.is_empty());
@@ -134,12 +145,15 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
             assert_eq!(&std::fs::read(path).unwrap(), &originals[i], "{path} changed");
         }
     }
-    for name in ["a.jpg", "d.tif", r"sub\e.bmp"] {
-        let copy = copies.join(name);
+    // The catalog keeps a file's name without its folder, so the cuts are keyed by the name alone.
+    for name in ["a.jpg", "d.tif", "sub/e.bmp"] {
+        let relative = Path::new(name);
+        let key = relative.file_name().unwrap().to_string_lossy().into_owned();
+        let copy = copies.join(relative);
         let bytes = std::fs::read(&copy).unwrap_or_else(|e| panic!("{}: {e}", copy.display()));
         let d = pg_render::display::decode(&mut Decoder::new().unwrap(), &bytes, MinSize::Full, Turns::NONE).unwrap();
         // JPEG: the top cut moves inward to the 8 or 16 px grid, the bottom is exact.
-        let [_, top, _, bottom] = cuts[name.rsplit('\\').next().unwrap()];
+        let [_, top, _, bottom] = cuts[&key];
         assert_eq!(u32::try_from(d.image.width).unwrap(), W, "{name}");
         let cut_top = H - bottom - u32::try_from(d.image.height).unwrap();
         if name == "a.jpg" {

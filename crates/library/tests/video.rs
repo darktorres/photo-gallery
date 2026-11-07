@@ -101,7 +101,6 @@ const BLUE: [u8; 3] = [0, 0, 255];
 const GREEN: [u8; 3] = [0, 128, 0];
 
 #[test]
-#[cfg_attr(not(windows), ignore = "S-17: the catalog joins folder and name with a Windows separator")]
 fn videos() {
     let Some(exe) = ffmpeg() else {
         pg_testkit::missing_tool("ffmpeg");

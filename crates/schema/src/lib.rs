@@ -161,6 +161,52 @@ impl Lock {
     }
 }
 
+/// A hold on a database file that a process has open: `<database>.live`, which stays after the hold is released. A
+/// process that has the file open (a catalog, a cache, for as long as it is open) holds it shared, and so does nothing
+/// to stop another such process. A process that would move the file aside or delete it (a catalog's rebuild, a cache
+/// started over) takes it exclusively, which fails while any other process or connection holds it. The contents are
+/// the transactions' business: this is about the file itself, which only a rebuild or a start over replaces. It holds
+/// between processes of one operating system, as [`Lock`] does.
+#[derive(Debug)]
+pub struct Live {
+    _held: File,
+}
+
+impl Live {
+    /// The shared hold on the database at `path`, for as long as the caller keeps it. It waits up to `LOCK_TRIES` tries
+    /// while an exclusive holder (a rebuild) lets go. `None` when one still holds the file after that.
+    pub fn shared(path: &Path) -> io::Result<Option<Live>> {
+        let file = open_live(path)?;
+        for attempt in 0..LOCK_TRIES {
+            match file.try_lock_shared() {
+                Ok(()) => return Ok(Some(Live { _held: file })),
+                Err(TryLockError::Error(e)) => return Err(e),
+                Err(TryLockError::WouldBlock) if attempt + 1 < LOCK_TRIES => std::thread::sleep(LOCK_WAIT),
+                Err(TryLockError::WouldBlock) => {}
+            }
+        }
+        Ok(None)
+    }
+
+    /// The exclusive hold on the database at `path`, for a change to the file itself. It doesn't wait: `None` when any
+    /// other process or connection holds the file, which then can't be changed.
+    pub fn exclusive(path: &Path) -> io::Result<Option<Live>> {
+        let file = open_live(path)?;
+        match file.try_lock() {
+            Ok(()) => Ok(Some(Live { _held: file })),
+            Err(TryLockError::WouldBlock) => Ok(None),
+            Err(TryLockError::Error(e)) => Err(e),
+        }
+    }
+}
+
+/// The `.live` file beside the database at `path`, made if it isn't there.
+fn open_live(path: &Path) -> io::Result<File> {
+    let mut name = path.as_os_str().to_owned();
+    name.push(".live");
+    OpenOptions::new().create(true).write(true).truncate(false).open(name)
+}
+
 /// `sql` with what does not change its meaning taken out: comments and whitespace are dropped, unquoted words are
 /// lowercased (ASCII only, as SQLite folds them), and each token is joined to the next with one space. Quoted strings
 /// and quoted identifiers (`'..'`, `".."`, `` `..` ``, `[..]`) are kept exactly as written.

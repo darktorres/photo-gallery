@@ -1682,7 +1682,6 @@ dependencies = [
  "pg-thumbs",
  "pg-video",
  "pg-writeback",
- "rusqlite",
 ]
 
 [[package]]

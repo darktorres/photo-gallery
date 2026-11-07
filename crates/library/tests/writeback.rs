@@ -422,27 +422,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     drop(c);
 
     // The catalog as it was before, with the temp as text.
-    let old = rusqlite::Connection::open(&catalog_path).unwrap();
-    old.execute_batch(
-        r"DROP TABLE file_writes;
-          CREATE TABLE file_writes(
-              file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
-              kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
-              value    INTEGER NOT NULL,
-              queued   INTEGER NOT NULL,
-              attempts INTEGER NOT NULL DEFAULT 0,
-              error    TEXT,
-              temp       TEXT,
-              temp_value INTEGER,
-              PRIMARY KEY(file_id, kind));",
-    )
-    .unwrap();
-    old.execute(
-        "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rating', 3, 0, ?2, 3)",
-        rusqlite::params![id.get(), temp_text],
-    )
-    .unwrap();
-    drop(old);
+    state::set_text_temp_layout(&catalog_path, id, &temp_text).unwrap();
 
     // The upgrade carries the row (its temp as bytes), and the writer finishes the copy.
     let c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();

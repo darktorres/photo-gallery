@@ -1,5 +1,6 @@
 //! The window's test hooks (`--name=value` arguments, listed in Main.qml), read typed: the QML doesn't parse text.
-//! `--screenshot` and `--wait` are main.rs's.
+//! `--screenshot` and `--wait` are read by screenshot.rs. A path option is read by `path`, exactly as given; the QML
+//! never gets a path from here.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -8,8 +9,6 @@ pub mod qobject {
         type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qstringlist.h");
         type QStringList = cxx_qt_lib::QStringList;
-        include!("cxx-qt-lib/qurl.h");
-        type QUrl = cxx_qt_lib::QUrl;
     }
 
     extern "RustQt" {
@@ -31,10 +30,6 @@ pub mod qobject {
         #[qinvokable]
         fn number(self: &CommandLine, name: &QString, fallback: f64) -> f64;
 
-        /// The value, a path, as a file URL.
-        #[qinvokable]
-        fn url(self: &CommandLine, name: &QString) -> QUrl;
-
         /// The value as keys: a character each, but for `r` and the digit after it, which are one ("r3": rate 3).
         #[qinvokable]
         fn keys(self: &CommandLine, name: &QString) -> QStringList;
@@ -45,7 +40,7 @@ use std::ffi::OsString;
 use std::path::Path;
 use std::sync::OnceLock;
 
-use cxx_qt_lib::{QString, QStringList, QUrl};
+use cxx_qt_lib::{QString, QStringList};
 use pg_model::query::{Query, Sort};
 
 #[derive(Default)]
@@ -134,15 +129,21 @@ pub fn start_options() -> StartOptions {
 /// which then answers in its place and sends nothing. Only that flag selects it; the default is never the fixture,
 /// because a search sends the photo to Yandex.
 pub fn yandex_source() -> pg_app::yandex::Factory {
-    match value("yandex-fixture") {
+    match path("yandex-fixture") {
         Some(dir) => {
             crate::panic_log::note(&format!(
-                "yandex: --yandex-fixture: answering from the recorded session in {dir}; nothing is sent"
+                "yandex: --yandex-fixture: answering from the recorded session in {}; nothing is sent",
+                dir.display()
             ));
-            pg_app::yandex::replay(Path::new(dir))
+            pg_app::yandex::replay(dir)
         }
         None => pg_app::yandex::client(),
     }
+}
+
+/// The value as a number: `fallback` without one, or when it isn't one.
+fn number_of(value: Option<&str>, fallback: f64) -> f64 {
+    value.and_then(|v| v.trim().parse().ok()).unwrap_or(fallback)
 }
 
 /// `keys` split as `CommandLine.keys` does.
@@ -175,11 +176,7 @@ impl qobject::CommandLine {
     }
 
     fn number(&self, name: &QString, fallback: f64) -> f64 {
-        named(name).and_then(|v| v.trim().parse().ok()).unwrap_or(fallback)
-    }
-
-    fn url(&self, name: &QString) -> QUrl {
-        QUrl::from_local_file(&self.text(name))
+        number_of(named(name), fallback)
     }
 
     fn keys(&self, name: &QString) -> QStringList {
@@ -227,5 +224,15 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].name, "find-similar");
         assert_eq!(parsed[0].exact, value);
+    }
+
+    // The numeric options read as they always did: the number, trimmed; the fallback otherwise.
+    #[test]
+    fn a_number_option_is_its_number_or_the_fallback() {
+        assert_eq!(number_of(Some(" 0.5 "), 1.0), 0.5);
+        assert_eq!(number_of(Some("3"), 1.0), 3.0);
+        assert_eq!(number_of(Some("x"), 1.0), 1.0);
+        assert_eq!(number_of(Some(""), 1.0), 1.0);
+        assert_eq!(number_of(None, 1.0), 1.0);
     }
 }

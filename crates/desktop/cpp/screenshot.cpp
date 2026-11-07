@@ -3,23 +3,28 @@
 // delay: QML says it is `ready` (Main.qml: the first list shown and the test hooks run), no image in the window is
 // still loading, no one-shot QML Timer is pending (each one is a change the window has yet to make), no animation runs
 // on a visible item (a busy indicator spins), the library has no job running and no write into the files pending, and
-// no frame has been drawn for a while. `max_ms` is the most the hook waits; a window that never settles is saved anyway, and
-// the settle log says why. The log is written beside the image: `<image>.settle.txt`.
+// no frame has been drawn for a while. `max_ms` is the most the hook waits; a window that never settles is saved anyway,
+// and the report says why. The frame is encoded here as a PNG, and the report is made here too; Rust writes both, at
+// the path the command line gave (src/screenshot.rs), so this file takes no path: a path that isn't UTF-8 can't be a
+// QString.
 
-#include "screenshot.h"
+#include "pg-desktop/cpp/screenshot.h"
 
 #include <atomic>
+#include <cstddef>
+#include <cstdint>
 #include <memory>
 
+#include <QtCore/QBuffer>
+#include <QtCore/QByteArray>
 #include <QtCore/QCoreApplication>
 #include <QtCore/QElapsedTimer>
-#include <QtCore/QFile>
-#include <QtCore/QTextStream>
+#include <QtCore/QStringList>
 #include <QtCore/QTimer>
 #include <QtGui/QImage>
 #include <QtQuick/QQuickWindow>
 
-#include <cstdio>
+#include "pg-desktop/src/screenshot.cxx.h"
 
 namespace pg {
 
@@ -104,11 +109,21 @@ Busy busy_of(QQuickWindow* window) {
     return busy;
 }
 
-void write_log(const QString& path, const QString& text) {
-    QFile file(path + QStringLiteral(".settle.txt"));
-    if (file.open(QIODevice::WriteOnly | QIODevice::Text)) {
-        QTextStream(&file) << text << '\n';
+// The window as a PNG, or an empty array when there is no window or it can't be encoded.
+QByteArray encode_window(QQmlApplicationEngine& engine) {
+    QByteArray png;
+    QQuickWindow* window = window_of(engine);
+    if (!window)
+        return png;
+    bool encoded = false;
+    {
+        QBuffer buffer(&png);
+        buffer.open(QIODevice::WriteOnly);
+        encoded = window->grabWindow().save(&buffer, "PNG");
     }
+    if (!encoded)
+        png.clear();
+    return png;
 }
 
 // The render thread stamps the last frame drawn; the poll (on the GUI thread) reads it.
@@ -123,14 +138,14 @@ struct Settle {
 
 }  // namespace
 
-void save_screenshot_later(QQmlApplicationEngine& engine, const QString& path, int max_ms) {
+void save_screenshot_later(QQmlApplicationEngine& engine, int max_ms) {
     auto state = std::make_shared<Settle>();
     state->clock.start();
     state->total.start();
     // Polled: the window's `ready` is a QML property, and this file has no moc for a slot to connect.
     auto* poll = new QTimer(&engine);
     poll->setInterval(kPollMs);
-    QObject::connect(poll, &QTimer::timeout, &engine, [&engine, poll, path, max_ms, state] {
+    QObject::connect(poll, &QTimer::timeout, &engine, [&engine, poll, max_ms, state] {
         QQuickWindow* window = window_of(engine);
         if (!window)
             return;
@@ -162,12 +177,12 @@ void save_screenshot_later(QQmlApplicationEngine& engine, const QString& path, i
                   .arg(state->total.elapsed()).arg(state->waited.elapsed()).arg(quiet).arg(busy.text())
             : QStringLiteral("timed out after %1 ms (%2 ms since ready, quiet for %3 ms); %4")
                   .arg(state->total.elapsed()).arg(state->waited.elapsed()).arg(quiet).arg(busy.text());
-        if (!settled)
-            std::fprintf(stderr, "screenshot: the window did not settle: %s\n", qUtf8Printable(report));
-        write_log(path, report);
-        if (QQuickWindow* grab = window_of(engine))
-            if (!grab->grabWindow().save(path))
-                std::fprintf(stderr, "screenshot: can't save %s\n", qUtf8Printable(path));
+        const QByteArray png = encode_window(engine);
+        const QByteArray text = report.toUtf8();
+        screenshot_taken(
+            rust::Slice<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(png.constData()),
+                                            static_cast<std::size_t>(png.size())),
+            settled, rust::Str(text.constData(), static_cast<std::size_t>(text.size())));
         QCoreApplication::quit();
     });
     poll->start();

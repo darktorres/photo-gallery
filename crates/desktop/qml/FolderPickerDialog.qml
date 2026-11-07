@@ -46,16 +46,19 @@ ModalOverlay {
             RowLayout {
                 Layout.fillWidth: true
                 Button {
+                    objectName: "up"
                     text: words.text("ui-folder-up")
                     onClicked: overlay.goUp()
                 }
                 Label {
+                    objectName: "here"
                     text: overlay.here
                     elide: Text.ElideMiddle
                     Layout.fillWidth: true
                 }
             }
             WheelListView {
+                objectName: "folders"
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
@@ -68,11 +71,13 @@ ModalOverlay {
                     width: ListView.view.width
                     // A click opens the folder; Choose takes it.
                     ItemDelegate {
+                        objectName: "open"
                         Layout.fillWidth: true
                         text: folderRow.modelData
                         onClicked: overlay.openRow(folderRow.index)
                     }
                     Button {
+                        objectName: "choose"
                         text: words.text("ui-choose")
                         flat: true
                         onClicked: {
@@ -86,6 +91,7 @@ ModalOverlay {
                 Layout.fillWidth: true
                 Item { Layout.fillWidth: true }
                 Button {
+                    objectName: "chooseHere"
                     text: words.text("ui-choose-here")
                     onClicked: {
                         overlay.open = false
@@ -93,6 +99,7 @@ ModalOverlay {
                     }
                 }
                 Button {
+                    objectName: "cancel"
                     text: words.text("ui-cancel")
                     onClicked: overlay.dismissed()
                 }

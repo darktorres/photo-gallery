@@ -4,6 +4,10 @@
 #include <QtCore/QString>
 #include <QtCore/QUrl>
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
 namespace pg {
 namespace {
 
@@ -36,8 +40,11 @@ void VideoPlayer::play_units(rust::Slice<const std::uint16_t> units, rust::Str e
 
 void VideoPlayer::play_fd(std::int32_t fd, rust::Str ext) {
     auto file = std::make_unique<QFile>();
-    if (fd >= 0) {
-        file->open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle);
+    if (fd >= 0 && !file->open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
+        // Qt takes the descriptor only when it opens: a refused one is closed here, or it would stay open.
+#if !defined(_WIN32)
+        ::close(fd);
+#endif
     }
     set_device(std::move(file), ext);
 }

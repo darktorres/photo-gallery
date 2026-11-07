@@ -16,6 +16,7 @@ pub mod qobject {
         #[namespace = "pg"]
         unsafe fn new_video_player(player: *mut QMediaPlayer) -> UniquePtr<VideoPlayer>;
         /// Plays the file named by `units` (Windows: the file's UTF-16 units). `ext` is its extension, ASCII.
+        #[cfg(windows)]
         #[namespace = "pg"]
         fn play_units(self: Pin<&mut VideoPlayer>, units: &[u16], ext: &str);
         /// Plays the file open at `fd` (Unix; a negative `fd` is a file that could not be opened).

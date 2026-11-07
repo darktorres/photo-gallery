@@ -202,8 +202,13 @@ pub struct PickerRust {
 
 impl Default for PickerRust {
     fn default() -> Self {
-        PickerRust { native: cfg!(windows), names: QStringList::default(), here: QString::default() }
+        PickerRust { native: native_dialog(), names: QStringList::default(), here: QString::default() }
     }
+}
+
+/// Whether the system's dialog is the one used: it is Windows' (the other systems use the app's own, `openInApp`).
+fn native_dialog() -> bool {
+    cfg!(windows)
 }
 
 impl qobject::FolderPicker {

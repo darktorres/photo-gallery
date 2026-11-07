@@ -276,6 +276,27 @@ mod tests {
             .any(|(i, w)| w == b"Rating" && bytes[i + 6..(i + 40).min(bytes.len())].contains(&b'4'))
     }
 
+    /// The names the file tests write a file as: spaces, a leading space, a `#` or `-`, a quote, a `[CSTR]` look-alike
+    /// and a lone surrogate (its bytes are raw bytes on Unix); and, on Unix only, a raw non-UTF-8 byte, a line break (the
+    /// argument route) and a double quote, which Windows can't hold in a name.
+    fn names() -> Vec<Vec<u8>> {
+        let common = [
+            b"plain.png".to_vec(),
+            b"sp ace.png".to_vec(),
+            b" lead.png".to_vec(),
+            b"#hash.png".to_vec(),
+            b"-dash.png".to_vec(),
+            b"q'uote.png".to_vec(),
+            b"[CSTR]x.png".to_vec(),
+            b"w\xed\xa0\x80.png".to_vec(),
+        ];
+        #[cfg(unix)]
+        let unix_only = vec![b"raw\xff.png".to_vec(), b"nl\nname.png".to_vec(), b"q\"uote.png".to_vec()];
+        #[cfg(windows)]
+        let unix_only: Vec<Vec<u8>> = Vec::new();
+        common.into_iter().chain(unix_only).collect()
+    }
+
     /// A command's lines up to its marker are its answer; a marker that doesn't come by the deadline fails it.
     #[test]
     fn a_command_is_read_up_to_its_marker_or_times_out() {
@@ -338,26 +359,7 @@ mod tests {
         let Some(mut tool) = start_or_skip(&program) else { return };
         let dir = pg_testkit::test_folder("scratch_exiftool", "names").unwrap();
         let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
-        // Unix only: a raw byte, and a line break (Windows can't hold either).
-        #[cfg(unix)]
-        let unix_only: &[&[u8]] = &[&b"raw\xff.png"[..], &b"nl\nname.png"[..], &b"q\"uote.png"[..]];
-        #[cfg(windows)]
-        let unix_only: &[&[u8]] = &[];
-        let names: Vec<&[u8]> = [
-            &b"plain.png"[..],
-            &b"sp ace.png"[..],
-            &b" lead.png"[..],
-            &b"#hash.png"[..],
-            &b"-dash.png"[..],
-            &b"q'uote.png"[..],
-            &b"[CSTR]x.png"[..],
-            &b"w\xed\xa0\x80.png"[..],
-        ]
-        .iter()
-        .chain(unix_only)
-        .copied()
-        .collect();
-        for (i, name) in names.iter().enumerate() {
+        for (i, name) in names().iter().enumerate() {
             let path = dir.join(pg_platform::names::path_buf(name));
             std::fs::write(&path, &source).unwrap();
             let out = dir.join(format!("out-{i}.png"));
@@ -365,6 +367,49 @@ mod tests {
             let written = std::fs::read(&out).unwrap();
             assert!(rated_4(&written), "{}: the written copy has no rating 4", path.display());
             assert_eq!(std::fs::read(&path).unwrap(), source, "{}: the original changed", path.display());
+        }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An orientation is written into a copy of a file of each name, and the tags of a rated file are copied into the
+    /// file of each name in place, and out of it into a plain file: the names' own bytes, as the rating's test. The
+    /// original of each copy is left as it was. Needs ExifTool; skipped without it.
+    #[test]
+    fn an_orientation_and_the_tags_are_written_for_a_file_of_each_name() {
+        use pg_model::format::Format;
+        use pg_model::orientation::Orientation;
+
+        let program = OsString::from("exiftool");
+        let Some(mut tool) = start_or_skip(&program) else { return };
+        let dir = pg_testkit::test_folder("scratch_exiftool", "orientation-tags").unwrap();
+        let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
+        // A plain file with rating 4: the source of the tags.
+        let input = dir.join("rated-in.png");
+        std::fs::write(&input, &source).unwrap();
+        let rated = dir.join("rated.png");
+        tool.write_rating(&input, &rated, 4).unwrap();
+        for (i, name) in names().iter().enumerate() {
+            let path = dir.join(pg_platform::names::path_buf(name));
+            std::fs::write(&path, &source).unwrap();
+            // The orientation goes into a copy.
+            let turned = dir.join(format!("turned-{i}.png"));
+            tool.write_orientation(&path, &turned, 6).unwrap_or_else(|e| panic!("{}: {e:#}", path.display()));
+            let written = std::fs::read(&turned).unwrap();
+            assert_eq!(
+                pg_metadata::orientation(&written, Format::Png),
+                Orientation::new(6).unwrap(),
+                "{}: the written copy has no orientation 6",
+                path.display()
+            );
+            assert_eq!(std::fs::read(&path).unwrap(), source, "{}: the original changed", path.display());
+            // The rated file's tags go into the file, in place.
+            tool.copy_tags(&rated, &path).unwrap_or_else(|e| panic!("{}: {e:#}", path.display()));
+            assert!(rated_4(&std::fs::read(&path).unwrap()), "{}: the copied tags have no rating 4", path.display());
+            // And the file's tags go out of it, into a plain file.
+            let plain = dir.join(format!("plain-{i}.png"));
+            std::fs::write(&plain, &source).unwrap();
+            tool.copy_tags(&path, &plain).unwrap_or_else(|e| panic!("{}: {e:#}", path.display()));
+            assert!(rated_4(&std::fs::read(&plain).unwrap()), "{}: nothing was copied out of it", path.display());
         }
         let _ = std::fs::remove_dir_all(&dir);
     }

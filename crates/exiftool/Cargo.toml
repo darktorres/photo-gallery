@@ -14,4 +14,6 @@ anyhow.workspace = true
 pg-platform = { path = "../platform" }
 
 [dev-dependencies]
+pg-metadata = { path = "../metadata" }
+pg-model = { path = "../model" }
 pg-testkit = { path = "../testkit" }

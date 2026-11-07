@@ -213,7 +213,8 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+    let opts = Options::new(pg_platform::priority::Priority::Normal);
+    pg_import::import(&mut c, &opts, false, &ctl).unwrap();
     let before = ids(&c).unwrap();
     assert_eq!(before.len(), 2, "both imported: {before:?}");
     let jpeg_id = before.iter().find(|(_, name)| name.ends_with(".jpg")).expect("the JPEG").0;
@@ -221,6 +222,9 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
         Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+    // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
+    let made = pg_thumbs::run(thumbs, &catalog_path, 64, &opts, &ctl).unwrap();
+    assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     pg_catalog::writes::set_rating(&c, FileId::new(jpeg_id), Rating::new(4), true).unwrap();
     writer.wake();
@@ -379,5 +383,70 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     }
     let rotation = state::analysis_rotation(&c, id).unwrap();
     assert_eq!(rotation, 0, "the turn is in the file, so the analysis no longer shows it pending");
+    quiet.check();
+}
+
+/// A finishing copy queued while its temp was text (the catalog before temps were kept as bytes) is carried over by the
+/// upgrade and finished: the original takes the temp's content, the rating is applied, and the temp is gone.
+#[test]
+fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
+    let dir = pg_testkit::run_folder_with("scratch_writeback", "carried-temp", &["images"]).unwrap();
+    let files = make_files(&dir).unwrap();
+    let catalog_path = dir.join("catalog.sqlite");
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let ctl = Control::new();
+    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    pg_scan::scan(&mut c, &root, &ctl).unwrap();
+    pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
+
+    // The temp a rating of b.png left: it holds a.jpg's bytes, so the copy into b.png is visible.
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path);
+    let temp_text = String::from_utf8(c.rules().join(&temp)).unwrap();
+    let copied = std::fs::read(&files[0].0).unwrap();
+    std::fs::write(pg_platform::names::path_buf(&c.rules().join(&temp)), &copied).unwrap();
+    drop(c);
+
+    // The catalog as it was before, with the temp as text.
+    let old = rusqlite::Connection::open(&catalog_path).unwrap();
+    old.execute_batch(
+        r"DROP TABLE file_writes;
+          CREATE TABLE file_writes(
+              file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+              kind     TEXT NOT NULL CHECK (kind IN ('rating', 'rotation')),
+              value    INTEGER NOT NULL,
+              queued   INTEGER NOT NULL,
+              attempts INTEGER NOT NULL DEFAULT 0,
+              error    TEXT,
+              temp       TEXT,
+              temp_value INTEGER,
+              PRIMARY KEY(file_id, kind));",
+    )
+    .unwrap();
+    old.execute(
+        "INSERT INTO file_writes(file_id, kind, value, queued, temp, temp_value) VALUES (?1, 'rating', 3, 0, ?2, 3)",
+        rusqlite::params![id.get(), temp_text],
+    )
+    .unwrap();
+    drop(old);
+
+    // The upgrade carries the row (its temp as bytes), and the writer finishes the copy.
+    let c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    assert!(c.rebuilt().is_some(), "the text layout is moved aside");
+    assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()));
+    let (events, quiet) = Quiet::bus();
+    let thumbs: &'static ThumbCache =
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    writer.wake();
+    wait_for_queue(&c).unwrap();
+    assert_eq!(writer.status().error, None);
+    assert_eq!(std::fs::read(&files[1].0).unwrap(), copied, "the copy went into the original");
+    assert!(!pg_platform::names::path_buf(&c.rules().join(&temp)).exists(), "the temp is still on disk");
+    assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the file holds the rating once the copy is done");
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
     quiet.check();
 }

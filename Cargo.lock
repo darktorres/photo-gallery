@@ -1617,6 +1617,8 @@ name = "pg-exiftool"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "pg-metadata",
+ "pg-model",
  "pg-platform",
  "pg-testkit",
 ]
@@ -1679,6 +1681,7 @@ dependencies = [
  "pg-thumbs",
  "pg-video",
  "pg-writeback",
+ "rusqlite",
 ]
 
 [[package]]

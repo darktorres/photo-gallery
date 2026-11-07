@@ -85,6 +85,11 @@ pub fn rating_of(c: &Catalog, id: FileId) -> Result<Option<u8>> {
     Ok(c.conn.query_row("SELECT rating FROM ratings WHERE file_id = ?1", [id.get()], |r| r.get(0)).optional()?)
 }
 
+/// The rating the file itself holds (`file_ratings`, as it was written into the file or read from it), unrated as `None`.
+pub fn file_rating_of(c: &Catalog, id: FileId) -> Result<Option<u8>> {
+    Ok(c.conn.query_row("SELECT value FROM file_ratings WHERE file_id = ?1", [id.get()], |r| r.get(0)).optional()?)
+}
+
 /// The `borders_due` flag of the analysis of the file called `name`: 1 while the borders pass still has to read it.
 pub fn borders_due(c: &Catalog, name: &str) -> Result<i64> {
     Ok(c.conn.query_row(

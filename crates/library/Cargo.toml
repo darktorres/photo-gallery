@@ -34,3 +34,4 @@ pg-metadata = { path = "../metadata" }
 pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }
 pg-video = { path = "../video" }
+rusqlite.workspace = true

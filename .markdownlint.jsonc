@@ -1,0 +1,8 @@
+// markdownlint config for every tracked .md file. Run by `just lint`; excluded paths are in .markdownlintignore.
+{
+  "default": true,
+  // Prose wraps near 100 columns and table rows are as long as their content.
+  "MD013": false,
+  // Tables use the compact "| a | b |" rows with a "|---|---|" delimiter row.
+  "MD060": false
+}

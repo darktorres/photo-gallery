@@ -1,0 +1,127 @@
+"""Shared paths, the canonical image list, and ground truth for the M0 model bake-off.
+
+Row i of every embedding file corresponds to line i of files.txt, so all models are
+compared on exactly the same images in the same order.
+"""
+
+import os
+from collections import defaultdict
+from dataclasses import dataclass
+from itertools import combinations
+from pathlib import Path
+from typing import BinaryIO
+
+from PIL import Image, ImageOps
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _load_dotenv() -> None:
+    """Load <repo>/.env (KEY=VALUE lines, # comments) into os.environ. Variables already set win."""
+    env_file = REPO_ROOT / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        os.environ.setdefault(key.strip(), value.strip())
+
+
+_load_dotenv()
+
+
+def pg_path(var: str | None, *parts: str) -> Path:
+    """The value of the environment variable `var` if it is set, else PG_ROOT joined with `parts`.
+
+    Fails with a message that names both variables when neither is set. There is no drive-letter default."""
+    if var and os.environ.get(var):
+        return Path(os.environ[var])
+    root = os.environ.get("PG_ROOT")
+    if root:
+        return Path(root, *parts)
+    names = f"{var} or PG_ROOT" if var else "PG_ROOT"
+    raise SystemExit(f"{names} must be set (put PG_ROOT=<base folder> in {REPO_ROOT / '.env'}, or in the environment)")
+
+
+DATA_ROOT = pg_path("PG_DATA_ROOT", "datasets", "pinterest")
+WORK_DIR = pg_path("PG_WORK_DIR", "eval")
+CACHE_DIR = pg_path("PG_CACHE_DIR", "cache")
+
+# Keep model downloads off C: (nearly full). Must run before timm/open_clip are imported.
+os.environ.setdefault("HF_HOME", str(CACHE_DIR / "hf"))
+os.environ.setdefault("TORCH_HOME", str(CACHE_DIR / "torch"))
+
+IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
+
+# Local, trusted files; some Pinterest originals are huge.
+Image.MAX_IMAGE_PIXELS = None
+
+
+def load_rgb(path: Path | BinaryIO, draft: tuple[int, int] | None = None) -> Image.Image:
+    """Decode, apply EXIF orientation, and flatten transparency onto white.
+
+    draft=(w, h): let a JPEG decode at 1/2, 1/4 or 1/8 scale in the DCT (libjpeg-turbo) while staying at least
+    w x h after orientation; other formats decode in full."""
+    with Image.open(path) as im:
+        if draft and im.format == "JPEG":
+            swap = im.getexif().get(0x0112, 1) in (5, 6, 7, 8)  # rotated a quarter turn
+            im.draft("RGB" if im.mode == "RGB" else None, (draft[1], draft[0]) if swap else draft)
+        im = ImageOps.exif_transpose(im)
+        if im.mode in ("RGBA", "LA") or (im.mode == "P" and "transparency" in im.info):
+            rgba = im.convert("RGBA")
+            flat = Image.new("RGB", rgba.size, (255, 255, 255))
+            flat.paste(rgba, mask=rgba.getchannel("A"))
+            return flat
+        return im.convert("RGB")
+
+
+# dups2/<NNN>/<files>: matched duplicate groups.
+# dups2/<file>: each file has a duplicate among the other loose files; not yet paired.
+GROUPS_DIR = "dups2"
+# Images that duplicate tools flagged as duplicates, but which aren't.
+NEGATIVES_DIR = "similiar_but_not_dups"
+
+
+def image_list() -> list[str]:
+    """Relative POSIX paths of all images under DATA_ROOT, in a stable order (cached)."""
+    cache = WORK_DIR / "files.txt"
+    if cache.exists():
+        return cache.read_text(encoding="utf-8").splitlines()
+    files = sorted(
+        p.relative_to(DATA_ROOT).as_posix() for p in DATA_ROOT.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTS
+    )
+    WORK_DIR.mkdir(parents=True, exist_ok=True)
+    cache.write_text("\n".join(files), encoding="utf-8")
+    return files
+
+
+@dataclass
+class GroundTruth:
+    """Row indices into the file list."""
+
+    groups: list[list[int]]
+    # Every pair inside a matched group.
+    positives: list[tuple[int, int]]
+    # Every pair inside the negatives folder is a non-duplicate.
+    negative_pool: list[int]
+    # Loose dups2 files: each has a duplicate somewhere else in this pool.
+    unpaired_pool: list[int]
+
+
+def ground_truth(files: list[str]) -> GroundTruth:
+    by_group: dict[str, list[int]] = defaultdict(list)
+    negative_pool: list[int] = []
+    unpaired_pool: list[int] = []
+    for i, f in enumerate(files):
+        parts = f.split("/")
+        if len(parts) == 3 and parts[0] == GROUPS_DIR:
+            by_group[parts[1]].append(i)
+        elif len(parts) == 2 and parts[0] == GROUPS_DIR:
+            unpaired_pool.append(i)
+        elif len(parts) == 2 and parts[0] == NEGATIVES_DIR:
+            negative_pool.append(i)
+    groups = [sorted(g) for g in by_group.values() if len(g) >= 2]
+    positives = [pair for g in groups for pair in combinations(g, 2)]
+    return GroundTruth(groups, positives, negative_pool, unpaired_pool)

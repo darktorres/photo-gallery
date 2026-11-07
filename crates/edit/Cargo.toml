@@ -1,0 +1,26 @@
+[package]
+name = "pg-edit"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The lossless edits: a rotation or a crop that rewrites a file's bytes. The pixel encoders are the codec's; the
+# container's and the metadata's parsers read the file, and the tests take their fixtures from pg-testkit.
+[dependencies]
+pg-codec = { path = "../codec" }
+pg-container = { path = "../container" }
+pg-metadata = { path = "../metadata" }
+pg-model = { path = "../model" }
+anyhow.workspace = true
+crc32fast.workspace = true
+image-webp.workspace = true
+png.workspace = true
+turbojpeg.workspace = true
+weezl.workspace = true
+
+[dev-dependencies]
+pg-codec = { path = "../codec", features = ["fixtures"] }
+pg-testkit = { path = "../testkit" }

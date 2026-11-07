@@ -1,0 +1,32 @@
+[package]
+name = "jpeg-decoders"
+edition = "2024"
+version = "0.1.0"
+publish = false
+description = "Speed and output of JPEG decoders on the library's kinds of files (docs/JPEG_DECODERS.md)"
+
+# Not a member of the app's workspace: the decoders compared here aren't the app's dependencies.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+ffmpeg-next = { version = "9", default-features = false, features = ["codec", "format", "software-scaling"] }
+# Without rayon, so every decoder runs on one thread.
+jpeg-decoder = { version = "0.3", default-features = false }
+turbojpeg = { version = "1", features = ["cmake"] }
+zune-core = "0.5"
+zune-jpeg = "0.5"
+
+[target.'cfg(target_os = "linux")'.dev-dependencies]
+gungraun = "0.20"
+
+[[bench]]
+name = "ir"
+harness = false
+
+[profile.release]
+debug = "line-tables-only"
+
+# The app's libjpeg-turbo build (vendor/README.md).
+[patch.crates-io]
+turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }

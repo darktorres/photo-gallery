@@ -1,0 +1,4 @@
+# Build output at any depth (gitignore syntax: "target/" matches every target directory).
+target/
+# Playwright MCP session output, not project docs.
+.playwright-mcp/

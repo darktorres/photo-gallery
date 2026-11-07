@@ -1,0 +1,50 @@
+# Weekly pull requests that update the dependencies the repository names:
+#   - the actions in .github/workflows: the commit each one is pinned to, and the tag named in its comment;
+#   - the crates.io crates of each Cargo workspace: the app (the root), and the two outside it (eval/jpeg-decoders and
+#     fuzz, each with its own Cargo.lock);
+#   - the Python packages in tools/shots/requirements.txt.
+# Minor and patch updates of a workspace come as one pull request. Not covered: the git-sourced forks in the root
+# Cargo.toml's [patch] (fork-updates.yml reports them, vendor/README.md), the Qt, FFmpeg and ExifTool versions and the
+# markdownlint-cli version in ci.yml, and eval/ (it has no manifest).
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /eval/jpeg-decoders
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: cargo
+    directory: /fuzz
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /tools/shots
+    schedule:
+      interval: weekly
+    groups:
+      minor-and-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

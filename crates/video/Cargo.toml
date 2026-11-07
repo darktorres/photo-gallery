@@ -1,0 +1,22 @@
+[package]
+name = "pg-video"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# A video's facts and frames, through FFmpeg. FFmpeg is used here alone (deny.toml). Its DLLs are loaded at run time by
+# full path (src/ffi.rs), so nothing here links FFmpeg; build.rs generates the types from its headers and copies the
+# DLLs beside the app on Windows.
+[dependencies]
+pg-codec = { path = "../codec" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+anyhow.workspace = true
+libloading.workspace = true
+
+[build-dependencies]
+# The same bindgen as ffmpeg-sys-next (its runtime feature: libclang is found at run time, as before).
+bindgen.workspace = true

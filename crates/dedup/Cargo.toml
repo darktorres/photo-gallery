@@ -1,0 +1,13 @@
+[package]
+name = "pg-dedup"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The duplicates' grouping over the tier-1 PDQ hashes: the index, the import's pairing and the union-find. Over the
+# model's hashes only; the catalog and the import hand them in.
+[dependencies]
+pg-model = { path = "../model" }

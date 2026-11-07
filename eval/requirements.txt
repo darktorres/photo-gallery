@@ -1,0 +1,74 @@
+# The Python packages of the eval venv (`$PG_ROOT\venv-eval`, eval/README.md), exactly as it was frozen: `pip freeze` on
+# Python 3.12.10 with CUDA 13 (torch cu134, onnxruntime-gpu, TensorRT). Install with:
+#   python -m pip install -r eval/requirements.txt
+# The two extra indexes hold the CUDA builds (torch's cu134 wheels, the TensorRT wheels); PyPI stays the primary one.
+# The GPU needs an NVIDIA driver of 580 or newer (eval/README.md). The int8 quantization venv (venv-quant) is separate.
+--extra-index-url https://download.pytorch.org/whl/cu134
+--extra-index-url https://pypi.nvidia.com
+annotated-doc==0.0.5
+anyio==4.15.1
+cffi==2.1.1
+click==8.5.0
+colorama==0.4.6
+faiss-cpu==1.15.1
+filelock==4.2.4
+flatbuffers==25.12.19
+fsspec==2026.9.0
+ftfy==6.3.1
+h11==0.16.0
+hf-xet==1.8.0
+httpcore2==2.16.0
+httpx2==2.16.0
+huggingface_hub==2.4.0
+idna==3.20
+imagecodecs==2026.10.10
+Jinja2==3.1.6
+kornia==0.9.0
+kornia_rs==0.2.0
+markdown-it-py==4.2.0
+MarkupSafe==3.0.4
+mdurl==0.1.2
+ml_dtypes==0.6.0
+mpmath==1.3.0
+networkx==3.7
+numpy==2.5.4
+onnx==1.23.2
+onnxruntime-gpu==1.31.1
+open_clip_torch==3.3.0
+opencv-python-headless==5.0.0.93
+packaging==26.3
+pandas==3.1.0
+pdqhash==0.2.8
+pillow==13.0.0
+protobuf==7.36.2
+py-spy==0.4.2
+pycparser==3.12
+Pygments==2.21.0
+python-dateutil==3.0.0
+pyvips==3.2.0
+pyvips-binary==8.18.7
+PyYAML==6.0.3
+regex==2026.9.29
+rich==15.0.0
+safetensors==0.8.0
+scipy==1.18.1
+setuptools==84.2.1
+shellingham==1.5.4
+six==1.17.0
+ssimulacra2==0.3.0
+sympy==1.14.0
+tensorrt_cu13==11.4.0.106
+tensorrt_cu13_bindings==11.4.0.106
+tensorrt_cu13_libs==11.4.0.106
+timm==1.0.30
+tokenizers==0.23.3
+torch==2.15.0+cu134
+torchvision==0.29.2+cu134
+tqdm==4.70.1
+transformers==5.22.1
+truststore==0.10.5
+typer==0.27.3
+typing_extensions==4.16.0
+tzdata==2026.6
+usearch==2.26.6
+wcwidth==0.9.4

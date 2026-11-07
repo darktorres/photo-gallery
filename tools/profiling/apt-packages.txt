@@ -1,0 +1,27 @@
+# The apt packages for the Linux side: the crates that link FFmpeg and libclang, the tools the tests run (ExifTool,
+# ffmpeg), and the system libraries Qt 6 needs on Linux (the desktop crate). One per line. CI and WSL both install this
+# list; the callgrind benches' own packages are in apt-packages-bench.txt (WSL only).
+build-essential
+cmake
+nasm
+clang
+libclang-dev
+pkg-config
+git
+libssl-dev
+python3
+ffmpeg
+libavcodec-dev
+libavformat-dev
+libavutil-dev
+libswscale-dev
+libswresample-dev
+libavfilter-dev
+libavdevice-dev
+libimage-exiftool-perl
+libgl-dev
+libegl-dev
+libxkbcommon-dev
+libfontconfig-dev
+libxcb-cursor0
+libdbus-1-dev

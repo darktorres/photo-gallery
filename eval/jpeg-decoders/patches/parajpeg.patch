@@ -1,0 +1,42 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index f563bf4..05921d4 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -24,7 +24,7 @@ add_library(parajpeg
+   src/cpu/simd_avx2.cpp
+   src/cpu/simd_dispatch.cpp)
+ target_include_directories(parajpeg PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include> $<INSTALL_INTERFACE:include>)
+-target_compile_options(parajpeg PRIVATE $<$<CXX_COMPILER_ID:GNU,Clang,AppleClang>:-Wall -Wextra -O3>)
++target_compile_options(parajpeg PRIVATE $<$<COMPILE_LANG_AND_ID:CXX,GNU,Clang,AppleClang>:-Wall -Wextra -O3>)
+ # AVX2 kernels use function-level target attributes and are selected at runtime by CPUID, so the
+ # library itself stays runnable on any x86-64 CPU.
+ find_package(Threads REQUIRED)
+diff --git a/src/core/bitreader.h b/src/core/bitreader.h
+index 0742b07..c8b4163 100644
+--- a/src/core/bitreader.h
++++ b/src/core/bitreader.h
+@@ -9,6 +9,10 @@
+ #pragma once
+ #include <cstddef>
+ #include <cstdint>
++#if defined(_MSC_VER) && !defined(__clang__)
++#include <cstdlib>
++#include <cstring>
++#endif
+ 
+ #include "../common/hd.h"
+ 
+@@ -39,8 +43,13 @@ public:
+ #if !defined(__CUDA_ARCH__)
+         if (!hit_marker_ && pos_ + 8 <= end_) {
+             uint64_t v;
++#if defined(_MSC_VER) && !defined(__clang__)  // cl as nvcc's host compiler on Windows
++            std::memcpy(&v, base_ + pos_, 8);
++            v = _byteswap_uint64(v);
++#else
+             __builtin_memcpy(&v, base_ + pos_, 8);
+             v = __builtin_bswap64(v);
++#endif
+             // Any 0xFF byte? (zero-byte detection on v ^ 0xFF..)
+             uint64_t x = ~v;
+             if (((x - 0x0101010101010101ull) & ~x & 0x8080808080808080ull) == 0) {

@@ -1,0 +1,86 @@
+# The fuzz targets (S-18.1). Outside the workspace (its own `[workspace]`, so `cargo check --workspace` never builds
+# libFuzzer): run with cargo-fuzz on Linux, `tools/fuzz-smoke.sh` (`just fuzz-smoke`) or `cargo fuzz run <target>`.
+# Each crash found becomes a regression test in the crate that owns the code, then the input is kept in corpus/.
+[package]
+name = "pg-fuzz"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+pg-codec = { path = "../crates/codec" }
+pg-container = { path = "../crates/container" }
+pg-edit = { path = "../crates/edit" }
+pg-metadata = { path = "../crates/metadata" }
+pg-model = { path = "../crates/model" }
+serde_json = "1"
+
+[workspace]
+members = ["."]
+
+[[bin]]
+name = "container_jpeg"
+path = "fuzz_targets/container_jpeg.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "container_chunks"
+path = "fuzz_targets/container_chunks.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "metadata_read"
+path = "fuzz_targets/metadata_read.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "edit_rotate"
+path = "fuzz_targets/edit_rotate.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_keys"
+path = "fuzz_targets/model_keys.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "model_query_json"
+path = "fuzz_targets/model_query_json.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "codec_transform"
+path = "fuzz_targets/codec_transform.rs"
+test = false
+doc = false
+bench = false
+
+# The workspace's vendored crates (vendor/README.md; the root Cargo.toml's [patch.crates-io] is the full list). Without
+# these, this crate's graph would take the upstream quick-xml, which pg-metadata does not compile against.
+[patch.crates-io]
+fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", rev = "0ea7089165e3c991693f45bcddbf82bbcf9c4e7b" }
+fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }
+gif = { git = "https://github.com/darktorres/image-gif", rev = "c79564c1cdf86e674b281f232aeffd706c325623" }
+image-webp = { git = "https://github.com/darktorres/image-webp", rev = "1e9023c914f8f0793544a34b2c02525ff183863e" }
+png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b2f5e5ca470dfcd57df4c3c7a" }
+quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
+tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
+turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }
+zune-core = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }
+zune-jpeg = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }

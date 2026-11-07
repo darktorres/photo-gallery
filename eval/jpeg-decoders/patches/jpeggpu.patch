@@ -1,0 +1,52 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 34bbb5e..9ed3c12 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -18,7 +18,7 @@ project(jpeggpu LANGUAGES C CXX CUDA)
+ 
+ find_package(CUDAToolkit REQUIRED)
+ 
+-set(CMAKE_CXX_STANDARD 17)
++set(CMAKE_CXX_STANDARD 20) # MSVC needs C++20 for designated initializers (local patch)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ set(CMAKE_CXX_EXTENSIONS OFF)
+ 
+diff --git a/benchmark/benchmark.cpp b/benchmark/benchmark.cpp
+index 7eb2731..c38d66f 100644
+--- a/benchmark/benchmark.cpp
++++ b/benchmark/benchmark.cpp
+@@ -34,7 +34,7 @@ int main(int argc, const char* argv[])
+         std::filesystem::path file_path(argv[i]);
+         std::cout << file_path.filename().string() << "\n";
+ 
+-        std::ifstream file(file_path);
++        std::ifstream file(file_path, std::ios::binary); // binary: text mode corrupts JPEG data on Windows (local patch)
+         if (!file.is_open()) {
+             std::cerr << "cannot open \"" << file_path << "\"\n";
+             return EXIT_FAILURE;
+diff --git a/example/example_tool.c b/example/example_tool.c
+index 209aa81..7410cb7 100644
+--- a/example/example_tool.c
++++ b/example/example_tool.c
+@@ -77,7 +77,7 @@ int main(int argc, char* argv[])
+     const char* filename = argv[1];
+ 
+     FILE* fp = NULL;
+-    CHECK((fp = fopen(filename, "r")) != NULL);
++    CHECK((fp = fopen(filename, "rb")) != NULL);
+ 
+     CHECK(fseek(fp, 0, SEEK_END) != -1);
+     long int off = 0;
+diff --git a/test/test.cpp b/test/test.cpp
+index 545114a..d70b4b6 100644
+--- a/test/test.cpp
++++ b/test/test.cpp
+@@ -229,7 +229,7 @@ int main(int argc, const char* argv[])
+         std::filesystem::path file_path(argv[i]);
+         std::cout << file_path.filename().string() << "\n";
+ 
+-        std::ifstream file(file_path);
++        std::ifstream file(file_path, std::ios::binary); // binary: text mode corrupts JPEG data on Windows (local patch)
+         if (!file.is_open()) {
+             std::cerr << "cannot open \"" << file_path << "\"\n";
+             return EXIT_FAILURE;

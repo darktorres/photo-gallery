@@ -1,0 +1,16 @@
+[package]
+name = "pg-jobs"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+pg-platform = { path = "../platform" }
+anyhow.workspace = true
+crossbeam-channel.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }

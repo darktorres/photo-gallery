@@ -1,0 +1,33 @@
+[package]
+name = "pg-desktop"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+
+[lib]
+# The unit tests run with Qt's bin on PATH (`just test` puts it there): a test binary links Qt and runs from
+# target/<profile>/build/pg-desktop/<hash>/out under the pinned nightly (target/<profile>/deps with stable), where the Qt DLLs
+# aren't, so without that PATH it fails with STATUS_DLL_NOT_FOUND.
+doctest = false
+
+[dependencies]
+# Not here: catalog, library, jobs, thumbcache, yandex and codec. The window reaches them through `pg-app` alone (its
+# typed methods and `pg_app::reexport`), so `cargo deny` and machete see the boundary.
+pg-client = { path = "../client" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+pg-trace = { path = "../trace" }
+pg-app = { path = "../app" }
+pg-render = { path = "../render" }
+anyhow.workspace = true
+cxx.workspace = true
+cxx-qt.workspace = true
+cxx-qt-lib = { workspace = true, features = ["qt_gui", "qt_qml"] }
+serde_json.workspace = true
+
+[build-dependencies]
+cxx-qt-build.workspace = true

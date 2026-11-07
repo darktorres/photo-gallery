@@ -1,0 +1,18 @@
+[package]
+name = "pg-thumbs"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The thumbnail pass: makes the cached thumbnails of the analyzed files. Depends on the render and the thumbnail cache, not on the analysis or the writes.
+[dependencies]
+pg-catalog = { path = "../catalog" }
+pg-jobs = { path = "../jobs" }
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+pg-render = { path = "../render" }
+pg-thumbcache = { path = "../thumbcache" }
+anyhow.workspace = true

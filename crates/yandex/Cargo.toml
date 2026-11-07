@@ -1,0 +1,16 @@
+[package]
+name = "pg-yandex"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The Yandex image search client: the similar images of an upload, their pages, and the downloads. The only crate that
+# talks to Yandex (deny.toml). A download's format is what its bytes sniff as.
+[dependencies]
+pg-model = { path = "../model" }
+serde_json.workspace = true
+thiserror.workspace = true
+ureq.workspace = true

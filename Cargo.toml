@@ -1,0 +1,132 @@
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+edition = "2024"
+version = "0.1.0"
+publish = false
+
+[workspace.dependencies]
+anyhow = "1"
+arrayvec = "0.7"
+bindgen = { version = "0.73", default-features = false, features = ["runtime"] } # pg-video's build script
+blake3 = "1"
+clap = { version = "4", features = ["derive", "env"] }
+crc32fast = "1"
+crossbeam-channel = "0.5"
+cxx = "1"
+cxx-qt = "0.10"
+cxx-qt-build = "0.10"
+cxx-qt-lib = "0.10"
+dhat = { git = "https://github.com/darktorres/dhat-rs", rev = "da677e1a232fc69c240b1251831426dee812332c" } # pg-gallery's heap profiler
+fast_image_resize = "6"
+fluent-bundle = "0.16"
+gif = "0.14"
+gungraun = "0.20"
+image = { version = "0.25", default-features = false, features = ["png", "gif", "webp", "bmp", "tiff", "jpeg"] }
+image-webp = "0.2"
+libc = "0.2"
+libloading = "0.9"
+miniz_oxide = "0.9"
+pdqhash = "0.1"
+png = "0.18"
+proptest = "1"
+quick-xml = "0.42"
+rusqlite = { version = "0.41", features = ["bundled", "collation", "fallible_uint", "functions", "hooks"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+specta = { version = "=2.0.0-rc.27", features = ["derive"] } # exact: a release candidate; the web client's types (pg-model)
+strum = { version = "0.28", features = ["derive"] }
+thiserror = "2"
+thumbhash = "0.1"
+tiff = "0.11"
+turbojpeg = { version = "1", features = ["cmake"] }
+unic-langid = "0.9"
+ureq = { version = "3", default-features = false, features = ["native-tls"] }
+weezl = "0.2"
+winres = "0.1" # pg-gallery's build script (the icon and version resource)
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Storage_FileSystem", "Win32_System_Console", "Win32_System_IO", "Win32_System_JobObjects", "Win32_System_SystemInformation", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging"] }
+xxhash-rust = { version = "0.8", features = ["xxh3"] }
+# zune-core without its defaults, as `image` has it, so the features stay the same.
+zune-core = { version = "0.5", default-features = false }
+zune-jpeg = "0.5"
+
+# Each crate opts in with `[lints] workspace = true`. Kept at "warn" so work in progress builds; `cargo clippy
+# --workspace --all-targets -- -D warnings` (just lint) holds the tree to them.
+[workspace.lints.clippy]
+# Every unsafe block says why it is sound.
+undocumented_unsafe_blocks = "warn"
+# Phase 1 of docs/CLIPPY_LEDGER.md: the lints with few or no hits. A deliberate use is `#[expect(.., reason)]` at the site.
+dbg_macro = "deny"
+todo = "deny"
+unimplemented = "deny"
+mem_forget = "deny"
+exit = "deny"
+panic = "deny"
+allow_attributes = "warn"
+string_slice = "warn"
+# Phase 2 (docs/CLIPPY_LEDGER.md): printing is for the entry points and the tools, which allow it at their crate root
+# with `#![expect(.., reason)]`. A library reports through its results; the app's errors go to its log.
+print_stdout = "deny"
+print_stderr = "deny"
+# Phase 3 (docs/CLIPPY_LEDGER.md): panic-freedom. A failure is a `Result`; an `expect` says why its invariant holds.
+unwrap_used = "deny"
+expect_used = "deny"
+indexing_slicing = "deny"
+# Phase 4 (docs/CLIPPY_LEDGER.md): lossless casts are `From` conversions.
+cast_lossless = "deny"
+# Phase 4: a narrowing cast is a `try_from` or a documented clamping helper (docs/CLIPPY_LEDGER.md, truncation policy).
+cast_possible_truncation = "deny"
+# Phase 4: a signed value that becomes unsigned is a `try_from`, a clamping helper, or `cast_unsigned` (docs/CLIPPY_LEDGER.md, sign-loss policy).
+cast_sign_loss = "deny"
+# Phase 4: a signed value from an unsigned one is a `try_from`, a saturating clamp, or `cast_signed` (docs/CLIPPY_LEDGER.md, wrap policy).
+cast_possible_wrap = "deny"
+# Phase 4: an integer to float conversion is a `pg_model::num` helper (count, size or signed), or a local helper in `jobs`; the expect sits on the helper (docs/CLIPPY_LEDGER.md, precision policy).
+cast_precision_loss = "deny"
+# Phase 4: every `as` is replaced by the form its rule states (docs/CLIPPY_LEDGER.md, as-conversions policy).
+as_conversions = "deny"
+
+# Debug builds (and `cargo test`) with the dependencies optimized: decoding, resizing and hashing are all in
+# them (libjpeg-turbo too: its CMake build follows the opt-level), and unoptimized they are many times slower.
+# Our own crates stay at opt-level 0, so they rebuild as fast and step in a debugger as before.
+[profile.dev.package."*"]
+opt-level = 3
+
+[profile.release]
+debug = "line-tables-only"
+
+# Build scripts optimized in release too, as the dev profile's `package."*"` already does: unoptimized, bindgen
+# (pg-video's build script generates the FFmpeg bindings) overflows the 1 MB stack of Windows' main thread.
+[profile.release.build-override]
+opt-level = 3
+
+# The heap profiler's build (`--features dhat-heap`, docs/PROFILING.md "Tool: dhat"): release's optimizations with
+# function names and lines for the backtraces, no LTO and incremental, so rebuilds after a change are quick. Its own
+# target directory keeps it from replacing the normal build's artifacts.
+[profile.dhat]
+inherits = "release"
+debug = 1
+lto = false
+incremental = true
+
+# turbojpeg-sys with libjpeg-turbo on the dynamic C runtime, as the rest of the app; qt-build-utils that gives the QML
+# compiler the module's types; rusqlite whose statement cache doesn't copy the SQL on every hit; thumbhash with a
+# reusable encoder that reads RGB; fast_image_resize whose resizer keeps its coefficients; quick-xml whose reader
+# reuses its buffers; png, fdeflate, image-webp, gif and zune-jpeg whose decoders keep their buffers and tables; tiff
+# and zune-core that read small values without allocating (vendor/README.md).
+[patch.crates-io]
+fast_image_resize = { git = "https://github.com/darktorres/fast_image_resize", rev = "0ea7089165e3c991693f45bcddbf82bbcf9c4e7b" }
+fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }
+gif = { git = "https://github.com/darktorres/image-gif", rev = "c79564c1cdf86e674b281f232aeffd706c325623" }
+image-webp = { git = "https://github.com/darktorres/image-webp", rev = "1e9023c914f8f0793544a34b2c02525ff183863e" }
+png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b2f5e5ca470dfcd57df4c3c7a" }
+cxx-qt-build = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
+qt-build-utils = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
+quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
+rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "1184d0f760cd17d14b49e49a9641a5369c703900" }
+thumbhash = { git = "https://github.com/darktorres/thumbhash", rev = "a7bc11b868583c513ab3a5f0a1a37b93668adcbf" }
+tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
+turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }
+zune-core = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }
+zune-jpeg = { git = "https://github.com/darktorres/zune-image", rev = "b4f668c817204c60f38e8416064902dea8a9441d" }

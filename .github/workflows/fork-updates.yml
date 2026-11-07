@@ -1,0 +1,57 @@
+# Weekly check of the forks under github.com/darktorres against their crates' newest upstream releases
+# (tools/fork-updates.py, vendor/README.md). One issue stays open while a fork is behind, and closes once none is.
+# The check fails the run only when it cannot read a release, so the issue is the notification for a new one.
+name: Fork releases
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    name: Forks against upstream releases
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      ISSUE_TITLE: Upstream releases for the forks
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - name: Compare each fork's locked version with its crate's newest release
+        id: check
+        run: |
+          status=0
+          python3 tools/fork-updates.py --report "$RUNNER_TEMP/fork-report.md" || status=$?
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+
+      - name: Open or update the issue (a newer release is out)
+        if: steps.check.outputs.status == '1'
+        run: |
+          number=$(gh issue list --state open --search "in:title \"$ISSUE_TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue edit "$number" --body-file "$RUNNER_TEMP/fork-report.md"
+          else
+            gh issue create --title "$ISSUE_TITLE" --body-file "$RUNNER_TEMP/fork-report.md"
+          fi
+
+      - name: Close the issue (every fork is at its newest release)
+        if: steps.check.outputs.status == '0'
+        run: |
+          number=$(gh issue list --state open --search "in:title \"$ISSUE_TITLE\"" --json number --jq '.[0].number')
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "Every fork is at its crate's newest release."
+          fi
+
+      - name: Fail when a release could not be read
+        if: steps.check.outputs.status == '2'
+        run: |
+          echo "A crates.io release could not be read; see the report above." >&2
+          exit 1

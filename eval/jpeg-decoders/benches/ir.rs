@@ -28,15 +28,19 @@ mod linux {
         (std::fs::read(&path).unwrap_or_else(|e| panic!("{path}: {e}")), Decoders::new().unwrap())
     }
 
-    fn run(dec: Dec, mode: Mode, (bytes, mut decoders): (Vec<u8>, Decoders)) -> Rgb {
-        black_box(decoders.decode(dec, mode, black_box(&bytes)).unwrap())
+    /// The output, and the input and decoders handed back: returning them moves their drop out of the measured call.
+    pub type Out = (Rgb, Vec<u8>, Decoders);
+
+    fn run(dec: Dec, mode: Mode, (bytes, mut decoders): (Vec<u8>, Decoders)) -> Out {
+        let rgb = black_box(decoders.decode(dec, mode, black_box(&bytes)).unwrap());
+        (rgb, bytes, decoders)
     }
 
     macro_rules! bench {
         ($name:ident, $dec:expr, $mode:expr) => {
             #[library_benchmark]
             #[benches::file(args = [0, 1, 2, 3, 4, 5, 6], setup = load)]
-            pub fn $name(input: (Vec<u8>, Decoders)) -> Rgb {
+            pub fn $name(input: (Vec<u8>, Decoders)) -> Out {
                 run($dec, $mode, input)
             }
         };

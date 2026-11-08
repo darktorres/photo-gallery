@@ -107,8 +107,9 @@ pub fn dimensions(bytes: &[u8]) -> Result<(usize, usize)> {
 pub struct Decoders {
     turbo: turbojpeg::Decompressor,
     fast: TurboFast,
-    /// One opened MJPEG decoder per `lowres` (0–3), which is fixed when a decoder opens.
-    ffmpeg: [Option<ffmpeg::decoder::Video>; 4],
+    /// One opened MJPEG decoder per `lowres` (0–3). FFmpeg fixes `lowres` when a decoder opens, so all four open
+    /// here, in setup, and a benchmark's measured call never opens one.
+    ffmpeg: [ffmpeg::decoder::Video; 4],
 }
 
 impl Decoders {
@@ -116,7 +117,8 @@ impl Decoders {
         ffmpeg::init()?;
         ffmpeg::util::log::set_level(ffmpeg::util::log::Level::Fatal);
         vips::init()?;
-        Ok(Decoders { turbo: turbojpeg::Decompressor::new()?, fast: TurboFast::new()?, ffmpeg: Default::default() })
+        let ffmpeg = [open_mjpeg(0)?, open_mjpeg(1)?, open_mjpeg(2)?, open_mjpeg(3)?];
+        Ok(Decoders { turbo: turbojpeg::Decompressor::new()?, fast: TurboFast::new()?, ffmpeg })
     }
 
     pub fn decode(&mut self, dec: Dec, mode: Mode, bytes: &[u8]) -> Result<Rgb> {
@@ -136,9 +138,8 @@ impl Decoders {
     fn ffmpeg_decode(&mut self, mode: Mode, bytes: &[u8]) -> Result<Rgb> {
         let (w, h) = dimensions(bytes)?;
         let lowres = denom(mode, w, h).trailing_zeros() as usize;
-        let decoder = match &mut self.ffmpeg[lowres] {
-            Some(d) => d,
-            slot => slot.insert(open_mjpeg(lowres)?),
+        let Some(decoder) = self.ffmpeg.get_mut(lowres) else {
+            bail!("no MJPEG decoder for lowres {lowres}")
         };
         decoder.send_packet(&ffmpeg::Packet::copy(bytes))?;
         let mut frame = ffmpeg::frame::Video::empty();

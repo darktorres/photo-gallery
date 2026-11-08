@@ -3,10 +3,12 @@
 # own disk: faster than /mnt/c, and the Windows tree's uncommitted work stays out. From the repo, in PowerShell:
 #   wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-bench.sh [gungraun args, e.g. --save-baseline=before]
 # The clone (PG_BENCH_CLONE, default ~/photo-gallery) belongs to this script: it's reset to HEAD on every run.
-# Results go to $CLONE/target/gungraun/, and their .out files are archived (zstd) to docs/perf/callgrind/<sha>.tar.zst in
-# the checkout: committed, one archive per benched commit. Unpack with `tar --zstd -xf`, then read them with
+# Results go to $CLONE/target/gungraun/, and a full run's .out files are archived (zstd) to docs/perf/callgrind/<sha>.tar.zst
+# in the checkout: committed, one archive per benched commit. Unpack with `tar --zstd -xf`, then read them with
 # tools/profiling/cgtab.py (docs/PROFILING.md).
-# A bench name as the argument runs only the matching benches (gungraun's FILTER), e.g. `catalog::list`.
+# A bench name as the argument runs only the matching benches (gungraun's FILTER), e.g. `catalog::list`. Such a run is
+# partial, so it isn't archived: an archive would replace the commit's full one with a subset. Options (starting with -,
+# e.g. --save-baseline=before) don't make a run partial.
 # The catalog benches' data (tools/profiling/bench_data.py, made on the Windows side) is copied to $PG_BENCH_DATA, default
 # ~/pg-bench, once per layout.
 set -euo pipefail
@@ -51,16 +53,25 @@ rm -rf "$CLONE/target/gungraun"
 cargo clippy -p pg-bench --benches -- -D warnings
 cargo bench -p pg-bench --bench ir -- "$@"
 
-# The full callgrind outputs of this run are kept in the checkout, as a reference over time: one archive per benched
-# commit, docs/perf/callgrind/<short sha of HEAD>.tar.zst, holding the .out files with the target's layout (pg-bench/ir/...).
-# Only the .out files: .out.old is the run before, and the .log files are gungraun's text. A run with a bench name
-# archives just those benches.
-sha=$(git -C "$CLONE" rev-parse --short HEAD)
-archive="$REPO/docs/perf/callgrind/$sha.tar.zst"
-mkdir -p "$REPO/docs/perf/callgrind"
-list=$(mktemp)
-(cd "$CLONE/target/gungraun" && find . -name 'callgrind.*.out' | sed 's#^\./##' | sort) > "$list"
-[ -s "$list" ] || { echo "no callgrind outputs to archive" >&2; exit 1; }
-ZSTD_CLEVEL=19 tar --zstd -cf "$archive" -C "$CLONE/target/gungraun" -T "$list"
-rm -f "$list"
-echo "profiles: $(wc -l < <(tar --zstd -tf "$archive")) files in ${archive#"$REPO/"} ($(du -h "$archive" | cut -f1))"
+# A bench-name argument makes this run partial (see the header); options don't.
+filtered=0
+for arg in "$@"; do
+    case "$arg" in -*) ;; *) filtered=1 ;; esac
+done
+
+if [ $filtered -eq 0 ]; then
+    # A full run's callgrind outputs are kept in the checkout, as a reference over time: one archive per benched commit,
+    # docs/perf/callgrind/<short sha of HEAD>.tar.zst, holding the .out files with the target's layout (pg-bench/ir/...).
+    # Only the .out files: .out.old is the run before, and the .log files are gungraun's text.
+    sha=$(git -C "$CLONE" rev-parse --short HEAD)
+    archive="$REPO/docs/perf/callgrind/$sha.tar.zst"
+    mkdir -p "$REPO/docs/perf/callgrind"
+    list=$(mktemp)
+    (cd "$CLONE/target/gungraun" && find . -name 'callgrind.*.out' | sed 's#^\./##' | sort) > "$list"
+    [ -s "$list" ] || { echo "no callgrind outputs to archive" >&2; exit 1; }
+    ZSTD_CLEVEL=19 tar --zstd -cf "$archive" -C "$CLONE/target/gungraun" -T "$list"
+    rm -f "$list"
+    echo "profiles: $(wc -l < <(tar --zstd -tf "$archive")) files in ${archive#"$REPO/"} ($(du -h "$archive" | cut -f1))"
+else
+    echo "profiles: not archived (filtered run)"
+fi

@@ -486,13 +486,26 @@ function paintMark(node, r) {
   if (warn) warn.hidden = !(mark && mark !== decisionMark(r));
 }
 
+// POSTs JSON. A dropped connection or a non-OK status shows `failure` with the reason and returns null, so the
+// caller doesn't update its marks (a rejected fetch would otherwise end the handler with no message).
+async function postJson(url, body, failure) {
+  let res;
+  try {
+    res = await fetch(url, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+    });
+  } catch (e) {
+    alert(failure + ": " + e.message);
+    return null;
+  }
+  if (!res.ok) { alert(failure + ": " + await res.text()); return null; }
+  return res;
+}
+
 async function toggleMark(r, mark) {
   const next = markOf(r) === mark ? null : mark;
-  const res = await fetch("/api/marks", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ run: state.run, a: r.path_a, b: r.path_b, mark: next }),
-  });
-  if (!res.ok) { alert("Saving the mark failed: " + await res.text()); return false; }
+  const res = await postJson("/api/marks", { run: state.run, a: r.path_a, b: r.path_b, mark: next }, "Saving the mark failed");
+  if (!res) return false;
   if (next) state.marks[pairKey(r)] = next; else delete state.marks[pairKey(r)];
   const key = pairKey(r);
   for (const node of document.querySelectorAll(".card, .modal .marks")) {
@@ -715,11 +728,8 @@ function repaintGroup(g) {
 }
 
 async function postMarks(items) {
-  const res = await fetch("/api/marks/bulk", {
-    method: "POST", headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ run: state.run, marks: items }),
-  });
-  if (!res.ok) { alert("Saving the marks failed: " + await res.text()); return false; }
+  const res = await postJson("/api/marks/bulk", { run: state.run, marks: items }, "Saving the marks failed");
+  if (!res) return false;
   for (const [a, b, m] of items) {
     if (m) state.marks[keyOf(a, b)] = m; else delete state.marks[keyOf(a, b)];
   }

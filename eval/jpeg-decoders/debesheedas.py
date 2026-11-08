@@ -3,7 +3,7 @@
 It is a program, not a library: one decode per run, written as a text array to ../testing/cuda_decoder_output_arrays
 relative to the working directory. So: the median of 3 whole runs, minus the median of 3 runs of the same program on
 a 16x16 image (process start, CUDA context, allocation), and its output against libjpeg-turbo.
-    python -I eval/jpeg-decoders/debesheedas.py --exe DECODER.exe --ref-dir DIR FILE...
+    python eval/jpeg-decoders/debesheedas.py --exe DECODER.exe --ref-dir DIR FILE...
 DIR holds `harness dump turbo FILE DIR/NAME.ppm` for each FILE (NAME = FILE's stem).
 """
 
@@ -16,17 +16,15 @@ import time
 from pathlib import Path
 
 import numpy as np
+from PIL import Image
 
 
 def read_ppm(path):
-    parts = path.read_bytes().split(maxsplit=4)
-    w, h = int(parts[1]), int(parts[2])
-    return np.frombuffer(parts[4][: w * h * 3], np.uint8).reshape(h, w, 3)
+    """The libjpeg-turbo reference: uint8, shape (h, w, 3)."""
+    return np.ascontiguousarray(np.asarray(Image.open(path)))
 
 
 def tiny_jpeg(path):  # a 16x16 4:4:4 baseline JPEG, for the fixed cost
-    from PIL import Image
-
     Image.new("RGB", (16, 16), (128, 64, 32)).save(path, quality=90, subsampling=0)
     return path
 
@@ -43,18 +41,22 @@ def main():
     ap.add_argument("--ref-dir", type=Path, required=True)
     ap.add_argument("files", nargs="+", type=Path)
     a = ap.parse_args()
+    # The program runs in a temp folder, so every path it is given must be absolute.
+    exe = str(Path(a.exe).resolve())
+    ref_dir = a.ref_dir.resolve()
+    files = [f.resolve() for f in a.files]
     work = Path(tempfile.mkdtemp())
     try:
         (work / "run").mkdir()
         outdir = work / "testing" / "cuda_decoder_output_arrays"
         outdir.mkdir(parents=True)
         tiny = tiny_jpeg(work / "tiny.jpg")
-        base = statistics.median(run(a.exe, tiny, work) for _ in range(3))
+        base = statistics.median(run(exe, tiny, work) for _ in range(3))
         print(f"fixed cost (16x16 image): {base * 1e3:.0f} ms")
-        for f in a.files:
-            ref = read_ppm(a.ref_dir / (f.stem + ".ppm"))
+        for f in files:
+            ref = read_ppm(ref_dir / (f.stem + ".ppm"))
             try:
-                wall = statistics.median(run(a.exe, f, work) for _ in range(3))
+                wall = statistics.median(run(exe, f, work) for _ in range(3))
             except subprocess.CalledProcessError as e:
                 print(f"{f.name:34} error: exit {e.returncode}")
                 continue

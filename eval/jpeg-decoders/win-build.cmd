@@ -18,7 +18,7 @@ for %%s in (%STEPS%) do (
 exit /b 0
 
 :clone
-rem name url commit: shallow clone with LF line endings (as upstream), then the local patch if there is one
+rem name url commit: a full clone with autocrlf off (LF line endings, as upstream), checked out at the commit, then the local patch if there is one
 if exist "%JPEG_EVAL%\src\%~1" exit /b 0
 git -c core.autocrlf=false clone -q "%~2" "%JPEG_EVAL%\src\%~1" || exit /b 1
 git -C "%JPEG_EVAL%\src\%~1" -c core.autocrlf=false checkout -q %~3 || exit /b 1

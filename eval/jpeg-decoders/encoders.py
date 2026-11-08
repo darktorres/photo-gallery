@@ -49,11 +49,14 @@ def run(cmd, **kw):
 
 
 def png_of(ppm):  # guetzli reads PNG only
+    """The PNG of a PPM, written to a temp name and renamed, so a concurrent caller never sees a half-written file."""
     png = ppm.with_suffix(".png")
     if not png.exists():
         from PIL import Image  # python3-pil
 
-        Image.open(ppm).save(png, compress_level=1)
+        tmp = png.with_name(png.name + ".tmp")
+        Image.open(ppm).save(tmp, format="PNG", compress_level=1)
+        tmp.replace(png)
     return png
 
 
@@ -104,7 +107,10 @@ def prepare():
         ppm = W / "src" / f"{name}.ppm"
         if not ppm.exists():
             run([BIN / "djpeg-turbo", "-ppm", "-outfile", ppm, INPUTS / f"{name}.jpg"])
-        print(name, *ppm_size(ppm))
+        w, h = ppm_size(ppm)
+        if w * h / 1e6 <= GUETZLI_MAX_MP:  # the inputs guetzli gets; made here, serially, not by the parallel encode jobs
+            png_of(ppm)
+        print(name, w, h)
 
 
 def encode():
@@ -123,7 +129,7 @@ def encode():
 
 
 def speed():
-    print("Q75, one encode at a time, median of 3 runs of the command (PPM in, JPEG out): ms per megapixel")
+    print("Q75 (guetzli: its lowest, Q84), one encode at a time, median of 3 runs (PPM in, JPEG out): ms per megapixel")
     rows = []
     for name in NAMES:
         ppm = W / "src" / f"{name}.ppm"

@@ -24,11 +24,15 @@ make_variant() {  # NAME VARIANT -> path
     echo "$dst"
 }
 
-ir() {  # MODE FILE -> M instructions per decode, all threads
+ir() {  # MODE FILE -> M instructions per decode, all threads; ERR if valgrind fails (as wsl.sh's)
     local t a b
     t=$(mktemp -d)
-    valgrind --tool=callgrind --callgrind-out-file="$t/a" "$BIN" repeat 1 libjpeg-turbo "$1" "$2" >/dev/null 2>&1
-    valgrind --tool=callgrind --callgrind-out-file="$t/b" "$BIN" repeat 3 libjpeg-turbo "$1" "$2" >/dev/null 2>&1
+    if ! { valgrind --tool=callgrind --callgrind-out-file="$t/a" "$BIN" repeat 1 libjpeg-turbo "$1" "$2" >/dev/null 2>&1 &&
+           valgrind --tool=callgrind --callgrind-out-file="$t/b" "$BIN" repeat 3 libjpeg-turbo "$1" "$2" >/dev/null 2>&1; }; then
+        rm -rf "$t"
+        echo ERR
+        return
+    fi
     a=$(awk '/^(summary|totals):/ {print $2; exit}' "$t/a"); b=$(awk '/^(summary|totals):/ {print $2; exit}' "$t/b")
     rm -rf "$t"
     awk -v a="$a" -v b="$b" 'BEGIN { printf "%.1f", (b - a) / 2e6 }'

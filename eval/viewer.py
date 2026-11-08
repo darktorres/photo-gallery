@@ -176,9 +176,17 @@ def pair_key(a: str, b: str) -> str:
     return "|".join(sorted((a, b)))
 
 
-def load_marks(run: str) -> dict[str, str]:
+def _read_marks(run: str) -> dict[str, str]:
+    """The run's marks file, read without the lock: only for a caller that holds marks_lock already."""
     path = run_dir(run) / PAIR_MARKS
     return json.loads(path.read_text(encoding="utf-8")) if path.exists() else {}
+
+
+def load_marks(run: str) -> dict[str, str]:
+    """The marks, read under marks_lock, so a reader never has the file open while set_marks replaces it (os.replace
+    fails on Windows while a reader has the target open)."""
+    with marks_lock:
+        return _read_marks(run)
 
 
 @lru_cache(maxsize=4)
@@ -202,7 +210,7 @@ def set_marks(run: str, items: list) -> dict:
             raise ValueError("unknown image path")
     target = run_dir(run) / PAIR_MARKS
     with marks_lock:
-        marks = load_marks(run)
+        marks = _read_marks(run)  # marks_lock is held here, and it is not reentrant: load_marks would deadlock
         for a, b, mark in items:
             if mark is None:
                 marks.pop(pair_key(a, b), None)
@@ -284,6 +292,8 @@ class Handler(BaseHTTPRequestHandler):
             self.reply(f"bad request: {e}".encode(), "text/plain", status=400)
         except (ConnectionAbortedError, BrokenPipeError):
             pass  # the browser cancelled (e.g. scrolled past a lazy image)
+        except OSError as e:  # e.g. a file that can't be read right now: an answer, not a dropped connection
+            self.reply(f"could not read: {e}".encode(), "text/plain", status=500)
 
     def do_POST(self) -> None:
         if not self.host_allowed():
@@ -303,8 +313,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.reply_json(set_marks(body["run"], [(a, b, m) for a, b, m in body["marks"]]))
             else:
                 self.reply(b"not found", "text/plain", status=404)
+        except (ConnectionAbortedError, BrokenPipeError, ConnectionResetError):
+            pass  # the browser went away mid-request, as in do_GET
         except (KeyError, ValueError, IndexError, TypeError) as e:
             self.reply(f"bad request: {e}".encode(), "text/plain", status=400)
+        except OSError as e:  # e.g. PermissionError: the marks were not saved, and the page must say so
+            self.reply(f"could not save the marks: {e}".encode(), "text/plain", status=500)
 
     def reply(self, body: bytes, content_type: str, status: int = 200, cache: bool = False) -> None:
         self.send_response(status)

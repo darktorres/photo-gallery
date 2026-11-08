@@ -3,7 +3,7 @@
 
     perf-compare.py BASELINE RUN_DIR [--tolerance 0.01] [--update] [--skip PREFIX]...
 
-RUN_DIR is gungraun's output (target/gungraun): every `callgrind.out` under it (not the `.out.old` kept beside it) is one
+RUN_DIR is gungraun's output (target/gungraun): every `callgrind.*.out` under it (not the `.out.old` kept beside it) is one
 bench, named by its path relative to RUN_DIR. Its total is the `totals:` line's Ir (the instructions executed). A bench
 moved by more than the tolerance (1% by default) fails the gate, in either direction: an improvement is a baseline
 to update, not an accident to keep. `--update` writes the run as the new baseline (after a change that should move it).
@@ -54,7 +54,7 @@ def main() -> int:
 
     run = measure(args.run_dir)
     if not run:
-        print(f"no callgrind.out under {args.run_dir}: run the benches first", file=sys.stderr)
+        print(f"no callgrind.*.out under {args.run_dir}: run the benches first", file=sys.stderr)
         return 1
     if args.update:
         args.baseline.parent.mkdir(parents=True, exist_ok=True)

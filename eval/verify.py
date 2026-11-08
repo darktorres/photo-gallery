@@ -68,6 +68,7 @@ from functools import lru_cache, partial
 import cv2
 import numpy as np
 import torch
+from PIL import Image
 
 from common import DATA_ROOT, WORK_DIR, ground_truth, image_list, load_rgb
 from group import SHORTCUT_PDQ, SHORTCUT_SIM, pdq_distances, shortcut
@@ -227,7 +228,7 @@ def work_image(im) -> tuple[np.ndarray, float]:
     side = max(im.size)
     scale = min(WORK_SIDE, max(MIN_WORK_SIDE, side)) / side
     if scale != 1.0:
-        im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), resample=4)  # LANCZOS
+        im = im.resize((max(1, round(im.width * scale)), max(1, round(im.height * scale))), resample=Image.Resampling.LANCZOS)
     return np.asarray(im), scale
 
 
@@ -502,9 +503,10 @@ def compare(al: Aligned, params: Params, rng: np.random.Generator, samples: int 
     if valid.sum() < 1000:
         return {**out, "decision": "unrelated"}, None
 
-    # Same effective resolution: a low-res original upsampled onto the canvas is blurrier.
-    e_ref = 0.5 * max(1.0, c / al.ref_scale)
-    e_other = 0.5 * max(1.0, s_other / al.other_scale)
+    # Same effective resolution: a low-res original upsampled onto the canvas is blurrier. Both factors are canvas px
+    # per ORIGINAL px (the scales are working px per original px, so the working image's canvas factor is multiplied by them).
+    e_ref = 0.5 * max(1.0, c * al.ref_scale)
+    e_other = 0.5 * max(1.0, s_other * al.other_scale)
     e = max(e_ref, e_other)
     ref_c = blur(ref_c, 1.0 + np.sqrt(max(0.0, e**2 - e_ref**2)))
     other_c = blur(other_c, 1.0 + np.sqrt(max(0.0, e**2 - e_other**2)))

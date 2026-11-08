@@ -62,7 +62,7 @@ mkdir -p "$prefix"
 ln -sfn "/usr/include/$arch" "$prefix/include"
 ln -sfn "/usr/lib/$arch" "$prefix/lib"
 
-# The repo on /mnt/c belongs to the Windows user; git refuses to read it otherwise.
+# A repo on a Windows drive (/mnt/<drive>) belongs to the Windows user; git refuses to read it otherwise.
 git config --global --get-all safe.directory | grep -qxF "$REPO" || git config --global --add safe.directory "$REPO"
 
 echo "$(rustc --version | cut -d' ' -f1-2), FFmpeg libavcodec $(pkg-config --modversion libavcodec)"

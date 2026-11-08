@@ -46,6 +46,7 @@ foreach ($line in Get-Content (Join-Path $PSScriptRoot "..\.env") -ErrorAction S
     }
 }
 if ($Record -and $Self) { throw "-Record and -Self do not go together" }
+if ($Record -and $Only) { throw "-Record and -Only do not go together: a subset would replace the whole reference" }
 $Repo = (Resolve-Path (Join-Path $PSScriptRoot "..")).Path
 $Shots = Join-Path $Repo "target\shots"
 $Library = Join-Path $Shots "library"
@@ -108,9 +109,9 @@ $expectList = @($Expect -split "," | Where-Object { $_ })
 function Build-Gallery([string]$Tree, [string]$TargetDir) {
     Push-Location $Tree
     try {
-        $args = @("build", "-p", "pg-gallery")
-        if ($TargetDir) { $args += @("--target-dir", $TargetDir) }
-        & cargo @args | Out-Host
+        $cargoArgs = @("build", "-p", "pg-gallery")
+        if ($TargetDir) { $cargoArgs += @("--target-dir", $TargetDir) }
+        & cargo @cargoArgs | Out-Host
         if ($LASTEXITCODE) { throw "cargo build failed in $Tree" }
     } finally { Pop-Location }
     $dir = if ($TargetDir) { $TargetDir } else { Join-Path $Tree "target" }
@@ -118,8 +119,9 @@ function Build-Gallery([string]$Tree, [string]$TargetDir) {
 }
 
 function Update-BaseWorktree([string]$Commit) {
-    $sha = (& git -C $Repo rev-parse --verify "$Commit^{commit}").Trim()
+    $sha = & git -C $Repo rev-parse --verify "$Commit^{commit}"
     if ($LASTEXITCODE) { throw "no commit $Commit" }
+    $sha = "$sha".Trim()
     $wt = Join-Path $Shots "base"
     & git -C $Repo worktree prune | Out-Null
     if (-not (Test-Path (Join-Path $wt ".git"))) {
@@ -131,8 +133,9 @@ function Update-BaseWorktree([string]$Commit) {
         if ($LASTEXITCODE) { throw "git checkout $sha failed in $wt" }
         & git -C $wt clean -fdq | Out-Null
     }
-    $top = (& git -C $wt rev-parse --show-toplevel).Trim()
-    if ((Resolve-Path $top).Path -ne (Resolve-Path $wt).Path) { throw "$wt is not its own worktree" }
+    $top = & git -C $wt rev-parse --show-toplevel
+    if ($LASTEXITCODE) { throw "$wt is not a git worktree" }
+    if ((Resolve-Path "$top".Trim()).Path -ne (Resolve-Path $wt).Path) { throw "$wt is not its own worktree" }
     return @{ Tree = $wt; Sha = $sha }
 }
 
@@ -236,8 +239,9 @@ function Resolve-Reference {
         if ($refs.Count -gt 1) { throw "several references ($(($refs.Name) -join ', ')): pass -Base <commit>" }
         return $refs[0].FullName
     }
-    $sha = (& git -C $Repo rev-parse --verify "$Base^{commit}").Trim()
+    $sha = & git -C $Repo rev-parse --verify "$Base^{commit}"
     if ($LASTEXITCODE) { throw "no commit $Base" }
+    $sha = "$sha".Trim()
     $dir = Join-Path $RefRoot $sha.Substring(0, 10)
     if (-not (Test-Path (Join-Path $dir "manifest.json"))) { throw "no reference for ${Base}: record it with just shots -Record $Base" }
     return $dir
@@ -423,7 +427,7 @@ $summary = "base: $baseLabel`ncurrent: working tree`n$table"
 Set-Content -Path (Join-Path $Shots "report.txt") -Value $summary
 Write-Host $summary
 if ($failed -gt 0) {
-    Write-Host "$failed of $($Scenarios.Count) scenarios differ or did not run; diffs in $diffDir"
+    Write-Host "$failed of $($report.Count) scenarios differ or did not run; diffs in $diffDir"
     exit 1
 }
-Write-Host "all $($Scenarios.Count) scenarios as expected"
+Write-Host "all $($report.Count) scenarios as expected"

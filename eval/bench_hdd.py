@@ -155,14 +155,20 @@ def main() -> None:
     )
     parser.add_argument("--seed", type=int, default=0)
     args = parser.parse_args()
+    # The Win32 calls take a \\?\ path, which needs an absolute one: resolve the folder once, here.
+    root = Path(args.root).resolve()
 
     t = time.perf_counter()
-    files = walk(Path(args.root))
-    print(f"{len(files):,} files under {args.root} (walk {time.perf_counter() - t:.0f} s)", flush=True)
+    files = walk(root)
+    print(f"{len(files):,} files under {root} (walk {time.perf_counter() - t:.0f} s)", flush=True)
 
     orders = ["path", "mft", "lcn", "random", "path_qd8", "lcn_qd8"]
     if args.dense:
-        # Contiguous blocks of the path order, spread over the folder: neighboring files, as in a full pass.
+        # Contiguous blocks of the path order, spread over the folder: neighboring files, as in a full pass. The
+        # blocks are disjoint only if each fits in one step of len(files) // len(orders).
+        if args.dense * len(orders) > len(files):
+            need = args.dense * len(orders)
+            parser.error(f"--dense {args.dense:,} x {len(orders)} orders needs {need:,} files; {len(files):,} found")
         step = len(files) // len(orders)
         samples = {name: files[k * step : k * step + args.dense] for k, name in enumerate(orders)}
     else:

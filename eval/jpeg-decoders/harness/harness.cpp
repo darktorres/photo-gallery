@@ -123,6 +123,7 @@ int time_mode(std::vector<std::string> args) {
     double budget = 1.0;
     std::string only;
     while (!args.empty() && args[0].rfind("--", 0) == 0) {
+        if (args.size() < 2) return std::fprintf(stderr, "%s needs a value\n", args[0].c_str()), 2;
         if (args[0] == "--secs") budget = std::atof(args[1].c_str());
         else if (args[0] == "--dec") only = "," + args[1] + ",";
         args.erase(args.begin(), args.begin() + 2);
@@ -213,12 +214,14 @@ int throughput_mode(std::vector<std::string> args) {
     double budget = 2.0;
     int workers = 1;
     while (!args.empty() && args[0].rfind("--", 0) == 0) {
+        if (args.size() < 2) return std::fprintf(stderr, "%s needs a value\n", args[0].c_str()), 2;
         if (args[0] == "--secs") budget = std::atof(args[1].c_str());
         else if (args[0] == "--workers") workers = std::atoi(args[1].c_str());
         args.erase(args.begin(), args.begin() + 2);
     }
+    if (args.empty()) return std::fprintf(stderr, "throughput [--secs S] [--workers N] DEC FILE...\n"), 2;
     auto decs = all_decoders();
-    auto* spec = find(decs, args.at(0));
+    auto* spec = find(decs, args[0]);
     if (!spec) return 2;
     for (size_t f = 1; f < args.size(); f++) {
         auto jpeg = read_file(args[f]);

@@ -12,7 +12,7 @@ one diagnostic per pair in verify_synth_<model>/<edit>_<i>.jpg.
 import argparse
 import random
 import time
-from functools import partial
+from functools import lru_cache, partial
 from types import SimpleNamespace
 
 import cv2
@@ -26,6 +26,7 @@ from verify import (
     Features,
     PairRunner,
     Prefetcher,
+    Prepared,
     add_decision_args,
     params_from,
     prepared,
@@ -88,15 +89,27 @@ def main() -> None:
         return work_image(im), copies
 
     prefetch = Prefetcher(load, todo, args.loaders, ahead=8)
+
+    # Everything that can fail runs inside PairRunner.submit's try (its getters), so one bad file is that pair's error.
+    # Prefetcher.get pops its key, so each image is loaded once and kept here while its pairs are submitted.
+    @lru_cache(maxsize=8)
+    def loaded(i: int) -> tuple:
+        return prefetch.get(i)
+
+    @lru_cache(maxsize=8)
+    def original(i: int) -> Prepared:
+        return prepared(features, loaded(i)[0])
+
+    def edited(i: int, t_index: int) -> Prepared:
+        return prepared(features, loaded(i)[1][t_index])
+
     runner = PairRunner(features, params, args.workers, done)
     for i, ts in todo.items():
-        work, copies = prefetch.get(i)
-        original = prepared(features, work)
         rel = files[sample[i]]
         for t_index in ts:
             name = edits[t_index]
             row = {"id": f"{name}_{i}", "label": name, "path_a": rel, "path_b": f"{name}:{rel}", "slot": i * len(edits) + t_index}
-            runner.submit(row, lambda o=original: o, partial(prepared, features, copies[t_index]))
+            runner.submit(row, partial(original, i), partial(edited, i, t_index))
     runner.close()
     prefetch.close()
     run = SimpleNamespace(pairs="synth", model=args.model, floor=None, features=args.features)

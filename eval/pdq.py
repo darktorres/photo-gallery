@@ -1,7 +1,7 @@
 """PDQ perceptual hash (Meta's tier-1 near-duplicate hash), scored like the embedding models.
 
 Usage: python pdq.py [--workers 6]          # hash every image -> emb_pdq.npy, then: evaluate.py --model pdq
-       python pdq.py --synth [--count 300]  # synthetic robustness, same edits and sample as synth.py
+       python pdq.py --synth [--count 300]  # synthetic robustness, same edits; same sample as synth.py when both ok masks match
 
 PDQ is a 256-bit hash compared by Hamming distance d. Each hash is stored as a +-1/16 vector, so
 cosine similarity = 1 - d/128 and every embedding tool (evaluate.py, verify.py, the viewer) works on

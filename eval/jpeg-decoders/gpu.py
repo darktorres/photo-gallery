@@ -1,6 +1,6 @@
 """nvJPEG (torchvision.io.decode_jpeg on CUDA) against CPU decoders on Windows, for docs/JPEG_DECODERS.md.
 
-Run with the eval venv (torch with CUDA): python -I eval/jpeg-decoders/gpu.py FILE...
+Run with the eval venv (torch with CUDA): python eval/jpeg-decoders/gpu.py FILE...
 
 - GPU: batches of the same file (1 to 64, capped by the decoded size), per-image time with the pixels left on
   the GPU and with them copied back to the host (what CPU code after the decode needs), and the process's CPU
@@ -10,6 +10,7 @@ Run with the eval venv (torch with CUDA): python -I eval/jpeg-decoders/gpu.py FI
 - Output: nvJPEG against Pillow, mean absolute difference per channel value and PSNR.
 """
 
+import ctypes
 import io
 import os
 import statistics
@@ -28,6 +29,18 @@ from torchvision.io import ImageReadMode, decode_jpeg
 pyvips.cache_set_max(0)  # otherwise decoding the same buffer again is a cache hit
 BUDGET_S = 1.5
 MAX_BATCH_BYTES = 2.5e9  # decoded RGB per batch; the 2060 has 6 GB, ~1.4 GB in use by the desktop
+CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
+
+
+def blocking_sync() -> None:
+    """Make the primary context of device 0 block on synchronize(), so waiting for the GPU doesn't bill CPU time
+    (spinning would count as the decode's CPU cost). Must run before the first CUDA call; see JPEG_DECODERS.md.
+    Done through the driver's own DLL, so no torch is needed (the nvImageCodec venv has none)."""
+    cuda = ctypes.CDLL("nvcuda.dll")
+    if (rc := cuda.cuInit(0)) != 0:
+        raise RuntimeError(f"cuInit returned {rc}")
+    if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
+        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags returned {rc} (the context is already active?)")
 
 
 def denom(w, h):
@@ -52,7 +65,13 @@ def timed(fn, per_call=1):
 def pillow(data, d=1):
     im = Image.open(io.BytesIO(data))
     if d > 1:
-        im.draft("RGB", (-(-im.width // d), -(-im.height // d)))
+        w, h = im.size
+        # Request the floor: Pillow picks the largest DCT scale that still gives at least the requested size, so this
+        # keeps 1/d. The decoded size is the ceiling, ceil(w/d) (3840x2151 at d=4 is 960x538); a ceiling request can
+        # pick a larger scale for a side that isn't a multiple of d.
+        im.draft("RGB", (w // d, h // d))
+        if im.size != (-(-w // d), -(-h // d)):
+            raise RuntimeError(f"draft gave {im.size} for {w}x{h} at 1/{d}, expected {(-(-w // d), -(-h // d))}")
     im.load()
     return im
 
@@ -62,6 +81,7 @@ def vips(data, d=1):
 
 
 def main():
+    blocking_sync()
     assert torch.cuda.is_available(), "no CUDA device"
     vips_version = ".".join(str(pyvips.version(i)) for i in range(3))
     print(f"{torch.cuda.get_device_name()}, torch {torch.__version__}, Pillow {Image.__version__}, libvips {vips_version}")

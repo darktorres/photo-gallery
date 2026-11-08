@@ -4,6 +4,7 @@ command line can't make.
     python tools/shots/fixture.py library OUT        a small synthetic library: OUT/folder-00 and OUT/folder-01
     python tools/shots/fixture.py views CATALOG      a saved view "alpha" on folder-00 (recursive, by name, descending)
                                                      and the session's folder folder-01, in CATALOG (catalog.sqlite)
+    python tools/shots/fixture.py settled CATALOG    fails if the catalog has background work left
 
 The view's folder differs from the session's on purpose: `--apply-view=alpha` must show folder-00.
 """

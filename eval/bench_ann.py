@@ -76,7 +76,8 @@ def stage_gen(n: int, nq: int, p: dict) -> None:
     for s in range(0, n, CHUNK):
         base[s : s + CHUNK] = gen(min(CHUNK, n - s))
     queries = gen(nq)
-    # Each query's partner: cosine c drawn from the real duplicate pairs, along a fresh direction orthogonal to it.
+    # Each query's partner: cosine c uniform in 0.3-0.99 (not the real duplicate pairs' distribution), along a fresh
+    # direction orthogonal to it.
     c = rng.uniform(0.3, 0.99, nq).astype(np.float32)
     u = gen(nq)
     u = normalize(u - (u * queries).sum(1, keepdims=True) * queries)
@@ -254,13 +255,15 @@ def stage_usearch(p: dict, exact: dict, dtype: str) -> list[dict]:
 
 
 def rerank(base, q: np.ndarray, cand: np.ndarray) -> np.ndarray:
-    """Exact cosine on the stored fp16 vectors for each query's candidates; top K."""
-    out = np.empty((len(q), K), dtype=np.int64)
+    """Exact cosine on the stored fp16 vectors for each query's candidates; the top K, padded with -1 when a query has
+    fewer than K candidates."""
+    out = np.full((len(q), K), -1, dtype=np.int64)
     for i in range(len(q)):
         c = cand[i][cand[i] >= 0]
         order = np.sort(c)
         s = np.asarray(base[order], dtype=np.float32) @ q[i]
-        out[i] = order[np.argsort(-s)[:K]]
+        top = order[np.argsort(-s)[:K]]
+        out[i, : len(top)] = top
     return out
 
 

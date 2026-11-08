@@ -2,22 +2,25 @@
 batches, each with the pixels copied to host memory; CPU time per image; output against libjpeg-turbo.
 
 Run with its own venv (python -m pip install -r eval/jpeg-decoders/requirements.txt), not the shared eval venv:
-    $JPEG_EVAL/venv/Scripts/python.exe -I eval/jpeg-decoders/nvimgcodec_bench.py \
+    $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/nvimgcodec_bench.py \
         --ref-dir DIR FILE...
 DIR holds the harness's libjpeg-turbo decodes (`harness dump turbo FILE DIR/NAME.ppm`), one per FILE.
 Timing as the harness: warm-up, then samples until 5 and the budget; the median, and process CPU time per image.
 """
 
 import argparse
+import ctypes
 import statistics
 import time
 from pathlib import Path
 
 import numpy as np
 from nvidia import nvimgcodec as nv
+from PIL import Image
 
 BUDGET_S = 2.0
 MAX_BATCH_BYTES = 2.0e9  # decoded RGB per batch: the 2060 has 6 GB, ~1.5 GB taken by the desktop
+CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
 BACKENDS = {
     "default": None,
     "GPU_ONLY": nv.BackendKind.GPU_ONLY,
@@ -26,11 +29,19 @@ BACKENDS = {
 }
 
 
+def blocking_sync() -> None:
+    """Make the primary context of device 0 block on synchronize(), so waiting for the GPU doesn't bill CPU time.
+    Must run before the first CUDA call. Done through the driver's DLL: this venv has no torch (see gpu.py)."""
+    cuda = ctypes.CDLL("nvcuda.dll")
+    if (rc := cuda.cuInit(0)) != 0:
+        raise RuntimeError(f"cuInit returned {rc}")
+    if (rc := cuda.cuDevicePrimaryCtxSetFlags(0, CU_CTX_SCHED_BLOCKING_SYNC)) != 0:
+        raise RuntimeError(f"cuDevicePrimaryCtxSetFlags returned {rc} (the context is already active?)")
+
+
 def read_ppm(path):
-    data = path.read_bytes()
-    parts = data.split(maxsplit=4)  # P6 W H 255 pixels
-    w, h = int(parts[1]), int(parts[2])
-    return np.frombuffer(parts[4][: w * h * 3], np.uint8).reshape(h, w, 3)
+    """The libjpeg-turbo reference: uint8, shape (h, w, 3)."""
+    return np.ascontiguousarray(np.asarray(Image.open(path)))
 
 
 def timed(fn, per_call, budget):
@@ -62,9 +73,13 @@ def main():
     ap.add_argument("files", nargs="+", type=Path)
     args = ap.parse_args()
     batches = [int(b) for b in args.batches.split(",")]
-    decoders = {
-        name: nv.Decoder() if kind is None else nv.Decoder(backends=[nv.Backend(kind)]) for name, kind in BACKENDS.items()
-    }
+    blocking_sync()
+    decoders = {}
+    for name, kind in BACKENDS.items():
+        try:
+            decoders[name] = nv.Decoder() if kind is None else nv.Decoder(backends=[nv.Backend(kind)])
+        except Exception as e:  # noqa: BLE001 (reported, and the other backends still run)
+            print(f"{name:15} cannot be created: {e}")
     print(
         f"nvImageCodec {nv.__version__}: median wall ms per image (pixels on the host), CPU ms per image, "
         "output vs libjpeg-turbo (mean |diff| / max / PSNR)"
@@ -76,7 +91,10 @@ def main():
         cap = max(1, int(MAX_BATCH_BYTES // (w * h * 3)))
         for name, dec in decoders.items():
             try:
-                out = np.asarray(dec.decode(data).cpu())
+                decoded = dec.decode(data)
+                if decoded is None:
+                    raise RuntimeError("returned no image")
+                out = np.asarray(decoded.cpu())
             except Exception as e:  # noqa: BLE001 (reported, and the run goes on)
                 print(f"{f.name:34} {name:15} error: {e}")
                 continue

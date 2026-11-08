@@ -9,15 +9,15 @@ use std::panic::AssertUnwindSafe;
 use std::sync::{Arc, Condvar, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread;
 
-use pg_codec::decode::{Decoder, MinSize};
 use pg_jobs::events::Bus;
 use pg_model::format::Format;
 use pg_model::turns::Turns;
+use pg_render::maker::Maker;
 use pg_yandex::{Download, Fetcher, YandexError};
 
-/// The longest side of a grid picture, in px: the decode's smallest size (the grid draws at this size, and so does the
-/// QML `sourceSize`).
-pub const SHOWN_SIDE: usize = 320;
+/// The height of a grid picture, in px. The gallery's thumbnail pipeline makes it (a DCT-scaled decode, Lanczos3 down,
+/// a JPEG), so a result looks like a gallery thumbnail; the grid draws at 220 px.
+pub const GRID_HEIGHT: usize = 320;
 
 /// How many files are fetched at once.
 const FETCHERS: usize = 4;
@@ -33,8 +33,17 @@ impl Fetch for Fetcher {
     }
 }
 
-/// Whether bytes are an image this app decodes; the reason when they are not. [`decodes`] is the real one.
-pub type Check = fn(&[u8]) -> Result<(), &'static str>;
+/// Makes the grid picture of bytes that are an image this app decodes; the reason when they are not.
+/// [`grid_picture`] is the real one.
+pub type Check = fn(&[u8]) -> Result<Vec<u8>, &'static str>;
+
+/// A result's file, kept: the file as Yandex's host gave it (what a save writes), and its grid picture (a JPEG,
+/// [`GRID_HEIGHT`] px high, which the grid shows).
+#[derive(Debug)]
+pub struct Fetched {
+    pub file: Download,
+    pub grid: Vec<u8>,
+}
 
 /// Where a result's file is.
 enum State {
@@ -42,7 +51,7 @@ enum State {
     Queued,
     /// Being fetched now, by a fetcher or by a caller that asked for it.
     Fetching,
-    Ready(Arc<Download>),
+    Ready(Arc<Fetched>),
     Dead(YandexError),
 }
 
@@ -120,15 +129,15 @@ impl Images {
         None
     }
 
-    fn fetch_checked(&self, url: &str) -> Result<Arc<Download>, YandexError> {
-        let download = self.fetch.fetch(url)?;
-        (self.check)(&download.bytes).map_err(YandexError::Undecodable)?;
-        Ok(Arc::new(download))
+    fn fetch_checked(&self, url: &str) -> Result<Arc<Fetched>, YandexError> {
+        let file = self.fetch.fetch(url)?;
+        let grid = (self.check)(&file.bytes).map_err(YandexError::Undecodable)?;
+        Ok(Arc::new(Fetched { file, grid }))
     }
 
     /// [`Images::fetch_checked`], where a panic (the decoder's, on a malformed file) ends the result as dead: a result
     /// left in `Fetching` would hold up every caller that waits for it.
-    fn fetch_caught(&self, url: &str) -> Result<Arc<Download>, YandexError> {
+    fn fetch_caught(&self, url: &str) -> Result<Arc<Fetched>, YandexError> {
         match pg_jobs::panics::catch(AssertUnwindSafe(|| self.fetch_checked(url))) {
             Ok(outcome) => outcome,
             Err(_) => Err(YandexError::Undecodable("the decoder stopped on this file")),
@@ -136,7 +145,7 @@ impl Images {
     }
 
     /// Keeps the outcome of a fetch: its file, or the death of the result (announced on `changes`).
-    fn settle(&self, id: u64, outcome: Result<Arc<Download>, YandexError>) {
+    fn settle(&self, id: u64, outcome: Result<Arc<Fetched>, YandexError>) {
         let dead = outcome.is_err();
         {
             let mut t = lock(&self.table);
@@ -159,11 +168,11 @@ impl Images {
 
     /// The file of the result `id`, which is at `url`: kept when it is in, waited for when a fetcher is on it, and
     /// fetched now otherwise. A dead result is an error.
-    pub fn get(&self, id: u64, url: &str) -> Result<Arc<Download>, YandexError> {
+    pub fn get(&self, id: u64, url: &str) -> Result<Arc<Fetched>, YandexError> {
         let mut t = lock(&self.table);
         let url = loop {
             match t.slots.get(&id) {
-                Some(Slot { state: State::Ready(download), .. }) => return Ok(download.clone()),
+                Some(Slot { state: State::Ready(fetched), .. }) => return Ok(fetched.clone()),
                 Some(Slot { state: State::Dead(error), .. }) => return Err(error.clone()),
                 Some(Slot { state: State::Fetching, .. }) => {}
                 Some(Slot { url, state: State::Queued }) => break url.clone(),
@@ -179,7 +188,7 @@ impl Images {
     }
 
     /// The file of the result `id`, at the URL it was queued with. An id that no search has is an error.
-    pub fn get_known(&self, id: u64) -> Result<Arc<Download>, YandexError> {
+    pub fn get_known(&self, id: u64) -> Result<Arc<Fetched>, YandexError> {
         let url = lock(&self.table)
             .slots
             .get(&id)
@@ -208,25 +217,24 @@ pub fn current() -> Option<Arc<Images>> {
 }
 
 thread_local! {
-    /// This thread's decoder: a decoder keeps its buffers, so each fetcher has one.
-    static DECODER: RefCell<Option<Decoder>> = const { RefCell::new(None) };
+    /// This thread's maker: its decoder, resizer and encoder keep their buffers, so each fetcher has one.
+    static MAKER: RefCell<Option<Maker>> = const { RefCell::new(None) };
 }
 
-/// Whether `bytes` are an image this app decodes, at the grid's size. The reason when they are not.
-pub fn decodes(bytes: &[u8]) -> Result<(), &'static str> {
+/// The grid picture of `bytes`, an image this app decodes: a JPEG [`GRID_HEIGHT`] px high, made by the gallery's
+/// thumbnail pipeline. The reason when the bytes are not such an image.
+pub fn grid_picture(bytes: &[u8]) -> Result<Vec<u8>, &'static str> {
     if Format::sniff(bytes).is_none() {
         return Err("the file is not a picture");
     }
-    DECODER.with_borrow_mut(|slot| -> Result<(), &'static str> {
+    MAKER.with_borrow_mut(|slot| -> Result<Vec<u8>, &'static str> {
         if slot.is_none() {
-            *slot = Some(Decoder::new().map_err(|_| "no decoder")?);
+            *slot = Some(Maker::new().map_err(|_| "no maker")?);
         }
-        let Some(decoder) = slot.as_mut() else {
-            return Err("no decoder");
+        let Some(maker) = slot.as_mut() else {
+            return Err("no maker");
         };
-        pg_render::display::decode(decoder, bytes, MinSize::Sides(SHOWN_SIDE, SHOWN_SIDE), Turns::NONE)
-            .map(drop)
-            .map_err(|_| "the picture does not decode")
+        maker.make(bytes, GRID_HEIGHT, Turns::NONE).map_err(|_| "the picture does not decode")
     })
 }
 
@@ -255,12 +263,18 @@ mod tests {
         }
     }
 
-    fn accept(_: &[u8]) -> Result<(), &'static str> {
-        Ok(())
+    fn accept(_: &[u8]) -> Result<Vec<u8>, &'static str> {
+        Ok(b"grid".to_vec())
     }
 
-    fn reject(_: &[u8]) -> Result<(), &'static str> {
+    fn reject(_: &[u8]) -> Result<Vec<u8>, &'static str> {
         Err("no")
+    }
+
+    /// Bytes that are no picture make no grid picture.
+    #[test]
+    fn a_file_that_is_no_picture_makes_no_grid_picture() {
+        assert_eq!(grid_picture(b"not a picture at all"), Err("the file is not a picture"));
     }
 
     fn images(fetch: Arc<Counting>, check: Check) -> Arc<Images> {
@@ -275,7 +289,8 @@ mod tests {
         images.prefetch(vec![(1, "https://a.example/1.jpg".into())]);
         let first = images.get(1, "https://a.example/1.jpg").unwrap();
         let again = images.get(1, "https://a.example/1.jpg").unwrap();
-        assert_eq!(first.bytes, b"picture");
+        assert_eq!(first.file.bytes, b"picture");
+        assert_eq!(first.grid, b"grid");
         assert!(Arc::ptr_eq(&first, &again));
         std::thread::sleep(Duration::from_millis(20));
         assert_eq!(fetch.calls.load(Ordering::SeqCst), 1, "one fetch for the file");
@@ -308,8 +323,8 @@ mod tests {
         let fetch = Arc::new(Counting { calls: AtomicUsize::new(0), fail: vec![] });
         let images = images(fetch.clone(), accept);
         assert_eq!(images.get_known(9).unwrap_err().to_string(), "unexpected Yandex response: no such result");
-        assert_eq!(images.get(9, "https://a.example/9.jpg").unwrap().bytes, b"picture");
-        assert_eq!(images.get_known(9).unwrap().bytes, b"picture");
+        assert_eq!(images.get(9, "https://a.example/9.jpg").unwrap().file.bytes, b"picture");
+        assert_eq!(images.get_known(9).unwrap().file.bytes, b"picture");
         assert_eq!(fetch.calls.load(Ordering::SeqCst), 1);
     }
 }

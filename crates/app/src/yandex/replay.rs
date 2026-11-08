@@ -114,8 +114,8 @@ mod tests {
     use pg_jobs::events::Bus;
     use std::sync::Mutex;
 
-    fn accept(_: &[u8]) -> Result<(), &'static str> {
-        Ok(())
+    fn accept(_: &[u8]) -> Result<Vec<u8>, &'static str> {
+        Ok(Vec::new())
     }
 
     /// A source that records the order of its calls, to check the search's.

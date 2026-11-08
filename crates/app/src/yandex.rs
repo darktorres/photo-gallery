@@ -19,7 +19,7 @@ use pg_model::rules::PathRules;
 use pg_platform::file::TempFile;
 use pg_platform::names::{path_buf, rule_path_of};
 pub use pg_yandex::YandexError;
-use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Download, Fetcher, OtherSize, Similar, Upload};
+use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload};
 
 use crate::app::App;
 
@@ -82,8 +82,8 @@ pub fn replay(dir: &Path) -> Factory {
     })
 }
 
-/// The picture of the result `id` of the search on screen, for the grid: its file, fetched now if it is not kept yet.
-pub fn image(id: u64) -> Result<Arc<Download>, YandexError> {
+/// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
+pub fn image(id: u64) -> Result<Arc<images::Fetched>, YandexError> {
     images::current().ok_or(YandexError::Unexpected("no search"))?.get_known(id)
 }
 
@@ -400,8 +400,8 @@ fn stem_of(photo: &Path) -> OsString {
 /// Downloads one hit into `folder`, named `<stem> (<suffix>)` so it sorts next to the photo ([`write_new`]).
 /// Writes a result's file (kept by the search, or fetched now) into `folder`, named after the photo.
 fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
-    let file = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
-    write_new(folder, &saved_stem(stem, &hit.suffix), file.format.extension(), &file.bytes)
+    let kept = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
+    write_new(folder, &saved_stem(stem, &hit.suffix), kept.file.format.extension(), &kept.file.bytes)
         .map(drop)
         .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path, error })
 }
@@ -499,7 +499,7 @@ impl Search {
                     number(&mut found, s.generation);
                     let results: Vec<(u64, String)> =
                         found.other.iter().chain(&found.similar).map(|hit| (hit.id, hit.url.clone())).collect();
-                    let pictures = Images::new(fetch, images::decodes, changes.clone());
+                    let pictures = Images::new(fetch, images::grid_picture, changes.clone());
                     images::set_current(Some(pictures.clone()));
                     fetching = Some((pictures, results));
                     s.found = Some(found);

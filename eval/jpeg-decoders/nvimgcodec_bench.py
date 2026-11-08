@@ -92,11 +92,12 @@ def main():
         for name, dec in decoders.items():
             try:
                 decoded = dec.decode(data)
-                if decoded is None:
-                    raise RuntimeError("returned no image")
-                out = np.asarray(decoded.cpu())
+                out = None if decoded is None else np.asarray(decoded.cpu())
             except Exception as e:  # noqa: BLE001 (reported, and the run goes on)
                 print(f"{f.name:34} {name:15} error: {e}")
+                continue
+            if out is None:
+                print(f"{f.name:34} {name:15} error: returned no image")
                 continue
             quality = diff(out, ref)
             for b in [b for b in batches if b <= cap]:

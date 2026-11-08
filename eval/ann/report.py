@@ -52,7 +52,7 @@ def true_duplicate_recall(base: Base) -> dict:
     if not csv_path.exists() or not meta_path.exists():
         return {}
     meta = json.loads(meta_path.read_text(encoding="utf-8"))
-    with open(csv_path, newline="", encoding="utf-8") as f:
+    with csv_path.open(newline="", encoding="utf-8") as f:
         decision = {int(r["id"]): r["decision"] for r in csv.DictReader(f)}
     sub = base.subset(MAIN)
     t = metrics.truth(base, sub, exact.ground_truth(base, MAIN))

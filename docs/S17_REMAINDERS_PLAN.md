@@ -1,5 +1,7 @@
 # Plan: S-17.3 and S-17.5 remainders (HEAD 2016a9b)
 
+Superseded (2026-11-07): the remainders are done by S-17 Units A to F (`docs/REFACTOR_PLAN.md`, rows S-17.3 to S-17.6 and S-17.8), and the S-17 work plan replaces this one. Kept for its probes and its record of what was verified. Its claims about the code as of 2016a9b are not current.
+
 Every claim in "Verified state" comes from a file read, not from the ledger.
 
 ## Verified state (read from code)

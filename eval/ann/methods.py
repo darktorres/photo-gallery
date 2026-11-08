@@ -139,7 +139,7 @@ def run_cpu(tag: str, base_file: Path, family: str, config: dict, params: list[d
         raise RuntimeError(f"worker failed ({tag}): {proc.stdout[-2000:]} {proc.stderr[-2000:]}")
     res = json.loads((work / "result.json").read_text(encoding="utf-8"))
     out = [{"param": s["param"], "search_s": s["search_s"], "ids": np.load(work / s["file"])} for s in res["searches"]]
-    build = {k: v for k, v in res.items() if k not in ("searches",)}
+    build = {k: v for k, v in res.items() if k != "searches"}
     shutil.rmtree(work)
     return build, out
 

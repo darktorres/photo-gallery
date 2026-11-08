@@ -217,6 +217,35 @@ after three rounds of fixes: [HEAP_PROFILE.md](HEAP_PROFILE.md) (2026-11-01, 202
 Every heap allocation of the app's start on the default catalog (dhat), before and after:
 [HEAP_PROFILE_START.md](HEAP_PROFILE_START.md) (2026-11-01, 2026-11-02).
 
+### Wall-clock library scan, WSL (`tools/profiling/scan-timing.sh`, 2026-11-07)
+
+Not gated: wall-clock time on this machine, not instructions, so it is a ledger entry, not a `perf` result.
+
+- **Binary:** `gallery` release build (`cargo build --release -p pg-gallery --bin gallery`, WSL Ubuntu-26.04, Qt 6.12
+  for Linux, nightly-2026-11-06), from the tree at `262004b`. The crates are the same as `22ae0ff`: `262004b` changed
+  no crate.
+- **Library:** `tools/profiling/synthetic_library.py --folders 100 --per-folder 100 --seed 1`: 10,000 files (mostly JPEG,
+  some PNG, GIF and WebP), on WSL's ext4 disk (`/dev/sdf`), not tmpfs. Renumbered in place, which the scan pairs
+  (the same folder, size, mtime and identity under a new name).
+- **Command:** `scan-timing.sh GALLERY LIBRARY WORK [--drop-caches]`, run as root. Each scan is into a fresh catalog;
+  `first` scans the library from nothing, `unchanged` rescans it, and `renumbered` rescans after every file's number
+  moved to the other range (0 to 999 and back).
+- **Machine:** 12 cores, 31 GB RAM, nothing else running. Times are wall clock, one run per line unless noted.
+
+| Caches | Run | first | unchanged | renumbered |
+|---|---|---|---|---|
+| as they are | 1 | 1.672 s | 0.227 s | 0.478 s |
+| as they are | 2 | 1.647 s | 0.485 s | 0.397 s |
+| dropped before each scan | 1 | 4.844 s | 0.888 s | 1.283 s |
+
+- **What the renumbered run did:** the catalog has 10,000 file rows after all three scans, and none is missing (checked
+  by reading the catalog), so the renamed files were paired with their rows. Its scan reports 10,000 new or changed,
+  which counts the renames, and 0 missing.
+- **tmpfs under a scanned root** (WSL, the S-17.7 manual check): a tmpfs folder of 20 files inside a library with 20
+  plain files (device numbers 178 and 2128). Two scans; 40 rows and 0 missing after each. No row flipped.
+- **Not measured:** a Windows run, and the `wsl --shutdown` run (the cold VM after a restart, the plan's end-to-end
+  check, which needs WSL and Docker stopped).
+
 ### The start's stages before and after the two heap plans (release, `PG_TRACE=1`, offscreen, 2026-11-02)
 
 `gallery-prev.exe` (2e1b6ca, before both plans) against `gallery.exe` (1d3685b), on the default catalog: 189,518 files,

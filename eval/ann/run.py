@@ -62,33 +62,33 @@ def grid(n: int) -> list[dict]:
     """Every configuration: family, config (build settings), params (search settings swept on one build)."""
     out = [{"family": "exact", "config": {}, "params": [{}]}]
     for nl in nlists(n):
-        for r in (1, 2, 4):
-            out.append(
-                {"family": "gpu_ivf", "config": {"nlist": nl, "r": r}, "params": [{"nprobe": p} for p in powers(min(nl, 256))]}
-            )
+        out.extend(
+            {"family": "gpu_ivf", "config": {"nlist": nl, "r": r}, "params": [{"nprobe": p} for p in powers(min(nl, 256))]}
+            for r in (1, 2, 4)
+        )
     for m in (16, 32, 64):
         for ef_add in (128, 256, 512):
             for dtype in ("f32", "f16", "i8"):
                 cfg = {"M": m, "ef_add": ef_add, "dtype": dtype}
                 out.append({"family": "usearch", "config": cfg, "params": [{"ef": e} for e in EFS]})
     for m in (32, 64):
-        for efc in (256, 512):
-            out.append(
-                {
-                    "family": "faiss_hnsw",
-                    "config": {"spec": f"HNSW{m},Flat", "efC": efc},
-                    "params": [{"efSearch": e} for e in EFS],
-                }
-            )
+        out.extend(
+            {
+                "family": "faiss_hnsw",
+                "config": {"spec": f"HNSW{m},Flat", "efC": efc},
+                "params": [{"efSearch": e} for e in EFS],
+            }
+            for efc in (256, 512)
+        )
     for nl in nlists(n):
-        for enc in ("Flat", "SQ8", "PQ64", "PQ32x4fs", "PQ64x4fs"):
-            out.append(
-                {
-                    "family": "faiss_ivf",
-                    "config": {"spec": f"IVF{nl},{enc}", "centroids": True},
-                    "params": [{"nprobe": p} for p in powers(nl)],
-                }
-            )
+        out.extend(
+            {
+                "family": "faiss_ivf",
+                "config": {"spec": f"IVF{nl},{enc}", "centroids": True},
+                "params": [{"nprobe": p} for p in powers(nl)],
+            }
+            for enc in ("Flat", "SQ8", "PQ64", "PQ32x4fs", "PQ64x4fs")
+        )
         out.append(
             {"family": "faiss_ivf", "config": {"spec": f"OPQ64,IVF{nl},PQ64"}, "params": [{"nprobe": p} for p in powers(nl)]}
         )
@@ -101,8 +101,7 @@ def grid(n: int) -> list[dict]:
         }
     )
     for k in (32, 64):
-        for it in (10, 20):
-            out.append({"family": "nndescent", "config": {"K": k, "iter": it}, "params": [{}]})
+        out.extend({"family": "nndescent", "config": {"K": k, "iter": it}, "params": [{}]} for it in (10, 20))
     return out
 
 
@@ -205,9 +204,8 @@ def done_names(stage: str) -> set[str]:
 
 
 def append(stage: str, lines: list[dict]) -> None:
-    with open(results_path(stage), "a", encoding="utf-8") as f:
-        for line in lines:
-            f.write(json.dumps(line) + "\n")
+    with results_path(stage).open("a", encoding="utf-8") as f:
+        f.writelines(json.dumps(line) + "\n" for line in lines)
 
 
 def load_results(stage: str) -> list[dict]:
@@ -233,7 +231,7 @@ def stage_validate(base: Base) -> None:
         tgz = sift / "sift.tar.gz"
         if not tgz.exists():
             print(f"downloading {SIFT_URL}", flush=True)
-            urllib.request.urlretrieve(SIFT_URL, tgz)
+            urllib.request.urlretrieve(SIFT_URL, tgz)  # noqa: S310 (SIFT_URL is a fixed ftp constant)
         with tarfile.open(tgz) as tf:
             tf.extractall(sift, filter="data")
         for name in ("base", "query", "learn"):
@@ -342,7 +340,7 @@ def stage_tune(base: Base, configs: list[dict] | None = None, stage: str = "tune
         start = time.perf_counter()
         try:
             build, runs = run_config(base, MAIN, c, pca_dim=pca_dim)
-        except Exception as e:  # one failing configuration is recorded, not fatal
+        except Exception as e:  # noqa: BLE001 (one failing configuration is recorded, not fatal)
             append(stage, [{"name": name, "family": c["family"], "config": c["config"], "error": str(e)[:500]}])
             print(f"[{i + 1}/{len(configs)}] {name}: FAILED {str(e)[:200]}", flush=True)
             continue
@@ -498,10 +496,9 @@ def prepare_verify(base: Base) -> None:
     ]
     (OUT / "verify_meta.json").write_text(json.dumps(meta), encoding="utf-8")
     tmp = WORK_DIR / "pairs_knn.csv.tmp"
-    with open(tmp, "w", encoding="utf-8") as f:
+    with tmp.open("w", encoding="utf-8") as f:
         f.write("a,b,label\n")
-        for ra, rb, lab in zip(rows_a, rows_b, label, strict=True):
-            f.write(f"{ra},{rb},{lab}\n")
+        f.writelines(f"{ra},{rb},{lab}\n" for ra, rb, lab in zip(rows_a, rows_b, label, strict=True))
     tmp.replace(WORK_DIR / "pairs_knn.csv")
     print(f"{len(keys)} pairs to verify -> {WORK_DIR / 'pairs_knn.csv'}", flush=True)
 

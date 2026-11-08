@@ -56,7 +56,16 @@ catalog, scan and platform tests).
   other Unix systems refuse every root (`check_root` fails closed).
 - **Bind mounts:** a folder whose identity is already on the walk's path is not descended and is counted as a loop
   (`ScanStats::loops`, S-17.7 decision 11).
-- **Not measured:** the wall-clock scan benchmark and the perf ledger (S-17.7 step 8) were not run for this change.
+- **Open files:** a catalog or thumbnail cache that another process has open is not rebuilt or started over. Each holds
+  `<db>.live` shared while it is open, and a rebuild or a start-over takes it exclusively (`crates/schema`). Before
+  S-17 Unit F, Linux moved an open catalog aside and the other process went on writing to the moved file, while Windows
+  refused the rename; both now refuse.
+- **Tests:** the Linux job runs the whole workspace (`ci.yml:270-271`), with the five library tests that were ignored on
+  Linux before S-17 Unit F. Two tests need a file that can't be read or written (the borders file, the writeback copy);
+  as root that can't be made, so they are skipped there, and `tools/wsl-check.sh` runs them as an ordinary user.
+- **Timed:** a 10,000-file library scans in about 1.6 s warm and 4.8 s cold on WSL's ext4 disk, and a rescan after
+  renumbering pairs every file with its row (`docs/PROFILING.md`, Measurements, 2026-11-07). Not measured: a Windows
+  run, and the cold VM after `wsl --shutdown`.
 
 ## If support is ever needed
 

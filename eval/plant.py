@@ -42,9 +42,10 @@ def make_copy(job: tuple[str, int, str, int]) -> tuple[str, bool]:
         else:
             TRANSFORMS[edit](im, random.Random(seed)).save(tmp, "JPEG", quality=95)
         tmp.replace(out)
-        return rel, True
-    except Exception:
+    except Exception:  # noqa: BLE001 (a copy that fails is counted, and the run goes on)
         return rel, False
+    else:
+        return rel, True
 
 
 def main() -> None:

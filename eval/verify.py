@@ -695,7 +695,7 @@ def main() -> None:
         if not args.list:
             parser.error("--pairs listed needs --list")
         prefix = f"verify_{args.list}"
-        with open(WORK_DIR / f"pairs_{args.list}.csv", newline="", encoding="utf-8") as f:
+        with (WORK_DIR / f"pairs_{args.list}.csv").open(newline="", encoding="utf-8") as f:
             listed = [(r["label"], int(r["a"]), int(r["b"])) for r in csv.DictReader(f)]
         labels = tuple(sorted({label for label, _, _ in listed}))
 

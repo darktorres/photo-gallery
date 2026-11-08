@@ -2,13 +2,13 @@
 
 Written against `main` at 53ff12c. Depends on S-17.3/5 (`docs/S17_REMAINDERS_PLAN.md`); see Sequencing. The refactor plan is `docs/REFACTOR_DESIGN.md`.
 
-Status: implemented in steps 1 to 7; step 8 (the WSL benchmark and the perf ledger) was not run, so no timing is claimed. The deviations from this plan are recorded in the S-17.7 row of `docs/REFACTOR_PLAN.md`.
+Status: implemented in steps 1 to 7. Step 8's wall-clock timing was run on 2026-11-07 (S-17 Unit G, `tools/profiling/scan-timing.sh`, recorded in `docs/PROFILING.md`, not gated); it is not a callgrind result. The deviations from this plan are recorded in the S-17.7 row of `docs/REFACTOR_PLAN.md`.
 
-Code references (`file:line`) are as of `53ff12c`, before the change, unless a note says otherwise. For the current place of a symbol, grep for its name. Notes marked "Superseded" give the state as of 2026-11-06.
+Code references (`file:line`) are as of `53ff12c`, before the change, unless a note says otherwise. For the current place of a symbol, grep for its name. Notes marked "Superseded" give the state as of 2026-11-06. Re-checked against HEAD on 2026-11-07: a reference that moved is re-pointed; a claim that no longer holds at HEAD has a note marked "Superseded (2026-11-07)".
 
 ## Problem
 
-`FileIdentity { volume, file_index }` (`crates/model/src/ids.rs:32`) keys `files` by `UNIQUE(volume, file_ref)` (`crates/catalog/src/lib.rs:144`; the baseline schema is at `:113`, `files` at `:126-145`). Both identity columns are `NOT NULL`. On Linux `volume` is `st_dev as u32` (`crates/platform/src/dir.rs:183`); on Windows it is the 32-bit `dwVolumeSerialNumber` (`dir.rs:86-91`).
+`FileIdentity { volume, file_index }` (`crates/model/src/ids.rs:35`) keys `files` by `UNIQUE(volume, file_ref)` (`crates/catalog/src/schema.rs:303`; the baseline schema is at `crates/catalog/src/schema.rs:263`, `files` at `:276-304`). Both identity columns are `NOT NULL`. On Linux `volume` is `st_dev as u32` (`crates/platform/src/dir.rs:183`); on Windows it is the 32-bit `dwVolumeSerialNumber` (`dir.rs:86-91`). Superseded (2026-11-07): this describes the code at `53ff12c`. At HEAD the volume is `u64` on both platforms: `st_dev` whole (`crates/platform/src/dir.rs:468-469`) and the 64-bit `FileIdInfo` serial (`dir.rs:368-377`); `dir.rs:86-91` are now methods of the `RootFacts` trait (`dir.rs:84`).
 
 On WSL2 (Ubuntu-26.04), `/mnt/d`'s device number changes. Across restarts it went 214 → 146 → 74 and then stayed at 74. Within one VM boot (boot id `229876ad`, no restart) it went 74 → 117 → 160. Each drvfs mount has its own device number, so a change means `/mnt/d`'s mount was replaced. The trigger is unknown.
 
@@ -51,13 +51,13 @@ WSL (ext4 `$HOME`; `/mnt/d` is `9p`):
    - On drvfs `created` is NULL, so identity hits keep the row. Inode reuse on drvfs was not observed (0 of 2000); that is the accepted risk there.
 
 3. **Schema commit (step 3): `created`, `unpaired`, nullable identity, layout bump, catalog move-aside.**
-   - Add `files.created INTEGER NULL` and `files.unpaired INTEGER NOT NULL DEFAULT 0`. The name `pending` is taken: `files.pending` (`:141`) is the import-work flag.
+   - Add `files.created INTEGER NULL` and `files.unpaired INTEGER NOT NULL DEFAULT 0`. The name `pending` is taken: `files.pending` (`crates/catalog/src/schema.rs:297`) is the import-work flag.
    - Make `volume` and `file_ref` nullable.
-   - Add both new columns to `LAYOUT_CHECK` (`catalog/src/lib.rs:421-433`) and bump `LAYOUT_PARTS` (`:434`, 25 → 26; 26 → 27 if S-17.3/5 lands first). The bump is what makes `prepare` see the old catalog.
-     Superseded (2026-11-06): `LAYOUT_CHECK` and `LAYOUT_PARTS` no longer exist. The schema is `BASELINE` in `crates/catalog/src/schema.rs` (`BASELINE_VERSION` 1, no migrations yet). A catalog whose schema differs from this build's is rebuilt (`carry_rows` in `schema.rs`). `files.created` and `files.unpaired` are in the baseline (`schema.rs:234` and `:251`).
-   - `prepare` does not copy a catalog from an earlier layout in this step. It moves the catalog set aside (`catalog.sqlite`, `-wal`, `-shm` and `thumbs.sqlite` to `*.pre-s17-7`) and creates new ones, which the next scan fills. The moved files are kept until the user deletes them. This is the only step that does not copy rows.
-   - Superseded (2026-11-06): the catalog file is moved aside by `move_aside` (`crates/catalog/src/lib.rs`, around line 316) to `<name>.replaced`, or `<name>.replaced.N` when that name is taken. The suffix is not `*.pre-s17-7`. No move-aside of `thumbs.sqlite` was found by grep in `crates/catalog/src` or `crates/thumbcache/src`.
-   - Check the `files_to_import` index (`:153`), which keys on `volume` and `file_ref & 0xFFFFFFFFFFFF`, for the 64-bit change.
+   - Add both new columns to `LAYOUT_CHECK` (`catalog/src/lib.rs:421-433`) and bump `LAYOUT_PARTS` (`:434`, 25 → 26; 26 → 27 if S-17.3/5 lands first). The bump is what makes `prepare` see the old catalog. Superseded (2026-11-07): `LAYOUT_CHECK` (`:421-433`) and `LAYOUT_PARTS` (`:434`) are not in the code; see the note below.
+     Superseded (2026-11-06): `LAYOUT_CHECK` and `LAYOUT_PARTS` no longer exist. The schema is `BASELINE` in `crates/catalog/src/schema.rs` (`BASELINE_VERSION` 1, no migrations yet). A catalog whose schema differs from this build's is rebuilt (`carry_rows` in `schema.rs`). `files.created` and `files.unpaired` are in the baseline (`schema.rs:285` and `:302`).
+   - `prepare` does not copy a catalog from an earlier layout in this step. It moves the catalog set aside (`catalog.sqlite`, `-wal`, `-shm` and `thumbs.sqlite` to `*.pre-s17-7`) and creates new ones, which the next scan fills. The moved files are kept until the user deletes them. This is the only step that does not copy rows. Superseded (2026-11-07): the suffix is not `*.pre-s17-7`, and `thumbs.sqlite` is not moved; see the note below.
+   - Superseded (2026-11-06): the catalog file is moved aside by `move_aside` (`crates/catalog/src/lib.rs:347`) to `<name>.replaced`, or `<name>.replaced.N` when that name is taken. The suffix is not `*.pre-s17-7`. No move-aside of `thumbs.sqlite` was found by grep in `crates/catalog/src` or `crates/thumbcache/src`.
+   - Check the `files_to_import` index (`crates/catalog/src/schema.rs:314`), which keys on `volume` and `file_ref & 0xFFFFFFFFFFFF`, for the 64-bit change.
    - Back up the catalog before its first run anyway (see Rollback).
 
 4. **Pairing at the end of every scan, driven by the persistent `unpaired` flag.**
@@ -82,31 +82,31 @@ WSL (ext4 `$HOME`; `/mnt/d` is `9p`):
      6. `GetVolumeInformationByHandleW` must report exactly `NTFS`.
      Any API error refuses (fail closed).
    - Unix: decision 13.
-   - Placement: `add_folder` (`crates/app/src/library.rs:157-162`) and the CLI add path (`crates/cli/src/lib.rs:258`) call `check_root` before `add_root`. `pg_scan::scan` calls it first, before `open_folder`, `volume_serial` (`crates/scan/src/lib.rs:118-119`) and `begin_scan` (`:121`). A refused scan writes no `scans` row, and `mark_missing` never runs.
-   - A refused root stays in the library, with a notice on each scan. Removal (`remove_folder`, `gallery remove`) is the way out, and the notice names it. `remove_root` keeps the rows (`catalog/src/lib.rs:1074-1085`).
-   - The refusal is its own error variant. The runner maps every scan error to `Notice::ScanFailed` today (`crates/library/src/runner.rs:360-364`); a refusal maps to a new `Notice::RootRefused`. That needs a `text::Message` variant (`crates/client/src/text.rs`), a Fluent entry (`crates/client/locales/en/text.ftl`), and the mapping in `crates/desktop/src/library.rs:162`.
-   - CLI: the add loop (`cli/src/lib.rs`, around `:250-258`) and the scan loop (`:267`) match on each root's result. A refused root prints its message and the other roots continue; the `?` in both loops is removed.
+   - Placement: `add_folder` (`crates/app/src/library.rs:156-159`) and the CLI add path (`crates/cli/src/lib.rs:288`) call `check_root` before `add_root`. `pg_scan::scan` calls it first, before `open_folder`, `volume_serial` (`crates/scan/src/lib.rs:118-119`) and `begin_scan` (`:121`). Superseded (2026-11-07): the scan's check is `pg_scan::check_folder` (`crates/scan/src/lib.rs:195-197`, which calls `check_root`), run by `scan` at `:203` before the walk. In the walk, `open_folder` is at `:219`, `lister.volume` (the call that replaced `volume_serial`) at `:220`, and `begin_scan` at `:221`. A refused scan writes no `scans` row, and `mark_missing` never runs.
+   - A refused root stays in the library, with a notice on each scan. Removal (`remove_folder`, `gallery remove`) is the way out, and the notice names it. `remove_root` keeps the rows (`catalog/src/lib.rs:846-860`).
+   - The refusal is its own error variant. The runner maps every scan error to `Notice::ScanFailed` today (`crates/library/src/runner.rs:360-364`); a refusal maps to a new `Notice::RootRefused`. That needs a `text::Message` variant (`crates/client/src/text.rs`), a Fluent entry (`crates/client/locales/en/text.ftl`), and the mapping in `crates/desktop/src/library.rs:172`. Superseded (2026-11-07): all three are in place. The runner's mapping is at `crates/library/src/runner.rs:437-439` (`Refused` to `Notice::RootRefused`; any other error to `ScanFailed`), the variant at `crates/client/src/text.rs:114`, and the Fluent entry at `crates/client/locales/en/text.ftl:84`. The "today" sentence above describes the code at `53ff12c`.
+   - CLI: the add loop (`cli/src/lib.rs`, around `:285-296`) and the scan loop (`:299-311`) match on each root's result. A refused root prints its message and the other roots continue; the `?` in both loops is removed.
 
 7. **Reset rules on replacement.** The candidate takes F's identity, and its content state resets completely:
    - `rotation` = 0; delete the file's `analysis`, `pdq_pairs` and `border_marks` rows.
    - Delete the file's thumbnail entries in `thumbs.sqlite`, after the catalog transaction commits (it is a separate file, so the two cannot share a transaction). A crash between the two leaves stale thumbnails and no rating is affected; the next scan of that file re-keys it.
    - Delete the `file_ratings` row, so the first sync treats the file as having no known rating.
-   - Delete the queued content writes (`file_writes` rows of kind `rotation`, `catalog/src/lib.rs:272`) and their temp files.
-   - Keep the queued **rating** writes, so the rating still reaches the new file. A rating row can also carry a `temp` (`writeback/src/lib.rs:289` records one for every non-video write, rating included). That temp is the old file's content with the old file's rating, so copying it in would put the old bytes into the new file. Delete the temp file and set `temp` and `temp_value` to NULL on the row. It keeps `value` and is written again from the new file.
-   - Keep `ratings`. Set `size`, `mtime`, `created`, `last_scan` and `missing = 0`, and let the existing `UPDATE OF` triggers fire for the changed columns (`catalog/src/lib.rs:320-331`).
+   - Delete the queued content writes (`file_writes` rows of kind `rotation`, `crates/catalog/src/schema.rs:440`) and their temp files.
+   - Keep the queued **rating** writes, so the rating still reaches the new file. A rating row can also carry a `temp` (`writeback/src/lib.rs:299` records one for every non-video write, rating included). That temp is the old file's content with the old file's rating, so copying it in would put the old bytes into the new file. Delete the temp file and set `temp` and `temp_value` to NULL on the row. It keeps `value` and is written again from the new file.
+   - Keep `ratings`. Set `size`, `mtime`, `created`, `last_scan` and `missing = 0`, and let the existing `UPDATE OF` triggers fire for the changed columns (`crates/catalog/src/schema.rs:494-515`).
 
 8. **Ratings.**
    - Replacement: the kept `ratings` value stands. Because `file_ratings` was deleted, the first sync sees `known = None`: it adopts the file's own rating if it has one, and otherwise the kept value stands.
-   - Every other row: the existing three-way `sync_file_rating` (`catalog/src/lib.rs:1600-1617`) is unchanged. A file that loses its rating clears the catalog's rating, unless a write of ours is queued. The existing test at `:2536-2538` covers this.
+   - Every other row: the existing three-way `sync_file_rating` (`catalog/src/lib.rs:1448-1465`) is unchanged. A file that loses its rating clears the catalog's rating, unless a write of ours is queued. The existing test at `catalog/src/lib.rs:3046-3069` (`three_way_rating_sync`; it was at `:2536-2538`) covers this.
 
 9. **Reparse entries are indexed, not dropped.**
    - A reparse **file** is recorded from its listing metadata (identity, name, size, mtime, `created`, attributes). Its row stays present and `last_scan` advances. It gets no content work: no thumbnail, no analysis, no read of its contents. The listing does not hydrate a cloud placeholder. Counted in `ScanStats.skipped_reparse`.
-   - A reparse **folder** is not descended into. Its subtree goes in the skip set, so `mark_missing` (`catalog/src/lib.rs:1013-1033`) keeps its rows. It is counted and noticed.
-   - This replaces the silent drop at `crates/scan/src/lib.rs:61`.
+   - A reparse **folder** is not descended into. Its subtree goes in the skip set, so `mark_missing` (`catalog/src/lib.rs:772-796`) keeps its rows. It is counted and noticed.
+   - This replaces the silent drop at `crates/scan/src/lib.rs:61`. Superseded (2026-11-07): that line is blank at HEAD. The drop is gone, and the reparse branch that replaced it is at `crates/scan/src/lib.rs:268-280`.
 
 10. **Zero file ID.** A NTFS listing entry with `file_id == 0` (other than `.` and `..`) makes `list()` return an error for its folder, which marks the folder unreadable. Its sibling entries are not updated; that is the stated behaviour. `list()` takes a `Listing` trait (`each` returns `Result`), so tests can supply entries; the real `Lister` implements it.
 
-11. **Unix per-entry device and bind-mount loops.** `Entry.volume: Option<u64>` is `Some(dev)` from each entry's own `lstat` on Unix and `None` on Windows. The walk is recursive with an explicit ancestor list of `(dev, ino)`. A folder already on the ancestor list is skipped and counted (a bind-mount cycle). Entry metadata errors (`dir.rs:201`) become errors for the folder, not silent `continue`s.
+11. **Unix per-entry device and bind-mount loops.** `Entry.volume: Option<u64>` is `Some(dev)` from each entry's own `lstat` on Unix and `None` on Windows. The walk is recursive with an explicit ancestor list of `(dev, ino)`. A folder already on the ancestor list is skipped and counted (a bind-mount cycle). Entry metadata errors (`dir.rs:487-491`) become errors for the folder, not silent `continue`s.
 
 12. **Reporting.** `ScanStats` gains `rebound`, `replaced`, `duplicates`, `skipped_reparse`, `unpaired_with_data` and `ambiguous`. The CLI prints them; the runner raises one notice for each non-zero count.
 
@@ -118,14 +118,14 @@ Not built, on purpose: a fallback identity for FAT32, exFAT or ReFS; repointing 
 
 Each step is a commit, made when asked.
 
-1. **Refusal, zero ID, listing seam (decisions 6, 10 and 13).** `crates/platform/src/dir.rs` (`check_root`, `RootFacts`), `crates/scan/src/lib.rs` (`scan`, `list`, the `Listing` trait), `crates/app/src/library.rs` (`add_folder`), `crates/cli/src/lib.rs` (the add and scan loops), and the notices (`runner.rs`, `text.rs`, `text.ftl`, `desktop/src/library.rs`). Docs: `docs/STORAGE.md` (the NTFS decision is enforced; the SMB row at `:32`; the stale `crates/library/src/scan.rs` references at `:10, 20, 41`; the SMB and ReFS rows at `:38-40`); `docs/NTFS_MFT_SCAN_PLAN.md:39-41` says `Z:` scans silently as empty, which this step's refusal changes.
+1. **Refusal, zero ID, listing seam (decisions 6, 10 and 13).** `crates/platform/src/dir.rs` (`check_root`, `RootFacts`), `crates/scan/src/lib.rs` (`scan`, `list`, the `Listing` trait), `crates/app/src/library.rs` (`add_folder`), `crates/cli/src/lib.rs` (the add and scan loops), and the notices (`runner.rs`, `text.rs`, `text.ftl`, `desktop/src/library.rs`). Docs: `docs/STORAGE.md` (the NTFS decision is enforced; the SMB row at `:32`; the stale `crates/library/src/scan.rs` references at `:10, 20, 41` (Superseded 2026-11-07: none is left at HEAD; line 10 already names `crates/scan/src/lib.rs`); the SMB and ReFS rows at `:38-40`); `docs/NTFS_MFT_SCAN_PLAN.md:48-49` says `Z:` scans silently as empty (Superseded 2026-11-07: the sentence is at `:48-49`, not `:39-41`), which this step's refusal changes.
 2. **Reparse entries indexed (decision 9).** `crates/scan/src/lib.rs` (`list`, the skip set), and the reparse notice. No schema change.
-3. **Schema, volume `u64`, catalog move-aside (decisions 1 and 3).** One commit, described in decision 3. Touches `BASELINE` (`catalog/src/lib.rs:113`, `files` at `:126-145`), `LAYOUT_CHECK` and `LAYOUT_PARTS`, `FILLED` if it needs the new columns, and the move-aside in `prepare`. Also `crates/model/src/ids.rs`, `dir.rs` (`volume_serial` returns `u64`), `scan/src/lib.rs`, `catalog/src/lib.rs` (`upsert_file`, `known`, `thumb_sources`, the `ORDER BY volume` reads, `fixture.rs:55`), and `thumbcache/src/lib.rs:672`. `dir.rs` provides `created` on both platforms: `CreationTime` on Windows and `statx` birth time on Linux (NULL where unsupported; a `statx` error maps to NULL, never to a failed scan).
+3. **Schema, volume `u64`, catalog move-aside (decisions 1 and 3).** One commit, described in decision 3. Touches `BASELINE` (`crates/catalog/src/schema.rs:263`, `files` at `:276-304`), `LAYOUT_CHECK` and `LAYOUT_PARTS`, `FILLED` if it needs the new columns, and the move-aside in `prepare`. Also `crates/model/src/ids.rs`, `dir.rs` (`volume_serial` returns `u64`; at HEAD the function is `Dir::volume`, `dir.rs:368` and `:468`, and returns `u64`), `scan/src/lib.rs`, `catalog/src/lib.rs` (`upsert_file`, `known`, `thumb_sources`, the `ORDER BY volume` reads, `crates/catalog/src/fixture.rs:53-72`), and `thumbcache/src/lib.rs:672`. Superseded (2026-11-07): `thumbcache/src/lib.rs:672` is the cache's layout-version check, not a volume bind. The volume is read by `pending_sql` at `thumbcache/src/lib.rs:852`. The fixture's `insert` binds no volume; it writes the literal `1` at `fixture.rs:68`. `dir.rs` provides `created` on both platforms: `CreationTime` on Windows and `statx` birth time on Linux (NULL where unsupported; a `statx` error maps to NULL, never to a failed scan).
 4. **Per-entry device and the recursive walk (decision 11).** `dir.rs` (`Entry.volume`), `scan/src/lib.rs` (the walk and the ancestor list).
-5. **Upsert: hits, backfill, displacement (decision 2).** `catalog/src/lib.rs` upsert (around `:1385-1436`): `RETURNING id`, `created` written and compared in `same`, the `unpaired` marks.
-6. **Pairing, replacement reset, rating rules (decisions 4, 7 and 8).** `pg_scan::scan` and the catalog pairing functions. `under_root!` and `under_params` (`catalog/src/lib.rs:88-111`) scope the pairing to the root. Apply the queued-write rules of decision 7 (the kind column is `rating` or `rotation`).
+5. **Upsert: hits, backfill, displacement (decision 2).** `catalog/src/lib.rs` upsert (`:1221-1290`; `upsert_file` at `:1249`): `RETURNING id`, `created` written and compared in `same`, the `unpaired` marks. Superseded (2026-11-07): `upsert_file` has no `RETURNING id` (the only one in `ScanWriter::new` is the folder insert, `:1207`), and `created` is compared in `upsert_file`'s hit logic (`:1276-1282`), not in `same`.
+6. **Pairing, replacement reset, rating rules (decisions 4, 7 and 8).** `pg_scan::scan` and the catalog pairing functions. `under_root!` and `under_params` (`catalog/src/lib.rs:80-84` and `:99-117`) scope the pairing to the root. Apply the queued-write rules of decision 7 (the kind column is `rating` or `rotation`).
 7. **Duplicates, stats, notices (decisions 5 and 12).**
-8. **Bench, ledger and docs.** Commit the wall-clock scan bench first. Then run `just perf --update` and commit the baseline separately (`wsl-bench.sh` benches committed HEAD, so the order matters). Update `docs/REFACTOR_PLAN.md` S-17.7 (row 823) and `docs/STORAGE.md` (a Linux section).
+8. **Bench, ledger and docs.** Commit the wall-clock scan bench first. Then run `just perf --update` and commit the baseline separately (`wsl-bench.sh` benches committed HEAD, so the order matters). Update `docs/REFACTOR_PLAN.md` S-17.7 (row 823) and `docs/STORAGE.md` (a Linux section). Superseded (2026-11-07): the wall-clock bench is being written in S-17 Unit G as `tools/profiling/scan-timing.sh` (in the working tree, not committed). Nothing has been run.
 
 ## Tests
 
@@ -141,7 +141,7 @@ Each step lands with its tests.
   - The runner maps a refusal to `RootRefused`, not `ScanFailed`.
 - **Step 2.** A reparse file from a fake listing keeps its row and advances `last_scan`, with no content job created. A reparse folder's subtree survives `mark_missing`.
 - **Step 3.**
-  - A catalog from the previous layout is moved aside to `*.pre-s17-7` and a new, empty one is created; the moved files are untouched.
+  - A catalog from the previous layout is moved aside to `*.pre-s17-7` and a new, empty one is created; the moved files are untouched. Superseded (2026-11-07): the suffix is `catalog.sqlite.replaced` (then `.replaced.N`); the test is `an_earlier_layout_is_moved_aside_and_a_new_catalog_is_made` (`crates/catalog/src/lib.rs:1619`).
   - `u64` volumes above `i64::MAX` round-trip through every bind site (enumerated in the step).
   - NULL-safety: `created` NULL on one side with the same identity is the same row.
 - **Step 4.**
@@ -164,8 +164,8 @@ Each step lands with its tests.
   - ext4 reuse under the same name (accepted, decision 4): the new file takes the rating, and the test records that it does.
   - An unpaired row with a rating, rotation or analysis is not paired at any tier; `unpaired_with_data` counts it on every scan.
   - An unpaired row is cleared after a clean complete scan without children; it is not cleared when a folder was skipped.
-  - A pairing that crosses the 10,000-file batch boundary (`scan/src/lib.rs:39`) still finds its unpaired rows, since they are in the catalog.
-  - The existing `sync_file_rating` test (`catalog/src/lib.rs:2536-2538`) passes unchanged.
+  - A pairing that crosses the 10,000-file batch boundary (`scan/src/lib.rs:72`, `BATCH`) still finds its unpaired rows, since they are in the catalog.
+  - The existing `sync_file_rating` test (`catalog/src/lib.rs:3046-3069`, `three_way_rating_sync`) passes unchanged.
 - **Step 7.** A hard-link second path is skipped and counted; the row does not flip between two scans; a missing row in another root does not claim the identity.
 - **Step 8.** The bench runs on committed HEAD only; the wall-clock timing is recorded in the ledger, not gated.
 - **Manual, WSL.** A tmpfs mounted under a scanned root scans twice with no row flipping.
@@ -175,12 +175,12 @@ Each step lands with its tests.
 
 - `just lint` exits 0.
 - `just test` with `$env:PG_TEST_DIR = '<repo>\target\pg-test'` (PowerShell syntax) exits 0.
-- WSL: a copy of the **working tree** (not HEAD; `tools/wsl-check.sh` and `tools/perf-check.sh` check committed HEAD only), with `. ~/.cargo/env` and `FFMPEG_DIR` set as the tool does, and `LIBCLANG_PATH` discovered rather than hard-coded. Run `cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings` and the same `cargo test`. Linux CI runs the catalog, scan and platform tests (`.github/workflows/ci.yml:232`, the `linux` job's `cargo test`), so they must pass there.
-- **Perf.** `just perf` is callgrind (`crates/bench/benches/ir/linux.rs`). It counts instructions and does not see drvfs I/O. `tools/perf-compare.py` reads only `callgrind.*.out` files, so a wall-clock bench is not gated and needs no `--update`. Add a wall-clock scan timing (a 10k-file fixture: first scan and renumbered rescan, before and after) and record it in the ledger. The catalog bench's `LAYOUT` constant is at `crates/bench/benches/ir/catalog.rs:30` and changes with the schema; its dataset is regenerated with `bench_data.py`.
+- WSL: a copy of the **working tree** (not HEAD; `tools/wsl-check.sh` and `tools/perf-check.sh` check committed HEAD only), with `. ~/.cargo/env` and `FFMPEG_DIR` set as the tool does, and `LIBCLANG_PATH` discovered rather than hard-coded. Run `cargo clippy --workspace --exclude pg-desktop --exclude pg-gallery --all-targets -- -D warnings` and the same `cargo test`. Linux CI runs the catalog, scan and platform tests (`.github/workflows/ci.yml:271`, the `linux` job's `cargo test`), so they must pass there. Superseded (2026-11-07): the `--exclude pg-desktop --exclude pg-gallery` flags in this bullet were removed in S-17 Unit F (`docs/REFACTOR_PLAN.md` row 824). `tools/wsl-check.sh` now runs `cargo clippy --workspace --all-targets` and `cargo test --workspace`, and CI's Linux job runs the whole workspace (`.github/workflows/ci.yml:268-271`), not a subset.
+- **Perf.** `just perf` is callgrind (`crates/bench/benches/ir/linux.rs`). It counts instructions and does not see drvfs I/O. `tools/perf-compare.py` reads only `callgrind.*.out` files, so a wall-clock bench is not gated and needs no `--update`. Add a wall-clock scan timing (a 10k-file fixture: first scan and renumbered rescan, before and after) and record it in the ledger. Superseded (2026-11-07): this is being written in S-17 Unit G as `tools/profiling/scan-timing.sh` (in the working tree, not committed); it has not been run. The catalog bench's `LAYOUT` constant is at `crates/bench/benches/ir/catalog.rs:30` and changes with the schema; its dataset is regenerated with `bench_data.py`.
 
 ## Rollback
 
-- Back up the catalog directory before the first run of each step: `catalog.sqlite` with its `-wal` and `-shm` (`crates/app/src/config.rs:28`), and `thumbs.sqlite` (`crates/thumbcache/src/lib.rs:130`). Step 3 also moves these files aside itself (decision 3).
+- Back up the catalog directory before the first run of each step: `catalog.sqlite` with its `-wal` and `-shm` (`crates/app/src/config.rs:28`), and `thumbs.sqlite` (`crates/thumbcache/src/lib.rs:143`). Step 3 also moves these files aside itself (decision 3). Superseded (2026-11-07): `move_aside` (`crates/catalog/src/lib.rs:347`) moves only the catalog file with its `-wal`, `-shm` and `-journal`; `thumbs.sqlite` is not moved aside.
 - Each step is a commit. Reverting a commit restores the code, not the catalog.
 - Step 3 changes the catalog in a way the older code does not detect. The older layout check does not count the new columns, so it still matches and opens the catalog silently. Its `u32` volume binds then miss the 64-bit identities, and tombstones with NULL volume are misread. Going back past step 3 therefore means restoring the moved-aside files. The step 3 commit message says so.
 - Steps 1, 2 and 4 to 8 keep the catalog readable by the code of the same commit. Steps 1 and 2 do not change the catalog layout.
@@ -189,8 +189,8 @@ Each step lands with its tests.
 
 - Files shared with `docs/S17_REMAINDERS_PLAN.md`: `crates/catalog/src/lib.rs` (`LAYOUT_CHECK`, `LAYOUT_PARTS`, `FILLED`, the test helper; the first two and `FILLED` no longer exist, see decision 3), `crates/cli/src/lib.rs`, and `docs/REFACTOR_PLAN.md` (rows 820-824). `crates/app/src/library.rs` is not shared; the companion plan touches `views.rs`, `images.rs` and `reader.rs` in that crate.
 - S-17 step 2 (25 → 26, `views.folder`) lands before step 3 here (26 → 27). S-17 step 8 (the catalog helper) lands before step 6's catalog tests.
-  Superseded (2026-11-06): the layout is no longer numbered (decision 3), so there is no 25, 26 or 27 to bump. S-17.7 has landed; `views.folder` is still `TEXT` (the S-17.3 row, `docs/REFACTOR_PLAN.md` row 819), so the companion plan's change is still open.
-- S-17's decision 3 says `drives: u32` becomes `anchors: u64`. That is already done (`crates/model/src/tree.rs:23`, ledger row 820), so it is not this plan's work, and the S-17 plan should drop it.
+  Superseded (2026-11-06): the layout is no longer numbered (decision 3), so there is no 25, 26 or 27 to bump. S-17.7 has landed; `views.folder` is still `TEXT` (the S-17.3 row, `docs/REFACTOR_PLAN.md` row 819), so the companion plan's change is still open. Superseded (2026-11-07): `views.folder` is a BLOB (`crates/catalog/src/schema.rs:456`), and the S-17.3 row (`docs/REFACTOR_PLAN.md` row 819) records it done in S-17 Units A and B. A TEXT catalog's saved views are carried over by `carry_rows`.
+- S-17's decision 3 says `drives: u32` becomes `anchors: u64`. That is already done (`crates/model/src/tree.rs:27`, ledger row 820), so it is not this plan's work, and the S-17 plan should drop it.
 
 ## Settled questions
 

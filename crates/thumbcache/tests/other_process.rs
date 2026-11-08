@@ -3,7 +3,7 @@
 //! operating system's, not one process's.
 
 use std::path::Path;
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -23,7 +23,8 @@ fn wait_for(path: &Path, within: Duration) {
 /// and keeps it open until `release` exists.
 fn spawn_holder(dir: &Path, catalog_id: &str, ready: &Path, release: &Path) -> std::io::Result<Child> {
     Command::new(std::env::current_exe()?)
-        .args(["--exact", "holder", "--nocapture"])
+        .args(["--exact", "holder"])
+        .stdout(Stdio::null())
         .env("PG_THUMB_HOLDER", dir)
         .env("PG_THUMB_CATALOG", catalog_id)
         .env("PG_THUMB_READY", ready)

@@ -3,7 +3,7 @@
 //! `holder` test below, which does nothing unless it is run that way), so the holds are the operating system's.
 
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command};
+use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use pg_schema::Live;
@@ -29,7 +29,8 @@ fn wait_for(path: &Path, within: Duration) {
 /// makes `ready` once it has it, and keeps it until `release` exists.
 fn spawn_holder(db: &Path, mode: &str, ready: &Path, release: &Path) -> std::io::Result<Child> {
     Command::new(std::env::current_exe()?)
-        .args(["--exact", "holder", "--nocapture"])
+        .args(["--exact", "holder"])
+        .stdout(Stdio::null())
         .env("PG_LIVE_DB", db)
         .env("PG_LIVE_MODE", mode)
         .env("PG_LIVE_READY", ready)

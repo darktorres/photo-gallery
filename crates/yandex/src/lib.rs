@@ -18,7 +18,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pg_model::format::Format;
 use serde_json::Value;
-use ureq::tls::{TlsConfig, TlsProvider};
+use ureq::tls::{RootCerts, TlsConfig, TlsProvider};
 use ureq::typestate::WithoutBody;
 
 const UPLOAD_URL: &str = "https://yandex.com/images-apphost/image-download?cbird=111";
@@ -166,11 +166,15 @@ pub struct Client {
 impl Client {
     pub fn new() -> Self {
         // Statuses are read by `read_response` and `download` (a captcha page's body says what it is), so the agent
-        // hands every response back. TLS is the system's (native-tls), as the crate's feature set says.
+        // hands every response back. TLS is the system's: native-tls on the OS's roots (the platform verifier). The
+        // default roots (`WebPki`) are the bundled Mozilla list with the system's store off, and a chain the system
+        // builds for a site (i.ytimg.com's) then fails: "unable to find any user-specified roots in the final cert chain".
         let config = ureq::Agent::config_builder()
             .timeout_global(Some(TIMEOUT))
             .http_status_as_error(false)
-            .tls_config(TlsConfig::builder().provider(TlsProvider::NativeTls).build())
+            .tls_config(
+                TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build(),
+            )
             .build();
         Self { agent: ureq::Agent::new_with_config(config), yp: yp_cookie(), last_request: None }
     }

@@ -37,12 +37,35 @@ struct Job {
     out: PathRef,
 }
 
+/// The copies' folder as the disk spells it. The check that keeps the copies out of the library compares spellings, so
+/// a typed 8.3 short name (`RUNNER~1`) or other case would slip past it. The folder may not exist yet: the longest part
+/// that does is resolved, and the rest is taken as typed.
+fn real_folder(folder: &Path) -> Result<RulePath> {
+    let mut missing = Vec::new();
+    let mut existing = folder;
+    while !existing.exists() {
+        let (Some(parent), Some(name)) = (existing.parent(), existing.file_name()) else { break };
+        missing.push(name);
+        existing = parent;
+    }
+    if !existing.exists() {
+        return pg_platform::names::rule_path_of(folder).context("the folder for the copies isn't a path");
+    }
+    let mut real = pg_scan::normalize_path(existing)?;
+    if !missing.is_empty() {
+        let tail: PathBuf = missing.iter().rev().collect();
+        let tail = pg_platform::names::rule_path_of(&tail).context("the folder for the copies isn't a path")?;
+        real.parts.extend(tail.parts);
+    }
+    Ok(real)
+}
+
 /// Save cropped copies of `ids` under `folder`.
 pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ctl: &Control) -> Result<Stats> {
     let rules = catalog.rules();
-    // The folder is chosen by the user, and it is taken exactly: a lossy text form would write the copies into a
-    // different folder from the one named.
-    let folder = pg_platform::names::rule_path_of(folder).context("the folder for the copies isn't a path")?;
+    // The folder is chosen by the user. It is taken as the disk spells it, not as text: a lossy text form would write
+    // the copies into a different folder from the one named.
+    let folder = real_folder(folder)?;
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
     let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());

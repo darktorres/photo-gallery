@@ -29,6 +29,8 @@ concurrency:
 
 env:
   CARGO_TERM_COLOR: always
+  # A panic in a test or a build script prints its backtrace, so a CI failure shows where it came from.
+  RUST_BACKTRACE: 1
   # Cargo draws its progress bar only on a terminal; the runner has none, so force it, at a fixed width.
   CARGO_TERM_PROGRESS_WHEN: always
   CARGO_TERM_PROGRESS_WIDTH: "100"

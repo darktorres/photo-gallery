@@ -5,7 +5,7 @@
 //! Files are made in a scratch folder (`PG_TEST_DIR`, or the temp folder's `scratch_rate`), never in a dataset.
 
 use std::io::Cursor;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -65,16 +65,18 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
 
 /// The place under `out` of the copies of the library folder `root`, as `crop::save` puts them: the drive's letter as a
 /// part (none on Unix, where the root is no part), then the folder's parts.
-fn place_in(out: &Path, root: &Path) -> PathBuf {
-    root.components().fold(out.to_path_buf(), |place, part| match part {
-        Component::Prefix(prefix) => {
-            let letter: String =
-                prefix.as_os_str().to_string_lossy().chars().filter(|&c| c != ':' && c != '\\').collect();
-            if letter.is_empty() { place } else { place.join(letter) }
-        }
-        Component::Normal(name) => place.join(name),
-        Component::RootDir | Component::CurDir | Component::ParentDir => place,
-    })
+/// The copies' folder for a library folder: under `out`, the library folder's drive as a part, then its parts. The
+/// library folder is taken as the catalog holds it (its canonical spelling), which is what the copies are written under.
+fn place_in(out: &Path, root: &pg_model::rules::Path) -> PathBuf {
+    let letter = pg_platform::names::path_buf(root.anchor.as_bytes()).to_string_lossy().replace([':', '\\'], "");
+    let mut place = out.to_path_buf();
+    if !letter.is_empty() {
+        place.push(letter);
+    }
+    for part in &root.parts {
+        place.push(pg_platform::names::path_buf(part.as_bytes()));
+    }
+    place
 }
 
 #[test]
@@ -142,7 +144,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
 
     let out = dir.join("out");
     // The copies of the library folder `images`: under the copies' folder, in the library folder's place.
-    let copies = place_in(&out, &dir.join("images"));
+    let copies = place_in(&out, &root);
     let s = crop::save(&c, &all, &out, &opts, &ctl).unwrap();
     assert_eq!((s.saved, s.skipped, s.failed), (3, 2, 0), "{:?}", s.error);
     assert!(s.remaining.is_empty());

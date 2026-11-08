@@ -104,6 +104,18 @@ lint-windows: _qt && lint-qml
     cargo clippy --workspace --all-targets --locked --timings -- -D warnings
     $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --no-deps --document-private-items --locked --timings
 
+# The module-cycle check (docs/MODULARITY_PLAN.md, M-0): the compiler's module graph of each library crate on this
+# machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the
+# cxx-qt bridge modules the compiler does not. cargo-modules is a tool, not a dependency: its version is pinned here and
+# in docker/Dockerfile (bump both). A missing or different one is installed at the pin. It reports the cycle groups; it
+# does not fail on them until the allowlist (M-16) exists.
+cargo_modules_version := "0.28.0"
+
+modgraph: _qt
+    if (((cargo modules --version 2>$null) -split '\s+' | Select-Object -Last 1) -ne '{{ cargo_modules_version }}') { cargo install --locked cargo-modules --version {{ cargo_modules_version }} }
+    python tools/modgraph/module_graph.py
+    python tools/modgraph/compiler_graph.py
+
 # Screenshot comparison: the test-hook matrix on one fixture, the working tree against a recorded reference, pixel by
 # pixel (tools/compare-shots.ps1). `just shots -Record <commit>` builds that commit and records its screenshots under
 # tools/shots/reference (once); `just shots` then builds only the working tree. `-Expect a,b` declares scenarios

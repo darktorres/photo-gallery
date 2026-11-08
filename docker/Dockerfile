@@ -52,6 +52,10 @@ RUN python3 -m venv /opt/lint \
  && /opt/lint/bin/pip install --quiet ruff==0.17.3 \
  && npm install --global markdownlint-cli@0.50.0
 
+# The module-graph tool for the cycle check (tools/modgraph, docs/MODULARITY_PLAN.md M-0), at the version the plan
+# pins. It goes last so that the Qt and lint layers above stay cached when it changes.
+RUN cargo install --locked cargo-modules --version 0.28.0
+
 COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/pg-entrypoint
 
 WORKDIR /work

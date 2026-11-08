@@ -1,8 +1,9 @@
 # Building and checking in a container
 
 The container has the Linux environment of CI's Linux job (`.github/workflows/ci.yml`): Ubuntu 26.04, the toolchain
-from `rust-toolchain.toml`, Qt 6.12.0, FFmpeg, ExifTool, and the pinned `just`, `cargo-deny`, `cargo-machete`, ruff and
-markdownlint. The repository is mounted from the host, so edits show up in the container at once.
+from `rust-toolchain.toml`, Qt 6.12.0, FFmpeg, ExifTool, and the pinned `just`, `cargo-deny`, `cargo-machete`,
+`cargo-modules` (the module-graph check), ruff and markdownlint. The repository is mounted from the host, so edits
+show up in the container at once.
 
 Build the image once, and again after the Dockerfile changes (from the repository root):
 

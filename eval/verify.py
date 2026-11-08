@@ -99,9 +99,13 @@ PAIR_SETS = {
     "labeled": ("verify", ("duplicate", "similar_folder")),
     "cross_groups": ("verify_cross", ("cross_group",)),
     "knn": ("verify_knn", ("duplicate", "cross_group", "similar_folder", "unlabeled")),
+    # Pairs listed by another script in WORK_DIR/pairs_<--list>.csv (columns a, b, label: row indices into
+    # files.txt), written to verify_<--list>_<model>.csv; e.g. the ANN bake-off's samples (eval/ann).
+    "listed": ("verify", ()),
 }
-# The right decision per label; labels without one (similar_folder) aren't scored.
-EXPECTED = {"duplicate": "match", "cross_group": "unrelated"}
+# The right decision per label; labels without one (similar_folder) aren't scored. Planted copies (plant.py) are
+# edits of their source, so they must match.
+EXPECTED = {"duplicate": "match", "cross_group": "unrelated", "planted": "match"}
 
 
 @dataclass
@@ -673,6 +677,7 @@ def main() -> None:
     parser.add_argument("--floor", type=float, default=0.4, help="min similarity for an unlabeled or negative pair to be checked")
     parser.add_argument("--k", type=int, default=10, help="neighbors per image for --pairs knn")
     parser.add_argument("--limit", type=int, default=0, help="check only the first N pairs of each label (0 = all)")
+    parser.add_argument("--list", default="", help="for --pairs listed: reads WORK_DIR/pairs_<LIST>.csv")
     parser.add_argument(
         "--shortcut", action="store_true", help="accept PDQ <= 22 or SSCD >= 0.95 without image work (pipeline mode)"
     )
@@ -683,6 +688,14 @@ def main() -> None:
     args = parser.parse_args()
     params = params_from(args)
     prefix, labels = PAIR_SETS[args.pairs]
+    listed: list[tuple[str, int, int]] = []
+    if args.pairs == "listed":
+        if not args.list:
+            parser.error("--pairs listed needs --list")
+        prefix = f"verify_{args.list}"
+        with open(WORK_DIR / f"pairs_{args.list}.csv", newline="", encoding="utf-8") as f:
+            listed = [(r["label"], int(r["a"]), int(r["b"])) for r in csv.DictReader(f)]
+        labels = tuple(sorted({label for label, _, _ in listed}))
 
     if args.rescore:
         with (WORK_DIR / f"{prefix}_{args.model}.csv").open(newline="", encoding="utf-8") as f:
@@ -711,6 +724,10 @@ def main() -> None:
         # The similar_folder pairs have no ground truth under the current rule (variants count as matches,
         # and that folder mixes variants with genuinely different pictures).
         pairs = [("duplicate", a, b) for a, b in positives] + [("similar_folder", a, b) for a, b in similar]
+    elif args.pairs == "listed":
+        pairs = [(label, a, b) for label, a, b in listed if ok[a] and ok[b]]
+        if args.limit:
+            pairs = pairs[: args.limit]
     elif args.pairs == "knn":
         from evaluate import knn, unique_pairs
 

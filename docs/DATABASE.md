@@ -229,8 +229,9 @@ Sizes at 70M:
 | 1-bit | 4.5 GB | 6.7 GB |
 
 The machine has 64 GB of RAM, a 6 GB RTX 2060, and D: is an NVMe SSD (Kingston NV2), so exact re-ranking from the fp16
-file is cheap. FINDINGS "Nearest-neighbour search": USearch HNSW would need ~71 GB and 15+ hours; HNSW and IVF lost many duplicate partners
-on random data.
+file is cheap. The approximate-index comparison (FINDINGS "Nearest-neighbour search, first attempt") ran on synthetic data
+that had no cluster structure, so it says nothing about how well HNSW or IVF would find duplicates in real embeddings; that
+comparison is being redone (PLAN §9 decision 5).
 
 ### Hands-on, 1M random normalized 768-d vectors
 

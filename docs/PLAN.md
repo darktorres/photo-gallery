@@ -261,8 +261,9 @@ can be added later against the same crates.
   - Thumbnail encode with JPEG (turbo/jpegli) vs WebP (done: AVIF/WebP/JPEG XL too, FINDINGS "Thumbnails").
   - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, FINDINGS "TensorRT and ONNX Runtime").
 - **ANN bake-off** on 5M vectors: USearch HNSW int8 vs FAISS IVF-PQ, measuring recall at radius, RAM and
-  insert speed (done on synthetic vectors: exact GPU search is fast enough for 70M all-pairs, ~5.5 days, and
-  the approximate indexes lose partners; §9 decision 5, FINDINGS "Nearest-neighbour search").
+  insert speed. A first run on synthetic vectors was invalid (unclustered data, untuned indexes; FINDINGS
+  "Nearest-neighbour search, first attempt"); it is being redone on the test set's real embeddings plus planted
+  edits, with tuned indexes (§9 decision 5).
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
   backed by a number. Met: the model and the read order; the thumbnail size is no longer fixed (§6). Open: the
   thresholds (they wait on the hand marks, FINDINGS "Pending"), the thumbnail cache's format and cap, and the
@@ -414,12 +415,10 @@ can be added later against the same crates.
 4. **Heavy crops:** if M0 shows SSCD misses small crops, consider region embeddings for reference images. That
    costs multiples of index size, and could be limited to cluster heads.
 5. **ANN backend:** USearch (simple, about 27 GB RAM) vs FAISS (about 3 GB, training step, harder Windows
-   build). Measured on 5M synthetic vectors (2026-10-31): neither, for duplicate candidates. Exact fp16 search on
-   the 2060 runs at 10.4 G pairs/s, ~5.5 days for 70M all-pairs and ~70 s per 10,000 new images, at the recall
-   ceiling; the best approximate index (FAISS IVF, nprobe 256) found 77% of planted partners at cosine ≥ 0.4
-   and HNSW int8 26%, on data that is a worst case for them. Recommended: exact search, which replaces Tier 2's
-   in-RAM index and the query-then-insert scheme above with one all-pairs batch job plus brute force for new
-   images. Semantic search (one text query against 70M) still needs an index. Not decided yet.
+   build), or exact search on the GPU (10.4 G pairs/s on the 2060). Open: the comparison is being redone on the
+   test set's real SSCD embeddings plus planted hard edits, with every index tuned to its best and the harness
+   validated first; the first run, on unclustered synthetic vectors, was invalid (FINDINGS "Nearest-neighbour
+   search, first attempt").
 
 6. **Embeddings and trimming:** design conclusion 3 trims borders before embedding, but the borders now come from
    a pass after the import (§4), while §4 puts embeddings in the import. Either embeddings move after the borders

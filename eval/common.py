@@ -59,13 +59,20 @@ IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp", ".gif"}
 Image.MAX_IMAGE_PIXELS = None
 
 
-def load_rgb(path: Path | BinaryIO, draft: tuple[int, int] | None = None) -> Image.Image:
+def load_rgb(
+    path: Path | BinaryIO, draft: tuple[int, int] | None = None, draft_sides: tuple[int, int] | None = None
+) -> Image.Image:
     """Decode, apply EXIF orientation, and flatten transparency onto white.
 
     draft=(w, h): let a JPEG decode at 1/2, 1/4 or 1/8 scale in the DCT (libjpeg-turbo) while staying at least
-    w x h after orientation; other formats decode in full."""
+    w x h after orientation; other formats decode in full.
+    draft_sides=(long, short): the same, keeping the long side >= long and the short side >= short; this is the
+    Rust import's decode rule (512, 320 in crates/core/src/analyze.rs)."""
     with Image.open(path) as im:
-        if draft and im.format == "JPEG":
+        if draft_sides and im.format == "JPEG":
+            long, short = draft_sides  # orientation doesn't change which side is the long one
+            im.draft("RGB" if im.mode == "RGB" else None, (long, short) if im.width >= im.height else (short, long))
+        elif draft and im.format == "JPEG":
             swap = im.getexif().get(0x0112, 1) in (5, 6, 7, 8)  # rotated a quarter turn
             im.draft("RGB" if im.mode == "RGB" else None, (draft[1], draft[0]) if swap else draft)
         im = ImageOps.exif_transpose(im)

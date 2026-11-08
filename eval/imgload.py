@@ -27,15 +27,18 @@ class ImageSource(Protocol):
 
 
 class FileSource:
-    def __init__(self, root: Path, files: Sequence[str]):
+    """With draft_sides=(long, short), JPEGs decode DCT-scaled as the Rust import does (common.load_rgb)."""
+
+    def __init__(self, root: Path, files: Sequence[str], draft_sides: tuple[int, int] | None = None):
         self.root = root
         self.files = files
+        self.draft_sides = draft_sides
 
     def __len__(self) -> int:
         return len(self.files)
 
     def __call__(self, i: int) -> Image.Image:
-        return load_rgb(self.root / self.files[i])
+        return load_rgb(self.root / self.files[i], draft_sides=self.draft_sides)
 
 
 # The gallery's border detector (crates/analysis/src/borders.rs), run on piped pixels by `gallery borders --stdin`.

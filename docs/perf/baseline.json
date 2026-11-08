@@ -1,13 +1,13 @@
 {
-  "pg-bench/ir/catalog/facets.all/callgrind.facets.all.out": 48264812,
-  "pg-bench/ir/catalog/list.all_name/callgrind.list.all_name.out": 30334720,
-  "pg-bench/ir/catalog/list.all_taken/callgrind.list.all_taken.out": 44642419,
-  "pg-bench/ir/catalog/list.all_unrated/callgrind.list.all_unrated.out": 30556655,
-  "pg-bench/ir/catalog/list.folder_flat/callgrind.list.folder_flat.out": 746230,
-  "pg-bench/ir/catalog/list.folder_recursive/callgrind.list.folder_recursive.out": 32158868,
+  "pg-bench/ir/catalog/facets.all/callgrind.facets.all.out": 48231178,
+  "pg-bench/ir/catalog/list.all_name/callgrind.list.all_name.out": 30342975,
+  "pg-bench/ir/catalog/list.all_taken/callgrind.list.all_taken.out": 44674976,
+  "pg-bench/ir/catalog/list.all_unrated/callgrind.list.all_unrated.out": 30565325,
+  "pg-bench/ir/catalog/list.folder_flat/callgrind.list.folder_flat.out": 755415,
+  "pg-bench/ir/catalog/list.folder_recursive/callgrind.list.folder_recursive.out": 32173889,
   "pg-bench/ir/catalog/pending_import.empty/callgrind.pending_import.empty.out": 113418,
-  "pg-bench/ir/catalog/pending_thumbs.at_height/callgrind.pending_thumbs.at_height.out": 3766742,
-  "pg-bench/ir/catalog/tree.all/callgrind.tree.all.out": 3285842,
+  "pg-bench/ir/catalog/pending_thumbs.at_height/callgrind.pending_thumbs.at_height.out": 3767148,
+  "pg-bench/ir/catalog/tree.all/callgrind.tree.all.out": 3360046,
   "pg-bench/ir/per_file/analyze_jpeg.sample/callgrind.analyze_jpeg.sample.out": 69758060,
-  "pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out": 52277737
+  "pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out": 52277738
 }

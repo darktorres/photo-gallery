@@ -123,8 +123,9 @@ class Provider : public QQuickAsyncImageProvider {
 public:
     explicit Provider(ImageKind kind) : m_kind(kind) {
         // Thumbnails read originals and decode: enough threads to keep the disk queue full (FINDINGS "I/O": 8 in
-        // flight). Full-size images are big; two at a time keeps memory in check.
-        m_pool.setMaxThreadCount(kind == ImageKind::Thumb ? 8 : 2);
+        // flight). Full-size images are big; two at a time keeps memory in check. A Yandex picture is a file the search
+        // fetches on demand, so four at a time.
+        m_pool.setMaxThreadCount(kind == ImageKind::Thumb ? 8 : kind == ImageKind::Yandex ? 4 : 2);
     }
 
     ~Provider() override {

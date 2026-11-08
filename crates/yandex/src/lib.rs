@@ -42,12 +42,15 @@ const BODY_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 const MIN_INTERVAL: Duration = Duration::from_millis(1500);
 /// Similar pages fetched when the caller does not choose a limit.
 pub const DEFAULT_MAX_SIMILAR_PAGES: u32 = 5;
-/// Largest result image `Client::download` accepts.
+/// Largest result image `Fetcher::download` accepts.
 pub const MAX_DOWNLOAD_BYTES: u64 = 100 * 1024 * 1024;
 
 /// Why a Yandex request failed.
-#[derive(Debug, thiserror::Error)]
+#[derive(Clone, Debug, thiserror::Error)]
 pub enum YandexError {
+    /// A result file that is not an image this app can decode (the reason is what failed).
+    #[error("not an image this app can decode: {0}")]
+    Undecodable(&'static str),
     /// Yandex asked for an anti-robot check. Nothing is retried; the user has to resolve it in a browser.
     #[error("Yandex asked for a captcha")]
     Captcha,
@@ -88,11 +91,9 @@ pub struct SimilarItem {
     pub width: u32,
     pub height: u32,
     pub image_url: String,
-    /// A small preview from Yandex's CDN, for showing the item without downloading the full file.
-    pub thumb_url: Option<String>,
 }
 
-/// One result image downloaded with `Client::download`.
+/// One result image downloaded with `Fetcher::download`.
 #[derive(Debug)]
 pub struct Download {
     pub bytes: Vec<u8>,
@@ -163,20 +164,24 @@ pub struct Client {
     last_request: Option<Instant>,
 }
 
+/// The HTTP agent of the search and of the result files: statuses are handed back to the caller (a captcha page's
+/// body says what it is), and TLS is the system's: native-tls on the OS's roots (the platform verifier). The default
+/// roots (`WebPki`) are the bundled Mozilla list with the system's store off, and a chain the system builds for a site
+/// (i.ytimg.com's) then fails: "unable to find any user-specified roots in the final cert chain".
+fn agent() -> ureq::Agent {
+    let config = ureq::Agent::config_builder()
+        .timeout_global(Some(TIMEOUT))
+        .http_status_as_error(false)
+        .tls_config(
+            TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build(),
+        )
+        .build();
+    ureq::Agent::new_with_config(config)
+}
+
 impl Client {
     pub fn new() -> Self {
-        // Statuses are read by `read_response` and `download` (a captcha page's body says what it is), so the agent
-        // hands every response back. TLS is the system's: native-tls on the OS's roots (the platform verifier). The
-        // default roots (`WebPki`) are the bundled Mozilla list with the system's store off, and a chain the system
-        // builds for a site (i.ytimg.com's) then fails: "unable to find any user-specified roots in the final cert chain".
-        let config = ureq::Agent::config_builder()
-            .timeout_global(Some(TIMEOUT))
-            .http_status_as_error(false)
-            .tls_config(
-                TlsConfig::builder().provider(TlsProvider::NativeTls).root_certs(RootCerts::PlatformVerifier).build(),
-            )
-            .build();
-        Self { agent: ureq::Agent::new_with_config(config), yp: yp_cookie(), last_request: None }
+        Self { agent: agent(), yp: yp_cookie(), last_request: None }
     }
 
     /// Uploads an image and returns the ids that the result requests need. The body is the raw file, with no
@@ -267,9 +272,24 @@ fn transfer_timeouts<B>(req: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B>
         .build()
 }
 
-impl Client {
-    /// Fetches a result image. Result files are on Yandex's CDN, so the search cookie is not sent, and the
-    /// request is not paced. A response whose type says it is not an image (an error page, a video) is an error
+/// Fetches result images from the hosts they are on (Yandex's CDN, or the site that has the picture). Unlike the
+/// search, no search cookie is sent and nothing is paced, so it can be shared by threads that fetch at once.
+pub struct Fetcher {
+    agent: ureq::Agent,
+}
+
+impl Default for Fetcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Fetcher {
+    pub fn new() -> Self {
+        Self { agent: agent() }
+    }
+
+    /// Fetches a result image. A response whose type says it is not an image (an error page, a video) is an error
     /// before its body is read ([`plausibly_image`]); the bytes of one that may be decide what it is ([`sniffed`]).
     /// Its bounds are a transfer's (`transfer_timeouts`): a large file on a slow link takes minutes.
     pub fn download(&self, url: &str) -> Result<Download, YandexError> {
@@ -476,10 +496,6 @@ fn similar_item(entity: &Value) -> Option<SimilarItem> {
         width: u32::try_from(width).unwrap_or(0),
         height: u32::try_from(height).unwrap_or(0),
         image_url,
-        thumb_url: entity["image"].as_str().map(|s| match s.strip_prefix("//") {
-            Some(rest) => format!("https://{rest}"),
-            None => s.to_string(),
-        }),
     })
 }
 
@@ -559,8 +575,6 @@ mod tests {
         assert_eq!(page.items[0].image_url, "https://b.example/two.png?q=1");
         assert_eq!((page.items[0].width, page.items[0].height), (300, 200));
         assert_eq!(page.items[1].image_url, "https://a.example/one.jpg");
-        assert_eq!(page.items[1].thumb_url.as_deref(), Some("https://thumbs.example/one.jpg"));
-        assert_eq!(page.items[0].thumb_url, None);
     }
 
     #[test]
@@ -606,7 +620,7 @@ mod tests {
 
     #[test]
     fn a_later_page_that_fails_stops_the_list_with_its_reason() {
-        let item = |pos: u32| SimilarItem { pos, width: 1, height: 1, image_url: format!("u{pos}"), thumb_url: None };
+        let item = |pos: u32| SimilarItem { pos, width: 1, height: 1, image_url: format!("u{pos}") };
         let page = |n: u32, has_next: bool| -> Result<SimilarPage, YandexError> {
             Ok(SimilarPage { items: vec![item(n)], has_next })
         };

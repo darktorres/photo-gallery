@@ -23,7 +23,7 @@ use pg_yandex::{
     parse_similar_page, parse_upload, read_similar_pages, sniffed,
 };
 
-use super::Source;
+use super::{Fetch, Source};
 
 /// A recorded session, read into memory.
 pub struct Recording {
@@ -92,7 +92,11 @@ impl Source for Replay {
         })
     }
 
-    fn download(&self, url: &str) -> Result<Download, YandexError> {
+}
+
+/// The recorded result files stand in for the fetcher's downloads.
+impl Fetch for Replay {
+    fn fetch(&self, url: &str) -> Result<Download, YandexError> {
         let bytes = self
             .recording
             .downloads
@@ -105,9 +109,14 @@ impl Source for Replay {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::yandex::{Hit, Saved, SimilarNote, find_similar, save_all};
+    use crate::yandex::images::Images;
+    use crate::yandex::{Hit, Saved, SimilarNote, find_similar, number, save_all};
     use pg_jobs::events::Bus;
     use std::sync::Mutex;
+
+    fn accept(_: &[u8]) -> Result<(), &'static str> {
+        Ok(())
+    }
 
     /// A source that records the order of its calls, to check the search's.
     struct Logged {
@@ -127,9 +136,6 @@ mod tests {
         fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError> {
             self.calls.push("similar");
             self.inner.similar(up, max_pages)
-        }
-        fn download(&self, url: &str) -> Result<Download, YandexError> {
-            self.inner.download(url)
         }
     }
 
@@ -163,11 +169,12 @@ mod tests {
         // A JPEG's start, so the photo sniffs as a still; the recording answers, so the bytes are never decoded.
         std::fs::write(&photo, b"\xFF\xD8\xFF not decoded: the recording answers").unwrap();
 
-        let recording = Recording::read(&dir).unwrap();
-        let mut source = Logged { inner: Replay::new(Arc::new(recording)), calls: Vec::new() };
+        let recording = Arc::new(Recording::read(&dir).unwrap());
+        let mut source = Logged { inner: Replay::new(recording.clone()), calls: Vec::new() };
         let shared = Mutex::new(Default::default());
-        let changes: Bus<()> = Bus::new(16);
-        let (found, note) = find_similar(&photo, &mut source, &shared, &changes).unwrap();
+        let changes: Arc<Bus<()>> = Arc::new(Bus::new(16));
+        let (mut found, note) = find_similar(&photo, &mut source, &shared, &changes).unwrap();
+        number(&mut found, 1);
 
         assert_eq!(source.calls, ["upload", "other_sizes", "similar"]);
         assert_eq!(found.other.len(), 1);
@@ -176,11 +183,13 @@ mod tests {
         assert_eq!(urls, ["https://a.example/one.png", "https://b.example/two.png"]);
         assert!(matches!(note, Some(SimilarNote::Stopped { shown: 2, error: YandexError::Captcha })));
 
-        // The save path reads the recorded bytes of the first result.
+        // The save path writes the recorded bytes of the first result, from the search's images.
+        let pictures = Images::new(Arc::new(Replay::new(recording)), accept, changes.clone());
         let folder = dir.join("saved");
         std::fs::create_dir_all(&folder).unwrap();
         let hits: Vec<Hit> = found.similar.into_iter().take(1).collect();
-        let saved: Saved = save_all(&hits, std::ffi::OsStr::new("IMG_1234"), &folder, &source, &shared, &changes);
+        let saved: Saved =
+            save_all(&hits, std::ffi::OsStr::new("IMG_1234"), &folder, &pictures, &shared, &changes);
         assert_eq!((saved.written, saved.failed), (1, 0));
         let written = std::fs::read(folder.join("IMG_1234 (yandex similar 1).png")).unwrap();
         assert_eq!(written, b"\x89PNG\r\n\x1a\nresult one");

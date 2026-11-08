@@ -25,6 +25,8 @@ pub mod ffi {
         Thumb,
         Thumbhash,
         Full,
+        /// A Yandex result's picture: its file as the search kept it (`image://yandex/<result id>`).
+        Yandex,
     }
 
     /// How a `Pixels` holds its image: `Image` is a `QImage` (a decoded thumbnail, in `image`); the others are raw
@@ -125,12 +127,32 @@ fn provider(kind: ImageKind) -> &'static str {
         ImageKind::Thumb => "thumb",
         ImageKind::Thumbhash => "thumbhash",
         ImageKind::Full => "full",
+        ImageKind::Yandex => "yandex",
         _ => "",
+    }
+}
+
+/// A Yandex result's picture: its file as the search kept it (fetched now when it isn't kept yet), decoded by Qt.
+fn yandex_picture(id: &str) -> Pixels {
+    let result = id
+        .parse::<u64>()
+        .map_err(anyhow::Error::from)
+        .and_then(|id| pg_app::yandex::image(id).map_err(anyhow::Error::from))
+        .and_then(|file| QImage::from_data(&file.bytes, None).context("not an image Qt reads"));
+    match result {
+        Ok(image) => Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image },
+        Err(e) => {
+            crate::panic_log::note(&format!("image Yandex {id}: {e:#}"));
+            failed()
+        }
     }
 }
 
 /// The image a request for `kind` and `id` (the URL's part after the provider's name, `pg_model::image`) asks for.
 fn load_image(kind: ImageKind, id: &str) -> Pixels {
+    if kind == ImageKind::Yandex {
+        return yandex_picture(id);
+    }
     let Some(request) = ImageRequest::parse(provider(kind), id) else {
         crate::panic_log::note(&format!("image {kind:?} {id}: not a request"));
         return failed();

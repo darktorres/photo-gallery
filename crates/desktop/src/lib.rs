@@ -84,6 +84,7 @@ pub fn run(args: &[OsString]) -> i32 {
                 ("thumb", providers::ffi::ImageKind::Thumb),
                 ("thumbhash", providers::ffi::ImageKind::Thumbhash),
                 ("full", providers::ffi::ImageKind::Full),
+                ("yandex", providers::ffi::ImageKind::Yandex),
             ] {
                 // SAFETY: a new provider, which the engine takes ownership of.
                 unsafe {

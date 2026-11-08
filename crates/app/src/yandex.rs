@@ -19,10 +19,13 @@ use pg_model::rules::PathRules;
 use pg_platform::file::TempFile;
 use pg_platform::names::{path_buf, rule_path_of};
 pub use pg_yandex::YandexError;
-use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Download, OtherSize, Similar, Upload};
+use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Download, Fetcher, OtherSize, Similar, Upload};
 
 use crate::app::App;
 
+pub mod images;
+pub use images::Fetch;
+use images::Images;
 pub mod replay;
 pub use replay::{Recording, Replay};
 
@@ -32,7 +35,6 @@ pub trait Source {
     fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError>;
     fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, YandexError>;
     fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError>;
-    fn download(&self, url: &str) -> Result<Download, YandexError>;
 }
 
 impl Source for Client {
@@ -47,42 +49,51 @@ impl Source for Client {
     fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError> {
         Client::similar(self, up, max_pages)
     }
-
-    fn download(&self, url: &str) -> Result<Download, YandexError> {
-        Client::download(self, url)
-    }
 }
 
-/// Makes the source for one search or one save. The front end passes [`client()`], or [`replay()`] when it is given a
-/// recorded session explicitly.
-pub type Factory = Arc<dyn Fn() -> Result<Box<dyn Source + Send>, YandexError> + Send + Sync>;
+/// What a search gets from its front end: the source of its calls (Yandex's search, which runs on the search's thread),
+/// and the fetcher of the results' files (shared by the threads that fetch them).
+pub struct Connection {
+    pub source: Box<dyn Source + Send>,
+    pub fetch: Arc<dyn Fetch>,
+}
 
-/// The real Yandex client, made for each search and each save. The default.
+/// Makes the connection for one search. The front end passes [`client()`], or [`replay()`] when it is given a recorded
+/// session explicitly.
+pub type Factory = Arc<dyn Fn() -> Result<Connection, YandexError> + Send + Sync>;
+
+/// The real Yandex client, made for each search. The default.
 pub fn client() -> Factory {
-    Arc::new(|| -> Result<Box<dyn Source + Send>, YandexError> {
-        let source: Box<dyn Source + Send> = Box::new(Client::new());
-        Ok(source)
+    Arc::new(|| -> Result<Connection, YandexError> {
+        Ok(Connection { source: Box::new(Client::new()), fetch: Arc::new(Fetcher::new()) })
     })
 }
 
 /// The recorded session in `dir` (the folder's layout is in the `replay` module), standing in for the client. It is read once, here; when it
-/// can't be read, every search and save fails with the reason, so nothing is sent to Yandex in its place.
+/// can't be read, every search fails with the reason, so nothing is sent to Yandex in its place.
 pub fn replay(dir: &Path) -> Factory {
     let recording = Recording::read(dir).map(Arc::new);
     Arc::new(move || match &recording {
-        Ok(recording) => {
-            let source: Box<dyn Source + Send> = Box::new(Replay::new(recording.clone()));
-            Ok(source)
-        }
+        Ok(recording) => Ok(Connection {
+            source: Box::new(Replay::new(recording.clone())),
+            fetch: Arc::new(Replay::new(recording.clone())),
+        }),
         Err(why) => Err(YandexError::Recorded(why.clone())),
     })
+}
+
+/// The picture of the result `id` of the search on screen, for the grid: its file, fetched now if it is not kept yet.
+pub fn image(id: u64) -> Result<Arc<Download>, YandexError> {
+    images::current().ok_or(YandexError::Unexpected("no search"))?.get_known(id)
 }
 
 /// One result as the panel shows and saves it.
 #[derive(Clone, Debug)]
 pub struct Hit {
+    /// The result's id: its search and its place in the search's results ([`hit_id`]). Its picture is kept under it.
+    pub id: u64,
+    /// The file the result is, at its host.
     pub url: String,
-    pub thumb: String,
     pub width: i32,
     pub height: i32,
     /// What follows the photo's name in the saved file's name, inside the brackets: `yandex 1920x1080`.
@@ -94,6 +105,12 @@ pub struct Hit {
 pub struct Found {
     pub other: Vec<Hit>,
     pub similar: Vec<Hit>,
+}
+
+/// The id of the result at `index` of the search numbered `generation` (numbered from 1, so no id is 0).
+fn hit_id(generation: u64, index: usize) -> u64 {
+    // A search has far fewer results than 2^32, so the index never reaches the generation's bits.
+    (generation << 32) | u64::try_from(index).unwrap_or(u64::MAX)
 }
 
 /// Where a search or a save is, while it runs.
@@ -181,12 +198,16 @@ pub struct Poll {
     pub status: Option<Status>,
     /// The results that came in since the last poll, once.
     pub found: Option<Found>,
+    /// The results whose files could not be fetched or decoded since the last poll, once: take them off the grid.
+    pub dead: Vec<u64>,
 }
 
 /// What the background threads share with [`Search::poll`].
 #[derive(Default)]
 struct Shared {
     busy: bool,
+    /// How many searches have started: the results' ids say which search they are from ([`hit_id`]).
+    generation: u64,
     /// The photo searched for: the saved files are named after it.
     photo: PathBuf,
     /// The latest status, not yet read by `poll`.
@@ -270,11 +291,12 @@ fn find_similar<S: Source + ?Sized>(
         }
         Err(error) => (Vec::new(), Some(SimilarNote::Failed(error))),
     };
+    // The ids are numbered when the search's results are known (`number`).
     let found = Found {
         other: other
             .into_iter()
             .map(|s| Hit {
-                thumb: s.url.clone(),
+                id: 0,
                 url: s.url,
                 width: dimension(s.width),
                 height: dimension(s.height),
@@ -284,7 +306,7 @@ fn find_similar<S: Source + ?Sized>(
         similar: similar
             .into_iter()
             .map(|s| Hit {
-                thumb: s.thumb_url.unwrap_or_else(|| s.image_url.clone()),
+                id: 0,
                 url: s.image_url,
                 width: dimension(s.width),
                 height: dimension(s.height),
@@ -293,6 +315,14 @@ fn find_similar<S: Source + ?Sized>(
             .collect(),
     };
     Ok((found, note))
+}
+
+/// Gives the results of a search their ids: the search `generation` and each result's place, the other sizes first.
+fn number(found: &mut Found, generation: u64) {
+    let hits = found.other.iter_mut().chain(found.similar.iter_mut());
+    for (index, hit) in hits.enumerate() {
+        hit.id = hit_id(generation, index);
+    }
 }
 
 /// The photo's stem as a saved file's: `stem` kept exactly, then ` (<suffix>)`. The suffix is text the search returns, so
@@ -368,43 +398,49 @@ fn stem_of(photo: &Path) -> OsString {
 }
 
 /// Downloads one hit into `folder`, named `<stem> (<suffix>)` so it sorts next to the photo ([`write_new`]).
-fn save_one<S: Source + ?Sized>(source: &S, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
-    let file = source.download(&hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
+/// Writes a result's file (kept by the search, or fetched now) into `folder`, named after the photo.
+fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
+    let file = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
     write_new(folder, &saved_stem(stem, &hit.suffix), file.format.extension(), &file.bytes)
         .map(drop)
         .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path, error })
 }
 
-/// The search on its thread: its source is made first (a recorded session or the client), then the search runs on it.
+/// What a search found, its note, and the fetcher of its results' files.
+type Searched = (Found, Option<SimilarNote>, Arc<dyn Fetch>);
+
+/// The search on its thread: its connection is made first (a recorded session or the client), then the search runs on
+/// its source. The fetcher goes with the results, for their files.
 fn search(
     photo: &Path,
     make: &Factory,
     shared: &Mutex<Shared>,
     changes: &Bus<()>,
-) -> Result<(Found, Option<SimilarNote>), SearchError> {
-    let mut source = make().map_err(SearchError::Request)?;
-    find_similar(photo, &mut *source, shared, changes)
+) -> Result<Searched, SearchError> {
+    let mut connection = make().map_err(SearchError::Request)?;
+    let (found, note) = find_similar(photo, &mut *connection.source, shared, changes)?;
+    Ok((found, note, connection.fetch))
 }
 
-/// The outcome of a save whose source could not be made: nothing downloaded, every hit failed.
+/// The outcome of a save with no search on screen to take its files from: nothing downloaded, every hit failed.
 fn save_refused(hits: &[Hit], folder: &Path, error: YandexError) -> Saved {
     let failed = hits.len();
     Saved { folder: folder.to_path_buf(), written: 0, failed, first_error: Some(SaveFailure::Client(error)) }
 }
 
-/// Downloads every hit into `folder`, one at a time (these are CDN files, so the client paces nothing here).
-fn save_all<S: Source + ?Sized>(
+/// Writes every hit into `folder`, one at a time, from the search's images.
+fn save_all(
     hits: &[Hit],
     stem: &OsStr,
     folder: &Path,
-    source: &S,
+    images: &Images,
     shared: &Mutex<Shared>,
     changes: &Bus<()>,
 ) -> Saved {
     let mut saved = Saved { folder: folder.to_path_buf(), written: 0, failed: 0, first_error: None };
     for (i, hit) in hits.iter().enumerate() {
         set_status(shared, changes, Status::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
-        match save_one(source, hit, stem, folder) {
+        match save_one(images, hit, stem, folder) {
             Ok(()) => saved.written += 1,
             Err(failure) => {
                 saved.failed += 1;
@@ -454,8 +490,18 @@ impl Search {
             // A panic here is logged (the hook), and the search ends with a status, so `busy` is always cleared.
             let outcome = pg_jobs::panics::catch(AssertUnwindSafe(|| search(&photo, &make, &shared, &changes)));
             let mut s = lock(&shared);
+            // The results' files are fetched after the search ends, into this search's images (which replace the last
+            // search's on screen).
+            let mut fetching = None;
             match outcome {
-                Ok(Ok((found, note))) => {
+                Ok(Ok((mut found, note, fetch))) => {
+                    s.generation += 1;
+                    number(&mut found, s.generation);
+                    let results: Vec<(u64, String)> =
+                        found.other.iter().chain(&found.similar).map(|hit| (hit.id, hit.url.clone())).collect();
+                    let pictures = Images::new(fetch, images::decodes, changes.clone());
+                    images::set_current(Some(pictures.clone()));
+                    fetching = Some((pictures, results));
                     s.found = Some(found);
                     s.status = Some(Status::Searched(note));
                 }
@@ -465,6 +511,9 @@ impl Search {
             // Same lock as the results, so `poll()` never sees the search end before its results.
             s.busy = false;
             drop(s);
+            if let Some((pictures, results)) = fetching {
+                pictures.prefetch(results);
+            }
             changes.publish(());
         })
     }
@@ -479,7 +528,8 @@ impl Search {
     /// poll. Each result and status is returned once.
     pub fn poll(&self) -> Poll {
         let mut s = lock(&self.shared);
-        Poll { busy: s.busy, status: s.status.take(), found: s.found.take() }
+        let dead = images::current().map(|pictures| pictures.take_dead()).unwrap_or_default();
+        Poll { busy: s.busy, status: s.status.take(), found: s.found.take(), dead }
     }
 
     /// Where the save dialog opens: the folder saved into last (`yandex_folder`) while it exists, or else the photo's
@@ -493,11 +543,11 @@ impl Search {
         photo.parent().map(Path::to_path_buf)
     }
 
-    /// Save the picked `hits` into `folder`, one file each, named after the photo, downloaded from the source `make`
-    /// gives. The folder is remembered in the preferences for the next save, whether or not every download works. False
-    /// when nothing is picked or a search or a save is running (nothing changes); an error when its thread couldn't
-    /// start (nothing is downloaded, and nothing stays busy). The save's outcome comes from [`Search::poll`].
-    pub fn save(&self, app: &App, hits: Vec<Hit>, folder: PathBuf, make: Factory) -> io::Result<bool> {
+    /// Save the picked `hits` into `folder`, one file each, named after the photo, from the files the search kept. The
+    /// folder is remembered in the preferences for the next save, whether or not every save works. False when nothing
+    /// is picked or a search or a save is running (nothing changes); an error when its thread couldn't start (nothing
+    /// is written, and nothing stays busy). The save's outcome comes from [`Search::poll`].
+    pub fn save(&self, app: &App, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
         if hits.is_empty() {
             return Ok(false);
         }
@@ -520,9 +570,9 @@ impl Search {
         let changes = self.changes.clone();
         self.spawn_worker("yandex save", move || {
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
-            let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match make() {
-                Ok(source) => save_all(&hits, &stem, &folder, &*source, &shared, &changes),
-                Err(e) => save_refused(&hits, &folder, e),
+            let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match images::current() {
+                Some(pictures) => save_all(&hits, &stem, &folder, &pictures, &shared, &changes),
+                None => save_refused(&hits, &folder, YandexError::Unexpected("no search on screen")),
             })) {
                 Ok(saved) => Status::Saved(saved),
                 Err(_) => Status::Stopped,

@@ -190,6 +190,7 @@ yandex-http-status = Yandex answered HTTP { $status }
 yandex-transport = Yandex request failed: { $error }
 yandex-unexpected = unexpected Yandex response: { $detail }
 yandex-recorded = recorded Yandex session: { $error }
+yandex-undecodable = a result's file is not an image this app can decode: { $reason }
 
 # The boxes the app shows before it ends: the catalog that can't be opened, and a panic (`text::internal_error`: the
 # first line, the panic's message, then where its details are)

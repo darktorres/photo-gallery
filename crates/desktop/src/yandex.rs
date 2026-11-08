@@ -204,6 +204,30 @@ impl YandexSearchRust {
     }
 }
 
+/// The results left when the dead ones are taken off: in order, each with whether it is picked (the picks follow their
+/// results, not their positions), and how many of the first `other` are left.
+fn without_dead(hits: &[Hit], picks: &Picks, other: usize, dead: &[u64]) -> (Vec<Hit>, Vec<bool>, usize) {
+    let mut kept = Vec::new();
+    let mut picked = Vec::new();
+    let mut other_kept = 0;
+    for (i, hit) in hits.iter().enumerate() {
+        if dead.contains(&hit.id) {
+            continue;
+        }
+        if i < other {
+            other_kept += 1;
+        }
+        kept.push(hit.clone());
+        picked.push(picks.is_picked(i));
+    }
+    (kept, picked, other_kept)
+}
+
+/// The URL of a result's picture, for the grid and the preview: the image provider serves it from the search's files.
+fn picture_url(id: u64) -> String {
+    format!("image://yandex/{id}")
+}
+
 /// What the user reads when a request fails: each of the client's errors has its own words; the values they carry (the
 /// transport's error, what an answer lacked) are the lower layers' text.
 fn explain(e: &YandexError) -> String {
@@ -213,6 +237,7 @@ fn explain(e: &YandexError) -> String {
         YandexError::Transport(error) => text::yandex_transport(error),
         YandexError::Unexpected(detail) => text::yandex_unexpected(detail),
         YandexError::Recorded(error) => text::yandex_recorded(error),
+        YandexError::Undecodable(reason) => text::yandex_undecodable(reason),
     }
 }
 
@@ -391,6 +416,34 @@ impl qobject::YandexSearch {
     /// Lay the results out in the panel's width, at `ROW_HEIGHT` and the gallery's gap, as the gallery lays its rows out:
     /// each group's rows are justified (`layout::frames`), from the top of the group's block, and the blocks' heights
     /// are set. Each result's frame is read again (its roles).
+    /// The results whose files died are taken off the grid: the layout is rebuilt without them, and the picks of the
+    /// others stay on their results.
+    fn drop_dead(mut self: Pin<&mut Self>, dead: &[u64]) {
+        let other = usize::try_from(self.other_count).unwrap_or(0);
+        let (hits, picked, other) = without_dead(&self.hits, &self.picks, other, dead);
+        if hits.len() == self.hits.len() {
+            return;
+        }
+        let len = hits.len();
+        self.as_mut().begin_reset_model();
+        {
+            let mut this = self.as_mut().rust_mut();
+            this.hits = hits;
+            this.picks.reset(len);
+            for (i, is_picked) in picked.into_iter().enumerate() {
+                if is_picked {
+                    this.picks.set(i..i + 1, true);
+                }
+            }
+        }
+        self.as_mut().end_reset_model();
+        let similar = self.hits.len() - other;
+        self.as_mut().set_other_count(qt_int(other));
+        self.as_mut().set_similar_count(qt_int(similar));
+        self.as_mut().relayout();
+        self.picks_changed();
+    }
+
     fn relayout(mut self: Pin<&mut Self>) {
         let other = usize::try_from(self.other_count).unwrap_or(0).min(self.hits.len());
         let aspects: Vec<f64> = self.hits.iter().map(hit_aspect).collect();
@@ -441,7 +494,7 @@ impl qobject::YandexSearch {
     fn refresh_preview(mut self: Pin<&mut Self>) {
         let shown = usize::try_from(self.preview_item).ok().and_then(|i| self.hits.get(i).map(|hit| (i, hit)));
         let (url, width, height, picked) = match shown {
-            Some((i, hit)) => (QString::from(&hit.url), hit.width, hit.height, self.picks.is_picked(i)),
+            Some((i, hit)) => (QString::from(&picture_url(hit.id)), hit.width, hit.height, self.picks.is_picked(i)),
             None => (QString::default(), 0, 0, false),
         };
         self.as_mut().set_preview_url(url);
@@ -455,6 +508,10 @@ impl qobject::YandexSearch {
         // The results first: whatever watches `busy` going off finds them in place.
         if let Some(found) = poll.found {
             self.as_mut().show(found.other, found.similar);
+        }
+        // The results whose files died come off the grid (their ids are the search's, so an older search's are ignored).
+        if !poll.dead.is_empty() {
+            self.as_mut().drop_dead(&poll.dead);
         }
         if let Some(status) = poll.status {
             self.as_mut().set_status(QString::from(&status_text(status)));
@@ -471,7 +528,7 @@ impl qobject::YandexSearch {
         };
         let frame = self.frames.get(i).copied().unwrap_or_default();
         match role {
-            ROLE_THUMB => QVariant::from(&QString::from(&hit.thumb)),
+            ROLE_THUMB => QVariant::from(&QString::from(&picture_url(hit.id))),
             ROLE_IMAGE_WIDTH => QVariant::from(&hit.width),
             ROLE_IMAGE_HEIGHT => QVariant::from(&hit.height),
             ROLE_PICKED => QVariant::from(&self.picks.is_picked(i)),
@@ -545,7 +602,7 @@ impl qobject::YandexSearch {
         self.as_mut().ensure_pump();
         // The app refuses a search or a save already running (the status line keeps showing its progress), and
         // remembers the folder when it saves.
-        match self.search.save(crate::app::get(), hits, folder, crate::command_line::yandex_source()) {
+        match self.search.save(crate::app::get(), hits, folder) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => return self.not_started("save", &e),
@@ -560,5 +617,27 @@ impl qobject::YandexSearch {
         crate::panic_log::note(&format!("yandex: the {what} didn't start: {e}"));
         self.as_mut().set_busy(false);
         self.as_mut().set_status(QString::from(&text::yandex_not_started(&e.to_string())));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn hit(id: u64) -> Hit {
+        Hit { id, url: format!("https://a.example/{id}.jpg"), width: 1, height: 1, suffix: String::new() }
+    }
+
+    /// The picks follow their results when a dead one is taken off: the picked results stay picked, in order.
+    #[test]
+    fn the_picks_stay_on_their_results_when_a_dead_one_goes() {
+        let hits = vec![hit(1), hit(2), hit(3), hit(4)];
+        let mut picks = Picks::new(4);
+        picks.set(0..1, true);
+        picks.set(2..4, true);
+        let (kept, picked, other) = without_dead(&hits, &picks, 2, &[2]);
+        assert_eq!(kept.iter().map(|h| h.id).collect::<Vec<_>>(), [1, 3, 4]);
+        assert_eq!(picked, [true, true, true]);
+        assert_eq!(other, 1, "result 2 was one of the other sizes; one of them is left");
     }
 }

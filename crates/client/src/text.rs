@@ -364,6 +364,10 @@ pub enum Message {
     YandexRecorded {
         error: String,
     },
+    /// A result's file that is not an image this app decodes, for `reason`.
+    YandexUndecodable {
+        reason: String,
+    },
     /// The catalog couldn't be opened at start, for `error`: the app ends after the box.
     CatalogUnopened {
         error: String,
@@ -510,6 +514,7 @@ impl Message {
             Message::YandexTransport { .. } => "yandex-transport",
             Message::YandexUnexpected { .. } => "yandex-unexpected",
             Message::YandexRecorded { .. } => "yandex-recorded",
+            Message::YandexUndecodable { .. } => "yandex-undecodable",
             Message::CatalogUnopened { .. } => "catalog-unopened",
             Message::InternalError => "internal-error",
             Message::DetailsInLog { .. } => "details-in-log",
@@ -717,6 +722,9 @@ impl Message {
             Message::YandexUnexpected { detail } => {
                 a.set("detail", detail.as_str());
             }
+            Message::YandexUndecodable { reason } => {
+                a.set("reason", reason.as_str());
+            }
             Message::DetailsInLog { log } => {
                 a.set("log", log.as_str());
             }
@@ -846,6 +854,7 @@ impl Message {
             Message::YandexTransport { error: s() },
             Message::YandexUnexpected { detail: s() },
             Message::YandexRecorded { error: s() },
+            Message::YandexUndecodable { reason: s() },
             Message::CatalogUnopened { error: s() },
             Message::InternalError,
             Message::DetailsInLog { log: s() },
@@ -1413,6 +1422,11 @@ pub fn yandex_unexpected(detail: &str) -> String {
 /// A recorded Yandex session that can't answer, for `error`.
 pub fn yandex_recorded(error: &str) -> String {
     render(&Message::YandexRecorded { error: error.to_string() })
+}
+
+/// A result's file that is not an image this app decodes, for `reason`.
+pub fn yandex_undecodable(reason: &str) -> String {
+    render(&Message::YandexUndecodable { reason: reason.to_string() })
 }
 
 /// The catalog couldn't be opened at start, for `error`.

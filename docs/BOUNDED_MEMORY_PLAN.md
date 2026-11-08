@@ -5,18 +5,21 @@
 A code-only audit found that almost every library-wide pass holds its whole working set in RAM. At 1B files that set is about 0.9-1.2 TB. The PDQ index alone is 864-928 GB, and the work lists, grid lists, scan sets and duplicate maps each add roughly 100 GB. On top of that, SQLite runs with `temp_store=MEMORY` and 14 caches of 256 MiB.
 
 Round 1 merged six reviewed area designs into one plan. Round 2 did four things:
+
 - closed every residual and deferral left by round 1, through four gap designs (folder residuals, thumbnail eviction, PDQ structure, Qt cap);
 - audited the crates nobody had audited (write/start path, shell/CLI);
 - had two adversarial reviews of the merged plan;
 - had every design reviewed and revised again.
 
 Round 3 did two things:
+
 - designed, reviewed and revised the NTFS USN-journal incremental rescan, because the user chose Q-S1 (b). It is now step 3.9.
 - ran an adversarial review of the round-2 synthesizer's own decisions. It found two blockers: `pend_batch` was never cleared, and an order-key range is not a root. Both are fixed throughout.
 
 This document replaces the round-2 plan. It keeps the same structure and folds everything in.
 
 **Rules held throughout:**
+
 - RAM is a fixed configured budget, independent of library size.
 - Results are identical: pairs, groups, grid order, filters, counts and CLI output. Where they are not, the deviation is stated precisely: in the step, and collected in §7 Q-D.
 - Disk and time are stated at 1B.
@@ -26,6 +29,7 @@ This document replaces the round-2 plan. It keeps the same structure and folds e
 Paths are relative to `D:/GitHub/photo-gallery/`. The user is editing the tree, so cited lines may drift by a few; find them by symbol.
 
 **Decisions already taken by the user (2026-11-07):**
+
 - PDQ radius stays exactly 31.
 - One BASELINE schema edit, then freeze.
 - Batched commits are accepted.
@@ -55,9 +59,11 @@ Every other open question takes the recommended option unless the user says othe
 **Source keys.** These name the design text each step comes from.
 
 Round-1 sources, in `C:\Users\Torres\.claude\projects\D--GitHub-photo-gallery\c2642be2-7931-4269-841c-6ecbe5ba1f3e\subagents\workflows\wf_cba81dff-055\journal.jsonl`:
+
 - `[r1 scan Sn]`, `[r1 grid Sn]`, `[r1 pdq Sn]`, `[r1 dups Sn]`, `[r1 wl Sn]`, `[r1 T n]`
 
 Round-2 sources, in the agent transcripts under `...\subagents\workflows\wf_8cdcde0a-48d\`:
+
 - `[F1-F6]`: gap folder-residuals
 - `[TE1-TE6]`: gap thumb-eviction
 - `[G1-G13]`: gap PDQ structure
@@ -68,6 +74,7 @@ Round-2 sources, in the agent transcripts under `...\subagents\workflows\wf_8cdc
 - `[PRX n]`: plan review, features, issue n
 
 Round-3 sources, in `C:\Users\Torres\AppData\Local\Temp\claude\2c16f13ff155207f\c2642be2-7931-4269-841c-6ecbe5ba1f3e\scratchpad\r3.json`:
+
 - `[USN1-USN8]`: the revised USN-journal design (`usn.revised.design.steps`)
 - `[UR n]`: the USN design review, issue n (1-based)
 - `[RR n]`: the review of the round-2 resolutions, issue n (1-based)
@@ -109,6 +116,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 | **Whole process** | about 1-1.3 TB + unbounded temp | **≤ about 3.6 GiB at defaults (64 GB RAM); about 2.1 GiB minimum; constant in n** | per row | per row |
 
 **Whole-process derivation.** Passes run one at a time in the runner. Caches fill lazily.
+
 - **W** is one process-wide reservation. It is held in turn by the pair worker, the groups heavy peel (G11) and tier-1 merges or bulk build. The bulk build sorts in the background share only.
 - **Defaults peak:** role caches 0.86 GiB + max over runner passes of (import pipeline 0.25 + W 2, or groups 0.3 + W 2 [G11 heavy adjacency], or thumbs 0.25, or a journal scan pass 0.14 inside the background share) + interactive sort share 0.25 + grid build beyond its share 0.07 + facets 0.07 + client, window, tree and picker 0.05 + journal watch 0.02 (a 16 MiB LRU plus 64 KiB per volume; its 4 MiB Watch cache is counted in the role caches). That is 0.86 + 2.3 + 0.25 + 0.19 ≈ 3.6 GiB.
 - **Minimum peak:** W = 0.5 GiB, giving 0.86 + 0.8 + 0.25 + 0.19 ≈ 2.1 GiB, with the same terms as the defaults. This corrects round 1's "1.5 GiB" ([PRX6]) and round 2's term mismatch ([RR5]).
@@ -164,6 +172,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 **Oracles.** Every equivalence oracle is the old code or SQL kept under `cfg(test)` or the `fixture` feature.
 
 ### Phase 0: Preconditions (the user's)
+
 - **0.1** The user lands the in-flight S-17 Unit E work before Phase 1 starts. Phases 1-2 depend on two parts of it:
   - `crates/platform/src/sqlite.rs`: `sqlite_path`, `attach_bytes`, `alias_of_folder`;
   - the `carry_rows` `attach_bytes` change.
@@ -173,6 +182,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 ### Phase 1: Shared foundations (no behaviour change)
 
 **1.1 Temp storage on disk** [r1 T1]
+
 - **Closes:** scan-S08, import-06, import-08, grid-F10, dedup-11, dedup-18.
 - **Files:**
   - `.cargo/config.toml`
@@ -189,6 +199,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - `tests/no_memory_temp.rs` lint.
 
 **1.2 `pg_schema::env`: connect, roles, hooks, URIs** [r1 T2, grid S3, scan S2; F3; F5; U7; D3/D4/D21]
+
 - **Closes:** grid-F14, A5, R2-desktop-10.
 - **Files:**
   - `crates/schema/{Cargo.toml (+pg-platform), src/env.rs, src/lease.rs}`
@@ -225,6 +236,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - a second process's frames are visible to WriteBatch through `pnLog`.
 
 **1.3 Guard toolkit** [r1 T3, wl assert_bounded, grid VM_STEP] (moved before keyset, [PRF9])
+
 - **Files:**
   - `crates/schema/src/testing.rs`
   - `crates/catalog/src/fixture/plan.rs` (`with_billion_stats`)
@@ -237,6 +249,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 - **Tests:** the toolkit's own tests on crafted statements.
 
 **1.4 Write discipline** [r1 scan S2; F5; U7; D18]
+
 - **Closes:** scan-S09 (lock hold), A3.
 - **Files:**
   - `crates/catalog/src/batch.rs` (new)
@@ -254,6 +267,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - a second process grows the WAL past the ceiling and this process waits.
 
 **1.5 Keyset and subtree primitives** [r1 wl S3, scan S3, grid continuation rule; F1]
+
 - **Files:**
   - `crates/schema/src/keyset.rs`
   - `crates/catalog/src/subtree.rs`
@@ -270,6 +284,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - no TEMP B-TREE.
 
 **1.6 `pg-spill` and platform primitives** [r1 pdq S5/S9, dups S3, scan S5, grid S6; F2; F4; G5; S4; U4; PRX10; PRX15; USN1]
+
 - **Files:**
   - `crates/spill/src/{lib, extsort, budget, spill, segstack, paged, codec, reorder, concurrent, scratch}.rs`
   - `crates/platform/src/{file.rs (Staged, read_at/write_at, file identity), volume.rs (free_bytes, mount_root, detachable, volume_root_handle), process.rs (peak_private_bytes, run_in_job)}`
@@ -347,6 +362,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
     - FSCTL_LOCK_VOLUME succeeds while a wait_read is armed.
 
 **1.7 pg-model shared types** [r1 pdq S1, dups S2, wl S1; QT1; G1]
+
 - **Closes:** dedup-12, the WorkList part of import-01.
 - **Files:** `crates/model/src/{pdq.rs, ids.rs, num.rs, dups.rs, grid.rs, path.rs}`
 - **Change:**
@@ -370,6 +386,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - `formed` with a NULL/None `pend_batch` is true, and agrees with the SQL text on random inputs.
 
 **1.8 pg-jobs pipeline and progress** [r1 wl S2, pdq S10/S11, dups S7; F2; S4; S1]
+
 - **Files:**
   - `crates/jobs/{src/pipeline.rs, src/control.rs}`
   - `library/src/crop.rs`, `cli/src/borders.rs`, `cli/src/lib.rs`
@@ -395,6 +412,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - FeedFailed comes after the in-flight sinks.
 
 **1.9 Lease helper** [D16; PRX5; F3; TE2]
+
 - **Files:** `crates/schema/src/lease.rs`
 - **Change:** These are SQL texts over a `work_leases`-shaped table. The catalog's table is created in 2.1; the cache's lease reuses the helper.
   - `claim(kind, target, unique)`, which returns an id and token;
@@ -412,6 +430,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 ### Phase 2: One coordinated schema change, rebuild, upgrade and startup
 
 **2.1 BASELINE objects** (the single edit; [r1 pdq S7, scan S1, wl S4, grid S1/S14, dups S4]; F1; F3; S1; S2; S7; S12; U1-U4; TE5; G7; USN2; RR1; RR2)
+
 - **File:** `crates/catalog/src/schema.rs`. Literals come from macros (`max_attempts!`, `match_distance!`, `group_distance!`, `min_quality!`).
 - **files table:**
   - Drop `last_scan`.
@@ -447,7 +466,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 - **USN journal (USN2):**
   - `usn_builds(build PK, result)`.
   - `usn_volumes(serial PK, collation_ok, collation_note)`.
-  - `usn_roots(root_id PK → roots CASCADE, volume, root_ref, journal_id, lowest_valid_usn, base_scan → scans (indexed by `usn_roots_base(base_scan)`, as the D24 FK lint requires), next_usn, fp_usn, fp_ref, fp_reason, fp_time, access_proj, rules_hash, verify_due, last_reason, census: folders, files, entries, reparse_files, extra_links, foreign_ids)`.
+  - `usn_roots(root_id PK → roots CASCADE, volume, root_ref, journal_id, lowest_valid_usn, base_scan → scans (indexed by`usn_roots_base(base_scan)`, as the D24 FK lint requires), next_usn, fp_usn, fp_ref, fp_reason, fp_time, access_proj, rules_hash, verify_due, last_reason, census: folders, files, entries, reparse_files, extra_links, foreign_ids)`.
   - `usn_dirs(id PK, root_id, volume, ref, parent_ref, path, wkey, state 0 listed/1 unreadable/2 reparse, error, entries, media, reparse_files, counted)` with:
     - `usn_dirs_ref` UNIQUE(volume, ref, root_id);
     - `usn_dirs_path` UNIQUE(path);
@@ -513,6 +532,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - the wake trigger's EXPLAIN uses `usn_entries_foreign`.
 
 **2.2 Catalog rebuild: chunked, resumable, crash-safe** [F3 + U5 + S7; D23]
+
 - **Closes:** R2-startup-01 (carry), A2, missed-4, round-1 residual 7, [PRF3], [PRX9].
 - **Files:**
   - `crates/catalog/src/rebuild.rs` (new)
@@ -612,6 +632,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - Scale: flat heaps, SQLite heap ≤ 2 × cache + 16 MiB + index/32768, temp ≤ 2.2 × the largest index, no WAL.
 
 **2.3 Post-freeze migration machinery** [F6 + U12; D1]
+
 - **Files:**
   - `schema.rs` (`Migration`, `bring_to`, `expected_for`, `version_of`)
   - `rebuild.rs` (shared copier, verifier, estimator)
@@ -640,6 +661,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - `set_rating` stays within 150 ms throughout.
 
 **2.4 Writers adapted to the new columns** [r1 scan S4, wl S4, pdq S8, grid S1; D8; D9; D25]
+
 - **Files:**
   - `crates/catalog/src/lib.rs`, `pair.rs`
   - fixtures (`raw.rs`, `state.rs`)
@@ -673,6 +695,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - invariant proptest: after any writer sequence, `unpaired_anchor = CASE unpaired WHEN 1 THEN folders.anchor END` for every row, including moves across drive letters.
 
 **2.5 Upgrade pass: version recomputes off prepare, exact reads** [U1 + U2; D20; D32]
+
 - **Closes:** A1, A3, missed-8, [PRF2], [PRX18].
 - **Files:**
   - `catalog/src/{upgrade.rs, lib.rs (prepare, set_*_version), work.rs}`
@@ -721,6 +744,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - Pairing during Pass A equals the oracle under D25; `pend_batch` after Pass A equals its definition.
 
 **2.6 Counters and status** [S1 + U3; D22]
+
 - **Closes:** A4, W1, R2-cli-01, R2-cli-08, the R2-writeback-01 counts, [PRF10].
 - **Files:**
   - `schema.rs` (triggers)
@@ -744,6 +768,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - Golden `gallery status` output.
 
 **2.7 Startup off the GUI thread; opens log** [U6 + S8; TE5; D36]
+
 - **Closes:** R2-startup-01 (UI), missed-5, the S8 review issues.
 - **Files:**
   - `desktop/src/{lib.rs, app.rs, preparing.rs}`
@@ -772,6 +797,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 **Closes:** scan-01..08, scan-11, scan-S03, scan-S08, scan-S09 (writes), import-10, residual (d), [PRF5], [PRF8], [PRF20], [PRX13], [RR2], [RR3], Q-S1, R-SCAN (on local fixed NTFS).
 
 **Files:**
+
 - `crates/scan/src/{lib.rs, sink.rs (new), order.rs (new), journal.rs (new)}`
 - `platform/src/{dir.rs, usn.rs, token.rs}` (from 1.6)
 - `catalog/src/{lib.rs, pair.rs, subtree.rs, usn.rs (new)}`
@@ -1097,6 +1123,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 ### Phase 4: Work lists, write-back, thumbnails, borders CLI
 
 **4.1 `import_work` / `borders_work` cursors** ([r1 wl S7] + [U2] + D6 + [U13])
+
 - **Closes:** import-04..08 (import-01, scan-10 and dedup-04 close with 5.1).
 - **Files:**
   - `catalog/src/work.rs`
@@ -1119,6 +1146,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 **4.2 Borders pass** on the cursor. The final flush runs on every `Ended`; then `end_work`.
 
 **4.3 Write-back queue** ([U4] + [S2])
+
 - **Closes:** W2, W3, W4, R2-writeback-01.
 - **Files:**
   - `catalog/src/writes.rs`
@@ -1147,6 +1175,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - W4 gives identical bytes and digest, and peak RAM stays below 64 MiB on a 1 GB file.
 
 **4.4 Thumbnail cache layout: the one edit, then start over** ([TE1] + [U8] + [U9] + [U10]; D35)
+
 - **Files:**
   - `thumbcache/src/{lib.rs, layout.rs, key.rs}`
 - **Change:**
@@ -1174,6 +1203,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - A cache with `checked` starts over.
 
 **4.5 Cache writer ops** ([TE2] + [U8] + [S9] + [U9] + [U10] + T4)
+
 - **Closes:** T2, T3, T4, missed-1, missed-3, missed-6, R2-startup-02, residual (thumbs 2).
 - **Change:**
   - **TE2 ops:**
@@ -1209,6 +1239,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - The inbox cap.
 
 **4.6 ThumbPass** ([TE3] + ordered batches + memo)
+
 - **Closes:** import-and-thumbnails-04/05/06, residual-2, residual-5, [PRF1], [PRX8].
 - **Files:**
   - `thumbcache/src/pass.rs`, `pass/compact.rs`, `key.rs`
@@ -1239,6 +1270,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - Plan guards.
 
 **4.7 thumbs::run, runner and CLI** ([TE4])
+
 - **Files:**
   - `thumbs/src/lib.rs`
   - `library/src/runner.rs`
@@ -1264,6 +1296,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - Disabled completes.
 
 **4.8 `gallery borders --csv` and `--import-review`** ([F2] + [S4] + [S3]/[S6] + [RR9])
+
 - **Closes:** R2-cli-02, R2-cli-03, residual (b).
 - **Files:**
   - `cli/src/{borders.rs, sorted_walk.rs}`
@@ -1303,6 +1336,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 **Closes:** dedup-01, 02, 03, 15, import-01, 02, 03, scan-09, scan-10, dedup-04, residual (PDQ 4c), [PRX1], [PRX2], [PRX3], [PRX7], [RR1].
 
 **Files:**
+
 - `crates/dedup/src/{layout, canonical, sheet/*, join/*, peel, stop, components}.rs`
 - `crates/tier1/src/{store, gc, tail, pair, classify, publish, transfer, account, partners, schedule, maintain, budget, reclassify, planes}.rs`
 - `crates/catalog/src/tier1.rs` (the HeavyPartners trait, bounded readers and writers)
@@ -1393,6 +1427,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 **Closes:** dedup-05..11, 18, 19, import-09, R2-query-02, R2-cli-07, [PRX4], [PRX11], [PRX17].
 
 **Files:**
+
 - `crates/dedup/src/{components, build}.rs`
 - `crates/catalog/{Cargo.toml (+pg-dedup), src/groups/{mod, graph, store, scratch, build, counts, maintain, report, oracle}.rs, src/dups.rs}`
 - `crates/query/src/lib.rs` (`duplicates!`)
@@ -1433,6 +1468,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 **Closes:** grid-F01..F10, F12, F13, F17, R2-desktop-01..06, A6, A7, A9, S2-held, the review's residual 10, [PRX22], [RR4], plus all [QT] items.
 
 **Files:**
+
 - `crates/runs/`
 - `catalog/src/browse/read/{changes, facets, grid, tree}.rs`
 - `catalog/src/names.rs`
@@ -1690,6 +1726,7 @@ Verdict: needs-changes. 21 issues, all accepted by the designer and applied in 1
 | UR21 oracle coverage | minor | Mixed schedules, pairing continuation inside J, other-user and denied mutators, open sessions, POSIX deletes, parent-ambiguity mode. |
 
 **Rejected by the USN designer (judge these):**
+
 - OpenFileById live values as the truth (the walk records directory-index values);
 - a links table (changes walk semantics);
 - stamping every seen row (O(n) WAL per pass);
@@ -1859,6 +1896,7 @@ Verdict: needs-changes (2 blockers, 5 major, 4 minor). Every issue was resolved:
 ## 7. Open questions (genuine user decisions; recommendation first)
 
 **Decisions already taken (recorded):**
+
 - PDQ radius stays exactly 31.
 - One BASELINE edit, then freeze (D1).
 - Batched commits are accepted (Q6), including the batched folder-wide missing updates, pairing pages and removal.
@@ -1871,6 +1909,7 @@ Verdict: needs-changes (2 blockers, 5 major, 4 minor). Every issue was resolved:
 - **Q-S1 (b), NTFS change journal:** the USN-journal incremental rescan is included as step 3.9, with D37/D38, the full-walk fallback, and deviations J-a … J-f.
 
 **Stated deviations to accept as a set (Q-D). Accepted by the user.**
+
 - D6 cursor subset: no failure row for a file deleted mid-import; a file modified mid-pass waits for the next pass.
 - **Pairing:**
   - Q3: extra raw pairs with missing files;
@@ -1970,6 +2009,7 @@ Verdict: needs-changes (2 blockers, 5 major, 4 minor). Every issue was resolved:
 ## 8. Verification
 
 **Harness:** `crates/scale/tests/scale.rs`, `#[ignore]`, `--test-threads=1`.
+
 - Catalogs at N and 10N come from a child `pg-scale synth`, cached by schema hash: smoke 100k/1M, full 1M/10M, manual 10M/100M.
 - Two configurations:
   - **Uniform:** `CacheBudget::uniform(4 MiB)`, hard_limit = Σ open connections × 4 MiB + 16 MiB margin;
@@ -1996,7 +2036,7 @@ Verdict: needs-changes (2 blockers, 5 major, 4 minor). Every issue was resolved:
 | §2 row | Scenario(s) | Assertions |
 |---|---|---|
 | Scan walk | First scan of: one N-file folder, N subfolders, a balanced tree. No-change rescan walk. A 10N-subfolder single folder. Validate and relist injection. A stop inside a listing. A first walk with mirror upkeep. | RAM; STEPS-N; WAL; DISK (entry scratch 0; frames ≤ 20 B × N + one block; `usn_dirs` ≤ 280 B/dir); rescan WAL ≤ about 14 B per row |
-| Journal rescan | No-change pass at N/10N; 10^4 and 10^6 records (FakeVolume) over N/10N catalogs; a renamed folder of N/100 and of 0.5·N files; an R-A re-probe; a multi-root shared read; stop in R and W, then resume; Budget{1,1} | RAM (counting allocator ≤ the 3.9 bound); STEPS-1 for a no-change pass, as long as |state-1|, |usn_stale|, |usn_wake| and the root's unpaired rows are held fixed between N and 10N (8.1 generator); otherwise STEPS ∝ those sets. A pass with zero relevant records and empty recurring sets stops before R6: no scans row, no W5/W6; STEPS-Δ (∝ records + dirty entries + sub-walk entries + affected rows); WAL; RTX; DISK (scratch ≤ 60 B/record + 150 B per non-subtree intent, 0 per sub-walk entry); half-library rename ≤ 0.6 × the walk's time; oracle-equal to `--walk` |
+| Journal rescan | No-change pass at N/10N; 10^4 and 10^6 records (FakeVolume) over N/10N catalogs; a renamed folder of N/100 and of 0.5·N files; an R-A re-probe; a multi-root shared read; stop in R and W, then resume; Budget{1,1} | RAM (counting allocator ≤ the 3.9 bound); STEPS-1 for a no-change pass, as long as \|state-1\|, \|usn_stale\|, \|usn_wake\| and the root's unpaired rows are held fixed between N and 10N (8.1 generator); otherwise STEPS ∝ those sets. A pass with zero relevant records and empty recurring sets stops before R6: no scans row, no W5/W6; STEPS-Δ (∝ records + dirty entries + sub-walk entries + affected rows); WAL; RTX; DISK (scratch ≤ 60 B/record + 150 B per non-subtree intent, 0 per sub-walk entry); half-library rename ≤ 0.6 × the walk's time; oracle-equal to `--walk` |
 | Pairing | Two roots; two drives with mirrored layouts; a drive root; save-overs; rebinds; ambiguous; moved; deleted; a stop between pages, then resume; a journal-pass floor | RAM; STEPS (rows visited ≤ that root's (anchor, range) unpaired rows); 0 write transactions when nothing pairs; resume equals uninterrupted |
 | mark_missing / removal / `import --again` | Remove an N-file single-folder root (with a mirrored same-named root on a second drive); delete N in one folder, then rescan; `--again` over N; warm and cold timing; a scan request during a removal | RAM; WAL; STEPS-1 per page; the mask hides at once and leaves the other drive visible; status present/missing exact; a requested scan starts within one 60 s slice; time per row recorded (R8) |
 | Import work list (+retry) | Import with a stub analyzer; `--retry`; preemption at every fetch | RAM; examined ≤ n + preemptions × 4096; done == total |
@@ -2034,7 +2074,7 @@ Verdict: needs-changes (2 blockers, 5 major, 4 minor). Every issue was resolved:
 
 **Commands** (once, at the end):
 
-```
+```text
 just build && just lint && just test   # unit, oracle, proptest, plan guards, qt-edge lint, golden ListView, journal oracle and faults
 just lint-qml                          # qmlcachegen: no fallbacks
 just plans                             # ledger: tags, plans, temps, fan-out, total order, read-tx census, allowlist, unpaired_anchor writers
@@ -2166,6 +2206,7 @@ just scale-dhat <pass> <size>
   - RE20: plus the Watch role.
 
 ### Critical Files for Implementation
+
 - D:/GitHub/photo-gallery/crates/catalog/src/schema.rs
 - D:/GitHub/photo-gallery/crates/catalog/src/lib.rs
 - D:/GitHub/photo-gallery/crates/catalog/src/pair.rs

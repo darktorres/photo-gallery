@@ -59,4 +59,32 @@ export PG_REQUIRE_TOOLS=1
 cd "$CHECKOUT"
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace
+
+# The permission tests skip as root, and this check runs as root: the permissions don't stop it. They run here as an
+# ordinary user too: a copy of each test binary runs as that user, and a skip there fails the check.
+if [ "$(id -u)" -eq 0 ]; then
+    ORDINARY=pgcheck
+    id "$ORDINARY" >/dev/null 2>&1 || useradd -m "$ORDINARY"
+    RUN=$(mktemp -d /tmp/pg-ordinary.XXXXXX)
+    trap 'rm -rf "$RUN"; userdel -r "$ORDINARY" 2>/dev/null || true' EXIT
+    chmod 755 "$RUN"
+    mkdir "$RUN/scratch"
+    chown "$ORDINARY" "$RUN/scratch"
+    check_as_ordinary() {  # $1: the test binary (a `--test` target of pg-library), $2: the test's name
+        local exe out
+        exe=$(cargo test -p pg-library --test "$1" --no-run 2>&1 | grep Executable | sed 's/.*(\(.*\))$/\1/')
+        cp "$exe" "$RUN/$1"
+        chmod 755 "$RUN/$1"
+        out=$(su "$ORDINARY" -s /bin/bash -c "cd '$RUN' && PG_TEST_DIR='$RUN/scratch' PG_REQUIRE_TOOLS=1 ./$1 --exact $2 --nocapture 2>&1") \
+            || { echo "$out"; echo "$2 failed as $ORDINARY" >&2; exit 1; }
+        if echo "$out" | grep -q "skipped:"; then
+            echo "$out"
+            echo "$2 skipped as $ORDINARY: the permissions it checks were not stopping the process" >&2
+            exit 1
+        fi
+        echo "as $ORDINARY: $2 ok"
+    }
+    check_as_ordinary borders an_unreadable_file_stays_due_for_the_next_pass
+    check_as_ordinary writeback a_finishing_copy_that_keeps_failing_is_given_up
+fi
 echo "wsl-check: clean ($mode)"

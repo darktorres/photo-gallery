@@ -319,17 +319,18 @@ fn take_lock(path: &Path) -> Result<pg_schema::Lock> {
         .ok_or_else(|| Error::Other(anyhow!("catalog {}: another process is preparing it", path.display())))
 }
 
-/// The exclusive hold a change to the catalog file needs (`pg_schema::Live`): no other process or connection may have
-/// it open. Fails without waiting, with the catalog as it was.
-fn take_exclusive(path: &Path) -> Result<pg_schema::Live> {
-    pg_schema::Live::exclusive(path)
-        .with_context(|| format!("catalog {}: its open marker", path.display()))?
-        .ok_or_else(|| {
-            Error::Other(anyhow!(
-                "catalog {}: another program or connection has it open, so it can't be changed until it is closed",
-                path.display()
-            ))
-        })
+/// The exclusive hold on the catalog file (`pg_schema::Live`), when no other process or connection holds it. It doesn't
+/// wait: `None` is the answer when one does.
+fn try_exclusive(path: &Path) -> Result<Option<pg_schema::Live>> {
+    Ok(pg_schema::Live::exclusive(path).with_context(|| format!("catalog {}: its open marker", path.display()))?)
+}
+
+/// The refusal of a change to a catalog that another program or connection has open. Nothing has been moved.
+fn in_use(path: &Path) -> Error {
+    Error::Other(anyhow!(
+        "catalog {}: another program or connection has it open, so it can't be changed until it is closed",
+        path.display()
+    ))
 }
 
 /// The shared hold a catalog keeps while it is open (`pg_schema::Live`). It waits for a change in progress to finish.
@@ -629,10 +630,13 @@ impl Catalog {
             }
             Some(found) => mismatch(&conn, found, &expected(found)?)?,
         };
-        // A change to the file is made with the exclusive hold, which is kept through it (`take_exclusive` fails with
-        // nothing moved when another holds the file). A catalog that needs no change is only held shared, below.
+        // The lock order of a change: the exclusive hold first, kept through the change. Without it a change is refused
+        // before anything is moved; a catalog that needs no change is held shared, below, as any open catalog is.
         let changes = why.is_some() || version.is_some_and(|found| found != current);
-        let exclusive = if memory || !changes { None } else { Some(take_exclusive(path)?) };
+        let exclusive = if memory { None } else { try_exclusive(path)? };
+        if changes && !memory && exclusive.is_none() {
+            return Err(in_use(path));
+        }
         let mut rebuilt = None;
         if let Some(why) = why {
             rebuilt = Some(rebuild(conn, path, rules, why, version.is_some())?);
@@ -665,7 +669,8 @@ impl Catalog {
     /// build's (another program changed it since it was prepared).
     pub fn open(path: &Path, rules: PathRules) -> Result<Catalog> {
         // Held before the file is looked at: a rebuild in progress is waited for, not read half-made.
-        let live = if path == Path::new(":memory:") { None } else { Some(take_shared(path)?) };
+        // A catalog that isn't there is the open's error below, and no marker is made for it.
+        let live = if path == Path::new(":memory:") || !path.exists() { None } else { Some(take_shared(path)?) };
         let flags = OpenFlags::default() - OpenFlags::SQLITE_OPEN_CREATE;
         let conn = Connection::open_with_flags(db_file(path)?, flags)
             .with_context(|| format!("catalog {}", path.display()))?;
@@ -1578,6 +1583,15 @@ mod tests {
 
     // The layout tests below read the file on disk through their own connection (`raw::on_disk`): what they check
     // is the layout, not the catalog's tables.
+
+    /// A catalog that isn't there is an error to open, and opening it makes no marker beside where it would be.
+    #[test]
+    fn opening_a_catalog_that_is_not_there_makes_no_marker() {
+        let dir = test_folder(SCRATCH, "not-there").unwrap();
+        let path = dir.join("catalog.sqlite");
+        assert!(Catalog::open(&path, PathRules::NATIVE).is_err());
+        assert!(!dir.join("catalog.sqlite.live").exists(), "no marker for a catalog that isn't there");
+    }
 
     /// A catalog another connection has open is not moved aside: its rebuild is refused, with the file as it was, and it
     /// is rebuilt once that connection has closed. The edit to the file is made on a raw connection, which holds nothing.

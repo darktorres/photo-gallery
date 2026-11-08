@@ -504,6 +504,8 @@ impl ThumbCache {
         if !path.exists() {
             return Ok(None);
         }
+        // Held shared for the read: a start over elsewhere waits for it, as it waits for the cache's own connections.
+        let _live = hold_shared(&path)?;
         // Read-write, as the other connections are: a read-only one can't merge the WAL when it closes last, and
         // would leave the WAL and its index behind.
         let conn = Connection::open_with_flags(sqlite_path(&path)?, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
@@ -1768,6 +1770,18 @@ mod tests {
         cache.flush();
         cache.checked(&during.snapshot, None).unwrap();
         assert!(!cache.pending(&catalog, 100).unwrap().snapshot.since_checked);
+    }
+
+    /// The usage of a cache another process holds for a start over is not read (the read waits for the hold, and gives
+    /// up): a read holds the cache shared while it reads, as the cache's own connections do.
+    #[test]
+    fn read_usage_is_refused_while_a_start_over_holds_the_cache() {
+        let dir = test_folder(SCRATCH, "usage-held").unwrap();
+        drop(open(&dir, 1 << 30));
+        let held = pg_schema::Live::exclusive(&cache_path(&dir)).unwrap().expect("free");
+        assert!(ThumbCache::read_usage(&dir).is_err(), "held for a start over: not read");
+        drop(held);
+        assert!(ThumbCache::read_usage(&dir).unwrap().is_some(), "read once free");
     }
 
     #[test]

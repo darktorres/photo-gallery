@@ -104,15 +104,18 @@ All 334 files in the ledger were read in full, in ledger order.
 
 These were settled while the fixes were checked. Each one changes what gets built, so each is recorded here.
 
-1. **C-36 temp names are per kind** (`.rating` and `.turns`), not a per-file queue serialization. This keeps the queue contract and fixes the shared-temp collision at its source.
-2. **C-2(d) is dropped.** The finding's premise was false: `known` None means "the file held no rating when last synced", and the existing three-way sync test adopts an external change. The queued-rating guard covers the finding's case.
-3. **C-39: a sharing violation on an existing folder is a counted attempt.** The job waits at the cap for the next change. The alternative, uncounted waiting, can loop forever on a file another program holds open.
-4. **C-41: writeback and crop refuse folders whose names end in a dot or space**, with a typed error. ExifTool cannot take `\\?\` paths, so ExifTool-bound jobs get the same refusal. This is a limit with a refusal, not a silent write to a sibling photo.
-5. **C-46 and C-48: no shared Python modules.** The eval scripts run with `python -I`, which drops the script's directory from `sys.path`, so a sibling import fails. Each script carries its own helper.
-6. **C-46: the nvImageCodec version cited is 0.10.0.9**, the version the numbers were measured with. `eval/jpeg-decoders/requirements.txt` still pins 0.9.0.20. Changing the pin, and pinning `nvjpeg64_13.dll` back to 13.2.3 after the install replaced it, are left to the user.
-7. **C-55: the `$proc.ExitCode` change is dropped**, because the claim did not reproduce in a probe.
-8. **C-50** opens the four FFmpeg MJPEG decoders eagerly in `Decoders::new`, and the bench returns the input so its drop falls outside the measured call.
-9. **C-12: unheld extensions are marked missing at open**, rather than skipped at each reader. Their queued writes are then dropped by the existing `file_gone` path; see Behaviour changes.
+**Status:** implementation of the fixes has not started. nvImageCodec is kept for now, by decision of the user; see the
+eval notes in `JPEG_DECODERS.md`.
+
+1. **C-36 temp names are per kind** (`.rating` and `.turns`), not a per-file queue serialization. This keeps the queue contract and fixes the shared-temp collision at its source. *Confirmed by the user.*
+2. **C-2(d) is dropped.** The finding's premise was false: `known` None means "the file held no rating when last synced", and the existing three-way sync test adopts an external change. The queued-rating guard covers the finding's case. *Confirmed by the user.*
+3. **C-39: a sharing violation on an existing folder is a counted attempt.** The job waits at the cap for the next change. The alternative, uncounted waiting, can loop forever on a file another program holds open. *Confirmed by the user.*
+4. **C-41: writeback and crop refuse folders whose names end in a dot or space**, with a typed error. ExifTool cannot take `\\?\` paths, so ExifTool-bound jobs get the same refusal. This is a limit with a refusal, not a silent write to a sibling photo. *Confirmed by the user.*
+5. **Python isolation: the eval scripts will drop `python -I`, and print their package versions instead.** `-I` was added without a recorded reason. Its only effect that matters here is to keep the script's folder off `sys.path`, which breaks sibling imports. The eval venv already keeps out the user site-packages and any system packages, and `PYTHONPATH` is unset, so the flag guards against nothing this setup uses. What actually ties a number to its environment is the package versions that produced it. Each script runs from its venv (`venv-eval` for torch and nvJPEG, the nvImageCodec venv for `nvimgcodec_bench.py`) and prints the versions of numpy, Pillow, torch and nvImageCodec at the top of its output. Shared helper modules are allowed, since the folder is on `sys.path`. Decision 5 supersedes the earlier "no shared Python modules" choice.
+6. **C-46: the nvImageCodec and nvJPEG pins are settled.** `eval/jpeg-decoders/requirements.txt` pins `nvidia-nvimgcodec-cu13` at 0.10.0.9, the version the numbers were measured with, and `nvidia-nvjpeg` at 13.3.2.43, the latest release, so both share one env with torch. The GPU figures in `JPEG_DECODERS.md` were measured on nvJPEG 13.2.3 and need a rerun on 13.3.2.43.
+7. **C-55: the `$proc.ExitCode` change is dropped**, because the claim did not reproduce in a probe. *Confirmed by the user.*
+8. **C-50** opens the four FFmpeg MJPEG decoders eagerly in `Decoders::new`, and the bench returns the input so its drop falls outside the measured call. *Confirmed by the user.*
+9. **C-12: unheld extensions are marked missing at open**, rather than skipped at each reader. Their queued writes are then dropped by the existing `file_gone` path; see Behaviour changes. *Confirmed by the user.*
 
 ## Conventions for the fixes
 
@@ -597,18 +600,18 @@ Everything else depends on this package.
   - `nvimgcodec_bench.py` already records per-backend failures in the decode path (`:77-82`, `:90-94`). Only the `Decoder`
     construction (`:65-67`) is unguarded: make it report an explicit message, and check `out is None` ("returned no image")
     per backend.
-  - The report notes that installing nvidia-nvimgcodec replaced the shared `nvjpeg64_13.dll` in `venv-eval`; pinning it
-    back to 13.2.3 is left to the user.
+  - Installing nvidia-nvimgcodec without a pin replaced the shared `nvjpeg64_13.dll` in `venv-eval`, because its `[all]`
+    extra pulls in an unpinned `nvidia-nvjpeg`. The requirements file now pins `nvidia-nvjpeg` at 13.3.2.43, so both packages
+    stay in one env.
 - **C-47.** `gpu.py:55` requests the **floor** size, `(im.width // d, im.height // d)`, as `nvjpeg.py:224` does. Pillow's draft
   picks its scale from the request, so the floor request keeps the `1/d` scale. The decoded size is then the ceiling,
   `ceil(W/d)`: 3840x2151 at `d=4` gives 960x538. After `im.draft()`, assert `im.size == (-(-w // d), -(-h // d))`. The
   `nvimgcodec_bench.py` part is dropped: it has no draft and no `d` (`:74-96`), and its shape check is `diff()` at `:49-50`.
   Rerun `gpu.py`, and rewrite `docs/JPEG_DECODERS.md:185-190` (the "Pillow full / scaled" column and footnote 1), which
   the bug explains.
-- **C-48.** `read_ppm` is not shared. `debesheedas.py`, `gpu_encoders.py` and `nvimgcodec_bench.py` run with `python -I`, so a
-  sibling module doesn't import (Decisions, 5). Each script replaces its reader with
+- **C-48.** `read_ppm` is replaced in `debesheedas.py`, `gpu_encoders.py` and `nvimgcodec_bench.py`, which may share one helper module (Decisions, 5). Each replacement is
   `np.ascontiguousarray(np.asarray(Image.open(path)))`; Pillow is a dependency of all three venvs. The contract is the same:
-  uint8, shape `(h, w, 3)`. No module, and no ledger row.
+  uint8, shape `(h, w, 3)`. A shared module would need a ledger row.
 - **C-49.** `png_of` writes to a temp and renames it, and saves with `format='PNG'`. PNGs are made in `prepare()`, serially,
   and only for inputs guetzli will get (`w*h/1e6 <= GUETZLI_MAX_MP`, `encoders.py:42`), so 24 MP PNGs aren't written for nothing.
 - **C-50.** `Decoders::new` opens the four FFmpeg MJPEG decoders eagerly (`src/lib.rs:115-120`), and the lazy path
@@ -689,8 +692,8 @@ Run once, after all edits.
   `verbatim`; the desktop words test. Also `cargo check -p pg-client --target wasm32-unknown-unknown`.
 - `just lint` (ruff, markdownlint); `just lint-qml`; `just qmltest`.
 - `just shots`, by the C-16 recipe: commit first, `-Expect borders` once, then `-Record <fix-commit>`.
-- Python: `ruff check eval tools`; the new Python test recipe (C-53); `python -I` runs of `debesheedas.py`, `gpu_encoders.py`
-  and `nvimgcodec_bench.py` (C-48's reader works under `-I`).
+- Python: `ruff check eval tools`; the new Python test recipe (C-53); each script run from its venv, checking that the
+  version header prints and the output matches the reader's contract (C-48).
 - Python runs that can be done here: `verify.py` before and after the fix, for all three pair sets (C-44, C-45); GPU
   benchmarks with the blocking-sync helper and the ceiling assert (C-46, C-47) in both venvs.
 - Not runnable here, to be reported plainly: callgrind (C-50); the live Yandex path (C-10, C-43); Qt GUI behaviour
@@ -732,7 +735,7 @@ Each is listed so the change is visible, not hidden in a fix.
 - **C-31:** `Stats` gains `stored`, and the cli line uses it. CMYK TIFF crops keep CMYK.
 - **C-56:** GIF screens and frames, and PNG and WebP, are capped. BMP is not (it is bounded by file size).
 - **C-54:** a full run with `--save-baseline` is still archived; only filtered runs are not.
-- **C-46:** the nvImageCodec pin in `eval/jpeg-decoders/requirements.txt` (0.9.0.20) and the measured version (0.10.0.9) disagree. Left to the user.
+- **C-46:** the nvImageCodec pin in `eval/jpeg-decoders/requirements.txt` is now 0.10.0.9, the measured version. The nvJPEG pin is 13.3.2.43, so the GPU figures need a rerun.
 - **C-51 and C-44:** no shared Python module; each script carries its own helper.
 - **Not run:** the callgrind benches (C-50), the live Yandex path (C-10, C-43), and the Qt GUI checks that need a built
   `gallery.exe` (C-15, C-17, C-57).

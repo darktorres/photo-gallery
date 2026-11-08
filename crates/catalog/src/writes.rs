@@ -1,9 +1,11 @@
 //! The file writes queue (`file_writes`): what the user changed that the files themselves should carry, and what
 //! the writer does with it. A rating or a turn is queued here in the same transaction that changes the catalog
 //! (the producers: `set_rating`, `queue_rotation`). The writer takes the oldest settled job with `next_ready`, records
-//! the temp file it made with `record_temp`, and ends the job with `done` (with what the write changed in the
-//! catalog, a `WriteEffect`), `failed`, or `drop_gone`. Each call is one transaction or one statement, so no reader
-//! sees a write both done and still queued.
+//! the temp file it made with `record_temp` once the original is open for the copy (a recorded temp means the copy
+//! into the original may have started), and ends the job with `done` (with what the write changed in the catalog, a
+//! `WriteEffect`), `failed`, or `drop_gone`. A recorded temp is never discarded: a copy that keeps failing stays
+//! recorded, and `retry_copies` lets each start of the writer try it again. Each call is one transaction or one
+//! statement, so no reader sees a write both done and still queued.
 
 use crate::Catalog;
 use crate::Result;
@@ -12,6 +14,7 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
 use pg_model::format::Format;
 use pg_model::ids::FileId;
+use pg_model::media::Kind;
 use pg_model::orientation::turns_swap;
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
@@ -30,7 +33,8 @@ pub struct Job {
     pub kind: WriteKind,
     /// The rating, or the quarter turns still to write (0 to 3).
     pub value: i64,
-    /// Set once the new content is complete: its path, and the value it carries.
+    /// Set once the copy of the new content into the original may have started (the temp is complete, and the
+    /// original is open for it): the temp's path, and the value it carries.
     pub temp: Option<(RulePath, i64)>,
     /// Failed attempts so far.
     pub attempts: i64,
@@ -60,9 +64,17 @@ pub enum WriteEffect {
     Nothing,
 }
 
+/// Whether a file of `kind` (`files.kind`) and analyzed `format` (`None` when it isn't analyzed yet) may hold a rating
+/// of its own: an image (a video keeps its rating in the catalog, as rewriting it would copy GBs), whose format can hold
+/// one or isn't known yet. The writer decides for an unknown format once it has read the file (`pg_writeback`).
+pub fn rating_in_file_possible(kind: &str, format: Option<&str>) -> bool {
+    kind == Kind::Image.key() && format.and_then(Format::from_name).is_none_or(pg_metadata::can_hold_rating)
+}
+
 /// Rate a file: 1–5, or `None` to clear. The catalog changes at once. With `write_back`, the rating is also queued
-/// for the file itself (`pg_writeback`), when its format can hold one and it differs from what the file
-/// holds; clearing writes 0 only into a file that holds a rating.
+/// for the file itself (`pg_writeback`) when it may hold one ([`rating_in_file_possible`]: an image whose format can
+/// hold one, or that isn't analyzed yet, but not one whose analysis failed) and it differs from what the file holds;
+/// clearing writes 0 only into a file that holds a rating.
 pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
     let conn = &catalog.conn;
     let tx = crate::write_transaction(conn)?;
@@ -75,11 +87,18 @@ pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, wr
         )?,
         None => tx.execute("DELETE FROM ratings WHERE file_id = ?1", [file_id])?,
     };
-    let format: Option<String> = tx
-        .query_row("SELECT format FROM analysis WHERE file_id = ?1 AND error IS NULL", [file_id], |r| r.get(0))
-        .optional()?
-        .flatten();
-    let can_hold = format.as_deref().and_then(Format::from_name).is_some_and(pg_metadata::can_hold_rating);
+    // The file's kind, its analyzed format, and whether its analysis failed (a file the import couldn't read isn't
+    // written into).
+    let target: Option<(String, Option<String>, bool)> = tx
+        .query_row(
+            "SELECT f.kind, a.format, a.error IS NOT NULL FROM files f LEFT JOIN analysis a ON a.file_id = f.id
+             WHERE f.id = ?1",
+            [file_id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .optional()?;
+    let can_hold =
+        target.is_some_and(|(kind, format, failed)| !failed && rating_in_file_possible(&kind, format.as_deref()));
     let in_file: Option<u8> =
         tx.query_row("SELECT value FROM file_ratings WHERE file_id = ?1", [file_id], |r| r.get(0)).optional()?;
     // What the file should hold: the rating, or none (0) if it holds one and the rating is cleared.
@@ -97,10 +116,11 @@ pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, wr
         )?;
     } else {
         // Back to what the file holds (or not written back): nothing left to write. A write already being
-        // copied in finishes, and then this value follows it.
+        // copied in finishes, and then this value follows it; its attempts start again, so a copy that had failed
+        // up to the cap is tried again for the change.
         tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rating' AND temp IS NULL", [file_id])?;
         tx.execute(
-            "UPDATE file_writes SET value = ?2 WHERE file_id = ?1 AND kind = 'rating'",
+            "UPDATE file_writes SET value = ?2, attempts = 0 WHERE file_id = ?1 AND kind = 'rating'",
             params![file_id, wanted.unwrap_or(0)],
         )?;
     }
@@ -187,18 +207,23 @@ pub fn left_to_write(catalog: &Catalog) -> Result<i64> {
     )?)
 }
 
-/// The latest errors of the queue, for the command line.
+/// The latest errors of the queue, for the command line: newest first. `error` is set only by [`failed`], which
+/// stamps `queued` with the time of the failure, so `queued` orders them; the file and the kind break a tie within a
+/// second, so the rows shown under the limit are always the same.
 pub fn recent_errors(catalog: &Catalog, limit: usize) -> Result<Vec<String>> {
     let conn = &catalog.conn;
-    let mut stmt = conn.prepare("SELECT error FROM file_writes WHERE error IS NOT NULL LIMIT ?1")?;
+    let mut stmt = conn.prepare(
+        "SELECT error FROM file_writes WHERE error IS NOT NULL ORDER BY queued DESC, file_id DESC, kind DESC LIMIT ?1",
+    )?;
     let errors = stmt
         .query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |r| r.get(0))?
         .collect::<rusqlite::Result<Vec<String>>>()?;
     Ok(errors)
 }
 
-/// The new content of a job is complete at `temp`, carrying `value`. The copy into the file comes next; until `done`,
-/// readers see the file as being written (`pg_model::state::FileState::writing`).
+/// The new content of a job is complete and durable at `temp`, carrying `value`, and the original is open for the copy
+/// into it, which starts next: from here the original may be part-written. Until `done`, readers see the file as being
+/// written (`pg_model::state::FileState::writing`), and the writer finishes the copy from `temp` before anything else.
 pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, value: i64) -> Result<()> {
     let conn = &catalog.conn;
     let bytes = catalog.rules().join(temp);
@@ -285,21 +310,12 @@ pub fn drop_gone(catalog: &Catalog, job: &Job) -> Result<()> {
     Ok(())
 }
 
-/// A copy that failed at the attempts' cap is given up: its temp is discarded by the caller, and the job no longer
-/// counts as being written. The file's content is unknown, as after an interrupted copy, so `after` (its stat now,
-/// when known) is recorded with no size or mtime before, and the analysis is redone. The row stays, with its error.
-pub fn abandon_temp(catalog: &Catalog, job: &Job, after: Option<(i64, i64)>) -> Result<()> {
+/// The copies into the originals that failed up to the cap get their attempts back: the writer calls it when it starts,
+/// so each start tries a stuck copy again. Its temp is the only whole copy of the new content while the original may be
+/// part-written, so it is never given up. The number of rows reset.
+pub fn retry_copies(catalog: &Catalog) -> Result<usize> {
     let conn = &catalog.conn;
-    let tx = crate::write_transaction(conn)?;
-    if let Some(after) = after {
-        file_rewritten(&tx, job.file_id, (-1, -1), after, None)?;
-    }
-    tx.execute(
-        "UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = ?2",
-        params![job.file_id.get(), job.kind.key()],
-    )?;
-    tx.commit()?;
-    Ok(())
+    Ok(conn.execute("UPDATE file_writes SET attempts = 0 WHERE temp IS NOT NULL AND attempts > 0", [])?)
 }
 
 /// Record what the file holds now (the rating it was last written with, or the import's reads).
@@ -423,6 +439,131 @@ mod tests {
         assert_eq!(recent_errors(&c, 5).unwrap(), ["offline"]);
         drop_gone(&c, &job).unwrap();
         assert_eq!(remaining(&c).unwrap(), 0);
+    }
+
+    /// The latest errors come first, a tie within a second broken by the file and the kind, and the limit keeps the
+    /// newest.
+    #[test]
+    fn recent_errors_are_the_newest_in_a_fixed_order() {
+        let c = library(PathRules::Windows);
+        set_rating(&c, FileId::new(1), Rating::new(3), true).unwrap();
+        set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
+        queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
+        let fail = |id: i64, kind: &str, queued: i64, error: &str| {
+            c.conn
+                .execute(
+                    "UPDATE file_writes SET error = ?3, queued = ?4 WHERE file_id = ?1 AND kind = ?2",
+                    params![id, kind, error, queued],
+                )
+                .unwrap();
+        };
+        fail(1, "rating", 100, "oldest");
+        fail(1, "rotation", 200, "tied, lower file");
+        fail(2, "rating", 200, "tied, higher file");
+        assert_eq!(recent_errors(&c, 5).unwrap(), ["tied, higher file", "tied, lower file", "oldest"]);
+        assert_eq!(recent_errors(&c, 2).unwrap(), ["tied, higher file", "tied, lower file"]);
+        // A tie on the file too: the kind decides.
+        fail(1, "rating", 200, "tied, rating");
+        assert_eq!(recent_errors(&c, 3).unwrap(), ["tied, higher file", "tied, lower file", "tied, rating"]);
+    }
+
+    fn attempts(c: &Catalog, id: i64, kind: &str) -> i64 {
+        c.conn
+            .query_row("SELECT attempts FROM file_writes WHERE file_id = ?1 AND kind = ?2", params![id, kind], |r| {
+                r.get(0)
+            })
+            .unwrap()
+    }
+
+    /// A finishing copy is done with the value its temp carries: a turn or a rating made after the temp was recorded
+    /// stays queued for the rest, with its attempts back to 0.
+    #[test]
+    fn a_finished_copy_leaves_a_later_change_queued() {
+        let c = library(PathRules::Windows);
+        // Three turns recorded in a temp; then one more turn (a full circle in all), and a failed copy.
+        queue_rotation(&c, FileId::new(1), Turns::new(3)).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        let temp = PathRules::Windows.parse(r"D:\p\.b.jpg.turns.pg-write").unwrap();
+        record_temp(&c, &job, &temp, 3).unwrap();
+        queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
+        assert_eq!(raw::queued(&c, 1, "rotation"), Some(0), "kept while its temp is recorded");
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        assert_eq!(job.temp, Some((temp.clone(), 3)));
+        failed(&c, &job, "locked", false).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        let rewrite = Rewrite { before: (-1, -1), after: (31, 7), metadata_only: None };
+        done(&c, &Job { value: 3, ..job.clone() }, WriteEffect::TurnedBack { rewrite, turns: Turns::new(3) }).unwrap();
+        // Three turns are in the file: one is left to make the full circle.
+        assert_eq!(raw::queued(&c, 1, "rotation"), Some(1));
+        assert_eq!(attempts(&c, 1, "rotation"), 0);
+        let rest = next_ready(&c, 0).unwrap().unwrap();
+        assert_eq!(rest.temp, None);
+        drop_gone(&c, &rest).unwrap();
+
+        // A rating of 3 recorded in a temp, then 5: the copy of 3 is done, and 5 stays queued.
+        set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        assert_eq!((job.file_id, job.kind), (FileId::new(2), WriteKind::Rating));
+        let temp = PathRules::Windows.parse(r"E:\p\.a.png.rating.pg-write").unwrap();
+        record_temp(&c, &job, &temp, 3).unwrap();
+        set_rating(&c, FileId::new(2), Rating::new(5), true).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        assert_eq!((job.file_id, job.value, job.temp.as_ref().map(|t| t.1)), (FileId::new(2), 5, Some(3)));
+        let rewrite = Rewrite { before: (-1, -1), after: (11, 9), metadata_only: None };
+        done(&c, &Job { value: 3, ..job.clone() }, WriteEffect::FileRating { rewrite, rating: 3 }).unwrap();
+        assert_eq!(raw::queued(&c, 2, "rating"), Some(5));
+        let in_file: u8 =
+            c.conn.query_row("SELECT value FROM file_ratings WHERE file_id = 2", [], |r| r.get(0)).unwrap();
+        assert_eq!(in_file, 3, "the file holds what the temp carried");
+    }
+
+    /// A copy that failed up to the cap keeps its temp, and is tried again: after a change to the file (even one that
+    /// only goes back to what the file holds), and at each start of the writer.
+    #[test]
+    fn a_stuck_copy_is_tried_again_after_a_change_and_at_a_start() {
+        let c = library(PathRules::Windows);
+        set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
+        let job = next_ready(&c, 0).unwrap().unwrap();
+        let temp = PathRules::Windows.parse(r"E:\p\.a.png.rating.pg-write").unwrap();
+        record_temp(&c, &job, &temp, 3).unwrap();
+        let stuck = |c: &Catalog| {
+            for _ in 0..MAX_ATTEMPTS {
+                failed(c, &job, "locked", false).unwrap();
+            }
+            assert_eq!(attempts(c, 2, "rating"), MAX_ATTEMPTS);
+            assert!(next_ready(c, 0).unwrap().is_none(), "at the cap");
+        };
+        stuck(&c);
+        // Back to what the file holds (none): the row stays for its copy, with its attempts back.
+        set_rating(&c, FileId::new(2), None, true).unwrap();
+        assert_eq!(attempts(&c, 2, "rating"), 0);
+        assert_eq!(next_ready(&c, 0).unwrap().unwrap().temp, Some((temp, 3)));
+        stuck(&c);
+        assert_eq!(retry_copies(&c).unwrap(), 1);
+        assert_eq!(attempts(&c, 2, "rating"), 0);
+        // A failing write without a temp is not a copy: it keeps its attempts.
+        queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
+        let turn = Job { file_id: FileId::new(1), kind: WriteKind::Turns, value: 1, temp: None, attempts: 0 };
+        failed(&c, &turn, "locked", false).unwrap();
+        assert_eq!(retry_copies(&c).unwrap(), 0);
+        assert_eq!(attempts(&c, 1, "rotation"), 1);
+    }
+
+    /// A rating is queued for an image whose format can hold one or isn't known yet (not analyzed), and not for a
+    /// video, a format that can't hold one, or a file whose analysis failed.
+    #[test]
+    fn a_rating_is_queued_for_the_files_that_may_hold_one() {
+        let c = crate::browse::fixtures::mixed_library(PathRules::Windows);
+        // 5: a video; 7: its analysis failed; 8: not analyzed yet; 4: a BMP.
+        for id in [4, 5, 7, 8] {
+            set_rating(&c, FileId::new(id), Rating::new(4), true).unwrap();
+        }
+        let queued: Vec<Option<i64>> = [4, 5, 7, 8].iter().map(|&id| raw::queued(&c, id, "rating")).collect();
+        assert_eq!(queued, [None, None, None, Some(4)]);
+        assert!(rating_in_file_possible("image", None));
+        assert!(rating_in_file_possible("image", Some("jpeg")));
+        assert!(!rating_in_file_possible("image", Some("bmp")));
+        assert!(!rating_in_file_possible("video", None));
     }
 
     #[test]

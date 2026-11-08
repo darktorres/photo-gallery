@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use fluent_bundle::{FluentArgs, FluentBundle, FluentResource};
 use pg_model::detection::Class;
 use pg_model::query::{BorderFacet, Choice, DateRange, MediaType, Query, Range, RatingFilter, Shape, Status};
+use pg_model::write::WriteKind;
 use unic_langid::LanguageIdentifier;
 
 use crate::input::day_text;
@@ -74,58 +75,312 @@ pub enum Message {
     FilterUnrated,
     FilterWithDuplicates,
     FilterWithoutDuplicates,
-    FilterTaken { days: String },
-    FilterModified { days: String },
-    FilterRangeMb { from: String, to: String },
-    FilterRangeMp { from: String, to: String },
-    FilterRangeSeconds { from: String, to: String },
-    FilterBorders { values: String },
+    FilterTaken {
+        days: String,
+    },
+    FilterModified {
+        days: String,
+    },
+    FilterRangeMb {
+        from: String,
+        to: String,
+    },
+    FilterRangeMp {
+        from: String,
+        to: String,
+    },
+    FilterRangeSeconds {
+        from: String,
+        to: String,
+    },
+    FilterBorders {
+        values: String,
+    },
     FilterBordersMarked,
     FilterBordersNotMarked,
-    FilterName { name: String },
-    BadgeVideo { time: String },
+    FilterName {
+        name: String,
+    },
+    BadgeVideo {
+        time: String,
+    },
     BadgeApng,
     InfoNotImported,
-    InfoDims { width: String, height: String },
-    InfoSizeMb { size: String },
-    InfoSizeKb { size: String },
+    InfoDims {
+        width: String,
+        height: String,
+    },
+    InfoSizeMb {
+        size: String,
+    },
+    InfoSizeKb {
+        size: String,
+    },
     InfoKept,
-    InfoLine { path: String, dims: String, size: String, kept: String, borders: String },
+    InfoLine {
+        path: String,
+        dims: String,
+        size: String,
+        kept: String,
+        borders: String,
+    },
     ClassBlack,
     ClassWhite,
     ClassColor,
     ClassBlur,
-    BordersInfo { names: String, left: String, top: String, right: String, bottom: String, marked: String },
+    BordersInfo {
+        names: String,
+        left: String,
+        top: String,
+        right: String,
+        bottom: String,
+        marked: String,
+    },
     BordersMarked,
-    PassScan { root: String, count: String },
+    PassScan {
+        root: String,
+        count: String,
+    },
     PassImport,
     PassBorders,
     PassCrop,
-    PassThumbs { height: String },
-    PassWorking { what: String, done: String, total: String, rate: String, eta: String, failed: String },
-    PassFailed { count: String },
-    EtaSeconds { seconds: String },
-    EtaMinutes { minutes: String },
-    EtaHours { hours: String, minutes: String },
-    WritingChanges { count: usize },
-    ChangesUnwritten { count: usize, error: String },
-    UnreadableFolders { root: String, count: String },
-    ScanFailed { root: String, error: String },
-    RootRefused { root: String, reason: String },
-    ScanNote { root: String, kind: String, count: String },
-    RoundPanicked { message: String },
-    CacheFull { height: String, made: String },
-    CroppedSaved { count: usize, folder: String },
-    CroppedSkipped { count: usize },
-    CroppedFailed { failed: String, error: String },
+    PassThumbs {
+        height: String,
+    },
+    PassWorking {
+        what: String,
+        done: String,
+        total: String,
+        rate: String,
+        eta: String,
+        failed: String,
+    },
+    PassFailed {
+        count: String,
+    },
+    EtaSeconds {
+        seconds: String,
+    },
+    EtaMinutes {
+        minutes: String,
+    },
+    EtaHours {
+        hours: String,
+        minutes: String,
+    },
+    WritingChanges {
+        count: usize,
+    },
+    ChangesUnwritten {
+        count: usize,
+        error: String,
+    },
+    WriteQueueFailed {
+        error: String,
+    },
+    WriteIncomplete {
+        file: String,
+        temp: String,
+        error: String,
+    },
+    WriteFolderRefused {
+        file: String,
+        folder: String,
+    },
+    WriteDropped {
+        kind: WriteKind,
+        count: usize,
+    },
+    UnreadableFolders {
+        root: String,
+        count: String,
+    },
+    ScanFailed {
+        root: String,
+        error: String,
+    },
+    RootRefused {
+        root: String,
+        reason: String,
+    },
+    ScanNote {
+        root: String,
+        kind: String,
+        count: String,
+    },
+    RoundPanicked {
+        message: String,
+    },
+    FilePanicked {
+        message: String,
+    },
+    CacheFull {
+        height: String,
+        made: String,
+    },
+    CroppedSaved {
+        count: usize,
+        folder: String,
+    },
+    CroppedSkipped {
+        count: usize,
+    },
+    CroppedFailed {
+        failed: String,
+        error: String,
+    },
     YandexCaptcha,
     YandexNotStill,
     YandexUploading,
     YandexOtherSizes,
     YandexSimilar,
-    YandexUnreadablePhoto { error: String },
-    YandexSimilarStopped { shown: String, reason: String },
-    YandexSimilarFailed { reason: String },
+    YandexUnreadablePhoto {
+        error: String,
+    },
+    YandexSimilarStopped {
+        shown: String,
+        reason: String,
+    },
+    YandexSimilarFailed {
+        reason: String,
+    },
+    YandexNotStarted {
+        error: String,
+    },
+    /// The thumbnail cache was started over, for `reason`; `path` is where the old file is kept (a damaged one) or the
+    /// cache file made anew (one this build can't use). Each reason has its own entry.
+    ThumbCacheStartedOver {
+        reason: CacheStartOver,
+        path: String,
+    },
+    /// The library's status line while the background work is paused and no pass is running.
+    WorkPaused,
+    /// The library's status line while the background work is paused in a pass (`status`: the pass's line).
+    PausedPass {
+        status: String,
+    },
+    /// The newest notice from the job, with how many others came in since the last one shown.
+    NoticeMore {
+        notice: String,
+        count: usize,
+    },
+    /// A folder added that was already in the library: it is rescanned.
+    FolderAlreadyAdded {
+        folder: String,
+    },
+    /// A folder not added because the scanner refuses it, for `reason`.
+    FolderRefused {
+        folder: String,
+        reason: String,
+    },
+    /// A folder that couldn't be added, for `error` (the catalog's).
+    FolderNotAdded {
+        error: String,
+    },
+    /// A folder that couldn't be removed from the library, for `error`.
+    FolderNotRemoved {
+        error: String,
+    },
+    /// A rescan of the library that couldn't start, for `error`.
+    RescanFailed {
+        error: String,
+    },
+    /// The background work (the job and the writer) couldn't start, for `error`: nothing is scanned or written.
+    LibraryUnavailable {
+        error: String,
+    },
+    /// The library's folders couldn't be read from the catalog, for `error`.
+    FoldersUnreadable {
+        error: String,
+    },
+    /// A round of the background job that failed, for `error`.
+    RoundFailed {
+        error: String,
+    },
+    /// A crop job that failed before it could save anything, for `error`.
+    CropFailed {
+        error: String,
+    },
+    /// The Yandex panel's line while a search or a save starts.
+    YandexStarting,
+    /// A save of `count` results about to start.
+    YandexSaving {
+        count: usize,
+    },
+    /// The `n`th of `of` results being downloaded.
+    YandexSavingFile {
+        n: String,
+        of: String,
+    },
+    /// A save that wrote all its `count` files into `folder`.
+    YandexSaved {
+        count: usize,
+        folder: String,
+    },
+    /// A save in which some files failed: how many were written, how many failed, and the first failure.
+    YandexSavedFailed {
+        written: String,
+        failed: String,
+        error: String,
+    },
+    /// A result that couldn't be downloaded, for `error`.
+    YandexDownloadFailed {
+        url: String,
+        error: String,
+    },
+    /// A downloaded result that couldn't be written to `path`, for `error`.
+    YandexWriteFailed {
+        url: String,
+        path: String,
+        error: String,
+    },
+    /// A search or a save stopped by an internal error (a panic, whose details are in gallery.log).
+    YandexStopped,
+    /// Yandex answered with an HTTP `status` other than success.
+    YandexHttpStatus {
+        status: String,
+    },
+    /// A connection, TLS or timeout failure of a Yandex request.
+    YandexTransport {
+        error: String,
+    },
+    /// A Yandex answer without the data the app reads (`detail`: what was missing).
+    YandexUnexpected {
+        detail: String,
+    },
+    /// A recorded Yandex session (the screenshot fixture's) that can't answer, for `error`.
+    YandexRecorded {
+        error: String,
+    },
+    /// The catalog couldn't be opened at start, for `error`: the app ends after the box.
+    CatalogUnopened {
+        error: String,
+    },
+    /// The first line of the box for a panic that ends the app.
+    InternalError,
+    /// The box's last line when the panic's details were written to `log`.
+    DetailsInLog {
+        log: String,
+    },
+    /// The box's last line when writing the details to `log` failed, for `error`.
+    DetailsNotLogged {
+        log: String,
+        error: String,
+    },
+}
+
+/// Why the thumbnail cache was started over: the cache's reasons (`pg_thumbcache::StartOverReason`), which the front
+/// end maps in, as this crate depends on no cache type.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CacheStartOver {
+    /// SQLite found the file damaged: moved aside to `path`.
+    Damaged,
+    /// The file was not a database at all: moved aside to `path`.
+    NotADatabase,
+    /// The cache was made for another catalog: deleted and made anew.
+    OtherCatalog,
+    /// The cache was made by another version of the app: deleted and made anew.
+    OtherBuild,
 }
 
 impl Message {
@@ -186,11 +441,16 @@ impl Message {
             Message::EtaHours { .. } => "eta-hours",
             Message::WritingChanges { .. } => "writing-changes",
             Message::ChangesUnwritten { .. } => "changes-unwritten",
+            Message::WriteQueueFailed { .. } => "write-queue-failed",
+            Message::WriteIncomplete { .. } => "write-incomplete",
+            Message::WriteFolderRefused { .. } => "write-folder-refused",
+            Message::WriteDropped { .. } => "write-dropped",
             Message::UnreadableFolders { .. } => "unreadable-folders",
             Message::ScanFailed { .. } => "scan-failed",
             Message::RootRefused { .. } => "root-refused",
             Message::ScanNote { .. } => "scan-note",
             Message::RoundPanicked { .. } => "round-panicked",
+            Message::FilePanicked { .. } => "file-panicked",
             Message::CacheFull { .. } => "cache-full",
             Message::CroppedSaved { .. } => "cropped-saved",
             Message::CroppedSkipped { .. } => "cropped-skipped",
@@ -203,6 +463,41 @@ impl Message {
             Message::YandexUnreadablePhoto { .. } => "yandex-unreadable-photo",
             Message::YandexSimilarStopped { .. } => "yandex-similar-stopped",
             Message::YandexSimilarFailed { .. } => "yandex-similar-failed",
+            Message::YandexNotStarted { .. } => "yandex-not-started",
+            Message::ThumbCacheStartedOver { reason, .. } => match reason {
+                CacheStartOver::Damaged => "thumb-cache-damaged",
+                CacheStartOver::NotADatabase => "thumb-cache-not-a-database",
+                CacheStartOver::OtherCatalog => "thumb-cache-other-catalog",
+                CacheStartOver::OtherBuild => "thumb-cache-other-build",
+            },
+            Message::WorkPaused => "work-paused",
+            Message::PausedPass { .. } => "paused-pass",
+            Message::NoticeMore { .. } => "notice-more",
+            Message::FolderAlreadyAdded { .. } => "folder-already-added",
+            Message::FolderRefused { .. } => "folder-refused",
+            Message::FolderNotAdded { .. } => "folder-not-added",
+            Message::FolderNotRemoved { .. } => "folder-not-removed",
+            Message::RescanFailed { .. } => "rescan-failed",
+            Message::LibraryUnavailable { .. } => "library-unavailable",
+            Message::FoldersUnreadable { .. } => "folders-unreadable",
+            Message::RoundFailed { .. } => "round-failed",
+            Message::CropFailed { .. } => "crop-failed",
+            Message::YandexStarting => "yandex-starting",
+            Message::YandexSaving { .. } => "yandex-saving",
+            Message::YandexSavingFile { .. } => "yandex-saving-file",
+            Message::YandexSaved { .. } => "yandex-saved",
+            Message::YandexSavedFailed { .. } => "yandex-saved-failed",
+            Message::YandexDownloadFailed { .. } => "yandex-download-failed",
+            Message::YandexWriteFailed { .. } => "yandex-write-failed",
+            Message::YandexStopped => "yandex-stopped",
+            Message::YandexHttpStatus { .. } => "yandex-http-status",
+            Message::YandexTransport { .. } => "yandex-transport",
+            Message::YandexUnexpected { .. } => "yandex-unexpected",
+            Message::YandexRecorded { .. } => "yandex-recorded",
+            Message::CatalogUnopened { .. } => "catalog-unopened",
+            Message::InternalError => "internal-error",
+            Message::DetailsInLog { .. } => "details-in-log",
+            Message::DetailsNotLogged { .. } => "details-not-logged",
         }
     }
 
@@ -284,6 +579,27 @@ impl Message {
                 plural(&mut a, *count);
                 a.set("error", error.as_str());
             }
+            Message::WriteQueueFailed { error } => {
+                a.set("error", error.as_str());
+            }
+            Message::WriteIncomplete { file, temp, error } => {
+                a.set("file", file.as_str());
+                a.set("temp", temp.as_str());
+                a.set("error", error.as_str());
+            }
+            Message::WriteFolderRefused { file, folder } => {
+                a.set("file", file.as_str());
+                a.set("folder", folder.as_str());
+            }
+            Message::WriteDropped { kind, count } => {
+                plural(&mut a, *count);
+                // A selector, not shown: the entry has the words for each kind.
+                let kind = match kind {
+                    WriteKind::Rating => "rating",
+                    WriteKind::Turns => "turns",
+                };
+                a.set("kind", kind);
+            }
             Message::UnreadableFolders { root, count } => {
                 a.set("root", root.as_str());
                 a.set("count", count.as_str());
@@ -301,7 +617,7 @@ impl Message {
                 a.set("kind", kind.as_str());
                 a.set("count", count.as_str());
             }
-            Message::RoundPanicked { message } => {
+            Message::RoundPanicked { message } | Message::FilePanicked { message } => {
                 a.set("message", message.as_str());
             }
             Message::CacheFull { height, made } => {
@@ -326,6 +642,72 @@ impl Message {
             }
             Message::YandexSimilarFailed { reason } => {
                 a.set("reason", reason.as_str());
+            }
+            Message::YandexNotStarted { error }
+            | Message::FolderNotAdded { error }
+            | Message::FolderNotRemoved { error }
+            | Message::RescanFailed { error }
+            | Message::LibraryUnavailable { error }
+            | Message::FoldersUnreadable { error }
+            | Message::RoundFailed { error }
+            | Message::CropFailed { error }
+            | Message::YandexTransport { error }
+            | Message::YandexRecorded { error }
+            | Message::CatalogUnopened { error } => {
+                a.set("error", error.as_str());
+            }
+            Message::PausedPass { status } => {
+                a.set("status", status.as_str());
+            }
+            Message::NoticeMore { notice, count } => {
+                plural(&mut a, *count);
+                a.set("notice", notice.as_str());
+            }
+            Message::FolderAlreadyAdded { folder } => {
+                a.set("folder", folder.as_str());
+            }
+            Message::FolderRefused { folder, reason } => {
+                a.set("folder", folder.as_str());
+                a.set("reason", reason.as_str());
+            }
+            Message::YandexSaving { count } => plural(&mut a, *count),
+            Message::YandexSavingFile { n, of } => {
+                a.set("n", n.as_str());
+                a.set("of", of.as_str());
+            }
+            Message::YandexSaved { count, folder } => {
+                plural(&mut a, *count);
+                a.set("folder", folder.as_str());
+            }
+            Message::YandexSavedFailed { written, failed, error } => {
+                a.set("written", written.as_str());
+                a.set("failed", failed.as_str());
+                a.set("error", error.as_str());
+            }
+            Message::YandexDownloadFailed { url, error } => {
+                a.set("url", url.as_str());
+                a.set("error", error.as_str());
+            }
+            Message::YandexWriteFailed { url, path, error } => {
+                a.set("url", url.as_str());
+                a.set("path", path.as_str());
+                a.set("error", error.as_str());
+            }
+            Message::YandexHttpStatus { status } => {
+                a.set("status", status.as_str());
+            }
+            Message::YandexUnexpected { detail } => {
+                a.set("detail", detail.as_str());
+            }
+            Message::DetailsInLog { log } => {
+                a.set("log", log.as_str());
+            }
+            Message::DetailsNotLogged { log, error } => {
+                a.set("log", log.as_str());
+                a.set("error", error.as_str());
+            }
+            Message::ThumbCacheStartedOver { path, .. } => {
+                a.set("path", path.as_str());
             }
             _ => {}
         };
@@ -391,11 +773,16 @@ impl Message {
             Message::EtaHours { hours: s(), minutes: s() },
             Message::WritingChanges { count: 1 },
             Message::ChangesUnwritten { count: 1, error: s() },
+            Message::WriteQueueFailed { error: s() },
+            Message::WriteIncomplete { file: s(), temp: s(), error: s() },
+            Message::WriteFolderRefused { file: s(), folder: s() },
+            Message::WriteDropped { kind: WriteKind::Rating, count: 1 },
             Message::UnreadableFolders { root: s(), count: s() },
             Message::ScanFailed { root: s(), error: s() },
             Message::RootRefused { root: s(), reason: s() },
             Message::ScanNote { root: s(), kind: s(), count: s() },
             Message::RoundPanicked { message: s() },
+            Message::FilePanicked { message: s() },
             Message::CacheFull { height: s(), made: s() },
             Message::CroppedSaved { count: 1, folder: s() },
             Message::CroppedSkipped { count: 1 },
@@ -408,6 +795,39 @@ impl Message {
             Message::YandexUnreadablePhoto { error: s() },
             Message::YandexSimilarStopped { shown: s(), reason: s() },
             Message::YandexSimilarFailed { reason: s() },
+            Message::YandexNotStarted { error: s() },
+            Message::ThumbCacheStartedOver { reason: CacheStartOver::Damaged, path: s() },
+            Message::ThumbCacheStartedOver { reason: CacheStartOver::NotADatabase, path: s() },
+            Message::ThumbCacheStartedOver { reason: CacheStartOver::OtherCatalog, path: s() },
+            Message::ThumbCacheStartedOver { reason: CacheStartOver::OtherBuild, path: s() },
+            Message::WorkPaused,
+            Message::PausedPass { status: s() },
+            Message::NoticeMore { notice: s(), count: 1 },
+            Message::FolderAlreadyAdded { folder: s() },
+            Message::FolderRefused { folder: s(), reason: s() },
+            Message::FolderNotAdded { error: s() },
+            Message::FolderNotRemoved { error: s() },
+            Message::RescanFailed { error: s() },
+            Message::LibraryUnavailable { error: s() },
+            Message::FoldersUnreadable { error: s() },
+            Message::RoundFailed { error: s() },
+            Message::CropFailed { error: s() },
+            Message::YandexStarting,
+            Message::YandexSaving { count: 1 },
+            Message::YandexSavingFile { n: s(), of: s() },
+            Message::YandexSaved { count: 1, folder: s() },
+            Message::YandexSavedFailed { written: s(), failed: s(), error: s() },
+            Message::YandexDownloadFailed { url: s(), error: s() },
+            Message::YandexWriteFailed { url: s(), path: s(), error: s() },
+            Message::YandexStopped,
+            Message::YandexHttpStatus { status: s() },
+            Message::YandexTransport { error: s() },
+            Message::YandexUnexpected { detail: s() },
+            Message::YandexRecorded { error: s() },
+            Message::CatalogUnopened { error: s() },
+            Message::InternalError,
+            Message::DetailsInLog { log: s() },
+            Message::DetailsNotLogged { log: s(), error: s() },
         ]
     }
 }
@@ -740,8 +1160,26 @@ pub fn write_status(queued: usize, error: Option<&str>) -> String {
     match (queued, error) {
         (0, None) => String::new(),
         (n, None) => render(&Message::WritingChanges { count: n }),
+        (0, Some(e)) => render(&Message::WriteQueueFailed { error: e.to_string() }),
         (n, Some(e)) => render(&Message::ChangesUnwritten { count: n, error: e.to_string() }),
     }
+}
+
+/// A copy into a file that failed up to the cap after it may have started: the file may be incomplete, and `temp`
+/// holds its whole new content (`error`: why the copy failed). The writer tries it again later.
+pub fn write_incomplete(file: &str, temp: &str, error: &str) -> String {
+    render(&Message::WriteIncomplete { file: file.to_string(), temp: temp.to_string(), error: error.to_string() })
+}
+
+/// A write refused before it touched anything: a folder of the file's path (`folder`) ends in a dot or a space, which
+/// Windows may drop from a path, so the write could reach another folder's file.
+pub fn write_folder_refused(file: &str, folder: &str) -> String {
+    render(&Message::WriteFolderRefused { file: file.to_string(), folder: folder.to_string() })
+}
+
+/// Queued writes dropped because their files left the library: `count` since the last note, the latest of `kind`.
+pub fn write_dropped(kind: WriteKind, count: usize) -> String {
+    render(&Message::WriteDropped { kind, count })
 }
 
 /// A root whose folders a scan couldn't read.
@@ -770,6 +1208,11 @@ pub fn round_panicked(message: &str) -> String {
     render(&Message::RoundPanicked { message: message.to_string() })
 }
 
+/// A file a job panicked on (caught, so the job went on), with the panic's message: a crop's or a write's failure.
+pub fn file_panicked(message: &str) -> String {
+    render(&Message::FilePanicked { message: message.to_string() })
+}
+
 /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
 pub fn cache_full(height: u32, made: usize) -> String {
     render(&Message::CacheFull { height: height.to_string(), made: made.to_string() })
@@ -790,7 +1233,7 @@ pub fn cropped(saved: usize, folder: &str, skipped: usize, failed: usize, first_
     note
 }
 
-/// The photo to search couldn't be read.
+/// The photo to search couldn't be read, or (a TIFF) decoded to be sent as a JPEG.
 pub fn yandex_unreadable_photo(error: &str) -> String {
     render(&Message::YandexUnreadablePhoto { error: error.to_string() })
 }
@@ -803,6 +1246,146 @@ pub fn yandex_similar_stopped(shown: usize, reason: &str) -> String {
 /// The similar images failed, for `reason` (the other sizes are still shown).
 pub fn yandex_similar_failed(reason: &str) -> String {
     render(&Message::YandexSimilarFailed { reason: reason.to_string() })
+}
+
+/// A search or a save couldn't start: the system refused its thread, for `error`.
+pub fn yandex_not_started(error: &str) -> String {
+    render(&Message::YandexNotStarted { error: error.to_string() })
+}
+
+/// The thumbnail cache was started over when it was opened, for `reason`: `path` is where the old file is kept (a
+/// damaged one, moved aside) or the cache file made anew (one this build can't use, deleted).
+pub fn thumb_cache_started_over(reason: CacheStartOver, path: &str) -> String {
+    render(&Message::ThumbCacheStartedOver { reason, path: path.to_string() })
+}
+
+/// The library's status line while the background work is paused: `pass` is the running pass's line, empty when none
+/// runs.
+pub fn paused_status(pass: &str) -> String {
+    if pass.is_empty() {
+        render(&Message::WorkPaused)
+    } else {
+        render(&Message::PausedPass { status: pass.to_string() })
+    }
+}
+
+/// The newest notice from the job, `notice`, with the `more` others that came in since the last one shown (none: the
+/// notice as it is).
+pub fn notice_more(notice: String, more: usize) -> String {
+    if more == 0 { notice } else { render(&Message::NoticeMore { notice, count: more }) }
+}
+
+/// A folder added that was already in the library: it is rescanned.
+pub fn folder_already_added(folder: &str) -> String {
+    render(&Message::FolderAlreadyAdded { folder: folder.to_string() })
+}
+
+/// A folder not added, because the scanner refuses it for `reason` (not on a local NTFS disk, or on a network file
+/// system).
+pub fn folder_refused(folder: &str, reason: &str) -> String {
+    render(&Message::FolderRefused { folder: folder.to_string(), reason: reason.to_string() })
+}
+
+/// A folder that couldn't be added, for `error`.
+pub fn folder_not_added(error: &str) -> String {
+    render(&Message::FolderNotAdded { error: error.to_string() })
+}
+
+/// A folder that couldn't be removed from the library, for `error`.
+pub fn folder_not_removed(error: &str) -> String {
+    render(&Message::FolderNotRemoved { error: error.to_string() })
+}
+
+/// A rescan of the library that couldn't start, for `error`.
+pub fn rescan_failed(error: &str) -> String {
+    render(&Message::RescanFailed { error: error.to_string() })
+}
+
+/// The background work (the job and the writer) couldn't start, for `error`.
+pub fn library_unavailable(error: &str) -> String {
+    render(&Message::LibraryUnavailable { error: error.to_string() })
+}
+
+/// The library's folders couldn't be read from the catalog, for `error`.
+pub fn folders_unreadable(error: &str) -> String {
+    render(&Message::FoldersUnreadable { error: error.to_string() })
+}
+
+/// A round of the background job that failed, for `error`.
+pub fn round_failed(error: &str) -> String {
+    render(&Message::RoundFailed { error: error.to_string() })
+}
+
+/// A crop job that failed before it could save anything, for `error`.
+pub fn crop_failed(error: &str) -> String {
+    render(&Message::CropFailed { error: error.to_string() })
+}
+
+/// A Yandex save of `files` results about to start.
+pub fn yandex_saving(files: usize) -> String {
+    render(&Message::YandexSaving { count: files })
+}
+
+/// The `n`th of `of` results of a Yandex save being downloaded (counted from 1).
+pub fn yandex_saving_file(n: usize, of: usize) -> String {
+    render(&Message::YandexSavingFile { n: n.to_string(), of: of.to_string() })
+}
+
+/// A Yandex save that ended: `written` files into `folder`, and when some failed, how many and the first failure.
+pub fn yandex_saved(written: usize, folder: &str, failed: usize, first_error: Option<&str>) -> String {
+    match first_error {
+        None => render(&Message::YandexSaved { count: written, folder: folder.to_string() }),
+        Some(e) => render(&Message::YandexSavedFailed {
+            written: written.to_string(),
+            failed: failed.to_string(),
+            error: e.to_string(),
+        }),
+    }
+}
+
+/// A Yandex result at `url` that couldn't be downloaded, for `error`.
+pub fn yandex_download_failed(url: &str, error: &str) -> String {
+    render(&Message::YandexDownloadFailed { url: url.to_string(), error: error.to_string() })
+}
+
+/// A Yandex result at `url`, downloaded, that couldn't be written to `path`, for `error`.
+pub fn yandex_write_failed(url: &str, path: &str, error: &str) -> String {
+    render(&Message::YandexWriteFailed { url: url.to_string(), path: path.to_string(), error: error.to_string() })
+}
+
+/// Yandex answered with the HTTP `status`, not a success.
+pub fn yandex_http_status(status: u16) -> String {
+    render(&Message::YandexHttpStatus { status: status.to_string() })
+}
+
+/// A Yandex request that failed to connect, in TLS or by a timeout, for `error`.
+pub fn yandex_transport(error: &str) -> String {
+    render(&Message::YandexTransport { error: error.to_string() })
+}
+
+/// A Yandex answer without the data the app reads: `detail` says what was missing.
+pub fn yandex_unexpected(detail: &str) -> String {
+    render(&Message::YandexUnexpected { detail: detail.to_string() })
+}
+
+/// A recorded Yandex session that can't answer, for `error`.
+pub fn yandex_recorded(error: &str) -> String {
+    render(&Message::YandexRecorded { error: error.to_string() })
+}
+
+/// The catalog couldn't be opened at start, for `error`.
+pub fn catalog_unopened(error: &str) -> String {
+    render(&Message::CatalogUnopened { error: error.to_string() })
+}
+
+/// The box for a panic that ends the app: the panic's `message`, then where its details are: in `log`, or, when
+/// writing them there failed, why (`log_error`).
+pub fn internal_error(message: &str, log: &str, log_error: Option<&str>) -> String {
+    let details = match log_error {
+        None => render(&Message::DetailsInLog { log: log.to_string() }),
+        Some(e) => render(&Message::DetailsNotLogged { log: log.to_string(), error: e.to_string() }),
+    };
+    format!("{}\n\n{message}\n\n{details}", render(&Message::InternalError))
 }
 
 #[cfg(test)]
@@ -926,6 +1509,29 @@ mod tests {
         assert_eq!(write_status(3, None), "Writing 3 changes into files");
         assert_eq!(write_status(3, Some("offline")), "3 changes not yet in the files: offline");
         assert_eq!(write_status(1, Some("offline")), "1 change not yet in the files: offline");
+        assert_eq!(write_status(0, Some("denied")), "A change couldn't be written into its file: denied");
+    }
+
+    #[test]
+    fn a_dropped_write_and_an_incomplete_copy_are_worded() {
+        assert_eq!(
+            write_dropped(WriteKind::Rating, 1),
+            "A queued rating was dropped: its file is no longer in the library"
+        );
+        assert_eq!(
+            write_dropped(WriteKind::Turns, 3),
+            "3 queued changes were dropped, the latest a turn: their files are no longer in the library"
+        );
+        assert_eq!(
+            write_incomplete("D:/a.jpg", "D:/.a.jpg.rating.pg-write", "disk full"),
+            "D:/a.jpg may be incomplete: copying its change into it failed (disk full). Its whole new content is in \
+             D:/.a.jpg.rating.pg-write, and the copy is tried again"
+        );
+        assert_eq!(
+            write_folder_refused(r"D:\Acme Inc.\a.jpg", "Acme Inc."),
+            "D:\\Acme Inc.\\a.jpg isn't written: its folder Acme Inc. ends in a dot or a space, which Windows may drop \
+             from a path, so the write could reach another folder. Rename the folder to write into it"
+        );
     }
 
     #[test]
@@ -941,6 +1547,84 @@ mod tests {
         assert_eq!(
             cropped(2, "D:/out", 2, 1, Some("disk full")),
             "Saved 2 cropped copies in D:/out; 2 files had nothing to crop any more; 1 failed, the first: disk full"
+        );
+    }
+
+    #[test]
+    fn the_library_lines_are_worded() {
+        assert_eq!(paused_status(""), "Background work paused");
+        assert_eq!(paused_status("Importing"), "Paused · Importing");
+        assert_eq!(notice_more("D:/p: offline".to_string(), 0), "D:/p: offline");
+        assert_eq!(notice_more("D:/p: offline".to_string(), 1), "D:/p: offline (and 1 more)");
+        assert_eq!(notice_more("D:/p: offline".to_string(), 3), "D:/p: offline (and 3 more)");
+        assert_eq!(folder_already_added(r"D:\Photos"), "D:\\Photos is already in the library: rescanning it");
+        assert_eq!(
+            folder_refused(r"Z:\Photos", "its drive is a network drive"),
+            "Z:\\Photos can't be added: its drive is a network drive"
+        );
+        assert_eq!(folder_not_added("database is locked"), "The folder couldn't be added: database is locked");
+        assert_eq!(
+            folder_not_removed("database is locked"),
+            "The folder couldn't be removed from the library: database is locked"
+        );
+        assert_eq!(rescan_failed("database is locked"), "The library couldn't be scanned again: database is locked");
+        assert_eq!(
+            library_unavailable("no thread"),
+            "The background work couldn't start, so nothing is scanned, imported or written into the files: no thread"
+        );
+        assert_eq!(folders_unreadable("locked"), "The library's folders couldn't be read: locked");
+        assert_eq!(round_failed("disk full"), "The background job failed: disk full");
+        assert_eq!(crop_failed("disk full"), "Saving cropped copies failed: disk full");
+    }
+
+    #[test]
+    fn the_yandex_lines_are_worded() {
+        assert_eq!(render(&Message::YandexStarting), "Starting…");
+        assert_eq!(yandex_saving(1), "Saving 1 file…");
+        assert_eq!(yandex_saving(3), "Saving 3 files…");
+        assert_eq!(yandex_saving_file(2, 5), "Saving 2 of 5…");
+        assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
+        assert_eq!(yandex_saved(3, "D:/out", 0, None), "Saved 3 files to D:/out");
+        assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");
+        assert_eq!(
+            yandex_download_failed("https://a/b.jpg", "Yandex answered HTTP 404"),
+            "https://a/b.jpg couldn't be downloaded: Yandex answered HTTP 404"
+        );
+        assert_eq!(
+            yandex_write_failed("https://a/b.jpg", "D:/out/b.jpg", "disk full"),
+            "https://a/b.jpg couldn't be written to D:/out/b.jpg: disk full"
+        );
+        assert_eq!(render(&Message::YandexStopped), "Stopped by an internal error; the details are in gallery.log.");
+        assert_eq!(yandex_http_status(503), "Yandex answered HTTP 503");
+        assert_eq!(yandex_transport("timed out"), "Yandex request failed: timed out");
+        assert_eq!(yandex_unexpected("no cbir_id"), "unexpected Yandex response: no cbir_id");
+        assert_eq!(yandex_recorded("no such step"), "recorded Yandex session: no such step");
+    }
+
+    #[test]
+    fn the_start_and_crash_boxes_are_worded() {
+        assert_eq!(catalog_unopened("locked"), "Can't open the catalog: locked");
+        assert_eq!(
+            internal_error("boom", r"C:\gallery.log", None),
+            "Photo Gallery hit an internal error:\n\nboom\n\nThe details are in C:\\gallery.log."
+        );
+        assert_eq!(
+            internal_error("boom", r"C:\gallery.log", Some("denied")),
+            "Photo Gallery hit an internal error:\n\nboom\n\nWriting them to C:\\gallery.log failed (denied)."
+        );
+    }
+
+    #[test]
+    fn a_started_over_cache_says_why_and_where_the_old_file_is() {
+        assert_eq!(
+            thumb_cache_started_over(CacheStartOver::Damaged, r"C:\cat\thumbs.sqlite.bad"),
+            "The thumbnail cache was damaged, so it was started over; its thumbnails are made again. The old file is \
+             kept as C:\\cat\\thumbs.sqlite.bad"
+        );
+        assert_eq!(
+            thumb_cache_started_over(CacheStartOver::OtherCatalog, r"C:\cat\thumbs.sqlite"),
+            "The thumbnail cache C:\\cat\\thumbs.sqlite was made for another catalog, so it was started over; its \
+             thumbnails are made again"
         );
     }
 

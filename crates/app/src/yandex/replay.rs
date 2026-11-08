@@ -160,7 +160,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         write_session(&dir);
         let photo = dir.join("IMG_1234.jpg");
-        std::fs::write(&photo, b"not decoded: the recording answers").unwrap();
+        // A JPEG's start, so the photo sniffs as a still; the recording answers, so the bytes are never decoded.
+        std::fs::write(&photo, b"\xFF\xD8\xFF not decoded: the recording answers").unwrap();
 
         let recording = Recording::read(&dir).unwrap();
         let mut source = Logged { inner: Replay::new(Arc::new(recording)), calls: Vec::new() };

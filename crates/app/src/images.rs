@@ -22,7 +22,7 @@ use pg_model::turns::Turns;
 use pg_thumbcache::{self as thumbs};
 
 use crate::app::App;
-use crate::error::{Error, Result, failed};
+use crate::error::{Error, Result, failed, original};
 
 /// How long a request waits for a write of the app's into its file to end before it fails.
 const WRITE_WAIT: Duration = Duration::from_secs(10);
@@ -187,13 +187,13 @@ impl App {
                 // A video: its poster frame.
                 match self.with_maker(|m| Ok(m.load_frame(&path, at, current.rotation)))? {
                     Ok(()) => self.with_maker(|m| m.encode_frame(pg_model::num::index(height)))?,
-                    Err(e) => return Ok(Found::Offline(failed(e), kept_smaller)),
+                    Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
             } else {
                 // Read into the maker, which keeps the buffer for the next file.
                 match self.with_maker(|m| Ok(m.read_file(&path)))? {
                     Ok(()) => {}
-                    Err(e) => return Ok(Found::Offline(failed(e), kept_smaller)),
+                    Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
                 self.with_maker(|m| m.make_from_file(pg_model::num::index(height), current.rotation))?
             };
@@ -297,14 +297,19 @@ impl App {
         }
         let (full, image) = if let Some(at) = src.poster_ms {
             // A video: its poster frame stands for it until it plays.
-            let frame = pg_video::frame(&crate::app::path_of(&src.path), at, rotation).map_err(failed)?;
+            let frame = pg_video::frame(&crate::app::path_of(&src.path), at, rotation).map_err(original)?;
             ((frame.width, frame.height), Arc::new(frame))
         } else {
+            // The read's and the decode's failures are the original's (gone, offline, not decodable), so the variant is
+            // made here: `with_maker` would make any error its closure returns an `Error::Failed`. A maker that can't
+            // be made is still that.
+            let path = crate::app::path_of(&src.path);
             let decoded = self.with_maker(|m| {
-                m.read_file(&crate::app::path_of(&src.path))
-                    .map_err(|e| anyhow::anyhow!("original unavailable: {e}"))?;
-                m.decode_file(min, rotation)
-            })?;
+                Ok(match m.read_file(&path) {
+                    Ok(()) => m.decode_file(min, rotation).map_err(original),
+                    Err(e) => Err(original(e)),
+                })
+            })??;
             (
                 (pg_model::num::index(decoded.info.full_width), pg_model::num::index(decoded.info.full_height)),
                 Arc::new(decoded.image),
@@ -335,5 +340,51 @@ fn big_enough(w: usize, h: usize, full: (usize, usize), min: MinSize) -> bool {
         MinSize::Sides(long, short) => {
             w.max(h) >= long.min(full.0.max(full.1)) && w.min(h) >= short.min(full.0.min(full.1))
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Config;
+    use pg_catalog::fixture::{self, File};
+    use pg_model::ids::FolderId;
+
+    // A file the catalog holds whose original is gone (deleted, or on a drive that is offline) is `Error::Original`,
+    // which a caller can branch on, for the viewer's original and for a thumbnail alike; its text says so once.
+    #[test]
+    fn an_original_that_is_gone_is_error_original() {
+        let dir = pg_testkit::test_folder("scratch_app", "original-gone").unwrap();
+        let app = App::open(Config {
+            catalog_dir: dir.join("catalog"),
+            prefs_path: dir.join("gallery.json"),
+            thumb_cap_bytes: None,
+        })
+        .unwrap();
+        let folder = if cfg!(windows) { r"D:\pg-test-no-such-folder" } else { "/pg-test-no-such-folder" };
+        app.with_catalog(|c| {
+            fixture::state::add_scan(c, 1, folder).unwrap();
+            fixture::state::add_folder(c, 1, folder).unwrap();
+            fixture::insert(c, &[File::new(FileId::new(1), FolderId::new(1), "gone.jpg", 10, 0)]).unwrap();
+            Ok(())
+        })
+        .unwrap();
+        match app.full_image(FileId::new(1), View::Full) {
+            Err(e @ Error::Original(_)) => {
+                let text = e.to_string();
+                assert!(text.starts_with("original unavailable: "), "{text}");
+                assert_eq!(text.matches("original unavailable").count(), 1, "{text}");
+            }
+            Err(e) => panic!("not Error::Original: {e:?}"),
+            Ok(_) => panic!("an image of a file that isn't there"),
+        }
+        let key = ImageKey { file: FileId::new(1), version: None };
+        match app.thumbnail(key, 100, &mut Vec::new()) {
+            Err(Error::Original(_)) => {}
+            Err(e) => panic!("not Error::Original: {e:?}"),
+            Ok(_) => panic!("a thumbnail of a file that isn't there"),
+        }
+        drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

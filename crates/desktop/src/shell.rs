@@ -197,8 +197,9 @@ pub mod qobject {
         #[cxx_name = "listingChanged"]
         fn listing_changed(self: Pin<&mut Shell>);
 
-        /// Show the folder of a tree row (row 0, or a row the tree doesn't have, is all folders), with the current
-        /// subfolders, sort and query.
+        /// Show the folder of a tree row, with the current subfolders, sort and query. Row 0 (and a row the tree
+        /// doesn't have) is all folders, with their subfolders; the "Drive roots" row is the drive roots' own files,
+        /// without.
         #[qinvokable]
         #[cxx_name = "openFolderRow"]
         fn open_folder_row(self: Pin<&mut Shell>, row: i32);
@@ -293,6 +294,17 @@ fn to_i32(index: usize) -> i32 {
     i32::try_from(index).unwrap_or(-1)
 }
 
+/// The listing change a click on a tree row makes. Recursion is the listing's one toggle, so the first two rows set it:
+/// "All" is the empty folder with its subfolders, "Drive roots" the empty folder without them (the drive roots' own
+/// files). A folder keeps the recursion as it is.
+fn row_event(kind: folders::RowKind) -> ListingEvent {
+    match kind {
+        folders::RowKind::All => ListingEvent::OpenAll,
+        folders::RowKind::DriveRoots => ListingEvent::OpenRoots,
+        folders::RowKind::Folder(folder) => ListingEvent::OpenFolder(folder),
+    }
+}
+
 /// The names of the saved views, sorted (`saved_views`).
 fn view_names() -> QStringList {
     app::get()
@@ -310,7 +322,8 @@ impl qobject::Shell {
     /// The folder tree is in. The listed folder is kept as the tree spells it, when the tree shows it under another
     /// spelling (the controller remembers that), and then the start is told whether the folder is known.
     fn tree_loaded(mut self: Pin<&mut Self>, folder_known: bool) {
-        if let Some(spelled) = folders::spelling_of(&controller::listing().folder) {
+        let listing = controller::listing();
+        if let Some(spelled) = folders::spelling_of(&listing.folder, listing.recursive) {
             self.as_mut().dispatch(Event::FolderSpelled(spelled));
         }
         self.dispatch(Event::TreeLoaded { folder_known });
@@ -435,7 +448,7 @@ impl qobject::Shell {
     }
 
     fn open_folder_row(self: Pin<&mut Self>, row: i32) {
-        self.dispatch(Event::Listing(ListingEvent::OpenFolder(folders::merged_at(row))));
+        self.dispatch(Event::Listing(row_event(folders::row_kind(row))));
     }
 
     fn set_recursive(self: Pin<&mut Self>, on: bool) {
@@ -641,5 +654,66 @@ impl qobject::Shell {
             Some(at) => deadline::arm(at.saturating_sub(deadline::now_ms())),
             None => deadline::disarm(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use pg_client::controller::listing;
+    use pg_client::tree::Tree;
+    use pg_model::query::{Query, Sort};
+    use pg_model::rules::{Merged, PathRules};
+    use pg_model::tree::TreeBuilder;
+    use pg_model::view::Listing;
+
+    use super::*;
+    use crate::folders::RowKind;
+
+    /// A tree with files directly in `D:\` and in the folder `D:\p`: rows "All", "Drive roots", `p`.
+    fn tree() -> Tree {
+        let rules = PathRules::Windows;
+        let mut builder = TreeBuilder::with_capacity(rules, 2, 0, 0);
+        builder.add(1, &rules.parse(r"D:\").unwrap(), 2);
+        builder.add(2, &rules.parse(r"D:\p").unwrap(), 3);
+        let mut tree = Tree::default();
+        tree.replace(builder.build());
+        tree
+    }
+
+    /// The listing a click on `row` leaves, from a recursive listing of the folder `q`.
+    fn clicked(tree: &Tree, row: i32) -> (ListingEvent, Listing) {
+        let event = row_event(RowKind::of(tree, row));
+        let folder = Merged::from(vec![pg_model::name::Name::from("q")]);
+        let mut shown = Listing { folder, recursive: true, sort: Sort::default(), query: Query::default() };
+        listing::update(&mut shown, event.clone());
+        (event, shown)
+    }
+
+    /// A click on "Drive roots" opens the drive roots' own files (`OpenRoots`: the folder `""` without subfolders),
+    /// not the empty folder with recursion left on, which would list every file.
+    #[test]
+    fn the_drive_roots_row_opens_the_roots_without_subfolders() {
+        let tree = tree();
+        assert_eq!(RowKind::of(&tree, 1), RowKind::DriveRoots);
+        let (event, shown) = clicked(&tree, 1);
+        assert_eq!(event, ListingEvent::OpenRoots);
+        assert_ne!(event, ListingEvent::OpenFolder(Merged::default()));
+        assert!(shown.folder.is_empty() && !shown.recursive);
+    }
+
+    /// "All" (and a row the tree doesn't have) opens every folder with its subfolders; a folder's row opens that
+    /// folder, recursion as it was.
+    #[test]
+    fn the_all_row_opens_every_folder_and_a_folder_row_its_folder() {
+        let tree = tree();
+        for row in [0, -1, 99] {
+            let (event, shown) = clicked(&tree, row);
+            assert_eq!(event, ListingEvent::OpenAll, "row {row}");
+            assert!(shown.folder.is_empty() && shown.recursive, "row {row}");
+        }
+        let p = Merged::from(vec![pg_model::name::Name::from("p")]);
+        let (event, shown) = clicked(&tree, 2);
+        assert_eq!(event, ListingEvent::OpenFolder(p.clone()));
+        assert_eq!((shown.folder, shown.recursive), (p, true));
     }
 }

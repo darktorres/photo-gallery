@@ -81,7 +81,7 @@ impl Codecs {
     /// `Scratch`), which go back to `self.png` whatever happens.
     fn png(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
         // The PNG decoder is given `ImageReader`'s limits as they are before the image's size is reserved.
-        let max_bytes = usize::try_from(Limits::default().max_alloc.unwrap_or(u64::MAX)).unwrap_or(usize::MAX);
+        let max_bytes = usize::try_from(max_decode_bytes()).unwrap_or(usize::MAX);
         let limits = png::Limits { bytes: max_bytes };
         let mut decoder = png::Decoder::new_with_scratch(Cursor::new(bytes), limits, std::mem::take(&mut self.png));
         // Text and ICC profiles are skipped, where `image` reads them for its metadata getters, which a decode
@@ -399,7 +399,8 @@ impl Codecs {
                     ),
                 )));
             }
-            // (An empty image has no planes to read: `image` panics there, at its tiff.rs:163, `chunks_exact(0)`.)
+            // (The decoder refuses a zero width or height (tiff decoder `image.rs:325`), so an image has at least one
+            // plane here.)
             if self.raw.len().checked_div(plane_stride).unwrap_or(0) < usize::from(color.channel_count()) {
                 return Err(ImageError::Decoding(DecodingError::new(
                     ImageFormat::Tiff.into(),
@@ -476,6 +477,13 @@ struct TiffPlan {
     stored: Stored,
     /// The decoder's limit for its decoding buffer.
     decoding_size: usize,
+}
+
+/// The most bytes one decoded image may take: `ImageReader`'s default `max_alloc` (512 MiB). The one cap for every
+/// decoded buffer, the decoders' here and the lossless rewrites' (`pg_edit`), so a damaged header that declares a
+/// huge image is an error before anything that size is allocated, never an allocation failure (which aborts).
+pub fn max_decode_bytes() -> u64 {
+    Limits::default().max_alloc.unwrap_or(u64::MAX)
 }
 
 /// `ImageReader::decode`'s reservation of the decoded image's size (`total_bytes`) from the default limits: an

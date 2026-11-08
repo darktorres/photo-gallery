@@ -30,8 +30,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   detector (`BORDERS_VERSION`).
 - `dedup` (`pg-dedup`): the tier-1 duplicates: the PDQ index, the import's pairing and the union-find that groups
   pairs.
-- `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`) and the viewer's
-  images (`display`).
+- `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`), the viewer's
+  images (`display`), and a TIFF re-encoded as a JPEG for the Yandex search (`transcode`).
 - `query` (`pg-query`): the query compiler: a `Query` (`pg-model`'s) becomes the SQL of its conditions and their
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
@@ -182,14 +182,16 @@ or `--catalog-dir` on the command line, to change it). The app's preferences (wr
 beside the catalog folder (`%LOCALAPPDATA%\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they survive rebuilding the
 catalog. Saved views and where you were (folder, subfolders, filters, sort) are in the catalog.
 
-The catalog schema is one baseline (`crates/catalog/src/schema.rs`), and every version is 1 until the first catalog
-worth keeping. Each start checks the catalog's schema against the one this build creates (`pg-schema`). A difference
+The catalog schema is a baseline (version 1) and the migrations after it (`MIGRATIONS` in
+`crates/catalog/src/schema.rs`; version 2 adds the change stamps for borders). The baseline is frozen: every schema
+change is a migration, and a catalog of this build's schema at an earlier version is migrated forward with its rows.
+Each start checks the catalog's schema against the one this build creates for its version (`pg-schema`). A difference
 (a changed column, index or trigger, an extra object, another application id) is rebuilt: a new catalog in this
 build's layout is made beside it, the old rows are copied into it with their ids (files, library folders, ratings,
 analysis, and the rest), and the old file is moved aside as `catalog.sqlite.replaced`. Nothing is deleted. Where a
 copy can't take the rows (a column the new layout needs is missing from the old one), the new catalog is empty and
 the note says why, and the library is scanned again. A catalog made under the other platform's path rules is refused,
-not moved: open it on the platform that made it. The migration mechanism (`MIGRATIONS`) is in place for later, unused.
+not moved: open it on the platform that made it.
 
 Run `.\target\release\gallery.exe` and add folders with **Library…**. The app scans them, imports them and
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
@@ -245,8 +247,10 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
   - Its layout version stays 1 before the first release, like the catalog's: a layout change edits it in place,
-    and an existing cache file is deleted by hand. A file of another version is refused, and one that can't be
-    opened only means thumbnails aren't kept.
+    and an existing cache file is started over. A file of another version, layout or catalog is started over (its
+    cap kept); one that is not a database, or that SQLite finds damaged (at the open, or at the day's check of the
+    totals), is moved aside to `thumbs.sqlite.bad` (`pg_schema::move_aside`) and made anew; a database that is not
+    a cache is refused and left alone. A cache that can't be opened only means thumbnails aren't kept.
 - **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, which is not in this repo; FINDINGS
   "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
   the stored pixels at full size.
@@ -273,7 +277,9 @@ with its file when a list is refreshed; while the viewer is open a new list wait
 made while a list was on its way is kept. Startup times are in FINDINGS "Startup".
 
 - **Folder tree** (left): folders with the same path on different drives are one node (their drives are shown
-  in green). "All folders" lists everything; "Include subfolders" toggles recursion.
+  in green). "All folders" lists everything (it turns subfolders on); "Drive roots", shown when files lie directly
+  in a drive root (`D:\`), lists only those (subfolders off). "Include subfolders" toggles recursion; for the empty
+  folder that moves between the two rows.
 - **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file size, date
   modified, date taken, megapixels, duration, border depth) and its direction (↑ / ↓). **Views ▾** saves the current folder,
   subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
@@ -317,9 +323,10 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   - **Animated** GIF, APNG and WebP play the same way: our FFmpeg decodes all three. Qt's `AnimatedImage` has no
     APNG, and has WebP only with Qt's Image Formats add-on. They loop silently, without the transport bar; **K**
     pauses.
-  - **≈** (the rating bar) finds similar images on Yandex (`crates/yandex`, `crates/app/src/yandex.rs`, `YandexPanel.qml`): the photo is uploaded,
-    and a panel shows its other sizes and the similar images. A click picks a result, Shift-click picks or unpicks
-    a range (to the state of the result clicked last), and each group has Select all. A double-click shows a
+  - **≈** (the rating bar) finds similar images on Yandex (`crates/yandex`, `crates/app/src/yandex.rs`, `YandexPanel.qml`): the photo is uploaded
+    (a TIFF as a JPEG; a video is refused), and a panel shows its other sizes and the similar images. A click
+    picks a result, Shift-click picks or unpicks a range (to the state of the result clicked last), and each group
+    has Select all. A double-click shows a
     result at full size, fitted or 1:1 (a click or the button); ←/→ step through the results, Space picks,
     Escape goes back. **Save N images…** saves the picks into a folder; the dialog opens at the folder saved into
     last (in `gallery.json`), or else the photo's. Files are named after the photo, `IMG_1234 (yandex
@@ -351,8 +358,10 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   --viewer-keys=LBNHK+1<>r<n> --zoom=<x> --menu=views --apply-view=<name> --query=<json> --sort=<json> --filters=1
   --borders=1 --library=1 --save-view=1 --find-similar=<path> --yandex-preview=<n> --add-folder=<path> --save-crops=<folder>
   --screenshot=<png> --wait=<s>`. `--query`, `--sort` and `--apply-view` shape the first list; the others act on it
-  once it is shown, and `--wait` (4 s by default) counts from then. `--borders` shows the borders (B) for the run. `--find-similar` uploads the file to Yandex: a path that isn't a still image (a `.txt`)
-  opens the panel on its error without sending anything; `--yandex-preview` then shows result n at full size. With
+  once it is shown. `--wait` (10 s by default) counts from the call (the screenshot is scheduled as the window is
+  shown, before the first list); a window that hasn't settled or isn't ready by then is saved as it is, and a run
+  with no window exits with status 1. `--borders=1` shows the borders (B) for the run. `--find-similar` uploads the
+  file to Yandex: a path that isn't a still image (a `.txt`) opens the panel on its error without sending anything; `--yandex-preview` then shows result n at full size. With
   `QT_QPA_PLATFORM=offscreen` needs `platforms\qoffscreen.dll` next to the exe (from Qt's `plugins\platforms`). The app
   points `QT_QPA_FONTDIR` at the Windows fonts folder itself when the platform is offscreen (`crates/desktop/cpp/gui_app.cpp`), since
   offscreen's font lookup otherwise finds no fonts and text draws as boxes. Set `QT_FORCE_STDERR_LOGGING=1` to see QML

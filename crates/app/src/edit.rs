@@ -1,5 +1,5 @@
 //! What the user changes about a file: its rating, its border mark. Turns are in `library.rs` (they go through the writer).
-//! A rating is written into the file too, unless the server's preferences say the catalog only (`write_back`).
+//! A rating is written into the file too, unless the app's preferences say the catalog only (`write_back`).
 
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;

@@ -18,6 +18,10 @@ pub enum Error {
     /// The original can't be read (offline, or not decodable): why.
     #[error("original unavailable: {0}")]
     Original(String),
+    /// A folder not added to the library, because the scanner refuses it (`App::add_folder`): its display path, and
+    /// why (`pg_platform::dir::Refused`'s reason). The front end words it (`pg_client::text::folder_refused`).
+    #[error("{folder} can't be added: {reason}")]
+    FolderRefused { folder: String, reason: String },
     /// Anything else a lower layer failed with.
     #[error("{0}")]
     Failed(String),
@@ -28,4 +32,10 @@ pub type Result<T, E = Error> = std::result::Result<T, E>;
 /// The error of a lower layer, as its text (`{:#}`: the causes included).
 pub fn failed(e: impl Display) -> Error {
     Error::Failed(format!("{e:#}"))
+}
+
+/// The original can't be read (offline, or not decodable): [`Error::Original`], with the lower layer's text (`{:#}`:
+/// the causes included). Its `Display` adds "original unavailable: ", so the text given here doesn't say it.
+pub fn original(e: impl Display) -> Error {
+    Error::Original(format!("{e:#}"))
 }

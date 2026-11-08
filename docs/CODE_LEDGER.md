@@ -1,7 +1,8 @@
 # Code ledger
 
 Lists the code files in the repository, with the vendored crates left out.
-Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
+Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit, except `eval/test_viewer.py` (added in 262004b) and `crates/render/src/transcode.rs` (added later, with the C-10 change)
+and counted there.
 
 ## Scope
 
@@ -16,7 +17,7 @@ Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
 | Language | Files | Lines |
 |---|---:|---:|
 | Rust | 210 | 41894 |
-| Python | 36 | 6922 |
+| Python | 37 | 7039 |
 | QML | 38 | 4157 |
 | C++ | 25 | 2314 |
 | PowerShell | 9 | 1094 |
@@ -25,7 +26,7 @@ Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
 | Batch | 2 | 88 |
 | Just | 1 | 87 |
 | CMake | 2 | 74 |
-| Total | 338 | 58143 |
+| Total | 339 | 58260 |
 
 ## Sections
 
@@ -51,7 +52,7 @@ Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
 | `crates/model` | 27 | 3952 |
 | `crates/platform` | 9 | 1342 |
 | `crates/query` | 1 | 621 |
-| `crates/render` | 4 | 526 |
+| `crates/render` | 5 | 578 |
 | `crates/scan` | 1 | 566 |
 | `crates/schema` | 1 | 345 |
 | `crates/testkit` | 2 | 198 |
@@ -62,7 +63,7 @@ Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
 | `crates/writeback` | 1 | 375 |
 | `crates/yandex` | 1 | 619 |
 | `docs/probes` | 9 | 663 |
-| `eval` | 46 | 8345 |
+| `eval` | 47 | 8462 |
 | `fuzz` | 7 | 96 |
 | `tools` | 19 | 2610 |
 | Repository root | 1 | 87 |
@@ -416,6 +417,7 @@ Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
 | `crates/render/src/lib.rs` | Rust | 11 |
 | `crates/render/src/maker.rs` | Rust | 276 |
 | `crates/render/src/player.rs` | Rust | 169 |
+| `crates/render/src/transcode.rs` | Rust | 52 |
 
 ## crates/scan
 
@@ -533,6 +535,7 @@ Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit.
 | `eval/models.py` | Python | 234 |
 | `eval/pdq.py` | Python | 162 |
 | `eval/synth.py` | Python | 112 |
+| `eval/test_viewer.py` | Python | 117 |
 | `eval/verify.py` | Python | 903 |
 | `eval/verify_synth.py` | Python | 108 |
 | `eval/viewer.html` | HTML | 861 |

@@ -85,7 +85,7 @@ $Scenarios = [ordered]@{
     "library"              = "--library=1"
     "apply-view"           = "--apply-view=alpha"
     "save-view"            = "--save-view=1"
-    "borders"              = "--borders"
+    "borders"              = "--borders=1"
     "find-similar"         = "--find-similar={FIX}\notes.txt"
     "save-crops"           = "--save-crops={RUN}\crops"
     "filters-view0"        = "--filters=1 --view=0"
@@ -94,9 +94,11 @@ $Scenarios = [ordered]@{
 # reference. The reference is recorded again whenever this changes.
 $Mascot = 1
 # The pseudo-locale (S-19.3): every line of the front end in the pseudo-locale. No reference has it, so it is run on the
-# working tree only and its screenshot kept under target\shots\pseudo, for a look; it is not compared.
+# working tree only and its screenshot kept under target\shots\pseudo, for a look; it is not compared. The library
+# scenario shows the library panel's lines (its folders, its status and the job's notices) in the pseudo-locale.
 $Pseudo = [ordered]@{
-    "pseudo-locale" = "--locale=pseudo"
+    "pseudo-locale"  = "--locale=pseudo"
+    "pseudo-library" = "--locale=pseudo --library=1"
 }
 $onlyList = @($Only -split "," | Where-Object { $_ })
 if ($onlyList.Count -gt 0) {

@@ -16,6 +16,7 @@ pg-writeback = { path = "../writeback" }
 pg-catalog = { path = "../catalog" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-model = { path = "../model" }
+pg-client = { path = "../client" }
 pg-analysis = { path = "../analysis" }
 pg-codec = { path = "../codec" }
 pg-jobs = { path = "../jobs" }
@@ -23,3 +24,8 @@ pg-platform = { path = "../platform" }
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }
+# The writer's faults, for the test that `gallery write` returns when the writer ends.
+pg-writeback = { path = "../writeback", features = ["fault"] }

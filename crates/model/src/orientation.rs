@@ -83,8 +83,11 @@ impl Orientation {
         (5..=8).contains(&self.0)
     }
 
-    /// Where the pixel (`x`, `y`) of a `w` × `h` stored picture is shown.
+    /// Where the pixel (`x`, `y`) of a `w` × `h` stored picture is shown. The pixel must be in the picture
+    /// (`x < w`, `y < h`): a caller with a rectangle that may reach past it (a GIF frame on its logical screen)
+    /// clips it first.
     pub fn shown_pixel(self, x: usize, y: usize, w: usize, h: usize) -> (usize, usize) {
+        debug_assert!(x < w && y < h, "pixel ({x}, {y}) outside a {w} x {h} picture");
         shown(self, (x, y), (w, h), 1)
     }
 
@@ -127,7 +130,9 @@ pub fn turns_swap(turns: Turns) -> bool {
 }
 
 /// The one coordinate map. `last` is how far the last index lies below its extent: 1 for pixels (the last pixel of a
-/// width `w` is `w - 1`), 0 for fractions of a unit extent.
+/// width `w` is `w - 1`), 0 for fractions of a unit extent. Precondition: the point is in the picture (`x <= w -
+/// last`, `y <= h - last`); otherwise an unsigned `T` underflows. [`Orientation::shown_pixel`] asserts it in debug
+/// builds.
 fn shown<T>(o: Orientation, (x, y): (T, T), (w, h): (T, T), last: T) -> (T, T)
 where
     T: Copy + Sub<Output = T>,

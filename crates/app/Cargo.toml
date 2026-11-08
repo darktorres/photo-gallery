@@ -8,7 +8,7 @@ publish.workspace = true
 workspace = true
 
 # The UI-free application layer (PLAN §7): the catalog, the thumbnail cache, the pools, the reader, the library's job
-# and writer, the images, the edits, the views, Yandex and the server's preferences. Sync, runtime-free, no Qt.
+# and writer, the images, the edits, the views, Yandex and the app's preferences. Sync, runtime-free, no Qt.
 [dependencies]
 pg-catalog = { path = "../catalog" }
 pg-codec = { path = "../codec" }
@@ -32,3 +32,5 @@ thumbhash.workspace = true
 pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
 proptest.workspace = true
+# `SortKey::iter`, so the listing laws cover every sort key.
+strum.workspace = true

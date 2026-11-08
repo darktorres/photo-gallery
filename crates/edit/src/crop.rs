@@ -6,8 +6,10 @@
 //!   cuts move inward to it, cutting up to 15 px more there (as `jpegtran -crop`); the right and bottom are exact.
 //! - PNG, BMP, still GIF, WebP: exact, re-encoded losslessly with every other chunk kept (`rewrite`). A lossy WebP
 //!   comes out lossless: larger, with no generation loss.
-//! - TIFF and compressed BMP: exact, re-encoded (TIFF losslessly) without their metadata; [`Cropped::metadata`]
-//!   is false, and the caller copies it over (ExifTool).
+//! - TIFF and compressed BMP: exact, re-encoded without their metadata; [`Cropped::metadata`] is false, and the
+//!   caller copies it over (ExifTool). An 8- or 16-bit CMYK or RGB TIFF keeps its samples and its kind (classic or
+//!   BigTIFF; `pg_codec::encode::cropped`). Not kept for other TIFFs, which go through `image`: they come out
+//!   classic, 1-bit grey becomes 8-bit, and palette and YCbCr TIFFs are refused.
 
 use anyhow::{Result, bail, ensure};
 

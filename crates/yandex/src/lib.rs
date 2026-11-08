@@ -9,7 +9,7 @@
 //! it too. Nothing else is sent: the Sites list is not fetched, because its pages after the first need an
 //! anti-robot cookie, and this client does not try to get one.
 //!
-//! Endpoints and parsing follow `crawlers/yandex-reverse/search.py`.
+//! Endpoints and parsing follow `yandex-reverse/search.py` of the crawlers monorepo, which is outside this repository.
 // A library reports through its results; printing is for the command line and the app.
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
@@ -23,13 +23,21 @@ use ureq::typestate::WithoutBody;
 
 const UPLOAD_URL: &str = "https://yandex.com/images-apphost/image-download?cbird=111";
 const SEARCH_URL: &str = "https://yandex.com/images/search";
-/// The same User-Agent as `crawlers/yandex-reverse/search.py`, which Yandex serves without a captcha.
+/// The same User-Agent as the crawlers monorepo's `yandex-reverse/search.py` (outside this repository), which Yandex
+/// serves without a captcha.
 const USER_AGENT: &str =
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/108.0.0.0 Safari/537.36";
 /// The similar endpoint's `request` parameter, byte for byte as the crawler's `json.dumps(..., separators=(",", ":"))`
 /// writes it: key order and all.
 const SIMILAR_REQUEST: &str = r#"{"blocks":[{"block":"extra-content","params":{},"version":2},{"block":{"block":"i-react-ajax-adapter:ajax"},"params":{"type":"ImagesApp","ajaxKey":"serpList/fetch"},"version":2}]}"#;
+/// The whole of a search request (the results page, a similar page): small answers, so one bound covers it all.
 const TIMEOUT: Duration = Duration::from_secs(30);
+/// An upload or a download moves a file of up to `MAX_DOWNLOAD_BYTES`, which a slow link takes minutes over, so its
+/// bounds are per phase instead (`transfer_timeouts`): the name lookup and the connection, the wait for the answer's
+/// headers, and each read or write, which bounds a stalled transfer...
+const STEP_TIMEOUT: Duration = Duration::from_secs(30);
+/// ...and the body as a whole, which bounds one that trickles: 100 MB in 15 minutes is about 110 kB/s.
+const BODY_TIMEOUT: Duration = Duration::from_secs(15 * 60);
 /// Pause between requests. A burst of automated requests gets a captcha.
 const MIN_INTERVAL: Duration = Duration::from_millis(1500);
 /// Similar pages fetched when the caller does not choose a limit.
@@ -168,11 +176,12 @@ impl Client {
     }
 
     /// Uploads an image and returns the ids that the result requests need. The body is the raw file, with no
-    /// Content-Type, as the crawler sends it.
+    /// Content-Type, as the crawler sends it. Its bounds are a transfer's (`transfer_timeouts`), not the 30 s of
+    /// the whole search request: a large photo on a slow link takes longer than that.
     pub fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {
         self.pace();
         let req = self.agent.post(UPLOAD_URL).header("User-Agent", USER_AGENT).header("Cookie", &self.yp);
-        parse_upload(&read_response(req.send(image))?)
+        parse_upload(&read_response(transfer_timeouts(req).send(image))?)
     }
 
     /// The same image at other resolutions, largest first. One request.
@@ -235,21 +244,39 @@ impl Default for Client {
     }
 }
 
+/// `req` with a transfer's bounds in place of the agent's whole-request one (`TIMEOUT`, which the search requests
+/// keep): `STEP_TIMEOUT` for the name lookup, the connection, the request's headers, the wait for the answer's headers
+/// and each read or write (a stalled transfer), and `BODY_TIMEOUT` for sending or receiving a body as a whole (one that
+/// trickles). The agent's own configuration is not changed.
+fn transfer_timeouts<B>(req: ureq::RequestBuilder<B>) -> ureq::RequestBuilder<B> {
+    req.config()
+        .timeout_global(None)
+        .timeout_per_call(None)
+        .timeout_resolve(Some(STEP_TIMEOUT))
+        .timeout_connect(Some(STEP_TIMEOUT))
+        .timeout_send_request(Some(STEP_TIMEOUT))
+        .timeout_recv_response(Some(STEP_TIMEOUT))
+        .timeout_per_read(Some(STEP_TIMEOUT))
+        .timeout_per_write(Some(STEP_TIMEOUT))
+        .timeout_send_body(Some(BODY_TIMEOUT))
+        .timeout_recv_body(Some(BODY_TIMEOUT))
+        .build()
+}
+
 impl Client {
     /// Fetches a result image. Result files are on Yandex's CDN, so the search cookie is not sent, and the
-    /// request is not paced. A response that is not an image (an error page, say) is an error, not a file.
+    /// request is not paced. A response whose type says it is not an image (an error page, a video) is an error
+    /// before its body is read ([`plausibly_image`]); the bytes of one that may be decide what it is ([`sniffed`]).
+    /// Its bounds are a transfer's (`transfer_timeouts`): a large file on a slow link takes minutes.
     pub fn download(&self, url: &str) -> Result<Download, YandexError> {
-        let resp = self
-            .agent
-            .get(url)
-            .header("User-Agent", USER_AGENT)
+        let resp = transfer_timeouts(self.agent.get(url).header("User-Agent", USER_AGENT))
             .call()
             .map_err(|e| YandexError::Transport(e.to_string()))?;
         if !resp.status().is_success() {
             return Err(YandexError::Status(resp.status().as_u16()));
         }
         let content_type = resp.headers().get("content-type").and_then(|v| v.to_str().ok()).unwrap_or("");
-        if claimed_format(content_type, url).is_none() {
+        if !plausibly_image(content_type) {
             return Err(YandexError::Unexpected("the result is not an image"));
         }
         let mut bytes = Vec::new();
@@ -266,33 +293,30 @@ impl Client {
     }
 }
 
-/// The format an image response claims, from its Content-Type. A file sent without a type (or as
-/// `application/octet-stream`) is judged by the URL's extension. Anything else is not an image. The bytes have the last
-/// word: see `sniffed`.
-pub fn claimed_format(content_type: &str, url: &str) -> Option<Format> {
-    let content_type = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
-    if content_type.starts_with("image/") {
-        return match content_type.as_str() {
-            "image/jpeg" => Some(Format::Jpeg),
-            "image/png" => Some(Format::Png),
-            "image/webp" => Some(Format::Webp),
-            "image/gif" => Some(Format::Gif),
-            "image/bmp" => Some(Format::Bmp),
-            _ => None,
-        };
-    }
-    if !(content_type.is_empty() || content_type == "application/octet-stream") {
-        return None;
-    }
-    let path = url.split(['?', '#']).next()?;
-    match path.rsplit_once('.')?.1.to_ascii_lowercase().as_str() {
-        "jpg" | "jpeg" => Some(Format::Jpeg),
-        "png" => Some(Format::Png),
-        "webp" => Some(Format::Webp),
-        "gif" => Some(Format::Gif),
-        "bmp" => Some(Format::Bmp),
-        _ => None,
-    }
+/// Whether a response's Content-Type lets it be one of the images the search returns, so that its body is worth
+/// reading: a type of those kinds, under the names real servers send (`image/jpg`, `image/pjpeg`, `image/x-png` among
+/// them), or no type that says anything (none, `application/octet-stream`, `binary/octet-stream`). Anything else (a
+/// page, a video, a PDF, an SVG) is refused before the body is read. The type only rules out: the bytes decide what the
+/// file is ([`sniffed`]), whatever the type or the URL say.
+pub fn plausibly_image(content_type: &str) -> bool {
+    let essence = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
+    matches!(
+        essence.as_str(),
+        "image/jpeg"
+            | "image/jpg"
+            | "image/pjpeg"
+            | "image/png"
+            | "image/x-png"
+            | "image/apng"
+            | "image/webp"
+            | "image/gif"
+            | "image/bmp"
+            | "image/x-bmp"
+            | "image/x-ms-bmp"
+            | ""
+            | "application/octet-stream"
+            | "binary/octet-stream"
+    )
 }
 
 /// The format of a downloaded file, from its bytes: one of the kinds the search returns. Anything else is not an image.
@@ -599,24 +623,38 @@ mod tests {
     }
 
     #[test]
-    fn similar_request_is_the_crawlers_json() {
-        // The same bytes `json.dumps(request_json, separators=(",", ":"))` gives in the crawler.
+    fn similar_request_is_the_json_of_the_crawlers_monorepos_search_py() {
+        // The same bytes `json.dumps(request_json, separators=(",", ":"))` gives in `yandex-reverse/search.py` of the
+        // crawlers monorepo, which is outside this repository.
         let v: serde_json::Value = serde_json::from_str(SIMILAR_REQUEST).unwrap();
         assert_eq!(v["blocks"][1]["params"]["ajaxKey"], "serpList/fetch");
         assert!(SIMILAR_REQUEST.starts_with(r#"{"blocks":[{"block":"extra-content""#));
     }
 
     #[test]
-    fn result_files_are_images_only() {
-        assert_eq!(claimed_format("image/jpeg; charset=x", ""), Some(Format::Jpeg));
-        assert_eq!(claimed_format("image/webp", "https://a.example/x"), Some(Format::Webp));
-        assert_eq!(claimed_format("image/avif", "https://a.example/x.avif"), None);
-        // An error page must not be saved as a picture, even when its URL ends in .jpg.
-        assert_eq!(claimed_format("text/html", "https://a.example/x.jpg"), None);
-        // No type: the URL decides, ignoring a query string.
-        assert_eq!(claimed_format("", "https://a.example/x.PNG?w=1"), Some(Format::Png));
-        assert_eq!(claimed_format("application/octet-stream", "https://a.example/x.gif#f"), Some(Format::Gif));
-        assert_eq!(claimed_format("", "https://a.example/x"), None);
+    fn the_types_real_servers_send_for_images_are_read() {
+        for content_type in ["image/jpeg; charset=x", "image/webp", "IMAGE/PNG", "image/gif", "image/bmp"] {
+            assert!(plausibly_image(content_type), "{content_type}");
+        }
+        // The four that real servers send for real images, which were refused before their bytes were looked at.
+        for content_type in ["image/jpg", "image/pjpeg", "image/x-png", "binary/octet-stream"] {
+            assert!(plausibly_image(content_type), "{content_type}");
+        }
+        // No type that says anything: the bytes decide.
+        assert!(plausibly_image(""));
+        assert!(plausibly_image("application/octet-stream"));
+    }
+
+    #[test]
+    fn a_type_that_is_not_one_of_the_searchs_images_is_refused_before_the_body() {
+        // An error page or an API answer must not be saved as a picture, whatever its URL ends in.
+        for content_type in ["text/html; charset=utf-8", "application/json", "text/plain"] {
+            assert!(!plausibly_image(content_type), "{content_type}");
+        }
+        // Nor downloaded up to the cap only to be refused by its bytes.
+        for content_type in ["video/mp4", "application/pdf", "image/svg+xml", "image/avif", "image/tiff"] {
+            assert!(!plausibly_image(content_type), "{content_type}");
+        }
     }
 
     #[test]

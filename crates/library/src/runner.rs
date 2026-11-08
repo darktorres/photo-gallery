@@ -19,6 +19,7 @@ use anyhow::{Context, Result};
 use pg_catalog::Catalog;
 use pg_jobs::control::{Control, Progress};
 use pg_jobs::events::{Bus, Change};
+use pg_jobs::failure::FileError;
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
@@ -103,7 +104,7 @@ pub enum Notice {
     /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
     CacheFull { height: u32, made: usize },
     /// A crop job that ran to the end of its request.
-    Cropped { folder: PathBuf, saved: usize, skipped: usize, failed: usize, first_error: Option<String> },
+    Cropped { folder: PathBuf, saved: usize, skipped: usize, failed: usize, first_error: Option<FileError> },
     /// A crop job that failed before it could save anything.
     CropFailed { error: String },
 }
@@ -467,7 +468,8 @@ struct Borders;
 impl Pass<Cx<'_>> for Borders {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
         let s = borders::find(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
-        if s.files > 0 {
+        // Only what went into the catalog changes what the app shows: files that couldn't be read stored nothing.
+        if s.stored > 0 {
             cx.inner.imported();
         }
         Ok(Step::Done)

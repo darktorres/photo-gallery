@@ -3,10 +3,11 @@
 // delay: QML says it is `ready` (Main.qml: the first list shown and the test hooks run), no image in the window is
 // still loading, no one-shot QML Timer is pending (each one is a change the window has yet to make), no animation runs
 // on a visible item (a busy indicator spins), the library has no job running and no write into the files pending, and
-// no frame has been drawn for a while. `max_ms` is the most the hook waits; a window that never settles is saved anyway,
-// and the report says why. The frame is encoded here as a PNG, and the report is made here too; Rust writes both, at
-// the path the command line gave (src/screenshot.rs), so this file takes no path: a path that isn't UTF-8 can't be a
-// QString.
+// no frame has been drawn for a while. `max_ms` is the most the hook waits, from the call: a window that never settles,
+// or never says it is ready, is saved anyway when it runs out, and the report says why; with no window at all by then,
+// the log says so, no image is written, and the app exits with status 1. The frame is encoded here as a PNG, and the
+// report is made here too; Rust writes both, at the path the command line gave (src/screenshot.rs), so this file takes
+// no path: a path that isn't UTF-8 can't be a QString.
 
 #include "pg-desktop/cpp/screenshot.h"
 
@@ -136,6 +137,20 @@ struct Settle {
     bool hooked = false;
 };
 
+// Stop polling and hand the window (an empty PNG when there is none, or it can't be encoded) and the report to Rust,
+// which writes the settle log, says on stderr when the window did not settle, and writes the image. The one way a
+// screenshot is taken; the caller then quits.
+void take(QQmlApplicationEngine& engine, QTimer* poll, bool settled, const QString& report) {
+    poll->stop();
+    poll->deleteLater();
+    const QByteArray png = encode_window(engine);
+    const QByteArray text = report.toUtf8();
+    screenshot_taken(
+        rust::Slice<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(png.constData()),
+                                        static_cast<std::size_t>(png.size())),
+        settled, rust::Str(text.constData(), static_cast<std::size_t>(text.size())));
+}
+
 }  // namespace
 
 void save_screenshot_later(QQmlApplicationEngine& engine, int max_ms) {
@@ -146,13 +161,29 @@ void save_screenshot_later(QQmlApplicationEngine& engine, int max_ms) {
     auto* poll = new QTimer(&engine);
     poll->setInterval(kPollMs);
     QObject::connect(poll, &QTimer::timeout, &engine, [&engine, poll, max_ms, state] {
+        // First: the wait ends at `max_ms` whatever the window is doing, shown or not, ready or not.
+        const bool timed_out = state->total.elapsed() >= max_ms;
         QQuickWindow* window = window_of(engine);
-        if (!window)
+        if (!window) {
+            if (!timed_out)
+                return;
+            // No window to save: the log says so, the image is empty, and the run fails.
+            take(engine, poll, false, QStringLiteral("timed out after %1 ms: no window").arg(state->total.elapsed()));
+            QCoreApplication::exit(1);
             return;
+        }
         const QVariant ready = window->property("ready");
         // A window without the property is ready as it is.
-        if (ready.isValid() && !ready.toBool())
+        if (ready.isValid() && !ready.toBool()) {
+            if (!timed_out)
+                return;
+            // Never ready: saved as it is. Nothing was timed since ready, nor were frames watched.
+            take(engine, poll, false,
+                 QStringLiteral("timed out after %1 ms, the window not ready; %2")
+                     .arg(state->total.elapsed()).arg(busy_of(window).text()));
+            QCoreApplication::quit();
             return;
+        }
         if (!state->ready_seen) {
             state->ready_seen = true;
             state->waited.start();
@@ -167,22 +198,14 @@ void save_screenshot_later(QQmlApplicationEngine& engine, int max_ms) {
         const qint64 quiet = state->clock.elapsed() - state->last_frame_ms.load(std::memory_order_relaxed);
         const Busy busy = busy_of(window);
         const bool settled = busy.idle() && quiet >= kQuietMs;
-        const bool timed_out = state->total.elapsed() >= max_ms;
         if (!settled && !timed_out)
             return;
-        poll->stop();
-        poll->deleteLater();
         const QString report = settled
             ? QStringLiteral("settled after %1 ms (%2 ms since ready, quiet for %3 ms); %4")
                   .arg(state->total.elapsed()).arg(state->waited.elapsed()).arg(quiet).arg(busy.text())
             : QStringLiteral("timed out after %1 ms (%2 ms since ready, quiet for %3 ms); %4")
                   .arg(state->total.elapsed()).arg(state->waited.elapsed()).arg(quiet).arg(busy.text());
-        const QByteArray png = encode_window(engine);
-        const QByteArray text = report.toUtf8();
-        screenshot_taken(
-            rust::Slice<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(png.constData()),
-                                            static_cast<std::size_t>(png.size())),
-            settled, rust::Str(text.constData(), static_cast<std::size_t>(text.size())));
+        take(engine, poll, settled, report);
         QCoreApplication::quit();
     });
     poll->start();

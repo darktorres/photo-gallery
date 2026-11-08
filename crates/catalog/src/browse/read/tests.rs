@@ -162,6 +162,20 @@ fn ratings_and_orders(rules: PathRules) {
 
 under_both_rules!(ratings_and_orders, ratings_and_orders_windows, ratings_and_orders_posix);
 
+/// The details panel says a rating goes into the file exactly when `set_rating` queues it: not for a video or a file
+/// whose analysis failed, and for an image not analyzed yet.
+fn the_details_follow_the_write_back_rule(rules: PathRules) {
+    let c = mixed_library(rules);
+    let in_file = |id: i64| details(&c, FileId::new(id)).unwrap().unwrap().rating_in_file;
+    assert_eq!([in_file(5), in_file(7), in_file(8)], [false, false, true], "video, analysis failed, not analyzed");
+}
+
+under_both_rules!(
+    the_details_follow_the_write_back_rule,
+    the_details_follow_the_write_back_rule_windows,
+    the_details_follow_the_write_back_rule_posix
+);
+
 fn folders_in_the_trees_order(rules: PathRules) {
     let c = library(rules);
     // "p-x" sorts before "p\sub" as a whole path ('-' < '\'), but after it in the tree (p's children first).
@@ -174,6 +188,26 @@ fn folders_in_the_trees_order(rules: PathRules) {
 }
 
 under_both_rules!(folders_in_the_trees_order, folders_in_the_trees_order_windows, folders_in_the_trees_order_posix);
+
+/// A file directly in a drive root is counted (C-58): the tree's total is what "All folders" lists, and its root
+/// files are what the empty folder lists without subfolders (the "Drive roots" row).
+fn the_tree_counts_what_the_grid_lists(rules: PathRules) {
+    let c = library(rules);
+    raw::add_folder(&c, 5, &spelled(rules, r"D:\"));
+    fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(5), "root.jpg", 1, 1)]).unwrap();
+    let tree = folder_tree(&c).unwrap();
+    let all = ids(&c, "", true, &Query::default(), Sort::default());
+    let roots = ids(&c, "", false, &Query::default(), Sort::default());
+    assert_eq!(roots, [9]);
+    assert_eq!(tree.total(), i64::try_from(all.len()).unwrap());
+    assert_eq!(tree.root_files(), i64::try_from(roots.len()).unwrap());
+}
+
+under_both_rules!(
+    the_tree_counts_what_the_grid_lists,
+    the_tree_counts_what_the_grid_lists_windows,
+    the_tree_counts_what_the_grid_lists_posix
+);
 
 /// A node as compared: merged path, name, depth, direct and total counts, drives (upper case, by letter), and
 /// how many children, in pre-order.
@@ -287,6 +321,13 @@ fn check_tree(rules: PathRules, rows: &[(i64, String, i64)]) {
     if rules == PathRules::Windows {
         assert_eq!(flat(&tree), reference_tree(rows));
     }
+    // A drive root's files are in no node, but counted: "All folders" lists every row's files (C-58).
+    let in_root = |path: &str| rules.parse(path).unwrap().parts.is_empty();
+    let root_files: i64 = rows.iter().filter(|(_, path, _)| in_root(path)).map(|r| r.2).sum();
+    assert_eq!(tree.root_files(), root_files);
+    assert_eq!(tree.total(), rows.iter().map(|r| r.2).sum::<i64>());
+    let top: i64 = tree.children(None).map(|n| tree.node(n).unwrap().total).sum();
+    assert_eq!(top + root_files, tree.total());
     let mut key = Vec::new();
     for n in 0..tree.len() {
         let merged = tree.merged(n);
@@ -316,7 +357,7 @@ fn check_tree(rules: PathRules, rows: &[(i64, String, i64)]) {
 #[test]
 fn the_tree_is_built_as_before() {
     let named = [r"D:\p\Sub", r"E:\P\sub\x", r"E:\p", r"D:\p-x", r"d:\P", r"\\srv\share\a", r"D:\ΑΣ\b", r"E:\ας"];
-    let named = named.into_iter().chain([r"D:\a\b", "D:\\a\\b\u{1}c", "D:", r"D:\İ", r"E:\i\u{307}"]);
+    let named = named.into_iter().chain([r"D:\a\b", "D:\\a\\b\u{1}c", "D:", r"D:\İ", "E:\\i\u{307}"]);
     // A deeper folder first: its spelling of `p` wins over `E:\P`'s.
     check_tree(
         PathRules::Windows,

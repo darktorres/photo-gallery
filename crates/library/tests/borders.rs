@@ -40,14 +40,15 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
         return;
     };
     let stats = borders::find(&mut c, &opts, &ctl).unwrap();
-    assert_eq!(stats.failed, 1);
+    // Both looked at; the unreadable one stored nothing.
+    assert_eq!((stats.files, stats.failed, stats.stored), (2, 1, 1));
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 1, "an unreadable file must stay due");
     assert_eq!(state::borders_due(&c, "b.png").unwrap(), 0, "the readable one is done");
 
     // Readable again: the next pass looks at it, and it is no longer due.
     drop(lock);
     let stats = borders::find(&mut c, &opts, &ctl).unwrap();
-    assert_eq!(stats.failed, 0);
+    assert_eq!((stats.files, stats.failed, stats.stored), (1, 0, 1));
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 0);
 
     drop(c);

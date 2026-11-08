@@ -22,6 +22,7 @@ use std::time::Instant;
 use anyhow::{Context, Result, bail};
 use clap::{Parser, Subcommand};
 use pg_catalog::Catalog;
+use pg_client::text::{self, CacheStartOver};
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
@@ -149,7 +150,8 @@ enum Command {
 }
 
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
-/// cache is gone (its bus with it): joining the thread then means the last one is out.
+/// cache that holds the bus is dropped: joining it then means the last one is out. A cache that is leaked (`gallery
+/// write`, for the writer's `'static` borrow) never drops, so its thread runs until the process ends and is not joined.
 fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, JoinHandle<()>) {
     let bus = Arc::new(Bus::new(64));
     let events = bus.subscribe();
@@ -171,7 +173,20 @@ fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
         Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
         Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
         Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
-        Event::StartedOver { why } => format!("thumbnail cache: started over, {why}"),
+        Event::StartedOver { reason, path, .. } => {
+            text::thumb_cache_started_over(started_over_reason(*reason), &path.display().to_string())
+        }
+    }
+}
+
+/// The client's words for why the thumbnail cache was started over.
+fn started_over_reason(reason: pg_thumbcache::StartOverReason) -> CacheStartOver {
+    use pg_thumbcache::StartOverReason as Reason;
+    match reason {
+        Reason::Damaged => CacheStartOver::Damaged,
+        Reason::NotADatabase => CacheStartOver::NotADatabase,
+        Reason::OtherCatalog => CacheStartOver::OtherCatalog,
+        Reason::OtherBuild => CacheStartOver::OtherBuild,
     }
 }
 
@@ -422,9 +437,10 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             } else {
                 let s = pg_library::borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
                 println!(
-                    "borders looked for in {} files ({} failed), {:.1} s",
+                    "borders looked for in {} files ({} failed, {} stored), {:.1} s",
                     s.files,
                     s.failed,
+                    s.stored,
                     start.elapsed().as_secs_f64()
                 );
             }
@@ -460,14 +476,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 Box::leak(Box::new(ThumbCache::open(&catalog_dir, &catalog.catalog_id()?, None, events)?));
             let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)))?;
             writer.wake();
-            // Until nothing writable is left (failures past their retries stay queued and are reported).
-            loop {
-                std::thread::sleep(std::time::Duration::from_millis(500));
-                let left = pg_catalog::writes::left_to_write(&catalog)?;
-                if left == 0 {
-                    break;
-                }
-            }
+            wait_for_writes(&writer, &catalog)?;
             if let Some(e) = writer.status().thumbnail_error {
                 eprintln!("thumbnails: {e}");
             }
@@ -485,6 +494,23 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
     }
     Ok(())
+}
+
+/// `gallery write`'s wait: until nothing writable is left (failures past their retries stay queued and are reported).
+/// A writer that ended (a panic outside a job) leaves what it didn't write counted, so the wait fails then instead of
+/// waiting for ever.
+fn wait_for_writes(writer: &Writer, catalog: &Catalog) -> Result<()> {
+    loop {
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        let left = pg_catalog::writes::left_to_write(catalog)?;
+        if left == 0 {
+            return Ok(());
+        }
+        if !writer.is_running() {
+            let why = writer.status().error.map(|e| format!(" (the last failure: {e})")).unwrap_or_default();
+            bail!("the file writer stopped with {left} changes still to write{why}");
+        }
+    }
 }
 
 /// The present files of the catalog at these paths, each a file or a folder (its files and its subfolders'), each
@@ -561,5 +587,42 @@ mod tests {
     fn the_catalog_flag_is_catalog_dir() {
         let cli = Cli::try_parse_from(["gallery", "--catalog-dir", "X", "status"]).unwrap();
         assert_eq!(cli.catalog_dir(), PathBuf::from("X"));
+    }
+
+    /// The writer panics outside a job (where it reads the queue), so its thread ends with a write still queued:
+    /// `gallery write` returns an error instead of waiting for ever.
+    #[test]
+    fn gallery_write_returns_when_the_writer_ends() {
+        use pg_catalog::fixture::state;
+        use pg_writeback::fault::Fault;
+
+        let dir = pg_testkit::run_folder_with("scratch_rate", "cli-write", &["images"]).unwrap();
+        std::fs::write(dir.join("images").join("a.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
+        let catalog_path = dir.join("catalog.sqlite");
+        let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+        let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+        pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
+        state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
+        let (events, quiet) = pg_testkit::events::Quiet::bus();
+        let thumbs: &'static ThumbCache =
+            Box::leak(Box::new(ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        drop(catalog);
+        let writer =
+            Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain)
+                .unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let waited = Catalog::open(&catalog_path, PathRules::NATIVE)
+                .map_err(anyhow::Error::from)
+                .and_then(|catalog| wait_for_writes(&writer, &catalog))
+                .map_err(|e| format!("{e:#}"));
+            let _ = tx.send(waited);
+        });
+        let waited = rx
+            .recv_timeout(std::time::Duration::from_secs(60))
+            .expect("gallery write kept waiting for a writer that ended");
+        let error = waited.unwrap_err();
+        assert!(error.contains("the file writer stopped with 1 changes still to write"), "{error}");
+        quiet.check();
     }
 }

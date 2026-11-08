@@ -20,8 +20,7 @@ impl FileId {
 }
 
 /// A file's identity on its volume: on Windows, the volume's serial number and the file's NTFS file ID; on Unix,
-/// the device and the inode (the device truncated to 32 bits, which the platform does, so two devices could in
-/// principle share one; a catalog-assigned volume id would remove that, and the `dev` number itself can change
+/// the device and the inode (the Unix volume is the whole device number, a u64; the `dev` number itself can change
 /// across reboots, which is an open item for the Linux build). The file ID survives renames and moves, so a moved
 /// file keeps its row and its analysis (PLAN §4). On NTFS its low 48 bits are the MFT record number, which the
 /// catalog reads its files in (`files.file_ref & 0xFFFFFFFFFFFF` in SQL: a locality order, a heuristic that is

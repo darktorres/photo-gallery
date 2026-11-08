@@ -9,11 +9,10 @@ import pg.gallery
 
 Item {
     id: cell
-    // The item this cell shows, and its values (see GalleryModel's ROLE_KEYS to ROLE_CONTENT_HEIGHT): the image key
-    // (it names the image: GalleryModel's image_key), the badge, the rating, whether the borders are marked, the aspect
-    // of the image as shown and of the tile, and the borders' box (left as fractions of the image: x, y, width, height).
+    // The item this cell shows, and its values (see GalleryModel's ROLE_BADGES to ROLE_CONTENT_HEIGHT): the badge, the
+    // rating, whether the borders are marked, the aspect of the image as shown and of the tile, and the borders' box
+    // (left as fractions of the image: x, y, width, height).
     required property int item
-    required property string itemKey
     required property string itemBadge
     required property int itemRating
     required property bool itemBordersMarked
@@ -27,7 +26,8 @@ Item {
     required property int version
     required property real rowHeight
     // The image URLs, made by the model (the grammar is Rust's: pg_model::image): the thumbnail at the thumbnail height,
-    // and the placeholder (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS).
+    // and the placeholder (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS). Their image key (GalleryModel's image_key) changes
+    // when the file is rewritten or turned, so the cell shows the new image.
     required property string itemThumbUrl
     required property string itemThumbhashUrl
     required property bool showBorders
@@ -36,8 +36,6 @@ Item {
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
 
-    // Changes when the file is rewritten or turned (the image key: its URLs, and GalleryModel's image_key).
-    readonly property string key: cell.version >= 0 ? cell.itemKey : ""
     readonly property int rating: cell.version >= 0 ? cell.itemRating : 0
     readonly property string badge: cell.version >= 0 ? cell.itemBadge : ""
     // What is left without the borders (an empty rectangle: none found).

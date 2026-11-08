@@ -17,6 +17,11 @@ WheelListView {
     // Row `row` was asked to expand or collapse.
     signal toggleRequested(int row)
 
+    // The words of the first rows ("All folders", "Drive roots"): the model gives a row's kind, not its words.
+    Words {
+        id: words
+    }
+
     clip: true
     model: folders
     currentIndex: 0
@@ -31,6 +36,8 @@ WheelListView {
         required property double total
         required property string drives
         required property bool merged
+        // 0: "All" (every folder, with subfolders), 1: "Drive roots" (their own files only), 2: a folder.
+        required property int kind
         width: ListView.view.width
         height: 26
         rightPadding: 18  // clear of the scrollbar
@@ -43,7 +50,12 @@ WheelListView {
                 Layout.preferredWidth: 12
                 TapHandler { onTapped: tree.toggleRequested(node.index) }
             }
-            Label { text: node.name; elide: Text.ElideRight; Layout.fillWidth: true }
+            Label {
+                text: node.kind === 0 ? words.text("ui-all-folders")
+                    : node.kind === 1 ? words.text("ui-drive-roots") : node.name
+                elide: Text.ElideRight
+                Layout.fillWidth: true
+            }
             // Folders present on more than one drive are merged into this one node.
             Label { text: node.drives; color: "#6fbf8f"; visible: node.merged; font.pixelSize: 11 }
             Label { text: Qt.locale().toString(node.total, "f", 0); color: "#888888"; font.pixelSize: 11 }

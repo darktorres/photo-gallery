@@ -153,8 +153,10 @@ wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-bench.sh   # 3 s once bu
 
 `wsl-bench.sh` builds the **committed HEAD** in a clone on WSL's own disk (`~/photo-gallery`, reset on every run).
 That's faster than `/mnt/c`, and the Windows tree's uncommitted work stays out. Arguments after it go to gungraun
-(e.g. `--save-baseline=before`, then `--baseline=before`). Each run's `.out` files are also archived, zstd-compressed, to
-`docs/perf/callgrind/<sha>.tar.zst` (the benched HEAD's short sha, committed). Unpack one with
+(e.g. `--save-baseline=before`, then `--baseline=before`). A full run's `.out` files are also archived, zstd-compressed, to
+`docs/perf/callgrind/<sha>.tar.zst` (the benched HEAD's short sha, committed). A run given a bench name (a filter) is partial and
+is not archived; options such as `--save-baseline` do not make a run partial.
+Unpack an archive with
 `tar --zstd -xf docs/perf/callgrind/<sha>.tar.zst -C some/dir` (WSL has zstd from `tools/profiling/apt-packages.txt`). Read the results with `cgtab.py`, in WSL:
 
 ```sh

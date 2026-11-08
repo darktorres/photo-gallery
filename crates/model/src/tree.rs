@@ -45,6 +45,9 @@ pub struct FolderTree {
     /// The anchors the folders are on, in text order (`D:`, `E:`): a Windows drive's root, uppercased. A folder with
     /// no anchor (a UNC or a Unix path) is on none.
     anchor_names: Vec<Name>,
+    /// Present files directly in a drive root (a folder with no parts: `D:\`, or `/`), which no node holds. They are
+    /// the merged folder `""` without its subfolders.
+    root_files: i64,
 }
 
 impl Default for FolderTree {
@@ -55,6 +58,7 @@ impl Default for FolderTree {
             paths: Vec::new(),
             keys: Vec::new(),
             anchor_names: Vec::new(),
+            root_files: 0,
         }
     }
 }
@@ -100,14 +104,17 @@ impl TreeBuilder {
             paths: Vec::with_capacity(bytes),
             keys: Vec::with_capacity(bytes + components),
             anchor_names: Vec::new(),
+            root_files: 0,
         };
         TreeBuilder { tree, rows: Vec::with_capacity(rows), interned: Vec::new() }
     }
 
-    /// A folder (`folders.id`, its path) holding `count` present files. A drive root (no parts) is in no node. Only a
-    /// drive counts as an anchor: a UNC root or a Unix path's empty anchor is on none.
+    /// A folder (`folders.id`, its path) holding `count` present files. A drive root (no parts) is in no node: its
+    /// files are counted in [`FolderTree::root_files`] (and so in [`FolderTree::total`]). Only a drive counts as an
+    /// anchor: a UNC root or a Unix path's empty anchor is on none.
     pub fn add(&mut self, id: i64, path: &Path, count: i64) {
         if path.parts.is_empty() {
+            self.tree.root_files = self.tree.root_files.saturating_add(count);
             return;
         }
         let rules = self.tree.rules;
@@ -320,9 +327,16 @@ impl FolderTree {
         self.nodes.get(n).is_some_and(|node| node.anchors.count_ones() > 1)
     }
 
-    /// Present files in every folder of the tree.
+    /// Present files in every folder of the tree, the drive roots' own files included: the files "All folders" lists.
     pub fn total(&self) -> i64 {
-        self.children(None).filter_map(|n| self.nodes.get(n)).map(|node| node.total).sum()
+        let folders: i64 = self.children(None).filter_map(|n| self.nodes.get(n)).map(|node| node.total).sum();
+        folders.saturating_add(self.root_files)
+    }
+
+    /// Present files directly in a drive root, which no node holds: the files the merged folder `""` lists without its
+    /// subfolders (the "Drive roots" row).
+    pub fn root_files(&self) -> i64 {
+        self.root_files
     }
 
     /// The node of a folder, in any case (`key` holds its key meanwhile).
@@ -377,6 +391,40 @@ mod tests {
         assert!(!tree.multi_anchor(node("q")));
         assert_eq!(tree.anchors(node(r"nas\share\p")), "");
         assert!(!tree.multi_anchor(node(r"nas\share\p")));
+    }
+
+    /// Files directly in drive roots are in no node, but they are counted: `root_files` holds them, and `total` (what
+    /// "All folders" lists) includes them.
+    #[test]
+    fn drive_root_files_alone_are_counted_but_make_no_node() {
+        let mut builder = TreeBuilder::with_capacity(PathRules::Windows, 2, 0, 0);
+        builder.add(1, &PathRules::Windows.parse("D:").unwrap(), 3);
+        builder.add(2, &PathRules::Windows.parse(r"E:\").unwrap(), 2);
+        let tree = builder.build();
+        assert!(tree.is_empty());
+        assert_eq!(tree.root_files(), 5);
+        assert_eq!(tree.total(), 5);
+        assert_eq!(TreeBuilder::with_capacity(PathRules::Posix, 0, 0, 0).build().root_files(), 0);
+    }
+
+    /// With folders beside them, the drive roots' files add to the folders' total and to no node.
+    #[test]
+    fn drive_root_files_beside_folders_add_to_the_total_only() {
+        let mut builder = TreeBuilder::with_capacity(PathRules::Windows, 4, 0, 0);
+        for (id, path, count) in [(1, "D:", 3), (2, r"D:\p", 2), (3, r"E:\p\sub", 4), (4, "E:", 1)] {
+            builder.add(id, &PathRules::Windows.parse(path).unwrap(), count);
+        }
+        let tree = builder.build();
+        assert_eq!(tree.len(), 2);
+        assert_eq!(tree.root_files(), 4);
+        assert_eq!(tree.total(), 10);
+        let folders: i64 = tree.children(None).map(|n| tree.node(n).unwrap().total).sum();
+        assert_eq!(folders, 6);
+        let mut posix = TreeBuilder::with_capacity(PathRules::Posix, 2, 0, 0);
+        posix.add(1, &PathRules::Posix.parse("/").unwrap(), 2);
+        posix.add(2, &PathRules::Posix.parse("/home").unwrap(), 1);
+        let posix = posix.build();
+        assert_eq!((posix.len(), posix.root_files(), posix.total()), (1, 2, 3));
     }
 
     /// A node's folder and name come back exactly, with a lone surrogate, and `find` takes the typed folder in any case.

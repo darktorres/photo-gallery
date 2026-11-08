@@ -550,6 +550,32 @@ a calibration problem. **No threshold, normalization or better embedding model f
 needs a stage that aligns the two images and looks at *where* they differ (see
 `PLAN.md` / the verifier decision below).
 
+### Verifier figures below predate two fixes (C-44, C-45); the re-pick of `--max-noise` is pending
+
+`eval/verify.py` had two defects, both now fixed in the code:
+
+- **C-44:** the working images were resized with `resample=4`, commented as Lanczos. In Pillow 4 is `BOX`
+  (Lanczos is 1), so every working image was box-filtered. It now uses `Image.Resampling.LANCZOS`.
+- **C-45:** the effective-resolution blur divided by the scales (`ref_scale`, `other_scale`) where it should multiply:
+  they are working px per original px, so canvas px per original px is `c * ref_scale`. It now multiplies.
+
+**Every verifier figure in the sections below was measured with the box filter and the old blur, and has not been
+re-measured:** the residual percentiles and the 0.06 rule, the reruns after the split, the rerun of all three sets with
+motion, the synthetic-edit table (including the grayscale noise 0.078), and "Verifier fixes and speed" (including the
+0.0603 → 0.0599 pair). They are kept as the record of what was run, not as the verifier's current behaviour.
+
+**No pre-fix baseline was taken for the three pair sets (`labeled`, `cross_groups`, `knn`).** The recorded labeled
+numbers (1043 pairs; duplicates 698/698; similar_folder 237 match, 108 unrelated; median-residual percentiles
+p10/50/90/99: duplicates 0.0032/0.0056/0.0093/0.0171, similar_folder 0.0101/0.0436/0.0999/0.2347) are the only
+reference, and they have no `cross_groups` or `knn` counterpart. So no before-and-after comparison exists for the fix.
+
+**`--max-noise` is still 0.06, the value picked on the box-filtered data.** The labeled set has no negatives
+(`PAIR_SETS['labeled']` is duplicates and similar_folder, and `EXPECTED` covers only duplicate and cross_group), so it
+cannot choose the threshold. The re-pick has not been done. It needs a `verify.py --rescore` sweep on the
+`cross_groups` data, with the criterion used above (cross-group p1 of the median residual against duplicate p99:
+0.092 against 0.025 in the old data), and a verifier run with the fixed code to produce that data. Until then, treat 0.06
+as unvalidated for the fixed code.
+
 ### Verifier prototype, first run (subset, 2026-10-28)
 
 `eval/verify.py`:

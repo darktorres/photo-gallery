@@ -18,6 +18,7 @@ pub mod fixture;
 pub use pg_query as query;
 pub mod writes;
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -116,8 +117,26 @@ fn under_params(rules: PathRules, root: &pg_model::rules::Path) -> [Vec<u8>; 3] 
     [bytes, lo, hi]
 }
 
+/// The ids of the folders at `path` or below it ([`under_root`]), on `conn` (a transaction's too).
+fn folders_under(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Vec<i64>> {
+    let mut stmt = conn.prepare_cached(under_root!())?;
+    let [p1, p2, p3] = under_params(rules, path);
+    Ok(stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
+}
+
+/// The folders a scan did not list: each folder of `skipped` (one it couldn't read, or a reparse folder it did not
+/// follow) and every folder below it. The scan saw nothing there, so neither the missing marks nor the pairing judge
+/// their rows.
+fn skipped_folders(conn: &Connection, rules: PathRules, skipped: &[RulePath]) -> Result<BTreeSet<i64>> {
+    let mut folders = BTreeSet::new();
+    for path in skipped {
+        folders.extend(folders_under(conn, rules, path)?);
+    }
+    Ok(folders)
+}
+
 mod pair;
-pub use pair::Pairing;
+pub use pair::{Coverage, Pairing};
 mod schema;
 use schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, carry_rows, current_expected, current_version, expected, mismatch,
@@ -245,7 +264,10 @@ fn rebuild(old: Connection, path: &Path, rules: PathRules, why: String, readable
             Carried::Nothing(reason)
         }
     };
-    let kept = move_aside(path).with_context(|| format!("catalog {}: moving it aside ({why})", path.display()))?;
+    // To `catalog.sqlite.replaced`, then `.replaced.1`, and so on: kept whole, with its sidecars, for the user to
+    // remove.
+    let kept = pg_schema::move_aside(path, ".replaced")
+        .with_context(|| format!("catalog {}: moving it aside ({why})", path.display()))?;
     std::fs::rename(&replacement, path).with_context(|| {
         format!("catalog {}: its new file {} can't take the name", path.display(), replacement.display())
     })?;
@@ -340,30 +362,6 @@ fn take_shared(path: &Path) -> Result<pg_schema::Live> {
         .ok_or_else(|| Error::Other(anyhow!("catalog {}: another program is changing it", path.display())))
 }
 
-/// Move the catalog at `path`, with its `-wal`, `-shm` and `-journal` files, aside to the first free name beside it:
-/// `catalog.sqlite.replaced`, then `.replaced.1`, and so on. Returns the main file's new path. Nothing is deleted: the
-/// user removes the moved files when they are no longer wanted. The sidecars move first, so the main file is never
-/// left at `path` without the changes its sidecars held. No connection to the catalog may be open.
-fn move_aside(path: &Path) -> Result<PathBuf> {
-    const PARTS: [&str; 4] = ["-wal", "-shm", "-journal", ""];
-    let mut n = 0u32;
-    let base = loop {
-        let base = if n == 0 { ".replaced".to_string() } else { format!(".replaced.{n}") };
-        if PARTS.iter().all(|part| !beside(path, &format!("{base}{part}")).exists()) {
-            break base;
-        }
-        n += 1;
-    };
-    for part in PARTS {
-        let from = beside(path, part);
-        if from.exists() {
-            let to = beside(path, &format!("{base}{part}"));
-            std::fs::rename(&from, &to).with_context(|| format!("can't move {} aside", from.display()))?;
-        }
-    }
-    Ok(beside(path, &base))
-}
-
 /// The versions of the analyses the build makes, which `files.pending` and `analysis.borders_due` are kept against
 /// (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`). The library passes them to [`Catalog::prepare`]: the
 /// catalog doesn't depend on the analysis.
@@ -405,6 +403,28 @@ fn set_import_version(conn: &Connection, current: i64) -> Result<()> {
         ))?;
     }
     Ok(tx.commit()?)
+}
+
+/// Mark missing the present files whose extension this build doesn't hold (`media::Ext::of`; a build that held more
+/// recorded them): the number marked. The scan records only the extensions it holds, so they never come back, and
+/// every read of the catalog (the grid, an entry, the tree, the facets, the status) leaves them out as it leaves out
+/// any missing file, where one such row would fail the grid's list. A queued write on one is dropped as any write on
+/// a missing file is. In one write transaction, at [`Catalog::prepare`].
+fn mark_unheld_missing(conn: &Connection) -> Result<usize> {
+    let tx = write_transaction(conn)?;
+    let exts: Vec<String> = tx
+        .prepare("SELECT DISTINCT ext FROM files WHERE missing = 0")?
+        .query_map([], |r| r.get(0))?
+        .collect::<rusqlite::Result<_>>()?;
+    let mut marked = 0;
+    {
+        let mut mark = tx.prepare("UPDATE files SET missing = 1 WHERE ext = ?1 AND missing = 0")?;
+        for ext in exts.iter().filter(|ext| Ext::of(ext.as_str()).is_none()) {
+            marked += mark.execute([ext])?;
+        }
+    }
+    tx.commit()?;
+    Ok(marked)
 }
 
 /// Make `analysis.borders_due` mean this build's detector: when the catalog's `meta.borders_version` is another,
@@ -549,7 +569,7 @@ pub struct ScannedFile<'a> {
     pub created: Option<i64>,
 }
 
-/// A folder's row, with its part of its files' order key (`path::folder_key`).
+/// A folder's row, with its part of its files' order key (`PathRules::folder_key`).
 pub struct Folder {
     pub id: FolderId,
     pub key: Vec<u8>,
@@ -607,9 +627,9 @@ impl Catalog {
     /// judged before anything is written to it: its schema (every object, and the keys its creation seeds) must be the
     /// one this build makes for its version. One that isn't (an earlier layout, another build's, or not a database at
     /// all) is rebuilt: a new catalog in this build's layout is made beside it, the old rows are copied into it with
-    /// their ids (`carry_rows`), and the old file is moved aside (`move_aside`; see [`Catalog::rebuilt`]). A row the
-    /// copy can't take (a column the new layout needs that the old one lacks) fails the copy, and the new catalog is
-    /// made empty, with the reason said. A catalog of this build's schema at an earlier version is migrated forward.
+    /// their ids (`carry_rows`), and the old file is moved aside (`pg_schema::move_aside`; see [`Catalog::rebuilt`]). A
+    /// row the copy can't take (a column the new layout needs that the old one lacks) fails the copy, and the new catalog
+    /// is made empty, with the reason said. A catalog of this build's schema at an earlier version is migrated forward.
     /// Its version marks are set to `versions`. The library calls this once, before anything else opens the catalog. A
     /// change to the file (a rebuild, or a migration) needs no other process or connection to have it open: otherwise
     /// it fails with the catalog untouched, and the one that has it open is left as it is.
@@ -651,6 +671,7 @@ impl Catalog {
             )));
         }
         check_rules(&conn, path, rules)?;
+        mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
@@ -767,25 +788,17 @@ impl Catalog {
     }
 
     /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions). Files in
-    /// `unreadable` folders (and their subfolders) are left as they are: the scan couldn't list them, so it saw
-    /// nothing there to compare with.
-    pub fn mark_missing(&self, root: &RulePath, scan: i64, unreadable: &[RulePath]) -> Result<usize> {
+    /// `skipped` folders (and their subfolders) are left as they are: the scan didn't list them (it couldn't, or they
+    /// are reparse folders it doesn't follow), so it saw nothing there to compare with.
+    pub fn mark_missing(&self, root: &RulePath, scan: i64, skipped: &[RulePath]) -> Result<usize> {
         // One transaction: all of the folders are marked, or none, and the commit is one for the whole pass.
         let tx = write_transaction(&self.conn)?;
-        let under = |path: &RulePath| -> Result<Vec<i64>> {
-            let mut stmt = tx.prepare(under_root!())?;
-            let [p1, p2, p3] = under_params(self.rules, path);
-            Ok(stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
-        };
-        let mut skipped = std::collections::BTreeSet::new();
-        for path in unreadable {
-            skipped.extend(under(path)?);
-        }
+        let skipped = skipped_folders(&tx, self.rules, skipped)?;
         let mut marked = 0;
         {
             let mut mark =
                 tx.prepare("UPDATE files SET missing = 1 WHERE folder_id = ?1 AND missing = 0 AND last_scan < ?2")?;
-            for folder in under(root)? {
+            for folder in folders_under(&tx, self.rules, root)? {
                 if !skipped.contains(&folder) {
                     marked += mark.execute(params![folder, scan])?;
                 }
@@ -1083,9 +1096,10 @@ impl Catalog {
     }
 }
 
-/// No write of the app's into file `?1` is in progress (`file_writes.temp`, set before the file is rewritten in
-/// place and cleared in the transaction that records the result): what was read from it is what the catalog
-/// says, not a part-written file.
+/// No write of the app's into file `?1` is in progress (`file_writes.temp`, set once the complete new content is
+/// beside the file and the file is open for the copy, before the file is rewritten in place, and cleared in the
+/// transaction that records the result; a copy that keeps failing keeps it): what was read from it is what the
+/// catalog says, not a part-written file.
 macro_rules! not_being_written {
     () => {
         "NOT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL)"
@@ -1545,7 +1559,8 @@ mod tests {
         Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION }
     }
 
-    /// A path under `rules`, written as Windows spells it (see [`spelled`]).
+    /// A path under `rules`, from its text as the tests write it, in the Windows form (`D:\p\sub`), which [`spelled`]
+    /// turns into the form of `rules` (`/p/sub` under POSIX).
     fn p(rules: PathRules, text: &str) -> RulePath {
         rules.parse(&spelled(rules, text)).expect("a test path")
     }
@@ -2158,6 +2173,85 @@ mod tests {
         a_comment_in_a_stored_definition_is_not_a_schema_change_posix
     );
 
+    fn a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows(rules: PathRules) {
+        let dir = test_folder(SCRATCH, &format!("migrate-v1-{}", rules_name(rules))).unwrap();
+        let path = dir.join("catalog.sqlite");
+        // A catalog as the build before the first migration made it: the baseline, with a library folder.
+        {
+            let conn = Connection::open(&path).unwrap();
+            bring_to(&conn, BASELINE, MIGRATIONS, rules, crate::schema::BASELINE_VERSION).unwrap();
+            let root = rules.join(&p(rules, r"D:\kept"));
+            conn.execute("INSERT INTO roots(id, path, added) VALUES (7, ?1, 1)", [root]).unwrap();
+        }
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        assert!(c.rebuilt().is_none(), "migrated, not rebuilt");
+        assert!(!dir.join("catalog.sqlite.replaced").exists());
+        assert_eq!(pg_schema::user_version(&c.conn).unwrap(), current_version().unwrap());
+        assert!(is_current(&c.conn).unwrap());
+        let roots = c.roots().unwrap();
+        assert_eq!(roots.len(), 1);
+        assert_eq!((roots[0].id, &roots[0].path), (RootId::new(7), &p(rules, r"D:\kept")));
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A file whose extension this build doesn't hold (a build that held more recorded it) is marked missing when the
+    /// catalog is prepared, so the grid lists the rest, and every count leaves it out.
+    fn a_file_of_an_extension_not_held_is_missing_after_prepare(rules: PathRules) {
+        use crate::browse::read::{facets, folder_tree, list_grid};
+        use pg_model::query::{Query, Sort};
+
+        let dir = test_folder(SCRATCH, &format!("unheld-ext-{}", rules_name(rules))).unwrap();
+        let path = dir.join("catalog.sqlite");
+        {
+            let mut c = Catalog::prepare(&path, versions(), rules).unwrap();
+            c.add_root(&p(rules, r"D:\x")).unwrap();
+            let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+            for (n, name) in ["a.jpg", "b.jpg"].into_iter().enumerate() {
+                let tx = c.tx().unwrap();
+                let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+                let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
+                let file = ScannedFile {
+                    identity: FileIdentity::new(1, 10 + u64::try_from(n).unwrap()),
+                    name: &Name::from(name),
+                    ext: Ext::of_name(name).unwrap(),
+                    size: 10,
+                    mtime: 100,
+                    created: None,
+                };
+                writer.upsert_file(&folder, &file).unwrap();
+                drop(writer);
+                tx.commit().unwrap();
+            }
+            c.conn.execute("UPDATE files SET ext = 'xyz' WHERE name = ?1", [b"b.jpg".to_vec()]).unwrap();
+        }
+        let c = Catalog::prepare(&path, versions(), rules).unwrap();
+        let missing: i64 = c.conn.query_row("SELECT missing FROM files WHERE ext = 'xyz'", [], |r| r.get(0)).unwrap();
+        assert_eq!(missing, 1);
+        let all = pg_model::rules::Merged::default();
+        assert_eq!(list_grid(&c, &all, true, &Query::default(), Sort::default()).unwrap().len(), 1);
+        let status = c.status().unwrap();
+        assert_eq!((status.files, status.missing), (1, 1));
+        assert_eq!(folder_tree(&c).unwrap().total(), 1);
+        let counts = facets(&c, &all, true, &Query::default()).unwrap();
+        assert_eq!(counts.total, 1);
+        assert!(counts.exts.iter().all(|(ext, _)| ext != "xyz"), "{:?}", counts.exts);
+        drop(c);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    under_both_rules!(
+        a_file_of_an_extension_not_held_is_missing_after_prepare,
+        a_file_of_an_extension_not_held_is_missing_after_prepare_windows,
+        a_file_of_an_extension_not_held_is_missing_after_prepare_posix
+    );
+
+    under_both_rules!(
+        a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows,
+        a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows_windows,
+        a_catalog_at_version_one_is_migrated_forward_and_keeps_its_rows_posix
+    );
+
     fn a_database_that_is_not_a_catalog_is_moved_aside_not_built_on(rules: PathRules) {
         let dir = test_folder(SCRATCH, &format!("foreign-database-{}", rules_name(rules))).unwrap();
         let path = dir.join("catalog.sqlite");
@@ -2658,6 +2752,79 @@ mod tests {
         borders_are_looked_for_after_the_import_and_again_after_a_new_detector_posix
     );
 
+    /// The borders the grid shows are a change of the file (`changes_since`): storing them, a changed cut, removed
+    /// sides and a removed analysis each stamp it. Its thumbnails' source (`files.seq`) is not touched.
+    fn borders_stamp_the_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
+        use crate::browse::read::changes_since;
+        use pg_model::detection::{Edge, Kind as SideKind, Side};
+
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let item = next_work(&c);
+        let analysis = Analysis {
+            version: IMPORT_VERSION,
+            file_hash: [1; 32],
+            orientation: Orientation::UPRIGHT,
+            width: 400,
+            height: 300,
+            thumbhash: ThumbHash::default(),
+            frames: 1,
+            taken: None,
+            media: a_jpeg(),
+        };
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.commit().unwrap();
+        let seq = |c: &Catalog| -> i64 {
+            c.conn.query_row("SELECT seq FROM files WHERE id = ?1", [item.id.get()], |r| r.get(0)).unwrap()
+        };
+        let thumbs = seq(&c);
+        // Each step is a change of the file, after the change number before it.
+        let stamped = |c: &Catalog, since: i64| -> i64 {
+            let (changed, now) = changes_since(c, since).unwrap();
+            assert_eq!(changed, [item.id]);
+            assert_eq!(seq(c), thumbs, "the thumbnails' source is not changed");
+            now
+        };
+        let (_, before) = changes_since(&c, 0).unwrap();
+
+        let top = Side {
+            pass: 0,
+            edge: Edge::Top,
+            kind: SideKind::Solid,
+            depth: 41,
+            color: Some([0, 0, 0]),
+            straight: 1.0,
+            dev: Some(0.0),
+            drift: Some(0.5),
+            rejected: None,
+        };
+        let sides = [top].into_iter().collect();
+        let found = Detection { width: 400, height: 300, content: [0, 41, 400, 300], sides };
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&item, Some(&found)).unwrap();
+        tx.commit().unwrap();
+        let now = stamped(&c, before);
+
+        // The same cut written again changes nothing.
+        c.conn.execute("UPDATE analysis SET cut_top = cut_top WHERE file_id = ?1", [item.id.get()]).unwrap();
+        assert_eq!(changes_since(&c, now).unwrap(), (vec![], now));
+        c.conn.execute("UPDATE analysis SET cut_top = 7 WHERE file_id = ?1", [item.id.get()]).unwrap();
+        let now = stamped(&c, now);
+        c.conn.execute("DELETE FROM border_sides WHERE file_id = ?1", [item.id.get()]).unwrap();
+        let now = stamped(&c, now);
+        c.conn.execute("DELETE FROM analysis WHERE file_id = ?1", [item.id.get()]).unwrap();
+        stamped(&c, now);
+    }
+
+    under_both_rules!(
+        borders_stamp_the_file_as_changed_and_not_its_thumbnails,
+        borders_stamp_the_file_as_changed_and_not_its_thumbnails_windows,
+        borders_stamp_the_file_as_changed_and_not_its_thumbnails_posix
+    );
+
     fn border_depth_sorts_by_the_largest_share_of_a_side_cut(rules: PathRules) {
         use crate::browse;
         use pg_model::query::{Query, Sort, SortKey};
@@ -3069,4 +3236,21 @@ mod tests {
     }
 
     under_both_rules!(three_way_rating_sync, three_way_rating_sync_windows, three_way_rating_sync_posix);
+
+    /// A file rated before its first import: the rating is queued for the file (its format isn't known yet), and the
+    /// import, which finds no rating in the file, keeps the catalog's while the write is queued.
+    fn a_rating_made_before_the_import_is_kept_and_queued(rules: PathRules) {
+        let (mut c, id) = one_file(rules);
+        writes::set_rating(&c, FileId::new(id), Rating::new(4), true).unwrap();
+        assert_eq!(raw::queued(&c, id, "rating"), Some(4), "queued with no analysis");
+        sync_file(&mut c, id, None);
+        assert_eq!(raw::rating(&c, id), Some(4));
+        assert_eq!(raw::queued(&c, id, "rating"), Some(4));
+    }
+
+    under_both_rules!(
+        a_rating_made_before_the_import_is_kept_and_queued,
+        a_rating_made_before_the_import_is_kept_and_queued_windows,
+        a_rating_made_before_the_import_is_kept_and_queued_posix
+    );
 }

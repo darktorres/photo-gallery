@@ -17,15 +17,15 @@ pub mod qobject {
         /// The image's top-left corner, in logical pixels.
         #[qproperty(f64, ox, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(f64, oy, READ, WRITE, NOTIFY, FINAL)]
-        /// At the fit zoom (follows the window's size).
-        #[qproperty(bool, fitted, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(f64, fit_zoom, cxx_name = "fitZoom", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(f64, min_zoom, cxx_name = "minZoom", READ, WRITE, NOTIFY, FINAL)]
         /// The image's size on screen, in logical pixels.
         #[qproperty(f64, dw, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(f64, dh, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, zoomed, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, pixels, READ, WRITE, NOTIFY, FINAL)]
+        /// The fitted image's size, in device pixels (the window's size times the device pixel ratio). The viewer
+        /// renders the fit at it once it has settled after a resize (`fitSource` takes the size it settled on).
+        #[qproperty(i64, fit_width, cxx_name = "fitWidth", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(i64, fit_height, cxx_name = "fitHeight", READ, WRITE, NOTIFY, FINAL)]
         type Viewport = super::ViewportRust;
     }
 
@@ -65,10 +65,11 @@ pub mod qobject {
         #[qinvokable]
         fn pan(self: Pin<&mut Viewport>, ox: f64, oy: f64);
 
-        /// The image (by its key) fitted to the window, at device pixels: its URL.
+        /// The image (by its key) fitted to `width` × `height` device pixels (the `fitWidth` and `fitHeight` the
+        /// viewer settled on): its URL. The size is an argument, so a QML binding to the URL follows it.
         #[qinvokable]
         #[cxx_name = "fitSource"]
-        fn fit_source(self: &Viewport, key: &QString) -> QString;
+        fn fit_source(self: &Viewport, key: &QString, width: i64, height: i64) -> QString;
 
         /// The region of the image on screen, rendered at the zoom: its URL, or "" when none of it shows. Its
         /// fractions are `regionX`, `regionY`, `regionW` and `regionH`.
@@ -127,29 +128,28 @@ pub struct ViewportRust {
     zoom: f64,
     ox: f64,
     oy: f64,
-    fitted: bool,
-    fit_zoom: f64,
-    min_zoom: f64,
     dw: f64,
     dh: f64,
     zoomed: bool,
     pixels: bool,
+    fit_width: i64,
+    fit_height: i64,
 }
 
 impl ViewportRust {
     fn of(view: View) -> Self {
+        let (fit_width, fit_height) = view.fit_px();
         Self {
             view,
             zoom: view.zoom,
             ox: view.ox,
             oy: view.oy,
-            fitted: view.fitted,
-            fit_zoom: view.fit_zoom(),
-            min_zoom: view.min_zoom(),
             dw: view.dw(),
             dh: view.dh(),
             zoomed: view.zoomed(),
             pixels: view.pixels(),
+            fit_width,
+            fit_height,
         }
     }
 }
@@ -204,18 +204,16 @@ impl qobject::Viewport {
         self.as_mut().set_zoom(p.zoom);
         self.as_mut().set_ox(p.ox);
         self.as_mut().set_oy(p.oy);
-        self.as_mut().set_fitted(p.fitted);
-        self.as_mut().set_fit_zoom(p.fit_zoom);
-        self.as_mut().set_min_zoom(p.min_zoom);
         self.as_mut().set_dw(p.dw);
         self.as_mut().set_dh(p.dh);
         self.as_mut().set_zoomed(p.zoomed);
         self.as_mut().set_pixels(p.pixels);
+        self.as_mut().set_fit_width(p.fit_width);
+        self.as_mut().set_fit_height(p.fit_height);
     }
 
-    fn fit_source(&self, key: &QString) -> QString {
-        let (w, h) = self.view.fit_px();
-        full_url(key, image::View::Fit(px(w), px(h)))
+    fn fit_source(&self, key: &QString, width: i64, height: i64) -> QString {
+        full_url(key, image::View::Fit(px(width), px(height)))
     }
 
     fn region_source(&self, key: &QString) -> QString {

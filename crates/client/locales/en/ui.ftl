@@ -65,6 +65,8 @@ ui-app-name = Photo Gallery
 ui-window-title = Photo Gallery — { $text }
 ui-save-view-title = Save the current view
 ui-all-folders = All folders
+# The folder tree's row of the files directly in a drive root (D:\, /), which no folder holds.
+ui-drive-roots = Drive roots
 ui-and-subfolders = and subfolders
 ui-view-name = Name (one already saved is replaced)
 

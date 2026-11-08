@@ -59,7 +59,9 @@ ToolBar {
         anchors.rightMargin: 8
         spacing: 12
         Label {
-            text: bar.folder.length ? bar.folder : words.text("ui-all-folders")
+            // The empty folder is every folder with subfolders, and the drive roots' own files without.
+            text: bar.folder.length ? bar.folder
+                : bar.recursive ? words.text("ui-all-folders") : words.text("ui-drive-roots")
             font.bold: true
             elide: Text.ElideMiddle
             Layout.maximumWidth: 600

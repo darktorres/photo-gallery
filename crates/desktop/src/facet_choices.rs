@@ -113,7 +113,7 @@ struct Row {
 
 #[derive(Default)]
 pub struct FacetChoicesRust {
-    /// The list's index in `Facet`; out of range (the default) shows no rows.
+    /// The facet: the list's index in `Facet`; 0 (the default) is Types.
     facet: i32,
     rows: Vec<Row>,
 }

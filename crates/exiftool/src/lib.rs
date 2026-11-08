@@ -60,10 +60,26 @@ impl ExifTool {
             format!("starting {} (ExifTool, needed to write ratings into files)", program.to_string_lossy())
         })?;
         pg_platform::process::die_with_parent(&child);
+        match ExifTool::pipes(&mut child) {
+            Ok((stdin, stdout, stderr)) => {
+                Ok(ExifTool { program: program.to_owned(), child, stdin, stdout, stderr, next: 1, broken: false })
+            }
+            // Started, but not usable: the process doesn't outlive the failure (a reader thread already started
+            // ends at its pipe's end).
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                Err(e)
+            }
+        }
+    }
+
+    /// A started ExifTool's stdin, and its stdout and stderr each read by a thread of its own (`pump`).
+    fn pipes(child: &mut Child) -> Result<(ChildStdin, Receiver<String>, Receiver<String>)> {
         let stdin = child.stdin.take().context("ExifTool started without its stdin pipe")?;
-        let stdout = pump(child.stdout.take().context("ExifTool started without its stdout pipe")?);
-        let stderr = pump(child.stderr.take().context("ExifTool started without its stderr pipe")?);
-        Ok(ExifTool { program: program.to_owned(), child, stdin, stdout, stderr, next: 1, broken: false })
+        let stdout = pump(child.stdout.take().context("ExifTool started without its stdout pipe")?)?;
+        let stderr = pump(child.stderr.take().context("ExifTool started without its stderr pipe")?)?;
+        Ok((stdin, stdout, stderr))
     }
 
     /// Run one command on the argument file; returns (stdout, stderr). A failure (a pipe broken, or no answer in time)
@@ -188,29 +204,33 @@ fn oneshot(program: &OsStr, args: &[&OsStr]) -> Result<(String, String)> {
 /// A pipe's lines, read by a thread of its own. ExifTool's stdout and stderr fill as it runs: read in turn, a full
 /// stderr would stop it before the stdout marker that is read first. The thread ends at the pipe's end. A line is
 /// read as bytes: one with no UTF-8 form (a name in ExifTool's message) is shown with U+FFFD, and the answer goes on.
-fn pump(pipe: impl Read + Send + 'static) -> Receiver<String> {
+/// A thread that can't be started is an error (`thread::spawn` would panic).
+fn pump(pipe: impl Read + Send + 'static) -> Result<Receiver<String>> {
     let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let mut reader = BufReader::new(pipe);
-        let mut line = Vec::new();
-        loop {
-            line.clear();
-            match reader.read_until(b'\n', &mut line) {
-                Ok(0) | Err(_) => break,
-                Ok(_) => {}
+    std::thread::Builder::new()
+        .name("exiftool-pipe".into())
+        .spawn(move || {
+            let mut reader = BufReader::new(pipe);
+            let mut line = Vec::new();
+            loop {
+                line.clear();
+                match reader.read_until(b'\n', &mut line) {
+                    Ok(0) | Err(_) => break,
+                    Ok(_) => {}
+                }
+                if line.last() == Some(&b'\n') {
+                    line.pop();
+                }
+                if line.last() == Some(&b'\r') {
+                    line.pop();
+                }
+                if tx.send(String::from_utf8_lossy(&line).into_owned()).is_err() {
+                    break;
+                }
             }
-            if line.last() == Some(&b'\n') {
-                line.pop();
-            }
-            if line.last() == Some(&b'\r') {
-                line.pop();
-            }
-            if tx.send(String::from_utf8_lossy(&line).into_owned()).is_err() {
-                break;
-            }
-        }
-    });
-    rx
+        })
+        .context("starting a thread to read ExifTool's output")?;
+    Ok(rx)
 }
 
 /// The lines up to `marker` (not included). An ExifTool that exited ends the wait, and one that hasn't reached the
@@ -329,7 +349,7 @@ mod tests {
     /// with U+FFFD, and the answer still ends at its marker.
     #[test]
     fn a_line_that_is_not_utf8_does_not_end_the_answer() {
-        let lines = pump(std::io::Cursor::new(b"ab\xff\r\n{ready1}\n".to_vec()));
+        let lines = pump(std::io::Cursor::new(b"ab\xff\r\n{ready1}\n".to_vec())).unwrap();
         let answer = read_until(&lines, "{ready1}", Instant::now() + COMMAND_TIMEOUT).unwrap();
         assert_eq!(answer, "ab\u{FFFD}\n");
     }

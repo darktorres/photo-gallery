@@ -93,7 +93,7 @@ Rectangle {
         e.accepted = true
     }
     // Clicks on the dimmed background close it. No click or wheel reaches the viewer below: the results' Flickable
-    // passes the wheel on at its ends, and the viewer would zoom.
+    // passes the wheel on at its ends, and the viewer would step to the next picture (its wheel), so it is not reached.
     MouseArea {
         anchors.fill: parent
         onClicked: panel.close()

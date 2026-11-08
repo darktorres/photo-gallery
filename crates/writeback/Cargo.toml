@@ -8,6 +8,10 @@ publish.workspace = true
 workspace = true
 
 # The writer: puts the ratings and the turns into the files (ExifTool, the rotation edit) and keeps the queue of those writes. Its dependencies are the edit, the metadata and ExifTool.
+# The `fault` feature lets the tests of the crates above start a writer that panics where they ask (`pg_writeback::fault`).
+[features]
+fault = []
+
 [dependencies]
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }

@@ -43,7 +43,8 @@ Dialog {
 
     ColumnLayout {
         Label {
-            text: (dialog.folder.length ? dialog.folder : words.text("ui-all-folders"))
+            text: (dialog.folder.length ? dialog.folder
+                       : dialog.recursive ? words.text("ui-all-folders") : words.text("ui-drive-roots"))
                 + (dialog.recursive ? " " + words.text("ui-and-subfolders") : "") + " · " + dialog.filters + " · "
                 + dialog.sortName + (dialog.descending ? " ↓" : " ↑")
             color: "#999999"

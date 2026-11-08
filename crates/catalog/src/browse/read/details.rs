@@ -7,17 +7,15 @@ use rusqlite::{Connection, OptionalExtension};
 
 use pg_model::details::Details;
 use pg_model::detection;
-use pg_model::format::Format;
 use pg_model::ids::FileId;
-use pg_model::media::Kind;
 
 pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
     // One read snapshot: the file's row and its border sides are one moment's (a re-analysis may write meanwhile).
     let snapshot = catalog.conn.unchecked_transaction()?;
     let row = snapshot
         .prepare_cached(
-            "SELECT fo.path, f.name, f.size, f.kind, a.format FROM files f
-             JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
+            "SELECT fo.path, f.name, f.size, f.kind, a.format, a.error IS NOT NULL FROM files f
+             JOIN folders fo ON fo.id = f.folder_id LEFT JOIN analysis a ON a.file_id = f.id
              WHERE f.id = ?1",
         )?
         .query_row([file_id.get()], |r| {
@@ -27,17 +25,18 @@ pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
                 r.get::<_, i64>(2)?,
                 r.get::<_, String>(3)?,
                 r.get::<_, Option<String>>(4)?,
+                r.get::<_, bool>(5)?,
             ))
         })
         .optional()?;
     let found = match row {
-        Some((folder, name, size, kind, format)) => {
+        Some((folder, name, size, kind, format, failed)) => {
             Some(Details {
                 path: catalog.file_path_of(&folder, &name)?,
                 size,
-                // Videos keep theirs in the catalog (rewriting a video to add XMP would copy GBs).
-                rating_in_file: kind == Kind::Image.key()
-                    && format.as_deref().and_then(Format::from_name).is_none_or(pg_metadata::can_hold_rating),
+                // The rule the rating's write-back follows (`writes::set_rating`): videos keep theirs in the catalog
+                // (rewriting a video to add XMP would copy GBs), and so does a file the import couldn't read.
+                rating_in_file: !failed && crate::writes::rating_in_file_possible(&kind, format.as_deref()),
                 border_sides: detection::Sides::new(),
             })
         }

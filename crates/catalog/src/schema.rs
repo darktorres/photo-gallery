@@ -15,13 +15,44 @@ use crate::{Error, Result, write_transaction};
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
 ///
-/// Until there is a catalog worth keeping (the full-library run at the latest, PLAN M4), schema changes edit the
-/// baseline in place, without a new version. A catalog whose schema differs from this build's is rebuilt when it is
-/// prepared ([`crate::Catalog::prepare`]): a new catalog is made from the baseline and takes the old rows with their
-/// ids ([`carry_rows`]), and the old file is moved aside. From then on the baseline is frozen and every change is a
-/// migration, which converts the rows whose meaning changed instead of copying them as they are.
+/// The baseline is frozen: since the first migration (version 2), every schema change is a migration, which converts
+/// the rows whose meaning changed instead of copying them as they are, and the baseline takes comment edits only (a
+/// catalog at version 1 is compared with it). A catalog whose schema differs from this build's at its version is
+/// rebuilt when it is prepared ([`crate::Catalog::prepare`]): a new catalog is made from the baseline and the
+/// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
+/// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[];
+pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS];
+
+/// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
+/// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
+/// its sides (`Catalog::store_borders`); a pairing's replacement deletes them, and the analysis with them. `files.seq`
+/// is not touched: the thumbnails are not made from the borders.
+const TO_2_CHANGE_STAMPS: &str = concat!(
+    "CREATE TRIGGER analysis_cut_stamp AFTER UPDATE OF cut_left, cut_top, cut_right, cut_bottom ON analysis\n",
+    "WHEN old.cut_left IS NOT new.cut_left OR old.cut_top IS NOT new.cut_top OR old.cut_right IS NOT new.cut_right\n",
+    "    OR old.cut_bottom IS NOT new.cut_bottom\n",
+    "BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER analysis_removed_stamp AFTER DELETE ON analysis BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = old.file_id;\nEND;\n",
+    "CREATE TRIGGER border_sides_stamp_insert AFTER INSERT ON border_sides BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER border_sides_stamp_delete AFTER DELETE ON border_sides BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = old.file_id;\nEND;\n",
+);
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
 /// schema, so a SQLite file that merely has the same tables is not taken for a catalog.
@@ -293,7 +324,7 @@ CREATE TABLE files(
     missing   INTEGER NOT NULL DEFAULT 0,
     rotation  INTEGER NOT NULL DEFAULT 0,  -- quarter turns clockwise kept here, for files that can't be rotated
                                            -- in place (pg_metadata::rotation_method); applied after EXIF orientation
-    order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (path::order_key)
+    order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (PathRules::order_key)
     pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
     seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers
     changed   INTEGER NOT NULL DEFAULT 0,  -- meta.seq at its last user-visible change (changes_since): kept by triggers
@@ -431,9 +462,10 @@ CREATE TABLE file_ratings(
     value   INTEGER NOT NULL CHECK (value BETWEEN 0 AND 5)
 );
 -- Changes waiting to be written into the files (the writeback crate), so a write survives quitting. `value` is
--- the rating, or the quarter turns clockwise still to apply. `temp` is set once the new content is complete
--- beside the original, carrying `temp_value`; a row with it set is finished by copying it in (the file keeps its
--- NTFS identity). The user may change `value` meanwhile: what is left after `temp_value` is written stays queued.
+-- the rating, or the quarter turns clockwise still to apply. `temp` is set once the copy of the complete new
+-- content beside the original, carrying `temp_value`, into the original starts (the original may be part-written
+-- from then); a row with it set is finished by copying it in (the file keeps its NTFS identity), and is never given
+-- up. The user may change `value` meanwhile: what is left after `temp_value` is written stays queued.
 -- `temp` is the temp file's path as the rules join it (the bytes, like `files`' folder), not text.
 CREATE TABLE file_writes(
     file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
@@ -658,5 +690,38 @@ mod tests {
         expected_schemas_follow_the_version,
         expected_schemas_follow_the_version_windows,
         expected_schemas_follow_the_version_posix
+    );
+
+    fn triggers(conn: &Connection) -> Vec<String> {
+        conn.prepare("SELECT name FROM sqlite_schema WHERE type = 'trigger' ORDER BY name")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap()
+    }
+
+    /// The stamps of version 2 are its migration's, not the baseline's (which is frozen): a version-1 catalog taken
+    /// forward by it has this build's schema.
+    fn the_baseline_and_the_migration_make_the_current_schema(rules: PathRules) {
+        assert_eq!(current_version().unwrap(), BASELINE_VERSION + 1);
+        let stamps =
+            ["analysis_cut_stamp", "analysis_removed_stamp", "border_sides_stamp_delete", "border_sides_stamp_insert"];
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION).unwrap();
+        let before = triggers(&conn);
+        assert!(stamps.iter().all(|s| !before.iter().any(|t| t == s)), "{before:?}");
+        assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(&expected(BASELINE_VERSION).unwrap()), None);
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        assert_eq!(version(&conn), BASELINE_VERSION + 1);
+        let after = triggers(&conn);
+        assert!(stamps.iter().all(|s| after.iter().any(|t| t == s)), "{after:?}");
+        assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(current_expected().unwrap()), None);
+    }
+
+    under_both_rules!(
+        the_baseline_and_the_migration_make_the_current_schema,
+        the_baseline_and_the_migration_make_the_current_schema_windows,
+        the_baseline_and_the_migration_make_the_current_schema_posix
     );
 }

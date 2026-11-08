@@ -1,7 +1,10 @@
 //! The folder tree's expansion: the rows the folder pane shows, of a tree whose folders open and close. Row 0 is "All"
-//! (`None`); the other rows are the tree's nodes in its pre-order, the visible ones: a node is shown when every folder
-//! above it is open. The desktop wraps this in its list model and does the Qt part (the insert and remove signals);
-//! the rows it inserts or removes come from here, before the change, so the signals say what changed.
+//! (the merged folder `""` with its subfolders); row 1 is "Drive roots" (`""` without them: the files directly in a
+//! drive root, which no folder holds) when there are such files; the other rows are the tree's nodes in its pre-order,
+//! the visible ones: a node is shown when every folder above it is open. Recursion is the listing's one toggle, so the
+//! two first rows are the pairs (`""`, recursive) and (`""`, not recursive). The desktop wraps this in its list model
+//! and does the Qt part (the insert and remove signals); the rows it inserts or removes come from here, before the
+//! change, so the signals say what changed.
 
 use std::cell::RefCell;
 use std::ops::Range;
@@ -9,8 +12,17 @@ use std::ops::Range;
 use pg_model::rules::Merged;
 use pg_model::tree::FolderTree;
 
-/// A visible row: `None` is "All".
-pub type Visible = Option<usize>;
+/// A visible row. The order is the rows' order (All, then Drive roots, then the nodes in pre-order), which
+/// [`Tree::row_of`] searches by.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum Visible {
+    /// Every folder, with the subfolders: the folder `""`, recursive.
+    All,
+    /// The files directly in the drive roots: the folder `""`, not recursive. Shown only when there are some.
+    DriveRoots,
+    /// A node of the tree.
+    Folder(usize),
+}
 
 /// A toggle of a folder, before it is made: whether it opens, and the rows below its row that it inserts (opening) or
 /// removes (closing).
@@ -33,7 +45,7 @@ pub struct Tree {
 impl Default for Tree {
     /// Only "All", until the first tree.
     fn default() -> Tree {
-        Tree { tree: FolderTree::default(), expanded: Vec::new(), visible: vec![None], key: RefCell::default() }
+        Tree { tree: FolderTree::default(), expanded: Vec::new(), visible: vec![Visible::All], key: RefCell::default() }
     }
 }
 
@@ -43,7 +55,7 @@ impl Tree {
         &self.tree
     }
 
-    /// The visible rows, "All" first.
+    /// The visible rows, "All" first (then "Drive roots", when there are files in them).
     pub fn rows(&self) -> &[Visible] {
         &self.visible
     }
@@ -84,23 +96,29 @@ impl Tree {
         self.show_all();
     }
 
-    /// The node of a folder (the empty folder is "All", not a node), in any case.
+    /// The node of a folder (the empty folder is "All" or "Drive roots", not a node), in any case.
     pub fn find(&self, folder: &Merged) -> Option<usize> {
         self.tree.find(folder, &mut self.key.borrow_mut())
     }
 
-    /// The row a folder shows on (the empty folder is "All", row 0), if it shows.
-    pub fn row_of_path(&self, folder: &Merged) -> Option<usize> {
-        if folder.is_empty() {
-            return Some(0);
-        }
-        self.visible.binary_search(&Some(self.find(folder)?)).ok()
+    /// The row a listing's folder shows on, if it shows. The empty folder is "All" (row 0) with its subfolders, and
+    /// "Drive roots" (row 1) without them when that row is shown; with no files in the drive roots it is "All" either
+    /// way, so the empty folder always has a row. Recursion makes no other folder's row.
+    pub fn row_of(&self, folder: &Merged, recursive: bool) -> Option<usize> {
+        let row = if !folder.is_empty() {
+            Visible::Folder(self.find(folder)?)
+        } else if !recursive && self.tree.root_files() > 0 {
+            Visible::DriveRoots
+        } else {
+            Visible::All
+        };
+        self.visible.binary_search(&row).ok()
     }
 
-    /// What toggling the folder on `row` would do, without doing it: `None` for "All" and for a folder with no
-    /// children.
+    /// What toggling the folder on `row` would do, without doing it: `None` for "All", for "Drive roots" and for a
+    /// folder with no children.
     pub fn plan_toggle(&self, row: usize) -> Option<Toggle> {
-        let n = (*self.visible.get(row)?)?;
+        let Visible::Folder(n) = *self.visible.get(row)? else { return None };
         if !self.tree.has_children(n) {
             return None;
         }
@@ -112,7 +130,7 @@ impl Tree {
     /// Opens or closes the folder on `row`, as [`Tree::plan_toggle`] says; nothing when there is nothing to toggle.
     pub fn toggle(&mut self, row: usize) {
         let Some(plan) = self.plan_toggle(row) else { return };
-        let Some(Some(n)) = self.visible.get(row).copied() else { return };
+        let Some(Visible::Folder(n)) = self.visible.get(row).copied() else { return };
         let Some(open) = self.expanded.get_mut(n) else { return };
         *open = plan.expand;
         if plan.expand {
@@ -125,9 +143,10 @@ impl Tree {
         }
     }
 
-    /// Opens the folders above a folder so it shows: its row, or `None` when there is no such folder.
-    pub fn reveal(&mut self, folder: &Merged) -> Option<usize> {
-        if let Some(row) = self.row_of_path(folder) {
+    /// Opens the folders above a listing's folder so it shows: its row ([`Tree::row_of`]), or `None` when there is no
+    /// such folder.
+    pub fn reveal(&mut self, folder: &Merged, recursive: bool) -> Option<usize> {
+        if let Some(row) = self.row_of(folder, recursive) {
             return Some(row);
         }
         let n = self.find(folder)?;
@@ -139,14 +158,17 @@ impl Tree {
             above = self.tree.parent(p);
         }
         self.show_all();
-        self.row_of_path(folder)
+        self.row_of(folder, recursive)
     }
 
-    /// The visible rows from the expansion: "All", then the tree.
+    /// The visible rows from the expansion: "All", "Drive roots" when there are files in them, then the tree.
     fn show_all(&mut self) {
         let mut visible = std::mem::take(&mut self.visible);
         visible.clear();
-        visible.push(None);
+        visible.push(Visible::All);
+        if self.tree.root_files() > 0 {
+            visible.push(Visible::DriveRoots);
+        }
         self.visible_in(0..self.tree.len(), &mut visible);
         self.visible = visible;
     }
@@ -157,7 +179,7 @@ impl Tree {
         let mut n = nodes.start;
         while n < nodes.end {
             let Some(&open) = self.expanded.get(n) else { break };
-            out.push(Some(n));
+            out.push(Visible::Folder(n));
             n = if open { n + 1 } else { self.tree.subtree_end(n) };
         }
     }
@@ -196,10 +218,65 @@ mod tests {
         b.build()
     }
 
-    /// The visible rows as the merged paths they show (`""` for "All").
+    /// The visible rows as the merged paths they show (`""` for "All", `"/"` for "Drive roots").
     fn shown(t: &Tree) -> Vec<String> {
         let rules = t.folders().rules();
-        t.rows().iter().map(|r| r.map_or(String::new(), |n| rules.display_merged(&t.folders().merged(n)))).collect()
+        t.rows()
+            .iter()
+            .map(|r| match *r {
+                Visible::All => String::new(),
+                Visible::DriveRoots => "/".to_string(),
+                Visible::Folder(n) => rules.display_merged(&t.folders().merged(n)),
+            })
+            .collect()
+    }
+
+    /// `tree()`'s folders, with `count` files directly in `D:\` and in `E:\`.
+    fn tree_with_roots(count: i64) -> FolderTree {
+        let mut b = TreeBuilder::with_capacity(PathRules::Windows, 7, 0, 0);
+        for (id, path) in [(1, r"D:\a"), (2, r"D:\a\b"), (3, r"D:\a\b\c"), (4, r"D:\a\d"), (5, r"D:\e")] {
+            b.add(id, &PathRules::Windows.parse(path).unwrap(), 1);
+        }
+        b.add(6, &PathRules::Windows.parse(r"D:\").unwrap(), count);
+        b.add(7, &PathRules::Windows.parse(r"E:\").unwrap(), count);
+        b.build()
+    }
+
+    /// With files in the drive roots, "Drive roots" is row 1: the folder `""` without subfolders, which neither
+    /// toggles nor moves; with none, the row is not there and `""` is "All" either way.
+    #[test]
+    fn drive_roots_is_row_one_when_the_roots_hold_files() {
+        let mut t = Tree::default();
+        t.replace(tree_with_roots(2));
+        assert_eq!(shown(&t), ["", "/", "a", "e"]);
+        assert_eq!(t.row(0), Some(Visible::All));
+        assert_eq!(t.row(1), Some(Visible::DriveRoots));
+        assert_eq!(t.folders().total(), 9);
+        assert_eq!(t.folders().root_files(), 4);
+        let all = Merged::default();
+        assert_eq!(t.row_of(&all, true), Some(0));
+        assert_eq!(t.row_of(&all, false), Some(1));
+        assert_eq!(t.reveal(&all, false), Some(1));
+        // Recursion makes no other folder's row.
+        assert_eq!(t.row_of(&folder("e"), true), Some(3));
+        assert_eq!(t.row_of(&folder("e"), false), Some(3));
+        // Neither of the first two rows toggles; a folder below them toggles at its own row.
+        assert_eq!(t.plan_toggle(0), None);
+        assert_eq!(t.plan_toggle(1), None);
+        t.toggle(1);
+        assert_eq!(shown(&t), ["", "/", "a", "e"]);
+        let plan = t.plan_toggle(2).unwrap();
+        assert_eq!((plan.expand, plan.rows), (true, 3..5));
+        t.toggle(2);
+        assert_eq!(shown(&t), ["", "/", "a", r"a\b", r"a\d", "e"]);
+        assert_eq!(t.reveal(&folder(r"a\b\c"), true), Some(4));
+
+        // Without root files the row goes; the folder `""` is "All" with or without subfolders.
+        t.replace(tree_with_roots(0));
+        assert_eq!(shown(&t)[..2], ["", "a"]);
+        assert_eq!(t.row_of(&all, false), Some(0));
+        assert_eq!(t.row_of(&all, true), Some(0));
+        assert_eq!(t.folders().total(), 5);
     }
 
     #[test]
@@ -235,12 +312,13 @@ mod tests {
     fn reveal_opens_the_folders_above_and_gives_its_row() {
         let mut t = Tree::default();
         t.replace(tree());
-        assert_eq!(t.reveal(&folder(r"a\b\c")), Some(3));
+        assert_eq!(t.reveal(&folder(r"a\b\c"), true), Some(3));
         assert_eq!(shown(&t), ["", "a", r"a\b", r"a\b\c", r"a\d", "e"]);
-        // Any case; a folder that isn't there; "All".
-        assert_eq!(t.row_of_path(&folder(r"A\D")), Some(4));
-        assert_eq!(t.reveal(&folder("nope")), None);
-        assert_eq!(t.reveal(&Merged::default()), Some(0));
+        // Any case; a folder that isn't there; "All" (with or without subfolders: no files are in the drive roots).
+        assert_eq!(t.row_of(&folder(r"A\D"), false), Some(4));
+        assert_eq!(t.reveal(&folder("nope"), true), None);
+        assert_eq!(t.reveal(&Merged::default(), true), Some(0));
+        assert_eq!(t.reveal(&Merged::default(), false), Some(0));
     }
 
     #[test]
@@ -265,9 +343,9 @@ mod tests {
         b.add(1, &path, 1);
         let mut t = Tree::default();
         t.replace(b.build());
-        let node = t.row(1).flatten().expect("the folder's row");
+        let Some(Visible::Folder(node)) = t.row(1) else { panic!("the folder's row") };
         let opened = t.folders().merged(node);
         assert_eq!(opened, Merged::from(vec![odd]));
-        assert_eq!(t.reveal(&opened), Some(1));
+        assert_eq!(t.reveal(&opened, true), Some(1));
     }
 }

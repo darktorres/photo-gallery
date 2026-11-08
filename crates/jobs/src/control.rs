@@ -143,9 +143,16 @@ impl Control {
 
     /// Called before each unit of work: waits while paused. `false` means stop.
     pub fn checkpoint(&self) -> bool {
+        self.checkpoint_until(&AtomicBool::new(false))
+    }
+
+    /// [`Control::checkpoint`], which also stops for `stop`, a stop of the caller's own (a pipeline's, set when its
+    /// pass ends). Both are checked under the pause lock: whoever sets `stop` and then calls [`Control::wake`] can't
+    /// set it between this check and the wait.
+    pub fn checkpoint_until(&self, stop: &AtomicBool) -> bool {
         let mut paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
         loop {
-            if self.stop_requested() {
+            if self.stop_requested() || stop.load(Ordering::SeqCst) {
                 return false;
             }
             if !*paused {
@@ -155,11 +162,21 @@ impl Control {
         }
     }
 
-    pub fn begin(&self, phase: Phase, total: u64) {
+    /// Wakes every paused checkpoint to look at its stops again, without resuming: one whose own stop was set
+    /// ([`Control::checkpoint_until`]) returns, the others wait on.
+    pub fn wake(&self) {
+        let _paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        self.resumed.notify_all();
+    }
+
+    /// A phase starts: its progress from 0 of `total`. It ends when the guard is dropped, however the pass leaves (a
+    /// return, an error, a panic): the final progress goes out as [`Event::Finished`], and the phase is idle.
+    pub fn begin(&self, phase: Phase, total: u64) -> PhaseGuard<'_> {
         let now = Instant::now();
         *self.last_event.lock().unwrap_or_else(PoisonError::into_inner) = now;
         self.progress.set(Progress { phase, done: 0, total, failed: 0, bytes: 0, started: now });
         self.changed();
+        PhaseGuard { ctl: self }
     }
 
     /// One file done.
@@ -189,8 +206,8 @@ impl Control {
         self.changed();
     }
 
-    /// The phase ended: its final progress goes out as an event, and the phase is idle.
-    pub fn finish(&self) {
+    /// The phase ended: its final progress goes out as an event, and the phase is idle. Called by [`PhaseGuard`]'s drop.
+    fn finish(&self) {
         let ended = self.progress.update(|p| std::mem::replace(p, Progress::idle()));
         self.events.publish(Event::Finished(ended));
         self.changed();
@@ -209,6 +226,18 @@ impl Control {
 impl Default for Control {
     fn default() -> Control {
         Control::new()
+    }
+}
+
+/// A phase in progress ([`Control::begin`]); dropping it ends the phase.
+#[must_use = "the phase ends when the guard is dropped: bind it (`let _phase = ctl.begin(..)`) for the pass's length"]
+pub struct PhaseGuard<'a> {
+    ctl: &'a Control,
+}
+
+impl Drop for PhaseGuard<'_> {
+    fn drop(&mut self) {
+        self.ctl.finish();
     }
 }
 
@@ -254,13 +283,35 @@ mod tests {
     }
 
     #[test]
-    fn finish_publishes_the_last_progress_and_goes_idle() {
+    fn waking_a_paused_checkpoint_stops_only_the_one_whose_own_stop_is_set() {
+        let ctl = Arc::new(Control::new());
+        ctl.set_paused(true);
+        let stop = Arc::new(AtomicBool::new(false));
+        let (tx, rx) = mpsc::channel();
+        let (own, other) = (tx.clone(), tx);
+        let (waiting, flag) = (ctl.clone(), stop.clone());
+        std::thread::spawn(move || own.send(("own", waiting.checkpoint_until(&flag))).unwrap());
+        let waiting = ctl.clone();
+        std::thread::spawn(move || other.send(("other", waiting.checkpoint())).unwrap());
+        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+        stop.store(true, Ordering::SeqCst);
+        ctl.wake();
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), ("own", false));
+        // The other is still paused: the wake is not a resume.
+        assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
+        ctl.set_paused(false);
+        assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), ("other", true));
+    }
+
+    #[test]
+    fn a_dropped_phase_guard_publishes_the_last_progress_and_goes_idle() {
         let ctl = Control::new();
         let sub = ctl.subscribe();
-        ctl.begin(Phase::Import, 10);
+        let phase = ctl.begin(Phase::Import, 10);
         ctl.add(5, false);
         ctl.add(7, true);
-        ctl.finish();
+        assert_eq!(ctl.snapshot().phase, Phase::Import);
+        drop(phase);
         let items = sub.take().items;
         match items.as_slice() {
             [Event::Finished(p)] => {
@@ -268,6 +319,24 @@ mod tests {
             }
             other => panic!("expected one Finished event, got {} events", other.len()),
         }
+        assert_eq!(ctl.snapshot().phase, Phase::Idle);
+    }
+
+    #[test]
+    fn a_pass_that_fails_or_panics_still_ends_its_phase() {
+        let ctl = Control::new();
+        let pass = |fail: bool| -> anyhow::Result<()> {
+            let _phase = ctl.begin(Phase::Borders, 3);
+            anyhow::ensure!(!fail, "the pass failed");
+            Ok(())
+        };
+        assert!(pass(true).is_err());
+        assert_eq!(ctl.snapshot().phase, Phase::Idle);
+        let panicked = crate::panics::catch(std::panic::AssertUnwindSafe(|| {
+            let _phase = ctl.begin(Phase::Crop, 1);
+            panic!("the pass panicked");
+        }));
+        assert!(panicked.is_err());
         assert_eq!(ctl.snapshot().phase, Phase::Idle);
     }
 }

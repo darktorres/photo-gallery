@@ -178,6 +178,20 @@ pub fn write_row(c: &Catalog, id: FileId) -> Result<WriteRow> {
     Ok(WriteRow { attempts, temp, error })
 }
 
+/// The file's write row of `kind` (`rating` or `rotation`), for a file with both queued (it must be in the queue: an
+/// error otherwise).
+pub fn write_row_of(c: &Catalog, id: FileId, kind: &str) -> Result<WriteRow> {
+    let (attempts, temp, error): (i64, Option<Vec<u8>>, Option<String>) = c.conn.query_row(
+        "SELECT attempts, temp, error FROM file_writes WHERE file_id = ?1 AND kind = ?2",
+        params![id.get(), kind],
+        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+    )?;
+    let temp = temp
+        .map(|bytes| c.rules().parse_bytes(&bytes).ok_or_else(|| anyhow::anyhow!("a temp path that doesn't parse")))
+        .transpose()?;
+    Ok(WriteRow { attempts, temp, error })
+}
+
 /// Queues a write of `kind` (`rating` or `rotation`) with `value` for the file, as a change made by hand.
 pub fn queue_write(c: &Catalog, id: FileId, kind: &str, value: i64) -> Result<()> {
     c.conn.execute(

@@ -1,6 +1,10 @@
 //! The files changed since a change number (`files.changed`): what a client that kept its list as of that number has to
 //! fetch again. Every user-visible change stamps its file, in the same statement as the change (the schema's triggers):
-//! the file itself, its analysis, its rating, its border mark, and its queued write.
+//! the file itself, its analysis (made, changed or removed), the borders found in it (the cut and the sides), its
+//! rating, its border mark, and its queued write.
+//!
+//! No caller in the app yet: its planned consumer is a `Bus` subscriber that fell behind (`Lagged`) and resyncs
+//! through it (docs/REFACTOR_PLAN.md, the event primitives), which is not built.
 
 use crate::Result;
 use pg_model::ids::FileId;

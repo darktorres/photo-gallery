@@ -1,4 +1,4 @@
-//! The window's test hooks (`--name=value` arguments, listed in Main.qml), read typed: the QML doesn't parse text.
+//! The window's test hooks (`--name=value` arguments, listed in TestHooks.qml), read typed: the QML doesn't parse text.
 //! `--screenshot` and `--wait` are read by screenshot.rs. A path option is read by `path`, exactly as given; the QML
 //! never gets a path from here.
 

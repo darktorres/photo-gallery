@@ -56,9 +56,12 @@ pub enum Event {
     GridResized(f64),
     /// The filter bar's query was typed: the list is shown once the typing rests.
     QueryEdited,
-    /// A size request: the sort, the panels or the listing changed by the user (the desktop's menus and bars).
+    /// A panel opened, closed or toggled: the filter bar, the borders shown, the viewer (the desktop's menus, bars and
+    /// keys).
     Panel(panels::Event),
+    /// A size request: the grid's row height stepped, scaled or chosen, or the screen's scale changed.
     Size(prefs::Event),
+    /// Where the grid looks changed by the user: the folder, the recursion, the sort, the query, a saved view.
     Listing(listing::Event),
     /// A rating, a quarter turn, or a border mark, asked for by the user (the viewer's or the grid's keys).
     Rate {
@@ -246,9 +249,7 @@ impl Controller {
         let mut out = Vec::new();
         for command in self.start.update(event) {
             match command {
-                start::Command::OpenAll => {
-                    out.extend(self.listing_event(listing::Event::OpenFolder(Merged::default())))
-                }
+                start::Command::OpenAll => out.extend(self.listing_event(listing::Event::OpenAll)),
                 start::Command::Select(i) => out.push(Command::RestoreSelection(i)),
                 start::Command::Started => out.push(Command::Started),
             }
@@ -332,10 +333,22 @@ impl Controller {
         self.fire(due)
     }
 
-    /// The shutdown: the saves that wait run now. A pause that would only show the list is not run.
+    /// The shutdown: the saves that wait run now, each once. A query's pause (`ApplyQuery`) saves the session when it
+    /// ends, so it waiting is a session to save too: it becomes the session's save (`SaveSession`, which saves the last
+    /// file as well), never a list shown (`listing_now`) for a window that is closing. A layout's pause is dropped.
     fn flush(&mut self) -> Vec<Command> {
-        let due: Vec<Timer> =
-            self.deadlines.drain().into_iter().filter(|t| matches!(t, Timer::SaveSession | Timer::Size)).collect();
+        let mut save = false;
+        let mut due = Vec::new();
+        for timer in self.deadlines.drain() {
+            match timer {
+                Timer::ApplyQuery | Timer::SaveSession => save = true,
+                Timer::Size => due.push(timer),
+                Timer::Layout => {}
+            }
+        }
+        if save {
+            due.push(Timer::SaveSession);
+        }
         self.fire(due)
     }
 

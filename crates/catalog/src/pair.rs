@@ -9,6 +9,11 @@
 //! 3. **Replacement** (a save over the same name): a fresh row with no children takes the row of the file it replaced,
 //!    which loses its content state and keeps its ratings (decision 7). Only on a complete scan.
 //!
+//! The folders the scan did not list (unreadable ones, and the reparse folders it does not follow, with what is below
+//! them) are out of every tier: their rows were not seen, so a row there is neither a candidate nor cleared, and the
+//! rows paired are only those this scan saw (`last_scan`), which are in folders it listed. The rest of the root is
+//! paired in full on a complete scan.
+//!
 //! A candidate counts when it matches exactly one row, every row counted (missing or not); several bind nothing and
 //! are counted as ambiguous. A fresh row with children is never paired: pairing deletes it, and its children with it.
 //! Each binding is in the one transaction of the pass.
@@ -32,6 +37,16 @@ pub struct Pairing {
     pub temps: Vec<RulePath>,
 }
 
+/// What a scan of a root saw, for its pairing.
+#[derive(Clone, Copy, Debug)]
+pub struct Coverage<'a> {
+    /// The walk finished: it was not stopped. Tier 2, the replacements and the clearing need it.
+    pub complete: bool,
+    /// The folders the walk did not list: those it couldn't read, and the reparse folders it does not follow. Their
+    /// subtrees were not seen, so their rows are left out of every tier.
+    pub skipped: &'a [RulePath],
+}
+
 /// A fresh row, as the pairing reads it.
 struct Fresh {
     id: i64,
@@ -48,14 +63,18 @@ struct Fresh {
 }
 
 impl Catalog {
-    /// The pairing at the end of a scan of `root` (`scan` is its id). `clean` says the walk finished with every folder
-    /// listed and none skipped: only then do tier 2, the replacements and the clearing run, since they need the whole
-    /// tree to have been seen. Tier 1 runs on any scan that reached this point.
-    pub fn pair(&mut self, root: &RulePath, scan: i64, clean: bool) -> Result<Pairing> {
+    /// The pairing at the end of a scan of `root` (`scan` is its id), over what `coverage` says the scan saw. Tier 1
+    /// runs on any scan that reached this point. Tier 2, the replacements and the clearing run when the walk was
+    /// complete, since they need the tree to have been looked through: they leave out the folders it skipped, whose
+    /// rows were not seen, and pair only the fresh rows this scan saw.
+    pub fn pair(&mut self, root: &RulePath, scan: i64, coverage: Coverage<'_>) -> Result<Pairing> {
         let under = under_params(self.rules, root);
         let tx = write_transaction(&self.conn)?;
+        let skipped = skipped_folders(&tx, self.rules, coverage.skipped)?;
         let mut out = Pairing::default();
-        let fresh = fresh_rows(&tx, &under)?;
+        // A row this scan saw was upserted in a folder it listed; one in a skipped folder is left out all the same.
+        let fresh: Vec<Fresh> =
+            fresh_rows(&tx, &under, scan)?.into_iter().filter(|f| !skipped.contains(&f.folder_id)).collect();
         // The fresh rows some tier found several candidates for; counted at the end, once each.
         let mut ambiguous = std::collections::BTreeSet::new();
 
@@ -86,29 +105,37 @@ impl Catalog {
             }
         }
 
-        if clean {
-            // Tier 2: the same file ID, size, mtime and extension, on a volume none of whose files this scan saw. The
-            // volumes are read once here, not per candidate (a volume's rows, per candidate, was a quadratic scan).
+        if coverage.complete {
+            // Tier 2: the same file ID, size, mtime and extension, on a volume none of whose files this scan saw, in a
+            // folder it did not skip. The volumes are read once here, not per candidate (a volume's rows, per
+            // candidate, was a quadratic scan).
             let mut seen = if fresh.is_empty() { Default::default() } else { seen_volumes(&tx, scan)? };
             let mut moved = tx.prepare(concat!(
-                "SELECT id, volume FROM files WHERE volume IS NOT NULL AND volume <> ?4 AND file_ref = ?5 AND size = ?6
-                 AND mtime = ?7 AND ext = ?8 AND (created IS NULL OR ?9 IS NULL OR created = ?9)
+                "SELECT id, volume, folder_id FROM files WHERE volume IS NOT NULL AND volume <> ?4 AND file_ref = ?5
+                 AND size = ?6 AND mtime = ?7 AND ext = ?8 AND (created IS NULL OR ?9 IS NULL OR created = ?9)
                  AND last_scan < ?10 AND id <> ?11 AND folder_id IN (",
                 under_root!(),
                 ") ORDER BY id"
             ))?;
-            for f in fresh.iter().filter(|f| f.unpaired_still(&tx)) {
-                let candidates: Vec<(i64, i64)> = moved
+            for f in &fresh {
+                // Checked here, not before the loop: a rebind earlier in it may have taken the row.
+                if !f.unpaired_still(&tx)? {
+                    continue;
+                }
+                let candidates: Vec<(i64, i64, i64)> = moved
                     .query_map(
                         params![
                             under[0], under[1], under[2], f.volume, f.file_ref, f.size, f.mtime, f.ext, f.created,
                             scan, f.id
                         ],
-                        |r| Ok((r.get(0)?, r.get(1)?)),
+                        |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
                     )?
                     .collect::<rusqlite::Result<_>>()?;
-                let ids: Vec<i64> =
-                    candidates.into_iter().filter(|(_, volume)| !seen.contains(volume)).map(|(id, _)| id).collect();
+                let ids: Vec<i64> = candidates
+                    .into_iter()
+                    .filter(|(_, volume, folder)| !seen.contains(volume) && !skipped.contains(folder))
+                    .map(|(id, _, _)| id)
+                    .collect();
                 match ids.as_slice() {
                     [] => {}
                     [only] => {
@@ -124,7 +151,8 @@ impl Catalog {
             }
 
             // Replacement: the file that took a name, in the same folder, with a changed or unknown creation time.
-            // Candidates are rows displaced or still unpaired, or live rows this scan did not see.
+            // Candidates are rows displaced or still unpaired, or live rows this scan did not see. They are in the
+            // fresh row's folder, which the scan listed.
             let mut replaced_by = tx.prepare(
                 "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
                  AND ((unpaired = 1 AND (volume IS NULL OR last_scan < ?4))
@@ -132,7 +160,10 @@ impl Catalog {
                  AND (created IS NULL OR ?5 IS NULL OR created <> ?5)
                  ORDER BY id",
             )?;
-            for f in fresh.iter().filter(|f| f.unpaired_still(&tx)) {
+            for f in &fresh {
+                if !f.unpaired_still(&tx)? {
+                    continue;
+                }
                 let ids: Vec<i64> = replaced_by
                     .query_map(params![f.folder_id, f.name, f.id, scan, f.created], |r| r.get(0))?
                     .collect::<rusqlite::Result<_>>()?;
@@ -151,19 +182,23 @@ impl Catalog {
         }
 
         // Counted before the clearing below, which makes the rows nothing paired no longer unpaired.
-        out.ambiguous = fresh.iter().filter(|f| ambiguous.contains(&f.id) && f.unpaired_still(&tx)).count();
-        if clean {
-            // The fresh rows nothing paired, which have no children, are genuinely new files: cleared. Displaced rows
-            // (no identity) stay as they are, as tombstones a later file can replace.
-            tx.execute(
-                concat!(
-                    "UPDATE files SET unpaired = 0 WHERE unpaired = 1 AND volume IS NOT NULL AND folder_id IN (",
-                    under_root!(),
-                    ") AND NOT ",
-                    has_children!()
-                ),
-                params![under[0], under[1], under[2]],
-            )?;
+        for f in &fresh {
+            if ambiguous.contains(&f.id) && f.unpaired_still(&tx)? {
+                out.ambiguous += 1;
+            }
+        }
+        if coverage.complete {
+            // The fresh rows nothing paired, which have no children, are genuinely new files: cleared, outside the
+            // skipped folders. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
+            let mut clear = tx.prepare(concat!(
+                "UPDATE files SET unpaired = 0 WHERE folder_id = ?1 AND unpaired = 1 AND volume IS NOT NULL AND NOT ",
+                has_children!()
+            ))?;
+            for folder in folders_under(&tx, self.rules, root)? {
+                if !skipped.contains(&folder) {
+                    clear.execute([folder])?;
+                }
+            }
         }
 
         out.unpaired_with_data = tx.query_row(
@@ -182,12 +217,14 @@ impl Catalog {
 }
 
 impl Fresh {
-    /// Whether the row is still unpaired, after the passes so far: a bound row is gone or no longer unpaired.
-    fn unpaired_still(&self, tx: &Transaction) -> bool {
-        let unpaired = tx
-            .prepare_cached("SELECT unpaired FROM files WHERE id = ?1")
-            .and_then(|mut stmt| stmt.query_row([self.id], |r| r.get::<_, i64>(0)).optional());
-        matches!(unpaired, Ok(Some(1)))
+    /// Whether the row is still unpaired, after the passes so far: a bound row is gone (false) or no longer unpaired.
+    /// A failed read is an error, which fails the pass, not a row skipped.
+    fn unpaired_still(&self, tx: &Transaction) -> Result<bool> {
+        let unpaired: Option<i64> = tx
+            .prepare_cached("SELECT unpaired FROM files WHERE id = ?1")?
+            .query_row([self.id], |r| r.get(0))
+            .optional()?;
+        Ok(unpaired == Some(1))
     }
 }
 
@@ -197,19 +234,20 @@ fn seen_volumes(tx: &Transaction, scan: i64) -> Result<std::collections::BTreeSe
     Ok(stmt.query_map([scan], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
-/// The fresh rows of the root that have an identity and no children: the rows to pair. A row with children is counted
-/// by [`Catalog::pair`] and left alone.
-fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3]) -> Result<Vec<Fresh>> {
+/// The fresh rows of the root that this scan saw (`last_scan`), with an identity and no children: the rows to pair. A
+/// row with children is counted by [`Catalog::pair`] and left alone. A fresh row the scan did not see may be in a
+/// folder it did not list, so it is not paired until a scan sees it.
+fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3], scan: i64) -> Result<Vec<Fresh>> {
     let mut stmt = tx.prepare(concat!(
         "SELECT id, volume, file_ref, created, folder_id, name, ext, kind, size, mtime, order_key FROM files
-         WHERE volume IS NOT NULL AND unpaired = 1 AND folder_id IN (",
+         WHERE volume IS NOT NULL AND unpaired = 1 AND last_scan = ?4 AND folder_id IN (",
         under_root!(),
         ") AND NOT ",
         has_children!(),
         " ORDER BY id"
     ))?;
     let rows = stmt
-        .query_map(params![under[0], under[1], under[2]], |r| {
+        .query_map(params![under[0], under[1], under[2], scan], |r| {
             Ok(Fresh {
                 id: r.get(0)?,
                 volume: r.get(1)?,
@@ -335,10 +373,25 @@ mod tests {
         size: u64,
         created: Option<i64>,
     ) -> Recorded {
+        found_in(c, scan, r"D:\x", volume, file, name, size, created)
+    }
+
+    /// [`found`], in the folder `folder` of the root D:\x.
+    #[expect(clippy::too_many_arguments, reason = "a test helper: the facts of one scanned file")]
+    fn found_in(
+        c: &mut Catalog,
+        scan: i64,
+        folder: &str,
+        volume: u64,
+        file: u64,
+        name: &str,
+        size: u64,
+        created: Option<i64>,
+    ) -> Recorded {
         let rules = c.rules();
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
-        let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
+        let folder = writer.folder(&p(rules, folder)).unwrap();
         let file = ScannedFile {
             identity: FileIdentity::new(volume, file),
             name: &Name::from(name),
@@ -353,9 +406,17 @@ mod tests {
         recorded
     }
 
-    fn pair(c: &mut Catalog, scan: i64, clean: bool) -> Pairing {
+    /// The pairing of a scan of D:\x that skipped no folder, `complete` or stopped.
+    fn pair(c: &mut Catalog, scan: i64, complete: bool) -> Pairing {
         let rules = c.rules();
-        c.pair(&p(rules, r"D:\x"), scan, clean).unwrap()
+        c.pair(&p(rules, r"D:\x"), scan, Coverage { complete, skipped: &[] }).unwrap()
+    }
+
+    /// The pairing of a complete scan of D:\x that did not list `skipped` (the folders' texts).
+    fn pair_skipping(c: &mut Catalog, scan: i64, skipped: &[&str]) -> Pairing {
+        let rules = c.rules();
+        let skipped: Vec<RulePath> = skipped.iter().map(|text| p(rules, text)).collect();
+        c.pair(&p(rules, r"D:\x"), scan, Coverage { complete: true, skipped: &skipped }).unwrap()
     }
 
     fn count(c: &Catalog) -> i64 {
@@ -404,7 +465,8 @@ mod tests {
         found(&mut c, first, 3, 7, "a.jpg", 10, Some(5));
         pair(&mut c, first, true);
 
-        // Tiers 1 and 2 both see two candidates for the new row: it is one ambiguous row, and stays unpaired.
+        // Tiers 1 and 2 both see two candidates for the new row: nothing is bound to it, and it counts as one ambiguous
+        // row. It is then cleared as a new file (the scan is complete and it has no children), so it isn't unpaired.
         let second = begin(&c);
         found(&mut c, second, 2, 7, "a.jpg", 10, Some(5));
         let paired = pair(&mut c, second, true);
@@ -431,8 +493,9 @@ mod tests {
         assert_eq!(pair(&mut c, second, false).rebound, 0);
         assert!(row(&c, "b.jpg").2, "still unpaired");
 
-        // A clean scan, which looked for the old volume's files and found none of them, pairs it.
+        // A complete scan, which looked for the old volume's files and found none of them, pairs it.
         let third = begin(&c);
+        assert_eq!(found(&mut c, third, 2, 7, "b.jpg", 10, Some(5)), Recorded::Same);
         assert_eq!(pair(&mut c, third, true).rebound, 1);
         assert_eq!(count(&c), 1);
         assert_eq!(row(&c, "b.jpg"), (id, Some(2), false));
@@ -547,5 +610,45 @@ mod tests {
         a_new_file_is_cleared_only_by_a_clean_scan,
         a_new_file_is_cleared_only_by_a_clean_scan_windows,
         a_new_file_is_cleared_only_by_a_clean_scan_posix
+    );
+
+    /// A complete scan that skipped a folder (unreadable, or a reparse folder) pairs and clears the rest of the root,
+    /// and leaves the skipped folder's rows as they are: a row there is no tier-2 candidate, and a fresh row there is
+    /// neither paired nor cleared.
+    fn a_skipped_folders_rows_are_not_paired_or_cleared(rules: PathRules) {
+        let mut c = catalog(rules);
+        // old.jpg in sub, a known file; new.jpg in sub, found by a scan that was stopped (still unpaired).
+        let first = begin(&c);
+        found_in(&mut c, first, r"D:\x\sub", 1, 7, "old.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (old, _, _) = row(&c, "old.jpg");
+        let stopped = begin(&c);
+        found_in(&mut c, stopped, r"D:\x\sub\deeper", 1, 8, "new.jpg", 10, Some(5));
+        pair(&mut c, stopped, false);
+        assert!(row(&c, "new.jpg").2);
+
+        // Now sub can't be read. A file on another volume with old.jpg's file ID, size, mtime and creation time shows
+        // up in the root: old.jpg's volume is not seen, but its folder was not looked in, so it is not a candidate.
+        let third = begin(&c);
+        found(&mut c, third, 2, 7, "moved.jpg", 10, Some(5));
+        let paired = pair_skipping(&mut c, third, &[r"D:\x\sub"]);
+        assert_eq!((paired.rebound, paired.replaced, paired.ambiguous), (0, 0, 0));
+        assert_eq!(count(&c), 3);
+        assert_eq!(row(&c, "old.jpg"), (old, Some(1), false));
+        assert!(row(&c, "new.jpg").2, "a fresh row in a skipped folder is not cleared");
+        assert!(!row(&c, "moved.jpg").2, "the rest of the root is cleared");
+
+        // Read again: the fresh row the scan sees there is cleared.
+        let fourth = begin(&c);
+        found(&mut c, fourth, 2, 7, "moved.jpg", 10, Some(5));
+        found_in(&mut c, fourth, r"D:\x\sub\deeper", 1, 8, "new.jpg", 10, Some(5));
+        pair(&mut c, fourth, true);
+        assert!(!row(&c, "new.jpg").2);
+    }
+
+    under_both_rules!(
+        a_skipped_folders_rows_are_not_paired_or_cleared,
+        a_skipped_folders_rows_are_not_paired_or_cleared_windows,
+        a_skipped_folders_rows_are_not_paired_or_cleared_posix
     );
 }

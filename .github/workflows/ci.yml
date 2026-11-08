@@ -163,6 +163,13 @@ jobs:
       - name: QML tests
         run: just qmltest
 
+      - name: Eval tools tests (stdlib unittest; the viewer imports Pillow)
+        shell: pwsh
+        run: |
+          python -m pip install --quiet pillow==13.0.0
+          just test-eval
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
       - name: Screenshot comparison against the committed reference
         if: github.event_name == 'pull_request'
         continue-on-error: true # informational until it is stable (plan S-15)

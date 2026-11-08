@@ -62,6 +62,26 @@ proptest! {
         prop_assert!(PathRules::Windows.merged_key(&merged_of(&below)).starts_with(&PathRules::Windows.merged_key(&merged_of(&merged))));
     }
 
+    // A Posix folder's recursive scope holds every file below it, in a subfolder whose raw name starts with byte 0xFF
+    // too (a byte no UTF-8 name starts with), and no file of a sibling whose name extends the folder's.
+    #[test]
+    fn a_posix_recursive_scope_holds_every_file_below(parts in prop::collection::vec(component(), 1..4), n in name(), tail in "[a-z\u{1}\u{2}]{0,3}") {
+        let rules = PathRules::Posix;
+        let folder: Vec<Name> = parts.iter().map(|p| Name::from(p.as_str())).collect();
+        let (lo, hi) = rules.scope_keys(&folder, true);
+        let hi = hi.unwrap_or_default();
+        let mut below = folder.clone();
+        below.push(Name::from_raw(&[&[0xFF, b'a'][..], tail.as_bytes()].concat()));
+        let key = rules.order_key(&rules.folder_key(&below), &Name::from(n.as_str()));
+        prop_assert!(lo <= key && key < hi);
+        let mut sibling = folder.clone();
+        if let Some(last) = sibling.last_mut() {
+            *last = Name::from(format!("{}{tail}\u{1}", parts.last().map_or("", String::as_str)).as_str());
+        }
+        let outside = rules.order_key(&rules.folder_key(&sibling), &Name::from(n.as_str()));
+        prop_assert!(outside < lo || outside >= hi);
+    }
+
     // The drive is not part of the key: every drive's copy of a folder is one folder, and its files have one order key.
     #[test]
     fn the_drive_is_not_part_of_the_order_key(parts in prop::collection::vec(component(), 1..4), n in name(), d in "[A-Z]") {

@@ -85,7 +85,7 @@ use std::path::Path;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use pg_app::reexport::{Change, Notice, Phase, Progress};
+use pg_app::reexport::{Cause, Change, FileError, Notice, Phase, Progress, WriteError};
 use pg_client::text;
 use pg_model::ids::RootId;
 use pg_model::rules::PathRules;
@@ -148,6 +148,8 @@ pub struct LibraryRust {
     message_warning: bool,
     writes: QString,
     write_failed: bool,
+    /// The writer's count of dropped writes (`WriteStatus::dropped`) already shown: a note is shown when it grows.
+    dropped_seen: usize,
 }
 
 /// The status line's text for a pass's progress; empty when idle.
@@ -171,12 +173,33 @@ fn notice_text(notice: &Notice) -> String {
         Notice::ScanFailed { root, error } => text::scan_failed(root, error),
         Notice::RootRefused { root, reason } => text::root_refused(root, reason),
         Notice::ScanNote { root, note, count } => text::scan_note(root, note.kind(), *count),
-        Notice::RoundFailed { error } | Notice::CropFailed { error } => error.clone(),
+        Notice::RoundFailed { error } => text::round_failed(error),
+        Notice::CropFailed { error } => text::crop_failed(error),
         Notice::RoundPanicked { message } => text::round_panicked(message),
         Notice::CacheFull { height, made } => text::cache_full(*height, *made),
         Notice::Cropped { folder, saved, skipped, failed, first_error } => {
+            let first_error =
+                first_error.as_ref().map(|FileError { path, cause }| format!("{path}: {}", cause_text(cause)));
             text::cropped(*saved, &folder.display().to_string(), *skipped, *failed, first_error.as_deref())
         }
+    }
+}
+
+/// Why a job failed on a file: the error's text, or the words for a panic the job caught on it.
+fn cause_text(cause: &Cause) -> String {
+    match cause {
+        Cause::Error(error) => error.clone(),
+        Cause::Panicked(message) => text::file_panicked(message),
+    }
+}
+
+/// Why the writer's latest write failed, in words: the job's cause, a copy into a file that may be incomplete, or a
+/// write refused for its folder's name.
+fn write_error_text(error: &WriteError) -> String {
+    match error {
+        WriteError::Failed(cause) => cause_text(cause),
+        WriteError::CopyIncomplete { file, temp, cause } => text::write_incomplete(file, temp, &cause_text(cause)),
+        WriteError::FolderRefused { file, folder } => text::write_folder_refused(file, folder),
     }
 }
 
@@ -186,11 +209,16 @@ impl qobject::Library {
         self.set_message(QString::from(&text));
     }
 
+    /// The library's folders, as the catalog has them. When they can't be read, none is listed and the panel says why.
     fn load_roots(mut self: Pin<&mut Self>) {
-        let roots = app::get().roots().unwrap_or_else(|e| {
-            crate::panic_log::note(&format!("library: {e}"));
-            Vec::new()
-        });
+        let roots = match app::get().roots() {
+            Ok(roots) => roots,
+            Err(e) => {
+                crate::panic_log::note(&format!("library: the folders couldn't be read: {e}"));
+                self.as_mut().show(text::folders_unreadable(&e.to_string()), true);
+                Vec::new()
+            }
+        };
         let texts: QStringList = roots.iter().map(|r| QString::from(&PathRules::NATIVE.display(&r.path))).collect();
         self.as_mut().rust_mut().root_ids = roots.iter().map(|r| r.id).collect();
         self.set_roots(texts);
@@ -204,7 +232,9 @@ impl qobject::Library {
         let library = match app::get().library(u32::try_from(thumb_height.max(1)).unwrap_or(1)) {
             Ok(library) => library,
             Err(e) => {
+                // Nothing is scanned, imported or written: the panel says so, not only the log.
                 crate::panic_log::note(&format!("library: {e}"));
+                self.show(text::library_unavailable(&e.to_string()), true);
                 return;
             }
         };
@@ -279,26 +309,32 @@ impl qobject::Library {
         let Some(library) = LIBRARY.get() else { return };
         let status = library.status();
         let p = &status.progress;
-        let line = match (status.paused, progress_status(p)) {
-            (true, s) if s.is_empty() => "Background work paused".to_string(),
-            (true, s) => format!("Paused · {s}"),
-            (false, s) => s,
-        };
+        let pass = progress_status(p);
+        let line = if status.paused { text::paused_status(&pass) } else { pass };
         self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().set_paused(status.paused);
         self.as_mut().set_status(QString::from(&line));
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
     }
 
-    /// The writer's queue and its latest failure.
+    /// The writer's queue and its latest failure; and a note, once, for the writes dropped since the last one (a drop
+    /// is not a failure: it doesn't light `write_failed`).
     fn refresh_writes(mut self: Pin<&mut Self>) {
         let Some(library) = LIBRARY.get() else { return };
         let s = library.status().writes;
-        let writes = text::write_status(s.queued, s.error.as_deref());
+        let error = s.error.as_ref().map(write_error_text);
+        let writes = text::write_status(s.queued, error.as_deref());
         if self.writes.to_string() != writes {
             self.as_mut().set_writes(QString::from(&writes));
         }
         self.as_mut().set_write_failed(s.error.is_some());
+        if s.dropped > self.dropped_seen {
+            let new = s.dropped.saturating_sub(self.dropped_seen);
+            self.as_mut().rust_mut().dropped_seen = s.dropped;
+            if let Some(kind) = s.last_dropped {
+                self.as_mut().show(text::write_dropped(kind, new), true);
+            }
+        }
     }
 
     /// The newest notice from the job, with how many others came in since the last one: the job keeps the newest and
@@ -308,9 +344,7 @@ impl qobject::Library {
         let taken = library.take_messages();
         if let Some(last) = taken.kept.back() {
             let more = taken.kept.len() - 1 + taken.not_kept;
-            let text = notice_text(last);
-            let text = if more == 0 { text } else { format!("{text} (and {more} more)") };
-            self.show(text, last.is_warning());
+            self.show(text::notice_more(notice_text(last), more), last.is_warning());
         }
     }
 
@@ -326,11 +360,14 @@ impl qobject::Library {
             Ok((root, added)) => {
                 // A folder already in the library is rescanned (the app scans it either way).
                 if !added {
-                    self.as_mut().show(format!("{root} is already in the library: rescanning it"), false);
+                    self.as_mut().show(text::folder_already_added(&root), false);
                 }
                 self.as_mut().load_roots();
             }
-            Err(e) => self.show(format!("{e}"), true),
+            Err(pg_app::Error::FolderRefused { folder, reason }) => {
+                self.show(text::folder_refused(&folder, &reason), true);
+            }
+            Err(e) => self.show(text::folder_not_added(&e.to_string()), true),
         }
     }
 
@@ -343,13 +380,13 @@ impl qobject::Library {
                 self.as_mut().load_roots();
                 self.scanned();
             }
-            Err(e) => self.show(format!("{e}"), true),
+            Err(e) => self.show(text::folder_not_removed(&e.to_string()), true),
         }
     }
 
     fn rescan(self: Pin<&mut Self>) {
         if let Err(e) = app::get().rescan() {
-            self.show(format!("{e}"), true);
+            self.show(text::rescan_failed(&e.to_string()), true);
         }
     }
 

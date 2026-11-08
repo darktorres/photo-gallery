@@ -3,7 +3,7 @@
 //! write pending, no frame for a while), then quit (cpp/screenshot.cpp). C++ encodes the window as a PNG and calls
 //! `screenshot_taken` here, which writes the image and the reason it was taken (`<png>.settle.txt`) at the path as the
 //! system gave it, so a name that isn't UTF-8 is written under its own bytes. For checking the UI without a person at the
-//! screen, with the QML's own hooks (Main.qml).
+//! screen, with the QML's own hooks (TestHooks.qml).
 
 #[cxx_qt::bridge]
 pub mod ffi {

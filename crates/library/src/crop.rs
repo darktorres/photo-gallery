@@ -15,8 +15,11 @@ use pg_model::rules::Path as RulePath;
 
 use pg_exiftool::ExifTool;
 use pg_jobs::control::{Control, Phase};
+use pg_jobs::failure::{Cause, FileError};
 use pg_jobs::pipeline::{self, Options};
+use pg_platform::file::TempFile;
 use pg_platform::names::{path_buf, set_path};
+use pg_platform::native::{check_folder_names, verbatim};
 use pg_writeback::{exiftool_program, stat};
 
 pub struct Stats {
@@ -24,8 +27,9 @@ pub struct Stats {
     /// Nothing to crop now (no borders, marked, changed since), or not in the library any more.
     pub skipped: usize,
     pub failed: usize,
-    /// The first failure, with its file.
-    pub error: Option<String>,
+    /// The first failure, with its file. A panic on a file is a failure of that file (`Cause::Panicked`), which is
+    /// not queued again.
+    pub error: Option<FileError>,
     /// What a stop left (to queue again).
     pub remaining: Vec<FileId>,
 }
@@ -106,7 +110,8 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
         return Ok(stats);
     }
 
-    ctl.begin(Phase::Crop, u64::try_from(jobs.len()).unwrap_or(u64::MAX));
+    // The phase ends when this is dropped, however the pass leaves.
+    let phase = ctl.begin(Phase::Crop, u64::try_from(jobs.len()).unwrap_or(u64::MAX));
     let mut done = vec![false; jobs.len()];
     let mut exiftool: Option<ExifTool> = None;
     pipeline::run(
@@ -141,15 +146,16 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    stats.error.get_or_insert_with(|| {
-                        format!("{}: {e:#}", String::from_utf8_lossy(paths.get(job.source.path)))
+                    stats.error.get_or_insert_with(|| FileError {
+                        path: String::from_utf8_lossy(paths.get(job.source.path)).into_owned(),
+                        cause: Cause::of(&e),
                     });
                 }
             }
             Ok(true)
         },
     )?;
-    ctl.finish();
+    drop(phase);
     stats.remaining = jobs.iter().zip(&done).filter(|(_, d)| !**d).map(|(j, _)| j.id).collect();
     Ok(stats)
 }
@@ -174,27 +180,99 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) ->
     let s = &job.source;
     let (source, out) = (paths.get(s.path), paths.get(job.out));
     let (source_path, out_path) = (path_buf(source), path_buf(out));
+    // A folder whose name Windows may change in the plain path (a trailing dot or space) is refused, for the original
+    // and for the copy: ExifTool, which takes plain paths, would reach another folder's file. std's own calls below
+    // take the verbatim form, which reaches the file exactly.
+    check_folder_names(&source_path)?;
+    check_folder_names(&out_path)?;
     if stat(&source_path)? != (s.size, s.mtime) || usize::try_from(s.size).ok() != Some(bytes.len()) {
         return Ok(Written::Skipped);
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
     if let Some(dir) = out_path.parent() {
-        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
+        std::fs::create_dir_all(verbatim(dir)).with_context(|| format!("creating {}", dir.display()))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
     temp.clear();
     temp.extend_from_slice(out);
     temp.extend_from_slice(b".pg-crop");
     let temp_path: PathBuf = path_buf(temp);
-    std::fs::write(&temp_path, &cropped.bytes).with_context(|| format!("writing {}", out_path.display()))?;
-    keep_time(&source_path, &temp_path)?;
-    std::fs::rename(&temp_path, &out_path).with_context(|| format!("writing {}", out_path.display()))?;
+    publish(&temp_path, &out_path, &cropped.bytes, &source_path)?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
 
-/// Give the copy at `copy` the original's modification time.
-fn keep_time(original: &Path, copy: &Path) -> Result<()> {
-    let modified = std::fs::metadata(original)?.modified()?;
-    std::fs::File::options().write(true).open(copy)?.set_modified(modified)?;
+/// Write `bytes` to the temporary `temp`, give it `source`'s modification time, and rename it to `out`, so the copy
+/// at `out` is complete or not there. The temporary is removed on any failure from its first write on (a write that
+/// failed part way, a time not set, a rename refused): its guard is armed before the write and disarmed only once
+/// the rename is done. (Its name is fixed, `<out>.pg-crop`, so what a crash leaves is replaced by the next save.)
+fn publish(temp: &Path, out: &Path, bytes: &[u8], source: &Path) -> Result<()> {
+    // Each is reached exactly, by its verbatim form; the messages name them as the user does.
+    let (temp_disk, out_disk) = (verbatim(temp), verbatim(out));
+    let guard = TempFile::new(&temp_disk);
+    std::fs::write(&temp_disk, bytes).with_context(|| format!("writing {}", out.display()))?;
+    keep_time(source, temp)?;
+    std::fs::rename(&temp_disk, &out_disk).with_context(|| format!("writing {}", out.display()))?;
+    guard.persist();
     Ok(())
+}
+
+/// Give the copy at `copy` the original's modification time (both reached exactly, by their verbatim forms).
+fn keep_time(original: &Path, copy: &Path) -> Result<()> {
+    let modified = std::fs::metadata(verbatim(original))?.modified()?;
+    std::fs::File::options().write(true).open(verbatim(copy))?.set_modified(modified)?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A folder with a source file in it, for `publish`.
+    fn folder(name: &str) -> (PathBuf, PathBuf) {
+        let dir = pg_testkit::test_folder("scratch_crop", name).unwrap();
+        let source = dir.join("source.jpg");
+        std::fs::write(&source, b"original").unwrap();
+        (dir, source)
+    }
+
+    /// Published: the copy is in place with the source's time, and no temporary is left.
+    #[test]
+    fn publish_renames_the_temp_into_place() {
+        let (dir, source) = folder("pg-crop-publish");
+        let (temp, out) = (dir.join("out.jpg.pg-crop"), dir.join("out.jpg"));
+        publish(&temp, &out, b"cropped", &source).unwrap();
+        assert_eq!(std::fs::read(&out).unwrap(), b"cropped");
+        assert!(!temp.exists());
+        let time = |p: &Path| std::fs::metadata(p).unwrap().modified().unwrap();
+        assert_eq!(time(&out), time(&source));
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A rename that fails (the copy's folder is gone) leaves no temporary, and no copy.
+    #[test]
+    fn a_failed_rename_leaves_no_temp() {
+        let (dir, source) = folder("pg-crop-rename");
+        let (temp, out) = (dir.join("out.jpg.pg-crop"), dir.join("gone").join("out.jpg"));
+        assert!(publish(&temp, &out, b"cropped", &source).is_err());
+        assert!(!temp.exists(), "the temporary is removed");
+        assert!(!out.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A failure after the write (the source's time can't be read: it is gone) leaves no temporary; nor does a
+    /// write that fails.
+    #[test]
+    fn a_failed_write_or_time_leaves_no_temp() {
+        let (dir, source) = folder("pg-crop-write");
+        let (temp, out) = (dir.join("out.jpg.pg-crop"), dir.join("out.jpg"));
+        assert!(publish(&temp, &out, b"cropped", &dir.join("missing.jpg")).is_err());
+        assert!(!temp.exists(), "written, then removed");
+        assert!(!out.exists());
+        // The temporary's folder is missing: the write fails, and nothing is there.
+        let temp = dir.join("gone").join("out.jpg.pg-crop");
+        assert!(publish(&temp, &out, b"cropped", &source).is_err());
+        assert!(!temp.exists());
+        assert!(!out.exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 }

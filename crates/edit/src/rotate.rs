@@ -15,7 +15,7 @@
 //! orientation and the new turn together, then resets the tag to 1, so the result shows the same in programs that
 //! ignore the tag.
 
-use anyhow::Result;
+use anyhow::{Result, ensure};
 use pg_model::turns::Turns;
 
 use crate::rewrite::{self, Op};
@@ -40,23 +40,32 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
     // The transform that takes the stored pixels to the new upright image.
     let total = shown.compose(turns);
     let tag = || Outcome::Orientation(total);
-    let rewritten = |out: Vec<u8>| -> Outcome {
-        // Pixels now upright: the tag (if any) goes back to 1.
-        Outcome::Rewritten(pg_metadata::patch_orientation(&out, format, Orientation::UPRIGHT).unwrap_or(out))
+    let rewritten = |out: Vec<u8>| -> Result<Outcome> {
+        // Pixels now upright: the tag goes back to 1. `None` means the file holds no tag the patcher sets, and the
+        // check below then says whether that is so (nothing to reset) or a tag it can't set would turn the
+        // picture a second time.
+        let out = pg_metadata::patch_orientation(&out, format, Orientation::UPRIGHT).unwrap_or(out);
+        let left = pg_metadata::orientation(&out, format);
+        ensure!(
+            left == Orientation::UPRIGHT,
+            "the turned pixels would show turned again: the orientation tag still reads {}",
+            left.get()
+        );
+        Ok(Outcome::Rewritten(out))
     };
     Ok(match format {
         Format::Jpeg => match rewrite::jpeg(bytes, Op::Orient(total)) {
-            Ok(out) => rewritten(out),
+            Ok(out) => rewritten(out)?,
             // Not a perfect transform at this size, or a damaged file: the tag carries the turn.
             Err(e) if e.is::<rewrite::Imperfect>() => tag(),
             Err(e) => return Err(e),
         },
         Format::Png if png_chunks(bytes).any(|c| &c.kind == b"acTL") => tag(),
-        Format::Png => rewritten(rewrite::png(bytes, Op::Orient(total))?),
+        Format::Png => rewritten(rewrite::png(bytes, Op::Orient(total))?)?,
         Format::Webp
             if webp_chunks(bytes).any(|c| &c.kind == b"VP8L") && !webp_chunks(bytes).any(|c| &c.kind == b"ANIM") =>
         {
-            rewritten(rewrite::webp(bytes, Op::Orient(total))?)
+            rewritten(rewrite::webp(bytes, Op::Orient(total))?)?
         }
         Format::Webp | Format::Tiff => tag(),
         Format::Gif => match rewrite::gif(bytes, Op::Orient(total))? {
@@ -256,5 +265,61 @@ mod tests {
                 .unwrap_err()
                 .is::<rewrite::Imperfect>()
         );
+    }
+
+    /// A JPEG whose EXIF orientation 6 is a BYTE, a LONG, or a LONG array stored out of its entry turns once: the
+    /// patcher resets the tag the reader took, so the turned pixels are not turned again by it.
+    #[test]
+    fn jpeg_byte_and_long_orientations_turn_once() {
+        let mut c = turbojpeg::Compressor::new().unwrap();
+        c.set_quality(95).unwrap();
+        c.set_subsamp(turbojpeg::Subsamp::Sub2x2).unwrap();
+        let (w, h) = (64, 32);
+        let pixels = pattern(w, h);
+        let plain = c
+            .compress_to_vec(turbojpeg::Image {
+                pixels: &pixels[..],
+                width: w,
+                pitch: w * 3,
+                height: h,
+                format: turbojpeg::PixelFormat::RGB,
+            })
+            .unwrap();
+        // A little-endian EXIF block with one orientation entry: (type, count, value field, data after the IFD).
+        let entry = |kind: u16, count: u32, field: [u8; 4], data: &[u8]| {
+            let mut t = b"II*\0\x08\0\0\0".to_vec();
+            t.extend(1u16.to_le_bytes());
+            t.extend(0x0112u16.to_le_bytes());
+            t.extend(kind.to_le_bytes());
+            t.extend(count.to_le_bytes());
+            t.extend(field);
+            t.extend(0u32.to_le_bytes());
+            t.extend(data);
+            t
+        };
+        // The data after the IFD starts at 8 + 2 + 12 + 4 = 26.
+        let long_array = [6u32, 1].iter().flat_map(|v| v.to_le_bytes()).collect::<Vec<u8>>();
+        for exif in [
+            entry(1, 1, [6, 0, 0, 0], &[]),
+            entry(4, 1, 6u32.to_le_bytes(), &[]),
+            entry(4, 2, 26u32.to_le_bytes(), &long_array),
+        ] {
+            let mut seg = b"Exif\0\0".to_vec();
+            seg.extend(exif);
+            let mut jpeg = plain[..2].to_vec();
+            jpeg.extend([0xFF, 0xE1]);
+            jpeg.extend(u16::try_from(seg.len() + 2).unwrap().to_be_bytes());
+            jpeg.extend(seg);
+            jpeg.extend_from_slice(&plain[2..]);
+            assert_eq!(pg_metadata::orientation(&jpeg, Format::Jpeg).get(), 6);
+            let Outcome::Rewritten(out) = rotate(&jpeg, Format::Jpeg, Turns::new(1)).unwrap() else {
+                panic!("aligned JPEG")
+            };
+            assert_eq!(pg_metadata::orientation(&out, Format::Jpeg), Orientation::UPRIGHT);
+            let (got, want) = (shown(&out), expect_turned(&jpeg, Turns::new(1)));
+            assert_eq!((got.0, got.1), (want.0, want.1));
+            let worst = got.2.iter().zip(&want.2).map(|(a, b)| a.abs_diff(*b)).max().unwrap();
+            assert!(worst <= 3, "max difference {worst}");
+        }
     }
 }

@@ -168,8 +168,9 @@ impl RootFacts for WinFacts {
 
     fn volume_root(&self, path: &[Unit]) -> io::Result<Vec<Unit>> {
         use windows_sys::Win32::Storage::FileSystem::GetVolumePathNameW;
+        // The path as it was typed: the volume calls are given the plain form.
         let mut wide = NativePath::default();
-        wide.set(&[path]);
+        wide.set_plain(&[path]);
         let mut out = vec![0; 32 * 1024];
         let len = u32::try_from(out.len()).map_err(io::Error::other)?;
         // SAFETY: `wide` is NUL-terminated and outlives the call; `out` is writable for its length.
@@ -182,7 +183,7 @@ impl RootFacts for WinFacts {
     fn drive_type(&self, volume_root: &[Unit]) -> u32 {
         use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
         let mut wide = NativePath::default();
-        wide.set(&[volume_root]);
+        wide.set_plain(&[volume_root]);
         // SAFETY: `wide` is NUL-terminated and outlives the call.
         unsafe { GetDriveTypeW(wide.units().as_ptr()) }
     }
@@ -380,7 +381,8 @@ mod windows {
 
     impl Lister {
         /// Open the folder `path` for listing. A drive root (`D:`) names the drive's current folder, so the path is
-        /// opened with its trailing backslash, and in its verbatim form when long, which lifts the 260-character limit.
+        /// opened with its trailing backslash, and in its verbatim form (`native`), which reaches a folder whose name
+        /// ends in a dot and lifts the 260-character limit.
         pub fn open(&mut self, path: &[Unit]) -> io::Result<Dir> {
             self.wide.set(&[path, &[SEP]]);
             // SAFETY: `wide` is NUL-terminated and outlives the call; the null pointers are optional arguments.

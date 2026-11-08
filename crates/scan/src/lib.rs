@@ -21,7 +21,7 @@ use std::io;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use pg_catalog::{Catalog, Recorded, ScannedFile};
+use pg_catalog::{Catalog, Coverage, Recorded, ScannedFile};
 use pg_model::ids::{FileId, FileIdentity};
 use pg_model::media::Ext;
 use pg_model::name::Name;
@@ -221,9 +221,9 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     let scan_id = catalog.begin_scan(root)?;
     let mut stats = ScanStats::default();
     let mut stack = vec![Frame { path: root.clone(), chain: Vec::new(), dir: Some(root_dir) }];
-    // The folders this scan couldn't list, or were told not to read (a reparse folder): the files under them weren't
-    // seen, so they aren't marked missing.
-    let mut unreadable: Vec<RulePath> = Vec::new();
+    // The folders this scan didn't list: those it couldn't read, and the reparse folders it doesn't follow. The files
+    // under them weren't seen, so they aren't marked missing, and the pairing leaves them out.
+    let mut skipped: Vec<RulePath> = Vec::new();
     // Each identity recorded or seen this scan: the second path to a file is skipped (decision 5).
     let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
     let mut entries: Vec<DirEntry> = Vec::new();
@@ -231,7 +231,8 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     let mut writer = tx.scan_writer(scan_id, root)?;
     let mut in_tx = 0;
     let mut complete = true;
-    ctl.begin(Phase::Scan { root: root_name.clone() }, 0);
+    // The phase ends when this is dropped, however the walk leaves.
+    let _phase = ctl.begin(Phase::Scan { root: root_name.clone() }, 0);
 
     while let Some(frame) = stack.pop() {
         // A stop ends the walk here: nothing is marked missing and the scan's `finished` stays NULL. The pairing
@@ -247,7 +248,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                 Err(e) => {
                     keep_failure(&mut stats.failures, rules.display(&frame.path), format!("{e:#}"));
                     stats.errors += 1;
-                    unreadable.push(frame.path);
+                    skipped.push(frame.path);
                     continue;
                 }
             },
@@ -257,7 +258,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
             Err(e) => {
                 keep_failure(&mut stats.failures, rules.display(&frame.path), format!("{e:#}"));
                 stats.errors += 1;
-                unreadable.push(frame.path);
+                skipped.push(frame.path);
                 continue;
             }
         };
@@ -269,7 +270,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                 stats.skipped_reparse += 1;
                 match e.ext {
                     // A reparse folder is not descended into (it may lead anywhere, and its listing may be a download).
-                    None => unreadable.push(child_path(&frame.path, &e.name)),
+                    None => skipped.push(child_path(&frame.path, &e.name)),
                     // A reparse file keeps its row if it has one: its listing gives no content, so none is queued.
                     Some(_) => {
                         writer.seen_identity(identity)?;
@@ -323,9 +324,9 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     }
     drop(writer);
     tx.commit()?;
-    // The pairing needs the whole tree for tiers 2 and replacement, so it runs them only when nothing was skipped.
-    let clean = complete && unreadable.is_empty();
-    let pairing = catalog.pair(root, scan_id, clean)?;
+    // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
+    // and outside the folders it skipped.
+    let pairing = catalog.pair(root, scan_id, Coverage { complete, skipped: &skipped })?;
     stats.rebound = pairing.rebound;
     stats.replaced = pairing.replaced;
     stats.ambiguous = pairing.ambiguous;
@@ -333,11 +334,10 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     stats.replaced_ids = pairing.replaced_ids;
     stats.temps = pairing.temps;
     if complete {
-        stats.missing = catalog.mark_missing(root, scan_id, &unreadable)?;
+        stats.missing = catalog.mark_missing(root, scan_id, &skipped)?;
         catalog.finish_scan(scan_id)?;
     }
     stats.complete = complete;
-    ctl.finish();
     Ok(stats)
 }
 
@@ -413,8 +413,15 @@ mod tests {
 
     impl FakeListing {
         fn new(root_volume: u64, tree: &[(&str, Vec<FakeEntry>)]) -> FakeListing {
-            let tree =
-                tree.iter().map(|(rel, entries)| (units_of(fake_path(rel).as_bytes()), entries.clone())).collect();
+            FakeListing::under(PathRules::NATIVE, root_volume, tree)
+        }
+
+        /// The fake tree with its folders spelled under `rules`.
+        fn under(rules: PathRules, root_volume: u64, tree: &[(&str, Vec<FakeEntry>)]) -> FakeListing {
+            let tree = tree
+                .iter()
+                .map(|(rel, entries)| (units_of(fake_path(rules, rel).as_bytes()), entries.clone()))
+                .collect();
             FakeListing { tree, root_volume }
         }
     }
@@ -453,16 +460,22 @@ mod tests {
 
     /// The root path of the fake tree, under the rules the tests catalog uses.
     fn fake_root() -> RulePath {
-        PathRules::NATIVE.parse(if cfg!(windows) { r"D:\x" } else { "/x" }).unwrap()
+        fake_root_under(PathRules::NATIVE)
     }
 
-    /// The text of a folder of the fake tree, `rel` under its root (`""` is the root), as the walk opens it.
-    fn fake_path(rel: &str) -> String {
-        let root = if cfg!(windows) { r"D:\x" } else { "/x" };
-        match (rel.is_empty(), cfg!(windows)) {
-            (true, _) => root.to_string(),
-            (false, true) => format!(r"{root}\{rel}"),
-            (false, false) => format!("{root}/{rel}"),
+    /// The root path of the fake tree under `rules`.
+    fn fake_root_under(rules: PathRules) -> RulePath {
+        rules.parse(&fake_path(rules, "")).unwrap()
+    }
+
+    /// The text of a folder of the fake tree under `rules`, `rel` under its root (`""` is the root; its parts are
+    /// separated by `/`), as the walk opens it.
+    fn fake_path(rules: PathRules, rel: &str) -> String {
+        match (rel.is_empty(), rules) {
+            (true, PathRules::Windows) => r"D:\x".to_string(),
+            (true, PathRules::Posix) => "/x".to_string(),
+            (false, PathRules::Windows) => format!(r"D:\x\{}", rel.replace('/', r"\")),
+            (false, PathRules::Posix) => format!("/x/{rel}"),
         }
     }
 
@@ -470,10 +483,11 @@ mod tests {
         pg_catalog::Versions { import: 1, borders: 1 }
     }
 
-    /// One scan of the fake tree into a catalog.
+    /// One scan of the fake tree into a catalog, under the catalog's rules.
     fn scan_fake(catalog: &mut Catalog, tree: &[(&str, Vec<FakeEntry>)], root_volume: u64) -> ScanStats {
-        let root = fake_root();
-        let mut lister = FakeListing::new(root_volume, tree);
+        let rules = catalog.rules();
+        let root = fake_root_under(rules);
+        let mut lister = FakeListing::under(rules, root_volume, tree);
         walk(catalog, &root, &Control::new(), &mut lister).unwrap()
     }
 
@@ -530,6 +544,75 @@ mod tests {
         // The subtree was not listed, so its file is not missing.
         assert_eq!(stats.missing, 0);
         assert_eq!(c.status().unwrap().missing, 0);
+    }
+
+    #[test]
+    fn a_complete_scan_with_a_reparse_folder_still_pairs_the_rest_of_the_root() {
+        // c.jpg (file 5) in the root, a.jpg in sub, on volume 1. Then the root is on volume 2, sub is a link, and c.jpg
+        // is d.jpg (moved while the app was closed): tier 2 pairs it, though the walk skipped sub, and sub's file is
+        // kept as it was (neither missing nor a candidate).
+        let mut c = catalog();
+        let before = [("", vec![file("c.jpg", 5, 3), folder("sub", 20)]), ("sub", vec![file("a.jpg", 9, 1)])];
+        scan_fake(&mut c, &before, 1);
+        let link = FakeEntry { reparse: true, ..folder("sub", 20) };
+        let stats = scan_fake(&mut c, &[("", vec![file("d.jpg", 5, 3), link]), ("sub", vec![])], 2);
+        assert!(stats.complete);
+        assert_eq!((stats.skipped_reparse, stats.rebound, stats.ambiguous), (1, 1, 0));
+        assert_eq!(stats.missing, 0);
+        assert_eq!(c.status().unwrap().missing, 0);
+    }
+
+    #[test]
+    fn an_unreadable_folder_is_skipped_and_the_rest_of_the_root_is_paired() {
+        // As above, with sub unreadable (the fake has no listing for it): the same pairing, and one error.
+        let mut c = catalog();
+        let before = [("", vec![file("c.jpg", 5, 3), folder("sub", 20)]), ("sub", vec![file("a.jpg", 9, 1)])];
+        scan_fake(&mut c, &before, 1);
+        let stats = scan_fake(&mut c, &[("", vec![file("d.jpg", 5, 3), folder("sub", 20)])], 2);
+        assert!(stats.complete);
+        assert_eq!((stats.errors, stats.rebound), (1, 1));
+        assert_eq!(c.status().unwrap().missing, 0);
+    }
+
+    /// The keys the scan stores are the ones the grid looks folders up by (CODE_REVIEW C-23): a folder ending in Σ
+    /// after a letter (`ΟΔΥΣΣΕΥΣ`, whose final sigma lowercases differently from a whole-word fold) lists its files,
+    /// alone and with its subfolders, under both rules.
+    fn scanned_folders_list_their_files_in_the_grid(rules: PathRules) {
+        use pg_catalog::browse::read::{details, list_grid};
+        use pg_model::query::{Query, Sort};
+
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let tree = [
+            ("", vec![folder("ΑΣ", 20), folder("ΟΔΥΣΣΕΥΣ", 21)]),
+            ("ΑΣ", vec![file("a.jpg", 1, 1)]),
+            ("ΟΔΥΣΣΕΥΣ", vec![file("b.jpg", 2, 1), folder("child", 22)]),
+            ("ΟΔΥΣΣΕΥΣ/child", vec![file("c.jpg", 3, 1)]),
+        ];
+        let stats = scan_fake(&mut c, &tree, 1);
+        assert_eq!((stats.files, stats.errors), (3, 0));
+        let names = |rel: &str, recursive: bool| -> Vec<String> {
+            let folder = rules.merge(&rules.parse(&fake_path(rules, rel)).unwrap());
+            let entries = list_grid(&c, &folder, recursive, &Query::default(), Sort::default()).unwrap();
+            entries
+                .iter()
+                .filter_map(|e| details(&c, e.id).unwrap()?.path.parts.last().map(|n| n.display().into_owned()))
+                .collect()
+        };
+        assert_eq!(names("ΑΣ", false), ["a.jpg"]);
+        assert_eq!(names("ΟΔΥΣΣΕΥΣ", false), ["b.jpg"]);
+        assert_eq!(names("ΟΔΥΣΣΕΥΣ", true), ["b.jpg", "c.jpg"]);
+        assert_eq!(names("ΟΔΥΣΣΕΥΣ/child", false), ["c.jpg"]);
+        assert_eq!(names("", true), ["a.jpg", "b.jpg", "c.jpg"]);
+    }
+
+    #[test]
+    fn scanned_folders_list_their_files_in_the_grid_windows() {
+        scanned_folders_list_their_files_in_the_grid(PathRules::Windows);
+    }
+
+    #[test]
+    fn scanned_folders_list_their_files_in_the_grid_posix() {
+        scanned_folders_list_their_files_in_the_grid(PathRules::Posix);
     }
 
     #[test]

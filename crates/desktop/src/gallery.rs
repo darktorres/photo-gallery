@@ -173,49 +173,8 @@ pub mod qobject {
         #[cxx_name = "indexOf"]
         fn index_of(self: &GalleryModel, file_id: i64) -> i32;
 
-        /// Width ÷ height, as laid out.
-        #[qinvokable]
-        fn aspect(self: &GalleryModel, item: i32) -> f64;
-
         /// The thumbnails' height changed: every row's thumbnail URLs are read again (`ROLE_THUMB_URLS`).
         fn set_thumb_height(self: Pin<&mut GalleryModel>, height: i32);
-
-        /// Turn a file by quarter turns (1 = clockwise, -1 = counterclockwise), losslessly, in the background.
-        #[qinvokable]
-        fn rotate(self: Pin<&mut GalleryModel>, item: i32, turns: i32);
-
-        /// Files were turned: re-read the items still waiting for a turn (new image, size and version), in place,
-        /// so nothing is renumbered under the viewer.
-        #[qinvokable]
-        #[cxx_name = "refreshTurned"]
-        fn refresh_turned(self: Pin<&mut GalleryModel>);
-
-        /// Whether the file's format holds its rating too (false: kept in the catalog only).
-        #[qinvokable]
-        #[cxx_name = "ratingInFile"]
-        fn rating_in_file(self: &GalleryModel, item: i32) -> bool;
-
-        #[qinvokable]
-        fn rating(self: &GalleryModel, item: i32) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "setRating"]
-        fn set_rating(self: Pin<&mut GalleryModel>, item: i32, rating: i32);
-
-        /// What the grid marks on a thumbnail besides its rating: a video's length (`▶ 1:23`), the format of an
-        /// animated image (`GIF`, `APNG`, `WEBP`), or nothing.
-        #[qinvokable]
-        fn badge(self: &GalleryModel, item: i32) -> QString;
-
-        /// Whether the item's borders are marked as not a border (the review).
-        #[qinvokable]
-        #[cxx_name = "borderMarked"]
-        fn border_marked(self: &GalleryModel, item: i32) -> bool;
-
-        /// Mark the item's borders as not a border, or take the mark back. Only items with borders found.
-        #[qinvokable]
-        #[cxx_name = "setBorderMarked"]
-        fn set_border_marked(self: Pin<&mut GalleryModel>, item: i32, marked: bool);
 
         /// Save cropped copies of the listed files whose borders were found (and not marked) into the folder the picker
         /// chose for them (`FolderPicker`, purpose 1), in the background (the library's crop pass). Returns how many it
@@ -224,18 +183,9 @@ pub mod qobject {
         #[cxx_name = "saveCroppedCopiesPicked"]
         fn save_cropped_copies_picked(self: &GalleryModel) -> i32;
 
-        /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file
-        /// (the QML adds the rating's symbol), and the borders found.
-        #[qinvokable]
-        fn info(self: &GalleryModel, item: i32) -> QString;
-
         #[qinvokable]
         #[cxx_name = "rowOf"]
         fn row_of(self: &GalleryModel, item: i32) -> i32;
-
-        /// Keyboard navigation: the item `dx` to the side, or the one above/below (`dy`) nearest horizontally.
-        #[qinvokable]
-        fn neighbor(self: &GalleryModel, item: i32, dx: i32, dy: i32) -> i32;
     }
 }
 
@@ -270,8 +220,8 @@ const ROLE_HEIGHT: i32 = 257;
 const ROLE_VERSION: i32 = 258;
 /// The values a row's cells show, one role per field: a list with an entry per item of the row, in order. They are
 /// typed lists (`QStringList`, `QList<i32>`, `QList<bool>`, `QList<f64>`), which QML's compiler reads without `var`
-/// (`GridRow`). Each comes with `ROLE_SPAN` and `ROLE_VERSION`, and before them (`show`, `items_changed`).
-const ROLE_KEYS: i32 = 259;
+/// (`GridRow`). Each comes with `ROLE_SPAN` and `ROLE_VERSION`, and before them (`show`, `items_changed`). A cell
+/// needs no image key of its own: its thumbnail URLs carry it, and the viewer reads its item's (`viewedKey`).
 const ROLE_BADGES: i32 = 260;
 const ROLE_RATINGS: i32 = 261;
 const ROLE_BORDERS_MARKED: i32 = 262;
@@ -284,8 +234,7 @@ const ROLE_CONTENT_HEIGHT: i32 = 268;
 const ROLE_THUMB_URLS: i32 = 269;
 const ROLE_THUMBHASH_URLS: i32 = 270;
 /// The cells' roles, and their names in QML.
-const CELL_ROLES: [(i32, &str); 12] = [
-    (ROLE_KEYS, "keys"),
+const CELL_ROLES: [(i32, &str); 11] = [
     (ROLE_THUMB_URLS, "thumbUrls"),
     (ROLE_THUMBHASH_URLS, "thumbhashUrls"),
     (ROLE_BADGES, "badges"),
@@ -431,7 +380,6 @@ impl qobject::GalleryModel {
             ROLE_HEIGHT => QVariant::from(&row.height),
             // The version's bits are the tag Qt compares: as the catalog's counter, it wraps where it wraps.
             ROLE_VERSION => QVariant::from(&(self.grid.version(at).cast_signed())),
-            ROLE_KEYS => QVariant::from(&items.map(|i| self.image_key(i)).collect::<QStringList>()),
             ROLE_THUMB_URLS => QVariant::from(
                 &items.map(|i| self.thumb_url(&self.image_key(i), self.thumb_height)).collect::<QStringList>(),
             ),
@@ -725,6 +673,7 @@ impl qobject::GalleryModel {
         self.grid.position_of(Some(FileId::new(file_id)))
     }
 
+    /// Width ÷ height, as laid out (`ROLE_ASPECTS`).
     fn aspect(&self, item: i32) -> f64 {
         self.grid.item(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
     }
@@ -794,6 +743,8 @@ impl qobject::GalleryModel {
         self.grid.item(item).map_or(0, |i| i32::from(i.pending_turns.get()))
     }
 
+    /// Turn a file by quarter turns (1 = clockwise, -1 = counterclockwise), losslessly, in the background: the
+    /// controller's `Turn` command.
     pub(crate) fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
         let Ok(at) = usize::try_from(item) else { return };
         let Some(id) = self.grid.id_at(item) else { return };
@@ -821,6 +772,8 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
+    /// Files were turned: re-read the items still waiting for a turn (new image, size and version), in place, so
+    /// nothing is renumbered under the viewer (the controller's `RefreshTurned` command, and a list that arrives).
     pub(crate) fn refresh_turned(mut self: Pin<&mut Self>) {
         // The list on its way may have been read before these turns were written: do it again when it arrives.
         let loading = self.loading;
@@ -842,14 +795,13 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
-    fn rating_in_file(&self, item: i32) -> bool {
-        self.with_details(item, |_, d| d.rating_in_file).unwrap_or(false)
-    }
-
+    /// The item's rating, 0 for none (`ROLE_RATINGS`, the status bar's symbol).
     fn rating(&self, item: i32) -> i32 {
         self.grid.item(item).and_then(|i| i.rating).map_or(0, |r| i32::from(r.get()))
     }
 
+    /// Rate the item (0 takes its rating away), in the catalog and, through the writer, in its file: the controller's
+    /// `Rate` command.
     pub(crate) fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
         let Ok(at) = usize::try_from(item) else { return };
         let Some(id) = self.grid.id_at(item) else { return };
@@ -870,6 +822,8 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
+    /// What the grid marks on a thumbnail besides its rating (`ROLE_BADGES`): a video's length (`▶ 1:23`), the
+    /// format of an animated image (`GIF`, `APNG`, `WEBP`), or nothing.
     fn badge(&self, item: i32) -> QString {
         let Some(e) = self.grid.item(item) else { return QString::default() };
         QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.name()))
@@ -884,10 +838,12 @@ impl qobject::GalleryModel {
         }
     }
 
+    /// Whether the item's borders are marked as not a border (the review).
     pub(crate) fn border_marked(&self, item: i32) -> bool {
         self.grid.item(item).is_some_and(|e| e.borders == Borders::Marked)
     }
 
+    /// Mark the item's borders as not a border, or take the mark back. Only items with borders found.
     pub(crate) fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
         let Ok(at) = usize::try_from(item) else { return };
         let Some(e) = self.grid.item(item).copied() else { return };
@@ -959,6 +915,8 @@ impl qobject::GalleryModel {
         self.grid.item(item).map_or(0, |e| i32::from(e.rotation.plus(e.pending_turns).get()))
     }
 
+    /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file (the
+    /// rating's symbol is added after it, `refresh_derived`), and the borders found.
     fn info(&self, item: i32) -> QString {
         self.with_details(item, |e, d| {
             let classes: Vec<Class> = d.border_sides.iter().filter(|s| s.accepted()).map(|s| s.class()).collect();
@@ -983,6 +941,7 @@ impl qobject::GalleryModel {
         i32::try_from(self.grid.row_index(at)).unwrap_or(-1)
     }
 
+    /// Keyboard navigation: the item `dx` to the side, or the one above/below (`dy`) nearest horizontally.
     fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
         self.grid.placement().neighbor(item, dx, dy)
     }

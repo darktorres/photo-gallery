@@ -12,6 +12,7 @@
 //! to file: a pass makes about `slots` of them, whatever its length.
 
 use std::io::Read;
+use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, PoisonError};
 
@@ -21,6 +22,7 @@ use pg_platform::native::NativePath;
 use pg_platform::priority::{self, Priority};
 
 use crate::control::Control;
+use crate::panics::{self, Panicked};
 
 pub struct Options {
     pub readers: usize,
@@ -75,6 +77,10 @@ impl Options {
 /// `read(item, wide)` writes the file's path into `wide` ([`NativePath::set`]), and returns
 /// true; the reader's buffer is reused from file to file, so no path is made per file. An item it returns false
 /// for isn't read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded).
+///
+/// A panic in `read` or `process` is that item's error ([`panics::Panicked`], through [`panics::guard`]), and the
+/// pass goes on: a worker whose `process` panicked makes its state again with `init`. A panic in `init`, or an error
+/// from it, fails the pass, as does a pass that ends with items sent to the workers and no result for them.
 pub fn run<T, S, R>(
     items: &[T],
     read: impl Fn(&T, &mut NativePath) -> bool + Sync,
@@ -89,6 +95,8 @@ where
     R: Send,
 {
     let next = AtomicUsize::new(0);
+    // The items the readers handed to the workers, to check that each came back with a result.
+    let sent = AtomicUsize::new(0);
     let stop = AtomicBool::new(false);
     let pool = Pool::new(opts.buffer_bytes, opts.slots);
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
@@ -96,29 +104,39 @@ where
     let (res_tx, res_rx) = bounded::<(usize, Result<R>, usize)>(opts.workers * 4);
 
     std::thread::scope(|s| {
-        // However the pass ends (done, stopped, an error from `sink`), readers waiting on the pool stop waiting.
-        let _stop = StopOnDrop(&stop, &pool);
+        // However the pass ends (done, stopped, an error from `sink`), readers waiting on the pool or paused at a
+        // checkpoint stop waiting.
+        let _stop = StopOnDrop(&stop, &pool, ctl);
         for _ in 0..opts.readers {
             let raw_tx = raw_tx.clone();
-            let (next, stop, read, pool) = (&next, &stop, &read, &pool);
+            let (next, sent, stop, read, pool) = (&next, &sent, &stop, &read, &pool);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
                 let mut wide = NativePath::default();
-                while !stop.load(Ordering::Relaxed) && ctl.checkpoint() {
+                while ctl.checkpoint_until(stop) {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { break };
-                    let bytes = if read(item, &mut wide) {
-                        match read_whole(pool, i, &wide) {
+                    let bytes = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
+                        Ok(true) => match read_whole(pool, i, &wide) {
                             Some(bytes) => bytes,
                             None => break, // stopped
+                        },
+                        Ok(false) => {
+                            pool.pass(i);
+                            Ok(Lease::empty())
                         }
-                    } else {
-                        pool.pass(i);
-                        Ok(Lease::empty())
+                        Err(payload) => {
+                            // The item's turn in the pool is passed all the same, or the items after it would wait
+                            // for it forever; the path it left half-written is not used again.
+                            pool.pass(i);
+                            wide = NativePath::default();
+                            Err(std::io::Error::other(Panicked(panics::message(&*payload).to_string())))
+                        }
                     };
                     if raw_tx.send((i, bytes)).is_err() {
                         break;
                     }
+                    sent.fetch_add(1, Ordering::SeqCst);
                 }
             });
         }
@@ -129,21 +147,36 @@ where
             let (init, process) = (&init, &process);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
-                let mut state = match init() {
-                    Ok(st) => st,
+                // A worker whose setup failed (or panicked) sends its error with `usize::MAX`, and stops.
+                let setup = || match panics::guard(AssertUnwindSafe(init)) {
+                    Ok(st) => Some(st),
                     Err(e) => {
                         let _ = res_tx.send((usize::MAX, Err(e), 0));
-                        return;
+                        None
                     }
                 };
+                let Some(mut state) = setup() else { return };
                 for (i, read) in raw_rx {
-                    // The buffer goes back to the pool as the lease is dropped, before the result is sent.
-                    let (out, len) = match read {
-                        Ok(lease) => (process(&mut state, i, &lease.bytes), lease.bytes.len()),
-                        Err(e) => (Err(anyhow::Error::new(e).context("read")), 0),
+                    let (out, len, rebuild) = match read {
+                        Ok(lease) => {
+                            let len = lease.bytes.len();
+                            let out = panics::guard(AssertUnwindSafe(|| process(&mut state, i, &lease.bytes)));
+                            // The buffer goes back to the pool before the result is sent.
+                            drop(lease);
+                            // A panic may have left the state half-changed: it is made again.
+                            let rebuild = out.as_ref().is_err_and(panics::is_panic);
+                            (out, len, rebuild)
+                        }
+                        Err(e) => (Err(read_error(e)), 0, false),
                     };
                     if res_tx.send((i, out, len)).is_err() {
                         break;
+                    }
+                    if rebuild {
+                        match setup() {
+                            Some(st) => state = st,
+                            None => return,
+                        }
                     }
                 }
             });
@@ -151,18 +184,33 @@ where
         drop((raw_rx, res_tx));
 
         // Leaving this closure drops `res_rx`, which unblocks and ends the workers, then the readers.
+        let mut received = 0usize;
         for (i, out, len) in res_rx {
             if i == usize::MAX {
                 // A worker whose setup failed sends its error with this index, and nothing else.
                 let error = out.err().unwrap_or_else(|| anyhow::anyhow!("a worker failed without an error"));
                 return Err(error.context("worker setup"));
             }
+            received += 1;
             if !sink(i, out, len)? || ctl.stop_requested() {
-                break;
+                return Ok(());
             }
+        }
+        // Every worker has ended, and every reader before them: what was sent is final.
+        let sent = sent.load(Ordering::SeqCst);
+        if received < sent {
+            anyhow::bail!("the workers ended with {} of the {sent} items read and no result for them", sent - received);
         }
         Ok(())
     })
+}
+
+/// The error of an item that couldn't be read. A panic in `read` comes as an I/O error holding it, and stays a panic.
+fn read_error(e: std::io::Error) -> anyhow::Error {
+    match e.get_ref().and_then(|inner| inner.downcast_ref::<Panicked>()) {
+        Some(panicked) => anyhow::Error::new(panicked.clone()),
+        None => anyhow::Error::new(e).context("read"),
+    }
 }
 
 /// Read the file at `path` (item `i`) into a buffer from the pool, its size reserved in list
@@ -184,13 +232,15 @@ fn read_whole<'p>(pool: &'p Pool, i: usize, path: &NativePath) -> Option<std::io
     Some(file.0.read_to_end(&mut lease.bytes).map(|_| lease))
 }
 
-/// Ends the pass: tells the readers and the pool.
-struct StopOnDrop<'a>(&'a AtomicBool, &'a Pool);
+/// Ends the pass: tells the readers, the pool, and the readers paused at a checkpoint (which look at the stop under
+/// the pause lock, so the wake can't come between their check and their wait).
+struct StopOnDrop<'a>(&'a AtomicBool, &'a Pool, &'a Control);
 
 impl Drop for StopOnDrop<'_> {
     fn drop(&mut self) {
-        self.0.store(true, Ordering::Relaxed);
+        self.0.store(true, Ordering::SeqCst);
         self.1.stop();
+        self.2.wake();
     }
 }
 
@@ -495,6 +545,139 @@ mod tests {
         .unwrap();
         assert!(seen.iter().all(|&s| s));
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Runs `f` on a thread of its own, and fails if it takes longer than a pass of a few files ever should: a
+    /// regression that hangs the pass fails the test instead of hanging it.
+    fn within_timeout<R: Send + 'static>(f: impl FnOnce() -> R + Send + 'static) -> R {
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(f());
+        });
+        rx.recv_timeout(std::time::Duration::from_secs(60)).expect("the pass hung (or panicked)")
+    }
+
+    /// `count` small files in a new folder, with their indices.
+    fn numbered_files(name: &str, count: usize) -> (std::path::PathBuf, Vec<(usize, String)>) {
+        let dir = pg_testkit::test_folder("scratch_rate", name).unwrap();
+        let items = (0..count)
+            .map(|i| {
+                let path = dir.join(format!("{i}.bin"));
+                std::fs::write(&path, vec![u8::try_from(i).unwrap(); 10 + i]).unwrap();
+                (i, path.to_str().unwrap().to_string())
+            })
+            .collect();
+        (dir, items)
+    }
+
+    /// Each item's result in a pass whose `read` or `process` panics on item 3, and how many times `init` ran.
+    fn a_pass_panicking_on_item_3(in_read: bool) -> (Vec<Option<Result<usize, bool>>>, usize) {
+        let (dir, items) = numbered_files(if in_read { "pg-pipeline-read-panic" } else { "pg-pipeline-panic" }, 8);
+        let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+        let inits = AtomicUsize::new(0);
+        let mut results = vec![None; items.len()];
+        run(
+            &items,
+            |(i, p), wide| {
+                assert!(!(in_read && *i == 3), "item 3 can't be read");
+                wide.set(&[&units(p)]);
+                true
+            },
+            &opts,
+            &Control::new(),
+            || {
+                inits.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            },
+            |_, i, bytes| {
+                assert!(in_read || i != 3, "item 3 can't be processed");
+                Ok(bytes.len())
+            },
+            |i, out, _| {
+                // `Err(true)`: the item's error is a panic.
+                results[i] = Some(out.map_err(|e| panics::is_panic(&e)));
+                Ok(true)
+            },
+        )
+        .unwrap();
+        std::fs::remove_dir_all(&dir).unwrap();
+        (results, inits.into_inner())
+    }
+
+    #[test]
+    fn a_panic_in_process_is_that_items_error_and_the_pass_goes_on() {
+        let (results, inits) = within_timeout(|| a_pass_panicking_on_item_3(false));
+        for (i, result) in results.iter().enumerate() {
+            let expected = if i == 3 { Err(true) } else { Ok(10 + i) };
+            assert_eq!(result.as_ref(), Some(&expected), "item {i}");
+        }
+        // Two workers, and the one that panicked made its state again.
+        assert_eq!(inits, 3);
+    }
+
+    #[test]
+    fn a_panic_in_read_is_that_items_error_and_the_pass_goes_on() {
+        let (results, inits) = within_timeout(|| a_pass_panicking_on_item_3(true));
+        for (i, result) in results.iter().enumerate() {
+            let expected = if i == 3 { Err(true) } else { Ok(10 + i) };
+            assert_eq!(result.as_ref(), Some(&expected), "item {i}");
+        }
+        assert_eq!(inits, 2);
+    }
+
+    #[test]
+    fn a_failed_init_fails_the_pass() {
+        let outcome = within_timeout(|| {
+            let (dir, items) = numbered_files("pg-pipeline-init", 4);
+            let opts = Options { readers: 2, workers: 2, slots: 4, buffer_bytes: 1 << 20, priority: Priority::Normal };
+            let outcome = run(
+                &items,
+                |(_, p), wide| {
+                    wide.set(&[&units(p)]);
+                    true
+                },
+                &opts,
+                &Control::new(),
+                || -> Result<()> { panic!("no state") },
+                |_, _, _| Ok(()),
+                |_, _, _| Ok(true),
+            );
+            std::fs::remove_dir_all(&dir).unwrap();
+            outcome.map_err(|e| format!("{e:#}"))
+        });
+        let error = outcome.unwrap_err();
+        assert!(error.contains("worker setup") && error.contains("no state"), "{error}");
+    }
+
+    /// `sink` fails while the job is paused: the readers paused at their checkpoint (two of them) stop waiting, and
+    /// the pass returns its error without a resume.
+    #[test]
+    fn a_sink_error_while_paused_returns_without_a_resume() {
+        let outcome = within_timeout(|| {
+            let (dir, items) = numbered_files("pg-pipeline-paused", 40);
+            let opts = Options { readers: 2, workers: 1, slots: 64, buffer_bytes: 1 << 20, priority: Priority::Normal };
+            let ctl = Control::new();
+            let outcome = run(
+                &items,
+                |(_, p), wide| {
+                    wide.set(&[&units(p)]);
+                    true
+                },
+                &opts,
+                &ctl,
+                || Ok(()),
+                |_, _, _| Ok(()),
+                |_, _, _| {
+                    ctl.set_paused(true);
+                    // Time for both readers to come back to their checkpoint and wait there.
+                    std::thread::sleep(std::time::Duration::from_millis(100));
+                    anyhow::bail!("the sink fails")
+                },
+            );
+            std::fs::remove_dir_all(&dir).unwrap();
+            (outcome.map_err(|e| e.to_string()), ctl.is_paused())
+        });
+        assert_eq!(outcome, (Err("the sink fails".to_string()), true));
     }
 
     /// A file opens as std opens it: a long path (verbatim), a name outside ASCII, and a missing file's error.

@@ -115,4 +115,22 @@ TestCase {
         compare(v.fileId, 42)
         galleryStub.viewedFileId = 0
     }
+
+    // A resize renders the fit again at the window's new size (C-15), once the size has settled, not at each step of
+    // the drag. Opened from closed, as the window does it, so the content is made.
+    function test_a_resize_renders_the_fit_again_once_it_settles() {
+        galleryStub.viewedKey = "k"
+        const v = viewer(-1, 3)
+        v.index = 0
+        const fit = findChild(v, "fitImage")
+        verify(fit !== null)
+        const opened = "image://full/k/fit/" + Math.round(800 * v.dpr) + "x" + Math.round(600 * v.dpr)
+        compare(String(fit.source), opened)
+        v.width = 500
+        v.width = 400
+        compare(String(fit.source), opened)
+        const resized = "image://full/k/fit/" + Math.round(400 * v.dpr) + "x" + Math.round(600 * v.dpr)
+        tryVerify(() => String(fit.source) === resized, 2000)
+        galleryStub.viewedKey = ""
+    }
 }

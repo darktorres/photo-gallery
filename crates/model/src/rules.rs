@@ -234,9 +234,8 @@ impl PathRules {
     pub fn scope_keys(self, parts: &[Name], recursive: bool) -> (Vec<u8>, Option<Vec<u8>>) {
         let mut lo = self.folder_key(parts);
         let hi = if recursive {
-            // Below the folder, nothing sorts at or after 0xFF (no UTF-8 byte is 0xFF; raw Unix bytes never
-            // start a name key with it either, as the key's 0x00 comes first).
-            if lo.is_empty() { None } else { Some([lo.as_slice(), &[0xFF]].concat()) }
+            // Every key below the folder starts with its key, and nothing else does from `lo` up to the bound.
+            prefix_upper_bound(&lo)
         } else {
             let hi = [lo.as_slice(), &[0x01]].concat();
             lo.push(0x00);
@@ -285,6 +284,23 @@ impl PathRules {
     }
 }
 
+/// The least key above every key that starts with `prefix` (a folder's key), so `prefix..bound` is exactly the keys
+/// that start with it: `None` when there is none (the empty folder, whose prefix every key starts with). A folder key
+/// ends in its part terminator 0x01, so the bound is `prefix[..-1] + [0x02]`, and it is exact: a key that starts with
+/// the prefix is below it whatever bytes follow (a subfolder whose raw Posix name starts with byte 0xFF included),
+/// and a key from the prefix up to it starts with the prefix. The rule in general, which gives that: the trailing 0xFF
+/// bytes go (nothing is above them), and the last byte left goes up by one.
+fn prefix_upper_bound(prefix: &[u8]) -> Option<Vec<u8>> {
+    let mut hi = prefix.to_vec();
+    while let Some(last) = hi.pop() {
+        if let Some(next) = last.checked_add(1) {
+            hi.push(next);
+            return Some(hi);
+        }
+    }
+    None
+}
+
 /// `bytes` appended with the key's escapes: 0x01 as 0x02 0x02 and 0x02 as 0x02 0x03, so the terminators stay
 /// unambiguous and the order is kept.
 fn push_escaped(key: &mut Vec<u8>, bytes: &[u8]) {
@@ -295,6 +311,12 @@ fn push_escaped(key: &mut Vec<u8>, bytes: &[u8]) {
             _ => key.push(b),
         }
     }
+}
+
+/// `bytes` without its leading separators.
+fn trim_seps(bytes: &[u8], sep: u8) -> &[u8] {
+    let n = bytes.iter().take_while(|&&b| b == sep).count();
+    bytes.get(n..).unwrap_or_default()
 }
 
 #[cfg(test)]
@@ -437,12 +459,31 @@ mod tests {
         assert_eq!(serde_json::from_str::<Merged>(&json).unwrap(), merged);
         assert_eq!(serde_json::to_string(&Merged::default()).unwrap(), "[]");
     }
-}
 
-/// `bytes` without its leading separators.
-fn trim_seps(bytes: &[u8], sep: u8) -> &[u8] {
-    let n = bytes.iter().take_while(|&&b| b == sep).count();
-    bytes.get(n..).unwrap_or_default()
+    #[test]
+    fn a_prefix_bound_is_the_least_key_above_the_prefix() {
+        assert_eq!(prefix_upper_bound(&[]), None);
+        assert_eq!(prefix_upper_bound(&[0x01]), Some(vec![0x02]));
+        assert_eq!(prefix_upper_bound(&[0xFF, 0x01]), Some(vec![0xFF, 0x02]));
+        // The general rule (not a folder key's): trailing 0xFF bytes go first.
+        assert_eq!(prefix_upper_bound(&[0x61, 0xFF]), Some(vec![0x62]));
+        assert_eq!(prefix_upper_bound(&[0xFF, 0xFF]), None);
+    }
+
+    #[test]
+    fn a_recursive_scope_holds_a_posix_subfolder_whose_name_starts_with_0xff() {
+        let rules = PathRules::Posix;
+        let parent = names(&["photos"]);
+        let (lo, hi) = rules.scope_keys(&parent, true);
+        let hi = hi.unwrap();
+        let mut below = parent.clone();
+        below.push(Name::from_raw(b"\xFFa"));
+        let key = rules.order_key(&rules.folder_key(&below), &Name::from("x.jpg"));
+        assert!(lo <= key && key < hi, "{key:?} not in {lo:?}..{hi:?}");
+        // A sibling whose name extends the folder's is outside.
+        let sibling = rules.order_key(&rules.folder_key(&names(&["photos\u{1}"])), &Name::from("x.jpg"));
+        assert!(sibling >= hi);
+    }
 }
 
 #[cfg(test)]

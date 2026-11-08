@@ -228,6 +228,13 @@ ApplicationWindow {
         shell.treeLoaded(row !== -2)
     }
 
+    // The subfolders were switched: for the empty folder that moves the listing between "All" (with them) and "Drive
+    // roots" (without), so the tree's current row follows the listing (-1: under a folder the user collapsed).
+    function followListedRow() {
+        const row = folderModel.revealListing(false)
+        tree.currentIndex = row === -1 ? -1 : Math.max(row, 0)
+    }
+
     // The folder tree changed (a scan): read it again, and the open folder's files.
     function reloadAll() {
         folderModel.reload()
@@ -352,7 +359,10 @@ ApplicationWindow {
             filtersOpen: win.filtersOpen
             rowHeight: win.rowHeight
             onFiltersToggled: shell.toggleFilters()
-            onRecursiveToggled: (on) => shell.setRecursive(on)
+            onRecursiveToggled: (on) => {
+                shell.setRecursive(on)
+                win.followListedRow()
+            }
             onSortActivated: (i) => {
                 shell.sortBy(i)
                 grid.takeFocus()

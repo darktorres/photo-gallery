@@ -44,7 +44,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     stats.indexed = pairer.len();
 
     let mut batch: Vec<(usize, Result<Analyzed>)> = Vec::with_capacity(BATCH);
-    ctl.begin(Phase::Import, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    // The phase ends when this is dropped, however the pass leaves.
+    let _phase = ctl.begin(Phase::Import, u64::try_from(items.len()).unwrap_or(u64::MAX));
 
     let mut flush = |batch: &mut Vec<(usize, Result<Analyzed>)>, stats: &mut ImportStats| -> Result<()> {
         let tx = catalog.tx()?;
@@ -125,6 +126,5 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         },
     )?;
     flush(&mut batch, &mut stats)?;
-    ctl.finish();
     Ok(stats)
 }

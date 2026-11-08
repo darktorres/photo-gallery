@@ -6,7 +6,9 @@
 
 use std::sync::OnceLock;
 
+use pg_app::reexport::ThumbStartOverReason;
 use pg_app::{App, Config, Note};
+use pg_client::text::{self, CacheStartOver};
 
 static APP: OnceLock<App> = OnceLock::new();
 
@@ -79,8 +81,20 @@ fn note_text(note: &Note) -> String {
                 Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
                 Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
                 Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
-                Event::StartedOver { why } => format!("thumbnail cache: started over, {why}"),
+                Event::StartedOver { reason, path, .. } => {
+                    text::thumb_cache_started_over(started_over_reason(*reason), &path.display().to_string())
+                }
             }
         }
+    }
+}
+
+/// The client's words for why the thumbnail cache was started over.
+fn started_over_reason(reason: ThumbStartOverReason) -> CacheStartOver {
+    match reason {
+        ThumbStartOverReason::Damaged => CacheStartOver::Damaged,
+        ThumbStartOverReason::NotADatabase => CacheStartOver::NotADatabase,
+        ThumbStartOverReason::OtherCatalog => CacheStartOver::OtherCatalog,
+        ThumbStartOverReason::OtherBuild => CacheStartOver::OtherBuild,
     }
 }

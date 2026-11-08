@@ -65,7 +65,7 @@ dev *args: _qt
 test *args: _qt
     cargo test --workspace --locked --timings {{ args }}
 
-# The eval tools' Python tests (stdlib unittest). The viewer imports Pillow. CI doesn't run this yet.
+# The eval tools' Python tests (stdlib unittest). The viewer imports Pillow. CI runs it in the Windows job.
 test-eval:
     python -m unittest discover -s eval -p 'test_*.py'
 

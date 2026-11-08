@@ -1476,6 +1476,7 @@ dependencies = [
  "proptest",
  "serde",
  "serde_json",
+ "strum",
  "thiserror 2.0.21",
  "thumbhash",
 ]
@@ -1519,6 +1520,7 @@ dependencies = [
  "clap",
  "pg-analysis",
  "pg-catalog",
+ "pg-client",
  "pg-codec",
  "pg-import",
  "pg-jobs",
@@ -1526,6 +1528,7 @@ dependencies = [
  "pg-model",
  "pg-platform",
  "pg-scan",
+ "pg-testkit",
  "pg-thumbcache",
  "pg-thumbs",
  "pg-writeback",
@@ -1793,10 +1796,13 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "pg-catalog",
+ "pg-import",
  "pg-jobs",
  "pg-model",
  "pg-platform",
  "pg-render",
+ "pg-scan",
+ "pg-testkit",
  "pg-thumbcache",
 ]
 

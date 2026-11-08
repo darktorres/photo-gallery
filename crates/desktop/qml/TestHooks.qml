@@ -14,7 +14,7 @@
 //                          the panel with its error)
 //   --yandex-preview=<n>  with --find-similar: show result n at full size once the results are in
 //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
-//   --borders  show the borders (as B does) from the start
+//   --borders=1  show the borders (as B does) from the start
 //   --save-crops=<folder>  save cropped copies of the listed files with borders found
 //                        (GalleryModel.saveCroppedCopiesPicked)
 //   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
@@ -22,7 +22,7 @@
 //                       for that, 10 by default (src/screenshot.rs)
 // The options are read here. What they do to the window is signalled to Main, which makes the calls on the viewer and
 // the Rust objects. --query, --sort and --apply-view shape the first list in Rust (listing::start); --filters and
-// --borders are shown from the start by Main; the others act once the first list is shown (run, from startHooks()).
+// --borders=1 are shown from the start by Main; the others act once the first list is shown (run, from startHooks()).
 pragma ComponentBehavior: Bound
 
 import QtQuick

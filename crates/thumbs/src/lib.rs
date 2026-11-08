@@ -14,6 +14,7 @@ use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
 use pg_jobs::control::{Control, Phase};
 use pg_jobs::failure::{Failure, keep_failure};
+use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Options};
 
 const BATCH: usize = 200;
@@ -64,7 +65,9 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
     let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
     let (mut tried, mut first_failed) = (0, None);
-    ctl.begin(Phase::Thumbs { height }, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    // The phase ends when this is dropped: after the last flush, before the cache is checked and shrunk, or when the
+    // pass leaves early (an error, a panic).
+    let phase = ctl.begin(Phase::Thumbs { height }, u64::try_from(items.len()).unwrap_or(u64::MAX));
 
     let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
         let n = batch.len();
@@ -94,6 +97,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         Maker::new,
         |maker, i, bytes| {
             let item = items.get(i).context("a thumbnail to make for no work item")?;
+            #[cfg(test)]
+            tests::fault(item.id);
             let mut out = spare.lock().unwrap_or_else(PoisonError::into_inner).pop().unwrap_or_default();
             let made = match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
@@ -136,10 +141,14 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                     }
                 },
                 // The import already decoded these files; a failure here is a file changed or gone since (or its
-                // drive offline): the next pass tries it again.
+                // drive offline): the next pass tries it again. A panic (`pg_jobs::panics::Panicked`) would only
+                // panic again, and write its backtrace to the log on every pass: it is counted, and the file is tried
+                // again only once it changes.
                 Err(e) => {
                     stats.failed += 1;
-                    first_failed = Some(first_failed.map_or(item.seq, |s: i64| s.min(item.seq)));
+                    if !panics::is_panic(&e) {
+                        first_failed = Some(first_failed.map_or(item.seq, |s: i64| s.min(item.seq)));
+                    }
                     let path = String::from_utf8_lossy(&work.path(item.path, sep)).into_owned();
                     keep_failure(&mut stats.failures, path, format!("{e:#}"));
                 }
@@ -153,11 +162,59 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     if !stats.cache_full {
         flush(&mut batch, &mut stats)?;
     }
-    ctl.finish();
+    drop(phase);
     stats.complete = !stats.cache_full && tried == items.len();
     if stats.complete {
         cache.checked(&snapshot, first_failed)?;
     }
     cache.shrink()?;
     Ok(stats)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Mutex;
+
+    use pg_catalog::fixture::state;
+    use pg_model::ids::FileId;
+    use pg_platform::priority::Priority;
+    use pg_testkit::events::Quiet;
+
+    use super::*;
+
+    /// The file whose thumbnail panics.
+    static PANIC_ON: Mutex<Option<FileId>> = Mutex::new(None);
+
+    /// Panics when `id` is the file asked for.
+    pub(super) fn fault(id: FileId) {
+        if *PANIC_ON.lock().unwrap_or_else(PoisonError::into_inner) == Some(id) {
+            panic!("a fault: the thumbnail of file {} panics", id.get());
+        }
+    }
+
+    /// A panic is counted as a failure, but doesn't hold the pass's checkpoint back: the next pass doesn't list the
+    /// file again (it would only panic again, and log its backtrace every time), until it changes.
+    #[test]
+    fn a_file_whose_thumbnail_panics_is_not_listed_again() {
+        let dir = pg_testkit::run_folder_with("scratch_rate", "thumbs-panic", &["images"]).unwrap();
+        for name in ["a.png", "b.png"] {
+            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        }
+        let catalog_path = dir.join("catalog.sqlite");
+        let mut c = Catalog::prepare(&catalog_path, pg_catalog::fixture::versions(), PathRules::NATIVE).unwrap();
+        let ctl = Control::new();
+        let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+        pg_scan::scan(&mut c, &root, &ctl).unwrap();
+        let opts = Options::new(Priority::Normal);
+        pg_import::import(&mut c, &opts, false, &ctl).unwrap();
+        *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+
+        let (events, _quiet) = Quiet::bus();
+        let cache = ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap();
+        let first = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
+        assert_eq!((first.needed, first.made, first.failed, first.complete), (2, 1, 1, true));
+        assert_eq!(ctl.snapshot().phase, Phase::Idle, "the phase ended");
+        let second = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
+        assert_eq!((second.needed, second.made, second.failed), (0, 0, 0), "the file that panicked is listed again");
+    }
 }

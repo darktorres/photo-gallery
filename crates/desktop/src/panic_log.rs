@@ -25,12 +25,11 @@ pub fn install(log: PathBuf) {
         let caught = pg_app::reexport::panic_caught();
         let report = report(info);
         let written = append(&log, &report);
-        let where_ = match written {
-            Ok(()) => format!("The details are in {}.", log.display()),
-            Err(e) => format!("Writing them to {} failed ({e}).", log.display()),
-        };
         if !caught {
-            crate::message_box(&format!("Photo Gallery hit an internal error:\n\n{info}\n\n{where_}"));
+            let log_error = written.err().map(|e| e.to_string());
+            let message = info.to_string();
+            let shown = pg_client::text::internal_error(&message, &log.display().to_string(), log_error.as_deref());
+            crate::message_box(&shown);
         }
     }));
 }

@@ -73,7 +73,8 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
     let files = image_files(paths)?;
     let mut rows: Vec<(usize, String)> = Vec::with_capacity(files.len());
     let mut stats = ReportStats { files: 0, borders: 0, rejected: 0, skipped: 0, errors: 0, seconds: 0.0 };
-    ctl.begin(Phase::Borders, u64::try_from(files.len()).unwrap_or(u64::MAX));
+    // The phase ends when this is dropped: after the pass, or on its error.
+    let phase = ctl.begin(Phase::Borders, u64::try_from(files.len()).unwrap_or(u64::MAX));
     pipeline::run(
         &files,
         |file, wide| {
@@ -122,7 +123,7 @@ pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> R
             Ok(true)
         },
     )?;
-    ctl.finish();
+    drop(phase);
     rows.sort_by_key(|(i, _)| *i);
     let mut out = String::from(
         "path,width,height,status,crop_left,crop_top,crop_right,crop_bottom,sides,rejected,output,error\n",

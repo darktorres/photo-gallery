@@ -31,7 +31,6 @@ TestCase {
                 span: list.rowSpan
                 rowHeight: 100
                 version: list.rowVersion
-                keys: tc.perCell((i) => "k" + i)
                 badges: tc.perCell(() => "")
                 ratings: tc.perCell(() => 0)
                 bordersMarked: tc.perCell(() => false)

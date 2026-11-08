@@ -9,7 +9,7 @@ use std::collections::BTreeMap;
 use std::fmt;
 use std::fs::{File, OpenOptions, TryLockError};
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use rusqlite::Connection;
@@ -202,9 +202,45 @@ impl Live {
 
 /// The `.live` file beside the database at `path`, made if it isn't there.
 fn open_live(path: &Path) -> io::Result<File> {
+    OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, ".live"))
+}
+
+/// `path` with `suffix` added to its name (the file's own units, not its display form, which is lossy): a database's
+/// `-wal`, or a file beside it.
+fn beside(path: &Path, suffix: &str) -> PathBuf {
     let mut name = path.as_os_str().to_owned();
-    name.push(".live");
-    OpenOptions::new().create(true).write(true).truncate(false).open(name)
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// A database file's parts, the sidecars first: a `-wal` left beside a main file that moved would be replayed into
+/// whatever takes the name next.
+const PARTS: [&str; 4] = ["-wal", "-shm", "-journal", ""];
+
+/// Move the database at `path`, with its `-wal`, `-shm` and `-journal` files, aside to the first free name beside it:
+/// `<name><mark>`, then `<name><mark>.1`, and so on (a catalog that is replaced, `.replaced`; a thumbnail cache that is
+/// damaged, `.bad`). Returns the main file's new path. Nothing is deleted and nothing is overwritten: the user removes
+/// the moved files when they are no longer wanted. The sidecars move first, so the main file is never left at `path`
+/// without the changes its sidecars held. No connection to the database may be open, and the caller holds its
+/// [`Lock`] (and its exclusive [`Live`]), so no other process takes a name between the check and the move.
+pub fn move_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
+    let mut n = 0u32;
+    let base = loop {
+        let base = if n == 0 { mark.to_string() } else { format!("{mark}.{n}") };
+        if PARTS.iter().all(|part| !beside(path, &format!("{base}{part}")).exists()) {
+            break base;
+        }
+        n += 1;
+    };
+    for part in PARTS {
+        let from = beside(path, part);
+        if from.exists() {
+            let to = beside(path, &format!("{base}{part}"));
+            std::fs::rename(&from, &to)
+                .map_err(|e| io::Error::new(e.kind(), format!("can't move {} aside: {e}", from.display())))?;
+        }
+    }
+    Ok(beside(path, &base))
 }
 
 /// `sql` with what does not change its meaning taken out: comments and whitespace are dropped, unquoted words are
@@ -386,6 +422,25 @@ mod tests {
         let err = Schema::read(&conn, &[]).unwrap_err();
         assert_eq!(err.sqlite_error_code(), Some(rusqlite::ErrorCode::NotADatabase));
         drop(conn);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The main file and its sidecars move together to the first free name, and nothing already there is overwritten.
+    #[test]
+    fn moving_aside_takes_the_sidecars_and_never_overwrites() {
+        let dir = std::env::temp_dir().join(format!("pg-schema-aside-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("db.sqlite");
+        std::fs::write(&path, b"first").unwrap();
+        std::fs::write(dir.join("db.sqlite-wal"), b"first wal").unwrap();
+        std::fs::write(dir.join("db.sqlite.bad-shm"), b"in the way").unwrap();
+        // `.bad` is taken (one of its parts is there), so `.bad.1` is the first free name.
+        let kept = move_aside(&path, ".bad").unwrap();
+        assert_eq!(kept, dir.join("db.sqlite.bad.1"));
+        assert_eq!(std::fs::read(&kept).unwrap(), b"first");
+        assert_eq!(std::fs::read(dir.join("db.sqlite.bad.1-wal")).unwrap(), b"first wal");
+        assert_eq!(std::fs::read(dir.join("db.sqlite.bad-shm")).unwrap(), b"in the way");
+        assert!(!path.exists() && !dir.join("db.sqlite-wal").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

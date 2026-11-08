@@ -107,10 +107,11 @@ proptest! {
         let mut c = Controller::new(listing(&folder), 200, 1.0);
         let commands = c.update(0, Event::TreeLoaded { folder_known: false });
         let all = commands.iter().find_map(|c| match c {
-            Command::OpenList { listing, .. } => Some(listing.folder.clone()),
+            Command::OpenList { listing, .. } => Some((listing.folder.clone(), listing.recursive)),
             _ => None,
         });
-        prop_assert_eq!(all, Some(Merged::default()));
+        // All folders: the empty folder with its subfolders (without them it would be the drive roots' own files).
+        prop_assert_eq!(all, Some((Merged::default(), true)));
         prop_assert!(!c.started());
     }
 
@@ -150,6 +151,8 @@ proptest! {
             Event::Key(Grid::Step { dx: -1, dy: 2 }),
             Event::SetBorderMark { item, marked: index },
             Event::Listing(listing_event::Event::OpenFolder(odd.clone())),
+            Event::Listing(listing_event::Event::OpenAll),
+            Event::Listing(listing_event::Event::OpenRoots),
             Event::Listing(listing_event::Event::ViewApplied(view)),
             Event::FolderSpelled(odd),
         ];
@@ -159,4 +162,54 @@ proptest! {
             prop_assert_eq!(back, event);
         }
     }
+}
+
+/// How many of `commands` are session saves, last-file saves and lists shown.
+fn saves_and_lists(commands: &[Command]) -> (usize, usize, usize) {
+    let count = |f: fn(&Command) -> bool| commands.iter().filter(|c| f(c)).count();
+    (
+        count(|c| matches!(c, Command::SaveSession(_))),
+        count(|c| matches!(c, Command::SaveLastFile)),
+        count(|c| matches!(c, Command::OpenList { .. })),
+    )
+}
+
+/// A session save waiting at the close is made, with the last file's.
+#[test]
+fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
+    let mut c = Controller::new(listing(""), 200, 1.0);
+    c.update(0, Event::ListShown { count: 10, last_file: None });
+    c.update(1, Event::CurrentChanged(Some(3)));
+    let flushed = c.update(2, Event::Flush);
+    assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
+}
+
+/// A query typed within its pause of the close is saved with the session, and no list is shown for a closing window.
+#[test]
+fn a_pending_query_is_saved_at_the_close_without_a_list() {
+    let mut c = Controller::new(listing(""), 200, 1.0);
+    let query = Query { name: "beach".into(), ..Query::default() };
+    c.update(0, Event::Listing(listing_event::Event::QueryChanged(query.clone())));
+    c.update(0, Event::QueryEdited);
+    let flushed = c.update(100, Event::Flush);
+    assert_eq!(saves_and_lists(&flushed).0, 1, "{flushed:?}");
+    assert_eq!(saves_and_lists(&flushed).2, 0, "{flushed:?}");
+    let saved = flushed.iter().find_map(|c| match c {
+        Command::SaveSession(listing) => Some(listing.query.clone()),
+        _ => None,
+    });
+    assert_eq!(saved, Some(query));
+}
+
+/// A query and a session save both waiting make one session save and one last-file save, not one each.
+#[test]
+fn a_pending_query_and_session_save_make_one_save_at_the_close() {
+    let mut c = Controller::new(listing(""), 200, 1.0);
+    c.update(0, Event::ListShown { count: 10, last_file: None });
+    c.update(1, Event::CurrentChanged(Some(3)));
+    c.update(2, Event::Listing(listing_event::Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));
+    c.update(2, Event::QueryEdited);
+    let flushed = c.update(3, Event::Flush);
+    assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
+    assert!(c.next_deadline().is_none(), "nothing is left waiting");
 }

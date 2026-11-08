@@ -41,6 +41,19 @@ fn a_folder_is_the_one_shown() {
     assert!(listing.folder.is_empty());
 }
 
+/// The tree's two first rows: "All" is the empty folder with its subfolders, "Drive roots" without them, whatever
+/// recursion was before.
+#[test]
+fn all_folders_and_the_drive_roots_set_the_folder_and_the_subfolders() {
+    let mut listing = start();
+    assert_eq!(update(&mut listing, Event::OpenAll), OPEN);
+    assert!(listing.folder.is_empty() && listing.recursive);
+    assert_eq!(update(&mut listing, Event::OpenRoots), OPEN);
+    assert!(listing.folder.is_empty() && !listing.recursive);
+    update(&mut listing, Event::OpenAll);
+    assert!(listing.folder.is_empty() && listing.recursive);
+}
+
 #[test]
 fn subfolders_are_as_chosen() {
     let mut listing = start();

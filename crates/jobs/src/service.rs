@@ -101,6 +101,12 @@ impl Service {
         self.shared.ready.notify_one();
     }
 
+    /// Whether the body is still running: `false` once it has returned, or ended by a panic it didn't catch (a
+    /// writer whose own loop panicked), so that whoever waits for its work can stop waiting.
+    pub fn is_running(&self) -> bool {
+        !*self.shared.exited.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
     /// Ask the body to return at its next wait (or as soon as it checks [`Waker::quitting`]).
     pub fn quit(&self) {
         // Under the lock, so a body between its check and its wait can't miss it.
@@ -200,5 +206,22 @@ mod tests {
     fn a_panicking_body_counts_as_exited() {
         let service = Service::start("test", |_| panic!("the body fails")).unwrap();
         assert!(service.stop_within(Duration::from_secs(5)));
+        assert!(!service.is_running());
+    }
+
+    #[test]
+    fn a_body_is_running_until_it_returns() {
+        let (release_tx, release_rx) = mpsc::channel::<()>();
+        let service = Service::start("test", move |_| {
+            let _ = release_rx.recv();
+        })
+        .unwrap();
+        assert!(service.is_running());
+        release_tx.send(()).unwrap();
+        let start = std::time::Instant::now();
+        while service.is_running() {
+            assert!(start.elapsed() < Duration::from_secs(5), "the body didn't end");
+            std::thread::sleep(Duration::from_millis(1));
+        }
     }
 }

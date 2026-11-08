@@ -1,5 +1,7 @@
 //! The folder tree (merged across drives, read by `pg_app`'s session) as a flat list model: each visible node is a row
-//! with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All".
+//! with its depth; expanding a node inserts its visible descendants below it. Row 0 is "All"; row 1 is "Drive roots"
+//! when files lie directly in a drive root (`pg_client::tree`). The `kind` role tells the rows apart, and QML gives
+//! the first two their words.
 //!
 //! The tree is read off the GUI thread (the app's catalog reader): `reload` asks, `apply` shows it. Until the first one,
 //! only "All" is there (`ready` is false). The tree itself is kept on the GUI thread (`TREE`, beside the controller), so
@@ -110,7 +112,7 @@ use std::cell::RefCell;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_client::tree::Tree;
+use pg_client::tree::{Tree, Visible};
 use pg_model::rules::Merged;
 use pg_model::tree::FolderTree;
 
@@ -123,6 +125,12 @@ const ROLE_EXPANDED: i32 = 259;
 const ROLE_TOTAL: i32 = 260;
 const ROLE_DRIVES: i32 = 261;
 const ROLE_MERGED: i32 = 262;
+const ROLE_KIND: i32 = 263;
+
+/// The `kind` role: which of the rows it is (FolderTree.qml names the first two by their `ui.ftl` words).
+const KIND_ALL: i32 = 0;
+const KIND_DRIVE_ROOTS: i32 = 1;
+const KIND_FOLDER: i32 = 2;
 
 /// A row as QML's int, or -1 (not found) for one past what an int can hold.
 fn row_index(row: usize) -> i32 {
@@ -154,19 +162,36 @@ fn with_mut<T>(change: impl FnOnce(&mut Tree) -> T) -> T {
     TREE.with(|tree| change(&mut tree.borrow_mut()))
 }
 
-/// The folder a row shows, merged (the empty folder for "All", and for a row the tree doesn't have).
-pub(crate) fn merged_at(row: i32) -> Merged {
-    with(|tree| match tree.row(row) {
-        Some(Some(n)) => tree.folders().merged(n),
-        _ => Merged::default(),
-    })
+/// What a row shows, read off the tree as shown (the shell's click on a row: `shell::row_event`).
+pub(crate) fn row_kind(row: i32) -> RowKind {
+    with(|tree| RowKind::of(tree, row))
+}
+
+/// What a row shows, by value: the folder of a node, merged.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum RowKind {
+    /// "All", and a row the tree doesn't have.
+    All,
+    /// "Drive roots".
+    DriveRoots,
+    Folder(Merged),
+}
+
+impl RowKind {
+    pub(crate) fn of(tree: &Tree, row: i32) -> RowKind {
+        match tree.row(row) {
+            Some(Visible::Folder(n)) => RowKind::Folder(tree.folders().merged(n)),
+            Some(Visible::DriveRoots) => RowKind::DriveRoots,
+            Some(Visible::All) | None => RowKind::All,
+        }
+    }
 }
 
 /// The listed folder as the tree spells it, when the tree shows it under another spelling (the start's spelled-folder
 /// step: the folder is kept as the tree has it). `None` when the folder isn't shown or is spelled the same.
-pub(crate) fn spelling_of(folder: &Merged) -> Option<Merged> {
+pub(crate) fn spelling_of(folder: &Merged, recursive: bool) -> Option<Merged> {
     with(|tree| {
-        tree.row_of_path(folder)?;
+        tree.row_of(folder, recursive)?;
         let n = tree.find(folder)?;
         let spelled = tree.folders().merged(n);
         (spelled != *folder).then_some(spelled)
@@ -177,20 +202,26 @@ impl qobject::FolderModel {
     fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         with(|tree| {
             let Some(v) = tree.row(index.row()) else { return QVariant::default() };
-            let Some(n) = v else {
+            let (kind, total) = match v {
+                Visible::All => (KIND_ALL, tree.folders().total()),
+                Visible::DriveRoots => (KIND_DRIVE_ROOTS, tree.folders().root_files()),
+                Visible::Folder(_) => (KIND_FOLDER, 0),
+            };
+            let Visible::Folder(n) = v else {
+                // The words of "All folders" and "Drive roots" are the QML's (`ui.ftl`), by the row's kind.
                 return match role {
-                    ROLE_NAME => QVariant::from(&QString::from("All folders")),
+                    ROLE_NAME | ROLE_DRIVES => QVariant::from(&QString::default()),
                     ROLE_DEPTH => QVariant::from(&0i32),
-                    ROLE_EXPANDABLE | ROLE_EXPANDED => QVariant::from(&false),
-                    ROLE_TOTAL => QVariant::from(&tree.folders().total()),
-                    ROLE_DRIVES => QVariant::from(&QString::default()),
-                    ROLE_MERGED => QVariant::from(&false),
+                    ROLE_EXPANDABLE | ROLE_EXPANDED | ROLE_MERGED => QVariant::from(&false),
+                    ROLE_TOTAL => QVariant::from(&total),
+                    ROLE_KIND => QVariant::from(&kind),
                     _ => QVariant::default(),
                 };
             };
             let folders = tree.folders();
             let Some(node) = folders.node(n) else { return QVariant::default() };
             match role {
+                ROLE_KIND => QVariant::from(&kind),
                 ROLE_NAME => QVariant::from(&QString::from(folders.name(n).display().as_ref())),
                 ROLE_DEPTH => QVariant::from(&(i32::try_from(node.depth).unwrap_or(i32::MAX))),
                 ROLE_EXPANDABLE => QVariant::from(&folders.has_children(n)),
@@ -213,6 +244,7 @@ impl qobject::FolderModel {
             (ROLE_TOTAL, "total"),
             (ROLE_DRIVES, "drives"),
             (ROLE_MERGED, "merged"),
+            (ROLE_KIND, "kind"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -279,14 +311,15 @@ impl qobject::FolderModel {
     }
 
     fn reveal_listing(mut self: Pin<&mut Self>, first: bool) -> i32 {
-        let folder = controller::listing().folder;
-        let shown = with(|tree| tree.row_of_path(&folder));
+        let listing = controller::listing();
+        let (folder, recursive) = (listing.folder, listing.recursive);
+        let shown = with(|tree| tree.row_of(&folder, recursive));
         let row = match shown {
             Some(row) => Some(row),
             // Opening the folders above it changes the rows: a reset, as the model's rows are read again.
             None if first && with(|tree| tree.find(&folder)).is_some() => {
                 self.as_mut().begin_reset_model();
-                let row = with_mut(|tree| tree.reveal(&folder));
+                let row = with_mut(|tree| tree.reveal(&folder, recursive));
                 self.as_mut().end_reset_model();
                 row
             }

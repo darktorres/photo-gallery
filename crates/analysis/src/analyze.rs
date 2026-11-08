@@ -23,9 +23,9 @@ use pg_model::orientation;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
 /// in place, which keeps the library, ratings and views. Not a schema version. Until the first release it is not
-/// bumped: a change that alters what is stored means the owner recreates the catalogs (a change to the tables is
-/// made in place in the catalog's baseline, `catalog::BASELINE_VERSION` stays 1). From the first release on, a change
-/// that alters what is stored bumps it.
+/// bumped: a change that alters what is stored means the owner recreates the catalogs (a change to the tables is a
+/// migration of the catalog's schema, `MIGRATIONS` in `pg_catalog`'s `schema.rs`, whose baseline is frozen). From the
+/// first release on, a change that alters what is stored bumps it.
 pub const IMPORT_VERSION: i64 = 1;
 
 /// The JPEG decode keeps at least this many pixels on the upright long side…

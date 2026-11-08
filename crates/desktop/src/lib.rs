@@ -35,8 +35,11 @@ use std::ffi::OsString;
 use cxx_qt::casting::Upcast;
 use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 
-/// Opens the app with the program's arguments (the program's name first). Returns when its window closes.
-pub fn run(args: &[OsString]) {
+/// Opens the app with the program's arguments (the program's name first). Returns when its window closes, with the
+/// application's exit status (`QGuiApplication::exec`'s: 0, or 1 when a `--screenshot` run found no window to save;
+/// 1 when the application couldn't be made), for the process to exit with.
+#[must_use]
+pub fn run(args: &[OsString]) -> i32 {
     // The crate's and the QML module's C++ initializers. A static library keeps them only where they are called.
     cxx_qt::init_crate!(pg_desktop);
     cxx_qt::init_qml_module!("pg.gallery");
@@ -65,7 +68,7 @@ pub fn run(args: &[OsString]) {
             }
         });
     if let Err(e) = app::open(config) {
-        fatal(&format!("Can't open the catalog: {e:#}"));
+        fatal(&pg_client::text::catalog_unopened(&format!("{e:#}")));
     }
     pg_trace::pg_stage_init_done();
 
@@ -110,15 +113,14 @@ pub fn run(args: &[OsString]) {
         unsafe { gpu_device::ffi::show_windows(engine.as_mut(), gpu.pin_mut()) };
         screenshot::schedule(engine);
     }
-    if let Some(app) = app.as_mut() {
-        app.exec();
-    }
+    let status = app.as_mut().map_or(1, |app| app.exec());
     // The background work stops first (the reader, then the library). Then the engine ends the image providers, and
     // Qt joins their thread pools as they end: the connections those threads hold close with them, before the app
     // closes its own (`app::shutdown`).
     app::stop();
     drop(engine);
     app::shutdown();
+    status
 }
 
 /// A GUI program has nowhere to print: show the error, then quit.

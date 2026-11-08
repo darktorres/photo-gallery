@@ -9,6 +9,7 @@ use pg_model::query::{Query, Sort, SortKey};
 use pg_model::rules::Merged;
 use pg_model::view::Listing;
 use proptest::prelude::*;
+use strum::IntoEnumIterator;
 
 static NEXT: AtomicU64 = AtomicU64::new(0);
 
@@ -36,27 +37,15 @@ fn fresh_dir() -> std::path::PathBuf {
     dir
 }
 
-fn key() -> impl Strategy<Value = SortKey> {
-    prop::sample::select(vec![
-        SortKey::Name,
-        SortKey::Size,
-        SortKey::Modified,
-        SortKey::Taken,
-        SortKey::Megapixels,
-        SortKey::Duration,
-    ])
-}
-
 proptest! {
-    // A few cases: each one opens a catalog.
+    // A few cases: each one opens a catalog, and saves and reads back the listing once per sort.
     #![proptest_config(ProptestConfig::with_cases(12))]
 
+    // Every sort key, both ways, in every case: a key left out of a generator would not be covered at all.
     #[test]
     fn the_saved_listing_reads_back(
         folder in folder(),
         recursive in any::<bool>(),
-        sort_key in key(),
-        descending in any::<bool>(),
         name in "[a-zA-Z ]{0,8}",
         exts in prop::collection::vec("[a-z]{1,4}", 0..3),
     ) {
@@ -67,16 +56,23 @@ proptest! {
             thumb_cap_bytes: None,
         })
         .unwrap();
-        let listing = Listing {
-            folder,
-            recursive,
-            sort: Sort { key: sort_key, descending },
-            query: Query { name, exts, ..Query::default() },
-        };
-        app.save_listing(&listing).unwrap();
-        let back = app.listing();
+        let mut read = Vec::new();
+        for key in SortKey::iter() {
+            for descending in [false, true] {
+                let listing = Listing {
+                    folder: folder.clone(),
+                    recursive,
+                    sort: Sort { key, descending },
+                    query: Query { name: name.clone(), exts: exts.clone(), ..Query::default() },
+                };
+                app.save_listing(&listing).unwrap();
+                read.push((app.listing(), listing));
+            }
+        }
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
-        prop_assert_eq!(back, listing);
+        for (back, listing) in read {
+            prop_assert_eq!(back, listing);
+        }
     }
 }

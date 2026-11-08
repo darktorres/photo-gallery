@@ -28,7 +28,6 @@ Item {
     required property real dpr
 
     readonly property alias fitImage: fit
-    readonly property alias fullImage: full
     // The parts' values over the picture (the Loupe, the frame, the HUD), read from the images.
     readonly property int fitStatus: fit.status
     readonly property bool fullReady: full.status === Image.Ready
@@ -58,6 +57,7 @@ Item {
     // Fitted by Rust. When zoomed, the GPU stretches it over the image's place until a sharper layer is ready.
     Image {
         id: fit
+        objectName: "fitImage"
         source: layers.fitSource
         width: layers.viewport.zoomed ? layers.viewport.dw : implicitWidth / layers.dpr
         height: layers.viewport.zoomed ? layers.viewport.dh : implicitHeight / layers.dpr

@@ -12,8 +12,13 @@ use crate::sort::sort_choice;
 /// A change to the listing: made by the user, or by the start.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Event {
-    /// Show a merged folder (the empty folder = all folders).
+    /// Show a merged folder (the empty folder = all folders, or the drive roots' own files without subfolders).
     OpenFolder(Merged),
+    /// Show every folder: the empty folder with its subfolders (the tree's "All" row, and the start's fallback).
+    OpenAll,
+    /// Show the files directly in the drive roots: the empty folder without its subfolders (the tree's "Drive roots"
+    /// row).
+    OpenRoots,
     /// With, or without, the files of its subfolders.
     Recursive(bool),
     /// The sort box's choice (`pg_client::sort`).
@@ -39,6 +44,8 @@ pub enum Command {
 pub fn update(listing: &mut Listing, event: Event) -> Vec<Command> {
     match event {
         Event::OpenFolder(folder) => listing.folder = folder,
+        Event::OpenAll => (listing.folder, listing.recursive) = (Merged::default(), true),
+        Event::OpenRoots => (listing.folder, listing.recursive) = (Merged::default(), false),
         Event::Recursive(on) => listing.recursive = on,
         Event::SortChoice(index) => match sort_choice(index) {
             Some(sort) => listing.sort = sort,

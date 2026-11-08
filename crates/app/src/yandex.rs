@@ -6,13 +6,17 @@
 //! 1920x1080).jpg`), and that folder is remembered in the preferences (`yandex_folder`) for the next save.
 
 use std::ffi::{OsStr, OsString};
+use std::fs::{File, OpenOptions};
+use std::io::{self, ErrorKind, Read, Write};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread;
 
 use pg_jobs::events::{Bus, Subscription};
+use pg_model::format::Format;
 use pg_model::rules::PathRules;
+use pg_platform::file::TempFile;
 use pg_platform::names::{path_buf, rule_path_of};
 pub use pg_yandex::YandexError;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Download, OtherSize, Similar, Upload};
@@ -122,10 +126,13 @@ pub enum SimilarNote {
 /// Why a search ended without results.
 #[derive(Debug)]
 pub enum SearchError {
-    /// Refused before anything is sent: only still images are searched.
+    /// Refused before anything is sent: only still images are searched. Decided by the file's first bytes, so a
+    /// video is refused without being read.
     NotStill,
     /// The photo could not be read from disk.
     Unreadable(std::io::Error),
+    /// The photo is in a format Yandex may refuse (TIFF), and it could not be decoded to be sent as a JPEG.
+    Undecodable(String),
     /// A request to Yandex failed before any results came (the client, the upload or the other sizes).
     Request(YandexError),
 }
@@ -202,10 +209,29 @@ impl Default for Search {
     }
 }
 
-/// Still images only: videos and anything else are refused before anything is sent.
-fn is_still_image(path: &Path) -> bool {
-    let ext = path.extension().and_then(|e| e.to_str()).map(str::to_ascii_lowercase);
-    matches!(ext.as_deref(), Some("jpg" | "jpeg" | "png" | "webp" | "gif" | "bmp"))
+/// How much of a file is read to tell its format ([`Format::sniff`] looks at no more).
+const SNIFF_BYTES: u64 = 16;
+
+/// What the search uploads of the photo at `path`: its bytes, read once from one open of the file. See
+/// [`photo_bytes`].
+fn read_photo(path: &Path) -> Result<Vec<u8>, SearchError> {
+    let file = File::open(path).map_err(SearchError::Unreadable)?;
+    photo_bytes(file)
+}
+
+/// The bytes to upload of the photo `file` holds, decided by its content, not its name. Its first bytes are read and
+/// sniffed, and anything but a still image (a video, an unknown file) is refused before the rest is read. JPEG, PNG,
+/// WebP, GIF and BMP are sent as they are: the set the search has always taken. A TIFF, which Yandex may refuse, is
+/// sent as a JPEG of the same size ([`pg_render::transcode::to_jpeg`]).
+fn photo_bytes(mut file: impl Read) -> Result<Vec<u8>, SearchError> {
+    let mut bytes = Vec::new();
+    file.by_ref().take(SNIFF_BYTES).read_to_end(&mut bytes).map_err(SearchError::Unreadable)?;
+    let format = Format::sniff(&bytes).ok_or(SearchError::NotStill)?;
+    file.read_to_end(&mut bytes).map_err(SearchError::Unreadable)?;
+    match format {
+        Format::Jpeg | Format::Png | Format::Webp | Format::Gif | Format::Bmp => Ok(bytes),
+        Format::Tiff => pg_render::transcode::to_jpeg(&bytes).map_err(|e| SearchError::Undecodable(format!("{e:#}"))),
+    }
 }
 
 fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
@@ -230,10 +256,7 @@ fn find_similar<S: Source + ?Sized>(
     shared: &Mutex<Shared>,
     changes: &Bus<()>,
 ) -> Result<(Found, Option<SimilarNote>), SearchError> {
-    if !is_still_image(photo) {
-        return Err(SearchError::NotStill);
-    }
-    let bytes = std::fs::read(photo).map_err(SearchError::Unreadable)?;
+    let bytes = read_photo(photo)?;
     set_status(shared, changes, Status::Working(Phase::Uploading));
     let upload = source.upload(&bytes).map_err(SearchError::Request)?;
     set_status(shared, changes, Status::Working(Phase::OtherSizes));
@@ -281,23 +304,62 @@ fn saved_stem(stem: &OsStr, suffix: &str) -> OsString {
     name
 }
 
-/// `folder/<stem>.<ext>`, or with ` (2)`, ` (3)`… after the stem when that name is taken.
-fn unique_path(folder: &Path, stem: &OsStr, ext: &str) -> PathBuf {
-    let named = |n: u32| {
-        let mut name = stem.to_os_string();
-        if n > 1 {
-            name.push(format!(" ({n})"));
-        }
-        name.push(format!(".{ext}"));
-        folder.join(name)
-    };
-    let mut path = named(1);
-    let mut n = 2;
-    while path.exists() {
-        path = named(n);
-        n += 1;
+/// How many names [`claim`] tries (`<stem>`, then ` (2)` up to this) before it gives up.
+const MAX_CLAIMS: u32 = 10_000;
+
+/// The file name `<stem>.<ext>`, or with ` (n)` after the stem when `n` is past 1.
+fn numbered(stem: &OsStr, ext: &str, n: u32) -> OsString {
+    let mut name = stem.to_os_string();
+    if n > 1 {
+        name.push(format!(" ({n})"));
     }
-    path
+    name.push(format!(".{ext}"));
+    name
+}
+
+/// Takes the first free name of `folder/<stem>.<ext>`, ` (2)`, ` (3)`… by making it, empty: `create_new` makes the
+/// check and the claim one step, so a name another program takes at the same time is not written over.
+fn claim(folder: &Path, stem: &OsStr, ext: &str) -> io::Result<PathBuf> {
+    for n in 1..=MAX_CLAIMS {
+        let path = folder.join(numbered(stem, ext, n));
+        match OpenOptions::new().write(true).create_new(true).open(&path) {
+            Ok(_) => return Ok(path),
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(ErrorKind::AlreadyExists, format!("{MAX_CLAIMS} names of this file are all taken")))
+}
+
+/// The temporary a save writes before it takes the final name: `.<stem>.<ext>.pg-save` beside it (the repository's
+/// temporaries are dot-names beside their target: `.pg-write`, `.pg-crop`).
+fn temp_path(folder: &Path, stem: &OsStr, ext: &str) -> PathBuf {
+    let mut name = OsString::from(".");
+    name.push(numbered(stem, ext, 1));
+    name.push(".pg-save");
+    folder.join(name)
+}
+
+/// Writes `bytes` to a new file in `folder` named `<stem>.<ext>` (or ` (2)`, ` (3)`… after the stem when that is
+/// taken) and returns its path. The bytes go to a temporary beside it first ([`temp_path`]), synced; then the final
+/// name is claimed ([`claim`]) and the temporary renamed over the empty claim. A failure at any step removes both, so
+/// a failed write leaves no partial file at the photo's name. The error comes with the path it was at.
+///
+/// What a crash leaves: during the write, the temporary (its name is fixed, so the next save of that name replaces
+/// it); in the instant between the claim and the rename, the temporary and an empty file at the claimed name.
+fn write_new(folder: &Path, stem: &OsStr, ext: &str, bytes: &[u8]) -> Result<PathBuf, (PathBuf, io::Error)> {
+    let temp = TempFile::new(&temp_path(folder, stem, ext));
+    let at_temp = |error: io::Error| (temp.path().to_path_buf(), error);
+    let mut file = File::create(temp.path()).map_err(at_temp)?;
+    file.write_all(bytes).map_err(at_temp)?;
+    file.sync_all().map_err(at_temp)?;
+    drop(file);
+    let path = claim(folder, stem, ext).map_err(|error| (folder.join(numbered(stem, ext, 1)), error))?;
+    let placeholder = TempFile::new(&path);
+    std::fs::rename(temp.path(), &path).map_err(|error| (path.clone(), error))?;
+    placeholder.persist();
+    temp.persist();
+    Ok(path)
 }
 
 /// The file-name stem of the photo, kept exactly: `IMG_1234` for `IMG_1234.jpg`.
@@ -305,11 +367,12 @@ fn stem_of(photo: &Path) -> OsString {
     photo.file_stem().map_or_else(|| OsString::from("image"), OsStr::to_os_string)
 }
 
-/// Downloads one hit into `folder`, named `<stem> (<suffix>)` so it sorts next to the photo.
+/// Downloads one hit into `folder`, named `<stem> (<suffix>)` so it sorts next to the photo ([`write_new`]).
 fn save_one<S: Source + ?Sized>(source: &S, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
     let file = source.download(&hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
-    let path = unique_path(folder, &saved_stem(stem, &hit.suffix), file.format.extension());
-    std::fs::write(&path, &file.bytes).map_err(|error| SaveFailure::Write { url: hit.url.clone(), path, error })
+    write_new(folder, &saved_stem(stem, &hit.suffix), file.format.extension(), &file.bytes)
+        .map(drop)
+        .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path, error })
 }
 
 /// The search on its thread: its source is made first (a recorded session or the client), then the search runs on it.
@@ -353,14 +416,32 @@ fn save_all<S: Source + ?Sized>(
 }
 
 impl Search {
+    /// Runs `work` (a search or a save, which has set `busy`) on a thread of its own, named `name`. When the system
+    /// refuses the thread, `busy` and the status are cleared again, the change is announced, and the error returned:
+    /// nothing ran, so the next search or save may start.
+    fn spawn_worker(&self, name: &str, work: impl FnOnce() + Send + 'static) -> io::Result<bool> {
+        match thread::Builder::new().name(name.to_string()).spawn(work) {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                let mut s = lock(&self.shared);
+                s.busy = false;
+                s.status = None;
+                drop(s);
+                self.changes.publish(());
+                Err(e)
+            }
+        }
+    }
+
     /// Start a search for the photo at `photo`, a local path, with the source `make` gives (the client, or a recorded
-    /// session). False when a search or a save is running (nothing changes).
-    pub fn start(&self, photo: &Path, make: Factory) -> bool {
+    /// session). False when a search or a save is running (nothing changes); an error when its thread couldn't start
+    /// (nothing runs, and nothing stays busy).
+    pub fn start(&self, photo: &Path, make: Factory) -> io::Result<bool> {
         let photo = photo.to_path_buf();
         {
             let mut s = lock(&self.shared);
             if s.busy {
-                return false;
+                return Ok(false);
             }
             s.busy = true;
             s.photo = photo.clone();
@@ -369,7 +450,7 @@ impl Search {
         self.changes.publish(());
         let shared = self.shared.clone();
         let changes = self.changes.clone();
-        thread::spawn(move || {
+        self.spawn_worker("yandex search", move || {
             // A panic here is logged (the hook), and the search ends with a status, so `busy` is always cleared.
             let outcome = pg_jobs::panics::catch(AssertUnwindSafe(|| search(&photo, &make, &shared, &changes)));
             let mut s = lock(&shared);
@@ -385,8 +466,7 @@ impl Search {
             s.busy = false;
             drop(s);
             changes.publish(());
-        });
-        true
+        })
     }
 
     /// A subscriber's end of the change bus: an event each time what `poll` reports changes. Events are only a signal;
@@ -415,16 +495,16 @@ impl Search {
 
     /// Save the picked `hits` into `folder`, one file each, named after the photo, downloaded from the source `make`
     /// gives. The folder is remembered in the preferences for the next save, whether or not every download works. False
-    /// when nothing is picked or a search or a save is running (nothing changes). The save's outcome comes from
-    /// [`Search::poll`].
-    pub fn save(&self, app: &App, hits: Vec<Hit>, folder: PathBuf, make: Factory) -> bool {
+    /// when nothing is picked or a search or a save is running (nothing changes); an error when its thread couldn't
+    /// start (nothing is downloaded, and nothing stays busy). The save's outcome comes from [`Search::poll`].
+    pub fn save(&self, app: &App, hits: Vec<Hit>, folder: PathBuf, make: Factory) -> io::Result<bool> {
         if hits.is_empty() {
-            return false;
+            return Ok(false);
         }
         let stem = {
             let mut s = lock(&self.shared);
             if s.busy {
-                return false;
+                return Ok(false);
             }
             s.busy = true;
             s.status = Some(Status::Working(Phase::Saving { files: hits.len() }));
@@ -438,7 +518,7 @@ impl Search {
         }
         let shared = self.shared.clone();
         let changes = self.changes.clone();
-        thread::spawn(move || {
+        self.spawn_worker("yandex save", move || {
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
             let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match make() {
                 Ok(source) => save_all(&hits, &stem, &folder, &*source, &shared, &changes),
@@ -452,8 +532,7 @@ impl Search {
             s.busy = false;
             drop(s);
             changes.publish(());
-        });
-        true
+        })
     }
 }
 
@@ -475,11 +554,105 @@ mod tests {
         }
     }
 
+    /// The names in `folder`, sorted.
+    fn names_in(folder: &Path) -> Vec<OsString> {
+        let mut names: Vec<OsString> =
+            std::fs::read_dir(folder).unwrap().map(|entry| entry.unwrap().file_name()).collect();
+        names.sort();
+        names
+    }
+
     #[test]
     fn saved_names_follow_the_photo() {
-        let folder = std::env::temp_dir();
+        let folder = pg_testkit::test_folder("scratch_app", "yandex-names").unwrap();
         let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
-        assert_eq!(unique_path(&folder, &stem, "jpg"), folder.join("IMG_1234 (yandex 1920x1080).jpg"));
+        let path = write_new(&folder, &stem, "jpg", b"first").unwrap();
+        assert_eq!(path, folder.join("IMG_1234 (yandex 1920x1080).jpg"));
+        assert_eq!(std::fs::read(&path).unwrap(), b"first");
+        assert_eq!(names_in(&folder), [OsString::from("IMG_1234 (yandex 1920x1080).jpg")], "no temporary is left");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn two_saves_of_one_name_get_two_files() {
+        let folder = pg_testkit::test_folder("scratch_app", "yandex-twice").unwrap();
+        let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
+        let first = write_new(&folder, &stem, "jpg", b"first").unwrap();
+        let second = write_new(&folder, &stem, "jpg", b"second").unwrap();
+        assert_eq!(second, folder.join("IMG_1234 (yandex 1920x1080) (2).jpg"));
+        assert_eq!(std::fs::read(&first).unwrap(), b"first", "the first is not written over");
+        assert_eq!(std::fs::read(&second).unwrap(), b"second");
+        assert_eq!(names_in(&folder).len(), 2, "no temporary is left");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_failed_write_leaves_no_file_at_the_name() {
+        let folder = pg_testkit::test_folder("scratch_app", "yandex-failed").unwrap();
+        let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
+        // A folder where the temporary goes: the write to it fails.
+        let temp = temp_path(&folder, &stem, "jpg");
+        std::fs::create_dir(&temp).unwrap();
+        let (at, _) = write_new(&folder, &stem, "jpg", b"bytes").unwrap_err();
+        assert_eq!(at, temp, "the error names where it failed");
+        assert!(!folder.join("IMG_1234 (yandex 1920x1080).jpg").exists(), "no partial or empty file at the name");
+        assert_eq!(names_in(&folder), [temp.file_name().unwrap().to_os_string()], "only the folder put there");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    /// A reader that fails: what the photo's file gives past the bytes a test lets be read.
+    struct Refuses;
+
+    impl Read for Refuses {
+        fn read(&mut self, _buf: &mut [u8]) -> io::Result<usize> {
+            Err(io::Error::other("read past the sniffed bytes"))
+        }
+    }
+
+    #[test]
+    fn a_still_image_is_sent_as_it_is() {
+        let png = pg_testkit::png_rgb(2, 2, &[10; 12]).unwrap();
+        assert_eq!(photo_bytes(png.as_slice()).unwrap(), png);
+    }
+
+    #[test]
+    fn a_video_is_refused_on_its_first_bytes() {
+        // An MP4's start (a `ftyp` box), and then a file that fails if it is read further.
+        let head: &[u8] = b"\0\0\0\x18ftypmp42\0\0\0\0";
+        assert_eq!(head.len(), 16);
+        assert!(matches!(photo_bytes(head.chain(Refuses)), Err(SearchError::NotStill)));
+        assert!(matches!(photo_bytes(&b""[..]), Err(SearchError::NotStill)), "an empty file too");
+    }
+
+    #[test]
+    fn a_tiff_is_sent_as_a_jpeg_of_its_size() {
+        let rgb: Vec<u8> = (0..6 * 4).flat_map(|_| [30u8, 120, 220]).collect();
+        let tiff = pg_testkit::tiff_rgb(6, 4, &rgb).unwrap();
+        let sent = photo_bytes(tiff.as_slice()).unwrap();
+        assert_eq!(Format::sniff(&sent), Some(Format::Jpeg));
+        let mut decoder = pg_codec::decode::Decoder::new().unwrap();
+        let decoded = pg_render::display::decode(
+            &mut decoder,
+            &sent,
+            pg_codec::decode::MinSize::Full,
+            pg_model::turns::Turns::NONE,
+        )
+        .unwrap();
+        assert_eq!((decoded.info.format, decoded.image.width, decoded.image.height), (Format::Jpeg, 6, 4));
+    }
+
+    #[test]
+    fn a_tiff_that_doesnt_decode_is_undecodable() {
+        let mut broken = b"II\x2a\x00".to_vec();
+        broken.extend_from_slice(&[0xFF; 32]);
+        assert!(matches!(photo_bytes(broken.as_slice()), Err(SearchError::Undecodable(_))));
+    }
+
+    #[test]
+    fn a_missing_photo_is_unreadable() {
+        let folder = pg_testkit::test_folder("scratch_app", "yandex-missing").unwrap();
+        assert!(matches!(read_photo(&folder.join("gone.jpg")), Err(SearchError::Unreadable(_))));
+        std::fs::remove_dir_all(&folder).unwrap();
     }
 
     #[test]

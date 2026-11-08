@@ -252,9 +252,33 @@ pub enum Event {
     NotStored { error: String },
     /// The WAL could not be merged when the writer closed.
     WalNotMerged { error: String },
-    /// The cache file was started over when it was opened, because this build can't use it (`why`: the first
-    /// difference, or the catalog it was made for). Its thumbnails are made again; the cap it had is kept.
-    StartedOver { why: String },
+    /// The cache file was started over when it was opened, for `reason`: because this build can't use it (made for
+    /// another catalog, or by another build), or because it was damaged or not a database. `path` is where the old
+    /// file is now for a damaged one, which is moved aside (`thumbs.sqlite.bad`), and the cache file itself, made
+    /// anew, for one this build can't use, which is deleted. `detail` is the technical account (the first difference,
+    /// SQLite's error), for a log: the words a person reads come from `reason` and `path`. Its thumbnails are made
+    /// again; the cap it had is kept, except a damaged file's, which can't be read (the cap given, or the default).
+    StartedOver { reason: StartOverReason, path: PathBuf, detail: String },
+}
+
+/// Why a cache file was started over ([`Event::StartedOver`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StartOverReason {
+    /// SQLite found the file's pages don't hold together (`DatabaseCorrupt`): moved aside.
+    Damaged,
+    /// The file is not a database at all (`NotADatabase`): moved aside.
+    NotADatabase,
+    /// A cache made for another catalog: deleted, its cap kept.
+    OtherCatalog,
+    /// A cache made by another build (another layout version, schema, application id or vacuum setting): deleted, its
+    /// cap kept.
+    OtherBuild,
+}
+
+/// Why a file is started over, inside the cache: the reason, and the technical account of it ([`Event::StartedOver`]).
+struct Why {
+    reason: StartOverReason,
+    detail: String,
 }
 
 /// What a cache holds (bytes, entries) and may hold (`cap`, bytes).
@@ -373,7 +397,9 @@ impl ThumbCache {
     /// cache's cap from now on, for every process (one far over it comes down at the next write); without, the cap
     /// stays as it is ([`default_cap_bytes`] for a new cache). The totals are checked against the entries once here
     /// (`heal`, if the last check was `HEAL_INTERVAL` ago or more), a fix published on `events` before this returns:
-    /// subscribe first.
+    /// subscribe first. A file SQLite finds damaged, or that is not a database at all, is moved aside to
+    /// `thumbs.sqlite.bad` and made anew (an [`Event::StartedOver`] says so): damage in the file's header or layout is
+    /// found here, damage among the entries only at the day's check of the totals, so up to a day late.
     pub fn open(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>, events: Arc<Bus<Event>>) -> Result<ThumbCache> {
         if let Some(cap) = cap_bytes
             && cap < 0
@@ -381,11 +407,11 @@ impl ThumbCache {
             bail!("a thumbnail cache cap of {cap} bytes");
         }
         let path = cache_path(dir);
-        let (mut conn, started_over, live) = open_writer(&path, catalog_id, cap_bytes)?;
-        if let Some(why) = started_over {
-            events.publish(Event::StartedOver { why });
+        let Writing { conn, started_over, drift, live } = open_writer(&path, catalog_id, cap_bytes)?;
+        if let Some((why, old)) = started_over {
+            events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
-        if let Some((kept, actual)) = heal_if_due(&mut conn)? {
+        if let Some((kept, actual)) = drift {
             events.publish(Event::TotalsFixed { kept, actual });
         }
         let inbox = Arc::new(Inbox::new());
@@ -613,9 +639,32 @@ enum Found {
     New,
     /// A cache this build can't use (of another catalog, another layout, or an earlier build's): started over, with
     /// the reason and the cap it had.
-    Stale { why: String, cap: Option<i64> },
-    /// Not a thumbnail cache at all: refused, and left as it is.
+    Stale { why: Why, cap: Option<i64> },
+    /// Not a database, or one SQLite finds damaged (`NotADatabase`, `DatabaseCorrupt`): moved aside to
+    /// `<name>.bad` and made anew. Nothing in it can be trusted, its cap included, and it held derived data only.
+    Damaged { why: Why },
+    /// A database that is not a thumbnail cache: refused, and left as it is.
     Foreign { why: String },
+}
+
+/// Why `e` says the file is damaged, if its code is one of SQLite's for that: not a database at all
+/// (`NotADatabase`), or a database whose pages don't hold together (`DatabaseCorrupt`). Any other failure (busy, no
+/// permission, a full disk) is not the file's fault, and stays an error.
+fn damage(e: &rusqlite::Error) -> Option<Why> {
+    match e.sqlite_error_code() {
+        Some(rusqlite::ErrorCode::NotADatabase) => {
+            Some(Why { reason: StartOverReason::NotADatabase, detail: "it is not a database".to_string() })
+        }
+        Some(rusqlite::ErrorCode::DatabaseCorrupt) => {
+            Some(Why { reason: StartOverReason::Damaged, detail: format!("it is damaged ({e})") })
+        }
+        _ => None,
+    }
+}
+
+/// [`damage`] for the first SQLite error in `e`'s chain.
+fn damage_in(e: &anyhow::Error) -> Option<Why> {
+    e.chain().filter_map(|cause| cause.downcast_ref::<rusqlite::Error>()).find_map(damage)
 }
 
 /// The cache's schema as this build makes it, for the comparison in [`judge`]. Made in memory, once per process: the
@@ -642,44 +691,58 @@ fn make_layout(conn: &Connection, catalog_id: &str, cap_bytes: i64) -> rusqlite:
 }
 
 /// What the file at `path` is, for a writer of catalog `catalog_id`. It reads only: a file that is not ours gets no
-/// pragma and no write, so it is left as it was.
+/// pragma and no write, so it is left as it was. A read SQLite fails as damage ([`damage`]) is [`Found::Damaged`].
 fn judge(path: &Path, catalog_id: &str) -> Result<Found> {
     if !path.exists() {
         return Ok(Found::New);
     }
+    let expected = expected()?;
     let conn = Connection::open(sqlite_path(path)?)?;
-    let schema = match Schema::read(&conn, SEEDS) {
-        Ok(schema) => schema,
-        Err(e) if e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) => {
-            return Ok(Found::Foreign { why: "it is not a database".to_string() });
-        }
-        Err(e) => return Err(e.into()),
-    };
+    match read_found(&conn, catalog_id, expected) {
+        Ok(found) => Ok(found),
+        Err(e) => match damage(&e) {
+            Some(why) => Ok(Found::Damaged { why }),
+            None => Err(e.into()),
+        },
+    }
+}
+
+/// [`judge`]'s reads, on the file's connection `conn`: its schema compared with this build's (`expected`), its header
+/// fields and its owner.
+fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlite::Result<Found> {
+    let schema = Schema::read(conn, SEEDS)?;
     if schema.is_empty() {
         return Ok(Found::New);
     }
-    let id = pg_schema::application_id(&conn)?;
+    let id = pg_schema::application_id(conn)?;
     // A cache of an earlier build has no application id, but it has the two tables every cache has.
     let ours = id == APPLICATION_ID || (id == 0 && schema.has_table("entries") && schema.has_table("limits"));
     if !ours {
         return Ok(Found::Foreign { why: "it is not a thumbnail cache".to_string() });
     }
-    let cap = conn.query_row("SELECT cap FROM limits", [], |r| r.get::<_, i64>(0)).ok();
-    let version = pg_schema::user_version(&conn)?;
+    let cap = match conn.query_row("SELECT cap FROM limits", [], |r| r.get::<_, i64>(0)) {
+        Ok(cap) => Some(cap),
+        // An earlier layout may have another `limits`: no cap to keep. Damage is not that.
+        Err(e) if damage(&e).is_some() => return Err(e),
+        Err(_) => None,
+    };
+    let version = pg_schema::user_version(conn)?;
     let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
     // The owner is read last: an earlier layout may have no `meta` table at all.
+    let other_build = |detail: String| Some(Why { reason: StartOverReason::OtherBuild, detail });
     let difference = if version != CACHE_VERSION {
-        Some(format!("layout version {version}, this build's is {CACHE_VERSION}"))
-    } else if let Some(difference) = schema.difference(expected()?) {
-        Some(difference.to_string())
+        other_build(format!("layout version {version}, this build's is {CACHE_VERSION}"))
+    } else if let Some(difference) = schema.difference(expected) {
+        other_build(difference.to_string())
     } else if id != APPLICATION_ID {
-        Some(format!("application id {id}, not a cache's"))
+        other_build(format!("application id {id}, not a cache's"))
     } else if auto_vacuum != 2 {
-        Some("auto_vacuum is not incremental, so its free pages can't be given back".to_string())
+        other_build("auto_vacuum is not incremental, so its free pages can't be given back".to_string())
     } else {
         let owner: Option<String> =
             conn.query_row("SELECT value FROM meta WHERE key = 'catalog_id'", [], |r| r.get(0)).optional()?;
-        (owner.as_deref() != Some(catalog_id)).then(|| "made for another catalog".to_string())
+        (owner.as_deref() != Some(catalog_id))
+            .then(|| Why { reason: StartOverReason::OtherCatalog, detail: "made for another catalog".to_string() })
     };
     Ok(match difference {
         None => Found::Usable,
@@ -687,24 +750,59 @@ fn judge(path: &Path, catalog_id: &str) -> Result<Found> {
     })
 }
 
-/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given, why the file was
-/// started over (`None`: it was kept, or it is new), and the shared hold on the file (`pg_schema::Live`), kept for as
-/// long as the connection is. A file this build can't use (of another catalog or layout) is deleted with its sidecars
-/// and made anew, keeping its cap: that needs the exclusive hold, so no other program or connection has the file open
-/// (a start over is refused otherwise, and nothing is deleted). A file that is not a thumbnail cache is refused and
-/// left alone. The lock beside the file is held while it is judged and changed.
-fn open_writer(
-    path: &Path,
-    catalog_id: &str,
-    cap_bytes: Option<i64>,
-) -> Result<(Connection, Option<String>, pg_schema::Live)> {
+/// What [`open_writer`] gives the cache: the writer's connection, why the file was started over and the path of
+/// [`Event::StartedOver`] (`None`: it was kept, or it is new), what the day's check of the totals fixed
+/// (`heal_if_due`), and the shared hold on the file (`pg_schema::Live`), kept for as long as the connection is.
+struct Writing {
+    conn: Connection,
+    started_over: Option<(Why, PathBuf)>,
+    drift: Option<Drift>,
+    live: pg_schema::Live,
+}
+
+/// One try at the file ([`open_once`]): opened, or found damaged (the reason), with nothing of it held.
+enum Attempt {
+    Opened(Writing),
+    Damaged(Why),
+}
+
+/// The writer's connection to a cache of catalog `catalog_id`, with the cap set if one is given ([`Writing`]). A file
+/// this build can't use (of another catalog or layout) is deleted with its sidecars and made anew, keeping its cap:
+/// that needs the exclusive hold, so no other program or connection has the file open (a start over is refused
+/// otherwise, and nothing is deleted). A file that is not a database, or one SQLite finds damaged when it is judged,
+/// opened or has its totals checked (`heal_if_due`), is moved aside to `<name>.bad` with its sidecars
+/// (`pg_schema::move_aside`, which overwrites nothing) and made anew once; it holds derived data only. A database
+/// that is not a thumbnail cache is refused and left alone, and any other failure (busy, no permission, a full disk)
+/// stays an error. The lock beside the file is held while it is judged, checked and changed, so another process
+/// opening it finds the result.
+fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Writing> {
     let _lock = pg_schema::Lock::take(path)
         .with_context(|| format!("{}: its lock file", path.display()))?
         .ok_or_else(|| anyhow!("{}: another process is changing it", path.display()))?;
-    let (why, cap) = match judge(path, catalog_id)? {
-        Found::Usable => return Ok((open_file(path, catalog_id, cap_bytes)?, None, hold_shared(path)?)),
-        Found::New => (None, None),
-        Found::Stale { why, cap } => (Some(why), cap),
+    let why = match open_once(path, catalog_id, cap_bytes)? {
+        Attempt::Opened(writing) => return Ok(writing),
+        Attempt::Damaged(why) => why,
+    };
+    let kept = move_damaged(path, &why.detail)?;
+    match open_once(path, catalog_id, cap_bytes)? {
+        Attempt::Opened(mut writing) => {
+            let detail = format!("{}; the old file is kept as {}", why.detail, kept.display());
+            writing.started_over = Some((Why { reason: why.reason, detail }, kept));
+            Ok(writing)
+        }
+        Attempt::Damaged(again) => bail!("{}: {}, even when made anew", path.display(), again.detail),
+    }
+}
+
+/// One try of [`open_writer`], under its lock: the file judged, started over if this build can't use it, opened, and
+/// its totals checked. Damage found on the way is [`Attempt::Damaged`], with every connection to the file closed and
+/// every hold on it let go, so the file can be moved aside.
+fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Attempt> {
+    let (usable, why, cap) = match judge(path, catalog_id)? {
+        Found::Usable => (true, None, None),
+        Found::New => (false, None, None),
+        Found::Stale { why, cap } => (false, Some(why), cap),
+        Found::Damaged { why } => return Ok(Attempt::Damaged(why)),
         Found::Foreign { why } => bail!("{}: {why}, so it is left alone", path.display()),
     };
     // Taken before anything is removed, and kept until the new file is made: the exclusive hold says nothing else has
@@ -741,14 +839,37 @@ fn open_writer(
             }
         }
     }
-    let conn = open_file(path, catalog_id, cap_bytes.or(cap))?;
-    if !matches!(judge(path, catalog_id)?, Found::Usable) {
-        bail!("{}: not usable even when made anew", path.display());
-    }
+    let (conn, drift) = match ready(path, catalog_id, cap_bytes.or(cap), !usable) {
+        Ok(ready) => ready,
+        // The connection is closed (`ready` dropped it) and the exclusive hold goes with this return.
+        Err(e) => return damage_in(&e).map(Attempt::Damaged).ok_or(e),
+    };
     // The file is made: the exclusive hold gives way to the shared one the connection keeps.
     drop(exclusive);
     let live = hold_shared(path)?;
-    Ok((conn, why, live))
+    let started_over = why.map(|why| (why, path.to_path_buf()));
+    Ok(Attempt::Opened(Writing { conn, started_over, drift, live }))
+}
+
+/// The writer's connection to the judged file ([`open_file`]), and what the day's check of its totals fixed. A file
+/// made here (`made`) is judged again first, and must be this build's.
+fn ready(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, made: bool) -> Result<(Connection, Option<Drift>)> {
+    let mut conn = open_file(path, catalog_id, cap_bytes)?;
+    if made && !matches!(judge(path, catalog_id)?, Found::Usable) {
+        bail!("{}: not usable even when made anew", path.display());
+    }
+    let drift = heal_if_due(&mut conn)?;
+    Ok((conn, drift))
+}
+
+/// Move the damaged cache at `path` aside, with its sidecars, to `<name>.bad` (or `.bad.1`, and so on): its new path.
+/// Only with the exclusive hold, so no other program or connection has it open; refused otherwise, with nothing moved.
+fn move_damaged(path: &Path, why: &str) -> Result<PathBuf> {
+    let _exclusive =
+        pg_schema::Live::exclusive(path).with_context(|| format!("{}: its open marker", path.display()))?.ok_or_else(
+            || anyhow!("{}: {why}, and can't be moved aside while another program has it open", path.display()),
+        )?;
+    pg_schema::move_aside(path, ".bad").with_context(|| format!("{}: {why}, and can't be moved aside", path.display()))
 }
 
 /// The shared hold a cache keeps while it is open (`pg_schema::Live`): it waits for a start over in progress to finish.
@@ -763,8 +884,13 @@ fn hold_shared(path: &Path) -> Result<pg_schema::Live> {
 fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
     let mut conn = Connection::open(sqlite_path(path)?)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
-    // auto_vacuum must be set before the first table exists.
-    conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
+    // auto_vacuum must be set before the first table exists. Setting it writes page 1 even when the file already has
+    // it, so it is set only when it differs: a cache judged usable has it, and its open must write nothing before the
+    // day's check (which may find the file damaged and move it aside as it was).
+    let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
+    if auto_vacuum != 2 {
+        conn.execute_batch("PRAGMA auto_vacuum = INCREMENTAL;")?;
+    }
     conn.execute_batch(CONNECTION_PRAGMAS)?;
     // The writer's pages: a 200-thumbnail batch fits in them, so its transaction doesn't go to the file for each.
     conn.execute_batch("PRAGMA cache_size = -16384;")?;
@@ -1239,8 +1365,13 @@ mod tests {
         Opened { cache, _events: watch }
     }
 
-    /// Opens a cache that starts over: returns it with the reason, which is the one event the open publishes.
-    fn open_started_over(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> (ThumbCache, String) {
+    /// Opens a cache that starts over: returns it with the reason, the path and the detail of the one event the open
+    /// publishes.
+    fn open_started_over(
+        dir: &Path,
+        catalog_id: &str,
+        cap_bytes: Option<i64>,
+    ) -> (ThumbCache, StartOverReason, PathBuf, String) {
         let bus = Arc::new(Bus::new(8));
         let events = bus.subscribe();
         let cache = ThumbCache::open(dir, catalog_id, cap_bytes, bus).unwrap();
@@ -1248,7 +1379,7 @@ mod tests {
         let first = taken.next();
         assert!(taken.next().is_none(), "one event expected");
         match first {
-            Some(Event::StartedOver { why }) => (cache, why),
+            Some(Event::StartedOver { reason, path, detail }) => (cache, reason, path, detail),
             other => panic!("a start-over expected, got {other:?}"),
         }
     }
@@ -1492,8 +1623,9 @@ mod tests {
             .unwrap()
             .execute_batch("ALTER TABLE entries ADD COLUMN extra INTEGER;")
             .unwrap();
-        let (cache, why) = open_started_over(&dir, CATALOG_ID, None);
+        let (cache, reason, path, why) = open_started_over(&dir, CATALOG_ID, None);
         assert!(why.contains("entries"), "{why}");
+        assert_eq!((reason, path), (StartOverReason::OtherBuild, cache_path(&dir)));
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 12345));
         drop(cache);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -1511,13 +1643,122 @@ mod tests {
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
+    /// A database that is not a cache (tables of its own, no cache's application id) is refused and left as it was.
     #[test]
-    fn a_file_that_is_not_a_cache_is_refused_and_left_as_it_was() {
-        let dir = test_folder(SCRATCH, "foreign-cache").unwrap();
-        std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
+    fn a_database_that_is_not_a_cache_is_refused_and_left_as_it_was() {
+        let dir = test_folder(SCRATCH, "foreign-db").unwrap();
+        Connection::open(cache_path(&dir)).unwrap().execute_batch("CREATE TABLE notes(text TEXT);").unwrap();
+        let before = std::fs::read(cache_path(&dir)).unwrap();
         let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
+        assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), before);
+        assert!(!bad_path(&dir).exists());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Where a damaged cache in `dir` is moved aside to.
+    fn bad_path(dir: &Path) -> PathBuf {
+        dir.join("thumbs.sqlite.bad")
+    }
+
+    /// Opens the cache in `dir`, whose file holds `damaged`: it is moved aside to `.bad` whole, a new cache takes the
+    /// name, and the one event says why and where the old file went: the reason and the detail.
+    fn opens_over_damage(dir: &Path, damaged: &[u8]) -> (StartOverReason, String) {
+        let (cache, reason, path, why) = open_started_over(dir, CATALOG_ID, None);
+        assert!(why.contains("thumbs.sqlite.bad"), "{why}");
+        assert_eq!(path, bad_path(dir), "the event names where the old file went");
+        assert!(matches!(reason, StartOverReason::Damaged | StartOverReason::NotADatabase), "{reason:?}");
+        assert_eq!(std::fs::read(bad_path(dir)).unwrap(), damaged, "the old bytes are kept");
+        assert_eq!(cache.totals().unwrap(), (0, 0));
+        cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
+        assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_some());
+        drop(cache);
+        (reason, why)
+    }
+
+    /// A file that is not a database at all is moved aside and made anew: the cache holds derived data only.
+    #[test]
+    fn a_file_that_is_not_a_database_is_moved_aside() {
+        let dir = test_folder(SCRATCH, "foreign-cache").unwrap();
+        std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
+        let (reason, why) = opens_over_damage(&dir, &[b'x'; 8192]);
+        assert!(why.contains("not a database"), "{why}");
+        assert_eq!(reason, StartOverReason::NotADatabase);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A cache of a few hundred entries, closed (its WAL merged), with the day's check of its totals due at the next
+    /// open: its bytes and page size.
+    fn closed_cache_due_a_check(dir: &Path) -> (Vec<u8>, usize) {
+        let cache = open_quiet(dir, CATALOG_ID, None);
+        for i in 0..20 {
+            let mut batch: Vec<Thumb> = (0..20).map(|j| thumb(i * 20 + j, 100, 5, 2000)).collect();
+            assert!(cache.put_batch(&mut batch, None).unwrap());
+        }
+        drop(cache);
+        let conn = Connection::open(cache_path(dir)).unwrap();
+        conn.execute("UPDATE meta SET value = 0 WHERE key = 'healed'", []).unwrap();
+        let page: i64 = conn.query_row("PRAGMA page_size", [], |r| r.get(0)).unwrap();
+        drop(conn);
+        assert!(!dir.join("thumbs.sqlite-wal").exists(), "the WAL is merged");
+        (std::fs::read(cache_path(dir)).unwrap(), usize::try_from(page).unwrap())
+    }
+
+    /// A real cache whose body is garbage after its header: moved aside and made anew.
+    #[test]
+    fn a_cache_with_a_garbage_body_is_moved_aside() {
+        let dir = test_folder(SCRATCH, "garbage-body").unwrap();
+        let (mut bytes, _) = closed_cache_due_a_check(&dir);
+        for (i, b) in bytes.iter_mut().enumerate().skip(100) {
+            *b = u8::try_from(i % 251).unwrap() ^ 0xA5;
+        }
+        std::fs::write(cache_path(&dir), &bytes).unwrap();
+        opens_over_damage(&dir, &bytes);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A real cache cut to half its pages (a disk full, a copy cut short): moved aside and made anew.
+    #[test]
+    fn a_truncated_cache_is_moved_aside() {
+        let dir = test_folder(SCRATCH, "truncated").unwrap();
+        let (bytes, page) = closed_cache_due_a_check(&dir);
+        let cut = &bytes[..bytes.len() / page / 2 * page];
+        std::fs::write(cache_path(&dir), cut).unwrap();
+        opens_over_damage(&dir, cut);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// Damage among the entries, past the pages the open reads, is found by the day's check of the totals
+    /// (`meta.healed` put back, or the open doesn't check): that takes the same path, under the same lock.
+    #[test]
+    fn damage_found_by_the_days_check_is_moved_aside() {
+        let dir = test_folder(SCRATCH, "heal-damage").unwrap();
+        let (mut bytes, page) = closed_cache_due_a_check(&dir);
+        // The first pages hold the header, the schema and the tables' roots (the open reads those); the entries' leaves
+        // and the JPEGs are past them.
+        let keep = 16 * page;
+        assert!(bytes.len() > 4 * keep, "the cache is too small to damage past its roots: {} bytes", bytes.len());
+        for b in &mut bytes[keep..] {
+            *b = 0xEE;
+        }
+        std::fs::write(cache_path(&dir), &bytes).unwrap();
+        let (reason, why) = opens_over_damage(&dir, &bytes);
+        assert!(why.contains("damaged"), "{why}");
+        assert_eq!(reason, StartOverReason::Damaged);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// A damaged cache that another program has open is not moved: the open fails, and the file stays as it was.
+    #[test]
+    fn a_damaged_cache_another_program_holds_is_not_moved() {
+        let dir = test_folder(SCRATCH, "damaged-held").unwrap();
+        std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
+        let held = pg_schema::Live::shared(&cache_path(&dir)).unwrap().unwrap();
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
+        assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), vec![b'x'; 8192]);
+        assert!(!bad_path(&dir).exists());
+        drop(held);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -1790,8 +2031,9 @@ mod tests {
         let cache = open(&dir, 12345);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         drop(cache);
-        let (reopened, why) = open_started_over(&dir, "rebuilt", None);
+        let (reopened, reason, path, why) = open_started_over(&dir, "rebuilt", None);
         assert!(why.contains("another catalog"), "{why}");
+        assert_eq!((reason, path), (StartOverReason::OtherCatalog, cache_path(&dir)));
         assert!(reopened.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_none(), "file 1 is another file now");
         assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
         // Open elsewhere: it can't be deleted, so it isn't used.
@@ -1811,8 +2053,9 @@ mod tests {
         )
         .unwrap();
         drop(old);
-        let (cache, why) = open_started_over(&dir, CATALOG_ID, None);
+        let (cache, reason, _, why) = open_started_over(&dir, CATALOG_ID, None);
         assert!(why.contains("entries"), "{why}");
+        assert_eq!(reason, StartOverReason::OtherBuild);
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 777), "empty, its cap kept");
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_some());

@@ -11,19 +11,25 @@ use pg_jobs::pipeline::{self, Options};
 const BATCH: usize = 500;
 
 pub struct Stats {
+    /// The files looked at, read or not.
     pub files: usize,
+    /// Of those, the ones that couldn't be read or decoded.
     pub failed: usize,
+    /// The files whose result went into the catalog: those read (borders or none), and those that don't decode
+    /// (stored as none). A file that couldn't be read stores nothing and stays due.
+    pub stored: usize,
 }
 
 /// Look for the borders that are due, committing in batches (stopping loses at most the batch).
 pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stats> {
     let work = catalog.pending_borders()?;
     let items = &work.items;
-    let mut stats = Stats { files: 0, failed: 0 };
+    let mut stats = Stats { files: 0, failed: 0, stored: 0 };
     if items.is_empty() {
         return Ok(stats);
     }
-    ctl.begin(Phase::Borders, u64::try_from(items.len()).unwrap_or(u64::MAX));
+    // The phase ends when this is dropped, however the pass leaves.
+    let _phase = ctl.begin(Phase::Borders, u64::try_from(items.len()).unwrap_or(u64::MAX));
     let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
     let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
         let tx = catalog.tx()?;
@@ -38,13 +44,15 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
                     stats.failed += 1;
                     continue;
                 }
-                // It doesn't decode: no borders, for the file as it is; the import records the failure.
+                // It doesn't decode, or the detector panicked on it (`pg_jobs::panics::Panicked`): no borders, for the
+                // file as it is, so a file that panics isn't tried again every round; the import records a failure.
                 Err(_) => {
                     stats.failed += 1;
                     None
                 }
             };
             writer.store_borders(items.get(i).context("an item outside the pass")?, found.as_ref())?;
+            stats.stored += 1;
         }
         drop(writer);
         tx.commit()?;
@@ -71,6 +79,5 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         },
     )?;
     flush(&mut batch, &mut stats)?;
-    ctl.finish();
     Ok(stats)
 }

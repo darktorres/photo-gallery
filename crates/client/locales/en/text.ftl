@@ -77,6 +77,25 @@ changes-unwritten = { $count ->
     [one] { $text } change not yet in the files: { $error }
    *[other] { $text } changes not yet in the files: { $error }
 }
+# The latest failure when nothing is left queued (the change it was about went)
+write-queue-failed = A change couldn't be written into its file: { $error }
+# A copy into a file that failed up to its retries after it may have started (`text::write_incomplete`)
+write-incomplete = { $file } may be incomplete: copying its change into it failed ({ $error }). Its whole new content is in { $temp }, and the copy is tried again
+# A write refused because a folder of the file's path ends in a dot or a space, which Windows drops from the path an
+# outside program is given (`text::write_folder_refused`)
+write-folder-refused = { $file } isn't written: its folder { $folder } ends in a dot or a space, which Windows may drop from a path, so the write could reach another folder. Rename the folder to write into it
+# Queued writes dropped because their files left the library: how many since the last note, and the kind of the latest
+# (`rating` or `turns`, a selector)
+write-dropped = { $count ->
+    [one] { $kind ->
+        [rating] A queued rating was dropped: its file is no longer in the library
+       *[turns] A queued turn was dropped: its file is no longer in the library
+    }
+   *[other] { $kind ->
+        [rating] { $text } queued changes were dropped, the latest a rating: their files are no longer in the library
+       *[turns] { $text } queued changes were dropped, the latest a turn: their files are no longer in the library
+    }
+}
 
 # The job's notices
 unreadable-folders = { $root }: { $count } folders couldn't be read
@@ -92,6 +111,8 @@ scan-note = { $root }: { $kind ->
    *[other] { $count } scan notes
 }
 round-panicked = internal error in the background job: { $message }
+# A file a job panicked on (caught: the job went on with the next file), as a crop's or a write's failure
+file-panicked = internal error on this file: { $message }
 cache-full = The thumbnail cache is full: { $made } thumbnails at { $height } px weren't made
 
 # A crop job's note: the saved copies, then the skipped files and the failures (`text::cropped`)
@@ -107,10 +128,68 @@ cropped-failed = { $failed } failed, the first: { $error }
 
 # The Yandex panel
 yandex-captcha = Yandex asked for a captcha, which the app can't answer. Try again later.
-yandex-not-still = Yandex search takes still images (JPEG, PNG, WebP, GIF or BMP).
+yandex-not-still = Yandex search takes still images (JPEG, PNG, WebP, GIF, BMP or TIFF).
 yandex-uploading = Uploading the photo…
 yandex-other-sizes = Reading the other sizes…
 yandex-similar = Reading similar images…
 yandex-unreadable-photo = Can't read the photo: { $error }
 yandex-similar-stopped = Similar images stopped after { $shown } results: { $reason }
 yandex-similar-failed = Similar images failed: { $reason }
+yandex-not-started = Couldn't start the search or the save: { $error }
+
+# The thumbnail cache, started over when it was opened (`text::thumb_cache_started_over`): one entry per reason. A
+# damaged file's `$path` is where the old file is kept; for the others, it is the cache file, made anew.
+thumb-cache-damaged = The thumbnail cache was damaged, so it was started over; its thumbnails are made again. The old file is kept as { $path }
+thumb-cache-not-a-database = The thumbnail cache was not a database, so it was started over; its thumbnails are made again. The old file is kept as { $path }
+thumb-cache-other-catalog = The thumbnail cache { $path } was made for another catalog, so it was started over; its thumbnails are made again
+thumb-cache-other-build = The thumbnail cache { $path } was made by another version of the app, so it was started over; its thumbnails are made again
+
+# The library panel (the desktop's `Library`): the status line while paused, the notice line with how many others came
+# in, and what adding, removing and rescanning a folder say
+work-paused = Background work paused
+paused-pass = Paused · { $status }
+notice-more = { $count ->
+    [one] { $notice } (and { $text } more)
+   *[other] { $notice } (and { $text } more)
+}
+folder-already-added = { $folder } is already in the library: rescanning it
+# A folder the scanner refuses (`$reason`: not on a local NTFS disk, or on a network file system) is not added
+folder-refused = { $folder } can't be added: { $reason }
+folder-not-added = The folder couldn't be added: { $error }
+folder-not-removed = The folder couldn't be removed from the library: { $error }
+rescan-failed = The library couldn't be scanned again: { $error }
+# The background work (the job and the writer) couldn't start: nothing is done until the app is started again
+library-unavailable = The background work couldn't start, so nothing is scanned, imported or written into the files: { $error }
+# The catalog's list of the library's folders couldn't be read
+folders-unreadable = The library's folders couldn't be read: { $error }
+round-failed = The background job failed: { $error }
+crop-failed = Saving cropped copies failed: { $error }
+
+# The Yandex panel's search and save lines
+yandex-starting = Starting…
+yandex-saving = { $count ->
+    [one] Saving { $text } file…
+   *[other] Saving { $text } files…
+}
+yandex-saving-file = Saving { $n } of { $of }…
+yandex-saved = { $count ->
+    [one] Saved { $text } file to { $folder }
+   *[other] Saved { $text } files to { $folder }
+}
+yandex-saved-failed = Saved { $written }, { $failed } failed. First failure: { $error }
+yandex-download-failed = { $url } couldn't be downloaded: { $error }
+yandex-write-failed = { $url } couldn't be written to { $path }: { $error }
+# A search or a save stopped by a panic, which the app logged
+yandex-stopped = Stopped by an internal error; the details are in gallery.log.
+# Why a Yandex request failed (`pg_yandex::YandexError`; the captcha is `yandex-captcha`)
+yandex-http-status = Yandex answered HTTP { $status }
+yandex-transport = Yandex request failed: { $error }
+yandex-unexpected = unexpected Yandex response: { $detail }
+yandex-recorded = recorded Yandex session: { $error }
+
+# The boxes the app shows before it ends: the catalog that can't be opened, and a panic (`text::internal_error`: the
+# first line, the panic's message, then where its details are)
+catalog-unopened = Can't open the catalog: { $error }
+internal-error = Photo Gallery hit an internal error:
+details-in-log = The details are in { $log }.
+details-not-logged = Writing them to { $log } failed ({ $error }).

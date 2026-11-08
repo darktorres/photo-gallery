@@ -14,9 +14,8 @@ Item {
     required property real rowHeight
     // New whenever the row's items change in place: rated, turned, marked, rewritten, or another list.
     required property int version
-    // The values the cells show, one list per field with an entry per item of the row (galleryModel's ROLE_KEYS to
+    // The values the cells show, one list per field with an entry per item of the row (galleryModel's ROLE_BADGES to
     // ROLE_CONTENT_HEIGHT). They are copied into typed lists in update(), which the QML compiler can read.
-    required property var keys
     required property var badges
     required property var ratings
     required property var bordersMarked
@@ -52,7 +51,6 @@ Item {
     // Bumped to read the same items again.
     property int cellsVersion: 0
     // The shown items' values, taken in update() with the span and the version.
-    property list<string> shownKeys
     property list<string> shownBadges
     property list<int> shownRatings
     property list<bool> shownBordersMarked
@@ -72,7 +70,6 @@ Item {
         if (!live)
             return
         // The values as the row has them now: the model signals them before its span and version.
-        shownKeys = keys
         shownBadges = badges
         shownRatings = ratings
         shownBordersMarked = bordersMarked
@@ -113,7 +110,6 @@ Item {
             delegate: GridCell {
                 required property int index
                 item: rowItem.cellsFirst + index
-                itemKey: rowItem.shownKeys[index]
                 itemBadge: rowItem.shownBadges[index]
                 itemRating: rowItem.shownRatings[index]
                 itemBordersMarked: rowItem.shownBordersMarked[index]

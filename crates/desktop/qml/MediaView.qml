@@ -64,11 +64,13 @@ Item {
     onFileIdChanged: openVideo()
     Component.onCompleted: openVideo()
 
-    // Fitted (up or down), turned by the catalog's turns.
+    // Fitted (up or down), turned by the catalog's turns. Before the import the size isn't known (fw and fh are 0, and
+    // so is playScale): the picture then takes the whole view, and the VideoOutput's PreserveAspectFit fits the frame.
     Item {
-        visible: !media.still && media.playScale > 0
-        width: media.fw * media.playScale
-        height: media.fh * media.playScale
+        objectName: "videoBox"
+        visible: !media.still
+        width: media.playScale > 0 ? media.fw * media.playScale : media.width
+        height: media.playScale > 0 ? media.fh * media.playScale : media.height
         anchors.centerIn: parent
         Item {
             anchors.centerIn: parent

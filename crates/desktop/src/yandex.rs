@@ -137,9 +137,6 @@ use pg_client::picks::Picks;
 use pg_client::text;
 use pg_model::ids::FileId;
 
-/// The status line when a search or a save stops at an internal error (the panic is in the log).
-const INTERNAL_STOP: &str = "Stopped by an internal error; the details are in gallery.log.";
-
 const ROLE_THUMB: i32 = 256;
 const ROLE_IMAGE_WIDTH: i32 = 257;
 const ROLE_IMAGE_HEIGHT: i32 = 258;
@@ -174,22 +171,26 @@ impl YandexSearchRust {
     }
 }
 
-/// What the user reads when a request fails.
+/// What the user reads when a request fails: each of the client's errors has its own words; the values they carry (the
+/// transport's error, what an answer lacked) are the lower layers' text.
 fn explain(e: &YandexError) -> String {
     match e {
         YandexError::Captcha => text::render(&text::Message::YandexCaptcha),
-        other => other.to_string(),
+        YandexError::Status(status) => text::yandex_http_status(*status),
+        YandexError::Transport(error) => text::yandex_transport(error),
+        YandexError::Unexpected(detail) => text::yandex_unexpected(detail),
+        YandexError::Recorded(error) => text::yandex_recorded(error),
     }
 }
 
 fn phase_text(phase: Phase) -> String {
     match phase {
-        Phase::Starting => "Starting…".to_string(),
+        Phase::Starting => text::render(&text::Message::YandexStarting),
         Phase::Uploading => text::render(&text::Message::YandexUploading),
         Phase::OtherSizes => text::render(&text::Message::YandexOtherSizes),
         Phase::Similar => text::render(&text::Message::YandexSimilar),
-        Phase::Saving { files } => format!("Saving {files} files…"),
-        Phase::SavingFile { n, of } => format!("Saving {n} of {of}…"),
+        Phase::Saving { files } => text::yandex_saving(files),
+        Phase::SavingFile { n, of } => text::yandex_saving_file(n, of),
     }
 }
 
@@ -197,6 +198,7 @@ fn search_error_text(e: SearchError) -> String {
     match e {
         SearchError::NotStill => text::render(&text::Message::YandexNotStill),
         SearchError::Unreadable(e) => text::yandex_unreadable_photo(&e.to_string()),
+        SearchError::Undecodable(e) => text::yandex_unreadable_photo(&e),
         SearchError::Request(e) => explain(&e),
     }
 }
@@ -211,17 +213,17 @@ fn similar_note_text(note: SimilarNote) -> String {
 fn failure_text(failure: SaveFailure) -> String {
     match failure {
         SaveFailure::Client(e) => explain(&e),
-        SaveFailure::Download { url, error } => format!("{url}: {error}"),
-        SaveFailure::Write { url, path, error } => format!("{url}: {}: {error}", path.display()),
+        SaveFailure::Download { url, error } => text::yandex_download_failed(&url, &explain(&error)),
+        SaveFailure::Write { url, path, error } => {
+            text::yandex_write_failed(&url, &path.display().to_string(), &error.to_string())
+        }
     }
 }
 
 fn saved_text(saved: Saved) -> String {
     let Saved { folder, written, failed, first_error } = saved;
-    match first_error {
-        None => format!("Saved {written} file{} to {}", if written == 1 { "" } else { "s" }, folder.display()),
-        Some(first) => format!("Saved {written}, {failed} failed. First failure: {}", failure_text(first)),
-    }
+    let first_error = first_error.map(failure_text);
+    text::yandex_saved(written, &folder.display().to_string(), failed, first_error.as_deref())
 }
 
 fn status_text(status: Status) -> String {
@@ -230,7 +232,8 @@ fn status_text(status: Status) -> String {
         Status::Searched(note) => note.map_or_else(String::new, similar_note_text),
         Status::SearchFailed(e) => search_error_text(e),
         Status::Saved(saved) => saved_text(saved),
-        Status::Stopped => INTERNAL_STOP.to_string(),
+        // The panic that stopped it is in gallery.log (a thread the system refused is `not_started`'s line instead).
+        Status::Stopped => text::render(&text::Message::YandexStopped),
     }
 }
 
@@ -256,8 +259,10 @@ impl qobject::YandexSearch {
     /// Start a search for the photo at `path`. The app refuses one already running, and nothing shows then.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
         self.as_mut().ensure_pump();
-        if !self.search.start(path, crate::command_line::yandex_source()) {
-            return;
+        match self.search.start(path, crate::command_line::yandex_source()) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(e) => return self.not_started("search", &e),
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
         self.as_mut().set_busy(true);
@@ -432,10 +437,20 @@ impl qobject::YandexSearch {
         let files = hits.len();
         self.as_mut().ensure_pump();
         // The app refuses an empty pick, a search or a save already running, and remembers the folder when it saves.
-        if !self.search.save(crate::app::get(), hits, folder, crate::command_line::yandex_source()) {
-            return;
+        match self.search.save(crate::app::get(), hits, folder, crate::command_line::yandex_source()) {
+            Ok(true) => {}
+            Ok(false) => return,
+            Err(e) => return self.not_started("save", &e),
         }
         self.as_mut().set_busy(true);
         self.as_mut().set_status(QString::from(&status_text(Status::Working(Phase::Saving { files }))));
+    }
+
+    /// A search or a save (`what`) whose thread the system refused: the log says why, and so does the status line.
+    /// Nothing runs, so the panel isn't busy.
+    fn not_started(mut self: Pin<&mut Self>, what: &str, e: &std::io::Error) {
+        crate::panic_log::note(&format!("yandex: the {what} didn't start: {e}"));
+        self.as_mut().set_busy(false);
+        self.as_mut().set_status(QString::from(&text::yandex_not_started(&e.to_string())));
     }
 }

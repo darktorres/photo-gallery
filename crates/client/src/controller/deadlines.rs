@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 /// A pause the window waits out.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Timer {
-    /// The filter bar's query rests: the list is shown (300 ms).
+    /// The filter bar's query rests: the list is shown and the session saved (300 ms).
     ApplyQuery,
     /// The selection rests: the session's last file is saved (1 s).
     SaveSession,

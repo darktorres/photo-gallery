@@ -14,3 +14,5 @@ pub mod encode;
 pub mod fixtures;
 pub mod pixels;
 pub mod resize;
+
+pub use codecs::max_decode_bytes;

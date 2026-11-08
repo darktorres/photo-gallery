@@ -16,3 +16,8 @@ pg-platform = { path = "../platform" }
 pg-render = { path = "../render" }
 pg-thumbcache = { path = "../thumbcache" }
 anyhow.workspace = true
+
+[dev-dependencies]
+pg-import = { path = "../import" }
+pg-scan = { path = "../scan" }
+pg-testkit = { path = "../testkit" }

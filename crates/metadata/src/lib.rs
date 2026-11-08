@@ -340,6 +340,13 @@ impl<'a> Tiff<'a> {
     /// An entry's value bytes: in the entry when they fit in 4 bytes, else where it points. `None` for a type
     /// whose size isn't known, or a value outside the block.
     fn value(&self, e: &Entry) -> Option<&'a [u8]> {
+        self.data.get(self.value_range(e)?)
+    }
+
+    /// Where an entry's value bytes are in the block: its value field when they fit there (4 bytes, or 8 in
+    /// BigTIFF), else where that field points. `None` for a type whose size isn't known, or a value outside the
+    /// block.
+    fn value_range(&self, e: &Entry) -> Option<Range<usize>> {
         let unit: usize = match e.kind {
             1 | 2 | 6 | 7 => 1,
             3 | 8 => 2,
@@ -353,7 +360,26 @@ impl<'a> Tiff<'a> {
         let inline = if self.big { 8 } else { 4 };
         let at = self.value_at(e);
         let start = if len <= inline { at } else { self.offset_at(at)? };
-        self.data.get(start..start.checked_add(len)?)
+        let range = start..start.checked_add(len)?;
+        self.data.get(range.clone())?;
+        Some(range)
+    }
+
+    /// Whether an orientation entry is of a kind the reader and the patcher take: BYTE, SHORT or LONG, and LONG8
+    /// in BigTIFF (the kinds [`Tiff::uint`] reads as a number).
+    fn orientation_kind(&self, e: &Entry) -> bool {
+        matches!(e.kind, TIFF_BYTE | TIFF_SHORT | TIFF_LONG) || (self.big && e.kind == TIFF_LONG8)
+    }
+
+    /// IFD0's orientation entries of a kind [`Tiff::orientation_kind`] takes, each with where its value bytes are
+    /// in the block (an entry whose value is outside the block is left out). The reader takes the last readable
+    /// one; the patcher sets the first value of each.
+    fn orientation_entries(&self) -> impl Iterator<Item = (Range<usize>, Entry)> + '_ {
+        self.ifd0()
+            .into_iter()
+            .flat_map(|ifd0| self.entries(ifd0))
+            .filter(|e| e.tag == EXIF_TAG_ORIENTATION && self.orientation_kind(e))
+            .filter_map(|e| Some((self.value_range(&e)?, e)))
     }
 
     /// An entry's first value as an unsigned integer (BYTE, SHORT or LONG; a LONG8 or IFD8 that fits a LONG).
@@ -404,7 +430,10 @@ impl<'a> Exif<'a> {
         let mut exif_ifd = None;
         for e in tiff.entries(tiff.ifd0()?) {
             match e.tag {
-                EXIF_TAG_ORIENTATION => exif.orientation = tiff.uint(&e),
+                // The last readable one, of the kinds the patcher sets too.
+                EXIF_TAG_ORIENTATION if tiff.orientation_kind(&e) => {
+                    exif.orientation = tiff.uint(&e).or(exif.orientation);
+                }
                 EXIF_TAG_RATING => exif.rating = tiff.uint(&e),
                 EXIF_TAG_RATING_PERCENT => exif.rating_percent = tiff.uint(&e),
                 TIFF_TAG_XMP => exif.xmp = tiff.bytes(&e),
@@ -471,7 +500,9 @@ impl Container {
                             Some(ItxtXmp::Plain(text)) => packets.push(Packet::InFile(range_in(bytes, text))),
                             Some(ItxtXmp::Compressed(text)) => {
                                 let inflater = inflater.get_or_insert_with(Box::default);
-                                packets.extend(inflate_zlib(text, inflater, assembled).map(Packet::Assembled));
+                                // The budget is for the file: what its earlier packets left of it.
+                                let left = MAX_INFLATED.saturating_sub(assembled.len());
+                                packets.extend(inflate_zlib(text, inflater, assembled, left).map(Packet::Assembled));
                             }
                             None => {}
                         },
@@ -547,18 +578,28 @@ fn extended_packets(bytes: &[u8], chunks: &mut [ExtendedChunk], assembled: &mut 
     }
 }
 
-/// The most an inflated XMP packet may be. A packet is a few kilobytes; a larger one (a compressed bomb in a small
-/// file) is treated as absent, so the import doesn't grow to gigabytes for it.
+/// The most the inflated XMP packets of one file may be, together. A packet is a few kilobytes; a larger one (a
+/// compressed bomb in a small file), or one past what the file's earlier packets left, is treated as absent, so the
+/// import doesn't grow to gigabytes for it, however many compressed chunks the file holds.
 const MAX_INFLATED: usize = 16 << 20;
 
 /// zlib data inflated onto the end of `out`, as `miniz_oxide::inflate::decompress_to_vec_zlib` would give it (the
 /// same output, the same failures), with a kept decompressor. Its range in `out`; `None`, and `out` as it was, if it
-/// doesn't inflate or inflates to more than [`MAX_INFLATED`].
-fn inflate_zlib(mut input: &[u8], decompressor: &mut DecompressorOxide, out: &mut Vec<u8>) -> Option<Range<usize>> {
+/// doesn't inflate or inflates to more than `limit` bytes (the budget left of [`MAX_INFLATED`]; none left, it is
+/// absent).
+fn inflate_zlib(
+    mut input: &[u8],
+    decompressor: &mut DecompressorOxide,
+    out: &mut Vec<u8>,
+    limit: usize,
+) -> Option<Range<usize>> {
+    if limit == 0 {
+        return None;
+    }
     let flags = inflate_flags::TINFL_FLAG_PARSE_ZLIB_HEADER | inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF;
     decompressor.init();
     let start = out.len();
-    out.resize(start + input.len().saturating_mul(2).min(MAX_INFLATED), 0);
+    out.resize(start + input.len().saturating_mul(2).min(limit), 0);
     let mut at = 0;
     loop {
         let (status, read, written) = decompress(decompressor, input, out.get_mut(start..)?, at, flags);
@@ -569,10 +610,10 @@ fn inflate_zlib(mut input: &[u8], decompressor: &mut DecompressorOxide, out: &mu
                 out.truncate(start + at);
                 return Some(start..out.len());
             }
-            (TINFLStatus::HasMoreOutput, Some(rest)) if out.len() - start < MAX_INFLATED => {
+            (TINFLStatus::HasMoreOutput, Some(rest)) if out.len() - start < limit => {
                 input = rest;
                 let len = out.len() - start;
-                out.resize(start + len.saturating_mul(2).min(MAX_INFLATED), 0);
+                out.resize(start + len.saturating_mul(2).min(limit), 0);
             }
             _ => {
                 out.truncate(start);
@@ -622,26 +663,45 @@ fn exif_block(bytes: &[u8], format: Format) -> Option<std::ops::Range<usize>> {
     }
 }
 
-/// Offset of the orientation value in a TIFF block's IFD0, if the tag is there as one SHORT.
-fn tiff_orientation_offset(block: &[u8], bigtiff: bool) -> Option<usize> {
+/// The value bytes to write for each orientation entry in a TIFF block's IFD0 (those [`Tiff::orientation_entries`]
+/// yields): the range of the entry's first value in the block, and `o` at that entry's width (BYTE, SHORT, LONG or
+/// LONG8), in the block's byte order.
+fn tiff_orientation_patches(block: &[u8], bigtiff: bool, o: Orientation) -> Option<Vec<(Range<usize>, Vec<u8>)>> {
     let tiff = Tiff::new(block, bigtiff)?;
-    tiff.entries(tiff.ifd0()?)
-        .find(|e| e.tag == EXIF_TAG_ORIENTATION && e.kind == TIFF_SHORT && e.count == 1)
-        .map(|e| tiff.value_at(&e))
+    let le = tiff.little_endian;
+    let v = o.get();
+    let patches = tiff
+        .orientation_entries()
+        .filter_map(|(range, e)| {
+            let value: Vec<u8> = match e.kind {
+                TIFF_BYTE => vec![v],
+                TIFF_SHORT => (if le { u16::from(v).to_le_bytes() } else { u16::from(v).to_be_bytes() }).to_vec(),
+                TIFF_LONG => (if le { u32::from(v).to_le_bytes() } else { u32::from(v).to_be_bytes() }).to_vec(),
+                TIFF_LONG8 => (if le { u64::from(v).to_le_bytes() } else { u64::from(v).to_be_bytes() }).to_vec(),
+                _ => return None,
+            };
+            let first = range.start..range.start.checked_add(value.len())?;
+            // The entry's value holds at least one value of its width (its count is not 0).
+            (first.end <= range.end).then_some((first, value))
+        })
+        .collect();
+    Some(patches)
 }
 
 /// The file with its EXIF orientation set to `o`, changed in place (same size, nothing moves), or `None` when
-/// the file has no orientation tag to change (adding one is a job for ExifTool).
+/// the file has no orientation tag to change (adding one is a job for ExifTool). Every IFD0 orientation entry the
+/// reader could take is set, each at its own width, so the reader sees `o` whichever entry it takes.
 pub fn patch_orientation(bytes: &[u8], format: Format, o: Orientation) -> Option<Vec<u8>> {
     let block = exif_block(bytes, format)?;
-    let at = block.start + tiff_orientation_offset(bytes.get(block.clone())?, format == Format::Tiff)?;
-    let le = bytes.get(block.start..block.start + 2)? == b"II";
+    let patches = tiff_orientation_patches(bytes.get(block.clone())?, format == Format::Tiff, o)?;
+    if patches.is_empty() {
+        return None;
+    }
     let mut out = bytes.to_vec();
-    out.get_mut(at..at + 2)?.copy_from_slice(&if le {
-        u16::from(o.get()).to_le_bytes()
-    } else {
-        u16::from(o.get()).to_be_bytes()
-    });
+    for (range, value) in patches {
+        let at = block.start.checked_add(range.start)?..block.start.checked_add(range.end)?;
+        out.get_mut(at)?.copy_from_slice(&value);
+    }
     if format == Format::Png {
         // The eXIf chunk's CRC covers its type and data.
         let chunk = png_chunks(&out).find(|c| &c.kind == b"eXIf")?;
@@ -921,6 +981,78 @@ mod tests {
         }
     }
 
+    /// The patcher sets every orientation entry the reader could take, each at its own width, so what it wrote is
+    /// what the reader reads back: a BYTE, a LONG, a LONG out of its entry, a repeated tag, and LONG8 in BigTIFF.
+    #[test]
+    fn orientation_patch_round_trips_every_kind_the_reader_takes() {
+        for (big, le) in [(false, true), (false, false), (true, true), (true, false)] {
+            let short = |v: &[u16]| -> Vec<u8> {
+                v.iter().flat_map(|&v| if le { v.to_le_bytes() } else { v.to_be_bytes() }).collect()
+            };
+            let long = |v: &[u32]| -> Vec<u8> {
+                v.iter().flat_map(|&v| if le { v.to_le_bytes() } else { v.to_be_bytes() }).collect()
+            };
+            let long8 = |v: &[u64]| -> Vec<u8> {
+                v.iter().flat_map(|&v| if le { v.to_le_bytes() } else { v.to_be_bytes() }).collect()
+            };
+            let mut cases: Vec<Vec<TestEntry>> = vec![
+                vec![(EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![6])],
+                vec![(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[6]))],
+                vec![(EXIF_TAG_ORIENTATION, TIFF_LONG, 1, long(&[6]))],
+                // Out of its entry (more than the value field holds): the data it points at is patched, not the
+                // pointer.
+                vec![(EXIF_TAG_ORIENTATION, TIFF_LONG, 3, long(&[6, 1, 1]))],
+                vec![(EXIF_TAG_ORIENTATION, TIFF_SHORT, 3, short(&[6, 1, 1]))],
+                // Repeated, of different kinds: both are set, so the last (the one read) reads as patched.
+                vec![(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, short(&[8])), (EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![6])],
+                vec![(EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![8]), (EXIF_TAG_ORIENTATION, TIFF_LONG, 1, long(&[6]))],
+            ];
+            if big {
+                cases.push(vec![(EXIF_TAG_ORIENTATION, TIFF_LONG8, 1, long8(&[6]))]);
+                cases.push(vec![(EXIF_TAG_ORIENTATION, TIFF_LONG8, 2, long8(&[6, 1]))]);
+            }
+            for ifd0 in cases {
+                let block = tiff_block_as(big, le, &ifd0, &[]);
+                assert_eq!(orientation(&block, Format::Tiff).get(), 6, "{ifd0:?}");
+                let patched = patch_orientation(&block, Format::Tiff, Orientation::new(3).unwrap()).unwrap();
+                assert_eq!(patched.len(), block.len());
+                assert_eq!(orientation(&patched, Format::Tiff).get(), 3, "{ifd0:?}");
+                // Every entry was set, the first read too.
+                let tiff = Tiff::new(&patched, true).unwrap();
+                assert_eq!(tiff.orientation_entries().count(), ifd0.len());
+                for (_, e) in tiff.orientation_entries() {
+                    assert_eq!(tiff.uint(&e), Some(3), "{ifd0:?}");
+                }
+                // Nothing but the value changed: a single entry patched back to 6 gives the file it was (the
+                // trailing values of an array are kept).
+                if ifd0.len() == 1 {
+                    let back = patch_orientation(&patched, Format::Tiff, Orientation::new(6).unwrap()).unwrap();
+                    assert_eq!(back, block, "{ifd0:?}");
+                }
+            }
+            // An orientation of a kind the reader doesn't take (ASCII) is not patched: there is nothing to set.
+            let ascii = tiff_block_as(big, le, &[(EXIF_TAG_ORIENTATION, TIFF_ASCII, 2, b"6\0".to_vec())], &[]);
+            assert_eq!(patch_orientation(&ascii, Format::Tiff, Orientation::new(3).unwrap()), None);
+        }
+    }
+
+    /// A JPEG's EXIF block with a BYTE or a LONG orientation is patched too (the case that turned a picture twice).
+    #[test]
+    fn jpeg_byte_and_long_orientations_patch() {
+        for entry in [
+            (EXIF_TAG_ORIENTATION, TIFF_BYTE, 1, vec![6]),
+            (EXIF_TAG_ORIENTATION, TIFF_LONG, 1, 6u32.to_be_bytes().to_vec()),
+        ] {
+            let tiff = tiff_block(false, &[entry], &[]);
+            let app1 = [&b"Exif\0\0"[..], &tiff].concat();
+            let len = u16::try_from(app1.len() + 2).unwrap().to_be_bytes();
+            let jpeg = [&[0xFF, 0xD8, 0xFF, 0xE1][..], &len, &app1, &[0xFF, 0xD9]].concat();
+            assert_eq!(orientation(&jpeg, Format::Jpeg).get(), 6);
+            let patched = patch_orientation(&jpeg, Format::Jpeg, Orientation::UPRIGHT).unwrap();
+            assert_eq!(orientation(&patched, Format::Jpeg), Orientation::UPRIGHT);
+        }
+    }
+
     #[test]
     fn exif_dates_as_kamadak_read_them() {
         assert_eq!(exif_date(b"2023:07:15 18:30:05"), Some(1_689_445_805));
@@ -1180,11 +1312,37 @@ mod tests {
         let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; MAX_INFLATED + 1], 6);
         assert!(zlib.len() < 1 << 20, "{}", zlib.len());
         let mut out = b"before".to_vec();
-        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out).is_none());
+        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out, MAX_INFLATED).is_none());
         assert_eq!(out, b"before");
         // Just within the limit: taken.
         let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&vec![0u8; MAX_INFLATED], 6);
-        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out).is_some());
+        assert!(inflate_zlib(&zlib, &mut DecompressorOxide::default(), &mut out, MAX_INFLATED).is_some());
+        // No budget left: absent, and `out` as it was.
+        let small = miniz_oxide::deflate::compress_to_vec_zlib(b"<x/>", 6);
+        let before = out.len();
+        assert!(inflate_zlib(&small, &mut DecompressorOxide::default(), &mut out, 0).is_none());
+        assert_eq!(out.len(), before);
+    }
+
+    /// The budget is the file's, not each packet's: a PNG of many compressed iTXt chunks, each within the limit
+    /// alone, inflates no more than [`MAX_INFLATED`] in all, and the packets past it are absent.
+    #[test]
+    fn many_compressed_packets_share_one_budget() {
+        // Over 4 MiB in each, a few kilobytes packed: 3 fit in the budget, the rest don't.
+        let packet = [&b"<x:xmpmeta xmlns:x=\"adobe:ns:meta/\">"[..], &vec![b' '; 4 << 20], b"</x:xmpmeta>"].concat();
+        let zlib = miniz_oxide::deflate::compress_to_vec_zlib(&packet, 6);
+        let itxt = [&b"XML:com.adobe.xmp\0"[..], &[1, 0], b"\0\0", &zlib].concat();
+        let mut png = b"\x89PNG\r\n\x1a\n".to_vec();
+        png.extend(png_chunk(b"IHDR", &[0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]));
+        for _ in 0..10 {
+            png.extend(png_chunk(b"iTXt", &itxt));
+        }
+        png.extend(png_chunk(b"IEND", b""));
+        let mut scratch = MetaScratch::default();
+        Container::walk(&png, Format::Png, &mut scratch);
+        assert!(scratch.assembled.len() <= MAX_INFLATED, "{}", scratch.assembled.len());
+        let inflated = scratch.packets.iter().filter(|p| matches!(p, Packet::Assembled(_))).count();
+        assert_eq!(inflated, MAX_INFLATED / packet.len());
     }
 
     #[test]
@@ -1209,7 +1367,7 @@ mod tests {
             }
             let want = miniz_oxide::inflate::decompress_to_vec_zlib(&zlib).ok();
             let before = out.len();
-            let got = inflate_zlib(&zlib, &mut decompressor, &mut out).map(|r| out[r].to_vec());
+            let got = inflate_zlib(&zlib, &mut decompressor, &mut out, MAX_INFLATED).map(|r| out[r].to_vec());
             assert_eq!(got, want, "case {i}");
             if got.is_none() {
                 assert_eq!(out.len(), before);

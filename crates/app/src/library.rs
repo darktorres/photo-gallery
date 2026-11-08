@@ -154,7 +154,7 @@ impl App {
         let root = normalize_path(path).map_err(failed)?;
         // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
         if let Err(refused) = pg_scan::check_folder(PathRules::NATIVE, &root) {
-            return Err(failed(format!("{} can't be added: {refused}", PathRules::NATIVE.display(&root))));
+            return Err(Error::FolderRefused { folder: PathRules::NATIVE.display(&root), reason: refused.reason });
         }
         let added = self.with_catalog(|c| c.add_root(&root))?;
         if let Some(library) = self.library_cell.get() {
@@ -163,8 +163,9 @@ impl App {
         Ok((PathRules::NATIVE.display(&root), added))
     }
 
-    /// Remove a folder from the library, by its id (from [`App::roots`]). A scan of it in progress stops; the files it
-    /// had stay until the next scan.
+    /// Remove a folder from the library, by its id (from [`App::roots`]). A scan of it in progress stops. The files it
+    /// had are marked missing at once (`Catalog::remove_root`), not deleted: adding the folder back brings them back
+    /// with their analyses and ratings.
     pub fn remove_folder(&self, id: RootId) -> Result<()> {
         self.with_catalog(|c| c.remove_root(id).map(|_| ()))?;
         if let Some(library) = self.library_cell.get() {

@@ -66,6 +66,8 @@ Rectangle {
     final property bool loupe: false    // L: 10× loupe under the cursor
     final property bool zen: false      // H or a tap: nothing over the picture
     readonly property real dpr: Screen.devicePixelRatio
+    // A window moved to a screen with another pixel ratio: the view, and the fit's size in device pixels, follow it.
+    onDprChanged: pushWindow()
 
     readonly property bool still: kind === GalleryModel.Image
     readonly property bool hasBorders: still && borderBox.width > 0
@@ -78,7 +80,14 @@ Rectangle {
     // Made once needed, then kept: the content at the first show, the players at the first video or animation.
     property bool opened: false
     property bool mediaOpened: false
-    onVisibleChanged: if (visible) opened = true
+    // Opening the viewer, or another item, renders the fit at the window's size at once (settleFit).
+    onVisibleChanged: {
+        if (visible) {
+            opened = true
+            settleFit()
+        }
+    }
+    onKeyChanged: settleFit()
     onPlaysVideoChanged: if (playsVideo) mediaOpened = true
     onPlaysAnimationChanged: if (playsAnimation) mediaOpened = true
     // From the media: a frame of the shown video or animation was drawn (the poster gives way); the player's error.
@@ -111,19 +120,32 @@ Rectangle {
     final readonly property real zoom: viewportItem.zoom
     readonly property real ox: viewportItem.ox
     readonly property real oy: viewportItem.oy
-    // At the fit zoom (follows window resizes): above 1 for an image smaller than the window, which is enlarged to it.
-    readonly property bool fitted: viewportItem.fitted
-    readonly property real fitZoom: viewportItem.fitZoom
-    // The smallest zoom: the fit, or 1:1 when the fit enlarges the image (1:1 is then the furthest zoom out).
-    readonly property real minZoom: viewportItem.minZoom
-    readonly property real dw: viewportItem.dw
-    readonly property real dh: viewportItem.dh
     readonly property bool zoomed: viewportItem.zoomed
-    // 1:1 and beyond, away from the fit: the original, nearest neighbour.
-    readonly property bool pixels: viewportItem.pixels
 
     Viewport {
         id: viewportItem
+        // The window's size in device pixels changed: render the fit again once it has settled (a resize drags
+        // through many sizes, and each render is a Lanczos resample in Rust).
+        onFitWidthChanged: fitSettle.restart()
+        onFitHeightChanged: fitSettle.restart()
+    }
+
+    // The size the fitted image is rendered at, in device pixels: the Viewport's fitWidth and fitHeight, taken at
+    // once when the viewer opens or shows another item, and ~120 ms after the last change while a window is resized.
+    // Until the new render is ready the fit keeps its old pixels and size (ImageLayers' retainWhileLoading).
+    property int fitW: 0
+    property int fitH: 0
+
+    function settleFit() {
+        fitSettle.stop()
+        fitW = viewportItem.fitWidth
+        fitH = viewportItem.fitHeight
+    }
+
+    Timer {
+        id: fitSettle
+        interval: 120
+        onTriggered: viewer.settleFit()
     }
 
     signal closed(int index)
@@ -202,7 +224,8 @@ Rectangle {
         viewMoved()
     }
 
-    // The window's size changed: a fitted view follows it (reopened fitted), another is kept and clamped.
+    // The window's size or pixel ratio changed: a fitted view follows it (reopened fitted), another is kept and
+    // clamped. The fitted image is rendered again at the new size once the size has settled (fitSettle).
     function pushWindow() {
         const reset = viewportItem.setWindow(width, height, dpr, settings.realSize)
         viewMoved()
@@ -229,6 +252,7 @@ Rectangle {
         viewportItem.setStill(still)
         viewportItem.setMedia(fw, fh, settings.realSize)
         viewportItem.setWindow(width, height, dpr, settings.realSize)
+        settleFit()
     }
 
     // The key map (pg-client's keys, through the KeyMap facade) names the viewer's action for a key; this carries it out.
@@ -346,7 +370,7 @@ Rectangle {
                 ImageLayers {
                     id: layers
                     viewport: viewportItem
-                    fitSource: viewer.visible ? viewportItem.fitSource(viewer.key) : ""
+                    fitSource: viewer.visible ? viewportItem.fitSource(viewer.key, viewer.fitW, viewer.fitH) : ""
                     fullUrl: viewer.fullUrl
                     showing: viewer.visible
                     key: viewer.key
@@ -374,7 +398,7 @@ Rectangle {
                         required property string modelData
                         visible: false
                         asynchronous: true
-                        source: viewportItem.fitSource(modelData)
+                        source: viewportItem.fitSource(modelData, viewer.fitW, viewer.fitH)
                     }
                 }
 

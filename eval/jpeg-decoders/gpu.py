@@ -20,6 +20,7 @@ from pathlib import Path
 
 os.environ["VIPS_CONCURRENCY"] = "1"  # before pyvips loads libvips
 
+import env
 import numpy as np
 import pyvips
 import torch
@@ -84,7 +85,8 @@ def main():
     blocking_sync()
     assert torch.cuda.is_available(), "no CUDA device"
     vips_version = ".".join(str(pyvips.version(i)) for i in range(3))
-    print(f"{torch.cuda.get_device_name()}, torch {torch.__version__}, Pillow {Image.__version__}, libvips {vips_version}")
+    print(f"{torch.cuda.get_device_name()}, libvips {vips_version}")
+    print(env.line())
     for path in sys.argv[1:]:
         data = Path(path).read_bytes()
         name = Path(path).stem

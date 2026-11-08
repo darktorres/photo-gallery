@@ -14,6 +14,7 @@ import subprocess
 import time
 from pathlib import Path
 
+import env
 import numpy as np
 from nvidia import nvimgcodec as nv
 from PIL import Image
@@ -46,6 +47,7 @@ def main():
     ap.add_argument("--gpujpeg", required=True, help="gpujpegtool.exe")
     a = ap.parse_args()
     enc = nv.Encoder()
+    print(env.line())
     print("encode ms per megapixel at Q75: nvjpeg (in-process, median), gpujpeg (its own average, first iteration excluded)")
     for ppm in sorted((W / "src").glob("*.ppm")):
         name = ppm.stem

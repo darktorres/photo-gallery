@@ -127,6 +127,6 @@ python3 eval/jpeg-decoders/encoders.py score     # scores (cached in ~/jpeg-enc/
 ```
 
 The GPU encoders run on Windows in between `encode` and `score`, writing into the same folder through
-`\\wsl.localhost`: `D:\PhotoGallery\tools\jpeg-eval\venv\Scripts\python.exe -I eval\jpeg-decoders\gpu_encoders.py
+`\\wsl.localhost`: `D:\PhotoGallery\tools\jpeg-eval\venv\Scripts\python.exe eval\jpeg-decoders\gpu_encoders.py
 --gpujpeg D:\PhotoGallery\tools\jpeg-eval\build\GPUJPEG\gpujpegtool.exe`. The inputs are library photos and stay
 in WSL's `~/jpeg-enc`, never in the repo.

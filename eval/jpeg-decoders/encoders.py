@@ -25,6 +25,8 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import env
+
 BIN = Path.home() / "jpeg-eval/bin"
 W = Path.home() / "jpeg-enc"
 INPUTS = Path.home() / "jpeg-inputs"
@@ -228,4 +230,5 @@ def score():
 
 
 if __name__ == "__main__":
+    print(env.line(), file=sys.stderr)
     {"prepare": prepare, "encode": encode, "speed": speed, "score": score}[sys.argv[1]]()

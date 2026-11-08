@@ -574,7 +574,7 @@ Not measured:
 - **CPU decoders (Rust harness)**, from PowerShell in the repo: `wsl -d Ubuntu-26.04 -u root -- bash
   eval/jpeg-decoders/wsl.sh inputs check compare time bench marginal`. This needs `apt-get install libvips-dev` in
   the distro. The inputs are library photos, so they're copied to `~/jpeg-inputs` in WSL and never into the repo.
-- **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe -I eval\jpeg-decoders\gpu.py FILE...`
+- **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
   (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
   backends).
 - **Restart markers and baseline conversion:** `wsl -d Ubuntu-26.04 -u root -- bash eval/jpeg-decoders/restart.sh`

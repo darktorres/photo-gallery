@@ -1,6 +1,6 @@
 """nvJPEG with Huffman decoding on the CPU (HYBRID) against on the GPU (GPU_HYBRID), for docs/JPEG_DECODERS.md.
 
-Run with the eval venv (torch with CUDA): python -I eval/jpeg-decoders/nvjpeg.py [--interpolate] [--batches 1,64] FILE...
+Run with the eval venv (torch with CUDA): python eval/jpeg-decoders/nvjpeg.py [--interpolate] [--batches 1,64] FILE...
 
 torchvision's decode_jpeg has no backend option and decodes Huffman on the CPU, so this calls the nvJPEG DLL that
 ships with torchvision directly (ctypes; declarations from nvjpeg.h 13.2). Device memory and streams come from torch.
@@ -26,6 +26,7 @@ import statistics
 import time
 from pathlib import Path
 
+import env
 import numpy as np
 import torch
 import torchvision
@@ -260,9 +261,10 @@ def main():
     batches = [int(b) for b in args.batches.split(",")]
     assert torch.cuda.is_available(), "no CUDA device"
     print(
-        f"{torch.cuda.get_device_name()}, torch {torch.__version__}, nvJPEG {nvjpeg_version()} (torchvision's DLL),"
-        f" Pillow {Image.__version__}, chroma upsampling {'interpolated' if args.interpolate else 'default'}"
+        f"{torch.cuda.get_device_name()}, nvJPEG {nvjpeg_version()} (torchvision's DLL),"
+        f" chroma upsampling {'interpolated' if args.interpolate else 'default'}"
     )
+    print(env.line())
     stream = torch.cuda.Stream()  # creates the context
     flags = C.c_uint()
     ok(CUDART.cudaGetDeviceFlags(C.byref(flags)), "cudaGetDeviceFlags")

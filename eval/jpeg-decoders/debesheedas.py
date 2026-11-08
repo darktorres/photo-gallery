@@ -15,6 +15,7 @@ import tempfile
 import time
 from pathlib import Path
 
+import env
 import numpy as np
 from PIL import Image
 
@@ -41,6 +42,7 @@ def main():
     ap.add_argument("--ref-dir", type=Path, required=True)
     ap.add_argument("files", nargs="+", type=Path)
     a = ap.parse_args()
+    print(env.line())
     # The program runs in a temp folder, so every path it is given must be absolute.
     exe = str(Path(a.exe).resolve())
     ref_dir = a.ref_dir.resolve()

@@ -14,6 +14,7 @@ import statistics
 import time
 from pathlib import Path
 
+import env
 import numpy as np
 from nvidia import nvimgcodec as nv
 from PIL import Image
@@ -80,6 +81,7 @@ def main():
             decoders[name] = nv.Decoder() if kind is None else nv.Decoder(backends=[nv.Backend(kind)])
         except Exception as e:  # noqa: BLE001 (reported, and the other backends still run)
             print(f"{name:15} cannot be created: {e}")
+    print(env.line())
     print(
         f"nvImageCodec {nv.__version__}: median wall ms per image (pixels on the host), CPU ms per image, "
         "output vs libjpeg-turbo (mean |diff| / max / PSNR)"

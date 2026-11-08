@@ -1,7 +1,7 @@
 # Code ledger
 
 Lists the code files in the repository, with the vendored crates left out.
-Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit, except `eval/test_viewer.py` (added in 262004b) and `crates/render/src/transcode.rs` (added later, with the C-10 change)
+Recorded 2026-11-06 at commit `2b35a09`; line counts are for that commit, except `eval/test_viewer.py` (added in 262004b) and `eval/jpeg-decoders/env.py` (added with decision 5) and `crates/render/src/transcode.rs` (added later, with the C-10 change)
 and counted there.
 
 ## Scope
@@ -510,6 +510,7 @@ and counted there.
 | `eval/jpeg-decoders/benches/ir.rs` | Rust | 84 |
 | `eval/jpeg-decoders/debesheedas.py` | Python | 81 |
 | `eval/jpeg-decoders/encoders.py` | Python | 225 |
+| `eval/jpeg-decoders/env.py` | Python | 25 |
 | `eval/jpeg-decoders/gpu.py` | Python | 117 |
 | `eval/jpeg-decoders/gpu_encoders.py` | Python | 87 |
 | `eval/jpeg-decoders/harness-wsl.sh` | Shell | 52 |

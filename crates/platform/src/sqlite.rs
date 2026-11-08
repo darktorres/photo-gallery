@@ -8,7 +8,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 /// The path SQLite opens for `path`: `path` itself where SQLite can take it. On Windows, a file in a folder with no
-/// UTF-8 form is opened as `alias\name`, the alias being a junction to the folder (see [`alias_of_folder`]). A file
+/// UTF-8 form is opened as `alias\name`, the alias being a junction to the folder (see `alias_of_folder`). A file
 /// whose own name has no UTF-8 form is an error there: the catalog's and the cache's file names are ASCII.
 pub fn sqlite_path(path: &Path) -> io::Result<PathBuf> {
     #[cfg(unix)]

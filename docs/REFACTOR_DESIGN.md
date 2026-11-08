@@ -1,6 +1,6 @@
 # Finish the refactor properly: a Qt-free controller core, lossless paths, and eight gaps in `docs/REFACTOR_PLAN.md`
 
-Status note (2026-11-06): the Context describes the code as of the 2026-11-02 check. REFACTOR_PLAN.md's ledger records what has since been closed (S-12.4 to S-12.22, and S-17.1 to S-17.8 for names). The claim in line 13 that S-12.3 has `#[qenum]` filter types was not true of the code: `MediaKind` is the only `#[qenum]`.
+Status note (2026-11-06): the Context describes the code as of the 2026-11-02 check. REFACTOR_PLAN.md's ledger records what has since been closed (S-12.4 to S-12.22, and S-17.1 to S-17.8 for names). The claim in line 13 that S-12.3 has `#[qenum]` filter types was not true of the code: `MediaKind` is the only `#[qenum]`. Status (2026-11-08): `docs/REFACTOR_PLAN.md`'s ledger is the status source; this file is the design, and its Context is the 2026-11-02 state.
 
 ## Context
 

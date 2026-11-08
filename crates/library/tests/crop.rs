@@ -121,7 +121,13 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let all: Vec<FileId> = files_ids.iter().map(|(id, _)| FileId::new(*id)).collect();
 
     // Into the library: refused, nothing written.
-    assert!(crop::save(&c, &all, &dir.join("images"), &opts, &ctl).is_err());
+    assert!(
+        crop::save(&c, &all, &dir.join("images"), &opts, &ctl).is_err(),
+        "copies into the library were not refused: folder {:?}, the library's root {:?}, the catalog's roots {:?}",
+        dir.join("images"),
+        root,
+        c.roots().unwrap()
+    );
     // Copies go into a folder named by their library folder's whole path, so saving into the parent doesn't reach the
     // library any more; a folder inside a library folder still does.
     assert!(crop::save(&c, &all, &dir.join("images").join("sub"), &opts, &ctl).is_err(), "copies into the library");

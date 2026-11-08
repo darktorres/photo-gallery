@@ -254,7 +254,7 @@ Not gated: wall-clock time on this machine, not instructions, so it is a ledger 
 - **Windows** (the same script, under Git Bash with the Windows Python; `gallery.exe` release build of the working tree,
   whose crates are HEAD's, on NTFS, the 10,000-file library on `D:`): first 1.316 s, unchanged 0.146 s, renumbered
   0.322 s. The renumbered scan paired every row: 10,000 rows, none missing.
-- **Not measured:** the `just perf` gate (see REFACTOR_PLAN, S-16): it fails before it measures.
+- **Not measured:** the `just perf` gate on HEAD (see REFACTOR_PLAN, S-16). It failed before it measured until the bench data moved to the `v5` layout; the baseline was re-measured and committed in `15ca4e1`, and the gate has not been run on HEAD since.
 
 ### The start's stages before and after the two heap plans (release, `PG_TRACE=1`, offscreen, 2026-11-02)
 

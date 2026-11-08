@@ -32,15 +32,21 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   pairs.
 - `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`) and the viewer's
   images (`display`).
-- `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
-  schema, the writes, the reads (`browse`), the filters and sort (their SQL is `query`'s) and the duplicate reports.
 - `query` (`pg-query`): the query compiler: a `Query` (`pg-model`'s) becomes the SQL of its conditions and their
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
+- `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
+  schema, the writes, the reads (`browse`), the filters and sort (their SQL is `query`'s) and the duplicate reports.
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
   pause, stop), the job thread and schedule, the panics it catches and the event bus.
 - `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
 - `yandex` (`pg-yandex`): Yandex Images reverse search: the upload, the two result lists and the downloads (the only
   HTTP client).
+- `scan` (`pg-scan`): the folder walk: the directory listing (`pg-platform`), the skipped folders, and the catalog rows
+  for what it finds.
+- `import` (`pg-import`): a file's analysis (`pg-analysis`) and its pairing (`pg-dedup`), written to the catalog.
+- `thumbs` (`pg-thumbs`): the thumbnail pass: makes the thumbnails the catalog says are missing (`pg-render`, into the
+  thumbnail cache).
+- `writeback` (`pg-writeback`): writes the queued ratings and turns into the files (`pg-exiftool`, `pg-edit`).
 - `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, the cropped copies, the
   borders and the duplicates. Each pass that touches the files is its own crate, so its manifest shows what it may
   reach: `scan` (`pg-scan`: the folder walk), `import` (`pg-import`: the analyses), `thumbs` (`pg-thumbs`: the

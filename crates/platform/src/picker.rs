@@ -5,7 +5,7 @@
 //!
 //! Qt initializes COM on the GUI thread (a single-threaded apartment), so this initializes nothing, and it is called on
 //! that thread only. The dialog runs its own message loop while it is open: a caller holds no borrow of its state
-//! across the call. The dialog's steps are behind [`FolderDialog`] and [`ShellItem`], so [`pick_with`] is tested with a
+//! across the call. The dialog's steps are behind [`FolderDialog`] and [`ShellItem`], so `pick_with` is tested with a
 //! fake dialog; the Windows implementation is only the calls to the system.
 
 use std::io;

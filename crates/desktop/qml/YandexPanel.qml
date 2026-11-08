@@ -19,6 +19,10 @@ Rectangle {
 
     signal closed()
 
+    // The gallery's row height and gap: the results are laid out with them, so they match the grid.
+    required property real rowHeight
+    required property real gap
+
     // The viewer's photo: the catalog's file, by its id.
     function show(fileId: int) {
         openPanel()
@@ -100,14 +104,22 @@ Rectangle {
         onWheel: (wheel) => wheel.accepted = true
     }
 
-    // The results are its rows, and its state comes across when it changes (the change pump, src/yandex.rs).
-    YandexSearch { id: yandex }
+    // The results are its rows, and its state comes across when it changes (the change pump, src/yandex.rs). They are
+    // laid out in the width of the list they are in, at the gallery's row height and gap (their frames).
+    YandexSearch {
+        id: yandex
+        layoutWidth: sections.width
+        rowHeight: panel.rowHeight
+        gap: panel.gap
+    }
 
     // Where the picked results are saved: the picker asks for the folder, then they are saved into it (`done`).
     FolderPicker {
         id: savePicker
         onDone: yandex.downloadPicked()
         onOpenInApp: saveDialog.open = true
+        // The save's folder dialog couldn't open: the status line says why (this picker is only the save's).
+        onFailed: (purpose, message) => yandex.showFailure(message)
     }
     FolderPickerDialog {
         id: saveDialog
@@ -156,29 +168,25 @@ Rectangle {
                 Button { text: words.text("ui-close"); onClicked: panel.close() }
             }
 
-            // The status in full: wrapped, so nothing is cut off, and selectable so it can be copied.
-            RowLayout {
+            // How to see a result at full size, shown while there are results to see.
+            Label {
                 Layout.fillWidth: true
-                spacing: 10
-                visible: yandex.status !== ""
+                visible: yandex.otherCount + yandex.similarCount > 0
+                text: words.text("ui-yandex-hint")
+                color: Theme.hintText
+                font.pixelSize: 13
+            }
 
-                TextEdit {
-                    id: statusText
-                    Layout.fillWidth: true
-                    text: yandex.status
-                    color: Theme.bodyText
-                    font.pixelSize: 13
-                    wrapMode: TextEdit.Wrap
-                    readOnly: true
-                    selectByMouse: true
-                }
-                Button {
-                    text: words.text("ui-copy")
-                    onClicked: {
-                        statusText.selectAll()
-                        statusText.copy()
-                    }
-                }
+            // The status in full: wrapped, so nothing is cut off, and selectable, so it can be copied.
+            TextEdit {
+                Layout.fillWidth: true
+                visible: yandex.status !== ""
+                text: yandex.status
+                color: Theme.bodyText
+                font.pixelSize: 13
+                wrapMode: TextEdit.Wrap
+                readOnly: true
+                selectByMouse: true
             }
 
             Flickable {
@@ -199,9 +207,10 @@ Rectangle {
                         count: yandex.otherCount
                         picked: yandex.otherPicked
                     }
-                    Flow {
+                    // The group's block: its results at their frames, which YandexSearch lays out in the panel's width.
+                    Item {
                         Layout.fillWidth: true
-                        spacing: 8
+                        Layout.preferredHeight: yandex.otherHeight
                         Repeater {
                             model: yandex
                             ResultTile {
@@ -219,9 +228,9 @@ Rectangle {
                         count: yandex.similarCount
                         picked: yandex.similarPicked
                     }
-                    Flow {
+                    Item {
                         Layout.fillWidth: true
-                        spacing: 8
+                        Layout.preferredHeight: yandex.similarHeight
                         Repeater {
                             model: yandex
                             ResultTile {

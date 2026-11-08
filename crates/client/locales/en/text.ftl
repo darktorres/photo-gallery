@@ -136,6 +136,10 @@ yandex-unreadable-photo = Can't read the photo: { $error }
 yandex-similar-stopped = Similar images stopped after { $shown } results: { $reason }
 yandex-similar-failed = Similar images failed: { $reason }
 yandex-not-started = Couldn't start the search or the save: { $error }
+folder-dialog-failed = Couldn't open the folder dialog: { $error }
+folder-unreadable = Couldn't read the folder: { $error }
+yandex-nothing-picked = Pick at least one image to save.
+yandex-no-folder = No folder was chosen, so nothing was saved.
 
 # The thumbnail cache, started over when it was opened (`text::thumb_cache_started_over`): one entry per reason. A
 # damaged file's `$path` is where the old file is kept; for the others, it is the cache file, made anew.

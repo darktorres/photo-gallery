@@ -1,14 +1,15 @@
-// A result of the Yandex search, in YandexPanel's grid: its picture with its size, outlined when picked. The tile is a
-// delegate of the search's results model (YandexSearch), so its roles are what it shows. A click toggles the pick,
-// Shift-click gives every result from the last one clicked to this one that one's state (`rangeTo`), and a
-// double-click shows it at full size (`previewRequested`).
+// A result of the Yandex search, in YandexPanel's justified layout: its picture with its size, and a check badge when
+// it is picked. The tile is a delegate of the search's results model (YandexSearch), so its roles are what it shows,
+// its frame (where and how big it is in its group's block) included. A click toggles the pick, Shift-click gives every
+// result from the last one clicked to this one that one's state (`rangeTo`), and a double-click shows it at full size
+// (`previewRequested`).
 pragma ComponentBehavior: Bound
 
 import QtQuick
 import QtQuick.Controls.Fusion
 import pg.gallery
 
-Rectangle {
+Item {
     id: tile
 
     // The result's index in the search (its row): the other sizes first, then the similar images.
@@ -19,21 +20,23 @@ Rectangle {
     required property string thumb
     required property int imageWidth
     required property int imageHeight
+    // The frame the layout gave it (YandexSearch's frame roles): its place in its group's block, and its size.
+    required property real frameX
+    required property real frameY
+    required property real frameWidth
+    required property real frameHeight
 
     signal toggled(int item)
     signal rangeTo(int item)
     signal previewRequested(int item)
 
-    width: 176
-    height: 176
-    radius: 4
-    color: Theme.tileFill
-    border.width: tile.picked ? 3 : 1
-    border.color: tile.picked ? Theme.pickedOutline : Theme.tileOutline
+    x: tile.frameX
+    y: tile.frameY
+    width: tile.frameWidth
+    height: tile.frameHeight
 
     Image {
         anchors.fill: parent
-        anchors.margins: 6
         // The panel shows each group with its own Repeater over the whole model, so a tile of the other group is
         // hidden here and loads no picture.
         source: tile.visible ? tile.thumb : ""
@@ -42,13 +45,41 @@ Rectangle {
         fillMode: Image.PreserveAspectFit
         asynchronous: true
     }
-    Label {
+    // Picked: a check in the accent colour, in the top-right corner.
+    Rectangle {
+        anchors.top: parent.top
+        anchors.right: parent.right
+        anchors.margins: 6
+        width: 22
+        height: 22
+        radius: 11
+        color: Theme.pickedBadge
+        visible: tile.picked
+        Label {
+            anchors.centerIn: parent
+            text: "✓"
+            color: Theme.pickedText
+            font.pixelSize: 13
+            font.bold: true
+        }
+    }
+    // The size, on a dark backing: the picture under it may be light or dark.
+    Rectangle {
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.margins: 6
-        text: tile.imageWidth > 0 ? tile.imageWidth + "×" + tile.imageHeight : ""
-        color: Theme.tileCaption
-        font.pixelSize: 11
+        width: caption.implicitWidth + 10
+        height: caption.implicitHeight + 4
+        radius: 3
+        color: Theme.captionBacking
+        visible: caption.text !== ""
+        Label {
+            id: caption
+            anchors.centerIn: parent
+            text: tile.imageWidth > 0 ? tile.imageWidth + "×" + tile.imageHeight : ""
+            color: Theme.tileCaption
+            font.pixelSize: 11
+        }
     }
     MouseArea {
         anchors.fill: parent

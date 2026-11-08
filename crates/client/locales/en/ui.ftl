@@ -131,10 +131,10 @@ ui-save-picked = Save { $text } { $count ->
     [one] image…
    *[other] images…
 }
-ui-copy = Copy
 ui-other-sizes = Other sizes of this photo
 ui-similar-images = Similar images
 ui-no-results = No results.
+ui-yandex-hint = Double-click a result to see it at full size.
 ui-other-size = Other size { $text } of { $other }
 ui-similar-image = Similar image { $text } of { $other }
 ui-loading-percent = Loading… { $text }%

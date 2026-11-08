@@ -56,6 +56,40 @@ fn greedy(aspects: impl Iterator<Item = f64>, width: f64, target_height: f64, sp
     }
 }
 
+/// Where an item is in a laid-out grid: its left edge and top, and its size, in pixels.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct Frame {
+    pub x: f64,
+    pub y: f64,
+    pub width: f64,
+    pub height: f64,
+}
+
+/// The frames of a justified grid of items of these aspect ratios in `width` (the rows of `justify_into`, stacked from
+/// the top left, `spacing` apart both ways), and the grid's height. One frame per item, in order; the items of a row
+/// are as wide as their clamped aspect at the row's height. With no width or no height, every frame is empty.
+pub fn frames(aspects: &[f64], width: f64, target_height: f64, spacing: f64) -> (Vec<Frame>, f64) {
+    if width <= 0.0 || target_height <= 0.0 {
+        return (vec![Frame::default(); aspects.len()], 0.0);
+    }
+    let mut rows = Vec::new();
+    justify_into(&mut rows, aspects.iter().copied(), width, target_height, spacing);
+    let mut frames = Vec::with_capacity(aspects.len());
+    let mut y = 0.0;
+    for row in &rows {
+        let mut x = 0.0;
+        // A row holds items of `aspects`, as `justify_into` made it of them.
+        for &aspect in aspects.get(row.first..row.first + row.count).unwrap_or_default() {
+            let w = clamp_aspect(aspect) * row.height;
+            frames.push(Frame { x, y, width: w, height: row.height });
+            x += w + spacing;
+        }
+        y += row.height + spacing;
+    }
+    let height = if rows.is_empty() { 0.0 } else { y - spacing };
+    (frames, height)
+}
+
 /// Where the items of a laid-out grid are: the rows, the spacing, and the clamped aspect each item is laid out at
 /// (`aspect(i)` for item `i`, of `len` items). It answers the cursor's questions: an item's row, its span in the row,
 /// and the item a step away.
@@ -272,6 +306,40 @@ mod tests {
         assert_eq!(fresh, rows);
         justify_into(&mut fresh, std::iter::empty(), width, 200.0, spacing);
         assert!(fresh.is_empty());
+    }
+
+    #[test]
+    fn frames_stack_the_rows_and_fill_their_width() {
+        let aspects = [1.5, 0.66, 1.0, 1.0, 2.0, 0.75, 1.33, 1.0, 0.5];
+        let (width, spacing, target) = (1000.0, 4.0, 200.0);
+        let (laid, height) = frames(&aspects, width, target, spacing);
+        assert_eq!(laid.len(), aspects.len());
+        let mut rows = Vec::new();
+        justify_into(&mut rows, aspects.iter().copied(), width, target, spacing);
+        // Each row starts at the left edge, one row-height and a spacing below the one before; its items are as wide
+        // as their aspects, and a full row fills the width.
+        let mut top = 0.0;
+        for r in &rows {
+            let row = &laid[r.first..r.first + r.count];
+            assert!(row.iter().all(|f| f.y == top && f.height == r.height));
+            assert_eq!(row[0].x, 0.0);
+            for (f, pair) in row.iter().zip(row.iter().skip(1)) {
+                assert!((f.x + f.width + spacing - pair.x).abs() < 1e-9);
+            }
+            let end = row.last().map_or(0.0, |f| f.x + f.width);
+            if r.count > 0 && r != rows.last().unwrap() {
+                assert!((end - width).abs() < 1e-6, "{end}");
+            }
+            top += r.height + spacing;
+        }
+        assert_eq!(height, top - spacing);
+        assert_eq!(rows.last().unwrap().height, target);
+        // A frame's width is its clamped aspect at its row's height.
+        assert!((laid[1].width - 0.66 * rows[0].height).abs() < 1e-9);
+        // Nothing to lay out, and no width to lay it out in.
+        assert_eq!(frames(&[], width, target, spacing), (Vec::new(), 0.0));
+        assert_eq!(frames(&aspects, 0.0, target, spacing), (vec![Frame::default(); aspects.len()], 0.0));
+        assert_eq!(frames(&aspects, width, 0.0, spacing), (vec![Frame::default(); aspects.len()], 0.0));
     }
 
     #[test]

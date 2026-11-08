@@ -40,6 +40,11 @@ pub mod qobject {
         #[cxx_name = "openInApp"]
         fn open_in_app(self: Pin<&mut FolderPicker>, purpose: i32);
 
+        /// A folder dialog couldn't open, or couldn't give or list a folder, for `purpose`: `message` says why, and
+        /// nothing was chosen.
+        #[qsignal]
+        fn failed(self: Pin<&mut FolderPicker>, purpose: i32, message: QString);
+
         /// Pick a folder for `purpose`: the system's dialog, or the app's (`openInApp`).
         #[qinvokable]
         fn pick(self: Pin<&mut FolderPicker>, purpose: i32);
@@ -78,6 +83,7 @@ use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
 use cxx_qt_lib::{QString, QStringList};
+use pg_client::text;
 
 /// What a chosen folder is for. The code is what QML passes (`pick`, `done`, `openInApp`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -141,20 +147,27 @@ pub fn set_start(path: Option<PathBuf>) {
     START.with(|start| *start.borrow_mut() = path);
 }
 
-/// The folder the dialog opens in: the one set for it (`set_start`, taken), else the user's folder.
+/// The folder the dialog opens in: the one set for it (`set_start`, taken) while it is still a folder, else the user's
+/// folder.
 fn start_for() -> Option<PathBuf> {
     START
         .with(|start| start.borrow_mut().take())
+        .filter(|folder| folder.is_dir())
         .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
 }
 
-/// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own).
-fn folders_in(dir: &Path) -> Vec<PathBuf> {
-    let Ok(entries) = std::fs::read_dir(dir) else { return Vec::new() };
-    let mut folders: Vec<PathBuf> =
-        entries.filter_map(Result::ok).filter(|e| e.file_type().is_ok_and(|t| t.is_dir())).map(|e| e.path()).collect();
+/// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own). An error when `dir`
+/// can't be read, or one of its entries can't.
+fn folders_in(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
+    let mut folders = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            folders.push(entry.path());
+        }
+    }
     folders.sort();
-    folders
+    Ok(folders)
 }
 
 /// The display names of the listing's folders (the names as text: a dialog shows them, and the path is kept apart).
@@ -220,12 +233,19 @@ impl qobject::FolderPicker {
             match native(purpose, start.as_deref(), owner()) {
                 Ok(Some(chosen)) => self.choose_path(chosen),
                 Ok(None) => {}
-                Err(e) => crate::panic_log::note(&format!("folder picker: {e}")),
+                Err(e) => {
+                    crate::panic_log::note(&format!("folder picker: {e}"));
+                    let message = QString::from(&text::folder_dialog_failed(&e.to_string()));
+                    self.as_mut().failed(purpose.code(), message);
+                }
             }
             return;
         }
         let here = start.unwrap_or_else(|| PathBuf::from("/"));
-        let folders = folders_in(&here);
+        let folders = match folders_in(&here) {
+            Ok(folders) => folders,
+            Err(e) => return self.report_unlisted(purpose, &here, &e),
+        };
         let names = names_of(&folders);
         self.as_mut().set_here(QString::from(here.to_string_lossy().as_ref()));
         self.as_mut().set_names(names);
@@ -286,9 +306,25 @@ impl qobject::FolderPicker {
         LISTING.with(|listing| *listing.borrow_mut() = None);
     }
 
+    /// The app's dialog can't list `folder` (`error`): the purpose's picker says so (`failed`), and keeps what it
+    /// showed.
+    fn report_unlisted(self: Pin<&mut Self>, purpose: Purpose, folder: &Path, error: &std::io::Error) {
+        crate::panic_log::note(&format!("folder picker: {}: {error}", folder.display()));
+        let message = QString::from(&text::folder_unreadable(&error.to_string()));
+        self.failed(purpose.code(), message);
+    }
+
     /// The app's dialog now shows `folder` (and its folders).
     fn show_folder(mut self: Pin<&mut Self>, folder: PathBuf) {
-        let folders = folders_in(&folder);
+        let folders = match folders_in(&folder) {
+            Ok(folders) => folders,
+            Err(e) => {
+                if let Some(purpose) = LISTING.with(|listing| listing.borrow().as_ref().map(|l| l.purpose)) {
+                    self.as_mut().report_unlisted(purpose, &folder, &e);
+                }
+                return;
+            }
+        };
         let names = names_of(&folders);
         self.as_mut().set_here(QString::from(folder.to_string_lossy().as_ref()));
         self.as_mut().set_names(names);
@@ -356,12 +392,13 @@ mod tests {
         std::fs::write(tree.0.join("a file.txt"), b"x").unwrap();
         let mut want = vec![tree.0.join("Beta"), tree.0.join("alpha"), odd];
         want.sort();
-        assert_eq!(folders_in(&tree.0), want, "folders only, each by its exact path");
+        assert_eq!(folders_in(&tree.0).unwrap(), want, "folders only, each by its exact path");
     }
 
     #[test]
-    fn a_folder_that_is_gone_lists_nothing() {
-        assert!(folders_in(Path::new("no-such-folder-for-the-picker-test")).is_empty());
+    fn a_folder_that_is_gone_is_an_error_not_an_empty_listing() {
+        let error = folders_in(Path::new("no-such-folder-for-the-picker-test")).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
     }
 }
 

@@ -8,12 +8,12 @@ QtObject {
     readonly property color panelScrim: "#b0000000"
     // The full-size preview's background.
     readonly property color previewFill: "#141414"
-    // A result tile's fill and its outline (the picked outline is the accent).
-    readonly property color tileFill: "#202020"
-    readonly property color tileOutline: "#444444"
-    readonly property color pickedOutline: "#4a90e2"
-    // A result tile's size label.
-    readonly property color tileCaption: "#dddddd"
+    // A picked result's check badge (the accent) and the check on it.
+    readonly property color pickedBadge: "#4a90e2"
+    readonly property color pickedText: "#ffffff"
+    // A result tile's size label, and the dark backing it sits on, so it reads over any picture.
+    readonly property color tileCaption: "#ffffff"
+    readonly property color captionBacking: "#b3000000"
     // The panel's status line and the preview's size.
     readonly property color bodyText: "#cccccc"
     // Quiet text: "No results.", and a caption or a loading line.

@@ -247,6 +247,18 @@ pub enum Message {
     YandexNotStarted {
         error: String,
     },
+    /// The folder dialog couldn't open or give its folder (for `error`), so nothing was chosen.
+    FolderDialogFailed {
+        error: String,
+    },
+    /// The save was asked with nothing picked.
+    YandexNothingPicked,
+    /// The save's folder dialog gave no folder, so nothing is saved.
+    YandexNoFolder,
+    /// The app's own folder dialog can't list a folder (for `error`).
+    FolderUnreadable {
+        error: String,
+    },
     /// The thumbnail cache was started over, for `reason`; `path` is where the old file is kept (a damaged one) or the
     /// cache file made anew (one this build can't use). Each reason has its own entry.
     ThumbCacheStartedOver {
@@ -464,6 +476,10 @@ impl Message {
             Message::YandexSimilarStopped { .. } => "yandex-similar-stopped",
             Message::YandexSimilarFailed { .. } => "yandex-similar-failed",
             Message::YandexNotStarted { .. } => "yandex-not-started",
+            Message::FolderDialogFailed { .. } => "folder-dialog-failed",
+            Message::YandexNothingPicked => "yandex-nothing-picked",
+            Message::YandexNoFolder => "yandex-no-folder",
+            Message::FolderUnreadable { .. } => "folder-unreadable",
             Message::ThumbCacheStartedOver { reason, .. } => match reason {
                 CacheStartOver::Damaged => "thumb-cache-damaged",
                 CacheStartOver::NotADatabase => "thumb-cache-not-a-database",
@@ -644,6 +660,8 @@ impl Message {
                 a.set("reason", reason.as_str());
             }
             Message::YandexNotStarted { error }
+            | Message::FolderDialogFailed { error }
+            | Message::FolderUnreadable { error }
             | Message::FolderNotAdded { error }
             | Message::FolderNotRemoved { error }
             | Message::RescanFailed { error }
@@ -796,6 +814,10 @@ impl Message {
             Message::YandexSimilarStopped { shown: s(), reason: s() },
             Message::YandexSimilarFailed { reason: s() },
             Message::YandexNotStarted { error: s() },
+            Message::FolderDialogFailed { error: s() },
+            Message::YandexNothingPicked,
+            Message::YandexNoFolder,
+            Message::FolderUnreadable { error: s() },
             Message::ThumbCacheStartedOver { reason: CacheStartOver::Damaged, path: s() },
             Message::ThumbCacheStartedOver { reason: CacheStartOver::NotADatabase, path: s() },
             Message::ThumbCacheStartedOver { reason: CacheStartOver::OtherCatalog, path: s() },
@@ -1251,6 +1273,26 @@ pub fn yandex_similar_failed(reason: &str) -> String {
 /// A search or a save couldn't start: the system refused its thread, for `error`.
 pub fn yandex_not_started(error: &str) -> String {
     render(&Message::YandexNotStarted { error: error.to_string() })
+}
+
+/// The folder dialog couldn't open, or didn't give a folder, for `error`: nothing was chosen.
+pub fn folder_dialog_failed(error: &str) -> String {
+    render(&Message::FolderDialogFailed { error: error.to_string() })
+}
+
+/// The save was asked with no image picked.
+pub fn yandex_nothing_picked() -> String {
+    render(&Message::YandexNothingPicked)
+}
+
+/// The save's folder dialog gave no folder: nothing is saved.
+pub fn yandex_no_folder() -> String {
+    render(&Message::YandexNoFolder)
+}
+
+/// The app's own folder dialog can't list a folder, for `error`.
+pub fn folder_unreadable(error: &str) -> String {
+    render(&Message::FolderUnreadable { error: error.to_string() })
 }
 
 /// The thumbnail cache was started over when it was opened, for `reason`: `path` is where the old file is kept (a

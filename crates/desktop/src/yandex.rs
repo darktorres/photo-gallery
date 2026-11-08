@@ -1,9 +1,12 @@
 //! Reverse image search on Yandex, from the viewer: the Qt glue over `pg_app::yandex`. A thread subscribes to the search's
 //! changes and queues a `poll()` onto the Qt thread for each one, as the library's change pump does; QML doesn't poll.
 //! The results are the model's rows, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
-//! then the similar images (`similarCount`). A row's `picked` role follows the picks to save. The preview shows one
-//! result (`previewItem`): its URL, size and pick are properties, set whenever the item or its pick changes. The words
-//! the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed outcomes the app returns.
+//! then the similar images (`similarCount`). A row's `picked` role follows the picks to save. Each result's frame (its
+//! `frameX`, `frameY`, `frameWidth` and `frameHeight` roles) places it in the panel's justified layout: the panel sets
+//! `layoutWidth`, and the gallery's `rowHeight` and `gap`; each group's block is `otherHeight` or `similarHeight` high.
+//! The preview shows one result (`previewItem`): its URL, size and pick are properties, set whenever the item or its
+//! pick changes. The words the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed
+//! outcomes the app returns.
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -36,6 +39,15 @@ pub mod qobject {
         #[qproperty(i32, picked_count, cxx_name = "pickedCount", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, other_picked, cxx_name = "otherPicked", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, similar_picked, cxx_name = "similarPicked", READ, WRITE, NOTIFY, FINAL)]
+        /// The width the results are laid out in: the panel sets it to its list's width, and they are laid out again.
+        #[qproperty(f64, layout_width, cxx_name = "layoutWidth", READ, WRITE = set_layout_width, NOTIFY, FINAL)]
+        /// The height a row of results is laid out at: the gallery's row height (the user's setting), so the two agree.
+        #[qproperty(f64, row_height, cxx_name = "rowHeight", READ, WRITE = set_row_height, NOTIFY, FINAL)]
+        /// The space between the results: the gallery's gap, so the two agree.
+        #[qproperty(f64, gap, READ, WRITE = set_gap, NOTIFY, FINAL)]
+        /// The height of each group's block of frames: the other sizes', and the similar images'.
+        #[qproperty(f64, other_height, cxx_name = "otherHeight", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(f64, similar_height, cxx_name = "similarHeight", READ, WRITE, NOTIFY, FINAL)]
         /// The result the preview shows (-1: none). Setting it refreshes the four properties below.
         #[qproperty(i32, preview_item, cxx_name = "previewItem", READ, WRITE = set_preview_item, NOTIFY, FINAL)]
         /// What the preview shows of its item: its picture's URL (`""` for none), its size in pixels as Yandex gives
@@ -51,6 +63,12 @@ pub mod qobject {
 
     unsafe extern "RustQt" {
         fn set_preview_item(self: Pin<&mut YandexSearch>, value: i32);
+
+        fn set_layout_width(self: Pin<&mut YandexSearch>, value: f64);
+
+        fn set_row_height(self: Pin<&mut YandexSearch>, value: f64);
+
+        fn set_gap(self: Pin<&mut YandexSearch>, value: f64);
 
         /// Upload the catalog's file `file_id` (the photo) and read its other sizes and similar images.
         #[qinvokable]
@@ -112,6 +130,11 @@ pub mod qobject {
         #[cxx_name = "setPicked"]
         fn set_picked(self: Pin<&mut YandexSearch>, first: i32, count: i32, picked: bool);
 
+        /// Show `text` as the status line: the save's folder dialog failed (the picker's `failed`), and says why.
+        #[qinvokable]
+        #[cxx_name = "showFailure"]
+        fn show_failure(self: Pin<&mut YandexSearch>, text: &QString);
+
         /// Before the save dialog opens: where it starts (the folder saved into last, while it exists, or else the photo's
         /// folder), for the folder picker (`FolderPicker`, purpose 2).
         #[qinvokable]
@@ -133,6 +156,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status, YandexError};
+use pg_client::layout::{self, Frame};
 use pg_client::picks::Picks;
 use pg_client::text;
 use pg_model::ids::FileId;
@@ -141,6 +165,10 @@ const ROLE_THUMB: i32 = 256;
 const ROLE_IMAGE_WIDTH: i32 = 257;
 const ROLE_IMAGE_HEIGHT: i32 = 258;
 const ROLE_PICKED: i32 = 259;
+const ROLE_FRAME_X: i32 = 260;
+const ROLE_FRAME_Y: i32 = 261;
+const ROLE_FRAME_WIDTH: i32 = 262;
+const ROLE_FRAME_HEIGHT: i32 = 263;
 
 #[derive(Default)]
 pub struct YandexSearchRust {
@@ -156,11 +184,18 @@ pub struct YandexSearchRust {
     preview_width: i32,
     preview_height: i32,
     preview_picked: bool,
+    layout_width: f64,
+    row_height: f64,
+    gap: f64,
+    other_height: f64,
+    similar_height: f64,
     search: Search,
     /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
     pump: bool,
     /// The other sizes, then the similar images, as the latest search found them.
     hits: Vec<Hit>,
+    /// Each result's frame in the panel's layout (`relayout`), by its index in `hits`.
+    frames: Vec<Frame>,
     picks: Picks,
 }
 
@@ -242,11 +277,19 @@ fn qt_int(n: usize) -> i32 {
     i32::try_from(n).unwrap_or(i32::MAX)
 }
 
+/// A result's aspect ratio, for its frame: its size as Yandex gives it, or square when it gives none.
+fn hit_aspect(hit: &Hit) -> f64 {
+    if hit.width > 0 && hit.height > 0 { f64::from(hit.width) / f64::from(hit.height) } else { 1.0 }
+}
+
 impl qobject::YandexSearch {
-    fn search_file(self: Pin<&mut Self>, file_id: i64) {
+    fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
         match crate::app::get().file_path(FileId::new(file_id)) {
             Ok(path) => self.search_photo(&path),
-            Err(err) => crate::panic_log::note(&format!("yandex: file {file_id}: {err:#}")),
+            Err(err) => {
+                crate::panic_log::note(&format!("yandex: file {file_id}: {err:#}"));
+                self.as_mut().set_status(QString::from(&text::yandex_unreadable_photo(&format!("{err:#}"))));
+            }
         }
     }
 
@@ -256,7 +299,8 @@ impl qobject::YandexSearch {
         }
     }
 
-    /// Start a search for the photo at `path`. The app refuses one already running, and nothing shows then.
+    /// Start a search for the photo at `path`. The app refuses one already running; the status line keeps showing that
+    /// one's progress.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
         self.as_mut().ensure_pump();
         match self.search.start(path, crate::command_line::yandex_source()) {
@@ -322,7 +366,61 @@ impl qobject::YandexSearch {
         self.as_mut().end_reset_model();
         self.as_mut().set_other_count(other_count);
         self.as_mut().set_similar_count(similar_count);
+        self.as_mut().relayout();
         self.picks_changed();
+    }
+
+    /// The panel's width changed: the results are laid out in it again.
+    fn set_layout_width(mut self: Pin<&mut Self>, value: f64) {
+        if self.layout_width == value {
+            return;
+        }
+        self.as_mut().rust_mut().layout_width = value;
+        self.as_mut().layout_width_changed();
+        self.relayout();
+    }
+
+    /// The gallery's row height changed: the results are laid out at it again.
+    fn set_row_height(mut self: Pin<&mut Self>, value: f64) {
+        if self.row_height == value {
+            return;
+        }
+        self.as_mut().rust_mut().row_height = value;
+        self.as_mut().row_height_changed();
+        self.relayout();
+    }
+
+    /// The gallery's gap changed: the results are laid out again.
+    fn set_gap(mut self: Pin<&mut Self>, value: f64) {
+        if self.gap == value {
+            return;
+        }
+        self.as_mut().rust_mut().gap = value;
+        self.as_mut().gap_changed();
+        self.relayout();
+    }
+
+    /// Lay the results out in the panel's width at the gallery's row height and gap, as the gallery lays its rows out:
+    /// each group's rows are justified (`layout::frames`), from the top of the group's block, and the blocks' heights
+    /// are set. Each result's frame is read again (its roles).
+    fn relayout(mut self: Pin<&mut Self>) {
+        let other = usize::try_from(self.other_count).unwrap_or(0).min(self.hits.len());
+        let aspects: Vec<f64> = self.hits.iter().map(hit_aspect).collect();
+        let (other_aspects, similar_aspects) = aspects.split_at(other);
+        let (width, height, gap) = (self.layout_width, self.row_height, self.gap);
+        let (mut frames, other_height) = layout::frames(other_aspects, width, height, gap);
+        let (similar, similar_height) = layout::frames(similar_aspects, width, height, gap);
+        frames.extend(similar);
+        let rows = qt_int(frames.len());
+        self.as_mut().rust_mut().frames = frames;
+        self.as_mut().set_other_height(other_height);
+        self.as_mut().set_similar_height(similar_height);
+        if rows > 0 {
+            let root = QModelIndex::default();
+            let (top, bottom) = (self.index(0, 0, &root), self.index(rows - 1, 0, &root));
+            let roles = [ROLE_FRAME_X, ROLE_FRAME_Y, ROLE_FRAME_WIDTH, ROLE_FRAME_HEIGHT];
+            self.as_mut().data_changed(&top, &bottom, &QList::from(&roles[..]));
+        }
     }
 
     /// After the picks change: each row's `picked` role, the counts, and the preview's pick.
@@ -383,11 +481,16 @@ impl qobject::YandexSearch {
         let Some(hit) = self.hits.get(i) else {
             return QVariant::default();
         };
+        let frame = self.frames.get(i).copied().unwrap_or_default();
         match role {
             ROLE_THUMB => QVariant::from(&QString::from(&hit.thumb)),
             ROLE_IMAGE_WIDTH => QVariant::from(&hit.width),
             ROLE_IMAGE_HEIGHT => QVariant::from(&hit.height),
             ROLE_PICKED => QVariant::from(&self.picks.is_picked(i)),
+            ROLE_FRAME_X => QVariant::from(&frame.x),
+            ROLE_FRAME_Y => QVariant::from(&frame.y),
+            ROLE_FRAME_WIDTH => QVariant::from(&frame.width),
+            ROLE_FRAME_HEIGHT => QVariant::from(&frame.height),
             _ => QVariant::default(),
         }
     }
@@ -399,6 +502,10 @@ impl qobject::YandexSearch {
             (ROLE_IMAGE_WIDTH, "imageWidth"),
             (ROLE_IMAGE_HEIGHT, "imageHeight"),
             (ROLE_PICKED, "picked"),
+            (ROLE_FRAME_X, "frameX"),
+            (ROLE_FRAME_Y, "frameY"),
+            (ROLE_FRAME_WIDTH, "frameWidth"),
+            (ROLE_FRAME_HEIGHT, "frameHeight"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -427,16 +534,29 @@ impl qobject::YandexSearch {
         self.picks_changed();
     }
 
+    fn show_failure(mut self: Pin<&mut Self>, text: &QString) {
+        let text = String::from(text);
+        self.as_mut().set_status(QString::from(&text));
+    }
+
     fn prepare_save(&self) {
         crate::picker::set_start(self.search.start_folder(crate::app::get()));
     }
 
     fn download_picked(mut self: Pin<&mut Self>) {
-        let Some(folder) = crate::picker::take(crate::picker::Purpose::YandexSave) else { return };
+        let Some(folder) = crate::picker::take(crate::picker::Purpose::YandexSave) else {
+            self.as_mut().set_status(QString::from(&text::yandex_no_folder()));
+            return;
+        };
         let hits: Vec<Hit> = self.picks.indices().filter_map(|i| self.hits.get(i).cloned()).collect();
+        if hits.is_empty() {
+            self.as_mut().set_status(QString::from(&text::yandex_nothing_picked()));
+            return;
+        }
         let files = hits.len();
         self.as_mut().ensure_pump();
-        // The app refuses an empty pick, a search or a save already running, and remembers the folder when it saves.
+        // The app refuses a search or a save already running (the status line keeps showing its progress), and
+        // remembers the folder when it saves.
         match self.search.save(crate::app::get(), hits, folder, crate::command_line::yandex_source()) {
             Ok(true) => {}
             Ok(false) => return,

@@ -48,6 +48,20 @@ pub fn path_of_units(units: &[u16]) -> PathBuf {
     PathBuf::from(std::ffi::OsString::from_wide(units))
 }
 
+/// A path in the form the shell takes: backslashes for forward slashes, and no `\\?\` verbatim prefix (the shell
+/// refuses both with "invalid parameter"). `\\?\UNC\server\share` is `\\server\share`.
+#[cfg(windows)]
+pub fn shell_path(units: &[u16]) -> Vec<u16> {
+    const VERBATIM: [u16; 4] = [0x5C, 0x5C, 0x3F, 0x5C];
+    const UNC: [u16; 4] = [0x55, 0x4E, 0x43, 0x5C];
+    let units: Vec<u16> = units.iter().map(|&u| if u == 0x2F { 0x5C } else { u }).collect();
+    let Some(rest) = units.strip_prefix(&VERBATIM) else { return units };
+    match rest.strip_prefix(&UNC) {
+        Some(share) => [0x5C, 0x5C].into_iter().chain(share.iter().copied()).collect(),
+        None => rest.to_vec(),
+    }
+}
+
 #[cfg(windows)]
 pub use native::Dialog;
 
@@ -65,7 +79,7 @@ mod native {
     use windows::Win32::UI::WindowsAndMessaging::{PM_REMOVE, PeekMessageW, PostMessageW, WM_MOUSEMOVE};
     use windows::core::{HRESULT, PCWSTR};
 
-    use super::{FolderDialog, ShellItem};
+    use super::{FolderDialog, ShellItem, shell_path};
 
     /// ERROR_CANCELLED, which the dialog reports when the user closes it without choosing.
     const ERROR_CANCELLED: u32 = 1223;
@@ -93,17 +107,30 @@ mod native {
         }
     }
 
+    /// The shell item of the start folder, from its path in the form the shell takes (`shell_path`): None when there
+    /// is no path, and an error when the shell refuses it.
+    fn start_item(start: &[u16]) -> io::Result<Option<IShellItem>> {
+        let mut units = shell_path(start);
+        if units.is_empty() {
+            return Ok(None);
+        }
+        units.push(0);
+        // SAFETY: the units are NUL-terminated for the call, and the item is returned owned.
+        let item: IShellItem =
+            unsafe { SHCreateItemFromParsingName(PCWSTR(units.as_ptr()), None) }.map_err(io::Error::other)?;
+        Ok(Some(item))
+    }
+
     impl FolderDialog for Dialog {
         fn run(&mut self, start: Option<&[u16]>, owner: Option<usize>) -> io::Result<bool> {
-            // SAFETY: the start folder's units are NUL-terminated for the call, and the item lives for it.
+            // A start folder the shell refuses is an error, which the picker shows (the desktop picker passes only a
+            // folder that is there).
+            if let Some(item) = start.map(start_item).transpose()?.flatten() {
+                // SAFETY: a plain call on the dialog and the item made just above.
+                unsafe { self.dialog.SetFolder(&item) }.map_err(io::Error::other)?;
+            }
+            // SAFETY: the owner is the window's handle, given to the dialog as the window system gave it.
             unsafe {
-                if let Some(start) = start {
-                    let mut units = start.to_vec();
-                    units.push(0);
-                    let item: IShellItem =
-                        SHCreateItemFromParsingName(PCWSTR(units.as_ptr()), None).map_err(io::Error::other)?;
-                    self.dialog.SetFolder(&item).map_err(io::Error::other)?;
-                }
                 // The handle is an address the window system gave (the app's window's HWND), not a pointer of ours.
                 let owner = owner.map(|handle| HWND(std::ptr::with_exposed_provenance_mut::<c_void>(handle)));
                 // The dialog runs its own message loop here; the caller holds nothing of the app across it.
@@ -160,7 +187,7 @@ mod tests {
     use std::io;
     use std::path::Path;
 
-    use super::{FolderDialog, ShellItem, path_of_units, pick_with};
+    use super::{FolderDialog, ShellItem, path_of_units, pick_with, shell_path};
     use crate::names::path_buf;
 
     /// The units of a folder with an unpaired surrogate come back as that folder's path, exactly.
@@ -169,6 +196,18 @@ mod tests {
         let units = [0x43, 0x3A, 0x5C, 0x61, 0xD800, 0x62];
         assert_eq!(path_of_units(&units), path_buf(b"C:\\a\xED\xA0\x80b"));
         assert_eq!(path_of_units(&[0x43, 0x3A]), path_buf(b"C:"));
+    }
+
+    /// A start folder reaches the shell in the form it takes: the forward slashes and the verbatim prefix the shell
+    /// refuses are written as backslashes and dropped.
+    #[test]
+    fn a_start_folder_is_in_the_form_the_shell_takes() {
+        let units = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
+        assert_eq!(shell_path(&units("D:/GitHub/photo-gallery")), units("D:\\GitHub\\photo-gallery"));
+        assert_eq!(shell_path(&units("\\\\?\\C:\\Users")), units("C:\\Users"));
+        assert_eq!(shell_path(&units("\\\\?\\UNC\\server\\share")), units("\\\\server\\share"));
+        assert_eq!(shell_path(&units("C:\\Users\\a")), units("C:\\Users\\a"));
+        assert!(shell_path(&units("")).is_empty());
     }
 
     /// What the dialog was opened with: its start folder's units and its owner.

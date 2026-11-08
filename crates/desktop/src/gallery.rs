@@ -885,7 +885,11 @@ impl qobject::GalleryModel {
     }
 
     fn save_cropped_copies_picked(&self) -> i32 {
-        let Some(folder) = crate::picker::take(crate::picker::Purpose::SaveCrops) else { return 0 };
+        let Some(folder) = crate::picker::take(crate::picker::Purpose::SaveCrops) else {
+            // The picker says `done` only with its folder, so this can't happen; if it does, the log records it.
+            crate::panic_log::note("save cropped copies: no folder was chosen");
+            return 0;
+        };
         let ids: Vec<FileId> =
             self.grid.entries().iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
         let n = qt_int(ids.len());

@@ -58,6 +58,11 @@ pub mod qobject {
         #[cxx_name = "addPicked"]
         fn add_picked(self: Pin<&mut Library>);
 
+        /// Show `text` as the library's message, as a warning: a folder dialog's failure (the picker's `failed`).
+        #[qinvokable]
+        #[cxx_name = "showWarning"]
+        fn show_warning(self: Pin<&mut Library>, text: &QString);
+
         /// Remove the library folder at `row` (its row in `roots`).
         #[qinvokable]
         #[cxx_name = "removeFolder"]
@@ -207,6 +212,10 @@ impl qobject::Library {
     fn show(mut self: Pin<&mut Self>, text: String, warning: bool) {
         self.as_mut().set_message_warning(warning);
         self.set_message(QString::from(&text));
+    }
+
+    fn show_warning(self: Pin<&mut Self>, text: &QString) {
+        self.show(String::from(text), true);
     }
 
     /// The library's folders, as the catalog has them. When they can't be read, none is listed and the panel says why.

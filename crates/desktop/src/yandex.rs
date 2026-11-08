@@ -3,7 +3,7 @@
 //! The results are the model's rows, as the grid's are (`GalleryModel`): the other sizes first (`otherCount` of them),
 //! then the similar images (`similarCount`). A row's `picked` role follows the picks to save. Each result's frame (its
 //! `frameX`, `frameY`, `frameWidth` and `frameHeight` roles) places it in the panel's justified layout: the panel sets
-//! `layoutWidth`, and the gallery's `rowHeight` and `gap`; each group's block is `otherHeight` or `similarHeight` high.
+//! `layoutWidth` and the gallery's `gap`; each group's block is `otherHeight` or `similarHeight` high.
 //! The preview shows one result (`previewItem`): its URL, size and pick are properties, set whenever the item or its
 //! pick changes. The words the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed
 //! outcomes the app returns.
@@ -41,8 +41,6 @@ pub mod qobject {
         #[qproperty(i32, similar_picked, cxx_name = "similarPicked", READ, WRITE, NOTIFY, FINAL)]
         /// The width the results are laid out in: the panel sets it to its list's width, and they are laid out again.
         #[qproperty(f64, layout_width, cxx_name = "layoutWidth", READ, WRITE = set_layout_width, NOTIFY, FINAL)]
-        /// The height a row of results is laid out at: the gallery's row height (the user's setting), so the two agree.
-        #[qproperty(f64, row_height, cxx_name = "rowHeight", READ, WRITE = set_row_height, NOTIFY, FINAL)]
         /// The space between the results: the gallery's gap, so the two agree.
         #[qproperty(f64, gap, READ, WRITE = set_gap, NOTIFY, FINAL)]
         /// The height of each group's block of frames: the other sizes', and the similar images'.
@@ -65,8 +63,6 @@ pub mod qobject {
         fn set_preview_item(self: Pin<&mut YandexSearch>, value: i32);
 
         fn set_layout_width(self: Pin<&mut YandexSearch>, value: f64);
-
-        fn set_row_height(self: Pin<&mut YandexSearch>, value: f64);
 
         fn set_gap(self: Pin<&mut YandexSearch>, value: f64);
 
@@ -170,6 +166,9 @@ const ROLE_FRAME_Y: i32 = 261;
 const ROLE_FRAME_WIDTH: i32 = 262;
 const ROLE_FRAME_HEIGHT: i32 = 263;
 
+/// The height a row of results is laid out at: fixed, at the size the gallery's rows start at.
+const ROW_HEIGHT: f64 = 220.0;
+
 #[derive(Default)]
 pub struct YandexSearchRust {
     busy: bool,
@@ -185,7 +184,6 @@ pub struct YandexSearchRust {
     preview_height: i32,
     preview_picked: bool,
     layout_width: f64,
-    row_height: f64,
     gap: f64,
     other_height: f64,
     similar_height: f64,
@@ -380,16 +378,6 @@ impl qobject::YandexSearch {
         self.relayout();
     }
 
-    /// The gallery's row height changed: the results are laid out at it again.
-    fn set_row_height(mut self: Pin<&mut Self>, value: f64) {
-        if self.row_height == value {
-            return;
-        }
-        self.as_mut().rust_mut().row_height = value;
-        self.as_mut().row_height_changed();
-        self.relayout();
-    }
-
     /// The gallery's gap changed: the results are laid out again.
     fn set_gap(mut self: Pin<&mut Self>, value: f64) {
         if self.gap == value {
@@ -400,14 +388,14 @@ impl qobject::YandexSearch {
         self.relayout();
     }
 
-    /// Lay the results out in the panel's width at the gallery's row height and gap, as the gallery lays its rows out:
+    /// Lay the results out in the panel's width, at `ROW_HEIGHT` and the gallery's gap, as the gallery lays its rows out:
     /// each group's rows are justified (`layout::frames`), from the top of the group's block, and the blocks' heights
     /// are set. Each result's frame is read again (its roles).
     fn relayout(mut self: Pin<&mut Self>) {
         let other = usize::try_from(self.other_count).unwrap_or(0).min(self.hits.len());
         let aspects: Vec<f64> = self.hits.iter().map(hit_aspect).collect();
         let (other_aspects, similar_aspects) = aspects.split_at(other);
-        let (width, height, gap) = (self.layout_width, self.row_height, self.gap);
+        let (width, height, gap) = (self.layout_width, ROW_HEIGHT, self.gap);
         let (mut frames, other_height) = layout::frames(other_aspects, width, height, gap);
         let (similar, similar_height) = layout::frames(similar_aspects, width, height, gap);
         frames.extend(similar);

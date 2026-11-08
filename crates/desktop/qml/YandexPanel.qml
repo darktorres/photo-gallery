@@ -19,8 +19,7 @@ Rectangle {
 
     signal closed()
 
-    // The gallery's row height and gap: the results are laid out with them, so they match the grid.
-    required property real rowHeight
+    // The gallery's gap: the results are spaced as the grid's cells are.
     required property real gap
 
     // The viewer's photo: the catalog's file, by its id.
@@ -105,11 +104,10 @@ Rectangle {
     }
 
     // The results are its rows, and its state comes across when it changes (the change pump, src/yandex.rs). They are
-    // laid out in the width of the list they are in, at the gallery's row height and gap (their frames).
+    // laid out in the width of the list they are in, at the gallery's gap (their frames).
     YandexSearch {
         id: yandex
         layoutWidth: sections.width
-        rowHeight: panel.rowHeight
         gap: panel.gap
     }
 
@@ -135,8 +133,9 @@ Rectangle {
 
     Pane {
         anchors.centerIn: parent
-        width: Math.min(parent.width - 64, 1040)
-        height: Math.min(parent.height - 64, 760)
+        // Most of the window, not all of it, as a modal is: it follows the window's size.
+        width: Math.round(parent.width * 0.9)
+        height: Math.round(parent.height * 0.9)
         padding: 16
         // Clicks inside the panel don't reach the dimmed background.
         MouseArea { anchors.fill: parent }

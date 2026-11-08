@@ -527,7 +527,6 @@ ApplicationWindow {
             sourceComponent: Component {
                 YandexPanel {
                     id: yandexPanel
-                    rowHeight: win.rowHeight
                     gap: win.gap
                     previewWhenFound: testHooks.yandexPreview
                     // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer

@@ -243,8 +243,18 @@ Not gated: wall-clock time on this machine, not instructions, so it is a ledger 
   which counts the renames, and 0 missing.
 - **tmpfs under a scanned root** (WSL, the S-17.7 manual check): a tmpfs folder of 20 files inside a library with 20
   plain files (device numbers 178 and 2128). Two scans; 40 rows and 0 missing after each. No row flipped.
-- **Not measured:** a Windows run, and the `wsl --shutdown` run (the cold VM after a restart, the plan's end-to-end
-  check, which needs WSL and Docker stopped).
+- **The cold VM** (the first run after `wsl --shutdown`, same library, same binary): first 1.353 s, unchanged 0.129 s,
+  renumbered 0.245 s. The VM's own cache was empty at the restart; this run did not drop the caches.
+- **Device change across a restart** (the S-17.7 end-to-end check, in WSL, with the HEAD binary): a 40-file library on
+  the Windows drive (drvfs), scanned, one rating set to 4, and imported (40 analysis rows). Across `wsl --shutdown` the
+  library's device number changed (201 to 145), and the rescan found all 40 rows under a new identity: same ids and
+  names, none missing, the rating and the analysis kept. A second restart changed it again (145 to 74), with the same
+  result. Not done here: the plan's first step, a catalog built with the older binary; this check used HEAD's binary
+  for both scans.
+- **Windows** (the same script, under Git Bash with the Windows Python; `gallery.exe` release build of the working tree,
+  whose crates are HEAD's, on NTFS, the 10,000-file library on `D:`): first 1.316 s, unchanged 0.146 s, renumbered
+  0.322 s. The renumbered scan paired every row: 10,000 rows, none missing.
+- **Not measured:** the `just perf` gate (see REFACTOR_PLAN, S-16): it fails before it measures.
 
 ### The start's stages before and after the two heap plans (release, `PG_TRACE=1`, offscreen, 2026-11-02)
 

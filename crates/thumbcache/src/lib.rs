@@ -859,6 +859,11 @@ fn ready(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, made: bool) -> R
         bail!("{}: not usable even when made anew", path.display());
     }
     let drift = heal_if_due(&mut conn)?;
+    // After the day's check, not in `open_file`: a write before it would commit to a damaged file, and the damage
+    // would then be moved aside changed. A file of another layout may lack the row: open_writer starts that one over.
+    if let Some(cap) = cap_bytes {
+        let _ = conn.execute("UPDATE limits SET cap = ?1", [cap]);
+    }
     Ok((conn, drift))
 }
 
@@ -909,10 +914,6 @@ fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Co
             make_layout(&tx, catalog_id, cap_bytes.unwrap_or_else(|| default_cap_bytes(dir)))?;
         }
         tx.commit()?;
-    }
-    if let Some(cap) = cap_bytes {
-        // A file of another layout may lack it: open_writer starts that one over.
-        let _ = conn.execute("UPDATE limits SET cap = ?1", [cap]);
     }
     Ok(conn)
 }
@@ -1745,6 +1746,27 @@ mod tests {
         let (reason, why) = opens_over_damage(&dir, &bytes);
         assert!(why.contains("damaged"), "{why}");
         assert_eq!(reason, StartOverReason::Damaged);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// The same damage found on an open that passes a cap: the cap is written only after the day's check, so the
+    /// damaged file is moved aside with the bytes it had.
+    #[test]
+    fn damage_found_on_an_open_with_a_cap_is_moved_aside_whole() {
+        let dir = test_folder(SCRATCH, "heal-damage-cap").unwrap();
+        let (mut bytes, page) = closed_cache_due_a_check(&dir);
+        let keep = 16 * page;
+        assert!(bytes.len() > 4 * keep, "the cache is too small to damage past its roots: {} bytes", bytes.len());
+        for b in &mut bytes[keep..] {
+            *b = 0xEE;
+        }
+        std::fs::write(cache_path(&dir), &bytes).unwrap();
+        let (cache, reason, path, why) = open_started_over(&dir, CATALOG_ID, Some(12345));
+        assert!(why.contains("damaged"), "{why}");
+        assert_eq!((reason, path), (StartOverReason::Damaged, bad_path(&dir)));
+        assert_eq!(std::fs::read(bad_path(&dir)).unwrap(), bytes, "the old bytes are kept");
+        assert_eq!(cache.cap().unwrap(), 12345);
+        drop(cache);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

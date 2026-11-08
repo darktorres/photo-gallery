@@ -74,8 +74,10 @@ impl PathRules {
 
     /// The path that user text names, if it is one of these rules' paths. A Windows drive with or without its
     /// root (`D:`, `D:\a`), a UNC path (`\\server\share\a`, anchor `\`, parts `server`, `share`, `a`), or a
-    /// relative path (empty anchor). Empty parts (doubled or trailing separators) are dropped. Returns `None` for
-    /// text that cannot be a path here (a NUL, which no name holds).
+    /// relative path (empty anchor). Empty parts (doubled or trailing separators) and `.` parts are dropped, and on
+    /// Windows `/` separates as `\` does (a Windows name holds neither, so a path typed or saved with forward slashes
+    /// is the same path). `..` is kept: it is resolved where the path is taken from the disk. Returns `None` for text
+    /// that cannot be a path here (a NUL, which no name holds).
     pub fn parse(self, text: &str) -> Option<Path> {
         self.parse_bytes(text.as_bytes())
     }
@@ -86,6 +88,17 @@ impl PathRules {
         if bytes.contains(&0) {
             return None;
         }
+        // A Windows name holds no `/`, so a forward slash is a separator here too. Without this, a path with mixed
+        // separators (`D:\/a/b`) parsed to one name `/a/b`, which joined back gave the same malformed text. The bytes
+        // are ASCII, so no byte of a multi-byte character changes.
+        let folded: Vec<u8>;
+        let bytes = match self {
+            PathRules::Windows if bytes.contains(&b'/') => {
+                folded = bytes.iter().map(|&b| if b == b'/' { b'\\' } else { b }).collect();
+                folded.as_slice()
+            }
+            _ => bytes,
+        };
         let sep = self.sep_byte();
         let (anchor, rest): (&[u8], &[u8]) = match self {
             PathRules::Windows => {
@@ -99,7 +112,7 @@ impl PathRules {
             }
             PathRules::Posix => (b"", trim_seps(bytes, sep)),
         };
-        let parts = rest.split(|&b| b == sep).filter(|p| !p.is_empty()).map(Name::from_raw).collect();
+        let parts = rest.split(|&b| b == sep).filter(|p| !p.is_empty() && *p != b".").map(Name::from_raw).collect();
         Some(Path { anchor: Name::from_raw(anchor), parts })
     }
 
@@ -338,6 +351,19 @@ mod tests {
         assert_eq!(unc.parts, names(&["server", "share", "x"]));
         assert_eq!(PathRules::Windows.display(&unc), r"\\server\share\x");
         assert_eq!(PathRules::Windows.display(&PathRules::Windows.parse("D:\\").unwrap()), "D:\\");
+    }
+
+    /// Forward slashes are separators on Windows, as backslashes are; `.` parts go. The saved value that made the
+    /// picker's dialog fail reads back as the folder it names, and joins back in the form the shell takes.
+    #[test]
+    fn windows_text_takes_forward_slashes_and_drops_dot_parts() {
+        let back = PathRules::Windows.parse(r"D:\PhotoGallery\datasets\pinterest\Photos").unwrap();
+        assert_eq!(PathRules::Windows.parse("D:/PhotoGallery/datasets/pinterest/Photos").unwrap(), back);
+        assert_eq!(PathRules::Windows.parse(r"D:\/PhotoGallery/datasets/pinterest/Photos").unwrap(), back);
+        assert_eq!(PathRules::Windows.parse(r"D:\a\.\b").unwrap(), PathRules::Windows.parse(r"D:\a\b").unwrap());
+        assert_eq!(PathRules::Windows.parse("//server/share/a").unwrap(), PathRules::Windows.parse(r"\\server\share\a").unwrap());
+        let saved = PathRules::Windows.parse_bytes(br"D:\/PhotoGallery/datasets/pinterest/Photos").unwrap();
+        assert_eq!(PathRules::Windows.join(&saved), br"D:\PhotoGallery\datasets\pinterest\Photos");
     }
 
     #[test]

@@ -65,6 +65,20 @@ pub fn shell_path(units: &[u16]) -> Vec<u16> {
 #[cfg(windows)]
 pub use native::Dialog;
 
+/// The system call of the dialog that failed, for an error the dialog gave (`None` for any other error). The log names
+/// it; the message the user sees is the system's text alone.
+pub fn failed_call(error: &io::Error) -> Option<&'static str> {
+    #[cfg(windows)]
+    {
+        error.get_ref()?.downcast_ref::<native::CallError>().map(|e| e.call)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = error;
+        None
+    }
+}
+
 #[cfg(windows)]
 mod native {
     use std::ffi::c_void;
@@ -84,6 +98,30 @@ mod native {
     /// ERROR_CANCELLED, which the dialog reports when the user closes it without choosing.
     const ERROR_CANCELLED: u32 = 1223;
 
+    /// A system call of the dialog that failed, and the system's error. Its text (the message the user sees) is the
+    /// system's alone; its Debug form, which the log takes, names the call too.
+    #[derive(Debug)]
+    pub(super) struct CallError {
+        pub(super) call: &'static str,
+        error: windows::core::Error,
+    }
+
+    impl std::fmt::Display for CallError {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            std::fmt::Display::fmt(&self.error, f)
+        }
+    }
+
+    impl std::error::Error for CallError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            Some(&self.error)
+        }
+    }
+
+    pub(super) fn step(call: &'static str, error: windows::core::Error) -> io::Error {
+        io::Error::other(CallError { call, error })
+    }
+
     /// The system's folder dialog, made with folders-only options (as Qt's native dialog sets them).
     pub struct Dialog {
         dialog: IFileOpenDialog,
@@ -95,13 +133,14 @@ mod native {
             // SAFETY: COM is initialized on this thread by Qt (see the module's note). The dialog is released when the
             // smart pointer is dropped.
             let dialog: IFileOpenDialog =
-                unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) }.map_err(io::Error::other)?;
+                unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) }
+                    .map_err(|e| step("CoCreateInstance(FileOpenDialog)", e))?;
             // SAFETY: plain calls on the dialog made just above.
             unsafe {
-                let options = dialog.GetOptions().map_err(io::Error::other)?;
+                let options = dialog.GetOptions().map_err(|e| step("GetOptions", e))?;
                 dialog
                     .SetOptions(options | FOS_PICKFOLDERS | FOS_FILEMUSTEXIST | FOS_FORCEFILESYSTEM)
-                    .map_err(io::Error::other)?;
+                    .map_err(|e| step("SetOptions", e))?;
             }
             Ok(Dialog { dialog, chosen: None })
         }
@@ -116,8 +155,8 @@ mod native {
         }
         units.push(0);
         // SAFETY: the units are NUL-terminated for the call, and the item is returned owned.
-        let item: IShellItem =
-            unsafe { SHCreateItemFromParsingName(PCWSTR(units.as_ptr()), None) }.map_err(io::Error::other)?;
+        let item: IShellItem = unsafe { SHCreateItemFromParsingName(PCWSTR(units.as_ptr()), None) }
+            .map_err(|e| step("SHCreateItemFromParsingName", e))?;
         Ok(Some(item))
     }
 
@@ -127,7 +166,7 @@ mod native {
             // folder that is there).
             if let Some(item) = start.map(start_item).transpose()?.flatten() {
                 // SAFETY: a plain call on the dialog and the item made just above.
-                unsafe { self.dialog.SetFolder(&item) }.map_err(io::Error::other)?;
+                unsafe { self.dialog.SetFolder(&item) }.map_err(|e| step("SetFolder", e))?;
             }
             // SAFETY: the owner is the window's handle, given to the dialog as the window system gave it.
             unsafe {
@@ -139,9 +178,9 @@ mod native {
                 match shown {
                     Ok(()) => {}
                     Err(e) if e.code() == HRESULT::from_win32(ERROR_CANCELLED) => return Ok(false),
-                    Err(e) => return Err(io::Error::other(e)),
+                    Err(e) => return Err(step("Show", e)),
                 }
-                self.chosen = Some(self.dialog.GetResult().map_err(io::Error::other)?);
+                self.chosen = Some(self.dialog.GetResult().map_err(|e| step("GetResult", e))?);
                 Ok(true)
             }
         }
@@ -158,7 +197,7 @@ mod native {
         fn file_system_path(&self) -> io::Result<Vec<u16>> {
             // SAFETY: the shell allocates the name; it is copied, and then freed once.
             unsafe {
-                let name = self.0.GetDisplayName(SIGDN_FILESYSPATH).map_err(io::Error::other)?;
+                let name = self.0.GetDisplayName(SIGDN_FILESYSPATH).map_err(|e| step("GetDisplayName", e))?;
                 let units = name.as_wide().to_vec();
                 CoTaskMemFree(Some(name.as_ptr().cast()));
                 Ok(units)
@@ -189,6 +228,19 @@ mod tests {
 
     use super::{FolderDialog, ShellItem, path_of_units, pick_with, shell_path};
     use crate::names::path_buf;
+
+    /// A failed call of the dialog names the call for the log, and its message is the system's text alone.
+    #[test]
+    fn a_failed_call_is_named_for_the_log_and_not_in_the_message() {
+        // ERROR_INVALID_PARAMETER (87), the "Parâmetro incorreto" of the dialog's failure: 0x80070057.
+        let system = windows::core::Error::from_hresult(windows::core::HRESULT::from_win32(87));
+        let error = super::native::step("SetFolder", system);
+        assert_eq!(super::failed_call(&error), Some("SetFolder"));
+        let message = error.to_string();
+        assert!(message.contains("0x80070057"), "the system's error: {message}");
+        assert!(!message.contains("SetFolder"), "the message the user sees: {message}");
+        assert_eq!(super::failed_call(&io::Error::other("not a dialog call")), None);
+    }
 
     /// The units of a folder with an unpaired surrogate come back as that folder's path, exactly.
     #[test]

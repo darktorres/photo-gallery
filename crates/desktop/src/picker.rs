@@ -148,12 +148,36 @@ pub fn set_start(path: Option<PathBuf>) {
 }
 
 /// The folder the dialog opens in: the one set for it (`set_start`, taken) while it is still a folder, else the user's
-/// folder.
+/// folder. The folder is given in its real form (`canonicalize`), which the shell takes where the path as given may
+/// not be: it refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is only spaces. A folder
+/// under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path as given is kept.
 fn start_for() -> Option<PathBuf> {
     START
         .with(|start| start.borrow_mut().take())
+        .map(|folder| match std::fs::canonicalize(&folder) {
+            Ok(real) if has_drive_or_share(&real) => real,
+            _ => folder,
+        })
         .filter(|folder| folder.is_dir())
         .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
+}
+
+/// Whether `path` starts with a drive or a share (`C:\`, `\\?\C:\`, `\\server\share`), the forms the shell takes.
+#[cfg(windows)]
+fn has_drive_or_share(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix)) if matches!(
+            prefix.kind(),
+            Prefix::Disk(_) | Prefix::VerbatimDisk(_) | Prefix::UNC(..) | Prefix::VerbatimUNC(..)
+        )
+    )
+}
+
+#[cfg(not(windows))]
+fn has_drive_or_share(_: &Path) -> bool {
+    true
 }
 
 /// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own). An error when `dir`
@@ -230,11 +254,15 @@ impl qobject::FolderPicker {
         let start = start_for();
         if cfg!(windows) {
             // The system's dialog runs its own loop: nothing of the app is borrowed across it (`native`).
-            match native(purpose, start.as_deref(), owner()) {
+            let owner = owner();
+            match native(purpose, start.as_deref(), owner) {
                 Ok(Some(chosen)) => self.choose_path(chosen),
                 Ok(None) => {}
                 Err(e) => {
-                    crate::panic_log::note(&format!("folder picker: {e}"));
+                    let call = pg_platform::picker::failed_call(&e).unwrap_or("the dialog");
+                    crate::panic_log::note(&format!(
+                        "folder picker {purpose:?}: {call}: {e} (start folder {start:?}, owner window {owner:?})"
+                    ));
                     let message = QString::from(&text::folder_dialog_failed(&e.to_string()));
                     self.as_mut().failed(purpose.code(), message);
                 }
@@ -348,9 +376,33 @@ impl qobject::FolderPicker {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    use std::path::{Component, Path, PathBuf};
 
-    use super::folders_in;
+    use super::{folders_in, set_start, start_for};
+
+    /// A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
+    /// A path under a volume with no drive letter is not a drive or share, so the start folder keeps its path as given;
+    /// the drive and share forms are.
+    #[cfg(windows)]
+    #[test]
+    fn only_a_drive_or_a_share_is_given_in_its_canonical_form() {
+        use super::has_drive_or_share;
+        assert!(has_drive_or_share(Path::new(r"\\?\C:\photos")));
+        assert!(has_drive_or_share(Path::new(r"C:\photos")));
+        assert!(has_drive_or_share(Path::new(r"\\?\UNC\server\share\a")));
+        assert!(has_drive_or_share(Path::new(r"\\server\share\a")));
+        assert!(!has_drive_or_share(Path::new(r"\\?\Volume{38788d0c-38dd-46ca-b547-211e9c17f3ac}\photos")));
+    }
+
+    #[test]
+    fn a_start_folder_is_given_in_its_real_form() {
+        let tree = Tree::new("start");
+        std::fs::create_dir(tree.0.join("inner")).unwrap();
+        set_start(Some(tree.0.join("inner").join("..")));
+        let got = start_for().expect("the start folder");
+        assert_eq!(got, std::fs::canonicalize(&tree.0).unwrap());
+        assert!(!got.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)));
+    }
 
     /// A folder whose name is no UTF-8: a lone surrogate on Windows, a raw `0xFF` byte on Unix.
     #[cfg(windows)]

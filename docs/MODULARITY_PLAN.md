@@ -182,7 +182,9 @@ Gate: Linux checks, Windows `just test`.
 
 ### M-5: group C
 
-`filters::count` has one caller: `facet_choices`. Move `count` into `facet_choices`, which owns the `Counts` type it returns. Then `facet_choices` no longer depends on `filters`. The reverse edge (`filters` uses `Counts` and `set_counts`) stays.
+`filters::count` (the saturating `i64` to `i32`) has two callers: `facet_choices::rows`, and `filters`'s `apply_facets`. Move `count` into `facet_choices`, which owns the `Counts` type it serves. Then `facet_choices` no longer depends on `filters`. `filters` imports `count` from `facet_choices`, which is the edge it already has (`Counts`, `set_counts`). In `rows`, the closure's binding `count` is renamed `shown`, so it does not shadow the function.
+
+- **Result (committed in the M-5 commit):** the text scan's group C is gone. Its two bridge pairs remain, as separate J entries in `tools/modgraph-allow.txt`: `facet_choices, facet_choices::qobject` and `filters, filters::qobject`.
 
 Gate: desktop gates.
 

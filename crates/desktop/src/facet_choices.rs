@@ -144,14 +144,19 @@ fn choices(facet: Facet, counts: &Counts) -> Vec<(Choice, Option<i64>)> {
     }
 }
 
+/// Counts saturate: the properties are ints, as QML's are. (`Filters` shows its totals with the same function.)
+pub(crate) fn count(n: i64) -> i32 {
+    i32::try_from(n.max(0)).unwrap_or(i32::MAX)
+}
+
 /// The rows of `facet` for a query and counts.
 fn rows(facet: Facet, query: &Query, counts: &Counts) -> Vec<Row> {
     choices(facet, counts)
         .into_iter()
-        .map(|(choice, count)| Row {
+        .map(|(choice, shown)| Row {
             chosen: query.has(&choice),
             label: text::choice_label(&choice),
-            count: crate::filters::count(count.unwrap_or(0)),
+            count: count(shown.unwrap_or(0)),
             key: key_of(&choice),
         })
         .collect()

@@ -106,7 +106,7 @@ use pg_client::input::{Edge, Field, bound_is_valid, choice};
 use pg_client::text;
 
 use crate::controller;
-use crate::facet_choices::Counts;
+use crate::facet_choices::{Counts, count};
 
 pub struct FiltersRust {
     active: i32,
@@ -155,11 +155,6 @@ fn review_index(marked: Option<bool>) -> i32 {
         Some(false) => 1,
         Some(true) => 2,
     }
-}
-
-/// Counts saturate: the properties are ints, as QML's are.
-pub(crate) fn count(n: i64) -> i32 {
-    i32::try_from(n.max(0)).unwrap_or(i32::MAX)
 }
 
 impl qobject::Filters {

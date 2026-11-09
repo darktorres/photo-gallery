@@ -4,7 +4,6 @@
 # A variable already set in the real environment wins over `.env`.
 
 set dotenv-load := true
-set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 
 # The pinned third-party build `just setup` fetches: BtbN's GPL shared build of FFmpeg 9.0 (the release's asset, and its
 # SHA-256 as GitHub's digest). CI runs `just setup` too, so these are the only place the pin is written.
@@ -67,7 +66,7 @@ test *args: _qt
 
 # The eval tools' Python tests (stdlib unittest). The viewer imports Pillow. CI runs it in the Windows job.
 test-eval:
-    python -m unittest discover -s eval -p 'test_*.py'
+    {{ py }} -m unittest discover -s eval -p 'test_*.py'
 
 # Format the Rust and the Python code.
 fmt:
@@ -118,9 +117,9 @@ lint: _qt _lint-tools && lint-qml
 cargo_modules_version := "0.28.0"
 
 modgraph: _qt
-    if (((cargo modules --version 2>$null) -split '\s+' | Select-Object -Last 1) -ne '{{ cargo_modules_version }}') { cargo install --locked cargo-modules --version {{ cargo_modules_version }} }
-    python tools/modgraph/module_graph.py
-    python tools/modgraph/compiler_graph.py
+    cargo install --locked cargo-modules --version {{ cargo_modules_version }}  # a no-op when that version is installed
+    {{ py }} tools/modgraph/module_graph.py
+    {{ py }} tools/modgraph/compiler_graph.py
 
 # Screenshot comparison: the test-hook matrix on one fixture, the working tree against a recorded reference, pixel by
 # pixel (tools/compare_shots.py). `just shots --record <commit>` builds that commit and records its screenshots under

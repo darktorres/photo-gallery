@@ -282,8 +282,39 @@ jobs:
       - name: Tests (the whole workspace)
         run: just test
 
+      # A crash in the QML tests (a SIGSEGV in Qt Multimedia, seen on this job) leaves a core file: the kernel writes it
+      # to this folder, set here because this runner's default hands cores to systemd-coredump. The failure steps below
+      # read it with gdb and upload it. Nothing runs under gdb on a pass, and the core costs nothing unless there is one.
+      - name: Core files for the QML tests (a folder under RUNNER_TEMP)
+        run: |
+          mkdir -p "$RUNNER_TEMP/cores"
+          sudo sysctl -w kernel.core_pattern="$RUNNER_TEMP/cores/core.%e.%p"
+
       - name: QML tests
-        run: just qmltest
+        id: qml
+        run: |
+          ulimit -c unlimited
+          just qmltest
+
+      - name: QML crash, on a QML failure only (backtrace from the core)
+        if: steps.qml.outcome == 'failure'
+        run: |
+          command -v gdb > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
+          shopt -s nullglob
+          for core in "$RUNNER_TEMP"/cores/core.qml_host.*; do
+            gdb -batch -ex "thread apply all bt 40" target/qml_host/qml_host "$core" || true
+            gzip -c "$core" > "$RUNNER_TEMP/$(basename "$core").gz"
+          done
+          ls -la "$RUNNER_TEMP/cores"
+
+      - name: Upload the QML core, on a QML failure only
+        if: steps.qml.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: qml-core-linux
+          path: ${{ runner.temp }}/core.qml_host.*.gz
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Python tools tests (stdlib unittest, tools/test_*.py)
         run: just test-tools

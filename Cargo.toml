@@ -125,7 +125,7 @@ png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b
 cxx-qt-build = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
 qt-build-utils = { git = "https://github.com/darktorres/cxx-qt", rev = "ff48a9babad3e78ed15cac0027abf5a1d6ab9ffe" }
 quick-xml = { git = "https://github.com/darktorres/quick-xml", rev = "eb2fa71d72e974bbd9e7fa6723326a8933b62dbd" }
-rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "1184d0f760cd17d14b49e49a9641a5369c703900" }
+rusqlite = { git = "https://github.com/darktorres/rusqlite", rev = "9d76035b8f1b069bf1c7d98b420e70f3a8369e51" }
 thumbhash = { git = "https://github.com/darktorres/thumbhash", rev = "a7bc11b868583c513ab3a5f0a1a37b93668adcbf" }
 tiff = { git = "https://github.com/darktorres/image-tiff", rev = "7157618eaabddd2245223d5ec1899a624e005476" }
 turbojpeg-sys = { git = "https://github.com/darktorres/rust-turbojpeg", rev = "945d853b47a76f98fd97ac5ff43830997712caa2" }

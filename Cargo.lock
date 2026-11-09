@@ -1328,8 +1328,8 @@ dependencies = [
 
 [[package]]
 name = "libsqlite3-sys"
-version = "0.39.0"
-source = "git+https://github.com/darktorres/rusqlite?rev=1184d0f760cd17d14b49e49a9641a5369c703900#1184d0f760cd17d14b49e49a9641a5369c703900"
+version = "0.39.1"
+source = "git+https://github.com/darktorres/rusqlite?rev=9d76035b8f1b069bf1c7d98b420e70f3a8369e51#9d76035b8f1b069bf1c7d98b420e70f3a8369e51"
 dependencies = [
  "cc",
  "pkg-config",
@@ -2263,7 +2263,7 @@ dependencies = [
 [[package]]
 name = "rusqlite"
 version = "0.41.1"
-source = "git+https://github.com/darktorres/rusqlite?rev=1184d0f760cd17d14b49e49a9641a5369c703900#1184d0f760cd17d14b49e49a9641a5369c703900"
+source = "git+https://github.com/darktorres/rusqlite?rev=9d76035b8f1b069bf1c7d98b420e70f3a8369e51#9d76035b8f1b069bf1c7d98b420e70f3a8369e51"
 dependencies = [
  "bitflags 2.13.2",
  "fallible-iterator",

@@ -9,6 +9,10 @@ stubs stand in for GalleryModel, Shell and the rest.
 
 The tests run in a host built from crates/desktop/tests/qml_host (Qt Quick Test's main, as qmltestrunner has it) with the
 app's image providers as stubs, so the image:// URLs the tests pass resolve as they do in the app.
+
+The mascots are the app's own files (crates/desktop/resources/mascots). The app has them in its resources, and Mascot.qml
+loads them by qrc: URL, so they are compiled here into a resource bundle (rcc, from the Qt kit) at the same paths, and the
+host registers it (PG_QML_RESOURCES).
 """
 
 import os
@@ -16,6 +20,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from xml.sax.saxutils import escape
 
 from pgtools import REPO, WINDOWS, load_env_file, run
 
@@ -23,6 +28,7 @@ QML = REPO / "crates" / "desktop" / "qml"
 STUBS = REPO / "crates" / "desktop" / "tests" / "qml" / "stubs" / "pg" / "gallery"
 TESTS = REPO / "crates" / "desktop" / "tests" / "qml"
 HOST_SOURCE = REPO / "crates" / "desktop" / "tests" / "qml_host"
+MASCOTS = REPO / "crates" / "desktop" / "resources" / "mascots"
 STAGED = REPO / "target" / "qmltest"
 HOST_BUILD = REPO / "target" / "qml_host"
 OUT = REPO / "target" / "qmltest.txt"
@@ -53,6 +59,26 @@ def stage() -> None:
         else:
             entries.append(f"{file.stem} 1.0 {file.name}")
     (module / "qmldir").write_text("\n".join(entries) + "\n", encoding="utf-8")
+
+
+def mascot_bundle(qt: Path) -> Path:
+    """The mascots as a Qt resource bundle, at the paths Mascot.qml loads: qrc:/qt/qml/pg/gallery/resources/mascots/NN.png.
+
+    rcc is the Qt kit's: in libexec on Linux, in bin on Windows. Each file is listed by its own path, so the bundle has the
+    app's images, not copies.
+    """
+    rcc = next((p for p in (qt / "libexec" / "rcc", qt / "bin" / "rcc.exe", qt / "bin" / "rcc") if p.is_file()), None)
+    if rcc is None:
+        sys.exit(f"no rcc in {qt} (libexec or bin): the Qt kit has the resource compiler; reinstall its tools.")
+    files = sorted(MASCOTS.glob("*.png"))
+    if not files:
+        sys.exit(f"no mascot images in {MASCOTS}")
+    entries = "\n".join(f'    <file alias="resources/mascots/{f.name}">{escape(str(f))}</file>' for f in files)
+    qrc = STAGED / "mascots.qrc"
+    bundle = STAGED / "mascots.rcc"
+    qrc.write_text(f'<RCC>\n  <qresource prefix="/qt/qml/pg/gallery">\n{entries}\n  </qresource>\n</RCC>\n', encoding="utf-8")
+    run([str(rcc), "--binary", "-o", str(bundle), str(qrc)], dict(os.environ))
+    return bundle
 
 
 def test_env(qt: Path) -> dict[str, str]:
@@ -88,6 +114,7 @@ def main() -> None:
     qt = qt_kit()
     stage()
     env = test_env(qt)
+    env["PG_QML_RESOURCES"] = str(mascot_bundle(qt))
     host = build_host(env, qt)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     result = subprocess.run(

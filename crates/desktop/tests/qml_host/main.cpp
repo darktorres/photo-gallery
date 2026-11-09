@@ -3,8 +3,10 @@
 // files through Rust, which the tests don't have, so these stand in: each one makes a plain image of the size asked for,
 // and the image:// URLs the tests pass resolve as they do in the app.
 #include <QtCore/QObject>
+#include <QtCore/QResource>
 #include <QtCore/QSize>
 #include <QtCore/QString>
+#include <QtCore/qtenvironmentvariables.h>
 #include <QtGui/QColor>
 #include <QtGui/QImage>
 #include <QtQml/QQmlEngine>
@@ -32,7 +34,13 @@ public:
 class Setup : public QObject {
     Q_OBJECT
 public slots:
-    void applicationAvailable() {}
+    // The mascots' resource bundle (tools/qmltest.py): the app has these files in its resources, and Mascot.qml loads
+    // them by qrc:, so the bundle goes in before any test loads that QML. A bundle that does not load fails the run.
+    void applicationAvailable() {
+        const QString bundle = qEnvironmentVariable("PG_QML_RESOURCES");
+        if (!bundle.isEmpty() && !QResource::registerResource(bundle))
+            qFatal("the resource bundle %s did not load", qPrintable(bundle));
+    }
 
     void qmlEngineAvailable(QQmlEngine* engine) {
         for (const char* name : {"thumb", "thumbhash", "full"})

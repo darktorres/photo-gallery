@@ -26,16 +26,10 @@ use crate::app::App;
 pub mod images;
 pub use images::Fetch;
 use images::Images;
+pub mod source;
+pub use source::Source;
 pub mod replay;
 pub use replay::{Recording, Replay};
-
-/// Where a search or a save gets its Yandex calls: the real client, or a recorded session that stands in for it.
-/// Each search and each save makes its own, on its thread.
-pub trait Source {
-    fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError>;
-    fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, YandexError>;
-    fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError>;
-}
 
 impl Source for Client {
     fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {

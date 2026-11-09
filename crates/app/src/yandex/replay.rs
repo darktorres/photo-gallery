@@ -23,7 +23,8 @@ use pg_yandex::{
     parse_similar_page, parse_upload, read_similar_pages, sniffed,
 };
 
-use super::{Fetch, Source};
+use super::images::Fetch;
+use super::source::Source;
 
 /// A recorded session, read into memory.
 pub struct Recording {

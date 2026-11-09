@@ -267,6 +267,8 @@ Three groups have the same shape: a parent module defines a trait or types, its 
 
 Gate: Linux checks; Windows `just build` and `just test`; both `cargo-modules` runs (M-0), which must show no group F, H or I on either target.
 
+- **Result (committed in the M-19 commit; not yet validated, see the end of the plan):** F: `Source` is in `app/src/yandex/source.rs` (a leaf); `yandex.rs` re-exports it and implements it for `Client`; `replay.rs` imports `Fetch` from `images` and `Source` from `source`, so it no longer reaches its parent. H: `Entry` and `Lister` are in `platform/src/dir/listing.rs`, which `dir.rs` re-exports; the `Lister` fields the backends use are `pub(super)`. I: `FolderDialog`, `ShellItem`, `shell_path` and `path_of_units` are in `platform/src/picker/shell.rs` with their pure tests; `native` imports from it. The text scan shows none of the three groups. The allowlist's F, H and I entries (scan, Linux and Windows) are removed; the compiler side is checked at the end.
+
 ## Large single-file crates
 
 Each split is a move. Items keep their visibility, and public paths stay the same through `pub use` where rule 2 allows it. Every split below was checked as a DAG at group level, method by method, by reading. Re-run the check at M-0 and before each step.

@@ -54,19 +54,10 @@ pub fn start_units(start: Option<&Path>) -> Option<Vec<u16>> {
     start.map(|path| path.as_os_str().encode_wide().collect())
 }
 
-/// The item the dialog chose: its file-system path in the system's units (`SIGDN_FILESYSPATH`).
-pub trait ShellItem {
-    fn file_system_path(&self) -> io::Result<Vec<u16>>;
-}
-
-/// The folder dialog's steps that touch the system.
-pub trait FolderDialog {
-    /// Shows the dialog until the user chooses or cancels. `start` is the folder it opens in (its units, without a NUL),
-    /// `owner` the window it belongs to (its handle; None: unowned). Ok(true) when a folder was chosen.
-    fn run(&mut self, start: Option<&[u16]>, owner: Option<usize>) -> io::Result<bool>;
-    /// The item `run` chose, if it chose one.
-    fn chosen(&self) -> io::Result<Option<Box<dyn ShellItem>>>;
-}
+mod shell;
+pub use shell::{FolderDialog, ShellItem};
+#[cfg(windows)]
+pub use shell::{path_of_units, shell_path};
 
 /// Runs `dialog` and gives the folder it chose, exactly. None when the user cancelled. `start` is the folder the dialog
 /// opens in (its units), and `owner` the window it belongs to (None for none).
@@ -81,27 +72,6 @@ pub fn pick_with(
     }
     let item = dialog.chosen()?.ok_or_else(|| io::Error::other("the dialog chose no folder"))?;
     Ok(Some(path_of_units(&item.file_system_path()?)))
-}
-
-/// A path from the system's units (UTF-16 on Windows), exactly.
-#[cfg(windows)]
-pub fn path_of_units(units: &[u16]) -> PathBuf {
-    use std::os::windows::ffi::OsStringExt;
-    PathBuf::from(std::ffi::OsString::from_wide(units))
-}
-
-/// A path in the form the shell takes: backslashes for forward slashes, and no `\\?\` verbatim prefix (the shell
-/// refuses both with "invalid parameter"). `\\?\UNC\server\share` is `\\server\share`.
-#[cfg(windows)]
-pub fn shell_path(units: &[u16]) -> Vec<u16> {
-    const VERBATIM: [u16; 4] = [0x5C, 0x5C, 0x3F, 0x5C];
-    const UNC: [u16; 4] = [0x55, 0x4E, 0x43, 0x5C];
-    let units: Vec<u16> = units.iter().map(|&u| if u == 0x2F { 0x5C } else { u }).collect();
-    let Some(rest) = units.strip_prefix(&VERBATIM) else { return units };
-    match rest.strip_prefix(&UNC) {
-        Some(share) => [0x5C, 0x5C].into_iter().chain(share.iter().copied()).collect(),
-        None => rest.to_vec(),
-    }
 }
 
 #[cfg(windows)]
@@ -135,7 +105,7 @@ mod native {
     use windows::Win32::UI::WindowsAndMessaging::{PM_REMOVE, PeekMessageW, PostMessageW, WM_MOUSEMOVE};
     use windows::core::{HRESULT, PCWSTR};
 
-    use super::{FolderDialog, ShellItem, shell_path};
+    use super::shell::{FolderDialog, ShellItem, shell_path};
 
     /// ERROR_CANCELLED, which the dialog reports when the user closes it without choosing.
     const ERROR_CANCELLED: u32 = 1223;
@@ -267,7 +237,7 @@ mod tests {
     use std::io;
     use std::path::Path;
 
-    use super::{FolderDialog, ShellItem, path_of_units, pick_with, shell_path};
+    use super::{FolderDialog, ShellItem, pick_with};
     use crate::names::path_buf;
 
     /// A failed call of the dialog names the call for the log, and its message is the system's text alone.
@@ -281,26 +251,6 @@ mod tests {
         assert!(message.contains("0x80070057"), "the system's error: {message}");
         assert!(!message.contains("SetFolder"), "the message the user sees: {message}");
         assert_eq!(super::failed_call(&io::Error::other("not a dialog call")), None);
-    }
-
-    /// The units of a folder with an unpaired surrogate come back as that folder's path, exactly.
-    #[test]
-    fn a_folder_from_its_units_keeps_an_unpaired_surrogate() {
-        let units = [0x43, 0x3A, 0x5C, 0x61, 0xD800, 0x62];
-        assert_eq!(path_of_units(&units), path_buf(b"C:\\a\xED\xA0\x80b"));
-        assert_eq!(path_of_units(&[0x43, 0x3A]), path_buf(b"C:"));
-    }
-
-    /// A start folder reaches the shell in the form it takes: the forward slashes and the verbatim prefix the shell
-    /// refuses are written as backslashes and dropped.
-    #[test]
-    fn a_start_folder_is_in_the_form_the_shell_takes() {
-        let units = |s: &str| s.encode_utf16().collect::<Vec<u16>>();
-        assert_eq!(shell_path(&units("D:/GitHub/photo-gallery")), units("D:\\GitHub\\photo-gallery"));
-        assert_eq!(shell_path(&units("\\\\?\\C:\\Users")), units("C:\\Users"));
-        assert_eq!(shell_path(&units("\\\\?\\UNC\\server\\share")), units("\\\\server\\share"));
-        assert_eq!(shell_path(&units("C:\\Users\\a")), units("C:\\Users\\a"));
-        assert!(shell_path(&units("")).is_empty());
     }
 
     /// What the dialog was opened with: its start folder's units and its owner.

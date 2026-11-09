@@ -169,7 +169,7 @@ example `pg-metadata` stayed one module, S-05.1).
 | `pg-desktop` (lib) | Qt glue only: QObject facades over `pg-client` and `pg-app`, list models, image providers, the frame sink, the GPU device, screenshot, live reload, `gui_app` (the QGuiApplication built from the argv bytes), `command_line` (argv read once), the flat `qml/` folder, the desktop's client prefs. `[lib] test = false, doctest = false` | app, client, trace, cxx-qt, cxx-qt-lib, cxx, serde_json |
 | `pg-gallery` (bin `gallery`) | `main` (CLI or GUI dispatch), `windows_subsystem`, console attach, message box, panic hook, the `dhat-heap` feature, winres icon (its build.rs). `desktop` is an optional default feature, so a headless build is possible | cli, desktop, platform, dhat (feature), winres (build) |
 | `pg-testkit` (dev) | scratch dirs (`PG_TEST_DIR`), pattern, letterbox and animated test images (the only `image` user besides codec), ExifTool and ffmpeg discovery that prints SKIPPED, `wait_for_writes`. It re-exports the catalog fixture (`catalog.rs:1348`, `pub(crate) mod fixture` today), which lives in `pg-catalog` behind a `fixture` feature, since only catalog sees `conn` | model, catalog (`fixture`), image |
-| `pg-bench` (dev) | the gungraun `ir` harness (`benches/ir`), so `wsl-bench.sh` has one stable target. It goes through the catalog API, not `conn` | analysis, render, catalog, thumbcache, gungraun |
+| `pg-bench` (dev) | the gungraun `ir` harness (`benches/ir`), so `tools/profiling/bench.sh` has one stable target. It goes through the catalog API, not `conn` | analysis, render, catalog, thumbcache, gungraun |
 
 **`pg-model` contents:**
 
@@ -838,7 +838,7 @@ Rules that hold for every row:
   - The ExifTool and ffmpeg integration tests (`writeback`, `crop`, `video`) must print that they ran, not SKIPPED.
   - `pg-client`'s tests run from step 10. They cover the logic that today only the screenshots check.
   - The codec's `files_decode_as_image_did` test (72 files against `image`'s own decode) runs unchanged in `pg-codec`.
-- **Commits that touch `platform`, benches or any crate below `library`:** `just wsl-check`.
+- **Commits that touch `platform`, benches or any crate below `library`:** `just check-linux` (the container's Linux checks).
 - **Commits that touch desktop, client, app or QML:** run the release build offscreen (`QT_QPA_PLATFORM=offscreen`,
   `QT_QPA_FONTDIR`) on a scratch library (`PG_CATALOG_DIR`, `PG_PREFS`) with the test hooks:
   - `--screenshot` of the grid, the viewer (`--view`), `--filters=1`, `--menu=views`, `--library=1`;

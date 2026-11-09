@@ -1,6 +1,6 @@
 # The apt packages for the Linux side: the crates that link FFmpeg and libclang, the tools the tests run (ExifTool,
-# ffmpeg), and the system libraries Qt 6 needs on Linux (the desktop crate). One per line. CI and WSL both install this
-# list; the callgrind benches' own packages are in apt-packages-bench.txt (WSL only).
+# ffmpeg), and the system libraries Qt 6 needs on Linux (the desktop crate). One per line. CI's Linux job and the container
+# (docker/Dockerfile) both install this list; the callgrind benches' own packages are in apt-packages-bench.txt.
 build-essential
 cmake
 nasm

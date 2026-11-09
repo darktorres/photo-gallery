@@ -11,7 +11,8 @@ change.
     python tools/profiling/bench_data.py v3-windows-rules \\
         $PG_ROOT\\synthetic\\catalog-v3 $PG_ROOT\\bench-data
 
-wsl-bench.sh copies OUT/* to WSL's disk (/root/pg-bench) before running the benches.
+`just perf` (tools/linux.py) mounts the bench data folder into the container, which copies it to its own
+volume before the benches run.
 """
 
 import argparse

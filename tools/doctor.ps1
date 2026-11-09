@@ -2,7 +2,7 @@
 # Reads .env through `just`: run it that way, so the values in .env count. It builds nothing and changes nothing.
 #
 # Required parts: cargo, the Qt kit, the FFmpeg headers and DLLs, and libclang. Optional parts are used by some tests
-# and by the WSL recipes; a missing optional part only says so. Exit code 1 when a required part is missing.
+# and by the Linux recipes (the container); a missing optional part only says so. Exit code 1 when a required part is missing.
 
 $ErrorActionPreference = 'Continue'
 $repo = Split-Path -Parent $PSScriptRoot
@@ -73,14 +73,15 @@ $ffmpegCmd = Get-Command $ffmpegExe -ErrorAction SilentlyContinue
 Optional ($null -ne $ffmpegCmd) 'ffmpeg exe' $ffmpegCmd.Source `
     'the video tests skip without it: set PG_FFMPEG in .env to ffmpeg.exe, or run `just setup`'
 
-# Optional: the WSL distro the perf, fuzz and wsl-check recipes run in (PG_WSL_DISTRO, default Ubuntu-26.04).
-$distro = if ($env:PG_WSL_DISTRO) { $env:PG_WSL_DISTRO } else { 'Ubuntu-26.04' }
-$wsl = Get-Command wsl.exe -ErrorAction SilentlyContinue
-# `wsl --list` writes UTF-16, so each line comes with NUL characters between its letters: strip them.
-$distros = if ($wsl) { @(wsl.exe --list --quiet 2>$null | ForEach-Object { ($_ -replace "[`0\r]", '').Trim() }) } else { @() }
-$hasDistro = $distros -contains $distro
-Optional $hasDistro "WSL $distro" 'present' `
-    "the perf, fuzz-smoke and wsl-check recipes need it: install WSL and the distro (wsl --install -d $distro), or set PG_WSL_DISTRO in .env"
+# Optional: Docker, which the Linux recipes run in (`just check-linux`, `just perf`, `just fuzz-smoke`, docker/README.md).
+$docker = Get-Command docker.exe -ErrorAction SilentlyContinue
+$dockerUp = $false
+if ($docker) {
+    docker version --format '{{.Server.Version}}' 2>$null | Out-Null
+    $dockerUp = ($LASTEXITCODE -eq 0)
+}
+Optional $dockerUp 'Docker' 'running' `
+    'the Linux checks, benches and fuzzer run in a container: start Docker Desktop, then `just linux-build`'
 
 if ($script:missingRequired) {
     Write-Host ''

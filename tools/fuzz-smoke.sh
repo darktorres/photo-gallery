@@ -1,35 +1,28 @@
 #!/bin/bash
-# Each fuzz target (fuzz/, S-18.1) for a short time, on a clone of the committed HEAD in WSL's own disk (like
-# tools/profiling/wsl-bench.sh). From the repo, in PowerShell:
-#   wsl -d Ubuntu-26.04 -u root -- bash tools/fuzz-smoke.sh [seconds per target, default 60]
-# The fuzzer needs Linux and nightly Rust (cargo-fuzz's sanitizers). The C libraries the crates link come from
-# tools/profiling/wsl-setup.sh, run once before this. A crash exits non-zero and leaves its input in fuzz/artifacts/.
+# Each fuzz target (fuzz/, S-18.1) for a short time, in the container's tools image (`just fuzz-smoke`, which runs this
+# through tools/linux.py fuzz). The tree fuzzed is /head: the launcher's git archive of HEAD. The fuzzer's build is a volume
+# of its own. A crash stops the run, and its input is copied to fuzz/artifacts/ in the checkout.
+#   bash tools/fuzz-smoke.sh [seconds per target, default 60]
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/.." && pwd)
-CLONE=${PG_FUZZ_CLONE:-$HOME/photo-gallery-fuzz}
+TREE=/head
 SECONDS_EACH=${1:-60}
+export CARGO_TARGET_DIR=/bench/fuzz-target
 
-[ -d "$CLONE/.git" ] || git clone "$REPO" "$CLONE"
-git -C "$CLONE" fetch "$REPO" HEAD
-git -C "$CLONE" checkout --force --detach FETCH_HEAD
-echo "fuzz at $(git -C "$CLONE" log --oneline -1)"
-
-. "$HOME/.cargo/env"
-# The fuzzer's toolchain is the repo's pinned nightly (rust-toolchain.toml), and cargo-fuzz is pinned to its release.
-FUZZ_NIGHTLY=nightly-2026-11-06
-command -v cargo-fuzz >/dev/null || cargo install --locked cargo-fuzz --version 0.13.2
-rustup toolchain list | grep -q "^$FUZZ_NIGHTLY" || rustup toolchain install "$FUZZ_NIGHTLY" --profile minimal
-export FFMPEG_DIR=$HOME/.local/share/pg-bench/ffmpeg
-LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
-export LIBCLANG_PATH
-
-cd "$CLONE/fuzz"
+cd "$TREE/fuzz"
+echo "fuzz at ${PG_HEAD_SHA:-HEAD}"
 # fuzz/ is its own workspace with its own Cargo.lock, and cargo-fuzz does not pass --locked: fail here if the lock is stale.
 cargo metadata --locked --format-version 1 >/dev/null
 # Captured first: in a `for ... in $(cargo fuzz list)` a failing list runs no target and the script still exits 0.
 targets=$(cargo fuzz list)
-[ -n "$targets" ] || { echo "cargo fuzz list found no fuzz targets in $CLONE/fuzz" >&2; exit 1; }
+[ -n "$targets" ] || { echo "cargo fuzz list found no fuzz targets in $TREE/fuzz" >&2; exit 1; }
 for target in $targets; do
     echo "== $target: ${SECONDS_EACH}s"
-    cargo +"$FUZZ_NIGHTLY" fuzz run "$target" -- -max_total_time="$SECONDS_EACH"
+    if ! cargo fuzz run "$target" -- -max_total_time="$SECONDS_EACH"; then
+        mkdir -p "$REPO/fuzz/artifacts"
+        cp -r "$TREE/fuzz/artifacts/." "$REPO/fuzz/artifacts/"
+        echo "crash: the input is in fuzz/artifacts/ in the checkout" >&2
+        exit 1
+    fi
 done
+echo "fuzz-smoke: every target ran for ${SECONDS_EACH}s with no crash"

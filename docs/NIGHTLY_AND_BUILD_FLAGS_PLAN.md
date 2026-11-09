@@ -32,7 +32,7 @@ edf7a39). The survey below is at `nightly-2026-09-22`. Whether the phases below 
 | D1 | Does the binary only run on this machine class (i7-8700, AVX2)? | **Yes.** `-C target-cpu=x86-64-v3` may be adopted if it measures well. |
 | D2 | Is a nightly pin acceptable for the workspace (`rust-toolchain.toml`) or only for opt-in runs? | **A pin is acceptable.** `#![feature]`, `cargo-features` and `-Z` flags in the product build are allowed. |
 
-What a pin costs, to weigh per adoption (not a blocker): build, clippy, `cargo deny` and the WSL benches all move to
+What a pin costs, to weigh per adoption (not a blocker): build, clippy, `cargo deny` and the container benches all move to
 the pinned nightly; its date is bumped by hand and features can break or be renamed on a bump (`allocator_api` became
 `allocator_ext`); crates using `#![feature]` no longer build on stable. So: try everything first in a scratch target
 dir (`-Zcrate-attr=feature(x)` enables a feature without editing source), and prefer a stable equivalent when it gives
@@ -40,16 +40,16 @@ the same result.
 
 ## How the work runs
 
-- **Benchmarks:** `tools/profiling/wsl-bench.sh` clones the *committed* HEAD into WSL and runs gungraun (callgrind) on
+- **Benchmarks:** `just perf` (`tools/profiling/bench.sh`) exports the *committed* HEAD into the container and runs gungraun (callgrind) on
   `crates/bench/benches/ir.rs`: `analyze_jpeg`, `thumb_jpeg` (`ir/linux.rs`) and the catalog benches (`ir/catalog.rs`).
-  Results go to `target/gungraun/` in the clone and are read with `tools/profiling/cgtab.py`. Counts are
+  Results go to `/bench/target/gungraun/` in the container and are read with `tools/profiling/cgtab.py`. Counts are
   deterministic, so one run per variant is enough. Uncommitted work is never benched, so:
   - flag and profile trials go in through the environment (`RUSTFLAGS`, `CARGO_PROFILE_BENCH_LTO`,
-    `CARGO_PROFILE_BENCH_CODEGEN_UNITS`), forwarded into WSL with `WSLENV` (to verify on first use);
+    `CARGO_PROFILE_BENCH_CODEGEN_UNITS`), passed into the container with `-e` (`tools/linux.py`, to verify on first use);
   - code trials (E8) are committed on a short-lived local branch `eval/<id>`, benched, then merged or deleted.
-- **Nightly in WSL** is not installed; Phase 0 installs `nightly-2026-09-22` there (needed for N5, N10, N17).
+- **Nightly in the container:** the image has the pinned nightly only; Phase 0 installs `nightly-2026-09-22` in the container too (needed for N5, N10, N17).
 - **Scratch target dirs** outside the repo (`CARGO_TARGET_DIR=<scratch>\cargo-targets\<name>` on Windows,
-  `~/target-<name>` in WSL) for every nightly or flag experiment, so the main `target/` is never rebuilt by them.
+  `/bench/target-<name>` in the container) for every nightly or flag experiment, so the main `target/` is never rebuilt by them.
 - **No Windows build, test or timing while other edits are in progress in the tree**; check `git status` before each
   Windows step.
 - **Adoption threshold:** a performance change is adopted when estimated cycles
@@ -69,7 +69,7 @@ the same result.
 - 0b. `rustc +stable -O --emit asm` of a copy of `Hash::distance`'s body (`crates/model/src/pdq.rs:27`), at baseline and
   with `-C target-cpu=x86-64-v3`: is it a software popcount today? Decides how much of E1 is about POPCNT.
 - 0c. `rustup component list --toolchain nightly-2026-09-22` for what is installed (rust-docs only so far); install
-  the nightly in WSL (`rustup toolchain install nightly-2026-09-22 --profile minimal`) and the components later phases need.
+  the nightly in the container (`rustup toolchain install nightly-2026-09-22 --profile minimal`, in `just linux-shell`) and the components later phases need.
 
 **Phase 1: baseline at HEAD.**
 
@@ -77,18 +77,18 @@ the same result.
   `best_matches` 239 and `query` 261, has no bench) and a PNG decode through `analyze`. Both in
   `crates/bench/benches/ir/linux.rs` beside the existing ones
   (not added yet: the file still has only `analyze_jpeg` and `thumb_jpeg`).
-- 1b. `wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-bench.sh --save-baseline=head`. Read with `cgtab.py`.
+- 1b. `just linux-bench --save-baseline=head`. Read with `cgtab.py`.
   Record counts and the new top self-cost lines in `PROFILING.md`; replace the stale 41eaa1c leads (E2, box_1d).
 
-**Phase 2: stable levers, one batched pass in WSL** (each against `--baseline=head`): E1, then E5, then E8 if the
+**Phase 2: stable levers, one batched pass in the container** (each against `--baseline=head`): E1, then E5, then E8 if the
 baseline shows `dct_64_to_16` is visible, then E6 (needs E5's final profile). E3 and E4 are measurements/decisions
 that need no bench. Adopt winners by the threshold above; each adoption is its own commit and `just lint` + the crate
 tests must pass.
 
-**Phase 3: nightly measurement runs** (no product-code change; scratch dirs): N10 and N17 in WSL on the bench build,
+**Phase 3: nightly measurement runs** (no product-code change; scratch dirs): N10 and N17 in the container on the bench build,
 N12 and N15 as `check`/`rustc` dumps, N14 (needs the PNG bench from 1a), N19, N1, N16.
 
-**Phase 4: robustness tooling:** N5 fuzzing in WSL (longest-running; start early and let it run while Phase 3 is read),
+**Phase 4: robustness tooling:** N5 fuzzing in the container (longest-running; start early and let it run while Phase 3 is read),
 N13 coverage from the same corpus/tests, N6 ASan on Windows after a link-and-run proof on a trivial crate.
 
 **Phase 5: compile time and footprint** (Windows, needs a quiet tree): T1 timings first, then E7, then N3, N8, N9,
@@ -97,7 +97,7 @@ N11, N2 only as T1 shows they could matter.
 **Phase 6: the pin decision.** With every number in hand: take a `rust-toolchain.toml` pin only if the wins justify
 moving the whole build (candidates: N14, N2, any `-Z` option that measured well, the section 5 cleanups taken as a
 group). Otherwise stay on stable and keep nightly for opt-in tooling. If taken: the pin and the changes it enables are
-separate commits, `just lint` and the full tests run on the pinned toolchain, and the WSL bench script gets the same pin.
+separate commits, `just lint` and the full tests run on the pinned toolchain, and the bench script runs on the same pin (it builds `/head` with its `rust-toolchain.toml`).
 
 **Phase 7: close out.** `PROFILING.md` final numbers, delete the scratch target dirs and branches, and report each item's result in the tracker.
 
@@ -106,11 +106,11 @@ separate commits, `just lint` and the full tests run on the pinned toolchain, an
 | ID | Evaluate | Evidence | How | Gate |
 |---|---|---|---|---|
 | E0 | Baseline at HEAD and stable-feature check | See Context 4; Phase 0 and 1 | Phase 0a, 1b | Everything below compares to it |
-| E1 | `-C target-cpu=x86-64-v3` | `.cargo/config.toml` sets no `target-cpu`, so the x86-64 baseline. `Hash::distance` (`crates/model/src/pdq.rs:27`) and the Hamming scan (`crates/dedup/src/pdq_index.rs:323`) use `count_ones`; POPCNT is not in baseline x86-64 (asm unverified, Phase 0b). Also AVX2 autovectorization of our own loops; the JPEG, resize and zlib kernels already pick their own SIMD paths | `RUSTFLAGS="-C target-cpu=x86-64-v3"` through `WSLENV`; compare `analyze_jpeg`, `thumb`, the new PDQ-search and PNG benches | Threshold; D1 allows adopting. A flag in `.cargo/config.toml` `[build]` also applies to the Windows build |
+| E1 | `-C target-cpu=x86-64-v3` | `.cargo/config.toml` sets no `target-cpu`, so the x86-64 baseline. `Hash::distance` (`crates/model/src/pdq.rs:27`) and the Hamming scan (`crates/dedup/src/pdq_index.rs:323`) use `count_ones`; POPCNT is not in baseline x86-64 (asm unverified, Phase 0b). Also AVX2 autovectorization of our own loops; the JPEG, resize and zlib kernels already pick their own SIMD paths | `RUSTFLAGS="-C target-cpu=x86-64-v3"` into the container with `-e`; compare `analyze_jpeg`, `thumb`, the new PDQ-search and PNG benches | Threshold; D1 allows adopting. A flag in `.cargo/config.toml` `[build]` also applies to the Windows build |
 | E2 | PDQ after 81ad925 | Premise gone (Context 4) | Re-read the Phase 1 profile; update the `PROFILING.md` lead | Close if `pdq` no longer dominates cache misses |
 | E3 | Lanczos weight cache (`precompute_coefficients` in the `fast_image_resize` fork, a git pin) | 3.2 M of 50.6 M instructions per thumbnail (6.4%) at 41eaa1c, mostly libm `sin` | Count (source, target) size repeats in a real `gallery thumbs` pass on a scratch catalog; prototype a cache only if repeats are common | High repeat rate and the threshold |
 | E4 | `DECODE_MARGIN = 4` (full-scale decode vs DCT scaling) | 28.5 M vs 21.2 M instructions for images just under 4x | A quality comparison (FINDINGS "Thumbnails"), not a speed one | A decision for the maintainer; the price is recorded |
-| E5 | Release `lto = "fat"`/`"thin"` and `codegen-units = 1`; nightly variants `-Zcross-crate-inline-threshold=always`, `-Zinline-mir` | `[profile.release]` sets only `debug = "line-tables-only"`; no cross-crate inlining between the pg-* crates, the vendored decoders and std; release is non-incremental so inference is on | `CARGO_PROFILE_BENCH_LTO` / `_CODEGEN_UNITS` through `WSLENV`, also build time; nightly variants only if the stable ones leave a gap | Threshold and acceptable build time |
+| E5 | Release `lto = "fat"`/`"thin"` and `codegen-units = 1`; nightly variants `-Zcross-crate-inline-threshold=always`, `-Zinline-mir` | `[profile.release]` sets only `debug = "line-tables-only"`; no cross-crate inlining between the pg-* crates, the vendored decoders and std; release is non-incremental so inference is on | `CARGO_PROFILE_BENCH_LTO` / `_CODEGEN_UNITS` into the container with `-e`, also build time; nightly variants only if the stable ones leave a gap | Threshold and acceptable build time |
 | E6 | PGO (`-Cprofile-generate` / `-Cprofile-use`) | Stable; needs `llvm-profdata` (`llvm-tools` component) | Instrument a thumbnail and import run on a scratch catalog, rebuild, compare | After E5; threshold and a workable profile-refresh process |
 | E7 | `target/` footprint (48 GiB, 78,053 files) | `Cargo.toml` leaves dev `debug` unset (full) and builds dependencies at `opt-level = 3` (inferred cause, unmeasured) | `[profile.dev.package."*"] debug = "line-tables-only"` (or `false`), `split-debuginfo`; compare `target/` size after one full dev build; then N11 | Size down without hurting debugging |
 | E8 | Bit-exact loop interchange in `dct_64_to_16` (`crates/analysis/src/pdq.rs:218-242`) | The k-sums are in-order f32 and `input[k][j]` is read down a column. Looping i, k, j keeps each output's operation sequence (Rust never fuses `a*b+c`), so hashes stay bit-identical, and lets LLVM vectorize across j; stage 2 needs the DCT matrix transposed once (same values). Tests assert exact bits against the reference crate (`matches_reference_crate`, `pdq.rs:361`) | Only if the Phase 1 profile shows it visible. Branch `eval/e8`; N17 remarks show whether the current loop vectorizes | Bit-identical hashes and the threshold |
@@ -119,11 +119,11 @@ separate commits, `just lint` and the full tests run on the pinned toolchain, an
 
 | ID | Evaluate | Evidence | How | Gate |
 |---|---|---|---|---|
-| N5 | `cargo-fuzz` (libFuzzer) on parsers of untrusted bytes | No fuzzing existed when this was written. Superseded: a top-level `fuzz/` crate has seven targets (`fuzz/fuzz_targets/`: codec_transform, container_chunks, container_jpeg, edit_rotate, metadata_read, model_keys, model_query_json) and `just fuzz-smoke` runs them (`tools/fuzz-smoke.sh`); they are not the per-crate directories planned here. Targets: `Meta::read` (`crates/metadata/src/lib.rs:101`), `orientation` (148), `patch_orientation` (635; rewrites the user's files through write-back), `animation::frames`, the codec wrappers (`crates/codec/src/codecs.rs`). `pg-metadata` and `pg-codec` build on Linux | `fuzz/` targets (in `crates/metadata/` and `crates/codec/`) seeded from the test samples; a fixed time per target in WSL; check `patch_orientation` output re-parses with the orientation asked | Any crash, hang or OOM: fix with a regression test |
+| N5 | `cargo-fuzz` (libFuzzer) on parsers of untrusted bytes | No fuzzing existed when this was written. Superseded: a top-level `fuzz/` crate has seven targets (`fuzz/fuzz_targets/`: codec_transform, container_chunks, container_jpeg, edit_rotate, metadata_read, model_keys, model_query_json) and `just fuzz-smoke` runs them (`tools/fuzz-smoke.sh`); they are not the per-crate directories planned here. Targets: `Meta::read` (`crates/metadata/src/lib.rs:101`), `orientation` (148), `patch_orientation` (635; rewrites the user's files through write-back), `animation::frames`, the codec wrappers (`crates/codec/src/codecs.rs`). `pg-metadata` and `pg-codec` build on Linux | `fuzz/` targets (in `crates/metadata/` and `crates/codec/`) seeded from the test samples; a fixed time per target in the container; check `patch_orientation` output re-parses with the orientation asked | Any crash, hang or OOM: fix with a regression test |
 | N13 | Branch coverage: `-Cinstrument-coverage -Zcoverage-options=branch` (`mcdc` is rejected on this nightly) | Needs `llvm-tools` | Tests plus N5's corpus, scratch target dir; read uncovered parser branches | Informational; add tests |
 | N6 | `-Zsanitizer=address` over the tests, aimed at the C boundaries (turbojpeg, ffmpeg-next, `crates/platform/src/dir.rs`, `crates/video/src/lib.rs`) | The MSVC target supports only `address`. Needs the ASan runtime DLL on `PATH`. Link-and-run not yet tried; C libraries stay uninstrumented | A trivial crate first, then `pg-codec` / `pg-library` tests with `--target x86_64-pc-windows-msvc` | Fix what it finds |
 | N1 | `-Zub-checks=yes` on a release test run, and `cargo careful` | Dev and test already check UB (debug-assertions); this adds release / `dhat` coverage only. Failures abort. The only `from_raw_parts` in `crates/` is `platform/src/dir.rs:429` (sound: the API-filled buffer); more unsafe in `video`, `platform/src/process.rs`, `crates/desktop`, `vendor/` | One run with `RUSTFLAGS="-Zub-checks=yes"`, own target dir | Informational, low priority |
-| N10 | `-Zannotate-moves[=N]` | Debug info only: big moves appear as `core::profiling::compiler_move::<T, SIZE>` frames above `memcpy`. libc memcpy / memset / malloc together were 2.7% / 3.2% with no Rust attribution. Whether callgrind plus `cgtab.py` shows the frames is unverified | WSL bench build with the flag; counts must equal the baseline (self-check); list memcpy callers by annotated type | Informational: avoidable large moves, or all in C libraries |
+| N10 | `-Zannotate-moves[=N]` | Debug info only: big moves appear as `core::profiling::compiler_move::<T, SIZE>` frames above `memcpy`. libc memcpy / memset / malloc together were 2.7% / 3.2% with no Rust attribution. Whether callgrind plus `cgtab.py` shows the frames is unverified | container bench build with the flag; counts must equal the baseline (self-check); list memcpy callers by annotated type | Informational: avoidable large moves, or all in C libraries |
 | N12 | `-Zprint-type-sizes` of hot structs | Recent commits moved data inline (ArrayVec of 12, inline ThumbHash) | `cargo +nightly rustc -p pg-analysis -- -Zprint-type-sizes` (and `pg-model`), scratch dir; list types over a threshold | Fix only clearly wasteful padding |
 | N15 | `-Zmove-size-limit=N` (`large_assignments` lint) | `pdq.rs:74`, `:94` and `:218` return `[f32; 256]` by value (in the current file); `crates/model/src/grid.rs:41` pins `Entry` at 56 bytes | `RUSTFLAGS=-Zmove-size-limit=512 cargo +nightly check`, scratch dir | Informational; pairs with N10 |
 | N16 | `-Zrandomize-layout -Zlayout-seed=N` over the tests | Catches reliance on unspecified `repr(Rust)` layout (the UTF-16 slice at `platform/src/dir.rs:429`, FFI wrappers, vendored transmutes); cxx shared structs are `repr(C)`; std is not randomized without build-std | Several seeds, scratch dir | Green across seeds |
@@ -140,7 +140,7 @@ separate commits, `just lint` and the full tests run on the pinned toolchain, an
 | N3 | `--jobs-frontend=N` (with `-Zunstable-options`; `-Zthreads` is superseded) and `-Zshare-generics=yes` | Both accepted by the nightly. Front-end time matters for `check` / clippy on `pg-desktop` (cxx-qt bridge); `opt-level = 3` dependencies may duplicate generics | Re-time T1 one flag at a time; `target/` size and bench counts for share-generics | Clear time or size win; note the CPU cost |
 | N8 | `-Zself-profile`, `-Ztime-passes`, `-Zllvm-time-trace`, `-Zdump-mono-stats`, `-Zmacro-stats` | `--timings` splits by crate only | Only if T1 shows compile time is the problem: slowest crate first | Diagnostic for N2 / N3 |
 | N9 | `-Zbuild-std` | `rust-src` not installed. Lets std use `x86-64-v3` and gives sanitizers and ub-checks std coverage | Only if E1 pays or for N6 | Clear win only |
-| N11 | Cargo options: `-Zembed-metadata=no`, `-Zbuild-analysis` with `cargo report rebuilds`, `-Zfeature-unification` (`CARGO_RESOLVER_FEATURE_UNIFICATION=workspace`), `-Zchecksum-freshness` (`CARGO_BUILD_FINGERPRINT=content`) | The tree is copied to WSL for benches and edited on Windows; mtime-only freshness can rebuild the `vendor/*` path crates for nothing. Duplicate dependency artifacts across `-p` and `--workspace` builds are unchecked. Status: `ci.yml` now sets `CARGO_UNSTABLE_CHECKSUM_FRESHNESS` and `CARGO_BUILD_FINGERPRINT=content` | After E7: `cargo report rebuilds`, `target/` size, a no-op rebuild after a copy | Adopt what removes rebuilds or disk |
+| N11 | Cargo options: `-Zembed-metadata=no`, `-Zbuild-analysis` with `cargo report rebuilds`, `-Zfeature-unification` (`CARGO_RESOLVER_FEATURE_UNIFICATION=workspace`), `-Zchecksum-freshness` (`CARGO_BUILD_FINGERPRINT=content`) | The tree is exported into the container for benches and edited on Windows; mtime-only freshness can rebuild the `vendor/*` path crates for nothing. Duplicate dependency artifacts across `-p` and `--workspace` builds are unchecked. Status: `ci.yml` now sets `CARGO_UNSTABLE_CHECKSUM_FRESHNESS` and `CARGO_BUILD_FINGERPRINT=content` | After E7: `cargo report rebuilds`, `target/` size, a no-op rebuild after a copy | Adopt what removes rebuilds or disk |
 | N2 | Cranelift backend for our crates (`codegen-backend` profile key) | Component `rustc-codegen-cranelift-x86_64-pc-windows-msvc` available, not installed. cg_clif has no Windows unwinding and partial `std::arch`; panic=abort is its default. Whether we rely on unwinding is unverified (`crates/desktop/src/panic_log.rs` installs a hook). The pin makes `cargo-features` possible | After T1, only if codegen is a large share; run the suite under it | WATCH: a clear win and green tests |
 
 ## 5. Unstable features with a site in our code (candidates under the pin, Phase 6)
@@ -188,9 +188,9 @@ Library: 176 (a-g) and 235 (h-z) entries examined, 133 bulk-excluded. Flags: 177
 ## Critical files
 
 - Edited by adoptions: `Cargo.toml` (profiles), `.cargo/config.toml` (`target-cpu`), `crates/analysis/src/pdq.rs` (E8),
-  `docs/PROFILING.md` (results), and with the pin `rust-toolchain.toml`, `tools/profiling/wsl-bench.sh`, section 5 sites.
+  `docs/PROFILING.md` (results), and with the pin `rust-toolchain.toml`, `tools/profiling/bench.sh`, section 5 sites.
 - New: bench inputs in `crates/bench/benches/ir/linux.rs`; `fuzz/` directories under `crates/metadata/` and `crates/codec/` (N5; built as the top-level `fuzz/` crate instead).
-- Reused as is: `tools/profiling/wsl-bench.sh`, `cgtab.py`, `bench_data.py`, `crates/bench/benches/ir.rs`, the
+- Reused as is: `tools/profiling/bench.sh`, `cgtab.py`, `bench_data.py`, `crates/bench/benches/ir.rs`, the
   `justfile` recipes (`lint`: fmt, clippy `-D warnings`, `cargo deny`, `cargo machete`, ruff, markdownlint).
 
 ## Verification

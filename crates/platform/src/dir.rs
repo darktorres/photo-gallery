@@ -737,15 +737,23 @@ mod listing_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn each_entry_carries_its_own_device_across_a_mount() {
-        // `/proc` is a mount of its own (procfs): its entries are on its device, which the root's is not.
+        // `/proc` is a mount of its own (procfs), so it is on a different device from `/`. Each entry carries the device
+        // of its own `lstat`: procfs's device, or, for a path a container masks with a bind mount (Docker does, for some
+        // of /proc), that mount's device. The check holds either way, and it fails if every entry took the folder's device.
+        use std::ffi::OsStr;
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::MetadataExt;
         let mut lister = Lister::new();
         let root = lister.open(&units_of(b"/")).unwrap();
         let proc = lister.open(&units_of(b"/proc")).unwrap();
-        let (root_volume, proc_volume) = (root.volume().unwrap(), proc.volume().unwrap());
-        assert_ne!(root_volume, proc_volume);
-        let mut volumes = Vec::new();
-        lister.each(&proc, |e| volumes.push(e.volume)).unwrap();
-        assert!(!volumes.is_empty());
-        assert!(volumes.iter().all(|v| *v == Some(proc_volume)));
+        assert_ne!(root.volume().unwrap(), proc.volume().unwrap());
+        let mut seen = Vec::new();
+        lister.each(&proc, |e| seen.push((e.name.to_vec(), e.volume))).unwrap();
+        assert!(!seen.is_empty());
+        for (name, volume) in &seen {
+            let own =
+                std::fs::symlink_metadata(std::path::Path::new("/proc").join(OsStr::from_bytes(name))).unwrap().dev();
+            assert_eq!(*volume, Some(own), "the entry {:?} of /proc", OsStr::from_bytes(name));
+        }
     }
 }

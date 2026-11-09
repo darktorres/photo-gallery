@@ -160,7 +160,7 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 `QT_FORCE_STDERR_LOGGING=1` is set.
 
 `just lint` also checks that `pg-model` and `pg-client` build for WebAssembly (`wasm32-unknown-unknown`) and that the
-rustdoc has no warnings. `just wsl-check` runs clippy in WSL for the Linux-only code. `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
+rustdoc has no warnings. `just check-linux` runs the Linux job's checks, clippy included, in the container (the Linux-only code). `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
 (the allowed list is in `deny.toml`), duplicate versions, and each dependency staying in its crates (Qt in `pg-desktop` alone, the image codecs in
 `pg-codec`, SQLite in `pg-catalog`, `pg-query`, `pg-schema` and `pg-thumbcache`);
 `cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or

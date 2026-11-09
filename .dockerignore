@@ -1,10 +1,9 @@
-# The image build reads only the setup script, the toolchain file and the entrypoint (docker/Dockerfile). Everything else
+# The image build reads only docker/ (the Dockerfile, the entrypoint, the apt lists) and the toolchain file. Everything else
 # is left out of the build context: the repository's own target folder alone is tens of gigabytes.
 *
 !docker
 docker/*
+!docker/apt-packages.txt
+!docker/apt-packages-bench.txt
 !docker/entrypoint.sh
 !rust-toolchain.toml
-!tools
-tools/*
-!tools/profiling

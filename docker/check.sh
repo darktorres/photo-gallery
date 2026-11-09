@@ -1,7 +1,7 @@
 #!/bin/bash
 # The Linux job of CI (.github/workflows/ci.yml), step by step, in the container's /work (the repository). Each step
-# stops the run on failure, as in CI. Run it from the repository root, with the container from docker/README.md:
-#   docker run --rm --security-opt systempaths=unconfined -v "$PWD:/work" -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/home/pg/.cargo/registry pg-dev
+# stops the run on failure, as in CI. Run it through the launcher, from the repository root: `just check-linux`
+# (tools/linux.py check), which builds the image and mounts the working tree here.
 set -euo pipefail
 
 step() { printf '\n== %s\n' "$*"; }

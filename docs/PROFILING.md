@@ -2,7 +2,7 @@
 
 Measuring CPU cost by **instructions executed**, not time. Both tools instrument every instruction, so the counts are
 exact and do not depend on clock speed or machine load. Intel SDE runs the real Windows binary. Callgrind, through
-the gungraun benches, runs a Linux build under WSL2 and adds call graphs, cache simulation and run-to-run diffs.
+the gungraun benches, runs a Linux build in the pg-dev container (docker/) and adds call graphs, cache simulation and run-to-run diffs.
 Newest entries at the top of each section. Every number states the binary, the command and the data it was
 measured on.
 
@@ -93,7 +93,7 @@ considered:
 | DynamoRIO (`inscount`, `drcachesim`) | Totals; cache simulation (the cachegrind equivalent) | Keep in mind for cache questions |
 | ETW PMC counting (`xperf -pmc InstructionRetired`) | Hardware instruction counts per thread, no slowdown | No per-function view; blocked when Hyper-V/VBS is on |
 | `-C instrument-coverage` | Exact execution counts per code region | A proxy for loop counts, not instructions |
-| WSL2 + callgrind / gungraun | The real thing | Measures the Linux build (allocator, I/O, TurboJPEG), not ours |
+| callgrind / gungraun, in the pg-dev container | The real thing | Measures the Linux build (allocator, I/O, TurboJPEG), not ours |
 
 **Install:** SDE 10.13.1 (2026-07-28), `sde-external-10.13.1-2026-07-28-win.tar.xz` from
 <https://www.intel.com/content/www/us/en/download/684897/intel-software-development-emulator.html>, SHA256
@@ -119,19 +119,20 @@ sde.exe -mix -omix out.txt -- prog.exe args     # per-function and per-block cou
   but threads started after the stop still count.
 - **Slowdown:** about 10–100×, roughly valgrind's.
 
-## Tool: WSL2 + callgrind / gungraun (2026-10-31)
+## Tool: callgrind / gungraun (2026-10-31; run in WSL2 then, in the pg-dev container since 2026-11-09)
 
 For repeatable instruction counts per function (regression benches), with callgrind's call graph and its inclusive
 costs, which SDE lacks. The catch: it measures the **Linux** build of the per-file code (`pg-analysis`, `pg-render`). That build uses glibc's allocator and
 FFmpeg 8 (Ubuntu's `libavcodec` 62.11; the Windows app ships FFmpeg with `avcodec-63`). libjpeg-turbo is built from
 the same vendored source, but with GCC instead of MSVC.
 
-**Setup** (a separate WSL2 distro, `Ubuntu-26.04` (26.04.1 LTS), kernel 6.18, 12 CPUs; used as root):
+**Setup as it was on 2026-10-31** (a separate WSL2 distro, `Ubuntu-26.04` (26.04.1 LTS), kernel 6.18, 12 CPUs; used as root;
+superseded: the environment is now the pg-dev image, `docker/Dockerfile`, which installs what is listed here):
 
 - Installed with `wsl --install -d Ubuntu-26.04 --no-launch` and first started with `-u root`, which skips creating
   a user. It is the default distro. `Ubuntu-24.04` was tried first, but it only has FFmpeg 6.1 and valgrind 3.22;
   it was unregistered on 2026-10-31.
-- `tools/profiling/wsl-setup.sh` (idempotent) installs the rest: valgrind 3.26, the build tools, FFmpeg 8's
+- `tools/profiling/wsl-setup.sh` (idempotent; deleted on 2026-11-09, its steps are now in `docker/Dockerfile`) installed the rest: valgrind 3.26, the build tools, FFmpeg 8's
   headers, rustup (the toolchain that `rust-toolchain.toml` names, with clippy and rustfmt), and the `gungraun-runner` of the exact version in
   `Cargo.lock`.
 
@@ -144,25 +145,26 @@ comparable with the ones from the real photo that the benches used before (FINDI
 at build time picks another file. Reading it and creating the `Analyzer` and the `Maker` happen in gungraun's `setup`, outside
 the measured function. Their buffers start empty, so each run measures a worker's first file. The bench also has
 catalog benches (`crates/bench/benches/ir/catalog.rs`: the grid's list, the tree and the background job, on a
-synthetic catalog made by `tools/profiling/bench_data.py`); `wsl-bench.sh` takes a bench name to run only those.
+synthetic catalog made by `tools/profiling/bench_data.py`); `tools/profiling/bench.sh` (`just linux-bench`) takes a bench name to run only those.
 
 ```powershell
-wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-setup.sh   # once, and after a gungraun update
-wsl -d Ubuntu-26.04 -u root -- bash tools/profiling/wsl-bench.sh   # 3 s once built; compared with the previous run
+just linux-build                          # once, and after a Dockerfile or Cargo.lock (gungraun) change
+just perf                                 # the committed HEAD's benches, compared with docs/perf/baseline.json
+just linux-bench --save-baseline=before   # gungraun's own options, without the gate
 ```
 
-`wsl-bench.sh` builds the **committed HEAD** in a clone on WSL's own disk (`~/photo-gallery`, reset on every run).
-That's faster than `/mnt/c`, and the Windows tree's uncommitted work stays out. Arguments after it go to gungraun
+`just perf` benches the **committed HEAD**: the launcher exports it (`git archive`) into the container, so the Windows tree's
+uncommitted work stays out and the build runs on the container's own disk. Arguments of `just linux-bench` go to gungraun
 (e.g. `--save-baseline=before`, then `--baseline=before`). A full run's `.out` files are also archived, zstd-compressed, to
 `docs/perf/callgrind/<sha>.tar.zst` (the benched HEAD's short sha, committed). A run given a bench name (a filter) is partial and
 is not archived; options such as `--save-baseline` do not make a run partial. An option's value goes after `=`:
 `--save-baseline before` is refused, because `before` could be a bench name.
 Unpack an archive with
-`tar --zstd -xf docs/perf/callgrind/<sha>.tar.zst -C some/dir` (WSL has zstd from `tools/profiling/apt-packages.txt`). Read the results with `cgtab.py`, in WSL:
+`tar --zstd -xf docs/perf/callgrind/<sha>.tar.zst -C some/dir` (the container has zstd: `docker/apt-packages-bench.txt`). Read the results with `cgtab.py`, in the container (`just linux-shell`):
 
 ```sh
-O=~/photo-gallery/target/gungraun/pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out
-C=/mnt/d/GitHub/photo-gallery/tools/profiling/cgtab.py
+O=/bench/target/gungraun/pg-bench/ir/per_file/thumb_jpeg.h256/callgrind.thumb_jpeg.h256.out
+C=/work/tools/profiling/cgtab.py
 $C table $O                              # self, inclusive, calls per function
 $C table $O --sort incl --match 'pg_analysis::'
 $C table $O --by crate                   # self cost per crate, following inlined code to its source
@@ -176,11 +178,11 @@ $C diff $O.old $O                        # per function: what the last change di
 2. A way around `.cargo/config.toml`'s `[env]`, which sets Windows paths for every build. `FFMPEG_DIR = D:/…` made
    `crates/video/build.rs` panic looking for the DLLs, and `LIBCLANG_PATH = C:/…/LLVM/bin` kept bindgen from finding
    libclang. Cargo has no per-target `[env]` and can't unset an entry, but the real environment wins over it. So
-   `wsl-bench.sh` sets `LIBCLANG_PATH` to the newest `/usr/lib/llvm-*/lib`, and sets `FFMPEG_DIR` to a prefix that
-   `wsl-setup.sh` makes (`~/.local/share/pg-bench/ffmpeg`, with `include` and `lib` linked to Ubuntu's multiarch
+   the container sets `LIBCLANG_PATH` (`docker/entrypoint.sh`) to the newest `/usr/lib/llvm-*/lib`, and `FFMPEG_DIR` is a prefix that
+   the Dockerfile makes (`/opt/pg/ffmpeg`, with `include` and `lib` linked to Ubuntu's multiarch
    directories). `FFMPEG_DIR=/usr` doesn't work, because the headers are in `/usr/include/x86_64-linux-gnu`.
 3. `build.rs` copies the FFmpeg DLLs on Windows targets only.
-4. `.gitattributes` keeps `*.sh` at LF: they run under WSL straight from the Windows checkout, where
+4. `.gitattributes` keeps `*.sh` at LF: they run in the container straight from the Windows checkout, where
    `core.autocrlf` would add `\r`.
 
 **Noise between builds:** the code is deterministic, but code generation is not stable across unrelated changes. From

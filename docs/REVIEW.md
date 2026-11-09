@@ -107,7 +107,7 @@ Covered: the Rust sources under `crates/`, the build scripts and manifests, `Jus
 | `crates/desktop/cpp` | all C++ sources | None. Checked: LIFO priority, the `to_qimage` ownership transfer, the link's cancel flag, the GPU device's `qputenv` only when unset, the `SingleShot` disconnect, the debug-only live reload, and the screenshot's `ready` poll. |
 | `crates/gallery` | `src/main.rs`, `build.rs`, `Cargo.toml` | None |
 | `crates/testkit`, `crates/bench` | all | R-122 (testkit) |
-| `tools` | `wsl-check.sh`, `synthetic_library.py`, `lint-qml.ps1`, `make_icon.py`, `profiling/` | None open |
+| `tools` | `linux.py`, `synthetic_library.py`, `lint-qml.ps1`, `make_icon.py`, `profiling/` | None open |
 | Workspace | `Justfile`, `deny.toml`, `.cargo/config.toml`, root `Cargo.toml` | None open |
 | Rust crates | `crates/catalog`, `model`, `edit`, `codec`, `thumbcache`, `render`, `metadata`, `container`, `video`, `exiftool`, `library`, `jobs`, `analysis`, `dedup`, `cli`, `yandex`, `desktop/src`, `client`, `app`, `platform`, `trace`, `testkit`, `gallery`, `bench`, and the crate manifests | R-72 to R-131 |
 

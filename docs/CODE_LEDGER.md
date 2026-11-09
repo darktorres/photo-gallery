@@ -572,11 +572,9 @@ and counted there.
 | `tools/profiling/cgtab.py` | Python | 364 |
 | `tools/profiling/make_bench_jpeg.py` | Python | 63 |
 | `tools/profiling/synthetic_library.py` | Python | 123 |
-| `tools/profiling/wsl-bench.sh` | Shell | 63 |
-| `tools/profiling/wsl-setup.sh` | Shell | 54 |
+| `tools/profiling/bench.sh` | Shell | 77 |
 | `tools/qmltest.ps1` | PowerShell | 50 |
 | `tools/shots/fixture.py` | Python | 112 |
-| `tools/wsl-check.sh` | Shell | 29 |
 
 ## Repository root
 

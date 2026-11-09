@@ -1,5 +1,5 @@
 //! The size of the volume a folder is on, for the defaults that scale with the disk (the thumbnail cache's cap).
-//! `GetDiskFreeSpaceExW` on Windows, `statvfs` on Linux (the WSL checks), and `None` elsewhere, where the caller keeps
+//! `GetDiskFreeSpaceExW` on Windows, `statvfs` on Linux (the Linux checks), and `None` elsewhere, where the caller keeps
 //! its fixed default.
 
 use std::path::Path;

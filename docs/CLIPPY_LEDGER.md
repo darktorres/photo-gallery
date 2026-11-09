@@ -673,7 +673,7 @@ string_slice = "warn"
 ## Method
 
 - - Linux-only code (`#[cfg(target_os = "linux")]`, and the bench `ir/linux.rs`, which `ir.rs` includes on Linux) is not
-  compiled by the Windows gate. Check it in WSL with the Linux CI job's commands (see Phase 3).
+  compiled by the Windows gate. Check it in the container (`just check-linux`), with the Linux CI job's commands (see Phase 3).
 - Counts come from `cargo clippy --workspace --lib --bins --message-format=json` with the candidate lints passed as
   `-W`. Diagnostics are deduplicated by lint, file, line and message.
 - A lint is done when it is enabled at its level in `Cargo.toml` and `just lint` passes.

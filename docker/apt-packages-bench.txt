@@ -1,0 +1,4 @@
+# The apt packages only the callgrind benches need (docs/PROFILING.md): Valgrind, which runs them, and zstd, which unpacks
+# their results. The container's tools stage installs them; CI's Linux job does not, since it runs no benches.
+valgrind
+zstd

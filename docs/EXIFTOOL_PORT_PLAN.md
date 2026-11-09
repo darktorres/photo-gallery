@@ -323,7 +323,7 @@ One commit per verified step. Before building, check that no other build is runn
   - The app-level diff explained file by file.
   - `ratings` identical before and after the re-baseline pass.
 - **Measured once at the end:**
-  - Instruction counts with gungraun (`tools/profiling/wsl-bench.sh`, which benches the committed HEAD), before and
+  - Instruction counts with gungraun (`just perf`, which benches the committed HEAD), before and
     after.
     - `analyze_jpeg` (`crates/bench/benches/ir/linux.rs:46`) reads `PG_BENCH_JPEG`.
     - A new `meta_read` bench uses a camera JPEG with EXIF, XMP and a thumbnail IFD. It is added in step 0's commit

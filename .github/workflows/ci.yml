@@ -1,16 +1,16 @@
 # CI (S-15). Two jobs: `windows` (the app: lint, tests, the QML tests, the screenshot comparison),
 # and `linux` (the whole workspace, Qt 6.12 for Linux included: formatting, clippy, tests, docs, the wasm32 check, the
-# supply-chain checks, the Python and Markdown lints). The Linux job runs cargo directly, where the Windows job runs the
-# Justfile's recipes: the Justfile's recipes are Windows-first (QT_DIR, PowerShell). The compiler is pinned in
+# supply-chain checks, the Python and Markdown lints). The Linux job runs the container's checks
+# (docker/check.sh); the Windows job runs the Justfile's recipes (Windows-first: QT_DIR, PowerShell). The compiler is pinned in
 # rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
-# comment; .github/dependabot.yml proposes updates. The Linux packages are in tools/profiling/apt-packages.txt.
+# comment; .github/dependabot.yml proposes updates. The Linux packages are in docker/apt-packages.txt.
 #
 # Inputs from outside the repository, and what each one is pinned to:
 #   - Qt 6.12.0 (msvc2022_64), installed by jurplel/install-qt-action at C:\Qt\6.12.0\msvc2022_64. The Windows job sets
 #     QT_DIR to that folder, as a developer's .env does.
 #   - FFmpeg 9.0 shared build, GPL (BtbN autobuild-2026-10-30-13-01): pinned in the Justfile, which `just setup` fetches and
 #     checks against its SHA-256 (GitHub's digest of the release asset). The Windows job runs that recipe.
-#   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in tools/profiling/apt-packages.txt.
+#   - ExifTool (Chocolatey) at EXIFTOOL_VERSION, and the Linux packages in docker/apt-packages.txt.
 #
 # The screenshot comparison starts informational (continue-on-error) and becomes required once it is stable (plan S-15).
 name: CI
@@ -206,106 +206,44 @@ jobs:
           if-no-files-found: ignore
 
   linux:
-    name: Linux (whole workspace, Qt)
+    name: Linux (whole workspace, in the pg-dev container)
     runs-on: ubuntu-26.04
-    timeout-minutes: 90
-    env:
-      # The desktop crate's tests run without a display.
-      QT_QPA_PLATFORM: offscreen
-      # Link with mold (installed in the system step). qt-build-utils picks the linker when the build script runs, and
-      # a cached run keeps its choice, so installing mold alone changes nothing: the cache's build script keeps ld.bfd and
-      # replays its warning. Setting the flag here changes every unit's fingerprint, so the next run rebuilds once.
-      RUSTFLAGS: -C link-arg=-fuse-ld=mold
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - name: Rust toolchain (rust-toolchain.toml)
-        run: rustup show
-
-      - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
-        run: echo "PG_DESKTOP_CONTENT_KEY=${{ hashFiles('crates/desktop/**') }}" >> "$GITHUB_ENV"
-
+      # The checks run in the container that docker/Dockerfile builds: the same image `just check-linux` runs on a
+      # developer's machine. Its versions are the Justfile's pins, which tools/linux.py reads with `just --evaluate`, so the
+      # runner needs `just` and nothing else from the pins.
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           # Pinned (see the Windows job): `just lint` checks these versions too.
-          tool: just@1.59.0,cargo-deny@0.20.2,cargo-machete@0.9.2
+          tool: just@1.59.0
 
-      # The apt packages (tools/profiling/apt-packages.txt) and the FFmpeg and libclang links. Not cached: an apt cache
-      # restores files without registering them with apt, so apt downloads them again anyway, and the cached step did nothing.
-      - name: System packages and libraries (FFmpeg, libclang)
-        run: bash tools/profiling/wsl-setup.sh --ci
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
 
-      - name: Build environment (FFmpeg and libclang, for the steps after this one)
-        # Each step runs in its own shell, so an export in one step does not reach the next. GITHUB_ENV carries these
-        # to every later step (Clippy and tests, Docs).
-        run: |
-          echo "FFMPEG_DIR=$HOME/.local/share/pg-bench/ffmpeg" >> "$GITHUB_ENV"
-          # pg-video's build script key (crates/video/build.rs): the FFmpeg headers' packages, by name and version. apt installs
-          # them fresh on every run, so the folder's mtimes change every run; the key changes only when the packages do.
-          echo "PG_VIDEO_CONTENT_KEY=$(dpkg-query -W -f='${Package} ${Version}\n' libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"
-          LIBCLANG_PATH=$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)
-          echo "LIBCLANG_PATH=$LIBCLANG_PATH" >> "$GITHUB_ENV"
-
-      - name: Qt 6.12.0 (linux_gcc_64, at $RUNNER_TEMP/Qt, as the Windows job's kit)
-        uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
+      # The Cargo target and registry, which the container mounts from this folder (tools/linux.py, PG_LINUX_CACHE). Saved
+      # even when a check fails, as the rust-cache of the Windows job was: the next run needs what this one compiled.
+      - name: Restore the Cargo caches
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          version: ${{ env.QT_VERSION }}
-          # The same aqtinstall commit as the Windows job (see there for why).
-          aqtsource: git+https://github.com/miurahr/aqtinstall.git@076e1659807d0b362a3ed684d54c2e9c775eb9c7
-          arch: linux_gcc_64
-          # The action installs to <dir>/Qt/<version>/<arch>: gcc_64 under RUNNER_TEMP.
-          dir: ${{ runner.temp }}
-          modules: qtmultimedia
-          cache: true
+          path: ${{ runner.temp }}/pg-linux-cache
+          key: pg-linux-cargo-${{ hashFiles('Cargo.lock', '**/build.rs') }}-${{ github.run_id }}
+          restore-keys: |
+            pg-linux-cargo-${{ hashFiles('Cargo.lock', '**/build.rs') }}-
 
-      - name: Qt's qmake and libraries (for cxx-qt and the test binaries)
-        run: |
-          # cxx-qt finds qmake through QMAKE; the test binaries load Qt's libraries from LD_LIBRARY_PATH.
-          echo "QMAKE=$RUNNER_TEMP/Qt/6.12.0/gcc_64/bin/qmake" >> "$GITHUB_ENV"
-          echo "LD_LIBRARY_PATH=$RUNNER_TEMP/Qt/6.12.0/gcc_64/lib" >> "$GITHUB_ENV"
+      # The image is built here when it is not in the runner's cache: the Dockerfile's layers are cached in the GitHub
+      # Actions cache (PG_LINUX_BUILD_CACHE=gha), and the checks run in it. docker/check.sh stops at the first failing step,
+      # as the Windows job's steps do.
+      - name: The Linux checks (docker/check.sh, in the container)
+        env:
+          PG_LINUX_CACHE: ${{ runner.temp }}/pg-linux-cache
+          PG_LINUX_BUILD_CACHE: gha
+        run: python3 tools/linux.py check
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
+      - name: Save the Cargo caches
+        if: always()
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
-          # Saved even when a step fails: lint and tests fail often while a change is being fixed, and what they compiled
-          # is what the next run needs (the default saves nothing from a failed job).
-          cache-on-failure: true
-          # The workspace crates too: a change to one crate rebuilds it and its dependents, not the whole workspace.
-          cache-workspace-crates: true
-          # As in the Windows job: a build.rs change must start a new entry, or it is never saved (see there).
-          key: ${{ hashFiles('**/build.rs') }}
-
-      # The Linux job runs the checks that do not need Windows, once: the Windows job's lint runs only the Windows-only ones.
-      # Every cargo command takes --locked: it fails before compiling if Cargo.lock would have to change.
-      - name: Formatting
-        run: cargo fmt --all --check
-
-      - name: Clippy and tests (the whole workspace)
-        run: |
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-          cargo test --workspace --locked
-
-      - name: Docs (warnings are errors, as the Windows job's lint)
-        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
-
-      - name: wasm32 (the shared model and the client stay free of platform code)
-        run: cargo check -p pg-model -p pg-client --locked --target wasm32-unknown-unknown
-
-      - name: Lockfiles of the workspaces outside the root (fuzz, eval/jpeg-decoders)
-        run: |
-          # Each is its own workspace with its own Cargo.lock, and is not built here: this fails when its lock would change.
-          cargo metadata --locked --manifest-path fuzz/Cargo.toml --format-version 1 >/dev/null
-          cargo metadata --locked --manifest-path eval/jpeg-decoders/Cargo.toml --format-version 1 >/dev/null
-
-      - name: Supply chain (licences, advisories, unused dependencies)
-        run: |
-          cargo deny check
-          cargo machete crates
-
-      - name: Python and Markdown
-        run: |
-          # The versions the Justfile's lint checks for (its ruff_version and markdownlint_version); bump both together.
-          python -m pip install --quiet ruff==0.17.3
-          ruff format --check .
-          ruff check .
-          npm install --global markdownlint-cli@0.50.0
-          markdownlint "**/*.md"
+          path: ${{ runner.temp }}/pg-linux-cache
+          key: pg-linux-cargo-${{ hashFiles('Cargo.lock', '**/build.rs') }}-${{ github.run_id }}

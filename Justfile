@@ -11,8 +11,8 @@ set windows-shell := ["pwsh", "-NoLogo", "-NoProfile", "-Command"]
 ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-30-13-01/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
 ffmpeg_sha256 := "7c09a4c6bd73a5013963f06b1c6175326605cbc2585444ebe0f740ef4f35b4c9"
 
-# The WSL distro the callgrind, fuzz and WSL-check recipes run in (PG_WSL_DISTRO overrides it).
-wsl_distro := env('PG_WSL_DISTRO', 'Ubuntu-26.04')
+# The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
+py := env('PG_PYTHON', 'python')
 
 # Qt's kit folder (QT_DIR, Qt 6.12.0 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
 # and the tests of the desktop crate need Qt's DLLs. Recipes that link Qt depend on `_qt`, which fails when it is unset.
@@ -80,6 +80,14 @@ markdownlint_version := "0.50.0"
 cargo_deny_version := "0.20.2"
 cargo_machete_version := "0.9.2"
 
+# The Linux container's pins (docker/Dockerfile): the launcher reads them from here with `just --evaluate`, so each is
+# written once. CI's Linux job runs the same image, and its `just` is the one in the install step (just_version).
+just_version := "1.59.0"
+cargo_fuzz_version := "0.13.2"
+qt_linux_version := "6.12.0"
+# The aqtinstall commit that installs Qt for Linux, as CI's jurplel/install-qt-action pins it for the Windows job.
+aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"
+
 # Fails when a lint tool is not the version above (tools/check-lint-tools.ps1).
 [private]
 _lint-tools:
@@ -129,25 +137,39 @@ shots *args: _qt
 qmltest: _qt
     pwsh -NoLogo -NoProfile -File tools/qmltest.ps1
 
-# The instruction-count gate (S-16.2): the callgrind benches in WSL, compared with docs/perf/baseline.json at ±1%
-# (tools/perf-check.sh). After a change that should move the counts: `just perf --update`. The bench data comes from
-# PG_BENCH_DATA_SOURCE (a Windows path in .env); WSLENV passes it to WSL as the WSL path.
+# The Linux checks, the callgrind benches and the fuzzer run in the pg-dev container (docker/, tools/linux.py). It is the
+# only Linux environment this repository uses. Needs Docker Desktop running; `just linux-build` builds the image.
+
+# The Linux job of CI, step by step, on the working tree (docker/check.sh). `check-linux-head` checks the committed HEAD.
+check-linux *args:
+    {{ py }} tools/linux.py check {{ args }}
+
+check-linux-head *args:
+    {{ py }} tools/linux.py check --head {{ args }}
+
+# Builds the image (docker/Dockerfile) at the pins above. The other recipes build it when it is missing.
+linux-build *args:
+    {{ py }} tools/linux.py build {{ args }}
+
+# The instruction-count gate (S-16.2): the callgrind benches in the container, compared with docs/perf/baseline.json at
+# ±1% (tools/perf-check.sh). After a change that should move the counts: `just perf --update`. The bench data is the
+# folder PG_BENCH_DATA_SOURCE names in .env, mounted read-only into the container.
 perf *args:
-    $env:WSLENV = 'PG_BENCH_DATA_SOURCE/p:' + $env:WSLENV; wsl -d {{ wsl_distro }} -u root -- bash tools/perf-check.sh {{ args }}
+    {{ py }} tools/linux.py perf {{ args }}
 
-# Each fuzz target for a short time, in WSL (fuzz/, tools/fuzz-smoke.sh): the fuzz smoke test (S-18.3). `just fuzz-smoke 300`
-# for five minutes per target.
+# Each fuzz target for a short time, in the container (fuzz/, tools/fuzz-smoke.sh): the fuzz smoke test (S-18.3).
+# `just fuzz-smoke 300` runs five minutes per target.
 fuzz-smoke *args:
-    wsl -d {{ wsl_distro }} -u root -- bash tools/fuzz-smoke.sh {{ args }}
+    {{ py }} tools/linux.py fuzz {{ args }}
 
-# Clippy (-D warnings) and the tests of the whole workspace, in WSL, on the committed HEAD: the Linux-only code compiles
-# and runs there (tools/wsl-check.sh). `just wsl-check-tree` checks the working tree instead, uncommitted changes included.
-wsl-check:
-    wsl -d {{ wsl_distro }} -u root -- bash tools/wsl-check.sh
+# The callgrind benches without the gate: gungraun's options (`just linux-bench --save-baseline=before`). Saves no archive
+# for a filtered run (docs/PROFILING.md).
+linux-bench *args:
+    {{ py }} tools/linux.py bench {{ args }}
 
-# The same checks on the working tree, uncommitted changes included (tools/wsl-check.sh --working-tree).
-wsl-check-tree:
-    wsl -d {{ wsl_distro }} -u root -- bash tools/wsl-check.sh --working-tree
+# A shell in the container, on the working tree.
+linux-shell:
+    {{ py }} tools/linux.py shell
 
 # qmllint and the QML compiler on the QML, failing on any warning or anything not compiled to C++. Uses the
 # pg.gallery types of the last build, so build first.

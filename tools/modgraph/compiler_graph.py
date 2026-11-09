@@ -5,7 +5,7 @@ it writes the DOT graph to OUT/<crate>.dot, maps each item to its enclosing modu
 and prints the cycle groups (strongly connected components with more than one module). cargo-modules cannot see the
 cxx-qt bridge modules, so the text scan (module_graph.py) covers those; `just modgraph` runs both.
 
-A group is reported, not failed here: the allowlist that makes a new group fail is M-16 in docs/MODULARITY_PLAN.md.
+A group that is not on the allowlist (tools/modgraph-allow.txt, for this target) fails the run; see allowlist.py.
 Usage: python tools/modgraph/compiler_graph.py [OUT_DIR]   (default: target/modgraph/cargo-modules)
 """
 
@@ -15,6 +15,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+from allowlist import check_all, target_source
 from module_graph import REPO, sccs
 
 DEFAULT_OUT = REPO / "target" / "modgraph" / "cargo-modules"
@@ -93,6 +94,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     failed = []
     groups_total = 0
+    by_crate = {}
     for crate in library_crates():
         try:
             dot = graph_of(crate)
@@ -106,9 +108,14 @@ def main():
         print(f"{crate}: {edges} module edges, {len(groups)} cycle group(s)")
         for group in groups:
             print("   group:", " <-> ".join(sorted(x or "(crate root)" for x in group)))
+        by_crate[crate.removeprefix("pg-")] = [[x or "(crate root)" for x in group] for group in groups]
     print(f"compiler graph: {groups_total} cycle group(s); DOT files in {out}")
     if failed:
         print("cargo-modules failed for: " + ", ".join(failed))
+        sys.exit(1)
+    failures = check_all(target_source(), by_crate)
+    print(f"compiler graph ({target_source()}): {failures} group(s) not on the allowlist, or stale entries")
+    if failures:
         sys.exit(1)
 
 

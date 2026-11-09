@@ -107,8 +107,8 @@ lint-windows: _qt && lint-qml
 # The module-cycle check (docs/MODULARITY_PLAN.md, M-0): the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the
 # cxx-qt bridge modules the compiler does not. cargo-modules is a tool, not a dependency: its version is pinned here and
-# in docker/Dockerfile (bump both). A missing or different one is installed at the pin. It reports the cycle groups; it
-# does not fail on them until the allowlist (M-16) exists.
+# in docker/Dockerfile (bump both). A missing or different one is installed at the pin. A cycle group that is not on the
+# allowlist (tools/modgraph-allow.txt) fails the check; the allowlist empties as M-1 to M-20 land (M-16).
 cargo_modules_version := "0.28.0"
 
 modgraph: _qt

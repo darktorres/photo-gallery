@@ -19,6 +19,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from allowlist import check_all
+
 REPO = Path(__file__).resolve().parents[2]
 OUT = Path(sys.argv[1]) if len(sys.argv) > 1 else REPO / "target" / "modgraph"
 
@@ -279,6 +281,11 @@ def main():
         print(f"{crate}: {s['modules']} modules, {s['edges']} edges, cycles={len(s['cycles'])}")
         for c in s["cycles"]:
             print("   cycle:", " <-> ".join(label(x) for x in c))
+    groups = {crate: [[label(x) for x in c] for c in s["cycles"]] for crate, s in summary.items()}
+    failures = check_all("scan", groups)
+    print(f"text scan: {failures} group(s) not on the allowlist, or stale entries")
+    if failures:
+        sys.exit(1)
 
 
 def write_dot(crate, nodes, edges):

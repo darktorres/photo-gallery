@@ -1,0 +1,41 @@
+# The module-cycle allowlist (docs/MODULARITY_PLAN.md, M-0 and M-16). Each line is one known cycle group still to be fixed:
+#   source crate: member, member, ...
+# source: scan (the text scan, module_graph.py), linux or windows (the compiler's module graph, compiler_graph.py, on
+# that target). crate: the directory name without `pg-`. Members: as the scan labels them. A group that fails the check
+# is either new (fix it, or list it here with its plan step) or fixed (remove its line in the same commit).
+
+# Text scan (the same on every target): cxx-qt bridges are invisible to the compiler.
+scan app: app, images, library, reader   # D (M-4)
+scan app: yandex, yandex::replay   # F (M-19)
+scan catalog: (crate root), browse::read, browse::read::changes, browse::read::details, browse::read::facets, browse::read::grid, browse::read::state, browse::read::tree, browse::read::views, pair, schema, writes   # E, G (M-3, M-3a, M-7)
+scan desktop: trace, trace::qobject   # J (M-20)
+scan desktop: (crate root), app, command_line, command_line::qobject, panic_log, screenshot   # A (M-1)
+scan desktop: animation, animation::qobject   # J (M-20)
+scan desktop: viewport, viewport::qobject   # J (M-20)
+scan desktop: picker, picker::qobject   # J (M-20)
+scan desktop: gallery, gallery::qobject   # J (M-20)
+scan desktop: keymap, keymap::qobject   # J (M-20)
+scan desktop: controller, deadline, folders, folders::qobject, shell, shell::qobject   # B (M-6), J (M-20)
+scan desktop: facet_choices, facet_choices::qobject, filters, filters::qobject   # C (M-5), J (M-20)
+scan desktop: library, library::qobject   # J (M-20)
+scan desktop: settings, settings::qobject   # J (M-20)
+scan desktop: video_source, video_source::qobject   # J (M-20)
+scan desktop: words, words::qobject   # J (M-20)
+scan desktop: yandex, yandex::qobject   # J (M-20)
+scan platform: dir, dir::unix, dir::windows   # H (M-19)
+scan platform: picker, picker::native   # I (M-19)
+
+# Compiler, Linux (pg-dev).
+linux app: app, images, library, reader   # D (M-4)
+linux app: yandex, yandex::replay   # F (M-19)
+linux catalog: (crate root), dups, pair, schema, writes   # E (M-3, M-7)
+linux catalog: browse::read, browse::read::facets, browse::read::grid   # G (M-3a)
+linux platform: dir, dir::unix   # H (M-19)
+
+# Compiler, Windows (the host).
+windows app: app, images, library, reader   # D (M-4)
+windows app: yandex, yandex::replay   # F (M-19)
+windows catalog: (crate root), dups, pair, schema, writes   # E (M-3, M-7)
+windows catalog: browse::read, browse::read::facets, browse::read::grid   # G (M-3a)
+windows platform: dir, dir::windows   # H (M-19)
+windows platform: picker, picker::native   # I (M-19)

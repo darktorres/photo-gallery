@@ -673,7 +673,9 @@ mod unix {
         /// stored); a shorter serial as the little-endian integer of its bytes, which is the number udev writes in hex.
         fn uuid_id(bytes: &[u8]) -> Option<u64> {
             match bytes.len() {
-                16 => Some(bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))),
+                16 => Some(
+                    bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3)),
+                ),
                 1..=8 => Some(bytes.iter().rev().fold(0u64, |acc, b| (acc << 8) | u64::from(*b))),
                 _ => None,
             }
@@ -736,7 +738,15 @@ mod root_tests {
     fn the_kernels_pseudo_file_systems_are_refused() {
         // The magic numbers measured on the kernel this was built on (see REFUSED).
         let pseudo = [
-            0x9FA0, 0x6265_6572, 0x1CD1, 0x6367_7270, 0x6462_6720, 0x7472_6163, 0x7363_6673, 0xCAFE_4A11, 0x6165_676C,
+            0x9FA0,
+            0x6265_6572,
+            0x1CD1,
+            0x6367_7270,
+            0x6462_6720,
+            0x7472_6163,
+            0x7363_6673,
+            0xCAFE_4A11,
+            0x6165_676C,
             0x6265_6570,
         ];
         for f_type in pseudo {

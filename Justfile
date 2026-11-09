@@ -130,10 +130,10 @@ shots *args: _qt
     pwsh -NoLogo -NoProfile -File tools/compare-shots.ps1 {{ args }}
 
 # The QML tests (S-14.3): Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen, against the
-# components staged as the pg.gallery module (tools/qmltest.ps1). The stubs stand in for the Rust types, so the tests
+# components staged as the pg.gallery module (tools/qmltest.py). The stubs stand in for the Rust types, so the tests
 # check the QML and nothing Rust.
 qmltest: _qt
-    pwsh -NoLogo -NoProfile -File tools/qmltest.ps1
+    {{ py }} tools/qmltest.py
 
 # The Linux checks, the callgrind benches and the fuzzer run in the pg-dev container (docker/, tools/linux.py). It is the
 # only Linux environment this repository uses. Needs Docker Desktop running; `just linux-build` builds the image.

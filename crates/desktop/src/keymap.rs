@@ -4,6 +4,8 @@
 //! second call. The codes are the positions in each QML file's `enum` of the same name, so the two lists are kept in the
 //! same order. The map and the hint lines are pg-client's.
 
+mod state;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -14,7 +16,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        type KeyMap = super::KeyMapRust;
+        type KeyMap = crate::keymap::state::KeyMapRust;
     }
 
     unsafe extern "RustQt" {
@@ -46,9 +48,6 @@ pub mod qobject {
 
 use cxx_qt_lib::QString;
 use pg_client::keys::{self, Grid, Key, Media, Mods, Panel, Shown, Viewer};
-
-#[derive(Default)]
-pub struct KeyMapRust;
 
 // Qt's key codes (`Qt::Key`) and modifier flags (`Qt::KeyboardModifier`): the values of Qt's stable ABI.
 const KEY_ESCAPE: i32 = 0x0100_0000;

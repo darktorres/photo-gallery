@@ -5,6 +5,9 @@
 //! in meanwhile, each kind once. The Qt thread reads the new state and updates the properties and emits `scanned`,
 //! `imported` and `filesChanged`. QML doesn't poll.
 
+mod state;
+use state::LibraryRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -31,7 +34,7 @@ pub mod qobject {
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).
         #[qproperty(bool, write_failed, cxx_name = "writeFailed", READ, WRITE, NOTIFY, FINAL)]
-        type Library = super::LibraryRust;
+        type Library = crate::library::state::LibraryRust;
     }
 
     impl cxx_qt::Threading for Library {}
@@ -92,7 +95,6 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, FileError, Notice, Phase, Progress, WriteError};
 use pg_client::text;
-use pg_model::ids::RootId;
 use pg_model::rules::PathRules;
 
 use crate::app;
@@ -138,25 +140,6 @@ impl Changes {
 fn lock(shared: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
     // A panic on the other side leaves the changes as they were: the next pass handles them.
     shared.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-#[derive(Default)]
-pub struct LibraryRust {
-    roots: QStringList,
-    /// The catalog's id of each folder in `roots`, row for row: what removing a row removes.
-    root_ids: Vec<RootId>,
-    busy: bool,
-    paused: bool,
-    status: QString,
-    progress: f64,
-    message: QString,
-    message_warning: bool,
-    writes: QString,
-    write_failed: bool,
-    /// The writer's count of dropped writes (`WriteStatus::dropped`) already shown: a note is shown when it grows.
-    dropped_seen: usize,
-    /// Whether the note that the writer has stopped for good has been shown (it is shown once).
-    writer_stopped_shown: bool,
 }
 
 /// The status line's text for a pass's progress; empty when idle.

@@ -5,6 +5,9 @@
 //! published (`set_counts`), both read here, typed: `refresh` rebuilds the rows, and the filter bar calls it when the
 //! query or the counts change.
 
+mod state;
+use state::{Row, FacetChoicesRust};
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -27,7 +30,7 @@ pub mod qobject {
         #[qml_element]
         /// Which list, by its index in `pg_client::facets::Facet` (the filter bar names them). Set it once.
         #[qproperty(i32, facet, READ, WRITE = set_facet, FINAL)]
-        type FacetChoices = super::FacetChoicesRust;
+        type FacetChoices = crate::facet_choices::state::FacetChoicesRust;
     }
 
     unsafe extern "RustQt" {
@@ -62,9 +65,9 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
+use cxx_qt::CxxQtType;
 use std::cell::RefCell;
 
-use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_client::facets::Facet;
 use pg_client::input::key_of;
@@ -99,23 +102,6 @@ pub(crate) fn set_counts(counts: Counts) {
 
 fn counts() -> Counts {
     COUNTS.with(|c| c.borrow().clone())
-}
-
-/// One row: its key (the value the bar sends back, `key_of`), its label, its count (0 where none is shown), and whether
-/// it's chosen.
-#[derive(Clone, Debug, PartialEq)]
-struct Row {
-    key: String,
-    label: String,
-    count: i32,
-    chosen: bool,
-}
-
-#[derive(Default)]
-pub struct FacetChoicesRust {
-    /// The facet: the list's index in `Facet`; 0 (the default) is Types.
-    facet: i32,
-    rows: Vec<Row>,
 }
 
 /// The choices of a list facet, in the bar's order, each with its count (`None` where the bar shows none).

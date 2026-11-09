@@ -8,6 +8,9 @@
 //! the rows, the reveal of the listed folder and the spelling of a row's folder are read here and never passed as text:
 //! QML names a row by its number, and the folders go by value.
 
+mod state;
+use state::FolderRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -30,7 +33,7 @@ pub mod qobject {
         #[qml_element]
         /// The tree has been read at least once.
         #[qproperty(bool, ready, READ, WRITE, NOTIFY, FINAL)]
-        type FolderModel = super::FolderRust;
+        type FolderModel = crate::folders::state::FolderRust;
     }
 
     impl cxx_qt::Threading for FolderModel {}
@@ -136,15 +139,6 @@ pub(crate) const KIND_FOLDER: i32 = 2;
 /// A row as QML's int, or -1 (not found) for one past what an int can hold.
 fn row_index(row: usize) -> i32 {
     i32::try_from(row).unwrap_or(-1)
-}
-
-#[derive(Default)]
-pub struct FolderRust {
-    ready: bool,
-    /// The latest tree asked for; older ones arriving are dropped.
-    generation: u64,
-    /// The tree has been shown once: its first arrival opens the folders above the listed one (`tree_loaded`).
-    shown: bool,
 }
 
 thread_local! {

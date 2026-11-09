@@ -2,6 +2,8 @@
 //! `--screenshot` and `--wait` are read by screenshot.rs. A path option is read by `path`, exactly as given; the QML
 //! never gets a path from here.
 
+mod state;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -14,7 +16,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        type CommandLine = super::CommandLineRust;
+        type CommandLine = crate::command_line::state::CommandLineRust;
     }
 
     unsafe extern "RustQt" {
@@ -42,9 +44,6 @@ use std::sync::OnceLock;
 
 use cxx_qt_lib::{QString, QStringList};
 use pg_model::query::{Query, Sort};
-
-#[derive(Default)]
-pub struct CommandLineRust;
 
 /// One `--name=value` argument: its name, its value as text (lossy: what the text options read), and the value exactly
 /// as the system gave it (what a path option reads).

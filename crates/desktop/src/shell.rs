@@ -10,6 +10,9 @@
 //! of these signals or notifies must not call the shell back synchronously; the signals that do call it are emitted
 //! later (`later`), once the call has returned.
 
+mod state;
+use state::ShellRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -43,7 +46,7 @@ pub mod qobject {
         #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
         /// The thumbnail height: the row height times the screen's scale, settled after a pause.
         #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, NOTIFY, FINAL)]
-        type Shell = super::ShellRust;
+        type Shell = crate::shell::state::ShellRust;
     }
 
     impl cxx_qt::Threading for Shell {}
@@ -265,19 +268,6 @@ use pg_model::rules::PathRules;
 use pg_model::view::SavedView;
 
 use crate::{app, controller, deadline, folders, gallery, keymap};
-
-/// The properties the shell mirrors from the controller. Everything else is the controller's.
-pub struct ShellRust {
-    folder: QString,
-    recursive: bool,
-    folder_kind: i32,
-    descending: bool,
-    saved_views: QStringList,
-    filters_open: bool,
-    show_borders: bool,
-    row_height: i32,
-    thumb_height: i32,
-}
 
 impl Default for ShellRust {
     /// The controller's start, mirrored: the listing the window starts with, and the size's defaults (the window sets

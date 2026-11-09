@@ -2,13 +2,15 @@
 //! themselves are `pg-trace`'s (docs/PROFILING.md "Startup"): this module is the bridge, and the app's printing of them
 //! with `PG_TRACE=1` (`install`).
 
+mod state;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     extern "RustQt" {
         /// The stages only the QML sees.
         #[qobject]
         #[qml_element]
-        type Stages = super::StagesRust;
+        type Stages = crate::trace::state::StagesRust;
     }
 
     unsafe extern "RustQt" {
@@ -25,9 +27,6 @@ pub mod qobject {
 }
 
 use pg_trace::{pg_stage_first_frame, pg_stage_ready};
-
-#[derive(Default)]
-pub struct StagesRust;
 
 impl qobject::Stages {
     fn first_frame(&self) {

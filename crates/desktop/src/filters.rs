@@ -4,6 +4,9 @@
 //! and the list facets' rows are `FacetChoices` (facet_choices.rs), which read the query and the counts directly. FilterBar.qml
 //! makes one and is the only QML that calls into it.
 
+mod state;
+use state::FiltersRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -27,7 +30,7 @@ pub mod qobject {
         #[qproperty(i32, matching, READ, WRITE, NOTIFY, FINAL)]
         /// One line saying what the query keeps, for the save-view dialog.
         #[qproperty(QString, description, READ, WRITE, NOTIFY, FINAL)]
-        type Filters = super::FiltersRust;
+        type Filters = crate::filters::state::FiltersRust;
     }
 
     impl cxx_qt::Threading for Filters {}
@@ -107,19 +110,6 @@ use pg_client::text;
 
 use crate::controller;
 use crate::facet_choices::{Counts, count};
-
-pub struct FiltersRust {
-    active: i32,
-    name: QString,
-    duplicates_index: i32,
-    border_marked_index: i32,
-    total: i32,
-    matching: i32,
-    description: QString,
-    facets: Facets,
-    /// The latest counts asked for; older ones arriving are dropped.
-    generation: u64,
-}
 
 impl Default for FiltersRust {
     /// The query the window starts with (the listing's).

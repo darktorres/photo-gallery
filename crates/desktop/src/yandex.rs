@@ -8,6 +8,9 @@
 //! pick changes. The words the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed
 //! outcomes the app returns.
 
+mod state;
+use state::YandexSearchRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -54,7 +57,7 @@ pub mod qobject {
         #[qproperty(i32, preview_width, cxx_name = "previewWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, preview_height, cxx_name = "previewHeight", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, preview_picked, cxx_name = "previewPicked", READ, WRITE, NOTIFY, FINAL)]
-        type YandexSearch = super::YandexSearchRust;
+        type YandexSearch = crate::yandex::state::YandexSearchRust;
     }
 
     impl cxx_qt::Threading for YandexSearch {}
@@ -151,8 +154,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
-use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, Search, SearchError, SimilarNote, Status, YandexError};
-use pg_client::layout::{self, Frame};
+use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, SearchError, SimilarNote, Status, YandexError};
+use pg_client::layout;
 use pg_client::picks::Picks;
 use pg_client::text;
 use pg_model::ids::FileId;
@@ -168,34 +171,6 @@ const ROLE_FRAME_HEIGHT: i32 = 263;
 
 /// The height a row of results is laid out at: fixed, at the size the gallery's rows start at.
 const ROW_HEIGHT: f64 = 220.0;
-
-#[derive(Default)]
-pub struct YandexSearchRust {
-    busy: bool,
-    status: QString,
-    other_count: i32,
-    similar_count: i32,
-    picked_count: i32,
-    other_picked: i32,
-    similar_picked: i32,
-    preview_item: i32,
-    preview_url: QString,
-    preview_width: i32,
-    preview_height: i32,
-    preview_picked: bool,
-    layout_width: f64,
-    gap: f64,
-    other_height: f64,
-    similar_height: f64,
-    search: Search,
-    /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
-    pump: bool,
-    /// The other sizes, then the similar images, as the latest search found them.
-    hits: Vec<Hit>,
-    /// Each result's frame in the panel's layout (`relayout`), by its index in `hits`.
-    frames: Vec<Frame>,
-    picks: Picks,
-}
 
 impl YandexSearchRust {
     /// The results `first..first + count` that exist.

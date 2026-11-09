@@ -4,6 +4,9 @@
 //! screen only learns that one was chosen for a purpose (`done`): the action that purpose names takes it (`take`). So
 //! the path never crosses to QML as text.
 
+mod state;
+use state::PickerRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -27,7 +30,7 @@ pub mod qobject {
         #[qproperty(QStringList, names, READ, WRITE, NOTIFY, FINAL)]
         /// The app's dialog: the folder it is in (display text).
         #[qproperty(QString, here, READ, WRITE, NOTIFY, FINAL)]
-        type FolderPicker = super::PickerRust;
+        type FolderPicker = crate::picker::state::PickerRust;
     }
 
     unsafe extern "RustQt" {
@@ -203,12 +206,6 @@ fn run_dialog(
 ) -> std::io::Result<Option<Chosen>> {
     let start = pg_platform::picker::start_units(start);
     Ok(pg_platform::picker::pick_with(dialog, start.as_deref(), owner)?.map(|path| (purpose, path)))
-}
-
-pub struct PickerRust {
-    native: bool,
-    names: QStringList,
-    here: QString,
 }
 
 impl Default for PickerRust {

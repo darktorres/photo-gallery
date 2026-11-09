@@ -257,6 +257,9 @@ The `super::` paths in each bridge are that one line. The other `super::` hits i
 
 Gate: the desktop builds only on Windows. Windows `just build` and `just test`, and `just shots` with no pixel change against `tools/shots/reference`. Run `cargo-modules` (M-0) on the Windows target afterwards; the scan must show no J group.
 
+- **Result, part 1 (committed in the M-20 commit; not yet validated, see the end of the plan):** thirteen modules are done: `trace`, `command_line`, `keymap`, `settings`, `words`, `filters`, `folders`, `library`, `viewport`, `yandex`, `picker`, `shell` and `facet_choices`. Each `XRust` (and, in `facet_choices`, `Row`) is in `X/state.rs`, with `pub(super)` fields, and the bridge alias names `crate::X::state::XRust`. The `CxxQtType` and `Threading` imports stay where the bridge methods need them.
+- **Blocked, part 2 (needs a decision):** three modules keep a bridge-declared type in their backing struct, so the struct cannot move to a leaf without the leaf importing the bridge's child. `animation` (`AnimationPlayerRust` holds `UniquePtr<qobject::SinkRef>`), `video_source` (`VideoSourceRust` holds `UniquePtr<VideoPlayer>`, and `VideoPlayer` is a plain C++ type declared in the qobject bridge with `cfg(windows)` and `cfg(unix)` functions) and `gallery` (`GalleryRust` holds `qobject::MediaKind`, a QML enum declared in the bridge). The plan says nothing about this. The options are to move the plain C++ declarations (`SinkRef`, `VideoPlayer`) into the leaf's own `#[cxx::bridge]`, or to keep a Rust-side wrapper in the module; `MediaKind` is a QML enum and would have to stay in the bridge, so `gallery` may need to wait for M-12.
+
 ### M-19: the parent-child cycles (groups F, H, I)
 
 Three groups have the same shape: a parent module defines a trait or types, its child implements them, and the parent re-exports the child. Each is cut the same way: move the shared items into a new leaf module that neither side depends on upward.

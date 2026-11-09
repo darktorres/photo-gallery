@@ -2,6 +2,9 @@
 //! region rendered for a zoomed view. QML keeps the gestures, the keys and the signals; the numbers, the clamping and
 //! the image URLs are here. Each change is pushed back as the properties the QML binds to.
 
+mod state;
+use state::ViewportRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -26,7 +29,7 @@ pub mod qobject {
         /// renders the fit at it once it has settled after a resize (`fitSource` takes the size it settled on).
         #[qproperty(i64, fit_width, cxx_name = "fitWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i64, fit_height, cxx_name = "fitHeight", READ, WRITE, NOTIFY, FINAL)]
-        type Viewport = super::ViewportRust;
+        type Viewport = crate::viewport::state::ViewportRust;
     }
 
     unsafe extern "RustQt" {
@@ -101,8 +104,8 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
-
 use cxx_qt::CxxQtType;
+
 use cxx_qt_lib::QString;
 use pg_client::viewport::View;
 use pg_model::image::{self, ImageKey, ImageRequest};
@@ -120,20 +123,6 @@ pub(crate) fn full_url(key: &QString, view: image::View) -> QString {
         Some(key) => QString::from(&ImageRequest::Full { key, view }.url()),
         None => QString::default(),
     }
-}
-
-/// The view, and the values of its properties (kept in step by `sync`, so the bindings update).
-pub struct ViewportRust {
-    view: View,
-    zoom: f64,
-    ox: f64,
-    oy: f64,
-    dw: f64,
-    dh: f64,
-    zoomed: bool,
-    pixels: bool,
-    fit_width: i64,
-    fit_height: i64,
 }
 
 impl ViewportRust {

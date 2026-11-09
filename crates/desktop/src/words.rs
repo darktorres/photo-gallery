@@ -2,6 +2,8 @@
 //! front end's own literals (the labels and tooltips, by their `ui.ftl` id). One object per component that needs them,
 //! made inside it (as the other facades are).
 
+mod state;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -12,7 +14,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        type Words = super::WordsRust;
+        type Words = crate::words::state::WordsRust;
     }
 
     unsafe extern "RustQt" {
@@ -41,9 +43,6 @@ pub mod qobject {
 
 use cxx_qt_lib::QString;
 use pg_client::text;
-
-#[derive(Default)]
-pub struct WordsRust;
 
 impl qobject::Words {
     fn rating_symbol(&self, rating: i32) -> QString {

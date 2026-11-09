@@ -3,6 +3,8 @@
 //! changes and saves it. These properties hold no copy: each reads the preferences as they are and writes through them.
 //! Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
 
+mod state;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     extern "RustQt" {
@@ -18,7 +20,7 @@ pub mod qobject {
         #[qproperty(f64, row_height, cxx_name = "rowHeight", READ = read_row_height, WRITE = set_row_height_saved, NOTIFY, FINAL)]
         /// The id of the file selected (or open in the viewer) last, -1 for none.
         #[qproperty(i64, last_file, cxx_name = "lastFile", READ = read_last_file, WRITE = set_last_file_saved, NOTIFY, FINAL)]
-        type Settings = super::SettingsRust;
+        type Settings = crate::settings::state::SettingsRust;
     }
 
     unsafe extern "RustQt" {
@@ -39,10 +41,6 @@ pub mod qobject {
 use core::pin::Pin;
 
 use crate::app;
-
-/// The properties' state is the preferences': the struct holds nothing.
-#[derive(Default)]
-pub struct SettingsRust;
 
 /// Change the preferences and save them. A save that fails is a note on the app's bus (the window prints it), and the
 /// change holds in memory until the app closes.

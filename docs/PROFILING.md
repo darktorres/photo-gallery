@@ -52,7 +52,7 @@ built against the Pin 4.3 kit inside SDE, since SDE's `-mix` has self counts onl
 python tools/profiling/callgraph/build.py      # target/pin/callgraph.dll, a few seconds (Windows)
 just deploy release pdb                          # once: Qt's PDBs beside its DLLs (Qt's "Debug Information Files")
 $env:PG_CATALOG_DIR = 'D:\…\scratch\catalog'; $env:PG_PREFS = 'D:\…\scratch\gallery.json'
-tools/profiling/callgraph/profile.ps1 -Out D:\…\profiles\ready   # to pg_stage_ready; -Stop/-Start take any stage
+python tools/profiling/callgraph/profile.py --out D:\…\profiles\ready   # to pg_stage_ready; --stop/--start take any stage
 python tools/profiling/cgtab.py table D:\…\profiles\ready.<pid>-<thread> --sort incl
 ```
 
@@ -65,7 +65,7 @@ python tools/profiling/cgtab.py table D:\…\profiles\ready.<pid>-<thread> --sor
 - **Symbols:** Pin reads a PDB only from beside its DLL or from where it was built; it ignores `_NT_SYMBOL_PATH` and
   DIA's registry path. Where it has one (our exe, Qt with `just deploy release pdb`) a function is Pin's routine.
   Elsewhere Pin's routines are the exports, each spanning to the next (SDE's wrong names), so the tool names a
-  function by the address it was entered at, `ntdll.dll+0x1fa14`. `symbolize.py` (run by `profile.ps1`) then names
+  function by the address it was entered at, `ntdll.dll+0x1fa14`. `symbolize.py` (run by `profile.py`) then names
   those with dbghelp from Microsoft's symbol server, cached in `D:\symbols`, turns the positions (instruction
   addresses) into source lines, and demangles Rust's v0 names with `llvm-cxxfilt`. It needs the Windows SDK's x64
   debugging tools. Windows' public PDBs have no lines (`???`), and NVIDIA's driver has no symbols (nearest export).

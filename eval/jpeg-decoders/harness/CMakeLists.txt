@@ -4,7 +4,7 @@
 #   jpegli:    JPEGLI_SRC, JPEGLI_BUILD (its CMake build directory)
 #   Wuffs:     WUFFS_SRC (the repository)
 #   GPU:       WITH_CUDA=ON for nvJPEG (CUDA toolkit); JPEGGPU_SRC, JPEGGPU_BUILD; GPUJPEG_SRC, GPUJPEG_BUILD
-# eval/jpeg-decoders/win-build.cmd and wsl_build.py configure it.
+# eval/jpeg-decoders/win_build.py and wsl_build.py configure it.
 cmake_minimum_required(VERSION 3.20)
 project(jpeg_harness CXX)
 set(CMAKE_CXX_STANDARD 17)
@@ -24,7 +24,7 @@ if(PARAJPEG_SRC)
                               COMPILE_DEFINITIONS HAVE_PARAJPEG)
   target_link_libraries(harness PRIVATE "${PARAJPEG_LIB}")
   if(WIN32)  # built with clang-cl: __builtin_cpu_supports needs clang's builtins runtime
-    # the LLVM install: LLVM_DIR from the environment (win-env.cmd sets it), default ProgramFiles\LLVM
+    # the LLVM install: LLVM_DIR from the environment (win_env.py sets it), default ProgramFiles\LLVM
     if("$ENV{LLVM_DIR}" STREQUAL "")
       set(LLVM_ROOT "$ENV{ProgramFiles}/LLVM")
     else()

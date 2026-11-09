@@ -1,4 +1,4 @@
-# The QML test host (main.cpp), built by tools/qmltest.ps1 against the Qt kit (Quick and Qt Quick Test, the
+# The QML test host (main.cpp), built by tools/qmltest.py against the Qt kit (Quick and Qt Quick Test, the
 # qmltestrunner's own libraries). Not part of the Cargo build.
 cmake_minimum_required(VERSION 3.21)
 project(qml_host LANGUAGES CXX)

@@ -1,5 +1,5 @@
 # The fuzz targets (S-18.1). Outside the workspace (its own `[workspace]`, so `cargo check --workspace` never builds
-# libFuzzer): run with cargo-fuzz on Linux, `tools/fuzz-smoke.sh` (`just fuzz-smoke`) or `cargo fuzz run <target>`.
+# libFuzzer): run with cargo-fuzz on Linux, `tools/fuzz_smoke.py` (`just fuzz-smoke`) or `cargo fuzz run <target>`.
 # Each crash found becomes a regression test in the crate that owns the code, then the input is kept in corpus/.
 [package]
 name = "pg-fuzz"

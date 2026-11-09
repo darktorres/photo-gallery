@@ -7,7 +7,7 @@ Work folder: `D:\PhotoGallery\static` (outside the repository: sources, builds a
 
 ## FFmpeg recipe
 
-`tools/build-static-ffmpeg.ps1` is the recipe: the pilot's steps, with the pins, the checks and the manifest.
+`tools/build_static_ffmpeg.py` is the recipe: the pilot's steps, with the pins, the checks and the manifest.
 `tools/static-ffmpeg/static-check.c` is its link check. A run writes `<Work>\manifest.json` (commit, tool
 versions, configure line, library sizes and SHA-256, CRT references, link-check output).
 
@@ -267,7 +267,7 @@ Why not drop Qt's JPEG: the app hands `QImage::from_data` every thumbnail (JPEG,
 original, which can be any format Qt reads. Moving JPEG to Rust would still leave the other formats in Qt, so the
 process would keep two decoders. One libjpeg for the whole process is the proper fix.
 
-**The fix: one libjpeg-turbo, built once, used by Qt and the app.** `tools/build-jpeg-turbo.ps1` builds libjpeg-turbo
+**The fix: one libjpeg-turbo, built once, used by Qt and the app.** `tools/build_jpeg_turbo.py` builds libjpeg-turbo
 from the pinned fork's sources (the same commit as `turbojpeg-sys` in the root `Cargo.toml`), with `WITH_JPEG8=ON`
 (API 8.0, as Qt expects), `WITH_CRT_DLL=ON` and static libraries, into `<Work>\prefix`. Then:
 
@@ -289,7 +289,7 @@ Verified (2026-11-09):
 - **Qt's JPEG plugin** decodes real photos through the shared libjpeg-turbo: a small program (`D:\PhotoGallery\static\jpegcheck`)
   reads two JPEGs (1080×1920 and 1920×1080) and a missing file, which reports "File not found". The static
   `gallery.exe` (debug) on the same libjpeg runs offscreen for 90 s with no JPEG error.
-- **Recipe:** `tools/build-jpeg-turbo.ps1` builds from an empty folder. Its headers match the hand build's byte for byte.
+- **Recipe:** `tools/build_jpeg_turbo.py` builds from an empty folder. Its headers match the hand build's byte for byte.
   Its first run had CRLF headers, because Git for Windows converts line endings by default. The recipe now sets
   `core.autocrlf` to false, so the bytes don't depend on the machine's Git settings.
 - **Same folder, two runs:** 94 of 94 extracted objects are identical except bytes 4–7 of each COFF header, the

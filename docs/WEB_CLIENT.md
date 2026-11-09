@@ -324,7 +324,7 @@ later.
   with Qt Quick and the player), and the screenshot and live-reload helpers. The web needs replacements for each.
 
 **What is already in place:** `crates/desktop/tests/qml/stubs/pg/gallery/` has stand-ins for 7 of the 14 bridge types
-(117 lines in all), and `tools/qmltest.ps1` runs the real views against them. So the views depend on names, not on the
+(117 lines in all), and `tools/qmltest.py` runs the real views against them. So the views depend on names, not on the
 Rust implementations. That is the seam a web backend would plug into. It covers 7 types, though, and the stubs hold
 only what the tests read. A full `pg.gallery` for the browser has to implement all of the surface.
 

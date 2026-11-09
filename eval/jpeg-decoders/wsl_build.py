@@ -130,7 +130,7 @@ def build_wuffs() -> None:
 
 
 def build_parajpeg() -> None:
-    """The CPU backend (the CUDA build is win-build.cmd's): libparajpeg.a and pjdec."""
+    """The CPU backend (the CUDA build is win_build.py's): libparajpeg.a and pjdec."""
     clone("parajpeg", "https://github.com/anniigr/parajpeg", "f45081d7f75fdab809e7170c15fd806f42deb375")
     configure(
         "parajpeg",

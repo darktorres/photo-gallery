@@ -8,7 +8,7 @@ __pycache__/
 *.npy
 # This machine's settings (paths and the like): copy .env.example to .env and fill it in.
 .env
-# What `just setup` fetches: the pinned FFmpeg build, and its download (tools/setup-ffmpeg.ps1).
+# What `just setup` fetches: the pinned FFmpeg build, and its download (tools/setup_ffmpeg.py).
 /.deps/
 # The install log of the aqtinstall tool that CI's Qt install writes when it runs locally.
 aqtinstall.log

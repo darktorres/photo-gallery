@@ -102,7 +102,7 @@ for the A6000.
 ## Instructions per decode
 
 Millions of instructions; callgrind, Linux build. Most come from gungraun. libvips and jpeg-decoder do
-their work in threads gungraun doesn't count, so their figures come from whole runs instead (`wsl.sh marginal`:
+their work in threads gungraun doesn't count, so their figures come from whole runs instead (`wsl.py marginal`:
 3 decodes minus 1, halved, all threads). That method gives the same numbers as gungraun for libjpeg-turbo, to
 within 0.5 M.
 
@@ -335,7 +335,7 @@ least 2 s and 5 samples, the median; CPU time is the process's (all threads) per
 libjpeg-turbo's (jpeggpu, which returns planes, with libjpeg-turbo's planes).
 
 The inputs are the seven files as they are, the progressive one converted losslessly to baseline, and each with a
-restart marker every MCU row (`restart.sh`; jpegtran's output is baseline, so the row-marker progressive file is
+restart marker every MCU row (`restart.py`; jpegtran's output is baseline, so the row-marker progressive file is
 baseline too).
 
 | Decoder | Version | Built |
@@ -581,8 +581,8 @@ Not measured:
 - **Restart markers and baseline conversion:** `python3 eval/jpeg-decoders/restart.py`
   (needs `apt-get install libjpeg-turbo-progs`). It keeps the variants in `~/jpeg-restart`.
 - **The C++ harness:**
-  - Build: `eval\jpeg-decoders\win-build.cmd` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
-    `win-env.cmd` sets them up) and `python3 eval/jpeg-decoders/wsl_build.py`. Both
+  - Build: `python eval\jpeg-decoders\win_build.py` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
+    `win_env.py` sets them up) and `python3 eval/jpeg-decoders/wsl_build.py`. Both
     clone the third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or `~/jpeg-eval` and apply
     `eval/jpeg-decoders/patches/`: for jpeggpu, C++20 and binary file reads for MSVC; for parajpeg, its GCC flags
     kept off nvcc and MSVC equivalents of two builtins.

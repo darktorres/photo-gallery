@@ -117,7 +117,7 @@ iteration excluded, also including the copies to and from the GPU.
 
 ## To rerun
 
-In WSL, after `eval/jpeg-decoders/wsl-build.sh` (which builds every encoder and `ssimulacra2`), from the repo:
+In WSL, after `eval/jpeg-decoders/wsl_build.py` (which builds every encoder and `ssimulacra2`), from the repo:
 
 ```sh
 python3 eval/jpeg-decoders/encoders.py prepare   # PPMs in ~/jpeg-enc/src

@@ -62,7 +62,7 @@ catalog, scan and platform tests).
   refused the rename; both now refuse.
 - **Tests:** the Linux job runs the whole workspace (`ci.yml:270-271`), with the five library tests that were ignored on
   Linux before S-17 Unit F. Two tests need a file that can't be read or written (the borders file, the writeback copy);
-  as root that can't be made, so they are skipped there, and the container runs them as the user `pg` (`docker/check.sh`), where they check.
+  as root that can't be made, so they are skipped there, and the container runs them as the user `pg` (`docker/check.py`), where they check.
 - **Timed:** a 10,000-file library scans in about 1.6 s warm and 4.8 s cold on WSL's ext4 disk, and a rescan after
   renumbering pairs every file with its row (`docs/PROFILING.md`, Measurements, 2026-11-07). Not measured: a Windows
   run, and the cold VM after `wsl --shutdown`.

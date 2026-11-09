@@ -1,4 +1,4 @@
-/* Link and run check for the static FFmpeg build (tools/build-static-ffmpeg.ps1). It calls into each library, so the link
+/* Link and run check for the static FFmpeg build (tools/build_static_ffmpeg.py). It calls into each library, so the link
  * must resolve every symbol this level needs. Prints the library versions, the decoder lookups, the hardware device
  * types, and the result of opening a missing file. The script compares these lines with what it expects. */
 #include <stdio.h>

@@ -26,7 +26,7 @@ index daaf0a4..a26c5f5 100644
      Ok(())
  }
  
-+/// The static FFmpeg's libraries (MSVC, built by tools/build-static-ffmpeg.ps1) from `lib_dir`, linked into pg-video.
++/// The static FFmpeg's libraries (MSVC, built by tools/build_static_ffmpeg.py) from `lib_dir`, linked into pg-video.
 +/// Its link needs these Windows libraries: FFmpeg's .pc files don't list them (docs/STATIC_BUILD.md).
 +fn link_static(lib_dir: &Path) {
 +    println!("cargo::rustc-link-search=native={}", lib_dir.display());

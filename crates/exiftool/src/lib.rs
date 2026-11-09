@@ -56,10 +56,9 @@ impl ExifTool {
         let mut cmd = Command::new(program);
         cmd.args(["-stay_open", "True", "-@", "-"]).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped());
         pg_platform::process::hide_console_window(&mut cmd);
-        let mut child = cmd.spawn().with_context(|| {
+        let mut child = pg_platform::process::spawn_background(cmd).with_context(|| {
             format!("starting {} (ExifTool, needed to write ratings into files)", program.to_string_lossy())
         })?;
-        pg_platform::process::die_with_parent(&child);
         match ExifTool::pipes(&mut child) {
             Ok((stdin, stdout, stderr)) => {
                 Ok(ExifTool { program: program.to_owned(), child, stdin, stdout, stderr, next: 1, broken: false })

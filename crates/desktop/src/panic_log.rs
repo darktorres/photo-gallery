@@ -45,6 +45,11 @@ pub fn note(line: &str) {
     }
 }
 
+/// `name` in the folder that holds `gallery.log` (what the app keeps beside its log); `None` before `install`.
+pub fn beside_log(name: &str) -> Option<PathBuf> {
+    LOG.get().and_then(|log| log.parent()).map(|folder| folder.join(name))
+}
+
 fn append(log: &Path, text: &str) -> std::io::Result<()> {
     std::fs::OpenOptions::new().create(true).append(true).open(log)?.write_all(text.as_bytes())
 }

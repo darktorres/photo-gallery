@@ -43,7 +43,7 @@ thumbhash = "0.1"
 tiff = "0.11"
 turbojpeg = { version = "1", features = ["cmake"] }
 unic-langid = "0.9"
-ureq = { version = "3", default-features = false, features = ["native-tls"] }
+ureq = { version = "3", default-features = false, features = ["native-tls", "cookies"] }
 weezl = "0.2"
 winres = "0.1" # pg-gallery's build script (the icon and version resource)
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_System_Threading", "Win32_UI_Shell", "Win32_UI_Shell_Common", "Win32_UI_WindowsAndMessaging"] }

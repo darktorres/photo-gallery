@@ -526,7 +526,7 @@ mod unix {
     pub struct Dir(PathBuf);
 
     impl Lister {
-        /// The volume a folder is on: its stable identity (see [`Lister::volume_of_device`]).
+        /// The volume a folder is on: its stable identity (see `Lister::volume_of_device`).
         pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
             let dev = std::fs::metadata(&dir.0)?.dev();
             Ok(self.volume_of_device(dev, &dir.0, OsStr::new("")))

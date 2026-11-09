@@ -287,7 +287,7 @@ fn hit_aspect(hit: &Hit) -> f64 {
 
 impl qobject::YandexSearch {
     fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
-        match crate::app::get().file_path(FileId::new(file_id)) {
+        match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
                 crate::log::note(&format!("yandex: file {file_id}: {err:#}"));
@@ -565,7 +565,7 @@ impl qobject::YandexSearch {
     }
 
     fn prepare_save(&self) {
-        crate::picker::set_start(self.search.start_folder(crate::app::get()));
+        crate::picker::set_start(self.search.start_folder(crate::app::get().prefs()));
     }
 
     fn download_picked(mut self: Pin<&mut Self>) {
@@ -582,7 +582,7 @@ impl qobject::YandexSearch {
         self.as_mut().ensure_pump();
         // The app refuses a search or a save already running (the status line keeps showing its progress), and
         // remembers the folder when it saves.
-        match self.search.save(crate::app::get(), hits, folder) {
+        match self.search.save(crate::app::get().prefs(), hits, folder) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => return self.not_started("save", &e),

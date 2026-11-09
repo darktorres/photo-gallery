@@ -15,7 +15,7 @@ static APP: OnceLock<App> = OnceLock::new();
 /// Open the app from `config` and start printing its notes. Call once, on the GUI thread, before the UI starts.
 pub fn open(config: Config) -> anyhow::Result<()> {
     let app = App::open(config)?;
-    let notes = app.notes();
+    let notes = app.notes().subscribe();
     std::thread::Builder::new().name("app notes".into()).spawn(move || {
         while let Some(note) = notes.recv() {
             crate::log::note(&note_text(&note));

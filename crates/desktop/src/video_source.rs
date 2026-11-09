@@ -89,7 +89,7 @@ impl qobject::VideoSource {
     }
 
     fn play(mut self: Pin<&mut Self>, file_id: i64) {
-        let path = crate::app::get().file_path(FileId::new(file_id));
+        let path = crate::app::get().catalogs().file_path(FileId::new(file_id));
         let Some(player) = player_of(self.as_mut().rust_mut().get_mut()) else { return };
         match path {
             Ok(path) => play_path(player, &path),

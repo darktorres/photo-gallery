@@ -62,7 +62,7 @@ impl Core {
 /// then the saved view `--apply-view` names, when there is one (its folder, subfolders, sort and query, which win over
 /// the session's). The filter bar starts with the listing's query (`filters.rs`).
 fn start() -> Listing {
-    let mut listing = app::get().listing();
+    let mut listing = app::get().views().listing();
     let options = command_line::start_options();
     if let Some(query) = options.query {
         listing.query = query;
@@ -71,7 +71,7 @@ fn start() -> Listing {
         listing.sort = sort;
     }
     if let Some(name) = options.apply_view
-        && let Some(v) = app::get().view(&name).ok().flatten()
+        && let Some(v) = app::get().views().view(&name).ok().flatten()
     {
         listing = Listing { folder: v.folder, recursive: v.recursive, sort: v.sort, query: v.query };
     }

@@ -98,7 +98,7 @@ fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
     let app = app::get();
     let file = key.file;
     JPEG.with_borrow_mut(|jpeg| {
-        let thumb = app.thumbnail(key, height, jpeg)?;
+        let thumb = app.images().thumbnail(key, height, jpeg)?;
         let bytes = thumb.made.as_ref().map_or(&jpeg[..], |(made, _)| made);
         let pixels = if thumb.turns == Turns::NONE {
             QImage::from_data(bytes, None).context("not an image Qt reads").map(|image| Pixels {
@@ -109,13 +109,13 @@ fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
                 image,
             })
         } else {
-            app.turn_jpeg(bytes, thumb.turns).map_err(anyhow::Error::from).and_then(upload)
+            app.images().turn_jpeg(bytes, thumb.turns).map_err(anyhow::Error::from).and_then(upload)
         };
         if let Some((made, keep)) = thumb.made {
-            app.keep(keep, made);
+            app.images().keep(keep, made);
         } else if let Some(at) = thumb.kept_at
             && pixels.is_err()
-            && let Err(e) = app.forget_thumb(file, at)
+            && let Err(e) = app.images().forget_thumb(file, at)
         {
             crate::log::note(&format!("thumbnail {} at {at} px: dropping it failed: {e:#}", file.get()));
         }
@@ -181,10 +181,10 @@ fn load_image(kind: ImageKind, id: &str) -> Pixels {
     let result = match request {
         ImageRequest::Thumb { key, height } => thumbnail(key, height),
         ImageRequest::Thumbhash { key } => {
-            app::get().placeholder(key.file).map_err(anyhow::Error::from).and_then(upload)
+            app::get().images().placeholder(key.file).map_err(anyhow::Error::from).and_then(upload)
         }
         ImageRequest::Full { key, view } => {
-            app::get().full_image(key.file, view).map_err(anyhow::Error::from).and_then(upload)
+            app::get().images().full_image(key.file, view).map_err(anyhow::Error::from).and_then(upload)
         }
     };
     result.unwrap_or_else(|e| {

@@ -5,9 +5,9 @@
 //! that a write of the app's into the file at that moment is neither shown twice nor kept under the state before it.
 //!
 //! A thumbnail made on a miss goes to the cache's writer once it is shown, moved there rather than copied ([`Keep`]):
-//! the front end hands it back with [`App::keep`] once it is done with the bytes.
+//! the front end hands it back with [`Images::keep`] once it is done with the bytes.
 
-use std::sync::{Arc, PoisonError};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_catalog::browse;
@@ -19,10 +19,11 @@ use pg_model::image::{ImageKey, Version, View};
 use pg_model::orientation::Orientation;
 use pg_model::state::FileSource;
 use pg_model::turns::Turns;
-use pg_thumbcache::{self as thumbs};
+use pg_thumbcache::{self as thumbs, ThumbCache};
 
-use crate::app::App;
+use crate::catalogs::{Catalogs, path_of};
 use crate::error::{Error, Result, failed, original};
+use crate::makers::Makers;
 
 /// How long a request waits for a write of the app's into its file to end before it fails.
 const WRITE_WAIT: Duration = Duration::from_secs(10);
@@ -51,18 +52,18 @@ enum Found {
     Offline(Error, Option<u32>),
 }
 
-/// A thumbnail, as [`App::thumbnail`] finds it.
+/// A thumbnail, as [`Images::thumbnail`] finds it.
 pub struct Thumbnail {
     /// Quarter turns clockwise to show it turned by.
     pub turns: Turns,
     /// One made from the original: its bytes, and where the cache keeps it once it is shown. Otherwise the bytes are the
-    /// cache's, in the buffer [`App::thumbnail`] was given.
+    /// cache's, in the buffer [`Images::thumbnail`] was given.
     pub made: Option<(Vec<u8>, Keep)>,
-    /// For a cache's: the height it is kept at, to drop it ([`App::forget_thumb`]) when it doesn't decode.
+    /// For a cache's: the height it is kept at, to drop it ([`Images::forget_thumb`]) when it doesn't decode.
     pub kept_at: Option<u32>,
 }
 
-/// Where the cache keeps a thumbnail made on a miss ([`App::keep`]).
+/// Where the cache keeps a thumbnail made on a miss ([`Images::keep`]).
 #[derive(Clone, Copy, Debug)]
 pub struct Keep {
     pub file_id: FileId,
@@ -120,7 +121,22 @@ pub(crate) struct Decoded {
     image: Arc<Rgb>,
 }
 
-impl App {
+/// The images the front end shows: thumbnails, placeholders, and the viewer's original, as the catalog, the thumbnail cache
+/// and the files have them.
+pub struct Images {
+    catalogs: Arc<Catalogs>,
+    makers: Arc<Makers>,
+    /// The thumbnail cache, leaked to a `'static` reference so the library's threads can borrow it. Closed at shutdown.
+    thumbs: &'static ThumbCache,
+    /// The last full-size decode (`Images::full_image`).
+    last_decode: Mutex<Option<Decoded>>,
+}
+
+impl Images {
+    pub(crate) fn new(catalogs: Arc<Catalogs>, makers: Arc<Makers>, thumbs: &'static ThumbCache) -> Images {
+        Images { catalogs, makers, thumbs, last_decode: Mutex::new(None) }
+    }
+
     /// `read` of the file, consistent with the catalog: the file's state is read before and after it, and the result
     /// counts only when no write of the app's into the file was in progress and the state stayed the same. The writer
     /// marks a write before it rewrites the file and records it in the transaction that ends the mark, so a write that
@@ -135,7 +151,7 @@ impl App {
             let src = self.source(file_id)?;
             if !src.state.writing {
                 let result = read(&src);
-                if self.with_catalog(|c| browse::read::file_state(c, file_id))? == Some(src.state) {
+                if self.catalogs.with_catalog(|c| browse::read::file_state(c, file_id))? == Some(src.state) {
                     return result.map(|r| (src, r));
                 }
             }
@@ -147,7 +163,7 @@ impl App {
     }
 
     fn source(&self, file_id: FileId) -> Result<FileSource> {
-        self.with_catalog(|c| browse::read::file_source(c, file_id))?.ok_or(Error::UnknownFile(file_id.get()))
+        self.catalogs.with_catalog(|c| browse::read::file_source(c, file_id))?.ok_or(Error::UnknownFile(file_id.get()))
     }
 
     /// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps one at
@@ -186,22 +202,22 @@ impl App {
                     }
                 }
             };
-            let path = crate::app::path_of(&src.path);
+            let path = path_of(&src.path);
             let made = if let Some(at) = src.poster_ms {
                 // A video: its poster frame.
                 // FFmpeg opens the file this path names: the verbatim form (as the import does).
                 let verbatim = pg_platform::native::verbatim(&path);
-                match self.with_maker(|m| Ok(m.load_frame(&verbatim, at, current.rotation)))? {
-                    Ok(()) => self.with_maker(|m| m.encode_frame(pg_model::num::index(height)))?,
+                match self.makers.with_maker(|m| Ok(m.load_frame(&verbatim, at, current.rotation)))? {
+                    Ok(()) => self.makers.with_maker(|m| m.encode_frame(pg_model::num::index(height)))?,
                     Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
             } else {
                 // Read into the maker, which keeps the buffer for the next file.
-                match self.with_maker(|m| Ok(m.read_file(&path)))? {
+                match self.makers.with_maker(|m| Ok(m.read_file(&path)))? {
                     Ok(()) => {}
                     Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
-                self.with_maker(|m| m.make_from_file(pg_model::num::index(height), current.rotation))?
+                self.makers.with_maker(|m| m.make_from_file(pg_model::num::index(height), current.rotation))?
             };
             Ok(Found::Made(made))
         })?;
@@ -241,7 +257,7 @@ impl App {
 
     /// A thumbnail (a JPEG) turned by `turns` quarter turns clockwise, for a turn not yet written into the file.
     pub fn turn_jpeg(&self, jpeg: &[u8], turns: Turns) -> Result<Upload> {
-        self.with_maker(|m| {
+        self.makers.with_maker(|m| {
             let decoded = pg_render::display::decode(m.decoder(), jpeg, MinSize::Full, turns)?;
             Ok(Upload::opaque(&decoded.image))
         })
@@ -250,7 +266,7 @@ impl App {
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now.
     pub fn placeholder(&self, file_id: FileId) -> Result<Upload> {
         let p =
-            self.with_catalog(|c| browse::read::placeholder(c, file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
+            self.catalogs.with_catalog(|c| browse::read::placeholder(c, file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
         let hash = p.hash.ok_or(Error::NotImported)?;
         let (w, h, rgba) =
             thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| Error::Failed("bad thumbhash".to_string()))?;
@@ -312,15 +328,15 @@ impl App {
         }
         let (full, image) = if let Some(at) = src.poster_ms {
             // A video: its poster frame stands for it until it plays.
-            let path = pg_platform::native::verbatim(&crate::app::path_of(&src.path));
+            let path = pg_platform::native::verbatim(&path_of(&src.path));
             let frame = pg_video::frame(&path, at, rotation).map_err(original)?;
             ((frame.width, frame.height), Arc::new(frame))
         } else {
             // The read's and the decode's failures are the original's (gone, offline, not decodable), so the variant is
             // made here: `with_maker` would make any error its closure returns an `Error::Failed`. A maker that can't
             // be made is still that.
-            let path = crate::app::path_of(&src.path);
-            let decoded = self.with_maker(|m| {
+            let path = path_of(&src.path);
+            let decoded = self.makers.with_maker(|m| {
                 Ok(match m.read_file(&path) {
                     Ok(()) => m.decode_file(min, rotation).map_err(original),
                     Err(e) => Err(original(e)),
@@ -362,6 +378,7 @@ fn big_enough(w: usize, h: usize, full: (usize, usize), min: MinSize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::app::App;
     use crate::config::Config;
     use pg_catalog::fixture::{self, File};
     use pg_model::ids::FolderId;
@@ -373,14 +390,14 @@ mod tests {
         let dir = pg_testkit::test_folder("scratch_app", "original-gone").unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();
         let folder = if cfg!(windows) { r"D:\pg-test-no-such-folder" } else { "/pg-test-no-such-folder" };
-        app.with_catalog(|c| {
+        app.catalogs().with_catalog(|c| {
             fixture::state::add_scan(c, 1, folder).unwrap();
             fixture::state::add_folder(c, 1, folder).unwrap();
             fixture::insert(c, &[File::new(FileId::new(1), FolderId::new(1), "gone.jpg", 10, 0)]).unwrap();
             Ok(())
         })
         .unwrap();
-        match app.full_image(FileId::new(1), View::Full) {
+        match app.images().full_image(FileId::new(1), View::Full) {
             Err(e @ Error::Original(_)) => {
                 let text = e.to_string();
                 assert!(text.starts_with("original unavailable: "), "{text}");
@@ -390,7 +407,7 @@ mod tests {
             Ok(_) => panic!("an image of a file that isn't there"),
         }
         let key = ImageKey { file: FileId::new(1), version: None };
-        match app.thumbnail(key, 100, &mut Vec::new()) {
+        match app.images().thumbnail(key, 100, &mut Vec::new()) {
             Err(Error::Original(_)) => {}
             Err(e) => panic!("not Error::Original: {e:?}"),
             Ok(_) => panic!("a thumbnail of a file that isn't there"),

@@ -112,7 +112,7 @@ impl qobject::AnimationPlayer {
             return;
         }
         let Some(sink) = &self.sink else { return };
-        let path = match crate::app::get().file_path(FileId::new(file_id)) {
+        let path = match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
             Ok(path) => path,
             Err(err) => {
                 crate::log::note(&format!("animation {file_id}: {err:#}"));

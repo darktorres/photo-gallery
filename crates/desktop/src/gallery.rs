@@ -345,7 +345,7 @@ impl GalleryRust {
             let found = memo.remove(at);
             memo.insert(0, found);
         } else {
-            let details = match crate::app::get().details(e.id) {
+            let details = match crate::app::get().reading().details(e.id) {
                 Ok(d) => d?,
                 Err(err) => {
                     crate::log::note(&format!("reading {}: {err:#}", e.id.get()));
@@ -438,7 +438,7 @@ impl qobject::GalleryModel {
         let pg_model::view::Listing { folder, recursive, sort, query } = listing;
         let model = self.qt_thread();
         let shown = pg_model::rules::PathRules::NATIVE.display_merged(&folder);
-        crate::app::get().session().grid(folder, recursive, query, sort, move |entries| {
+        crate::app::get().reading().session().grid(folder, recursive, query, sort, move |entries| {
             let entries = entries.unwrap_or_else(|e| {
                 crate::log::note(&format!("listing {shown}: {e:#}"));
                 Vec::new()
@@ -752,7 +752,7 @@ impl qobject::GalleryModel {
         if turns == Turns::NONE {
             return;
         }
-        if let Err(e) = crate::app::get().turn(id, turns) {
+        if let Err(e) = crate::app::get().library().turn(id, turns) {
             crate::log::note(&format!("rotating: {e:#}"));
             return;
         }
@@ -808,7 +808,7 @@ impl qobject::GalleryModel {
         let stars = u8::try_from(rating.clamp(0, 5)).unwrap_or(0);
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
-        if let Err(e) = crate::app::get().rate(id, rating) {
+        if let Err(e) = crate::app::get().edit().rate(id, rating) {
             crate::log::note(&format!("rating: {e:#}"));
             return;
         }
@@ -850,7 +850,7 @@ impl qobject::GalleryModel {
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
-        if let Err(err) = crate::app::get().set_border_mark(e.id, marked) {
+        if let Err(err) = crate::app::get().edit().set_border_mark(e.id, marked) {
             crate::log::note(&format!("marking borders: {err:#}"));
             return;
         }
@@ -893,7 +893,7 @@ impl qobject::GalleryModel {
             self.grid.entries().iter().filter(|e| e.borders == Borders::Found).map(|e| e.id).collect();
         let n = qt_int(ids.len());
         if n > 0 {
-            crate::app::get().save_crops(ids, folder);
+            crate::app::get().library().save_crops(ids, folder);
         }
         n
     }
@@ -972,7 +972,7 @@ fn cell_roles() -> Vec<i32> {
 
 /// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).
 fn fresh_entry(id: FileId) -> Option<Entry> {
-    match crate::app::get().entry(id) {
+    match crate::app::get().reading().entry(id) {
         Ok(found) => found,
         Err(e) => {
             crate::log::note(&format!("reloading {}: {e:#}", id.get()));

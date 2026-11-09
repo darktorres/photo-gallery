@@ -3,11 +3,11 @@
 //! (`pg_writeback`) puts ratings and turns into the files. Both announce what changed on one bus of
 //! [`Change`]s, so a front end waits for those instead of polling; the progress and the writer's state are read here.
 //!
-//! The library starts on first use ([`App::library`]), at the thumbnail height the grid asks for. Its folder operations
-//! are on [`App`]: they work on the catalog whether or not the job has started.
+//! The library starts on first use ([`LibraryService::start`]), at the thumbnail height the grid asks for. Its folder
+//! operations are on [`LibraryService`]: they work on the catalog whether or not the job has started.
 
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_catalog::Root;
@@ -20,7 +20,7 @@ use pg_scan::normalize_path;
 use pg_thumbcache::ThumbCache;
 use pg_writeback::{WriteStatus, Writer};
 
-use crate::app::App;
+use crate::catalogs::Catalogs;
 use crate::error::{Error, Result, failed};
 
 /// How long a stop waits for the job's file (or batch) in progress. A file that takes longer to read is left to end
@@ -78,11 +78,10 @@ pub struct Status {
 
 impl Library {
     /// Start the job and the writer; they first finish whatever is pending.
-    pub(crate) fn start(app: &App, thumb_height: u32) -> Result<Library> {
+    pub(crate) fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, thumb_height: u32) -> Result<Library> {
         let changes = Arc::new(Bus::new(256));
-        let catalog_path = app.config.catalog_path();
-        let runner = Runner::start(catalog_path.clone(), app.thumbs, thumb_height, changes.clone()).map_err(failed)?;
-        let writer = Writer::start(catalog_path.clone(), app.thumbs, changes.clone()).map_err(failed)?;
+        let runner = Runner::start(catalog_path.clone(), thumbs, thumb_height, changes.clone()).map_err(failed)?;
+        let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone()).map_err(failed)?;
         let slot = WriterSlot {
             writer,
             restarts: 0,
@@ -91,7 +90,7 @@ impl Library {
             given_up: false,
             stopping: false,
         };
-        Ok(Library { runner, writer: Mutex::new(slot), catalog_path, thumbs: app.thumbs, changes })
+        Ok(Library { runner, writer: Mutex::new(slot), catalog_path, thumbs, changes })
     }
 
     fn writer(&self) -> MutexGuard<'_, WriterSlot> {
@@ -201,34 +200,53 @@ impl Library {
     }
 }
 
-impl App {
+/// The library's service: the job and the writer, started on first use, and the folder operations, which work on the catalog
+/// whether or not the job has started.
+pub struct LibraryService {
+    catalog_path: PathBuf,
+    catalogs: Arc<Catalogs>,
+    thumbs: &'static ThumbCache,
+    /// The started job and writer; set once, by the first [`LibraryService::start`].
+    cell: OnceLock<Library>,
+}
+
+impl LibraryService {
+    pub(crate) fn new(catalog_path: PathBuf, catalogs: Arc<Catalogs>, thumbs: &'static ThumbCache) -> LibraryService {
+        LibraryService { catalog_path, catalogs, thumbs, cell: OnceLock::new() }
+    }
+
     /// The library, started at `thumb_height` device pixels on first use (later calls ignore the height: set it with
     /// [`Library::set_thumb_height`]). Fails when a thread can't start; the next call tries again.
-    pub fn library(&self, thumb_height: u32) -> Result<&Library> {
-        if let Some(library) = self.library_cell.get() {
+    pub fn start(&self, thumb_height: u32) -> Result<&Library> {
+        if let Some(library) = self.cell.get() {
             return Ok(library);
         }
-        let library = Library::start(self, thumb_height)?;
-        Ok(self.library_cell.get_or_init(|| library))
+        let library = Library::start(self.catalog_path.clone(), self.thumbs, thumb_height)?;
+        Ok(self.cell.get_or_init(|| library))
+    }
+
+    /// The started library, if it has started. The folder operations scan through it, and do nothing with it until then.
+    fn running(&self) -> Option<&Library> {
+        self.cell.get()
     }
 
     /// Ratings and turns were queued for the files; a no-op until the library has started.
     pub fn wake_writer(&self) {
-        if let Some(library) = self.library_cell.get() {
+        if let Some(library) = self.running() {
             library.wake_writer();
         }
     }
 
     /// Save cropped copies into `folder`; a no-op until the library has started.
     pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
-        if let Some(library) = self.library_cell.get() {
+        if let Some(library) = self.running() {
             library.save_crops(ids, folder);
         }
     }
 
     /// The library's folders, each with its id and its path (under the catalog's rules), as the catalog has them.
     pub fn roots(&self) -> Result<Vec<Root>> {
-        self.with_catalog(|c| c.roots())
+        self.catalogs.with_catalog(|c| c.roots())
     }
 
     /// Add a folder to the library, at the path given (exact): normalized, and scanned. Returns the normalized folder's
@@ -239,19 +257,19 @@ impl App {
         if let Err(refused) = pg_scan::check_folder(PathRules::NATIVE, &root) {
             return Err(Error::FolderRefused { folder: PathRules::NATIVE.display(&root), reason: refused.reason });
         }
-        let added = self.with_catalog(|c| c.add_root(&root))?;
-        if let Some(library) = self.library_cell.get() {
+        let added = self.catalogs.with_catalog(|c| c.add_root(&root))?;
+        if let Some(library) = self.running() {
             library.scan(vec![root.clone()]);
         }
         Ok((PathRules::NATIVE.display(&root), added))
     }
 
-    /// Remove a folder from the library, by its id (from [`App::roots`]). A scan of it in progress stops. The files it
-    /// had are marked missing at once (`Catalog::remove_root`), not deleted: adding the folder back brings them back
-    /// with their analyses and ratings.
+    /// Remove a folder from the library, by its id (from [`LibraryService::roots`]). A scan of it in progress stops. The
+    /// files it had are marked missing at once (`Catalog::remove_root`), not deleted: adding the folder back brings them
+    /// back with their analyses and ratings.
     pub fn remove_folder(&self, id: RootId) -> Result<()> {
-        self.with_catalog(|c| c.remove_root(id).map(|_| ()))?;
-        if let Some(library) = self.library_cell.get() {
+        self.catalogs.with_catalog(|c| c.remove_root(id).map(|_| ()))?;
+        if let Some(library) = self.running() {
             library.scan(Vec::new());
         }
         Ok(())
@@ -259,8 +277,9 @@ impl App {
 
     /// Scan every library folder again (new, changed, moved and deleted files).
     pub fn rescan(&self) -> Result<()> {
-        let roots: Vec<RulePath> = self.with_catalog(|c| Ok(c.roots()?.into_iter().map(|r| r.path).collect()))?;
-        if let Some(library) = self.library_cell.get() {
+        let roots: Vec<RulePath> =
+            self.catalogs.with_catalog(|c| Ok(c.roots()?.into_iter().map(|r| r.path).collect()))?;
+        if let Some(library) = self.running() {
             library.scan(roots);
         }
         Ok(())
@@ -268,14 +287,14 @@ impl App {
 
     /// Turn `file_id` by `turns` quarter turns (clockwise, as the grid shows it) and queue the rotation for the file.
     pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<()> {
-        self.with_catalog(|c| pg_catalog::writes::queue_rotation(c, file_id, turns))?;
+        self.catalogs.with_catalog(|c| pg_catalog::writes::queue_rotation(c, file_id, turns))?;
         self.wake_writer();
         Ok(())
     }
 
     /// Stop the library; an error when the job was still running after its wait.
-    pub(crate) fn stop_library(&self) -> Result<()> {
-        match self.library_cell.get() {
+    pub fn stop(&self) -> Result<()> {
+        match self.running() {
             Some(library) if !library.stop() => Err(Error::Failed(
                 "background job still running at exit: its last changes are merged at the next open".to_string(),
             )),

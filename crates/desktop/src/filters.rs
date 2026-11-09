@@ -268,7 +268,7 @@ impl qobject::Filters {
         let listing = controller::listing();
         let filters = self.qt_thread();
         let shown = PathRules::NATIVE.display_merged(&listing.folder);
-        crate::app::get().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
+        crate::app::get().reading().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
             let facets = facets.unwrap_or_else(|e| {
                 crate::log::note(&format!("facets of {shown}: {e:#}"));
                 Facets::default()

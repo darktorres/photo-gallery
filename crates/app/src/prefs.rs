@@ -3,8 +3,14 @@
 //! height are here with the library's write-back and the Yandex folder. The last file selected is here too: it is a
 //! file's id in the catalog, so after a rebuild it may name another file (or none).
 
+use std::path::PathBuf;
+use std::sync::Arc;
+
 use pg_model::rules::Path as RulePath;
 use serde::{Deserialize, Serialize};
+
+use crate::notes::{Note, Notes};
+use crate::store::JsonStore;
 
 /// The preferences file's content. Fields missing from a file take their defaults; fields the file has that this version
 /// doesn't know are ignored.
@@ -60,6 +66,41 @@ impl Default for Prefs {
             row_height: 220.0,
             last_file: -1,
         }
+    }
+}
+
+/// The preferences in memory and in their file. A change is saved when it is made, atomically (`JsonStore`). A change that
+/// can't be saved holds in memory, and a note says so.
+pub struct PrefStore {
+    store: JsonStore<Prefs>,
+    path: PathBuf,
+    notes: Arc<Notes>,
+}
+
+impl PrefStore {
+    /// Read the preferences at `path`: the defaults where the file is missing or doesn't parse (a note says why, and where
+    /// the unreadable file was kept).
+    pub(crate) fn open(path: PathBuf, notes: Arc<Notes>) -> PrefStore {
+        let (store, unreadable) = JsonStore::open(path.clone());
+        if let Some(u) = unreadable {
+            notes.publish(Note::PrefsUnreadable { path: path.clone(), error: u.error, kept: u.kept });
+        }
+        PrefStore { store, path, notes }
+    }
+
+    /// The preferences, as they are now.
+    pub fn get(&self) -> Prefs {
+        self.store.get()
+    }
+
+    /// Change the preferences and save them. The change is kept in memory even when the save fails; the error says why
+    /// it wasn't written.
+    pub fn update(&self, change: impl FnOnce(&mut Prefs)) -> std::io::Result<()> {
+        let result = self.store.update(change);
+        if let Err(e) = &result {
+            self.notes.publish(Note::PrefsNotSaved { path: self.path.clone(), error: e.to_string() });
+        }
+        result
     }
 }
 

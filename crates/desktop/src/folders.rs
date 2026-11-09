@@ -273,7 +273,7 @@ impl qobject::FolderModel {
             this.generation
         };
         let model = self.qt_thread();
-        crate::app::get().session().tree(move |tree| {
+        crate::app::get().reading().session().tree(move |tree| {
             let tree = tree.unwrap_or_else(|e| {
                 crate::log::note(&format!("folder tree: {e:#}"));
                 FolderTree::default()

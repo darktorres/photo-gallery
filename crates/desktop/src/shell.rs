@@ -309,6 +309,7 @@ fn row_event(kind: folders::RowKind) -> ListingEvent {
 fn view_names() -> QStringList {
     app::get()
         .views()
+        .all()
         .unwrap_or_else(|e| {
             crate::log::note(&format!("views: {e:#}"));
             Vec::new()
@@ -484,21 +485,21 @@ impl qobject::Shell {
             query: listing.query,
             sort: listing.sort,
         };
-        if let Err(e) = app::get().save_view(&view) {
+        if let Err(e) = app::get().views().save(&view) {
             crate::log::note(&format!("saving view: {e:#}"));
         }
         self.as_mut().set_saved_views(view_names());
     }
 
     fn delete_view(mut self: Pin<&mut Self>, name: &QString) {
-        if let Err(e) = app::get().delete_view(&name.to_string()) {
+        if let Err(e) = app::get().views().delete(&name.to_string()) {
             crate::log::note(&format!("deleting view: {e:#}"));
         }
         self.as_mut().set_saved_views(view_names());
     }
 
     fn apply_view(self: Pin<&mut Self>, name: &QString) -> bool {
-        let Some(v) = app::get().view(&name.to_string()).ok().flatten() else {
+        let Some(v) = app::get().views().view(&name.to_string()).ok().flatten() else {
             return false;
         };
         self.dispatch(Event::Listing(ListingEvent::ViewApplied(v)));
@@ -605,7 +606,7 @@ impl qobject::Shell {
             }
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
             Command::SaveSession(listing) => {
-                if let Err(e) = app::get().save_listing(&listing) {
+                if let Err(e) = app::get().views().save_listing(&listing) {
                     crate::log::note(&format!("session: {e:#}"));
                 }
             }

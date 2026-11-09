@@ -28,7 +28,7 @@ use pg_model::query::{Query, Sort};
 use pg_model::rules::{Merged, PathRules};
 use pg_model::tree::FolderTree;
 
-use crate::app::App;
+use crate::catalogs::Catalogs;
 use crate::error::{Error, Result, failed};
 
 /// What a request is for.
@@ -222,14 +222,39 @@ impl Session {
     }
 }
 
-impl App {
+/// The catalog reads: the reader thread's session (the grid, the folder tree, the filter bar's counts), and the reads a
+/// front end makes on its own thread (a file's details and its grid entry).
+pub struct Reading {
+    reader: Arc<Reader>,
+    session: Session,
+    catalogs: Arc<Catalogs>,
+}
+
+impl Reading {
+    /// Start the reader thread on the catalog at `catalog_path`; an error if the thread can't be started.
+    pub(crate) fn start(catalog_path: PathBuf, catalogs: Arc<Catalogs>) -> Result<Reading> {
+        let reader = Reader::start(catalog_path)?;
+        let session = Session::new(1, reader.clone());
+        Ok(Reading { reader, session, catalogs })
+    }
+
+    /// The catalog reader's session (the front end's one).
+    pub fn session(&self) -> Session {
+        self.session.clone()
+    }
+
+    /// Stop the reader thread (see [`Reader::stop`]).
+    pub(crate) fn stop(&self) {
+        self.reader.stop();
+    }
+
     /// A file's details, read now; `None` when the file is gone from the catalog.
     pub fn details(&self, file_id: FileId) -> Result<Option<Details>> {
-        self.with_catalog(|c| browse::read::details(c, file_id))
+        self.catalogs.with_catalog(|c| browse::read::details(c, file_id))
     }
 
     /// A file's grid entry as the catalog has it now; `None` when it is gone.
     pub fn entry(&self, file_id: FileId) -> Result<Option<Entry>> {
-        self.with_catalog(|c| browse::read::entry(c, file_id))
+        self.catalogs.with_catalog(|c| browse::read::entry(c, file_id))
     }
 }

@@ -209,7 +209,7 @@ impl qobject::Library {
 
     /// The library's folders, as the catalog has them. When they can't be read, none is listed and the panel says why.
     fn load_roots(mut self: Pin<&mut Self>) {
-        let roots = match app::get().roots() {
+        let roots = match app::get().library().roots() {
             Ok(roots) => roots,
             Err(e) => {
                 crate::log::note(&format!("library: the folders couldn't be read: {e}"));
@@ -227,7 +227,7 @@ impl qobject::Library {
             return;
         }
         self.as_mut().load_roots();
-        let library = match app::get().library(u32::try_from(thumb_height.max(1)).unwrap_or(1)) {
+        let library = match app::get().library().start(u32::try_from(thumb_height.max(1)).unwrap_or(1)) {
             Ok(library) => library,
             Err(e) => {
                 // Nothing is scanned, imported or written: the panel says so, not only the log.
@@ -359,7 +359,7 @@ impl qobject::Library {
 
     /// Add the folder at `path` (exact), and say so when it was already there.
     fn add_path(mut self: Pin<&mut Self>, path: &Path) {
-        match app::get().add_folder(path) {
+        match app::get().library().add_folder(path) {
             Ok((root, added)) => {
                 // A folder already in the library is rescanned (the app scans it either way).
                 if !added {
@@ -378,7 +378,7 @@ impl qobject::Library {
         let Some(id) = usize::try_from(row).ok().and_then(|r| self.rust().root_ids.get(r).copied()) else {
             return;
         };
-        match app::get().remove_folder(id) {
+        match app::get().library().remove_folder(id) {
             Ok(()) => {
                 self.as_mut().load_roots();
                 self.scanned();
@@ -388,7 +388,7 @@ impl qobject::Library {
     }
 
     fn rescan(self: Pin<&mut Self>) {
-        if let Err(e) = app::get().rescan() {
+        if let Err(e) = app::get().library().rescan() {
             self.show(text::rescan_failed(&e.to_string()), true);
         }
     }

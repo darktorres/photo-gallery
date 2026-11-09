@@ -21,7 +21,7 @@ use pg_platform::names::{path_buf, rule_path_of};
 pub use pg_yandex::YandexError;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload};
 
-use crate::app::App;
+use crate::prefs::PrefStore;
 
 pub mod images;
 pub use images::Fetch;
@@ -545,8 +545,8 @@ impl Search {
 
     /// Where the save dialog opens: the folder saved into last (`yandex_folder`) while it exists, or else the photo's
     /// folder. None when there is neither.
-    pub fn start_folder(&self, app: &App) -> Option<PathBuf> {
-        let last = app.prefs().yandex_folder.map(|folder| path_buf(&PathRules::NATIVE.join(&folder)));
+    pub fn start_folder(&self, prefs: &PrefStore) -> Option<PathBuf> {
+        let last = prefs.get().yandex_folder.map(|folder| path_buf(&PathRules::NATIVE.join(&folder)));
         if let Some(last) = last.filter(|last| last.is_dir()) {
             return Some(last);
         }
@@ -558,7 +558,7 @@ impl Search {
     /// folder is remembered in the preferences for the next save, whether or not every save works. False when nothing
     /// is picked or a search or a save is running (nothing changes); an error when its thread couldn't start (nothing
     /// is written, and nothing stays busy). The save's outcome comes from [`Search::poll`].
-    pub fn save(&self, app: &App, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
+    pub fn save(&self, prefs: &PrefStore, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
         if hits.is_empty() {
             return Ok(false);
         }
@@ -575,7 +575,7 @@ impl Search {
         // A preferences file that can't be written keeps the folder in memory for this run; the save goes on. The app
         // reports that failure through its notes when it can be reported.
         if let Some(chosen) = rule_path_of(&folder) {
-            let _ = app.update_prefs(|p| p.yandex_folder = Some(chosen));
+            let _ = prefs.update(|p| p.yandex_folder = Some(chosen));
         }
         let shared = self.shared.clone();
         let changes = self.changes.clone();

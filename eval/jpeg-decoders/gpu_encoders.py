@@ -3,7 +3,7 @@ PPMs encoders.py prepared in WSL, into its out/ directory, named as encoders.py 
 encoders.py score rates them with the CPU encoders. Also the encode time per megapixel at Q75 (in-process for nvJPEG:
 host pixels in, JPEG bytes on the host out; gpujpegtool's own per-iteration encode time for GPUJPEG).
 
-    $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/gpu_encoders.py --gpujpeg EXE
+    $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/gpu_encoders.py --gpujpeg EXE   (bin/python on Linux)
 """
 
 import argparse

@@ -1,6 +1,6 @@
 """ANN bake-off on real embeddings: exact GPU self-join vs tuned approximate methods (PLAN §9 decision 5).
 
-Usage (from eval/, with PG_DATA_ROOT=D:\\PhotoGallery\\datasets PG_WORK_DIR=D:\\PhotoGallery\\eval_ann):
+Usage (from eval/, with PG_DATA_ROOT=<datasets folder> PG_WORK_DIR=<run folder>):
     python -m ann.run validate charact exact tune pca finalists verify report
 
 Stages, each cached in CACHE_DIR/ann (results_*.jsonl lines are skipped when present):

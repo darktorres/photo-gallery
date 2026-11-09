@@ -35,7 +35,8 @@ from models import SPECS, SSCD, build_transform
 
 ONNX_DIR = CACHE_DIR / "onnx"
 TRT_DIR = CACHE_DIR / "trt"
-QUANT_PYTHON = pg_path("PG_QUANT_PYTHON", "venv-quant", "Scripts", "python.exe")
+VENV_PYTHON = ("Scripts", "python.exe") if os.name == "nt" else ("bin", "python")  # a venv's interpreter, by OS
+QUANT_PYTHON = pg_path("PG_QUANT_PYTHON", "venv-quant", *VENV_PYTHON)
 TRT10_DIR = pg_path("PG_TRT10_DIR", "tools", "tensorrt-10.16.1.11-cu13")
 CALIB_IMAGES = 512
 MAX_BATCH = 128

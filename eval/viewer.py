@@ -2,7 +2,7 @@
 
 Usage: python viewer.py [--port 8765] [--no-browser]  ->  http://127.0.0.1:8765
 
-Shows every run directory under D:\\PhotoGallery that holds a files.txt (eval_smoke,
+Shows every run directory under DATA_ROOT (PG_DATA_ROOT) that holds a files.txt (eval_smoke,
 eval, ...): a model comparison, and the pair lists written by evaluate.py as
 side-by-side thumbnails, plus verify.py's decisions and diagnostic images, and group.py's groups
 (marking a group writes pair marks: same within a set, different across sets). Binds to localhost

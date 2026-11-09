@@ -82,7 +82,13 @@ def llvm_dir() -> Path:
 
 def symbol_cache() -> str:
     """PG_SYMBOL_CACHE, else %LOCALAPPDATA%\\PhotoGallery\\symbols."""
-    return os.environ.get("PG_SYMBOL_CACHE") or str(Path(os.environ["LOCALAPPDATA"]) / "PhotoGallery" / "symbols")
+    cache = os.environ.get("PG_SYMBOL_CACHE")
+    if cache:
+        return cache
+    local = os.environ.get("LOCALAPPDATA")
+    if not local:
+        sys.exit("symbolize.py: LOCALAPPDATA is not set: set PG_SYMBOL_CACHE to the symbol folder")
+    return str(Path(local) / "PhotoGallery" / "symbols")
 
 
 class SymbolInfo(ctypes.Structure):
@@ -333,6 +339,8 @@ def symbolize(path, symbols, demangler):
 
 
 def main():
+    if os.name != "nt":
+        sys.exit("symbolize.py: Windows only (dbghelp and the Windows SDK's symbol server)")
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("files", nargs="+")
     ap.add_argument("--path", action="append", default=[], help="another directory of PDBs (repeatable)")

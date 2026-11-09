@@ -32,6 +32,7 @@ Writes WORK_DIR/bench_thumbs.json.
 import argparse
 import io
 import json
+import os
 import random
 import re
 import shutil
@@ -51,8 +52,9 @@ from bench_decode import _vips
 from common import CACHE_DIR, DATA_ROOT, WORK_DIR, image_list, load_rgb, pg_path
 
 TOOLS_DIR = pg_path("PG_TOOLS_DIR", "tools")
-SSIMULACRA2 = TOOLS_DIR / "libjxl-0.11.1" / "ssimulacra2.exe"
-CJPEGLI = TOOLS_DIR / "libjxl-0.11.1" / "cjpegli.exe"
+EXE = ".exe" if os.name == "nt" else ""
+SSIMULACRA2 = TOOLS_DIR / "libjxl-0.11.1" / f"ssimulacra2{EXE}"
+CJPEGLI = TOOLS_DIR / "libjxl-0.11.1" / f"cjpegli{EXE}"
 
 MAX_ASPECT = 3.0  # panoramas: width capped at this x the row height
 LIBRARY_SIZE = 70e6

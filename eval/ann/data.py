@@ -1,7 +1,7 @@
 """The bake-off's base: the test set plus the planted copies (plant.py), embedded with the production pipeline
 (embed.py --model sscd_trt_fp16 --trim --draft), with what is known about each row.
 
-Run with PG_DATA_ROOT=D:\\PhotoGallery\\datasets and PG_WORK_DIR=D:\\PhotoGallery\\eval_ann (plant.py's run folder).
+Run with PG_DATA_ROOT=<datasets folder> and PG_WORK_DIR=<run folder> (plant.py's run folder).
 Methods work on compact ids: the rows that embedded (ok), in files.txt order.
 """
 

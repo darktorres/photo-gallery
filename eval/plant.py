@@ -1,6 +1,6 @@
 """Planted hard duplicates for the ANN bake-off (eval/ann): edited copies of real test-set images, saved as files.
 
-Usage: PG_DATA_ROOT=D:\\PhotoGallery\\datasets PG_WORK_DIR=D:\\PhotoGallery\\eval_ann python plant.py [--per-edit 1000]
+Usage: PG_DATA_ROOT=<datasets folder> PG_WORK_DIR=<run folder> python plant.py [--per-edit 1000]
 
 For each edit in edits.TRANSFORMS, --per-edit distinct source images are decoded in full, edited and saved as JPEG
 (quality 95; the jpeg_q30 edit is the source saved at quality 30) at DATA_ROOT/planted/<edit>/<source row>.jpg.
@@ -16,12 +16,11 @@ import argparse
 import json
 import random
 from multiprocessing import Pool
-from pathlib import Path
 
-from common import DATA_ROOT, WORK_DIR, load_rgb
+from common import DATA_ROOT, WORK_DIR, load_rgb, pg_path
 from edits import TRANSFORMS, edit_seed
 
-TEST_LIST = Path(r"D:\PhotoGallery\eval\files.txt")  # the test set's canonical list (common.image_list)
+TEST_LIST = pg_path(None, "eval", "files.txt")  # the test set's canonical list (common.image_list)
 TEST_DIR = "pinterest"  # the test set's folder under DATA_ROOT
 PLANTED_DIR = "planted"
 

@@ -42,7 +42,8 @@ class FileSource:
 
 
 # The gallery's border detector (crates/analysis/src/borders.rs), run on piped pixels by `gallery borders --stdin`.
-GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / "gallery.exe"))
+GALLERY_EXE = "gallery.exe" if os.name == "nt" else "gallery"
+GALLERY = Path(os.environ.get("PG_GALLERY", Path(__file__).resolve().parents[1] / "target" / "release" / GALLERY_EXE))
 
 
 class _Detector:

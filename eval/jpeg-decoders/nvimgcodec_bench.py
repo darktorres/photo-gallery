@@ -1,7 +1,8 @@
 """nvImageCodec (NVIDIA's codec library over nvJPEG) for docs/JPEG_DECODERS.md: one image at a time per backend, and
 batches, each with the pixels copied to host memory; CPU time per image; output against libjpeg-turbo.
 
-Run with its own venv (python -m pip install -r eval/jpeg-decoders/requirements.txt), not the shared eval venv:
+Run with its own venv (python -m pip install -r eval/jpeg-decoders/requirements.txt; bin/python on
+Linux), not the shared eval venv:
     $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/nvimgcodec_bench.py \
         --ref-dir DIR FILE...
 DIR holds the harness's libjpeg-turbo decodes (`harness dump turbo FILE DIR/NAME.ppm`), one per FILE.

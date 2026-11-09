@@ -123,11 +123,11 @@ modgraph: _qt
     python tools/modgraph/compiler_graph.py
 
 # Screenshot comparison: the test-hook matrix on one fixture, the working tree against a recorded reference, pixel by
-# pixel (tools/compare-shots.ps1). `just shots -Record <commit>` builds that commit and records its screenshots under
-# tools/shots/reference (once); `just shots` then builds only the working tree. `-Expect a,b` declares scenarios
-# that are expected to differ; `-Self` runs the working tree against itself; `-Only a,b` runs some scenarios.
+# pixel (tools/compare_shots.py). `just shots --record <commit>` builds that commit and records its screenshots under
+# tools/shots/reference (once); `just shots` then builds only the working tree. `--expect a,b` declares scenarios
+# that are expected to differ; `--self` runs the working tree against itself; `--only a,b` runs some scenarios.
 shots *args: _qt
-    pwsh -NoLogo -NoProfile -File tools/compare-shots.ps1 {{ args }}
+    {{ py }} tools/compare_shots.py {{ args }}
 
 # The QML tests (S-14.3): Qt Quick Test on the QML that stays in QML (crates/desktop/tests/qml), offscreen, against the
 # components staged as the pg.gallery module (tools/qmltest.py). The stubs stand in for the Rust types, so the tests

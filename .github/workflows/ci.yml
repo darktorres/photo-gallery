@@ -92,7 +92,7 @@ jobs:
           cache: true
 
       # The pinned Python comes first: `just setup` and the other recipes run its scripts (the screenshot fixture's venv is
-      # built from it too, tools/compare-shots.ps1). The patch is pinned, as the local tools' Python is (3.12.10).
+      # built from it too, tools/compare_shots.py). The patch is pinned, as the local tools' Python is (3.12.10).
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12.10"
@@ -183,9 +183,9 @@ jobs:
         continue-on-error: true # informational until it is stable (plan S-15)
         shell: pwsh
         run: |
-          # Without -Base, the comparison uses the one reference under tools/shots/reference. A PR's base has none unless
-          # someone recorded one, so looking it up failed every run. -Python: the Python 3.12 that setup-python put on PATH.
-          just shots -Python python
+          # Without --base, the comparison uses the one reference under tools/shots/reference. A PR's base has none unless
+          # someone recorded one, so looking it up failed every run. --python: the Python 3.12 that setup-python put on PATH.
+          just shots --python python
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Screenshot report

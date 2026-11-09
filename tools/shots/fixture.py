@@ -1,4 +1,4 @@
-"""The fixture for the screenshot matrix (`just shots`, tools/compare-shots.ps1): the parts the hooks need that the
+"""The fixture for the screenshot matrix (`just shots`, tools/compare_shots.py): the parts the hooks need that the
 command line can't make.
 
     python tools/shots/fixture.py library OUT        a small synthetic library: OUT/folder-00 and OUT/folder-01

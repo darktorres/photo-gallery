@@ -72,7 +72,7 @@ Item {
         smooth: true
         mipmap: true
         opacity: status === Image.Ready ? 1 : 0
-        Behavior on opacity { NumberAnimation { duration: 120 } }
+        Behavior on opacity { NumberAnimation { duration: 120; easing.type: Easing.OutCubic } }
     }
     // B: the borders over the thumbnail, placed as PreserveAspectCrop paints it.
     Item {

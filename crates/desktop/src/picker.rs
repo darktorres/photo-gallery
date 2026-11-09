@@ -152,32 +152,7 @@ pub fn set_start(path: Option<PathBuf>) {
 /// not be: it refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is only spaces. A folder
 /// under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path as given is kept.
 fn start_for() -> Option<PathBuf> {
-    START
-        .with(|start| start.borrow_mut().take())
-        .map(|folder| match std::fs::canonicalize(&folder) {
-            Ok(real) if has_drive_or_share(&real) => real,
-            _ => folder,
-        })
-        .filter(|folder| folder.is_dir())
-        .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
-}
-
-/// Whether `path` starts with a drive or a share (`C:\`, `\\?\C:\`, `\\server\share`), the forms the shell takes.
-#[cfg(windows)]
-fn has_drive_or_share(path: &Path) -> bool {
-    use std::path::{Component, Prefix};
-    matches!(
-        path.components().next(),
-        Some(Component::Prefix(prefix)) if matches!(
-            prefix.kind(),
-            Prefix::Disk(_) | Prefix::VerbatimDisk(_) | Prefix::UNC(..) | Prefix::VerbatimUNC(..)
-        )
-    )
-}
-
-#[cfg(not(windows))]
-fn has_drive_or_share(_: &Path) -> bool {
-    true
+    pg_platform::picker::start_folder(START.with(|start| start.borrow_mut().take()))
 }
 
 /// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own). An error when `dir`
@@ -226,8 +201,7 @@ fn run_dialog(
     start: Option<&Path>,
     owner: Option<usize>,
 ) -> std::io::Result<Option<Chosen>> {
-    use std::os::windows::ffi::OsStrExt;
-    let start: Option<Vec<u16>> = start.map(|path| path.as_os_str().encode_wide().collect());
+    let start = pg_platform::picker::start_units(start);
     Ok(pg_platform::picker::pick_with(dialog, start.as_deref(), owner)?.map(|path| (purpose, path)))
 }
 
@@ -245,14 +219,14 @@ impl Default for PickerRust {
 
 /// Whether the system's dialog is the one used: it is Windows' (the other systems use the app's own, `openInApp`).
 fn native_dialog() -> bool {
-    cfg!(windows)
+    pg_platform::picker::NATIVE
 }
 
 impl qobject::FolderPicker {
     fn pick(mut self: Pin<&mut Self>, purpose: i32) {
         let Some(purpose) = Purpose::from_code(purpose) else { return };
         let start = start_for();
-        if cfg!(windows) {
+        if pg_platform::picker::NATIVE {
             // The system's dialog runs its own loop: nothing of the app is borrowed across it (`native`).
             let owner = owner();
             match native(purpose, start.as_deref(), owner) {
@@ -386,7 +360,7 @@ mod tests {
     #[cfg(windows)]
     #[test]
     fn only_a_drive_or_a_share_is_given_in_its_canonical_form() {
-        use super::has_drive_or_share;
+        use pg_platform::picker::has_drive_or_share;
         assert!(has_drive_or_share(Path::new(r"\\?\C:\photos")));
         assert!(has_drive_or_share(Path::new(r"C:\photos")));
         assert!(has_drive_or_share(Path::new(r"\\?\UNC\server\share\a")));

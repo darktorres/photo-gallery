@@ -107,29 +107,15 @@ impl qobject::VideoSource {
     }
 }
 
-/// Plays the file at `path`: its name's units on Windows, its open descriptor on Unix.
+/// Plays the file at `path`, in the form the system holds its name in (`pg_platform::file::play_target`): its units on
+/// Windows, its open descriptor on Unix. The player's declarations above are per platform, to take that form.
 fn play_path(player: Pin<&mut VideoPlayer>, path: &Path) {
     let ext = ext_of(path);
-    #[cfg(windows)]
-    {
-        use std::os::windows::ffi::OsStrExt;
-        let units: Vec<u16> = path.as_os_str().encode_wide().collect();
-        player.play_units(&units, ext);
-    }
-    #[cfg(unix)]
-    {
-        player.play_fd(fd_of(path), ext);
-    }
-}
-
-/// The file open for reading, as a descriptor the player takes over (`-1` when it can't be opened: the player then
-/// reports the error).
-#[cfg(unix)]
-fn fd_of(path: &Path) -> i32 {
-    use std::os::unix::io::IntoRawFd;
-    match std::fs::File::open(path) {
-        Ok(file) => file.into_raw_fd(),
-        Err(_) => -1,
+    match pg_platform::file::play_target(path) {
+        #[cfg(windows)]
+        pg_platform::file::PlayTarget::Units(units) => player.play_units(&units, ext),
+        #[cfg(unix)]
+        pg_platform::file::PlayTarget::Descriptor(fd) => player.play_fd(fd, ext),
     }
 }
 

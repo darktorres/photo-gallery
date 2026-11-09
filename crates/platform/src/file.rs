@@ -144,6 +144,37 @@ pub fn created_time(meta: &Metadata) -> Option<i64> {
     Some(UNIX_EPOCH_TICKS + secs * 10_000_000 + i64::from(since.subsec_nanos() / 100))
 }
 
+/// What the video player is given for a file, in the form the system holds the file's name in: its UTF-16 units (Windows),
+/// or the file open for reading, as a descriptor the player takes over (Unix).
+#[cfg(windows)]
+pub enum PlayTarget {
+    Units(Vec<u16>),
+}
+
+/// What the video player is given for a file (see the Windows one).
+#[cfg(unix)]
+pub enum PlayTarget {
+    Descriptor(i32),
+}
+
+/// The file at `path`, for the video player: its name's units on Windows.
+#[cfg(windows)]
+pub fn play_target(path: &Path) -> PlayTarget {
+    use std::os::windows::ffi::OsStrExt;
+    PlayTarget::Units(path.as_os_str().encode_wide().collect())
+}
+
+/// The file at `path`, for the video player: the file open for reading (`-1` when it can't be opened: the player then
+/// reports the error).
+#[cfg(unix)]
+pub fn play_target(path: &Path) -> PlayTarget {
+    use std::os::unix::io::IntoRawFd;
+    PlayTarget::Descriptor(match std::fs::File::open(path) {
+        Ok(file) => file.into_raw_fd(),
+        Err(_) => -1,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

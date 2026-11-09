@@ -9,8 +9,50 @@
 //! fake dialog; the Windows implementation is only the calls to the system.
 
 use std::io;
+use std::path::{Path, PathBuf};
+
+/// Whether the system's own folder dialog is the one the app uses: Windows' is, the other systems have the app's own picker.
+pub const NATIVE: bool = cfg!(windows);
+
+/// Whether `path` starts with a drive or a share (`C:\`, `\\?\C:\`, `\\server\share`), the forms the shell takes.
 #[cfg(windows)]
-use std::path::PathBuf;
+pub fn has_drive_or_share(path: &Path) -> bool {
+    use std::path::{Component, Prefix};
+    matches!(
+        path.components().next(),
+        Some(Component::Prefix(prefix)) if matches!(
+            prefix.kind(),
+            Prefix::Disk(_) | Prefix::VerbatimDisk(_) | Prefix::UNC(..) | Prefix::VerbatimUNC(..)
+        )
+    )
+}
+
+/// Every other system has no drives or shares to tell apart: the test is always met.
+#[cfg(not(windows))]
+pub fn has_drive_or_share(_: &Path) -> bool {
+    true
+}
+
+/// The folder the dialog opens in, from the one requested: given in its real form (`canonicalize`), which the shell takes
+/// where the path as given may not. It refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is
+/// only spaces; a folder under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path
+/// as given is kept. Without a folder that is one now, the user's own (USERPROFILE, else HOME).
+pub fn start_folder(requested: Option<PathBuf>) -> Option<PathBuf> {
+    requested
+        .map(|folder| match std::fs::canonicalize(&folder) {
+            Ok(real) if has_drive_or_share(&real) => real,
+            _ => folder,
+        })
+        .filter(|folder| folder.is_dir())
+        .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
+}
+
+/// The start folder in the shell's units, for `pick_with`.
+#[cfg(windows)]
+pub fn start_units(start: Option<&Path>) -> Option<Vec<u16>> {
+    use std::os::windows::ffi::OsStrExt;
+    start.map(|path| path.as_os_str().encode_wide().collect())
+}
 
 /// The item the dialog chose: its file-system path in the system's units (`SIGDN_FILESYSPATH`).
 pub trait ShellItem {

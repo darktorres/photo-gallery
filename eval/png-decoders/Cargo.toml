@@ -1,0 +1,26 @@
+[package]
+name = "png-decoders"
+edition = "2024"
+version = "0.1.0"
+publish = false
+description = "Speed and output of PNG decoders on the library's PNGs (docs/PNG_DECODERS.md)"
+
+# Not a member of the app's workspace: the decoders compared here aren't the app's dependencies.
+[workspace]
+
+[dependencies]
+anyhow = "1"
+# The app's PNG decoder: the fork pinned in the root Cargo.toml's [patch.crates-io] (vendor/README.md).
+png = { git = "https://github.com/darktorres/image-png", rev = "f7129d399da2984b2f5e5ca470dfcd57df4c3c7a" }
+# The fork's upstream, as crates.io has it.
+png-upstream = { package = "png", version = "0.18" }
+zune-core = "0.5"
+zune-png = "0.5"
+
+[profile.release]
+debug = "line-tables-only"
+
+# The app's fdeflate (root Cargo.toml's [patch.crates-io]): the fork of png keeps its decompressor, which needs this
+# fdeflate's reset. The patch applies to every user of fdeflate, so png 0.18 here decodes with it too.
+[patch.crates-io]
+fdeflate = { git = "https://github.com/darktorres/fdeflate", rev = "0994863ac0a3728982885e0b32521c1d88266820" }

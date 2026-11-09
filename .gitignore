@@ -2,6 +2,8 @@ __pycache__/
 /target/
 # The JPEG decoder comparison is its own workspace (eval/jpeg-decoders).
 /eval/jpeg-decoders/target/
+# So is the PNG one (eval/png-decoders); its Cargo.lock starts from the app's, for the fork's dependency versions.
+/eval/png-decoders/target/
 # Large outputs (bench data, caches, screenshots) live outside the repo, at the paths in .env.
 *.npy
 # This machine's settings (paths and the like): copy .env.example to .env and fill it in.

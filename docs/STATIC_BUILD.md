@@ -210,3 +210,74 @@ the FFmpeg and Windows media backends, `qsvgicon`.
 - **Not imported yet:** the deployed `networkinformation\qnetworklistmanager` plugin (its CMake target name is not
   checked) is in the app but not in the check's list. Add it when the app's own plugin list is written, if the app
   uses `QNetworkInformation`.
+
+## App build against the static Qt
+
+Build: `cargo build -p pg-gallery --bin gallery` with `PG_QT_STATIC=1`, `QT_DIR` = the static prefix,
+`PG_FFMPEG_STATIC` = the static FFmpeg's lib folder, and a separate `CARGO_TARGET_DIR`. Only that build sets
+`PG_QT_STATIC`; the shared build's `build.rs` path is unchanged.
+
+What it took, in order (each a link or start failure, found by running the binary offscreen):
+
+- **Link arguments do not propagate.** `cargo::rustc-link-arg` from `pg-desktop`'s build script does not reach the
+  binary. The static libraries go out as `rustc-link-search` and `rustc-link-lib=static=<name>` instead.
+- **Plugin class names.** A plugin's exported symbol is `qt_static_plugin_<name>`, where `<name>` drops the `Plugin`
+  suffix for the TLS backends (`QSchannelBackend`, `QTlsBackendCertOnly`). `dumpbin /symbols` on each plugin library
+  lists the names.
+- **Missing QML plugin:** `QtQml.WorkerScript`. `QtQml`'s qmldir uses `import` lines, not `depends`, so a walk over
+  `depends` alone misses it.
+- **Modules the QML plugins are built on:** `Qt6QuickControls2Impl`, `…Basic`, `…BasicStyleImpl`, `…Fusion`,
+  `…FusionStyleImpl` and `Qt6MultimediaQuick`. Their unresolved symbols showed them; qt-build-utils reads only the
+  modules' `.prl` files, not the plugins'.
+- **Resources are not registered by themselves.** A static build runs no `qInitResources_*`, so the Controls
+  styles' `.qml` files (`ApplicationWindow.qml`, under `qrc:/qt-project.org/imports/QtQuick/Controls/Fusion/`) are
+  missing until `Q_INIT_RESOURCE` runs. `cpp/static_qt.cpp` runs them from `pg_static_qt_link`, which
+  `gui_app::new` calls. The initializers are C++-linkage, so they sit in a separate function (an `extern "C"`
+  declaration gets an unmangled name and does not link).
+
+With those, `gallery.exe` (debug) starts offscreen and the QML loads.
+
+**Two libjpeg builds in one process (the problem).** Opening an image aborts: `Wrong JPEG library version: library is 62,
+caller expects 80`. Qt's `qjpeg` is built against Qt's bundled libjpeg, which has the JPEG 8.0 API (`JPEG_LIB_VERSION
+80`). `turbojpeg-sys` (the app's Rust turbojpeg, a git dependency) builds libjpeg-turbo with the default JPEG 6.2 API
+(`WITH_JPEG8` off, `turbojpeg-sys`'s `CMakeLists.txt`). Both libraries export `jpeg_*`, and the static link resolves
+Qt's calls to the 6.2 copy. In the shared build each is in its own DLL, so the clash does not occur.
+
+Tried: `WITH_JPEG8=ON` in turbojpeg-sys (a local copy of the pinned fork, `D:\PhotoGallery\static\rust-turbojpeg`,
+patched in `Cargo.toml` for the test, then reverted). The API version then matched, but the structs did not:
+`JPEG parameter struct mismatch: library thinks size is 624, caller expects 656`, and the process crashes. Qt's
+bundled libjpeg is the IJG code (`JPEG_LIB_VERSION 80`, with arithmetic coding and `BITS_IN_JSAMPLE` 8, 12 and 16
+variants), not libjpeg-turbo, so the two never agree on the struct layout. Matching the version number is not enough.
+
+Why not drop Qt's JPEG: the app hands `QImage::from_data` every thumbnail (JPEG, made by turbojpeg) and every Yandex
+original, which can be any format Qt reads. Moving JPEG to Rust would still leave the other formats in Qt, so the
+process would keep two decoders. One libjpeg for the whole process is the proper fix.
+
+**The fix: one libjpeg-turbo, built once, used by Qt and the app.** `tools/build-jpeg-turbo.ps1` builds libjpeg-turbo
+from the pinned fork's sources (the same commit as `turbojpeg-sys` in the root `Cargo.toml`), with `WITH_JPEG8=ON`
+(API 8.0, as Qt expects), `WITH_CRT_DLL=ON` and static libraries, into `<Work>\prefix`. Then:
+
+- **Qt:** `configure` with `-system-libjpeg -feature-system-jpeg` and `-DJPEG_INCLUDE_DIR` / `-DJPEG_LIBRARY_RELEASE`
+  pointing at that prefix. Two details:
+  - The path is passed with forward slashes. A backslash in `JPEG_LIBRARY` reaches the generated CMake as a
+    `set()` with an escape sequence and fails with a syntax error.
+  - `-feature-system-jpeg` is needed. Qt's `system-jpeg` condition tests `JPEG_FOUND`, which `qt_find_package` sets in
+    its own scope, so the condition is false even though `WrapSystemJpeg` finds the library (`TRUE`, version 80).
+    `-feature-` forces the feature on.
+- **The app:** `turbojpeg-sys` in its `explicit` mode, with `TURBOJPEG_SOURCE=explicit`, `TURBOJPEG_STATIC=1`,
+  `TURBOJPEG_LIB_DIR` = `<Work>\link` (a copy of `turbojpeg-static.lib` named `turbojpeg.lib`, the name it links) and
+  `TURBOJPEG_INCLUDE_DIR` = `<Work>\prefix\include`. The static build only; the shared build is unchanged.
+- **One archive:** only `turbojpeg-static.lib` goes into the process. Linking `jpeg-static.lib` as well would bring a
+  second copy of the `jpeg_*` functions.
+
+Verified (2026-11-09):
+
+- **Qt's JPEG plugin** decodes real photos through the shared libjpeg-turbo: a small program (`D:\PhotoGallery\static\jpegcheck`)
+  reads two JPEGs (1080×1920 and 1920×1080) and a missing file, which reports "File not found". The static
+  `gallery.exe` (debug) on the same libjpeg runs offscreen for 90 s with no JPEG error.
+- **Recipe:** `tools/build-jpeg-turbo.ps1` builds from an empty folder. Its headers match the hand build's byte for byte.
+  Its first run had CRLF headers, because Git for Windows converts line endings by default. The recipe now sets
+  `core.autocrlf` to false, so the bytes don't depend on the machine's Git settings.
+- **Same folder, two runs:** 94 of 94 extracted objects are identical except bytes 4–7 of each COFF header, the
+  TimeDateStamp. This meets the standard the FFmpeg recipe uses. Across folders the bytes differ, from the absolute
+  source paths, as recorded for FFmpeg.

@@ -19,6 +19,10 @@ fn main() -> Result<(), String> {
     mascots.sort();
     resources.extend(mascots);
 
+    // The `pg_static_qt` cfg (set below for the static build) is declared for every build, so the shared build is
+    // checked the same way.
+    println!("cargo::rustc-check-cfg=cfg(pg_static_qt)");
+
     // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that
     // (vendor/README.md).
     let mut builder = CxxQtBuilder::new_qml_module(
@@ -104,9 +108,115 @@ fn main() -> Result<(), String> {
     if std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
         builder = builder.file("src/live_reload.rs").cpp_file("cpp/live_reload.cpp");
     }
+    // A static Qt (PG_QT_STATIC set; docs/STATIC_BUILD.md): the modules the QML uses, the plugins' registration
+    // (cpp/static_qt.cpp), and the libraries of the static link. Only that build sets the variable: the shared build is
+    // unchanged.
+    if std::env::var_os("PG_QT_STATIC").is_some() {
+        builder = builder
+            .qt_module("QuickControls2")
+            .qt_module("QuickLayouts")
+            .qt_module("Svg")
+            .cpp_file("cpp/static_qt.cpp");
+        static_qt_links()?;
+    }
     builder.build();
     Ok(())
 }
+
+/// The static Qt's libraries beyond the modules cxx-qt links: the plugins and QML plugins (paths under QT_DIR, the static
+/// Qt's prefix), the Windows libraries Qt's static libraries need, and the static FFmpeg that Qt's FFmpeg plugin uses
+/// (PG_FFMPEG_STATIC, its lib folder). The lists are the static link line of the check program (docs/STATIC_BUILD.md).
+///
+/// The libraries go out as `rustc-link-search` and `rustc-link-lib`, which reach the binary that depends on this crate.
+/// `rustc-link-arg` would not: it is for the crate's own link, so the plugins would be lost (the app would start without
+/// its platform plugin). The `pg_static_qt` cfg tells gui_app.rs to keep cpp/static_qt.cpp's registrations linked.
+fn static_qt_links() -> Result<(), String> {
+    let qt = std::path::PathBuf::from(
+        std::env::var_os("QT_DIR").ok_or("PG_QT_STATIC needs QT_DIR, the static Qt's prefix")?,
+    );
+    let ffmpeg = std::path::PathBuf::from(
+        std::env::var_os("PG_FFMPEG_STATIC").ok_or("PG_QT_STATIC needs PG_FFMPEG_STATIC, the static FFmpeg's lib folder")?,
+    );
+    println!("cargo::rustc-cfg=pg_static_qt");
+    for lib in STATIC_QT_LIBS {
+        link_static(&qt.join(lib))?;
+    }
+    for lib in STATIC_FFMPEG_LIBS {
+        link_static(&ffmpeg.join(format!("{lib}.lib")))?;
+    }
+    for lib in STATIC_QT_SYSTEM_LIBS {
+        println!("cargo::rustc-link-lib={lib}");
+    }
+    Ok(())
+}
+
+/// Links one static library by its file: its folder is searched, and its name (without `.lib`) is the library.
+fn link_static(path: &std::path::Path) -> Result<(), String> {
+    let dir = path.parent().ok_or_else(|| format!("{}: no folder", path.display()))?;
+    let name = path
+        .file_stem()
+        .and_then(|name| name.to_str())
+        .ok_or_else(|| format!("{}: no library name", path.display()))?;
+    println!("cargo::rustc-link-search=native={}", dir.display());
+    println!("cargo::rustc-link-lib=static={name}");
+    Ok(())
+}
+
+/// Qt's static plugin and QML plugin libraries the app imports (cpp/static_qt.cpp), relative to QT_DIR.
+const STATIC_QT_LIBS: &[&str] = &[
+    "lib/Qt6FFmpegMediaPluginImpl.lib",
+    // The modules the QML plugins below are built on (their .prl files name them, and qt-build-utils reads only the
+    // modules' .prl files, not these).
+    "lib/Qt6QuickControls2Impl.lib",
+    "lib/Qt6QuickControls2Basic.lib",
+    "lib/Qt6QuickControls2BasicStyleImpl.lib",
+    "lib/Qt6QuickControls2Fusion.lib",
+    "lib/Qt6QuickControls2FusionStyleImpl.lib",
+    "lib/Qt6MultimediaQuick.lib",
+    "plugins/platforms/qwindows.lib",
+    "plugins/platforms/qoffscreen.lib",
+    "plugins/imageformats/qgif.lib",
+    "plugins/imageformats/qicns.lib",
+    "plugins/imageformats/qico.lib",
+    "plugins/imageformats/qjpeg.lib",
+    "plugins/imageformats/qsvg.lib",
+    "plugins/imageformats/qtga.lib",
+    "plugins/imageformats/qtiff.lib",
+    "plugins/imageformats/qwbmp.lib",
+    "plugins/imageformats/qwebp.lib",
+    "plugins/tls/qschannelbackend.lib",
+    "plugins/tls/qcertonlybackend.lib",
+    "plugins/multimedia/ffmpegmediaplugin.lib",
+    "plugins/multimedia/windowsmediaplugin.lib",
+    "plugins/iconengines/qsvgicon.lib",
+    "qml/QtQml/qmlplugin.lib",
+    "qml/QtQml/Models/modelsplugin.lib",
+    "qml/QtQml/WorkerScript/workerscriptplugin.lib",
+    "qml/QtQuick/qtquick2plugin.lib",
+    "qml/QtQuick/Window/quickwindowplugin.lib",
+    "qml/QtQuick/Layouts/qquicklayoutsplugin.lib",
+    "qml/QtQuick/Templates/qtquicktemplates2plugin.lib",
+    "qml/QtQuick/Controls/qtquickcontrols2plugin.lib",
+    "qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.lib",
+    "qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.lib",
+    "qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.lib",
+    "qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.lib",
+    "qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.lib",
+    "qml/QtMultimedia/quickmultimediaplugin.lib",
+];
+
+/// The FFmpeg libraries of the static build, in PG_FFMPEG_STATIC.
+const STATIC_FFMPEG_LIBS: &[&str] = &["avcodec", "avformat", "avutil", "swresample", "swscale"];
+
+/// The Windows libraries the static Qt's libraries use (the manifest's non-Qt6 system entries).
+const STATIC_QT_SYSTEM_LIBS: &[&str] = &[
+    "Dwmapi", "Dxva2", "advapi32", "amstrmid", "authz", "avrt", "bcrypt", "comdlg32", "crypt32", "d2d1", "d3d11",
+    "d3d12", "d3d9", "dnsapi", "dwrite", "dxgi", "dxguid", "evr", "gdi32", "icuin", "icuuc", "imm32", "iphlpapi",
+    "kernel32", "ksuser", "mf", "mfcore", "mfplat", "mfreadwrite", "mfuuid", "mpr", "mscms", "ncrypt", "netapi32",
+    "ntdll", "ole32", "oleaut32", "propsys", "runtimeobject", "secur32", "setupapi", "shcore", "shell32", "shlwapi",
+    "strmiids", "synchronization", "uiautomationcore", "user32", "userenv", "uuid", "uxtheme", "version", "windowsapp",
+    "winhttp", "winmm", "winspool", "wmcodecdspuuid", "ws2_32", "wtsapi32",
+];
 
 /// Whether the content key is set (non-empty), as CI sets it: the builder then emits no path lines for the sources.
 fn has_content_key() -> bool {

@@ -35,9 +35,9 @@ setup:
 test-tools:
     {{ py }} -m unittest discover -s tools -p "test_*.py"
 
-# Says which of this machine's prerequisites are missing and how to fix each one (tools/doctor.ps1). Builds nothing.
+# Says which of this machine's prerequisites are missing and how to fix each one (tools/doctor.py). Builds nothing.
 doctor:
-    pwsh -NoLogo -NoProfile -File tools/doctor.ps1
+    {{ py }} tools/doctor.py
 
 # Build the app: `release` (default) or `debug` (reads the QML from crates/desktop/qml and reloads it on change).
 build profile="release": _qt

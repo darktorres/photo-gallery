@@ -6,6 +6,8 @@ use image::ImageFormat;
 use pg_model::{format::Format, num};
 use std::io::Cursor;
 
+use crate::codecs::{decoded_color, tiff_limits};
+
 /// `bytes` (a BMP or a TIFF) decoded, cropped to the `w` × `h` rectangle at (`x`, `y`) and encoded again in the same
 /// format. The metadata is not carried over.
 ///
@@ -49,7 +51,11 @@ fn tiff_samples_cropped(bytes: &[u8], rect: [u32; 4]) -> Result<Option<Vec<u8>>>
     if layout.planes != 1 || !matches!(layout.sample_format, tiff::tags::SampleFormat::Uint) {
         return Ok(None);
     }
-    let (width, _) = decoder.dimensions().context("decoding")?;
+    let (width, height) = decoder.dimensions().context("decoding")?;
+    // The same limits as a decode of this file (`codecs::tiff_limits`): the decoded image reserved from the cap, and
+    // the decoder's buffers from the rest.
+    let (image, stored) = decoded_color(color).context("decoding")?;
+    let mut decoder = decoder.with_limits(tiff_limits(image, stored, width, height).context("decoding")?);
     // BigTIFF: 43 after the byte order, where a classic TIFF has 42.
     let big = matches!(bytes.get(..4), Some(b"II\x2B\0" | b"MM\0\x2B"));
     let [_, _, w, h] = rect;
@@ -110,7 +116,7 @@ where
 mod tests {
     use super::*;
     use tiff::encoder::TiffEncoder;
-    use tiff::encoder::colortype::{CMYK8, CMYK16};
+    use tiff::encoder::colortype::{CMYK8, CMYK16, RGB16};
 
     /// The stored samples of a TIFF, as the tiff crate reads them, with its colour type and size.
     fn samples(bytes: &[u8]) -> (tiff::ColorType, (u32, u32), tiff::decoder::DecodingResult) {
@@ -184,6 +190,29 @@ mod tests {
             let want: Vec<u8> = (1..3usize).flat_map(|y| rgb[(y * 6 + 1) * 3..(y * 6 + 5) * 3].to_vec()).collect();
             let tiff::decoder::DecodingResult::U8(got) = got else { panic!("8-bit samples") };
             assert_eq!(got, want);
+        }
+    }
+
+    /// A 16-bit RGB TIFF is cropped in its 16-bit samples, at its depth and in its kind, classic or BigTIFF.
+    #[test]
+    fn an_rgb16_tiff_crops_as_rgb16_in_its_own_kind() {
+        let (w, h) = (6u32, 4u32);
+        let rgb: Vec<u16> = (0..w * h * 3).map(|i| u16::try_from(i * 2741 % 65536).unwrap()).collect();
+        // Left 1, top 1, 4 × 2: rows 1 and 2, pixels 1 to 4.
+        for big in [false, true] {
+            let mut file = Cursor::new(Vec::new());
+            if big {
+                TiffEncoder::new_big(&mut file).unwrap().write_image::<RGB16>(w, h, &rgb).unwrap();
+            } else {
+                TiffEncoder::new(&mut file).unwrap().write_image::<RGB16>(w, h, &rgb).unwrap();
+            }
+            let out = cropped(&file.into_inner(), Format::Tiff, 1, 1, 4, 2).unwrap();
+            assert_eq!(is_big(&out), big);
+            let (color, size, got) = samples(&out);
+            assert_eq!((color, size), (tiff::ColorType::RGB(16), (4, 2)));
+            let tiff::decoder::DecodingResult::U16(got) = got else { panic!("16-bit samples") };
+            let want: Vec<u16> = (1..3usize).flat_map(|y| rgb[(y * 6 + 1) * 3..(y * 6 + 5) * 3].to_vec()).collect();
+            assert_eq!(got, want, "big {big}");
         }
     }
 }

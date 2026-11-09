@@ -16,18 +16,22 @@ from pathlib import Path
 
 import env
 import numpy as np
-from nvidia import nvimgcodec as nv
 from PIL import Image
 
 BUDGET_S = 2.0
 MAX_BATCH_BYTES = 2.0e9  # decoded RGB per batch: the 2060 has 6 GB, ~1.5 GB taken by the desktop
 CU_CTX_SCHED_BLOCKING_SYNC = 0x04  # cudaDeviceScheduleBlockingSync: a synchronize() sleeps instead of spinning
-BACKENDS = {
-    "default": None,
-    "GPU_ONLY": nv.BackendKind.GPU_ONLY,
-    "HYBRID_CPU_GPU": nv.BackendKind.HYBRID_CPU_GPU,
-    "CPU_ONLY": nv.BackendKind.CPU_ONLY,
-}
+
+
+def backends(nv) -> dict:
+    """The decoders to time: nvImageCodec's default (None), and each backend kind. Takes the imported module, which
+    main() imports only after blocking_sync()."""
+    return {
+        "default": None,
+        "GPU_ONLY": nv.BackendKind.GPU_ONLY,
+        "HYBRID_CPU_GPU": nv.BackendKind.HYBRID_CPU_GPU,
+        "CPU_ONLY": nv.BackendKind.CPU_ONLY,
+    }
 
 
 def blocking_sync() -> None:
@@ -75,8 +79,12 @@ def main():
     args = ap.parse_args()
     batches = [int(b) for b in args.batches.split(",")]
     blocking_sync()
+    # Imported only now: if importing the library creates the CUDA primary context, the flags above must already be set
+    # (cuDevicePrimaryCtxSetFlags fails on an active context).
+    from nvidia import nvimgcodec as nv
+
     decoders = {}
-    for name, kind in BACKENDS.items():
+    for name, kind in backends(nv).items():
         try:
             decoders[name] = nv.Decoder() if kind is None else nv.Decoder(backends=[nv.Backend(kind)])
         except Exception as e:  # noqa: BLE001 (reported, and the other backends still run)

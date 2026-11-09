@@ -189,14 +189,18 @@ impl Catalog {
         }
         if coverage.complete {
             // The fresh rows nothing paired, which have no children, are genuinely new files: cleared, outside the
-            // skipped folders. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
+            // skipped folders. Only the rows this scan saw are cleared: an unpaired row it did not see is a file that is
+            // gone for now, and stays unpaired, so the file coming back under its identity is paired with its row (and
+            // its data) rather than taken for a new file. Displaced rows (no identity) stay as they are, as tombstones a
+            // later file can replace.
             let mut clear = tx.prepare(concat!(
-                "UPDATE files SET unpaired = 0 WHERE folder_id = ?1 AND unpaired = 1 AND volume IS NOT NULL AND NOT ",
+                "UPDATE files SET unpaired = 0 WHERE folder_id = ?1 AND last_scan = ?2 AND unpaired = 1 \
+                 AND volume IS NOT NULL AND NOT ",
                 has_children!()
             ))?;
             for folder in folders_under(&tx, self.rules, root)? {
                 if !skipped.contains(&folder) {
-                    clear.execute([folder])?;
+                    clear.execute(params![folder, scan])?;
                 }
             }
         }
@@ -650,5 +654,73 @@ mod tests {
         a_skipped_folders_rows_are_not_paired_or_cleared,
         a_skipped_folders_rows_are_not_paired_or_cleared_windows,
         a_skipped_folders_rows_are_not_paired_or_cleared_posix
+    );
+
+    /// A stopped scan leaves a new file unpaired in a folder it listed, and a later complete scan does not see that
+    /// file. The later scan pairs only the fresh rows it saw (`fresh_rows`' `last_scan`), so the unseen row is no
+    /// candidate: the live row on another volume with the same file ID and facts (a moved-while-closed candidate, on a
+    /// volume the later scan did not see) is not rebound to it. Without that filter, tier 2 would rebind it.
+    fn a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        // c.jpg: a live row on volume 2, with file ID 8.
+        found(&mut c, first, 2, 8, "c.jpg", 10, Some(5));
+        pair(&mut c, first, true);
+        let (live, _, _) = row(&c, "c.jpg");
+
+        // A stopped scan finds b.jpg: file ID 8 on volume 1, unpaired in the listed folder D:\x.
+        let stopped = begin(&c);
+        found(&mut c, stopped, 1, 8, "b.jpg", 10, Some(5));
+        assert_eq!(pair(&mut c, stopped, false).rebound, 0);
+        assert!(row(&c, "b.jpg").2, "still unpaired");
+
+        // A later complete scan sees a.jpg and not b.jpg. Volume 2 is not among the volumes it saw.
+        let later = begin(&c);
+        assert_eq!(found(&mut c, later, 1, 7, "a.jpg", 10, Some(5)), Recorded::Same);
+        let paired = pair(&mut c, later, true);
+        assert_eq!((paired.rebound, paired.replaced, paired.ambiguous), (0, 0, 0));
+        assert_eq!(row(&c, "c.jpg"), (live, Some(2), false), "the live row on the other volume is not rebound");
+        assert_eq!(count(&c), 3);
+    }
+
+    /// A complete scan that doesn't see an unpaired live row leaves it unpaired: its file is gone for now, and when it
+    /// comes back under its identity, the row (with its data) is paired with it, rather than a new row being made.
+    fn an_unpaired_row_a_complete_scan_did_not_see_stays_unpaired_for_its_return(rules: PathRules) {
+        let mut c = catalog(rules);
+        let first = begin(&c);
+        found(&mut c, first, 1, 7, "a.jpg", 10, Some(5));
+        // b.jpg: a live row on volume 1 that a stopped scan finds, so it is unpaired.
+        let stopped = begin(&c);
+        found(&mut c, stopped, 1, 8, "b.jpg", 10, Some(5));
+        assert_eq!(pair(&mut c, stopped, false).rebound, 0);
+        assert!(row(&c, "b.jpg").2, "unpaired after the stopped scan");
+
+        // A complete scan that doesn't see b.jpg: it is gone for now, so it stays unpaired.
+        let gone = begin(&c);
+        found(&mut c, gone, 1, 7, "a.jpg", 10, Some(5));
+        pair(&mut c, gone, true);
+        assert!(row(&c, "b.jpg").2, "still unpaired: a complete scan that didn't see it doesn't clear it");
+        assert_eq!(count(&c), 2);
+
+        // The file is back under its identity: it is paired with its row, not made a new one.
+        let back = begin(&c);
+        found(&mut c, back, 1, 7, "a.jpg", 10, Some(5));
+        found(&mut c, back, 1, 8, "b.jpg", 10, Some(5));
+        pair(&mut c, back, true);
+        assert!(!row(&c, "b.jpg").2, "paired with its returning file");
+        assert_eq!(count(&c), 2, "no new row for the returning file");
+    }
+
+    under_both_rules!(
+        an_unpaired_row_a_complete_scan_did_not_see_stays_unpaired_for_its_return,
+        an_unpaired_row_a_complete_scan_did_not_see_stays_unpaired_for_its_return_windows,
+        an_unpaired_row_a_complete_scan_did_not_see_stays_unpaired_for_its_return_posix
+    );
+
+    under_both_rules!(
+        a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired,
+        a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired_windows,
+        a_fresh_row_the_later_complete_scan_did_not_see_is_not_paired_posix
     );
 }

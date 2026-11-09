@@ -350,6 +350,7 @@ ApplicationWindow {
             id: topBar
             folder: shell.folder
             recursive: shell.recursive
+            folderKind: shell.folderKind
             descending: shell.descending
             savedViews: shell.savedViews
             hasSavedViews: shell.savedViews.length > 0
@@ -551,6 +552,7 @@ ApplicationWindow {
                     requests: win.saveViewRequests
                     folder: shell.folder
                     recursive: shell.recursive
+                    folderKind: shell.folderKind
                     descending: shell.descending
                     filters: filterBar.description
                     sortName: topBar.sortText

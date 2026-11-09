@@ -6,8 +6,9 @@
 // no frame has been drawn for a while. `max_ms` is the most the hook waits, from the call: a window that never settles,
 // or never says it is ready, is saved anyway when it runs out, and the report says why; with no window at all by then,
 // the log says so, no image is written, and the app exits with status 1. The frame is encoded here as a PNG, and the
-// report is made here too; Rust writes both, at the path the command line gave (src/screenshot.rs), so this file takes
-// no path: a path that isn't UTF-8 can't be a QString.
+// report is made here too, with whether there was a window at all (an empty PNG with a window is one that couldn't be
+// encoded); Rust writes both, at the path the command line gave (src/screenshot.rs), so this file takes no path: a path
+// that isn't UTF-8 can't be a QString.
 
 #include "pg-desktop/cpp/screenshot.h"
 
@@ -110,7 +111,7 @@ Busy busy_of(QQuickWindow* window) {
     return busy;
 }
 
-// The window as a PNG, or an empty array when there is no window or it can't be encoded.
+// The window as a PNG, or an empty array when there is no window or it can't be encoded (take() tells the two apart).
 QByteArray encode_window(QQmlApplicationEngine& engine) {
     QByteArray png;
     QQuickWindow* window = window_of(engine);
@@ -137,18 +138,19 @@ struct Settle {
     bool hooked = false;
 };
 
-// Stop polling and hand the window (an empty PNG when there is none, or it can't be encoded) and the report to Rust,
-// which writes the settle log, says on stderr when the window did not settle, and writes the image. The one way a
-// screenshot is taken; the caller then quits.
+// Stop polling and hand the window (an empty PNG when there is none, or it can't be encoded), whether there is a
+// window at all, and the report to Rust, which writes the settle log, says on stderr when the window did not settle,
+// and writes the image (or says why there is none). The one way a screenshot is taken; the caller then quits.
 void take(QQmlApplicationEngine& engine, QTimer* poll, bool settled, const QString& report) {
     poll->stop();
     poll->deleteLater();
+    const bool has_window = window_of(engine) != nullptr;
     const QByteArray png = encode_window(engine);
     const QByteArray text = report.toUtf8();
     screenshot_taken(
         rust::Slice<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(png.constData()),
                                         static_cast<std::size_t>(png.size())),
-        settled, rust::Str(text.constData(), static_cast<std::size_t>(text.size())));
+        settled, has_window, rust::Str(text.constData(), static_cast<std::size_t>(text.size())));
 }
 
 }  // namespace

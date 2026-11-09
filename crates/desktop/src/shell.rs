@@ -27,6 +27,10 @@ pub mod qobject {
         #[qproperty(QString, folder, READ, NOTIFY, FINAL)]
         /// With the files of its subfolders (`setRecursive`).
         #[qproperty(bool, recursive, READ, NOTIFY, FINAL)]
+        /// The kind of the folder's label: 0 all folders, 1 drive roots (the empty folder without subfolders, when the
+        /// drive roots hold files), 2 a folder (its name). The tree's rule (`Tree::shown_as`), for the top bar and the
+        /// save dialog.
+        #[qproperty(i32, folder_kind, cxx_name = "folderKind", READ, NOTIFY, FINAL)]
         /// Which way the files are ordered (the key is the sort box's, `sortIndex`); `toggleDescending` turns it.
         #[qproperty(bool, descending, READ, NOTIFY, FINAL)]
         /// Names of the saved views, sorted.
@@ -262,6 +266,7 @@ use crate::{app, controller, deadline, folders, gallery, keymap};
 pub struct ShellRust {
     folder: QString,
     recursive: bool,
+    folder_kind: i32,
     descending: bool,
     saved_views: QStringList,
     filters_open: bool,
@@ -279,6 +284,7 @@ impl Default for ShellRust {
         ShellRust {
             folder: QString::from(&PathRules::NATIVE.display_merged(&listing.folder)),
             recursive: listing.recursive,
+            folder_kind: folders::listing_kind(&listing.folder, listing.recursive),
             descending: listing.sort.descending,
             saved_views: view_names(),
             filters_open: false,
@@ -528,6 +534,13 @@ impl qobject::Shell {
             self.as_mut().rust_mut().recursive = listing.recursive;
             self.as_mut().recursive_changed();
         }
+        // The label follows the tree too (a tree read after a scan can add the drive roots' files): `dispatch` mirrors
+        // on every event, the tree's arrival included.
+        let folder_kind = folders::listing_kind(&listing.folder, listing.recursive);
+        if self.folder_kind != folder_kind {
+            self.as_mut().rust_mut().folder_kind = folder_kind;
+            self.as_mut().folder_kind_changed();
+        }
         if self.descending != listing.sort.descending {
             self.as_mut().rust_mut().descending = listing.sort.descending;
             self.as_mut().descending_changed();
@@ -699,6 +712,31 @@ mod tests {
         assert_eq!(event, ListingEvent::OpenRoots);
         assert_ne!(event, ListingEvent::OpenFolder(Merged::default()));
         assert!(shown.folder.is_empty() && !shown.recursive);
+    }
+
+    /// The label kind of the listed folder (L-26): the empty folder is "Drive roots" only without subfolders and with
+    /// root files (the tree's rule), so a listing of `("", false)` with no root files is "All folders", as the tree's
+    /// highlighted row is; a folder is a folder.
+    #[test]
+    fn the_label_of_the_empty_folder_follows_the_tree_rule() {
+        let all = Merged::default();
+        let p = Merged::from(vec![pg_model::name::Name::from("p")]);
+        let with_roots = tree();
+        assert_eq!(folders::listing_kind_of(&with_roots, &all, true), folders::KIND_ALL);
+        assert_eq!(folders::listing_kind_of(&with_roots, &all, false), folders::KIND_DRIVE_ROOTS);
+        assert_eq!(folders::listing_kind_of(&with_roots, &p, false), folders::KIND_FOLDER);
+        assert_eq!(folders::listing_kind_of(&with_roots, &p, true), folders::KIND_FOLDER);
+
+        let rules = PathRules::Windows;
+        let mut builder = TreeBuilder::with_capacity(rules, 1, 0, 0);
+        builder.add(2, &rules.parse(r"D:\p").unwrap(), 3);
+        let mut without_roots = Tree::default();
+        without_roots.replace(builder.build());
+        assert_eq!(folders::listing_kind_of(&without_roots, &all, false), folders::KIND_ALL);
+        assert_eq!(without_roots.row_of(&all, false), Some(0));
+        // A folder the tree lacks is still a folder: its name is the label.
+        let nope = Merged::from(vec![pg_model::name::Name::from("nope")]);
+        assert_eq!(folders::listing_kind_of(&without_roots, &nope, false), folders::KIND_FOLDER);
     }
 
     /// "All" (and a row the tree doesn't have) opens every folder with its subfolders; a folder's row opens that

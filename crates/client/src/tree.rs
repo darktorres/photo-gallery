@@ -101,17 +101,21 @@ impl Tree {
         self.tree.find(folder, &mut self.key.borrow_mut())
     }
 
-    /// The row a listing's folder shows on, if it shows. The empty folder is "All" (row 0) with its subfolders, and
-    /// "Drive roots" (row 1) without them when that row is shown; with no files in the drive roots it is "All" either
-    /// way, so the empty folder always has a row. Recursion makes no other folder's row.
+    /// The row kind a listing's folder shows as, whether or not the row is shown: the empty folder is "All" with its
+    /// subfolders, and "Drive roots" without them when the drive roots hold files (with none it is "All" either way);
+    /// any other folder is its node, `None` when the tree doesn't have it. The top bar's and the save dialog's labels
+    /// follow this rule too.
+    pub fn shown_as(&self, folder: &Merged, recursive: bool) -> Option<Visible> {
+        if !folder.is_empty() {
+            return Some(Visible::Folder(self.find(folder)?));
+        }
+        Some(if !recursive && self.tree.root_files() > 0 { Visible::DriveRoots } else { Visible::All })
+    }
+
+    /// The row a listing's folder shows on, if it shows: [`Tree::shown_as`] found among the visible rows. The empty
+    /// folder always has a row. Recursion makes no other folder's row.
     pub fn row_of(&self, folder: &Merged, recursive: bool) -> Option<usize> {
-        let row = if !folder.is_empty() {
-            Visible::Folder(self.find(folder)?)
-        } else if !recursive && self.tree.root_files() > 0 {
-            Visible::DriveRoots
-        } else {
-            Visible::All
-        };
+        let row = self.shown_as(folder, recursive)?;
         self.visible.binary_search(&row).ok()
     }
 
@@ -277,6 +281,25 @@ mod tests {
         assert_eq!(t.row_of(&all, false), Some(0));
         assert_eq!(t.row_of(&all, true), Some(0));
         assert_eq!(t.folders().total(), 5);
+    }
+
+    /// The label rule (L-26): the empty folder is "Drive roots" only without subfolders and with root files, and "All"
+    /// otherwise, even when no "Drive roots" row is shown; a folder is its node, and a folder the tree lacks is none.
+    #[test]
+    fn the_empty_folder_is_drive_roots_only_without_subfolders_and_with_root_files() {
+        let all = Merged::default();
+        let mut t = Tree::default();
+        t.replace(tree_with_roots(2));
+        assert_eq!(t.shown_as(&all, true), Some(Visible::All));
+        assert_eq!(t.shown_as(&all, false), Some(Visible::DriveRoots));
+        assert_eq!(t.shown_as(&folder("e"), false), t.find(&folder("e")).map(Visible::Folder));
+        assert_eq!(t.shown_as(&folder("nope"), false), None);
+        // No root files: no "Drive roots" row, and the empty folder without subfolders is "All" (row 0), not a row
+        // the top bar may call "Drive roots" over an empty grid.
+        t.replace(tree_with_roots(0));
+        assert_eq!(t.shown_as(&all, false), Some(Visible::All));
+        assert_eq!(t.row_of(&all, false), Some(0));
+        assert_eq!(t.shown_as(&all, true), Some(Visible::All));
     }
 
     #[test]

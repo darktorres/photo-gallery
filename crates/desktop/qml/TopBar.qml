@@ -15,6 +15,8 @@ ToolBar {
     // The open folder ("" for all folders), whether subfolders are in, the sort's direction, and the saved views.
     required property string folder
     required property bool recursive
+    // What the empty folder is: 0 all folders, 1 the drive roots' own files, 2 a folder (the shell's folderKind).
+    required property int folderKind
     required property bool descending
     required property var savedViews
     required property bool hasSavedViews
@@ -59,9 +61,9 @@ ToolBar {
         anchors.rightMargin: 8
         spacing: 12
         Label {
-            // The empty folder is every folder with subfolders, and the drive roots' own files without.
+            // The empty folder's name comes from Rust (folderKind), so it matches the tree's row.
             text: bar.folder.length ? bar.folder
-                : bar.recursive ? words.text("ui-all-folders") : words.text("ui-drive-roots")
+                : bar.folderKind === 1 ? words.text("ui-drive-roots") : words.text("ui-all-folders")
             font.bold: true
             elide: Text.ElideMiddle
             Layout.maximumWidth: 600

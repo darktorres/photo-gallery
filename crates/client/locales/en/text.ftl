@@ -84,6 +84,8 @@ write-incomplete = { $file } may be incomplete: copying its change into it faile
 # A write refused because a folder of the file's path ends in a dot or a space, which Windows drops from the path an
 # outside program is given (`text::write_folder_refused`)
 write-folder-refused = { $file } isn't written: its folder { $folder } ends in a dot or a space, which Windows may drop from a path, so the write could reach another folder. Rename the folder to write into it
+# The writer died too often in a row and isn't started again until the app is (no arguments).
+write-stopped = Writing changes into the files has stopped after repeated failures. The changes are kept, and are written when the app starts again
 # Queued writes dropped because their files left the library: how many since the last note, and the kind of the latest
 # (`rating` or `turns`, a selector)
 write-dropped = { $count ->
@@ -125,6 +127,8 @@ cropped-skipped = { $count ->
    *[other] { $text } files had nothing to crop any more
 }
 cropped-failed = { $failed } failed, the first: { $error }
+# A crop's copy refused because a folder of its path ends in a dot or a space (`text::crop_folder_refused`)
+crop-folder-refused = { $file } isn't copied: its folder { $folder } ends in a dot or a space, which Windows may drop from a path, so the copy could reach another folder. Rename the folder, then save again
 
 # The Yandex panel
 yandex-captcha = Yandex asked for a captcha, which the app can't answer. Try again later.

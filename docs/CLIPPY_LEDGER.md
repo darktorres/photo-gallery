@@ -54,7 +54,7 @@ Cheap style wins: `derive_partial_eq_without_eq` (10), `redundant_closure_for_me
 | `unimplemented` | deny | 0 | none | done |
 | `mem_forget` | deny | 0 | none | done |
 | `exit` | deny | 1 | `expect` at the site | done |
-| `panic` | deny | 3 (build script), 12 (test code) | `expect` at the site; `allow-panic-in-tests` for `#[test]` functions | done |
+| `panic` | deny | 3 (build script), 12 (test code), 2 (writeback's `fault` module, non-test under the `fault` feature: `crates/writeback/src/lib.rs:701`, `:708`) | `expect` at the site; `allow-panic-in-tests` for `#[test]` functions | done |
 | `allow_attributes` | warn | 5 (+1 Linux-only) | `allow` to `expect` with a reason; one `allow` was unneeded and removed | done |
 | `string_slice` | warn | 16 (+5 in tests) | `get` where the function already returns `Option`; `expect` where the cut is by construction | done |
 

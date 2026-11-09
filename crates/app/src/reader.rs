@@ -189,8 +189,8 @@ impl Session {
         self.submit(Kind::Tree, browse::read::folder_tree, move |r| deliver(r.map_err(Error::from)));
     }
 
-    /// The files of `folder` (merged; the empty folder for all folders, with or without `recursive`), filtered by `query`
-    /// and sorted by `sort`: what the grid shows.
+    /// The files of `folder` (merged). The empty folder is every file with `recursive`, else the drive roots' own
+    /// files. Filtered by `query` and sorted by `sort`: what the grid shows.
     pub fn grid(
         &self,
         folder: Merged,

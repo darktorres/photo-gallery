@@ -92,20 +92,32 @@ fn failed() -> Pixels {
 }
 
 /// A thumbnail `height` px high of the key's file (`App::thumbnail`), decoded, or turned by its turns. One made on a
-/// miss moves to the cache's writer once decoded.
+/// miss moves to the cache's writer once decoded. A cached one that doesn't decode is dropped from the cache, so that
+/// the next pass at its height makes it anew from the original.
 fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
     let app = app::get();
+    let file = key.file;
     JPEG.with_borrow_mut(|jpeg| {
         let thumb = app.thumbnail(key, height, jpeg)?;
         let bytes = thumb.made.as_ref().map_or(&jpeg[..], |(made, _)| made);
         let pixels = if thumb.turns == Turns::NONE {
-            let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
-            Ok(Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image })
+            QImage::from_data(bytes, None).context("not an image Qt reads").map(|image| Pixels {
+                width: 0,
+                height: 0,
+                format: PixelFormat::Image,
+                data: Vec::new(),
+                image,
+            })
         } else {
             app.turn_jpeg(bytes, thumb.turns).map_err(anyhow::Error::from).and_then(upload)
         };
         if let Some((made, keep)) = thumb.made {
             app.keep(keep, made);
+        } else if let Some(at) = thumb.kept_at
+            && pixels.is_err()
+            && let Err(e) = app.forget_thumb(file, at)
+        {
+            crate::panic_log::note(&format!("thumbnail {} at {at} px: dropping it failed: {e:#}", file.get()));
         }
         pixels
     })

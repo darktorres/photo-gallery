@@ -65,7 +65,9 @@ Rectangle {
 
     final property bool loupe: false    // L: 10× loupe under the cursor
     final property bool zen: false      // H or a tap: nothing over the picture
-    readonly property real dpr: Screen.devicePixelRatio
+    // The window's pixel ratio, from its screen. A plain property, not readonly, so tst_viewer can try another ratio;
+    // nothing in the app assigns it.
+    property real dpr: Screen.devicePixelRatio
     // A window moved to a screen with another pixel ratio: the view, and the fit's size in device pixels, follow it.
     onDprChanged: pushWindow()
 

@@ -127,10 +127,11 @@ const ROLE_DRIVES: i32 = 261;
 const ROLE_MERGED: i32 = 262;
 const ROLE_KIND: i32 = 263;
 
-/// The `kind` role: which of the rows it is (FolderTree.qml names the first two by their `ui.ftl` words).
-const KIND_ALL: i32 = 0;
-const KIND_DRIVE_ROOTS: i32 = 1;
-const KIND_FOLDER: i32 = 2;
+/// The `kind` role: which of the rows it is (FolderTree.qml names the first two by their `ui.ftl` words). The shell's
+/// `folderKind` uses the same numbers for the listed folder's label.
+pub(crate) const KIND_ALL: i32 = 0;
+pub(crate) const KIND_DRIVE_ROOTS: i32 = 1;
+pub(crate) const KIND_FOLDER: i32 = 2;
 
 /// A row as QML's int, or -1 (not found) for one past what an int can hold.
 fn row_index(row: usize) -> i32 {
@@ -184,6 +185,22 @@ impl RowKind {
             Some(Visible::DriveRoots) => RowKind::DriveRoots,
             Some(Visible::All) | None => RowKind::All,
         }
+    }
+}
+
+/// The kind of the listed folder's label, as the tree names it (the top bar, the save dialog): the empty folder is
+/// `KIND_DRIVE_ROOTS` or `KIND_ALL` by the tree's rule (`Tree::shown_as`), any other folder `KIND_FOLDER` (its name is
+/// the label). Read off the tree as shown.
+pub(crate) fn listing_kind(folder: &Merged, recursive: bool) -> i32 {
+    with(|tree| listing_kind_of(tree, folder, recursive))
+}
+
+/// [`listing_kind`] of a given tree.
+pub(crate) fn listing_kind_of(tree: &Tree, folder: &Merged, recursive: bool) -> i32 {
+    match (folder.is_empty(), tree.shown_as(folder, recursive)) {
+        (false, _) => KIND_FOLDER,
+        (true, Some(Visible::DriveRoots)) => KIND_DRIVE_ROOTS,
+        (true, _) => KIND_ALL,
     }
 }
 

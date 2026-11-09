@@ -246,11 +246,19 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
     the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
-  - Its layout version stays 1 before the first release, like the catalog's: a layout change edits it in place,
-    and an existing cache file is started over. A file of another version, layout or catalog is started over (its
+  - Its layout version is 1. Before the first release a layout change edits the schema in place, and the cache is
+    never migrated: it holds derived data only. A file of another version, layout or catalog is started over (its
     cap kept); one that is not a database, or that SQLite finds damaged (at the open, or at the day's check of the
     totals), is moved aside to `thumbs.sqlite.bad` (`pg_schema::move_aside`) and made anew; a database that is not
     a cache is refused and left alone. A cache that can't be opened only means thumbnails aren't kept.
+  - A stored JPEG that doesn't decode (bad bytes, which SQLite can't see, so no check finds it; the day's check of the
+    totals reads only the entries): the read path finds it. The desktop decodes a cache hit as it is (`providers.rs`,
+    `thumbnail`). When that fails, the hit is dropped (`ThumbCache::forget_height`, which also forgets that height's
+    checked watermark), so the next pass at that height makes the thumbnail anew from the original; until that pass,
+    the cell is blank and a line goes to the panic log. A hit that decodes is kept: it is remade only when the file
+    changes (a new mtime or rotation makes the entry stale), the cache is started over, or the entry is evicted. A
+    shown entry is touched hourly, so it stays. Damage SQLite finds in the entries' pages is found only by the day's
+    check, which runs at an open (up to a day late), and then the file is moved aside.
 - **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, which is not in this repo; FINDINGS
   "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
   the stored pixels at full size.

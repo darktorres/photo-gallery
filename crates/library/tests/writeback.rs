@@ -723,6 +723,45 @@ fn a_copy_that_may_have_started_is_kept_while_its_file_is_missing() {
     quiet.check();
 }
 
+/// A copy that fails once its temp is recorded (every copy of the file does, as a disk full would: `Fault::FailCopy`) is
+/// a copy that may have started. A fresh job's failure at the cap is `CopyIncomplete` and names the temp, and the temp
+/// and its record are kept, the file reads as being written. Before, the fresh job's own failure had no temp to name,
+/// so the cap gave `Failed`. Turns, so that no ExifTool is needed.
+#[test]
+fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
+    let (dir, _files, catalog_path, c) = imported("failcopy").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let fault = Fault::FailCopy(id);
+    let writer = Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault).unwrap();
+    writer.wake();
+    let attempts = || state::write_row(&c, id).unwrap().attempts;
+    // The queue's row, and then the status, which the writer sets after it.
+    let incomplete = || matches!(writer.status().error, Some(WriteError::CopyIncomplete { .. }));
+    wait_until(120, || format!("not at the cap at {} attempts", attempts()), || attempts() >= 5 && incomplete());
+
+    let row = state::write_row(&c, id).unwrap();
+    assert_eq!(row.temp, Some(temp.clone()), "the temp's record is kept");
+    assert!(on_disk(&c, &temp).exists(), "the temp is kept on disk");
+    let shown_temp = c.rules().display(&temp);
+    let error = row.error.unwrap_or_default();
+    assert!(error.contains("may be incomplete") && error.contains(&shown_temp), "the queue's error: {error}");
+    assert!(
+        matches!(&writer.status().error, Some(WriteError::CopyIncomplete { temp, .. }) if *temp == shown_temp),
+        "the status: {:?}",
+        writer.status().error
+    );
+    assert!(pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
+}
+
 /// A job whose row leaves the queue after the writer read the file and opened it for the copy (here a change that cancels
 /// the write removes it, `Fault::ForgetBeforeRecord`) is not copied: the original is as it was, and no temp is left.
 #[test]

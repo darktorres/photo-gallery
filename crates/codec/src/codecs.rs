@@ -296,8 +296,6 @@ impl Codecs {
 
     /// [`Codecs::tiff`]'s first step: the image's size and colour types from its tags, and the decoder's limits.
     fn tiff_plan(&mut self, decoder: &mut TiffDecoder<'_>) -> ImageResult<(TiffPlan, tiff::decoder::Limits)> {
-        use tiff::ColorType as Tiff;
-
         let (w, h) = decoder.dimensions().map_err(tiff_error)?;
         let tiff_color = decoder.colortype().map_err(tiff_error)?;
         // `find_tag_unsigned_vec`, into a kept vector; without the tag, unsigned integers.
@@ -305,48 +303,10 @@ impl Codecs {
         if decoder.find_tag_unsigned_vec_into(tiff::tags::Tag::SampleFormat, formats).map_err(tiff_error)? {
             formats.iter().try_for_each(|&f| check_sample_format(f, tiff_color))?;
         }
-        let (color, stored) = match tiff_color {
-            Tiff::Gray(1) => (ColorType::L8, Stored::Gray1),
-            Tiff::Gray(8) => (ColorType::L8, Stored::Same),
-            Tiff::Gray(16) => (ColorType::L16, Stored::Same),
-            Tiff::GrayA(8) => (ColorType::La8, Stored::Same),
-            Tiff::GrayA(16) => (ColorType::La16, Stored::Same),
-            Tiff::RGB(8) => (ColorType::Rgb8, Stored::Same),
-            Tiff::RGB(16) => (ColorType::Rgb16, Stored::Same),
-            Tiff::RGBA(8) => (ColorType::Rgba8, Stored::Same),
-            Tiff::RGBA(16) => (ColorType::Rgba16, Stored::Same),
-            Tiff::CMYK(8) => (ColorType::Rgb8, Stored::Cmyk8),
-            Tiff::CMYK(16) => (ColorType::Rgb16, Stored::Cmyk16),
-            Tiff::RGB(32) => (ColorType::Rgb32F, Stored::Same),
-            Tiff::RGBA(32) => (ColorType::Rgba32F, Stored::Same),
-            Tiff::Palette(n) | Tiff::Gray(n) => return Err(tiff_unknown_color(n)),
-            Tiff::GrayA(n) => return Err(tiff_unknown_color(n.saturating_mul(2))),
-            Tiff::RGB(n) | Tiff::YCbCr(n) => return Err(tiff_unknown_color(n.saturating_mul(3))),
-            Tiff::RGBA(n) | Tiff::CMYK(n) => return Err(tiff_unknown_color(n.saturating_mul(4))),
-            Tiff::Multiband { bit_depth, num_samples } => {
-                let samples = u8::try_from(num_samples.min(255)).unwrap_or(u8::MAX);
-                return Err(tiff_unknown_color(bit_depth.saturating_mul(samples)));
-            }
-            _ => return Err(tiff_unknown_color(0)),
-        };
-        let limits = reserve(color, w, h)?;
-
-        // `TiffDecoder::set_limits`: what the stored samples take (CMYK's 4 or 8 bytes a pixel, more than the RGB
-        // image) for the decoding buffer, the rest of the allowance for the decoder's intermediate buffers.
-        let max_alloc = limits.max_alloc.unwrap_or(u64::MAX);
-        let stored_bpp = match stored {
-            Stored::Cmyk8 => 4,
-            Stored::Cmyk16 => 8,
-            _ => u64::from(color.bytes_per_pixel()),
-        };
-        let stored_bytes = (u64::from(w) * u64::from(h)).saturating_mul(stored_bpp);
-        let intermediate = max_alloc.saturating_sub(stored_bytes);
-        let mut tiff_limits = tiff::decoder::Limits::default();
-        tiff_limits.decoding_buffer_size = usize::try_from(max_alloc - intermediate).unwrap_or(usize::MAX);
-        tiff_limits.intermediate_buffer_size = usize::try_from(intermediate).unwrap_or(usize::MAX);
-        tiff_limits.ifd_value_size = tiff_limits.intermediate_buffer_size;
-        let decoding_size = tiff_limits.decoding_buffer_size;
-        Ok((TiffPlan { w, h, color, stored, decoding_size }, tiff_limits))
+        let (color, stored) = decoded_color(tiff_color)?;
+        let limits = tiff_limits(color, stored, w, h)?;
+        let decoding_size = limits.decoding_buffer_size;
+        Ok((TiffPlan { w, h, color, stored, decoding_size }, limits))
     }
 
     /// [`Codecs::tiff`]'s second step, once the decoder has its limits: the samples, into `out`.
@@ -362,8 +322,8 @@ impl Codecs {
             Some(Sample::U16 | Sample::I16 | Sample::F16) => 2,
             Some(Sample::U32 | Sample::I32 | Sample::F32) => 4,
             Some(_) => 8,
-            // Sample formats and depths that `check_sample_format` and the colour types of `tiff_plan` let through all
-            // have a sample type.
+            // Sample formats and depths that `check_sample_format` and the colour types of `decoded_color` let through
+            // all have a sample type.
             None => return Err(tiff_error(tiff::TiffError::LimitsExceeded)),
         };
         let plane_stride = layout.plane_stride.map_or(0, |n| n.get());
@@ -457,7 +417,7 @@ impl Codecs {
 
 /// How a TIFF's samples are stored, against the colour type `image` gives the image.
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Stored {
+pub(crate) enum Stored {
     /// As the colour type.
     Same,
     /// 1-bit gray, given as 8-bit (`L8`).
@@ -492,6 +452,60 @@ fn reserve(color: ColorType, w: u32, h: u32) -> ImageResult<Limits> {
     let mut limits = Limits::default();
     let total = (u64::from(w) * u64::from(h)).saturating_mul(u64::from(color.bytes_per_pixel()));
     limits.reserve(total)?;
+    Ok(limits)
+}
+
+/// The colour type `image` decodes a TIFF of colour type `color` to, and how its samples are stored: `image`'s
+/// mapping, with its refusals of palette, YCbCr and the unknown types. Shared by [`Codecs::tiff_plan`] and the TIFF
+/// crop (`encode`).
+pub(crate) fn decoded_color(color: tiff::ColorType) -> ImageResult<(ColorType, Stored)> {
+    use tiff::ColorType as Tiff;
+
+    Ok(match color {
+        Tiff::Gray(1) => (ColorType::L8, Stored::Gray1),
+        Tiff::Gray(8) => (ColorType::L8, Stored::Same),
+        Tiff::Gray(16) => (ColorType::L16, Stored::Same),
+        Tiff::GrayA(8) => (ColorType::La8, Stored::Same),
+        Tiff::GrayA(16) => (ColorType::La16, Stored::Same),
+        Tiff::RGB(8) => (ColorType::Rgb8, Stored::Same),
+        Tiff::RGB(16) => (ColorType::Rgb16, Stored::Same),
+        Tiff::RGBA(8) => (ColorType::Rgba8, Stored::Same),
+        Tiff::RGBA(16) => (ColorType::Rgba16, Stored::Same),
+        Tiff::CMYK(8) => (ColorType::Rgb8, Stored::Cmyk8),
+        Tiff::CMYK(16) => (ColorType::Rgb16, Stored::Cmyk16),
+        Tiff::RGB(32) => (ColorType::Rgb32F, Stored::Same),
+        Tiff::RGBA(32) => (ColorType::Rgba32F, Stored::Same),
+        Tiff::Palette(n) | Tiff::Gray(n) => return Err(tiff_unknown_color(n)),
+        Tiff::GrayA(n) => return Err(tiff_unknown_color(n.saturating_mul(2))),
+        Tiff::RGB(n) | Tiff::YCbCr(n) => return Err(tiff_unknown_color(n.saturating_mul(3))),
+        Tiff::RGBA(n) | Tiff::CMYK(n) => return Err(tiff_unknown_color(n.saturating_mul(4))),
+        Tiff::Multiband { bit_depth, num_samples } => {
+            let samples = u8::try_from(num_samples.min(255)).unwrap_or(u8::MAX);
+            return Err(tiff_unknown_color(bit_depth.saturating_mul(samples)));
+        }
+        _ => return Err(tiff_unknown_color(0)),
+    })
+}
+
+/// The decoder's limits for a `w` × `h` TIFF decoded as `color` and stored as `stored`, the one construction used by
+/// [`Codecs::tiff_plan`] and the TIFF crop (`encode`), so both obey the same cap (`max_decode_bytes`). The decoded
+/// image is reserved from it as `image` reserves it (`reserve`). `TiffDecoder::set_limits` then splits the rest: what
+/// the stored samples take (CMYK's 4 or 8 bytes a pixel, more than the RGB image) for the decoding buffer, and the
+/// rest of the allowance for the decoder's intermediate buffers.
+pub(crate) fn tiff_limits(color: ColorType, stored: Stored, w: u32, h: u32) -> ImageResult<tiff::decoder::Limits> {
+    let reserved = reserve(color, w, h)?;
+    let max_alloc = reserved.max_alloc.unwrap_or(u64::MAX);
+    let stored_bpp = match stored {
+        Stored::Cmyk8 => 4,
+        Stored::Cmyk16 => 8,
+        _ => u64::from(color.bytes_per_pixel()),
+    };
+    let stored_bytes = (u64::from(w) * u64::from(h)).saturating_mul(stored_bpp);
+    let intermediate = max_alloc.saturating_sub(stored_bytes);
+    let mut limits = tiff::decoder::Limits::default();
+    limits.decoding_buffer_size = usize::try_from(max_alloc - intermediate).unwrap_or(usize::MAX);
+    limits.intermediate_buffer_size = usize::try_from(intermediate).unwrap_or(usize::MAX);
+    limits.ifd_value_size = limits.intermediate_buffer_size;
     Ok(limits)
 }
 

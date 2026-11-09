@@ -426,7 +426,21 @@ fn gif_indices(lzw: &[u8], min_code: u8, pixels: usize) -> Result<Vec<u8>> {
     Ok(indices)
 }
 
-/// A still GIF; `None` for an animation (more than one image).
+/// A still GIF whose image has no part left on the screen after the turn or crop (no pixels, or wholly off the
+/// screen): there is nothing to rewrite. `rotate` takes it as the catalog's, as it does an animation; `crop` reports
+/// it.
+#[derive(Debug)]
+pub struct NothingLeft;
+
+impl std::fmt::Display for NothingLeft {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("nothing of the GIF's image is left")
+    }
+}
+
+impl std::error::Error for NothingLeft {}
+
+/// A still GIF; `None` for an animation (more than one image). A still image with nothing left ([`NothingLeft`]).
 pub(crate) fn gif(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
     let mut blocks = gif_blocks(bytes);
     let (mut images, mut image) = (0, None);
@@ -483,8 +497,7 @@ pub(crate) fn gif(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
         indices = rows.into_iter().flat_map(|(_, row)| row).copied().collect();
     }
     // The frame's place on the logical screen changes with it.
-    let ((nleft, ntop), kept, (nsw, nsh)) =
-        op.frame([left, top, w, h], sw, sh).context("nothing of the GIF's image is left")?;
+    let ((nleft, ntop), kept, (nsw, nsh)) = op.frame([left, top, w, h], sw, sh).ok_or(NothingLeft)?;
     let (kept_pixels, kw, kh) = Op::Crop(kept).apply(&indices, w, h, 1)?;
     let (pixels, nw, nh) = match op {
         Op::Orient(_) => op.apply(&kept_pixels, kw, kh, 1)?,
@@ -656,10 +669,10 @@ mod tests {
         let out = gif(&file, six).unwrap().unwrap();
         assert_eq!(&out[6..10], &[2, 0, 3, 0], "the turned screen");
         assert_eq!(descriptor(&out).1, [0, 0, 2, 3]);
-        // A frame wholly past the screen: nothing to turn, an error (not a wrapped placement).
+        // A frame wholly past the screen: nothing to turn, a `NothingLeft` error (not a wrapped placement).
         let (d, _) = descriptor(&file);
         file[d + 1..d + 3].copy_from_slice(&10u16.to_le_bytes());
-        assert!(gif(&file, six).is_err());
+        assert!(gif(&file, six).unwrap_err().is::<NothingLeft>());
     }
 
     /// A header that declares a huge image is an error before anything that size is allocated (an allocation

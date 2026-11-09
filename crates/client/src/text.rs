@@ -191,6 +191,8 @@ pub enum Message {
         kind: WriteKind,
         count: usize,
     },
+    /// The writer died too often and isn't started again until the app is.
+    WriteStopped,
     UnreadableFolders {
         root: String,
         count: String,
@@ -228,6 +230,11 @@ pub enum Message {
     CroppedFailed {
         failed: String,
         error: String,
+    },
+    /// A crop's copy refused for a folder whose name ends in a dot or a space: `file` is the source, `folder` the folder.
+    CropFolderRefused {
+        file: String,
+        folder: String,
     },
     YandexCaptcha,
     YandexNotStill,
@@ -461,6 +468,7 @@ impl Message {
             Message::WriteIncomplete { .. } => "write-incomplete",
             Message::WriteFolderRefused { .. } => "write-folder-refused",
             Message::WriteDropped { .. } => "write-dropped",
+            Message::WriteStopped => "write-stopped",
             Message::UnreadableFolders { .. } => "unreadable-folders",
             Message::ScanFailed { .. } => "scan-failed",
             Message::RootRefused { .. } => "root-refused",
@@ -471,6 +479,7 @@ impl Message {
             Message::CroppedSaved { .. } => "cropped-saved",
             Message::CroppedSkipped { .. } => "cropped-skipped",
             Message::CroppedFailed { .. } => "cropped-failed",
+            Message::CropFolderRefused { .. } => "crop-folder-refused",
             Message::YandexCaptcha => "yandex-captcha",
             Message::YandexNotStill => "yandex-not-still",
             Message::YandexUploading => "yandex-uploading",
@@ -621,6 +630,7 @@ impl Message {
                 };
                 a.set("kind", kind);
             }
+            Message::WriteStopped => {}
             Message::UnreadableFolders { root, count } => {
                 a.set("root", root.as_str());
                 a.set("count", count.as_str());
@@ -653,6 +663,10 @@ impl Message {
             Message::CroppedFailed { failed, error } => {
                 a.set("failed", failed.as_str());
                 a.set("error", error.as_str());
+            }
+            Message::CropFolderRefused { file, folder } => {
+                a.set("file", file.as_str());
+                a.set("folder", folder.as_str());
             }
             Message::YandexUnreadablePhoto { error } => {
                 a.set("error", error.as_str());
@@ -803,6 +817,7 @@ impl Message {
             Message::WriteIncomplete { file: s(), temp: s(), error: s() },
             Message::WriteFolderRefused { file: s(), folder: s() },
             Message::WriteDropped { kind: WriteKind::Rating, count: 1 },
+            Message::WriteStopped,
             Message::UnreadableFolders { root: s(), count: s() },
             Message::ScanFailed { root: s(), error: s() },
             Message::RootRefused { root: s(), reason: s() },
@@ -813,6 +828,7 @@ impl Message {
             Message::CroppedSaved { count: 1, folder: s() },
             Message::CroppedSkipped { count: 1 },
             Message::CroppedFailed { failed: s(), error: s() },
+            Message::CropFolderRefused { file: s(), folder: s() },
             Message::YandexCaptcha,
             Message::YandexNotStill,
             Message::YandexUploading,
@@ -1213,6 +1229,11 @@ pub fn write_dropped(kind: WriteKind, count: usize) -> String {
     render(&Message::WriteDropped { kind, count })
 }
 
+/// The writer died too often in a row and isn't started again until the app is: the changes wait in the catalog.
+pub fn write_stopped() -> String {
+    render(&Message::WriteStopped)
+}
+
 /// A root whose folders a scan couldn't read.
 pub fn unreadable_folders(root: &str, count: u64) -> String {
     render(&Message::UnreadableFolders { root: root.to_string(), count: count.to_string() })
@@ -1262,6 +1283,12 @@ pub fn cropped(saved: usize, folder: &str, skipped: usize, failed: usize, first_
         note += &render(&Message::CroppedFailed { failed: failed.to_string(), error: e.to_string() });
     }
     note
+}
+
+/// A crop's copy of `file` refused: its folder `folder` ends in a dot or a space, which Windows may drop from a path, so
+/// the copy could reach another folder's file.
+pub fn crop_folder_refused(file: &str, folder: &str) -> String {
+    render(&Message::CropFolderRefused { file: file.to_string(), folder: folder.to_string() })
 }
 
 /// The photo to search couldn't be read, or (a TIFF) decoded to be sent as a JPEG.
@@ -1579,6 +1606,10 @@ mod tests {
             "3 queued changes were dropped, the latest a turn: their files are no longer in the library"
         );
         assert_eq!(
+            write_stopped(),
+            "Writing changes into the files has stopped after repeated failures. The changes are kept, and are written when the app starts again"
+        );
+        assert_eq!(
             write_incomplete("D:/a.jpg", "D:/.a.jpg.rating.pg-write", "disk full"),
             "D:/a.jpg may be incomplete: copying its change into it failed (disk full). Its whole new content is in \
              D:/.a.jpg.rating.pg-write, and the copy is tried again"
@@ -1595,6 +1626,15 @@ mod tests {
         let c = Counts { done: 1500, total: 4000, failed: 2, rate: 100.0, eta_secs: 25.0 };
         assert_eq!(pass_status(Pass::Import, &c), "Importing 1,500 of 4,000 · 100/s · 25 s left · 2 failed");
         assert_eq!(pass_status(Pass::Idle, &c), "");
+    }
+
+    #[test]
+    fn a_crop_refused_for_its_folder_is_worded() {
+        assert_eq!(
+            crop_folder_refused(r"D:\Acme Inc.\a.jpg", "Acme Inc."),
+            "D:\\Acme Inc.\\a.jpg isn't copied: its folder Acme Inc. ends in a dot or a space, which Windows may drop \
+             from a path, so the copy could reach another folder. Rename the folder, then save again"
+        );
     }
 
     #[test]
@@ -1655,6 +1695,13 @@ mod tests {
         assert_eq!(yandex_transport("timed out"), "Yandex request failed: timed out");
         assert_eq!(yandex_unexpected("no cbir_id"), "unexpected Yandex response: no cbir_id");
         assert_eq!(yandex_recorded("no such step"), "recorded Yandex session: no such step");
+        assert_eq!(
+            render(&Message::YandexNotStill),
+            "Yandex search takes still images (JPEG, PNG, WebP, GIF, BMP or TIFF)."
+        );
+        assert_eq!(yandex_not_started("thread limit"), "Couldn't start the search or the save: thread limit");
+        assert_eq!(yandex_nothing_picked(), "Pick at least one image to save.");
+        assert_eq!(yandex_no_folder(), "No folder was chosen, so nothing was saved.");
     }
 
     #[test]

@@ -155,6 +155,8 @@ pub struct LibraryRust {
     write_failed: bool,
     /// The writer's count of dropped writes (`WriteStatus::dropped`) already shown: a note is shown when it grows.
     dropped_seen: usize,
+    /// Whether the note that the writer has stopped for good has been shown (it is shown once).
+    writer_stopped_shown: bool,
 }
 
 /// The status line's text for a pass's progress; empty when idle.
@@ -182,9 +184,12 @@ fn notice_text(notice: &Notice) -> String {
         Notice::CropFailed { error } => text::crop_failed(error),
         Notice::RoundPanicked { message } => text::round_panicked(message),
         Notice::CacheFull { height, made } => text::cache_full(*height, *made),
-        Notice::Cropped { folder, saved, skipped, failed, first_error } => {
-            let first_error =
-                first_error.as_ref().map(|FileError { path, cause }| format!("{path}: {}", cause_text(cause)));
+        Notice::Cropped { folder, saved, skipped, failed, first_error, .. } => {
+            // A refusal names its file, so the client's refusal message stands in for the error it came with.
+            let first_error = match notice.crop_refusal() {
+                Some((file, refused_folder)) => Some(text::crop_folder_refused(file, refused_folder)),
+                None => first_error.as_ref().map(|FileError { path, cause }| format!("{path}: {}", cause_text(cause))),
+            };
             text::cropped(*saved, &folder.display().to_string(), *skipped, *failed, first_error.as_deref())
         }
     }
@@ -330,7 +335,12 @@ impl qobject::Library {
     /// is not a failure: it doesn't light `write_failed`).
     fn refresh_writes(mut self: Pin<&mut Self>) {
         let Some(library) = LIBRARY.get() else { return };
-        let s = library.status().writes;
+        let status = library.status();
+        if status.writer_stopped && !self.writer_stopped_shown {
+            self.as_mut().rust_mut().writer_stopped_shown = true;
+            self.as_mut().show(text::write_stopped(), true);
+        }
+        let s = status.writes;
         let error = s.error.as_ref().map(write_error_text);
         let writes = text::write_status(s.queued, error.as_deref());
         if self.writes.to_string() != writes {

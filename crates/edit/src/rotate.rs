@@ -8,8 +8,8 @@
 //!   it was.
 //!
 //! Otherwise the EXIF Orientation tag carries the turn (TIFF, lossy or animated WebP, animated PNG, and a JPEG
-//! whose size doesn't allow a perfect transform), and as the last resort the catalog does (animated GIF,
-//! compressed BMP): nothing in the file can.
+//! whose size doesn't allow a perfect transform), and as the last resort the catalog does (animated GIF, a still GIF
+//! with no part left on its screen, compressed BMP): nothing in the file can.
 //!
 //! The image a viewer shows is the stored pixels under the EXIF orientation. Turning the pixels applies that
 //! orientation and the new turn together, then resets the tag to 1, so the result shows the same in programs that
@@ -68,9 +68,12 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
             rewritten(rewrite::webp(bytes, Op::Orient(total))?)?
         }
         Format::Webp | Format::Tiff => tag(),
-        Format::Gif => match rewrite::gif(bytes, Op::Orient(total))? {
-            Some(out) => Outcome::Rewritten(out),
-            None => Outcome::Catalog,
+        Format::Gif => match rewrite::gif(bytes, Op::Orient(total)) {
+            Ok(Some(out)) => Outcome::Rewritten(out),
+            Ok(None) => Outcome::Catalog,
+            // A still GIF with nothing on its screen: no pixels to turn, and no tag a GIF can carry.
+            Err(e) if e.is::<rewrite::NothingLeft>() => Outcome::Catalog,
+            Err(e) => return Err(e),
         },
         Format::Bmp => match rewrite::bmp(bytes, Op::Orient(total))? {
             Some(out) => Outcome::Rewritten(out),
@@ -85,6 +88,7 @@ mod tests {
     use crate::rewrite::{pack, png_chunk};
     use crate::testing::shown;
     use pg_codec::decode::orient;
+    use pg_container::{GifBlock, gif_blocks};
 
     /// A test image with distinct, smoothly varying pixels (so a wrong turn can't match by chance).
     fn pattern(w: usize, h: usize) -> Vec<u8> {
@@ -192,6 +196,26 @@ mod tests {
             writer.write_image_data(&data).unwrap();
             writer.finish().unwrap();
             check_exact(&all_orientations(&file, Format::Png), Format::Png);
+        }
+    }
+
+    /// A still GIF whose frame is wholly off its screen has no pixels to turn: `rotate` keeps the turn in the
+    /// catalog (`Outcome::Catalog`), as it does for an animation, rather than failing.
+    #[test]
+    fn a_still_gif_with_nothing_on_its_screen_is_catalogued() {
+        let (w, h) = (4, 3);
+        let rgb = pattern(w, h);
+        let mut file = pg_testkit::gif_rgb(4, 3, &rgb).unwrap();
+        // The frame's left edge moved past the 4-pixel screen.
+        let d = gif_blocks(&file)
+            .find_map(|b| match b {
+                GifBlock::Image { range } => Some(range.start),
+                _ => None,
+            })
+            .unwrap();
+        file[d + 1..d + 3].copy_from_slice(&10u16.to_le_bytes());
+        for turns in [1, 2] {
+            assert!(matches!(rotate(&file, Format::Gif, Turns::new(turns)).unwrap(), Outcome::Catalog), "{turns}");
         }
     }
 

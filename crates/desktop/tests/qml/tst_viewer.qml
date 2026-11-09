@@ -133,4 +133,21 @@ TestCase {
         tryVerify(() => String(fit.source) === resized, 2000)
         galleryStub.viewedKey = ""
     }
+
+    // A pixel-ratio change (the window moved to a screen with another ratio) hands the ratio to the view, and the fit
+    // is rendered at the new device size once it has settled (C-15, L-43).
+    function test_a_pixel_ratio_change_renders_the_fit_at_the_new_size() {
+        galleryStub.viewedKey = "k"
+        const v = viewer(-1, 3)
+        v.index = 0
+        const fit = findChild(v, "fitImage")
+        verify(fit !== null)
+        const dpr = v.dpr * 2
+        v.dpr = dpr
+        tryCompare(v, "fitW", Math.round(800 * dpr), 2000)
+        tryCompare(v, "fitH", Math.round(600 * dpr), 2000)
+        const resized = "image://full/k/fit/" + Math.round(800 * dpr) + "x" + Math.round(600 * dpr)
+        tryVerify(() => String(fit.source) === resized, 2000)
+        galleryStub.viewedKey = ""
+    }
 }

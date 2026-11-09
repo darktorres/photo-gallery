@@ -186,8 +186,9 @@ impl App {
     }
 }
 
-/// Forward the thumbnail cache's events to the notes bus, on a thread that runs until the process ends: the cache is
-/// leaked (`App::thumbs`), so its bus never goes. An error if the thread can't be started.
+/// Forward the thumbnail cache's events to the notes bus, on a thread that ends when the cache's bus is dropped. The
+/// writer thread owns that bus and drops it when it returns; `App::shutdown` stops it by closing the cache. An error
+/// if the thread can't be started.
 fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, notes: Arc<Bus<Note>>) -> Result<()> {
     let sub = events.subscribe();
     std::thread::Builder::new()

@@ -340,7 +340,7 @@ can be added later against the same crates.
   `catalog.sqlite.replaced`. A copy that can't take the rows leaves the new catalog empty, with the reason noted. The
   thumbnail cache starts over the same way. Nothing is deleted. The migration loop exists, tested with a synthetic
   step, with no migrations yet; that first kept catalog starts real ones, and from then on a difference is a refusal,
-  not a rebuild.
+  not a rebuild. Superseded (2026-11-09): there is a migration now, number 2 (catalog version 2, the C-8 change-stamp triggers, `TO_2_CHANGE_STAMPS` in `crates/catalog/src/schema.rs:25`), and the loop runs it.
 - **Taken time frame (decided 2026-11-05, by the code's design, recorded here; not a user decision):** the date
   filters and the date sort compare `analysis.taken` as wall-clock time. A camera's clock is kept as it is. A
   video's UTC creation time is converted to this computer's zone at import and kept as the instant in

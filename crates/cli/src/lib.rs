@@ -173,9 +173,10 @@ fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
         Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
         Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
         Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
-        Event::StartedOver { reason, path, .. } => {
+        Event::StartedOver { reason, path, detail } => format!(
+            "{}; detail: {detail}",
             text::thumb_cache_started_over(started_over_reason(*reason), &path.display().to_string())
-        }
+        ),
     }
 }
 

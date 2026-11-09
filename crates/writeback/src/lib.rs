@@ -118,6 +118,15 @@ impl std::fmt::Display for CopyStarted {
     }
 }
 
+/// The copy of a fresh job into its original, once its temp is recorded: the original, open for the copy; the new
+/// content; the file's (size, mtime) as it was read; and the BLAKE3 of the new bytes when only metadata changed.
+struct CopyInto<'a> {
+    file: File,
+    data: &'a [u8],
+    before: (i64, i64),
+    new_hash: Option<[u8; 32]>,
+}
+
 struct Inner {
     catalog_path: PathBuf,
     thumbs: &'static ThumbCache,
@@ -399,7 +408,9 @@ impl Inner {
 
         // A copy that may have started finishes: it gives no path to ExifTool, and the verbatim form reaches the file.
         if let Some((temp, temp_value)) = &job.temp {
-            return self.finish_copy(catalog, job, temp, *temp_value, &path, &native);
+            return self
+                .finish_copy(catalog, job, temp, *temp_value, &path, &native)
+                .with_context(|| CopyStarted { temp: rules.display(temp) });
         }
 
         // A rating for a format that can't hold one (known from the analysis) is done: the catalog keeps it.
@@ -507,10 +518,11 @@ impl Inner {
         }
         // From here until `done` records the write, readers know the file may be part-written
         // (pg_model::state::FileState::writing), and a failure leaves the temp for the next attempt to finish from.
-        write_into(file, &data).with_context(|| CopyStarted { temp: rules.display(&temp_rule) })?;
-        let after = stat(&path)?;
-        let rewrite = Rewrite { before, after, metadata_only: new_hash };
-        writes::done(catalog, job, Self::rewrote(job, rewrite))?;
+        // Every failure from here on is one where the copy may have started, so it is given the temp (`CopyStarted`).
+        let copy = CopyInto { file, data: &data, before, new_hash };
+        let after = self
+            .copy_and_done(catalog, job, &path, copy)
+            .with_context(|| CopyStarted { temp: rules.display(&temp_rule) })?;
         // The write is recorded: the temp is a leftover now, and one that can't be removed is cleared by the next
         // write of the file.
         let _ = std::fs::remove_file(&temp_disk);
@@ -539,9 +551,23 @@ impl Inner {
         Ok(file)
     }
 
+    /// The copy into the original, then the write recorded as done: the steps after a fresh job's temp is recorded.
+    /// Every failure here is one where the copy may have started; the caller gives it `CopyStarted`. Returns the file's
+    /// (size, mtime) after the copy.
+    fn copy_and_done(&self, catalog: &Catalog, job: &Job, path: &Path, copy: CopyInto<'_>) -> Result<(i64, i64)> {
+        #[cfg(any(test, feature = "fault"))]
+        fault::in_copy(self.fault, job.file_id)?;
+        write_into(copy.file, copy.data)?;
+        let after = stat(path)?;
+        let rewrite = Rewrite { before: copy.before, after, metadata_only: copy.new_hash };
+        writes::done(catalog, job, Self::rewrote(job, rewrite))?;
+        Ok(after)
+    }
+
     /// Finish a copy that may have started (its temp recorded): copy the temp in, and record the write with the value
     /// the temp carries, so a change made since stays queued. What the file held before is unknown now, so its
     /// analysis is redone rather than carried over. The original isn't compared: it may already be partly the temp's.
+    /// The caller gives every failure here `CopyStarted`, since the copy may have started.
     fn finish_copy(
         &self,
         catalog: &Catalog,
@@ -551,6 +577,8 @@ impl Inner {
         path: &Path,
         native: &NativePath,
     ) -> Result<()> {
+        #[cfg(any(test, feature = "fault"))]
+        fault::in_copy(self.fault, job.file_id)?;
         let rules = catalog.rules();
         let written = Job { value: temp_value, ..job.clone() };
         let temp_path = verbatim(&path_buf(&rules.join(temp)));
@@ -558,13 +586,13 @@ impl Inner {
             Ok(data) => {
                 let file = pg_platform::file::open_for_copy(native)
                     .with_context(|| format!("opening {} for writing", path.display()))?;
-                write_into(file, &data).with_context(|| CopyStarted { temp: rules.display(temp) })?;
+                write_into(file, &data)?;
             }
             // A recorded temp is deleted only once the write is recorded, so a missing one was deleted after its copy
             // by an earlier build (which deleted it before recording the write), or by another program (which can't
             // be told apart). The original is taken as holding it; the stat below fails if the drive is gone.
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => return Err(e).with_context(|| CopyStarted { temp: rules.display(temp) }),
+            Err(e) => return Err(e.into()),
         }
         let after = stat(path)?;
         let rewrite = Rewrite { before: (-1, -1), after, metadata_only: None };
@@ -696,6 +724,17 @@ pub mod fault {
         /// the copy, before the temp is recorded (a change that cancels the write does that, as a rating set back to what
         /// the file holds does).
         ForgetBeforeRecord(FileId),
+        /// Every copy of this file fails once its temp is recorded (the copy into the original fails, as with a disk
+        /// full), for a fresh job and a finishing copy alike: the copy is tried up to the cap.
+        FailCopy(FileId),
+    }
+
+    /// The failure of [`Fault::FailCopy`], at the start of a copy into the original.
+    pub(crate) fn in_copy(fault: Option<Fault>, file: FileId) -> std::io::Result<()> {
+        if fault == Some(Fault::FailCopy(file)) {
+            return Err(std::io::Error::other("a fault: the copy fails"));
+        }
+        Ok(())
     }
 
     #[expect(clippy::panic, reason = "the fault asked for is a panic")]

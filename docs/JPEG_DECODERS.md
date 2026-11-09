@@ -513,11 +513,12 @@ Mean |difference| / largest / PSNR, on the same inputs.
     `GPU_HYBRID` in `nvjpeg.py` (CPU 0.02 ms) and `HYBRID` (3.2 ms) at batch 64 show what a GPU Huffman path looks
     like, and nvImageCodec's batches do not look like that; the earlier wording that it "never used" the GPU path
     was stronger than the saved runs support.
-  - **`GPU_ONLY` returned no image** on this card, and the **CPU backend is 2.0–3.5× slower** than libjpeg-turbo on one
-    image (11.4 ms on `pin-base444-1mp`, 234 ms on the A6000). The `GPU_ONLY` result and the earlier claim that
-    `HW_GPU_ONLY` is unsupported on Turing are unverified: `gpu_only_probe.py` and `gpu_only_kinds.py` saved no
-    output, and `BACKENDS` in `nvimgcodec_bench.py` has no `HW_GPU_ONLY`. The script now reports a backend that
-    cannot be created, or that returns no image, with an explicit message.
+  - The **CPU backend is 2.0–3.5× slower** than libjpeg-turbo on one image (11.4 ms on `pin-base444-1mp`, 234 ms on
+    the A6000). An earlier probe reported that `GPU_ONLY` returned no image on this card, but that result is
+    unverified: the probe scripts (`gpu_only_probe.py`, `gpu_only_kinds.py`) saved no output and are not in the
+    repository, and `backends()` in `nvimgcodec_bench.py` has no `HW_GPU_ONLY`, so the claim that `HW_GPU_ONLY` is
+    unsupported on Turing is unverified too. The script now reports a backend that cannot be created, or that returns
+    no image, with an explicit message.
   - So: an integration layer with nothing to gain here over calling nvJPEG directly.
 - **debesheedas/GPU-JPEG-Decoder** (`debesheedas.py`) is a course project that decodes in a single warp: 1.3 s
   for 1.1 MP and 3.6 s for 2.9 MP past its 0.2 s start-up (a whole process per decode, including writing its
@@ -588,6 +589,8 @@ Not measured:
   - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with
     CUDA 13.4's `bin\x64` on PATH; `harness.exe list` names the decoders.
   - WSL: `bash eval/jpeg-decoders/harness-wsl.sh compare ir time throughput`.
-  - nvImageCodec, in its own venv (`pip install nvidia-nvimgcodec-cu13[all]`): `nvimgcodec_bench.py --ref-dir DIR
+  - nvImageCodec, in its own venv (`python -m pip install -r eval/jpeg-decoders/requirements.txt`, which pins
+    nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
+    `nvimgcodec_bench.py --ref-dir DIR
     FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`. debesheedas: `debesheedas.py --exe
     DECODER.exe --ref-dir DIR FILE...`.

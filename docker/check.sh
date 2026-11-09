@@ -1,7 +1,7 @@
 #!/bin/bash
 # The Linux job of CI (.github/workflows/ci.yml), step by step, in the container's /work (the repository). Each step
 # stops the run on failure, as in CI. Run it from the repository root, with the container from docker/README.md:
-#   docker run --rm --security-opt systempaths=unconfined -v "$PWD:/work" -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/root/.cargo/registry pg-dev
+#   docker run --rm --security-opt systempaths=unconfined -v "$PWD:/work" -v pg-cargo-target:/cargo-target -v pg-cargo-registry:/home/pg/.cargo/registry pg-dev
 set -euo pipefail
 
 step() { printf '\n== %s\n' "$*"; }
@@ -9,9 +9,23 @@ step() { printf '\n== %s\n' "$*"; }
 step "Formatting"
 cargo fmt --all --check
 
-step "Clippy and tests (the whole workspace)"
+step "Clippy (the whole workspace)"
 cargo clippy --workspace --all-targets --locked -- -D warnings
-cargo test --workspace --locked
+
+# A test that can't check what it is for returns early and passes, after it prints `skipped: <reason>`
+# (pg_testkit::skip) or `<tool> not found: skipped` (missing_tool). --show-output keeps the printed lines of the
+# passing tests too (libtest captures them otherwise), so the skipped lines reach the log that is checked below. A skip
+# fails this step: the container runs as `pg`, so none of the permission-based tests should skip, and any skip is a
+# test that checked nothing.
+step "Tests (the whole workspace)"
+log=$(mktemp)
+trap 'rm -f "$log"' EXIT
+cargo test --workspace --locked -- --show-output 2>&1 | tee "$log"
+skips=$(grep -E 'skipped: |: skipped$' "$log" || true)
+if [ -n "$skips" ]; then
+    printf '\nFAILED: tests skipped, so they passed without checking anything:\n%s\n' "$skips" >&2
+    exit 1
+fi
 
 step "Docs (warnings are errors)"
 RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked

@@ -68,6 +68,9 @@ proptest! {
         let all = Merged::default();
         prop_assert_eq!(tree.row_of(&all, true), Some(0));
         prop_assert_eq!(tree.row_of(&all, false), Some(usize::from(has_row)));
+        // The label rule (L-26): the empty folder is "Drive roots" exactly when its row is the second one.
+        prop_assert_eq!(tree.shown_as(&all, false) == Some(Visible::DriveRoots), has_row);
+        prop_assert_eq!(tree.shown_as(&all, true), Some(Visible::All));
         prop_assert_eq!(tree.reveal(&all, recursive), tree.row_of(&all, recursive));
         prop_assert_eq!(tree.plan_toggle(0), None);
         if has_row {

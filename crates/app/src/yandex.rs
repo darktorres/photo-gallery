@@ -378,6 +378,18 @@ fn temp_path(folder: &Path, stem: &OsStr, ext: &str) -> PathBuf {
 /// What a crash leaves: during the write, the temporary (its name is fixed, so the next save of that name replaces
 /// it); in the instant between the claim and the rename, the temporary and an empty file at the claimed name.
 fn write_new(folder: &Path, stem: &OsStr, ext: &str, bytes: &[u8]) -> Result<PathBuf, (PathBuf, io::Error)> {
+    write_new_with(folder, stem, ext, bytes, |from, to| std::fs::rename(from, to))
+}
+
+/// [`write_new`], with the rename that puts the temporary at the claimed name given as `rename` (the seam a test
+/// uses to make that step fail, after the claim).
+fn write_new_with(
+    folder: &Path,
+    stem: &OsStr,
+    ext: &str,
+    bytes: &[u8],
+    rename: impl FnOnce(&Path, &Path) -> io::Result<()>,
+) -> Result<PathBuf, (PathBuf, io::Error)> {
     let temp = TempFile::new(&temp_path(folder, stem, ext));
     let at_temp = |error: io::Error| (temp.path().to_path_buf(), error);
     let mut file = File::create(temp.path()).map_err(at_temp)?;
@@ -386,7 +398,7 @@ fn write_new(folder: &Path, stem: &OsStr, ext: &str, bytes: &[u8]) -> Result<Pat
     drop(file);
     let path = claim(folder, stem, ext).map_err(|error| (folder.join(numbered(stem, ext, 1)), error))?;
     let placeholder = TempFile::new(&path);
-    std::fs::rename(temp.path(), &path).map_err(|error| (path.clone(), error))?;
+    rename(temp.path(), &path).map_err(|error| (path.clone(), error))?;
     placeholder.persist();
     temp.persist();
     Ok(path)
@@ -397,8 +409,8 @@ fn stem_of(photo: &Path) -> OsString {
     photo.file_stem().map_or_else(|| OsString::from("image"), OsStr::to_os_string)
 }
 
-/// Downloads one hit into `folder`, named `<stem> (<suffix>)` so it sorts next to the photo ([`write_new`]).
-/// Writes a result's file (kept by the search, or fetched now) into `folder`, named after the photo.
+/// Writes a result's file (kept by the search, or fetched now) into `folder`, named `<stem> (<suffix>)` so it sorts
+/// next to the photo ([`write_new`]).
 fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
     let kept = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
     write_new(folder, &saved_stem(stem, &hit.suffix), kept.file.format.extension(), &kept.file.bytes)
@@ -451,8 +463,18 @@ impl Search {
     /// refuses the thread, `busy` and the status are cleared again, the change is announced, and the error returned:
     /// nothing ran, so the next search or save may start.
     fn spawn_worker(&self, name: &str, work: impl FnOnce() + Send + 'static) -> io::Result<bool> {
-        match thread::Builder::new().name(name.to_string()).spawn(work) {
-            Ok(_) => Ok(true),
+        let name = name.to_string();
+        self.spawn_with(work, |work| thread::Builder::new().name(name).spawn(work).map(drop))
+    }
+
+    /// [`Search::spawn_worker`] with the spawn given as `spawn`, which the tests make fail.
+    fn spawn_with<F: FnOnce() + Send + 'static>(
+        &self,
+        work: F,
+        spawn: impl FnOnce(F) -> io::Result<()>,
+    ) -> io::Result<bool> {
+        match spawn(work) {
+            Ok(()) => Ok(true),
             Err(e) => {
                 let mut s = lock(&self.shared);
                 s.busy = false;
@@ -643,6 +665,48 @@ mod tests {
         assert!(!folder.join("IMG_1234 (yandex 1920x1080).jpg").exists(), "no partial or empty file at the name");
         assert_eq!(names_in(&folder), [temp.file_name().unwrap().to_os_string()], "only the folder put there");
         std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_failed_rename_after_the_claim_leaves_no_file_at_the_name() {
+        let folder = pg_testkit::test_folder("scratch_app", "yandex-renamed").unwrap();
+        let stem = saved_stem(OsStr::new("IMG_1234"), "yandex 1920x1080");
+        // The claim (an empty file at the name) is made, then the rename of the temporary onto it is refused.
+        let refused = write_new_with(&folder, &stem, "jpg", b"bytes", |_, _| Err(io::Error::other("rename refused")));
+        let (at, error) = refused.unwrap_err();
+        assert_eq!(at, folder.join("IMG_1234 (yandex 1920x1080).jpg"), "the error names the claimed name");
+        assert_eq!(error.to_string(), "rename refused");
+        assert!(names_in(&folder).is_empty(), "neither the claim nor the temporary is left");
+        std::fs::remove_dir_all(&folder).unwrap();
+    }
+
+    #[test]
+    fn a_thread_that_cannot_start_clears_busy_and_the_status() {
+        let search = Search::default();
+        {
+            let mut s = lock(&search.shared);
+            s.busy = true;
+            s.status = Some(Status::Working(Phase::Starting));
+        }
+        let refused = search.spawn_with(|| {}, |_work| Err(io::Error::other("no threads left")));
+        assert!(matches!(refused, Err(ref e) if e.to_string() == "no threads left"));
+        let s = lock(&search.shared);
+        assert!(!s.busy, "the next search or save may start");
+        assert!(s.status.is_none(), "no status is left for a search that never ran");
+    }
+
+    #[test]
+    fn a_thread_that_starts_runs_its_work() {
+        let search = Search::default();
+        let (tx, rx) = std::sync::mpsc::channel();
+        let started = search.spawn_with(
+            move || {
+                let _ = tx.send(());
+            },
+            |work| thread::Builder::new().spawn(work).map(drop),
+        );
+        assert!(matches!(started, Ok(true)));
+        assert!(rx.recv_timeout(std::time::Duration::from_secs(10)).is_ok(), "the work ran on its thread");
     }
 
     /// A reader that fails: what the photo's file gives past the bytes a test lets be read.

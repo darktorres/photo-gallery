@@ -19,6 +19,8 @@ Dialog {
     // The view being saved, as the dialog's line describes it.
     required property string folder
     required property bool recursive
+    // What the empty folder is: 0 all folders, 1 the drive roots' own files, 2 a folder (the shell's folderKind).
+    required property int folderKind
     required property bool descending
     required property string filters
     required property string sortName
@@ -44,7 +46,7 @@ Dialog {
     ColumnLayout {
         Label {
             text: (dialog.folder.length ? dialog.folder
-                       : dialog.recursive ? words.text("ui-all-folders") : words.text("ui-drive-roots"))
+                       : dialog.folderKind === 1 ? words.text("ui-drive-roots") : words.text("ui-all-folders"))
                 + (dialog.recursive ? " " + words.text("ui-and-subfolders") : "") + " · " + dialog.filters + " · "
                 + dialog.sortName + (dialog.descending ? " ↓" : " ↑")
             color: "#999999"

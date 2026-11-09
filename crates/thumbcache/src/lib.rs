@@ -377,6 +377,12 @@ enum Op {
         file_id: FileId,
         reply: Sender<Result<()>>,
     },
+    /// One height's thumbnail of the file is dropped, and that height's watermark with it.
+    ForgetHeight {
+        file_id: FileId,
+        height: u32,
+        reply: Sender<Result<()>>,
+    },
     /// A pass read from `snapshot` went through all of its work: every file is checked up to `through`.
     Checked {
         snapshot: Snapshot,
@@ -399,7 +405,9 @@ impl ThumbCache {
     /// (`heal`, if the last check was `HEAL_INTERVAL` ago or more), a fix published on `events` before this returns:
     /// subscribe first. A file SQLite finds damaged, or that is not a database at all, is moved aside to
     /// `thumbs.sqlite.bad` and made anew (an [`Event::StartedOver`] says so): damage in the file's header or layout is
-    /// found here, damage among the entries only at the day's check of the totals, so up to a day late.
+    /// found here; damage SQLite finds in the entries' pages only at the day's check of the totals, so up to a day
+    /// late. No check reads a JPEG's bytes: a thumbnail that doesn't decode is found by the reader (see
+    /// `crates/README.md`).
     pub fn open(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>, events: Arc<Bus<Event>>) -> Result<ThumbCache> {
         if let Some(cap) = cap_bytes
             && cap < 0
@@ -520,6 +528,18 @@ impl ThumbCache {
         }
         let (reply, answer) = mpsc::channel();
         self.send(Op::Forget { file_id, reply })?;
+        answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
+    }
+
+    /// Drop the thumbnail of `file_id` at `height`, for one that doesn't decode, and forget how far that height was
+    /// checked (as an eviction does): the next pass at that height looks at every file again, and makes it anew from
+    /// the original. Waits.
+    pub fn forget_height(&self, file_id: FileId, height: u32) -> Result<()> {
+        if self.store.is_none() {
+            return Ok(());
+        }
+        let (reply, answer) = mpsc::channel();
+        self.send(Op::ForgetHeight { file_id, height, reply })?;
         answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
     }
 
@@ -720,11 +740,15 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
     if !ours {
         return Ok(Found::Foreign { why: "it is not a thumbnail cache".to_string() });
     }
-    let cap = match conn.query_row("SELECT cap FROM limits", [], |r| r.get::<_, i64>(0)) {
-        Ok(cap) => Some(cap),
-        // An earlier layout may have another `limits`: no cap to keep. Damage is not that.
-        Err(e) if damage(&e).is_some() => return Err(e),
-        Err(_) => None,
+    // The cap a stale file had: none when an earlier layout's `limits` has no `cap` column (or no table, or no row).
+    // Any other failure to read it (busy, no permission, damage) is an error, so the cap is never replaced by the
+    // default because of one.
+    let has_cap: i64 =
+        conn.query_row("SELECT count(*) FROM pragma_table_info('limits') WHERE name = 'cap'", [], |r| r.get(0))?;
+    let cap = if has_cap == 0 {
+        None
+    } else {
+        conn.query_row("SELECT cap FROM limits", [], |r| r.get::<_, i64>(0)).optional()?
     };
     let version = pg_schema::user_version(conn)?;
     let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
@@ -859,10 +883,12 @@ fn ready(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, made: bool) -> R
         bail!("{}: not usable even when made anew", path.display());
     }
     let drift = heal_if_due(&mut conn)?;
-    // After the day's check, not in `open_file`: a write before it would commit to a damaged file, and the damage
-    // would then be moved aside changed. A file of another layout may lack the row: open_writer starts that one over.
+    // After the day's check, not in `open_file`: a write before it would commit to a damaged file, which would then be
+    // moved aside changed. This write's failures are judged like the check's: damage moves the file aside
+    // (`open_once`), any other failure is an error. The row is there: a file judged usable has it, and a stale one was
+    // made anew above.
     if let Some(cap) = cap_bytes {
-        let _ = conn.execute("UPDATE limits SET cap = ?1", [cap]);
+        conn.execute("UPDATE limits SET cap = ?1", [cap])?;
     }
     Ok((conn, drift))
 }
@@ -1112,6 +1138,10 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Even
                 .map_err(anyhow::Error::from);
             let _ = reply.send(done);
         }
+        Op::ForgetHeight { file_id, height, reply } => {
+            let done = forget_height_entry(conn, file_id, height);
+            let _ = reply.send(done);
+        }
         Op::Checked { snapshot, through, reply } => {
             // Evicted meanwhile (the counter moved on): not stored.
             let done = conn
@@ -1257,6 +1287,20 @@ fn evict(tx: &Transaction, target: i64, keep_height: Option<u32>) -> Result<i64>
         forget.execute([height])?;
     }
     Ok(freed)
+}
+
+/// Drop the entry of `file_id` at `height`, and that height's watermark (`checked`), as an eviction does
+/// ([`ThumbCache::forget_height`]). The entry's JPEG goes with it (the trigger on `entries`).
+fn forget_height_entry(conn: &mut Connection, file_id: FileId, height: u32) -> Result<()> {
+    let tx = conn.transaction()?;
+    tx.execute("DELETE FROM entries WHERE file_id = ?1 AND height = ?2", params![file_id.get(), height])?;
+    tx.execute(
+        "INSERT INTO checked(height, seq, evictions) VALUES (?1, NULL, 1)
+         ON CONFLICT(height) DO UPDATE SET seq = NULL, evictions = evictions + 1",
+        [height],
+    )?;
+    tx.commit()?;
+    Ok(())
 }
 
 /// `heal`, unless it was done within `HEAL_INTERVAL` (`meta.healed`, the Unix second it last was): the open's check.
@@ -2012,6 +2056,24 @@ mod tests {
         assert!(plan.contains("USING INDEX files_seq"), "{plan}");
     }
 
+    /// A height's entry dropped on its own (a thumbnail that doesn't decode): its file is pending at that height again,
+    /// with the height looked at whole, and the other files' entries stay.
+    #[test]
+    fn forgetting_a_height_makes_its_file_pending_again() {
+        let dir = test_folder(SCRATCH, "forget-height").unwrap();
+        let (catalog, _c) = catalog_of_four(&dir);
+        let cache = open(&dir, 1_000_000);
+        let pass = cache.pending(&catalog, 100).unwrap();
+        assert!(cache.put_batch(&mut made(&pass, |_| true, 95), Some(100)).unwrap());
+        cache.checked(&pass.snapshot, None).unwrap();
+        assert!(cache.pending(&catalog, 100).unwrap().work.is_empty());
+        let file = pass.work.items[0].id;
+        cache.forget_height(file, 100).unwrap();
+        let after = cache.pending(&catalog, 100).unwrap();
+        assert!(!after.snapshot.since_checked, "the height is looked at whole");
+        assert_eq!(ids(&after), vec![file.get()]);
+    }
+
     #[test]
     fn eviction_forgets_how_far_a_height_was_checked() {
         let dir = test_folder(SCRATCH, "forget").unwrap();
@@ -2081,6 +2143,26 @@ mod tests {
         assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), 777), "empty, its cap kept");
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10)], None).unwrap();
         assert!(cache.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_some());
+    }
+
+    /// An earlier layout whose `limits` has no `cap` column is started over with the default cap: there is no cap to
+    /// keep, and reading the missing one is not an error (that would keep the cache from opening at all).
+    #[test]
+    fn an_earlier_limits_without_a_cap_starts_over_with_the_default() {
+        let dir = test_folder(SCRATCH, "earlier-limits").unwrap();
+        let old = Connection::open(dir.join("thumbs.sqlite")).unwrap();
+        old.execute_batch(
+            "CREATE TABLE entries(file_id INTEGER, height INTEGER);
+             CREATE TABLE limits(id INTEGER PRIMARY KEY); INSERT INTO limits VALUES (1);
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+        drop(old);
+        let (cache, reason, _, _) = open_started_over(&dir, CATALOG_ID, None);
+        assert_eq!(reason, StartOverReason::OtherBuild);
+        assert_eq!((cache.totals().unwrap(), cache.cap().unwrap()), ((0, 0), default_cap_bytes(&dir)));
+        drop(cache);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

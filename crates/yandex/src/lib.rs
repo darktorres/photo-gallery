@@ -321,30 +321,18 @@ impl Fetcher {
     }
 }
 
-/// Whether a response's Content-Type lets it be one of the images the search returns, so that its body is worth
-/// reading: a type of those kinds, under the names real servers send (`image/jpg`, `image/pjpeg`, `image/x-png` among
-/// them), or no type that says anything (none, `application/octet-stream`, `binary/octet-stream`). Anything else (a
-/// page, a video, a PDF, an SVG) is refused before the body is read. The type only rules out: the bytes decide what the
-/// file is ([`sniffed`]), whatever the type or the URL say.
+/// Whether a response's Content-Type lets its body be read as one of the images: any `image/*` type (the names real
+/// servers send, `image/jpg`, `image/pjpeg` and `image/x-png` among them, and types `sniffed` may refuse, such as
+/// `image/tiff` or `image/avif`), except SVG, which is markup that can run scripts; or no type that says anything
+/// (none, `application/octet-stream`, `binary/octet-stream`). Anything else (a page, a video, a PDF, an SVG) is refused
+/// before the body is read. The type only rules out: the bytes decide what the file is ([`sniffed`]), whatever the type
+/// or the URL say.
 pub fn plausibly_image(content_type: &str) -> bool {
     let essence = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
-    matches!(
-        essence.as_str(),
-        "image/jpeg"
-            | "image/jpg"
-            | "image/pjpeg"
-            | "image/png"
-            | "image/x-png"
-            | "image/apng"
-            | "image/webp"
-            | "image/gif"
-            | "image/bmp"
-            | "image/x-bmp"
-            | "image/x-ms-bmp"
-            | ""
-            | "application/octet-stream"
-            | "binary/octet-stream"
-    )
+    match essence.as_str() {
+        "" | "application/octet-stream" | "binary/octet-stream" => true,
+        _ => essence.strip_prefix("image/").is_some_and(|kind| !kind.starts_with("svg")),
+    }
 }
 
 /// The format of a downloaded file, from its bytes: one of the kinds the search returns. Anything else is not an image.
@@ -654,12 +642,16 @@ mod tests {
     }
 
     #[test]
-    fn the_types_real_servers_send_for_images_are_read() {
+    fn the_image_types_are_read_whatever_their_name() {
         for content_type in ["image/jpeg; charset=x", "image/webp", "IMAGE/PNG", "image/gif", "image/bmp"] {
             assert!(plausibly_image(content_type), "{content_type}");
         }
-        // The four that real servers send for real images, which were refused before their bytes were looked at.
+        // The names real servers send for real images, which were refused before their bytes were looked at.
         for content_type in ["image/jpg", "image/pjpeg", "image/x-png", "binary/octet-stream"] {
+            assert!(plausibly_image(content_type), "{content_type}");
+        }
+        // Image types `sniffed` may refuse are still read: the bytes decide, not the type.
+        for content_type in ["image/avif", "image/tiff", "image/heic"] {
             assert!(plausibly_image(content_type), "{content_type}");
         }
         // No type that says anything: the bytes decide.
@@ -668,13 +660,13 @@ mod tests {
     }
 
     #[test]
-    fn a_type_that_is_not_one_of_the_searchs_images_is_refused_before_the_body() {
+    fn a_type_that_is_not_an_image_is_refused_before_the_body() {
         // An error page or an API answer must not be saved as a picture, whatever its URL ends in.
         for content_type in ["text/html; charset=utf-8", "application/json", "text/plain"] {
             assert!(!plausibly_image(content_type), "{content_type}");
         }
-        // Nor downloaded up to the cap only to be refused by its bytes.
-        for content_type in ["video/mp4", "application/pdf", "image/svg+xml", "image/avif", "image/tiff"] {
+        // Nor downloaded up to the cap only to be refused by its bytes. SVG is markup, so it is refused as an image too.
+        for content_type in ["video/mp4", "application/pdf", "image/svg+xml", "IMAGE/SVG+XML; charset=utf-8"] {
             assert!(!plausibly_image(content_type), "{content_type}");
         }
     }

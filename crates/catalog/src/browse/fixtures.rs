@@ -76,7 +76,8 @@ pub(crate) fn library(rules: PathRules) -> crate::Catalog {
     c
 }
 
-/// The ids of a folder's list, the folder given as its path text (`""` for all folders) under the catalog's rules.
+/// The ids of a folder's list, the folder given as its path text under the catalog's rules. The empty folder is all
+/// folders with `recursive`, else the drive roots' own files.
 pub(crate) fn ids(c: &crate::Catalog, folder: &str, recursive: bool, query: &Query, sort: Sort) -> Vec<i64> {
     let folder = folder_of(c, folder);
     list_grid(c, &folder, recursive, query, sort).unwrap().iter().map(|e| e.id.get()).collect()

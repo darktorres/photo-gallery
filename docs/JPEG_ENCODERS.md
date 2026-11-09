@@ -50,7 +50,7 @@ The camera files (their own tables, at high quality) are the fair test, and thei
 | `jpegli` | `cjpegli -q Q --chroma_subsampling=444` (progressive by default) | jpegli 031a007 |
 | `jpegli-base` | the same, `-p 0` | |
 | `guetzli` | `guetzli --quality Q` | guetzli 214f2bb |
-| `nvjpeg` | nvImageCodec 0.9 encoder (nvJPEG): quality Q, 4:4:4, optimized Huffman, baseline | CUDA 13 |
+| `nvjpeg` | nvImageCodec encoder (nvJPEG): quality Q, 4:4:4, optimized Huffman, baseline | CUDA 13; nvImageCodec 0.9 as measured (`eval/jpeg-decoders/requirements.txt` pins 0.10.0.9, and these figures were not rerun on it) |
 | `gpujpeg` | `gpujpegtool -e -q Q --subsampled=4:4:4 -i` (its default restart interval, 8) | GPUJPEG 37ab481 |
 
 ## Bytes for the same quality

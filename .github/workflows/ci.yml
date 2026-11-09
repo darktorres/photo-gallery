@@ -166,7 +166,12 @@ jobs:
       - name: Eval tools tests (stdlib unittest; the viewer imports Pillow)
         shell: pwsh
         run: |
-          python -m pip install --quiet pillow==13.0.0
+          # The Pillow pin is read from eval/requirements.txt, the one place it is written. The rest of that file is the
+          # GPU venv (torch, TensorRT, two extra indexes), which CI does not install.
+          $pin = Select-String -Path eval/requirements.txt -Pattern '^pillow==' | ForEach-Object { $_.Line.Trim() } | Select-Object -First 1
+          if (-not $pin) { Write-Error "eval/requirements.txt has no pillow pin"; exit 1 }
+          python -m pip install --quiet "$pin"
+          if ($LASTEXITCODE -ne 0) { exit 1 }
           just test-eval
           if ($LASTEXITCODE -ne 0) { exit 1 }
 

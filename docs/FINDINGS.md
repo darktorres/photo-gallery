@@ -616,6 +616,10 @@ at 1.3 pairs/s:
 
 ### Verifier: match vs unrelated, with a negative set (subset, 2026-10-28)
 
+> **Predates the verifier fix (commit 262004b, 2026-11-07).** These figures are from the verifier before its PIL
+> resampling and its scale-corrected blur. The post-fix re-run is in "Verifier after the resampling fix" at the end
+> of this file.
+
 **Negative set:** pairs from two different `dups2/<NNN>` groups. Only 250 of ~915k such pairs
 reach SSCD 0.4 and 4 reach 0.8. Used every pair ≥ 0.3: 4,628 pairs, 57 min.
 
@@ -646,6 +650,9 @@ reach SSCD 0.4 and 4 reach 0.8. Used every pair ≥ 0.3: 4,628 pairs, 57 min.
 - `verify.py --rescore` re-applies thresholds to stored measurements in seconds (no image work).
 
 ### Same-shoot frames are different pictures (2026-10-29)
+
+> **Predates the verifier fix (commit 262004b, 2026-11-07).** The verifier figures in this section (match and motion
+> tables) were measured with BOX resampling and the uncorrected blur. Not rerun against the fixed verifier.
 
 **Decision (2026-10-29):** different frames of one shoot (same place and outfit, different pose or moment)
 are *different pictures*, not matches. dups2/090 held two such pairs and was split (090 + 679).
@@ -749,6 +756,9 @@ the strong clause: unlabeled 2,985 / 4,134.)
 
 ### Verifier on the synthetic edits (`eval/verify_synth.py`, subset, 2026-10-29)
 
+> **Predates the verifier fix (commit 262004b, 2026-11-07).** Measured with the BOX-resampling verifier. `verify_synth.py`
+> was not rerun after the fix, so these figures are unverified against it.
+
 The same 300 images and edits as the synthetic retrieval test below; each original verified against each edited
 copy (all should match). 3,900 pairs, 39 min.
 
@@ -774,6 +784,10 @@ copy (all should match). 3,900 pairs, 39 min.
   downscale and 6 rotation by motion, 4 grayscale and 2 text overlays by interior change, 1 crop).
 
 ### Which candidate pairs need the verifier (k-NN set, subset, 2026-10-29)
+
+> **Predates the verifier fix (commit 262004b, 2026-11-07).** The verifier counts here (the match and unrelated numbers
+> in the lines below) are from before the fix. The post-fix k-NN figures, on a 9,307-image subset, are in "Verifier
+> after the resampling fix" at the end of this file.
 
 8,344 k-NN pairs over 9,307 images = **0.9 pairs per image**; 28% of images have none (p90 4, max 48).
 
@@ -812,6 +826,9 @@ copy (all should match). 3,900 pairs, 39 min.
   above, on the order of weeks. The full set will give the real candidate rate.
 
 ### Verifier fixes and speed (subset, 2026-10-29)
+
+> **Predates the verifier fix (commit 262004b, 2026-11-07).** This section describes the fixes before 262004b, which
+> the fix itself corrects (the resampling and the blur scale). Its speed figures are not affected by the fix.
 
 Changes in `eval/verify.py`, all four pair sets rerun:
 
@@ -858,6 +875,9 @@ Changes in `eval/verify.py`, all four pair sets rerun:
   alignment is weak (like the mirror). `--features aliked` stays available.
 
 ### Verifier: TensorRT, rotations, SIFT, resolution (subset, 2026-10-30)
+
+> **Predates the verifier fix (commit 262004b, 2026-11-07).** Measured with BOX resampling. Not rerun against the fixed
+> verifier; the figures stand as the record of the pre-fix run.
 
 **DISK on TensorRT.** Only DISK's U-Net runs as a TensorRT 11 fp16 engine (`accel.DiskUnetTRT`, dynamic sides
 up to 1024 px); kornia's keypoint selection and LightGlue stay in PyTorch. Per image 35 ms vs 113 ms, 98% the same
@@ -1619,3 +1639,39 @@ variants set by Cargo's environment (`CARGO_PROFILE_RELEASE_LTO`, `CARGO_PROFILE
   (a stopgap, "Videos and animations"). Choose between our own engine on our FFmpeg 9 and libmpv with its D3D11
   render API ([VIDEO_PLAYER.md](VIDEO_PLAYER.md)).
 - Yandex: whether the browser shows all 18 other sizes or about 5 is not measured; only one photo was tested.
+
+### Verifier after the resampling fix (262004b, re-pick, 2026-11-08, subset)
+
+The verifier fix (PIL LANCZOS resampling, and the blur scaled by `ref_scale` / `other_scale`) is in commit 262004b. Old
+and new figures from the same work dir: the pre-fix tree is 22ae0ff (`262004b^`), the post-fix tree is HEAD. The runs
+are in `D:\PhotoGallery\eval\archive-prefix-22ae0ff\` and `archive-postfix-262004b-HEAD\`. The pre-fix labeled run
+reproduces the recorded labeled baseline exactly. Sets: labeled (1043 pairs); cross-groups (4637 pairs, floor 0.3);
+k-NN (8450 pairs on a 9,307-image subset, built by selecting rows of the full-set embeddings by path).
+
+| Set | Pre-fix | Post-fix |
+|---|---|---|
+| Labeled | duplicates 698/698; similar 237 match / 108 unrelated; duplicate noise p99 0.0171 | duplicates 698/698; similar 236 / 109; duplicate p99 0.0171 |
+| Cross-groups | 7 matched; aligned noise p1 0.0858 | 8 matched; aligned p1 0.0852 |
+| k-NN | duplicates 698/698; cross 7 of 207 matched; similar 225 / 97; unlabeled 2981 / 4242 | duplicates 698/698; cross 7 of 207; similar 225 / 97; unlabeled 2978 / 4245 |
+
+The criterion window (duplicate p99 to cross-group p1) is [0.0171, 0.0858] before the fix and [0.0171, 0.0852] after.
+The fix barely moves it.
+
+Sweep of `--max-noise` on the post-fix data (`verify.py --rescore`, all three sets):
+
+| max-noise | duplicates unrelated (of 698) | cross matched (of 4637) | k-NN cross matched (of 207) | labeled similar match / unrelated | k-NN unlabeled match / unrelated |
+|---|---|---|---|---|---|
+| 0.02 | 6 | 3 | 3 | 96 / 249 | 2880 / 4343 |
+| 0.03 | 2 | 4 | 4 | 124 / 221 | 2914 / 4309 |
+| 0.04 | 1 | 4 | 4 | 156 / 189 | 2936 / 4287 |
+| 0.05 | 1 | 7 | 6 | 197 / 148 | 2958 / 4265 |
+| **0.06** | **0** | **8** | **7** | **236 / 109** | **2978 / 4245** |
+| 0.07 | 0 | 12 | 9 | 264 / 81 | 2998 / 4225 |
+| 0.08 | 0 | 21 | 11 | 283 / 62 | 3024 / 4199 |
+| 0.085 | 0 | 26 | 13 | 297 / 48 | 3043 / 4180 |
+
+Decision: `--max-noise` stays at 0.06 (the default in `eval/verify.py`). It is inside the post-fix window, keeps every
+duplicate, and gives 8 cross-group matches. The midpoint of the window (about 0.051) would be 0.05, which loses one
+duplicate (697 of 698) for one fewer cross-group match.
+
+Not run: the full 187,808-image k-NN set (hours per run); `verify_synth.py` after the fix.

@@ -42,13 +42,13 @@ fn source_of(v: Version) -> thumbs::Source {
 
 /// What a thumbnail request found, as the catalog has the file.
 enum Found {
-    /// In the cache: read into the caller's buffer.
-    Kept,
+    /// In the cache at this height: read into the caller's buffer.
+    Kept(u32),
     /// Made from the original.
     Made(Vec<u8>),
-    /// The original can't be read (offline). Whether the best smaller thumbnail the cache keeps of the file as it is was
-    /// read into the caller's buffer.
-    Offline(Error, bool),
+    /// The original can't be read (offline). The height of the best smaller thumbnail the cache keeps of the file as it
+    /// is, if it was read into the caller's buffer.
+    Offline(Error, Option<u32>),
 }
 
 /// A thumbnail, as [`App::thumbnail`] finds it.
@@ -58,6 +58,8 @@ pub struct Thumbnail {
     /// One made from the original: its bytes, and where the cache keeps it once it is shown. Otherwise the bytes are the
     /// cache's, in the buffer [`App::thumbnail`] was given.
     pub made: Option<(Vec<u8>, Keep)>,
+    /// For a cache's: the height it is kept at, to drop it ([`App::forget_thumb`]) when it doesn't decode.
+    pub kept_at: Option<u32>,
 }
 
 /// Where the cache keeps a thumbnail made on a miss ([`App::keep`]).
@@ -157,13 +159,13 @@ impl App {
     /// thumbnail makes no buffer for its bytes.
     pub fn thumbnail(&self, key: ImageKey, height: u32, jpeg: &mut Vec<u8>) -> Result<Thumbnail> {
         let (file_id, named) = (key.file, key.version);
-        let kept = |turns| Thumbnail { turns, made: None };
-        // A smaller one of the file as named, read into `jpeg`.
-        let mut smaller = false;
+        let kept = |turns, at| Thumbnail { turns, made: None, kept_at: Some(at) };
+        // The height of a smaller one of the file as named, read into `jpeg`.
+        let mut smaller = None;
         if let Some(n) = named {
             match self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)? {
-                Some(h) if h >= height => return Ok(kept(n.turns)),
-                Some(_) => smaller = true,
+                Some(h) if h >= height => return Ok(kept(n.turns, h)),
+                Some(h) => smaller = Some(h),
                 None => {}
             }
         }
@@ -171,14 +173,16 @@ impl App {
             let current = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
             let kept_smaller = if named.is_some_and(|n| source_of(n) == current) {
                 // Looked for already.
-                false
+                None
             } else {
                 match self.thumbs.get_nearest_into(file_id, height, current, jpeg).map_err(failed)? {
-                    Some(h) if h >= height => return Ok(Found::Kept),
+                    Some(h) if h >= height => return Ok(Found::Kept(h)),
                     found => {
                         // A read overwrote the named one's bytes.
-                        smaller &= found.is_none();
-                        found.is_some()
+                        if found.is_some() {
+                            smaller = None;
+                        }
+                        found
                     }
                 }
             };
@@ -203,22 +207,31 @@ impl App {
         })?;
         let turns = src.state.turns;
         match found {
-            Found::Kept | Found::Offline(_, true) => Ok(kept(turns)),
+            Found::Kept(h) => Ok(kept(turns, h)),
+            Found::Offline(_, Some(h)) => Ok(kept(turns, h)),
             Found::Made(made) => {
                 let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
-                Ok(Thumbnail { turns, made: Some((made, Keep { file_id, height, source })) })
+                Ok(Thumbnail { turns, made: Some((made, Keep { file_id, height, source })), kept_at: None })
             }
-            Found::Offline(e, false) => match named {
-                Some(n) if smaller => Ok(kept(n.turns)),
-                // A read of the file as it is (an earlier try of `consistent`) overwrote it: read again.
-                Some(n)
-                    if self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)?.is_some() =>
-                {
-                    Ok(kept(n.turns))
+            Found::Offline(e, None) => {
+                let Some(n) = named else { return Err(e) };
+                let at = match smaller {
+                    Some(h) => Some(h),
+                    // A read of the file as it is (an earlier try of `consistent`) overwrote it: read again.
+                    None => self.thumbs.get_nearest_into(file_id, height, source_of(n), jpeg).map_err(failed)?,
+                };
+                match at {
+                    Some(h) => Ok(kept(n.turns, h)),
+                    None => Err(e),
                 }
-                _ => Err(e),
-            },
+            }
         }
+    }
+
+    /// Drop the cache's thumbnail of `file_id` at `height`, one that doesn't decode: the next pass at that height makes
+    /// it anew from the original ([`thumbs::ThumbCache::forget_height`]).
+    pub fn forget_thumb(&self, file_id: FileId, height: u32) -> Result<()> {
+        self.thumbs.forget_height(file_id, height).map_err(failed)
     }
 
     /// Put a thumbnail made on a miss into the cache, in the background: it is shown whatever the write does.

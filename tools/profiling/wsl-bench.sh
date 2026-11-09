@@ -8,10 +8,28 @@
 # tools/profiling/cgtab.py (docs/PROFILING.md).
 # A bench name as the argument runs only the matching benches (gungraun's FILTER), e.g. `catalog::list`. Such a run is
 # partial, so it isn't archived: an archive would replace the commit's full one with a subset. Options (starting with -,
-# e.g. --save-baseline=before) don't make a run partial.
+# e.g. --save-baseline=before) don't make a run partial, but an option's value must follow `=`: a bare option before a
+# plain argument is refused, since that argument could be its value or a bench name.
 # The catalog benches' data (tools/profiling/bench_data.py, made on the Windows side) is copied to $PG_BENCH_DATA, default
 # ~/pg-bench, once per layout.
 set -euo pipefail
+
+# Checked before anything runs, so a refused argument costs no build.
+filtered=0
+bare=
+for arg in "$@"; do
+    if [ -n "$bare" ] && [[ $arg != -* ]]; then
+        echo "wsl-bench.sh: '$bare $arg' is ambiguous: write a value as $bare=VALUE, or put the bench name before the options" >&2
+        exit 2
+    fi
+    bare=
+    case "$arg" in
+        -*=*) ;;
+        -*) bare=$arg ;;
+        *) filtered=1 ;;
+    esac
+done
+
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 CLONE=${PG_BENCH_CLONE:-$HOME/photo-gallery}
 export PG_BENCH_DATA=${PG_BENCH_DATA:-$HOME/pg-bench}
@@ -53,12 +71,7 @@ rm -rf "$CLONE/target/gungraun"
 cargo clippy -p pg-bench --benches -- -D warnings
 cargo bench -p pg-bench --bench ir -- "$@"
 
-# A bench-name argument makes this run partial (see the header); options don't.
-filtered=0
-for arg in "$@"; do
-    case "$arg" in -*) ;; *) filtered=1 ;; esac
-done
-
+# A bench-name argument makes this run partial (see the header, and the check at the top).
 if [ $filtered -eq 0 ]; then
     # A full run's callgrind outputs are kept in the checkout, as a reference over time: one archive per benched commit,
     # docs/perf/callgrind/<short sha of HEAD>.tar.zst, holding the .out files with the target's layout (pg-bench/ir/...).

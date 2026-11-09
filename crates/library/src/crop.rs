@@ -30,9 +30,36 @@ pub struct Stats {
     /// The first failure, with its file. A panic on a file is a failure of that file (`Cause::Panicked`), which is
     /// not queued again.
     pub error: Option<FileError>,
+    /// The first refusal (a folder whose name Windows may change), typed so the app can word it. It is also a failure
+    /// in `error`.
+    pub refused: Option<CropError>,
     /// What a stop left (to queue again).
     pub remaining: Vec<FileId>,
 }
+
+/// A file a crop refused to copy, typed so the app words it (`pg_client::text`); its `Display` is the English, for the
+/// command line.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CropError {
+    /// A folder of the file's path, or of its copy's, ends in a dot or a space, which Windows may drop from the plain
+    /// path ExifTool is given: the copy could reach another folder's file. Refused before anything is read or written.
+    /// `file` is the source, as the user sees its path; `folder` is the folder's name as the disk holds it.
+    FolderRefused { file: String, folder: String },
+}
+
+impl std::fmt::Display for CropError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            CropError::FolderRefused { file, folder } => write!(
+                f,
+                "{file} isn't copied: its folder {folder} ends in a dot or a space, which Windows may drop from a path, \
+                 so the copy could reach another folder"
+            ),
+        }
+    }
+}
+
+impl std::error::Error for CropError {}
 
 struct Job {
     id: FileId,
@@ -71,7 +98,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
     // the copies into a different folder from the one named.
     let folder = real_folder(folder)?;
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
-    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
+    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, refused: None, remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
     let mut paths = PathArena::default();
     for &id in ids {
@@ -135,8 +162,12 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
                     let (source, out) = (path_buf(paths.get(job.source.path)), path_buf(paths.get(job.out)));
-                    ExifTool::running(&mut exiftool, &exiftool_program())?.copy_tags(&source, &out)?;
-                    keep_time(&source, &out)?;
+                    if let Err(e) = tag_copy(&mut exiftool, &source, &out) {
+                        // The copy was published before it had its tags: a failure leaves no untagged copy at the
+                        // output, since the job reports a failure and the output is not what it asked for.
+                        let _ = std::fs::remove_file(verbatim(&out));
+                        return Err(e);
+                    }
                     Ok(true)
                 }
             });
@@ -146,6 +177,9 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
+                    if let Some(refused) = e.downcast_ref::<CropError>() {
+                        stats.refused.get_or_insert_with(|| refused.clone());
+                    }
                     stats.error.get_or_insert_with(|| FileError {
                         path: String::from_utf8_lossy(paths.get(job.source.path)).into_owned(),
                         cause: Cause::of(&e),
@@ -183,8 +217,13 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) ->
     // A folder whose name Windows may change in the plain path (a trailing dot or space) is refused, for the original
     // and for the copy: ExifTool, which takes plain paths, would reach another folder's file. std's own calls below
     // take the verbatim form, which reaches the file exactly.
-    check_folder_names(&source_path)?;
-    check_folder_names(&out_path)?;
+    let file = source_path.display().to_string();
+    for path in [&source_path, &out_path] {
+        check_folder_names(path).map_err(|altered| CropError::FolderRefused {
+            file: file.clone(),
+            folder: altered.folder.to_string_lossy().into_owned(),
+        })?;
+    }
     if stat(&source_path)? != (s.size, s.mtime) || usize::try_from(s.size).ok() != Some(bytes.len()) {
         return Ok(Written::Skipped);
     }
@@ -199,6 +238,12 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) ->
     let temp_path: PathBuf = path_buf(temp);
     publish(&temp_path, &out_path, &cropped.bytes, &source_path)?;
     Ok(Written::Saved { metadata: cropped.metadata })
+}
+
+/// Give the published copy at `out` the tags of `source` that the crop left out (ExifTool), and its modification time.
+fn tag_copy(exiftool: &mut Option<ExifTool>, source: &Path, out: &Path) -> Result<()> {
+    ExifTool::running(exiftool, &exiftool_program())?.copy_tags(source, out)?;
+    keep_time(source, out)
 }
 
 /// Write `bytes` to the temporary `temp`, give it `source`'s modification time, and rename it to `out`, so the copy

@@ -10,7 +10,7 @@ From the repository root, through the Justfile:
 | Command | What it does |
 |---|---|
 | `just linux-build` | builds the images: `pg-dev` (the checks) and `pg-tools` (the benches and the fuzzer) |
-| `just check-linux` | the Linux job of CI, step by step (`docker/check.sh`), on the working tree |
+| `just check-linux` | the Linux job of CI, step by step (`docker/check.py`), on the working tree |
 | `just check-linux-head` | the same, on the committed HEAD (a `git archive` of it), uncommitted changes left out |
 | `just perf` | the callgrind benches of HEAD, gated against `docs/perf/baseline.json` (±1%); `just perf --update` after a change that should move the counts |
 | `just fuzz-smoke 60` | each fuzz target for 60 seconds (`fuzz/`); a crash leaves its input in `fuzz/artifacts/` |
@@ -22,7 +22,7 @@ the repository. The images are built with the versions the Justfile pins (`just_
 `aqtinstall_commit`) and the gungraun version in `Cargo.lock`, so each version is written once. Build the image by hand
 only through `linux-build`: without the build arguments the Dockerfile fails on purpose.
 
-`docker/check.sh` runs the steps of CI's Linux job in CI's order and stops at the first failure. It also fails when a
+`docker/check.py` runs the steps of CI's Linux job in CI's order and stops at the first failure. It also fails when a
 test prints `skipped:` (the test checked nothing).
 
 The bench runs (`just perf`, `just linux-bench`) start their containers with `--security-opt seccomp=unconfined`. Gungraun

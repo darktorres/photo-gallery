@@ -236,7 +236,7 @@ jobs:
       # The apt packages (docker/apt-packages.txt) and the FFmpeg and libclang links. Not cached: an apt cache
       # restores files without registering them with apt, so apt downloads them again anyway, and the cached step did nothing.
       - name: System packages and libraries (FFmpeg, libclang)
-        run: bash tools/profiling/ci-setup.sh
+        run: python3 tools/profiling/ci_setup.py
 
       - name: Build environment (libclang and the video build's key, for the steps after this one)
         # Each step runs in its own shell, so an export in one step does not reach the next. GITHUB_ENV carries these

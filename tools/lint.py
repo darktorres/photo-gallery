@@ -18,6 +18,9 @@ STEPS = [
     ["cargo", "fmt", "--all", "--check"],
     ["cargo", "clippy", "--workspace", "--all-targets", "--locked", "--timings", "--", "-D", "warnings"],
     ["cargo", "check", "-p", "pg-model", "-p", "pg-client", "--locked", "--target", "wasm32-unknown-unknown"],
+    # The workspaces outside the root (fuzz and eval/jpeg-decoders have their own lockfiles): their lock must not be stale.
+    ["cargo", "metadata", "--locked", "--manifest-path", "fuzz/Cargo.toml", "--format-version", "1"],
+    ["cargo", "metadata", "--locked", "--manifest-path", "eval/jpeg-decoders/Cargo.toml", "--format-version", "1"],
     ["cargo", "doc", "--workspace", "--no-deps", "--document-private-items", "--locked", "--timings"],
     ["cargo", "deny", "check"],
     ["cargo", "machete", "crates"],
@@ -45,7 +48,8 @@ def main() -> None:
     load_env_file()
     for step in STEPS:
         env = {**os.environ, **DOC_FLAGS} if step[:2] == ["cargo", "doc"] else None
-        run(resolved(step), env)
+        # `cargo metadata` prints the whole graph; the check is only that it resolves.
+        run(resolved(step), env, quiet=step[:2] == ["cargo", "metadata"])
     print("lint: every step passed")
 
 

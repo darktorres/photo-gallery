@@ -132,7 +132,7 @@ superseded: the environment is now the pg-dev image, `docker/Dockerfile`, which 
 - Installed with `wsl --install -d Ubuntu-26.04 --no-launch` and first started with `-u root`, which skips creating
   a user. It is the default distro. `Ubuntu-24.04` was tried first, but it only has FFmpeg 6.1 and valgrind 3.22;
   it was unregistered on 2026-10-31.
-- `tools/profiling/wsl-setup.sh` (idempotent; its bench part was removed on 2026-11-09, and the CI part is now `tools/profiling/ci-setup.sh`) installed the rest: valgrind 3.26, the build tools, FFmpeg 8's
+- `tools/profiling/wsl-setup.sh` (idempotent; its bench part was removed on 2026-11-09, and the CI part is now `tools/profiling/ci_setup.py`) installed the rest: valgrind 3.26, the build tools, FFmpeg 8's
   headers, rustup (the toolchain that `rust-toolchain.toml` names, with clippy and rustfmt), and the `gungraun-runner` of the exact version in
   `Cargo.lock`.
 
@@ -145,7 +145,7 @@ comparable with the ones from the real photo that the benches used before (FINDI
 at build time picks another file. Reading it and creating the `Analyzer` and the `Maker` happen in gungraun's `setup`, outside
 the measured function. Their buffers start empty, so each run measures a worker's first file. The bench also has
 catalog benches (`crates/bench/benches/ir/catalog.rs`: the grid's list, the tree and the background job, on a
-synthetic catalog made by `tools/profiling/bench_data.py`); `tools/profiling/bench.sh` (`just linux-bench`) takes a bench name to run only those.
+synthetic catalog made by `tools/profiling/bench_data.py`); `tools/profiling/bench.py` (`just linux-bench`) takes a bench name to run only those.
 
 ```powershell
 just linux-build                          # once, and after a Dockerfile or Cargo.lock (gungraun) change
@@ -179,7 +179,7 @@ $C diff $O.old $O                        # per function: what the last change di
    `FFMPEG_DIR`, which made the Linux build look for Windows DLLs). `crates/video/build.rs` now finds FFmpeg's headers on Linux
    through pkg-config (the development packages in `docker/apt-packages.txt`), and on Windows in `.deps/ffmpeg`. `LIBCLANG_PATH`
    still has to be set on Linux, because libclang's folder depends on the Ubuntu release: the container sets it
-   (`docker/entrypoint.sh`) to the newest `/usr/lib/llvm-*/lib`, and the CI workflow does the same for the runner.
+   (a link, `/opt/libclang`, that the Dockerfile makes) to the newest `/usr/lib/llvm-*/lib`, and the CI workflow does the same for the runner.
 3. `build.rs` copies the FFmpeg DLLs on Windows targets only.
 4. `.gitattributes` keeps `*.sh` at LF: they run in the container straight from the Windows checkout, where
    `core.autocrlf` would add `\r`.

@@ -1,6 +1,6 @@
 # The Linux environment of CI's Linux job (.github/workflows/ci.yml), for building, checking, benchmarking and fuzzing this
 # repository. Built and run by tools/linux.py (docker/README.md), which passes the versions below from the Justfile, so
-# each version is written once. Two targets: `base` runs the checks (docker/check.sh); `tools` adds the callgrind benches
+# each version is written once. Two targets: `base` runs the checks (docker/check.py); `tools` adds the callgrind benches
 # and the fuzzer on top of it.
 # The base image is pinned by digest (the index: `docker buildx imagetools inspect ubuntu:26.04`), so a rebuild does not
 # change it under the pinned versions. Moving to a newer one is a commit, with its digest.
@@ -24,6 +24,8 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_HOME=/home/pg/.cargo \
     RUSTUP_HOME=/home/pg/.rustup \
     CARGO_TARGET_DIR=/cargo-target \
+    PG_FFMPEG=/usr/bin/ffmpeg \
+    LIBCLANG_PATH=/opt/libclang \
     QMAKE=/opt/Qt/${QT_VERSION}/gcc_64/bin/qmake \
     LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib \
     PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
@@ -36,6 +38,9 @@ RUN apt-get update \
  && grep -v '^#' /opt/pg/apt-packages.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends \
       ca-certificates curl git mold nodejs npm python3-venv \
  && rm -rf /var/lib/apt/lists/*
+
+# libclang for bindgen: the newest LLVM the image has, at a fixed path (LIBCLANG_PATH), as CI finds it.
+RUN ln -sfn "$(find /usr/lib -maxdepth 2 -path '/usr/lib/llvm-*/lib' | sort -V | tail -1)" /opt/libclang
 
 # The user the checks run as: UID 1001, the GitHub runner's user, so a checkout the runner made is writable by it.
 RUN useradd --uid 1001 --create-home --shell /bin/bash pg
@@ -61,7 +66,6 @@ RUN install -d -o pg -g pg /cargo-target /home/pg/.cargo /home/pg/.cargo/registr
 
 # The toolchain file, and the rustup step that installs what it names (the pinned nightly, its components and target).
 COPY rust-toolchain.toml /opt/pg/rust-toolchain.toml
-COPY --chmod=755 docker/entrypoint.sh /usr/local/bin/pg-entrypoint
 
 USER pg
 
@@ -77,8 +81,7 @@ RUN cargo install --locked just --version ${JUST_VERSION} \
  && cargo install --locked cargo-modules --version ${CARGO_MODULES_VERSION}
 
 WORKDIR /work
-ENTRYPOINT ["/usr/local/bin/pg-entrypoint"]
-CMD ["bash", "docker/check.sh"]
+CMD ["python3", "docker/check.py"]
 
 # The callgrind benches (docs/PROFILING.md) and the fuzzer: their packages, and their tools at the versions the Justfile
 # pins (cargo-fuzz) and at the version of the gungraun library in Cargo.lock (gungraun-runner, which the launcher reads).

@@ -3,10 +3,10 @@
 benches (`just perf`) and the fuzzer (`just fuzz-smoke`). Docker Desktop must be running.
 
     linux.py build                 build the images: `pg-dev` (the checks) and `pg-tools` (the benches and the fuzzer)
-    linux.py check [--head]        docker/check.sh on the working tree, or on the committed HEAD with --head
-    linux.py perf [ARGS...]        tools/perf-check.sh: the callgrind benches of HEAD, gated against docs/perf/baseline.json
-    linux.py bench [ARGS...]       tools/profiling/bench.sh: the benches without the gate (gungraun's options)
-    linux.py fuzz [SECONDS]        tools/fuzz-smoke.sh: each fuzz target for SECONDS (default 60)
+    linux.py check [--head]        docker/check.py on the working tree, or on the committed HEAD with --head
+    linux.py perf [ARGS...]        tools/perf_check.py: the callgrind benches of HEAD, gated against docs/perf/baseline.json
+    linux.py bench [ARGS...]       tools/profiling/bench.py: the benches without the gate (gungraun's options)
+    linux.py fuzz [SECONDS]        tools/fuzz_smoke.py: each fuzz target for SECONDS (default 60)
     linux.py shell                 a shell in `pg-dev`, on the working tree
 
 The tool versions are read from the Justfile with `just --evaluate`, and the gungraun version from Cargo.lock, so each
@@ -146,10 +146,10 @@ def run(image, command, mounts, extra=()):
 def check(head):
     ensure_image(CHECKS, "base")
     if not head:
-        return run(CHECKS, ["bash", "docker/check.sh"], ["-v", f"{posix(REPO)}:/work", *cache_mounts()])
+        return run(CHECKS, ["python3", "docker/check.py"], ["-v", f"{posix(REPO)}:/work", *cache_mounts()])
     with tempfile.TemporaryDirectory(prefix="pg-head-") as export:
         export_head(export)
-        return run(CHECKS, ["bash", "docker/check.sh"], ["-v", f"{posix(export)}:/work", *cache_mounts()])
+        return run(CHECKS, ["python3", "docker/check.py"], ["-v", f"{posix(export)}:/work", *cache_mounts()])
 
 
 def with_head(command, extra_mounts, extra_env=(), extra_flags=()):
@@ -174,7 +174,7 @@ def perf(args):
     if not source or not Path(source).is_dir():
         fail("PG_BENCH_DATA_SOURCE must name the bench data folder (.env, docs/PROFILING.md)")
     code = with_head(
-        ["bash", "tools/perf-check.sh", *args],
+        ["python3", "tools/perf_check.py", *args],
         ["-v", f"{posix(source)}:/bench-src:ro"],
         extra_env=["PG_BENCH_SKIP_CATALOG", "PG_HEAD_SHA"],
         extra_flags=BENCH_FLAGS,
@@ -183,12 +183,12 @@ def perf(args):
 
 
 def bench(args):
-    code = with_head(["bash", "tools/profiling/bench.sh", *args], [], extra_env=["PG_HEAD_SHA"], extra_flags=BENCH_FLAGS)
+    code = with_head(["python3", "tools/profiling/bench.py", *args], [], extra_env=["PG_HEAD_SHA"], extra_flags=BENCH_FLAGS)
     sys.exit(code)
 
 
 def fuzz(seconds):
-    command = ["bash", "tools/fuzz-smoke.sh", *([seconds] if seconds else [])]
+    command = ["python3", "tools/fuzz_smoke.py", *([seconds] if seconds else [])]
     sys.exit(with_head(command, []))
 
 
@@ -199,7 +199,7 @@ def main():
     check_parser = commands.add_parser("check", help="the Linux job's checks")
     check_parser.add_argument("--head", action="store_true", help="check the committed HEAD, not the working tree")
     perf_parser = commands.add_parser("perf", help="the callgrind benches, gated")
-    perf_parser.add_argument("args", nargs=argparse.REMAINDER, help="tools/perf-check.sh's options, e.g. --update")
+    perf_parser.add_argument("args", nargs=argparse.REMAINDER, help="tools/perf_check.py's options, e.g. --update")
     bench_parser = commands.add_parser("bench", help="the callgrind benches, without the gate (gungraun's options)")
     bench_parser.add_argument("args", nargs=argparse.REMAINDER, help="gungraun's options, e.g. --save-baseline=before")
     fuzz_parser = commands.add_parser("fuzz", help="each fuzz target for a short time")

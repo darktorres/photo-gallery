@@ -138,7 +138,7 @@ qmltest: _qt
 # The Linux checks, the callgrind benches and the fuzzer run in the pg-dev container (docker/, tools/linux.py). It is the
 # only Linux environment this repository uses. Needs Docker Desktop running; `just linux-build` builds the image.
 
-# The Linux job of CI, step by step, on the working tree (docker/check.sh). `check-linux-head` checks the committed HEAD.
+# The Linux job of CI, step by step, on the working tree (docker/check.py). `check-linux-head` checks the committed HEAD.
 check-linux *args:
     {{ py }} tools/linux.py check {{ args }}
 
@@ -150,12 +150,12 @@ linux-build *args:
     {{ py }} tools/linux.py build {{ args }}
 
 # The instruction-count gate (S-16.2): the callgrind benches in the container, compared with docs/perf/baseline.json at
-# ±1% (tools/perf-check.sh). After a change that should move the counts: `just perf --update`. The bench data is the
+# ±1% (tools/perf_check.py). After a change that should move the counts: `just perf --update`. The bench data is the
 # folder PG_BENCH_DATA_SOURCE names in .env, mounted read-only into the container.
 perf *args:
     {{ py }} tools/linux.py perf {{ args }}
 
-# Each fuzz target for a short time, in the container (fuzz/, tools/fuzz-smoke.sh): the fuzz smoke test (S-18.3).
+# Each fuzz target for a short time, in the container (fuzz/, tools/fuzz_smoke.py): the fuzz smoke test (S-18.3).
 # `just fuzz-smoke 300` runs five minutes per target.
 fuzz-smoke *args:
     {{ py }} tools/linux.py fuzz {{ args }}

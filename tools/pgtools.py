@@ -67,9 +67,10 @@ def lint_tool(name: str) -> str | None:
     return shutil.which(name)
 
 
-def run(cmd: list[str], env: dict[str, str] | None = None) -> None:
-    """Runs `cmd` in the repository, printing it first; a failing command ends this program with its exit status."""
+def run(cmd: list[str], env: dict[str, str] | None = None, quiet: bool = False) -> None:
+    """Runs `cmd` in the repository, printing it first; a failing command ends this program with its exit status. `quiet`
+    discards its output (for a check whose output is only data, such as `cargo metadata`)."""
     print("+ " + " ".join(cmd), flush=True)
-    result = subprocess.run(cmd, cwd=REPO, env=env, check=False)
+    result = subprocess.run(cmd, cwd=REPO, env=env, check=False, stdout=subprocess.DEVNULL if quiet else None)
     if result.returncode != 0:
         sys.exit(result.returncode)

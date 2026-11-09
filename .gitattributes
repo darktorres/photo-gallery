@@ -6,5 +6,5 @@
 *.sh text eol=lf
 # cmd misparses batch files with LF-only line ends (it drops characters at line starts).
 *.cmd text eol=crlf
-# The callgrind archives (docs/perf/callgrind, written by tools/profiling/bench.sh): zstd-compressed, never line-ending converted.
+# The callgrind archives (docs/perf/callgrind, written by tools/profiling/bench.py): zstd-compressed, never line-ending converted.
 *.tar.zst binary

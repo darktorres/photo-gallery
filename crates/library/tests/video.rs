@@ -9,7 +9,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use anyhow::anyhow;
+use anyhow::{Context, anyhow};
 use pg_analysis::analyze;
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
@@ -49,7 +49,7 @@ fn run(exe: &Path, args: &[&str]) -> anyhow::Result<()> {
 fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
     let dir = pg_testkit::run_folder("scratch_video", "video")?;
     let media = dir.join("media");
-    std::fs::create_dir_all(&media)?;
+    std::fs::create_dir_all(&media).with_context(|| format!("make the media folder {}", media.display()))?;
     let out = |name: &str| media.join(name).to_string_lossy().into_owned();
     let encode = |name: &str, codec: &[&str]| {
         let mut args = vec!["-f", "lavfi", "-i", SCENE];
@@ -68,7 +68,7 @@ fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
     run(exe, &["-display_hflip", "-i", &out("h264.mp4"), "-c", "copy", &out("mirrored.mp4")])?;
     // Animations: 0.8 to 1.2 s (red and blue, then green), outside the media folder.
     let anim = dir.join("anim");
-    std::fs::create_dir_all(&anim)?;
+    std::fs::create_dir_all(&anim).with_context(|| format!("make the animation folder {}", anim.display()))?;
     for (name, codec) in [
         ("anim.webp", &["-c:v", "libwebp_anim", "-lossless", "1", "-loop", "0"][..]),
         ("anim.gif", &["-f", "gif"]),

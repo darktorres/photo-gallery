@@ -154,6 +154,27 @@ jobs:
         # The rest of the lint (formatting, dependencies, Python, Markdown, wasm32) runs once, in the Linux job.
         run: just lint-windows
 
+      # Diagnostic (temporary): tests/video.rs failed here once with "Access is denied" from create_dir_all, and passed on
+      # every local run. This runs that test's binary under Process Monitor until a run fails, and keeps the failing run's
+      # capture (tools/procmon-video.ps1). It runs before the Tests step, and it does not fail the job: the Tests step
+      # still decides.
+      - name: Video test under Process Monitor (diagnostic)
+        id: procmon
+        continue-on-error: true
+        shell: pwsh
+        run: pwsh -NoLogo -NoProfile -File tools/procmon-video.ps1 -Runs 40
+
+      - name: Video test capture (diagnostic)
+        if: steps.procmon.outputs.failed == 'true'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: video-test-procmon
+          path: |
+            target/procmon/video.pml
+            target/procmon/video-filtered.csv
+            target/procmon/run-*.log
+          retention-days: 14
+
       - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
         shell: pwsh
         run: |

@@ -213,9 +213,18 @@ the FFmpeg and Windows media backends, `qsvgicon`.
 
 ## App build against the static Qt
 
+**The source is not on `main`.** Normal builds don't need it, so it stays out of their source. It is kept as a patch,
+`tools/static-qt/app-build.patch`, against the tree before it was taken out (`crates/desktop/build.rs`,
+`crates/desktop/src/gui_app.rs`, and the new `crates/desktop/cpp/static_qt.cpp`). To use the static build:
+
+    git apply tools/static-qt/app-build.patch
+
+and the commands below. Undo with `git apply -R` (or `git checkout -- crates/desktop`, when nothing else is changed there).
+
 Build: `cargo build -p pg-gallery --bin gallery` with `PG_QT_STATIC=1`, `QT_DIR` = the static prefix,
-`PG_FFMPEG_STATIC` = the static FFmpeg's lib folder, and a separate `CARGO_TARGET_DIR`. Only that build sets
-`PG_QT_STATIC`; the shared build's `build.rs` path is unchanged.
+`PG_FFMPEG_STATIC` = the static FFmpeg's lib folder, `TURBOJPEG_*` (see the libjpeg section), and a separate
+`CARGO_TARGET_DIR`. Only that build sets `PG_QT_STATIC`; with the patch applied, the shared build's `build.rs` path is
+unchanged.
 
 What it took, in order (each a link or start failure, found by running the binary offscreen):
 

@@ -1,0 +1,250 @@
+diff --git a/crates/desktop/build.rs b/crates/desktop/build.rs
+index 95f94ff..2a154be 100644
+--- a/crates/desktop/build.rs
++++ b/crates/desktop/build.rs
+@@ -19,6 +19,10 @@ fn main() -> Result<(), String> {
+     mascots.sort();
+     resources.extend(mascots);
+ 
++    // The `pg_static_qt` cfg (set below for the static build) is declared for every build, so the shared build is
++    // checked the same way.
++    println!("cargo::rustc-check-cfg=cfg(pg_static_qt)");
++
+     // The QML is compiled to C++ (qmlcachegen) against this module's types: qt-build-utils is vendored for that
+     // (vendor/README.md).
+     let mut builder = CxxQtBuilder::new_qml_module(
+@@ -104,10 +108,116 @@ fn main() -> Result<(), String> {
+     if std::env::var_os("CARGO_CFG_DEBUG_ASSERTIONS").is_some() {
+         builder = builder.file("src/live_reload.rs").cpp_file("cpp/live_reload.cpp");
+     }
++    // A static Qt (PG_QT_STATIC set; docs/STATIC_BUILD.md): the modules the QML uses, the plugins' registration
++    // (cpp/static_qt.cpp), and the libraries of the static link. Only that build sets the variable: the shared build is
++    // unchanged.
++    if std::env::var_os("PG_QT_STATIC").is_some() {
++        builder = builder
++            .qt_module("QuickControls2")
++            .qt_module("QuickLayouts")
++            .qt_module("Svg")
++            .cpp_file("cpp/static_qt.cpp");
++        static_qt_links()?;
++    }
+     builder.build();
+     Ok(())
+ }
+ 
++/// The static Qt's libraries beyond the modules cxx-qt links: the plugins and QML plugins (paths under QT_DIR, the static
++/// Qt's prefix), the Windows libraries Qt's static libraries need, and the static FFmpeg that Qt's FFmpeg plugin uses
++/// (PG_FFMPEG_STATIC, its lib folder). The lists are the static link line of the check program (docs/STATIC_BUILD.md).
++///
++/// The libraries go out as `rustc-link-search` and `rustc-link-lib`, which reach the binary that depends on this crate.
++/// `rustc-link-arg` would not: it is for the crate's own link, so the plugins would be lost (the app would start without
++/// its platform plugin). The `pg_static_qt` cfg tells gui_app.rs to keep cpp/static_qt.cpp's registrations linked.
++fn static_qt_links() -> Result<(), String> {
++    let qt = std::path::PathBuf::from(
++        std::env::var_os("QT_DIR").ok_or("PG_QT_STATIC needs QT_DIR, the static Qt's prefix")?,
++    );
++    let ffmpeg = std::path::PathBuf::from(
++        std::env::var_os("PG_FFMPEG_STATIC").ok_or("PG_QT_STATIC needs PG_FFMPEG_STATIC, the static FFmpeg's lib folder")?,
++    );
++    println!("cargo::rustc-cfg=pg_static_qt");
++    for lib in STATIC_QT_LIBS {
++        link_static(&qt.join(lib))?;
++    }
++    for lib in STATIC_FFMPEG_LIBS {
++        link_static(&ffmpeg.join(format!("{lib}.lib")))?;
++    }
++    for lib in STATIC_QT_SYSTEM_LIBS {
++        println!("cargo::rustc-link-lib={lib}");
++    }
++    Ok(())
++}
++
++/// Links one static library by its file: its folder is searched, and its name (without `.lib`) is the library.
++fn link_static(path: &std::path::Path) -> Result<(), String> {
++    let dir = path.parent().ok_or_else(|| format!("{}: no folder", path.display()))?;
++    let name = path
++        .file_stem()
++        .and_then(|name| name.to_str())
++        .ok_or_else(|| format!("{}: no library name", path.display()))?;
++    println!("cargo::rustc-link-search=native={}", dir.display());
++    println!("cargo::rustc-link-lib=static={name}");
++    Ok(())
++}
++
++/// Qt's static plugin and QML plugin libraries the app imports (cpp/static_qt.cpp), relative to QT_DIR.
++const STATIC_QT_LIBS: &[&str] = &[
++    "lib/Qt6FFmpegMediaPluginImpl.lib",
++    // The modules the QML plugins below are built on (their .prl files name them, and qt-build-utils reads only the
++    // modules' .prl files, not these).
++    "lib/Qt6QuickControls2Impl.lib",
++    "lib/Qt6QuickControls2Basic.lib",
++    "lib/Qt6QuickControls2BasicStyleImpl.lib",
++    "lib/Qt6QuickControls2Fusion.lib",
++    "lib/Qt6QuickControls2FusionStyleImpl.lib",
++    "lib/Qt6MultimediaQuick.lib",
++    "plugins/platforms/qwindows.lib",
++    "plugins/platforms/qoffscreen.lib",
++    "plugins/imageformats/qgif.lib",
++    "plugins/imageformats/qicns.lib",
++    "plugins/imageformats/qico.lib",
++    "plugins/imageformats/qjpeg.lib",
++    "plugins/imageformats/qsvg.lib",
++    "plugins/imageformats/qtga.lib",
++    "plugins/imageformats/qtiff.lib",
++    "plugins/imageformats/qwbmp.lib",
++    "plugins/imageformats/qwebp.lib",
++    "plugins/tls/qschannelbackend.lib",
++    "plugins/tls/qcertonlybackend.lib",
++    "plugins/multimedia/ffmpegmediaplugin.lib",
++    "plugins/multimedia/windowsmediaplugin.lib",
++    "plugins/iconengines/qsvgicon.lib",
++    "qml/QtQml/qmlplugin.lib",
++    "qml/QtQml/Models/modelsplugin.lib",
++    "qml/QtQml/WorkerScript/workerscriptplugin.lib",
++    "qml/QtQuick/qtquick2plugin.lib",
++    "qml/QtQuick/Window/quickwindowplugin.lib",
++    "qml/QtQuick/Layouts/qquicklayoutsplugin.lib",
++    "qml/QtQuick/Templates/qtquicktemplates2plugin.lib",
++    "qml/QtQuick/Controls/qtquickcontrols2plugin.lib",
++    "qml/QtQuick/Controls/impl/qtquickcontrols2implplugin.lib",
++    "qml/QtQuick/Controls/Basic/qtquickcontrols2basicstyleplugin.lib",
++    "qml/QtQuick/Controls/Basic/impl/qtquickcontrols2basicstyleimplplugin.lib",
++    "qml/QtQuick/Controls/Fusion/qtquickcontrols2fusionstyleplugin.lib",
++    "qml/QtQuick/Controls/Fusion/impl/qtquickcontrols2fusionstyleimplplugin.lib",
++    "qml/QtMultimedia/quickmultimediaplugin.lib",
++];
++
++/// The FFmpeg libraries of the static build, in PG_FFMPEG_STATIC.
++const STATIC_FFMPEG_LIBS: &[&str] = &["avcodec", "avformat", "avutil", "swresample", "swscale"];
++
++/// The Windows libraries the static Qt's libraries use (the manifest's non-Qt6 system entries).
++const STATIC_QT_SYSTEM_LIBS: &[&str] = &[
++    "Dwmapi", "Dxva2", "advapi32", "amstrmid", "authz", "avrt", "bcrypt", "comdlg32", "crypt32", "d2d1", "d3d11",
++    "d3d12", "d3d9", "dnsapi", "dwrite", "dxgi", "dxguid", "evr", "gdi32", "icuin", "icuuc", "imm32", "iphlpapi",
++    "kernel32", "ksuser", "mf", "mfcore", "mfplat", "mfreadwrite", "mfuuid", "mpr", "mscms", "ncrypt", "netapi32",
++    "ntdll", "ole32", "oleaut32", "propsys", "runtimeobject", "secur32", "setupapi", "shcore", "shell32", "shlwapi",
++    "strmiids", "synchronization", "uiautomationcore", "user32", "userenv", "uuid", "uxtheme", "version", "windowsapp",
++    "winhttp", "winmm", "winspool", "wmcodecdspuuid", "ws2_32", "wtsapi32",
++];
++
+ /// Whether the content key is set (non-empty), as CI sets it: the builder then emits no path lines for the sources.
+ fn has_content_key() -> bool {
+     std::env::var("PG_DESKTOP_CONTENT_KEY").is_ok_and(|key| !key.is_empty())
+diff --git a/crates/desktop/cpp/static_qt.cpp b/crates/desktop/cpp/static_qt.cpp
+new file mode 100644
+index 0000000..115beda
+--- /dev/null
++++ b/crates/desktop/cpp/static_qt.cpp
+@@ -0,0 +1,77 @@
++// The static Qt build (PG_QT_STATIC set, docs/STATIC_BUILD.md): a static Qt loads no plugin from disk, so each plugin and
++// QML plugin the app uses is registered here, by its class name (the qmldir "classname" and the plugin's own name).
++// build.rs compiles this file only for the static build. gui_app.rs calls pg_static_qt_link (below) under the
++// pg_static_qt cfg, so this object, with the registrations, is linked in even though nothing else names it.
++#include <QtPlugin>
++#include <QtCore/qtresource.h>
++#include <QtQml/qqmlextensionplugin.h>
++
++// Platform, image formats, TLS, media and icon plugins.
++Q_IMPORT_PLUGIN(QWindowsIntegrationPlugin)
++Q_IMPORT_PLUGIN(QOffscreenIntegrationPlugin)
++Q_IMPORT_PLUGIN(QGifPlugin)
++Q_IMPORT_PLUGIN(QICNSPlugin)
++Q_IMPORT_PLUGIN(QICOPlugin)
++Q_IMPORT_PLUGIN(QJpegPlugin)
++Q_IMPORT_PLUGIN(QSvgPlugin)
++Q_IMPORT_PLUGIN(QTgaPlugin)
++Q_IMPORT_PLUGIN(QTiffPlugin)
++Q_IMPORT_PLUGIN(QWbmpPlugin)
++Q_IMPORT_PLUGIN(QWebpPlugin)
++Q_IMPORT_PLUGIN(QSchannelBackend)
++Q_IMPORT_PLUGIN(QTlsBackendCertOnly)
++Q_IMPORT_PLUGIN(QFFmpegMediaPlugin)
++Q_IMPORT_PLUGIN(QWindowsMediaPlugin)
++Q_IMPORT_PLUGIN(QSvgIconPlugin)
++
++// QML plugins: the modules Main.qml and the other components import (qml/*.qml), and what they import in turn.
++Q_IMPORT_QML_PLUGIN(QtQmlPlugin)
++Q_IMPORT_QML_PLUGIN(QtQmlModelsPlugin)
++Q_IMPORT_QML_PLUGIN(QtQmlWorkerScriptPlugin)
++Q_IMPORT_QML_PLUGIN(QtQuick2Plugin)
++Q_IMPORT_QML_PLUGIN(QtQuick_WindowPlugin)
++Q_IMPORT_QML_PLUGIN(QtQuickLayoutsPlugin)
++Q_IMPORT_QML_PLUGIN(QtQuickTemplates2Plugin)
++Q_IMPORT_QML_PLUGIN(QtQuickControls2Plugin)
++Q_IMPORT_QML_PLUGIN(QtQuickControls2ImplPlugin)
++Q_IMPORT_QML_PLUGIN(QtQuickControls2BasicStylePlugin)
++Q_IMPORT_QML_PLUGIN(QtQuickControls2BasicStyleImplPlugin)
++Q_IMPORT_QML_PLUGIN(QtQuickControls2FusionStylePlugin)
++Q_IMPORT_QML_PLUGIN(QtQuickControls2FusionStyleImplPlugin)
++Q_IMPORT_QML_PLUGIN(QMultimediaQuickModule)
++
++// Called from gui_app.rs (static build only), so this object, with the registrations above, is always linked. It also
++// registers the Quick Controls' resources: the .qml files of the styles (ApplicationWindow.qml and the rest) and their
++// compiled caches. A shared Qt registers them when its plugin DLLs load; a static one runs no initializer by itself,
++// and the plugin libraries only reference them, so they are run here.
++// The initializers are C++ functions (their declarations come from the macro, so they must not sit in the extern "C"
++// function below).
++static void init_quick_controls_resources() {
++    Q_INIT_RESOURCE(qmake_QtQuick_Controls);
++
++    Q_INIT_RESOURCE(qmake_QtQuick_Controls_impl);
++    Q_INIT_RESOURCE(qmlcache_QuickControls2Impl);
++    Q_INIT_RESOURCE(QuickControls2Impl_raw_qml_0);
++
++    Q_INIT_RESOURCE(qmake_QtQuick_Controls_Basic);
++    Q_INIT_RESOURCE(qmlcache_QuickControls2Basic);
++    Q_INIT_RESOURCE(QuickControls2Basic_raw_qml_0);
++    Q_INIT_RESOURCE(qtquickcontrols2basicstyle);
++
++    Q_INIT_RESOURCE(qmake_QtQuick_Controls_Basic_impl);
++    Q_INIT_RESOURCE(qmlcache_QuickControls2BasicStyleImpl);
++    Q_INIT_RESOURCE(QuickControls2BasicStyleImpl_raw_qml_0);
++
++    Q_INIT_RESOURCE(qmake_QtQuick_Controls_Fusion);
++    Q_INIT_RESOURCE(qmlcache_QuickControls2Fusion);
++    Q_INIT_RESOURCE(QuickControls2Fusion_raw_qml_0);
++    Q_INIT_RESOURCE(qtquickcontrols2fusionstyle);
++
++    Q_INIT_RESOURCE(qmake_QtQuick_Controls_Fusion_impl);
++    Q_INIT_RESOURCE(qmlcache_QuickControls2FusionStyleImpl);
++    Q_INIT_RESOURCE(QuickControls2FusionStyleImpl_raw_qml_0);
++}
++
++extern "C" void pg_static_qt_link() {
++    init_quick_controls_resources();
++}
+diff --git a/crates/desktop/src/gui_app.rs b/crates/desktop/src/gui_app.rs
+index a58f1bc..2220f5b 100644
+--- a/crates/desktop/src/gui_app.rs
++++ b/crates/desktop/src/gui_app.rs
+@@ -18,12 +18,30 @@ mod ffi {
+ 
+ use std::ffi::OsString;
+ 
++// The static Qt's plugin registrations (cpp/static_qt.cpp), in the static build only (build.rs sets the cfg).
++#[cfg(pg_static_qt)]
++unsafe extern "C" {
++    fn pg_static_qt_link();
++}
++
+ /// The application, with `args` (`main`'s: the program's name first) as Qt's argc and argv. Call on the main thread,
+ /// before any other Qt object.
+ pub fn new(args: &[OsString]) -> cxx::UniquePtr<cxx_qt_lib::QGuiApplication> {
++    keep_static_qt_plugins();
+     ffi::new_gui_application(&argv_bytes(args))
+ }
+ 
++/// Calls the static build's registration object, so the linker keeps the plugins it registers (a static Qt loads none
++/// from disk). Does nothing in the shared build.
++#[cfg(pg_static_qt)]
++fn keep_static_qt_plugins() {
++    // SAFETY: pg_static_qt_link is an empty function in cpp/static_qt.cpp, linked into this binary by build.rs.
++    unsafe { pg_static_qt_link() }
++}
++
++#[cfg(not(pg_static_qt))]
++fn keep_static_qt_plugins() {}
++
+ /// The arguments as Qt's argv holds them: each one NUL-terminated, in order.
+ fn argv_bytes(args: &[OsString]) -> Vec<u8> {
+     let mut bytes = Vec::new();

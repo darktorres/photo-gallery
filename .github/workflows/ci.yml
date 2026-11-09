@@ -1,8 +1,7 @@
 # CI (S-15). Two jobs: `windows` (the app: lint, tests, the QML tests, the screenshot comparison),
-# and `linux` (the whole workspace, Qt 6.12 for Linux included: formatting, clippy, tests, docs, the wasm32 check, the
-# supply-chain checks, the Python and Markdown lints). The Linux job runs cargo directly, where the Windows job runs the
-# Justfile's recipes: the Justfile's recipes are Windows-first (QT_DIR, PowerShell). The compiler is pinned in
-# rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
+# and `linux` (the whole workspace on Linux, with Qt 6.12 for Linux: the same recipes as the Windows job, lint and tests
+# and the QML tests). Both run the Justfile's recipes, so a check that passes here passes there; the steps that are not
+# recipes are the setup. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
 # comment; .github/dependabot.yml proposes updates. The Linux packages are in docker/apt-packages.txt.
 #
 # Inputs from outside the repository, and what each one is pinned to:
@@ -62,15 +61,15 @@ jobs:
       CARGO_LOG: cargo::compiler::fingerprint=info
       # The Qt kit installed below: where the Justfile's recipes and the desktop crate find qmake (a developer sets it in .env).
       QT_DIR: 'C:\Qt\6.12.0\msvc2022_64'
+    # The steps run under bash (Git for Windows), so a failed command fails its step; the diagnostics below say pwsh.
+    defaults:
+      run:
+        shell: bash
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Rust toolchain (rust-toolchain.toml)
         run: rustup show
-
-      - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
-        shell: pwsh
-        run: '"PG_DESKTOP_CONTENT_KEY=${{ hashFiles(''crates/desktop/**'') }}" >> $env:GITHUB_ENV'
 
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
@@ -97,6 +96,9 @@ jobs:
         with:
           python-version: "3.12.10"
 
+      - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
+        run: python tools/ci/github_files.py env PG_DESKTOP_CONTENT_KEY "${{ hashFiles('crates/desktop/**') }}"
+
       - name: FFmpeg archive and build (cached; keyed on the Justfile, which holds the pin)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -108,16 +110,13 @@ jobs:
           key: ffmpeg-${{ hashFiles('Justfile') }}
 
       - name: FFmpeg (the pinned shared build, for pg-video and its tests)
-        shell: pwsh
+        # `just setup` checks the archive against the pin before it unpacks anything, so a mismatch fails here and nothing
+        # bad reaches the cache. With the build already there, it does nothing.
         run: |
-          # `just setup` checks the archive against the pin before it unpacks anything, so a mismatch fails here and nothing
-          # bad reaches the cache. With the build already there, it does nothing.
           just setup
-          if ($LASTEXITCODE -ne 0) { exit 1 }
-          "$env:GITHUB_WORKSPACE\.deps\ffmpeg\bin" >> $env:GITHUB_PATH
+          python tools/ci/github_files.py path .deps/ffmpeg/bin
 
       - name: ExifTool (the metadata tests)
-        shell: pwsh
         run: choco install exiftool --version=${{ env.EXIFTOOL_VERSION }} -y --no-progress
 
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
@@ -158,35 +157,28 @@ jobs:
         run: just lint
 
       - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
-        shell: pwsh
-        run: |
-          just test
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+        run: just test
 
       - name: QML tests
         run: just qmltest
 
+      - name: Python tools tests (stdlib unittest, tools/test_*.py)
+        run: just test-tools
+
       - name: Eval tools tests (stdlib unittest; the viewer imports Pillow)
-        shell: pwsh
         run: |
           # The Pillow pin is read from eval/requirements.txt, the one place it is written. The rest of that file is the
           # GPU venv (torch, TensorRT, two extra indexes), which CI does not install.
-          $pin = Select-String -Path eval/requirements.txt -Pattern '^pillow==' | ForEach-Object { $_.Line.Trim() } | Select-Object -First 1
-          if (-not $pin) { Write-Error "eval/requirements.txt has no pillow pin"; exit 1 }
-          python -m pip install --quiet "$pin"
-          if ($LASTEXITCODE -ne 0) { exit 1 }
+          python tools/ci/pillow_pin.py install
           just test-eval
-          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Screenshot comparison against the committed reference
         if: github.event_name == 'pull_request'
         continue-on-error: true # informational until it is stable (plan S-15)
-        shell: pwsh
         run: |
           # Without --base, the comparison uses the one reference under tools/shots/reference. A PR's base has none unless
           # someone recorded one, so looking it up failed every run. --python: the Python 3.12 that setup-python put on PATH.
           just shots --python python
-          if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Screenshot report
         if: always() && github.event_name == 'pull_request'
@@ -226,7 +218,7 @@ jobs:
         run: rustup show
 
       - name: Content key for pg-desktop's build script (a hash of its crate; see crates/desktop/build.rs)
-        run: echo "PG_DESKTOP_CONTENT_KEY=${{ hashFiles('crates/desktop/**') }}" >> "$GITHUB_ENV"
+        run: python3 tools/ci/github_files.py env PG_DESKTOP_CONTENT_KEY "${{ hashFiles('crates/desktop/**') }}"
 
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
@@ -260,9 +252,11 @@ jobs:
           modules: qtmultimedia
           cache: true
 
-      - name: Qt's qmake and libraries (for cxx-qt and the test binaries)
+      - name: Qt's qmake and libraries (for the recipes, cxx-qt and the test binaries)
         run: |
-          # cxx-qt finds qmake through QMAKE; the test binaries load Qt's libraries from LD_LIBRARY_PATH.
+          # The recipes find Qt through QT_DIR (as a developer's .env does); cxx-qt finds qmake through QMAKE; the test
+          # binaries load Qt's libraries from LD_LIBRARY_PATH.
+          echo "QT_DIR=$RUNNER_TEMP/Qt/6.12.0/gcc_64" >> "$GITHUB_ENV"
           echo "QMAKE=$RUNNER_TEMP/Qt/6.12.0/gcc_64/bin/qmake" >> "$GITHUB_ENV"
           echo "LD_LIBRARY_PATH=$RUNNER_TEMP/Qt/6.12.0/gcc_64/lib" >> "$GITHUB_ENV"
 
@@ -276,38 +270,20 @@ jobs:
           # As in the Windows job: a build.rs change must start a new entry, or it is never saved (see there).
           key: ${{ hashFiles('**/build.rs') }}
 
-      # The Linux job runs the checks that do not need Windows, once: the Windows job's lint runs only the Windows-only ones.
-      # Every cargo command takes --locked: it fails before compiling if Cargo.lock would have to change.
-      - name: Formatting
-        run: cargo fmt --all --check
+      # The same recipes as the Windows job. `just lint` runs every check that does not need Windows (formatting, clippy,
+      # the wasm32 check, the docs, the lockfiles, the supply chain, ruff and markdownlint) and the QML lint; the lint
+      # tools come from their lockfiles (`just lint-tools-setup`). Every cargo command takes --locked.
+      - name: Lint tools (ruff and markdownlint at their pins)
+        run: just lint-tools-setup
 
-      - name: Clippy and tests (the whole workspace)
-        run: |
-          cargo clippy --workspace --all-targets --locked -- -D warnings
-          cargo test --workspace --locked
+      - name: Lint (every check, and the QML)
+        run: just lint
 
-      - name: Docs (warnings are errors, as the Windows job's lint)
-        run: RUSTDOCFLAGS="-D warnings" cargo doc --workspace --no-deps --document-private-items --locked
+      - name: Tests (the whole workspace)
+        run: just test
 
-      - name: wasm32 (the shared model and the client stay free of platform code)
-        run: cargo check -p pg-model -p pg-client --locked --target wasm32-unknown-unknown
+      - name: QML tests
+        run: just qmltest
 
-      - name: Lockfiles of the workspaces outside the root (fuzz, eval/jpeg-decoders)
-        run: |
-          # Each is its own workspace with its own Cargo.lock, and is not built here: this fails when its lock would change.
-          cargo metadata --locked --manifest-path fuzz/Cargo.toml --format-version 1 >/dev/null
-          cargo metadata --locked --manifest-path eval/jpeg-decoders/Cargo.toml --format-version 1 >/dev/null
-
-      - name: Supply chain (licences, advisories, unused dependencies)
-        run: |
-          cargo deny check
-          cargo machete crates
-
-      - name: Python and Markdown
-        run: |
-          # The lint tools at their pins (tools/lint): ruff by the hashes of its files, markdownlint-cli by its lockfile.
-          python -m pip install --quiet --require-hashes -r tools/lint/requirements.txt
-          npm ci --prefix tools/lint --no-audit --no-fund
-          ruff format --check .
-          ruff check .
-          tools/lint/node_modules/.bin/markdownlint "**/*.md"
+      - name: Python tools tests (stdlib unittest, tools/test_*.py)
+        run: just test-tools

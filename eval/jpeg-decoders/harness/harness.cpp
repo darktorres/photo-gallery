@@ -264,7 +264,7 @@ int throughput_mode(std::vector<std::string> args) {
 int main(int argc, char** argv) {
     std::vector<std::string> a(argv + 1, argv + argc);
     gpu_init();
-    if (a.empty()) return std::fprintf(stderr, "harness list | time | repeat | throughput (see harness.cpp)\n"), 2;
+    if (a.empty()) return std::fprintf(stderr, "harness list | time | repeat | throughput | dump (see harness.cpp)\n"), 2;
     std::string mode = a[0];
     a.erase(a.begin());
     if (mode == "list") {

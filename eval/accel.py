@@ -6,7 +6,7 @@ Files (built on first use, under CACHE_DIR):
   onnx/sscd_<size>_fp32.onnx, _fp16.onnx   exported from models.SSCD (see SSCDExport)
   onnx/sscd_<size>_int8.onnx               int8 Q/DQ on the convolutions, fp16 elsewhere (NVIDIA ModelOpt PTQ)
   onnx/calib_<size>.npy                    the calibration batch: CALIB_IMAGES unlabeled images not in files.txt
-  trt/sscd_<size>_<precision>.plan         TensorRT engines (batch 1..MAX_BATCH)
+  trt/sscd_<size>_<precision>_trt<N>.plan  TensorRT engines (batch 1..MAX_BATCH; N is the TensorRT major version)
   onnx/disk_<precision>.onnx, trt/disk_<precision>_trt<N>.plan   DISK's U-Net (one image, any size up to
                                            DISK_MAX_SIDE, multiples of 16)
 

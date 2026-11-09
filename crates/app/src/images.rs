@@ -185,7 +185,9 @@ impl App {
             let path = crate::app::path_of(&src.path);
             let made = if let Some(at) = src.poster_ms {
                 // A video: its poster frame.
-                match self.with_maker(|m| Ok(m.load_frame(&path, at, current.rotation)))? {
+                // FFmpeg opens the file this path names: the verbatim form (as the import does).
+                let verbatim = pg_platform::native::verbatim(&path);
+                match self.with_maker(|m| Ok(m.load_frame(&verbatim, at, current.rotation)))? {
                     Ok(()) => self.with_maker(|m| m.encode_frame(pg_model::num::index(height)))?,
                     Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
@@ -297,7 +299,8 @@ impl App {
         }
         let (full, image) = if let Some(at) = src.poster_ms {
             // A video: its poster frame stands for it until it plays.
-            let frame = pg_video::frame(&crate::app::path_of(&src.path), at, rotation).map_err(original)?;
+            let path = pg_platform::native::verbatim(&crate::app::path_of(&src.path));
+            let frame = pg_video::frame(&path, at, rotation).map_err(original)?;
             ((frame.width, frame.height), Arc::new(frame))
         } else {
             // The read's and the decode's failures are the original's (gone, offline, not decodable), so the variant is

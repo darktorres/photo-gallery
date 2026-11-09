@@ -361,7 +361,10 @@ mod tests {
         assert_eq!(PathRules::Windows.parse("D:/PhotoGallery/datasets/pinterest/Photos").unwrap(), back);
         assert_eq!(PathRules::Windows.parse(r"D:\/PhotoGallery/datasets/pinterest/Photos").unwrap(), back);
         assert_eq!(PathRules::Windows.parse(r"D:\a\.\b").unwrap(), PathRules::Windows.parse(r"D:\a\b").unwrap());
-        assert_eq!(PathRules::Windows.parse("//server/share/a").unwrap(), PathRules::Windows.parse(r"\\server\share\a").unwrap());
+        assert_eq!(
+            PathRules::Windows.parse("//server/share/a").unwrap(),
+            PathRules::Windows.parse(r"\\server\share\a").unwrap()
+        );
         let saved = PathRules::Windows.parse_bytes(br"D:\/PhotoGallery/datasets/pinterest/Photos").unwrap();
         assert_eq!(PathRules::Windows.join(&saved), br"D:\PhotoGallery\datasets\pinterest\Photos");
     }

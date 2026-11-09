@@ -375,7 +375,9 @@ pub(crate) struct Input {
 
 impl Input {
     /// Opens the file at `path` and reads its stream information. The file is read through a handle of its own, so
-    /// its bytes are the file's, whatever the name (a lone surrogate, a raw byte) and however long the path.
+    /// its bytes are the file's, whatever the name (a lone surrogate, a raw byte) and however long the path. `path` is
+    /// opened as given: a caller passes the verbatim form (`pg_platform::native::verbatim`), so a folder name that
+    /// Windows would change (a trailing dot or space) reaches the file it names and not a sibling's.
     pub(crate) fn open(path: &Path) -> Result<Self> {
         let api = api()?;
         let file = std::fs::File::open(path)?;

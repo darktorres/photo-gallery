@@ -103,8 +103,11 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         |analyzer, i, bytes| {
             let item = items.get(i).context("no file to import at this index")?;
             if item.kind == Kind::Video {
+                // FFmpeg and the hash open the file this path names, so it is the verbatim form: the plain one would
+                // lose a trailing dot or space in a folder's name, and open a sibling's file.
                 let path = work.path(item.path, sep);
-                pg_analysis::analyze::video(&pg_platform::names::path_buf(&path), item.rotation, analyzer)
+                let verbatim = pg_platform::native::verbatim(&pg_platform::names::path_buf(&path));
+                pg_analysis::analyze::video(&verbatim, item.rotation, analyzer)
             } else {
                 analyzer.analyze(bytes, item.rotation)
             }

@@ -136,11 +136,6 @@ ToolBar {
             from: 60
             to: 800
             editable: true
-            textFromValue: (v) => words.phrase("ui-pixels", 0, "" + v, "")
-            valueFromText: (text) => {
-                const n = parseInt(text.replace(/\D/g, ""), 10)
-                return isNaN(n) ? sizeBox.value : n
-            }
             onValueModified: bar.sizeChosen(value)
             Layout.preferredWidth: 110
             // Follows the row height whatever set it (a typed value would otherwise break a plain binding).
@@ -149,5 +144,6 @@ ToolBar {
                 restoreMode: Binding.RestoreNone
             }
         }
+        Label { text: words.text("ui-px") }
     }
 }

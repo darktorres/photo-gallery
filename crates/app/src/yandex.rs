@@ -90,7 +90,7 @@ pub fn image(id: u64) -> Result<Arc<images::Fetched>, YandexError> {
 /// One result as the panel shows and saves it.
 #[derive(Clone, Debug)]
 pub struct Hit {
-    /// The result's id: its search and its place in the search's results ([`hit_id`]). Its picture is kept under it.
+    /// The result's id: its search and its place in the search's results (`hit_id`). Its picture is kept under it.
     pub id: u64,
     /// The file the result is, at its host.
     pub url: String,
@@ -411,12 +411,7 @@ type Searched = (Found, Option<SimilarNote>, Arc<dyn Fetch>);
 
 /// The search on its thread: its connection is made first (a recorded session or the client), then the search runs on
 /// its source. The fetcher goes with the results, for their files.
-fn search(
-    photo: &Path,
-    make: &Factory,
-    shared: &Mutex<Shared>,
-    changes: &Bus<()>,
-) -> Result<Searched, SearchError> {
+fn search(photo: &Path, make: &Factory, shared: &Mutex<Shared>, changes: &Bus<()>) -> Result<Searched, SearchError> {
     let mut connection = make().map_err(SearchError::Request)?;
     let (found, note) = find_similar(photo, &mut *connection.source, shared, changes)?;
     Ok((found, note, connection.fetch))

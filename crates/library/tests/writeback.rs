@@ -694,6 +694,65 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     quiet.check();
 }
 
+/// A copy that may have started, for a file the catalog marks missing, is not dropped: its temp is the only whole copy of
+/// the new content, so the temp and the row are kept until the file is listed again, and the status says so.
+#[test]
+fn a_copy_that_may_have_started_is_kept_while_its_file_is_missing() {
+    let (dir, files, catalog_path, c) = imported("missingcopy").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
+    std::fs::copy(&files[1].0, on_disk(&c, &temp)).unwrap();
+    state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
+    state::mark_missing(&c, id).unwrap();
+
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    writer.wake();
+    // The status is set after the job's failure is recorded in the queue.
+    wait_until(60, || "the copy's failure is not shown".into(), || writer.status().error_file == Some(id));
+    assert_eq!(writer.status().dropped, 0, "kept, not dropped");
+    assert_eq!(state::writes_queued(&c, id).unwrap(), 1, "the row is kept");
+    assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()), "the temp's record is kept");
+    assert!(on_disk(&c, &temp).exists(), "the temp is kept on disk");
+    let error = state::write_row(&c, id).unwrap().error.unwrap_or_default();
+    assert!(error.contains("no longer in the library") && error.contains(&c.rules().display(&temp)), "{error}");
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
+}
+
+/// A job whose row leaves the queue after the writer read the file and opened it for the copy (here a change that cancels
+/// the write removes it, `Fault::ForgetBeforeRecord`) is not copied: the original is as it was, and no temp is left.
+#[test]
+fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
+    let (dir, files, catalog_path, c) = imported("cancelled").unwrap();
+    let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
+    let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
+    let before = std::fs::read(&files[1].0).unwrap();
+    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+
+    let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
+    let fault = Fault::ForgetBeforeRecord(id);
+    let writer = Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault).unwrap();
+    writer.wake();
+    // The row is gone at the record, and the temp (made before it) goes right after: both are done when the temp is.
+    wait_until(
+        60,
+        || "the cancelled job's temp is still on disk".into(),
+        || state::writes_queued(&c, id).unwrap() == 0 && !on_disk(&c, &temp).exists(),
+    );
+    assert_eq!(std::fs::read(&files[1].0).unwrap(), before, "the original is as it was");
+    assert!(!pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert_eq!(writer.status().error, None);
+
+    drop(writer);
+    drop(c);
+    let _ = std::fs::remove_dir_all(dir.join("images"));
+    quiet.check();
+}
+
 #[test]
 fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // Its own folder, as the other tests here: run_folder keeps one folder per prefix.

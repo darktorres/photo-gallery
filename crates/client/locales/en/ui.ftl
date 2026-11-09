@@ -105,7 +105,7 @@ ui-filters-count = Filters ({ $text })
 ui-filters-tooltip = Filter by type, extension, rating, size, date, duplicates… (F)
 ui-library = Library…
 ui-size = Size
-ui-pixels = { $text } px
+ui-px = px
 
 # The video transport
 ui-play-pause = Play / pause (K)

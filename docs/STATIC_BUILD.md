@@ -77,7 +77,7 @@ the three fixes reached:
 - **The object files.** `cl` writes the absolute path of its output (`/Fo`) into each object, in its `LTLIB:OLDNAMES`
   record, even without `/Z7`: `D:\PhotoGallery\static\brepro-test\sub\t.o`, from a relative `/Fo:sub\t.o`.
   `cl /d1trimpath` isn't supported by this compiler (`C1007`).
-- **`lib.exe`** copies the same absolute path into the archive. `llvm-lib` (installed with LLVM, 
+- **`lib.exe`** copies the same absolute path into the archive. `llvm-lib` (installed with LLVM,
   `C:\Program Files\LLVM\bin`) does too, because it copies the object's bytes.
 
 So an object's bytes depend on the folder it was built in. No flag in this toolchain removes that. What's left:
@@ -121,27 +121,29 @@ they are plain C ABI.
 
 Configure takes several minutes (it runs compile tests); it's the first long step.
 
-6. **`cmp` missing.** MSYS2's base has no `cmp`, so configure printed `cmp: command not found` on every comparison
+### Further pilot steps
+
+1. **`cmp` missing.** MSYS2's base has no `cmp`, so configure printed `cmp: command not found` on every comparison
    and exited 0 anyway. A clean configure needs `diffutils` (`pacman -S diffutils`, 3.12-1). A zero exit doesn't prove
    the configure ran correctly: check the log for errors such as this one.
-7. **PNG decoder dropped.** Configure disabled `png_decoder` because `inflate_wrapper` (zlib) is missing. Removed
+2. **PNG decoder dropped.** Configure disabled `png_decoder` because `inflate_wrapper` (zlib) is missing. Removed
    `png` from the decoder list rather than add zlib, since pg-video doesn't need it.
-8. **Licence changes.** Without `--enable-gpl` and the GPL libraries, configure reports `License: LGPL version 2.1
+3. **Licence changes.** Without `--enable-gpl` and the GPL libraries, configure reports `License: LGPL version 2.1
    or later`. The pinned build is GPL. A static build with no GPL libraries is LGPL, so the app's GPL note in
    `crates/README.md` would no longer apply to a static build of this configuration. Check that before relying on it.
-9. **Pilot configure line** (`scripts\ffmpeg-configure.sh`): `--toolchain=msvc --enable-static --disable-shared`,
+4. **Pilot configure line** (`scripts\ffmpeg-configure.sh`): `--toolchain=msvc --enable-static --disable-shared`,
    `--extra-cflags=-MD`, `--disable-programs --disable-doc --disable-autodetect --disable-network
    --disable-avdevice --disable-avfilter --disable-everything`, the file protocol, the demuxers `mov,matroska,avi,
    mpegts,image2`, the decoders `h264,hevc,vp9,mpeg4,mjpeg`, the parsers `h264,hevc,vp9,mpeg4video,mjpeg`,
    `--enable-swscale --enable-swresample`, `--enable-d3d11va --enable-dxva2`.
    The decoder and demuxer lists are a pilot guess, not a checked list of what pg-video needs.
 
-10. **Build and install.** `make -j12` and `make install` (`scripts\ffmpeg-build.sh`), about three minutes. Output:
+5. **Build and install.** `make -j12` and `make install` (`scripts\ffmpeg-build.sh`), about three minutes. Output:
     `avcodec.lib` 29 MB, `avformat.lib` 7 MB, `avutil.lib` 7 MB, `swscale.lib` 8 MB, `swresample.lib` 1 MB (archives,
     not linked sizes). The prefix has `.pc` files, but their `Libs.private` is empty, so the system libraries a
     static link needs aren't recorded anywhere in the prefix.
 
-11. **Verification** (`test\static-check.c`, linked with MSVC `cl /MD`):
+6. **Verification** (`test\static-check.c`, linked with MSVC `cl /MD`):
     - Link needed `user32.lib` (`GetDesktopWindow`, from the DXVA2 device code) and `bcrypt.lib` (`av_get_random_seed`).
       The recipe must carry this list itself, derived from the link, not from `.pc` files.
     - Runs: library versions `avutil 3998054`, `avcodec 4129126`, `avformat 4129126`, `swscale 655718`, `swresample

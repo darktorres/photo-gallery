@@ -287,11 +287,24 @@ impl Inner {
                 }
                 return Ok(());
             };
-            // A file the catalog marks missing, or no longer lists, can't be written: its queued write is dropped, and
-            // the app is told (`WriteStatus::dropped`). A failure the status still shows for it goes with it.
+            // A file the catalog marks missing, or no longer lists, can't be written. A fresh write is dropped, and the app
+            // is told (`WriteStatus::dropped`); a failure the status still shows for it goes with it. A copy that may have
+            // started is kept with its temp, the only whole copy of the new content while the original may be part-written:
+            // it waits, offline (not an attempt), until the file is listed again.
             if catalog.file_gone(job.file_id)? {
                 if let Some((temp, _)) = &job.temp {
-                    let _ = std::fs::remove_file(verbatim(&path_buf(&catalog.rules().join(temp))));
+                    let message = format!(
+                        "{} is no longer in the library; the whole new content is kept in {} until it is back",
+                        shown_file(catalog, &job),
+                        catalog.rules().display(temp)
+                    );
+                    writes::failed(catalog, &job, &message, true)?;
+                    self.update_status(|s| {
+                        s.error = Some(WriteError::Failed(Cause::Error(message)));
+                        s.error_file = Some(job.file_id);
+                    });
+                    // Left for the next idle check, as an offline file is.
+                    return Ok(());
                 }
                 writes::drop_gone(catalog, &job)?;
                 self.update_status(|s| {
@@ -475,13 +488,25 @@ impl Inner {
                 return Err(e);
             }
         };
-        // From here until `done` records the write, readers know the file may be part-written
-        // (pg_model::state::FileState::writing), and a failure leaves the temp for the next attempt to finish from.
-        if let Err(e) = writes::record_temp(catalog, job, &temp_rule, job.value) {
+        #[cfg(any(test, feature = "fault"))]
+        fault::before_record(self.fault, &self.fault_fired, job, &self.catalog_path)?;
+        // Nothing is recorded (the error, or the job's row gone since it was read): the original is not touched, and the
+        // temp goes. A row gone means the write was cancelled; the job is over.
+        let recorded = match writes::record_temp(catalog, job, &temp_rule, job.value) {
+            Ok(recorded) => recorded,
+            Err(e) => {
+                drop(file);
+                let _ = std::fs::remove_file(&temp_disk);
+                return Err(e.into());
+            }
+        };
+        if !recorded {
             drop(file);
             let _ = std::fs::remove_file(&temp_disk);
-            return Err(e.into());
+            return Ok(());
         }
+        // From here until `done` records the write, readers know the file may be part-written
+        // (pg_model::state::FileState::writing), and a failure leaves the temp for the next attempt to finish from.
         write_into(file, &data).with_context(|| CopyStarted { temp: rules.display(&temp_rule) })?;
         let after = stat(&path)?;
         let rewrite = Rewrite { before, after, metadata_only: new_hash };
@@ -667,6 +692,10 @@ pub mod fault {
         /// Once, in a job of `file`: another program saves the file as `with`, after the writer read it and before it
         /// opens it for the copy.
         SaveBeforeCopy { file: FileId, with: &'static [u8] },
+        /// Once, in a job of `file`: the job's row leaves the queue after the writer read it and opened the original for
+        /// the copy, before the temp is recorded (a change that cancels the write does that, as a rating set back to what
+        /// the file holds does).
+        ForgetBeforeRecord(FileId),
     }
 
     #[expect(clippy::panic, reason = "the fault asked for is a panic")]
@@ -696,6 +725,24 @@ pub mod fault {
             && !fired.swap(true, Ordering::SeqCst)
         {
             std::fs::write(path, with)?;
+        }
+        Ok(())
+    }
+
+    /// The row removal of [`Fault::ForgetBeforeRecord`], the first time the job of its file reaches the record: the job's
+    /// row is removed through a catalog of its own, as a change that cancels the write would do.
+    pub(crate) fn before_record(
+        fault: Option<Fault>,
+        fired: &AtomicBool,
+        job: &pg_catalog::writes::Job,
+        catalog_path: &Path,
+    ) -> anyhow::Result<()> {
+        if let Some(Fault::ForgetBeforeRecord(forgotten)) = fault
+            && forgotten == job.file_id
+            && !fired.swap(true, Ordering::SeqCst)
+        {
+            let catalog = pg_catalog::Catalog::open(catalog_path, pg_model::rules::PathRules::NATIVE)?;
+            pg_catalog::writes::drop_gone(&catalog, job)?;
         }
         Ok(())
     }

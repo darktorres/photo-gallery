@@ -207,3 +207,28 @@ fn videos() {
     let made = pg_thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }
+
+/// A folder whose name ends in a dot is read through its verbatim path. Windows drops the dot from the plain path, which
+/// would open the file of the sibling folder of the same name instead: the dotted folder's own file is the one read.
+#[cfg(windows)]
+#[test]
+fn a_video_in_a_folder_ending_in_a_dot_is_read_from_that_folder() {
+    let Some(exe) = ffmpeg() else {
+        pg_testkit::missing_tool("ffmpeg");
+        return;
+    };
+    let dir = clips(&exe).unwrap();
+    let media = dir.join("media");
+    let verbatim = pg_platform::native::verbatim;
+    let dotted = dir.join("dotted").join("Acme Inc.");
+    let plain = dir.join("dotted").join("Acme Inc");
+    for folder in [&dotted, &plain] {
+        std::fs::create_dir_all(verbatim(folder)).unwrap();
+    }
+    // The dotted folder holds the upright one (orientation 1), the plain folder the mirrored one (2).
+    std::fs::copy(verbatim(&media.join("h264.mp4")), verbatim(&dotted.join("a.mp4"))).unwrap();
+    std::fs::copy(verbatim(&media.join("mirrored.mp4")), verbatim(&plain.join("a.mp4"))).unwrap();
+    let mut analyzer = analyze::Analyzer::new().unwrap();
+    let a = analyze::video(&verbatim(&dotted.join("a.mp4")), Turns::new(0), &mut analyzer).unwrap();
+    assert_eq!(a.record.orientation.get(), 1, "the dotted folder's own file");
+}

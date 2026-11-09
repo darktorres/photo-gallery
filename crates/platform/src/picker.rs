@@ -132,9 +132,8 @@ mod native {
         pub fn new() -> io::Result<Dialog> {
             // SAFETY: COM is initialized on this thread by Qt (see the module's note). The dialog is released when the
             // smart pointer is dropped.
-            let dialog: IFileOpenDialog =
-                unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) }
-                    .map_err(|e| step("CoCreateInstance(FileOpenDialog)", e))?;
+            let dialog: IFileOpenDialog = unsafe { CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER) }
+                .map_err(|e| step("CoCreateInstance(FileOpenDialog)", e))?;
             // SAFETY: plain calls on the dialog made just above.
             unsafe {
                 let options = dialog.GetOptions().map_err(|e| step("GetOptions", e))?;

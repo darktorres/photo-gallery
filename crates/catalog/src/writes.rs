@@ -224,14 +224,17 @@ pub fn recent_errors(catalog: &Catalog, limit: usize) -> Result<Vec<String>> {
 /// The new content of a job is complete and durable at `temp`, carrying `value`, and the original is open for the copy
 /// into it, which starts next: from here the original may be part-written. Until `done`, readers see the file as being
 /// written (`pg_model::state::FileState::writing`), and the writer finishes the copy from `temp` before anything else.
-pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, value: i64) -> Result<()> {
+///
+/// `false` when the job's row is no longer there (it was removed after the writer read it, so nothing is recorded): the
+/// copy must not start then. The caller leaves the original as it is.
+pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, value: i64) -> Result<bool> {
     let conn = &catalog.conn;
     let bytes = catalog.rules().join(temp);
-    conn.execute(
+    let recorded = conn.execute(
         "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
         params![job.file_id.get(), job.kind.key(), bytes, value],
     )?;
-    Ok(())
+    Ok(recorded == 1)
 }
 
 /// The job is written: its value (a rating, or the turns) is now in the file or the catalog. `effect` changes the

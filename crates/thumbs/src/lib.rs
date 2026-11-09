@@ -103,9 +103,11 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             let made = match item.poster_ms {
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
+                    // The verbatim form, as in import: FFmpeg opens the file this path names.
                     let path = work.path(item.path, sep);
+                    let verbatim = pg_platform::native::verbatim(&pg_platform::names::path_buf(&path));
                     maker
-                        .load_frame(&pg_platform::names::path_buf(&path), at, item.source.rotation)
+                        .load_frame(&verbatim, at, item.source.rotation)
                         .and_then(|()| maker.encode_frame_into(pg_model::num::index(height), &mut out))
                 }
                 None => maker.make_into(bytes, pg_model::num::index(height), item.source.rotation, &mut out),

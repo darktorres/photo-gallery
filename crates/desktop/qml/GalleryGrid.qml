@@ -23,7 +23,8 @@ Item {
     required property bool filtering
     required property bool importing
 
-    // True while the view is moved (rows made without their cells until it is where it is going; see GridRow).
+    // True while the list is reloaded, laid out again or positioned (set by Main.qml): its rows are made without their
+    // cells until it is where it is going (see GridRow). Scrolling does not set it.
     property bool settling: false
     // The width the rows are laid out for (the list's, inside its margins).
     readonly property real gridWidth: grid.width

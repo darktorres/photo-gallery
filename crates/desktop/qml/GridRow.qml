@@ -28,7 +28,7 @@ Item {
     // The image URLs of the cells (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS): made by the model at the thumbnail height.
     required property var thumbUrls
     required property var thumbhashUrls
-    // From the grid: the gap, the borders and selection, and whether the view is settling (moved, see GalleryGrid).
+    // From the grid: the gap, the borders and selection, and whether the list is settling (see GalleryGrid).
     required property real gap
     required property bool showBorders
     required property int current
@@ -41,8 +41,8 @@ Item {
     signal cellClicked(int itemIndex)
     signal cellDoubleClicked(int itemIndex)
 
-    // What the cells show, made to match the row once it is in use (not in the view's pool) and the view is where it is
-    // going (settling): its span's items, at its version, with their values as the row has them then. A reuse sets the
+    // What the cells show, made to match the row once it is in use (not in the view's pool) and the list is not
+    // settling: its span's items, at its version, with their values as the row has them then. A reuse sets the
     // span and the version one after the other, before the row is in use. A span change makes the cells read their
     // items, so a version signalled with it is not read again. Either way the cells read their items (and ask for
     // their images) once.

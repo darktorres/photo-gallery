@@ -1,11 +1,11 @@
 # JPEG decoder comparison
 
-`wsl.sh` runs the comparison under WSL. Its `inputs` step reads one `<name>.jpg` per entry of `NAMES` from the
+`wsl.py` runs the comparison under WSL. Its `inputs` step reads one `<name>.jpg` per entry of `NAMES` from the
 directory in `JPEG_SRC_DIR`. `win-build.cmd` builds the decoders on Windows.
 
 ## Third-party patches
 
-`patches/` holds local patches to two upstream projects. `wsl-build.sh` and `win-build.cmd` apply each one to a
+`patches/` holds local patches to two upstream projects. `wsl_build.py` and `win-build.cmd` apply each one to a
 clone of its upstream. Each patch modifies its upstream project, so it stays under that project's license. The
 upstream license text is saved next to the patch:
 

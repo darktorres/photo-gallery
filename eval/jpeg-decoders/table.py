@@ -49,5 +49,5 @@ for mode in ("full", "scaled"):
     multi = sorted({k[1] for k, n in threads.items() if n > 1 and k[0] == mode})
     if multi:
         # gungraun collects only while the benchmark function is on a thread's stack, so the work of the threads
-        # these decoders start (libvips's worker, jpeg-decoder's) is mostly missing: `wsl.sh marginal` counts it.
-        print(f"  (undercounted, they decode in their own threads: {', '.join(multi)}; see `wsl.sh marginal`)")
+        # these decoders start (libvips's worker, jpeg-decoder's) is mostly missing: `wsl.py marginal` counts it.
+        print(f"  (undercounted, they decode in their own threads: {', '.join(multi)}; see `wsl.py marginal`)")

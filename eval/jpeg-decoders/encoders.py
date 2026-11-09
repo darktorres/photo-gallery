@@ -1,6 +1,6 @@
 """JPEG encoders against each other for docs/JPEG_ENCODERS.md: bytes at equal SSIMULACRA2, and encode speed.
 
-In WSL (Ubuntu-26.04), with wsl-build.sh's tools in ~/jpeg-eval/bin:
+In WSL (Ubuntu-26.04), with wsl_build.py's tools in ~/jpeg-eval/bin:
     python3 eval/jpeg-decoders/encoders.py prepare      # the inputs decoded once (libjpeg-turbo) to PPM
     python3 eval/jpeg-decoders/encoders.py encode       # CPU encoders, every quality, in parallel
     (Windows: gpu_encoders.py writes its nvJPEG and GPUJPEG outputs into the same out/ directory)

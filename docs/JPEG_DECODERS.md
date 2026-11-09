@@ -572,23 +572,23 @@ Not measured:
 
 ## To rerun
 
-- **CPU decoders (Rust harness)**, from PowerShell in the repo: `wsl -d Ubuntu-26.04 -u root -- bash
-  eval/jpeg-decoders/wsl.sh inputs check compare time bench marginal`. This needs `apt-get install libvips-dev` in
-  the distro. The inputs are library photos, so they're copied to `~/jpeg-inputs` in WSL and never into the repo.
+- **CPU decoders (Rust harness)**, on Linux (natively or in the container; there is no WSL step any more): `python3
+  eval/jpeg-decoders/wsl.py inputs check compare time bench marginal`. This needs `apt-get install libvips-dev`. The inputs
+  are library photos, so they're copied to `~/jpeg-inputs` and never into the repo.
 - **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
   (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
   backends).
-- **Restart markers and baseline conversion:** `wsl -d Ubuntu-26.04 -u root -- bash eval/jpeg-decoders/restart.sh`
+- **Restart markers and baseline conversion:** `python3 eval/jpeg-decoders/restart.py`
   (needs `apt-get install libjpeg-turbo-progs`). It keeps the variants in `~/jpeg-restart`.
 - **The C++ harness:**
   - Build: `eval\jpeg-decoders\win-build.cmd` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
-    `win-env.cmd` sets them up) and `wsl -d Ubuntu-26.04 -u root -- bash eval/jpeg-decoders/wsl-build.sh`. Both
+    `win-env.cmd` sets them up) and `python3 eval/jpeg-decoders/wsl_build.py`. Both
     clone the third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or `~/jpeg-eval` and apply
     `eval/jpeg-decoders/patches/`: for jpeggpu, C++20 and binary file reads for MSVC; for parajpeg, its GCC flags
     kept off nvcc and MSVC equivalents of two builtins.
   - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with
     CUDA 13.4's `bin\x64` on PATH; `harness.exe list` names the decoders.
-  - WSL: `bash eval/jpeg-decoders/harness-wsl.sh compare ir time throughput`.
+  - WSL: `python3 eval/jpeg-decoders/harness_wsl.py compare ir time throughput`.
   - nvImageCodec, in its own venv (`python -m pip install -r eval/jpeg-decoders/requirements.txt`, which pins
     nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
     `nvimgcodec_bench.py --ref-dir DIR

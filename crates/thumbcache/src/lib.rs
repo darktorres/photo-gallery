@@ -1946,7 +1946,7 @@ mod tests {
     fn catalog_of_four(dir: &Path) -> (PathBuf, pg_catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
         let rules = pg_model::rules::PathRules::Windows;
-        let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::fixture::versions(), rules).unwrap();
+        let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }, rules).unwrap();
         state::add_scan(&c, 1, "D:\\p").unwrap();
         state::add_folder(&c, 1, "D:\\p").unwrap();
         use pg_catalog::fixture::{File, insert};

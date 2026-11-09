@@ -878,7 +878,7 @@ under_both_rules!(
 /// tree (the Windows-only keys merged them, and the tree dropped one).
 #[test]
 fn posix_folders_are_case_sensitive_and_listed_apart() {
-    let c = Catalog::prepare(std::path::Path::new(":memory:"), fixture::versions(), PathRules::Posix).unwrap();
+    let c = Catalog::prepare(std::path::Path::new(":memory:"), crate::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }, PathRules::Posix).unwrap();
     raw::add_scan(&c, 1, "/");
     raw::add_folder(&c, 1, "/photos/Pics");
     raw::add_folder(&c, 2, "/photos/pics");

@@ -68,7 +68,7 @@ pub enum WriteEffect {
 /// of its own: an image (a video keeps its rating in the catalog, as rewriting it would copy GBs), whose format can hold
 /// one or isn't known yet. The writer decides for an unknown format once it has read the file (`pg_writeback`).
 pub fn rating_in_file_possible(kind: &str, format: Option<&str>) -> bool {
-    kind == Kind::Image.key() && format.and_then(Format::from_name).is_none_or(pg_metadata::can_hold_rating)
+    kind == Kind::Image.key() && format.and_then(Format::from_name).is_none_or(pg_model::format::can_hold_rating)
 }
 
 /// Rate a file: 1–5, or `None` to clear. The catalog changes at once. With `write_back`, the rating is also queued

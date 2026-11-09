@@ -21,5 +21,6 @@ pg-schema = { path = "../schema" }
 rusqlite.workspace = true
 
 [dev-dependencies]
+pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }

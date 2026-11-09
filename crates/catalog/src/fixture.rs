@@ -37,12 +37,6 @@ impl File {
     }
 }
 
-/// The versions this build's analyses are stamped with, for [`Catalog::prepare`] in the tests of the crates around
-/// the catalog.
-pub fn versions() -> crate::Versions {
-    crate::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }
-}
-
 /// A folder's stored bytes and key, from its path text (as the tests write it) under the catalog's rules.
 pub(crate) fn folder_row(c: &Catalog, path: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let path = c.rules().parse(path).ok_or_else(|| anyhow!("{path:?} is not a test folder path"))?;

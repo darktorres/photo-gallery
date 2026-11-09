@@ -11,13 +11,11 @@ workspace = true
 # queued for the files), and the reads over it that the UI and the command line make. Its test fixture is behind the
 # `fixture` feature, for the other crates' tests.
 [features]
-fixture = ["dep:pg-analysis"]
+fixture = []
 
 [dependencies]
 anyhow.workspace = true
 thiserror.workspace = true
-pg-analysis = { path = "../analysis", optional = true }
-pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-query = { path = "../query" }
 pg-platform = { path = "../platform" }

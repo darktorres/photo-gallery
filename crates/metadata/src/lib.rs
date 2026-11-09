@@ -38,12 +38,6 @@ const EXIF_TAG_RATING_PERCENT: u16 = 0x4749;
 const EXIF_TAG_ORIENTATION: u16 = 0x0112;
 const TIFF_TAG_XMP: u16 = 700;
 
-/// Whether the format can carry a rating (an XMP packet) that other programs read. BMP can't: its rating lives in
-/// the catalog only.
-pub fn can_hold_rating(format: Format) -> bool {
-    !matches!(format, Format::Bmp)
-}
-
 /// What the import reads from a file's metadata: one walk of its container, one read of its EXIF block, and one
 /// parse of each XMP packet.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

@@ -330,7 +330,7 @@ CREATE TABLE files(
     last_scan INTEGER NOT NULL REFERENCES scans(id),
     missing   INTEGER NOT NULL DEFAULT 0,
     rotation  INTEGER NOT NULL DEFAULT 0,  -- quarter turns clockwise kept here, for files that can't be rotated
-                                           -- in place (pg_metadata::rotation_method); applied after EXIF orientation
+                                           -- in place (`pg_edit::rotate`); applied after EXIF orientation
     order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (PathRules::order_key)
     pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
     seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers

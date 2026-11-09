@@ -415,7 +415,7 @@ impl Inner {
 
         // A rating for a format that can't hold one (known from the analysis) is done: the catalog keeps it.
         let known = format.as_deref().and_then(Format::from_name);
-        if job.kind == WriteKind::Rating && known.is_some_and(|f| !pg_metadata::can_hold_rating(f)) {
+        if job.kind == WriteKind::Rating && known.is_some_and(|f| !pg_model::format::can_hold_rating(f)) {
             return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
         }
         // A folder whose name Windows may change in the plain path (a trailing dot or space): ExifTool, which takes
@@ -427,7 +427,7 @@ impl Inner {
         let format = match known.or_else(|| Format::sniff(&bytes)) {
             // Not a format the app reads (an analysis that failed, a file that isn't what its name says), or one that
             // can't hold a rating: a rating stays in the catalog, and the write is done. A turn can't be made.
-            Some(f) if job.kind == WriteKind::Rating && !pg_metadata::can_hold_rating(f) => {
+            Some(f) if job.kind == WriteKind::Rating && !pg_model::format::can_hold_rating(f) => {
                 return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
             }
             Some(f) => f,

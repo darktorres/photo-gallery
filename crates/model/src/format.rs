@@ -50,6 +50,12 @@ impl Format {
     }
 }
 
+/// Whether the format can carry a rating (an XMP packet) that other programs read. BMP can't: its rating lives in the
+/// catalog only.
+pub fn can_hold_rating(format: Format) -> bool {
+    !matches!(format, Format::Bmp)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

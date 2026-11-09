@@ -49,7 +49,7 @@ graph, in callgrind's output format (one file per thread), so `cgtab.py` and KCa
 built against the Pin 4.3 kit inside SDE, since SDE's `-mix` has self counts only, and callgrind can't run the app.
 
 ```powershell
-bash tools/profiling/callgraph/build.sh          # from Git Bash: target/pin/callgraph.dll, a few seconds
+python tools/profiling/callgraph/build.py      # target/pin/callgraph.dll, a few seconds (Windows)
 just deploy release pdb                          # once: Qt's PDBs beside its DLLs (Qt's "Debug Information Files")
 $env:PG_CATALOG_DIR = 'D:\…\scratch\catalog'; $env:PG_PREFS = 'D:\…\scratch\gallery.json'
 tools/profiling/callgraph/profile.ps1 -Out D:\…\profiles\ready   # to pg_stage_ready; -Stop/-Start take any stage

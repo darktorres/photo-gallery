@@ -25,7 +25,8 @@ pub mod ffi {
         Thumb,
         Thumbhash,
         Full,
-        /// A Yandex result's picture: its file as the search kept it (`image://yandex/<result id>`).
+        /// A Yandex result's picture: its grid picture (`image://yandex/<result id>`), or its file as the host gave it
+        /// (`image://yandex/<result id>/original`).
         Yandex,
     }
 
@@ -132,14 +133,21 @@ fn provider(kind: ImageKind) -> &'static str {
     }
 }
 
-/// A Yandex result's grid picture: the JPEG the search made of its file (fetched now when it isn't kept yet), decoded by
-/// Qt as the gallery's thumbnails are.
+/// A Yandex result's picture, by its id: the grid picture (the JPEG the search made of its file), or with a `/original`
+/// suffix the file as its host gave it (the preview's). Each is fetched now when the search doesn't keep it yet.
 fn yandex_picture(id: &str) -> Pixels {
+    let (id, original) = match id.strip_suffix("/original") {
+        Some(id) => (id, true),
+        None => (id, false),
+    };
     let result = id
         .parse::<u64>()
         .map_err(anyhow::Error::from)
         .and_then(|id| pg_app::yandex::image(id).map_err(anyhow::Error::from))
-        .and_then(|picture| QImage::from_data(&picture.grid, None).context("not an image Qt reads"));
+        .and_then(|picture| {
+            let bytes = if original { &picture.file.bytes } else { &picture.grid };
+            QImage::from_data(bytes, None).context("not an image Qt reads")
+        });
     match result {
         Ok(image) => Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image },
         Err(e) => {

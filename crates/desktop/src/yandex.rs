@@ -223,9 +223,14 @@ fn without_dead(hits: &[Hit], picks: &Picks, other: usize, dead: &[u64]) -> (Vec
     (kept, picked, other_kept)
 }
 
-/// The URL of a result's picture, for the grid and the preview: the image provider serves it from the search's files.
+/// The URL of a result's grid picture: the image provider serves it from the search's files.
 fn picture_url(id: u64) -> String {
     format!("image://yandex/{id}")
+}
+
+/// The URL of a result's file as its host gave it, for the preview at full size.
+fn original_url(id: u64) -> String {
+    format!("image://yandex/{id}/original")
 }
 
 /// What the user reads when a request fails: each of the client's errors has its own words; the values they carry (the
@@ -494,7 +499,7 @@ impl qobject::YandexSearch {
     fn refresh_preview(mut self: Pin<&mut Self>) {
         let shown = usize::try_from(self.preview_item).ok().and_then(|i| self.hits.get(i).map(|hit| (i, hit)));
         let (url, width, height, picked) = match shown {
-            Some((i, hit)) => (QString::from(&picture_url(hit.id)), hit.width, hit.height, self.picks.is_picked(i)),
+            Some((i, hit)) => (QString::from(&original_url(hit.id)), hit.width, hit.height, self.picks.is_picked(i)),
             None => (QString::default(), 0, 0, false),
         };
         self.as_mut().set_preview_url(url);

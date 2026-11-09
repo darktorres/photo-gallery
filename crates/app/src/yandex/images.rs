@@ -15,9 +15,9 @@ use pg_model::turns::Turns;
 use pg_render::maker::Maker;
 use pg_yandex::{Download, Fetcher, YandexError};
 
-/// The height of a grid picture, in px. The gallery's thumbnail pipeline makes it (a DCT-scaled decode, Lanczos3 down,
-/// a JPEG), so a result looks like a gallery thumbnail; the grid draws at 220 px.
-pub const GRID_HEIGHT: usize = 320;
+/// The height of a grid picture, in px: the height the panel draws a result at (its row, `ROW_HEIGHT` in the desktop's
+/// Yandex panel). The gallery's thumbnail pipeline makes it (a DCT-scaled decode, Lanczos3 down, a JPEG).
+pub const GRID_HEIGHT: usize = 220;
 
 /// How many files are fetched at once.
 const FETCHERS: usize = 4;

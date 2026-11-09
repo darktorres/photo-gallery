@@ -115,7 +115,7 @@ impl qobject::AnimationPlayer {
         let path = match crate::app::get().file_path(FileId::new(file_id)) {
             Ok(path) => path,
             Err(err) => {
-                crate::panic_log::note(&format!("animation {file_id}: {err:#}"));
+                crate::log::note(&format!("animation {file_id}: {err:#}"));
                 return;
             }
         };

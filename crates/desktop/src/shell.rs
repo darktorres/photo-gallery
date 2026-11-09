@@ -316,7 +316,7 @@ fn view_names() -> QStringList {
     app::get()
         .views()
         .unwrap_or_else(|e| {
-            crate::panic_log::note(&format!("views: {e:#}"));
+            crate::log::note(&format!("views: {e:#}"));
             Vec::new()
         })
         .iter()
@@ -491,14 +491,14 @@ impl qobject::Shell {
             sort: listing.sort,
         };
         if let Err(e) = app::get().save_view(&view) {
-            crate::panic_log::note(&format!("saving view: {e:#}"));
+            crate::log::note(&format!("saving view: {e:#}"));
         }
         self.as_mut().set_saved_views(view_names());
     }
 
     fn delete_view(mut self: Pin<&mut Self>, name: &QString) {
         if let Err(e) = app::get().delete_view(&name.to_string()) {
-            crate::panic_log::note(&format!("deleting view: {e:#}"));
+            crate::log::note(&format!("deleting view: {e:#}"));
         }
         self.as_mut().set_saved_views(view_names());
     }
@@ -612,7 +612,7 @@ impl qobject::Shell {
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
             Command::SaveSession(listing) => {
                 if let Err(e) = app::get().save_listing(&listing) {
-                    crate::panic_log::note(&format!("session: {e:#}"));
+                    crate::log::note(&format!("session: {e:#}"));
                 }
             }
             // Synchronous: the save must run at shutdown too (`flush`), and its handler calls no shell.

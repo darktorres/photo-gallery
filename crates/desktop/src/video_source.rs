@@ -94,7 +94,7 @@ impl qobject::VideoSource {
         match path {
             Ok(path) => play_path(player, &path),
             Err(err) => {
-                crate::panic_log::note(&format!("video {file_id}: {err:#}"));
+                crate::log::note(&format!("video {file_id}: {err:#}"));
                 player.clear();
             }
         }

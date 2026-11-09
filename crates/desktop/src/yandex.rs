@@ -315,7 +315,7 @@ impl qobject::YandexSearch {
         match crate::app::get().file_path(FileId::new(file_id)) {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
-                crate::panic_log::note(&format!("yandex: file {file_id}: {err:#}"));
+                crate::log::note(&format!("yandex: file {file_id}: {err:#}"));
                 self.as_mut().set_status(QString::from(&text::yandex_unreadable_photo(&format!("{err:#}"))));
             }
         }
@@ -376,7 +376,7 @@ impl qobject::YandexSearch {
         // Without its thread the panel isn't told the search's changes: the log says why, and the next search tries
         // again.
         if let Err(e) = pump {
-            crate::panic_log::note(&format!("yandex: the change pump didn't start: {e}"));
+            crate::log::note(&format!("yandex: the change pump didn't start: {e}"));
             self.as_mut().rust_mut().pump = false;
         }
     }
@@ -619,7 +619,7 @@ impl qobject::YandexSearch {
     /// A search or a save (`what`) whose thread the system refused: the log says why, and so does the status line.
     /// Nothing runs, so the panel isn't busy.
     fn not_started(mut self: Pin<&mut Self>, what: &str, e: &std::io::Error) {
-        crate::panic_log::note(&format!("yandex: the {what} didn't start: {e}"));
+        crate::log::note(&format!("yandex: the {what} didn't start: {e}"));
         self.as_mut().set_busy(false);
         self.as_mut().set_status(QString::from(&text::yandex_not_started(&e.to_string())));
     }

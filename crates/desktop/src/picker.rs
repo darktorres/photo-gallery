@@ -260,7 +260,7 @@ impl qobject::FolderPicker {
                 Ok(None) => {}
                 Err(e) => {
                     let call = pg_platform::picker::failed_call(&e).unwrap_or("the dialog");
-                    crate::panic_log::note(&format!(
+                    crate::log::note(&format!(
                         "folder picker {purpose:?}: {call}: {e} (start folder {start:?}, owner window {owner:?})"
                     ));
                     let message = QString::from(&text::folder_dialog_failed(&e.to_string()));
@@ -337,7 +337,7 @@ impl qobject::FolderPicker {
     /// The app's dialog can't list `folder` (`error`): the purpose's picker says so (`failed`), and keeps what it
     /// showed.
     fn report_unlisted(self: Pin<&mut Self>, purpose: Purpose, folder: &Path, error: &std::io::Error) {
-        crate::panic_log::note(&format!("folder picker: {}: {error}", folder.display()));
+        crate::log::note(&format!("folder picker: {}: {error}", folder.display()));
         let message = QString::from(&text::folder_unreadable(&error.to_string()));
         self.failed(purpose.code(), message);
     }

@@ -281,7 +281,7 @@ impl qobject::FolderModel {
         let model = self.qt_thread();
         crate::app::get().session().tree(move |tree| {
             let tree = tree.unwrap_or_else(|e| {
-                crate::panic_log::note(&format!("folder tree: {e:#}"));
+                crate::log::note(&format!("folder tree: {e:#}"));
                 FolderTree::default()
             });
             // Fails only when the model is gone (the window closing).

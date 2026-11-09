@@ -18,7 +18,7 @@ pub fn open(config: Config) -> anyhow::Result<()> {
     let notes = app.notes();
     std::thread::Builder::new().name("app notes".into()).spawn(move || {
         while let Some(note) = notes.recv() {
-            crate::panic_log::note(&note_text(&note));
+            crate::log::note(&note_text(&note));
         }
     })?;
     APP.set(app).map_err(|_| anyhow::anyhow!("the app was opened twice"))
@@ -39,7 +39,7 @@ pub fn stop() {
     if let Some(app) = APP.get()
         && let Err(e) = app.stop()
     {
-        crate::panic_log::note(&e.to_string());
+        crate::log::note(&e.to_string());
     }
 }
 

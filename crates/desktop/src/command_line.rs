@@ -131,7 +131,7 @@ pub fn start_options() -> StartOptions {
 pub fn yandex_source() -> pg_app::yandex::Factory {
     match path("yandex-fixture") {
         Some(dir) => {
-            crate::panic_log::note(&format!(
+            crate::log::note(&format!(
                 "yandex: --yandex-fixture: answering from the recorded session in {}; nothing is sent",
                 dir.display()
             ));

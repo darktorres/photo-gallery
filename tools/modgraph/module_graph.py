@@ -238,7 +238,19 @@ def sccs(nodes, edges):
 
 def main():
     files = subprocess.run(
-        ["git", "-C", str(REPO), "ls-files", "--", "crates/*/src/*.rs", "crates/*/src/**/*.rs"],
+        # Tracked and untracked files alike: a step's new module must be in the scan before it is committed.
+        [
+            "git",
+            "-C",
+            str(REPO),
+            "ls-files",
+            "--cached",
+            "--others",
+            "--exclude-standard",
+            "--",
+            "crates/*/src/*.rs",
+            "crates/*/src/**/*.rs",
+        ],
         capture_output=True,
         text=True,
         check=True,

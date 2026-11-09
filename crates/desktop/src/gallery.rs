@@ -348,7 +348,7 @@ impl GalleryRust {
             let details = match crate::app::get().details(e.id) {
                 Ok(d) => d?,
                 Err(err) => {
-                    crate::panic_log::note(&format!("reading {}: {err:#}", e.id.get()));
+                    crate::log::note(&format!("reading {}: {err:#}", e.id.get()));
                     return None;
                 }
             };
@@ -440,7 +440,7 @@ impl qobject::GalleryModel {
         let shown = pg_model::rules::PathRules::NATIVE.display_merged(&folder);
         crate::app::get().session().grid(folder, recursive, query, sort, move |entries| {
             let entries = entries.unwrap_or_else(|e| {
-                crate::panic_log::note(&format!("listing {shown}: {e:#}"));
+                crate::log::note(&format!("listing {shown}: {e:#}"));
                 Vec::new()
             });
             // Fails only when the model is gone (the window closing): nothing left to show it in.
@@ -753,7 +753,7 @@ impl qobject::GalleryModel {
             return;
         }
         if let Err(e) = crate::app::get().turn(id, turns) {
-            crate::panic_log::note(&format!("rotating: {e:#}"));
+            crate::log::note(&format!("rotating: {e:#}"));
             return;
         }
         let loading = self.loading;
@@ -809,7 +809,7 @@ impl qobject::GalleryModel {
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
         if let Err(e) = crate::app::get().rate(id, rating) {
-            crate::panic_log::note(&format!("rating: {e:#}"));
+            crate::log::note(&format!("rating: {e:#}"));
             return;
         }
         let loading = self.loading;
@@ -851,7 +851,7 @@ impl qobject::GalleryModel {
             return;
         }
         if let Err(err) = crate::app::get().set_border_mark(e.id, marked) {
-            crate::panic_log::note(&format!("marking borders: {err:#}"));
+            crate::log::note(&format!("marking borders: {err:#}"));
             return;
         }
         let loading = self.loading;
@@ -975,7 +975,7 @@ fn fresh_entry(id: FileId) -> Option<Entry> {
     match crate::app::get().entry(id) {
         Ok(found) => found,
         Err(e) => {
-            crate::panic_log::note(&format!("reloading {}: {e:#}", id.get()));
+            crate::log::note(&format!("reloading {}: {e:#}", id.get()));
             None
         }
     }

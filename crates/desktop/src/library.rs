@@ -228,7 +228,7 @@ impl qobject::Library {
         let roots = match app::get().roots() {
             Ok(roots) => roots,
             Err(e) => {
-                crate::panic_log::note(&format!("library: the folders couldn't be read: {e}"));
+                crate::log::note(&format!("library: the folders couldn't be read: {e}"));
                 self.as_mut().show(text::folders_unreadable(&e.to_string()), true);
                 Vec::new()
             }
@@ -247,7 +247,7 @@ impl qobject::Library {
             Ok(library) => library,
             Err(e) => {
                 // Nothing is scanned, imported or written: the panel says so, not only the log.
-                crate::panic_log::note(&format!("library: {e}"));
+                crate::log::note(&format!("library: {e}"));
                 self.show(text::library_unavailable(&e.to_string()), true);
                 return;
             }
@@ -276,7 +276,7 @@ impl qobject::Library {
             }
         });
         if let Err(e) = pump {
-            crate::panic_log::note(&format!("library: the change pump didn't start: {e}"));
+            crate::log::note(&format!("library: the change pump didn't start: {e}"));
         }
         // The state as it is now, for what was announced before the pump.
         self.as_mut().refresh_progress();

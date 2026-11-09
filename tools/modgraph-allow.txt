@@ -9,7 +9,7 @@ scan app: app, images, library, reader   # D (M-4)
 scan app: yandex, yandex::replay   # F (M-19)
 scan catalog: (crate root), browse::read, browse::read::changes, browse::read::details, browse::read::facets, browse::read::grid, browse::read::state, browse::read::tree, browse::read::views, pair, schema, writes   # E, G (M-3, M-3a, M-7)
 scan desktop: trace, trace::qobject   # J (M-20)
-scan desktop: (crate root), app, command_line, command_line::qobject, panic_log, screenshot   # A (M-1)
+scan desktop: command_line, command_line::qobject   # J (M-20); the rest of A went with M-1
 scan desktop: animation, animation::qobject   # J (M-20)
 scan desktop: viewport, viewport::qobject   # J (M-20)
 scan desktop: picker, picker::qobject   # J (M-20)

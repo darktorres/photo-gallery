@@ -1,6 +1,7 @@
 //! The desktop app (PLAN §7): the window, Qt Quick over CXX-Qt. `gallery` (crates/gallery) opens it with `run` when it's
 //! given no command; everything below the QML lives in `pg-client` and `pg-library`.
 
+mod alert;
 mod animation;
 mod app;
 mod app_icon;
@@ -17,6 +18,7 @@ mod keymap;
 mod library;
 #[cfg(debug_assertions)]
 mod live_reload;
+mod log;
 mod panic_log;
 mod picker;
 mod providers;
@@ -63,7 +65,7 @@ pub fn run(args: &[OsString]) -> i32 {
         std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_app::reexport::parse_thumb_cap_gb(&s) {
             Ok(bytes) => Some(bytes),
             Err(e) => {
-                panic_log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
+                log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
                 None
             }
         });
@@ -127,11 +129,6 @@ pub fn run(args: &[OsString]) -> i32 {
 /// A GUI program has nowhere to print: show the error, then quit.
 #[expect(clippy::exit, reason = "the process ends here by design, after the message box")]
 fn fatal(message: &str) -> ! {
-    message_box(message);
+    alert::error_box(message);
     std::process::exit(1);
-}
-
-/// An error message box, from any thread (it runs its own message loop).
-fn message_box(message: &str) {
-    pg_platform::message::error_box("Photo Gallery", message);
 }

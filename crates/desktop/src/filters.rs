@@ -285,7 +285,7 @@ impl qobject::Filters {
         let shown = PathRules::NATIVE.display_merged(&listing.folder);
         crate::app::get().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
             let facets = facets.unwrap_or_else(|e| {
-                crate::panic_log::note(&format!("facets of {shown}: {e:#}"));
+                crate::log::note(&format!("facets of {shown}: {e:#}"));
                 Facets::default()
             });
             // Fails only when the filter bar is gone (the window closing).

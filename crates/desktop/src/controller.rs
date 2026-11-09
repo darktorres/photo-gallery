@@ -33,7 +33,7 @@ impl Core {
         let recorder = std::env::var_os("PG_RECORD").and_then(|path| match std::fs::File::create(&path) {
             Ok(file) => Some(file),
             Err(e) => {
-                crate::panic_log::note(&format!("PG_RECORD {}: {e}", path.to_string_lossy()));
+                crate::log::note(&format!("PG_RECORD {}: {e}", path.to_string_lossy()));
                 None
             }
         });
@@ -50,10 +50,10 @@ impl Core {
         match serde_json::to_string(record) {
             Ok(line) => {
                 if let Err(e) = writeln!(file, "{line}") {
-                    crate::panic_log::note(&format!("PG_RECORD: {e}"));
+                    crate::log::note(&format!("PG_RECORD: {e}"));
                 }
             }
-            Err(e) => crate::panic_log::note(&format!("PG_RECORD: {e}")),
+            Err(e) => crate::log::note(&format!("PG_RECORD: {e}")),
         }
     }
 }

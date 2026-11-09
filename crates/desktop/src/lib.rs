@@ -29,7 +29,6 @@ mod viewport;
 mod words;
 
 mod yandex;
-mod yandex_log;
 
 use std::ffi::OsString;
 

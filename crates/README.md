@@ -198,7 +198,6 @@ makes thumbnails in the background, with progress and a Pause button in the bott
 below normal priority (thumbnails at idle), so the window and the thumbnails on screen come first. Quitting at
 any point is safe: the next start finishes what's pending. An internal error (a Rust panic) shows a message and
 appends its details and backtrace to `gallery.log` beside the catalog folder (`%LOCALAPPDATA%\PhotoGallery\gallery.log` by default).
-Each response a Yandex search gets is also written in full, with its status and headers, to its own file in `yandex-responses` beside `gallery.log`.
 
 The same passes on the command line, without the window (for scripts, profiling and checking results):
 

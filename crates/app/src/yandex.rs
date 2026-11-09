@@ -18,7 +18,7 @@ use pg_model::format::Format;
 use pg_model::rules::PathRules;
 use pg_platform::file::TempFile;
 use pg_platform::names::{path_buf, rule_path_of};
-pub use pg_yandex::{Dump, Exchange, YandexError};
+pub use pg_yandex::YandexError;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload};
 
 use crate::app::App;
@@ -62,14 +62,10 @@ pub struct Connection {
 /// session explicitly.
 pub type Factory = Arc<dyn Fn() -> Result<Connection, YandexError> + Send + Sync>;
 
-/// The real Yandex client, made for each search. The default. `dump` gets every search response as it comes (`None`:
-/// none is kept).
-pub fn client(dump: Option<Dump>) -> Factory {
-    Arc::new(move || -> Result<Connection, YandexError> {
-        Ok(Connection {
-            source: Box::new(Client::new()?.with_dump(dump.clone())),
-            fetch: Arc::new(Fetcher::new()),
-        })
+/// The real Yandex client, made for each search. The default.
+pub fn client() -> Factory {
+    Arc::new(|| -> Result<Connection, YandexError> {
+        Ok(Connection { source: Box::new(Client::new()?), fetch: Arc::new(Fetcher::new()) })
     })
 }
 

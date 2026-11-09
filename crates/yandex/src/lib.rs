@@ -14,7 +14,6 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 use std::io::Read;
-use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pg_model::format::Format;
@@ -160,30 +159,12 @@ pub fn read_similar_pages(
     Ok(Similar { items, stopped: None })
 }
 
-/// One response of a search request, as it came, for a log. `endpoint` names the request (`upload`, `other sizes`,
-/// `similar page 2`). `status` is `None` when no response came at all, and `error` is what failed (the transport, or
-/// reading the body), when something did. The body is whole: a captcha page's is the one that says why.
-pub struct Exchange {
-    pub endpoint: String,
-    /// The request as it was sent (see [`describe`]).
-    pub request: String,
-    pub status: Option<u16>,
-    /// The response's headers, one `name: value` line each.
-    pub headers: String,
-    pub body: String,
-    pub error: Option<String>,
-}
-
-/// Where each search response goes as it comes (see [`Client::with_dump`]). It is called on the search's thread.
-pub type Dump = Arc<dyn Fn(&Exchange) + Send + Sync>;
-
 /// A blocking Yandex client. One client paces its own requests, so callers can use it from a worker thread. Its agent
 /// keeps the cookies Yandex sets, as the crawler's `requests.Session` does: a request without the cookies the responses
 /// before it gave is a new anonymous client to Yandex, and Yandex answers those with a captcha.
 pub struct Client {
     agent: ureq::Agent,
     last_request: Option<Instant>,
-    dump: Option<Dump>,
 }
 
 /// The HTTP agent of the search and of the result files: statuses are handed back to the caller (a captcha page's
@@ -208,13 +189,7 @@ impl Client {
         let uri = ureq::http::Uri::from_static(ORIGIN);
         let cookie = ureq::Cookie::parse(yp_cookie(), &uri).map_err(|e| YandexError::Transport(e.to_string()))?;
         agent.cookie_jar_lock().insert(cookie, &uri).map_err(|e| YandexError::Transport(e.to_string()))?;
-        Ok(Self { agent, last_request: None, dump: None })
-    }
-
-    /// The same client, handing every search response to `dump` as it comes (`None`: nothing is handed over).
-    pub fn with_dump(mut self, dump: Option<Dump>) -> Self {
-        self.dump = dump;
-        self
+        Ok(Self { agent, last_request: None })
     }
 
     /// Uploads an image and returns the ids that the result requests need. The body is the raw file, with no
@@ -223,9 +198,7 @@ impl Client {
     pub fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {
         self.pace();
         let req = transfer_timeouts(self.agent.post(UPLOAD_URL).header("User-Agent", USER_AGENT));
-        let request = describe(&self.agent, &req);
-        let result = req.send(image);
-        parse_upload(&read_response("upload", request, self.dump.as_ref(), result)?)
+        parse_upload(&read_response(req.send(image))?)
     }
 
     /// The same image at other resolutions, largest first. One request.
@@ -237,7 +210,7 @@ impl Client {
             .query("url", &up.orig_url)
             .query("cbir_id", &up.cbir_id)
             .query("family", "none");
-        let html = self.send("other sizes", req)?;
+        let html = self.send(req)?;
         parse_other_sizes(&html)
     }
 
@@ -263,14 +236,13 @@ impl Client {
             .query("text", &text)
             .query("family", "none")
             .query("p", page.to_string());
-        self.send(&format!("similar page {page}"), req)
+        self.send(req)
     }
 
-    fn send(&mut self, endpoint: &str, req: ureq::RequestBuilder<WithoutBody>) -> Result<String, YandexError> {
+    fn send(&mut self, req: ureq::RequestBuilder<WithoutBody>) -> Result<String, YandexError> {
         self.pace();
         let req = req.header("User-Agent", USER_AGENT);
-        let request = describe(&self.agent, &req);
-        read_response(endpoint, request, self.dump.as_ref(), req.call())
+        read_response(req.call())
     }
 
     fn pace(&mut self) {
@@ -383,79 +355,23 @@ pub fn sniffed(bytes: &[u8]) -> Result<Format, YandexError> {
     }
 }
 
-/// The request as it is sent, for the log: its method, its URL with the query, the headers this client sets, and the
-/// cookies its jar sends (name and value, as the `Cookie` header carries them). The headers ureq adds itself (`Host`,
-/// `Accept`, `Connection`) are not listed.
-fn describe<B>(agent: &ureq::Agent, req: &ureq::RequestBuilder<B>) -> String {
-    let method = req.method_ref().map_or_else(|| "?".to_string(), ToString::to_string);
-    let uri = req.uri_ref().map_or_else(|| "?".to_string(), ToString::to_string);
-    let headers: String = req
-        .headers_ref()
-        .into_iter()
-        .flatten()
-        .map(|(name, value)| format!("{name}: {}\n", String::from_utf8_lossy(value.as_bytes())))
-        .collect();
-    let cookies: Vec<String> = agent.cookie_jar_lock().iter().map(|c| format!("{}={}", c.name(), c.value())).collect();
-    format!("method: {method}\nurl: {uri}\n\nheaders:\n{headers}\ncookies: {}\n", cookies.join("; "))
-}
-
 /// Reads a response body. A captcha page is reported as `Captcha` whatever its status. A body that can't be read is
-/// an error only when the status is a success; for an error status the status is what gets reported. The exchange
-/// goes to `dump` first, when there is one: the status, the headers and the whole body, as they came.
-fn read_response(
-    endpoint: &str,
-    request: String,
-    dump: Option<&Dump>,
-    result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
-) -> Result<String, YandexError> {
-    let mut resp = match result {
-        Ok(resp) => resp,
-        Err(e) => {
-            let error = e.to_string();
-            if let Some(dump) = dump {
-                dump(&Exchange {
-                    endpoint: endpoint.to_string(),
-                    request,
-                    status: None,
-                    headers: String::new(),
-                    body: String::new(),
-                    error: Some(error.clone()),
-                });
-            }
-            return Err(YandexError::Transport(error));
-        }
-    };
+/// an error only when the status is a success; for an error status the status is what gets reported.
+fn read_response(result: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> Result<String, YandexError> {
+    let mut resp = result.map_err(|e| YandexError::Transport(e.to_string()))?;
     let status = resp.status();
-    let headers: String = resp
-        .headers()
-        .iter()
-        .map(|(name, value)| format!("{name}: {}\n", String::from_utf8_lossy(value.as_bytes())))
-        .collect();
-    let (body, body_error) = match resp.body_mut().read_to_string() {
-        Ok(body) => (body, None),
-        Err(e) => (String::new(), Some(e.to_string())),
+    let body = match resp.body_mut().read_to_string() {
+        Ok(body) => body,
+        Err(e) if status.is_success() => return Err(YandexError::Transport(e.to_string())),
+        Err(_) => String::new(),
     };
-    let exchange = Exchange {
-        endpoint: endpoint.to_string(),
-        request,
-        status: Some(status.as_u16()),
-        headers,
-        body,
-        error: body_error,
-    };
-    if let Some(dump) = dump {
-        dump(&exchange);
-    }
-    if let Some(error) = exchange.error.as_ref().filter(|_| status.is_success()) {
-        return Err(YandexError::Transport(error.clone()));
-    }
-    if is_captcha_page(&exchange.body) {
+    if is_captcha_page(&body) {
         return Err(YandexError::Captcha);
     }
     if !status.is_success() {
         return Err(YandexError::Status(status.as_u16()));
     }
-    Ok(exchange.body)
+    Ok(body)
 }
 
 /// Screen metrics in the shape the browser's own script writes. Expires in a year.

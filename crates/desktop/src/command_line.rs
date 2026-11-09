@@ -137,7 +137,7 @@ pub fn yandex_source() -> pg_app::yandex::Factory {
             ));
             pg_app::yandex::replay(dir)
         }
-        None => pg_app::yandex::client(crate::yandex_log::dump()),
+        None => pg_app::yandex::client(),
     }
 }
 

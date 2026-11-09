@@ -7,7 +7,6 @@ libclang (bindgen loads it). Optional parts are used by some tests and by the Li
 optional part only says so. Exit status 1 when a required part is missing.
 """
 
-import glob
 import os
 import shutil
 import subprocess
@@ -73,11 +72,11 @@ def libclang_dirs() -> list[Path]:
     if WINDOWS:
         if os.environ.get("LLVM_DIR"):
             dirs.append(Path(os.environ["LLVM_DIR"]) / "bin")
-        if os.environ.get("ProgramFiles"):
-            dirs.append(Path(os.environ["ProgramFiles"]) / "LLVM" / "bin")
+        if os.environ.get("PROGRAMFILES"):
+            dirs.append(Path(os.environ["PROGRAMFILES"]) / "LLVM" / "bin")
         dirs.extend(Path(p) for p in os.environ.get("PATH", "").split(os.pathsep) if p)
     else:
-        dirs.extend(Path(p) for p in sorted(glob.glob("/usr/lib/llvm-*/lib")))
+        dirs.extend(sorted(Path("/usr/lib").glob("llvm-*/lib")))
         dirs.append(Path("/usr/lib/x86_64-linux-gnu"))
     return dirs
 
@@ -85,7 +84,7 @@ def libclang_dirs() -> list[Path]:
 def libclang_in(folder: Path) -> bool:
     if WINDOWS:
         return (folder / "libclang.dll").is_file()
-    return bool(glob.glob(str(folder / "libclang*.so*")))
+    return any(folder.glob("libclang*.so*"))
 
 
 def main() -> None:

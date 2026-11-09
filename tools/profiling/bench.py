@@ -27,12 +27,15 @@ TARGET = Path("/bench/target")
 
 
 def refuse_ambiguous(args: list[str]) -> bool:
-    """Checks the arguments before anything runs, so a refused one costs no build. Returns whether a bench name filters the run."""
+    """Checks the arguments before anything runs, so a refused one costs no build. Returns whether a bench name filters
+    the run."""
     filtered = False
     bare = ""
     for arg in args:
         if bare and not arg.startswith("-"):
-            sys.exit(f"bench.py: '{bare} {arg}' is ambiguous: write a value as {bare}=VALUE, or put the bench name before the options")
+            sys.exit(
+                f"bench.py: '{bare} {arg}' is ambiguous: write a value as {bare}=VALUE, or put the bench name before the options"
+            )
         bare = ""
         if arg.startswith("-"):
             if "=" not in arg:

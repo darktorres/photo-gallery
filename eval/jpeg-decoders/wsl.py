@@ -39,11 +39,13 @@ def ffmpeg_prefix() -> Path:
     """FFmpeg's prefix for this crate's build: ffmpeg-sys-next reads FFMPEG_DIR (include/ and lib/), which the crate's .cargo
     names as .deps/ffmpeg (Windows). On Linux that is a prefix of symlinks over Ubuntu's multiarch directories."""
     prefix = Path.home() / ".local" / "share" / "pg-bench" / "ffmpeg"
-    arch = subprocess.run(["dpkg-architecture", "-qDEB_HOST_MULTIARCH"], capture_output=True, text=True, check=True).stdout.strip()
+    arch = subprocess.run(
+        ["dpkg-architecture", "-qDEB_HOST_MULTIARCH"], capture_output=True, text=True, check=True
+    ).stdout.strip()
     prefix.mkdir(parents=True, exist_ok=True)
     for link, target in (("include", f"/usr/include/{arch}"), ("lib", f"/usr/lib/{arch}")):
         path = prefix / link
-        if not path.is_symlink() or os.readlink(path) != target:
+        if not path.is_symlink() or path.readlink() != target:
             path.unlink(missing_ok=True)
             path.symlink_to(target)
     return prefix
@@ -51,7 +53,10 @@ def ffmpeg_prefix() -> Path:
 
 def libclang_path() -> str:
     """The newest LLVM's library folder: the one bindgen loads libclang from (as CI finds it)."""
-    folders = sorted(Path("/usr/lib").glob("llvm-*/lib"), key=lambda p: [int(n) if n.isdigit() else 0 for n in re.findall(r"\d+", p.parent.name)])
+    folders = sorted(
+        Path("/usr/lib").glob("llvm-*/lib"),
+        key=lambda p: [int(n) if n.isdigit() else 0 for n in re.findall(r"\d+", p.parent.name)],
+    )
     return str(folders[-1]) if folders else ""
 
 
@@ -93,7 +98,17 @@ def marginal(env: dict[str, str]) -> None:
         with tempfile.TemporaryDirectory() as folder:
             out = Path(folder) / "cg"
             result = run(
-                ["valgrind", "--tool=callgrind", f"--callgrind-out-file={out}", str(binary), "repeat", str(count), decoder, mode, str(file)],
+                [
+                    "valgrind",
+                    "--tool=callgrind",
+                    f"--callgrind-out-file={out}",
+                    str(binary),
+                    "repeat",
+                    str(count),
+                    decoder,
+                    mode,
+                    str(file),
+                ],
                 check=False,
                 env=env,
                 quiet=True,

@@ -48,7 +48,17 @@ def instructions(mode: str, file: Path) -> str:
         for count in (1, 3):
             out = Path(folder) / f"{count}.out"
             result = subprocess.run(
-                ["valgrind", "--tool=callgrind", f"--callgrind-out-file={out}", str(BIN), "repeat", str(count), "libjpeg-turbo", mode, str(file)],
+                [
+                    "valgrind",
+                    "--tool=callgrind",
+                    f"--callgrind-out-file={out}",
+                    str(BIN),
+                    "repeat",
+                    str(count),
+                    "libjpeg-turbo",
+                    mode,
+                    str(file),
+                ],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 check=False,
@@ -75,7 +85,10 @@ def decoded(file: Path, *extra: str) -> bytes:
 
 def main() -> None:
     OUT.mkdir(parents=True, exist_ok=True)
-    print(f"{'input':<20} {'variant':<7} {'bytes':>9} {'size%':>8} {'px-full':<9} {'px-1/2':<9} {'Mir-full':>8} {'Mir-scal':>8} {'ms-full':>8} {'ms-scal':>8}")
+    print(
+        f"{'input':<20} {'variant':<7} {'bytes':>9} {'size%':>8} {'px-full':<9} {'px-1/2':<9} "
+        f"{'Mir-full':>8} {'Mir-scal':>8} {'ms-full':>8} {'ms-scal':>8}"
+    )
     for name in NAMES:
         source = INPUTS / f"{name}.jpg"
         original_size = source.stat().st_size

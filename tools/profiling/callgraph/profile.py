@@ -4,7 +4,8 @@ It runs target/release/gallery.exe under Pin with callgraph.dll (build.py) until
 then names the functions Pin could only name by address (symbolize.py). Read the result with tools/profiling/cgtab.py or
 KCachegrind.
 
-    python tools/profiling/callgraph/profile.py --out %PG_ROOT%\\profiles\\ready [--stop pg_stage_ready] [--start STAGE] [--qt DIR] [-- gallery arguments]
+    python tools/profiling/callgraph/profile.py --out %PG_ROOT%\\profiles\\ready
+        [--stop pg_stage_ready] [--start STAGE] [--qt DIR] [-- gallery arguments]
 
 The app runs with this shell's environment: set PG_CATALOG_DIR and PG_PREFS for a scratch catalog first. Under Pin the start
 takes some 50 times longer; the window shows meanwhile. --stop '' runs until the app exits. Reads QT_DIR (the Qt kit folder;
@@ -40,9 +41,14 @@ def main() -> None:
     load_env_file()
     qt = args.qt or os.environ.get("QT_DIR", "")
     if not qt:
-        sys.exit("QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env (or pass --qt).")
-    pin = Path(os.environ["PIN_EXE"]) if os.environ.get("PIN_EXE") else (
-        Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit" / "pin.exe"
+        sys.exit(
+            "QT_DIR is not set: point it at the Qt kit folder (the one with bin and lib), in the environment or in .env "
+            "(or pass --qt)."
+        )
+    pin = (
+        Path(os.environ["PIN_EXE"])
+        if os.environ.get("PIN_EXE")
+        else (Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit" / "pin.exe")
     )
     tool = REPO / "target" / "pin" / "callgraph.dll"
     if not tool.is_file():

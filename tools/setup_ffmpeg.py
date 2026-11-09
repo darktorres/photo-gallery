@@ -36,7 +36,10 @@ def download(url: str, target: Path) -> None:
     """Fetches `url` to `target`, through a `.partial` name so an interrupted download never looks finished."""
     partial = target.with_name(target.name + ".partial")
     print(f"Downloading {url}", flush=True)
-    with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file:
+    if not url.startswith("https://"):
+        sys.exit(f"the FFmpeg archive's URL is not https: {url}")
+    # An https URL, checked above: the pinned one, from the Justfile.
+    with urllib.request.urlopen(url, timeout=60) as response, partial.open("wb") as file:  # noqa: S310
         shutil.copyfileobj(response, file, CHUNK)
     partial.replace(target)
 

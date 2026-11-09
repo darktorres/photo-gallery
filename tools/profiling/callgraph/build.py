@@ -8,7 +8,6 @@ Windows SDK's kernel32.lib (KitsRoot10 in the registry). LLVM_DIR and PIN_ROOT (
 LOCALAPPDATA) can come from the repo's .env, for keys the environment does not set.
 """
 
-import glob
 import os
 import re
 import shutil
@@ -21,7 +20,8 @@ from pgtools import REPO, WINDOWS, load_env_file
 
 def newest(pattern: Path) -> Path:
     """The folder matching `pattern` with the highest version (its digits compared in order), or exits when there is none."""
-    matches = glob.glob(str(pattern))
+    anchor = Path(pattern.anchor)
+    matches = [str(match) for match in anchor.glob(str(pattern.relative_to(anchor)))]
     if not matches:
         sys.exit(f"build.py: nothing matches {pattern}")
     return Path(max(matches, key=lambda path: [int(n) for n in re.findall(r"\d+", path)]))
@@ -49,12 +49,16 @@ def main() -> None:
         sys.exit("build.py: Windows only (Intel Pin and clang-cl)")
     load_env_file()
     llvm_dir = os.environ.get("LLVM_DIR") or (
-        str(Path(os.environ["ProgramFiles"]) / "LLVM") if os.environ.get("ProgramFiles") else ""
+        str(Path(os.environ["PROGRAMFILES"]) / "LLVM") if os.environ.get("PROGRAMFILES") else ""
     )
     if not llvm_dir:
         sys.exit("build.py: LLVM_DIR is unset and ProgramFiles is unavailable: set LLVM_DIR")
     llvm = Path(llvm_dir)
-    pin = Path(os.environ["PIN_ROOT"]) if os.environ.get("PIN_ROOT") else Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit"
+    pin = (
+        Path(os.environ["PIN_ROOT"])
+        if os.environ.get("PIN_ROOT")
+        else Path(os.environ["LOCALAPPDATA"]) / "Programs" / "sde" / "pinkit"
+    )
     here = Path(__file__).resolve().parent
     out = REPO / "target" / "pin"
     out.mkdir(parents=True, exist_ok=True)

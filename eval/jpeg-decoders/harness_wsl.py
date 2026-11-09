@@ -34,7 +34,16 @@ def ir_one(decoder: str, file: str) -> str:
         for count in (1, 3):
             out = Path(folder) / str(count)
             result = run(
-                ["valgrind", "--tool=callgrind", f"--callgrind-out-file={out}", str(HARNESS), "repeat", str(count), decoder, file],
+                [
+                    "valgrind",
+                    "--tool=callgrind",
+                    f"--callgrind-out-file={out}",
+                    str(HARNESS),
+                    "repeat",
+                    str(count),
+                    decoder,
+                    file,
+                ],
                 cwd=RESTART,
                 check=False,
                 quiet=True,
@@ -47,9 +56,11 @@ def ir_one(decoder: str, file: str) -> str:
 
 def instructions() -> None:
     print(f"M instructions per decode (callgrind, all threads); columns: {' '.join(IR_DECODERS)}")
-    with ThreadPoolExecutor(max_workers=len(IR_DECODERS)) as pool:  # one job per decoder in parallel: instruction counts don't depend on load
+    with ThreadPoolExecutor(
+        max_workers=len(IR_DECODERS)
+    ) as pool:  # one job per decoder in parallel: instruction counts don't depend on load
         for file in FILES:
-            values = dict(zip(IR_DECODERS, pool.map(lambda d, f=file: ir_one(d, f), IR_DECODERS)))
+            values = dict(zip(IR_DECODERS, pool.map(lambda d, f=file: ir_one(d, f), IR_DECODERS), strict=True))
             print(f"{file:<32}" + "".join(f" {values[d]:>10}" for d in IR_DECODERS))
 
 

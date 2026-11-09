@@ -19,7 +19,7 @@ JOBS = str(os.cpu_count() or 1)
 ENV = {**os.environ, "CC": "clang", "CXX": "clang++"}
 
 
-class Failed(Exception):
+class BuildError(Exception):
     """A build step that failed; its message is shown, and the run stops."""
 
 
@@ -30,7 +30,7 @@ def run_logged(command: list[str], log: Path, cwd: Path | None = None) -> None:
         result = subprocess.run(command, stdout=file, stderr=subprocess.STDOUT, cwd=cwd, env=ENV, check=False)
     if result.returncode != 0:
         lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
-        raise Failed("\n".join(lines[-30:]))
+        raise BuildError("\n".join(lines[-30:]))
 
 
 def ensure_ninja() -> None:
@@ -40,7 +40,8 @@ def ensure_ninja() -> None:
 
 
 def clone(name: str, url: str, commit: str, submodules: bool = False) -> None:
-    """Fetches `commit` of `url` into the sources folder, once; applies the folder's patch (patches/<name>.patch) if it has one."""
+    """Fetches `commit` of `url` into the sources folder, once. Applies the folder's patch (patches/<name>.patch) if it has
+    one."""
     folder = E / "src" / name
     if not folder.is_dir():
         folder.mkdir(parents=True)
@@ -48,12 +49,18 @@ def clone(name: str, url: str, commit: str, submodules: bool = False) -> None:
         subprocess.run(["git", "-C", str(folder), "fetch", "-q", "--depth", "1", url, commit], check=True)
         subprocess.run(["git", "-C", str(folder), "checkout", "-q", "FETCH_HEAD"], check=True)
         if submodules:
-            subprocess.run(["git", "-C", str(folder), "submodule", "update", "-q", "--init", "--recursive", "--depth", "1"], check=True)
+            subprocess.run(
+                ["git", "-C", str(folder), "submodule", "update", "-q", "--init", "--recursive", "--depth", "1"], check=True
+            )
         patch = HERE / "patches" / f"{name}.patch"
         if patch.is_file():
             subprocess.run(["git", "-C", str(folder), "apply", str(patch)], check=True)
-    head = subprocess.run(["git", "-C", str(folder), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True).stdout.strip()
-    date = subprocess.run(["git", "-C", str(folder), "log", "-1", "--format=%cs"], capture_output=True, text=True, check=True).stdout.strip()
+    head = subprocess.run(
+        ["git", "-C", str(folder), "rev-parse", "--short", "HEAD"], capture_output=True, text=True, check=True
+    ).stdout.strip()
+    date = subprocess.run(
+        ["git", "-C", str(folder), "log", "-1", "--format=%cs"], capture_output=True, text=True, check=True
+    ).stdout.strip()
     print(f"{name:<14} {head} {date}")
 
 
@@ -70,9 +77,11 @@ def build(name: str, *targets: str) -> None:
     log = E / "build" / f"{name}.build.log"
     try:
         run_logged(["cmake", "--build", str(E / "build" / name), "-j", JOBS, "--target", *targets], log)
-    except Failed:
-        errors = [line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if "error" in line or "FAILED" in line]
-        raise Failed("\n".join(errors[:20])) from None
+    except BuildError:
+        errors = [
+            line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if "error" in line or "FAILED" in line
+        ]
+        raise BuildError("\n".join(errors[:20])) from None
 
 
 def install(source: Path, destination: Path) -> None:
@@ -82,7 +91,12 @@ def install(source: Path, destination: Path) -> None:
 def build_turbo() -> None:
     """The app's libjpeg-turbo 3.1.0, in the turbojpeg-sys fork it pins: cjpeg, djpeg, jpegtran, tjbench, libturbojpeg.a."""
     clone("rust-turbojpeg", "https://github.com/darktorres/rust-turbojpeg", "945d853b47a76f98fd97ac5ff43830997712caa2")
-    configure("libjpeg-turbo", E / "src" / "rust-turbojpeg" / "turbojpeg-sys" / "libjpeg-turbo", "-DENABLE_SHARED=OFF", "-DWITH_TURBOJPEG=ON")
+    configure(
+        "libjpeg-turbo",
+        E / "src" / "rust-turbojpeg" / "turbojpeg-sys" / "libjpeg-turbo",
+        "-DENABLE_SHARED=OFF",
+        "-DWITH_TURBOJPEG=ON",
+    )
     build("libjpeg-turbo", "cjpeg-static", "djpeg-static", "jpegtran-static", "tjbench-static", "turbojpeg-static")
     for tool in ["cjpeg", "djpeg", "jpegtran", "tjbench"]:
         install(E / "build" / "libjpeg-turbo" / f"{tool}-static", E / "bin" / f"{tool}-turbo")
@@ -105,18 +119,20 @@ def build_jpegli() -> None:
     for tool in ["cjpegli", "djpegli", "ssimulacra2"]:
         found = next((p for p in (E / "build" / "jpegli").rglob(tool) if p.is_file() and os.access(p, os.X_OK)), None)
         if found is None:
-            raise Failed(f"the build made no {tool}")
+            raise BuildError(f"the build made no {tool}")
         install(found, E / "bin" / tool)
 
 
 def build_guetzli() -> None:
     clone("guetzli", "https://github.com/google/guetzli", "214f2bb42abf5a577c079d00add5d6cc470620d3")
     try:
-        run_logged(["make", "-C", str(E / "src" / "guetzli"), "-j", JOBS, "config=release", "guetzli"], E / "build" / "guetzli.build.log")
-    except Failed:
+        run_logged(
+            ["make", "-C", str(E / "src" / "guetzli"), "-j", JOBS, "config=release", "guetzli"], E / "build" / "guetzli.build.log"
+        )
+    except BuildError:
         log = E / "build" / "guetzli.build.log"
         errors = [line for line in log.read_text(encoding="utf-8", errors="replace").splitlines() if "error" in line]
-        raise Failed("\n".join(errors[:20])) from None
+        raise BuildError("\n".join(errors[:20])) from None
     install(E / "src" / "guetzli" / "bin" / "Release" / "guetzli", E / "bin" / "guetzli")
 
 
@@ -124,7 +140,13 @@ def build_wuffs() -> None:
     """The harness compiles Wuffs' single-file release itself; convert-to-nia is its command-line decoder."""
     clone("wuffs", "https://github.com/google/wuffs", "d28ecd494491baa9b11d2557d10819111050fd24")
     subprocess.run(
-        [ENV["CC"], "-O3", "-o", str(E / "bin" / "wuffs-convert-to-nia"), str(E / "src" / "wuffs" / "example" / "convert-to-nia" / "convert-to-nia.c")],
+        [
+            ENV["CC"],
+            "-O3",
+            "-o",
+            str(E / "bin" / "wuffs-convert-to-nia"),
+            str(E / "src" / "wuffs" / "example" / "convert-to-nia" / "convert-to-nia.c"),
+        ],
         check=True,
     )
 
@@ -184,7 +206,7 @@ def main() -> None:
     for step in steps:
         try:
             BUILDERS[step]()
-        except Failed as error:
+        except BuildError as error:
             sys.exit(f"{step}: the build failed:\n{error}")
     for path in sorted((E / "bin").iterdir()):
         print(f"{path.stat().st_size:>12} {path}")

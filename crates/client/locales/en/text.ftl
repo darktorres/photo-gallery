@@ -111,6 +111,7 @@ scan-note = { $root }: { $kind ->
     [unpaired] { $count } missing files kept their ratings; no file was found for them
     [replaced] { $count } files were replaced by new files with the same name; their content was reset
     [rebound] { $count } files were found under a new identity and kept their ratings
+    [volume-id] { $count } volumes have no file system UUID, so their files are told apart by a device number that a restart can renumber
    *[other] { $count } scan notes
 }
 round-panicked = internal error in the background job: { $message }

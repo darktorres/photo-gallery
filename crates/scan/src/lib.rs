@@ -43,6 +43,8 @@ pub trait Listing {
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()>;
     /// Whether the folder at `path`, on a device other than the root's, may be walked into: the reason it may not, if not.
     fn check_mount(&mut self, path: &[Unit]) -> Result<(), String>;
+    /// How many devices were given their device number as their identity (no UUID, or the UUID of another device).
+    fn fallback_volumes(&self) -> u64;
 }
 
 impl Listing for Lister {
@@ -53,7 +55,7 @@ impl Listing for Lister {
     }
 
     fn volume(&mut self, dir: &Self::Dir) -> io::Result<u64> {
-        dir.volume()
+        Lister::folder_volume(self, dir)
     }
 
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()> {
@@ -62,6 +64,10 @@ impl Listing for Lister {
 
     fn check_mount(&mut self, path: &[Unit]) -> Result<(), String> {
         pg_platform::dir::check_mount(path).map_err(|refused| refused.reason)
+    }
+
+    fn fallback_volumes(&self) -> u64 {
+        Lister::fallback_volumes(self)
     }
 }
 
@@ -220,6 +226,8 @@ pub struct ScanStats {
     pub refused_mounts: u64,
     /// The first of those folders, with the reason (`FAILURES_KEPT`).
     pub refused_mount_list: Vec<Failure>,
+    /// Devices whose identity is their device number, not a file system's UUID: their identities can change at a restart.
+    pub volume_fallbacks: u64,
     /// Rows that took the identity of a new row on another volume (pairing tiers 1 and 2).
     pub rebound: usize,
     /// Rows that took the identity of the file that replaced them (pairing's replacement).
@@ -404,6 +412,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
         catalog.finish_scan(scan_id)?;
     }
     stats.complete = complete;
+    stats.volume_fallbacks = lister.fallback_volumes();
     Ok(stats)
 }
 
@@ -512,6 +521,10 @@ mod tests {
 
         fn volume(&mut self, _dir: &usize) -> io::Result<u64> {
             Ok(self.root_volume)
+        }
+
+        fn fallback_volumes(&self) -> u64 {
+            0
         }
 
         fn check_mount(&mut self, path: &[Unit]) -> Result<(), String> {
@@ -625,6 +638,18 @@ mod tests {
         // The subtree was not listed, so its file is not missing.
         assert_eq!(stats.missing, 0);
         assert_eq!(c.status().unwrap().missing, 0);
+    }
+
+    #[test]
+    fn a_renumbered_volume_rebinds_every_row_and_loses_none() {
+        // The same tree on volume 1, then on volume 2 (a device renumbered at a restart): every file is found again under its
+        // new identity, none is ambiguous, and none is missing.
+        let mut c = catalog();
+        let tree = [("", vec![file("a.jpg", 7, 1), folder("sub", 20)]), ("sub", vec![file("b.jpg", 8, 2)])];
+        scan_fake(&mut c, &tree, 1);
+        let stats = scan_fake(&mut c, &tree, 2);
+        assert_eq!((stats.rebound, stats.ambiguous, stats.unpaired_with_data, stats.missing), (2, 0, 0, 0));
+        assert_eq!(c.status().unwrap().files, 2);
     }
 
     #[test]

@@ -69,6 +69,8 @@ pub enum ScanNote {
     Replaced,
     /// Rows whose file was found again under a new identity (a renumbered drive, or a move while closed).
     Rebound,
+    /// Volumes with no file system UUID: their files are identified by a device number, which a restart can renumber.
+    VolumeFallback,
 }
 
 impl ScanNote {
@@ -81,6 +83,7 @@ impl ScanNote {
             ScanNote::UnpairedWithData => "unpaired",
             ScanNote::Replaced => "replaced",
             ScanNote::Rebound => "rebound",
+            ScanNote::VolumeFallback => "volume-id",
         }
     }
 }
@@ -457,6 +460,7 @@ impl Pass<Cx<'_>> for Scans {
                         (ScanNote::UnpairedWithData, u64::try_from(s.unpaired_with_data).unwrap_or(u64::MAX)),
                         (ScanNote::Replaced, u64::try_from(s.replaced).unwrap_or(u64::MAX)),
                         (ScanNote::Rebound, u64::try_from(s.rebound).unwrap_or(u64::MAX)),
+                        (ScanNote::VolumeFallback, s.volume_fallbacks),
                     ];
                     for (note, count) in counts {
                         if count > 0 {

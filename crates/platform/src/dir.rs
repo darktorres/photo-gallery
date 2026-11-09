@@ -23,7 +23,8 @@ pub struct Entry<'a> {
     pub size: u64,
     /// The last write time in FILETIME ticks: 100 ns since 1601-01-01 UTC.
     pub mtime: i64,
-    /// The file's own volume, read with the entry (Unix: its device number, which a mount can change under a folder).
+    /// The file's own volume, read with the entry (Unix: the stable identity of its device's volume, see
+    /// `Lister::folder_volume`; a mount under a folder has another).
     /// `None` where every entry of the folder is on the folder's volume (Windows).
     pub volume: Option<u64>,
     /// The creation time in FILETIME ticks; `None` where the file system or the platform doesn't give one (drvfs has
@@ -39,6 +40,15 @@ pub struct Lister {
     /// The records, as u64s to keep them 8-byte aligned as they must be.
     #[cfg(windows)]
     buf: Vec<u64>,
+    /// The stable identity of each device seen, by its device number (see `unix::Lister::folder_volume`).
+    #[cfg(unix)]
+    volumes: std::collections::BTreeMap<u64, u64>,
+    /// The devices that hold each identity, so a second device with the same one is found.
+    #[cfg(unix)]
+    claimed: std::collections::BTreeMap<u64, u64>,
+    /// How many devices were given their device number as their identity (no UUID, or a clone of another's).
+    #[cfg(unix)]
+    fallbacks: u64,
 }
 
 #[cfg(windows)]
@@ -46,9 +56,26 @@ impl Lister {
     pub fn new() -> Lister {
         Lister { wide: NativePath::default(), buf: vec![0; 8192] }
     }
+
+    /// The devices given their device number as identity: none on Windows, where a volume's serial is always there.
+    pub fn fallback_volumes(&self) -> u64 {
+        0
+    }
 }
 
-#[cfg(not(windows))]
+#[cfg(unix)]
+impl Lister {
+    pub fn new() -> Lister {
+        Lister { volumes: Default::default(), claimed: Default::default(), fallbacks: 0 }
+    }
+
+    /// The devices given their device number as identity (see `unix::Lister::folder_volume`).
+    pub fn fallback_volumes(&self) -> u64 {
+        self.fallbacks
+    }
+}
+
+#[cfg(not(any(windows, unix)))]
 impl Lister {
     pub fn new() -> Lister {
         Lister {}
@@ -409,6 +436,11 @@ mod windows {
     }
 
     impl Lister {
+        /// The volume a folder is on: NTFS's 64-bit volume serial number, which is the identity itself.
+        pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
+            dir.volume()
+        }
+
         /// Open the folder `path` for listing. A drive root (`D:`) names the drive's current folder, so the path is
         /// opened with its trailing backslash, and in its verbatim form (`native`), which reaches a folder whose name
         /// ends in a dot and lifts the 260-character limit.
@@ -488,20 +520,39 @@ mod unix {
     use std::io;
     use std::os::unix::ffi::OsStrExt;
     use std::os::unix::fs::MetadataExt;
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// An open folder: on Unix, its path (listed by `std::fs::read_dir` when asked).
     pub struct Dir(PathBuf);
 
-    impl Dir {
-        /// The folder's device number. With an inode number it identifies a file; each entry's own device is in
-        /// [`Entry::volume`], since a mount under the folder has another.
-        pub fn volume(&self) -> io::Result<u64> {
-            Ok(std::fs::metadata(&self.0)?.dev())
-        }
-    }
-
     impl Lister {
+        /// The volume a folder is on: its stable identity (see [`Lister::volume_of_device`]).
+        pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
+            let dev = std::fs::metadata(&dir.0)?.dev();
+            Ok(self.volume_of_device(dev, &dir.0, OsStr::new("")))
+        }
+
+        /// The stable identity of the volume device `dev` is, found from the path `folder/name` (a probe on that volume) and
+        /// kept for the listing. A device whose identity an earlier one holds (a clone of its disk) keeps its device number,
+        /// and is counted, so its files stay apart from the other's.
+        fn volume_of_device(&mut self, dev: u64, folder: &Path, name: &OsStr) -> u64 {
+            if let Some(id) = self.volumes.get(&dev) {
+                return *id;
+            }
+            let id = match volume_id(dev, &folder.join(name)) {
+                Some(id) if !self.claimed.contains_key(&id) => {
+                    self.claimed.insert(id, dev);
+                    id
+                }
+                _ => {
+                    self.fallbacks += 1;
+                    dev
+                }
+            };
+            self.volumes.insert(dev, id);
+            id
+        }
+
         pub fn open(&mut self, path: &[Unit]) -> io::Result<Dir> {
             let path = PathBuf::from(OsStr::from_bytes(path));
             if !std::fs::metadata(&path)?.is_dir() {
@@ -528,11 +579,139 @@ mod unix {
                     file_id: meta.ino(),
                     size: meta.len(),
                     mtime: crate::file::last_write_time(&meta),
-                    volume: Some(meta.dev()),
+                    volume: Some(self.volume_of_device(meta.dev(), &dir.0, &name)),
                     created: crate::file::created_time(&meta),
                 });
             }
             Ok(())
+        }
+    }
+
+    /// The stable identity of the volume that device `dev` is: the file system's UUID (from the kernel, or from udev's
+    /// database), or, for an ext file system, its `f_fsid` (which the kernel builds from the UUID). None when there is none
+    /// (procfs, tmpfs, FAT without a UUID in udev's database): the device number is all there is then. `probe` is a path on
+    /// the volume.
+    #[cfg(target_os = "linux")]
+    fn volume_id(dev: u64, probe: &Path) -> Option<u64> {
+        linux_ids::volume_id(dev, probe)
+    }
+
+    /// Elsewhere the device number is the identity.
+    #[cfg(not(target_os = "linux"))]
+    fn volume_id(dev: u64, probe: &Path) -> Option<u64> {
+        let _ = (dev, probe);
+        None
+    }
+
+    #[cfg(target_os = "linux")]
+    mod linux_ids {
+        use std::os::unix::ffi::OsStrExt;
+        use std::os::unix::fs::OpenOptionsExt;
+        use std::os::unix::io::AsRawFd;
+        use std::path::Path;
+
+        /// `FS_IOC_GETFSUUID`, `_IOR(0x15, 0, struct fsuuid2)`: the kernel's file system UUID (Linux 6.13 and later).
+        const FS_IOC_GETFSUUID: u32 = 0x8011_1500;
+
+        pub fn volume_id(dev: u64, probe: &Path) -> Option<u64> {
+            uuid_from_kernel(probe).or_else(|| uuid_from_udev(dev)).or_else(|| ext_fsid(probe))
+        }
+
+        /// The UUID the kernel gives the file system holding `probe`: a length byte, then the UUID (FAT gives its 4-byte serial).
+        fn uuid_from_kernel(probe: &Path) -> Option<u64> {
+            // O_NONBLOCK, so a FIFO named like an entry doesn't block the open; O_NOFOLLOW, so the probe is the entry itself.
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .custom_flags(libc::O_NONBLOCK | libc::O_NOFOLLOW)
+                .open(probe)
+                .ok()?;
+            let mut buf = [0u8; 17];
+            // SAFETY: `file` is open, and the kernel writes at most the struct's 17 bytes (a length byte, then 16 bytes).
+            let rc = unsafe { libc::ioctl(file.as_raw_fd(), FS_IOC_GETFSUUID as _, buf.as_mut_ptr()) };
+            if rc != 0 {
+                return None;
+            }
+            uuid_id(&buf[1..=usize::from(buf[0]).min(16)])
+        }
+
+        /// The ID_FS_UUID udev recorded for the device, in `/run/udev/data/b<major>:<minor>`, as it is written.
+        fn uuid_from_udev(dev: u64) -> Option<u64> {
+            let major = ((dev >> 8) & 0xfff) | ((dev >> 32) & !0xfff);
+            let minor = (dev & 0xff) | ((dev >> 12) & !0xff);
+            let db = std::fs::read_to_string(format!("/run/udev/data/b{major}:{minor}")).ok()?;
+            let value = db.lines().find_map(|line| line.strip_prefix("E:ID_FS_UUID="))?;
+            let hex: String = value.chars().filter(|c| *c != '-').collect();
+            if hex.len() == 32 {
+                let bytes: Option<Vec<u8>> = (0..16)
+                    .map(|i| hex.get(2 * i..2 * i + 2).and_then(|pair| u8::from_str_radix(pair, 16).ok()))
+                    .collect();
+                return uuid_id(&bytes?);
+            }
+            // A serial is written as its number in hex: vfat's `D35C-84C7` is 0xD35C84C7.
+            u64::from_str_radix(&hex, 16).ok()
+        }
+
+        /// The `f_fsid` of an ext2, ext3 or ext4 file system. Other types are not used: a vfat's is built from the device
+        /// number, as procfs's is.
+        fn ext_fsid(probe: &Path) -> Option<u64> {
+            let c = std::ffi::CString::new(probe.as_os_str().as_bytes()).ok()?;
+            let mut st = std::mem::MaybeUninit::<libc::statfs>::uninit();
+            // SAFETY: `c` is NUL-terminated and outlives the call; `st` is what the call fills when it returns 0.
+            if unsafe { libc::statfs(c.as_ptr(), st.as_mut_ptr()) } != 0 {
+                return None;
+            }
+            // SAFETY: statfs returned 0, so it filled `st`.
+            let st = unsafe { st.assume_init() };
+            if st.f_type != 0xEF53 as _ {
+                return None;
+            }
+            let halves = st.f_fsid.__val;
+            Some(u64::from(halves[0].cast_unsigned()) | (u64::from(halves[1].cast_unsigned()) << 32))
+        }
+
+        /// A file system's UUID bytes as its id: 16 bytes folded to 64 bits (FNV-1a, a fixed function, since the id is
+        /// stored); a shorter serial as the little-endian integer of its bytes, which is the number udev writes in hex.
+        fn uuid_id(bytes: &[u8]) -> Option<u64> {
+            match bytes.len() {
+                16 => Some(bytes.iter().fold(0xcbf2_9ce4_8422_2325, |h, b| (h ^ u64::from(*b)).wrapping_mul(0x0100_0000_01b3))),
+                1..=8 => Some(bytes.iter().rev().fold(0u64, |acc, b| (acc << 8) | u64::from(*b))),
+                _ => None,
+            }
+        }
+
+        #[cfg(test)]
+        mod tests {
+            use super::*;
+
+            #[test]
+            fn a_serial_gets_the_number_udev_writes() {
+                // The kernel gives vfat's serial as bytes c7 84 5c d3; udev writes it as D35C-84C7.
+                assert_eq!(uuid_id(&[0xc7, 0x84, 0x5c, 0xd3]), Some(0xD35C_84C7));
+                assert_eq!(u64::from_str_radix("D35C84C7", 16).ok(), Some(0xD35C_84C7));
+            }
+
+            #[test]
+            fn the_kernel_and_udev_agree_on_the_root_volume_when_both_know_it() {
+                use std::os::unix::fs::MetadataExt;
+                let dev = std::fs::metadata("/").unwrap().dev();
+                if let (Some(kernel), Some(udev)) = (uuid_from_kernel(Path::new("/")), uuid_from_udev(dev)) {
+                    assert_eq!(kernel, udev);
+                }
+            }
+
+            #[test]
+            fn the_root_volume_has_the_same_identity_on_every_call() {
+                use std::os::unix::fs::MetadataExt;
+                let dev = std::fs::metadata("/").unwrap().dev();
+                assert_eq!(volume_id(dev, Path::new("/")), volume_id(dev, Path::new("/")));
+            }
+
+            #[test]
+            fn procfs_has_no_identity_of_its_own() {
+                use std::os::unix::fs::MetadataExt;
+                let dev = std::fs::metadata("/proc").unwrap().dev();
+                assert_eq!(volume_id(dev, Path::new("/proc")), None);
+            }
         }
     }
 }

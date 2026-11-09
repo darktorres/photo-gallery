@@ -54,7 +54,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   directly; `pg-library` does not re-export them.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
   picks, input, keys, text and the folder tree.
-- `app` (`pg-app`): the UI-free application layer the front ends share: opens the app from a `Config`, reads what the
+- `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through `pg-library`): opens the app from a `Config`, reads what the
   window shows (`reader.rs`, off the UI thread), edits, preferences (`gallery.json`), saved views, the library, the
   Yandex search (its source is the client, or a recorded session that `--yandex-fixture` names), the re-exports the
   front end names (`reexport.rs`), and reports through a notes bus.
@@ -74,7 +74,7 @@ The internal dependencies (normal ones, from `cargo metadata`) only point down t
 above it:
 
 - `model`, `container` and `schema` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone.
-- `desktop` is the only crate that links Qt. It depends on `app`, the UI-free layer the front ends share, and on
+- `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
   `client`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
   `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods and
   `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on `cli` and `desktop` (the latter

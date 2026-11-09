@@ -12,9 +12,7 @@
 
 use std::sync::Arc;
 
-use pg_catalog::Catalog;
 use pg_jobs::events::Bus;
-use pg_model::rules::PathRules;
 use pg_thumbcache::ThumbCache;
 
 use crate::catalogs::Catalogs;
@@ -50,7 +48,7 @@ impl App {
         std::fs::create_dir_all(&config.catalog_dir)
             .map_err(|e| failed(format!("{}: {e}", config.catalog_dir.display())))?;
         let catalog_path = config.catalog_path();
-        let keeper = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE)?;
+        let keeper = pg_library::open_catalog(&config.catalog_dir)?;
         let catalog_id = keeper.catalog_id()?;
         let notes = Arc::new(Notes::new());
         if let Some(r) = keeper.rebuilt() {
@@ -58,7 +56,7 @@ impl App {
         }
         let thumb_events = Arc::new(Bus::new(64));
         forward_thumb_events(thumb_events.clone(), notes.clone())?;
-        let thumbs = ThumbCache::open(&config.catalog_dir, &catalog_id, config.thumb_cap_bytes, thumb_events)
+        let thumbs = pg_library::open_thumbs(&config.catalog_dir, &catalog_id, config.thumb_cap_bytes, thumb_events)
             .unwrap_or_else(|e| {
                 notes
                     .publish(Note::Thumbs(pg_thumbcache::Event::NotStored { error: format!("cache disabled: {e:#}") }));
@@ -164,6 +162,7 @@ mod tests {
     use crate::catalogs::path_of;
     use crate::error::Error;
     use pg_model::ids::FileId;
+    use pg_model::rules::PathRules;
 
     // A catalog path becomes the exact system path, a name with no UTF-8 form included.
     #[test]

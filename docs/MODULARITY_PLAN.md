@@ -182,6 +182,8 @@ The command line does not use `pg-app`, and should not. `run_command` opens one 
 
 Gate: Linux checks, Windows `just test`.
 
+- **Result (committed in the M-4b commit; not yet validated, see the end of the plan):** `pg_library` has `catalog_path`, `open_catalog` and `open_thumbs`. `App::open`, `Config::catalog_path` and the command line's four production sites call them. `cli` keeps its `Catalog` import for its helpers, and it still does not depend on `pg-app`. Its tests keep their direct calls. The README now describes `app` as the layer the window uses.
+
 ### M-5: group C
 
 `filters::count` (the saturating `i64` to `i32`) has two callers: `facet_choices::rows`, and `filters`'s `apply_facets`. Move `count` into `facet_choices`, which owns the `Counts` type it serves. Then `facet_choices` no longer depends on `filters`. `filters` imports `count` from `facet_choices`, which is the edge it already has (`Counts`, `set_counts`). In `rows`, the closure's binding `count` is renamed `shown`, so it does not shadow the function.

@@ -39,7 +39,7 @@ impl Config {
 
     /// The catalog's database file.
     pub fn catalog_path(&self) -> PathBuf {
-        self.catalog_dir.join("catalog.sqlite")
+        pg_library::catalog_path(&self.catalog_dir)
     }
 
     /// The configuration of everything under one `home` folder, as the defaults give it (for tests and scratch runs).

@@ -288,8 +288,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     // Before the match below moves out of `cli.command`: the data folders are read from the whole `cli`.
     let layout = cli.layout()?;
     let catalog_dir = layout.catalog_dir().to_path_buf();
-    let catalog_path = catalog_dir.join("catalog.sqlite");
-    let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE)?;
+    let catalog_path = layout.catalog_path();
+    let mut catalog = pg_library::open_catalog(&catalog_dir)?;
     report_rebuilt(&catalog);
     let rules = catalog.rules();
     let start = Instant::now();
@@ -340,7 +340,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision 7).
                 if !s.replaced_ids.is_empty() {
                     let (events, printer) = thumb_events();
-                    let cache = ThumbCache::open(&catalog_dir, &catalog.catalog_id()?, None, events)?;
+                    let cache = pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, None, events)?;
                     for id in &s.replaced_ids {
                         if let Err(e) = cache.forget(*id) {
                             println!("{name}: a replaced file's thumbnail wasn't deleted: {e:#}");
@@ -411,7 +411,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
             let (events, printer) = thumb_events();
-            let cache = ThumbCache::open(&catalog_dir, &catalog.catalog_id()?, cap, events)?;
+            let cache = pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, cap, events)?;
             let s = pg_thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
             println!(
@@ -477,7 +477,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // The cache is leaked, so its events print until the process ends.
             let (events, _printer) = thumb_events();
             let cache: &'static ThumbCache =
-                Box::leak(Box::new(ThumbCache::open(&catalog_dir, &catalog.catalog_id()?, None, events)?));
+                Box::leak(Box::new(pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, None, events)?));
             let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)))?;
             writer.wake();
             wait_for_writes(&writer, &catalog)?;

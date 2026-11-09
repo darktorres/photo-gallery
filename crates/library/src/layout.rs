@@ -64,9 +64,9 @@ impl Layout {
         &self.catalog_dir
     }
 
-    /// The catalog's database file.
+    /// The catalog's database file ([`crate::catalog_path`] of the catalog folder).
     pub fn catalog_path(&self) -> PathBuf {
-        self.catalog_dir.join("catalog.sqlite")
+        crate::catalog_path(&self.catalog_dir)
     }
 
     /// The preferences file.

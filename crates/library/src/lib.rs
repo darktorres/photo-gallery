@@ -12,6 +12,28 @@ pub mod dups;
 pub mod layout;
 pub mod runner;
 
+/// The path of the catalog file in the catalog folder `dir`.
+pub fn catalog_path(dir: &std::path::Path) -> std::path::PathBuf {
+    dir.join("catalog.sqlite")
+}
+
+/// The catalog in the folder `dir`, prepared for this build (`Catalog::prepare` with [`versions`], under the native rules).
+/// A catalog this build can't use is moved aside and rebuilt; [`pg_catalog::Catalog::rebuilt`] says so.
+pub fn open_catalog(dir: &std::path::Path) -> pg_catalog::Result<pg_catalog::Catalog> {
+    pg_catalog::Catalog::prepare(&catalog_path(dir), versions(), pg_model::rules::PathRules::NATIVE)
+}
+
+/// The thumbnail cache of the catalog `catalog_id`, in the folder `dir`, holding at most `cap` bytes (`None`: the cache's
+/// own cap). Its events go to `events`.
+pub fn open_thumbs(
+    dir: &std::path::Path,
+    catalog_id: &str,
+    cap: Option<i64>,
+    events: std::sync::Arc<pg_jobs::events::Bus<pg_thumbcache::Event>>,
+) -> anyhow::Result<pg_thumbcache::ThumbCache> {
+    pg_thumbcache::ThumbCache::open(dir, catalog_id, cap, events)
+}
+
 /// The versions of the analyses this build makes, for `Catalog::prepare`: the library passes them when it prepares a
 /// catalog for writing.
 pub fn versions() -> pg_catalog::Versions {

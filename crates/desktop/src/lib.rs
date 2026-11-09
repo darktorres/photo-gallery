@@ -56,9 +56,15 @@ pub fn run(args: &[OsString]) -> i32 {
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
     let mut gpu: cxx::UniquePtr<gpu_device::ffi::GpuDevice>;
-    // The catalog folder and the preferences file, from the environment.
-    let mut config = pg_app::Config::from_env();
-    panic_log::install(config.catalog_dir.parent().unwrap_or(&config.catalog_dir).join("gallery.log"));
+    // The data folders, from the environment: no folder to keep the data in is an error the window can show, since it
+    // is shown before the log exists.
+    let mut config = match pg_app::Config::from_env() {
+        Ok(config) => config,
+        Err(e) => fatal(&e),
+    };
+    panic_log::install(config.log_path.clone());
+    // The log is appended to, so this line starts each run's part of it: where the data is.
+    log::note(&format!("data folder: {}", config.home.display()));
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap_bytes =

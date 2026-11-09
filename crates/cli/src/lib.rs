@@ -34,7 +34,7 @@ use pg_writeback::Writer;
 #[derive(Parser)]
 #[command(name = "gallery", version, about = "Photo gallery. Without a command, opens the app.")]
 struct Cli {
-    /// Folder holding catalog.sqlite and the thumbnail cache (default: `%LOCALAPPDATA%\PhotoGallery\catalog`).
+    /// Folder holding catalog.sqlite and the thumbnail cache (default: the data folder's `catalog`, see `pg_library::layout`).
     // Named explicitly: the field is `catalog_dir_arg`, and the flag is `--catalog-dir` (README, the screenshot script).
     #[arg(long = "catalog-dir", env = "PG_CATALOG_DIR")]
     catalog_dir_arg: Option<PathBuf>,
@@ -43,9 +43,10 @@ struct Cli {
 }
 
 impl Cli {
-    /// The catalog folder: the one given, else the default.
-    fn catalog_dir(&self) -> PathBuf {
-        self.catalog_dir_arg.clone().unwrap_or_else(pg_library::default_catalog_dir)
+    /// The data folders: the catalog folder the flag gives, else the environment's and the default (`pg_library::layout`).
+    fn layout(&self) -> Result<pg_library::layout::Layout> {
+        pg_library::layout::Layout::resolve(|name| std::env::var_os(name), self.catalog_dir_arg.clone())
+            .map_err(anyhow::Error::msg)
     }
 }
 
@@ -224,7 +225,7 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     {
         return borders_outside(paths, csv.as_deref(), *stdin, pipeline);
     }
-    std::fs::create_dir_all(cli.catalog_dir())?;
+    std::fs::create_dir_all(cli.layout()?.catalog_dir())?;
     with_progress(|ctl| run_command(cli, ctl))
 }
 
@@ -284,8 +285,9 @@ fn rule_path_of(rules: PathRules, path: &Path) -> Result<RulePath> {
 }
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
-    // Before the match below moves out of `cli.command`: the catalog folder is read from the whole `cli`.
-    let catalog_dir = cli.catalog_dir();
+    // Before the match below moves out of `cli.command`: the data folders are read from the whole `cli`.
+    let layout = cli.layout()?;
+    let catalog_dir = layout.catalog_dir().to_path_buf();
     let catalog_path = catalog_dir.join("catalog.sqlite");
     let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE)?;
     report_rebuilt(&catalog);
@@ -447,6 +449,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             }
         }
         Command::Status => {
+            println!("data folder: {}", layout.home().display());
             for root in catalog.roots()? {
                 println!("library: {}", rules.display(&root.path));
             }
@@ -587,7 +590,7 @@ mod tests {
     #[test]
     fn the_catalog_flag_is_catalog_dir() {
         let cli = Cli::try_parse_from(["gallery", "--catalog-dir", "X", "status"]).unwrap();
-        assert_eq!(cli.catalog_dir(), PathBuf::from("X"));
+        assert_eq!(cli.layout().unwrap().catalog_dir(), std::path::Path::new("X"));
     }
 
     /// The writer panics outside a job (where it reads the queue), so its thread ends with a write still queued:

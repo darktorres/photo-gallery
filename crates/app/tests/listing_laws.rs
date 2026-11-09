@@ -50,11 +50,7 @@ proptest! {
         exts in prop::collection::vec("[a-z]{1,4}", 0..3),
     ) {
         let dir = fresh_dir();
-        let app = App::open(Config {
-            catalog_dir: dir.join("catalog"),
-            prefs_path: dir.join("gallery.json"),
-            thumb_cap_bytes: None,
-        })
+        let app = App::open(Config::in_home(&dir))
         .unwrap();
         let mut read = Vec::new();
         for key in SortKey::iter() {

@@ -1,34 +1,49 @@
-//! What the app is opened with: the catalog folder, the preferences file and the thumbnail cache's cap. The environment
-//! is read here, once (`from_env`); the owner may change a field before the app is opened.
+//! What the app is opened with: the data folders (`pg_library::layout::Layout`) and the thumbnail cache's cap. The
+//! environment is read here, once (`from_env`); the owner may change a field before the app is opened.
 
 use std::path::{Path, PathBuf};
 
+use pg_library::layout::Layout;
+
 #[derive(Clone, Debug)]
 pub struct Config {
+    /// The folder the data is under (`PG_HOME`, or the default), shown at startup.
+    pub home: PathBuf,
     /// The catalog folder: `catalog.sqlite`, and the thumbnail cache beside it.
     pub catalog_dir: PathBuf,
     /// The preferences (`gallery.json`).
     pub prefs_path: PathBuf,
+    /// The app's log (`gallery.log`).
+    pub log_path: PathBuf,
     /// The thumbnail cache's cap in bytes; `None` keeps the cap the cache has.
     pub thumb_cap_bytes: Option<i64>,
 }
 
 impl Config {
-    /// The configuration from `PG_CATALOG_DIR` (default: `pg_library::default_catalog_dir`) and `PG_PREFS` (default:
-    /// `gallery.json` beside the catalog folder, outside it, so the preferences outlive a catalog rebuild).
-    pub fn from_env() -> Config {
-        let catalog_dir =
-            std::env::var_os("PG_CATALOG_DIR").map_or_else(pg_library::default_catalog_dir, PathBuf::from);
-        let prefs_path = std::env::var_os("PG_PREFS").map_or_else(|| default_prefs(&catalog_dir), PathBuf::from);
-        Config { catalog_dir, prefs_path, thumb_cap_bytes: None }
+    /// The configuration of the environment (`PG_HOME`, `PG_CATALOG_DIR`, `PG_PREFS`, and the platform's default folder).
+    /// An error when no folder can be found for the data.
+    pub fn from_env() -> Result<Config, String> {
+        Ok(Config::from_layout(&Layout::resolve(|name| std::env::var_os(name), None)?))
+    }
+
+    /// The configuration of a resolved layout, with the thumbnail cache's cap unset.
+    pub fn from_layout(layout: &Layout) -> Config {
+        Config {
+            home: layout.home().to_path_buf(),
+            catalog_dir: layout.catalog_dir().to_path_buf(),
+            prefs_path: layout.prefs().to_path_buf(),
+            log_path: layout.log().to_path_buf(),
+            thumb_cap_bytes: None,
+        }
     }
 
     /// The catalog's database file.
     pub fn catalog_path(&self) -> PathBuf {
         self.catalog_dir.join("catalog.sqlite")
     }
-}
 
-fn default_prefs(catalog_dir: &Path) -> PathBuf {
-    catalog_dir.parent().unwrap_or(catalog_dir).join("gallery.json")
+    /// The configuration of everything under one `home` folder, as the defaults give it (for tests and scratch runs).
+    pub fn in_home(home: &Path) -> Config {
+        Config::from_layout(&Layout::in_home(home))
+    }
 }

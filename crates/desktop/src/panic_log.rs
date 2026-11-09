@@ -1,6 +1,6 @@
 //! Panics in the app. A GUI program has no console, so the default hook's message goes nowhere: a panic on the
 //! UI thread or in an image provider (where it aborts: it can't unwind into Qt) closes the window without a word.
-//! The hook appends the message and a backtrace to `gallery.log` beside the catalog folder (with `gallery.json`), through
+//! The hook appends the message and a backtrace to `gallery.log` in the data folder (`pg_library::layout`, with `gallery.json`), through
 //! `log`. A panic that ends the process also shows a box with where the log is. A panic that the background work catches
 //! is only logged: its caller reports it in the status line, and the app goes on.
 //!

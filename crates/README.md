@@ -177,10 +177,15 @@ viewer gets the shown item's values as properties. Text and numbers come typed f
 
 ## Run
 
-The catalog lives in `%LOCALAPPDATA%\PhotoGallery\catalog` (`PG_CATALOG_DIR`, which `.env` sets for `just run` and `just dev`,
-or `--catalog-dir` on the command line, to change it). The app's preferences (write-back, Real Size, borders, row height, the last file selected) are in `gallery.json`
-beside the catalog folder (`%LOCALAPPDATA%\PhotoGallery\gallery.json`; `PG_PREFS` to change it), so they survive rebuilding the
-catalog. Saved views and where you were (folder, subfolders, filters, sort) are in the catalog.
+The data folder (its home) is `PG_HOME` when set. Otherwise it is the parent of the catalog folder, when one is given:
+`PG_CATALOG_DIR` (which `.env` sets for `just run` and `just dev` on Windows) or `--catalog-dir` on the command line.
+Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows, and `$XDG_DATA_HOME/photo-gallery`
+(`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and the
+thumbnail cache), `gallery.json` and `gallery.log`. `PG_PREFS` moves the preferences file alone. The app writes the
+data folder to `gallery.log` at each start, and `gallery status` prints it. The app's preferences (write-back, Real Size,
+borders, row height, the last file selected) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and
+where you were (folder, subfolders, filters, sort) are in the catalog. Each of these is resolved in one place,
+`crates/library/src/layout.rs`; for now they share the home folder.
 
 The catalog schema is a baseline (version 1) and the migrations after it (`MIGRATIONS` in
 `crates/catalog/src/schema.rs`; version 2 adds the change stamps for borders). The baseline is frozen: every schema
@@ -197,7 +202,7 @@ Run `.\target\release\gallery.exe` and add folders with **Library…**. The app 
 makes thumbnails in the background, with progress and a Pause button in the bottom bar. Background work runs
 below normal priority (thumbnails at idle), so the window and the thumbnails on screen come first. Quitting at
 any point is safe: the next start finishes what's pending. An internal error (a Rust panic) shows a message and
-appends its details and backtrace to `gallery.log` beside the catalog folder (`%LOCALAPPDATA%\PhotoGallery\gallery.log` by default).
+appends its details and backtrace to `gallery.log` in the data folder (see Run above).
 
 The same passes on the command line, without the window (for scripts, profiling and checking results):
 

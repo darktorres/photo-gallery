@@ -223,12 +223,7 @@ mod tests {
         use pg_catalog::fixture::{self, File};
         use pg_model::ids::FolderId;
         let dir = pg_testkit::test_folder("scratch_app", "file-path").unwrap();
-        let app = App::open(Config {
-            catalog_dir: dir.join("catalog"),
-            prefs_path: dir.join("gallery.json"),
-            thumb_cap_bytes: None,
-        })
-        .unwrap();
+        let app = App::open(Config::in_home(&dir)).unwrap();
         let folder = if cfg!(windows) { r"D:\a" } else { "/a" };
         let name: &'static [u8] = b"x\xED\xA0\x80.jpg";
         app.with_catalog(|c| {

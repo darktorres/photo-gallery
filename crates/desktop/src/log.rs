@@ -1,4 +1,4 @@
-//! The app's log: `gallery.log` beside the catalog folder, for a problem a GUI program can't show on stderr (it has none).
+//! The app's log: `gallery.log` in the data folder, for a problem a GUI program can't show on stderr (it has none).
 //! `note` appends a line to it; the panic hook (`panic_log`) appends its reports with `append`. Before `init`, or when the
 //! log can't be written, a line goes to stderr instead: a message is never dropped, and a terminal still shows it.
 

@@ -176,7 +176,7 @@ Gate: Linux checks, Windows `just test`, `just shots` (the desktop's images come
 
 The command line does not use `pg-app`, and should not. `run_command` opens one mutable `Catalog`. `scan`, `thumbs` and `write` each open their own `ThumbCache` with the command's cap and a printer thread for its events; `write` leaks its cache so events print to the end. `App` keeps a connection pool, a keeper, a leaked cache, a reader and preferences. Bending both to one shape is worse. What the two share is how a catalog folder is opened.
 
-- **Add to `pg-library`:** `open_catalog(dir)` (`catalog.sqlite` in the folder, `versions()`, `PathRules::NATIVE`) and `open_thumbs(dir, catalog_id, cap, events)`. `versions()` and `default_catalog_dir()` already live there.
+- **Add to `pg-library`:** `open_catalog(dir)` (`catalog.sqlite` in the folder, `versions()`, `PathRules::NATIVE`) and `open_thumbs(dir, catalog_id, cap, events)`. `versions()` already lives there, and the data folders are `pg_library::layout::Layout` (which replaced `default_catalog_dir()`).
 - **Callers:** `App::open` and the four `cli` sites (`Catalog::prepare` in `run_command`; `ThumbCache::open` in the scan, thumbs and write commands) call them. `cli` keeps its control flow and does not depend on `pg-app`.
 - **README.** `crates/README.md` calls `app` "the UI-free application layer the front ends share", which is false for the command line. Change it to: "the application layer the window uses; the command line drives the passes directly through `pg-library`".
 
@@ -406,7 +406,7 @@ Gate: Linux checks, Windows `just test`. `cargo tree -d` must show no duplicate 
 - **Dependencies removed.** The split removes four dependencies from `pg-library`: `edit`, `exiftool`, `writeback` (with `crop`, which moves to `pg-crop`), and `pg-dedup` (with `dups`).
 - **New crates.** `pg-crop` (`crop.rs`, 323 lines) and `pg-borders` (`borders.rs`, 83 lines). The runner (`crop::save`, `borders::find`) depends on both. `cli` and the tests name `pg-borders` and `pg-crop` directly.
 - **Tests stay in `pg-library`.** Five integration test files exercise the two passes: `tests/borders.rs`, `tests/crop.rs`, `tests/crop_roots.rs`, `tests/crop_folders.rs` and `tests/crop_tags.rs` (the last is new and untracked). All of them call `pg_library::versions()` to prepare a catalog. Moved into the new crates, they would dev-depend on `pg-library`, which depends on the new crates: the dev-dependency cycle M-14 and M-16 forbid. So they stay in `pg-library/tests` and import `pg_crop::` and `pg_borders::`. The new crates keep only unit tests that need no catalog.
-- **What remains.** `pg-library` is `runner.rs` (519 lines) and `lib.rs`, plus `versions()`, `default_catalog_dir()` and M-4b's open functions. It keeps the `pg-writeback` `fault` dev-dependency and the codec, metadata, render and video dev-dependencies for the tests that remain.
+- **What remains.** `pg-library` is `runner.rs` (519 lines) and `lib.rs`, plus `versions()`, `layout` (which replaced `default_catalog_dir()`) and M-4b's open functions. It keeps the `pg-writeback` `fault` dev-dependency and the codec, metadata, render and video dev-dependencies for the tests that remain.
 - **Stale comment.** `pg-library`'s `Cargo.toml` says the passes are re-exported there under their old names. `lib.rs` re-exports nothing, and no caller uses those paths. Fix the comment in this step.
 
 Gate: Linux and Windows checks.

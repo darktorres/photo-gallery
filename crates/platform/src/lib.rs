@@ -6,6 +6,7 @@
 
 pub mod clock;
 pub mod dir;
+pub mod dirs;
 pub mod file;
 pub mod message;
 pub mod names;

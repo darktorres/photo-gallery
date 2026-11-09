@@ -9,14 +9,8 @@
 pub mod borders;
 pub mod crop;
 pub mod dups;
+pub mod layout;
 pub mod runner;
-
-/// The catalog folder when none is given: `PhotoGallery\catalog` under the user's local app data folder
-/// (`%LOCALAPPDATA%`), which is per user and on the system drive. `PG_CATALOG_DIR` and `--catalog-dir` override it.
-pub fn default_catalog_dir() -> std::path::PathBuf {
-    let local = std::env::var_os("LOCALAPPDATA").map_or_else(std::env::temp_dir, std::path::PathBuf::from);
-    local.join("PhotoGallery").join("catalog")
-}
 
 /// The versions of the analyses this build makes, for `Catalog::prepare`: the library passes them when it prepares a
 /// catalog for writing.

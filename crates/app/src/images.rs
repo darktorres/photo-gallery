@@ -371,12 +371,7 @@ mod tests {
     #[test]
     fn an_original_that_is_gone_is_error_original() {
         let dir = pg_testkit::test_folder("scratch_app", "original-gone").unwrap();
-        let app = App::open(Config {
-            catalog_dir: dir.join("catalog"),
-            prefs_path: dir.join("gallery.json"),
-            thumb_cap_bytes: None,
-        })
-        .unwrap();
+        let app = App::open(Config::in_home(&dir)).unwrap();
         let folder = if cfg!(windows) { r"D:\pg-test-no-such-folder" } else { "/pg-test-no-such-folder" };
         app.with_catalog(|c| {
             fixture::state::add_scan(c, 1, folder).unwrap();

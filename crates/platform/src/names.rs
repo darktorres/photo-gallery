@@ -231,6 +231,7 @@ mod stored_case_tests {
     use super::*;
 
     /// A fresh folder for one test under the test base (`PG_TEST_DIR`, else the temp folder).
+    #[expect(clippy::unwrap_used, reason = "a test helper: a folder that cannot be made fails the test")]
     fn fresh(test: &str) -> PathBuf {
         let base = std::env::var_os("PG_TEST_DIR")
             .map(PathBuf::from)

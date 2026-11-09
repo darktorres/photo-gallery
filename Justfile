@@ -12,21 +12,17 @@ ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild
 ffmpeg_sha256 := "7c09a4c6bd73a5013963f06b1c6175326605cbc2585444ebe0f740ef4f35b4c9"
 
 # The Python the Linux launcher (tools/linux.py) runs under, on this machine (`just shots` and the lint use it too).
-py := env('PG_PYTHON', 'python')
+py := env('PG_PYTHON', if os() == "windows" { "python" } else { "python3" })
 
 # Qt's kit folder (QT_DIR, Qt 6.12.0 msvc2022_64). Its bin goes on PATH for every recipe: cxx-qt-build finds qmake there,
 # and the tests of the desktop crate need Qt's DLLs. Recipes that link Qt depend on `_qt`, which fails when it is unset.
 qt := env('QT_DIR', '')
-export PATH := if qt == '' { env('PATH') } else { qt + '/bin;' + env('PATH') }
+path_sep := if os() == "windows" { ";" } else { ":" }
+export PATH := if qt == '' { env('PATH') } else { qt + '/bin' + path_sep + env('PATH') }
 
 [private]
 default:
     @just --list
-
-# Fails with the fix when QT_DIR is missing or has no qmake.
-[private]
-_qt:
-    @if (-not $env:QT_DIR) { throw 'QT_DIR is not set: put the Qt kit folder in .env (QT_DIR=C:/Qt/6.12.0/msvc2022_64)' }; if (-not (Test-Path "$env:QT_DIR/bin/qmake.exe")) { throw "no qmake.exe in $env:QT_DIR/bin: QT_DIR must be the Qt 6.12.0 msvc2022_64 kit" }
 
 # The pinned FFmpeg (the two values above) is downloaded once, checked against its SHA-256, and unpacked to .deps/ffmpeg.
 # To move to another pin, delete .deps/ffmpeg and change the two values.
@@ -74,9 +70,8 @@ fmt:
     cargo fmt --all
     ruff format .
 
-# The lint tools' versions. CI installs the same ones (.github/workflows/ci.yml, and pip and npm in its Linux job): bump both.
-ruff_version := "0.17.3"
-markdownlint_version := "0.50.0"
+# The lint tools' versions. ruff and markdownlint are pinned in tools/lint (their lockfiles, which CI installs from);
+# cargo-deny and cargo-machete are pinned here, and CI's install step names the same two.
 cargo_deny_version := "0.20.2"
 cargo_machete_version := "0.9.2"
 
@@ -88,29 +83,28 @@ qt_linux_version := "6.12.0"
 # The aqtinstall commit that installs Qt for Linux, as CI's jurplel/install-qt-action pins it for the Windows job.
 aqtinstall_commit := "076e1659807d0b362a3ed684d54c2e9c775eb9c7"
 
-# Fails when a lint tool is not the version above (tools/check-lint-tools.ps1).
+# ruff goes in `.venv` and markdownlint in `tools/lint/node_modules` (both git-ignored), so other projects on this machine
+# keep their own versions. Run it once, and again after a pin changes.
+
+# Installs ruff and markdownlint at their pinned versions, inside the repository (tools/check_lint_tools.py --install).
+lint-tools-setup:
+    {{ py }} tools/check_lint_tools.py --install
+
+# Fails with the fix when QT_DIR is missing or has no qmake (tools/check_qt.py).
+[private]
+_qt:
+    {{ py }} tools/check_qt.py
+
+# Fails when a lint tool is not the version CI uses, in the repository (`just lint-tools-setup`) or on PATH.
 [private]
 _lint-tools:
-    pwsh -NoLogo -NoProfile -File tools/check-lint-tools.ps1 -Ruff {{ ruff_version }} -Markdownlint {{ markdownlint_version }} -CargoDeny {{ cargo_deny_version }} -CargoMachete {{ cargo_machete_version }}
+    {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }}
 
-# Every check: formatting, clippy, dependencies (cargo-deny, cargo-machete), the Python, the Markdown and the QML.
 # cargo-machete reads only our crates: vendor/ keeps the upstream's lints (vendor/README.md).
-lint: _qt _lint-tools && lint-qml
-    cargo fmt --all --check
-    cargo clippy --workspace --all-targets --locked --timings -- -D warnings
-    cargo check -p pg-model -p pg-client --locked --target wasm32-unknown-unknown
-    $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --no-deps --document-private-items --locked --timings
-    cargo deny check
-    cargo machete crates
-    ruff format --check .
-    ruff check .
-    markdownlint "**/*.md"
 
-# The checks only Windows can run, for CI's Windows job: clippy and the docs over the code that compiles only there
-# (cfg(windows): gallery, platform, desktop), and the QML. The other checks of `lint` run once, in CI's Linux job.
-lint-windows: _qt && lint-qml
-    cargo clippy --workspace --all-targets --locked --timings -- -D warnings
-    $env:RUSTDOCFLAGS = "-D warnings"; cargo doc --workspace --no-deps --document-private-items --locked --timings
+# Every check: formatting, clippy, dependencies, the Python, the Markdown and the QML (tools/lint.py, every OS).
+lint: _qt _lint-tools && lint-qml
+    {{ py }} tools/lint.py
 
 # The module-cycle check (docs/MODULARITY_PLAN.md, M-0): the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the
@@ -171,7 +165,6 @@ linux-bench *args:
 linux-shell:
     {{ py }} tools/linux.py shell
 
-# qmllint and the QML compiler on the QML, failing on any warning or anything not compiled to C++. Uses the
-# pg.gallery types of the last build, so build first.
+# qmllint and the QML compiler on the QML, failing on any warning (tools/lint_qml.py, every OS; build first).
 lint-qml: _qt
-    pwsh -NoLogo -NoProfile -File tools/lint-qml.ps1
+    {{ py }} tools/lint_qml.py

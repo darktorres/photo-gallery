@@ -2,3 +2,5 @@
 target/
 # Playwright MCP session output, not project docs.
 .playwright-mcp/
+# The lint tools' installed packages (tools/lint, `npm ci`): their READMEs are not the project's docs.
+node_modules/

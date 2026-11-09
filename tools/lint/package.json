@@ -1,0 +1,8 @@
+{
+  "name": "photo-gallery-lint-tools",
+  "private": true,
+  "description": "The Markdown lint's tool: markdownlint-cli at CI's pin. `npm ci` in this folder installs it from package-lock.json.",
+  "dependencies": {
+    "markdownlint-cli": "0.50.0"
+  }
+}

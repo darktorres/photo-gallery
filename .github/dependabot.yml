@@ -2,10 +2,11 @@
 #   - the actions in .github/workflows: the commit each one is pinned to, and the tag named in its comment;
 #   - the crates.io crates of each Cargo workspace: the app (the root), and the two outside it (eval/jpeg-decoders and
 #     fuzz, each with its own Cargo.lock);
-#   - the Python packages in tools/shots/requirements.txt.
+#   - the Python packages in tools/shots/requirements.txt, and the lint tools in tools/lint (ruff, with its hashes, and
+#     markdownlint-cli, with its lockfile).
 # Minor and patch updates of a workspace come as one pull request. Not covered: the git-sourced forks in the root
-# Cargo.toml's [patch] (fork-updates.yml reports them, vendor/README.md), the Qt, FFmpeg and ExifTool versions and the
-# markdownlint-cli version in ci.yml, and eval/ (it has no manifest).
+# Cargo.toml's [patch] (fork-updates.yml reports them, vendor/README.md), the Qt, FFmpeg and ExifTool versions in
+# ci.yml, and eval/ (it has no manifest).
 version: 2
 updates:
   - package-ecosystem: github-actions
@@ -48,3 +49,13 @@ updates:
       minor-and-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+
+  - package-ecosystem: pip
+    directory: /tools/lint
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: npm
+    directory: /tools/lint
+    schedule:
+      interval: weekly

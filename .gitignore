@@ -23,3 +23,6 @@ aqtinstall.log
 # Claude Code's per-user settings and its scheduled-task lock (the shared .claude/ files stay tracked).
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
+# The lint tools at their pins (`just lint-tools-setup`): ruff in a venv, markdownlint in tools/lint's node_modules.
+/.venv/
+/tools/lint/node_modules/

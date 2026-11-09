@@ -7,8 +7,6 @@
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS base
 
 ARG JUST_VERSION
-ARG RUFF_VERSION
-ARG MARKDOWNLINT_VERSION
 ARG CARGO_DENY_VERSION
 ARG CARGO_MACHETE_VERSION
 ARG CARGO_MODULES_VERSION
@@ -29,7 +27,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     QMAKE=/opt/Qt/${QT_VERSION}/gcc_64/bin/qmake \
     LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib \
     FFMPEG_DIR=/opt/pg/ffmpeg \
-    PATH=/opt/lint/bin:/home/pg/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+    PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The system packages: the list CI installs (apt-packages.txt), the mold linker (CI's Linux job links with it), git (the
 # aqtinstall install below is from a git URL), nodejs and npm (markdownlint), and the venv module, its own package on
@@ -56,10 +54,12 @@ RUN python3 -m venv /opt/aqt \
  && /opt/aqt/bin/pip install --quiet "git+https://github.com/miurahr/aqtinstall.git@${AQTINSTALL_COMMIT}" \
  && /opt/aqt/bin/aqt install-qt --outputdir /opt/Qt linux desktop ${QT_VERSION} linux_gcc_64 --modules qtmultimedia
 
-# The Python and Markdown lint tools, at the versions the Justfile pins. Installed as root, read by every user.
+# The Python and Markdown lint tools, pinned in tools/lint: ruff by the hashes of its files (requirements.txt), and
+# markdownlint-cli by its lockfile (npm ci). Installed as root, read by every user.
+COPY tools/lint/requirements.txt tools/lint/package.json tools/lint/package-lock.json /opt/lint-src/
 RUN python3 -m venv /opt/lint \
- && /opt/lint/bin/pip install --quiet "ruff==${RUFF_VERSION}" \
- && npm install --global "markdownlint-cli@${MARKDOWNLINT_VERSION}"
+ && /opt/lint/bin/pip install --quiet --require-hashes -r /opt/lint-src/requirements.txt \
+ && npm ci --prefix /opt/lint-src --no-audit --no-fund
 
 # The directories the volumes are mounted on, owned by `pg`: a new named volume starts with its directory's owner.
 RUN install -d -o pg -g pg /cargo-target /home/pg/.cargo /home/pg/.cargo/registry /home/pg/.cargo/git /bench

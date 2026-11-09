@@ -6,4 +6,7 @@ docker/*
 !docker/apt-packages.txt
 !docker/apt-packages-bench.txt
 !docker/entrypoint.sh
+!tools/lint/requirements.txt
+!tools/lint/package.json
+!tools/lint/package-lock.json
 !rust-toolchain.toml

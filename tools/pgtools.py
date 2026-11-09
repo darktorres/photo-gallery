@@ -1,0 +1,75 @@
+"""What the repository's Python tools share: the repository's folder, the `.env` file (the Justfile loads it for recipes; a direct
+run reads it here), the lint tools at CI's pins (in `.venv` and `tools/lint`, else on PATH) and running a command. Standard
+library only, the same on every OS.
+"""
+
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+if sys.version_info < (3, 12):  # noqa: UP036 (the target is the floor; this guard is for an older Python)
+    sys.exit(
+        f"these tools need Python 3.12 or later (this is {sys.version.split()[0]}): install it, and set PG_PYTHON in .env "
+        "to its path"
+    )
+
+REPO = Path(__file__).resolve().parent.parent
+WINDOWS = os.name == "nt"
+_ENV_LINE = re.compile(r"^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$")
+
+
+def load_env_file() -> None:
+    """Sets the keys of the repository's `.env` that the environment does not set (a variable already set wins)."""
+    env_file = REPO / ".env"
+    if not env_file.is_file():
+        return
+    for line in env_file.read_text(encoding="utf-8").splitlines():
+        match = _ENV_LINE.match(line)
+        if match and match.group(1) not in os.environ:
+            os.environ[match.group(1)] = match.group(2)
+
+
+def venv_exe(name: str) -> Path:
+    """A program of the repository's `.venv` (its `Scripts` folder on Windows, `bin` elsewhere)."""
+    folder = "Scripts" if WINDOWS else "bin"
+    return REPO / ".venv" / folder / (name + ".exe" if WINDOWS else name)
+
+
+LINT_DIR = REPO / "tools" / "lint"
+
+
+def lint_pins() -> dict[str, str]:
+    """The versions CI installs, from the lockfiles: ruff (requirements.txt) and markdownlint-cli (package-lock.json)."""
+    pins = {}
+    for line in (LINT_DIR / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        match = re.match(r"^ruff==(\S+)", line)
+        if match:
+            pins["ruff"] = match.group(1)
+    lock = json.loads((LINT_DIR / "package-lock.json").read_text(encoding="utf-8"))
+    pins["markdownlint"] = lock["packages"]["node_modules/markdownlint-cli"]["version"]
+    if "ruff" not in pins:
+        sys.exit("tools/lint/requirements.txt pins no ruff version")
+    return pins
+
+
+def lint_tool(name: str) -> str | None:
+    """The lint tool `name`: ruff from `.venv`, markdownlint from `tools/lint`'s node_modules, else whichever is on PATH."""
+    if name == "ruff" and venv_exe("ruff").is_file():
+        return str(venv_exe("ruff"))
+    if name == "markdownlint":
+        local = LINT_DIR / "node_modules" / ".bin" / ("markdownlint.cmd" if WINDOWS else "markdownlint")
+        if local.is_file():
+            return str(local)
+    return shutil.which(name)
+
+
+def run(cmd: list[str], env: dict[str, str] | None = None) -> None:
+    """Runs `cmd` in the repository, printing it first; a failing command ends this program with its exit status."""
+    print("+ " + " ".join(cmd), flush=True)
+    result = subprocess.run(cmd, cwd=REPO, env=env, check=False)
+    if result.returncode != 0:
+        sys.exit(result.returncode)

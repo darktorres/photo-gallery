@@ -75,7 +75,7 @@ jobs:
       - uses: taiki-e/install-action@c509219cf42fba86913069efd0ade2458c59337b # v2
         with:
           # Pinned: a new release of these can change what the lint reports. `just lint` checks the same versions.
-          tool: just@1.59.0
+          tool: just@1.59.0,cargo-deny@0.20.2,cargo-machete@0.9.2
 
       - name: "Qt ${{ env.QT_VERSION }} (at QT_DIR, C:\\Qt\\6.12.0\\msvc2022_64)"
         uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4
@@ -150,9 +150,12 @@ jobs:
           # local tools' Python is (3.12.10).
           python-version: "3.12.10"
 
-      - name: Lint (clippy and the docs over the Windows-only code, and the QML)
-        # The rest of the lint (formatting, dependencies, Python, Markdown, wasm32) runs once, in the Linux job.
-        run: just lint-windows
+      # The lint tools at their pins (tools/lint, and `just lint-tools-setup`): the same ones the Linux job installs.
+      - name: Lint tools (ruff and markdownlint at their pins)
+        run: just lint-tools-setup
+
+      - name: Lint (every check, as on Linux, and the QML)
+        run: just lint
 
       - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
         shell: pwsh
@@ -303,9 +306,9 @@ jobs:
 
       - name: Python and Markdown
         run: |
-          # The versions the Justfile's lint checks for (its ruff_version and markdownlint_version); bump both together.
-          python -m pip install --quiet ruff==0.17.3
+          # The lint tools at their pins (tools/lint): ruff by the hashes of its files, markdownlint-cli by its lockfile.
+          python -m pip install --quiet --require-hashes -r tools/lint/requirements.txt
+          npm ci --prefix tools/lint --no-audit --no-fund
           ruff format --check .
           ruff check .
-          npm install --global markdownlint-cli@0.50.0
-          markdownlint "**/*.md"
+          tools/lint/node_modules/.bin/markdownlint "**/*.md"

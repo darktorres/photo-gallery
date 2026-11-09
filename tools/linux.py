@@ -30,8 +30,6 @@ TOOLS = "pg-tools"
 # The Justfile's variable behind each build argument of docker/Dockerfile.
 PINS = {
     "JUST_VERSION": "just_version",
-    "RUFF_VERSION": "ruff_version",
-    "MARKDOWNLINT_VERSION": "markdownlint_version",
     "CARGO_DENY_VERSION": "cargo_deny_version",
     "CARGO_MACHETE_VERSION": "cargo_machete_version",
     "CARGO_MODULES_VERSION": "cargo_modules_version",

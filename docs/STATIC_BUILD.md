@@ -218,8 +218,11 @@ the FFmpeg and Windows media backends, `qsvgicon`.
 `crates/desktop/src/gui_app.rs`, and the new `crates/desktop/cpp/static_qt.cpp`). To use the static build:
 
     git apply tools/static-qt/app-build.patch
+    git apply tools/static-qt/pg-video.patch
 
-and the commands below. Undo with `git apply -R` (or `git checkout -- crates/desktop`, when nothing else is changed there).
+and the commands below. The second patch makes pg-video link the static FFmpeg instead of loading the DLLs: with
+`PG_FFMPEG_STATIC` set, build.rs links the archives and skips the DLL copy, and ffi.rs points its function table at the
+linked functions. The build also needs `FFMPEG_DIR` set to the static FFmpeg's prefix (its headers). Undo with `git apply -R` (or `git checkout -- crates/desktop`, when nothing else is changed there).
 
 Build: `cargo build -p pg-gallery --bin gallery` with `PG_QT_STATIC=1`, `QT_DIR` = the static prefix,
 `PG_FFMPEG_STATIC` = the static FFmpeg's lib folder, `TURBOJPEG_*` (see the libjpeg section), and a separate

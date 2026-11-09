@@ -1,0 +1,224 @@
+diff --git a/crates/video/build.rs b/crates/video/build.rs
+index daaf0a4..a26c5f5 100644
+--- a/crates/video/build.rs
++++ b/crates/video/build.rs
+@@ -69,6 +69,19 @@ fn main() -> Result<(), String> {
+     }
+     generate_bindings(&include)?;
+ 
++    // The static build (PG_FFMPEG_STATIC, the static FFmpeg's lib folder; docs/STATIC_BUILD.md): FFmpeg is linked in, so
++    // there are no DLLs to copy or load. ffi.rs then points its functions at the linked ones (cfg pg_ffmpeg_static).
++    println!("cargo:rerun-if-env-changed=PG_FFMPEG_STATIC");
++    println!("cargo::rustc-check-cfg=cfg(pg_ffmpeg_static)");
++    if let Some(lib_dir) = std::env::var_os("PG_FFMPEG_STATIC") {
++        if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
++            return Err("PG_FFMPEG_STATIC is for the Windows static build only".into());
++        }
++        println!("cargo::rustc-cfg=pg_ffmpeg_static");
++        link_static(Path::new(&lib_dir));
++        return Ok(());
++    }
++
+     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows") {
+         let bin = dir.join("bin");
+         // Compiled in, so the loader can find the DLLs when no copy is beside the executable.
+@@ -79,6 +92,18 @@ fn main() -> Result<(), String> {
+     Ok(())
+ }
+ 
++/// The static FFmpeg's libraries (MSVC, built by tools/build-static-ffmpeg.ps1) from `lib_dir`, linked into pg-video.
++/// Its link needs these Windows libraries: FFmpeg's .pc files don't list them (docs/STATIC_BUILD.md).
++fn link_static(lib_dir: &Path) {
++    println!("cargo::rustc-link-search=native={}", lib_dir.display());
++    for lib in ["avcodec", "avformat", "avutil", "swresample", "swscale"] {
++        println!("cargo::rustc-link-lib=static={lib}");
++    }
++    for lib in ["user32", "bcrypt"] {
++        println!("cargo::rustc-link-lib={lib}");
++    }
++}
++
+ /// `OUT_DIR/ffmpeg.rs`: the types and constants from the headers.
+ fn generate_bindings(include: &Path) -> Result<(), String> {
+     let out = PathBuf::from(std::env::var_os("OUT_DIR").ok_or("OUT_DIR is not set: cargo sets it for build scripts")?);
+diff --git a/crates/video/src/ffi.rs b/crates/video/src/ffi.rs
+index b351e94..3d6b71a 100644
+--- a/crates/video/src/ffi.rs
++++ b/crates/video/src/ffi.rs
+@@ -25,7 +25,7 @@ use std::io::{Read, Seek, SeekFrom};
+ use std::marker::PhantomData;
+ use std::panic::{AssertUnwindSafe, catch_unwind};
+ use std::path::Path;
+-#[cfg(windows)]
++#[cfg(all(windows, not(pg_ffmpeg_static)))]
+ use std::path::PathBuf;
+ use std::ptr;
+ use std::sync::OnceLock;
+@@ -105,11 +105,18 @@ static API: OnceLock<Result<Api, String>> = OnceLock::new();
+ 
+ /// FFmpeg, loaded on first use. Its error says what is missing, and where it was looked for.
+ pub(crate) fn api() -> Result<&'static Api> {
+-    API.get_or_init(load).as_ref().map_err(|e| anyhow::anyhow!("{e}"))
++    // The static build (PG_FFMPEG_STATIC, build.rs) links FFmpeg, so its functions are there to point at; the others
++    // are looked up in the DLLs.
++    #[cfg(not(pg_ffmpeg_static))]
++    let loader = load;
++    #[cfg(pg_ffmpeg_static)]
++    let loader = linked;
++    API.get_or_init(loader).as_ref().map_err(|e| anyhow::anyhow!("{e}"))
+ }
+ 
+ /// The library names and major versions (from the headers), and the folders the Windows DLLs are looked for in: the
+ /// executable's own (a shipped app's), then the FFmpeg `bin` build.rs found (a build's, the tests').
++#[cfg(not(pg_ffmpeg_static))]
+ fn load() -> Result<Api, String> {
+     let avutil = Lib::open("avutil", generated_major_avutil())?;
+     let avcodec = Lib::open("avcodec", generated_major_avcodec())?;
+@@ -158,15 +165,119 @@ fn load() -> Result<Api, String> {
+     Ok(api)
+ }
+ 
++/// The functions of the static build: FFmpeg linked in (build.rs), so each table entry is the function itself, with the
++/// signature the same as in `Api`. No library is opened, so `_libs` is empty.
++#[cfg(pg_ffmpeg_static)]
++fn linked() -> Result<Api, String> {
++    // SAFETY: the declarations below are FFmpeg's functions, with the signatures of the `Api` fields (the headers the
++    // types come from); they are linked in by build.rs.
++    unsafe extern "C" {
++        fn av_log_set_level(level: c_int);
++        fn av_dict_get(
++            m: *const AVDictionary,
++            key: *const c_char,
++            prev: *const AVDictionaryEntry,
++            flags: c_int,
++        ) -> *mut AVDictionaryEntry;
++        fn av_frame_alloc() -> *mut AVFrame;
++        fn av_frame_free(frame: *mut *mut AVFrame);
++        fn av_frame_get_buffer(frame: *mut AVFrame, align: c_int) -> c_int;
++        fn av_strerror(errnum: c_int, errbuf: *mut c_char, errbuf_size: usize) -> c_int;
++        fn avformat_open_input(
++            ps: *mut *mut AVFormatContext,
++            url: *const c_char,
++            fmt: *const AVInputFormat,
++            options: *mut *mut AVDictionary,
++        ) -> c_int;
++        fn avformat_find_stream_info(ic: *mut AVFormatContext, options: *mut *mut AVDictionary) -> c_int;
++        fn avformat_close_input(s: *mut *mut AVFormatContext);
++        fn av_read_frame(s: *mut AVFormatContext, pkt: *mut AVPacket) -> c_int;
++        fn avformat_seek_file(s: *mut AVFormatContext, stream_index: c_int, min_ts: i64, ts: i64, max_ts: i64, flags: c_int) -> c_int;
++        fn av_find_best_stream(
++            ic: *mut AVFormatContext,
++            kind: AVMediaType,
++            wanted: c_int,
++            related: c_int,
++            decoder_ret: *mut *const AVCodec,
++            flags: c_int,
++        ) -> c_int;
++        fn avformat_alloc_context() -> *mut AVFormatContext;
++        fn avio_alloc_context(
++            buffer: *mut u8,
++            buffer_size: c_int,
++            write_flag: c_int,
++            opaque: *mut c_void,
++            read_packet: Option<ReadCallback>,
++            write_packet: Option<WriteCallback>,
++            seek: Option<SeekCallback>,
++        ) -> *mut AVIOContext;
++        fn avio_context_free(s: *mut *mut AVIOContext);
++        fn av_malloc(size: usize) -> *mut c_void;
++        fn av_free(ptr: *mut c_void);
++        fn av_packet_alloc() -> *mut AVPacket;
++        fn av_packet_free(pkt: *mut *mut AVPacket);
++        fn av_packet_unref(pkt: *mut AVPacket);
++        fn avcodec_find_decoder(id: AVCodecID) -> *const AVCodec;
++        fn avcodec_alloc_context3(codec: *const AVCodec) -> *mut AVCodecContext;
++        fn avcodec_free_context(avctx: *mut *mut AVCodecContext);
++        fn avcodec_parameters_to_context(codec: *mut AVCodecContext, par: *const AVCodecParameters) -> c_int;
++        fn avcodec_open2(avctx: *mut AVCodecContext, codec: *const AVCodec, options: *mut *mut AVDictionary) -> c_int;
++        fn avcodec_send_packet(avctx: *mut AVCodecContext, avpkt: *const AVPacket) -> c_int;
++        fn avcodec_receive_frame(avctx: *mut AVCodecContext, frame: *mut AVFrame) -> c_int;
++        fn avcodec_get_name(id: AVCodecID) -> *const c_char;
++        fn sws_alloc_context() -> *mut SwsContext;
++        fn sws_scale_frame(c: *mut SwsContext, dst: *mut AVFrame, src: *const AVFrame) -> c_int;
++        fn sws_free_context(swsContext: *mut *mut SwsContext);
++    }
++    Ok(Api {
++        av_log_set_level,
++        av_dict_get,
++        av_frame_alloc,
++        av_frame_free,
++        av_frame_get_buffer,
++        av_strerror,
++        avformat_open_input,
++        avformat_find_stream_info,
++        avformat_close_input,
++        av_read_frame,
++        avformat_seek_file,
++        av_find_best_stream,
++        avformat_alloc_context,
++        avio_alloc_context,
++        avio_context_free,
++        av_malloc,
++        av_free,
++        av_packet_alloc,
++        av_packet_free,
++        av_packet_unref,
++        avcodec_find_decoder,
++        avcodec_alloc_context3,
++        avcodec_free_context,
++        avcodec_parameters_to_context,
++        avcodec_open2,
++        avcodec_send_packet,
++        avcodec_receive_frame,
++        avcodec_get_name,
++        sws_alloc_context,
++        sws_scale_frame,
++        sws_free_context,
++        _libs: Vec::new(),
++    })
++}
++
++#[cfg(not(pg_ffmpeg_static))]
+ const fn generated_major_avutil() -> u32 {
+     LIBAVUTIL_VERSION_MAJOR
+ }
++#[cfg(not(pg_ffmpeg_static))]
+ const fn generated_major_avcodec() -> u32 {
+     LIBAVCODEC_VERSION_MAJOR
+ }
++#[cfg(not(pg_ffmpeg_static))]
+ const fn generated_major_avformat() -> u32 {
+     LIBAVFORMAT_VERSION_MAJOR
+ }
++#[cfg(not(pg_ffmpeg_static))]
+ const fn generated_major_swscale() -> u32 {
+     LIBSWSCALE_VERSION_MAJOR
+ }
+@@ -176,6 +287,7 @@ const fn generated_major_swscale() -> u32 {
+ /// # Safety
+ ///
+ /// `F` must be the C signature of the function `name` (`lib` must keep it loaded for as long as `F` is used).
++#[cfg(not(pg_ffmpeg_static))]
+ unsafe fn sym<F: Copy>(lib: &Library, name: &str) -> Result<F, String> {
+     let cname = CString::new(name).map_err(|e| e.to_string())?;
+     // SAFETY: the caller's contract: `F` matches the function, and `lib` outlives the pointer.
+@@ -183,8 +295,10 @@ unsafe fn sym<F: Copy>(lib: &Library, name: &str) -> Result<F, String> {
+ }
+ 
+ /// One of FFmpeg's libraries, open.
++#[cfg(not(pg_ffmpeg_static))]
+ struct Lib(Library);
+ 
++#[cfg(not(pg_ffmpeg_static))]
+ impl Lib {
+     /// The library `stem` of major version `major`: on Windows the DLL `stem-major.dll` in the first folder that has
+     /// it, opened by its full path; elsewhere the system's shared library, found by the system's own rules.
+@@ -219,7 +333,7 @@ impl Lib {
+ }
+ 
+ /// The folder with FFmpeg's DLLs: the executable's, else the `bin` build.rs found.
+-#[cfg(windows)]
++#[cfg(all(windows, not(pg_ffmpeg_static)))]
+ fn find_dir() -> Result<PathBuf, String> {
+     let probe = format!("avcodec-{LIBAVCODEC_VERSION_MAJOR}.dll");
+     let mut tried = Vec::new();

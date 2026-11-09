@@ -300,6 +300,20 @@ pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
     check_fs_type(f_type)
 }
 
+/// Whether a folder under a scanned root, on another device than the root's, may be walked into. On Linux a local root can
+/// hold a network or pseudo file system (`/proc` under `/`), so the mount is checked as the root is. On Windows a volume is
+/// a drive, which the root's check covers, and a junction is a reparse point the walk never follows.
+#[cfg(target_os = "linux")]
+pub fn check_mount(path: &[Unit]) -> Result<(), Refused> {
+    check_root(path)
+}
+
+/// On Windows a folder under the root is on the root's volume (see [`check_mount`]), so nothing is checked.
+#[cfg(not(target_os = "linux"))]
+pub fn check_mount(_path: &[Unit]) -> Result<(), Refused> {
+    Ok(())
+}
+
 /// Other systems are refused: the scanner's identities are checked on Windows and Linux only.
 #[cfg(all(unix, not(target_os = "linux")))]
 pub fn check_root(_path: &[Unit]) -> Result<(), Refused> {

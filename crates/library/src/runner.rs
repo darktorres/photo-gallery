@@ -95,6 +95,9 @@ pub enum Notice {
     ScanFailed { root: String, error: String },
     /// A folder the scanner refuses (decisions 6 and 13); it stays in the library until it is removed.
     RootRefused { root: String, reason: String },
+    /// A folder under a scanned root, on another file system, that the scanner refuses (a network or pseudo file system
+    /// mounted there). Its files are not in the scan; `mount` is the folder.
+    MountRefused { root: String, mount: String, reason: String },
     /// What a scan of a folder counted that the user may want to know, `count` of them (S-17.7 decision 12).
     ScanNote { root: String, note: ScanNote, count: u64 },
     /// A round that failed.
@@ -439,6 +442,13 @@ impl Pass<Cx<'_>> for Scans {
                     }
                     if s.errors > 0 {
                         cx.inner.notify(Notice::UnreadableFolders { root: root.clone(), count: s.errors });
+                    }
+                    for refused in &s.refused_mount_list {
+                        cx.inner.notify(Notice::MountRefused {
+                            root: root.clone(),
+                            mount: refused.path.clone(),
+                            reason: refused.error.clone(),
+                        });
                     }
                     let counts = [
                         (ScanNote::Duplicates, s.duplicates),

@@ -205,6 +205,10 @@ pub enum Message {
         root: String,
         reason: String,
     },
+    MountRefused {
+        mount: String,
+        reason: String,
+    },
     ScanNote {
         root: String,
         kind: String,
@@ -472,6 +476,7 @@ impl Message {
             Message::UnreadableFolders { .. } => "unreadable-folders",
             Message::ScanFailed { .. } => "scan-failed",
             Message::RootRefused { .. } => "root-refused",
+            Message::MountRefused { .. } => "mount-refused",
             Message::ScanNote { .. } => "scan-note",
             Message::RoundPanicked { .. } => "round-panicked",
             Message::FilePanicked { .. } => "file-panicked",
@@ -641,6 +646,10 @@ impl Message {
             }
             Message::RootRefused { root, reason } => {
                 a.set("root", root.as_str());
+                a.set("reason", reason.as_str());
+            }
+            Message::MountRefused { mount, reason } => {
+                a.set("mount", mount.as_str());
                 a.set("reason", reason.as_str());
             }
             Message::ScanNote { root, kind, count } => {
@@ -821,6 +830,7 @@ impl Message {
             Message::UnreadableFolders { root: s(), count: s() },
             Message::ScanFailed { root: s(), error: s() },
             Message::RootRefused { root: s(), reason: s() },
+            Message::MountRefused { mount: s(), reason: s() },
             Message::ScanNote { root: s(), kind: s(), count: s() },
             Message::RoundPanicked { message: s() },
             Message::FilePanicked { message: s() },
@@ -1247,6 +1257,11 @@ pub fn scan_failed(root: &str, error: &str) -> String {
 /// A folder in the library that the scanner refuses (not on a local NTFS disk, or on a network file system).
 pub fn root_refused(root: &str, reason: &str) -> String {
     render(&Message::RootRefused { root: root.to_string(), reason: reason.to_string() })
+}
+
+/// A folder under a scanned root that the scanner does not walk into, because its file system is refused.
+pub fn mount_refused(mount: &str, reason: &str) -> String {
+    render(&Message::MountRefused { mount: mount.to_string(), reason: reason.to_string() })
 }
 
 /// What a scan of a folder counted: `kind` is the note's kind (`duplicates`, `reparse`, `ambiguous`, `unpaired`,

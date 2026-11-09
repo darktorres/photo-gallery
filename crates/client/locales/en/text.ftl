@@ -103,6 +103,7 @@ write-dropped = { $count ->
 unreadable-folders = { $root }: { $count } folders couldn't be read
 scan-failed = { $root }: { $error }
 root-refused = { $root } is not scanned, because { $reason }. Remove it from the library to stop this notice.
+mount-refused = { $mount } is not scanned, because { $reason }. The files there stay as the library has them.
 scan-note = { $root }: { $kind ->
     [duplicates] { $count } files were skipped as duplicates (another path to the same file)
     [reparse] { $count } links or placeholders were indexed without being followed

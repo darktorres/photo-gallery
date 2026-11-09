@@ -179,6 +179,7 @@ fn notice_text(notice: &Notice) -> String {
         Notice::UnreadableFolders { root, count } => text::unreadable_folders(root, *count),
         Notice::ScanFailed { root, error } => text::scan_failed(root, error),
         Notice::RootRefused { root, reason } => text::root_refused(root, reason),
+        Notice::MountRefused { mount, reason, .. } => text::mount_refused(mount, reason),
         Notice::ScanNote { root, note, count } => text::scan_note(root, note.kind(), *count),
         Notice::RoundFailed { error } => text::round_failed(error),
         Notice::CropFailed { error } => text::crop_failed(error),

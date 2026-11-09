@@ -16,7 +16,7 @@
 //! paired at the end of the scan (`pg_catalog`'s `pair`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 use std::path::Path;
 
@@ -41,6 +41,8 @@ pub trait Listing {
     /// (Windows). An entry that carries its own volume (Unix) uses that instead.
     fn volume(&mut self, dir: &Self::Dir) -> io::Result<u64>;
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()>;
+    /// Whether the folder at `path`, on a device other than the root's, may be walked into: the reason it may not, if not.
+    fn check_mount(&mut self, path: &[Unit]) -> Result<(), String>;
 }
 
 impl Listing for Lister {
@@ -56,6 +58,10 @@ impl Listing for Lister {
 
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()> {
         Lister::each(self, dir, each)
+    }
+
+    fn check_mount(&mut self, path: &[Unit]) -> Result<(), String> {
+        pg_platform::dir::check_mount(path).map_err(|refused| refused.reason)
     }
 }
 
@@ -176,6 +182,11 @@ pub struct ScanStats {
     pub skipped_reparse: u64,
     /// Folders not descended into because they were already on the path (a bind-mount cycle, decision 11).
     pub loops: u64,
+    /// Folders under the root on another device whose file system is refused (a network or pseudo file system mounted under
+    /// a local root). Their files are not seen, so their rows are left as they are.
+    pub refused_mounts: u64,
+    /// The first of those folders, with the reason (`FAILURES_KEPT`).
+    pub refused_mount_list: Vec<Failure>,
     /// Rows that took the identity of a new row on another volume (pairing tiers 1 and 2).
     pub rebound: usize,
     /// Rows that took the identity of the file that replaced them (pairing's replacement).
@@ -210,6 +221,8 @@ struct Frame<D> {
     path: RulePath,
     chain: Vec<(u64, u64)>,
     dir: Option<D>,
+    /// The device the folder is on: a folder on another one is a mount, checked before it is walked into.
+    volume: u64,
 }
 
 /// The walk, over any listing: [`scan`] after its check.
@@ -220,10 +233,13 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     let root_volume = lister.volume(&root_dir)?;
     let scan_id = catalog.begin_scan(root)?;
     let mut stats = ScanStats::default();
-    let mut stack = vec![Frame { path: root.clone(), chain: Vec::new(), dir: Some(root_dir) }];
-    // The folders this scan didn't list: those it couldn't read, and the reparse folders it doesn't follow. The files
-    // under them weren't seen, so they aren't marked missing, and the pairing leaves them out.
+    let mut stack = vec![Frame { path: root.clone(), chain: Vec::new(), dir: Some(root_dir), volume: root_volume }];
+    // The folders this scan didn't list: those it couldn't read, the reparse folders it doesn't follow, and the mounts it
+    // refuses. The files under them weren't seen, so they aren't marked missing, and the pairing leaves them out.
     let mut skipped: Vec<RulePath> = Vec::new();
+    // The verdict on each device a folder under the root is on, by its first folder (the reason, if refused): one check
+    // per mount, not per folder.
+    let mut mounts: BTreeMap<u64, Result<(), String>> = BTreeMap::new();
     // Each identity recorded or seen this scan: the second path to a file is skipped (decision 5).
     let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
     let mut entries: Vec<DirEntry> = Vec::new();
@@ -288,9 +304,26 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                     stats.loops += 1;
                     continue;
                 }
+                let child = child_path(&frame.path, &e.name);
+                if e.volume != frame.volume {
+                    let verdict = match mounts.get(&e.volume) {
+                        Some(verdict) => verdict.clone(),
+                        None => {
+                            let verdict = lister.check_mount(&units_of(&rules.join(&child)));
+                            mounts.insert(e.volume, verdict.clone());
+                            verdict
+                        }
+                    };
+                    if let Err(reason) = verdict {
+                        stats.refused_mounts += 1;
+                        keep_failure(&mut stats.refused_mount_list, rules.display(&child), &reason);
+                        skipped.push(child);
+                        continue;
+                    }
+                }
                 let mut chain = frame.chain.clone();
                 chain.push(key);
-                stack.push(Frame { path: child_path(&frame.path, &e.name), chain, dir: None });
+                stack.push(Frame { path: child, chain, dir: None, volume: e.volume });
                 continue;
             };
             stats.files += 1;
@@ -409,6 +442,8 @@ mod tests {
     struct FakeListing {
         tree: Vec<(Vec<Unit>, Vec<FakeEntry>)>,
         root_volume: u64,
+        /// Folders (by their units) whose mount is refused.
+        refused: Vec<Vec<Unit>>,
     }
 
     impl FakeListing {
@@ -422,7 +457,13 @@ mod tests {
                 .iter()
                 .map(|(rel, entries)| (units_of(fake_path(rules, rel).as_bytes()), entries.clone()))
                 .collect();
-            FakeListing { tree, root_volume }
+            FakeListing { tree, root_volume, refused: Vec::new() }
+        }
+
+        /// The same tree, with the mount at `rel` (spelled under `rules`) refused by its file system.
+        fn refusing(mut self, rules: PathRules, rel: &str) -> FakeListing {
+            self.refused.push(units_of(fake_path(rules, rel).as_bytes()));
+            self
         }
     }
 
@@ -438,6 +479,13 @@ mod tests {
 
         fn volume(&mut self, _dir: &usize) -> io::Result<u64> {
             Ok(self.root_volume)
+        }
+
+        fn check_mount(&mut self, path: &[Unit]) -> Result<(), String> {
+            if self.refused.iter().any(|p| p == path) {
+                return Err("the test refuses it".to_string());
+            }
+            Ok(())
         }
 
         fn each(&mut self, dir: &usize, mut each: impl FnMut(Entry<'_>)) -> io::Result<()> {
@@ -622,6 +670,22 @@ mod tests {
         let stats = scan_fake(&mut c, &[("", vec![folder("loop", 20)]), ("loop", vec![folder("again", 20)])], 1);
         assert_eq!(stats.loops, 1);
         assert_eq!(stats.folders, 2);
+    }
+
+    #[test]
+    fn a_mount_refused_by_its_file_system_is_not_walked_and_its_rows_stay() {
+        // "mnt" is on another device (volume 2) under the root. It is walked on the first scan; the second refuses it, and
+        // then its file is neither walked nor marked missing (its folder was not seen, as an unreadable one is not).
+        let mut c = catalog();
+        let mnt = FakeEntry { name: "mnt", folder: true, reparse: false, file_id: 30, size: 0, volume: Some(2) };
+        let tree = [("", vec![file("a.jpg", 7, 1), mnt]), ("mnt", vec![file("m.jpg", 8, 1)])];
+        let first = walk(&mut c, &fake_root(), &Control::new(), &mut FakeListing::new(1, &tree)).unwrap();
+        assert_eq!((first.refused_mounts, c.status().unwrap().files), (0, 2));
+        let mut refusing = FakeListing::new(1, &tree).refusing(PathRules::NATIVE, "mnt");
+        let second = walk(&mut c, &fake_root(), &Control::new(), &mut refusing).unwrap();
+        assert_eq!(second.refused_mounts, 1);
+        assert!(second.refused_mount_list.first().is_some_and(|f| f.path.ends_with("mnt")));
+        assert_eq!((second.missing, c.status().unwrap().files), (0, 2));
     }
 
     #[test]

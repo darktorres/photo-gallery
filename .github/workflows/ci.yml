@@ -297,7 +297,7 @@ jobs:
           just qmltest
 
       - name: QML crash, on a QML failure only (backtrace from the core)
-        if: steps.qml.outcome == 'failure'
+        if: failure() && steps.qml.outcome == 'failure'
         run: |
           command -v gdb > /dev/null || { sudo apt-get update -qq && sudo apt-get install -y -qq gdb; }
           shopt -s nullglob
@@ -308,7 +308,7 @@ jobs:
           ls -la "$RUNNER_TEMP/cores"
 
       - name: Upload the QML core, on a QML failure only
-        if: steps.qml.outcome == 'failure'
+        if: failure() && steps.qml.outcome == 'failure'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
           name: qml-core-linux

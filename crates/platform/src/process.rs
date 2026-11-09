@@ -78,11 +78,14 @@ fn spawn_with_parent_death(cmd: &mut Command) -> io::Result<Child> {
     use std::os::unix::process::CommandExt;
     // SAFETY: getpid cannot fail.
     let parent = unsafe { libc::getpid() };
+    // prctl takes its option's argument as an unsigned long. A signal number is positive, so unsigned_abs is its value;
+    // the conversion is made here, not in the child.
+    let sigkill = libc::c_ulong::from(libc::SIGKILL.unsigned_abs());
     // SAFETY: the closure runs in the forked child before exec, where only async-signal-safe calls are allowed. prctl and
     // getppid are, and the closure does not allocate: its error is a raw OS error.
     unsafe {
         cmd.pre_exec(move || {
-            if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL as libc::c_ulong) != 0 {
+            if libc::prctl(libc::PR_SET_PDEATHSIG, sigkill) != 0 {
                 return Err(io::Error::last_os_error());
             }
             // The parent may have ended between the fork and the signal being set, when the signal could not fire. The
@@ -163,6 +166,7 @@ mod tests {
     /// The helper for the next test: starts a child and exits at once, without running destructors. It does nothing
     /// unless the test below runs it in a process of its own.
     #[test]
+    #[expect(clippy::exit, reason = "the helper must end without running destructors, which is what it tests")]
     fn spawn_helper() {
         if std::env::var_os("PG_PLATFORM_SPAWN_HELPER").is_none() {
             return;

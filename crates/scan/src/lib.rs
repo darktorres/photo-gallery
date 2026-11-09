@@ -65,13 +65,53 @@ impl Listing for Lister {
     }
 }
 
-/// Folders never descended into, by the rules they are under (their names compare ASCII case-insensitively). The
-/// NTFS system folders exist only on Windows, where the library runs them; a Posix library keeps every folder it lists.
-fn skip_dirs(rules: PathRules) -> &'static [&'static str] {
-    match rules {
-        PathRules::Windows => &["$RECYCLE.BIN", "System Volume Information", "_quarantine"],
-        PathRules::Posix => &[],
+/// A folder name the walk does not descend into.
+struct Skip {
+    /// The name, or its start when `prefix` is set (`.Trash-` matches `.Trash-1000`).
+    name: &'static str,
+    prefix: bool,
+    /// Whether ASCII case is ignored in the comparison (NTFS names are case-insensitive; Posix names are exact).
+    ignore_case: bool,
+}
+
+impl Skip {
+    fn matches(&self, name: &[u8]) -> bool {
+        let want = self.name.as_bytes();
+        let head = if self.prefix { name.get(..want.len()) } else { (name.len() == want.len()).then_some(name) };
+        head.is_some_and(|head| if self.ignore_case { head.eq_ignore_ascii_case(want) } else { head == want })
     }
+}
+
+/// Skipped under every rule set, without case: the NTFS system folders, which a drive Windows has used carries. Mounted on
+/// Linux, their deleted files would be walked as the library's.
+const SKIP_ANY: &[Skip] = &[
+    Skip { name: "$RECYCLE.BIN", prefix: false, ignore_case: true },
+    Skip { name: "System Volume Information", prefix: false, ignore_case: true },
+];
+
+/// Skipped on Windows, without case (NTFS names).
+const SKIP_WINDOWS: &[Skip] = &[Skip { name: "_quarantine", prefix: false, ignore_case: true }];
+
+/// Skipped on Posix, exactly: the trash, cache, thumbnail and system folders of the usual file managers and NAS systems
+/// (`Pics` and `pics` are different folders there).
+const SKIP_POSIX: &[Skip] = &[
+    Skip { name: "lost+found", prefix: false, ignore_case: false },
+    Skip { name: ".Trash", prefix: false, ignore_case: false },
+    Skip { name: ".Trash-", prefix: true, ignore_case: false },
+    Skip { name: ".Trashes", prefix: false, ignore_case: false },
+    Skip { name: ".cache", prefix: false, ignore_case: false },
+    Skip { name: ".thumbnails", prefix: false, ignore_case: false },
+    Skip { name: "@eaDir", prefix: false, ignore_case: false },
+    Skip { name: "_quarantine", prefix: false, ignore_case: false },
+];
+
+/// Whether the walk does not descend into a folder named `name` under `rules`.
+fn skipped_name(rules: PathRules, name: &[u8]) -> bool {
+    let own = match rules {
+        PathRules::Windows => SKIP_WINDOWS,
+        PathRules::Posix => SKIP_POSIX,
+    };
+    SKIP_ANY.iter().chain(own).any(|skip| skip.matches(name))
 }
 
 /// Files per catalog transaction.
@@ -289,7 +329,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                 continue;
             }
             let Some(ext) = e.ext else {
-                if skip_dirs(rules).iter().any(|s| e.name.as_bytes().eq_ignore_ascii_case(s.as_bytes())) {
+                if skipped_name(rules, e.name.as_bytes()) {
                     continue;
                 }
                 let key = (e.volume, e.file_id);
@@ -654,6 +694,30 @@ mod tests {
     #[test]
     fn scanned_folders_list_their_files_in_the_grid_posix() {
         scanned_folders_list_their_files_in_the_grid(PathRules::Posix);
+    }
+
+    #[test]
+    fn the_ntfs_system_folders_are_skipped_on_every_rule_set_without_case() {
+        for rules in [PathRules::Windows, PathRules::Posix] {
+            assert!(skipped_name(rules, b"$RECYCLE.BIN"), "{rules:?}");
+            assert!(skipped_name(rules, b"$recycle.bin"), "{rules:?}");
+            assert!(skipped_name(rules, b"system volume information"), "{rules:?}");
+            assert!(!skipped_name(rules, b"System Volume Information2"), "{rules:?}");
+        }
+    }
+
+    #[test]
+    fn each_rule_set_skips_its_own_folders_and_the_posix_ones_exactly() {
+        assert!(skipped_name(PathRules::Windows, b"_QUARANTINE"));
+        assert!(!skipped_name(PathRules::Windows, b".cache"));
+        assert!(!skipped_name(PathRules::Windows, b".Trash-1000"));
+        assert!(skipped_name(PathRules::Posix, b".cache"));
+        assert!(!skipped_name(PathRules::Posix, b".CACHE"), "Posix names are exact");
+        assert!(skipped_name(PathRules::Posix, b".Trash-1000"), "the trash is a prefix");
+        assert!(!skipped_name(PathRules::Posix, b".Trashy"));
+        assert!(skipped_name(PathRules::Posix, b"lost+found"));
+        assert!(!skipped_name(PathRules::Posix, b"Pics"));
+        assert!(!skipped_name(PathRules::Posix, b"pics"));
     }
 
     #[test]

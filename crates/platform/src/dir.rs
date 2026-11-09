@@ -291,8 +291,9 @@ pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
     check_ntfs(&WinFacts, path)
 }
 
-/// Whether a folder may be scanned on Linux (decision 13 in docs/S17_7_PLAN.md): the file system's type is checked, and network types
-/// (NFS, CIFS, SMB) are refused, because their inode numbers come from the server.
+/// Whether a folder may be scanned on Linux (decision 13 in docs/S17_7_PLAN.md): the file system's type is checked, and the
+/// network types (NFS, CIFS, SMB) are refused, because their inode numbers come from the server, and the kernel's pseudo file
+/// systems (`/proc`, `/sys`, ...), which hold no photos.
 #[cfg(target_os = "linux")]
 pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
     let f_type = linux_fs_type(path).map_err(|e| refuse(format!("its file system can't be read: {e}")))?;
@@ -305,18 +306,32 @@ pub fn check_root(_path: &[Unit]) -> Result<(), Refused> {
     Err(refuse("scanning is supported on Windows and Linux only"))
 }
 
-/// The `f_type` magic numbers of the network file systems (kernel `uapi/linux/magic.h`).
-const NFS_SUPER_MAGIC: i64 = 0x6969;
-const SMB_SUPER_MAGIC: i64 = 0x517B;
-const CIFS_SUPER_MAGIC: i64 = 0xFF53_4D42;
-const SMB2_SUPER_MAGIC: i64 = 0xFE53_4D42;
+/// The `f_type` magic numbers refused, with the reason. The network file systems (kernel `uapi/linux/magic.h`) hand out
+/// inode numbers from the server. The pseudo file systems are the kernel's own entries, not files: a scan of `/proc`
+/// reads process state, and `/sys`'s entries are attributes. The numbers of the pseudo ones were read with `stat -f` on
+/// the kernel this was built on (7.0). `devtmpfs` is not here: it reports tmpfs's number, which is accepted.
+const REFUSED: &[(i64, &str)] = &[
+    (0x6969, "it is on an NFS mount"),
+    (0x517B, "it is on an SMB or CIFS share"),
+    (0xFF53_4D42, "it is on an SMB or CIFS share"),
+    (0xFE53_4D42, "it is on an SMB or CIFS share"),
+    (0x9FA0, "it is the kernel's proc file system, not a disk"),
+    (0x6265_6572, "it is the kernel's sysfs file system, not a disk"),
+    (0x1CD1, "it is the kernel's devpts file system, not a disk"),
+    (0x6367_7270, "it is the kernel's cgroup2 file system, not a disk"),
+    (0x6462_6720, "it is the kernel's debugfs file system, not a disk"),
+    (0x7472_6163, "it is the kernel's tracefs file system, not a disk"),
+    (0x7363_6673, "it is the kernel's securityfs file system, not a disk"),
+    (0xCAFE_4A11, "it is the kernel's bpf file system, not a disk"),
+    (0x6165_676C, "it is the kernel's pstore file system, not a disk"),
+    (0x6265_6570, "it is the kernel's configfs file system, not a disk"),
+];
 
-/// Refuses the network file systems by their `f_type`; every other type is accepted, including `9p` (WSL's drvfs).
+/// Refuses the network and pseudo file systems by their `f_type`; every other type is accepted, including `9p` (WSL's drvfs).
 pub fn check_fs_type(f_type: i64) -> Result<(), Refused> {
-    match f_type {
-        NFS_SUPER_MAGIC => Err(refuse("it is on an NFS mount")),
-        CIFS_SUPER_MAGIC | SMB2_SUPER_MAGIC | SMB_SUPER_MAGIC => Err(refuse("it is on an SMB or CIFS share")),
-        _ => Ok(()),
+    match REFUSED.iter().find(|(magic, _)| *magic == f_type) {
+        Some((_, reason)) => Err(refuse(*reason)),
+        None => Ok(()),
     }
 }
 
@@ -524,12 +539,24 @@ mod root_tests {
         }
     }
 
+    #[test]
+    fn the_kernels_pseudo_file_systems_are_refused() {
+        // The magic numbers measured on the kernel this was built on (see REFUSED).
+        let pseudo = [
+            0x9FA0, 0x6265_6572, 0x1CD1, 0x6367_7270, 0x6462_6720, 0x7472_6163, 0x7363_6673, 0xCAFE_4A11, 0x6165_676C,
+            0x6265_6570,
+        ];
+        for f_type in pseudo {
+            assert!(check_fs_type(f_type).is_err(), "{f_type:#x}");
+        }
+    }
+
     #[cfg(target_os = "linux")]
     #[test]
-    fn this_systems_root_and_proc_are_accepted() {
-        // Real calls: `/` is a local file system; `/proc` is procfs. Neither is a network file system.
+    fn this_systems_root_is_accepted_and_proc_is_refused() {
+        // Real calls: `/` is a local file system; `/proc` is procfs, which is refused.
         assert_eq!(check_root(&units_of(b"/")), Ok(()));
-        assert_eq!(check_root(&units_of(b"/proc")), Ok(()));
+        assert!(check_root(&units_of(b"/proc")).is_err());
     }
 }
 

@@ -153,3 +153,60 @@ Configure takes several minutes (it runs compile tests); it's the first long ste
     - CRT: the `.lib` files reference `MSVCRT` (`/MD`) and never `LIBCMT` (a byte grep, not `dumpbin /directives`,
       so it's a check of references, not a full audit). The test exe imports only system DLLs and
       `VCRUNTIME140.dll`, as `/MD` should give.
+
+## Qt pilot
+
+### Source
+
+- `qt-everywhere-src-6.12.0.zip`, 604,643,023 bytes, from `download.qt.io/official_releases/qt/6.12/6.12.0/single/`.
+- MD5 `64889aee0623311cce096be5f445c7d1`, which matches Qt's own `md5sums.txt`. Qt publishes no SHA-256 file, so the
+  pin is the SHA-256 computed here: `a72e89c33726d742e67edf494abf7b625eaffc756673221c9823322ecd1a32d1`.
+- Extracted to `D:\PhotoGallery\static\qt\qt-everywhere-src-6.12.0` (short path; `LongPathsEnabled` is 1 on this machine).
+
+### Configure (`scripts\qt-configure.ps1`, pilot)
+
+`configure.bat -static -release -opensource -confirm-license -nomake tests -nomake examples -no-openssl -schannel
+-ffmpeg-dir <recipe-run7 prefix> -submodules qtbase,qtshadertools,qtdeclarative,qtmultimedia,qtimageformats,qtsvg`
+
+- Configured in 227 s + 19 s, no errors.
+- `-no-openssl`: the TLS backend is Schannel, as the deployed app's `tls\qschannelbackend.dll` is. The kit has
+  OpenSSL; the app doesn't use it.
+- Schannel, WebP (`qwebp` as a static plugin, for the Yandex panel) and the FFmpeg backend are all `yes` in the summary.
+- Qt's summary warns: static linking disables dynamically loaded plugins. Every plugin the app uses (the Windows
+  platform, the image formats, the QtQuick styles, the multimedia backends) must be imported explicitly.
+- The app's CMake/cxx-qt setup and the deployed folder's plugin list are what the import list has to match.
+
+### Build and install (`scripts\qt-build.ps1`, pilot)
+
+- `cmake --build . --parallel 12`: 8,452 steps, no failed step, about 50 minutes configure-to-install.
+- `cmake --install .` to `D:\PhotoGallery\static\qt\prefix`.
+- `prefix\bin` has no DLLs. `lib` has the static Qt libraries (`Qt6Core.lib` is 38.8 MB, a static archive).
+- Plugins are static libraries: `platforms` (`qwindows`, `qoffscreen`), `imageformats` (`qwebp` among them),
+  `multimedia` (`ffmpegmediaplugin`, `windowsmediaplugin`), `tls` (`qschannelbackend`), `networkinformation`,
+  `iconengines` (`qsvgicon`).
+- `prefix\bin\qmake.exe -v` runs and reports Qt 6.12.0.
+- Not checked yet: that `ffmpegmediaplugin.lib` links against our static FFmpeg (the check is a link, not a grep), and
+  that a program can register these plugins and start. Not checked either: whether a second build reproduces these
+  libraries byte for byte (the same-folder standard from the FFmpeg section has not been applied to Qt).
+
+### Link check and playback (`linkcheck\`, not in the repository)
+
+A small Qt program (`linkcheck\src\main.cpp`, `playback.cpp`) built with CMake against `qt\prefix`. It imports the
+deployed app's plugin set by name (`qt_import_plugins`): `qwindows`, `qoffscreen`, the image formats, `qschannelbackend`,
+the FFmpeg and Windows media backends, `qsvgicon`.
+
+- **Links and starts**, `windows` and `offscreen` platforms. Qt's `qwebp` reads WebP.
+- **DLLs:** none from Qt or FFmpeg. Non-system: `VCRUNTIME140`, `MSVCP140` (the `/MD` runtime, as intended) and `icu.dll`,
+  a Windows 10 system component (present in `System32`).
+- **FFmpeg backend in use:** Qt logs `Using Qt multimedia with FFmpeg version 7adfbe4`, the pinned commit.
+- **Playback works:** a 2 s H.264 clip (320×240, 25 fps, made with the pinned `ffmpeg.exe`) plays through
+  `QMediaPlayer` on the FFmpeg backend: 51 frames, 2000 ms, `EndOfMedia`. The Windows backend decodes it too (40 frames).
+  Decoding is in software ("No HW decoder found").
+- **Empty codec lists on the FFmpeg backend:** `QMediaFormat::supportedVideoCodecs(Decode)` and
+  `supportedFileFormats(Decode)` return nothing. The cause is in Qt's source (`qffmpegmediaformatinfo.cpp`): for FFmpeg
+  it takes "decoders = encoders", because "FFmpeg doesn't allow querying supported codecs for demuxers". Our build has
+  no encoders, so Qt advertises no decoders, although playback works. The app doesn't read these lists (no references in
+  `crates\desktop`), so this doesn't affect it. It would matter to any code that asks Qt what it can play.
+- **Not imported yet:** the deployed `networkinformation\qnetworklistmanager` plugin (its CMake target name is not
+  checked) is in the app but not in the check's list. Add it when the app's own plugin list is written, if the app
+  uses `QNetworkInformation`.

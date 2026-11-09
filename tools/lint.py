@@ -10,6 +10,7 @@ versions first (tools/check_lint_tools.py).
 import argparse
 import os
 import sys
+from pathlib import Path
 
 from pgtools import lint_tool, load_env_file, run
 
@@ -50,6 +51,8 @@ def main() -> None:
         env = {**os.environ, **DOC_FLAGS} if step[:2] == ["cargo", "doc"] else None
         # `cargo metadata` prints the whole graph; the check is only that it resolves.
         run(resolved(step), env, quiet=step[:2] == ["cargo", "metadata"])
+    # The platform rule (tools/check_platform.py): the Win32 calls are in pg-platform.
+    run([sys.executable, str(Path(__file__).resolve().parent / "check_platform.py")])
     print("lint: every step passed")
 
 

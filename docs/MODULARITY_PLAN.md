@@ -1,6 +1,6 @@
 # Plan: fix the modularity findings (M-series)
 
-Status (2026-11-09): investigated, re-measured at `905561d`, and re-reviewed in twelve passes. Not started. Churn and cost are not a constraint; the goal is the proper fix for each finding, not the cheapest one.
+Status (2026-11-09): investigated, re-measured at `905561d`, and re-reviewed in twelve passes. The consolidated rewrite is applied. M-0, M-1, M-3 and M-3a are done and committed (each step says where). Churn and cost are not a constraint; the goal is the proper fix for each finding, not the cheapest one.
 
 ## Investigation results
 
@@ -23,6 +23,7 @@ Measured on the working tree at `905561d` (2026-11-09). The measurement scripts 
 - **Rustdoc JSON** was ruled out: it covers public API only, not the references inside function bodies.
 - **`pg-model` stays one crate.** Its 23 modules are consumed by 1 to 15 crates each (`num` by 15, `turns` by 14, `orientation` by 13, `rules` by 12). It is the shared vocabulary; its fan-in is expected. The two modules with one consumer (`min_side`, `group_distance`) are macros that keep a Rust constant and a SQL string in sync, so they stay.
 - **`catalog`'s `analysis` dependency** is used only by `fixture::versions()` and by catalog's own tests (see M-17).
+- **Re-measured at `905561d` (2026-11-09).** Text scan: 19 groups, unchanged. Compiler graph: Windows 6 groups and Linux 5, whose union is the compiler-side list above; `pg-desktop` is 0 on both. `unreachable_pub`: `pg-video` 1,165 (generated), `pg-desktop` 181, `pg-cli` 6, `pg-app` 2, `pg-edit` 1 (2 at `7ba93e9`; the M-18 count settles it), `pg-platform` 0 on Linux and 1 on Windows, the rest 0. Call sites: `with_catalog` 20, `with_maker` 6, `pg_model::num` 14 consumers. The catalog's scan reports one group of twelve modules; the compiler reports groups E and G. They differ for the reasons given in M-3, so they are not agreeing views. Dev edges: one strongly connected component of eight crates, as above. Sizes that moved are in the M-12a table and the sizes note.
 
 ### The working tree moves
 
@@ -37,16 +38,13 @@ Concurrent feature work lands in the files this plan splits. 111 files changed b
 
 ## Ground rules
 
-1. **Symbols, not line numbers.** Name the function or type in every step. Line numbers go stale (`Catalog::file_state` is now at `catalog/src/lib.rs:1053`, not 1074; `trait Source` at `app/src/yandex.rs:34`, not 27).
-2. **Re-exports.** A `pub use` at an old path stays only where the item is part of the crate's documented public API, or a documented layer boundary (`pg_app::reexport`). Every other transitional re-export is removed in the same step as its callers. `pg_app::reexport` is a deliberate boundary: the desktop does not depend on `catalog`, `library`, `jobs`, `thumbcache`, `yandex` or `codec`, and reaches their types through it. `cargo deny` and `cargo machete` enforce that boundary (`desktop/Cargo.toml`). M-16 checks the rule.
-3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would form a cycle or need private access. Today: `pg-codec` `fixtures` (the encoders are `codec`'s, and `testkit` cannot depend on `codec`, which dev-depends on `testkit`), `pg-catalog` `fixture` (it needs the catalog's private connection), and `pg-writeback` `fault` (fault injection inside production paths). Each stays. Any other test helper goes in a dev-only crate (M-14).
+1. **Symbols, not line numbers.** The tree moved since the plan was written (`Catalog::file_state` is at `catalog/src/lib.rs:1053`, not 1074; `trait Source` at `app/src/yandex.rs:34`, not 27). Name the function or type in every step.
+2. **Re-exports.** A `pub use` at an old path stays only where the item is part of the crate's documented public API, or a documented layer boundary (`pg_app::reexport`, which the desktop uses because it does not depend on `catalog`, `library`, `jobs`, `thumbcache`, `yandex` or `codec`). Every other transitional re-export (M-7 to M-11, M-19, M-20) is removed in the same step with its callers. M-16 checks it.
+3. **Test support.** A test-support feature in a production crate is acceptable only when a dev-dependency crate would be a cycle or need private access. Today: `pg-codec` `fixtures`, `pg-catalog` `fixture`, `pg-writeback` `fault`. Each stays. Everything else (for example `Quiet` in `pg-jobs`) goes in a dev-only crate (M-14).
 4. **Large files.** Split when a file holds more than one layer of a dependency graph, not by line count. M-12a assesses the files over 500 production lines.
-5. **Layer claims are by reading or by script; neither is proof.** The compiler-backed `modgraph` run after each step is the check.
+5. **Layer claims are by reading or by script, and neither is proof.** The scratchpad scripts matched functions by bare name and skipped common ones (`new open close drop push next put get clear flush write read commit default insert len from into run trim clone eq fmt iter map take find detect`); `detect`, `trim`, `find` and `put` are therefore blind spots (M-8, M-10, M-11). The committed form is `tools/modgraph/split_check.py`, with the skip set in its docstring. The check that counts is the compiler: the `modgraph` run after each step.
 6. **Platform rule.** No `cfg(windows)`, `cfg(unix)` or `std::os::{windows,unix}` in production code outside `pg-platform`, except cxx-qt and FFI glue that must declare per-platform signatures. Each such exception is stated in M-13.
-7. **Ordering.** Each split step is done in one sitting on the current HEAD, its measurement is re-run first, and it is committed before anyone else's change to that file lands. The M-0 gate runs on a clean tree. No branches.
-8. Work on the checked-out branch. Build and test once at the end of a group of steps, not between steps.
-9. Moves keep the public paths callers use (`pub use` at the old location) only where rule 2 allows it. Otherwise the caller changes in the same step.
-10. Tests that touch a moved private item move with it, or get `pub(crate)` for the test.
+7. **Ordering.** The tree changes under the plan (111 files, +7,456 lines between `4d0ed46` and `905561d`, mostly in the files M-7 to M-9 split). Each split step is done in one sitting on the current HEAD, its measurement re-run first, and committed before anyone else's change to that file lands. The M-0 gate runs on a clean tree. No branches.
 
 ## Gates
 
@@ -68,10 +66,10 @@ Concurrent feature work lands in the files this plan splits. 111 files changed b
 ## M-0: make the check repeatable, and make it the compiler's
 
 - **Done:** the module-graph scripts are in `tools/modgraph/` (`module_graph.py`, `make_html.py`; standard library only, lint-clean under the repo's ruff). Output goes to `target/modgraph/`.
-- **Done:** the split-check script (`tools/modgraph/split_check.py`, the portable form of the scratchpad scripts, with the skip set in its docstring) and the `unreachable_pub` counter (`tools/modgraph/unreachable_pub.sh`). Both are uncommitted.
+- **Done:** the split-check script (`tools/modgraph/split_check.py`, the portable form of the scratchpad scripts, with the skip set in its docstring) and the `unreachable_pub` counter (`tools/modgraph/unreachable_pub.sh`). Both were committed in `c1e0253`.
 - **Cycle gate:** the union of (a) the compiler graph on Linux (`pg-dev`) and on Windows (the host, `just modgraph`), with only the `uses` edges, grouped by module (items map to their enclosing module; `(root)` is the crate root), and (b) the text scan, which covers the cxx-qt bridge modules. A group in either list fails the check unless it is on the allowlist.
 - **Allowlist:** `tools/modgraph-allow.txt`, read by `tools/modgraph/allowlist.py`. Each line names `source` (scan, linux or windows), the crate and its members. `module_graph.py` and `compiler_graph.py` both fail on a group that is not listed for their source, and on a listed entry that matches no group. Groups H and I exist on one target each, so a fix on one target must not leave a stale entry for the other. M-1, M-3, M-4, M-5, M-6, M-19 and M-20 remove entries; M-16 empties the file. Both checks were run at `7ba93e9`: the text scan and the compiler graph pass on Windows, and the compiler graph passes on Linux.
-- **Blocked: the perf baseline check.** `just perf` runs through `wsl -d`, and this repo does not use WSL. The `pg-dev` image has no valgrind, so `tools/perf_check.py` cannot run there either. This needs a Docker path before M-4's perf gate, and the baseline check is not run.
+- **Blocked: the perf baseline check.** `just perf` runs through `wsl -d`, and this repo does not use WSL. The `pg-dev` image has no valgrind, so `tools/perf-check.sh` cannot run there either. This needs a Docker path before M-4's perf gate, and the baseline check is not run.
 - **Known false positives:** items that a crate re-exports at its root (`pub use app::App;`) appear as root items, so a group can show `(root)` without a real edge to the root. Check each group in the source before it goes on the allowlist.
 - Add the `just modgraph` recipe (both scripts, in order).
 - Re-measure every number in this file on a clean tree, first, before any other step. Done at `7ba93e9` (see Investigation results); the numbers above are from that run.
@@ -101,9 +99,9 @@ Groups A, B and C also contain their `qobject` modules, so their back-edges into
 - **Fix:** one `error_box` wrapper in a leaf module of the desktop, with the title `"Photo Gallery"` included. `fatal` and the panic hook both call it. `message_box` is deleted from `crates/desktop/src/lib.rs`. Deleting it and calling `pg_platform` from both places would repeat the title.
 - **Logger rename.** `panic_log` is the desktop's logger under the wrong name. `note` is called 33 times from 14 modules (`gallery` 7, `shell` 4, `yandex`, `providers`, `library`, `controller` 3 each, `picker`, `lib`, `app` 2 each, and one each in `video_source`, `folders`, `filters`, `command_line`, `animation`); `install` is called once. Create a leaf `log.rs` (`note`, the `LOG` static, `append`, `local_time`). `panic_log.rs` keeps `install` and `report`, and depends on `log` and the `error_box` wrapper. The 33 call sites change to `log::note`.
 - Expected result: group A is gone. Confirm with the corrected scan.
-- **Result (working tree on `c1e0253`, not committed):** the root edge and the `panic_log` edges are gone, and the scan no longer reports group A. What remains is `command_line <-> command_line::qobject`, the bridge pair of group J (M-20), which the allowlist now lists in its place. The scan had to be fixed first: it read only tracked files, so the new `log.rs` and `alert.rs` were invisible to it (fixed in `module_graph.py`, which now includes untracked files).
-- **Gates:** `just build`, `just lint`, `just lint-qml` and `just test` pass. `just shots` against the reference recorded at `c1e0253` (`tools/shots/reference/c1e025319d`): 21 of 21 scenarios same, on two consecutive full runs.
-- **The `save-view` difference was a caret, and the earlier fix did not hold.** The 14 pixels are the name field's text caret: the `save-view` shot had it, the base did not. Commit `32bc9b7` bound the field's `cursorVisible` to `caret` (off with `--screenshot`), but Qt's TextInput sets `cursorVisible` itself when the field gains focus, which breaks that binding, so the caret still blinked into some shots. The fix is `cursorDelegate: dialog.caret ? null : noCaret` in `SaveViewDialog.qml`: a photographed window gets an empty caret, and every other window gets the default (`null`). Two full runs match all 21 scenarios.
+- **Result (committed as `170f8e2`, after the M-0 commit `c1e0253`):** the root edge and the `panic_log` edges are gone, and the scan no longer reports group A. What remains is `command_line <-> command_line::qobject`, the bridge pair of group J (M-20), which the allowlist now lists in its place. The scan had to be fixed first: it read only tracked files, so the new `log.rs` and `alert.rs` were invisible to it (fixed in `module_graph.py`, which now includes untracked files).
+- **Gates:** `just build`, `just lint-windows`, `just lint-qml` and `just test` pass. `just shots` against the reference recorded at `c1e0253` (`tools/shots/reference/c1e025319d`): 21 of 21 scenarios same, on two consecutive full runs.
+- **The `save-view` difference was a caret, and the earlier fix did not hold.** The 14 pixels are the name field's text caret: the `save-view` shot had it, the base did not. Commit `32bc9b7` bound the field's `cursorVisible` to `caret` (off with `--screenshot`), but Qt's TextInput sets `cursorVisible` itself when the field gains focus, which breaks that binding, so the caret still blinked into some shots. The fix is `cursorDelegate: dialog.caret ? null : noCaret` in `SaveViewDialog.qml`: a photographed window gets an empty caret, and every other window gets the default (`null`). Two full runs match all 21 scenarios. The fix is committed as `3be8edf`.
 
 Gate: desktop gates.
 
@@ -124,8 +122,8 @@ Every catalog module that names `crate::Catalog`, `crate::Result` or a root help
 - The root's `pub use pair::{Coverage, Pairing};` stays.
 - **M-3a, group G:** `scope` moves to `browse/read/scope.rs`. `facets` and `grid` import it from there; `read` stops being their parent for that helper. `facets`'s import of `super::grid::FILE_JOINS` is a sibling edge and stays.
 - **Expectation:** after M-3, M-3a and M-7, both the scan and the compiler views of groups E and G are empty. Record that expectation here, and make the gate the union (a group in either tool fails).
-- **Result (working tree on `3be8edf`, not committed):** `pg_query` alias deleted (callers use `pg_query::`; `pg-app` depends on `pg-query`); `pair`'s glob import replaced; `write_transaction` moved to `schema`; `Catalog::file_state` wrapper deleted (`thumbs` calls `browse::read::file_state`); `scope` moved to `browse/read/scope.rs`. Group G is gone in both views. Group E is now `(crate root), pair` on both targets: `pair` implements `Catalog` (`impl Catalog`), and `schema` no longer closes a cycle. What is left (`pair`'s `impl Catalog`, and the root's `Catalog`, `rules_name` and the file-rating constants) is M-7's move, so the allowlist entry is narrowed, not removed.
-- **Gates:** `just lint` and `just test` pass. The Linux container's `cargo fmt --check`, `clippy -D warnings`, `cargo doc` and `cargo test` all pass as root, but the permission-based tests skip as root and `docker/check.sh` fails on any skip. The local `pg-dev` image has no `pg` user (it predates the Dockerfile's `useradd` and `USER pg`), so the Linux pass has to be rerun after the image is rebuilt from `docker/Dockerfile`.
+- **Result (committed as `ebe42a2`, with M-3a; the M-1 commit `170f8e2` and the caret commit `3be8edf` come before it):** `pg_query` alias deleted (callers use `pg_query::`; `pg-app` depends on `pg-query`); `pair`'s glob import replaced; `write_transaction` moved to `schema`; `Catalog::file_state` wrapper deleted (`thumbs` calls `browse::read::file_state`); `scope` moved to `browse/read/scope.rs`. Group G is gone in both views. Group E is now `(crate root), pair` on both targets: `pair` implements `Catalog` (`impl Catalog`), and `schema` no longer closes a cycle. What is left (`pair`'s `impl Catalog`, and the root's `Catalog`, `rules_name` and the file-rating constants) is M-7's move, so the allowlist entry is narrowed, not removed.
+- **Gates:** `just lint-windows` and `just test` pass. The Linux container's `cargo fmt --check`, `clippy -D warnings`, `cargo doc` and `cargo test` all pass as root, but the permission-based tests skip as root and `docker/check.sh` fails on any skip. The local `pg-dev` image has no `pg` user (it predates the Dockerfile's `useradd` and `USER pg`), so the Linux pass has to be rerun after the image is rebuilt from `docker/Dockerfile`.
 
 Gate: Linux checks, Windows `just test`.
 
@@ -176,7 +174,7 @@ Gate: Linux checks, Windows `just test`, `just shots` (the desktop's images come
 
 The command line does not use `pg-app`, and should not. `run_command` opens one mutable `Catalog`. `scan`, `thumbs` and `write` each open their own `ThumbCache` with the command's cap and a printer thread for its events; `write` leaks its cache so events print to the end. `App` keeps a connection pool, a keeper, a leaked cache, a reader and preferences. Bending both to one shape is worse. What the two share is how a catalog folder is opened.
 
-- **Add to `pg-library`:** `open_catalog(dir)` (`catalog.sqlite` in the folder, `versions()`, `PathRules::NATIVE`) and `open_thumbs(dir, catalog_id, cap, events)`. `versions()` already lives there, and the data folders are `pg_library::layout::Layout` (which replaced `default_catalog_dir()`).
+- **Add to `pg-library`:** `open_catalog(dir)` (`catalog.sqlite` in the folder, `versions()`, `PathRules::NATIVE`) and `open_thumbs(dir, catalog_id, cap, events)`. `versions()` and `default_catalog_dir()` already live there.
 - **Callers:** `App::open` and the four `cli` sites (`Catalog::prepare` in `run_command`; `ThumbCache::open` in the scan, thumbs and write commands) call them. `cli` keeps its control flow and does not depend on `pg-app`.
 - **README.** `crates/README.md` calls `app` "the UI-free application layer the front ends share", which is false for the command line. Change it to: "the application layer the window uses; the command line drives the passes directly through `pg-library`".
 
@@ -203,7 +201,7 @@ Gate: desktop gates, including `just shots`.
 
 ### M-7: group E, and the `catalog` split
 
-`crates/catalog/src/lib.rs` has 3,090 lines; 1,534 are production code (see the sizes note at the end).
+`crates/catalog/src/lib.rs` has 3,090 lines; 1,547 are production code at `905561d` (1,534 at `7ba93e9`; see the sizes note at the end).
 
 Layers, checked as a DAG method by method:
 
@@ -226,7 +224,7 @@ Gate: Linux checks, Windows `just test`, perf (decision 1).
 ### M-17: edges that point the wrong way
 
 - **`catalog` → `metadata`.** The only production use is `writes.rs`, which calls `can_hold_rating(format: Format) -> bool` (`metadata/src/lib.rs`). That function is one line, `!matches!(format, Format::Bmp)`, and depends only on `pg-model`'s `Format`. Move it to `pg-model`, next to `Format` (`model/src/format.rs`). `writeback` callers change too. Then remove `pg-metadata` from `catalog/Cargo.toml` entirely. `schema.rs` mentions `pg_metadata::rotation_method` in an SQL comment; the comment names that function's real home after the move.
-- **`catalog` → `analysis`.** Optional, behind `fixture`. The fixture takes the two version constants from its callers (`fixture.rs`, `fixture/raw.rs`). Catalog's own tests get `analysis` as a **dev-dependency** (no cycle: `analysis` does not depend on `catalog`). The `fixture` feature then needs no `analysis`, and `catalog`'s normal dependencies are only storage crates. Remove the optional `pg-analysis` entry.
+- **`catalog` → `analysis`.** Optional, behind `fixture`. The fixture takes the two version constants from its callers (`fixture.rs`, `fixture/raw.rs`). Catalog's own tests already take `analysis` as a **dev-dependency** (no cycle: `analysis` does not depend on `catalog`). So the optional normal entry goes: remove the optional `pg-analysis` entry. The `fixture` feature stays for its private connection, and it no longer needs `analysis`.
 
 Gate: Linux checks, Windows `just test`.
 
@@ -272,7 +270,7 @@ Each split is a move. Items keep their visibility, and public paths stay the sam
 
 Layers:
 
-- `types.rs`: `FORMAT_JPEG`, `Source`, `Thumb`, `ThumbWork`, `Pending`, `Snapshot`, `Event`, `Usage`, `Drift`. A leaf. `writer` and `reader` both use `Event`, `Source` and `ThumbWork`, so these must not stay in `lib.rs`.
+- `types.rs`: `FORMAT_JPEG`, `Source`, `Thumb`, `ThumbWork`, `Pending`, `Snapshot`, `Event`, `Usage`. A leaf. `writer` and `reader` both use `Event`, `Source` and `ThumbWork`, so these must not stay in `lib.rs`.
 - `config.rs`: the cap functions and constants (`default_cap_bytes`, `parse_cap_gb`, `MAX_CAP_BYTES`, `MIN_DEFAULT_CAP_BYTES`, `MAX_DEFAULT_CAP_BYTES`, `whole_bytes`, `cache_path`), and the timing constants `TOUCH_AGE_S`, `TOUCH_FLUSH`, `HEAL_INTERVAL`, and `CACHE_VERSION`. The schema and the writer both read these.
 - `maintenance.rs`: `heal`, `heal_if_due`, `shrink` and `unix_now`, with their constants (`SHRINK_*`) and `Drift`. These maintain the cache database and use nothing of the write loop. They sit below both `schema` and `writer`. Put here, the open path (`ready` calls `heal_if_due`) no longer depends on the write loop. `unix_now` is also used by `lib.rs`.
 - `schema.rs`: `SCHEMA`, `APPLICATION_ID`, `SEEDS`, `CONNECTION_PRAGMAS`, `BUSY_TIMEOUT`, `Found`, `Why`, `damage`, `damage_in`, `Writing`, `Attempt`, `expected`, `make_layout`, `judge`, `open_writer`, `hold_shared`, `open_file`, `open_once`, `ready`, `move_damaged`, `read_found`, and `StartOverReason` (public) with the types.
@@ -406,7 +404,7 @@ Gate: Linux checks, Windows `just test`. `cargo tree -d` must show no duplicate 
 - **Dependencies removed.** The split removes four dependencies from `pg-library`: `edit`, `exiftool`, `writeback` (with `crop`, which moves to `pg-crop`), and `pg-dedup` (with `dups`).
 - **New crates.** `pg-crop` (`crop.rs`, 323 lines) and `pg-borders` (`borders.rs`, 83 lines). The runner (`crop::save`, `borders::find`) depends on both. `cli` and the tests name `pg-borders` and `pg-crop` directly.
 - **Tests stay in `pg-library`.** Five integration test files exercise the two passes: `tests/borders.rs`, `tests/crop.rs`, `tests/crop_roots.rs`, `tests/crop_folders.rs` and `tests/crop_tags.rs` (the last is new and untracked). All of them call `pg_library::versions()` to prepare a catalog. Moved into the new crates, they would dev-depend on `pg-library`, which depends on the new crates: the dev-dependency cycle M-14 and M-16 forbid. So they stay in `pg-library/tests` and import `pg_crop::` and `pg_borders::`. The new crates keep only unit tests that need no catalog.
-- **What remains.** `pg-library` is `runner.rs` (519 lines) and `lib.rs`, plus `versions()`, `layout` (which replaced `default_catalog_dir()`) and M-4b's open functions. It keeps the `pg-writeback` `fault` dev-dependency and the codec, metadata, render and video dev-dependencies for the tests that remain.
+- **What remains.** After the split `pg-library` is one coherent layer: `runner.rs` (519 lines) and `lib.rs`, plus `versions()`, `default_catalog_dir()` and M-4b's open functions. It keeps the `pg-writeback` `fault` dev-dependency and the codec, metadata, render and video dev-dependencies for the tests that remain.
 - **Stale comment.** `pg-library`'s `Cargo.toml` says the passes are re-exported there under their old names. `lib.rs` re-exports nothing, and no caller uses those paths. Fix the comment in this step.
 
 Gate: Linux and Windows checks.

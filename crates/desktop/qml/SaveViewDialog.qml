@@ -53,7 +53,13 @@ Dialog {
         }
         TextField {
             id: viewName
-            cursorVisible: dialog.caret
+            // Without a caret, a photographed window has nothing that blinks. (cursorVisible can't carry this: the field
+            // sets it itself when it gains focus.) Null is the default caret.
+            cursorDelegate: dialog.caret ? null : noCaret
+            Component {
+                id: noCaret
+                Item {}
+            }
             placeholderText: words.text("ui-view-name")
             Layout.preferredWidth: 400
             onAccepted: dialog.accept()

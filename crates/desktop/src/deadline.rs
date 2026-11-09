@@ -1,39 +1,32 @@
 //! The window's one deadline timer (S-12.18): the glue to cpp/deadline.cpp. The shell arms it to the controller's next deadline
-//! (`controller::deadlines`), on the GUI thread. When it fires, `deadline_fired` queues the shell's timeout handler, so the
-//! pauses run as an ordinary event and never inside another call of the shell.
+//! (`controller::deadlines`), on the GUI thread. The timer is a child of the shell's QObject, and when it fires it queues the
+//! shell's `timeout` invokable, so the pauses run as an ordinary event and never inside another call of the shell.
+
+use std::pin::Pin;
+
+use cxx_qt::QObject;
+use cxx_qt::casting::Upcast;
 
 #[cxx_qt::bridge]
 pub mod ffi {
     unsafe extern "C++" {
         include!("pg-desktop/cpp/deadline.h");
+        type QObject = cxx_qt::QObject;
         #[namespace = "pg"]
-        fn deadline_arm(ms: i64);
+        unsafe fn deadline_arm(owner: *mut QObject, ms: i64);
         #[namespace = "pg"]
-        fn deadline_disarm();
+        unsafe fn deadline_disarm(owner: *mut QObject);
         #[namespace = "pg"]
         fn deadline_now_ms() -> i64;
     }
-
-    extern "Rust" {
-        #[namespace = "pg"]
-        fn deadline_fired();
-    }
 }
 
-use std::cell::RefCell;
-
-use cxx_qt::CxxQtThread;
-
-use crate::shell::qobject::Shell;
-
-thread_local! {
-    /// The shell's thread handle, kept by the shell on each change (`remember`). Only the GUI thread touches it.
-    static SHELL: RefCell<Option<CxxQtThread<Shell>>> = const { RefCell::new(None) };
-}
-
-/// Keep the shell's thread handle, so the timer can reach the shell's timeout handler.
-pub(crate) fn remember(thread: CxxQtThread<Shell>) {
-    SHELL.with(|shell| *shell.borrow_mut() = Some(thread));
+/// The shell's QObject, which the timer is a child of. The pointer lives as long as the shell, and only the shell's methods
+/// (on the GUI thread) use it.
+pub(crate) fn owner<S: Upcast<QObject>>(shell: Pin<&mut S>) -> *mut QObject {
+    let mut base: Pin<&mut QObject> = shell.upcast_pin();
+    // SAFETY: the pinned base is not moved out of; the pointer is only handed to the C++ timer, which the shell owns.
+    unsafe { base.as_mut().get_unchecked_mut() as *mut QObject }
 }
 
 /// The monotonic clock the controller's deadlines are on, in milliseconds.
@@ -43,22 +36,14 @@ pub(crate) fn now_ms() -> u64 {
     u64::try_from(ms).unwrap_or(0)
 }
 
-/// Fire the timer in `ms` milliseconds, replacing any pending arm.
-pub(crate) fn arm(ms: u64) {
-    // Called on the GUI thread, where the QTimer lives; the C++ side only restarts it.
-    ffi::deadline_arm(i64::try_from(ms).unwrap_or(i64::MAX));
+/// Fire the shell's timer in `ms` milliseconds, replacing any pending arm.
+pub(crate) fn arm(owner: *mut QObject, ms: u64) {
+    // SAFETY: `owner` is the shell's QObject (see `owner`), alive while the shell's methods run.
+    unsafe { ffi::deadline_arm(owner, i64::try_from(ms).unwrap_or(i64::MAX)) }
 }
 
-/// Cancel the pending arm, if any.
-pub(crate) fn disarm() {
-    ffi::deadline_disarm();
-}
-
-/// The timer fired (on the GUI thread): queue the shell's timeout, which runs the pauses that are due.
-fn deadline_fired() {
-    SHELL.with(|shell| {
-        if let Some(thread) = shell.borrow().as_ref() {
-            let _ = thread.queue(|shell| shell.timeout());
-        }
-    });
+/// Cancel the shell's pending arm, if any.
+pub(crate) fn disarm(owner: *mut QObject) {
+    // SAFETY: as for `arm`.
+    unsafe { ffi::deadline_disarm(owner) }
 }

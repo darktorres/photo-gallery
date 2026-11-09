@@ -199,6 +199,9 @@ Remove both globals, not one:
 
 **Fallback:** a boxed closure only if cxx-qt cannot hand C++ the object pointer. If that happens, record why in this section.
 
+- **Result (committed in the M-6 commit; not yet validated, see the end of the plan):** the hand-off works through cxx-qt 0.10's `Upcast` (`shell.upcast_pin()`, as `lib.rs` already does for the QML engine). The bridge takes the base as `type QObject = cxx_qt::QObject` and passes `*mut QObject` to C++, so the fallback is not used. The timer is a child of the shell, made on the first arm, and its timeout queues the shell's `timeout`, which is now a `#[qinvokable]`. Removed: the static `QTimer` and the `deadline_fired` callback in `deadline.cpp`, the thread-local `SHELL` and `remember` in `deadline.rs`, and the `Shell` import there. The text scan's group B is gone: `controller` and `deadline` leave the cycle, and what remains is the J pairs `folders` and `shell`, listed separately.
+- **Unverified:** whether cxx-qt 0.10 generates `Upcast<QObject>` for the shell and whether the `QObject` alias compiles in the cxx-qt bridge. The check is the desktop build at the end of the plan.
+
 Gate: desktop gates, including `just shots`.
 
 ### M-7: group E, and the `catalog` split

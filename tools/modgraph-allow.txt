@@ -15,7 +15,8 @@ scan desktop: viewport, viewport::qobject   # J (M-20)
 scan desktop: picker, picker::qobject   # J (M-20)
 scan desktop: gallery, gallery::qobject   # J (M-20)
 scan desktop: keymap, keymap::qobject   # J (M-20)
-scan desktop: controller, deadline, folders, folders::qobject, shell, shell::qobject   # B (M-6), J (M-20)
+scan desktop: folders, folders::qobject   # J (M-20); B closed by M-6
+scan desktop: shell, shell::qobject   # J (M-20); B closed by M-6
 scan desktop: facet_choices, facet_choices::qobject   # J (M-20); C closed by M-5
 scan desktop: filters, filters::qobject   # J (M-20); C closed by M-5
 scan desktop: library, library::qobject   # J (M-20)

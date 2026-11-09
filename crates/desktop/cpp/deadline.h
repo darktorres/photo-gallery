@@ -4,12 +4,15 @@
 
 #include <cstdint>
 
+class QObject;
+
 namespace pg {
 
-// Fire deadline_fired() in `ms` milliseconds, replacing any pending arm (earlier or later).
-void deadline_arm(int64_t ms);
-// Cancel the pending arm, if any.
-void deadline_disarm();
+// Fire the owner's `timeout` invokable in `ms` milliseconds, replacing any pending arm (earlier or later). The timer is a child
+// of `owner` (the shell), so it is destroyed with it.
+void deadline_arm(QObject* owner, int64_t ms);
+// Cancel the pending arm of `owner`'s timer, if any.
+void deadline_disarm(QObject* owner);
 // The monotonic clock the deadlines are on (milliseconds since the first call).
 int64_t deadline_now_ms();
 

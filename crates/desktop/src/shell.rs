@@ -49,6 +49,10 @@ pub mod qobject {
     impl cxx_qt::Threading for Shell {}
 
     unsafe extern "RustQt" {
+        /// The deadline timer fired (C++ queues this call on the shell's thread, `deadline.cpp`): the pauses that are due run.
+        #[qinvokable]
+        fn timeout(self: Pin<&mut Shell>);
+
         /// The folder tree was loaded. `folderKnown`: the listed folder is in it (or it is all folders, "").
         #[qinvokable]
         #[cxx_name = "treeLoaded"]
@@ -448,7 +452,7 @@ impl qobject::Shell {
         self.dispatch(Event::Reload);
     }
 
-    /// The timer fired (queued from `deadline.rs`): the pauses that are due run.
+    /// The timer fired (the invokable above, queued from `deadline.cpp`): the pauses that are due run.
     pub(crate) fn timeout(self: Pin<&mut Self>) {
         self.dispatch(Event::Timeout);
     }
@@ -659,13 +663,13 @@ impl qobject::Shell {
         let _ = self.qt_thread().queue(emit);
     }
 
-    /// Set the one timer to the next pause (or cancel it when none is pending). The thread is kept first, so the
-    /// timer's timeout can reach this object.
+    /// Set the shell's timer to the next pause (or cancel it when none is pending). The timer is a child of this object,
+    /// so its timeout queues `timeout` here.
     fn rearm(self: Pin<&mut Self>) {
-        deadline::remember(self.qt_thread());
+        let owner = deadline::owner(self);
         match controller::with(|c| c.next_deadline()) {
-            Some(at) => deadline::arm(at.saturating_sub(deadline::now_ms())),
-            None => deadline::disarm(),
+            Some(at) => deadline::arm(owner, at.saturating_sub(deadline::now_ms())),
+            None => deadline::disarm(owner),
         }
     }
 }

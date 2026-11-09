@@ -67,15 +67,16 @@ def lint_tool(name: str) -> str | None:
     return shutil.which(name)
 
 
-def import_msvc_environment(build_tools: Path, toolset: str) -> str:
-    """Sets this process's environment for MSVC's command line (vcvars64.bat, with the toolset) and returns the path of its
-    cl.exe, which must be that toolset's. Windows only. A failure ends this program."""
+def import_msvc_environment(build_tools: Path, toolset: str | None = None) -> str:
+    """Sets this process's environment for MSVC's command line (vcvars64.bat, with the toolset when one is given) and returns
+    the path of its cl.exe. With a toolset, cl.exe must be that toolset's. Windows only. A failure ends this program."""
     vcvars = build_tools / "VC" / "Auxiliary" / "Build" / "vcvars64.bat"
     if not vcvars.is_file():
         sys.exit(f"vcvars64.bat not found: {vcvars} (Visual Studio Build Tools, see the pins)")
+    pin = f" -vcvars_ver={toolset}" if toolset else ""
     # A string, not a list: a list would have its quotes escaped with backslashes, which cmd.exe does not read.
     dump = subprocess.run(
-        f'cmd.exe /d /c ""{vcvars}" -vcvars_ver={toolset} >nul 2>nul && set"',
+        f'cmd.exe /d /c ""{vcvars}"{pin} >nul 2>nul && set"',
         capture_output=True,
         text=True,
         check=False,
@@ -89,15 +90,15 @@ def import_msvc_environment(build_tools: Path, toolset: str) -> str:
     cl = shutil.which("cl.exe")
     if cl is None:
         sys.exit("cl.exe is not on PATH after vcvars64.bat")
-    if f"\\{toolset}\\" not in cl:
+    if toolset and f"\\{toolset}\\" not in cl:
         sys.exit(f"cl.exe is not toolset {toolset}: {cl}")
     return cl
 
 
-def run(cmd: list[str], env: dict[str, str] | None = None, quiet: bool = False) -> None:
-    """Runs `cmd` in the repository, printing it first; a failing command ends this program with its exit status. `quiet`
-    discards its output (for a check whose output is only data, such as `cargo metadata`)."""
+def run(cmd: list[str], env: dict[str, str] | None = None, quiet: bool = False, cwd: Path = REPO) -> None:
+    """Runs `cmd` in `cwd` (the repository by default), printing it first; a failing command ends this program with its exit
+    status. `quiet` discards its output (for a check whose output is only data, such as `cargo metadata`)."""
     print("+ " + " ".join(cmd), flush=True)
-    result = subprocess.run(cmd, cwd=REPO, env=env, check=False, stdout=subprocess.DEVNULL if quiet else None)
+    result = subprocess.run(cmd, cwd=cwd, env=env, check=False, stdout=subprocess.DEVNULL if quiet else None)
     if result.returncode != 0:
         sys.exit(result.returncode)

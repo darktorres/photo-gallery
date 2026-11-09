@@ -18,6 +18,7 @@ pg-scan = { path = "../scan" }
 pg-writeback = { path = "../writeback" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
+pg-query = { path = "../query" }
 pg-render = { path = "../render" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-video = { path = "../video" }

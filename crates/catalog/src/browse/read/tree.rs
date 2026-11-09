@@ -2,7 +2,7 @@
 //! built by its `TreeBuilder` from the folders' rows).
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use pg_model::tree::{FolderTree, TreeBuilder};
 
 /// The present files of each folder, counted from the `files_present` index alone (no sort, no table), and each

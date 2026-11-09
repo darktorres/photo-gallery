@@ -2,7 +2,7 @@
 //! (`file_source`), and the ThumbHash placeholder (`placeholder`).
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use rusqlite::OptionalExtension;
 use rusqlite::types::ValueRef;
 

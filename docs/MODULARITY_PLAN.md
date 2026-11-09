@@ -124,6 +124,8 @@ Every catalog module that names `crate::Catalog`, `crate::Result` or a root help
 - The root's `pub use pair::{Coverage, Pairing};` stays.
 - **M-3a, group G:** `scope` moves to `browse/read/scope.rs`. `facets` and `grid` import it from there; `read` stops being their parent for that helper. `facets`'s import of `super::grid::FILE_JOINS` is a sibling edge and stays.
 - **Expectation:** after M-3, M-3a and M-7, both the scan and the compiler views of groups E and G are empty. Record that expectation here, and make the gate the union (a group in either tool fails).
+- **Result (working tree on `3be8edf`, not committed):** `pg_query` alias deleted (callers use `pg_query::`; `pg-app` depends on `pg-query`); `pair`'s glob import replaced; `write_transaction` moved to `schema`; `Catalog::file_state` wrapper deleted (`thumbs` calls `browse::read::file_state`); `scope` moved to `browse/read/scope.rs`. Group G is gone in both views. Group E is now `(crate root), pair` on both targets: `pair` implements `Catalog` (`impl Catalog`), and `schema` no longer closes a cycle. What is left (`pair`'s `impl Catalog`, and the root's `Catalog`, `rules_name` and the file-rating constants) is M-7's move, so the allowlist entry is narrowed, not removed.
+- **Gates:** `just lint-windows` and `just test` pass. The Linux container's `cargo fmt --check`, `clippy -D warnings`, `cargo doc` and `cargo test` all pass as root, but the permission-based tests skip as root and `docker/check.sh` fails on any skip. The local `pg-dev` image has no `pg` user (it predates the Dockerfile's `useradd` and `USER pg`), so the Linux pass has to be rerun after the image is rebuilt from `docker/Dockerfile`.
 
 Gate: Linux checks, Windows `just test`.
 

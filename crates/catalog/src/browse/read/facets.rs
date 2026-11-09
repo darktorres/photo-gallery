@@ -3,17 +3,17 @@
 use std::collections::BTreeMap;
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use rusqlite::params_from_iter;
 use rusqlite::types::Value;
 
 use strum::IntoEnumIterator;
 
 use super::grid::FILE_JOINS;
-use super::scope;
-use crate::query::{Facet, MEDIA_CASE, border_counts, condition_without};
+use super::scope::scope;
 use pg_model::query::{BorderFacet, MediaType, Query};
 use pg_model::rules::Merged;
+use pg_query::{Facet, MEDIA_CASE, border_counts, condition_without};
 
 /// What the filter bar shows next to its choices, for a view's folder.
 #[derive(Default, Debug, PartialEq)]

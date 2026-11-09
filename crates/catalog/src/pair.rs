@@ -1,5 +1,5 @@
 //! Pairing, at the end of every scan of a root (S-17.7 decisions 4, 7 and 8). The scan writes each file it finds by its
-//! identity ([`ScanWriter::upsert_file`]); a file the catalog has no row for gets a fresh row, `unpaired`, and a row
+//! identity ([`crate::ScanWriter::upsert_file`]); a file the catalog has no row for gets a fresh row, `unpaired`, and a row
 //! whose identity is another file's is displaced, `unpaired`. This module decides what those rows are, in tiers:
 //!
 //! 1. **Same folder and name** on another volume: the file came back under a new identity (a renumbered volume), so
@@ -18,7 +18,13 @@
 //! are counted as ambiguous. A fresh row with children is never paired: pairing deletes it, and its children with it.
 //! Each binding is in the one transaction of the pass.
 
-use super::*;
+use pg_model::ids::FileId;
+use pg_model::rules::{Path as RulePath, PathRules};
+use rusqlite::{OptionalExtension, Transaction, params};
+
+use crate::error::Result;
+use crate::schema::write_transaction;
+use crate::{Catalog, folders_under, skipped_folders, under_params};
 
 /// What the pairing did, for the scan's report.
 #[derive(Debug, Default, PartialEq, Eq)]
@@ -314,7 +320,7 @@ fn replace(
             let bytes = bytes?;
             let temp = rules
                 .parse_bytes(&bytes)
-                .ok_or_else(|| crate::Error::Other(anyhow::anyhow!("a queued temp path that doesn't parse")))?;
+                .ok_or_else(|| crate::error::Error::Other(anyhow::anyhow!("a queued temp path that doesn't parse")))?;
             temps.push(temp);
         }
     }
@@ -352,6 +358,10 @@ fn replace(
 mod tests {
     use super::*;
     use crate::browse::fixtures::{spelled, under_both_rules};
+    use crate::{Recorded, ScannedFile, Versions};
+    use pg_model::ids::FileIdentity;
+    use pg_model::media::Ext;
+    use pg_model::name::Name;
     use pg_model::rules::PathRules;
 
     fn p(rules: PathRules, text: &str) -> RulePath {

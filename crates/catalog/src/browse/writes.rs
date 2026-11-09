@@ -1,11 +1,11 @@
 //! The browsing side's writes that aren't the file queue: a saved view, and the place the session was left at.
 //! The ratings and turns the user makes are in `crate::writes`.
 
-use crate::Result;
+use crate::error::Result;
 use rusqlite::{Connection, params};
 
 use crate::Catalog;
-use crate::query::to_json;
+use pg_query::to_json;
 
 use pg_model::view::SavedView;
 
@@ -37,7 +37,7 @@ fn put_session(conn: &Connection, key: &str, value: &str) -> Result<()> {
 
 /// Several session keys, in one transaction.
 pub fn session_set_many(catalog: &Catalog, values: &[(&str, &str)]) -> Result<()> {
-    let tx = crate::write_transaction(&catalog.conn)?;
+    let tx = crate::schema::write_transaction(&catalog.conn)?;
     for (key, value) in values {
         put_session(&tx, key, value)?;
     }

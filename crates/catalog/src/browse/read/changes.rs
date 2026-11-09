@@ -6,7 +6,7 @@
 //! No caller in the app yet: its planned consumer is a `Bus` subscriber that fell behind (`Lagged`) and resyncs
 //! through it (docs/REFACTOR_PLAN.md, the event primitives), which is not built.
 
-use crate::Result;
+use crate::error::Result;
 use pg_model::ids::FileId;
 
 use crate::Catalog;

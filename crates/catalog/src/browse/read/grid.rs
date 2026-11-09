@@ -2,12 +2,11 @@
 //! folder's file list, filtered and sorted.
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use rusqlite::types::Type;
 use rusqlite::{OptionalExtension, params_from_iter};
 
-use super::scope;
-use crate::query::{condition, key_sql};
+use super::scope::scope;
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::media::Ext;
@@ -16,6 +15,7 @@ use pg_model::query::{Query, Sort};
 use pg_model::rating::Rating;
 use pg_model::rules::Merged;
 use pg_model::turns::Turns;
+use pg_query::{condition, key_sql};
 
 /// What an `Entry` is read from (`entry_from_row`), with `f` the file. Macros for the statements that are constants,
 /// constants for those made at run time.

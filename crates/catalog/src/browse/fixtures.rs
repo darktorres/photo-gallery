@@ -8,9 +8,9 @@ use pg_model::rules::PathRules;
 
 use crate::browse::read::{FILE_JOINS, list_grid};
 use crate::fixture::{self, raw};
-use crate::query::key_sql;
 use crate::writes::set_rating;
 use pg_model::query::{Query, Sort, SortKey};
+use pg_query::key_sql;
 
 /// Runs a rule-generic test (one that takes its [`PathRules`]) under both rule sets, as two tests: `$windows` under
 /// Windows rules and `$posix` under POSIX ones, so a failure names the rules it failed under.

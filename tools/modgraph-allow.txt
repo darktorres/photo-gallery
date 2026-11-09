@@ -7,7 +7,7 @@
 # Text scan (the same on every target): cxx-qt bridges are invisible to the compiler.
 scan app: app, images, library, reader   # D (M-4)
 scan app: yandex, yandex::replay   # F (M-19)
-scan catalog: (crate root), browse::read, browse::read::changes, browse::read::details, browse::read::facets, browse::read::grid, browse::read::state, browse::read::tree, browse::read::views, pair, schema, writes   # E, G (M-3, M-3a, M-7)
+scan catalog: (crate root), pair, schema   # E (M-7: rules_name and Catalog still in the root); G closed by M-3a
 scan desktop: trace, trace::qobject   # J (M-20)
 scan desktop: command_line, command_line::qobject   # J (M-20); the rest of A went with M-1
 scan desktop: animation, animation::qobject   # J (M-20)
@@ -28,14 +28,12 @@ scan platform: picker, picker::native   # I (M-19)
 # Compiler, Linux (pg-dev).
 linux app: app, images, library, reader   # D (M-4)
 linux app: yandex, yandex::replay   # F (M-19)
-linux catalog: (crate root), dups, pair, schema, writes   # E (M-3, M-7)
-linux catalog: browse::read, browse::read::facets, browse::read::grid   # G (M-3a)
+linux catalog: (crate root), pair   # E (M-7: Catalog and rules_name still in the root)
 linux platform: dir, dir::unix   # H (M-19)
 
 # Compiler, Windows (the host).
 windows app: app, images, library, reader   # D (M-4)
 windows app: yandex, yandex::replay   # F (M-19)
-windows catalog: (crate root), dups, pair, schema, writes   # E (M-3, M-7)
-windows catalog: browse::read, browse::read::facets, browse::read::grid   # G (M-3a)
+windows catalog: (crate root), pair   # E (M-7: Catalog and rules_name still in the root)
 windows platform: dir, dir::windows   # H (M-19)
 windows platform: picker, picker::native   # I (M-19)

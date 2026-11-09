@@ -1623,6 +1623,7 @@ dependencies = [
  "pg-library",
  "pg-model",
  "pg-platform",
+ "pg-query",
  "pg-render",
  "pg-scan",
  "pg-testkit",

@@ -3,10 +3,10 @@
 //! next start; a view is a listing with a name.
 
 use pg_catalog::browse;
-use pg_catalog::query::{from_json, to_json};
 use pg_model::query::{Query, Sort};
 use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
+use pg_query::{from_json, to_json};
 
 use crate::app::App;
 use crate::error::Result;

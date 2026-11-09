@@ -26,7 +26,8 @@ pub fn install(log_path: PathBuf) {
         if !caught {
             let log_error = written.err().map(|e| e.to_string());
             let message = info.to_string();
-            let shown = pg_client::text::internal_error(&message, &log_path.display().to_string(), log_error.as_deref());
+            let shown =
+                pg_client::text::internal_error(&message, &log_path.display().to_string(), log_error.as_deref());
             alert::error_box(&shown);
         }
     }));

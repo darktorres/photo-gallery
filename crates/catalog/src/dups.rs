@@ -2,7 +2,7 @@
 //! The counts for a report, and the edges that group files: the grouping itself (union-find) is `pg-dedup`'s.
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use pg_model::ids::FileId;
 
 /// The present files' current analyses.

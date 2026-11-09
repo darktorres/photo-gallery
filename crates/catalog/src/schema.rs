@@ -8,9 +8,16 @@ use std::sync::OnceLock;
 use anyhow::{Context, anyhow};
 use pg_model::rules::PathRules;
 use pg_schema::Schema;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
-use crate::{Error, Result, write_transaction};
+use crate::error::{Error, Result};
+
+/// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited
+/// for (`busy_timeout`) before anything is read. A deferred one that reads first and then writes can instead fail at
+/// once when another connection has committed in between (SQLITE_BUSY_SNAPSHOT), which no wait fixes.
+pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transaction<'_>> {
+    Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+}
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -275,7 +282,7 @@ fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Res
     if let Some(text) = session {
         let folder =
             rules.parse_merged(&text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?;
-        tx.execute("UPDATE main.session SET value = ?1 WHERE key = 'folder'", [crate::query::to_json(&folder)])?;
+        tx.execute("UPDATE main.session SET value = ?1 WHERE key = 'folder'", [pg_query::to_json(&folder)])?;
     }
     Ok(())
 }

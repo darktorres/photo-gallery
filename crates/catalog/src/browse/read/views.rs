@@ -1,12 +1,12 @@
 //! The saved views and the session, as they were saved.
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use rusqlite::OptionalExtension;
 
-use crate::query::from_json;
 use pg_model::name::Name;
 use pg_model::view::SavedView;
+use pg_query::from_json;
 use rusqlite::types::Type;
 
 /// The saved views, by name as the grid orders file names (the name's key).

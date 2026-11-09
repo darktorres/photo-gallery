@@ -6,9 +6,13 @@ use crate::browse::fixtures::{
 use crate::browse::writes::save_view;
 use crate::fixture;
 use crate::fixture::raw;
-use crate::query::condition;
 use crate::writes::{self, queue_rotation};
-use crate::{Catalog, Result};
+use pg_query::condition;
+use rusqlite::types::Value;
+
+use super::scope::scope;
+use crate::Catalog;
+use crate::error::Result;
 use pg_model::analysis::{THUMBHASH_MAX, ThumbHash};
 use pg_model::date::Day;
 use pg_model::detection;
@@ -780,7 +784,7 @@ under_both_rules!(facet_counts, facet_counts_windows, facet_counts_posix);
 /// The facets as they were before the one pass: a statement per facet, each with its own scan of the folder. The
 /// reference the pass is checked against.
 fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, query: &Query) -> Result<Facets> {
-    use crate::query::{Facet, MEDIA_CASE, border_sql, condition_without};
+    use pg_query::{Facet, MEDIA_CASE, border_sql, condition_without};
     use strum::IntoEnumIterator;
     let conn = &catalog.conn;
     let (scope, scope_values) = scope(catalog.rules(), merged, recursive);

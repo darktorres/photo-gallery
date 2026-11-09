@@ -8,7 +8,7 @@
 //! statement, so no reader sees a write both done and still queued.
 
 use crate::Catalog;
-use crate::Result;
+use crate::error::Result;
 use rusqlite::types::Type;
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
 
@@ -77,7 +77,7 @@ pub fn rating_in_file_possible(kind: &str, format: Option<&str>) -> bool {
 /// clearing writes 0 only into a file that holds a rating.
 pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
     let conn = &catalog.conn;
-    let tx = crate::write_transaction(conn)?;
+    let tx = crate::schema::write_transaction(conn)?;
     let file_id = file_id.get();
     match rating {
         Some(rating) => tx.execute(
@@ -132,7 +132,7 @@ pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, wr
 /// it can and keeps the turn in the catalog otherwise. Turns add up until written.
 pub fn queue_rotation(catalog: &Catalog, file_id: FileId, turns: Turns) -> Result<()> {
     let conn = &catalog.conn;
-    let tx = crate::write_transaction(conn)?;
+    let tx = crate::schema::write_transaction(conn)?;
     let (file_id, turns) = (file_id.get(), turns.get());
     tx.execute(
         "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rotation', ?2 % 4, unixepoch())
@@ -245,7 +245,7 @@ pub fn done(catalog: &Catalog, job: &Job, effect: WriteEffect) -> Result<()> {
     let (file_id, kind) = (job.file_id.get(), job.kind.key());
     // What the queue records as written: the job's rating, or its turns.
     let written = job.value;
-    let tx = crate::write_transaction(conn)?;
+    let tx = crate::schema::write_transaction(conn)?;
     match effect {
         WriteEffect::FileRating { rewrite, rating } => {
             debug_assert!(job.kind == WriteKind::Rating && i64::from(rating) == written);

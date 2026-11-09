@@ -15,7 +15,6 @@ pub mod browse;
 pub mod dups;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
-pub use pg_query as query;
 pub mod writes;
 
 use std::collections::BTreeSet;
@@ -140,7 +139,7 @@ pub use pair::{Coverage, Pairing};
 mod schema;
 use schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, carry_rows, current_expected, current_version, expected, mismatch,
-    version_of,
+    version_of, write_transaction,
 };
 
 /// A library folder: the user added it, and a rescan walks it again.
@@ -369,13 +368,6 @@ fn take_shared(path: &Path) -> Result<pg_schema::Live> {
 pub struct Versions {
     pub import: i64,
     pub borders: i64,
-}
-
-/// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited
-/// for (`busy_timeout`) before anything is read. A deferred one that reads first and then writes can instead fail at
-/// once when another connection has committed in between (SQLITE_BUSY_SNAPSHOT), which no wait fixes.
-pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transaction<'_>> {
-    Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
 }
 
 /// Make `files.pending` mean this build's IMPORT_VERSION: when the catalog's `meta.import_version` is another
@@ -675,7 +667,7 @@ impl Catalog {
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
-        crate::query::register_functions(&conn)?;
+        pg_query::register_functions(&conn)?;
         // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
         // come in meanwhile, since the preparer's lock is still held).
         drop(exclusive);
@@ -708,7 +700,7 @@ impl Catalog {
             return Err(Error::Other(anyhow!("catalog {}: {why}: it changed after it was prepared", path.display())));
         }
         check_rules(&conn, path, rules)?;
-        crate::query::register_functions(&conn)?;
+        pg_query::register_functions(&conn)?;
         Ok(Catalog { conn, rules, rebuilt: None, _live: live })
     }
 
@@ -1047,11 +1039,6 @@ impl Catalog {
             self.conn.prepare_cached("DELETE FROM border_marks WHERE file_id = ?1")?.execute([file_id.get()])?;
         }
         Ok(())
-    }
-
-    /// The file's state as the readers check it (`pg_model::state::FileState`), `None` when it isn't in the catalog.
-    pub fn file_state(&self, file_id: FileId) -> Result<Option<pg_model::state::FileState>> {
-        browse::read::file_state(self, file_id)
     }
 
     /// Where a file is: its folder and name, exact. `None` when the catalog has no such file.

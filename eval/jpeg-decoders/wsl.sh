@@ -4,7 +4,7 @@
 # Steps: inputs (copy the 7 files to WSL's disk), check (clippy, rustfmt), compare (output vs libjpeg-turbo),
 # time (median wall ms), bench (callgrind through gungraun, then the table), marginal (callgrind on whole runs,
 # all threads: libvips and jpeg-decoder decode in their own threads, which gungraun doesn't count).
-# Needs tools/profiling/wsl-setup.sh's toolchain and `apt-get install libvips-dev`.
+# Needs tools/profiling/ci-setup.sh's toolchain and `apt-get install libvips-dev`.
 set -euo pipefail
 REPO=$(cd "$(dirname "$0")/../.." && pwd)
 CLONE=${PG_BENCH_CLONE:-$HOME/photo-gallery}

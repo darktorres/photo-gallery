@@ -132,7 +132,7 @@ superseded: the environment is now the pg-dev image, `docker/Dockerfile`, which 
 - Installed with `wsl --install -d Ubuntu-26.04 --no-launch` and first started with `-u root`, which skips creating
   a user. It is the default distro. `Ubuntu-24.04` was tried first, but it only has FFmpeg 6.1 and valgrind 3.22;
   it was unregistered on 2026-10-31.
-- `tools/profiling/wsl-setup.sh` (idempotent; deleted on 2026-11-09, its steps are now in `docker/Dockerfile`) installed the rest: valgrind 3.26, the build tools, FFmpeg 8's
+- `tools/profiling/wsl-setup.sh` (idempotent; its bench part was removed on 2026-11-09, and the CI part is now `tools/profiling/ci-setup.sh`) installed the rest: valgrind 3.26, the build tools, FFmpeg 8's
   headers, rustup (the toolchain that `rust-toolchain.toml` names, with clippy and rustfmt), and the `gungraun-runner` of the exact version in
   `Cargo.lock`.
 

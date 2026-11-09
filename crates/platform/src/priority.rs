@@ -44,7 +44,9 @@ pub fn set_current_thread(priority: Priority) {
 #[cfg(target_os = "linux")]
 fn current_thread_id() -> libc::id_t {
     // SAFETY: gettid takes no arguments and cannot fail.
-    unsafe { libc::syscall(libc::SYS_gettid) as libc::id_t }
+    let tid = unsafe { libc::syscall(libc::SYS_gettid) };
+    // A thread id fits in 32 bits. 0 names the calling thread for setpriority too, so it is the fallback.
+    libc::id_t::try_from(tid).unwrap_or(0)
 }
 
 /// Elsewhere the priority is not changed.
@@ -62,6 +64,7 @@ mod tests {
     }
 
     /// The nice value a new thread has after it sets `priority`. Each thread has its own, so each test gets one.
+    #[expect(clippy::unwrap_used, reason = "a test helper: a panicked thread fails the test")]
     fn nice_after(priority: Priority) -> i32 {
         std::thread::spawn(move || {
             set_current_thread(priority);

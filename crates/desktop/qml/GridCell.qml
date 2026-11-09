@@ -53,6 +53,8 @@ Item {
     // thumbnail fades in: hiding it as soon as the thumbnail is ready would show the empty frame behind it for the fade.
     Image {
         anchors.fill: parent
+        // Cropped as the thumbnail is, so the two line up when they swap.
+        fillMode: Image.PreserveAspectCrop
         source: cell.itemThumbhashUrl
         asynchronous: true
         smooth: true

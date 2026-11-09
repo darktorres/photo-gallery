@@ -36,7 +36,7 @@ quick-xml = "0.42"
 rusqlite = { version = "0.41", features = ["bundled", "collation", "fallible_uint", "functions", "hooks"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
-specta = { version = "=2.0.0-rc.27", features = ["derive"] } # exact: a release candidate; the web client's types (pg-model)
+specta = { version = "=2.0.0-rc.28", features = ["derive"] } # exact: a release candidate; the web client's types (pg-model)
 strum = { version = "0.28", features = ["derive"] }
 thiserror = "2"
 thumbhash = "0.1"

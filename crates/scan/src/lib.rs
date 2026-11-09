@@ -147,18 +147,11 @@ fn child_path(parent: &RulePath, name: &Name) -> RulePath {
 /// trailing separator (a drive root is `D:`). Exact: a name with an unpaired surrogate keeps it, so a folder whose
 /// real name has one (a short name such as `PROGRA~1` can resolve to it) is still the folder it is.
 pub fn normalize_path(root: &Path) -> Result<RulePath> {
-    // canonicalize gives the real case (a folder typed in lower case still matches the catalog's paths).
-    let real = std::fs::canonicalize(root).with_context(|| format!("can't open {}", root.display()))?;
-    let mut bytes = canonical_of(&real);
-    if cfg!(windows) {
-        if let Some(unc) = bytes.strip_prefix(br"\\?\UNC\") {
-            bytes = [br"\\", unc].concat();
-        } else if let Some(rest) = bytes.strip_prefix(br"\\?\") {
-            bytes = rest.to_vec();
-        }
-    }
+    // The real path: the names in the case the file system stores them, so a folder typed in another case still matches
+    // the catalog's paths (`names::real_path`).
+    let real = pg_platform::names::real_path(root).with_context(|| format!("can't open {}", root.display()))?;
     // Trailing and doubled separators are dropped by the parse.
-    PathRules::NATIVE.parse_bytes(&bytes).with_context(|| format!("{} is not a path", real.display()))
+    PathRules::NATIVE.parse_bytes(&canonical_of(&real)).with_context(|| format!("{} is not a path", real.display()))
 }
 
 /// What a scan of a root did. The counts are for the report; `replaced_ids` and `temps` are for the caller to act on

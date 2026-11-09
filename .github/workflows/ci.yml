@@ -91,6 +91,12 @@ jobs:
           modules: qtmultimedia
           cache: true
 
+      # The pinned Python comes first: `just setup` and the other recipes run its scripts (the screenshot fixture's venv is
+      # built from it too, tools/compare-shots.ps1). The patch is pinned, as the local tools' Python is (3.12.10).
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12.10"
+
       - name: FFmpeg archive and build (cached; keyed on the Justfile, which holds the pin)
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:
@@ -143,12 +149,6 @@ jobs:
           "fingerprint dirs: $(@(Get-ChildItem -Path target/debug/.fingerprint -Directory -ErrorAction SilentlyContinue).Count)"
           "cxx-qt-lib build dirs: $(@(Get-ChildItem -Path target/debug/build -Directory -Filter 'cxx-qt-lib-*' -ErrorAction SilentlyContinue).Count)"
           "cxx-qt-lib build outputs: $(@(Get-ChildItem -Path target/debug/build -Recurse -Filter output -ErrorAction SilentlyContinue | Where-Object { $_.Directory.Name -like 'cxx-qt-lib-*' }).Count)"
-
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-        with:
-          # The screenshot fixture's venv is built from this Python (tools/compare-shots.ps1). The patch is pinned, as the
-          # local tools' Python is (3.12.10).
-          python-version: "3.12.10"
 
       # The lint tools at their pins (tools/lint, and `just lint-tools-setup`): the same ones the Linux job installs.
       - name: Lint tools (ruff and markdownlint at their pins)

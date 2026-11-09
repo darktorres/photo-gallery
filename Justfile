@@ -27,9 +27,13 @@ default:
 # The pinned FFmpeg (the two values above) is downloaded once, checked against its SHA-256, and unpacked to .deps/ffmpeg.
 # To move to another pin, delete .deps/ffmpeg and change the two values.
 
-# Fetch the pinned FFmpeg into .deps/ffmpeg (tools/setup-ffmpeg.ps1), unless it is already there.
+# Fetch the pinned FFmpeg into .deps/ffmpeg (tools/setup_ffmpeg.py), unless it is already there.
 setup:
-    pwsh -NoLogo -NoProfile -File tools/setup-ffmpeg.ps1 -Url {{ ffmpeg_url }} -Sha256 {{ ffmpeg_sha256 }} -Destination .deps/ffmpeg
+    {{ py }} tools/setup_ffmpeg.py --url {{ ffmpeg_url }} --sha256 {{ ffmpeg_sha256 }} --destination .deps/ffmpeg
+
+# The Python tools' own tests (tools/test_*.py, stdlib unittest).
+test-tools:
+    {{ py }} -m unittest discover -s tools -p "test_*.py"
 
 # Says which of this machine's prerequisites are missing and how to fix each one (tools/doctor.ps1). Builds nothing.
 doctor:

@@ -49,13 +49,14 @@ Item {
     width: cell.version >= 0 ? cell.itemAspect * cell.rowHeight : 0
     height: cell.rowHeight
 
-    // ThumbHash placeholder (from the import) until the thumbnail arrives.
+    // ThumbHash placeholder (from the import) until the thumbnail is opaque. It stays under the thumbnail while the
+    // thumbnail fades in: hiding it as soon as the thumbnail is ready would show the empty frame behind it for the fade.
     Image {
         anchors.fill: parent
         source: cell.itemThumbhashUrl
         asynchronous: true
         smooth: true
-        visible: thumb.status !== Image.Ready
+        visible: thumb.opacity < 1
     }
     Image {
         id: thumb

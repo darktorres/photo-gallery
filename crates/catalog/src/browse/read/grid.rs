@@ -1,9 +1,11 @@
 //! The grid's entries: what a list of files shows of each (`Entry`, 56 bytes), a single file's entry, and a
 //! folder's file list, filtered and sorted.
 
+use std::cmp::Ordering;
+
 use crate::Catalog;
 use crate::error::Result;
-use rusqlite::types::Type;
+use rusqlite::types::{Type, Value};
 use rusqlite::{OptionalExtension, params_from_iter};
 
 use super::scope::scope;
@@ -74,6 +76,21 @@ fn entry_from_row(r: &rusqlite::Row) -> rusqlite::Result<Entry> {
     })
 }
 
+/// The order of two sort keys (`key_sql`'s values): numbers, or text by its bytes (SQLite's order), reversed when
+/// `descending`. No key (NULL) comes last either way.
+fn compare_keys(a: &Value, b: &Value, descending: bool) -> Ordering {
+    let by_value = match (a, b) {
+        (Value::Null, Value::Null) => return Ordering::Equal,
+        (Value::Null, _) => return Ordering::Greater,
+        (_, Value::Null) => return Ordering::Less,
+        (Value::Integer(a), Value::Integer(b)) => a.cmp(b),
+        (Value::Text(a), Value::Text(b)) => a.cmp(b),
+        // No sort key is a real number or a blob.
+        _ => Ordering::Equal,
+    };
+    if descending { by_value.reverse() } else { by_value }
+}
+
 /// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
 pub fn entry(catalog: &Catalog, file_id: FileId) -> Result<Option<Entry>> {
     let conn = &catalog.conn;
@@ -130,13 +147,9 @@ pub fn list_grid(catalog: &Catalog, folder: &Merged, recursive: bool, query: &Qu
     } else {
         let mut keyed = Vec::with_capacity(bound);
         while let Some(r) = rows.next()? {
-            keyed.push((r.get::<_, Option<i64>>(SORT_COLUMN)?, entry_from_row(r)?));
+            keyed.push((r.get::<_, Value>(SORT_COLUMN)?, entry_from_row(r)?));
         }
-        keyed.sort_by(|(a, _), (b, _)| match (a, b) {
-            (Some(a), Some(b)) if sort.descending => b.cmp(a),
-            (Some(a), Some(b)) => a.cmp(b),
-            (a, b) => b.is_some().cmp(&a.is_some()),
-        });
+        keyed.sort_by(|(a, _), (b, _)| compare_keys(a, b, sort.descending));
         // Collected in place, into the keyed list's allocation, which is a fifth larger than the entries need.
         let mut entries: Vec<Entry> = keyed.into_iter().map(|(_, e)| e).collect();
         entries.shrink_to_fit();

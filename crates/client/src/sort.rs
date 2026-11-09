@@ -1,24 +1,31 @@
-//! The sort box (the top bar's): its choices in order, and the sort each one is. Name reads A→Z; the others start with the
-//! largest, newest or longest, so they are descending. The box shows the key, whichever way it sorts.
+//! The sort box (the top bar's): its choices in order, and the sort each one is. Name and file type read A→Z; the others
+//! start with the largest, newest, best or longest, so they are descending. The box shows the key, whichever way it sorts.
 
 use pg_model::query::{Sort, SortKey};
 
 /// The sort box's keys, in its order (the names are TopBar's `sortNames`).
-pub const KEYS: [SortKey; 7] = [
+pub const KEYS: [SortKey; 14] = [
     SortKey::Name,
+    SortKey::Extension,
     SortKey::Size,
     SortKey::Modified,
     SortKey::Taken,
+    SortKey::Created,
+    SortKey::Rating,
     SortKey::Megapixels,
+    SortKey::Width,
+    SortKey::Height,
+    SortKey::AspectRatio,
     SortKey::Duration,
+    SortKey::Frames,
     SortKey::Borders,
 ];
 
-/// The sort the box's choice `index` makes: its key, descending except for the first (name). `None` out of range.
+/// The sort the box's choice `index` makes: its key, descending except for name and file type. `None` out of range.
 pub fn sort_choice(index: i32) -> Option<Sort> {
     let index = usize::try_from(index).ok()?;
     let key = *KEYS.get(index)?;
-    Some(Sort { key, descending: index != 0 })
+    Some(Sort { key, descending: !matches!(key, SortKey::Name | SortKey::Extension) })
 }
 
 /// The box's index for a sort's key.

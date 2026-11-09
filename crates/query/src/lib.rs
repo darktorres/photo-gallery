@@ -348,6 +348,8 @@ const NOT_DUPLICATES: &str = concat!("a.file_id IS NOT NULL AND NOT ", duplicate
 pub fn key_sql(sort: Sort) -> Option<&'static str> {
     match sort.key {
         SortKey::Name => None,
+        // Text, not a number: the grid compares it as SQLite does (`compare_keys`). No extension is NULL, last.
+        SortKey::Extension => Some("NULLIF(f.ext, '')"),
         SortKey::Size => Some("f.size"),
         SortKey::Modified => Some("f.mtime"),
         SortKey::Taken => Some(concat!(
@@ -355,8 +357,15 @@ pub fn key_sql(sort: Sort) -> Option<&'static str> {
             filetime_unix_offset!(),
             ", 'unixepoch', 'localtime'))"
         )),
+        SortKey::Created => Some("f.created"),
+        SortKey::Rating => Some("r.rating"),
         SortKey::Megapixels => Some("a.width * a.height"),
+        SortKey::Width => Some("a.width"),
+        SortKey::Height => Some("a.height"),
+        // In millionths, as the border depth is: a height of 0 (or none) is NULL, which comes last.
+        SortKey::AspectRatio => Some("CAST(1e6 * a.width / a.height AS INTEGER)"),
         SortKey::Duration => Some("a.duration_ms"),
+        SortKey::Frames => Some("a.frames"),
         // In millionths. Cuts are in stored pixels: a quarter turn (orientation 5–8) swaps the upright sides.
         SortKey::Borders => Some(concat!(
             "CASE WHEN ",
@@ -569,7 +578,22 @@ mod tests {
         );
         assert_eq!(
             SortKey::iter().map(SortKey::key).collect::<Vec<_>>(),
-            ["name", "size", "modified", "taken", "megapixels", "duration", "borders"],
+            [
+                "name",
+                "extension",
+                "size",
+                "modified",
+                "taken",
+                "created",
+                "rating",
+                "megapixels",
+                "width",
+                "height",
+                "aspect_ratio",
+                "duration",
+                "frames",
+                "borders",
+            ],
         );
         for t in [MediaType::Image, MediaType::Animated, MediaType::Video] {
             assert_eq!(json(&t), format!("\"{}\"", t.key()));

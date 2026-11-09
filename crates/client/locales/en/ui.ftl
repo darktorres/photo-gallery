@@ -88,11 +88,18 @@ ui-resume = Resume
 
 # The top bar
 ui-sort-name = By name
+ui-sort-file-type = By file type
 ui-sort-file-size = By file size
 ui-sort-modified = By date modified
 ui-sort-taken = By date taken
+ui-sort-created = By date created
+ui-sort-rating = By rating
 ui-sort-megapixels = By megapixels
+ui-sort-width = By width
+ui-sort-height = By height
+ui-sort-aspect-ratio = By aspect ratio
 ui-sort-duration = By duration
+ui-sort-frames = By frames
 ui-sort-border-depth = By border depth
 ui-sort-descending = Descending (click for ascending)
 ui-sort-ascending = Ascending (click for descending)

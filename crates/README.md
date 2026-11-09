@@ -288,8 +288,9 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   in green). "All folders" lists everything (it turns subfolders on); "Drive roots", shown when files lie directly
   in a drive root (`D:\`), lists only those (subfolders off). "Include subfolders" toggles recursion; for the empty
   folder that moves between the two rows.
-- **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file size, date
-  modified, date taken, megapixels, duration, border depth) and its direction (↑ / ↓). **Views ▾** saves the current folder,
+- **Top bar**: "N of M files", **Filters** (or **F**) to open the filter bar, the order (name, file type, file size, date
+  modified, date taken, date created, rating, megapixels, width, height, aspect ratio, duration, frames, border depth)
+  and its direction (↑ / ↓). **Views ▾** saves the current folder,
   subfolders, filters and sort under a name (ImageRater's bookmarks), and opens or deletes saved ones.
 - **Filter bar** (`FilterBar.qml`, `crates/query/src/lib.rs`): type (image, animated, video), extension, rating (unrated,
   1–5), shape (landscape, portrait, square), file size, megapixels, duration, date taken, date modified,

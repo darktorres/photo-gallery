@@ -30,9 +30,12 @@ ToolBar {
     required property real rowHeight
 
     // The sort box's names (its keys are pg_client::sort::KEYS, in the same order).
-    readonly property list<string> sortNames: [words.text("ui-sort-name"), words.text("ui-sort-file-size"),
-        words.text("ui-sort-modified"), words.text("ui-sort-taken"), words.text("ui-sort-megapixels"),
-        words.text("ui-sort-duration"), words.text("ui-sort-border-depth")]
+    readonly property list<string> sortNames: [words.text("ui-sort-name"), words.text("ui-sort-file-type"),
+        words.text("ui-sort-file-size"),
+        words.text("ui-sort-modified"), words.text("ui-sort-taken"), words.text("ui-sort-created"),
+        words.text("ui-sort-rating"), words.text("ui-sort-megapixels"), words.text("ui-sort-width"),
+        words.text("ui-sort-height"), words.text("ui-sort-aspect-ratio"), words.text("ui-sort-duration"),
+        words.text("ui-sort-frames"), words.text("ui-sort-border-depth")]
     // The sort box's index, and its text (the save-view dialog says it).
     property alias sortIndex: sortBox.currentIndex
     readonly property string sortText: sortBox.currentText

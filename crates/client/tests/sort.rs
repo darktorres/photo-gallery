@@ -5,10 +5,29 @@ use pg_model::query::{Sort, SortKey};
 
 #[test]
 fn the_box_keeps_its_order_and_directions() {
-    assert_eq!(KEYS.map(SortKey::key), ["name", "size", "modified", "taken", "megapixels", "duration", "borders"]);
+    assert_eq!(
+        KEYS.map(SortKey::key),
+        [
+            "name",
+            "extension",
+            "size",
+            "modified",
+            "taken",
+            "created",
+            "rating",
+            "megapixels",
+            "width",
+            "height",
+            "aspect_ratio",
+            "duration",
+            "frames",
+            "borders",
+        ]
+    );
     assert_eq!(sort_choice(0), Some(Sort { key: SortKey::Name, descending: false }));
-    assert_eq!(sort_choice(2), Some(Sort { key: SortKey::Modified, descending: true }));
-    assert_eq!(sort_choice(7), None);
+    assert_eq!(sort_choice(1), Some(Sort { key: SortKey::Extension, descending: false }));
+    assert_eq!(sort_choice(3), Some(Sort { key: SortKey::Modified, descending: true }));
+    assert_eq!(sort_choice(14), None);
     assert_eq!(sort_choice(-1), None);
 }
 

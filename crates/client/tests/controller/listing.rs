@@ -68,7 +68,7 @@ fn the_sort_box_sets_key_and_way() {
     let mut listing = start();
     update(&mut listing, Event::SortChoice(0));
     assert_eq!(listing.sort, Sort { key: SortKey::Name, descending: false });
-    update(&mut listing, Event::SortChoice(2));
+    update(&mut listing, Event::SortChoice(3));
     assert_eq!(listing.sort, Sort { key: SortKey::Modified, descending: true });
 }
 

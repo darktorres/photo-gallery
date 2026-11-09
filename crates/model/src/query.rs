@@ -145,12 +145,27 @@ impl From<RatingFilter> for u8 {
 pub enum SortKey {
     /// Folders together, in path order (all drives of a merged folder as one), then by name.
     Name,
+    /// The file's extension (its type), in lower case: `jpg` before `png`; files without one last.
+    Extension,
     Size,
     Modified,
     /// When it was taken; files that don't say sort by their modified time (as local wall-clock time).
     Taken,
+    /// When the file system says it was created; files that don't say last.
+    Created,
+    /// The stars it has; unrated files last.
+    Rating,
     Megapixels,
+    /// Upright width in pixels.
+    Width,
+    /// Upright height in pixels.
+    Height,
+    /// Width over height: the widest first, the tallest last.
+    #[serde(rename = "aspect_ratio")]
+    AspectRatio,
     Duration,
+    /// Frames in the file: animated images and videos with the most first.
+    Frames,
     /// The largest share of the image borders take on any one side; files without borders last.
     Borders,
 }
@@ -528,6 +543,6 @@ mod tests {
     #[test]
     fn the_sort_is_by_name_and_ascending_unless_told() {
         assert_eq!(Sort::default(), Sort { key: SortKey::Name, descending: false });
-        assert_eq!(SortKey::iter().count(), 7);
+        assert_eq!(SortKey::iter().count(), 14);
     }
 }

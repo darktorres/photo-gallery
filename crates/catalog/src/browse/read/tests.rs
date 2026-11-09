@@ -735,10 +735,10 @@ under_both_rules!(
 );
 
 fn grid_lists_sort_as_sqlite_did(rules: PathRules) {
+    use strum::IntoEnumIterator;
     let c = mixed_library(rules);
     // Ties: four 4×3 images, and no taken date or duration on most.
-    for key in [SortKey::Name, SortKey::Size, SortKey::Modified, SortKey::Taken, SortKey::Megapixels, SortKey::Duration]
-    {
+    for key in SortKey::iter() {
         for descending in [false, true] {
             let sort = by(key, descending);
             assert_eq!(ids(&c, "", true, &Query::default(), sort), sorted_by_sqlite(&c, sort), "{sort:?}");

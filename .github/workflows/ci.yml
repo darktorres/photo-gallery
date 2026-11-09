@@ -238,11 +238,10 @@ jobs:
       - name: System packages and libraries (FFmpeg, libclang)
         run: bash tools/profiling/ci-setup.sh
 
-      - name: Build environment (FFmpeg and libclang, for the steps after this one)
+      - name: Build environment (libclang and the video build's key, for the steps after this one)
         # Each step runs in its own shell, so an export in one step does not reach the next. GITHUB_ENV carries these
-        # to every later step (Clippy and tests, Docs).
+        # to every later step (Clippy and tests, Docs). FFmpeg's headers are found by pkg-config (crates/video/build.rs).
         run: |
-          echo "FFMPEG_DIR=$HOME/.local/share/pg-bench/ffmpeg" >> "$GITHUB_ENV"
           # pg-video's build script key (crates/video/build.rs): the FFmpeg headers' packages, by name and version. apt installs
           # them fresh on every run, so the folder's mtimes change every run; the key changes only when the packages do.
           echo "PG_VIDEO_CONTENT_KEY=$(dpkg-query -W -f='${Package} ${Version}\n' libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libswresample-dev | sha256sum | cut -d' ' -f1)" >> "$GITHUB_ENV"

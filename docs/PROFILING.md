@@ -175,12 +175,11 @@ $C diff $O.old $O                        # per function: what the last change di
 **What the Linux build needed** (found one failure at a time):
 
 1. `libssl-dev`: `ureq`'s `native-tls` is OpenSSL on Linux.
-2. A way around `.cargo/config.toml`'s `[env]`, which sets Windows paths for every build. `FFMPEG_DIR = D:/…` made
-   `crates/video/build.rs` panic looking for the DLLs, and `LIBCLANG_PATH = C:/…/LLVM/bin` kept bindgen from finding
-   libclang. Cargo has no per-target `[env]` and can't unset an entry, but the real environment wins over it. So
-   the container sets `LIBCLANG_PATH` (`docker/entrypoint.sh`) to the newest `/usr/lib/llvm-*/lib`, and `FFMPEG_DIR` is a prefix that
-   the Dockerfile makes (`/opt/pg/ffmpeg`, with `include` and `lib` linked to Ubuntu's multiarch
-   directories). `FFMPEG_DIR=/usr` doesn't work, because the headers are in `/usr/include/x86_64-linux-gnu`.
+2. The build environment. `.cargo/config.toml` no longer sets Windows paths for every build (it had an `[env]` entry for
+   `FFMPEG_DIR`, which made the Linux build look for Windows DLLs). `crates/video/build.rs` now finds FFmpeg's headers on Linux
+   through pkg-config (the development packages in `docker/apt-packages.txt`), and on Windows in `.deps/ffmpeg`. `LIBCLANG_PATH`
+   still has to be set on Linux, because libclang's folder depends on the Ubuntu release: the container sets it
+   (`docker/entrypoint.sh`) to the newest `/usr/lib/llvm-*/lib`, and the CI workflow does the same for the runner.
 3. `build.rs` copies the FFmpeg DLLs on Windows targets only.
 4. `.gitattributes` keeps `*.sh` at LF: they run in the container straight from the Windows checkout, where
    `core.autocrlf` would add `\r`.

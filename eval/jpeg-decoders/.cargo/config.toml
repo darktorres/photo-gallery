@@ -1,0 +1,5 @@
+# This crate is its own workspace, and it builds ffmpeg-sys-next, which reads FFMPEG_DIR. On Windows it reads the pinned
+# FFmpeg that `just setup` fetches into .deps/ffmpeg, two folders up (the repository root). `relative` resolves it against
+# the folder holding .cargo. A real environment variable overrides it. Linux finds FFmpeg through pkg-config instead.
+[env]
+FFMPEG_DIR = { value = "../../.deps/ffmpeg", relative = true }

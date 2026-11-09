@@ -26,20 +26,15 @@ ENV DEBIAN_FRONTEND=noninteractive \
     CARGO_TARGET_DIR=/cargo-target \
     QMAKE=/opt/Qt/${QT_VERSION}/gcc_64/bin/qmake \
     LD_LIBRARY_PATH=/opt/Qt/${QT_VERSION}/gcc_64/lib \
-    FFMPEG_DIR=/opt/pg/ffmpeg \
     PATH=/opt/lint/bin:/opt/lint-src/node_modules/.bin:/home/pg/.cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
 # The system packages: the list CI installs (apt-packages.txt), the mold linker (CI's Linux job links with it), git (the
 # aqtinstall install below is from a git URL), nodejs and npm (markdownlint), and the venv module, its own package on
-# Ubuntu. Then the FFmpeg prefix that ffmpeg-sys-next reads (include/ and lib/, over Ubuntu's multiarch directories).
+# Ubuntu. FFmpeg's headers come from its development packages, which pkg-config finds (crates/video/build.rs).
 COPY docker/apt-packages.txt /opt/pg/apt-packages.txt
 RUN apt-get update \
  && grep -v '^#' /opt/pg/apt-packages.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends \
       ca-certificates curl git mold nodejs npm python3-venv \
- && arch=$(dpkg-architecture -qDEB_HOST_MULTIARCH) \
- && install -d /opt/pg/ffmpeg \
- && ln -sfn "/usr/include/$arch" /opt/pg/ffmpeg/include \
- && ln -sfn "/usr/lib/$arch" /opt/pg/ffmpeg/lib \
  && rm -rf /var/lib/apt/lists/*
 
 # The user the checks run as: UID 1001, the GitHub runner's user, so a checkout the runner made is writable by it.

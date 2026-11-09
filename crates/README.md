@@ -127,8 +127,9 @@ says why. Its test (`crates/library/tests/writeback.rs`) works on generated file
 the temp folder's `scratch_rate` (`PG_TEST_DIR` moves it), and skips itself without ExifTool.
 
 Videos go through FFmpeg 9, our own copy rather than the one Qt bundles: BtbN's prebuilt `gpl-shared` package
-(`just setup` fetches the pinned build into `.deps/ffmpeg`, which `FFMPEG_DIR` in `.cargo/config.toml` names; `.env` can name
-another folder. The pin and its SHA-256 are in the `Justfile`). It has dav1d for AV1, which Qt's copy lacks, and the x264, libvpx, libaom and libwebp encoders the
+(on Windows `just setup` fetches the pinned build into `.deps/ffmpeg`, and `crates/video/build.rs` reads its headers there; on
+Linux the headers come from the FFmpeg development packages, through pkg-config. `FFMPEG_DIR` in `.env` names another folder on
+either. The pin and its SHA-256 are in the `Justfile`). It has dav1d for AV1, which Qt's copy lacks, and the x264, libvpx, libaom and libwebp encoders the
 video test needs. The app is linked against this GPL build, so a distributed build would be under the GPL; the app
 is not distributed. The bindings to its types are generated from its headers with libclang (LLVM; `LIBCLANG_PATH` in `.env` names its `bin` folder when libclang isn't in the usual place).
 Nothing links FFmpeg: `pg-video` loads its DLLs at run time by full path (`crates/video/src/ffi.rs`), from the folder
@@ -141,8 +142,7 @@ the temp folder's `scratch_video` (`PG_TEST_DIR` moves it), and the test skips i
 
 On a new machine, copy `.env.example` to `.env` and set `QT_DIR` and any path that differs from the defaults. Then `just doctor`
 says what is still missing, and `just setup` fetches the pinned FFmpeg into `.deps/ffmpeg`. `just` reads `.env` for every
-recipe, and the Python and cmd tools read it too; a plain `cargo` command sees only the real environment and
-`.cargo/config.toml`. The commands are in the `Justfile` ([just](https://just.systems); `just` lists them):
+recipe, and the Python and cmd tools read it too; a plain `cargo` command sees only the real environment. The commands are in the `Justfile` ([just](https://just.systems); `just` lists them):
 
 ```powershell
 just doctor  # what is missing on this machine, and how to fix it

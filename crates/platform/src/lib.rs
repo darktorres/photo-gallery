@@ -5,8 +5,10 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 pub mod clock;
+pub mod console;
 pub mod dir;
 pub mod dirs;
+pub mod dll;
 pub mod file;
 pub mod message;
 pub mod names;

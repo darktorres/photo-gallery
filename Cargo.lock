@@ -1792,7 +1792,7 @@ dependencies = [
  "dhat",
  "pg-cli",
  "pg-desktop",
- "windows-sys",
+ "pg-platform",
  "winres",
 ]
 
@@ -1874,6 +1874,7 @@ name = "pg-platform"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "libloading 0.9.0",
  "pg-model",
  "pg-testkit",
  "windows",

@@ -24,9 +24,7 @@ use std::ffi::{CStr, CString, OsStr, c_char, c_int, c_void};
 use std::io::{Read, Seek, SeekFrom};
 use std::marker::PhantomData;
 use std::panic::{AssertUnwindSafe, catch_unwind};
-use std::path::Path;
-#[cfg(windows)]
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::ptr;
 use std::sync::OnceLock;
 
@@ -186,56 +184,22 @@ unsafe fn sym<F: Copy>(lib: &Library, name: &str) -> Result<F, String> {
 struct Lib(Library);
 
 impl Lib {
-    /// The library `stem` of major version `major`: on Windows the DLL `stem-major.dll` in the first folder that has
-    /// it, opened by its full path; elsewhere the system's shared library, found by the system's own rules.
+    /// The library `stem` of major version `major`: its file, in the first of the folders that holds it (on Windows: the
+    /// executable's, then the `bin` build.rs found), else found by the system's own rules.
     fn open(stem: &str, major: u32) -> Result<Self, String> {
-        #[cfg(windows)]
-        {
-            use libloading::os::windows::{
-                LOAD_LIBRARY_SEARCH_DEFAULT_DIRS, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR, Library as WinLibrary,
-            };
-            let dir = find_dir()?;
-            let path = dir.join(format!("{stem}-{major}.dll"));
-            // SAFETY: the DLL is FFmpeg's, from the folder the search found, and loading it runs its own initialization
-            // code. The flags search only its own folder, the system's and the ones added to the search (no PATH).
-            let lib = unsafe {
-                WinLibrary::load_with_flags(&path, LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR | LOAD_LIBRARY_SEARCH_DEFAULT_DIRS)
-            }
-            .map_err(|e| format!("loading {}: {e}", path.display()))?;
-            Ok(Self(Library::from(lib)))
-        }
-        #[cfg(not(windows))]
-        {
-            let name = if cfg!(target_os = "macos") {
-                format!("lib{stem}.{major}.dylib")
-            } else {
-                format!("lib{stem}.so.{major}")
-            };
-            // SAFETY: a system FFmpeg library; loading it runs its own initialization code.
-            let lib = unsafe { Library::new(&name) }.map_err(|e| format!("loading {name}: {e}"))?;
-            Ok(Self(lib))
-        }
+        let file = pg_platform::dll::file_name(stem, major);
+        let candidates: Vec<PathBuf> = std::env::current_exe()
+            .ok()
+            .and_then(|exe| exe.parent().map(Path::to_path_buf))
+            .into_iter()
+            .chain(option_env!("PG_FFMPEG_BIN").map(PathBuf::from))
+            .collect();
+        let path = pg_platform::dll::resolve(&file, &candidates)?;
+        // SAFETY: FFmpeg's own library, from the folder the search found (or the system's search); loading it runs its
+        // initialization code, as FFmpeg's does.
+        let lib = unsafe { pg_platform::dll::load(&path) }.map_err(|e| format!("loading {}: {e}", path.display()))?;
+        Ok(Self(lib))
     }
-}
-
-/// The folder with FFmpeg's DLLs: the executable's, else the `bin` build.rs found.
-#[cfg(windows)]
-fn find_dir() -> Result<PathBuf, String> {
-    let probe = format!("avcodec-{LIBAVCODEC_VERSION_MAJOR}.dll");
-    let mut tried = Vec::new();
-    if let Ok(exe) = std::env::current_exe()
-        && let Some(dir) = exe.parent()
-    {
-        tried.push(dir.to_path_buf());
-    }
-    if let Some(bin) = option_env!("PG_FFMPEG_BIN") {
-        tried.push(PathBuf::from(bin));
-    }
-    if let Some(dir) = tried.iter().find(|dir| dir.join(&probe).is_file()) {
-        return Ok(dir.clone());
-    }
-    let listed: Vec<String> = tried.iter().map(|d| d.display().to_string()).collect();
-    Err(format!("{probe} isn't in any of: {}", listed.join(", ")))
 }
 
 /// What FFmpeg says about error `code`.

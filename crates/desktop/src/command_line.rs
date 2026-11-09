@@ -73,27 +73,10 @@ fn parse(args: &[OsString]) -> Vec<Arg> {
 fn arg_of(arg: &OsString) -> Option<Arg> {
     let text = arg.to_string_lossy();
     let (name, value) = text.strip_prefix("--")?.split_once('=')?;
-    Some(Arg { name: name.to_string(), value: value.to_string(), exact: value_exact(arg)? })
+    Some(Arg { name: name.to_string(), value: value.to_string(), exact: pg_platform::names::after_first_equals(arg)? })
 }
 
 /// The part of `arg` after its first `=`, as the system holds it.
-#[cfg(unix)]
-fn value_exact(arg: &OsString) -> Option<OsString> {
-    use std::os::unix::ffi::{OsStrExt, OsStringExt};
-    let bytes = arg.as_bytes();
-    let at = bytes.iter().position(|&b| b == b'=')?;
-    Some(OsString::from_vec(bytes.get(at + 1..)?.to_vec()))
-}
-
-/// The part of `arg` after its first `=`, as the system holds it.
-#[cfg(windows)]
-fn value_exact(arg: &OsString) -> Option<OsString> {
-    use std::os::windows::ffi::{OsStrExt, OsStringExt};
-    let units: Vec<u16> = arg.encode_wide().collect();
-    let at = units.iter().position(|&u| u == u16::from(b'='))?;
-    Some(OsString::from_wide(units.get(at + 1..)?))
-}
-
 fn args() -> &'static [Arg] {
     ARGS.get().map_or(&[], Vec::as_slice)
 }

@@ -16,6 +16,7 @@ test = false
 
 [dependencies]
 pg-cli = { path = "../cli" }
+pg-platform = { path = "../platform" }
 # The app window. Without it `gallery` runs only its commands, and builds without Qt.
 pg-desktop = { path = "../desktop", optional = true }
 # The heap profiler (docs/PROFILING.md "Tool: dhat"): a patched dhat-rs that takes whole backtraces quickly
@@ -27,10 +28,6 @@ default = ["desktop"]
 desktop = ["dep:pg-desktop"]
 # `gallery` with dhat as its allocator, writing dhat-heap.json when it ends. Built with the `dhat` profile.
 dhat-heap = ["dep:dhat"]
-
-[target.'cfg(windows)'.dependencies]
-# The console attach (src/main.rs), which only Windows has.
-windows-sys.workspace = true
 
 [build-dependencies]
 winres.workspace = true

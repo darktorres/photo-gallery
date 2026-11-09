@@ -19,6 +19,7 @@ libc.workspace = true
 
 [dependencies]
 pg-model = { path = "../model" }
+libloading.workspace = true
 
 [dev-dependencies]
 pg-testkit = { path = "../testkit" }

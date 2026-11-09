@@ -2,6 +2,8 @@
 //! the process's arguments again and copies each one; this passes Qt the same arguments `command_line` reads
 //! (cpp/gui_app.cpp).
 
+use pg_platform::names::arg_bytes;
+
 #[cxx_qt::bridge]
 mod ffi {
     unsafe extern "C++" {
@@ -32,21 +34,6 @@ fn argv_bytes(args: &[OsString]) -> Vec<u8> {
         bytes.push(0);
     }
     bytes
-}
-
-/// One argument's bytes. Unix: exactly as the system holds them, a raw byte included. Windows: its text, converted
-/// lossily as cxx-qt-lib passes them; Qt reads its own arguments from the command line there, exactly (probed), and
-/// the app reads its arguments from `command_line`, so the argv only has to be well formed.
-#[cfg(unix)]
-fn arg_bytes(arg: &OsString) -> Vec<u8> {
-    use std::os::unix::ffi::OsStrExt;
-    arg.as_bytes().to_vec()
-}
-
-/// One argument's bytes: its text (lossy), as cxx-qt-lib passes them (see the Unix one).
-#[cfg(windows)]
-fn arg_bytes(arg: &OsString) -> Vec<u8> {
-    arg.to_string_lossy().as_bytes().to_vec()
 }
 
 #[cfg(all(test, unix))]

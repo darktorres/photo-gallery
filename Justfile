@@ -98,10 +98,12 @@ lint-tools-setup:
 _qt:
     {{ py }} tools/check_qt.py
 
-# Fails when a lint tool is not the version CI uses, in the repository (`just lint-tools-setup`) or on PATH.
+# Fails when a lint tool is not the version CI uses, in the repository (`just lint-tools-setup`) or on PATH. That is every
+# tool the lint and the module check run: ruff and markdownlint from the lockfiles, and the four pinned here (just itself
+# included, so a `just` other than CI's is caught the first time a recipe runs).
 [private]
 _lint-tools:
-    {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }}
+    {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }} --just {{ just_version }} --cargo-modules {{ cargo_modules_version }}
 
 # cargo-machete reads only our crates: vendor/ keeps the upstream's lints (vendor/README.md).
 

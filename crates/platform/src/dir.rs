@@ -627,11 +627,12 @@ mod unix {
                 .ok()?;
             let mut buf = [0u8; 17];
             // SAFETY: `file` is open, and the kernel writes at most the struct's 17 bytes (a length byte, then 16 bytes).
-            let rc = unsafe { libc::ioctl(file.as_raw_fd(), FS_IOC_GETFSUUID as _, buf.as_mut_ptr()) };
+            let rc = unsafe { libc::ioctl(file.as_raw_fd(), libc::c_ulong::from(FS_IOC_GETFSUUID), buf.as_mut_ptr()) };
             if rc != 0 {
                 return None;
             }
-            uuid_id(&buf[1..=usize::from(buf[0]).min(16)])
+            let len = usize::from(buf[0]).min(16);
+            uuid_id(buf.get(1..=len)?)
         }
 
         /// The ID_FS_UUID udev recorded for the device, in `/run/udev/data/b<major>:<minor>`, as it is written.
@@ -662,10 +663,12 @@ mod unix {
             }
             // SAFETY: statfs returned 0, so it filled `st`.
             let st = unsafe { st.assume_init() };
-            if st.f_type != 0xEF53 as _ {
+            if st.f_type != 0xEF53 {
                 return None;
             }
-            let halves = st.f_fsid.__val;
+            // libc keeps fsid_t's field private: its two words, which are C ints, read as they are.
+            // SAFETY: fsid_t is two C ints, the same size and layout as [i32; 2].
+            let halves: [i32; 2] = unsafe { std::mem::transmute(st.f_fsid) };
             Some(u64::from(halves[0].cast_unsigned()) | (u64::from(halves[1].cast_unsigned()) << 32))
         }
 
@@ -943,7 +946,7 @@ mod listing_tests {
         // The crate's own folder: read, never written.
         let mut lister = Lister::new();
         let dir = lister.open(&units_of(env!("CARGO_MANIFEST_DIR").as_bytes())).unwrap();
-        let folder_volume = dir.volume().unwrap();
+        let folder_volume = lister.folder_volume(&dir).unwrap();
         let wanted = units_of(b"Cargo.toml");
         let mut found = None;
         lister
@@ -976,7 +979,7 @@ mod listing_tests {
         let mut lister = Lister::new();
         let root = lister.open(&units_of(b"/")).unwrap();
         let proc = lister.open(&units_of(b"/proc")).unwrap();
-        assert_ne!(root.volume().unwrap(), proc.volume().unwrap());
+        assert_ne!(lister.folder_volume(&root).unwrap(), lister.folder_volume(&proc).unwrap());
         let mut seen = Vec::new();
         lister.each(&proc, |e| seen.push((e.name.to_vec(), e.volume))).unwrap();
         assert!(!seen.is_empty());

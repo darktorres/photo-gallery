@@ -408,7 +408,7 @@ impl Pass<Cx<'_>> for Scans {
                     for temp in &s.temps {
                         // By its disk path: the plain one would miss a temp in a folder whose name ends in a dot, or
                         // delete a sibling folder's file of the same name.
-                        let disk = pg_platform::native::disk_path(cx.catalog.rules(), temp);
+                        let disk = pg_platform::names::disk_path(cx.catalog.rules(), temp);
                         match std::fs::remove_file(&disk) {
                             Ok(()) => {}
                             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

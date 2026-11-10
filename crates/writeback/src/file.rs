@@ -10,7 +10,7 @@ use pg_model::rules::Path as RulePath;
 use pg_model::write::WriteKind;
 
 /// Size and mtime (FILETIME, as the scanner records it), of the file at `path` (its disk path,
-/// `pg_platform::native::disk_path`, which names it exactly).
+/// `pg_platform::names::disk_path`, which names it exactly).
 pub fn stat(path: impl AsRef<Path>) -> Result<(i64, i64)> {
     let path = path.as_ref();
     let m = std::fs::metadata(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))?;

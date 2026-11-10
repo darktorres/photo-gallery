@@ -131,7 +131,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 }
                 for temp in &s.temps {
                     // By its disk path, as the runner does: the plain one could reach a sibling folder's file.
-                    let disk = pg_platform::native::disk_path(rules, temp);
+                    let disk = pg_platform::names::disk_path(rules, temp);
                     match std::fs::remove_file(&disk) {
                         Ok(()) => {}
                         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}

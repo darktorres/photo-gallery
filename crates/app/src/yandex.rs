@@ -15,8 +15,9 @@ use std::thread;
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
+use pg_platform::names::disk_path;
 use pg_platform::names::rule_path_of;
-use pg_platform::native::{PATH_RULES, disk_path};
+use pg_platform::native::PATH_RULES;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
 
 use crate::prefs::PrefStore;

@@ -103,7 +103,7 @@ fn wait_until(secs: u64, what: impl Fn() -> String, mut done: impl FnMut() -> bo
 
 /// The path a rule path names on disk.
 fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
-    pg_platform::native::disk_path(c.rules(), path)
+    pg_platform::names::disk_path(c.rules(), path)
 }
 
 fn wait_for_queue(c: &Catalog) -> anyhow::Result<()> {
@@ -810,7 +810,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // shows the turn pending (rotation 1).
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
-    std::fs::copy(&files[1].0, pg_platform::native::disk_path(c.rules(), &temp)).unwrap();
+    std::fs::copy(&files[1].0, pg_platform::names::disk_path(c.rules(), &temp)).unwrap();
     state::set_analysis_rotation(&c, id, 1).unwrap();
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 
@@ -931,7 +931,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
     let temp_text = String::from_utf8(c.rules().join(&temp)).unwrap();
     let copied = std::fs::read(&files[0].0).unwrap();
-    std::fs::write(pg_platform::native::disk_path(c.rules(), &temp), &copied).unwrap();
+    std::fs::write(pg_platform::names::disk_path(c.rules(), &temp), &copied).unwrap();
     drop(c);
 
     // The catalog as it was before, with the temp as text.
@@ -949,7 +949,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
     assert_eq!(std::fs::read(&files[1].0).unwrap(), copied, "the copy went into the original");
-    assert!(!pg_platform::native::disk_path(c.rules(), &temp).exists(), "the temp is still on disk");
+    assert!(!pg_platform::names::disk_path(c.rules(), &temp).exists(), "the temp is still on disk");
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the file holds the rating once the copy is done");
 
     drop(writer);

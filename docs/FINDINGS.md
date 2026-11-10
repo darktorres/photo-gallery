@@ -125,7 +125,7 @@ or deleted. Finding it needs a full-set run.
   through the stay-open argument file, with the plain path. The option isn't turned on.
 - **Folders ending in a dot or a space.** A plain path drops the dot or space from a folder's name on Windows, so
   `D:\a.\x.jpg` opens `D:\a\x.jpg`; the verbatim form keeps it. Every stored path reaches the disk verbatim
-  (`pg_platform::native::disk_path`). Probed (2026-11-10, Windows 10, folders `a.` and `a` side by side):
+  (`pg_platform::names::disk_path`). Probed (2026-11-10, Windows 10, folders `a.` and `a` side by side):
   - ExifTool 13.60 takes the verbatim form, through the stay-open argument file and from the command line, with a
     non-ASCII name too: `-Rating=5` on `\\?\…\a.\x.jpg` wrote `a.\x.jpg`, and on the plain path it wrote `a\x.jpg`.
     The write-back and the crop give it the verbatim path. (An earlier note here said ExifTool did not read `\\?\`:

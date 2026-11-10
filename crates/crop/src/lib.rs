@@ -18,8 +18,8 @@ use pg_jobs::control::{Control, Phase};
 use pg_jobs::failure::{Cause, FileError};
 use pg_jobs::pipeline::{self, Options};
 use pg_platform::file::TempFile;
+use pg_platform::names::disk_path_of;
 use pg_platform::names::{set_path, shown};
-use pg_platform::native::disk_path_of;
 use pg_writeback::{exiftool_program, stat};
 
 pub struct Stats {

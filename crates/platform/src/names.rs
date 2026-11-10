@@ -7,8 +7,9 @@ use std::io;
 use std::path::{Path, PathBuf};
 
 use pg_model::name::Name;
+use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::native::{NativePath, SEP, Unit};
+use crate::native::{NativePath, SEP, Unit, verbatim};
 
 /// A name the system holds, from its units (`scan`'s listing): exact.
 pub fn name_from_native(units: &[Unit]) -> Name {
@@ -53,7 +54,7 @@ pub fn set_path(path: &mut NativePath, canonical: &[u8]) {
 }
 
 /// A path from its canonical bytes, in the plain form. Not public: a stored path is opened by its verbatim form
-/// (`native::disk_path`), and shown by `PathRules::display`, so no caller outside makes the plain form of one.
+/// ([`disk_path`]), and shown by `PathRules::display`, so no caller outside makes the plain form of one.
 pub(crate) fn path_buf(canonical: &[u8]) -> PathBuf {
     #[cfg(windows)]
     {
@@ -67,9 +68,22 @@ pub(crate) fn path_buf(canonical: &[u8]) -> PathBuf {
     }
 }
 
+/// The path std, FFmpeg and ExifTool open the stored `path` by: its verbatim form (`native::verbatim`), so a folder
+/// whose name ends in a dot or a space is the folder it names, not a sibling without it. The one way production code
+/// turns a catalog's path into a path it opens; a path the user is shown is `PathRules::display`.
+pub fn disk_path(rules: PathRules, path: &RulePath) -> PathBuf {
+    disk_path_of(&rules.join(path))
+}
+
+/// [`disk_path`] of a whole path's canonical bytes, as a work list or a path arena holds them (`PathRules::join`,
+/// `WorkList::path`).
+pub fn disk_path_of(canonical: &[u8]) -> PathBuf {
+    verbatim(&path_buf(canonical))
+}
+
 /// One name as the system holds it, from its canonical bytes (an unpaired surrogate kept on Windows, a raw byte
 /// elsewhere): for a name joined to a folder the caller holds as a `Path`, as the tests' odd names are. A whole stored
-/// path is `native::disk_path`'s.
+/// path is [`disk_path`]'s.
 pub fn os_name(name: &Name) -> OsString {
     path_buf(name.as_bytes()).into_os_string()
 }
@@ -91,7 +105,7 @@ pub fn canonical_of(path: &Path) -> Vec<u8> {
 }
 
 /// `path` under the native rules, exactly, the verbatim prefix dropped (`\\?\D:\a.` is `D:\a.`: the catalog keeps the
-/// plain bytes, and `native::disk_path` puts the prefix back). `None` when it has no path form under them (a NUL,
+/// plain bytes, and [`disk_path`] puts the prefix back). `None` when it has no path form under them (a NUL,
 /// which no name holds).
 pub fn rule_path_of(path: &Path) -> Option<pg_model::rules::Path> {
     crate::native::PATH_RULES.parse_bytes(&without_verbatim(canonical_of(path)))
@@ -254,6 +268,25 @@ mod tests {
             assert_eq!(rules.join(&rule), plain.as_bytes(), "{given}");
             assert_eq!(shown(Path::new(given)), plain, "{given}");
         }
+    }
+
+    /// A stored path reaches the file in a folder whose name ends in a dot through `disk_path`, by its rule path and
+    /// by its joined bytes alike, and not the file in the sibling folder without the dot.
+    #[cfg(windows)]
+    #[test]
+    fn a_stored_path_in_a_dotted_folder_is_reached_by_its_disk_path() {
+        let dir = std::path::absolute(pg_testkit::test_folder("scratch_names", "disk-path").unwrap()).unwrap();
+        let dotted = dir.join("Acme Inc.");
+        std::fs::create_dir_all(verbatim(&dotted)).unwrap();
+        std::fs::create_dir_all(dir.join("Acme Inc")).unwrap();
+        std::fs::write(verbatim(&dotted.join("a.jpg")), b"dotted").unwrap();
+        std::fs::write(dir.join("Acme Inc").join("a.jpg"), b"sibling").unwrap();
+        let stored = canonical_of(&dotted.join("a.jpg"));
+        assert!(disk_path_of(&stored).to_string_lossy().starts_with(r"\\?\"), "the verbatim form");
+        assert_eq!(std::fs::read(disk_path_of(&stored)).unwrap(), b"dotted");
+        let rule = rule_path_of(&dotted.join("a.jpg")).unwrap();
+        assert_eq!(std::fs::read(disk_path(crate::native::PATH_RULES, &rule)).unwrap(), b"dotted");
+        std::fs::remove_dir_all(verbatim(&dir)).unwrap();
     }
 
     #[test]

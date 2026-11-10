@@ -18,7 +18,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   exception is the desktop's glue that must name a type of one platform: the folder dialog's
   (`pg_platform::picker::Dialog` exists on Windows only). The video player is handed an open file
   (`file::player_handle`), the same call on every platform. `tools/boundaries.py` checks it, with the exception listed
-  there. A stored path reaches the disk through `native::disk_path` alone (the verbatim form on Windows, which keeps a
+  there. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and

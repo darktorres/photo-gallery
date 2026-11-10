@@ -103,7 +103,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 // A video: its poster frame, read by FFmpeg itself.
                 Some(at) => {
                     // FFmpeg opens the file by its disk path, as in import.
-                    let disk = pg_platform::native::disk_path_of(&work.path(item.path, sep));
+                    let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
                     maker
                         .load_frame(&disk, at, item.source.rotation)
                         .and_then(|()| maker.encode_frame_into(pg_model::num::index(height), &mut out))

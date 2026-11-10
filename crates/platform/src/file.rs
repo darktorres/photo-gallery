@@ -144,7 +144,7 @@ pub fn created_time(meta: &Metadata) -> Option<i64> {
     Some(UNIX_EPOCH_TICKS + secs * 10_000_000 + i64::from(since.subsec_nanos() / 100))
 }
 
-/// The file at `path` (a `native::disk_path`), open for reading, as the raw handle the video player takes over and
+/// The file at `path` (a `names::disk_path`), open for reading, as the raw handle the video player takes over and
 /// closes: a `HANDLE` on Windows, a descriptor on Unix, as one integer. The player can't be given the file by name: on
 /// Windows Qt's file engine normalizes every name it opens, the verbatim one too (`GetFullPathNameW`), which drops a
 /// folder's trailing dot, and on Unix a name with a byte that isn't UTF-8 has no `QString` form.

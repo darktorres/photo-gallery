@@ -14,10 +14,10 @@ use crate::pool::Pool;
 /// Idle catalog connections kept for the next borrower; more are closed when returned.
 const KEEP_CATALOGS: usize = 4;
 
-/// The path the file at a catalog path is opened by (`pg_platform::native::disk_path`): the catalogs are opened under
+/// The path the file at a catalog path is opened by (`pg_platform::names::disk_path`): the catalogs are opened under
 /// the native rules (`with_catalog`), so their paths are the native ones.
 pub(crate) fn path_of(path: &RulePath) -> PathBuf {
-    pg_platform::native::disk_path(pg_platform::native::PATH_RULES, path)
+    pg_platform::names::disk_path(pg_platform::native::PATH_RULES, path)
 }
 
 /// The catalog connections of the app.

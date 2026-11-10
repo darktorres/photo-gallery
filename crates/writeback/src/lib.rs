@@ -40,8 +40,9 @@ use pg_model::media::Kind;
 use pg_model::rules::Path as RulePath;
 
 use pg_model::write::WriteKind;
+use pg_platform::names::disk_path;
 use pg_platform::names::set_path;
-use pg_platform::native::{NativePath, disk_path};
+use pg_platform::native::NativePath;
 use pg_thumbcache::ThumbCache;
 
 use pg_jobs::events::Change;

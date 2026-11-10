@@ -42,6 +42,13 @@ use cxx_qt_lib::{QQmlApplicationEngine, QQmlEngine, QString, QUrl};
 /// 1 when the application couldn't be made), for the process to exit with.
 #[must_use]
 pub fn run(args: &[OsString]) -> i32 {
+    // Qt uses PipeWire for audio when its library is installed, and crashes when PipeWire cannot start (pg_platform::audio).
+    // Then the app asks Qt for PulseAudio instead. Qt reads the variable when it makes the audio devices, so it is set here,
+    // first, before any thread of the app's own starts. A choice the user made in the environment is kept.
+    if std::env::var_os("QT_AUDIO_BACKEND").is_none() && pg_platform::audio::pipewire_context_fails() {
+        // SAFETY: no other thread is running yet: this is the first thing `run` does.
+        unsafe { std::env::set_var("QT_AUDIO_BACKEND", "pulseaudio") };
+    }
     // The crate's and the QML module's C++ initializers. A static library keeps them only where they are called.
     cxx_qt::init_crate!(pg_desktop);
     cxx_qt::init_qml_module!("pg.gallery");

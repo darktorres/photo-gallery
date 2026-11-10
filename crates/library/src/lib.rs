@@ -18,7 +18,7 @@ pub fn catalog_path(dir: &std::path::Path) -> std::path::PathBuf {
 /// The catalog in the folder `dir`, prepared for this build (`Catalog::prepare` with [`versions`], under the native rules).
 /// A catalog this build can't use is moved aside and rebuilt; [`pg_catalog::Catalog::rebuilt`] says so.
 pub fn open_catalog(dir: &std::path::Path) -> pg_catalog::Result<pg_catalog::Catalog> {
-    pg_catalog::Catalog::prepare(&catalog_path(dir), versions(), pg_model::rules::PathRules::NATIVE)
+    pg_catalog::Catalog::prepare(&catalog_path(dir), versions(), pg_platform::native::PATH_RULES)
 }
 
 /// The thumbnail cache of the catalog `catalog_id`, in the folder `dir`, holding at most `cap` bytes (`None`: the cache's

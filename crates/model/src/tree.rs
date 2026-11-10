@@ -50,10 +50,11 @@ pub struct FolderTree {
     root_files: i64,
 }
 
-impl Default for FolderTree {
-    fn default() -> Self {
+impl FolderTree {
+    /// A tree with no folders, under `rules` (a catalog's, before its first tree is read).
+    pub fn empty(rules: PathRules) -> Self {
         FolderTree {
-            rules: PathRules::NATIVE,
+            rules,
             nodes: Vec::new(),
             paths: Vec::new(),
             keys: Vec::new(),

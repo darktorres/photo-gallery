@@ -25,7 +25,7 @@ use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
 use pg_model::query::{Query, Sort};
-use pg_model::rules::{Merged, PathRules};
+use pg_model::rules::Merged;
 use pg_model::tree::FolderTree;
 
 use crate::catalogs::Catalogs;
@@ -114,7 +114,7 @@ impl Reader {
             // Opened by the first request, and again by the next one if that failed.
             let opened = match catalog.take() {
                 Some(c) => Ok(c),
-                None => Catalog::open(&self.catalog_path, PathRules::NATIVE).and_then(|mut c| {
+                None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES).and_then(|mut c| {
                     c.cancel_when(self.cancel.clone())?;
                     Ok(c)
                 }),

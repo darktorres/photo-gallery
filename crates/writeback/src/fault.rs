@@ -75,7 +75,7 @@ pub(crate) fn before_record(
         && forgotten == job.file_id
         && !fired.swap(true, Ordering::SeqCst)
     {
-        let catalog = pg_catalog::Catalog::open(catalog_path, pg_model::rules::PathRules::NATIVE)?;
+        let catalog = pg_catalog::Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
         pg_catalog::writes::drop_gone(&catalog, job)?;
     }
     Ok(())

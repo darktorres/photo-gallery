@@ -9,7 +9,7 @@
 use std::cell::RefCell;
 use std::ops::Range;
 
-use pg_model::rules::Merged;
+use pg_model::rules::{Merged, PathRules};
 use pg_model::tree::FolderTree;
 
 /// A visible row. The order is the rows' order (All, then Drive roots, then the nodes in pre-order), which
@@ -42,10 +42,10 @@ pub struct Tree {
     key: RefCell<Vec<u8>>,
 }
 
-impl Default for Tree {
-    /// Only "All", until the first tree.
-    fn default() -> Tree {
-        Tree { tree: FolderTree::default(), expanded: Vec::new(), visible: vec![Visible::All], key: RefCell::default() }
+impl Tree {
+    /// Only "All", until the first tree, whose paths follow `rules`.
+    pub fn new(rules: PathRules) -> Tree {
+        Tree { tree: FolderTree::empty(rules), expanded: Vec::new(), visible: vec![Visible::All], key: RefCell::default() }
     }
 }
 
@@ -204,7 +204,6 @@ impl Tree {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pg_model::rules::PathRules;
     use pg_model::tree::TreeBuilder;
 
     /// A folder given as its Windows path text, merged.
@@ -250,7 +249,7 @@ mod tests {
     /// toggles nor moves; with none, the row is not there and `""` is "All" either way.
     #[test]
     fn drive_roots_is_row_one_when_the_roots_hold_files() {
-        let mut t = Tree::default();
+        let mut t = Tree::new(PathRules::Windows);
         t.replace(tree_with_roots(2));
         assert_eq!(shown(&t), ["", "/", "a", "e"]);
         assert_eq!(t.row(0), Some(Visible::All));
@@ -288,7 +287,7 @@ mod tests {
     #[test]
     fn the_empty_folder_is_drive_roots_only_without_subfolders_and_with_root_files() {
         let all = Merged::default();
-        let mut t = Tree::default();
+        let mut t = Tree::new(PathRules::Windows);
         t.replace(tree_with_roots(2));
         assert_eq!(t.shown_as(&all, true), Some(Visible::All));
         assert_eq!(t.shown_as(&all, false), Some(Visible::DriveRoots));
@@ -304,7 +303,7 @@ mod tests {
 
     #[test]
     fn folders_open_and_close_and_their_rows_follow() {
-        let mut t = Tree::default();
+        let mut t = Tree::new(PathRules::Windows);
         assert_eq!(shown(&t), [""]);
         t.replace(tree());
         // Two top-level folders, so nothing opens by itself.
@@ -333,7 +332,7 @@ mod tests {
 
     #[test]
     fn reveal_opens_the_folders_above_and_gives_its_row() {
-        let mut t = Tree::default();
+        let mut t = Tree::new(PathRules::Windows);
         t.replace(tree());
         assert_eq!(t.reveal(&folder(r"a\b\c"), true), Some(3));
         assert_eq!(shown(&t), ["", "a", r"a\b", r"a\b\c", r"a\d", "e"]);
@@ -346,7 +345,7 @@ mod tests {
 
     #[test]
     fn an_open_folder_stays_open_in_a_new_tree() {
-        let mut t = Tree::default();
+        let mut t = Tree::new(PathRules::Windows);
         t.replace(tree());
         t.toggle(1);
         t.replace(tree());
@@ -364,7 +363,7 @@ mod tests {
         path.parts = vec![odd.clone()];
         let mut b = TreeBuilder::with_capacity(rules, 2, 0, 0);
         b.add(1, &path, 1);
-        let mut t = Tree::default();
+        let mut t = Tree::new(PathRules::Windows);
         t.replace(b.build());
         let Some(Visible::Folder(node)) = t.row(1) else { panic!("the folder's row") };
         let opened = t.folders().merged(node);

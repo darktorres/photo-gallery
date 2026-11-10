@@ -1,6 +1,6 @@
-# CI (S-15). Two jobs: `windows` (the app: lint, tests, the QML tests, the screenshot comparison),
-# and `linux` (the whole workspace on Linux, with Qt 6.12 for Linux: the same recipes as the Windows job, lint and tests
-# and the QML tests). Both run the Justfile's recipes, so a check that passes here passes there; the steps that are not
+# CI (S-15). Two jobs: `windows` (the app: lint, the module cycles, tests, the QML tests, the screenshot comparison),
+# and `linux` (the whole workspace on Linux, with Qt 6.12 for Linux: the same recipes as the Windows job, lint, the module
+# cycles, tests and the QML tests). Both run the Justfile's recipes, so a check that passes here passes there; the steps that are not
 # recipes are the setup. The compiler is pinned in rust-toolchain.toml. Actions are pinned to commit SHAs with the tag in the
 # comment; .github/dependabot.yml proposes updates. The Linux packages are in docker/apt-packages.txt.
 #
@@ -156,6 +156,10 @@ jobs:
       - name: Lint (every check, as on Linux, and the QML)
         run: just lint
 
+      - name: Module cycles (the text scan, and the compiler's module graph on the Windows target)
+        # The Windows-only modules (the cfg(windows) halves of pg-platform) are in this graph only.
+        run: just modgraph
+
       - name: Tests (Qt's bin on PATH; PG_REQUIRE_TOOLS makes a missing tool fail the job)
         run: just test
 
@@ -271,13 +275,17 @@ jobs:
           key: ${{ hashFiles('**/build.rs') }}
 
       # The same recipes as the Windows job. `just lint` runs every check that does not need Windows (formatting, clippy,
-      # the wasm32 check, the docs, the lockfiles, the supply chain, ruff and markdownlint) and the QML lint; the lint
-      # tools come from their lockfiles (`just lint-tools-setup`). Every cargo command takes --locked.
+      # the wasm32 check, the docs, the lockfiles, the supply chain, the crate boundaries, ruff and markdownlint) and the
+      # QML lint; the lint tools come from their lockfiles (`just lint-tools-setup`). Every cargo command takes --locked.
       - name: Lint tools (ruff and markdownlint at their pins)
         run: just lint-tools-setup
 
       - name: Lint (every check, and the QML)
         run: just lint
+
+      - name: Module cycles (the text scan, and the compiler's module graph on the Linux target)
+        # The Unix-only modules (the cfg(unix) halves of pg-platform) are in this graph only.
+        run: just modgraph
 
       - name: Tests (the whole workspace)
         run: just test

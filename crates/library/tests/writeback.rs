@@ -20,7 +20,6 @@ use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::rating::Rating;
-use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
 use pg_jobs_testkit::Quiet;
@@ -77,7 +76,7 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
     std::fs::create_dir_all(dir.join("images"))?;
     let files = make_files(&dir)?;
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE)?;
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images"))?;
     pg_scan::scan(&mut c, &root, &ctl)?;
@@ -128,7 +127,7 @@ fn ratings_and_turns_reach_the_files() {
     let dir = pg_testkit::run_folder_with("scratch_rate", "writeback", &["images"]).unwrap();
     let files = make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -250,7 +249,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     .unwrap();
 
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -482,7 +481,7 @@ fn a_write_into_a_folder_ending_in_a_dot_is_refused_and_reaches_no_other_folder(
     std::fs::write(verbatim(&dotted.join("a.jpg")), &jpeg).unwrap();
     std::fs::write(sibling.join("a.jpg"), &jpeg).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
     // The scan lists both folders, each by its own name.
@@ -615,7 +614,7 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     let junk = dir.join("images").join("g.jpg");
     std::fs::write(&junk, b"not an image at all").unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -799,7 +798,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -842,7 +841,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -889,7 +888,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     std::fs::create_dir_all(dir.join("images")).unwrap();
     make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -919,7 +918,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     let dir = pg_testkit::run_folder_with("scratch_writeback", "carried-temp", &["images"]).unwrap();
     let files = make_files(&dir).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
@@ -937,7 +936,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     state::set_text_temp_layout(&catalog_path, id, &temp_text).unwrap();
 
     // The upgrade carries the row (its temp as bytes), and the writer finishes the copy.
-    let c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     assert!(c.rebuilt().is_some(), "the text layout is moved aside");
     assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()));
     let (events, quiet) = Quiet::bus();

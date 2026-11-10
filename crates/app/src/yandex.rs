@@ -15,10 +15,8 @@ use std::thread;
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
-use pg_model::rules::PathRules;
 use pg_platform::names::{path_buf, rule_path_of};
-pub use pg_yandex::YandexError;
-use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload};
+use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
 
 use crate::prefs::PrefStore;
 
@@ -463,7 +461,7 @@ impl Search {
     /// Where the save dialog opens: the folder saved into last (`yandex_folder`) while it exists, or else the photo's
     /// folder. None when there is neither.
     pub fn start_folder(&self, prefs: &PrefStore) -> Option<PathBuf> {
-        let last = prefs.get().yandex_folder.map(|folder| path_buf(&PathRules::NATIVE.join(&folder)));
+        let last = prefs.get().yandex_folder.map(|folder| path_buf(&pg_platform::native::PATH_RULES.join(&folder)));
         if let Some(last) = last.filter(|last| last.is_dir()) {
             return Some(last);
         }

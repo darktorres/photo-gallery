@@ -13,7 +13,6 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_crop::CropError;
 use pg_model::ids::FileId;
-use pg_model::rules::PathRules;
 use pg_platform::native::verbatim;
 
 /// A letterboxed picture; `seed` changes its content, so that two files' bytes differ.
@@ -55,7 +54,7 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
         std::fs::create_dir_all(verbatim(folder))?;
         std::fs::write(verbatim(&folder.join("a.jpg")), jpeg(seed)?)?;
     }
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE)?;
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let root = pg_scan::normalize_path(&images)?;

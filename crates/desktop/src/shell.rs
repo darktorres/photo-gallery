@@ -276,7 +276,7 @@ impl Default for ShellRust {
         let listing = controller::listing();
         let prefs = controller::with(|c| *c.prefs());
         ShellRust {
-            folder: QString::from(&PathRules::NATIVE.display_merged(&listing.folder)),
+            folder: QString::from(&pg_platform::native::PATH_RULES.display_merged(&listing.folder)),
             recursive: listing.recursive,
             folder_kind: folders::listing_kind(&listing.folder, listing.recursive),
             descending: listing.sort.descending,
@@ -520,7 +520,7 @@ impl qobject::Shell {
     /// Copy the listing into the properties, notifying those that changed.
     fn mirror(mut self: Pin<&mut Self>) {
         let listing = controller::listing();
-        let folder = QString::from(&PathRules::NATIVE.display_merged(&listing.folder));
+        let folder = QString::from(&pg_platform::native::PATH_RULES.display_merged(&listing.folder));
         if self.folder != folder {
             self.as_mut().rust_mut().folder = folder;
             self.as_mut().folder_changed();
@@ -683,7 +683,7 @@ mod tests {
         let mut builder = TreeBuilder::with_capacity(rules, 2, 0, 0);
         builder.add(1, &rules.parse(r"D:\").unwrap(), 2);
         builder.add(2, &rules.parse(r"D:\p").unwrap(), 3);
-        let mut tree = Tree::default();
+        let mut tree = Tree::new(rules);
         tree.replace(builder.build());
         tree
     }
@@ -725,7 +725,7 @@ mod tests {
         let rules = PathRules::Windows;
         let mut builder = TreeBuilder::with_capacity(rules, 1, 0, 0);
         builder.add(2, &rules.parse(r"D:\p").unwrap(), 3);
-        let mut without_roots = Tree::default();
+        let mut without_roots = Tree::new(rules);
         without_roots.replace(builder.build());
         assert_eq!(folders::listing_kind_of(&without_roots, &all, false), folders::KIND_ALL);
         assert_eq!(without_roots.row_of(&all, false), Some(0));

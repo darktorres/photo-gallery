@@ -19,12 +19,25 @@ SKIPPED = re.compile(r"skipped: |: skipped$")
 
 
 def main() -> None:
-    print("\n== Lint (tools/lint.py: formatting, clippy, docs, lockfiles, supply chain, Python and Markdown)", flush=True)
+    print(
+        "\n== Lint (tools/lint.py: formatting, clippy, docs, lockfiles, supply chain, crate boundaries, Python and Markdown)",
+        flush=True,
+    )
     lint = [sys.executable, str(REPO / "tools" / "lint.py")]
     print("+ " + " ".join(lint), flush=True)
     result = subprocess.run(lint, cwd=REPO, check=False)
     if result.returncode != 0:
         sys.exit(result.returncode)
+
+    # As `just modgraph`, on the Linux target: the Unix-only modules (pg-platform's cfg(unix) halves) are in this graph
+    # only. The image has cargo-modules at the Justfile's pin.
+    print("\n== Module cycles (the text scan, and the compiler's module graph on the Linux target)", flush=True)
+    for script in ("module_graph.py", "compiler_graph.py"):
+        command = [sys.executable, str(REPO / "tools" / "modgraph" / script)]
+        print("+ " + " ".join(command), flush=True)
+        result = subprocess.run(command, cwd=REPO, check=False)
+        if result.returncode != 0:
+            sys.exit(result.returncode)
 
     print("\n== Tests (the whole workspace)", flush=True)
     # --show-output keeps the printed lines of passing tests too (libtest captures them otherwise), so the skip lines reach

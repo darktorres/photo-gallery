@@ -25,7 +25,7 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::rules::{Path as RulePath, PathRules};
+use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
@@ -350,7 +350,7 @@ impl Inner {
     fn round(&self, conn: &mut Option<Catalog>) -> Result<Step> {
         let mut catalog = match conn.take() {
             Some(c) => c,
-            None => Catalog::open(&self.catalog_path, PathRules::NATIVE)?,
+            None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES)?,
         };
         let step = {
             let mut cx = Cx { inner: self, catalog: &mut catalog };

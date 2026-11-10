@@ -15,7 +15,6 @@ use pg_jobs::pipeline::Options;
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::path::PathArena;
-use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 
 const W: u32 = 320;
@@ -87,7 +86,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     }
     let dir = pg_testkit::run_folder_with("scratch_rate", "crop", &["images/sub"]).unwrap();
     let files = make_files(&dir).unwrap();
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     c.add_root(&root).unwrap();

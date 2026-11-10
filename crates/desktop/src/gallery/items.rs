@@ -11,7 +11,6 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, ImageRequest, Version};
 use pg_model::query::MediaType;
-use pg_model::rules::PathRules;
 
 use super::qobject;
 
@@ -184,7 +183,7 @@ impl qobject::GalleryModel {
                 _ => None,
             };
             let kept = e.rating.is_some() && !d.rating_in_file;
-            let path = PathRules::NATIVE.display(&d.path);
+            let path = pg_platform::native::PATH_RULES.display(&d.path);
             QString::from(&text::info(&path, e.shown_size(), u64::try_from(d.size).unwrap_or(0), kept, borders))
         })
         .unwrap_or_default()

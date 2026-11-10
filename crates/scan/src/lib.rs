@@ -32,7 +32,7 @@ use pg_platform::native::Unit;
 
 use pg_jobs::control::{Control, Phase};
 use pg_jobs::failure::{Failure, keep_failure};
-use pg_platform::names::{canonical_of, name_from_native, units_of};
+use pg_platform::names::{name_from_native, rule_path_of, units_of};
 
 /// The folder listing a scan reads with: the platform's [`Lister`], or a fake in the tests.
 pub trait Listing {
@@ -198,7 +198,7 @@ pub fn normalize_path(root: &Path) -> Result<RulePath> {
     // the catalog's paths (`names::real_path`).
     let real = pg_platform::names::real_path(root).with_context(|| format!("can't open {}", root.display()))?;
     // Trailing and doubled separators are dropped by the parse.
-    PathRules::NATIVE.parse_bytes(&canonical_of(&real)).with_context(|| format!("{} is not a path", real.display()))
+    rule_path_of(&real).with_context(|| format!("{} is not a path", real.display()))
 }
 
 /// What a scan of a root did. The counts are for the report; `replaced_ids` and `temps` are for the caller to act on
@@ -491,7 +491,7 @@ mod tests {
 
     impl FakeListing {
         fn new(root_volume: u64, tree: &[(&str, Vec<FakeEntry>)]) -> FakeListing {
-            FakeListing::under(PathRules::NATIVE, root_volume, tree)
+            FakeListing::under(pg_platform::native::PATH_RULES, root_volume, tree)
         }
 
         /// The fake tree with its folders spelled under `rules`.
@@ -555,7 +555,7 @@ mod tests {
 
     /// The root path of the fake tree, under the rules the tests catalog uses.
     fn fake_root() -> RulePath {
-        fake_root_under(PathRules::NATIVE)
+        fake_root_under(pg_platform::native::PATH_RULES)
     }
 
     /// The root path of the fake tree under `rules`.
@@ -587,7 +587,7 @@ mod tests {
     }
 
     fn catalog() -> Catalog {
-        Catalog::prepare(Path::new(":memory:"), versions(), PathRules::NATIVE).unwrap()
+        Catalog::prepare(Path::new(":memory:"), versions(), pg_platform::native::PATH_RULES).unwrap()
     }
 
     #[test]
@@ -764,7 +764,7 @@ mod tests {
         let tree = [("", vec![file("a.jpg", 7, 1), mnt]), ("mnt", vec![file("m.jpg", 8, 1)])];
         let first = walk(&mut c, &fake_root(), &Control::new(), &mut FakeListing::new(1, &tree)).unwrap();
         assert_eq!((first.refused_mounts, c.status().unwrap().files), (0, 2));
-        let mut refusing = FakeListing::new(1, &tree).refusing(PathRules::NATIVE, "mnt");
+        let mut refusing = FakeListing::new(1, &tree).refusing(pg_platform::native::PATH_RULES, "mnt");
         let second = walk(&mut c, &fake_root(), &Control::new(), &mut refusing).unwrap();
         assert_eq!(second.refused_mounts, 1);
         assert!(second.refused_mount_list.first().is_some_and(|f| f.path.ends_with("mnt")));

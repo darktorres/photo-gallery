@@ -95,7 +95,6 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, FileError, Notice, Phase, Progress, WriteError};
 use pg_client::text;
-use pg_model::rules::PathRules;
 
 use crate::app;
 use crate::picker::{self, Purpose};
@@ -217,7 +216,7 @@ impl qobject::Library {
                 Vec::new()
             }
         };
-        let texts: QStringList = roots.iter().map(|r| QString::from(&PathRules::NATIVE.display(&r.path))).collect();
+        let texts: QStringList = roots.iter().map(|r| QString::from(&pg_platform::native::PATH_RULES.display(&r.path))).collect();
         self.as_mut().rust_mut().root_ids = roots.iter().map(|r| r.id).collect();
         self.set_roots(texts);
     }

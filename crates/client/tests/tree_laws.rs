@@ -29,7 +29,7 @@ proptest! {
         for (i, path) in paths.iter().enumerate() {
             builder.add(i64::try_from(i).unwrap() + 1, &rules.parse(path).unwrap(), 1);
         }
-        let mut tree = Tree::default();
+        let mut tree = Tree::new(rules);
         tree.replace(builder.build());
         for path in &paths {
             let folder = merged(path);
@@ -58,7 +58,7 @@ proptest! {
         if roots > 0 {
             builder.add(0, &rules.parse("D:").unwrap(), roots);
         }
-        let mut tree = Tree::default();
+        let mut tree = Tree::new(rules);
         tree.replace(builder.build());
         let has_row = roots > 0;
         prop_assert_eq!(tree.row(0), Some(Visible::All));

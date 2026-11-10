@@ -79,7 +79,7 @@ impl qobject::GalleryModel {
         self.as_mut().set_loading(true);
         let pg_model::view::Listing { folder, recursive, sort, query } = listing;
         let model = self.qt_thread();
-        let shown = pg_model::rules::PathRules::NATIVE.display_merged(&folder);
+        let shown = pg_platform::native::PATH_RULES.display_merged(&folder);
         crate::app::get().reading().session().grid(folder, recursive, query, sort, move |entries| {
             let entries = entries.unwrap_or_else(|e| {
                 crate::log::note(&format!("listing {shown}: {e:#}"));

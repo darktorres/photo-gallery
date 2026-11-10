@@ -133,7 +133,7 @@ pub(crate) fn expected(version: i64) -> Result<Schema> {
 /// [`expected`] for the given baseline and migrations.
 pub(crate) fn expected_for(baseline: &str, migrations: &[&str], version: i64) -> Result<Schema> {
     let conn = Connection::open_in_memory()?;
-    bring_to(&conn, baseline, migrations, PathRules::NATIVE, version)?;
+    bring_to(&conn, baseline, migrations, pg_platform::native::PATH_RULES, version)?;
     Ok(Schema::read(&conn, SEEDS)?)
 }
 

@@ -105,17 +105,18 @@ _qt:
 _lint-tools:
     {{ py }} tools/check_lint_tools.py --cargo-deny {{ cargo_deny_version }} --cargo-machete {{ cargo_machete_version }} --just {{ just_version }} --cargo-modules {{ cargo_modules_version }}
 
-# cargo-machete reads only our crates: vendor/ keeps the upstream's lints (vendor/README.md).
-
-# Every check: formatting, clippy, dependencies, the Python, the Markdown and the QML (tools/lint.py, every OS).
+# Every check: formatting, clippy, dependencies, the crate boundaries (tools/boundaries.py: the crate layers, acyclic dev
+# edges, re-exports, platform code), the Python, the Markdown and the QML (tools/lint.py, every OS). cargo-machete reads
+# only our crates: vendor/ keeps the upstream's lints (vendor/README.md).
 lint: _qt _lint-tools && lint-qml
     {{ py }} tools/lint.py
 
 # The module-cycle check (docs/MODULARITY_PLAN.md, M-0): the compiler's module graph of each library crate on this
 # machine's target (tools/modgraph/compiler_graph.py), and the text scan (tools/modgraph/module_graph.py), which sees the
 # cxx-qt bridge modules the compiler does not. cargo-modules is a tool, not a dependency: its version is pinned here and
-# in docker/Dockerfile (bump both). A missing or different one is installed at the pin. A cycle group that is not on the
-# allowlist (tools/modgraph-allow.txt) fails the check; the allowlist empties as M-1 to M-20 land (M-16).
+# in CI's install steps (.github/workflows/ci.yml; bump both; the container reads it from here). A missing or different
+# one is installed at the pin. A cycle group that is not on the allowlist (tools/modgraph-allow.txt) fails the check, and
+# the allowlist is empty (M-16): any module cycle fails. CI runs it on both targets.
 cargo_modules_version := "0.28.0"
 
 modgraph: _qt

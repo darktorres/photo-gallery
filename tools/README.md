@@ -10,7 +10,8 @@ arguments, where it has any.
 | `pgtools.py` | The helpers the other tools share: the repository's folder, the `.env` loader, a command runner, the MSVC environment | both | imported |
 | `check_qt.py` | Fails with the fix when `QT_DIR` is not a Qt 6.12.0 kit (its `bin/qmake`) | both | `_qt` in the recipes that need Qt |
 | `check_lint_tools.py` | The lint tools at their pins: ruff and markdownlint from `.venv` and `.tools` (or PATH); `--install` makes them, from their lockfiles | both | `just lint-tools-setup`, `just lint` |
-| `lint.py` | The lint steps, the same list on every OS (fmt, clippy, wasm32, docs, the lockfiles, deny, machete, ruff, markdownlint) | both | `just lint`, `docker/check.py` |
+| `lint.py` | The lint steps, the same list on every OS (fmt, clippy, wasm32, docs, the lockfiles, deny, machete, ruff, markdownlint, the crate boundaries) | both | `just lint`, `docker/check.py` |
+| `boundaries.py` | The workspace's structural rules: the crate layers (`crate-layers.txt`), acyclic dev edges, re-exports, and the platform rule (OS calls and branches only in pg-platform) | both | `lint.py` |
 | `lint_qml.py` | The QML lint: qmllint and the QML compiler, failing on any warning | both | `just lint-qml` |
 | `doctor.py` | Checks the machine for what the build and tests need, and says how to fix each missing part | both | `just doctor` |
 | `setup_ffmpeg.py` | Fetches the pinned FFmpeg build: the archive, its SHA-256 checked before anything is unpacked | Windows | `just setup`, CI |
@@ -38,9 +39,9 @@ arguments, where it has any.
 | `profiling/callgraph/symbolize.py` | Turns `callgraph.dll`'s profiles into named ones, from the PDBs (dbghelp) | Windows only | `profile.py` |
 | `build_jpeg_turbo.py` | Builds libjpeg-turbo (JPEG 8.0, static, the dynamic CRT) for Qt's JPEG plugin and the app's turbojpeg | Windows only (MSVC) | by hand, into `PG_HOME\static\jpeg-turbo` or `--work` |
 | `build_static_ffmpeg.py` | Builds the static FFmpeg 9.0 for pg-video and Qt Multimedia, with its CRT and link checks | Windows only (MSVC, MSYS2) | by hand, into `PG_HOME\static\ffmpeg` or `--work` |
-| `modgraph/module_graph.py` | The intra-crate module graph: which module refers to which | both | `just modgraph` |
-| `modgraph/compiler_graph.py` | The compiler's module graph and its cycle groups (`cargo modules`) | both | `just modgraph` |
-| `modgraph/allowlist.py` | The module-cycle allowlist (`modgraph-allow.txt`): the known cycle groups still to be fixed | both | `just modgraph` |
+| `modgraph/module_graph.py` | The intra-crate module graph: which module refers to which | both | `just modgraph`, `docker/check.py` |
+| `modgraph/compiler_graph.py` | The compiler's module graph and its cycle groups (`cargo modules`) | both | `just modgraph`, `docker/check.py` |
+| `modgraph/allowlist.py` | The module-cycle allowlist (`modgraph-allow.txt`, empty: any module cycle fails) | both | `just modgraph`, `docker/check.py` |
 | `modgraph/split_check.py` | The group-level check of a planned split of one Rust file | both | by hand (`docs/MODULARITY_PLAN.md`) |
 | `modgraph/make_html.py` | A self-contained `graph.html` of the crate and module graphs | both | by hand |
 | `modgraph/unreachable_pub.py` | Counts rustc's `unreachable_pub` warnings per crate | both | by hand (`docs/MODULARITY_PLAN.md`) |
@@ -56,6 +57,8 @@ tests (`just test-eval`).
 - `lint/`: the lint tools at their pins: `requirements.txt` (ruff, with hashes) and `package.json` with its lockfile
   (markdownlint-cli). `just lint-tools-setup` installs from them.
 - `shots/`: the screenshot fixture and its reference recordings (`reference/<sha10>/`).
+- `crate-layers.txt`: each crate's allowed normal dependencies on the workspace's crates, bottom layer first
+  (`boundaries.py`).
 - `profiling/`, `modgraph/`: as in the table.
 
 ## PowerShell originals, kept until a Windows run confirms their Python ports

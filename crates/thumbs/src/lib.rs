@@ -8,7 +8,6 @@ use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Context, Result};
 use pg_catalog::Catalog;
-use pg_model::rules::PathRules;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
@@ -58,7 +57,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     }
     stats.cache_bytes = u64::try_from(cache.totals()?.0)?;
     // To check each file against before its thumbnail is kept.
-    let catalog = Catalog::open(catalog_path, PathRules::NATIVE)?;
+    let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
     let sep = catalog.rules().sep_byte();
     let mut batch = Vec::with_capacity(BATCH);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
@@ -209,7 +208,7 @@ mod tests {
                 import: pg_analysis::analyze::IMPORT_VERSION,
                 borders: pg_analysis::borders::BORDERS_VERSION,
             },
-            PathRules::NATIVE,
+            pg_platform::native::PATH_RULES,
         )
         .unwrap();
         let ctl = Control::new();

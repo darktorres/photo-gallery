@@ -102,7 +102,6 @@ use cxx_qt_lib::QString;
 use pg_app::reexport::Facets;
 use pg_model::date::Day;
 use pg_model::query::{Query, parse_number};
-use pg_model::rules::PathRules;
 
 use pg_client::facets::Facet;
 use pg_client::input::{Edge, Field, bound_is_valid, choice};
@@ -267,7 +266,7 @@ impl qobject::Filters {
         };
         let listing = controller::listing();
         let filters = self.qt_thread();
-        let shown = PathRules::NATIVE.display_merged(&listing.folder);
+        let shown = pg_platform::native::PATH_RULES.display_merged(&listing.folder);
         crate::app::get().reading().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
             let facets = facets.unwrap_or_else(|e| {
                 crate::log::note(&format!("facets of {shown}: {e:#}"));

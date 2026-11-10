@@ -18,6 +18,13 @@
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
+use pg_model::rules::PathRules;
+
+/// The path rules of this platform, the ones its catalogs are made under: [`PathRules::Windows`] on Windows,
+/// [`PathRules::Posix`] elsewhere. The model holds both rule sets as data; which one this machine's paths follow is
+/// a fact of the platform, so it is stated here.
+pub const PATH_RULES: PathRules = if cfg!(windows) { PathRules::Windows } else { PathRules::Posix };
+
 /// One unit of a native name or path: a UTF-16 unit on Windows, a byte elsewhere.
 #[cfg(windows)]
 pub type Unit = u16;

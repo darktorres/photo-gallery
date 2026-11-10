@@ -1,0 +1,48 @@
+# The crate layers (docs/MODULARITY_PLAN.md, M-16): one line per workspace crate, `crate: dependency dependency ...`,
+# listing exactly its normal dependencies on other workspace crates (dev-dependencies are checked apart: their graph
+# must have no cycle). A crate's line comes after the lines of everything it depends on, so the file reads from the
+# bottom layer up. `python tools/boundaries.py` (in `just lint` and CI) checks it against the manifests: a new
+# internal dependency fails until its line changes in the same commit.
+
+# Leaves: the shared model, the file-format and schema text, and the test helpers.
+container:
+model:
+schema:
+testkit:
+
+# On the model alone.
+client: model
+codec: model
+dedup: model
+metadata: container model
+platform: model
+query: model
+yandex: model
+
+# The catalog, the codecs' users and the job layer.
+catalog: model platform query schema
+edit: codec container metadata model
+exiftool: platform
+jobs: platform
+trace: platform
+video: codec model
+analysis: codec metadata model video
+jobs-testkit: jobs
+render: codec metadata model video
+
+# The passes, each its own crate.
+scan: catalog jobs model platform
+thumbcache: catalog jobs model platform schema
+bench: analysis catalog model platform render thumbcache
+borders: analysis catalog jobs platform
+import: analysis catalog dedup jobs model platform
+thumbs: catalog jobs model platform render thumbcache
+writeback: analysis catalog edit exiftool jobs metadata model platform thumbcache
+crop: catalog edit exiftool jobs model platform scan writeback
+
+# The runner, the application layer, the front ends and the one program.
+library: analysis borders catalog crop import jobs model platform scan thumbcache thumbs
+app: catalog codec jobs library model platform query render scan thumbcache video writeback yandex
+cli: analysis borders catalog client codec dedup import jobs library model platform scan thumbcache thumbs writeback
+desktop: app client model platform render trace
+gallery: cli desktop platform

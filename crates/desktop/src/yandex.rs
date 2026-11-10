@@ -154,7 +154,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
-use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, SearchError, SimilarNote, Status, YandexError};
+use pg_app::reexport::YandexError;
+use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, SearchError, SimilarNote, Status};
 use pg_client::layout;
 use pg_client::picks::Picks;
 use pg_client::text;

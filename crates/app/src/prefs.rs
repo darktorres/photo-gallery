@@ -37,13 +37,13 @@ pub struct Prefs {
 /// reads as none.
 mod yandex_folder {
     use pg_model::name::Name;
-    use pg_model::rules::{Path as RulePath, PathRules};
+    use pg_model::rules::Path as RulePath;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
     pub fn serialize<S: Serializer>(folder: &Option<RulePath>, serializer: S) -> Result<S::Ok, S::Error> {
         match folder {
             None => serializer.serialize_str(""),
-            Some(path) => Name::from_raw(&PathRules::NATIVE.join(path)).serialize(serializer),
+            Some(path) => Name::from_raw(&pg_platform::native::PATH_RULES.join(path)).serialize(serializer),
         }
     }
 
@@ -52,7 +52,7 @@ mod yandex_folder {
         if name.as_bytes().is_empty() {
             return Ok(None);
         }
-        Ok(PathRules::NATIVE.parse_bytes(name.as_bytes()))
+        Ok(pg_platform::native::PATH_RULES.parse_bytes(name.as_bytes()))
     }
 }
 
@@ -168,7 +168,7 @@ mod tests {
 
     #[test]
     fn a_folder_that_is_no_utf8_is_written_as_hex_and_read_back() {
-        let folder = PathRules::NATIVE.parse_bytes(ODD_FOLDER).expect("a path");
+        let folder = pg_platform::native::PATH_RULES.parse_bytes(ODD_FOLDER).expect("a path");
         let prefs = Prefs { yandex_folder: Some(folder.clone()), ..Prefs::default() };
         assert_eq!(serde_json::to_value(&prefs).unwrap()["yandex_folder"], serde_json::json!({ "b": ODD_HEX }));
         let text = serde_json::to_string(&prefs).unwrap();
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn a_folder_that_is_utf8_is_written_as_its_text_and_read_back() {
-        let folder = PathRules::NATIVE.parse_bytes(TEXT_FOLDER).expect("a path");
+        let folder = pg_platform::native::PATH_RULES.parse_bytes(TEXT_FOLDER).expect("a path");
         let prefs = Prefs { yandex_folder: Some(folder.clone()), ..Prefs::default() };
         let text_form = std::str::from_utf8(TEXT_FOLDER).unwrap();
         assert_eq!(serde_json::to_value(&prefs).unwrap()["yandex_folder"], text_form);
@@ -188,6 +188,6 @@ mod tests {
     #[test]
     fn the_text_an_older_version_wrote_reads_as_the_folder_it_named() {
         let read = serde_json::from_str::<Prefs>(OLD_TEXT).unwrap();
-        assert_eq!(read.yandex_folder, PathRules::NATIVE.parse_bytes(OLD_PATH));
+        assert_eq!(read.yandex_folder, pg_platform::native::PATH_RULES.parse_bytes(OLD_PATH));
     }
 }

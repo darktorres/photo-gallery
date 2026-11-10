@@ -84,11 +84,9 @@ pub fn canonical_of(path: &Path) -> Vec<u8> {
 
 /// `path` under the native rules, exactly. `None` when it has no path form under them (a NUL, which no name holds).
 pub fn rule_path_of(path: &Path) -> Option<pg_model::rules::Path> {
-    pg_model::rules::PathRules::NATIVE.parse_bytes(&canonical_of(path))
+    crate::native::PATH_RULES.parse_bytes(&canonical_of(path))
 }
 
-/// The real path of an existing folder, as the catalog keys it: its names in the case the file system stores them, and
-/// on Windows without the verbatim prefix.
 /// One argument's bytes, as the program's own argument list holds them: exactly on Unix, a raw byte included. On Windows,
 /// its text, converted lossily, as cxx-qt-lib passes arguments to Qt (Qt reads its own arguments from the command line there,
 /// exactly; the app reads its arguments from its command line, so the list only has to be well formed).
@@ -122,6 +120,8 @@ pub fn after_first_equals(arg: &OsStr) -> Option<OsString> {
     Some(OsString::from_wide(units.get(at + 1..)?))
 }
 
+/// The real path of an existing folder, as the catalog keys it: its names in the case the file system stores them, and
+/// on Windows without the verbatim prefix.
 #[cfg(windows)]
 pub fn real_path(root: &Path) -> io::Result<PathBuf> {
     let real = std::fs::canonicalize(root)?;

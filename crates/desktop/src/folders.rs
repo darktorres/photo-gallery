@@ -144,7 +144,7 @@ fn row_index(row: usize) -> i32 {
 thread_local! {
     /// The folder tree as shown: which folders are open, and the rows that follow (GUI thread only, beside the
     /// controller). Each borrow is one read or one change; none calls back into another.
-    static TREE: RefCell<Tree> = RefCell::new(Tree::default());
+    static TREE: RefCell<Tree> = RefCell::new(Tree::new(pg_platform::native::PATH_RULES));
 }
 
 /// The tree as shown, read.
@@ -276,7 +276,7 @@ impl qobject::FolderModel {
         crate::app::get().reading().session().tree(move |tree| {
             let tree = tree.unwrap_or_else(|e| {
                 crate::log::note(&format!("folder tree: {e:#}"));
-                FolderTree::default()
+                FolderTree::empty(pg_platform::native::PATH_RULES)
             });
             // Fails only when the model is gone (the window closing).
             let _ = model.queue(move |model| model.apply(generation, tree));

@@ -7,7 +7,6 @@ use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::ids::FileId;
-use pg_model::rules::PathRules;
 
 /// A letterboxed picture (black bars at the top and bottom, the content between them).
 fn letterboxed() -> image::RgbImage {
@@ -38,7 +37,7 @@ fn files_under(dir: &Path) -> Vec<PathBuf> {
 #[test]
 fn library_folders_with_one_name_keep_their_copies_apart() {
     let dir = pg_testkit::run_folder("scratch_rate", "crop-roots").unwrap();
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
 

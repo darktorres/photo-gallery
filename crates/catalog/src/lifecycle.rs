@@ -368,7 +368,7 @@ mod tests {
     fn opening_a_catalog_that_is_not_there_makes_no_marker() {
         let dir = test_folder(SCRATCH, "not-there").unwrap();
         let path = dir.join("catalog.sqlite");
-        assert!(Catalog::open(&path, PathRules::NATIVE).is_err());
+        assert!(Catalog::open(&path, pg_platform::native::PATH_RULES).is_err());
         assert!(!dir.join("catalog.sqlite.live").exists(), "no marker for a catalog that isn't there");
     }
 
@@ -378,18 +378,18 @@ mod tests {
     fn a_catalog_another_connection_has_open_is_not_moved_aside() {
         let dir = test_folder(SCRATCH, "open-elsewhere").unwrap();
         let path = dir.join("catalog.sqlite");
-        let open = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+        let open = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let edited = Connection::open(&path).unwrap();
         edited.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
         drop(edited);
 
-        let err = Catalog::prepare(&path, versions(), PathRules::NATIVE).err().expect("refused");
+        let err = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).err().expect("refused");
         assert!(format!("{err:#}").contains("has it open"), "{err:#}");
         assert!(path.exists(), "the catalog is where it was");
         assert!(!dir.join("catalog.sqlite.replaced").exists(), "nothing was moved aside");
         drop(open);
 
-        let c = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
         assert!(c.rebuilt().is_some(), "moved aside once nothing has it open");
     }
 
@@ -601,8 +601,8 @@ mod tests {
         let folder = dir.join(pg_platform::names::path_buf(b"cat\xED\xA0\x80"));
         std::fs::create_dir_all(&folder).unwrap();
         let path = folder.join("catalog.sqlite");
-        drop(Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap());
-        drop(Catalog::open(&path, PathRules::NATIVE).unwrap());
+        drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
+        drop(Catalog::open(&path, pg_platform::native::PATH_RULES).unwrap());
         // The layout of before the queued temps were bytes: the rebuild carries the old file's rows, attached by name.
         let old = Connection::open(sqlite_path(&path).unwrap()).unwrap();
         old.execute_batch(
@@ -620,7 +620,7 @@ mod tests {
         )
         .unwrap();
         drop(old);
-        let c = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+        let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
         assert!(c.rebuilt().is_some(), "moved aside, and its rows carried");
         drop(c);
         assert!(folder.join("catalog.sqlite").exists());

@@ -7,14 +7,17 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 
 - `model` (`pg-model`): the domain data: the analysis record, border detection, EXIF orientation, PDQ, formats, media
   kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
-  turns, writes, image keys and requests, saved views and the session place). Pure and WASM-safe: no file, catalog, decoder or platform calls.
+  turns, writes, image keys and requests, saved views and the session place), and which formats can hold a rating
+  (`format::can_hold_rating`, which the catalog's writes and the write-back share). Pure and WASM-safe: no file,
+  catalog, decoder or platform calls.
 - `platform` (`pg-platform`): the operating system behind portable functions: file identity, directory handles,
   priorities, processes, the console, the shared libraries loaded at run time, the folder dialog, verbatim paths, the
-  system's units of names and arguments, and message boxes. No other crate's production code names a platform
-  (`cfg(windows)`, `cfg(unix)`, `std::os::{windows,unix}`); the exceptions are the desktop's glue that must name the
-  platform's own signatures or types: the video player's declarations (`play_units` on Windows, `play_fd` on Unix) and
-  the folder dialog's (`pg_platform::picker::Dialog` exists on Windows only).
-- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
+  system's units of names and arguments, the path rules this machine's paths follow (`native::PATH_RULES`; `model`
+  holds both rule sets as data), and message boxes. No other crate's production code names a platform
+  (`cfg(windows)`, `cfg(unix)`, `target_os`, `std::os::{windows,unix}`, `windows_sys`, `libloading::os`); the
+  exceptions are the desktop's glue that must name the platform's own signatures or types: the video player's
+  declarations (`play_units` on Windows, `play_fd` on Unix) and the folder dialog's (`pg_platform::picker::Dialog`
+  exists on Windows only). `tools/boundaries.py` checks it, with the exceptions listed there.- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges.
 - `schema` (`pg-schema`): the SQLite schema check the catalog and the thumbnail cache share: a file's `sqlite_schema`
@@ -63,10 +66,13 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   its `versions`.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
   picks, input, keys, text and the folder tree.
-- `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through `pg-library`): opens the app from a `Config`, reads what the
-  window shows (`reader.rs`, off the UI thread), edits, preferences (`gallery.json`), saved views, the library, the
-  Yandex search (its source is the client, or a recorded session that `--yandex-fixture` names), the re-exports the
-  front end names (`reexport.rs`), and reports through a notes bus.
+- `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through
+  `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
+  `app.notes()`, `catalogs()`, `prefs()`, `images()`, `reading()` (what the window shows, read off the UI thread),
+  `views()` (the place the grid shows, saved views), `edit()` (ratings and marks) and `library()` (the folders, the
+  scan, the write-back); `App` orders their shutdown. Beside them: the Yandex search (its source is the client, or a
+  recorded session that `--yandex-fixture` names), the preferences file (`gallery.json`), and the re-exports the front
+  end names (`reexport.rs`). It reports through the notes bus.
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
@@ -82,18 +88,23 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 
 ## Dependencies
 
-The internal dependencies (normal ones, from `cargo metadata`) only point down the list, and no crate depends on one
-above it:
+The internal dependencies (normal ones, from `cargo metadata`) only point up the list: no crate depends on one below
+it. `tools/crate-layers.txt` lists each crate's internal dependencies exactly, bottom layer first, and
+`tools/boundaries.py` (in `just lint` and CI) fails on an edge the file does not list. It also checks that the
+dependencies including the dev and build ones have no cycle (a crate's tests never depend on a crate that depends on
+it, which is why `testkit` and `jobs-testkit` are leaves), that a `pub use` names a child module except in
+`app/src/reexport.rs`, and the platform rule above. Module cycles inside a crate are `just modgraph`'s (the compiler's
+module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI runs it on both targets.
 
 - `model`, `container` and `schema` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone.
 - `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
   `client`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
   `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods and
-  `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on `cli` and `desktop` (the latter
-  behind its `desktop` feature).
+  `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on
+  `cli` and `desktop` (the latter behind its `desktop` feature).
 - External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
-  `catalog`, `query`, `schema`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in `codec` (plus the
-  test fixtures and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
+  `catalog`, `query`, `schema`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
+  `codec` (plus the test fixtures and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
 
 ## Where the old paths went
 
@@ -120,7 +131,7 @@ refactor. The dated logs in `docs/` keep the old paths; the table is for reading
 | `core/src/yandex.rs` | `app/src/yandex.rs` (the search); the HTTP client is `yandex` |
 | `core/examples/stage_times.rs` | `analysis/examples/stage_times.rs` |
 | `ingest/src/{import,scan,writeback,thumbs}.rs` | `import/`, `scan/`, `writeback/` and `thumbs/` (the crates of those names) |
-| `ingest/src/{runner,borders,crop,dups}.rs` | `library/src/` (the same names); `borders` and `dups` reports print in `cli/src/` |
+| `ingest/src/{runner,borders,crop,dups}.rs` | `library/src/runner.rs`; the passes `borders/src/lib.rs` and `crop/src/lib.rs` (crates of their own); `dups` with its report in `cli/src/dups.rs`, and the borders report in `cli/src/borders.rs` |
 | `ingest/src/pipeline.rs`, `control.rs` | `jobs/src/` (the same names) |
 | `ingest/src/cli.rs` | `cli/src/lib.rs` |
 | `ingest/tests/*` | `library/tests/*` |

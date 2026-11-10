@@ -37,7 +37,7 @@ use pg_jobs::service::{Service, Waker, Woke};
 use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::format::Format;
 use pg_model::media::Kind;
-use pg_model::rules::{Path as RulePath, PathRules};
+use pg_model::rules::Path as RulePath;
 
 use pg_model::write::WriteKind;
 use pg_platform::names::{path_buf, set_path};
@@ -266,7 +266,7 @@ impl Inner {
     ) -> Result<()> {
         let c = match catalog.take() {
             Some(c) => c,
-            None => Catalog::open(&self.catalog_path, PathRules::NATIVE)?,
+            None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES)?,
         };
         if !*retried {
             writes::retry_copies(&c)?;

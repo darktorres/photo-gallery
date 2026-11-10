@@ -8,7 +8,6 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_model::rules::PathRules;
 use pg_testkit::held::{Access, hold};
 
 #[test]
@@ -24,7 +23,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
             .unwrap();
     }
     let catalog_path = dir.join("catalog.sqlite");
-    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();

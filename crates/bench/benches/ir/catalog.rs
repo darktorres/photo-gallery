@@ -28,7 +28,7 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
 // library at D:\PhotoGallery\synthetic\library. Its paths are Windows paths, as the folder literals below are. The
 // name is bumped whenever the schema changes, so data made before it is never read as current.
 const LAYOUT: &str = "v5-windows-rules";
-// The path rules the layout was made under (its meta.path_rules). Not PathRules::NATIVE: the benches run on Linux,
+// The path rules the layout was made under (its meta.path_rules). Not pg_platform::native::PATH_RULES: the benches run on Linux,
 // where that is posix, and a catalog keeps the rules it was made with.
 const RULES: pg_model::rules::PathRules = pg_model::rules::PathRules::Windows;
 // The thumbnail height the cache was filled at.

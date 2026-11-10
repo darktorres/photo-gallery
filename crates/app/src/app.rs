@@ -169,8 +169,8 @@ mod tests {
     fn a_catalog_path_is_the_exact_system_path() {
         // A lone surrogate (WTF-8 on Windows; the same bytes are a non-UTF-8 name on Unix).
         let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
-        let path = PathRules::NATIVE.parse_bytes(text).unwrap();
-        assert_eq!(PathRules::NATIVE.join(&path), text);
+        let path = pg_platform::native::PATH_RULES.parse_bytes(text).unwrap();
+        assert_eq!(pg_platform::native::PATH_RULES.join(&path), text);
         assert_eq!(path_of(&path), pg_platform::names::path_buf(text));
     }
 

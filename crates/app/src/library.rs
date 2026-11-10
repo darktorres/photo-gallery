@@ -15,7 +15,7 @@ use pg_jobs::control::Progress;
 use pg_jobs::events::{Bus, Change};
 use pg_library::runner::{Generation, Messages, Runner};
 use pg_model::ids::{FileId, RootId};
-use pg_model::rules::{Path as RulePath, PathRules};
+use pg_model::rules::Path as RulePath;
 use pg_scan::normalize_path;
 use pg_thumbcache::ThumbCache;
 use pg_writeback::{WriteStatus, Writer};
@@ -254,14 +254,14 @@ impl LibraryService {
     pub fn add_folder(&self, path: &std::path::Path) -> Result<(String, bool)> {
         let root = normalize_path(path).map_err(failed)?;
         // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
-        if let Err(refused) = pg_scan::check_folder(PathRules::NATIVE, &root) {
-            return Err(Error::FolderRefused { folder: PathRules::NATIVE.display(&root), reason: refused.reason });
+        if let Err(refused) = pg_scan::check_folder(pg_platform::native::PATH_RULES, &root) {
+            return Err(Error::FolderRefused { folder: pg_platform::native::PATH_RULES.display(&root), reason: refused.reason });
         }
         let added = self.catalogs.with_catalog(|c| c.add_root(&root))?;
         if let Some(library) = self.running() {
             library.scan(vec![root.clone()]);
         }
-        Ok((PathRules::NATIVE.display(&root), added))
+        Ok((pg_platform::native::PATH_RULES.display(&root), added))
     }
 
     /// Remove a folder from the library, by its id (from [`LibraryService::roots`]). A scan of it in progress stops. The

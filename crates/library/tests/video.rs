@@ -19,7 +19,6 @@ use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
-use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 use pg_jobs_testkit::Quiet;
 use pg_thumbcache::ThumbCache;
@@ -181,7 +180,7 @@ fn videos() {
     assert_eq!(poster_ms(3_600_000), 10_000);
 
     // The library passes: scan, import, thumbnails.
-    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), PathRules::NATIVE).unwrap();
+    let mut catalog = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&media).unwrap();
     catalog.add_root(&root).unwrap();

@@ -7,7 +7,6 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 use pg_catalog::{Catalog, Versions};
-use pg_model::rules::PathRules;
 use rusqlite::Connection;
 
 fn versions() -> Versions {
@@ -44,7 +43,7 @@ fn holder() {
     let _hold: Box<dyn std::any::Any> = if std::env::var("PG_CATALOG_MODE").unwrap() == "exclusive" {
         Box::new(pg_schema::Live::exclusive(path).unwrap().expect("the holder gets the rebuild's hold"))
     } else {
-        Box::new(Catalog::open(path, PathRules::NATIVE).expect("the holder opens the catalog"))
+        Box::new(Catalog::open(path, pg_platform::native::PATH_RULES).expect("the holder opens the catalog"))
     };
     std::fs::write(std::env::var_os("PG_CATALOG_READY").unwrap(), b"").unwrap();
     wait_for(Path::new(&std::env::var_os("PG_CATALOG_RELEASE").unwrap()), Duration::from_secs(60));
@@ -54,26 +53,26 @@ fn holder() {
 fn a_catalog_open_in_another_process_is_not_rebuilt() {
     let dir: PathBuf = pg_testkit::test_folder("scratch_catalog", "other-process").unwrap();
     let path = dir.join("catalog.sqlite");
-    drop(Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap());
+    drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut other = spawn_holder(&path, "open", &ready, &release).unwrap();
     wait_for(&ready, Duration::from_secs(60));
 
     // Opened beside the other process: both hold it shared.
-    drop(Catalog::open(&path, PathRules::NATIVE).unwrap());
+    drop(Catalog::open(&path, pg_platform::native::PATH_RULES).unwrap());
 
     // The file is edited on a raw connection, which holds nothing: it now needs a rebuild, which the other process
     // prevents.
     let edited = Connection::open(&path).unwrap();
     edited.execute_batch("CREATE INDEX extra_names ON files(name);").unwrap();
     drop(edited);
-    let err = Catalog::prepare(&path, versions(), PathRules::NATIVE).err().expect("refused");
+    let err = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).err().expect("refused");
     assert!(format!("{err:#}").contains("has it open"), "{err:#}");
     assert!(!dir.join("catalog.sqlite.replaced").exists(), "nothing was moved aside");
 
     std::fs::write(&release, b"").unwrap();
     assert!(other.wait().unwrap().success(), "the holder ends");
-    let c = Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap();
+    let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
     assert!(c.rebuilt().is_some(), "rebuilt once nothing else has it open");
 }
 
@@ -83,7 +82,7 @@ fn a_catalog_open_in_another_process_is_not_rebuilt() {
 fn open_waits_for_a_rebuild_in_another_process() {
     let dir: PathBuf = pg_testkit::test_folder("scratch_catalog", "open-waits").unwrap();
     let path = dir.join("catalog.sqlite");
-    drop(Catalog::prepare(&path, versions(), PathRules::NATIVE).unwrap());
+    drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
     let (ready, release) = (dir.join("ready"), dir.join("release"));
     let mut rebuild = spawn_holder(&path, "exclusive", &ready, &release).unwrap();
     wait_for(&ready, Duration::from_secs(60));
@@ -97,7 +96,7 @@ fn open_waits_for_a_rebuild_in_another_process() {
         }
     });
     let start = Instant::now();
-    let opened = Catalog::open(&path, PathRules::NATIVE);
+    let opened = Catalog::open(&path, pg_platform::native::PATH_RULES);
     assert!(opened.is_ok(), "opened once the rebuild let go");
     assert!(start.elapsed() >= Duration::from_secs(1), "it waited for the rebuild");
     releaser.join().unwrap();

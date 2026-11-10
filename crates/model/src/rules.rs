@@ -53,9 +53,6 @@ impl From<Vec<Name>> for Merged {
 }
 
 impl PathRules {
-    /// The rules of this platform.
-    pub const NATIVE: PathRules = if cfg!(windows) { PathRules::Windows } else { PathRules::Posix };
-
     /// The separator between parts.
     pub fn sep(self) -> char {
         match self {

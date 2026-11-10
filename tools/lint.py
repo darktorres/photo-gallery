@@ -51,8 +51,9 @@ def main() -> None:
         env = {**os.environ, **DOC_FLAGS} if step[:2] == ["cargo", "doc"] else None
         # `cargo metadata` prints the whole graph; the check is only that it resolves.
         run(resolved(step), env, quiet=step[:2] == ["cargo", "metadata"])
-    # The platform rule (tools/check_platform.py): the Win32 calls are in pg-platform.
-    run([sys.executable, str(Path(__file__).resolve().parent / "check_platform.py")])
+    # The crate boundaries (tools/boundaries.py): the crate layers, acyclic dev edges, re-exports, and the platform rule
+    # (the OS calls and branches are in pg-platform).
+    run([sys.executable, str(Path(__file__).resolve().parent / "boundaries.py")])
     print("lint: every step passed")
 
 

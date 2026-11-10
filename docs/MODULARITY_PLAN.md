@@ -1,6 +1,6 @@
 # Plan: fix the modularity findings (M-series)
 
-Status (2026-11-10): investigated, re-measured at `905561d`, and re-reviewed in twelve passes. The consolidated rewrite is applied. Every step, M-0 to M-20, is done and committed (each step says where). All of them pass the Windows checks and the Linux checks in `pg-dev` (see the two "Validation" sections at the end). The perf gate runs after the second validation commit. Churn and cost are not a constraint; the goal is the proper fix for each finding, not the cheapest one.
+Status (2026-11-10): investigated, re-measured at `905561d`, and re-reviewed in twelve passes. The consolidated rewrite is applied. Every step, M-0 to M-20, is done and committed (each step says where). All of them pass the Windows checks and the Linux checks in `pg-dev` (see the two "Validation" sections at the end). The perf gate shows no effect of the steps, and the baseline is re-measured at `3b46058`. Churn and cost are not a constraint; the goal is the proper fix for each finding, not the cheapest one.
 
 ## Investigation results
 
@@ -69,7 +69,7 @@ Concurrent feature work lands in the files this plan splits. 111 files changed b
 - **Done:** the split-check script (`tools/modgraph/split_check.py`, the portable form of the scratchpad scripts, with the skip set in its docstring) and the `unreachable_pub` counter (`tools/modgraph/unreachable_pub.sh`). Both were committed in `c1e0253`.
 - **Cycle gate:** the union of (a) the compiler graph on Linux (`pg-dev`) and on Windows (the host, `just modgraph`), with only the `uses` edges, grouped by module (items map to their enclosing module; `(root)` is the crate root), and (b) the text scan, which covers the cxx-qt bridge modules. A group in either list fails the check unless it is on the allowlist.
 - **Allowlist:** `tools/modgraph-allow.txt`, read by `tools/modgraph/allowlist.py`. Each line names `source` (scan, linux or windows), the crate and its members. `module_graph.py` and `compiler_graph.py` both fail on a group that is not listed for their source, and on a listed entry that matches no group. Groups H and I exist on one target each, so a fix on one target must not leave a stale entry for the other. M-1, M-3, M-4, M-5, M-6, M-19 and M-20 remove entries; M-16 empties the file. Both checks were run at `7ba93e9`: the text scan and the compiler graph pass on Windows, and the compiler graph passes on Linux.
-- **Perf check: runs in the container.** WSL is retired for this repository (`62b4540`). `just perf` runs `tools/perf-check.sh` in `pg-dev` through `tools/linux.py perf`, with the callgrind tools in the image's tools stage, and it gates against `docs/perf/baseline.json`. On this image the gate reports `list.all_taken` at -12.6% against the baseline; the other ten benches are within 0.4%. That is not yet investigated, and the baseline is unchanged. M-4's perf gate has to explain that result.
+- **Perf check: runs in the container.** WSL is retired for this repository (`62b4540`). `just perf` runs `tools/perf-check.sh` in `pg-dev` through `tools/linux.py perf`, with the callgrind tools in the image's tools stage, and it gates against `docs/perf/baseline.json`. On this image the gate reports `list.all_taken` at -12.6% against the baseline; the other ten benches are within 0.4%. Explained in "Validation 2": the C library's time-zone work no longer runs on that path; the baseline is re-measured there.
 - **Private imports resolve to their source** (added at M-20): a path that reaches a name its module binds with a private `use` (not `pub use`, which is the module's API) is an edge to the module the name comes from, as the compiler resolves it. A cxx-qt bridge must name its backing struct as `super::T` (M-20), so the parent binds it with `use state::XRust;`, and the bridge's edge goes to `state`, not back to the parent.
 - **Known false positives:** items that a crate re-exports at its root (`pub use app::App;`) appear as root items, so a group can show `(root)` without a real edge to the root. Check each group in the source before it goes on the allowlist.
 - Add the `just modgraph` recipe (both scripts, in order).
@@ -542,7 +542,18 @@ M-9 to M-16 and M-18, built and checked together for the first time, on Windows 
   - M-16: `TreeBuilder` derived `Default` through the `FolderTree` that lost it; nothing used it, so the derive is gone. `pg-bench` names `PATH_RULES` only in a comment, so the `pg-platform` dependency M-16 gave it is removed. Some test modules kept `PathRules` imports that only the constant had used (`app`'s `app.rs` and `prefs.rs`, `desktop`'s `shell.rs`).
   - Linux only: `catalog`'s `lifecycle.rs` tests imported `sqlite_path` for a Windows-only test (unused on Linux, so named at the call). `platform`'s `picker.rs` docs linked `Dialog` and `pick_with`, which exist on Windows only.
   - `tools/linux.py`: the HEAD export (`check --head`, `perf`, `bench`, `fuzz`) was a `tempfile` folder. Since Python 3.12.4 that folder has an ACL that admits only the current user on Windows, so Docker Desktop refused the mount ("Access denied"). The export is now a plain `mkdir` under `target/linux-head/`, removed after the run.
-- The perf gate runs after this commit: it benches the committed HEAD.
+- Perf (`just perf`, `pg-dev`, at `3b46058`; the gate benches the committed HEAD, so it ran after that commit). Nothing regressed. Two benches are below the baseline, and the other nine are within 0.32%:
+
+  | Bench | Baseline | `3b46058` | Change |
+  | --- | --- | --- | --- |
+  | `list.all_taken` | 44,674,976 | 40,080,890 | -10.28% |
+  | `pending_thumbs.at_height` | 3,767,148 | 3,412,495 | -9.41% |
+
+  - The modularity steps are not the cause. The same benches at `14b6d0c`, the last commit before M-5 to M-20, are within 0.16% of `3b46058` on all eleven (`list.all_taken` 40,064,734, `pending_thumbs.at_height` 3,412,473). That covers the three steps with a perf gate (M-4, M-7, M-8). M-1 and M-3 are before `14b6d0c`; neither touches a benched path.
+  - `pending_thumbs.at_height`: per function, against the `88e780b` profile, the instructions saved are all in SQLite's parser and allocator. That is the bundled SQLite 3.54.1 (`1da008e`); the bench's own code is unchanged since M-0.
+  - `list.all_taken`: the C library's per-row time-zone work (`tzset`, `offtime`, `vfscanf`) is gone. That was already the -12.6% of M-0, on the first container run. Since M-0 it is about 2.6 points slower, which matches `14b6d0c`, whose sort key compares SQLite values instead of `Option<i64>`.
+  - The baseline is re-measured at `3b46058` (`just perf --update`), with the profiles in `docs/perf/callgrind/3b46058.tar.zst`. Rerunning it reproduced every count exactly.
+  - `tools/linux.py`: `perf` and `bench` declared their pass-through options as an `argparse.REMAINDER` positional, which rejects a first token that starts with `--`, so the documented `just perf --update` failed. The two commands now take what `parse_known_args` leaves, and the others still reject unknown options.
 
 ## Open decisions
 

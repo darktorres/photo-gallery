@@ -166,6 +166,7 @@ def check(head):
     with head_export() as export:
         return run(CHECKS, ["python3", "docker/check.py"], ["-v", f"{posix(export)}:/work", *cache_mounts()])
 
+
 def with_head(command, extra_mounts, extra_env=(), extra_flags=()):
     """Runs `command` in the tools image: the checkout at /work, a committed HEAD export at /head, the caches."""
     ensure_image(TOOLS, "tools")
@@ -211,14 +212,17 @@ def main():
     commands.add_parser("build", help="build the images")
     check_parser = commands.add_parser("check", help="the Linux job's checks")
     check_parser.add_argument("--head", action="store_true", help="check the committed HEAD, not the working tree")
-    perf_parser = commands.add_parser("perf", help="the callgrind benches, gated")
-    perf_parser.add_argument("args", nargs=argparse.REMAINDER, help="tools/perf_check.py's options, e.g. --update")
-    bench_parser = commands.add_parser("bench", help="the callgrind benches, without the gate (gungraun's options)")
-    bench_parser.add_argument("args", nargs=argparse.REMAINDER, help="gungraun's options, e.g. --save-baseline=before")
+    # perf and bench hand everything after their name to a script in the container. Those options are the script's, so
+    # they are not declared here: an `argparse.REMAINDER` positional rejects a first token that starts with `--` (the
+    # documented `just perf --update`), so the two commands take what parse_known_args leaves.
+    commands.add_parser("perf", help="the callgrind benches, gated (tools/perf_check.py's options, e.g. --update)")
+    commands.add_parser("bench", help="the callgrind benches, ungated (gungraun's options, e.g. --save-baseline=x)")
     fuzz_parser = commands.add_parser("fuzz", help="each fuzz target for a short time")
     fuzz_parser.add_argument("seconds", nargs="?", default="", help="seconds per target (default 60)")
     commands.add_parser("shell", help="a shell in the checks image")
-    options = parser.parse_args()
+    options, rest = parser.parse_known_args()
+    if rest and options.command not in ("perf", "bench"):
+        parser.error(f"unrecognized arguments: {' '.join(rest)}")
 
     if options.command == "build":
         build("base", CHECKS)
@@ -226,9 +230,9 @@ def main():
     elif options.command == "check":
         sys.exit(check(options.head))
     elif options.command == "perf":
-        perf(options.args)
+        perf(rest)
     elif options.command == "bench":
-        bench(options.args)
+        bench(rest)
     elif options.command == "fuzz":
         fuzz(options.seconds)
     elif options.command == "shell":

@@ -56,7 +56,8 @@ impl NativePath {
     }
 
     /// `parts` concatenated as they are, never in the verbatim form: for the volume calls, which are given the path
-    /// as it was typed.
+    /// as it was typed. Windows only: its callers (the volume calls in dir.rs) are Windows code, so elsewhere it is dead.
+    #[cfg(windows)]
     pub(crate) fn set_plain(&mut self, parts: &[&[Unit]]) {
         self.0.clear();
         set_units(&mut self.0, parts, false);

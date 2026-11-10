@@ -5,29 +5,7 @@
 # is either new (fix it, or list it here with its plan step) or fixed (remove its line in the same commit).
 
 # Text scan (the same on every target): cxx-qt bridges are invisible to the compiler.
-scan app: app, images, library, reader   # D (M-4)
-scan catalog: (crate root), pair, schema   # E (M-7: rules_name and Catalog still in the root); G closed by M-3a
-scan desktop: trace, trace::qobject   # J (M-20)
-scan desktop: command_line, command_line::qobject   # J (M-20); the rest of A went with M-1
-scan desktop: animation, animation::qobject   # J (M-20)
-scan desktop: viewport, viewport::qobject   # J (M-20)
-scan desktop: picker, picker::qobject   # J (M-20)
-scan desktop: gallery, gallery::qobject   # J (M-20)
-scan desktop: keymap, keymap::qobject   # J (M-20)
-scan desktop: folders, folders::qobject   # J (M-20); B closed by M-6
-scan desktop: shell, shell::qobject   # J (M-20); B closed by M-6
-scan desktop: facet_choices, facet_choices::qobject   # J (M-20); C closed by M-5
-scan desktop: filters, filters::qobject   # J (M-20); C closed by M-5
-scan desktop: library, library::qobject   # J (M-20)
-scan desktop: settings, settings::qobject   # J (M-20)
-scan desktop: video_source, video_source::qobject   # J (M-20)
-scan desktop: words, words::qobject   # J (M-20)
-scan desktop: yandex, yandex::qobject   # J (M-20)
 
 # Compiler, Linux (pg-dev).
-linux app: app, images, library, reader   # D (M-4)
-linux catalog: (crate root), pair   # E (M-7: Catalog and rules_name still in the root)
 
 # Compiler, Windows (the host).
-windows app: app, images, library, reader   # D (M-4)
-windows catalog: (crate root), pair   # E (M-7: Catalog and rules_name still in the root)

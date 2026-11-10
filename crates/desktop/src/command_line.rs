@@ -3,6 +3,7 @@
 //! never gets a path from here.
 
 mod state;
+use state::CommandLineRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -16,7 +17,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        type CommandLine = crate::command_line::state::CommandLineRust;
+        type CommandLine = super::CommandLineRust;
     }
 
     unsafe extern "RustQt" {

@@ -3,6 +3,7 @@
 //! made inside it (as the other facades are).
 
 mod state;
+use state::WordsRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -14,7 +15,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        type Words = crate::words::state::WordsRust;
+        type Words = super::WordsRust;
     }
 
     unsafe extern "RustQt" {

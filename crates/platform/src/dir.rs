@@ -10,7 +10,7 @@ use crate::native::{SEP, Unit};
 use std::io;
 
 mod listing;
-pub use listing::{Entry, Lister};
+pub use listing::Entry;
 
 /// Why a folder can't be scanned: the reason, for the notice. `check_root` returns it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -316,14 +316,14 @@ fn linux_fs_type(path: &[Unit]) -> io::Result<i64> {
 }
 
 #[cfg(unix)]
-pub use unix::Dir;
+pub use unix::{Dir, Lister};
 #[cfg(windows)]
-pub use windows::Dir;
+pub use windows::{Dir, Lister};
 
 #[cfg(windows)]
 mod windows {
-    use super::listing::{Entry, Lister};
-    use crate::native::{SEP, Unit};
+    use super::listing::Entry;
+    use crate::native::{NativePath, SEP, Unit};
     use std::io;
     use windows_sys::Win32::Foundation::{CloseHandle, ERROR_NO_MORE_FILES, HANDLE, INVALID_HANDLE_VALUE};
     use windows_sys::Win32::Storage::FileSystem::{
@@ -359,7 +359,30 @@ mod windows {
         }
     }
 
+    /// What listing a folder needs, kept from one folder to the next, so a listing reuses its buffers.
+    pub struct Lister {
+        /// The folder's path, as the call is given it.
+        wide: NativePath,
+        /// The records, as u64s to keep them 8-byte aligned as they must be.
+        buf: Vec<u64>,
+    }
+
+    impl Default for Lister {
+        fn default() -> Self {
+            Self::new()
+        }
+    }
+
     impl Lister {
+        pub fn new() -> Lister {
+            Lister { wide: NativePath::default(), buf: vec![0; 8192] }
+        }
+
+        /// The devices given their device number as identity: none on Windows, where a volume's serial is always there.
+        pub fn fallback_volumes(&self) -> u64 {
+            0
+        }
+
         /// The volume a folder is on: NTFS's 64-bit volume serial number, which is the identity itself.
         pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
             dir.volume()
@@ -438,7 +461,7 @@ mod windows {
 
 #[cfg(unix)]
 mod unix {
-    use super::listing::{Entry, Lister};
+    use super::listing::Entry;
     use crate::native::Unit;
     use std::ffi::OsStr;
     use std::io;
@@ -449,7 +472,28 @@ mod unix {
     /// An open folder: on Unix, its path (listed by `std::fs::read_dir` when asked).
     pub struct Dir(PathBuf);
 
+    /// What listing a folder needs, kept from one folder to the next: the volume identities found so far
+    /// (`std::fs::read_dir` holds its own buffer).
+    #[derive(Default)]
+    pub struct Lister {
+        /// The stable identity of each device seen, by its device number (see `Lister::folder_volume`).
+        volumes: std::collections::BTreeMap<u64, u64>,
+        /// The devices that hold each identity, so a second device with the same one is found.
+        claimed: std::collections::BTreeMap<u64, u64>,
+        /// How many devices were given their device number as their identity (no UUID, or a clone of another's).
+        fallbacks: u64,
+    }
+
     impl Lister {
+        pub fn new() -> Lister {
+            Lister::default()
+        }
+
+        /// The devices given their device number as identity (see `Lister::folder_volume`).
+        pub fn fallback_volumes(&self) -> u64 {
+            self.fallbacks
+        }
+
         /// The volume a folder is on: its stable identity (see `Lister::volume_of_device`).
         pub fn folder_volume(&mut self, dir: &Dir) -> io::Result<u64> {
             let dev = std::fs::metadata(&dir.0)?.dev();

@@ -5,6 +5,7 @@
 //! same order. The map and the hint lines are pg-client's.
 
 mod state;
+use state::KeyMapRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -16,7 +17,7 @@ pub mod qobject {
     extern "RustQt" {
         #[qobject]
         #[qml_element]
-        type KeyMap = crate::keymap::state::KeyMapRust;
+        type KeyMap = super::KeyMapRust;
     }
 
     unsafe extern "RustQt" {

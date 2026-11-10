@@ -1,31 +1,17 @@
 //! `AnimationPlayer`: plays an animated GIF, APNG or WebP into a `VideoOutput`'s sink, so animations show like
 //! videos (same fit and turns) while looping as they should (the animation decoder's own notes say why not Qt's player). The
-//! loop itself is `pg_render::player`'s; this file is the Qt side: the source and the sink, and the thread-safety of
-//! the frame sink's calls.
+//! loop itself is `pg_render::player`'s; this file is the Qt side: the source and the sink. The sink's FFI and the
+//! thread-safety of its calls are `frame_sink`'s.
+
+mod state;
+use crate::frame_sink::{self, Frames};
+use state::AnimationPlayerRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
-
         include!(<QtMultimedia/QVideoSink>);
-        type QVideoSink;
-
-        include!("pg-desktop/cpp/frame_sink.h");
-        #[namespace = "pg"]
-        type FrameSink;
-        #[namespace = "pg"]
-        type SinkRef;
-        /// A weak reference to `sink`, which must be alive.
-        #[namespace = "pg"]
-        unsafe fn new_sink_ref(sink: *mut QVideoSink) -> UniquePtr<SinkRef>;
-        #[namespace = "pg"]
-        fn frame_sink(self: &SinkRef) -> UniquePtr<FrameSink>;
-        /// Any thread: queues the frame for the sink's thread.
-        #[namespace = "pg"]
-        fn present(self: &FrameSink, width: u32, height: u32, rgba: &[u8]);
-        /// The sink's thread: frames still queued are dropped.
-        #[namespace = "pg"]
-        fn close(self: &FrameSink);
+        type QVideoSink = crate::frame_sink::ffi::QVideoSink;
     }
 
     extern "RustQt" {
@@ -52,23 +38,9 @@ pub mod qobject {
 use core::pin::Pin;
 use std::sync::Arc;
 
-use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
 use pg_model::ids::FileId;
-use pg_render::player::{Player, Sink};
-
-pub struct AnimationPlayerRust {
-    file_id: i64,
-    playing: bool,
-    sink: Option<UniquePtr<qobject::SinkRef>>,
-    worker: Option<Player<Frames>>,
-}
-
-impl Default for AnimationPlayerRust {
-    fn default() -> Self {
-        Self { file_id: 0, playing: true, sink: None, worker: None }
-    }
-}
+use pg_render::player::Player;
 
 impl qobject::AnimationPlayer {
     fn set_file_id_and_play(mut self: Pin<&mut Self>, file_id: i64) {
@@ -99,7 +71,7 @@ impl qobject::AnimationPlayer {
     /// `sink` is a live `QVideoSink` (from QML: `videoOut.videoSink`), or null.
     unsafe fn set_sink(mut self: Pin<&mut Self>, sink: *mut qobject::QVideoSink) {
         // SAFETY: the caller passes a live sink or null; the reference made of it is weak (QPointer).
-        let sink = (!sink.is_null()).then(|| unsafe { qobject::new_sink_ref(sink) });
+        let sink = (!sink.is_null()).then(|| unsafe { frame_sink::ffi::new_sink_ref(sink) });
         self.as_mut().rust_mut().sink = sink;
         self.restart();
     }
@@ -119,26 +91,7 @@ impl qobject::AnimationPlayer {
                 return;
             }
         };
-        let (frames, paused) = (Arc::new(Frames(sink.frame_sink())), !self.playing);
+        let (frames, paused) = (Arc::new(Frames::of(sink)), !self.playing);
         self.as_mut().rust_mut().worker = Some(Player::start(path, frames, paused));
-    }
-}
-
-/// One animation's frame sink, used from its thread.
-struct Frames(UniquePtr<qobject::FrameSink>);
-
-// SAFETY: `FrameSink::present` may be called from any thread (cpp/frame_sink.cpp); `close` is called on the GUI
-// thread, by `Player`'s drop.
-unsafe impl Send for Frames {}
-// SAFETY: as above; both methods take `&self` and touch the sink only on its own thread.
-unsafe impl Sync for Frames {}
-
-impl Sink for Frames {
-    fn present(&self, width: u32, height: u32, rgba: &[u8]) {
-        self.0.present(width, height, rgba);
-    }
-
-    fn close(&self) {
-        self.0.close();
     }
 }

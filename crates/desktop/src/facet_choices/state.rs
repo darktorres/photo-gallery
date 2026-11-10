@@ -11,7 +11,7 @@ pub(super) struct Row {
 }
 
 #[derive(Default)]
-pub(super) struct FacetChoicesRust {
+pub struct FacetChoicesRust {
     /// The facet: the list's index in `Facet`; 0 (the default) is Types.
     pub(super) facet: i32,
     pub(super) rows: Vec<Row>,

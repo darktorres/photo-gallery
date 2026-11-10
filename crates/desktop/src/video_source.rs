@@ -1,31 +1,17 @@
-//! The video player's source (`VideoSource`): the file a video plays from, handed to Qt's player as a device
-//! (cpp/video_source.cpp). The file is the catalog's exact path: Windows names it by its UTF-16 units, Unix opens it
-//! here and hands over the descriptor, so a name with an unpaired surrogate or a raw byte plays as well as any other.
-//! Qt's file URL can't carry those names. Only the GUI thread touches it.
+//! The video player's source (`VideoSource`): the file a video plays from, handed to Qt's player as a device. The file
+//! is the catalog's exact path; how it reaches the player on each platform is `video_player`'s. Only the GUI thread
+//! touches it.
+
+mod state;
+
+use crate::video_player::{self, ffi::VideoPlayer};
+use state::VideoSourceRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
         include!(<QtMultimedia/QMediaPlayer>);
-        type QMediaPlayer;
-
-        include!("pg-desktop/cpp/video_source.h");
-        #[namespace = "pg"]
-        type VideoPlayer;
-        /// The source of `player` (a live `QMediaPlayer`, or null: the source keeps a weak reference to it).
-        #[namespace = "pg"]
-        unsafe fn new_video_player(player: *mut QMediaPlayer) -> UniquePtr<VideoPlayer>;
-        /// Plays the file named by `units` (Windows: the file's UTF-16 units). `ext` is its extension, ASCII.
-        #[cfg(windows)]
-        #[namespace = "pg"]
-        fn play_units(self: Pin<&mut VideoPlayer>, units: &[u16], ext: &str);
-        /// Plays the file open at `fd` (Unix; a negative `fd` is a file that could not be opened).
-        #[cfg(unix)]
-        #[namespace = "pg"]
-        fn play_fd(self: Pin<&mut VideoPlayer>, fd: i32, ext: &str);
-        /// Clears the player's source, then releases the device.
-        #[namespace = "pg"]
-        fn clear(self: Pin<&mut VideoPlayer>);
+        type QMediaPlayer = crate::video_player::ffi::QMediaPlayer;
     }
 
     extern "RustQt" {
@@ -54,25 +40,9 @@ pub mod qobject {
 }
 
 use core::pin::Pin;
-use std::ffi::OsStr;
-use std::path::Path;
 
-use cxx::UniquePtr;
 use cxx_qt::CxxQtType;
 use pg_model::ids::FileId;
-
-use self::qobject::VideoPlayer;
-
-pub struct VideoSourceRust {
-    /// Null until `attach`.
-    player: UniquePtr<VideoPlayer>,
-}
-
-impl Default for VideoSourceRust {
-    fn default() -> Self {
-        Self { player: UniquePtr::null() }
-    }
-}
 
 /// The player, when one is attached.
 fn player_of(rust: &mut VideoSourceRust) -> Option<Pin<&mut VideoPlayer>> {
@@ -81,10 +51,10 @@ fn player_of(rust: &mut VideoSourceRust) -> Option<Pin<&mut VideoPlayer>> {
 
 impl qobject::VideoSource {
     /// # Safety
-    /// As `qobject::new_video_player`: `player` is a live `QMediaPlayer` or null.
+    /// As `video_player::ffi::new_video_player`: `player` is a live `QMediaPlayer` or null.
     unsafe fn attach(mut self: Pin<&mut Self>, player: *mut qobject::QMediaPlayer) {
         // SAFETY: the caller's contract; the C++ side keeps only a weak reference to the player.
-        let player = unsafe { qobject::new_video_player(player) };
+        let player = unsafe { video_player::ffi::new_video_player(player) };
         self.as_mut().rust_mut().get_mut().player = player;
     }
 
@@ -92,7 +62,7 @@ impl qobject::VideoSource {
         let path = crate::app::get().catalogs().file_path(FileId::new(file_id));
         let Some(player) = player_of(self.as_mut().rust_mut().get_mut()) else { return };
         match path {
-            Ok(path) => play_path(player, &path),
+            Ok(path) => video_player::play_path(player, &path),
             Err(err) => {
                 crate::log::note(&format!("video {file_id}: {err:#}"));
                 player.clear();
@@ -104,35 +74,5 @@ impl qobject::VideoSource {
         if let Some(player) = player_of(self.as_mut().rust_mut().get_mut()) {
             player.clear();
         }
-    }
-}
-
-/// Plays the file at `path`, in the form the system holds its name in (`pg_platform::file::play_target`): its units on
-/// Windows, its open descriptor on Unix. The player's declarations above are per platform, to take that form.
-fn play_path(player: Pin<&mut VideoPlayer>, path: &Path) {
-    let ext = ext_of(path);
-    match pg_platform::file::play_target(path) {
-        #[cfg(windows)]
-        pg_platform::file::PlayTarget::Units(units) => player.play_units(&units, ext),
-        #[cfg(unix)]
-        pg_platform::file::PlayTarget::Descriptor(fd) => player.play_fd(fd, ext),
-    }
-}
-
-/// The file's extension, when it is ASCII: the player's format probe reads it from the name it is given, so the name
-/// is the extension alone (the file's own name never reaches the player). Empty otherwise.
-fn ext_of(path: &Path) -> &str {
-    path.extension().and_then(OsStr::to_str).filter(|e| e.bytes().all(|b| b.is_ascii_alphanumeric())).unwrap_or("")
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_hint_is_the_extension_when_it_is_ascii() {
-        assert_eq!(ext_of(Path::new("D:/clips/a.MOV")), "MOV");
-        assert_eq!(ext_of(Path::new("D:/clips/no-extension")), "");
-        assert_eq!(ext_of(Path::new("D:/clips/a.mö")), "");
     }
 }

@@ -3,7 +3,7 @@
 use cxx_qt_lib::{QString, QStringList};
 
 /// The properties the shell mirrors from the controller. Everything else is the controller's.
-pub(super) struct ShellRust {
+pub struct ShellRust {
     pub(super) folder: QString,
     pub(super) recursive: bool,
     pub(super) folder_kind: i32,

@@ -2,7 +2,7 @@
 
 use cxx_qt_lib::{QString, QStringList};
 
-pub(super) struct PickerRust {
+pub struct PickerRust {
     pub(super) native: bool,
     pub(super) names: QStringList,
     pub(super) here: QString,

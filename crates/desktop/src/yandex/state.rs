@@ -6,7 +6,7 @@ use pg_client::layout::Frame;
 use pg_client::picks::Picks;
 
 #[derive(Default)]
-pub(super) struct YandexSearchRust {
+pub struct YandexSearchRust {
     pub(super) busy: bool,
     pub(super) status: QString,
     pub(super) other_count: i32,

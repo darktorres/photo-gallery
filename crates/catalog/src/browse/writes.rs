@@ -72,8 +72,15 @@ mod tests {
     // A folder holding a lone surrogate and a raw byte (no text holds either) is stored and read back exactly.
     #[test]
     fn a_saved_view_keeps_a_folder_with_odd_names() {
-        let c =
-            Catalog::prepare(std::path::Path::new(":memory:"), crate::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }, PathRules::Posix).unwrap();
+        let c = Catalog::prepare(
+            std::path::Path::new(":memory:"),
+            crate::Versions {
+                import: pg_analysis::analyze::IMPORT_VERSION,
+                borders: pg_analysis::borders::BORDERS_VERSION,
+            },
+            PathRules::Posix,
+        )
+        .unwrap();
         let folder = Merged::from(vec![Name::from_raw(b"x\xFF"), Name::from_wide(&[0x61, 0xD800])]);
         let v = SavedView {
             name: "odd".into(),

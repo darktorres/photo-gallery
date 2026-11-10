@@ -4,6 +4,7 @@
 //! Nothing goes to the registry or `%LOCALAPPDATA%` (PLAN: nothing of ours on C:).
 
 mod state;
+use state::SettingsRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -20,7 +21,7 @@ pub mod qobject {
         #[qproperty(f64, row_height, cxx_name = "rowHeight", READ = read_row_height, WRITE = set_row_height_saved, NOTIFY, FINAL)]
         /// The id of the file selected (or open in the viewer) last, -1 for none.
         #[qproperty(i64, last_file, cxx_name = "lastFile", READ = read_last_file, WRITE = set_last_file_saved, NOTIFY, FINAL)]
-        type Settings = crate::settings::state::SettingsRust;
+        type Settings = super::SettingsRust;
     }
 
     unsafe extern "RustQt" {

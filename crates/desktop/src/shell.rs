@@ -46,7 +46,7 @@ pub mod qobject {
         #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
         /// The thumbnail height: the row height times the screen's scale, settled after a pause.
         #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, NOTIFY, FINAL)]
-        type Shell = crate::shell::state::ShellRust;
+        type Shell = super::ShellRust;
     }
 
     impl cxx_qt::Threading for Shell {}

@@ -1658,7 +1658,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "pg-analysis",
- "pg-metadata",
  "pg-model",
  "pg-platform",
  "pg-query",
@@ -1940,6 +1939,7 @@ name = "pg-thumbcache"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "pg-analysis",
  "pg-catalog",
  "pg-jobs",
  "pg-model",
@@ -1954,6 +1954,7 @@ name = "pg-thumbs"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "pg-analysis",
  "pg-catalog",
  "pg-import",
  "pg-jobs",

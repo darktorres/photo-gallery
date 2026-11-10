@@ -6,8 +6,9 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 /// The cache's layout version (`PRAGMA user_version`). Before the first release, layout changes edit `SCHEMA` in place
-/// and it stays 1. A cache of another version, or whose schema differs from this build's ([`crate::schema::judge`]), is started over,
-/// never migrated: it holds derived data only. A macro, so `SCHEMA` sets it as a constant.
+/// and it stays 1. A cache of another version, or whose schema differs from this build's, is started over
+/// ([`StartOverReason::OtherBuild`](crate::StartOverReason::OtherBuild)), never migrated: it holds derived data only. A
+/// macro, so `SCHEMA` sets it as a constant.
 macro_rules! cache_version {
     () => {
         1

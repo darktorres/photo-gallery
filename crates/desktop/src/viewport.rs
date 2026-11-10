@@ -29,7 +29,7 @@ pub mod qobject {
         /// renders the fit at it once it has settled after a resize (`fitSource` takes the size it settled on).
         #[qproperty(i64, fit_width, cxx_name = "fitWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i64, fit_height, cxx_name = "fitHeight", READ, WRITE, NOTIFY, FINAL)]
-        type Viewport = crate::viewport::state::ViewportRust;
+        type Viewport = super::ViewportRust;
     }
 
     unsafe extern "RustQt" {

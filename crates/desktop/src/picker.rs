@@ -30,7 +30,7 @@ pub mod qobject {
         #[qproperty(QStringList, names, READ, WRITE, NOTIFY, FINAL)]
         /// The app's dialog: the folder it is in (display text).
         #[qproperty(QString, here, READ, WRITE, NOTIFY, FINAL)]
-        type FolderPicker = crate::picker::state::PickerRust;
+        type FolderPicker = super::PickerRust;
     }
 
     unsafe extern "RustQt" {

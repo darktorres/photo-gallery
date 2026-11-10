@@ -21,7 +21,7 @@ use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
 
-use super::{DELETE_FILE_RATING, SET_FILE_RATING};
+use crate::types::{DELETE_FILE_RATING, SET_FILE_RATING};
 
 /// Failed writes are retried at most this many times (offline drives retry without counting).
 pub const MAX_ATTEMPTS: i64 = 5;

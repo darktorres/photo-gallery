@@ -391,3 +391,577 @@ impl<'tx> BordersWriter<'tx> {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use crate::browse::fixtures::{spelled, under_both_rules};
+    use crate::fixture::{self, raw};
+    use crate::test_support::*;
+    use crate::{Catalog, Recorded, ScannedFile, WorkItem, writes};
+    use pg_analysis::analyze::IMPORT_VERSION;
+    use pg_model::analysis::{Analysis, Taken, ThumbHash};
+    use pg_model::detection::Detection;
+    use pg_model::ids::{FileId, FileIdentity, FolderId};
+    use pg_model::media::Ext;
+    use pg_model::name::Name;
+    use pg_model::orientation::Orientation;
+    use pg_model::rating::Rating;
+    use pg_model::rules::PathRules;
+    use pg_model::turns::Turns;
+    use std::path::Path;
+
+    fn a_scan_tells_a_file_found_as_it_was_from_one_that_changed(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let key = |name: &str| {
+            let folder = rules.merge(&p(rules, r"D:\x"));
+            rules.order_key(&rules.merged_key(&folder), &Name::from(name))
+        };
+        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(&p(rules, r"D:\x")).unwrap()).collect();
+        assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
+        // As it was: only marked seen by the scan.
+        assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
+        assert_eq!(raw::file_row(&c), (scans[1], "a.jpg".into(), 10, 100, 0, key("a.jpg")));
+        for (scan, name, size, mtime) in [
+            (scans[2], "A.jpg", 10, 100),
+            (scans[3], "b.jpg", 10, 100),
+            (scans[4], "b.jpg", 11, 100),
+            (scans[5], "b.jpg", 11, 101),
+        ] {
+            assert!(scanned(&mut c, scan, name, size, mtime), "{name} {size} {mtime}");
+            assert_eq!(raw::file_row(&c), (scan, name.into(), i64::try_from(size).unwrap(), mtime, 0, key(name)));
+        }
+        // Back from missing.
+        raw::set_missing(&c, FileId::new(1));
+        assert!(scanned(&mut c, scans[6], "b.jpg", 11, 101));
+        assert_eq!(raw::file_row(&c).4, 0);
+        // An order key made by an earlier rule is made again.
+        raw::set_order_key(&c, FileId::new(1), &[0]);
+        assert!(scanned(&mut c, scans[7], "b.jpg", 11, 101));
+        assert_eq!(raw::file_row(&c).5, key("b.jpg"));
+        assert!(!scanned(&mut c, scans[8], "b.jpg", 11, 101));
+    }
+
+    under_both_rules!(
+        a_scan_tells_a_file_found_as_it_was_from_one_that_changed,
+        a_scan_tells_a_file_found_as_it_was_from_one_that_changed_windows,
+        a_scan_tells_a_file_found_as_it_was_from_one_that_changed_posix
+    );
+
+    /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
+    fn found_as(c: &mut Catalog, scan: i64, identity: FileIdentity, created: Option<i64>) -> Recorded {
+        let rules = c.rules();
+        let tx = c.tx().unwrap();
+        let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+        let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
+        let file = ScannedFile {
+            identity,
+            name: &Name::from("a.jpg"),
+            ext: Ext::of_name("a.jpg").unwrap(),
+            size: 10,
+            mtime: 100,
+            created,
+        };
+        let recorded = writer.upsert_file(&folder, &file).unwrap();
+        drop(writer);
+        tx.commit().unwrap();
+        recorded
+    }
+
+    fn a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let (volume, file) = (u64::MAX - 1, u64::MAX);
+        assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Changed);
+        let stored: (i64, i64) =
+            c.conn.query_row("SELECT volume, file_ref FROM files", [], |r| Ok((r.get(0)?, r.get(1)?))).unwrap();
+        assert_eq!((stored.0.cast_unsigned(), stored.1.cast_unsigned()), (volume, file));
+        // The same identity read back from the catalog is the same file: no new row.
+        assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Same);
+    }
+
+    under_both_rules!(
+        a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again,
+        a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again_windows,
+        a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again_posix
+    );
+
+    fn a_creation_time_fills_in_once_and_a_different_one_is_a_different_file(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let identity = FileIdentity::new(1, 7);
+        // Unknown on the first scan (a file system that doesn't give it), then known: it is filled in.
+        assert_eq!(found_as(&mut c, scan, identity, None), Recorded::Changed);
+        assert_eq!(found_as(&mut c, scan, identity, Some(5)), Recorded::Same);
+        let created: Option<i64> =
+            c.conn.query_row("SELECT created FROM files WHERE volume = 1", [], |r| r.get(0)).unwrap();
+        assert_eq!(created, Some(5));
+        // A different creation time is a different file: the row is displaced, and a new row takes the identity.
+        assert_eq!(found_as(&mut c, scan, identity, Some(6)), Recorded::Changed);
+        let rows: i64 = c.conn.query_row("SELECT count(*) FROM files", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 2);
+        let displaced: bool = c
+            .conn
+            .query_row(
+                "SELECT volume IS NULL AND unpaired = 1 AND created = 5 FROM files WHERE volume IS NULL",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(displaced);
+    }
+
+    under_both_rules!(
+        a_creation_time_fills_in_once_and_a_different_one_is_a_different_file,
+        a_creation_time_fills_in_once_and_a_different_one_is_a_different_file_windows,
+        a_creation_time_fills_in_once_and_a_different_one_is_a_different_file_posix
+    );
+
+    fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let stored = |c: &mut Catalog, item: &WorkItem| {
+            let tx = c.tx().unwrap();
+            let stored = tx.analysis_writer(versions().import).unwrap().store_failure(item, "a stand-in").unwrap();
+            tx.commit().unwrap();
+            stored
+        };
+        let item = next_work(&c);
+        // A write of the app's into it in progress: it may have been read part-written.
+        writes::queue_rotation(&c, item.id, Turns::new(3)).unwrap();
+        let job = writes::next_ready(&c, 0).unwrap().unwrap();
+        let temp = rules.parse(&spelled(rules, r"D:\x\a.jpg.tmp")).unwrap();
+        writes::record_temp(&c, &job, &temp, 3).unwrap();
+        assert!(!stored(&mut c, &item));
+        assert!(due(&c, item.id), "still due");
+        writes::done(&c, &job, writes::WriteEffect::Nothing).unwrap();
+        // Changed since it was listed.
+        scanned(&mut c, scan, "a.jpg", 11, 101);
+        assert!(!stored(&mut c, &item));
+        // Turned in the catalog since.
+        turn_kept(&c, item.id, 1);
+        let listed = next_work(&c);
+        assert_eq!(listed.rotation, Turns::new(1));
+        let unturned = WorkItem { rotation: Turns::new(0), ..listed };
+        assert!(!stored(&mut c, &unturned));
+        // As listed.
+        assert!(stored(&mut c, &listed));
+        assert!(!due(&c, item.id));
+    }
+
+    under_both_rules!(
+        what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed,
+        what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed_windows,
+        what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed_posix
+    );
+
+    fn a_size_change_alone_moves_the_file_in_the_thumbnail_source(rules: PathRules) {
+        // The scanner decides a file changed by its size and mtime, so a size change with the same mtime must reach
+        // the thumbnail pass (through files.seq), or a thumbnail made from the old file would be kept.
+        use fixture::{File, insert};
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
+        insert(&c, &[File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100)]).unwrap();
+        raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
+        let before = raw::thumb_source_seq(&c, FileId::new(1));
+        raw::set_size(&c, FileId::new(1), 11);
+        assert!(raw::thumb_source_seq(&c, FileId::new(1)) > before);
+    }
+
+    under_both_rules!(
+        a_size_change_alone_moves_the_file_in_the_thumbnail_source,
+        a_size_change_alone_moves_the_file_in_the_thumbnail_source_windows,
+        a_size_change_alone_moves_the_file_in_the_thumbnail_source_posix
+    );
+
+    fn thumb_sources_is_the_analysed_files_with_their_folders(rules: PathRules) {
+        use fixture::{File, insert};
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 2, &spelled(rules, r"D:\x\sub"));
+        insert(
+            &c,
+            &[
+                File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 100),
+                File::new(FileId::new(2), FolderId::new(2), "b.jpg", 10, 100),
+                File::new(FileId::new(3), FolderId::new(1), "c.jpg", 10, 100),
+            ],
+        )
+        .unwrap();
+        // File 1 analyzed, file 2 failed (still a source: the pass leaves it out), file 3 not analyzed (not a source).
+        raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
+        raw::insert_analysis(
+            &c,
+            &raw::AnalysisRow { error: Some("unreadable"), ..raw::AnalysisRow::image(2, 10, 100) },
+        );
+        assert_eq!(raw::thumb_sources(&c), [(1, spelled(rules, r"D:\x")), (2, spelled(rules, r"D:\x\sub"))]);
+        // The clock is the catalog's change number, as the pass reads it.
+        assert_eq!(raw::thumb_clock(&c), raw::meta_seq(&c));
+        // The pass's shape over it, with a TEMP stub of the thumbnail cache's entries: a change number's range still
+        // reads files_seq, and a file with no thumbnail yet is the one listed.
+        raw::stub_thumb_entries(&c);
+        let sql = "SELECT f.id FROM thumb_sources f LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
+                   WHERE f.seq > ?2 AND f.missing = 0 AND f.error IS NULL AND f.analyzed_mtime = f.mtime
+                     AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
+                   ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF";
+        let plan = raw::query_plan(&c, sql, [100, -1]);
+        assert!(plan.contains("files_seq"), "{plan:?}");
+        let listed = raw::rows_of(&c, sql, [100, -1], |r| r.get::<_, i64>(0));
+        assert_eq!(listed, [1]);
+    }
+
+    under_both_rules!(
+        thumb_sources_is_the_analysed_files_with_their_folders,
+        thumb_sources_is_the_analysed_files_with_their_folders_windows,
+        thumb_sources_is_the_analysed_files_with_their_folders_posix
+    );
+
+    fn borders_are_looked_for_after_the_import_and_again_after_a_new_detector(rules: PathRules) {
+        use crate::browse;
+        use pg_model::detection::{Edge, Kind as SideKind, Reason, Side};
+        use pg_model::query::{BorderFacet, Query, Sort};
+
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let item = next_work(&c);
+        let solid = |edge| Side {
+            pass: 0,
+            edge,
+            kind: SideKind::Solid,
+            depth: 41,
+            color: Some([0, 0, 0]),
+            straight: 1.0,
+            dev: Some(0.0),
+            drift: Some(0.5),
+            rejected: None,
+        };
+        let sky = Side {
+            pass: 0,
+            edge: Edge::Left,
+            kind: SideKind::Blur,
+            depth: 30,
+            color: None,
+            straight: 0.75,
+            dev: None,
+            drift: None,
+            rejected: Some(Reason::UnpairedBlur),
+        };
+        let found = Detection {
+            width: 400,
+            height: 300,
+            content: [0, 41, 400, 259],
+            sides: [solid(Edge::Top), solid(Edge::Bottom), sky].into_iter().collect(),
+        };
+        let analysis = Analysis {
+            version: IMPORT_VERSION,
+            file_hash: [1; 32],
+            orientation: Orientation::UPRIGHT,
+            width: 400,
+            height: 300,
+            thumbhash: ThumbHash::default(),
+            frames: 1,
+            taken: None,
+            media: a_jpeg(),
+        };
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.commit().unwrap();
+        // The import leaves them to the borders pass.
+        assert_eq!(raw::cut_sides(&c), [None; 4]);
+        let due = c.pending_borders().unwrap();
+        assert_eq!(due.items.iter().map(|d| d.id).collect::<Vec<_>>(), [item.id]);
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(raw::cut_sides(&c), [Some(0), Some(41), Some(0), Some(41)]);
+        assert_eq!(browse::read::border_sides(&c, item.id).unwrap(), found.sides);
+        assert!(c.pending_borders().unwrap().is_empty());
+
+        // The grid's entry, the filters and the sort.
+        let list = |c: &Catalog, q: Query| -> Vec<pg_model::grid::Entry> {
+            browse::read::list_grid(c, &pg_model::rules::Merged::default(), true, &q, Sort::default()).unwrap()
+        };
+        let entry = list(&c, Query::default()).remove(0);
+        assert_eq!(entry.borders, pg_model::grid::Borders::Found);
+        let [x, y, w, h] = entry.content().unwrap();
+        assert!(x == 0.0 && w == 1.0 && (y - 41.0 / 300.0).abs() < 1e-9 && (h - 218.0 / 300.0).abs() < 1e-9);
+        let only = |b: Vec<BorderFacet>| Query { borders: b, ..Query::default() };
+        assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
+        assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
+        let counts =
+            browse::read::facets(&c, &pg_model::rules::Merged::default(), true, &Query::default()).unwrap().borders;
+        assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
+        assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
+
+        // Marked as not a border: no border to the filters, the mark to the review.
+        c.set_border_mark(item.id, true).unwrap();
+        assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::Marked);
+        assert!(list(&c, only(vec![BorderFacet::Black])).is_empty());
+        assert_eq!(list(&c, only(vec![BorderFacet::None])).len(), 1);
+        assert_eq!(list(&c, Query { border_marked: Some(true), ..Query::default() }).len(), 1);
+
+        // A new detector: due again, without a new import; the mark stays.
+        raw::older_borders_version(&c);
+        raw::start_borders_version(&c);
+        assert!(c.pending_import(false).unwrap().is_empty());
+        let due = c.pending_borders().unwrap();
+        assert_eq!(due.len(), 1);
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(raw::cut_sides(&c), [Some(0); 4]);
+        assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
+        assert!(c.pending_borders().unwrap().is_empty());
+        assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::None);
+        assert_eq!(raw::border_marks(&c), 1);
+
+        // Analyzed again (the file changed): the old borders go, the new ones are due.
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.commit().unwrap();
+        assert_eq!(raw::cut_sides(&c), [None; 4]);
+        assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
+        assert_eq!(c.pending_borders().unwrap().len(), 1);
+    }
+
+    under_both_rules!(
+        borders_are_looked_for_after_the_import_and_again_after_a_new_detector,
+        borders_are_looked_for_after_the_import_and_again_after_a_new_detector_windows,
+        borders_are_looked_for_after_the_import_and_again_after_a_new_detector_posix
+    );
+
+    /// The borders the grid shows are a change of the file (`changes_since`): storing them, a changed cut, removed
+    /// sides and a removed analysis each stamp it. Its thumbnails' source (`files.seq`) is not touched.
+    fn borders_stamp_the_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
+        use crate::browse::read::changes_since;
+        use pg_model::detection::{Edge, Kind as SideKind, Side};
+
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let item = next_work(&c);
+        let analysis = Analysis {
+            version: IMPORT_VERSION,
+            file_hash: [1; 32],
+            orientation: Orientation::UPRIGHT,
+            width: 400,
+            height: 300,
+            thumbhash: ThumbHash::default(),
+            frames: 1,
+            taken: None,
+            media: a_jpeg(),
+        };
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+        tx.commit().unwrap();
+        let seq = |c: &Catalog| -> i64 {
+            c.conn.query_row("SELECT seq FROM files WHERE id = ?1", [item.id.get()], |r| r.get(0)).unwrap()
+        };
+        let thumbs = seq(&c);
+        // Each step is a change of the file, after the change number before it.
+        let stamped = |c: &Catalog, since: i64| -> i64 {
+            let (changed, now) = changes_since(c, since).unwrap();
+            assert_eq!(changed, [item.id]);
+            assert_eq!(seq(c), thumbs, "the thumbnails' source is not changed");
+            now
+        };
+        let (_, before) = changes_since(&c, 0).unwrap();
+
+        let top = Side {
+            pass: 0,
+            edge: Edge::Top,
+            kind: SideKind::Solid,
+            depth: 41,
+            color: Some([0, 0, 0]),
+            straight: 1.0,
+            dev: Some(0.0),
+            drift: Some(0.5),
+            rejected: None,
+        };
+        let sides = [top].into_iter().collect();
+        let found = Detection { width: 400, height: 300, content: [0, 41, 400, 300], sides };
+        let tx = c.tx().unwrap();
+        tx.borders_writer().unwrap().store_borders(&item, Some(&found)).unwrap();
+        tx.commit().unwrap();
+        let now = stamped(&c, before);
+
+        // The same cut written again changes nothing.
+        c.conn.execute("UPDATE analysis SET cut_top = cut_top WHERE file_id = ?1", [item.id.get()]).unwrap();
+        assert_eq!(changes_since(&c, now).unwrap(), (vec![], now));
+        c.conn.execute("UPDATE analysis SET cut_top = 7 WHERE file_id = ?1", [item.id.get()]).unwrap();
+        let now = stamped(&c, now);
+        c.conn.execute("DELETE FROM border_sides WHERE file_id = ?1", [item.id.get()]).unwrap();
+        let now = stamped(&c, now);
+        c.conn.execute("DELETE FROM analysis WHERE file_id = ?1", [item.id.get()]).unwrap();
+        stamped(&c, now);
+    }
+
+    under_both_rules!(
+        borders_stamp_the_file_as_changed_and_not_its_thumbnails,
+        borders_stamp_the_file_as_changed_and_not_its_thumbnails_windows,
+        borders_stamp_the_file_as_changed_and_not_its_thumbnails_posix
+    );
+
+    fn border_depth_sorts_by_the_largest_share_of_a_side_cut(rules: PathRules) {
+        use crate::browse;
+        use pg_model::query::{Query, Sort, SortKey};
+
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        c.add_root(&p(rules, r"D:\x")).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        // 400 × 300 stored. b: none; c: 30 of 300 at the top (10%); d: 60 of 400 at the left (15%), but turned a
+        // quarter (orientation 6), so 60 of the 400 upright rows; e: 90 at the top (30%), marked not a border.
+        let files = [("b.jpg", 1, None), ("c.jpg", 1, Some([0, 30, 0, 0])), ("d.jpg", 6, Some([60, 0, 0, 0]))];
+        let files = files.into_iter().chain([("e.jpg", 1, Some([0, 90, 0, 0]))]);
+        for (n, (name, orientation, cut)) in files.enumerate() {
+            let tx = c.tx().unwrap();
+            let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+            let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
+            let ext = Ext::of_name(name).unwrap();
+            let file = ScannedFile {
+                identity: FileIdentity::new(1, 10 + u64::try_from(n).unwrap()),
+                name: &Name::from(name),
+                ext,
+                size: 10,
+                mtime: 100,
+                created: None,
+            };
+            writer.upsert_file(&folder, &file).unwrap();
+            drop(writer);
+            tx.commit().unwrap();
+            let item = c.pending_import(false).unwrap().items.remove(0);
+            let [l, t, r, b] = cut.unwrap_or([0; 4]);
+            let mut borders = Detection::none(400, 300);
+            borders.content = [l, t, 400 - r, 300 - b];
+            let (width, height) = if Orientation::from_tag(orientation).swaps_axes() { (300, 400) } else { (400, 300) };
+            let analysis = Analysis {
+                version: IMPORT_VERSION,
+                file_hash: [u8::try_from(n).unwrap(); 32],
+                orientation: Orientation::from_tag(orientation),
+                width,
+                height,
+                thumbhash: ThumbHash::default(),
+                frames: 1,
+                taken: None,
+                media: a_jpeg(),
+            };
+            let tx = c.tx().unwrap();
+            tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
+            tx.borders_writer().unwrap().store_borders(&item, Some(&borders)).unwrap();
+            tx.commit().unwrap();
+            if name == "e.jpg" {
+                c.set_border_mark(item.id, true).unwrap();
+            }
+        }
+        let names = |descending: bool| -> Vec<String> {
+            let sort = Sort { key: SortKey::Borders, descending };
+            let entries =
+                browse::read::list_grid(&c, &pg_model::rules::Merged::default(), true, &Query::default(), sort)
+                    .unwrap();
+            let name = |id| {
+                browse::read::details(&c, id).unwrap().unwrap().path.parts.last().map(|n| n.display().into_owned())
+            };
+            entries.iter().map(|e| name(e.id).unwrap_or_default()).collect()
+        };
+        // Without a border (none found, or marked) last, by name, either way.
+        assert_eq!(names(false), ["c.jpg", "d.jpg", "b.jpg", "e.jpg"]);
+        assert_eq!(names(true), ["d.jpg", "c.jpg", "b.jpg", "e.jpg"]);
+    }
+
+    under_both_rules!(
+        border_depth_sorts_by_the_largest_share_of_a_side_cut,
+        border_depth_sorts_by_the_largest_share_of_a_side_cut_windows,
+        border_depth_sorts_by_the_largest_share_of_a_side_cut_posix
+    );
+
+    fn a_camera_clock_is_kept_as_it_is(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
+        let item = next_work(&c);
+        store_taken(&mut c, &item, Some(Taken::Wall(1_700_000_000)));
+        assert_eq!(taken_columns(&c), (Some(1_700_000_000), None));
+    }
+
+    under_both_rules!(
+        a_camera_clock_is_kept_as_it_is,
+        a_camera_clock_is_kept_as_it_is_windows,
+        a_camera_clock_is_kept_as_it_is_posix
+    );
+
+    fn a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well(rules: PathRules) {
+        let (mut c, _) = one_file(rules);
+        let item = next_work(&c);
+        let instant = 1_714_557_600;
+        store_taken(&mut c, &item, Some(Taken::Utc(instant)));
+        assert_eq!(taken_columns(&c), (Some(local_of(&c, instant)), Some(instant)));
+    }
+
+    under_both_rules!(
+        a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well,
+        a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well_windows,
+        a_utc_instant_is_converted_to_the_local_wall_clock_and_kept_as_well_posix
+    );
+
+    fn set_rating(c: &Catalog, id: i64, n: u8) {
+        let stars = Rating::new(n).filter(|r| r.get() > 0);
+        writes::set_rating(c, FileId::new(id), stars, false).unwrap();
+    }
+
+    /// The import's sync of the file's rating, in a transaction of its own.
+    fn sync_file(c: &mut Catalog, id: i64, in_file: Option<Rating>) {
+        let tx = c.tx().unwrap();
+        tx.analysis_writer(versions().import).unwrap().sync_file_rating(FileId::new(id), in_file).unwrap();
+        tx.commit().unwrap();
+    }
+
+    fn three_way_rating_sync(rules: PathRules) {
+        let (mut c, id) = one_file(rules);
+        // First import of a file rated elsewhere (ImageRater, Explorer): adopted.
+        sync_file(&mut c, id, Rating::new(4));
+        assert_eq!(raw::rating(&c, id), Some(4));
+        // Rated in the app, not written back (or the format can't hold it): the file still says 4, as known, so
+        // re-imports keep the catalog's 2.
+        set_rating(&c, id, 2);
+        sync_file(&mut c, id, Rating::new(4));
+        assert_eq!(raw::rating(&c, id), Some(2));
+        // Another program changes the file's rating: that is newer, and adopted.
+        sync_file(&mut c, id, Rating::new(5));
+        assert_eq!(raw::rating(&c, id), Some(5));
+        // Another program clears it (writes 0, or removes it): the catalog follows.
+        sync_file(&mut c, id, Rating::new(0));
+        assert_eq!(raw::rating(&c, id), None);
+        sync_file(&mut c, id, None);
+        assert_eq!(raw::rating(&c, id), None);
+        // A write of the app's own still queued wins over the file: a JPEG the app rates 3, queued for the file.
+        raw::insert_analysis(&c, &raw::AnalysisRow { format: Some("jpeg"), ..raw::AnalysisRow::image(id, 10, 100) });
+        writes::set_rating(&c, FileId::new(id), Rating::new(3), true).unwrap();
+        sync_file(&mut c, id, Rating::new(1));
+        assert_eq!(raw::rating(&c, id), Some(3));
+    }
+
+    under_both_rules!(three_way_rating_sync, three_way_rating_sync_windows, three_way_rating_sync_posix);
+
+    /// A file rated before its first import: the rating is queued for the file (its format isn't known yet), and the
+    /// import, which finds no rating in the file, keeps the catalog's while the write is queued.
+    fn a_rating_made_before_the_import_is_kept_and_queued(rules: PathRules) {
+        let (mut c, id) = one_file(rules);
+        writes::set_rating(&c, FileId::new(id), Rating::new(4), true).unwrap();
+        assert_eq!(raw::queued(&c, id, "rating"), Some(4), "queued with no analysis");
+        sync_file(&mut c, id, None);
+        assert_eq!(raw::rating(&c, id), Some(4));
+        assert_eq!(raw::queued(&c, id, "rating"), Some(4));
+    }
+
+    under_both_rules!(
+        a_rating_made_before_the_import_is_kept_and_queued,
+        a_rating_made_before_the_import_is_kept_and_queued_windows,
+        a_rating_made_before_the_import_is_kept_and_queued_posix
+    );
+}

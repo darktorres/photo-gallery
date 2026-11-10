@@ -6,6 +6,11 @@ each inline `mod name { ... }` block inside a file (its path is the file's, then
 module (edition 2018+ allows `browse::read::X` in browse.rs without `crate::`), and from the brace and glob re-export
 forms (`pub use child::{A, B};`, `pub use child::*;`).
 
+A path that reaches a name a module binds with a private `use` (not `pub use`) is an edge to the module the name comes
+from, as the compiler resolves it: a private import is the module's own binding, not an item of it. The case it is for
+is cxx-qt's: a bridge must name its backing struct as `super::T` (cxx-qt-gen, foreignmod.rs), so `x.rs` binds it with
+`use state::XRust;` and the bridge's `super::XRust` is an edge to `x::state`, not back to `x`.
+
 Test-only code is excluded: whole files named tests.rs (or under a tests/ folder), and inline `#[cfg(test)] mod`
 blocks, which are cut from the file before scanning.
 
@@ -29,6 +34,8 @@ BRACE = re.compile(r"\b(crate|super|self)::\{([^{}]*)\}")
 BARE = re.compile(r"(?<![:\w.])([a-z_][a-z0-9_]*)((?:::[A-Za-z_][A-Za-z0-9_]*)+)")
 # A child module used in the brace or glob form, as in `pub use pair::{Coverage, Pairing};` or `pub use grid::*;`.
 BARE_BRACE = re.compile(r"(?<![:\w.])([a-z_][a-z0-9_]*)::(?:\{[^{}]*\}|\*)")
+# A private `use` declaration (no `pub`), at the start of a line: `use state::XRust;`, `use crate::a::{b::C, D};`.
+PRIVATE_USE = re.compile(r"(?m)^[ 	]*use\s+([^;]+);")
 
 
 def crate_of(path):
@@ -82,9 +89,10 @@ def enclosing(ranges, pos):
     return [name for _, name in hits]
 
 
-def resolve(cur, kind, segs, modules, enc):
+def resolve(cur, kind, segs, modules, enc, imports=None):
     """The module a path refers to. `enc` is the inline modules the path sits in: `super` and `self` are relative
-    to that inline module, so `super::Item` inside `mod qobject` in command_line.rs is command_line."""
+    to that inline module, so `super::Item` inside `mod qobject` in command_line.rs is command_line. With `imports`
+    (module -> {name: module}), an item that its module binds by a private `use` resolves to where the name comes from."""
     effective = (cur.split("::") if cur else []) + enc
     if kind == "crate":
         base = []
@@ -96,10 +104,28 @@ def resolve(cur, kind, segs, modules, enc):
     for n in range(len(full), 0, -1):
         cand = "::".join(full[:n])
         if cand in modules:
+            if imports and n < len(full) and full[n] in imports.get(cand, {}):
+                return imports[cand][full[n]]
             return cand
     # No module of that name: the item lives in the module the base names (or the root).
     b = "::".join(base)
     return b if b in modules else ""
+
+
+def use_paths(body):
+    """The paths a `use` body binds, as segment lists: `a::b::{c::D, E}` -> [a, b, c, D] and [a, b, E]. A `self` or
+    a glob binds no single name, and is left out."""
+    body = re.sub(r"\s+", "", body)
+    m = re.fullmatch(r"(.*?)::\{(.*)\}", body)
+    if not m:
+        return [body.split("::")] if body and not body.endswith("*") else []
+    prefix = m.group(1).split("::")
+    out = []
+    for item in m.group(2).split(","):
+        item = item.split(" as ")[0]
+        if item and item != "self" and not item.endswith("*") and "{" not in item:
+            out.append(prefix + item.split("::"))
+    return out
 
 
 def node_id(m, chain):
@@ -142,6 +168,25 @@ def analyse_crate(crate_files):
             }
         return children_cache[src]
 
+    # The names each module binds by a private `use` (module -> {name: the module the name comes from}).
+    imports = {}
+    for m, text, ranges in sources:
+        for mm in PRIVATE_USE.finditer(text):
+            src = node_id(m, enclosing(ranges, mm.start()))
+            for path in use_paths(mm.group(1)):
+                if len(path) < 2 or not all(re.fullmatch(r"[A-Za-z_]\w*", s) for s in path):
+                    continue
+                head, rest = path[0], path[1:]
+                if head in ("crate", "self", "super"):
+                    kind, segs = head, rest
+                elif head in children_of(src):
+                    kind, segs = "self", path
+                else:
+                    continue  # std or another crate
+                tgt = resolve(src, kind, segs[:-1], modules, []) if segs[:-1] else resolve(src, kind, [], modules, [])
+                if tgt in modules and tgt != src:
+                    imports.setdefault(src, {})[path[-1]] = tgt
+
     edges = {}
     for m, text, ranges in sources:
 
@@ -171,7 +216,7 @@ def analyse_crate(crate_files):
             if mm.group(1) in children_of(src):
                 refs.append(("self", [mm.group(1)], src))
         for kind, segs, src in refs:
-            tgt = resolve(src, kind, segs, modules, [])
+            tgt = resolve(src, kind, segs, modules, [], imports)
             if tgt == src or tgt not in modules:
                 continue
             edges[(src, tgt)] = edges.get((src, tgt), 0) + 1

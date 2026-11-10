@@ -57,17 +57,17 @@ use crate::schema::{BUSY_TIMEOUT, Writing, hold_shared, open_writer};
 use crate::writer::{Inbox, Op, Store, write_loop};
 
 #[cfg(test)]
-use pg_model::turns::Turns;
-#[cfg(test)]
-use pg_platform::sqlite::attach_bytes;
-#[cfg(test)]
-use std::path::PathBuf;
-#[cfg(test)]
 use crate::maintenance::SHRINK_ABOVE_PAGES;
 #[cfg(test)]
 use crate::reader::pending_sql;
 #[cfg(test)]
 use crate::schema::APPLICATION_ID;
+#[cfg(test)]
+use pg_model::turns::Turns;
+#[cfg(test)]
+use pg_platform::sqlite::attach_bytes;
+#[cfg(test)]
+use std::path::PathBuf;
 
 /// The thumbnail cache. Without a file (it couldn't be opened, `disabled`), nothing is kept: thumbnails are made
 /// every time they are shown.
@@ -929,7 +929,15 @@ mod tests {
     fn catalog_of_four(dir: &Path) -> (PathBuf, pg_catalog::Catalog) {
         let catalog = dir.join("catalog.sqlite");
         let rules = pg_model::rules::PathRules::Windows;
-        let c = pg_catalog::Catalog::prepare(&catalog, pg_catalog::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }, rules).unwrap();
+        let c = pg_catalog::Catalog::prepare(
+            &catalog,
+            pg_catalog::Versions {
+                import: pg_analysis::analyze::IMPORT_VERSION,
+                borders: pg_analysis::borders::BORDERS_VERSION,
+            },
+            rules,
+        )
+        .unwrap();
         state::add_scan(&c, 1, "D:\\p").unwrap();
         state::add_folder(&c, 1, "D:\\p").unwrap();
         use pg_catalog::fixture::{File, insert};

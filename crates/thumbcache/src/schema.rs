@@ -85,7 +85,7 @@ pub(crate) const CONNECTION_PRAGMAS: &str =
 /// the cache): the writer's transactions and the readers' pass both wait for each other, rather than failing at once.
 pub(crate) const BUSY_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// Why a file is started over, inside the cache: the reason, and the technical account of it ([`Event::StartedOver`]).
+/// Why a file is started over, inside the cache: the reason, and the technical account of it ([`Event::StartedOver`](crate::Event::StartedOver)).
 pub(crate) struct Why {
     pub(crate) reason: StartOverReason,
     pub(crate) detail: String,
@@ -215,7 +215,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
 }
 
 /// What [`open_writer`] gives the cache: the writer's connection, why the file was started over and the path of
-/// [`Event::StartedOver`] (`None`: it was kept, or it is new), what the day's check of the totals fixed
+/// [`Event::StartedOver`](crate::Event::StartedOver) (`None`: it was kept, or it is new), what the day's check of the totals fixed
 /// (`heal_if_due`), and the shared hold on the file (`pg_schema::Live`), kept for as long as the connection is.
 pub(crate) struct Writing {
     pub(crate) conn: Connection,

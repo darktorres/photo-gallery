@@ -36,10 +36,8 @@ impl Catalogs {
 
     /// Run `f` with a catalog connection: an idle one, or one opened for it (and kept for the next borrower, up to a few).
     pub(crate) fn with_catalog<R>(&self, f: impl FnOnce(&Catalog) -> pg_catalog::Result<R>) -> Result<R> {
-        self.pool.with(
-            || Catalog::open(&self.path, PathRules::NATIVE).map_err(Error::from),
-            |c| f(c).map_err(Error::from),
-        )
+        self.pool
+            .with(|| Catalog::open(&self.path, PathRules::NATIVE).map_err(Error::from), |c| f(c).map_err(Error::from))
     }
 
     /// A file's path as the system holds it, for the programs that open the file (std, FFmpeg, the animation player).

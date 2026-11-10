@@ -13,7 +13,7 @@
 //! [`RulePath`] that the walk extends by its names, and a folder is opened by its units. Nothing is decoded lossily.
 //!
 //! Identity and pairing (S-17.7): a file is recorded by its volume and file ID; a file the catalog has no row for is
-//! paired at the end of the scan (`pg_catalog`'s `pair`), which is what makes a renumbered volume or a file moved
+//! paired at the end of the scan (`pg_catalog::pair::after_scan`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -21,7 +21,8 @@ use std::io;
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use pg_catalog::{Catalog, Coverage, Recorded, ScannedFile};
+use pg_catalog::pair::{self, Coverage};
+use pg_catalog::{Catalog, Recorded, ScannedFile};
 use pg_model::ids::{FileId, FileIdentity};
 use pg_model::media::Ext;
 use pg_model::name::Name;
@@ -400,7 +401,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     tx.commit()?;
     // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
     // and outside the folders it skipped.
-    let pairing = catalog.pair(root, scan_id, Coverage { complete, skipped: &skipped })?;
+    let pairing = pair::after_scan(catalog, root, scan_id, Coverage { complete, skipped: &skipped })?;
     stats.rebound = pairing.rebound;
     stats.replaced = pairing.replaced;
     stats.ambiguous = pairing.ambiguous;

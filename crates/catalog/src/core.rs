@@ -25,7 +25,9 @@ use crate::schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
     write_transaction,
 };
-use crate::types::{CropSource, Rebuilt, Root, Status, Versions, WorkItem, folders_under, skipped_folders, under_params};
+use crate::types::{
+    CropSource, Rebuilt, Root, Status, Versions, WorkItem, folders_under, skipped_folders, under_params,
+};
 use crate::writers::{AnalysisWriter, BordersWriter, ScanWriter};
 
 pub struct Catalog {
@@ -550,4 +552,214 @@ impl Tx<'_> {
     pub fn commit(self) -> Result<()> {
         Ok(self.inner.commit()?)
     }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Catalog;
+    use crate::browse::fixtures::{spelled, under_both_rules};
+    use crate::fixture::{self, raw};
+    use crate::test_support::*;
+    use crate::{Error, ScannedFile, writes};
+    use pg_model::ids::{FileId, FileIdentity, FolderId};
+    use pg_model::media::{Ext, Kind};
+    use pg_model::name::Name;
+    use pg_model::rules::PathRules;
+    use pg_model::turns::Turns;
+    use std::path::Path;
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicBool, Ordering};
+
+    fn roots_never_nest(rules: PathRules) {
+        let c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        assert!(c.add_root(&p(rules, r"D:\a\b")).unwrap());
+        assert!(c.add_root(&p(rules, r"D:\a\bc")).unwrap());
+        // The same folder spelled another way: on Windows another drive letter and case, which the root covers. POSIX
+        // names are case-sensitive, so there the spelling is the same path.
+        let same_folder = match rules {
+            PathRules::Windows => r"d:\A\b\c",
+            PathRules::Posix => "/a/b/c",
+        };
+        assert!(!c.add_root(&p(rules, same_folder)).unwrap(), "inside an existing root");
+        assert!(c.add_root(&p(rules, r"D:\a")).unwrap(), "replaces both");
+        let paths =
+            |c: &Catalog| c.roots().unwrap().into_iter().map(|r| c.rules().display(&r.path)).collect::<Vec<_>>();
+        assert_eq!(paths(&c), [spelled(rules, r"D:\a")]);
+        let id = c.root_id(&p(rules, r"D:\a")).unwrap().expect("a library folder has an id");
+        assert_eq!(c.remove_root(id).unwrap(), Some(0));
+        assert!(paths(&c).is_empty());
+        assert_eq!(c.remove_root(id).unwrap(), None, "not a library folder any more");
+    }
+
+    under_both_rules!(roots_never_nest, roots_never_nest_windows, roots_never_nest_posix);
+
+    fn cancelled_until_cleared(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let cancel = Arc::new(AtomicBool::new(false));
+        c.cancel_when(cancel.clone()).unwrap();
+        let run = || raw::slow_count(&c).map_err(Error::from);
+        assert_eq!(run().unwrap(), 100_000);
+        // Set between statements (SQLite's own interrupt would be lost there): every statement fails.
+        cancel.store(true, Ordering::Relaxed);
+        assert!(matches!(run().unwrap_err(), Error::Interrupted));
+        assert!(matches!(run().unwrap_err(), Error::Interrupted));
+        cancel.store(false, Ordering::Relaxed);
+        assert_eq!(run().unwrap(), 100_000);
+    }
+
+    under_both_rules!(cancelled_until_cleared, cancelled_until_cleared_windows, cancelled_until_cleared_posix);
+
+    fn pending_follows_what_the_analysis_was_made_from(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        // New: pending.
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        let first = next_work(&c);
+        let id = first.id;
+        assert!(due(&c, id));
+        // Analyzed as it is: done. A failure counts as done; only --retry redoes it.
+        analyzed(&mut c, &first);
+        assert!(!due(&c, id));
+        assert!(c.pending_import(false).unwrap().is_empty());
+        assert_eq!(c.pending_import(true).unwrap().len(), 1);
+        // A rescan that changes nothing changes nothing, for the import or the thumbnails.
+        let seq = raw::file_seq(&c, id);
+        scanned(&mut c, scan, "a.jpg", 10, 100);
+        assert_eq!(state(&c, id), (false, seq));
+        // Changed while it was being analyzed: what's stored is of the old file.
+        let old = c.pending_import(true).unwrap().items.remove(0);
+        scanned(&mut c, scan, "a.jpg", 11, 101);
+        analyzed(&mut c, &old);
+        assert!(due(&c, id));
+        let current = next_work(&c);
+        analyzed(&mut c, &current);
+        assert!(!due(&c, id));
+        // Turned in the catalog: analyzed again with the turn, and the thumbnails' source moved on.
+        turn_kept(&c, id, 1);
+        let (pending, after) = state(&c, id);
+        assert!(pending && after > seq);
+        let turned = next_work(&c);
+        assert_eq!(turned.rotation, Turns::new(1));
+        analyzed(&mut c, &turned);
+        // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
+        let rewritten = |c: &Catalog, before, after, metadata_only| {
+            // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
+            let job =
+                writes::Job { file_id: id, kind: pg_model::write::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
+            let rewrite = writes::Rewrite { before, after, metadata_only };
+            writes::done(c, &job, writes::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
+        };
+        rewritten(&c, (11, 101), (12, 102), Some([0; 32]));
+        assert!(!due(&c, id));
+        rewritten(&c, (12, 102), (13, 103), None);
+        assert!(due(&c, id));
+        let rewritten = next_work(&c);
+        analyzed(&mut c, &rewritten);
+        // Renamed to another kind: analyzed again as that.
+        scanned(&mut c, scan, "a.mp4", 13, 103);
+        let renamed = next_work(&c);
+        assert_eq!(renamed.kind, Kind::Video);
+        analyzed(&mut c, &renamed);
+        assert!(!due(&c, id));
+        // Gone, then back: nothing to import, but the thumbnails look at it both times.
+        let seq = raw::file_seq(&c, id);
+        let next = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        c.mark_missing(&p(rules, r"D:\x"), next, &[]).unwrap();
+        let gone = raw::file_seq(&c, id);
+        scanned(&mut c, next, "a.mp4", 13, 103);
+        assert_eq!(c.pending_import(false).unwrap().len(), 0);
+        assert!(seq < gone && gone < raw::file_seq(&c, id));
+    }
+
+    under_both_rules!(
+        pending_follows_what_the_analysis_was_made_from,
+        pending_follows_what_the_analysis_was_made_from_windows,
+        pending_follows_what_the_analysis_was_made_from_posix
+    );
+
+    fn a_folder_the_scan_could_not_list_keeps_its_files(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        let put = |c: &mut Catalog, scan: i64, folder: &str, name: &str, file_ref: u64| {
+            let tx = c.tx().unwrap();
+            let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
+            let folder = writer.folder(&p(rules, folder)).unwrap();
+            let ext = Ext::of_name(name).unwrap();
+            let identity = FileIdentity::new(1, file_ref);
+            writer
+                .upsert_file(
+                    &folder,
+                    &ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1, created: None },
+                )
+                .unwrap();
+            drop(writer);
+            tx.commit().unwrap();
+        };
+        let first = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        put(&mut c, first, r"D:\x\ok", "a.jpg", 1);
+        put(&mut c, first, r"D:\x\locked", "b.jpg", 2);
+        put(&mut c, first, r"D:\x\locked\deep", "c.jpg", 3);
+
+        // The next scan lists only D:\x\ok: D:\x\locked couldn't be read, so its files weren't seen, and aren't missing.
+        let next = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
+        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), next, &[p(rules, r"D:\x\locked")]).unwrap(), 0);
+        assert_eq!(raw::missing_count(&c), 0);
+
+        // Once it can be listed again, a scan that doesn't see its files marks them.
+        let later = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
+        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), later, &[]).unwrap(), 2);
+        assert_eq!(raw::missing_count(&c), 2);
+    }
+
+    under_both_rules!(
+        a_folder_the_scan_could_not_list_keeps_its_files,
+        a_folder_the_scan_could_not_list_keeps_its_files_windows,
+        a_folder_the_scan_could_not_list_keeps_its_files_posix
+    );
+
+    fn files_marked_are_imported_again_once(rules: PathRules) {
+        let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
+        raw::add_scan(&c, 1, &spelled(rules, "D:"));
+        raw::add_folder(&c, 1, &spelled(rules, r"D:\x"));
+        raw::add_folder(&c, 2, &spelled(rules, r"D:\x\y"));
+        raw::add_folder(&c, 3, &spelled(rules, r"D:\xy"));
+        raw::add_folder(&c, 4, &spelled(rules, r"D:\x\y\z"));
+        let files = [(1, 1, "a.jpg"), (2, 2, "b.jpg"), (3, 3, "c.jpg"), (4, 4, "d.jpg"), (5, 4, "e.jpg")];
+        let files =
+            files.map(|(id, folder, name)| fixture::File::new(FileId::new(id), FolderId::new(folder), name, 10, 100));
+        fixture::insert(&c, &files).unwrap();
+        for item in c.pending_import(false).unwrap().items {
+            analyzed(&mut c, &item);
+        }
+        // Analyzed, then gone.
+        raw::set_missing(&c, FileId::new(5));
+        assert!(c.pending_import(false).unwrap().is_empty());
+
+        // A folder holds the files of its subfolders, not those of a folder named like it; missing ones aren't there.
+        let mut under = c.files_under(&p(rules, r"D:\x\y")).unwrap();
+        under.sort();
+        assert_eq!(under, [FileId::new(2), FileId::new(4)]);
+        assert_eq!(c.files_under(&p(rules, r"D:\x")).unwrap().len(), 3);
+        assert!(c.files_under(&p(rules, r"D:\q")).unwrap().is_empty());
+
+        // Marked: due, whatever their analysis, the missing one left; the change number doesn't move.
+        let seq = raw::file_seq(&c, FileId::new(2));
+        assert_eq!(c.mark_pending(&[FileId::new(2), FileId::new(4), FileId::new(5)]).unwrap(), 2);
+        assert_eq!(state(&c, FileId::new(2)), (true, seq));
+        assert!(due(&c, FileId::new(4)) && !due(&c, FileId::new(5)) && !due(&c, FileId::new(1)));
+        let work = c.pending_import(false).unwrap();
+        assert_eq!(work.items.iter().map(|i| i.id).collect::<Vec<_>>(), [FileId::new(2), FileId::new(4)]);
+        // Analyzed again, as they are: done.
+        for item in work.items {
+            analyzed(&mut c, &item);
+        }
+        assert!(c.pending_import(false).unwrap().is_empty());
+    }
+
+    under_both_rules!(
+        files_marked_are_imported_again_once,
+        files_marked_are_imported_again_once_windows,
+        files_marked_are_imported_again_once_posix
+    );
 }

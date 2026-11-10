@@ -30,7 +30,7 @@ pub mod qobject {
         #[qproperty(i32, matching, READ, WRITE, NOTIFY, FINAL)]
         /// One line saying what the query keeps, for the save-view dialog.
         #[qproperty(QString, description, READ, WRITE, NOTIFY, FINAL)]
-        type Filters = crate::filters::state::FiltersRust;
+        type Filters = super::FiltersRust;
     }
 
     impl cxx_qt::Threading for Filters {}

@@ -4,7 +4,7 @@ use cxx_qt_lib::{QString, QStringList};
 use pg_model::ids::RootId;
 
 #[derive(Default)]
-pub(super) struct LibraryRust {
+pub struct LibraryRust {
     pub(super) roots: QStringList,
     /// The catalog's id of each folder in `roots`, row for row: what removing a row removes.
     pub(super) root_ids: Vec<RootId>,

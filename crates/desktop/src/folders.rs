@@ -33,7 +33,7 @@ pub mod qobject {
         #[qml_element]
         /// The tree has been read at least once.
         #[qproperty(bool, ready, READ, WRITE, NOTIFY, FINAL)]
-        type FolderModel = crate::folders::state::FolderRust;
+        type FolderModel = super::FolderRust;
     }
 
     impl cxx_qt::Threading for FolderModel {}

@@ -6,8 +6,9 @@
 
 use std::path::Path;
 
+use crate::Catalog;
+use crate::lifecycle::{set_borders_version, set_import_version};
 use crate::writes;
-use crate::{Catalog, set_borders_version, set_import_version};
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::ids::FileId;
@@ -28,7 +29,7 @@ pub(crate) fn recorded_rules(path: &Path) -> PathRules {
     let name: String = conn.query_row("SELECT value FROM meta WHERE key = 'path_rules'", [], |r| r.get(0)).unwrap();
     [PathRules::Windows, PathRules::Posix]
         .into_iter()
-        .find(|&rules| crate::rules_name(rules) == name)
+        .find(|&rules| crate::types::rules_name(rules) == name)
         .unwrap_or_else(|| panic!("an unknown path rules name: {name:?}"))
 }
 

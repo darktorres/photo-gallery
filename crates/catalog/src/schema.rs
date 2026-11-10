@@ -109,7 +109,7 @@ pub(crate) fn bring_to(
         }
         if version == 0 {
             tx.execute_batch(baseline).context("creating the catalog")?;
-            tx.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [crate::rules_name(rules)])?;
+            tx.execute("INSERT INTO meta(key, value) VALUES ('path_rules', ?1)", [crate::types::rules_name(rules)])?;
             tx.pragma_update(None, "application_id", APPLICATION_ID)?;
             tx.pragma_update(None, "user_version", BASELINE_VERSION)?;
         } else {

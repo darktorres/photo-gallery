@@ -3,7 +3,7 @@
 use cxx_qt_lib::QString;
 use pg_app::reexport::Facets;
 
-pub(super) struct FiltersRust {
+pub struct FiltersRust {
     pub(super) active: i32,
     pub(super) name: QString,
     pub(super) duplicates_index: i32,

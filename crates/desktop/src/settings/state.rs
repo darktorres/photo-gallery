@@ -2,4 +2,4 @@
 
 /// The properties' state is the preferences': the struct holds nothing.
 #[derive(Default)]
-pub(super) struct SettingsRust;
+pub struct SettingsRust;

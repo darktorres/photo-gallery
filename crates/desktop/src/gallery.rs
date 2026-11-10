@@ -9,6 +9,9 @@
 //! moves with its file when a new list arrives, and while the viewer is open (`viewing`) an arriving list waits
 //! for it to close. A rating or a turn made while a list was on its way is read again into it.
 
+mod state;
+use state::GalleryRust;
+
 #[cxx_qt::bridge]
 pub mod qobject {
     unsafe extern "C++" {
@@ -72,7 +75,7 @@ pub mod qobject {
         #[qproperty(i32, viewed_rating, cxx_name = "viewedRating", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_full_width, cxx_name = "viewedFullWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_full_height, cxx_name = "viewedFullHeight", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(MediaKind, viewed_kind, cxx_name = "viewedKind", READ, WRITE, NOTIFY, FINAL)]
+        #[qproperty(MediaKind, viewed_kind, cxx_name = "viewedKind", READ = read_viewed_kind, NOTIFY, FINAL)]
         #[qproperty(i32, viewed_player_turns, cxx_name = "viewedPlayerTurns", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i64, viewed_file_id, cxx_name = "viewedFileId", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(QString, viewed_full_url, cxx_name = "viewedFullUrl", READ, WRITE, NOTIFY, FINAL)]
@@ -94,6 +97,7 @@ pub mod qobject {
     unsafe extern "RustQt" {
         fn set_viewing_holding(self: Pin<&mut GalleryModel>, value: i32);
         fn set_current_item(self: Pin<&mut GalleryModel>, value: i32);
+        fn read_viewed_kind(self: &GalleryModel) -> MediaKind;
 
         /// A new list is about to replace the shown one: the last moment to set `anchor`.
         #[qsignal]
@@ -197,7 +201,7 @@ use cxx_qt::{CxxQtThread, CxxQtType, Threading};
 use cxx_qt_lib::{
     QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QRectF, QString, QStringList, QVariant,
 };
-use pg_client::grid::{Arrival, Changed, Grid, Plan, Shape};
+use pg_client::grid::{Arrival, Changed, Plan, Shape};
 use pg_client::layout;
 use pg_client::text::{self, FoundBorders};
 use pg_model::details::Details;
@@ -261,79 +265,6 @@ pub(crate) fn post(run: impl FnOnce(Pin<&mut qobject::GalleryModel>) + Send + 's
             let _ = thread.queue(run);
         }
     });
-}
-
-pub struct GalleryRust {
-    count: i32,
-    revision: i32,
-    croppable: i32,
-    loading: bool,
-    holding: bool,
-    current: i32,
-    selection_info: QString,
-    viewing: i32,
-    anchor: i32,
-    // The viewer's item's values (`refresh_viewed`): the qproperties' backing fields. Before any refresh they are the
-    // values of no item, which `refresh_viewed` gives with `viewing` out of range.
-    viewed_key: QString,
-    viewed_neighbour_keys: QStringList,
-    viewed_turns: i32,
-    viewed_rating: i32,
-    viewed_full_width: i32,
-    viewed_full_height: i32,
-    viewed_kind: qobject::MediaKind,
-    viewed_player_turns: i32,
-    viewed_file_id: i64,
-    viewed_full_url: QString,
-    thumb_height: i32,
-    viewed_info: QString,
-    viewed_border_box: QRectF,
-    viewed_rejected_top: f64,
-    viewed_rejected_bottom: f64,
-    viewed_rejected_left: f64,
-    viewed_rejected_right: f64,
-    viewed_border_marked: bool,
-    /// The list, its rows and the list session (`pg_client::grid`).
-    grid: Grid,
-    /// The details read last, of at most two files (the selection's and the viewer's), newest first. Emptied
-    /// whenever a list is shown or a file changes.
-    details: RefCell<Vec<(FileId, Details)>>,
-}
-
-impl Default for GalleryRust {
-    fn default() -> Self {
-        GalleryRust {
-            count: 0,
-            revision: 0,
-            croppable: 0,
-            loading: false,
-            holding: false,
-            current: -1,
-            selection_info: QString::default(),
-            viewing: -1,
-            anchor: -1,
-            viewed_key: QString::default(),
-            viewed_neighbour_keys: QStringList::default(),
-            viewed_turns: 0,
-            viewed_rating: 0,
-            viewed_full_width: 0,
-            viewed_full_height: 0,
-            viewed_kind: qobject::MediaKind::Image,
-            viewed_player_turns: 0,
-            viewed_file_id: 0,
-            viewed_full_url: QString::default(),
-            thumb_height: 0,
-            viewed_info: QString::default(),
-            viewed_border_box: QRectF::default(),
-            viewed_rejected_top: -1.0,
-            viewed_rejected_bottom: -1.0,
-            viewed_rejected_left: -1.0,
-            viewed_rejected_right: -1.0,
-            viewed_border_marked: false,
-            grid: Grid::default(),
-            details: RefCell::new(Vec::new()),
-        }
-    }
 }
 
 impl GalleryRust {
@@ -643,8 +574,11 @@ impl qobject::GalleryModel {
         self.as_mut().set_viewed_full_width(width);
         let height = self.full_height(item);
         self.as_mut().set_viewed_full_height(height);
-        let kind = self.media_kind(item);
-        self.as_mut().set_viewed_kind(kind);
+        let kind = self.media_type(item);
+        if self.viewed_kind != kind {
+            self.as_mut().rust_mut().viewed_kind = kind;
+            self.as_mut().viewed_kind_changed();
+        }
         let player_turns = self.player_turns(item);
         self.as_mut().set_viewed_player_turns(player_turns);
         let file_id = self.file_id(item);
@@ -903,12 +837,17 @@ impl qobject::GalleryModel {
         i32::try_from(self.grid.bordered()).unwrap_or(i32::MAX)
     }
 
-    /// What the viewer shows the item with (`viewedKind`): its media type.
-    fn media_kind(&self, item: i32) -> qobject::MediaKind {
-        match self.grid.item(item).map(|e| e.media_type()) {
-            Some(MediaType::Animated) => qobject::MediaKind::Animated,
-            Some(MediaType::Video) => qobject::MediaKind::Video,
-            Some(MediaType::Image) | None => qobject::MediaKind::Image,
+    /// What the viewer shows the item with (`viewedKind`): its media type, a still without an item.
+    fn media_type(&self, item: i32) -> MediaType {
+        self.grid.item(item).map_or(MediaType::Image, Entry::media_type)
+    }
+
+    /// `viewedKind`: the viewer's item's media type (`refresh_viewed`), as the bridge's enum.
+    fn read_viewed_kind(&self) -> qobject::MediaKind {
+        match self.viewed_kind {
+            MediaType::Image => qobject::MediaKind::Image,
+            MediaType::Animated => qobject::MediaKind::Animated,
+            MediaType::Video => qobject::MediaKind::Video,
         }
     }
 

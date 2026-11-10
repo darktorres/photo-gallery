@@ -34,7 +34,7 @@ pub mod qobject {
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).
         #[qproperty(bool, write_failed, cxx_name = "writeFailed", READ, WRITE, NOTIFY, FINAL)]
-        type Library = crate::library::state::LibraryRust;
+        type Library = super::LibraryRust;
     }
 
     impl cxx_qt::Threading for Library {}

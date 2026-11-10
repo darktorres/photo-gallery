@@ -6,7 +6,7 @@
 //! query or the counts change.
 
 mod state;
-use state::{Row, FacetChoicesRust};
+use state::{FacetChoicesRust, Row};
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -30,7 +30,7 @@ pub mod qobject {
         #[qml_element]
         /// Which list, by its index in `pg_client::facets::Facet` (the filter bar names them). Set it once.
         #[qproperty(i32, facet, READ, WRITE = set_facet, FINAL)]
-        type FacetChoices = crate::facet_choices::state::FacetChoicesRust;
+        type FacetChoices = super::FacetChoicesRust;
     }
 
     unsafe extern "RustQt" {

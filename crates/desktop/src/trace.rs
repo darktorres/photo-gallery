@@ -3,6 +3,7 @@
 //! with `PG_TRACE=1` (`install`).
 
 mod state;
+use state::StagesRust;
 
 #[cxx_qt::bridge]
 pub mod qobject {
@@ -10,7 +11,7 @@ pub mod qobject {
         /// The stages only the QML sees.
         #[qobject]
         #[qml_element]
-        type Stages = crate::trace::state::StagesRust;
+        type Stages = super::StagesRust;
     }
 
     unsafe extern "RustQt" {

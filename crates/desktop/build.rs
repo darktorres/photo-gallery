@@ -67,6 +67,7 @@ fn main() -> Result<(), String> {
     .qt_module("Multimedia")
     .files([
         "src/animation.rs",
+        "src/frame_sink.rs",
         "src/app_icon.rs",
         "src/command_line.rs",
         "src/deadline.rs",
@@ -85,6 +86,7 @@ fn main() -> Result<(), String> {
         "src/trace.rs",
         "src/keymap.rs",
         "src/video_source.rs",
+        "src/video_player.rs",
         "src/viewport.rs",
         "src/words.rs",
         "src/yandex.rs",

@@ -57,7 +57,7 @@ pub mod qobject {
         #[qproperty(i32, preview_width, cxx_name = "previewWidth", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, preview_height, cxx_name = "previewHeight", READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(bool, preview_picked, cxx_name = "previewPicked", READ, WRITE, NOTIFY, FINAL)]
-        type YandexSearch = crate::yandex::state::YandexSearchRust;
+        type YandexSearch = super::YandexSearchRust;
     }
 
     impl cxx_qt::Threading for YandexSearch {}

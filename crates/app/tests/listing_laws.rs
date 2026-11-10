@@ -61,8 +61,8 @@ proptest! {
                     sort: Sort { key, descending },
                     query: Query { name: name.clone(), exts: exts.clone(), ..Query::default() },
                 };
-                app.save_listing(&listing).unwrap();
-                read.push((app.listing(), listing));
+                app.views().save_listing(&listing).unwrap();
+                read.push((app.views().listing(), listing));
             }
         }
         drop(app);

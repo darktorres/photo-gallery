@@ -3,7 +3,7 @@
 use pg_client::viewport::View;
 
 /// The view, and the values of its properties (kept in step by `sync`, so the bindings update).
-pub(super) struct ViewportRust {
+pub struct ViewportRust {
     pub(super) view: View,
     pub(super) zoom: f64,
     pub(super) ox: f64,

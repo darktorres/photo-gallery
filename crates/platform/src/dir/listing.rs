@@ -1,9 +1,7 @@
-//! A directory listing's entries and the lister's buffers: what the two backends of `dir` (`unix` and `windows`) fill in.
-//! A leaf of `dir`: the backends import these from here, and `dir` re-exports both types, so the public paths do not
+//! A directory listing's entry: what the two backends of `dir` (`unix` and `windows`) fill in, each with its own
+//! `Lister`. A leaf of `dir`: the backends import it from here, and `dir` re-exports it, so its public path does not
 //! change.
 
-#[cfg(windows)]
-use crate::native::NativePath;
 use crate::native::Unit;
 
 /// A directory entry as the listing gives it. The name is borrowed from the lister's buffer until the next entry.
@@ -27,60 +25,4 @@ pub struct Entry<'a> {
     /// The creation time in FILETIME ticks; `None` where the file system or the platform doesn't give one (drvfs has
     /// none). Never an error: an unknown creation time is a NULL in the catalog.
     pub created: Option<i64>,
-}
-
-/// What listing a folder needs, kept from one folder to the next, so a listing reuses its buffers.
-pub struct Lister {
-    /// The folder's path, as the call is given it.
-    #[cfg(windows)]
-    pub(super) wide: NativePath,
-    /// The records, as u64s to keep them 8-byte aligned as they must be.
-    #[cfg(windows)]
-    pub(super) buf: Vec<u64>,
-    /// The stable identity of each device seen, by its device number (see `unix::Lister::folder_volume`).
-    #[cfg(unix)]
-    pub(super) volumes: std::collections::BTreeMap<u64, u64>,
-    /// The devices that hold each identity, so a second device with the same one is found.
-    #[cfg(unix)]
-    pub(super) claimed: std::collections::BTreeMap<u64, u64>,
-    /// How many devices were given their device number as their identity (no UUID, or a clone of another's).
-    #[cfg(unix)]
-    pub(super) fallbacks: u64,
-}
-
-#[cfg(windows)]
-impl Lister {
-    pub fn new() -> Lister {
-        Lister { wide: NativePath::default(), buf: vec![0; 8192] }
-    }
-
-    /// The devices given their device number as identity: none on Windows, where a volume's serial is always there.
-    pub fn fallback_volumes(&self) -> u64 {
-        0
-    }
-}
-
-#[cfg(unix)]
-impl Lister {
-    pub fn new() -> Lister {
-        Lister { volumes: Default::default(), claimed: Default::default(), fallbacks: 0 }
-    }
-
-    /// The devices given their device number as identity (see `unix::Lister::folder_volume`).
-    pub fn fallback_volumes(&self) -> u64 {
-        self.fallbacks
-    }
-}
-
-#[cfg(not(any(windows, unix)))]
-impl Lister {
-    pub fn new() -> Lister {
-        Lister {}
-    }
-}
-
-impl Default for Lister {
-    fn default() -> Self {
-        Self::new()
-    }
 }

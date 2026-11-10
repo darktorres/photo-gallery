@@ -203,7 +203,15 @@ mod tests {
             std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         }
         let catalog_path = dir.join("catalog.sqlite");
-        let mut c = Catalog::prepare(&catalog_path, pg_catalog::Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }, PathRules::NATIVE).unwrap();
+        let mut c = Catalog::prepare(
+            &catalog_path,
+            pg_catalog::Versions {
+                import: pg_analysis::analyze::IMPORT_VERSION,
+                borders: pg_analysis::borders::BORDERS_VERSION,
+            },
+            PathRules::NATIVE,
+        )
+        .unwrap();
         let ctl = Control::new();
         let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();

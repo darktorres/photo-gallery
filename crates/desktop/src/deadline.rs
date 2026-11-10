@@ -26,7 +26,7 @@ pub mod ffi {
 pub(crate) fn owner<S: Upcast<QObject>>(shell: Pin<&mut S>) -> *mut QObject {
     let mut base: Pin<&mut QObject> = shell.upcast_pin();
     // SAFETY: the pinned base is not moved out of; the pointer is only handed to the C++ timer, which the shell owns.
-    unsafe { base.as_mut().get_unchecked_mut() as *mut QObject }
+    core::ptr::from_mut(unsafe { base.as_mut().get_unchecked_mut() })
 }
 
 /// The monotonic clock the controller's deadlines are on, in milliseconds.

@@ -1,6 +1,6 @@
 # Plan: fix the modularity findings (M-series)
 
-Status (2026-11-09): investigated, re-measured at `905561d`, and re-reviewed in twelve passes. The consolidated rewrite is applied. M-0, M-1, M-3 and M-3a are done and committed (each step says where). Churn and cost are not a constraint; the goal is the proper fix for each finding, not the cheapest one.
+Status (2026-11-09): investigated, re-measured at `905561d`, and re-reviewed in twelve passes. The consolidated rewrite is applied. M-0 to M-8, M-17, M-19 and M-20 are done and committed (each step says where), and they pass the Windows checks (see "Validation" at the end). The Linux checks and the perf gate have not run on them yet. Churn and cost are not a constraint; the goal is the proper fix for each finding, not the cheapest one.
 
 ## Investigation results
 
@@ -70,6 +70,7 @@ Concurrent feature work lands in the files this plan splits. 111 files changed b
 - **Cycle gate:** the union of (a) the compiler graph on Linux (`pg-dev`) and on Windows (the host, `just modgraph`), with only the `uses` edges, grouped by module (items map to their enclosing module; `(root)` is the crate root), and (b) the text scan, which covers the cxx-qt bridge modules. A group in either list fails the check unless it is on the allowlist.
 - **Allowlist:** `tools/modgraph-allow.txt`, read by `tools/modgraph/allowlist.py`. Each line names `source` (scan, linux or windows), the crate and its members. `module_graph.py` and `compiler_graph.py` both fail on a group that is not listed for their source, and on a listed entry that matches no group. Groups H and I exist on one target each, so a fix on one target must not leave a stale entry for the other. M-1, M-3, M-4, M-5, M-6, M-19 and M-20 remove entries; M-16 empties the file. Both checks were run at `7ba93e9`: the text scan and the compiler graph pass on Windows, and the compiler graph passes on Linux.
 - **Perf check: runs in the container.** WSL is retired for this repository (`62b4540`). `just perf` runs `tools/perf-check.sh` in `pg-dev` through `tools/linux.py perf`, with the callgrind tools in the image's tools stage, and it gates against `docs/perf/baseline.json`. On this image the gate reports `list.all_taken` at -12.6% against the baseline; the other ten benches are within 0.4%. That is not yet investigated, and the baseline is unchanged. M-4's perf gate has to explain that result.
+- **Private imports resolve to their source** (added at M-20): a path that reaches a name its module binds with a private `use` (not `pub use`, which is the module's API) is an edge to the module the name comes from, as the compiler resolves it. A cxx-qt bridge must name its backing struct as `super::T` (M-20), so the parent binds it with `use state::XRust;`, and the bridge's edge goes to `state`, not back to the parent.
 - **Known false positives:** items that a crate re-exports at its root (`pub use app::App;`) appear as root items, so a group can show `(root)` without a real edge to the root. Check each group in the source before it goes on the allowlist.
 - Add the `just modgraph` recipe (both scripts, in order).
 - Re-measure every number in this file on a clean tree, first, before any other step. Done at `7ba93e9` (see Investigation results); the numbers above are from that run.
@@ -204,7 +205,7 @@ Remove both globals, not one:
 **Fallback:** a boxed closure only if cxx-qt cannot hand C++ the object pointer. If that happens, record why in this section.
 
 - **Result (committed in the M-6 commit; not yet validated, see the end of the plan):** the hand-off works through cxx-qt 0.10's `Upcast` (`shell.upcast_pin()`, as `lib.rs` already does for the QML engine). The bridge takes the base as `type QObject = cxx_qt::QObject` and passes `*mut QObject` to C++, so the fallback is not used. The timer is a child of the shell, made on the first arm, and its timeout queues the shell's `timeout`, which is now a `#[qinvokable]`. Removed: the static `QTimer` and the `deadline_fired` callback in `deadline.cpp`, the thread-local `SHELL` and `remember` in `deadline.rs`, and the `Shell` import there. The text scan's group B is gone: `controller` and `deadline` leave the cycle, and what remains is the J pairs `folders` and `shell`, listed separately.
-- **Unverified:** whether cxx-qt 0.10 generates `Upcast<QObject>` for the shell and whether the `QObject` alias compiles in the cxx-qt bridge. The check is the desktop build at the end of the plan.
+- **Verified** by the Windows build: cxx-qt 0.10 generates `Upcast<QObject>` for the shell, and the `QObject` alias compiles in the bridge. The pointer is made with `core::ptr::from_mut`, since the workspace denies `as` conversions.
 
 Gate: desktop gates, including `just shots`.
 
@@ -228,6 +229,13 @@ Check the result with `cargo-modules` (M-0): groups E and G must be gone from it
 
 Gate: Linux checks, Windows `just test`, perf (decision 1).
 
+- **Result (the split committed as `5f1e399`; the rest in the validation commit):** `lib.rs` holds only the module declarations and the public re-exports; `types.rs`, `lifecycle.rs`, `writers.rs` and `core.rs` hold the layers above. The split left three things, finished at validation:
+  - The tests stayed in `lib.rs` (about 1,700 lines), with 18 test-only imports so that `use super::*` still reached the moved items, and one test called the now-private `AnalysisWriter::sync_file_rating`. Each test now sits in the module it tests: 5 in `core.rs` (roots, cancelling, the work list, marking), 31 in `lifecycle.rs` (opening, preparing, layouts, rules, migration, the taken zone, the import version) and 13 in `writers.rs` (the scan, analysis, borders, taken-time and rating-sync writers). The helpers that more than one module's tests use are in `test_support.rs` (`#[cfg(test)]`). The test-only imports are gone, and `sync_file_rating` stays private.
+  - The root's crate-private re-exports (`DELETE_FILE_RATING`, `SET_FILE_RATING`, `folders_under`, `rules_name`, `skipped_folders`, `under_params`, and the `fixture`-gated `set_borders_version` and `set_import_version`) are gone: their users import from `types` and `lifecycle` (ground rule 2).
+  - `pair`'s `impl Catalog`, group E's last edge (the compiler graph shows it as `core <-> pair`), is a free function, `pg_catalog::pair::after_scan(&mut Catalog, …)`, in the now-public `pair` module, as `writes` and `browse` are. `Coverage` and `Pairing` are reached as `pg_catalog::pair::…`; `pg-scan` is the one caller.
+
+  Group E is gone from the text scan and from the Windows compiler graph.
+
 ## Layering
 
 ### M-17: edges that point the wrong way
@@ -236,6 +244,7 @@ Gate: Linux checks, Windows `just test`, perf (decision 1).
 - **`catalog` → `analysis`.** Optional, behind `fixture`. The fixture takes the two version constants from its callers (`fixture.rs`, `fixture/raw.rs`). Catalog's own tests already take `analysis` as a **dev-dependency** (no cycle: `analysis` does not depend on `catalog`). So the optional normal entry goes: remove the optional `pg-analysis` entry. The `fixture` feature stays for its private connection, and it no longer needs `analysis`.
 
 - **Result (committed in the M-17 commit; not yet validated, see the end of the plan):** `can_hold_rating` is in `pg-model` (`model/src/format.rs`, next to `Format`), and `catalog`'s `writes.rs` and `writeback` call it there. `catalog` no longer depends on `pg-metadata` or on `pg-analysis` (its `fixture` feature is `[]`; `pg-analysis` stays a dev-dependency). `fixture::versions()` is gone: the callers name `pg_analysis::analyze::IMPORT_VERSION` and `pg_analysis::borders::BORDERS_VERSION` themselves (five test call sites, in `catalog`, `thumbcache` and `thumbs`; the last two gain `pg-analysis` as a dev-dependency). The SQL comment names `pg_edit::rotate`, which decides which formats turn in the file: `pg_metadata::rotation_method` does not exist.
+- **Validation:** the M-17 commit did not update `Cargo.lock` for its dependency changes (`pg-catalog` loses `pg-metadata`; `pg-thumbcache` and `pg-thumbs` gain `pg-analysis`), so a `--locked` build failed. The lock file is updated in the validation commit.
 
 Gate: Linux checks, Windows `just test`.
 
@@ -257,14 +266,20 @@ The `super::` paths in each bridge are that one line. The other `super::` hits i
 
 **Fix, per module X:**
 
-- Move `XRust` (its fields and the methods the bridge calls) into a leaf module, `X/state.rs` or a sibling file. The bridge names it by its crate path (`type X = crate::<leaf>::XRust;`).
+- Move `XRust` (its fields and the methods the bridge calls) into a leaf module, `X/state.rs`. The bridge still names it `super::XRust`: cxx-qt accepts no other alias path (`cxx-qt-gen/src/syntax/foreignmod.rs`: "Type alias path must have at exactly two segments, super::T", because cxx takes an `extern "Rust"` type only by name), so X binds it with a private `use state::XRust;`. The struct is `pub` (the bridge's generated `pub` items name it; the private `state` module keeps it in the crate), and its fields are `pub(super)`.
 - X keeps `impl qobject::X` and the public functions. That gives X → qobject → leaf, with no edge back.
 - If `XRust` uses an item still in X, move that item to the leaf too. Check each one. Move the item and change its callers.
 
 Gate: the desktop builds only on Windows. Windows `just build` and `just test`, and `just shots` with no pixel change against `tools/shots/reference`. Run `cargo-modules` (M-0) on the Windows target afterwards; the scan must show no J group.
 
-- **Result, part 1 (committed in the M-20 commit; not yet validated, see the end of the plan):** thirteen modules are done: `trace`, `command_line`, `keymap`, `settings`, `words`, `filters`, `folders`, `library`, `viewport`, `yandex`, `picker`, `shell` and `facet_choices`. Each `XRust` (and, in `facet_choices`, `Row`) is in `X/state.rs`, with `pub(super)` fields, and the bridge alias names `crate::X::state::XRust`. The `CxxQtType` and `Threading` imports stay where the bridge methods need them.
-- **Blocked, part 2 (needs a decision):** three modules keep a bridge-declared type in their backing struct, so the struct cannot move to a leaf without the leaf importing the bridge's child. `animation` (`AnimationPlayerRust` holds `UniquePtr<qobject::SinkRef>`), `video_source` (`VideoSourceRust` holds `UniquePtr<VideoPlayer>`, and `VideoPlayer` is a plain C++ type declared in the qobject bridge with `cfg(windows)` and `cfg(unix)` functions) and `gallery` (`GalleryRust` holds `qobject::MediaKind`, a QML enum declared in the bridge). The plan says nothing about this. The options are to move the plain C++ declarations (`SinkRef`, `VideoPlayer`) into the leaf's own `#[cxx::bridge]`, or to keep a Rust-side wrapper in the module; `MediaKind` is a QML enum and would have to stay in the bridge, so `gallery` may need to wait for M-12.
+- **Result, part 1 (committed as `83ce244`; corrected in the validation commit):** thirteen modules: `trace`, `command_line`, `keymap`, `settings`, `words`, `filters`, `folders`, `library`, `viewport`, `yandex`, `picker`, `shell` and `facet_choices`. Each `XRust` (and, in `facet_choices`, `Row`) is in `X/state.rs`. As committed, the bridge aliases named `crate::X::state::XRust` and the structs were `pub(super)`; neither builds (the fix rule above says why). Each alias is now `super::XRust`, with `use state::XRust;` in X, and each struct is `pub`.
+- **Result, part 2 (the validation commit):** the three modules whose backing struct held a type declared in its own bridge.
+  - `animation`: the frame sink's C++ declarations (`QVideoSink`, `SinkRef`, `FrameSink` and their functions) are a bridge with no QObject, `src/frame_sink.rs`, with `Frames` (its `Send`, `Sync` and `pg_render` `Sink`) beside them. `animation/state.rs` holds `AnimationPlayerRust`; the `AnimationPlayer` bridge aliases `type QVideoSink = crate::frame_sink::ffi::QVideoSink;` for `setSink` (the precedent is `live_reload`'s `GpuDevice`).
+  - `video_source`: the player's declarations (`QMediaPlayer`, `VideoPlayer`, `new_video_player`, `play_units` on Windows, `play_fd` on Unix, `clear`) are a bridge with no QObject, `src/video_player.rs`, with `play_path`, the one place the per-platform call is chosen (FFI glue, ground rule 6). The conversions are `pg_platform`'s: `names::units_of_path` (UTF-16 units, not NUL-terminated and not verbatim, for a name handed on as text) and `file::open_descriptor` (Unix: a descriptor the caller owns). `video_source.rs` has no `cfg`; its bridge aliases `QMediaPlayer` from the leaf.
+  - `gallery`: `gallery/state.rs` holds `GalleryRust`, whose `viewed_kind` is a `pg_model::query::MediaType`. The property is `READ = read_viewed_kind, NOTIFY` with no `WRITE` (QML only reads it); the getter maps `MediaType` to the bridge's `MediaKind`, whose QML names (`GalleryModel.Video`) are unchanged. `refresh_viewed` compares, stores and signals, as the generated setter did, so the viewer still hears of a change only when there is one.
+  - The bridge files must all be in `src/` (cxx-qt-build: one directory per QML module, QTBUG-93443), so the two leaves are top-level modules, as `gpu_device` is.
+
+  The text scan shows no J group (with private imports resolved, M-0), and the allowlist's 16 J entries are gone.
 
 ### M-19: the parent-child cycles (groups F, H, I)
 
@@ -276,7 +291,7 @@ Three groups have the same shape: a parent module defines a trait or types, its 
 
 Gate: Linux checks; Windows `just build` and `just test`; both `cargo-modules` runs (M-0), which must show no group F, H or I on either target.
 
-- **Result (committed in the M-19 commit; not yet validated, see the end of the plan):** F: `Source` is in `app/src/yandex/source.rs` (a leaf); `yandex.rs` re-exports it and implements it for `Client`; `replay.rs` imports `Fetch` from `images` and `Source` from `source`, so it no longer reaches its parent. H: `Entry` and `Lister` are in `platform/src/dir/listing.rs`, which `dir.rs` re-exports; the `Lister` fields the backends use are `pub(super)`. I: `FolderDialog`, `ShellItem`, `shell_path` and `path_of_units` are in `platform/src/picker/shell.rs` with their pure tests; `native` imports from it. The text scan shows none of the three groups. The allowlist's F, H and I entries (scan, Linux and Windows) are removed; the compiler side is checked at the end.
+- **Result (committed in the M-19 commit; not yet validated, see the end of the plan):** F: `Source` is in `app/src/yandex/source.rs` (a leaf); `yandex.rs` re-exports it and implements it for `Client`; `replay.rs` imports `Fetch` from `images` and `Source` from `source`, so it no longer reaches its parent. H: `Entry` is in `platform/src/dir/listing.rs`, which `dir.rs` re-exports. As committed, `Lister` was there too, with its methods (`open`, `each`) left in the backends, which the compiler graph showed as `dir::listing <-> dir::windows`. At validation each backend (`dir::windows`, `dir::unix`) got its own `Lister`, with its fields, `new`, `open` and `each`, and `dir.rs` re-exports it with the backend's `Dir`; `listing.rs` has no `cfg` left. I: `FolderDialog`, `ShellItem`, `shell_path` and `path_of_units` are in `platform/src/picker/shell.rs` with their pure tests; `native` imports from it. The text scan shows none of the three groups. The allowlist's F, H and I entries (scan, Linux and Windows) are removed; the compiler side is checked at the end.
 
 ## Large single-file crates
 
@@ -297,6 +312,8 @@ Layers:
 The check's cross-references that look like cycles are false: `reply.send(…)` is a channel, and `checked`, `cap` and `totals` in `SCHEMA` and `total_and_cap` are SQL names.
 
 The 657 lines of tests (from `mod tests`) stay in `lib.rs` with `use super::…`.
+
+- **Result (committed as `f202ec9`):** the layers above, with `lib.rs` holding `ThumbCache` and its tests. Validation found three doc links the move broke, fixed in the validation commit (see "Validation").
 
 Gate: Linux checks, Windows `just test`, perf (decision 1).
 
@@ -392,7 +409,7 @@ Production platform code outside `pg-platform`:
 - `crates/desktop/src/command_line.rs`: `value_exact`, an `OsString` split by platform. Moves to `pg_platform::names` with the path-to-native-units conversion.
 - `crates/desktop/src/gui_app.rs`: `arg_bytes` moves to `pg_platform`.
 - `crates/desktop/src/picker.rs`: `has_drive_or_share`, `native`, `run_dialog`, the UTF-16 path conversion, and the `USERPROFILE`/`HOME` lookups. The start-folder logic moves to `pg_platform::picker`.
-- `crates/desktop/src/video_source.rs`: `play_path` and `fd_of`. `video_source` gets its player target (units or an open descriptor) from `pg_platform::file`.
+- `crates/desktop/src/video_source.rs`: done at M-20. The per-platform call is in `src/video_player.rs` (a stated exception: its bridge declares `play_units` on Windows and `play_fd` on Unix), and the conversions are `pg_platform::names::units_of_path` and `pg_platform::file::open_descriptor`. `picker.rs`'s UTF-16 path conversion can use `units_of_path` too.
 
 After the moves, the README's "the one exception" (`crates/README.md`) is removed. Any remaining exception is a cxx-qt or FFI declaration that needs per-platform signatures, and it is stated where it is. M-16 enforces the rule by grep.
 
@@ -432,6 +449,7 @@ Gate: Linux and Windows checks.
 - **Module cycles:** empty `tools/modgraph-allow.txt`, so the check fails on any module cycle. Run the `modgraph` check in CI. CI cannot run it yet, so this step also: (a) installs `cargo-modules@0.28.0` in both jobs (through `taiki-e/install-action` if it carries the tool; otherwise `cargo install --locked` with a cache); (b) adds a `modgraph` step to the Linux job and to `docker/check.sh` (the Linux compiler graph plus the scan), and `just modgraph` to the Windows job (the Windows-only groups H and I show there only); (c) keeps the three pins equal (Justfile, Dockerfile, `ci.yml`). Measure the step's time first: the first container run exceeded 400 seconds, and the warm-target time was never measured.
 - **Crate layers:** commit `tools/crate-layers.txt`, one line per crate listing its allowed normal internal dependencies. A draft from the current graph (30 crates, dependencies first) is in the session scratchpad as `crate-layers.draft.txt`. It is written after M-17 and includes the `app` services, `pg-crop`, `pg-borders`, `pg-jobs-testkit`, and `pg-app` → `pg-query`. CI checks the file against `cargo metadata`: a new internal edge fails until the file changes in the same commit.
 - **Dev edges and re-exports:** the graph including dev edges is acyclic; no `pub use` outside the exempt list (ground rule 2); the platform grep (ground rule 6).
+- **Module cycles, status:** after the validation commit the allowlist is empty, and the text scan and the Windows compiler graph pass. The Linux compiler graph has not run since.
 - **Documents:** update `crates/README.md` (the dependency section, the platform rule, `testkit`, the new crates, the `app` services, the moved `can_hold_rating`, and the `app` description from M-4b). Add a ledger row for each M step to `docs/REFACTOR_PLAN.md`, using the same status words. Record the final check results in this file.
 
 ## Order
@@ -446,11 +464,25 @@ Gate: Linux and Windows checks.
 8. **M-18** (`unreachable_pub`), after the splits, so the public surface reflects the final layout.
 9. **M-16**, last.
 
+## Validation (2026-11-09, Windows)
+
+The steps done so far, built and checked together on Windows for the first time. Everything the run found is fixed in one commit, each at its cause; each step above says what changed in it.
+
+- `just lint` (fmt, clippy on the whole workspace with `-D warnings`, the wasm32 check, `cargo doc` with `-D warnings`, `cargo deny`, `cargo machete`, ruff, markdownlint, the QML lint): passes.
+- `just test`: 79 suites, 719 tests pass, 2 ignored (in `pg-catalog`).
+- `just qmltest`: 48 tests pass.
+- `just modgraph`: no cycle group in the text scan or the Windows compiler graph; the allowlist is empty.
+- `just shots` against the M-0 reference (`c1e025319d`): all 23 scenarios match. An earlier run in the same session showed `query`, `library` and `apply-view` differing in their thumbnails; the cause was not found, and the rerun matched.
+- Fixed besides the steps' own results:
+  - M-4: `listing_laws` called `App::listing` and `App::save_listing`, which are `app.views()`'s now.
+  - M-8: three broken doc links (`judge` from the `cache_version!` docs now links `StartOverReason::OtherBuild`, which states the case; two `Event::StartedOver` links name `crate::Event`).
+  - The workspace had `cargo fmt` changes left in M-4's and M-7's files.
+  - The QML test stub of `KeyMap` lacked `viewerHint`, which `Hud.qml` calls (since the history squash).
+- Not run: the Linux checks (`just check-linux`) and the Linux compiler graph, so the Unix code paths of M-19 (`dir::unix`'s `Lister`) and M-20 (`play_fd`, `open_descriptor`) are not yet built; and the perf gate (M-4, M-7, M-8), which also has to explain the `list.all_taken` result (M-0).
+
 ## Open decisions
 
 None. Unverified until their step, and confirmed there:
 
 - M-12's per-concern split and the visibility rule (the first build in the step).
-- M-6's hand-off of the `QObject*` to C++ in cxx-qt (fallback recorded if it fails).
-- H's `Entry` and `Lister` dependencies on `dir.rs` (read first).
 - The warm-target time of `cargo-modules` in CI (measured at M-0).

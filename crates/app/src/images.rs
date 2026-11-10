@@ -265,8 +265,10 @@ impl Images {
 
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now.
     pub fn placeholder(&self, file_id: FileId) -> Result<Upload> {
-        let p =
-            self.catalogs.with_catalog(|c| browse::read::placeholder(c, file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
+        let p = self
+            .catalogs
+            .with_catalog(|c| browse::read::placeholder(c, file_id))?
+            .ok_or(Error::UnknownFile(file_id.get()))?;
         let hash = p.hash.ok_or(Error::NotImported)?;
         let (w, h, rgba) =
             thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| Error::Failed("bad thumbhash".to_string()))?;
@@ -390,13 +392,14 @@ mod tests {
         let dir = pg_testkit::test_folder("scratch_app", "original-gone").unwrap();
         let app = App::open(Config::in_home(&dir)).unwrap();
         let folder = if cfg!(windows) { r"D:\pg-test-no-such-folder" } else { "/pg-test-no-such-folder" };
-        app.catalogs().with_catalog(|c| {
-            fixture::state::add_scan(c, 1, folder).unwrap();
-            fixture::state::add_folder(c, 1, folder).unwrap();
-            fixture::insert(c, &[File::new(FileId::new(1), FolderId::new(1), "gone.jpg", 10, 0)]).unwrap();
-            Ok(())
-        })
-        .unwrap();
+        app.catalogs()
+            .with_catalog(|c| {
+                fixture::state::add_scan(c, 1, folder).unwrap();
+                fixture::state::add_folder(c, 1, folder).unwrap();
+                fixture::insert(c, &[File::new(FileId::new(1), FolderId::new(1), "gone.jpg", 10, 0)]).unwrap();
+                Ok(())
+            })
+            .unwrap();
         match app.images().full_image(FileId::new(1), View::Full) {
             Err(e @ Error::Original(_)) => {
                 let text = e.to_string();

@@ -144,41 +144,155 @@ pub fn created_time(meta: &Metadata) -> Option<i64> {
     Some(UNIX_EPOCH_TICKS + secs * 10_000_000 + i64::from(since.subsec_nanos() / 100))
 }
 
-/// What the video player is given for a file, in the form the system holds the file's name in: its UTF-16 units (Windows),
-/// or the file open for reading, as a descriptor the player takes over (Unix).
+/// The file at `path` (a `native::disk_path`), open for reading, as the raw handle the video player takes over and
+/// closes: a `HANDLE` on Windows, a descriptor on Unix, as one integer. The player can't be given the file by name: on
+/// Windows Qt's file engine normalizes every name it opens, the verbatim one too (`GetFullPathNameW`), which drops a
+/// folder's trailing dot, and on Unix a name with a byte that isn't UTF-8 has no `QString` form.
 #[cfg(windows)]
-pub enum PlayTarget {
-    Units(Vec<u16>),
-}
-
-/// What the video player is given for a file (see the Windows one).
-#[cfg(unix)]
-pub enum PlayTarget {
-    Descriptor(i32),
-}
-
-/// The file at `path`, for the video player: its name's units on Windows.
-#[cfg(windows)]
-pub fn play_target(path: &Path) -> PlayTarget {
-    use std::os::windows::ffi::OsStrExt;
-    PlayTarget::Units(path.as_os_str().encode_wide().collect())
-}
-
-/// The file at `path`, for the video player: the file open for reading (`-1` when it can't be opened: the player then
-/// reports the error).
-#[cfg(unix)]
-pub fn play_target(path: &Path) -> PlayTarget {
-    use std::os::unix::io::IntoRawFd;
-    PlayTarget::Descriptor(match std::fs::File::open(path) {
-        Ok(file) => file.into_raw_fd(),
-        Err(_) => -1,
+pub fn player_handle(path: &Path) -> io::Result<i64> {
+    use std::os::windows::io::IntoRawHandle;
+    let handle = File::open(path)?.into_raw_handle();
+    // A handle is a small kernel table index, well inside an i64; one that weren't is closed and refused.
+    i64::try_from(handle.addr()).map_err(|_| {
+        // SAFETY: the handle was just taken from the `File`, and nothing else owns it.
+        drop(unsafe { <File as std::os::windows::io::FromRawHandle>::from_raw_handle(handle) });
+        io::Error::other("a file handle out of range")
     })
+}
+
+/// The file at `path` open for reading, as the descriptor the video player takes over (see the Windows one).
+#[cfg(unix)]
+pub fn player_handle(path: &Path) -> io::Result<i64> {
+    use std::os::unix::io::IntoRawFd;
+    Ok(i64::from(File::open(path)?.into_raw_fd()))
+}
+
+/// `path` with `suffix` added to its file name, in the name's own units (`gallery.json` and `.bad` give
+/// `gallery.json.bad`; a database and `-wal` its WAL).
+pub fn beside(path: &Path, suffix: &str) -> PathBuf {
+    let mut name = path.as_os_str().to_owned();
+    name.push(suffix);
+    PathBuf::from(name)
+}
+
+/// Rename `from` to `to` unless `to` exists, which is then `AlreadyExists` and nothing moves. std's `rename` replaces
+/// its target on both systems; this never does, in one call (no window between a check and the rename).
+#[cfg(windows)]
+pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Storage::FileSystem::MoveFileExW;
+    let wide = |p: &Path| -> Vec<u16> { p.as_os_str().encode_wide().chain([0]).collect() };
+    let (from, to) = (wide(from), wide(to));
+    // SAFETY: both are NUL-terminated and outlive the call. No flag: an existing `to` fails the move
+    // (ERROR_ALREADY_EXISTS, which std reads as `AlreadyExists`).
+    if unsafe { MoveFileExW(from.as_ptr(), to.as_ptr(), 0) } == 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(())
+}
+
+/// Rename `from` to `to` unless `to` exists (see the Windows one): `renameat2` with `RENAME_NOREPLACE`. A file system
+/// without that flag (`EINVAL`) gets a hard link then the old name's removal, which fails the same way on an existing
+/// `to`.
+#[cfg(target_os = "linux")]
+pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let c = |p: &Path| std::ffi::CString::new(p.as_os_str().as_bytes()).map_err(io::Error::other);
+    let (c_from, c_to) = (c(from)?, c(to)?);
+    // SAFETY: both are NUL-terminated and outlive the call; AT_FDCWD resolves them as std's calls do.
+    let done = unsafe {
+        libc::renameat2(libc::AT_FDCWD, c_from.as_ptr(), libc::AT_FDCWD, c_to.as_ptr(), libc::RENAME_NOREPLACE)
+    };
+    if done == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if error.raw_os_error() == Some(libc::EINVAL) {
+        return link_then_unlink(from, to);
+    }
+    Err(error)
+}
+
+/// Rename `from` to `to` unless `to` exists (see the Windows one): a hard link, which fails on an existing `to`, then
+/// the old name's removal.
+#[cfg(all(unix, not(target_os = "linux")))]
+pub fn rename_no_replace(from: &Path, to: &Path) -> io::Result<()> {
+    link_then_unlink(from, to)
+}
+
+#[cfg(unix)]
+fn link_then_unlink(from: &Path, to: &Path) -> io::Result<()> {
+    std::fs::hard_link(from, to)?;
+    std::fs::remove_file(from)
+}
+
+/// Move `path` aside to the first free name beside it, never replacing a file: `<name><mark>`, then `<name><mark>.1`,
+/// and so on. Returns the new path. (A preferences file that can't be read is kept so for the user, and an earlier one
+/// kept is never lost.)
+pub fn keep_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
+    for n in 0..=u32::MAX {
+        let to = beside(path, &if n == 0 { mark.to_string() } else { format!("{mark}.{n}") });
+        match rename_no_replace(path, &to) {
+            Ok(()) => return Ok(to),
+            Err(e) if e.kind() == io::ErrorKind::AlreadyExists => {}
+            Err(e) => return Err(e),
+        }
+    }
+    Err(io::Error::new(io::ErrorKind::AlreadyExists, format!("no free name beside {}", path.display())))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+
+    /// A rename onto an existing name is refused and moves nothing; onto a free one it moves the file.
+    #[test]
+    fn a_rename_never_replaces() {
+        let dir = pg_testkit::test_folder("scratch_rename", "pg-no-replace").unwrap();
+        let (from, taken, free) = (dir.join("a"), dir.join("b"), dir.join("c"));
+        std::fs::write(&from, b"a").unwrap();
+        std::fs::write(&taken, b"b").unwrap();
+        let refused = rename_no_replace(&from, &taken).unwrap_err();
+        assert_eq!(refused.kind(), io::ErrorKind::AlreadyExists, "{refused}");
+        assert_eq!(std::fs::read(&taken).unwrap(), b"b", "the target is kept");
+        assert_eq!(std::fs::read(&from).unwrap(), b"a", "nothing moved");
+        rename_no_replace(&from, &free).unwrap();
+        assert_eq!(std::fs::read(&free).unwrap(), b"a");
+        assert!(!from.exists());
+    }
+
+    /// Each file kept aside takes the next free name, so an earlier one kept is never overwritten.
+    #[test]
+    fn a_file_kept_aside_takes_the_next_free_name() {
+        let dir = pg_testkit::test_folder("scratch_keep_aside", "pg-keep-aside").unwrap();
+        let path = dir.join("gallery.json");
+        for (n, want) in [(1, "gallery.json.bad"), (2, "gallery.json.bad.1"), (3, "gallery.json.bad.2")] {
+            std::fs::write(&path, format!("{n}")).unwrap();
+            assert_eq!(keep_aside(&path, ".bad").unwrap(), dir.join(want));
+            assert!(!path.exists());
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("gallery.json.bad")).unwrap(), "1", "the first one kept is kept");
+        assert_eq!(std::fs::read_to_string(dir.join("gallery.json.bad.2")).unwrap(), "3");
+    }
+
+    /// The video player's handle is the file, open for reading, through a folder whose name ends in a dot.
+    #[cfg(windows)]
+    #[test]
+    fn the_player_handle_is_the_file_in_a_dotted_folder() {
+        use std::os::windows::io::FromRawHandle;
+        let dir = std::path::absolute(pg_testkit::test_folder("scratch_player", "pg-player-handle").unwrap()).unwrap();
+        let (dotted, sibling) = (dir.join("a."), dir.join("a"));
+        std::fs::create_dir_all(crate::native::verbatim(&dotted)).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        std::fs::write(crate::native::verbatim(&dotted.join("v.mp4")), b"dotted").unwrap();
+        std::fs::write(sibling.join("v.mp4"), b"sibling").unwrap();
+        let handle = player_handle(&crate::native::verbatim(&dotted.join("v.mp4"))).unwrap();
+        let raw = std::ptr::without_provenance_mut(usize::try_from(handle).unwrap());
+        // SAFETY: the handle was just opened for this test, and is owned by nothing else.
+        let file = unsafe { File::from_raw_handle(raw) };
+        assert_eq!(io::read_to_string(file).unwrap(), "dotted");
+    }
 
     /// The copy's open writes the file in place; other programs may read it meanwhile, and on Windows a writer of theirs
     /// is refused until the handle closes. Its size is read from the handle.

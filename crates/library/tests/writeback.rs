@@ -103,7 +103,7 @@ fn wait_until(secs: u64, what: impl Fn() -> String, mut done: impl FnMut() -> bo
 
 /// The path a rule path names on disk.
 fn on_disk(c: &Catalog, path: &pg_model::rules::Path) -> PathBuf {
-    pg_platform::names::path_buf(&c.rules().join(path))
+    pg_platform::native::disk_path(c.rules(), path)
 }
 
 fn wait_for_queue(c: &Catalog) -> anyhow::Result<()> {
@@ -237,13 +237,13 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
         (b"odd\xFF.jpg", b"clip\xFF.mp4")
     };
     let images = dir.join("images");
-    let jpeg = images.join(pg_platform::names::path_buf(jpeg_name));
+    let jpeg = images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(jpeg_name)));
     let mut bytes = Cursor::new(Vec::new());
     pattern(64, 48).write_to(&mut bytes, image::ImageFormat::Jpeg).unwrap();
     std::fs::write(&jpeg, bytes.get_ref()).unwrap();
     // The clip from the video crate's tests: 64x48, six frames.
     std::fs::write(
-        images.join(pg_platform::names::path_buf(video_name)),
+        images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(video_name))),
         include_bytes!("../../video/tests/sample.mp4"),
     )
     .unwrap();
@@ -288,7 +288,10 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     assert_eq!((now.width, now.height), (48, 64), "the JPEG is turned in place");
     assert_eq!(Meta::read(&turned, Format::Jpeg, &mut MetaScratch::default()).rating, Some(4));
     let clip = include_bytes!("../../video/tests/sample.mp4");
-    assert_eq!(std::fs::read(images.join(pg_platform::names::path_buf(video_name))).unwrap(), clip.as_slice());
+    assert_eq!(
+        std::fs::read(images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(video_name)))).unwrap(),
+        clip.as_slice()
+    );
 
     drop(writer);
     drop(c);
@@ -465,11 +468,11 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
 }
 
 /// A rating for a file in a folder whose name ends in a dot (`Acme Inc.`, which NTFS holds and the plain path drops
-/// the dot of) is refused with its own error, and touches neither that file nor the one in `Acme Inc`, the folder the
-/// plain path would reach.
+/// the dot of) is written into that file, ExifTool's step included, and the file in `Acme Inc`, the folder the plain
+/// path would reach, is left as it was.
 #[cfg(windows)]
 #[test]
-fn a_write_into_a_folder_ending_in_a_dot_is_refused_and_reaches_no_other_folder() {
+fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     use pg_platform::native::verbatim;
     let dir = std::path::absolute(pg_testkit::run_folder("scratch_rate", "dotted").unwrap()).unwrap();
     let (dotted, sibling) = (dir.join("images").join("Acme Inc."), dir.join("images").join("Acme Inc"));
@@ -497,11 +500,10 @@ fn a_write_into_a_folder_ending_in_a_dot_is_refused_and_reaches_no_other_folder(
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     writer.wake();
-    let attempts = || state::write_row(&c, id).unwrap().attempts;
-    wait_until(60, || format!("{} attempts", attempts()), || attempts() >= 1);
-    let error = writer.status().error;
-    assert!(matches!(&error, Some(WriteError::FolderRefused { folder, .. }) if folder == "Acme Inc."), "{error:?}");
-    assert_eq!(std::fs::read(verbatim(&dotted.join("a.jpg"))).unwrap(), jpeg, "the refused file changed");
+    wait_for_queue(&c).unwrap();
+    assert_eq!(writer.status().error, None);
+    let written = std::fs::read(verbatim(&dotted.join("a.jpg"))).unwrap();
+    assert_eq!(Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating, Some(4), "the dotted file");
     assert_eq!(std::fs::read(sibling.join("a.jpg")).unwrap(), jpeg, "the other folder's file changed");
     for folder in [verbatim(&dotted), sibling.clone()] {
         assert!(!folder.join(".a.jpg.rating.pg-write").exists(), "a temp in {}", folder.display());
@@ -808,7 +810,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     // shows the turn pending (rotation 1).
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
-    std::fs::copy(&files[1].0, pg_platform::names::path_buf(&c.rules().join(&temp))).unwrap();
+    std::fs::copy(&files[1].0, pg_platform::native::disk_path(c.rules(), &temp)).unwrap();
     state::set_analysis_rotation(&c, id, 1).unwrap();
     state::queue_finished_copy(&c, id, "rotation", 1, &temp).unwrap();
 
@@ -929,7 +931,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
     let temp_text = String::from_utf8(c.rules().join(&temp)).unwrap();
     let copied = std::fs::read(&files[0].0).unwrap();
-    std::fs::write(pg_platform::names::path_buf(&c.rules().join(&temp)), &copied).unwrap();
+    std::fs::write(pg_platform::native::disk_path(c.rules(), &temp), &copied).unwrap();
     drop(c);
 
     // The catalog as it was before, with the temp as text.
@@ -947,7 +949,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
     assert_eq!(std::fs::read(&files[1].0).unwrap(), copied, "the copy went into the original");
-    assert!(!pg_platform::names::path_buf(&c.rules().join(&temp)).exists(), "the temp is still on disk");
+    assert!(!pg_platform::native::disk_path(c.rules(), &temp).exists(), "the temp is still on disk");
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the file holds the rating once the copy is done");
 
     drop(writer);

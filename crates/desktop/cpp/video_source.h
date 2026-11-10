@@ -1,6 +1,7 @@
-// A video's file as the player's device (src/video_source.rs): a QMediaPlayer plays a QFile opened here by the file's
-// exact name (Windows: its UTF-16 units, which keep an unpaired surrogate) or by its descriptor (Unix: opened in Rust,
-// so the bytes are the file's own). Qt's FFmpeg backend reads the device itself.
+// A video's file as the player's device (src/video_player.rs): a QMediaPlayer plays a QFile over the file Rust opened
+// by its exact path and handed over as a raw handle (a HANDLE on Windows, a descriptor on Unix). Qt never opens the
+// file by name: on Windows its file engine normalizes every name (GetFullPathNameW, the verbatim one too), which drops
+// a folder's trailing dot. Qt's FFmpeg backend reads the device itself.
 #pragma once
 
 #include <QtCore/QPointer>
@@ -21,11 +22,10 @@ public:
     VideoPlayer(const VideoPlayer&) = delete;
     VideoPlayer& operator=(const VideoPlayer&) = delete;
 
-    // Plays the file named by `units` (UTF-16, as the file system holds it). `ext` is the file's extension, ASCII.
-    void play_units(rust::Slice<const std::uint16_t> units, rust::Str ext);
-    // Plays the file open at `fd`, which the player then owns and closes. A negative `fd` is a file that could not be
-    // opened: the player reports that as its error.
-    void play_fd(std::int32_t fd, rust::Str ext);
+    // Plays the file open at `handle` (a HANDLE on Windows, a descriptor on Unix), which the player then owns and
+    // closes. A negative `handle` is a file that could not be opened: the player reports that as its error. `ext` is
+    // the file's extension, ASCII.
+    void play_file(std::int64_t handle, rust::Str ext);
     // Stops the video: the player's source is cleared, then the device is released.
     void clear();
 

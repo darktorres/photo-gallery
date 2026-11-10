@@ -393,8 +393,8 @@ mod dialog_tests {
         let mut fake = Fake { opened: RefCell::new(None) };
         let start = PathBuf::from(r"C:\a");
         let chosen = run_dialog(&mut fake, Purpose::SaveCrops, Some(&start), Some(0x40)).unwrap();
-        let path = pg_platform::names::path_buf(b"C:\\a\xED\xA0\x80");
-        assert_eq!(chosen, Some((Purpose::SaveCrops, path)), "the folder, exact, for its purpose");
+        let path = pg_platform::native::disk_path_of(b"C:\\a\xED\xA0\x80");
+        assert_eq!(chosen, Some((Purpose::SaveCrops, path)), "the folder, exact and verbatim, for its purpose");
         assert_eq!(fake.opened.into_inner(), Some((Some(vec![0x43, 0x3A, 0x5C, 0x61]), Some(0x40))));
     }
 }

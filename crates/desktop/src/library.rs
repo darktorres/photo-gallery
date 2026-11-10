@@ -90,13 +90,10 @@ fn notice_text(notice: &Notice) -> String {
         Notice::CropFailed { error } => text::crop_failed(error),
         Notice::RoundPanicked { message } => text::round_panicked(message),
         Notice::CacheFull { height, made } => text::cache_full(*height, *made),
-        Notice::Cropped { folder, saved, skipped, failed, first_error, .. } => {
-            // A refusal names its file, so the client's refusal message stands in for the error it came with.
-            let first_error = match notice.crop_refusal() {
-                Some((file, refused_folder)) => Some(text::crop_folder_refused(file, refused_folder)),
-                None => first_error.as_ref().map(|FileError { path, cause }| format!("{path}: {}", cause_text(cause))),
-            };
-            text::cropped(*saved, &folder.display().to_string(), *skipped, *failed, first_error.as_deref())
+        Notice::Cropped { folder, saved, skipped, failed, first_error } => {
+            let first_error =
+                first_error.as_ref().map(|FileError { path, cause }| format!("{path}: {}", cause_text(cause)));
+            text::cropped(*saved, &pg_platform::names::shown(folder), *skipped, *failed, first_error.as_deref())
         }
     }
 }
@@ -109,13 +106,11 @@ fn cause_text(cause: &Cause) -> String {
     }
 }
 
-/// Why the writer's latest write failed, in words: the job's cause, a copy into a file that may be incomplete, or a
-/// write refused for its folder's name.
+/// Why the writer's latest write failed, in words: the job's cause, or a copy into a file that may be incomplete.
 fn write_error_text(error: &WriteError) -> String {
     match error {
         WriteError::Failed(cause) => cause_text(cause),
         WriteError::CopyIncomplete { file, temp, cause } => text::write_incomplete(file, temp, &cause_text(cause)),
-        WriteError::FolderRefused { file, folder } => text::write_folder_refused(file, folder),
     }
 }
 

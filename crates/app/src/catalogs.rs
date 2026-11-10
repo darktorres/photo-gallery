@@ -14,10 +14,10 @@ use crate::pool::Pool;
 /// Idle catalog connections kept for the next borrower; more are closed when returned.
 const KEEP_CATALOGS: usize = 4;
 
-/// A catalog path as the system holds it: the catalogs are opened under the native rules (`with_catalog`), so their paths
-/// are the native ones.
+/// The path the file at a catalog path is opened by (`pg_platform::native::disk_path`): the catalogs are opened under
+/// the native rules (`with_catalog`), so their paths are the native ones.
 pub(crate) fn path_of(path: &RulePath) -> PathBuf {
-    pg_platform::names::path_buf(&pg_platform::native::PATH_RULES.join(path))
+    pg_platform::native::disk_path(pg_platform::native::PATH_RULES, path)
 }
 
 /// The catalog connections of the app.
@@ -42,9 +42,9 @@ impl Catalogs {
         )
     }
 
-    /// A file's path as the system holds it, for the programs that open the file (std, FFmpeg, the animation player).
-    /// The catalog's paths are exact, so this is where they become a `PathBuf`. `UnknownFile` when the catalog has no
-    /// such file.
+    /// The path a file is opened by, for the programs that open it (std, FFmpeg, the animation and video players): its
+    /// `disk_path`, so a folder whose name ends in a dot or a space is the folder it names. Not for display (it has the
+    /// verbatim prefix on Windows). `UnknownFile` when the catalog has no such file.
     pub fn file_path(&self, file_id: FileId) -> Result<PathBuf> {
         let path = self.with_catalog(|c| c.file_path(file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
         Ok(path_of(&path))

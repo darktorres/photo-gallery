@@ -6,6 +6,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
+use pg_platform::file::beside;
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -24,7 +25,7 @@ pub struct JsonStore<T> {
 
 impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
     /// Read the file. A missing file gives the defaults. One that can't be read or parsed is quarantined (moved to
-    /// `<name>.bad`) and the defaults are used; the returned [`Unreadable`] says so.
+    /// `<name>.bad`, or the next free `<name>.bad.N`) and the defaults are used; the returned [`Unreadable`] says so.
     pub fn open(path: PathBuf) -> (JsonStore<T>, Option<Unreadable>) {
         let (value, unreadable) = match std::fs::read(&path) {
             Ok(bytes) => match serde_json::from_slice::<T>(&bytes) {
@@ -55,29 +56,22 @@ impl<T: Serialize + DeserializeOwned + Default> JsonStore<T> {
     }
 }
 
-/// Move the unreadable file to `<name>.bad`, so a crash or a save never leaves it half-overwritten.
+/// Move the unreadable file aside, so a crash or a save never leaves it half-overwritten: to `<name>.bad`, or the next
+/// free `<name>.bad.N` when an earlier one is kept there (a rename never replaces it, `pg_platform::file::keep_aside`).
 fn quarantine(path: &Path, error: String) -> Unreadable {
-    let bad = with_suffix(path, ".bad");
-    let kept = std::fs::rename(path, &bad).map(|()| bad).map_err(|e| e.to_string());
+    let kept = pg_platform::file::keep_aside(path, ".bad").map_err(|e| e.to_string());
     Unreadable { error, kept }
 }
 
 /// Write to `<name>.tmp` beside the file, flush it to disk, then rename it over the file: a crash leaves the old file or
 /// the new one, never half of either.
 fn write_atomically(path: &Path, bytes: &[u8]) -> io::Result<()> {
-    let temp = with_suffix(path, ".tmp");
+    let temp = beside(path, ".tmp");
     let mut file = File::create(&temp)?;
     file.write_all(bytes)?;
     file.sync_all()?;
     drop(file);
     std::fs::rename(&temp, path)
-}
-
-/// The path with `suffix` added to its file name (`gallery.json` and `.bad` give `gallery.json.bad`).
-fn with_suffix(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(suffix);
-    PathBuf::from(name)
 }
 
 #[cfg(test)]
@@ -113,7 +107,7 @@ mod tests {
                 s.count = 7;
             })
             .unwrap();
-        assert!(!with_suffix(&path, ".tmp").exists(), "the temp file is renamed away");
+        assert!(!beside(&path, ".tmp").exists(), "the temp file is renamed away");
 
         let (reopened, unreadable) = JsonStore::<Sample>::open(path);
         assert!(unreadable.is_none());
@@ -141,6 +135,20 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&bad).unwrap(), "{ not json", "the content is kept");
         assert!(!path.exists(), "the corrupt file was moved, not copied");
         assert_eq!(store.get(), Sample::default());
+    }
+
+    /// A second unreadable file is kept beside the first, which is not overwritten: each failure's content stays.
+    #[test]
+    fn a_second_unreadable_file_keeps_the_first_one_kept() {
+        let dir = scratch("corrupt_twice");
+        let path = dir.join("sample.json");
+        for (content, kept) in [("{ first", "sample.json.bad"), ("{ second", "sample.json.bad.1")] {
+            std::fs::write(&path, content).unwrap();
+            let (_, unreadable) = JsonStore::<Sample>::open(path.clone());
+            assert_eq!(unreadable.unwrap().kept.ok(), Some(dir.join(kept)));
+        }
+        assert_eq!(std::fs::read_to_string(dir.join("sample.json.bad")).unwrap(), "{ first", "the first is kept");
+        assert_eq!(std::fs::read_to_string(dir.join("sample.json.bad.1")).unwrap(), "{ second");
     }
 
     #[test]

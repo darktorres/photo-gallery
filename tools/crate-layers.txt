@@ -4,10 +4,9 @@
 # bottom layer up. `python tools/boundaries.py` (in `just lint` and CI) checks it against the manifests: a new
 # internal dependency fails until its line changes in the same commit.
 
-# Leaves: the shared model, the file-format and schema text, and the test helpers.
+# Leaves: the shared model, the file formats, and the test helpers.
 container:
 model:
-schema:
 testkit:
 
 # On the model alone.
@@ -19,7 +18,8 @@ platform: model
 query: model
 yandex: model
 
-# The catalog, the codecs' users and the job layer.
+# A database file's lifecycle, the catalog, the codecs' users and the job layer.
+schema: platform
 catalog: model platform query schema
 edit: codec container metadata model
 exiftool: platform

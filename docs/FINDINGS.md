@@ -120,10 +120,20 @@ or deleted. Finding it needs a full-set run.
     on the machine.
 - **Paths over 260 characters.** std makes a long path verbatim (`\\?\`) itself, and the scanner's `CreateFileW` is
   handed the verbatim form (`crates/platform/src/native.rs`, `\\?\UNC\` for a share). FFmpeg reads its files through
-  std (`crates/video/src/ffi.rs`), so it gets the long form too. ExifTool gets the plain path, as `\\?\` isn't a path
-  it reads. Probed (ExifTool 13.60, a 375-character path): from the command line, a write and a read reach such a
-  file with the plain path, and with `WindowsLongPath=1` too; through the stay-open argument file, with the plain path.
-  The option isn't turned on.
+  std (`crates/video/src/ffi.rs`), so it gets the long form too. Probed (ExifTool 13.60, a 375-character path): from
+  the command line, a write and a read reach such a file with the plain path, and with `WindowsLongPath=1` too;
+  through the stay-open argument file, with the plain path. The option isn't turned on.
+- **Folders ending in a dot or a space.** A plain path drops the dot or space from a folder's name on Windows, so
+  `D:\a.\x.jpg` opens `D:\a\x.jpg`; the verbatim form keeps it. Every stored path reaches the disk verbatim
+  (`pg_platform::native::disk_path`). Probed (2026-11-10, Windows 10, folders `a.` and `a` side by side):
+  - ExifTool 13.60 takes the verbatim form, through the stay-open argument file and from the command line, with a
+    non-ASCII name too: `-Rating=5` on `\\?\…\a.\x.jpg` wrote `a.\x.jpg`, and on the plain path it wrote `a\x.jpg`.
+    The write-back and the crop give it the verbatim path. (An earlier note here said ExifTool did not read `\\?\`:
+    wrong for 13.60.)
+  - The shell takes neither form: `SHCreateItemFromParsingName` parses the plain `a.` as `a`, and fails on any
+    verbatim folder with `E_INVALIDARG`. The folder dialog starts at the nearest folder whose names survive.
+  - Qt's `QFile` normalizes the path with `GetFullPathNameW`, which drops the dot even behind `\\?\`. The video
+    player is handed the file already open (`pg_platform::file::player_handle`).
 - **ExifTool's argument file and odd names.** Probed in WSL (Ubuntu-26.04, ExifTool 13.50), with absolute paths, as a
   rating write (`-charset filename=utf8`, `-XMP:Rating=4 -o out in`) through `-@`. The argument file carries a name
   exactly, except one with a line break (split at it) or one ending in a space, tab, vertical tab, form feed or CR

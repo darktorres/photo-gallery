@@ -15,9 +15,12 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   system's units of names and arguments, the path rules this machine's paths follow (`native::PATH_RULES`; `model`
   holds both rule sets as data), and message boxes. No other crate's production code names a platform
   (`cfg(windows)`, `cfg(unix)`, `target_os`, `std::os::{windows,unix}`, `windows_sys`, `libloading::os`); the
-  exceptions are the desktop's glue that must name the platform's own signatures or types: the video player's
-  declarations (`play_units` on Windows, `play_fd` on Unix) and the folder dialog's (`pg_platform::picker::Dialog`
-  exists on Windows only). `tools/boundaries.py` checks it, with the exceptions listed there.- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
+  exception is the desktop's glue that must name a type of one platform: the folder dialog's
+  (`pg_platform::picker::Dialog` exists on Windows only). The video player is handed an open file
+  (`file::player_handle`), the same call on every platform. `tools/boundaries.py` checks it, with the exception listed
+  there. A stored path reaches the disk through `native::disk_path` alone (the verbatim form on Windows, which keeps a
+  folder ending in a dot or a space); `names::path_buf` is private to the crate.
+- `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges.
 - `schema` (`pg-schema`): the SQLite schema check the catalog and the thumbnail cache share: a file's `sqlite_schema`

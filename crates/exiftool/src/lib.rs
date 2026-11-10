@@ -308,6 +308,11 @@ mod tests {
     /// and a lone surrogate (its bytes are raw bytes on Unix); and, on Unix only, a raw non-UTF-8 byte, a line break (the
     /// argument route), a carriage return inside a name, and a double quote, which Windows can't hold in a name. A name
     /// ending in whitespace is refused instead (`a_name_whose_extension_ends_in_whitespace_is_refused`).
+    /// The name the system holds for the stored bytes `name`.
+    fn file_name(name: &[u8]) -> OsString {
+        pg_platform::names::os_name(&pg_model::name::Name::from_raw(name))
+    }
+
     fn names() -> Vec<Vec<u8>> {
         let common = [
             b"plain.png".to_vec(),
@@ -395,7 +400,7 @@ mod tests {
         let dir = pg_testkit::test_folder("scratch_exiftool", "names").unwrap();
         let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
         for (i, name) in names().iter().enumerate() {
-            let path = dir.join(pg_platform::names::path_buf(name));
+            let path = dir.join(file_name(name));
             std::fs::write(&path, &source).unwrap();
             let out = dir.join(format!("out-{i}.png"));
             tool.write_rating(&path, &out, 4).unwrap_or_else(|e| panic!("{}: {e:#}", path.display()));
@@ -418,7 +423,7 @@ mod tests {
         let dir = pg_testkit::test_folder("scratch_exiftool", "refused").unwrap();
         let source = pg_testkit::png_rgb(2, 2, &[0; 12]).unwrap();
         for name in [&b"trail.png "[..], &b"endcr.png\r"[..], &b"trailtab.png\t"[..]] {
-            let path = dir.join(pg_platform::names::path_buf(name));
+            let path = dir.join(file_name(name));
             std::fs::write(&path, &source).unwrap();
             let out = dir.join("refused-out.png");
             assert!(tool.write_rating(&path, &out, 4).is_err(), "{}: written", path.display());
@@ -446,7 +451,7 @@ mod tests {
         let rated = dir.join("rated.png");
         tool.write_rating(&input, &rated, 4).unwrap();
         for (i, name) in names().iter().enumerate() {
-            let path = dir.join(pg_platform::names::path_buf(name));
+            let path = dir.join(file_name(name));
             std::fs::write(&path, &source).unwrap();
             // The orientation goes into a copy.
             let turned = dir.join(format!("turned-{i}.png"));

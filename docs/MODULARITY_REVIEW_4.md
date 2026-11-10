@@ -68,7 +68,8 @@ Each proposed fix was then checked against the code, step by step, for whether i
 - **R-2: a stored path reaches the file system only through `disk_path`.**
   - A catalog path (`RulePath`) becomes a plain `PathBuf` through `pg_platform::names::path_buf`, and on Windows a plain path drops a trailing dot or space from a folder's name.
   - So the one way production code turns a stored path into one that std, FFmpeg or ExifTool opens is `pg_platform::native::disk_path(&PathRules, &RulePath) -> PathBuf`, the verbatim form (M-21). Qt and the Windows shell never get a stored path to open by name: both normalize it and drop the dot again (M-21).
-  - **The compiler enforces it, not a grep.** A grep cannot tell a stored path's bytes from other bytes: `path_buf(` has 59 uses in 28 files. So `names::path_buf` becomes `pub(crate)`, and `disk_path` is `pg-platform`'s only public way from stored bytes to a `PathBuf`. A test that needs an odd name uses `names::os_name(&[u8]) -> OsString`, one name and never a whole path, or `disk_path` with its own rules. A shown path is `PathRules::display`.
+  - **The compiler enforces it, not a grep.** A grep cannot tell a stored path's bytes from other bytes: `path_buf(` has 59 uses in 28 files. So `names::path_buf` becomes `pub(crate)`, and `disk_path` is `pg-platform`'s only public way from stored bytes to a `PathBuf`. A test that needs an odd name uses `names::os_name(&Name) -> OsString`, one name and never a whole path, or `disk_path` with its own rules. A shown path is `PathRules::display`, or `names::shown` for a path the system gave (a picked folder), which leaves out the verbatim prefix.
+  - Done in step 1. `disk_path_of(&[u8])` is the same for bytes already joined by the rules (a pass's `WorkPath`).
 
 ## Bugs
 
@@ -84,8 +85,9 @@ Each fix gets a test that fails before it.
     - the video player (the UTF-16 units of the plain path).
   - On Windows a plain path drops a trailing dot or space from a folder name. So a temp in such a folder is missed, or a file in a sibling folder is deleted. A photo, an animation or a video there does not open, or the sibling folder's file of the same name opens instead.
   - The passes avoid it only by writing `verbatim(path_buf(rules.join(p)))` by hand: import, thumbs, writeback (four times) and crop.
-  - **ExifTool is given the plain path, so a rating or a crop's tags go into the wrong file.** The write-back gives ExifTool the plain path on purpose (its comment: "its plain path, which ExifTool and the messages are given"), and so does the crop (`tag_copy(source, out)`, from `path_buf`). Checked with ExifTool 13.60, with folders `a.` and `a` side by side: `-Rating=5` on the plain `…\a.\x.jpg` wrote the rating into `a\x.jpg`. The verbatim `\\?\…\a.\x.jpg` reached the right file, for both the write and the read. ExifTool gets `disk_path`.
+  - **ExifTool is given the plain path, so a file in a folder ending in a dot cannot be written.** The write-back gives ExifTool the plain path on purpose (its comment: "its plain path, which ExifTool and the messages are given"), and so does the crop (`tag_copy(source, out)`, from `path_buf`). Checked with ExifTool 13.60, with folders `a.` and `a` side by side: `-Rating=5` on the plain `…\a.\x.jpg` wrote the rating into `a\x.jpg`. The verbatim `\\?\…\a.\x.jpg` reached the right file, for both the write and the read, by the stay-open argument file and by the command line, with a non-ASCII name too. The code did not write the wrong file: both passes refused such a folder first (`native::check_folder_names`, `WriteError::FolderRefused`, `CropError::FolderRefused`), so the rating stayed in the catalog and the crop was not saved. ExifTool gets `disk_path`, and the refusal and both error types go.
   - **The Yandex save dialog opens in the wrong folder.** `pg_app::yandex::start_folder` makes the remembered `yandex_folder` a plain path, checks `is_dir` on it, and `pg_platform::picker::start_folder` canonicalizes that. Both reach the sibling `a`. The shell cannot take such a folder in either form (checked with `SHCreateItemFromParsingName`: the plain form parses to `a`, and the verbatim form fails with `E_INVALIDARG`). So `start_folder` takes the stored path, checks it by `disk_path`, and when the folder's names do not survive the shell's parse (`native::AlteredFolder`), it starts at the nearest ancestor that does.
+  - **A picked folder is the same bug, at its source.** The dialog's chosen item is a plain path (`pick_with`), so a folder `a.` the user picks became `a` at its first use: the Yandex save, the crop's copies and an added root. `pick_with` returns the verbatim form; `names::rule_path_of` and `names::shown` leave the prefix out, so the catalog stores and the messages show the plain text.
   - Fix: R-2. Add `pg_platform::native::disk_path`, used by every site above, ExifTool's arguments included, with `Catalogs::file_path` returning it. `path_buf` leaves the public API, so the next site does not compile.
   - **The video player cannot take the file by name**, in either form (read in Qt 6.12's source, `C:\Qt\6.12.0\Src\qtbase\src\corelib\io`):
     - `QFile` opens `QFileSystemEntry::nativeFilePath()`. On Windows that is `QFSFileEnginePrivate::longFileName`, which calls `nativeAbsoluteFilePath`, which calls `GetFullPathNameW`.
@@ -97,10 +99,18 @@ Each fix gets a test that fails before it.
     - Then `QFile::open(fd, ReadOnly, AutoCloseHandle)`, which reads the handle back with `_get_osfhandle` (`qfsfileengine_win.cpp`).
   - `pg_platform::file::play_target`, the two `PlayTarget` variants and the per-platform match in `video_player.rs` become one `play_file`.
   - Tests: a still, an animation, a video, a queued temp, a rating written back, a crop's tags and the save dialog's start folder, each in a folder named `a.` beside one named `a` (Windows). Each is reached in its own folder, and the file in `a` is unchanged.
+  - **Done in step 1.** `pg_platform::file::player_handle` opens the file, and C++ `play_file(handle, ext)` takes it (`_open_osfhandle`, then `QFile::open(fd, ReadOnly, AutoCloseHandle)`; the handle or descriptor is closed when either fails). The video player's two files leave `tools/boundaries.py`'s exceptions. The tests are:
+    - `the_player_handle_is_the_file_in_a_dotted_folder` (platform): the handle reads the file in `a.`, not the one in `a`.
+    - `a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other` (library, the write-back through ExifTool).
+    - `a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder` and `a_copy_into_a_folder_ending_in_a_dot_is_written_there` (library, the crop with its tags).
+    - `a_dotted_folder_starts_the_dialog_at_its_nearest_plain_ancestor` (platform, the picker).
+    - `disk_path` keeps the dot (platform). `Catalogs::file_path` is `disk_path`, so the still, the animation and the queued temps go through one checked function; they have no test of their own, as each would only open that path again.
 - **An unreadable preferences file overwrites the last one kept.**
   - `app/src/store.rs` (`quarantine`) renames the file to `<name>.bad`. A rename replaces its target on both systems, so the `.bad` an earlier failure kept is lost. The doc says it "is kept".
   - `pg_schema::move_aside` would number them, but it is the SQLite file's (it moves the sidecars, and it assumes its `Lock` is held), and `pg-app` does not depend on `pg-schema`.
-  - Fix: the numbered rename that never replaces is a file operation: `pg_platform::file::keep_aside(path, mark)`. It renames without replacing (`MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`, `renameat2` with `RENAME_NOREPLACE`), taking the next number when the name is taken. The preferences store uses it, and so does `pg_schema::move_aside`, for each file.
+  - Fix: the numbered rename that never replaces is a file operation: `pg_platform::file::keep_aside(path, mark)`. It renames without replacing (`MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`, `renameat2` with `RENAME_NOREPLACE`), taking the next number when the name is taken. The preferences store uses it.
+  - `pg_schema::move_aside` cannot use it for each file: the database and its sidecars (`-wal`, `-shm`) must share one number, or a later open pairs a WAL with the wrong database. It keeps its one shared name and moves each part with `file::rename_no_replace`, so a part that a race took is an error and not a replacement.
+  - **Done in step 1**, with the test `a_second_unreadable_file_keeps_the_first_one_kept` (app) and `a_rename_never_replaces` and `a_file_kept_aside_takes_the_next_free_name` (platform). On Linux the rename is `renameat2(RENAME_NOREPLACE)`, and a link then an unlink where the file system does not take it (`EINVAL`).
 - **Two notes of the wrong kind.**
   - `App::open` reports a thumbnail cache that cannot be opened as `Note::Thumbs(Event::NotStored { error: "cache disabled: .." })`. That event means one on-demand thumbnail was not stored.
   - `App::shutdown` reports a catalog that fails to close as `Note::Thumbs(Event::WalNotMerged { error: "catalog: .." })`, the cache's WAL event.
@@ -112,6 +122,7 @@ Each fix gets a test that fails before it.
   - It joins the parts with literal `", "` and `" – "`, and prints numbers with `f64::to_string`, whatever the locale.
   - Fix: each chosen value is worded by `choice_label(&choice)`, the words the filter chips show, over the query's choices. The list separators, the case and the number format are the bundle's: a list message and Fluent's `NUMBER()`.
   - Test: the pseudo-locale's description of a query with every facet has no English word.
+  - **Done in step 1.** A rating is its symbol, or the bundle's "unrated"; a span of days is `filter-days`; the separators are `filter-list-separator` and `filter-part-separator`; a range's ends are Fluent numbers (`add_builtins`). The test is `crates/client/tests/describe_pseudo.rs`, a binary of its own because the pseudo-locale is a process-wide switch.
 - Gate: Windows `just test`, Linux checks.
 
 ## Work done twice
@@ -122,7 +133,7 @@ Each fix gets a test that fails before it.
   - `cli/src/lib.rs` (`run_command`, the `Scan` arm) and `library/src/runner.rs` (`Scans::run`) each forget the replaced files' thumbnails, delete their queued writes' temp files ("decision 7"), and turn the scan's counts into notes.
   - The runner reports `ScanStats::refused_mount_list` (`Notice::MountRefused`): the mounts under a root that the scan refused, such as FAT and exFAT on Linux since `6e20cad`. `gallery scan` never prints it, so a refused mount is skipped without a word. It does not print the `VolumeFallback` line either.
   - The CLI's scan notes are its own English (`"skipped as duplicates (another path to the same file)"`, ...), while the app's come from `scan-note` in `client/locales/en/text.ftl`.
-  - Both copies delete temps by the plain path (M-21).
+  - Both copies deleted temps by the plain path (M-21; both use `disk_path` since step 1).
 - **Also twice: adding a folder.** `normalize_path`, then `check_folder`, then `Catalog::add_root`, in the CLI's `Scan` arm and in `app/src/library.rs` (`LibraryService::add_folder`).
 - **Fix.** One copy of each, used by both front ends, split by concern.
   - `pg_library::add_folder(catalog, path) -> Result<(RulePath, bool), AddError>` normalizes, checks and adds. `AddError` is typed: `Refused`, `NotAPath`, the catalog's error. It returns the `RulePath`, not display text; the front end displays it. Today the app returns `(String, bool)`, and `Error::FolderRefused { folder: String }`.
@@ -185,7 +196,7 @@ Each fix gets a test that fails before it.
     - `Damage::of(&rusqlite::Error)`;
     - `Expected::new(make_layout)`, the schema built once, lazily.
   - `pg-schema` also owns `remove_database` (with the sidecars) and the holds.
-  - `beside` and the rename that never replaces (`keep_aside`, M-21) are file operations below all three users, so they are `pg_platform::file`'s, not `pg-schema`'s. `pg_schema::move_aside` is built on them. `pg-schema` gains a `pg-platform` dependency, an acyclic edge (`pg-platform` depends on `pg-model` alone), and the layer file changes with it.
+  - `beside` and the rename that never replaces (`keep_aside`, M-21) are file operations below all three users, so they are `pg_platform::file`'s, not `pg-schema`'s. `pg_schema::move_aside` is built on them. `pg-schema` gains a `pg-platform` dependency, an acyclic edge (`pg-platform` depends on `pg-model` alone), and the layer file changes with it. Step 1 did this part (M-21): `file::beside`, `file::rename_no_replace` and `file::keep_aside`, used by `pg-schema` and the preferences store. The copies in `Lock::take`, `catalog/src/lifecycle.rs` and `thumbcache/src/schema.rs` are this step's.
   - **The crate is renamed for what it holds: `pg-dbfile`**, a SQLite database file's lifecycle, of which the schema comparison is one part. Correcting only the header would leave the name wrong in its three dependents' `Cargo.toml`, every `use` and the layer file. Its one `lib.rs` is split by concern: `schema.rs` (`Schema`, `canonical`, `Difference`), `judge.rs` (`judge`, `Found`, `Damage`, `Expected`), `lock.rs` (`Lock`, `Live`, the holds) and `remove.rs` (`move_aside`, `remove_database`). Every `pg_schema::` in this review names the renamed crate.
   - The catalog is split:
     - `rebuild.rs`: both halves of the rebuild;
@@ -409,14 +420,13 @@ Each fix gets a test that fails before it.
   - **Refusals are found by downcast.** `pg_scan::scan` returns `anyhow::Result`, and its callers tell a refused folder from a failure with `downcast_ref::<pg_platform::dir::Refused>()`: `cli/src/lib.rs` (the `Scan` arm) and `library/src/runner.rs` (`Scans::run`). The contract is a doc comment (`scan/src/lib.rs`, "an error that is a `Refused`"), and nothing checks it.
   - **The policy and its words are in the OS layer.** `pg-platform` decides which folders the app accepts (`dir::check_ntfs` for decision 6's steps, `check_drive`, and the Linux `REFUSED` table of file systems). It also writes the reasons in English ("it is on an NFS mount", "its drive is removable", ...). They reach the window inside a Fluent message (`text::root_refused(root, reason)`), so they are never translated or pseudo-localized.
   - **`pg_scan::Listing::check_mount`** returns its refusal as a `Result<(), String>`.
-  - **One refusal, two types.** `pg_crop::CropError::FolderRefused { file, folder }` and `pg_writeback::WriteError::FolderRefused { file, folder }` have the same English `Display`, and each repeats the `check_folder_names` mapping.
+  - **One refusal, two types.** `pg_crop::CropError::FolderRefused { file, folder }` and `pg_writeback::WriteError::FolderRefused { file, folder }` had the same English `Display`, and each repeated the `check_folder_names` mapping. Both went in step 1: ExifTool takes the verbatim path, so neither pass refuses such a folder (M-21).
   - **Public for the tests only:** `RootFacts`, `check_ntfs`, `check_fs_type` and `NativePath::set_plain`.
 - **Fix.**
   - `pg-platform` reports facts as a typed value: the drive type, the file system's name or `f_type`, a reparse point, the real volume.
   - `pg-scan` holds the policy table. `scan` returns `Result<ScanStats, ScanError>`, with `ScanError::{Refused(Refused), Failed(anyhow::Error)}` and `Refused { reason: RefusedReason }`, and both callers match on it.
   - `check_mount` returns `Result<(), RefusedReason>`.
   - `RefusedReason` is `pg-model` data (R-1), and the client words each one. NOTIFICATIONS_PLAN's `Notice::RootRefused` and `MountRefused` carry it in place of their `reason: String`, stored by its code (kebab-case, like the notice tags). The inbox then shows a refusal in the reader's language, not in the one the scan ran in.
-  - One `FolderRefused`, built from `pg_platform::native::AlteredFolder`, is carried by both `CropError` and `WriteError`.
   - The test-only items become `pub(crate)`, with their tests beside them.
   - This was the only typed outcome downcast across crates. The rest are within a crate, or `jobs`' own `Panicked`.
 - Gate: Windows `just test`, Linux checks (the refused-mount tests), `just shots` (the pseudo-locale).
@@ -730,7 +740,7 @@ These are additions to the plan's M-12a list.
 
 This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered together, because the notice steps here are that plan's stages (R-1).
 
-1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`**, with `path_buf` made `pub(crate)`, comes with the first bug.
+1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`**, with `path_buf` made `pub(crate)`, comes with the first bug. Done.
 2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start.
 3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer.
 4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).

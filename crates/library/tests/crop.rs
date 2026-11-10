@@ -66,13 +66,13 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
 /// The copies' folder for a library folder: under `out`, the library folder's drive as a part, then its parts. The
 /// library folder is taken as the catalog holds it (its canonical spelling), which is what the copies are written under.
 fn place_in(out: &Path, root: &pg_model::rules::Path) -> PathBuf {
-    let letter = pg_platform::names::path_buf(root.anchor.as_bytes()).to_string_lossy().replace([':', '\\'], "");
+    let letter = String::from_utf8_lossy(root.anchor.as_bytes()).replace([':', '\\'], "");
     let mut place = out.to_path_buf();
     if !letter.is_empty() {
         place.push(letter);
     }
     for part in &root.parts {
-        place.push(pg_platform::names::path_buf(part.as_bytes()));
+        place.push(pg_platform::names::os_name(part));
     }
     place
 }

@@ -4,7 +4,18 @@
 #include <QtCore/QString>
 #include <QtCore/QUrl>
 
-#if !defined(_WIN32)
+#if defined(_WIN32)
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+
+#include <fcntl.h>
+#include <io.h>
+#else
 #include <unistd.h>
 #endif
 
@@ -32,19 +43,28 @@ VideoPlayer::~VideoPlayer() {
     }
 }
 
-void VideoPlayer::play_units(rust::Slice<const std::uint16_t> units, rust::Str ext) {
-    // The units as they are: a QString holds an unpaired surrogate, and QFile hands the name to CreateFileW unchanged.
-    const QString name(reinterpret_cast<const QChar*>(units.data()), static_cast<qsizetype>(units.size()));
-    set_device(std::make_unique<QFile>(name), ext);
-}
-
-void VideoPlayer::play_fd(std::int32_t fd, rust::Str ext) {
+void VideoPlayer::play_file(std::int64_t handle, rust::Str ext) {
     auto file = std::make_unique<QFile>();
-    if (fd >= 0 && !file->open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
-        // Qt takes the descriptor only when it opens: a refused one is closed here, or it would stay open.
-#if !defined(_WIN32)
-        ::close(fd);
+    if (handle >= 0) {
+#if defined(_WIN32)
+        // The C runtime's descriptor over the handle: the workspace links the runtime dynamically (no crt-static), so
+        // Rust, this code and Qt share one table, and QFile reads the handle back from it (_get_osfhandle).
+        const int fd = _open_osfhandle(static_cast<intptr_t>(handle), _O_RDONLY | _O_BINARY);
+        if (fd < 0) {
+            // No descriptor took the handle over: it is closed here, or it would stay open.
+            CloseHandle(reinterpret_cast<HANDLE>(static_cast<intptr_t>(handle)));
+        }
+#else
+        const int fd = static_cast<int>(handle);
 #endif
+        if (fd >= 0 && !file->open(fd, QIODevice::ReadOnly, QFileDevice::AutoCloseHandle)) {
+            // Qt takes the descriptor only when it opens: a refused one is closed here, or it would stay open.
+#if defined(_WIN32)
+            _close(fd);
+#else
+            ::close(fd);
+#endif
+        }
     }
     set_device(std::move(file), ext);
 }

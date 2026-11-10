@@ -1958,6 +1958,7 @@ dependencies = [
 name = "pg-schema"
 version = "0.1.0"
 dependencies = [
+ "pg-platform",
  "rusqlite",
 ]
 

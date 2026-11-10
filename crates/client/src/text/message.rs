@@ -36,18 +36,28 @@ pub enum Message {
     FilterModified {
         days: String,
     },
-    FilterRangeMb {
+    /// A span of days, `from` and `to` each a day or empty.
+    FilterDays {
         from: String,
         to: String,
+    },
+    /// A range's ends, as Fluent numbers (an open end is empty).
+    FilterRangeMb {
+        from: Option<f64>,
+        to: Option<f64>,
     },
     FilterRangeMp {
-        from: String,
-        to: String,
+        from: Option<f64>,
+        to: Option<f64>,
     },
     FilterRangeSeconds {
-        from: String,
-        to: String,
+        from: Option<f64>,
+        to: Option<f64>,
     },
+    /// Between the values of one facet in the filter line.
+    FilterListSeparator,
+    /// Between the filter line's parts.
+    FilterPartSeparator,
     FilterBorders {
         values: String,
     },
@@ -138,10 +148,6 @@ pub enum Message {
         temp: String,
         error: String,
     },
-    WriteFolderRefused {
-        file: String,
-        folder: String,
-    },
     WriteDropped {
         kind: WriteKind,
         count: usize,
@@ -189,11 +195,6 @@ pub enum Message {
     CroppedFailed {
         failed: String,
         error: String,
-    },
-    /// A crop's copy refused for a folder whose name ends in a dot or a space: `file` is the source, `folder` the folder.
-    CropFolderRefused {
-        file: String,
-        folder: String,
     },
     YandexCaptcha,
     YandexNotStill,
@@ -390,9 +391,12 @@ impl Message {
             Message::FilterWithoutDuplicates => "filter-without-duplicates",
             Message::FilterTaken { .. } => "filter-taken",
             Message::FilterModified { .. } => "filter-modified",
+            Message::FilterDays { .. } => "filter-days",
             Message::FilterRangeMb { .. } => "filter-range-mb",
             Message::FilterRangeMp { .. } => "filter-range-mp",
             Message::FilterRangeSeconds { .. } => "filter-range-seconds",
+            Message::FilterListSeparator => "filter-list-separator",
+            Message::FilterPartSeparator => "filter-part-separator",
             Message::FilterBorders { .. } => "filter-borders",
             Message::FilterBordersMarked => "filter-borders-marked",
             Message::FilterBordersNotMarked => "filter-borders-not-marked",
@@ -425,7 +429,6 @@ impl Message {
             Message::ChangesUnwritten { .. } => "changes-unwritten",
             Message::WriteQueueFailed { .. } => "write-queue-failed",
             Message::WriteIncomplete { .. } => "write-incomplete",
-            Message::WriteFolderRefused { .. } => "write-folder-refused",
             Message::WriteDropped { .. } => "write-dropped",
             Message::WriteStopped => "write-stopped",
             Message::UnreadableFolders { .. } => "unreadable-folders",
@@ -439,7 +442,6 @@ impl Message {
             Message::CroppedSaved { .. } => "cropped-saved",
             Message::CroppedSkipped { .. } => "cropped-skipped",
             Message::CroppedFailed { .. } => "cropped-failed",
-            Message::CropFolderRefused { .. } => "crop-folder-refused",
             Message::YandexCaptcha => "yandex-captcha",
             Message::YandexNotStill => "yandex-not-still",
             Message::YandexUploading => "yandex-uploading",
@@ -499,11 +501,15 @@ impl Message {
             Message::FilterTaken { days } | Message::FilterModified { days } => {
                 a.set("days", days.as_str());
             }
+            Message::FilterDays { from, to } => {
+                a.set("from", from.as_str());
+                a.set("to", to.as_str());
+            }
             Message::FilterRangeMb { from, to }
             | Message::FilterRangeMp { from, to }
             | Message::FilterRangeSeconds { from, to } => {
-                a.set("from", from.as_str());
-                a.set("to", to.as_str());
+                set_end(&mut a, "from", *from);
+                set_end(&mut a, "to", *to);
             }
             Message::FilterBorders { values } => {
                 a.set("values", values.as_str());
@@ -577,10 +583,6 @@ impl Message {
                 a.set("temp", temp.as_str());
                 a.set("error", error.as_str());
             }
-            Message::WriteFolderRefused { file, folder } => {
-                a.set("file", file.as_str());
-                a.set("folder", folder.as_str());
-            }
             Message::WriteDropped { kind, count } => {
                 plural(&mut a, *count);
                 // A selector, not shown: the entry has the words for each kind.
@@ -627,10 +629,6 @@ impl Message {
             Message::CroppedFailed { failed, error } => {
                 a.set("failed", failed.as_str());
                 a.set("error", error.as_str());
-            }
-            Message::CropFolderRefused { file, folder } => {
-                a.set("file", file.as_str());
-                a.set("folder", folder.as_str());
             }
             Message::YandexUnreadablePhoto { error } => {
                 a.set("error", error.as_str());
@@ -744,9 +742,12 @@ impl Message {
             Message::FilterWithoutDuplicates,
             Message::FilterTaken { days: s() },
             Message::FilterModified { days: s() },
-            Message::FilterRangeMb { from: s(), to: s() },
-            Message::FilterRangeMp { from: s(), to: s() },
-            Message::FilterRangeSeconds { from: s(), to: s() },
+            Message::FilterDays { from: s(), to: s() },
+            Message::FilterRangeMb { from: Some(1.5), to: None },
+            Message::FilterRangeMp { from: None, to: Some(12.0) },
+            Message::FilterRangeSeconds { from: Some(1.0), to: Some(2.0) },
+            Message::FilterListSeparator,
+            Message::FilterPartSeparator,
             Message::FilterBorders { values: s() },
             Message::FilterBordersMarked,
             Message::FilterBordersNotMarked,
@@ -779,7 +780,6 @@ impl Message {
             Message::ChangesUnwritten { count: 1, error: s() },
             Message::WriteQueueFailed { error: s() },
             Message::WriteIncomplete { file: s(), temp: s(), error: s() },
-            Message::WriteFolderRefused { file: s(), folder: s() },
             Message::WriteDropped { kind: WriteKind::Rating, count: 1 },
             Message::WriteStopped,
             Message::UnreadableFolders { root: s(), count: s() },
@@ -793,7 +793,6 @@ impl Message {
             Message::CroppedSaved { count: 1, folder: s() },
             Message::CroppedSkipped { count: 1 },
             Message::CroppedFailed { failed: s(), error: s() },
-            Message::CropFolderRefused { file: s(), folder: s() },
             Message::YandexCaptcha,
             Message::YandexNotStill,
             Message::YandexUploading,
@@ -848,6 +847,14 @@ impl Message {
 fn plural(a: &mut FluentArgs<'_>, count: usize) {
     a.set("count", pg_model::num::count(count));
     a.set("text", count.to_string());
+}
+
+/// A range's end: a Fluent number, which a locale formats (`NUMBER()`), or empty for an open end.
+fn set_end(a: &mut FluentArgs<'_>, key: &'static str, end: Option<f64>) {
+    match end {
+        Some(value) => a.set(key, value),
+        None => a.set(key, ""),
+    }
 }
 
 /// The line `message` reads as in the English words.

@@ -52,8 +52,9 @@ pub fn set_path(path: &mut NativePath, canonical: &[u8]) {
     path.set(&[&units_of(canonical)]);
 }
 
-/// A path for std and the programs that take one (FFmpeg, ExifTool's arguments), from its canonical bytes.
-pub fn path_buf(canonical: &[u8]) -> PathBuf {
+/// A path from its canonical bytes, in the plain form. Not public: a stored path is opened by its verbatim form
+/// (`native::disk_path`), and shown by `PathRules::display`, so no caller outside makes the plain form of one.
+pub(crate) fn path_buf(canonical: &[u8]) -> PathBuf {
     #[cfg(windows)]
     {
         use std::os::windows::ffi::OsStringExt;
@@ -66,8 +67,15 @@ pub fn path_buf(canonical: &[u8]) -> PathBuf {
     }
 }
 
+/// One name as the system holds it, from its canonical bytes (an unpaired surrogate kept on Windows, a raw byte
+/// elsewhere): for a name joined to a folder the caller holds as a `Path`, as the tests' odd names are. A whole stored
+/// path is `native::disk_path`'s.
+pub fn os_name(name: &Name) -> OsString {
+    path_buf(name.as_bytes()).into_os_string()
+}
+
 /// The canonical bytes of a whole path, as the system holds it: WTF-8 on Windows (exact, an unpaired surrogate kept),
-/// raw bytes elsewhere. The inverse of [`path_buf`].
+/// raw bytes elsewhere. The inverse of the plain form a stored path's bytes make.
 pub fn canonical_of(path: &Path) -> Vec<u8> {
     #[cfg(windows)]
     {
@@ -82,9 +90,32 @@ pub fn canonical_of(path: &Path) -> Vec<u8> {
     }
 }
 
-/// `path` under the native rules, exactly. `None` when it has no path form under them (a NUL, which no name holds).
+/// `path` under the native rules, exactly, the verbatim prefix dropped (`\\?\D:\a.` is `D:\a.`: the catalog keeps the
+/// plain bytes, and `native::disk_path` puts the prefix back). `None` when it has no path form under them (a NUL,
+/// which no name holds).
 pub fn rule_path_of(path: &Path) -> Option<pg_model::rules::Path> {
-    crate::native::PATH_RULES.parse_bytes(&canonical_of(path))
+    crate::native::PATH_RULES.parse_bytes(&without_verbatim(canonical_of(path)))
+}
+
+/// `path` as the user is shown it: without the verbatim prefix, lossy where a name has no UTF-8 form. A stored path is
+/// shown by `PathRules::display`; this is for a path the app holds as a `Path` (a folder the user picked).
+pub fn shown(path: &Path) -> String {
+    String::from_utf8_lossy(&without_verbatim(canonical_of(path))).into_owned()
+}
+
+/// A path's canonical bytes without the verbatim prefix: `\\?\UNC\server\share` to `\\server\share`, `\\?\D:\` to
+/// `D:\`. Other bytes (every path off Windows) as they are.
+fn without_verbatim(bytes: Vec<u8>) -> Vec<u8> {
+    if !cfg!(windows) {
+        return bytes;
+    }
+    if let Some(unc) = bytes.strip_prefix(br"\\?\UNC\") {
+        [br"\\", unc].concat()
+    } else if let Some(rest) = bytes.strip_prefix(br"\\?\") {
+        rest.to_vec()
+    } else {
+        bytes
+    }
 }
 
 /// One argument's bytes, as the program's own argument list holds them: exactly on Unix, a raw byte included. On Windows,
@@ -125,15 +156,7 @@ pub fn after_first_equals(arg: &OsStr) -> Option<OsString> {
 #[cfg(windows)]
 pub fn real_path(root: &Path) -> io::Result<PathBuf> {
     let real = std::fs::canonicalize(root)?;
-    let bytes = canonical_of(&real);
-    let plain = if let Some(unc) = bytes.strip_prefix(br"\\?\UNC\") {
-        [br"\\", unc].concat()
-    } else if let Some(rest) = bytes.strip_prefix(br"\\?\") {
-        rest.to_vec()
-    } else {
-        bytes
-    };
-    Ok(path_buf(&plain))
+    Ok(path_buf(&without_verbatim(canonical_of(&real))))
 }
 
 /// The real path of an existing folder, as the catalog keys it: its names in the case the file system stores them.
@@ -218,6 +241,18 @@ mod tests {
         {
             let units: Vec<Unit> = vec![0x61, 0xFF, 0x62];
             assert_eq!(units_of(name_from_native(&units).as_bytes()), units);
+        }
+    }
+
+    /// A verbatim path is stored and shown as its plain bytes; the prefix is the opening's, not the path's.
+    #[cfg(windows)]
+    #[test]
+    fn the_verbatim_prefix_is_not_part_of_the_path() {
+        let rules = crate::native::PATH_RULES;
+        for (given, plain) in [(r"\\?\D:\a.\b", r"D:\a.\b"), (r"\\?\UNC\nas\p\a.", r"\\nas\p\a."), (r"D:\a", r"D:\a")] {
+            let rule = rule_path_of(Path::new(given)).unwrap();
+            assert_eq!(rules.join(&rule), plain.as_bytes(), "{given}");
+            assert_eq!(shown(Path::new(given)), plain, "{given}");
         }
     }
 

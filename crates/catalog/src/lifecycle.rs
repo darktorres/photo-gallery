@@ -597,7 +597,7 @@ mod tests {
     #[test]
     fn a_catalog_in_a_folder_without_a_utf8_name_is_opened_and_carried_through_an_alias() {
         let dir = test_folder(SCRATCH, "odd-folder").unwrap();
-        let folder = dir.join(pg_platform::names::path_buf(b"cat\xED\xA0\x80"));
+        let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cat\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
         let path = folder.join("catalog.sqlite");
         drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());

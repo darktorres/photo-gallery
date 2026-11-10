@@ -1,6 +1,6 @@
-//! Cropped copies with a folder whose name ends in a dot or a space (Windows may drop it from the plain path ExifTool is
-//! given): the copy is refused, typed, before anything is read or written; nothing is left in the copies' folder; a
-//! sibling folder's file is untouched. Windows only: the names are normalized there alone.
+//! Cropped copies with a folder whose name ends in a dot (Windows drops it from the plain path): the source is read
+//! from that folder and the copy written into it, each by its disk path, and a sibling folder without the dot (the one
+//! the plain path names) is neither read nor written. Windows only: the names are normalized there alone.
 #![cfg(windows)]
 
 use std::io::Cursor;
@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
-use pg_crop::CropError;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
 use pg_model::ids::FileId;
@@ -77,10 +76,15 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     Ok((c, dotted_id.context("the file in the dotted folder")?, sibling_id.context("the sibling's file")?))
 }
 
-/// A source whose folder ends in a dot is refused: the sibling's copy is saved, the dotted file's isn't, and nothing is
-/// left behind.
+/// The name of the folder `path` is in.
+fn folder_name(path: &Path) -> String {
+    path.parent().and_then(Path::file_name).map(|n| n.to_string_lossy().into_owned()).unwrap_or_default()
+}
+
+/// A source whose folder ends in a dot is copied from that folder, beside its sibling's copy, and both originals are
+/// left as they were. Nothing else is left behind.
 #[test]
-fn a_source_in_a_folder_ending_in_a_dot_is_refused_and_leaves_no_temp() -> Result<()> {
+fn a_source_in_a_folder_ending_in_a_dot_is_copied_from_that_folder() -> Result<()> {
     let dir = std::path::absolute(pg_testkit::run_folder("scratch_crop", "folders-source")?)?;
     let (c, dotted, sibling) = library(&dir)?;
     let (dotted_original, sibling_original) = (
@@ -91,35 +95,25 @@ fn a_source_in_a_folder_ending_in_a_dot_is_refused_and_leaves_no_temp() -> Resul
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let stats = pg_crop::save(&c, &[dotted, sibling], &out, &opts, &Control::new())?;
 
-    assert_eq!((stats.saved, stats.failed), (1, 1), "{:?}", stats.error);
-    assert!(
-        matches!(&stats.refused, Some(CropError::FolderRefused { folder, .. }) if folder == "Acme Inc."),
-        "{:?}",
-        stats.refused
-    );
-    assert!(stats.error.is_some(), "the refusal is also the first failure");
-    assert_eq!(
-        std::fs::read(verbatim(&dir.join("images").join("Acme Inc.").join("a.jpg")))?,
-        dotted_original,
-        "the refused file changed"
-    );
-    assert_eq!(
-        std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?,
-        sibling_original,
-        "the sibling's file changed"
-    );
+    assert_eq!((stats.saved, stats.failed), (2, 0), "{:?}", stats.error);
+    assert_eq!(std::fs::read(verbatim(&dir.join("images").join("Acme Inc.").join("a.jpg")))?, dotted_original);
+    assert_eq!(std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?, sibling_original);
     let copies = files_under(&out);
-    assert_eq!(copies.len(), 1, "only the sibling's copy: {copies:?}");
-    assert!(copies.iter().all(|p| !p.to_string_lossy().ends_with(".pg-crop")), "a temp is left: {copies:?}");
+    assert_eq!(copies.len(), 2, "a copy of each: {copies:?}");
+    let mut folders: Vec<String> = copies.iter().map(|p| folder_name(p)).collect();
+    folders.sort();
+    assert_eq!(folders, ["Acme Inc", "Acme Inc."], "each copy in its own folder: {copies:?}");
+    // Each copy is of its own source: the two sources' pixels differ, so their copies do.
+    let [first, second] = copies.as_slice() else { anyhow::bail!("two copies: {copies:?}") };
+    assert_ne!(std::fs::read(first)?, std::fs::read(second)?, "{copies:?}");
     drop(c);
     let _ = std::fs::remove_dir_all(verbatim(&dir));
     Ok(())
 }
 
-/// A copy into a folder whose name ends in a dot is refused before the folder is made: nothing is written, and the
-/// source's file is untouched.
+/// A copy into a folder whose name ends in a dot is written into that folder, and no folder without the dot is made.
 #[test]
-fn a_copy_into_a_folder_ending_in_a_dot_is_refused_and_makes_nothing() -> Result<()> {
+fn a_copy_into_a_folder_ending_in_a_dot_is_written_there() -> Result<()> {
     let dir = std::path::absolute(pg_testkit::run_folder("scratch_crop", "folders-copy")?)?;
     let (c, _dotted, sibling) = library(&dir)?;
     let original = std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?;
@@ -127,13 +121,9 @@ fn a_copy_into_a_folder_ending_in_a_dot_is_refused_and_makes_nothing() -> Result
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     let stats = pg_crop::save(&c, &[sibling], &out, &opts, &Control::new())?;
 
-    assert_eq!((stats.saved, stats.failed), (0, 1), "{:?}", stats.error);
-    assert!(
-        matches!(&stats.refused, Some(CropError::FolderRefused { folder, .. }) if folder == "Out."),
-        "{:?}",
-        stats.refused
-    );
-    assert!(!out.exists(), "the copies' folder was made");
+    assert_eq!((stats.saved, stats.failed), (1, 0), "{:?}", stats.error);
+    assert_eq!(files_under(&verbatim(&out)).len(), 1, "the copy is in Out.");
+    assert!(!dir.join("Out").exists(), "a folder without the dot was made");
     assert_eq!(std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?, original);
     drop(c);
     let _ = std::fs::remove_dir_all(verbatim(&dir));

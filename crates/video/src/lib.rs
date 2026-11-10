@@ -305,7 +305,7 @@ mod tests {
     /// The sample under `name`, a name the system holds exactly (on Windows a lone surrogate, on Unix a raw byte: FFmpeg
     /// can't be given either by path).
     fn sample_named(dir: &Path, name: &[u8]) -> PathBuf {
-        let path = dir.join(pg_platform::names::path_buf(name));
+        let path = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(name)));
         std::fs::write(&path, SAMPLE).unwrap();
         path
     }

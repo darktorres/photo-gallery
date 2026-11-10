@@ -1,6 +1,5 @@
 //! The video player's source (`VideoSource`): the file a video plays from, handed to Qt's player as a device. The file
-//! is the catalog's exact path; how it reaches the player on each platform is `video_player`'s. Only the GUI thread
-//! touches it.
+//! is the catalog's `disk_path` of it, which `video_player` opens and hands over open. Only the GUI thread touches it.
 
 pub(crate) mod state;
 

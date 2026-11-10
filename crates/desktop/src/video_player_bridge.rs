@@ -13,14 +13,11 @@ pub mod ffi {
         /// The source of `player` (a live `QMediaPlayer`, or null: the source keeps a weak reference to it).
         #[namespace = "pg"]
         unsafe fn new_video_player(player: *mut QMediaPlayer) -> UniquePtr<VideoPlayer>;
-        /// Plays the file named by `units` (Windows: the file's UTF-16 units). `ext` is its extension, ASCII.
-        #[cfg(windows)]
+        /// Plays the file open at `handle` (`pg_platform::file::player_handle`: a `HANDLE` on Windows, a descriptor on
+        /// Unix), which the player then owns and closes. A negative `handle` is a file that could not be opened: the
+        /// player reports that as its error. `ext` is the file's extension, ASCII.
         #[namespace = "pg"]
-        fn play_units(self: Pin<&mut VideoPlayer>, units: &[u16], ext: &str);
-        /// Plays the file open at `fd` (Unix; a negative `fd` is a file that could not be opened).
-        #[cfg(unix)]
-        #[namespace = "pg"]
-        fn play_fd(self: Pin<&mut VideoPlayer>, fd: i32, ext: &str);
+        fn play_file(self: Pin<&mut VideoPlayer>, handle: i64, ext: &str);
         /// Clears the player's source, then releases the device.
         #[namespace = "pg"]
         fn clear(self: Pin<&mut VideoPlayer>);

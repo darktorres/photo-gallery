@@ -12,6 +12,7 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use pg_platform::file::{beside, rename_no_replace};
 use rusqlite::Connection;
 
 /// The objects of a database and the seeded keys of some of its tables.
@@ -205,14 +206,6 @@ fn open_live(path: &Path) -> io::Result<File> {
     OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, ".live"))
 }
 
-/// `path` with `suffix` added to its name (the file's own units, not its display form, which is lossy): a database's
-/// `-wal`, or a file beside it.
-fn beside(path: &Path, suffix: &str) -> PathBuf {
-    let mut name = path.as_os_str().to_owned();
-    name.push(suffix);
-    PathBuf::from(name)
-}
-
 /// A database file's parts, the sidecars first: a `-wal` left beside a main file that moved would be replayed into
 /// whatever takes the name next.
 const PARTS: [&str; 4] = ["-wal", "-shm", "-journal", ""];
@@ -221,8 +214,10 @@ const PARTS: [&str; 4] = ["-wal", "-shm", "-journal", ""];
 /// `<name><mark>`, then `<name><mark>.1`, and so on (a catalog that is replaced, `.replaced`; a thumbnail cache that is
 /// damaged, `.bad`). Returns the main file's new path. Nothing is deleted and nothing is overwritten: the user removes
 /// the moved files when they are no longer wanted. The sidecars move first, so the main file is never left at `path`
-/// without the changes its sidecars held. No connection to the database may be open, and the caller holds its
-/// [`Lock`] (and its exclusive [`Live`]), so no other process takes a name between the check and the move.
+/// without the changes its sidecars held. The parts share one name, so they are found free together; no connection to
+/// the database may be open, and the caller holds its [`Lock`] (and its exclusive [`Live`]), so no other process of
+/// ours takes a name between the check and the move. Each move never replaces a file all the same
+/// (`pg_platform::file::rename_no_replace`): one another program made in between fails the move, and is kept.
 pub fn move_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
     let mut n = 0u32;
     let base = loop {
@@ -236,7 +231,7 @@ pub fn move_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
         let from = beside(path, part);
         if from.exists() {
             let to = beside(path, &format!("{base}{part}"));
-            std::fs::rename(&from, &to)
+            rename_no_replace(&from, &to)
                 .map_err(|e| io::Error::new(e.kind(), format!("can't move {} aside: {e}", from.display())))?;
         }
     }

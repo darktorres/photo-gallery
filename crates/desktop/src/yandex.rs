@@ -120,7 +120,7 @@ fn failure_text(failure: SaveFailure) -> String {
         SaveFailure::Client(e) => explain(&e),
         SaveFailure::Download { url, error } => text::yandex_download_failed(&url, &explain(&error)),
         SaveFailure::Write { url, path, error } => {
-            text::yandex_write_failed(&url, &path.display().to_string(), &error.to_string())
+            text::yandex_write_failed(&url, &pg_platform::names::shown(&path), &error.to_string())
         }
     }
 }
@@ -128,7 +128,7 @@ fn failure_text(failure: SaveFailure) -> String {
 fn saved_text(saved: Saved) -> String {
     let Saved { folder, written, failed, first_error } = saved;
     let first_error = first_error.map(failure_text);
-    text::yandex_saved(written, &folder.display().to_string(), failed, first_error.as_deref())
+    text::yandex_saved(written, &pg_platform::names::shown(&folder), failed, first_error.as_deref())
 }
 
 fn status_text(status: Status) -> String {

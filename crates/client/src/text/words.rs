@@ -31,6 +31,8 @@ fn english() -> FluentBundle<FluentResource> {
     let mut bundle = FluentBundle::new(vec![langid]);
     // Fluent wraps each placeable in invisible isolation marks for right-to-left text; the screen wants the plain text.
     bundle.set_use_isolating(false);
+    // NUMBER() and DATETIME(), for an entry that formats its number (a range's ends are passed as numbers).
+    let _ = bundle.add_builtins();
     for source in [ENGLISH, ENGLISH_UI] {
         let resource = FluentResource::try_new(source.to_string()).unwrap_or_else(|(resource, _)| resource);
         // The English entries name no id twice (the tests check it); were one named twice, its first entry is kept

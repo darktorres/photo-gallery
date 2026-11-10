@@ -12,7 +12,9 @@ mod test_support;
 mod words;
 
 use pg_model::detection::Class;
-use pg_model::query::{BorderFacet, Choice, DateRange, MediaType, Query, Range, RatingFilter, Shape, Status};
+use pg_model::query::{
+    BorderFacet, Choice, DateRange, ListFacet, MediaType, Query, Range, RatingFilter, Shape, Status,
+};
 use pg_model::write::WriteKind;
 
 use crate::input::day_text;
@@ -86,56 +88,57 @@ pub fn choice_label(choice: &Choice) -> String {
     }
 }
 
-/// What `q` keeps, in one line: "all files" when it filters nothing.
+/// What `q` keeps, in one line: "all files" when it filters nothing. Every word is the bundle's: each chosen value is
+/// worded as its chip is (`choice_label`), with the case the bundle gives it; a range's ends are Fluent numbers; and
+/// the separators between values and between parts are entries too. Only the user's own text (an extension, a name
+/// needle) and the dates' digits come from elsewhere.
 pub fn describe(q: &Query) -> String {
-    let open = |v: Option<f64>| v.map(|v| v.to_string()).unwrap_or_default();
-    let range = |r: &Range, message: fn(String, String) -> Message| render(&message(open(r.min), open(r.max)));
-    let days = |r: &DateRange| format!("{} – {}", day_text(r.from), day_text(r.to));
+    let list = |values: Vec<String>| values.join(&render(&Message::FilterListSeparator));
+    let chosen = |facet: ListFacet| list(q.chosen(facet).iter().map(choice_label).collect());
+    let ranged = |r: &Range| r.min.is_some() || r.max.is_some();
+    let dated = |r: &DateRange| r.from.is_some() || r.to.is_some();
+    let days = |r: &DateRange| render(&Message::FilterDays { from: day_text(r.from), to: day_text(r.to) });
     let mut parts: Vec<String> = Vec::new();
     if !q.types.is_empty() {
-        parts.push(q.types.iter().map(|t| type_label(*t)).collect::<Vec<_>>().join(", "));
+        parts.push(chosen(ListFacet::Types));
     }
     if !q.exts.is_empty() {
-        parts.push(q.exts.join(", "));
+        parts.push(chosen(ListFacet::Exts));
     }
     if !q.ratings.is_empty() {
-        let ratings: Vec<String> = q
-            .ratings
-            .iter()
-            .map(|&r| match r {
-                RatingFilter::Unrated => render(&Message::FilterUnrated),
-                RatingFilter::Stars(stars) => rating_symbol(stars.get()).to_string(),
-            })
-            .collect();
-        parts.push(ratings.join(" "));
+        // A rating is its symbol, which no locale words, or the bundle's "unrated".
+        let ratings = q.ratings.iter().map(|&r| match r {
+            RatingFilter::Unrated => render(&Message::FilterUnrated),
+            RatingFilter::Stars(stars) => rating_symbol(stars.get()).to_string(),
+        });
+        parts.push(list(ratings.collect()));
     }
-    if q.size_mb.min.is_some() || q.size_mb.max.is_some() {
-        parts.push(range(&q.size_mb, |from, to| Message::FilterRangeMb { from, to }));
+    if ranged(&q.size_mb) {
+        parts.push(render(&Message::FilterRangeMb { from: q.size_mb.min, to: q.size_mb.max }));
     }
-    if q.megapixels.min.is_some() || q.megapixels.max.is_some() {
-        parts.push(range(&q.megapixels, |from, to| Message::FilterRangeMp { from, to }));
+    if ranged(&q.megapixels) {
+        parts.push(render(&Message::FilterRangeMp { from: q.megapixels.min, to: q.megapixels.max }));
     }
     if !q.shapes.is_empty() {
-        parts.push(q.shapes.iter().map(|o| o.key()).collect::<Vec<_>>().join(", "));
+        parts.push(chosen(ListFacet::Shapes));
     }
-    if q.taken.from.is_some() || q.taken.to.is_some() {
+    if dated(&q.taken) {
         parts.push(render(&Message::FilterTaken { days: days(&q.taken) }));
     }
-    if q.modified.from.is_some() || q.modified.to.is_some() {
+    if dated(&q.modified) {
         parts.push(render(&Message::FilterModified { days: days(&q.modified) }));
     }
-    if q.duration_s.min.is_some() || q.duration_s.max.is_some() {
-        parts.push(range(&q.duration_s, |from, to| Message::FilterRangeSeconds { from, to }));
+    if ranged(&q.duration_s) {
+        parts.push(render(&Message::FilterRangeSeconds { from: q.duration_s.min, to: q.duration_s.max }));
     }
     if let Some(d) = q.duplicates {
         parts.push(render(&if d { Message::FilterWithDuplicates } else { Message::FilterWithoutDuplicates }));
     }
     if !q.status.is_empty() {
-        parts.push(q.status.iter().map(|s| status_label(*s).to_lowercase()).collect::<Vec<_>>().join(", "));
+        parts.push(chosen(ListFacet::Status));
     }
     if !q.borders.is_empty() {
-        let values: Vec<String> = q.borders.iter().map(|b| border_label(*b).to_lowercase()).collect();
-        parts.push(render(&Message::FilterBorders { values: values.join(", ") }));
+        parts.push(render(&Message::FilterBorders { values: chosen(ListFacet::Borders) }));
     }
     if let Some(m) = q.border_marked {
         parts.push(render(&if m { Message::FilterBordersMarked } else { Message::FilterBordersNotMarked }));
@@ -143,7 +146,7 @@ pub fn describe(q: &Query) -> String {
     if !q.name.is_empty() {
         parts.push(render(&Message::FilterName { name: q.name.clone() }));
     }
-    if parts.is_empty() { render(&Message::FilterAll) } else { parts.join(" · ") }
+    if parts.is_empty() { render(&Message::FilterAll) } else { parts.join(&render(&Message::FilterPartSeparator)) }
 }
 
 /// The badge on a grid cell: a video's length, an animation's format; nothing for a still image.
@@ -308,12 +311,6 @@ pub fn write_incomplete(file: &str, temp: &str, error: &str) -> String {
     render(&Message::WriteIncomplete { file: file.to_string(), temp: temp.to_string(), error: error.to_string() })
 }
 
-/// A write refused before it touched anything: a folder of the file's path (`folder`) ends in a dot or a space, which
-/// Windows may drop from a path, so the write could reach another folder's file.
-pub fn write_folder_refused(file: &str, folder: &str) -> String {
-    render(&Message::WriteFolderRefused { file: file.to_string(), folder: folder.to_string() })
-}
-
 /// Queued writes dropped because their files left the library: `count` since the last note, the latest of `kind`.
 pub fn write_dropped(kind: WriteKind, count: usize) -> String {
     render(&Message::WriteDropped { kind, count })
@@ -378,12 +375,6 @@ pub fn cropped(saved: usize, folder: &str, skipped: usize, failed: usize, first_
         note += &render(&Message::CroppedFailed { failed: failed.to_string(), error: e.to_string() });
     }
     note
-}
-
-/// A crop's copy of `file` refused: its folder `folder` ends in a dot or a space, which Windows may drop from a path, so
-/// the copy could reach another folder's file.
-pub fn crop_folder_refused(file: &str, folder: &str) -> String {
-    render(&Message::CropFolderRefused { file: file.to_string(), folder: folder.to_string() })
 }
 
 /// The photo to search couldn't be read, or (a TIFF) decoded to be sent as a JPEG.
@@ -634,11 +625,6 @@ mod tests {
             "D:/a.jpg may be incomplete: copying its change into it failed (disk full). Its whole new content is in \
              D:/.a.jpg.rating.pg-write, and the copy is tried again"
         );
-        assert_eq!(
-            write_folder_refused(r"D:\Acme Inc.\a.jpg", "Acme Inc."),
-            "D:\\Acme Inc.\\a.jpg isn't written: its folder Acme Inc. ends in a dot or a space, which Windows may drop \
-             from a path, so the write could reach another folder. Rename the folder to write into it"
-        );
     }
 
     #[test]
@@ -646,15 +632,6 @@ mod tests {
         let c = Counts { done: 1500, total: 4000, failed: 2, rate: 100.0, eta_secs: 25.0 };
         assert_eq!(pass_status(Pass::Import, &c), "Importing 1,500 of 4,000 · 100/s · 25 s left · 2 failed");
         assert_eq!(pass_status(Pass::Idle, &c), "");
-    }
-
-    #[test]
-    fn a_crop_refused_for_its_folder_is_worded() {
-        assert_eq!(
-            crop_folder_refused(r"D:\Acme Inc.\a.jpg", "Acme Inc."),
-            "D:\\Acme Inc.\\a.jpg isn't copied: its folder Acme Inc. ends in a dot or a space, which Windows may drop \
-             from a path, so the copy could reach another folder. Rename the folder, then save again"
-        );
     }
 
     #[test]
@@ -760,6 +737,16 @@ mod tests {
     #[test]
     fn the_filter_line_and_the_borders_read_as_before() {
         assert_eq!(describe(&Query::default()), "all files");
+        // Each value as its chip words it (a shape too, which was its key), in the bundle's case; numbers and
+        // separators from the bundle.
+        let q = Query {
+            size_mb: Range { min: Some(1.5), max: None },
+            shapes: vec![Shape::Landscape],
+            status: vec![Status::Imported, Status::Failed],
+            borders: vec![BorderFacet::Black],
+            ..Query::default()
+        };
+        assert_eq!(describe(&q), "1.5– MB · Landscape · Imported, Unreadable · borders: Black");
         let classes = [Class::Black, Class::Black, Class::Color];
         let borders = FoundBorders { marked: true, cut: [1, 2, 3, 4], classes: &classes };
         assert_eq!(borders_info(Some(borders)), "   borders black, colored (L 1 T 2 R 3 B 4 px) — marked not a border");

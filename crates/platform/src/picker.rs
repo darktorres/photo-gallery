@@ -36,7 +36,10 @@ pub fn has_drive_or_share(_: &Path) -> bool {
 /// The folder the dialog opens in, from the one requested: given in its real form (`canonicalize`), which the shell takes
 /// where the path as given may not. It refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is
 /// only spaces; a folder under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path
-/// as given is kept. Without a folder that is one now, the user's own (USERPROFILE, else HOME).
+/// as given is kept. The shell also normalizes every path it parses, which drops a folder's trailing dot or space, so
+/// a folder with such a name (or under one) starts the dialog at its nearest ancestor without one: the shell would
+/// otherwise open a sibling (`a` for `a.`), or refuse the verbatim form. Without a folder that is one now, the user's
+/// own (USERPROFILE, else HOME).
 pub fn start_folder(requested: Option<PathBuf>) -> Option<PathBuf> {
     requested
         .map(|folder| match std::fs::canonicalize(&folder) {
@@ -44,7 +47,16 @@ pub fn start_folder(requested: Option<PathBuf>) -> Option<PathBuf> {
             _ => folder,
         })
         .filter(|folder| folder.is_dir())
+        .map(|folder| reachable_by_shell(&folder))
         .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
+}
+
+/// `folder`, or its nearest ancestor whose names all survive the shell's normalization
+/// (`native::check_folder_names`). Off Windows, `folder` itself.
+fn reachable_by_shell(folder: &Path) -> PathBuf {
+    // A name is checked as a folder of a path, so each ancestor is given one more part.
+    let reachable = |at: &&Path| crate::native::check_folder_names(&at.join("_")).is_ok();
+    folder.ancestors().find(reachable).unwrap_or(folder).to_path_buf()
 }
 
 /// The start folder in the shell's units, for `pick_with`.
@@ -71,7 +83,8 @@ pub fn pick_with(
         return Ok(None);
     }
     let item = dialog.chosen()?.ok_or_else(|| io::Error::other("the dialog chose no folder"))?;
-    Ok(Some(path_of_units(&item.file_system_path()?)))
+    // In the verbatim form, so std reaches the folder chosen: the plain form of `a.` names its sibling `a`.
+    Ok(Some(crate::native::verbatim(&path_of_units(&item.file_system_path()?))))
 }
 
 #[cfg(windows)]
@@ -291,7 +304,7 @@ mod tests {
         let mut fake = Fake { chose: true, chosen: surrogate_folder_units(), seen: RefCell::new(None) };
         let start = [0x43, 0x3A, 0x5C, 0xD800];
         let picked = pick_with(&mut fake, Some(&start), Some(0x1234)).unwrap();
-        assert_eq!(picked, Some(path_buf(b"C:\\a\xED\xA0\x80b")));
+        assert_eq!(picked, Some(crate::native::verbatim(&path_buf(b"C:\\a\xED\xA0\x80b"))));
         assert_eq!(fake.seen.into_inner(), Some((Some(start.to_vec()), Some(0x1234))), "start and owner, exact");
     }
 
@@ -304,8 +317,25 @@ mod tests {
 
     #[test]
     fn the_path_of_a_chosen_item_is_read_once_the_dialog_closed() {
-        let folder = Path::new("C:\\a");
+        // The folder in the verbatim form, which reaches it exactly.
+        let folder = Path::new(r"\\?\C:\a");
         let mut fake = Fake { chose: true, chosen: vec![0x43, 0x3A, 0x5C, 0x61], seen: RefCell::new(None) };
         assert_eq!(pick_with(&mut fake, None, None).unwrap(), Some(folder.to_path_buf()));
+    }
+
+    /// A folder whose name ends in a dot, or one under it, starts the dialog at the nearest folder without one: the
+    /// shell would take `a.` for its sibling `a`, or refuse its verbatim form.
+    #[test]
+    fn a_dotted_folder_starts_the_dialog_at_its_nearest_plain_ancestor() {
+        use crate::native::verbatim;
+        let dir = std::path::absolute(pg_testkit::test_folder("scratch_picker", "pg-start-dotted").unwrap()).unwrap();
+        let (dotted, sibling) = (dir.join("a."), dir.join("a"));
+        std::fs::create_dir_all(verbatim(&dotted.join("inner"))).unwrap();
+        std::fs::create_dir_all(&sibling).unwrap();
+        let real = std::fs::canonicalize(&dir).unwrap();
+        for asked in [verbatim(&dotted), verbatim(&dotted.join("inner"))] {
+            assert_eq!(super::start_folder(Some(asked.clone())), Some(real.clone()), "{}", asked.display());
+        }
+        assert_eq!(super::start_folder(Some(sibling.clone())), Some(std::fs::canonicalize(&sibling).unwrap()));
     }
 }

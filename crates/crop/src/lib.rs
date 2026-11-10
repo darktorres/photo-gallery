@@ -18,8 +18,8 @@ use pg_jobs::control::{Control, Phase};
 use pg_jobs::failure::{Cause, FileError};
 use pg_jobs::pipeline::{self, Options};
 use pg_platform::file::TempFile;
-use pg_platform::names::{path_buf, set_path};
-use pg_platform::native::{check_folder_names, verbatim};
+use pg_platform::names::{set_path, shown};
+use pg_platform::native::disk_path_of;
 use pg_writeback::{exiftool_program, stat};
 
 pub struct Stats {
@@ -30,36 +30,9 @@ pub struct Stats {
     /// The first failure, with its file. A panic on a file is a failure of that file (`Cause::Panicked`), which is
     /// not queued again.
     pub error: Option<FileError>,
-    /// The first refusal (a folder whose name Windows may change), typed so the app can word it. It is also a failure
-    /// in `error`.
-    pub refused: Option<CropError>,
     /// What a stop left (to queue again).
     pub remaining: Vec<FileId>,
 }
-
-/// A file a crop refused to copy, typed so the app words it (`pg_client::text`); its `Display` is the English, for the
-/// command line.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CropError {
-    /// A folder of the file's path, or of its copy's, ends in a dot or a space, which Windows may drop from the plain
-    /// path ExifTool is given: the copy could reach another folder's file. Refused before anything is read or written.
-    /// `file` is the source, as the user sees its path; `folder` is the folder's name as the disk holds it.
-    FolderRefused { file: String, folder: String },
-}
-
-impl std::fmt::Display for CropError {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CropError::FolderRefused { file, folder } => write!(
-                f,
-                "{file} isn't copied: its folder {folder} ends in a dot or a space, which Windows may drop from a path, \
-                 so the copy could reach another folder"
-            ),
-        }
-    }
-}
-
-impl std::error::Error for CropError {}
 
 struct Job {
     id: FileId,
@@ -98,7 +71,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
     // the copies into a different folder from the one named.
     let folder = real_folder(folder)?;
     let roots: Vec<RulePath> = catalog.roots()?.into_iter().map(|r| r.path).collect();
-    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, refused: None, remaining: Vec::new() };
+    let mut stats = Stats { saved: 0, skipped: 0, failed: 0, error: None, remaining: Vec::new() };
     let mut jobs = Vec::with_capacity(ids.len());
     let mut paths = PathArena::default();
     for &id in ids {
@@ -161,11 +134,13 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Written::Skipped => Ok(false),
                 Written::Saved { metadata: true } => Ok(true),
                 Written::Saved { metadata: false } => {
-                    let (source, out) = (path_buf(paths.get(job.source.path)), path_buf(paths.get(job.out)));
+                    // ExifTool reads and writes by the disk paths too, so a folder whose name ends in a dot is the
+                    // one it reaches.
+                    let (source, out) = (disk_path_of(paths.get(job.source.path)), disk_path_of(paths.get(job.out)));
                     if let Err(e) = tag_copy(&mut exiftool, &source, &out) {
                         // The copy was published before it had its tags: a failure leaves no untagged copy at the
                         // output, since the job reports a failure and the output is not what it asked for.
-                        let _ = std::fs::remove_file(verbatim(&out));
+                        let _ = std::fs::remove_file(&out);
                         return Err(e);
                     }
                     Ok(true)
@@ -177,9 +152,6 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    if let Some(refused) = e.downcast_ref::<CropError>() {
-                        stats.refused.get_or_insert_with(|| refused.clone());
-                    }
                     stats.error.get_or_insert_with(|| FileError {
                         path: String::from_utf8_lossy(paths.get(job.source.path)).into_owned(),
                         cause: Cause::of(&e),
@@ -213,29 +185,21 @@ enum Written {
 fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) -> Result<Written> {
     let s = &job.source;
     let (source, out) = (paths.get(s.path), paths.get(job.out));
-    let (source_path, out_path) = (path_buf(source), path_buf(out));
-    // A folder whose name Windows may change in the plain path (a trailing dot or space) is refused, for the original
-    // and for the copy: ExifTool, which takes plain paths, would reach another folder's file. std's own calls below
-    // take the verbatim form, which reaches the file exactly.
-    let file = source_path.display().to_string();
-    for path in [&source_path, &out_path] {
-        check_folder_names(path).map_err(|altered| CropError::FolderRefused {
-            file: file.clone(),
-            folder: altered.folder.to_string_lossy().into_owned(),
-        })?;
-    }
+    // Each by its disk path, which reaches it exactly: a folder whose name ends in a dot or a space is the one read and
+    // written, not a sibling without it.
+    let (source_path, out_path) = (disk_path_of(source), disk_path_of(out));
     if stat(&source_path)? != (s.size, s.mtime) || usize::try_from(s.size).ok() != Some(bytes.len()) {
         return Ok(Written::Skipped);
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
     if let Some(dir) = out_path.parent() {
-        std::fs::create_dir_all(verbatim(dir)).with_context(|| format!("creating {}", dir.display()))?;
+        std::fs::create_dir_all(dir).with_context(|| format!("creating {}", shown(dir)))?;
     }
     // Complete or not there: written beside it, then renamed over whatever an earlier save left.
     temp.clear();
     temp.extend_from_slice(out);
     temp.extend_from_slice(b".pg-crop");
-    let temp_path: PathBuf = path_buf(temp);
+    let temp_path: PathBuf = disk_path_of(temp);
     publish(&temp_path, &out_path, &cropped.bytes, &source_path)?;
     Ok(Written::Saved { metadata: cropped.metadata })
 }
@@ -251,20 +215,19 @@ fn tag_copy(exiftool: &mut Option<ExifTool>, source: &Path, out: &Path) -> Resul
 /// failed part way, a time not set, a rename refused): its guard is armed before the write and disarmed only once
 /// the rename is done. (Its name is fixed, `<out>.pg-crop`, so what a crash leaves is replaced by the next save.)
 fn publish(temp: &Path, out: &Path, bytes: &[u8], source: &Path) -> Result<()> {
-    // Each is reached exactly, by its verbatim form; the messages name them as the user does.
-    let (temp_disk, out_disk) = (verbatim(temp), verbatim(out));
-    let guard = TempFile::new(&temp_disk);
-    std::fs::write(&temp_disk, bytes).with_context(|| format!("writing {}", out.display()))?;
+    // Each is a disk path, reached exactly; the messages name them as the user does.
+    let guard = TempFile::new(temp);
+    std::fs::write(temp, bytes).with_context(|| format!("writing {}", shown(out)))?;
     keep_time(source, temp)?;
-    std::fs::rename(&temp_disk, &out_disk).with_context(|| format!("writing {}", out.display()))?;
+    std::fs::rename(temp, out).with_context(|| format!("writing {}", shown(out)))?;
     guard.persist();
     Ok(())
 }
 
-/// Give the copy at `copy` the original's modification time (both reached exactly, by their verbatim forms).
+/// Give the copy at `copy` the original's modification time (both disk paths).
 fn keep_time(original: &Path, copy: &Path) -> Result<()> {
-    let modified = std::fs::metadata(verbatim(original))?.modified()?;
-    std::fs::File::options().write(true).open(verbatim(copy))?.set_modified(modified)?;
+    let modified = std::fs::metadata(original)?.modified()?;
+    std::fs::File::options().write(true).open(copy)?.set_modified(modified)?;
     Ok(())
 }
 

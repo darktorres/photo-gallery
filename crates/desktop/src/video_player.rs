@@ -1,8 +1,7 @@
-//! The video player's device (cpp/video_source.h): a `QMediaPlayer` plays a file handed over by its exact name. Windows
-//! names it by its UTF-16 units; Unix opens it here and hands over the descriptor, so a name with an unpaired surrogate or
-//! a raw byte plays as well as any other (Qt's file URL can't carry those names). A bridge with no QObject, below the
-//! `VideoSource` bridge and its state, which both name its types. The one place the player's per-platform calls are
-//! chosen: their declarations differ by platform, so the choice is FFI glue (MODULARITY_PLAN ground rule 6).
+//! The video player's device (cpp/video_source.h): a `QMediaPlayer` plays a file handed over open, by its raw handle
+//! (`pg_platform::file::player_handle`). Qt is never given the file's name: on Windows its file engine normalizes every
+//! name, the verbatim one too, which drops a folder's trailing dot, and a name with an unpaired surrogate or a raw byte
+//! has no URL form. A bridge with no QObject, below the `VideoSource` bridge and its state, which both name its types.
 
 use core::pin::Pin;
 use std::ffi::OsStr;
@@ -10,17 +9,14 @@ use std::path::Path;
 
 use crate::video_player_bridge::ffi;
 
-/// Plays the file at `path`, in the form the system holds its name in (`pg_platform::file::play_target`): its units on
-/// Windows, its open descriptor on Unix. The player's declarations (`video_player_bridge`) are per platform, to take
-/// that form.
+/// Plays the file at `path` (the catalog's `disk_path` of it): opened here, and handed to the player open. A file that
+/// can't be opened is logged, and the player reports it as its error.
 pub(crate) fn play_path(player: Pin<&mut ffi::VideoPlayer>, path: &Path) {
-    let ext = ext_of(path);
-    match pg_platform::file::play_target(path) {
-        #[cfg(windows)]
-        pg_platform::file::PlayTarget::Units(units) => player.play_units(&units, ext),
-        #[cfg(unix)]
-        pg_platform::file::PlayTarget::Descriptor(fd) => player.play_fd(fd, ext),
-    }
+    let handle = pg_platform::file::player_handle(path).unwrap_or_else(|e| {
+        crate::log::note(&format!("video: can't open {}: {e}", path.display()));
+        -1
+    });
+    player.play_file(handle, ext_of(path));
 }
 
 /// The file's extension, when it is ASCII: the player's format probe reads it from the name it is given, so the name

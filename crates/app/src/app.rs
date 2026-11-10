@@ -163,14 +163,17 @@ mod tests {
     use crate::error::Error;
     use pg_model::ids::FileId;
 
-    // A catalog path becomes the exact system path, a name with no UTF-8 form included.
+    // A catalog path becomes the exact system path, a name with no UTF-8 form included, in the form that reaches the
+    // file exactly (the verbatim one on Windows).
     #[test]
     fn a_catalog_path_is_the_exact_system_path() {
         // A lone surrogate (WTF-8 on Windows; the same bytes are a non-UTF-8 name on Unix).
         let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
         let path = pg_platform::native::PATH_RULES.parse_bytes(text).unwrap();
         assert_eq!(pg_platform::native::PATH_RULES.join(&path), text);
-        assert_eq!(path_of(&path), pg_platform::names::path_buf(text));
+        assert_eq!(path_of(&path), pg_platform::native::disk_path_of(text));
+        let disk: &[u8] = if cfg!(windows) { b"\\\\?\\D:\\a\\x\xED\xA0\x80.jpg" } else { text };
+        assert_eq!(pg_platform::names::canonical_of(&path_of(&path)), disk);
     }
 
     // A file the catalog holds opens by its exact path, through the app's catalog connections: a folder and a name with
@@ -192,7 +195,7 @@ mod tests {
             })
             .unwrap();
         let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
-        assert_eq!(app.catalogs().file_path(FileId::new(1)).unwrap(), pg_platform::names::path_buf(text));
+        assert_eq!(app.catalogs().file_path(FileId::new(1)).unwrap(), pg_platform::native::disk_path_of(text));
         assert!(matches!(app.catalogs().file_path(FileId::new(2)), Err(Error::UnknownFile(2))));
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);

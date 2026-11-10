@@ -1021,7 +1021,7 @@ mod tests {
     #[test]
     fn a_cache_in_a_folder_without_a_utf8_name_is_opened_through_an_alias() {
         let dir = test_folder(SCRATCH, "odd-folder").unwrap();
-        let folder = dir.join(pg_platform::names::path_buf(b"cache\xED\xA0\x80"));
+        let folder = dir.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(b"cache\xED\xA0\x80")));
         std::fs::create_dir_all(&folder).unwrap();
         drop(open(&folder, 1 << 30));
         assert!(cache_path(&folder).exists(), "the cache file is in the folder");

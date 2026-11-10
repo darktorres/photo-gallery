@@ -8,13 +8,12 @@ use std::path::Path;
 use anyhow::{Context, Result, bail};
 use pg_model::rules::Path as RulePath;
 use pg_model::write::WriteKind;
-use pg_platform::native::verbatim;
 
-/// Size and mtime (FILETIME, as the scanner records it), of the file `path` names exactly (its verbatim form,
-/// `pg_platform::native::verbatim`).
+/// Size and mtime (FILETIME, as the scanner records it), of the file at `path` (its disk path,
+/// `pg_platform::native::disk_path`, which names it exactly).
 pub fn stat(path: impl AsRef<Path>) -> Result<(i64, i64)> {
     let path = path.as_ref();
-    let m = std::fs::metadata(verbatim(path)).with_context(|| format!("reading {}", path.display()))?;
+    let m = std::fs::metadata(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))?;
     Ok((i64::try_from(m.len())?, pg_platform::file::last_write_time(&m)))
 }
 
@@ -49,9 +48,9 @@ pub fn temp_of(path: &RulePath, kind: WriteKind) -> RulePath {
     temp
 }
 
-/// Flush a file's content to disk (the file `path` names exactly, by its verbatim form).
+/// Flush a file's content to disk (the file at its disk path).
 pub(crate) fn sync(path: &Path) -> std::io::Result<()> {
-    std::fs::OpenOptions::new().write(true).open(verbatim(path))?.sync_all()
+    std::fs::OpenOptions::new().write(true).open(path)?.sync_all()
 }
 
 /// Write `data` into the original, open for the copy, in place (same file, same NTFS identity), and flush it. The

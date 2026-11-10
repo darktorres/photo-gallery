@@ -107,17 +107,8 @@ pub enum Notice {
     RoundPanicked { message: String },
     /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
     CacheFull { height: u32, made: usize },
-    /// A crop job that ran to the end of its request. `refused` is the first refusal (`pg_crop::Stats::refused`).
-    Cropped {
-        folder: PathBuf,
-        saved: usize,
-        skipped: usize,
-        failed: usize,
-        first_error: Option<FileError>,
-        /// Boxed: a refusal carries two strings, and a notice travels in the `Err` of a round, which clippy's
-        /// `result_large_err` bounds.
-        refused: Option<Box<pg_crop::CropError>>,
-    },
+    /// A crop job that ran to the end of its request.
+    Cropped { folder: PathBuf, saved: usize, skipped: usize, failed: usize, first_error: Option<FileError> },
     /// A crop job that failed before it could save anything.
     CropFailed { error: String },
 }
@@ -126,17 +117,6 @@ impl Notice {
     /// Whether it is a problem (shown as a warning), not a job that went as asked.
     pub fn is_warning(&self) -> bool {
         !matches!(self, Notice::Cropped { failed: 0, .. })
-    }
-
-    /// The file and its folder of a crop's refusal, for the app to word (`pg_client::text`): the app names this crate's
-    /// notices, not the crop's error type.
-    pub fn crop_refusal(&self) -> Option<(&str, &str)> {
-        match self {
-            Notice::Cropped { refused: Some(refused), .. } => match &**refused {
-                pg_crop::CropError::FolderRefused { file, folder } => Some((file.as_str(), folder.as_str())),
-            },
-            _ => None,
-        }
     }
 }
 
@@ -389,7 +369,6 @@ impl Pass<Cx<'_>> for Crops {
                     skipped: s.skipped,
                     failed: s.failed,
                     first_error: s.error,
-                    refused: s.refused.map(Box::new),
                 }),
                 Err(e) => cx.inner.notify(Notice::CropFailed { error: format!("{e:#}") }),
             }
@@ -427,7 +406,9 @@ impl Pass<Cx<'_>> for Scans {
                         }
                     }
                     for temp in &s.temps {
-                        let disk = pg_platform::names::path_buf(&cx.catalog.rules().join(temp));
+                        // By its disk path: the plain one would miss a temp in a folder whose name ends in a dot, or
+                        // delete a sibling folder's file of the same name.
+                        let disk = pg_platform::native::disk_path(cx.catalog.rules(), temp);
                         match std::fs::remove_file(&disk) {
                             Ok(()) => {}
                             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
@@ -543,16 +524,9 @@ mod tests {
     #[test]
     fn only_a_crop_with_failures_is_a_warning() {
         let folder = PathBuf::from("out");
-        let done = Notice::Cropped {
-            folder: folder.clone(),
-            saved: 2,
-            skipped: 0,
-            failed: 0,
-            first_error: None,
-            refused: None,
-        };
+        let done = Notice::Cropped { folder: folder.clone(), saved: 2, skipped: 0, failed: 0, first_error: None };
         assert!(!done.is_warning());
-        let some_failed = Notice::Cropped { folder, saved: 1, skipped: 0, failed: 1, first_error: None, refused: None };
+        let some_failed = Notice::Cropped { folder, saved: 1, skipped: 0, failed: 1, first_error: None };
         assert!(some_failed.is_warning());
         assert!(Notice::RoundFailed { error: String::new() }.is_warning());
     }

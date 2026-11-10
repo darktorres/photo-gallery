@@ -7,18 +7,21 @@
 //! verbatim form (`\\?\`, `\\?\UNC\`), whatever its length. The verbatim form is the one rule: Win32 takes it as it
 //! is, where the plain form is normalized first, which drops a part's trailing dot, and the trailing dots and spaces
 //! of the path's end (NTFS holds such a name, as in a folder `Acme Inc.` copied from Linux or macOS, and the plain
-//! form then names `Acme Inc`, another folder or none). std's own calls are given [`verbatim`] paths by the code that
-//! needs the exact file (the writer, the crops). The volume calls (`GetVolumePathNameW`, `GetDriveTypeW`) take the
-//! plain form ([`NativePath::set_plain`]) as they always did.
+//! form then names `Acme Inc`, another folder or none). A stored path reaches std, FFmpeg and ExifTool through
+//! [`disk_path`], its verbatim form: the one way production code turns a catalog's path into one it opens
+//! (MODULARITY_REVIEW_4 R-2). The volume calls (`GetVolumePathNameW`, `GetDriveTypeW`) take the plain form
+//! ([`NativePath::set_plain`]) as they always did.
 //!
-//! ExifTool takes the plain path, as a `\\?\` path isn't one it reads (its own long-name support is a separate option,
-//! FINDINGS "I/O"), so it still normalizes the paths it is given: a write that hands it a path with a folder Win32
-//! would change is refused instead ([`check_folder_names`]). FFmpeg reads its files through std (ffi.rs).
+//! ExifTool reads and writes a verbatim path, through its stay-open argument file and its command line alike (checked
+//! with ExifTool 13.60, in a folder `Fotos ä.` beside `Fotos ä`). Two readers normalize every name they are given, the
+//! verbatim one too: Qt's file engine (`GetFullPathNameW`, in `QFSFileEnginePrivate::longFileName`), so the video
+//! player is given the file open (`file::player_handle`); and the shell's parse, so a folder dialog starts at the
+//! nearest folder whose names survive it ([`check_folder_names`], `picker::start_folder`).
 
 use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 
-use pg_model::rules::PathRules;
+use pg_model::rules::{Path as RulePath, PathRules};
 
 /// The path rules of this platform, the ones its catalogs are made under: [`PathRules::Windows`] on Windows,
 /// [`PathRules::Posix`] elsewhere. The model holds both rule sets as data; which one this machine's paths follow is
@@ -98,11 +101,24 @@ pub fn verbatim(path: &Path) -> PathBuf {
     }
 }
 
+/// The path std, FFmpeg and ExifTool open the stored `path` by: its verbatim form ([`verbatim`]), so a folder whose
+/// name ends in a dot or a space is the folder it names, not a sibling without it. The one way production code turns a
+/// catalog's path into a path it opens; a path the user is shown is `PathRules::display`.
+pub fn disk_path(rules: PathRules, path: &RulePath) -> PathBuf {
+    disk_path_of(&rules.join(path))
+}
+
+/// [`disk_path`] of a whole path's canonical bytes, as a work list or a path arena holds them (`PathRules::join`,
+/// `WorkList::path`).
+pub fn disk_path_of(canonical: &[u8]) -> PathBuf {
+    verbatim(&crate::names::path_buf(canonical))
+}
+
 /// A folder of a path whose name Win32 may change in the plain form of the path: it ends in a dot or a space, which
 /// the normalization drops (a dot always, a space at the path's end), so the plain path names another folder (or
-/// none). A program that is given plain paths (ExifTool) would read or write there, so a write to such a path is
-/// refused with this. A space is refused wherever it is, as a path that ends at the folder (a folder's own calls) has
-/// it dropped too.
+/// none). The shell normalizes every path it parses, the verbatim one too (it refuses that form), so a folder dialog
+/// can't start in such a folder (`picker::start_folder`). A space counts wherever it is, as a path that ends at the
+/// folder has it dropped too.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AlteredFolder {
     /// The path refused.
@@ -115,8 +131,7 @@ impl std::fmt::Display for AlteredFolder {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(
             f,
-            "{}: its folder {:?} ends in a dot or a space, which Windows may drop from a path, so the write could \
-             reach another folder",
+            "{}: its folder {:?} ends in a dot or a space, which Windows drops from a path it normalizes",
             self.path.display(),
             self.folder.to_string_lossy()
         )
@@ -337,6 +352,11 @@ mod tests {
         std::fs::write(sibling.join("a.jpg"), b"sibling").unwrap();
         assert_eq!(std::fs::read(verbatim(&dotted.join("a.jpg"))).unwrap(), b"dotted");
         assert_eq!(std::fs::read(dotted.join("a.jpg")).unwrap(), b"sibling", "the plain form drops the dot");
+        // A stored path's bytes reach the dotted file through `disk_path`.
+        let stored = crate::names::canonical_of(&dotted.join("a.jpg"));
+        assert_eq!(std::fs::read(disk_path_of(&stored)).unwrap(), b"dotted");
+        let rule = crate::names::rule_path_of(&dotted.join("a.jpg")).unwrap();
+        assert_eq!(std::fs::read(disk_path(PATH_RULES, &rule)).unwrap(), b"dotted");
         let mut native = NativePath::default();
         set_os_str(&mut native, dotted.join("a.jpg").as_os_str());
         let file = crate::file::open_read(&native).unwrap();

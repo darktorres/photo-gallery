@@ -9,6 +9,8 @@ workspace = true
 
 # The shape of a SQLite file: its objects as SQLite stores them (`sqlite_schema`) and the rows creation seeds, compared
 # with the shape a build creates. The catalog and the thumbnail cache use it to tell a file of this build's layout from
-# one of another, by what the file defines rather than by its names or a version number.
+# one of another, by what the file defines rather than by its names or a version number. Also the file's lock, its holds
+# and its move aside, whose renames never replace a file (`pg-platform`).
 [dependencies]
+pg-platform = { path = "../platform" }
 rusqlite.workspace = true

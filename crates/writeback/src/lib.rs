@@ -40,8 +40,8 @@ use pg_model::media::Kind;
 use pg_model::rules::Path as RulePath;
 
 use pg_model::write::WriteKind;
-use pg_platform::names::{path_buf, set_path};
-use pg_platform::native::{AlteredFolder, NativePath, check_folder_names, verbatim};
+use pg_platform::names::set_path;
+use pg_platform::native::{NativePath, disk_path};
 use pg_thumbcache::ThumbCache;
 
 use pg_jobs::events::Change;
@@ -84,11 +84,6 @@ pub enum WriteError {
     /// sees its path) may be incomplete, and the whole new content is in `temp`. Both are kept; the copy is tried
     /// again after the next change to the file, and at the next start.
     CopyIncomplete { file: String, temp: String, cause: Cause },
-    /// The write was refused before anything was read: a folder of the file's path (`folder`) ends in a dot or a
-    /// space, which Windows may drop from the plain path ExifTool is given, so the write could reach another folder's
-    /// file (`pg_platform::native::check_folder_names`). Counted as a failed attempt; renaming the folder lets the
-    /// next change through.
-    FolderRefused { file: String, folder: String },
 }
 
 /// The English words, for the command line and the queue's `error` column; the app words it through `pg_client::text`.
@@ -101,13 +96,17 @@ impl std::fmt::Display for WriteError {
                 "{file} may be incomplete: copying its change into it failed ({cause}); the whole new content is in \
                  {temp}"
             ),
-            WriteError::FolderRefused { file, folder } => write!(
-                f,
-                "{file} isn't written: its folder {folder} ends in a dot or a space, which Windows may drop from a \
-                 path, so the write could reach another folder"
-            ),
         }
     }
+}
+
+/// The original a write changes, in the three forms its steps take: its disk path (std's calls), its path for the
+/// system's open that denies other writers, and its path as the messages show it.
+#[derive(Clone, Copy)]
+struct Original<'a> {
+    path: &'a Path,
+    native: &'a NativePath,
+    shown: &'a str,
 }
 
 /// The context of a failure once the copy into the original may have started (its temp recorded): what the drain
@@ -356,14 +355,10 @@ impl Inner {
                     let at_cap = !offline && job.attempts.saturating_add(1) >= MAX_ATTEMPTS;
                     // At the cap, a copy that may have started says so: the original may be incomplete, and its temp
                     // (kept, with its record) holds the whole new content.
-                    let error = match (copy_temp(catalog, &job, &e), e.downcast_ref::<AlteredFolder>()) {
-                        (Some(temp), _) if at_cap => {
+                    let error = match copy_temp(catalog, &job, &e) {
+                        Some(temp) if at_cap => {
                             WriteError::CopyIncomplete { file: shown_file(catalog, &job), temp, cause }
                         }
-                        (_, Some(altered)) => WriteError::FolderRefused {
-                            file: shown_file(catalog, &job),
-                            folder: altered.folder.to_string_lossy().into_owned(),
-                        },
                         _ => WriteError::Failed(cause),
                     };
                     writes::failed(catalog, &job, &error.to_string(), offline)?;
@@ -384,7 +379,7 @@ impl Inner {
     /// taken as there, so the failure counts as an attempt and the job is retried, instead of waiting as offline.
     fn folder_present(&self, catalog: &Catalog, file_id: FileId) -> bool {
         match catalog.file_folder(file_id) {
-            Ok(folder) => folder.is_some_and(|p| verbatim(&path_buf(&catalog.rules().join(&p))).is_dir()),
+            Ok(folder) => folder.is_some_and(|p| disk_path(catalog.rules(), &p).is_dir()),
             Err(_) => true,
         }
     }
@@ -403,19 +398,19 @@ impl Inner {
             }
             return Ok(());
         }
-        // The file on disk (its plain path, which ExifTool and the messages are given; std's own calls take its
-        // `verbatim` form, which reaches the file exactly), its path for the system's open, and its path as the
-        // messages show it.
+        // The file's disk path (which std and ExifTool reach exactly, a folder whose name ends in a dot or a space
+        // included), its path for the system's open, and its path as the messages show it.
         let rules = catalog.rules();
-        let path = path_buf(&rules.join(&path_rule));
+        let path = disk_path(rules, &path_rule);
         let mut native = NativePath::default();
         set_path(&mut native, &rules.join(&path_rule));
         let shown = rules.display(&path_rule);
 
-        // A copy that may have started finishes: it gives no path to ExifTool, and the verbatim form reaches the file.
+        // A copy that may have started finishes.
         if let Some((temp, temp_value)) = &job.temp {
+            let original = Original { path: &path, native: &native, shown: &shown };
             return self
-                .finish_copy(catalog, job, temp, *temp_value, &path, &native)
+                .finish_copy(catalog, job, (temp, *temp_value), &original)
                 .with_context(|| CopyStarted { temp: rules.display(temp) });
         }
 
@@ -424,12 +419,9 @@ impl Inner {
         if job.kind == WriteKind::Rating && known.is_some_and(|f| !pg_model::format::can_hold_rating(f)) {
             return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
         }
-        // A folder whose name Windows may change in the plain path (a trailing dot or space): ExifTool, which takes
-        // the plain path, would reach another folder's file, so nothing is read or written.
-        check_folder_names(&path)?;
         // Taken before the read: a save by another program after it shows when the original is opened for the copy.
         let before = stat(&path)?;
-        let bytes = std::fs::read(verbatim(&path)).with_context(|| format!("reading {}", path.display()))?;
+        let bytes = std::fs::read(&path).with_context(|| format!("reading {shown}"))?;
         let format = match known.or_else(|| Format::sniff(&bytes)) {
             // Not a format the app reads (an analysis that failed, a file that isn't what its name says), or one that
             // can't hold a rating: a rating stays in the catalog, and the write is done. A turn can't be made.
@@ -441,11 +433,11 @@ impl Inner {
             None => bail!("{shown}: unknown format"),
         };
         let temp_rule = temp_of(&path_rule, job.kind);
-        let temp = path_buf(&rules.join(&temp_rule));
-        let temp_disk = verbatim(&temp);
+        let temp = disk_path(rules, &temp_rule);
+        let shown_temp = rules.display(&temp_rule);
         // Not recorded (the job has no temp), so not a copy that may have started: what is there is a leftover (a
         // crash before it was recorded, or a removal that failed after a write), and goes.
-        let _ = std::fs::remove_file(&temp_disk);
+        let _ = std::fs::remove_file(&temp);
 
         // Step 1: the new content, complete, in the temp.
         let (data, pixels_changed) = match job.kind {
@@ -453,16 +445,16 @@ impl Inner {
                 let rating = u8::try_from(job.value).with_context(|| format!("{shown}: no rating is {}", job.value))?;
                 let tool = ExifTool::running(exiftool, &exiftool_program())?;
                 tool.write_rating(&path, &temp, rating)?;
-                let written = std::fs::read(&temp_disk).with_context(|| format!("reading {}", temp.display()))?;
+                let written = std::fs::read(&temp).with_context(|| format!("reading {shown_temp}"))?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
-                    let _ = std::fs::remove_file(&temp_disk);
+                    let _ = std::fs::remove_file(&temp);
                     bail!("{shown}: the rating didn't read back after writing it");
                 }
                 (written, false)
             }
             WriteKind::Turns => {
                 let write_temp = |new: Vec<u8>| -> Result<Vec<u8>> {
-                    std::fs::write(&temp_disk, &new).with_context(|| format!("writing {}", temp.display()))?;
+                    std::fs::write(&temp, &new).with_context(|| format!("writing {shown_temp}"))?;
                     Ok(new)
                 };
                 let new = match rotate(&bytes, format, job_turns(job))? {
@@ -474,14 +466,14 @@ impl Inner {
                             // the catalog.
                             let tool = ExifTool::running(exiftool, &exiftool_program())?;
                             let written = match tool.write_orientation(&path, &temp, o.get()) {
-                                Ok(()) => Some(std::fs::read(&temp_disk)?)
+                                Ok(()) => Some(std::fs::read(&temp)?)
                                     .filter(|written| pg_metadata::orientation(written, format) == o),
                                 Err(_) => None,
                             };
                             match written {
                                 Some(written) => written,
                                 None => {
-                                    let _ = std::fs::remove_file(&temp_disk);
+                                    let _ = std::fs::remove_file(&temp);
                                     return self.keep_turn_in_catalog(catalog, job);
                                 }
                             }
@@ -498,10 +490,10 @@ impl Inner {
         // failure leaves the original untouched: the temp goes, and the next attempt starts from the file.
         #[cfg(any(test, feature = "fault"))]
         fault::before_copy(self.fault, &self.fault_fired, job.file_id, &path)?;
-        let file = match Self::open_for_copy(&path, &native, &temp, &shown, before) {
+        let file = match Self::open_for_copy(&native, &temp, &shown, &shown_temp, before) {
             Ok(file) => file,
             Err(e) => {
-                let _ = std::fs::remove_file(&temp_disk);
+                let _ = std::fs::remove_file(&temp);
                 return Err(e);
             }
         };
@@ -513,13 +505,13 @@ impl Inner {
             Ok(recorded) => recorded,
             Err(e) => {
                 drop(file);
-                let _ = std::fs::remove_file(&temp_disk);
+                let _ = std::fs::remove_file(&temp);
                 return Err(e.into());
             }
         };
         if !recorded {
             drop(file);
-            let _ = std::fs::remove_file(&temp_disk);
+            let _ = std::fs::remove_file(&temp);
             return Ok(());
         }
         // From here until `done` records the write, readers know the file may be part-written
@@ -531,7 +523,7 @@ impl Inner {
             .with_context(|| CopyStarted { temp: rules.display(&temp_rule) })?;
         // The write is recorded: the temp is a leftover now, and one that can't be removed is cleared by the next
         // write of the file.
-        let _ = std::fs::remove_file(&temp_disk);
+        let _ = std::fs::remove_file(&temp);
         if job.kind == WriteKind::Rating {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
@@ -549,11 +541,16 @@ impl Inner {
     /// The original opened for the copy, denying other writers (`pg_platform::file::open_for_copy`), once it is
     /// checked to be as it was read (`before`) and the temp is synced to disk: the new content must be durable before
     /// the original is overwritten from it.
-    fn open_for_copy(path: &Path, native: &NativePath, temp: &Path, shown: &str, before: (i64, i64)) -> Result<File> {
-        let file = pg_platform::file::open_for_copy(native)
-            .with_context(|| format!("opening {} for writing", path.display()))?;
+    fn open_for_copy(
+        native: &NativePath,
+        temp: &Path,
+        shown: &str,
+        shown_temp: &str,
+        before: (i64, i64),
+    ) -> Result<File> {
+        let file = pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
         unchanged(shown, before, stat_of(&file)?)?;
-        sync(temp).with_context(|| format!("writing {}", temp.display()))?;
+        sync(temp).with_context(|| format!("writing {shown_temp}"))?;
         Ok(file)
     }
 
@@ -578,20 +575,19 @@ impl Inner {
         &self,
         catalog: &Catalog,
         job: &Job,
-        temp: &RulePath,
-        temp_value: i64,
-        path: &Path,
-        native: &NativePath,
+        (temp, temp_value): (&RulePath, i64),
+        original: &Original<'_>,
     ) -> Result<()> {
         #[cfg(any(test, feature = "fault"))]
         fault::in_copy(self.fault, job.file_id)?;
+        let Original { path, native, shown } = *original;
         let rules = catalog.rules();
         let written = Job { value: temp_value, ..job.clone() };
-        let temp_path = verbatim(&path_buf(&rules.join(temp)));
+        let temp_path = disk_path(rules, temp);
         match std::fs::read(&temp_path) {
             Ok(data) => {
-                let file = pg_platform::file::open_for_copy(native)
-                    .with_context(|| format!("opening {} for writing", path.display()))?;
+                let file =
+                    pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
                 write_into(file, &data)?;
             }
             // A recorded temp is deleted only once the write is recorded, so a missing one was deleted after its copy
@@ -675,19 +671,6 @@ mod tests {
         assert!(text.starts_with(r"D:\p\a.jpg may be incomplete: copying its change into it failed"), "{text}");
         assert!(text.contains("(disk full)"), "{text}");
         assert!(text.ends_with(r"the whole new content is in D:\p\.a.jpg.rating.pg-write"), "{text}");
-    }
-
-    #[test]
-    fn a_refused_folder_names_the_file_and_the_folder() {
-        let error = WriteError::FolderRefused { file: r"D:\Acme Inc.\a.jpg".into(), folder: "Acme Inc.".into() };
-        let text = error.to_string();
-        assert!(text.starts_with(r"D:\Acme Inc.\a.jpg isn't written: its folder Acme Inc. ends in a dot"), "{text}");
-        // The refusal the job returns is known from its type, through the anyhow error.
-        let refused = anyhow::Error::new(pg_platform::native::AlteredFolder {
-            path: PathBuf::from(r"D:\Acme Inc.\a.jpg"),
-            folder: "Acme Inc.".into(),
-        });
-        assert!(refused.downcast_ref::<AlteredFolder>().is_some());
     }
 
     #[test]

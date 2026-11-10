@@ -15,7 +15,8 @@ use std::thread;
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
-use pg_platform::names::{path_buf, rule_path_of};
+use pg_platform::names::rule_path_of;
+use pg_platform::native::{PATH_RULES, disk_path};
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
 
 use crate::prefs::PrefStore;
@@ -459,9 +460,10 @@ impl Search {
     }
 
     /// Where the save dialog opens: the folder saved into last (`yandex_folder`) while it exists, or else the photo's
-    /// folder. None when there is neither.
+    /// folder. None when there is neither. In the form that reaches the folder exactly (`disk_path`); the dialog starts
+    /// at the nearest folder the shell can name (`pg_platform::picker::start_folder`).
     pub fn start_folder(&self, prefs: &PrefStore) -> Option<PathBuf> {
-        let last = prefs.get().yandex_folder.map(|folder| path_buf(&pg_platform::native::PATH_RULES.join(&folder)));
+        let last = prefs.get().yandex_folder.map(|folder| disk_path(PATH_RULES, &folder));
         if let Some(last) = last.filter(|last| last.is_dir()) {
             return Some(last);
         }

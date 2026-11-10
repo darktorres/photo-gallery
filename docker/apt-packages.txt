@@ -18,6 +18,9 @@ libswscale-dev
 libswresample-dev
 libavfilter-dev
 libavdevice-dev
+# pipewire ships client.conf, which Qt's PipeWire audio needs at startup. libavdevice-dev brings PipeWire's libraries
+# without it, and then QML's audio output crashes (Qt 6.12's QAudioContextManager, on a null PipeWire context).
+pipewire
 libimage-exiftool-perl
 libgl-dev
 libegl-dev

@@ -1,6 +1,114 @@
-# Modularity plan, Review 4a (2026-11-10, at `0ed0fbe`): the full read
+# Modularity plan, Review 4
 
-This file holds the second half of Review 4 of [MODULARITY_PLAN.md](MODULARITY_PLAN.md): the full read, its steps M-33 to M-48, its additions to the steps there (M-12a, M-13, M-21, M-22, M-25, M-26, M-30 to M-32), and the order of the whole Review 4 series. The ground rules and gates are the plan's.
+Review 4 of [MODULARITY_PLAN.md](MODULARITY_PLAN.md): the review of responsibilities (steps M-21 to M-32) and its full read, Review 4a (M-33 to M-48, and additions to the earlier steps). The ground rules and gates are the plan's.
+
+## Review 4 (2026-11-10, at `3b94a5b`): responsibilities
+
+The enforced checks all pass at `3b94a5b`: no module cycle on either target, the crate layers as `tools/crate-layers.txt` lists them, no cycle with dev edges, the re-export and platform rules, `unreachable_pub`. They check the shape of the graph, not where a piece of work lives. This review asked that, of every crate.
+
+How it was done. Five whole-tree passes, by script, over every `.rs` file under `crates/`. The scripts are in the session scratchpad (`review/`) and go to `tools/modgraph/` in M-31.
+
+1. **Public surface** (`api_surface.py`). Every `pub` item of every library crate, from `cargo modules structure` (1,157 items in 31 crates), with where it is named: other crates' production code, tests, or nowhere. A word match on the name, so an item reached only by type inference (a service returned by an accessor) or through `pg_app::reexport` looks unused. Every "no use" was checked by a grep of the whole tree, QML and C++ included.
+2. **Dependency edges** (`edges.py`). For each internal normal edge, the names the dependent's production code takes through it, and in how many files. Edges carrying one or two names are where code tends to sit in the wrong crate.
+3. **Duplicates** (`dupes.py`). Every window of 6 and of 4 normalized code lines, hashed across all files, tests included; production groups that span crates were read.
+4. **Sizes** (`sizes.py`). Production lines per file and functions over 80 lines. Nothing new to split: the files over 350 lines are declarations, tables or tests (M-12a), and the long functions are the passes' and the CLI's orchestration (read in M-21).
+5. **Process-wide state.** Every `static` with interior mutability, `OnceLock`, `LazyLock` and `thread_local!` in production code.
+
+Read besides: every crate root; every function of `pg-desktop` whose signature names no Qt type (the logic in the Qt crate); and everything the passes flagged. The pure crates (`model`, `client`, `container`, `query`, `dedup`) were checked for file, thread, environment and clock calls: none. Test-support features are enabled only from `[dev-dependencies]`.
+
+That first pass did not read the rest of the ~57,000 lines line by line. A second pass did (**Review 4a**, below): every production file of every crate, bottom-up. Its findings are the additions to M-21 to M-32 and the steps M-33 to M-48.
+
+The findings are the steps below, most important first. M-21 to M-27 are modularity defects; M-21's has already produced a bug. M-28 to M-32 are cleanup.
+
+### M-21: one scan follow-up, one way to add a folder
+
+- **Found.** The command line and the library runner each do what a scan's result asks for. `cli/src/lib.rs` (`run_command`, the `Scan` arm) and `library/src/runner.rs` (`Scans::run`) each forget the replaced files' thumbnails and delete their queued writes' temp files ("decision 7"), and each turns the scan's counts into notes. The copies have drifted. The runner reports `ScanStats::refused_mount_list` (`Notice::MountRefused`: the mounts under a root that the scan refused, such as FAT and exFAT on Linux since `6e20cad`); `gallery scan` never prints it, so a refused mount is skipped without a word. The CLI's scan notes are its own English (`"skipped as duplicates (another path to the same file)"`, ...), while the app's are `scan-note` in `client/locales/en/text.ftl`.
+- **Also twice: adding a folder.** `normalize_path`, then `check_folder`, then `Catalog::add_root`, in the CLI's `Scan` arm and in `app/src/library.rs` (`LibraryService::add_folder`).
+- **Fix.** `pg-library` gets the one copy of each, used by both front ends:
+  - `add_folder(catalog, path) -> Result<Added, AddError>`: normalized, checked, added; `AddError` is typed (`Refused`, `NotAPath`, the catalog's error).
+  - `after_scan(catalog, thumbs, &ScanStats) -> Vec<Notice>`: the forgets and deletions, and every note the scan's result carries, as the runner's `Notice`s (its failures, `UnreadableFolders`, `MountRefused`, the `ScanNote` counts). The runner's `Scans::run` and the CLI call it; the CLI prints each `Notice` with the same `pg_client::text` words the window shows (`text::scan_note`, ...), so its hard-coded English goes.
+  - The CLI's scan opens the thumbnail cache only when `replaced_ids` is not empty, as now.
+- **Test.** A `pg-cli` test over a `ScanStats` with a refused mount: `gallery scan` prints it. The runner's existing scan tests keep passing.
+- Gate: Windows `just test`, Linux checks.
+
+### M-22: the Yandex search is an `App` service
+
+- **Found.** Every other service hangs off `App` (M-4); the search does not. The desktop's QObject owns the `pg_app::yandex::Search` (`desktop/src/yandex/state.rs`, `search: Search`), and the search publishes its images through a process-wide `static CURRENT: RwLock<Option<Arc<Images>>>` (`app/src/yandex/images.rs`, `set_current`, `current`). The image provider reaches them through the free function `pg_app::yandex::image(id)` (`desktop/src/providers.rs`). So the panel and the provider are linked by a global, not a reference, and `App::stop`/`shutdown` do not stop a search or a save in progress.
+- **Fix.** `App` holds a `Yandex` service (`app.yandex()`): the `Search` and the images of the search on screen, as fields. It is built with the `Factory` from `Config` (the command line's `--yandex-fixture` goes into `Config`, not `desktop/src/command_line.rs::yandex_source`). `CURRENT`, `set_current`, `current` and the free `image` go; the provider calls `app::get().yandex().image(id)`, and the QObject holds no `Search`. `App::stop` stops the search's threads in its order (before the catalogs).
+- **Also:** `desktop/src/library.rs`'s `static LIBRARY: OnceLock<&'static pg_app::Library>` caches what `app::get().library()` already holds (its running library); it is read from there instead.
+- Gate: `just test`, `just shots` (the `yandex` scenarios), Linux checks.
+
+### M-23: the viewer's images are `pg-render`'s
+
+- **Found.** `pg-render` is "what a file shows as" (`render::display`), but the viewer's image pipeline is in `app/src/images.rs` (`Images::full_image`, `decode`, `big_enough`, `placeholder`): the decode size for each `View` (`DECODE_MARGIN`), reusing the last decode when it is big enough, the fit and region resizes, the ThumbHash placeholder and the video poster. That is why `pg-app` depends on `pg-codec` (`MinSize`, `orient_pixels`, `Rgb`, `Resizer`), `pg-video` (`frame`) and `thumbhash` itself.
+- **Fix.** `render::display` gets the pipeline over bytes and frames: `min_size(view)`, `big_enough`, `fit(view, &Rgb)` (the fit and the region), `placeholder(hash, turns)`, and the video poster through `pg_video` (already a dependency of `pg-render`). `Images` keeps what is the app's: the catalog lookup, the consistency check (`consistent`), the shared last decode and the makers. `pg-app` loses `pg-codec`, `pg-video` and `thumbhash` if nothing else of them is left (`Upload::opaque` takes an `Rgb`: the upload type moves with it, or takes width, height and bytes). The layer file changes with it.
+- Gate: `just test`, `just shots`, perf (the viewer is not benched; the gate is that nothing moves).
+
+### M-24: a pass does not reach a sibling pass for a helper
+
+- **Found.** `pg-crop` depends on `pg-scan` and `pg-writeback` only for helpers:
+  - `pg_scan::normalize_path`: the real path, then `rule_path_of`, both `pg_platform::names`. `app`, `cli` and the `library` tests use it too.
+  - `pg_writeback::exiftool_program`: `PG_EXIFTOOL`, else `exiftool`; ExifTool's concern.
+  - `pg_writeback::stat`: a file's size and last-write time; `pg_platform::file`'s concern (`last_write_time` is there).
+- **Fix.** `normalize_path` moves to `pg_platform::names` (its errors become a typed one or stay `io::Error` with the path), `exiftool_program` to `pg-exiftool`, `stat` to `pg_platform::file`. Callers are changed, with no re-export (ground rule 2). `pg-crop` loses `pg-scan` and `pg-writeback`; `pg-app` keeps `pg-scan` only if `check_folder` is still its (after M-21 it is `pg-library`'s). The layer file changes in the same commit.
+- Gate: `just lint` (the layer check), `just test`, Linux checks.
+
+### M-25: an event's words are written once
+
+- **Found.** Both front ends format the lower layers' events, for the log. The thumbnail cache's `Event` (every variant, with `started_over_reason`) is in `cli/src/report.rs` (`thumb_event_text`) and in `desktop/src/app.rs` (`note_text`, `Note::Thumbs`), word for word. "catalog rebuilt: …" is in `cli/src/report.rs` (`report_rebuilt`) and `desktop/src/app.rs`. Beneath them `pg-catalog` writes English of its own: `Rebuilt::carried_note` (`catalog/src/types.rs`).
+- **Fix.** These are log lines, like an error's `Display`, so each type says itself: `impl Display for pg_thumbcache::Event` and `for pg_catalog::Rebuilt` (taking in `carried_note`), and the front ends print `{event}`. The UI words for a start-over (`text::thumb_cache_started_over`, `CacheStartOver`) stay the client's, and `started_over_reason` is written once, where the UI shows it. If the log is to be localized later, the lines move to the Fluent bundle together instead.
+- Gate: `just test`.
+
+### M-26: the Qt crate holds no logic that needs no Qt
+
+- **Found.**
+  - The filter bar's facet choices: which choices a facet offers, in the bar's order, with which counts (`desktop/src/facet_choices.rs`: `Counts`, `choices`, `rows`), and the counts' assembly (`desktop/src/filters.rs`: `publish_counts`, which adds the chosen extensions the folder lacks). The two Qt modules pass the counts through a thread-local (`facet_choices::COUNTS`, `set_counts`).
+  - The Yandex panel's result list: its two groups, the picks that follow their results, taking the dead results off (`desktop/src/yandex.rs`: `without_dead`, `drop_dead`, `show`'s bookkeeping).
+- **Fix.** `pg_client::facets` gets `Counts` and `choices` (and the extension merge), tested without Qt; the counts live in the client's controller state with the query (`desktop/src/controller.rs`'s `CORE`), so `COUNTS` goes and `FacetChoices::refresh` reads both from one place. The result list becomes a `pg_client` type, generic over its item (`Results<T>`: groups, picks, `drop(ids)`), which the panel's QObject holds; `Hit` stays `pg_app`'s. What remains in the desktop is roles, Qt ints and signals.
+- **Not moved.** The outcome-to-words functions (`desktop/src/yandex.rs`: `status_text`, `explain`, ...; `desktop/src/library.rs`: `notice_text`, `write_error_text`) match on `pg_app` and `pg_library` types, which `pg-client` may not name (it depends on `pg-model` alone). They stay the desktop's; M-21 makes the command line use the same `text` functions for the scan.
+- Gate: `just test`, `just qmltest`, `just shots`.
+
+### M-27: a refused folder is a type, not a downcast
+
+- **Found.** `pg_scan::scan` returns `anyhow::Result`, and its callers tell a refused folder from a failure by `downcast_ref::<pg_platform::dir::Refused>()`: `cli/src/lib.rs` (the `Scan` arm) and `library/src/runner.rs` (`Scans::run`). The contract is a doc comment (`scan/src/lib.rs`, "an error that is a `Refused`"); nothing checks it.
+- **Fix.** `scan` returns `Result<ScanStats, ScanError>`, `ScanError::{Refused(Refused), Failed(anyhow::Error)}`, and both callers match. The same for the other typed outcomes that are downcast across crates today; the survey found only this one (the rest are within a crate, or `jobs`' own `Panicked`).
+- Gate: `just test`, Linux checks.
+
+### M-28: the catalog's API has one shape per concern
+
+- **Found.** `catalog/src/core.rs` has 33 methods on `Catalog`: its lifecycle (`open`, `prepare`, `close`, `tx`, `commit`, the writers), and also the roots (`roots`, `root_id`, `add_root`, `remove_root`), the import and borders queues (`pending_import`, `mark_pending`, `pending_borders`, `pdq_hashes`), lookups (`file_by_path`, `files_under`, `file_path`, `file_folder`), crops (`crop_source`), marks (`set_border_mark`) and `status`. The other concerns are 58 free functions in their modules (`browse`, `writes`, `dups`, `pair`), and some concerns are split between the two forms: `set_border_mark` is a method, `border_sides` a free function; `mark_pending` a method beside the `writes` queue's free functions.
+- **Fix.** `core.rs` keeps the lifecycle. Each concern's operations go to that concern's module in one form: methods, in an `impl Catalog` block of the module (`roots.rs`, `queues.rs`, `lookup.rs`, and the existing `browse`, `writes`, `dups`), so callers keep `catalog.x()` and the module says where `x` lives. The free functions of those modules become methods with their callers changed (ground rule 2: no aliases).
+- Gate: `just test`, Linux checks, perf (the catalog is benched).
+
+### M-29: the thumbnail cache reads the catalog through its views only
+
+- **Found.** `pg-thumbcache` uses `pg-catalog` for one function: `pg_catalog::max_folder_id(&tx, "cat.")` (`thumbcache/src/reader.rs`, `pending_in`), which reads the catalog's raw `folders` table. The rest of the contract is the catalog's views (`thumb_sources`, `thumb_clock`, `catalog/src/schema.rs`), which is the designed interface. In the other direction, the catalog's test `thumb_sources_is_the_analysed_files_with_their_folders` (`catalog/src/writers.rs`) copies the cache's pending join against the cache's private `entries` table.
+- **Fix.** The folder count is part of the views (`thumb_clock` gains `max_folder_id`, or a `thumb_folders` view), and `pending_in` reads it there. `pg-thumbcache` loses its normal `pg-catalog` dependency (it keeps the `fixture` dev-dependency for its tests). The catalog's test checks only its views; the join is tested in `pg-thumbcache`, which owns `entries`.
+- Gate: `just test`, Linux checks, perf (`pending_thumbs.at_height`).
+
+### M-30: the small duplicates
+
+- The civil date of a day count (Hinnant's `civil_from_days`) is in `model/src/date.rs` (`civil`) and inline in `platform/src/clock.rs` (`local_time`, Unix), though `pg-platform` depends on `pg-model`: `pg_model::date::civil` becomes public and the clock calls it.
+- `beside(path, suffix)` is in `catalog/src/lifecycle.rs` and `schema/src/lib.rs`, though `pg-catalog` depends on `pg-schema`: one copy, `pg_schema`'s, public.
+- `ScanStats` (`scan/src/lib.rs`) re-declares `Pairing`'s fields (`catalog/src/pair.rs`: `rebound`, `replaced`, `ambiguous`, `unpaired_with_data`, `replaced_ids`, `temps`) and copies them one by one: it holds the `Pairing`.
+- Gate: `just test`.
+
+### M-31: public items nothing uses, and the survey kept
+
+- **Dead:** `render::display::decode_stored` (no caller anywhere; its doc says "what a lossless crop cuts", and the crop does not call it). Deleted.
+- **Used by tests only**, each made `pub(crate)` or `#[cfg(test)]`, or deleted with its test when the test checks nothing else: `catalog::browse::writes::session_set` (`session_set_many` is the one in use), `codec::decode::orient` (used by `pg-edit`'s and `pg-library`'s tests: it goes to `pg-codec`'s `fixtures`), `analysis::pdq::Hasher::hash_rgb`, `model::name::Name::from_wtf8` (also `model/tests/name_laws.rs`: it stays public if that law test needs it, and says so), `ThumbCache::heal` (`heal_if_due` and the writer use the module's `heal`).
+- **Kept, with a reason:** `catalog::browse::read::changes::changes_since` (tests only today; `docs/DECODE_ONCE_PLAN.md` phase 4 builds the incremental grid on it).
+- **The survey is kept.** `review/api_surface.py`, `edges.py` and `dupes.py` go to `tools/modgraph/` as reports (not gates: their matches are by name), run by `just modgraph-report`, so the next review starts from them.
+- Gate: `just lint`, `just test`.
+
+### M-32: the documents
+
+- `crates/README.md`: the `platform` entry runs into the next ("…with the exceptions listed there.- `trace`"); a line break.
+- `app/src/lib.rs`'s header says the app is "what the front ends share", which M-4b made untrue (the README says "the application layer the window uses"); the header says that too.
+- After M-21 to M-31: the README's `app`, `library`, `crop`, `thumbcache`, `render` and `client` entries, the layer file, a ledger row per step in `docs/REFACTOR_PLAN.md`, and a "Validation 4" section here.
+- Gate: `just lint` (markdownlint).
+
+## Review 4a (2026-11-10, at `0ed0fbe`): the full read
 
 Review 4 read the crate roots, the desktop's Qt-free functions and what its scripts flagged. This pass read every production file of every crate (the code before the first line-start `#[cfg(test)]`), bottom-up, from the leaves (`container`, `model`, `schema`, `testkit`) to the front ends (`cli`, `gallery`, `desktop`). Tests were skimmed. A few files were outlined (signatures and doc comments read, bodies only where a finding needed them): `client/src/text/message.rs` (one enum and its three matches), the codec's format modules, `dedup/src/pdq_index.rs`, the metadata modules below `lib.rs`, the platform backends (`dir/{windows,unix}.rs`, `file`, `names`, `native`, `picker`, `process`), the catalog's `fixture`, `video/src/ffi.rs`, `analysis/src/pdq.rs`, the desktop's 26 bridge files and 18 state files (checked: no function bodies except `Default` and the gallery state's helpers), and `bench/benches/ir/catalog.rs`.
 
@@ -17,7 +125,7 @@ Review 4 read the crate roots, the desktop's Qt-free functions and what its scri
   - `pg_testkit::odd_name`.
 - Cohesive, with no finding: `container` (except one copy, in M-41), `exiftool`, `trace`, `jobs-testkit` and `bench`.
 
-## M-33: the bugs the read found
+### M-33: the bugs the read found
 
 Each fix gets a test that fails before it.
 
@@ -27,7 +135,7 @@ Each fix gets a test that fails before it.
 - **A filter's shapes shown untranslated.** `client/src/text.rs` (`describe`) writes a chosen shape by its key (`o.key()`, English) where the bar uses `shape_label`. Fix: `shape_label`. Test: the pseudo-locale's description of a query with a shape has no English word.
 - Gate: Windows `just test`, Linux checks.
 
-## M-34: the folder-refusal policy belongs to the scanner, and its words to the client
+### M-34: the folder-refusal policy belongs to the scanner, and its words to the client
 
 This extends M-27.
 
@@ -52,7 +160,7 @@ This extends M-27.
   - `RootFacts`, `check_ntfs`, `check_fs_type` and `NativePath::set_plain` are public today only so tests can reach them. They become `pub(crate)`, with the tests beside them.
 - Gate: Windows `just test`, Linux checks (the refused-mount tests), `just shots` (the pseudo-locale).
 
-## M-35: one name per concept
+### M-35: one name per concept
 
 - **The list facets are three enums.**
   - `pg_model::query::ListFacet` is in the model's order: Types, Exts, Ratings, Shapes, Status, Borders. It is used only inside the model (`Query::chosen`, `Choice::facet`).
@@ -86,7 +194,7 @@ This extends M-27.
 - **`ScanNote::kind() -> &'static str`.** It is a second key for a typed enum (`pg_library`). Fix: the app words the enum directly, and `kind` goes.
 - Gate: `just test`, `just qmltest`, `just shots`.
 
-## M-36: typed values across the catalog's API
+### M-36: typed values across the catalog's API
 
 - **Found.** Values cross the catalog's API as text or raw integers:
   - **The write target.** `write_target` returns `(RulePath, Option<String>, String)`: the format and the kind are text. `writes::rating_in_file_possible(kind: &str, format: Option<&str>)` takes the same text; `set_rating` and `browse::read::details` call it.
@@ -119,7 +227,7 @@ This extends M-27.
   - `Meta::rating` is an `Option<Rating>`.
 - Gate: `just test`, Linux checks, perf (the import and the catalog are benched).
 
-## M-37: the Qt boundary's conventions stay in the Qt crate
+### M-37: the Qt boundary's conventions stay in the Qt crate
 
 - **Found.** Qt's int conventions, where -1 means none, appear in the crates without Qt.
   - **In `pg-client`:**
@@ -145,7 +253,7 @@ This extends M-27.
   - The desktop's own calls take `Edge` and the bridge's `MediaKind`. One `Turns` constructor from any quarter-turn count, in `pg-model`, replaces the `rem_euclid` at each bridge.
 - Gate: `just test`, `just qmltest`, `just shots`.
 
-## M-38: the session is a typed `Listing`, stored by the catalog
+### M-38: the session is a typed `Listing`, stored by the catalog
 
 - **Found.**
   - The session is a store of text keys and values (`session_get`, `session_set`, `session_set_many(key: &str, value: &str)`). Its keys and encodings are in `app/src/views.rs`: `folder` as JSON, `recursive` as `"true"`, `query`, `sort`.
@@ -159,7 +267,7 @@ This extends M-27.
   - `session_set` goes (M-31 listed it as used by tests only).
 - Gate: `just test`, `just shots` (the start restores the listing), Linux checks.
 
-## M-39: the `image://` scheme in one place
+### M-39: the `image://` scheme in one place
 
 - **Found.**
   - `pg_model::image` builds the `thumb`, `thumbhash` and `full` URLs. That is front-end protocol inside the domain model.
@@ -173,7 +281,7 @@ This extends M-27.
   - The desktop builds and parses every URL through it.
 - Gate: `just test`, `just shots` (every provider).
 
-## M-40: `Layout` names every file of the data folder
+### M-40: `Layout` names every file of the data folder
 
 - **Found.**
   - `library/src/layout.rs` says that "the layout lives in one place". It does not:
@@ -189,7 +297,7 @@ This extends M-27.
   - Test: with `PG_HOME` set, opening a catalog in a folder with a non-UTF-8 name writes nothing outside it.
 - Gate: Windows `just test` (the alias path is Windows'), Linux checks.
 
-## M-41: the container formats are written where they are read
+### M-41: the container formats are written where they are read
 
 - **Found.**
   - **Whether a file is animated is decided twice.**
@@ -209,7 +317,7 @@ This extends M-27.
   - Test: a PNG with an `acTL` after its IDAT is the same kind to both.
 - Gate: `just test`, the fuzzer's container target (Linux).
 
-## M-42: a database file's lifecycle is `pg-schema`'s, and the catalog's `schema.rs` is split
+### M-42: a database file's lifecycle is `pg-schema`'s, and the catalog's `schema.rs` is split
 
 - **Found.**
   - **The cache repeats the catalog's file lifecycle:**
@@ -234,7 +342,7 @@ This extends M-27.
   - The catalog is split into `rebuild.rs` (both halves of the rebuild), `lifecycle.rs` (locks, holds, marks), `work.rs` (the work lists) and `schema.rs` (the schema). This is M-12a's answer for `catalog/src/schema.rs`.
 - Gate: `just test`, Linux checks, perf.
 
-## M-43: one pass skeleton for the per-file passes
+### M-43: one pass skeleton for the per-file passes
 
 - **Found.**
   - `pg-borders`, `pg-import` and `pg-thumbs` each write the same skeleton:
@@ -253,7 +361,7 @@ This extends M-27.
   - The results channel carries an enum: `Done(index, result)` or `SetupFailed(error)`.
 - Gate: `just test`, Linux checks, perf (the per-file benches).
 
-## M-44: `pg-writeback`'s dependencies
+### M-44: `pg-writeback`'s dependencies
 
 - **Found.**
   - `pg-writeback` depends on `pg-analysis` for one function, `analyze::file_hash` (BLAKE3 of a file's bytes). That edge brings in the analysis layer of the codec, video (FFmpeg) and metadata crates.
@@ -265,7 +373,7 @@ This extends M-27.
   - `thumbnail_error` is a typed `(FileId, Error)`, which the client words.
 - Gate: `just lint` (the layer check), `just test`.
 
-## M-45: `pg-yandex`'s error holds only the client's cases
+### M-45: `pg-yandex`'s error holds only the client's cases
 
 - **Found.**
   - `YandexError::Undecodable` and `YandexError::Recorded` are made only by `pg-app` (`yandex/images.rs`, `yandex.rs`, `yandex/replay.rs`). The variant's own doc says "Never made by the client".
@@ -275,7 +383,7 @@ This extends M-27.
   - `sniffed` takes the codec's list. `pg-yandex` depends on `pg-model` alone, so the list is either passed in or moved to `pg_model::format`, with the codec reading it from there.
 - Gate: `just test`, `just shots` (the `yandex` scenarios).
 
-## M-46: one numeric conversion, one fit, one decode cap
+### M-46: one numeric conversion, one fit, one decode cap
 
 - **Found.**
   - **The clamped float-to-integer conversion is written eight times:**
@@ -302,7 +410,7 @@ This extends M-27.
   - BigTIFF detection is `pg_model::format`'s.
 - Gate: `just test`, perf.
 
-## M-47: one JPEG encoder, and the maker decodes through `display`
+### M-47: one JPEG encoder, and the maker decodes through `display`
 
 - **Found.**
   - turbojpeg's `Compressor` is set up twice: in `Maker::new`/`encode_image` at q85 with 4:2:0 subsampling, and in `transcode::to_jpeg` at q95 with 4:4:4. Each also writes its own `Image { pixels, width, pitch: width * 3, height, RGB }`.
@@ -313,7 +421,7 @@ This extends M-27.
   - The maker decodes through `display::decode_into`, into its own buffers, so the claim in `display.rs` becomes true (with M-23).
 - Gate: `just test`, perf (`thumb_jpeg`), `just shots`.
 
-## M-48: an item lives with its only user
+### M-48: an item lives with its only user
 
 - `pg_model::query::parse_number` reads typed input (a comma or a point). `query.rs`'s header says the front end reads text typed into a filter. Its users are `client::input` and `desktop::filters`. It moves to `pg_client::input`.
 - `pg_model::date::exif_date` is EXIF's text format (kamadak-exif's rules), and only `pg-metadata` uses it. It moves to `metadata/src/exif.rs`; the model keeps `wall_clock_seconds`.
@@ -325,7 +433,7 @@ This extends M-27.
 - `cli::rule_path_of` (with the rules) sits beside `pg_platform::names::rule_path_of` (native). It becomes a `PathRules` method, used by both.
 - Gate: `just test`.
 
-## Additions to M-12a, M-13, M-21, M-22, M-25, M-26 and M-30 to M-32
+### Additions to M-12a, M-13, M-21, M-22, M-25, M-26 and M-30 to M-32
 
 - **M-12a.**
   - `video/src/ffi.rs` (779 production lines) is one layer, the safe wrapper of FFmpeg's C API, in three parts:
@@ -396,7 +504,7 @@ This extends M-27.
     - `picker::start_for`'s doc describes the shell's refusals, which are now `pg-platform`'s.
     - `command_line::args` has a doc line left over from another function ("The part of `arg` after its first `=`").
 
-## Order of M-21 to M-48
+### Order of M-21 to M-48
 
 1. **M-33** (the bugs), with their tests.
 2. **M-27** and **M-34** (the typed refusal), then **M-24** (the helpers move down), then **M-21** (one follow-up and one add-folder, on both).
@@ -410,6 +518,10 @@ This extends M-27.
 
 Unverified until their step, and confirmed there:
 
+- M-22: whether the search's `Factory` fits in `Config` as it is (it is an `Arc<dyn Fn>`; `Config` may need to stop deriving what a closure cannot).
+- M-23: whether `pg-app` drops `pg-codec` entirely (`Upload` and `turn_jpeg` may keep it).
+- M-26: whether the facet counts belong in the client's controller state or beside it (what `controller.rs`'s `CORE` already holds decides).
+- M-28: the size of the change (every caller of the free functions); counted at the step, done in one sitting (ground rule 7).
 - M-36 and M-38: the migration that converts the queue's values and the session's key-value rows (a new `TO_n`; `BASELINE` stays frozen).
 - M-41: which kind a PNG with an `acTL` after its IDAT should be. The container's rule decides it, and the test pins it.
 - M-45: whether the decodable formats are passed into `pg-yandex` or moved to `pg_model::format`. The codec's dependency on the model decides it.

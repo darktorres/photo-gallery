@@ -3,6 +3,7 @@
 
 use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicU64, Ordering};
 
 use anyhow::{Context, Result, anyhow};
 
@@ -77,17 +78,34 @@ pub fn test_folder(scratch: &str, name: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
-/// A fresh folder for a test binary's run: `prefix-<process id>` under the base. The folders `prefix-*` that earlier
-/// runs left are removed first, so the base keeps one run's folder per prefix. Fails if it can't be made.
+/// Numbers the run folders this process makes, so that every call gets a name of its own.
+static RUN_FOLDERS: AtomicU64 = AtomicU64::new(0);
+
+/// A fresh folder for one test (or one part of a test) in a test binary's run: `prefix-<process id>-<n>` under the base,
+/// where `n` counts this process's calls, so the tests that run at once in one process each have their own. The folders
+/// of other processes that earlier runs left (`prefix-<id>` or `prefix-<id>-<n>`) are removed first. This process's own
+/// are kept: another test of it may be using one. Two test binaries run at once on one base can still remove each
+/// other's folders, as before. Fails if it can't be made.
 pub fn run_folder(scratch: &str, prefix: &str) -> Result<PathBuf> {
     let base = base(scratch);
+    let pid = std::process::id().to_string();
     let earlier = format!("{prefix}-");
     for old in std::fs::read_dir(&base).into_iter().flatten().flatten() {
-        if old.file_name().to_string_lossy().starts_with(&earlier) {
+        let name = old.file_name().to_string_lossy().into_owned();
+        let Some(rest) = name.strip_prefix(&earlier) else { continue };
+        // Exactly `<id>` or `<id>-<n>`, digits only: a folder of another prefix that ends in digits (`run-5` with
+        // prefix `run`) has more segments, so it is not taken for a run folder.
+        let parts: Vec<&str> = rest.split('-').collect();
+        let numbers = parts.len() <= 2
+            && parts.iter().all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
+        if numbers && parts.first() != Some(&pid.as_str()) {
             let _ = std::fs::remove_dir_all(old.path());
         }
     }
-    let dir = base.join(format!("{earlier}{}", std::process::id()));
+    let n = RUN_FOLDERS.fetch_add(1, Ordering::Relaxed);
+    let dir = base.join(format!("{earlier}{pid}-{n}"));
+    // A folder of the same name left by an earlier process with this id: it is emptied, as `test_folder` does.
+    let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).with_context(|| format!("make the run folder {}", dir.display()))?;
     Ok(dir)
 }
@@ -191,5 +209,40 @@ mod tests {
         let run = run_folder(scratch, "run").unwrap();
         assert!(run.is_dir());
         assert!(!earlier.exists(), "an earlier run's folder is removed");
+    }
+
+    #[test]
+    fn a_later_run_folder_leaves_this_process_s_earlier_one_alone() {
+        let scratch = "pg-testkit-check-keep";
+        let first = run_folder(scratch, "shared").unwrap();
+        std::fs::write(first.join("kept.txt"), b"x").unwrap();
+        let second = run_folder(scratch, "shared").unwrap();
+        assert_ne!(first, second);
+        assert!(first.join("kept.txt").is_file(), "a call in this process does not remove another test's folder");
+        // A prefix that starts the same way is another test's: `shared-roots` is not `shared`'s run folder.
+        let other = base(scratch).join("shared-roots-7");
+        std::fs::create_dir_all(&other).unwrap();
+        // A prefix `shared-5` whose folders end in digits: `shared-5-<id>-<n>` has one segment more than a run folder.
+        let longer = base(scratch).join("shared-5-4242-0");
+        std::fs::create_dir_all(&longer).unwrap();
+        let _ = run_folder(scratch, "shared").unwrap();
+        assert!(other.is_dir(), "a folder of another prefix is not removed");
+        assert!(longer.is_dir(), "a folder of a prefix that ends in digits is not removed");
+    }
+
+    #[test]
+    fn run_folders_made_at_once_in_one_process_are_distinct() {
+        let scratch = "pg-testkit-check-threads";
+        let folders: Vec<PathBuf> = std::thread::scope(|s| {
+            let handles: Vec<_> = (0..16).map(|_| s.spawn(|| run_folder(scratch, "threads").unwrap())).collect();
+            handles.into_iter().map(|handle| handle.join().unwrap()).collect()
+        });
+        let mut unique = folders.clone();
+        unique.sort();
+        unique.dedup();
+        assert_eq!(unique.len(), folders.len(), "every call has a folder of its own");
+        for folder in &folders {
+            assert!(folder.is_dir(), "{} survives the other calls", folder.display());
+        }
     }
 }

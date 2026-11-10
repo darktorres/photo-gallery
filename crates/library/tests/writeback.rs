@@ -66,7 +66,7 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
     Ok(state::present_files(c)?.into_iter().map(|(id, name)| (id.get(), name)).collect())
 }
 
-/// A library of [`make_files`] in a folder of its own (`prefix`; run_folder keeps one folder per prefix, and these
+/// A library of [`make_files`] in a folder of its own (`prefix`; each run_folder call gets a folder of its own, and these
 /// tests run beside each other), scanned and imported: the folder, the files, the catalog's path and the catalog.
 /// The folder, the files written into it (name and format), the catalog's path and the catalog.
 type Imported = (PathBuf, Vec<(String, Format)>, PathBuf, Catalog);
@@ -795,7 +795,7 @@ fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
 
 #[test]
 fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
-    // Its own folder, as the other tests here: run_folder keeps one folder per prefix.
+    // Its own folder, as the other tests here: each run_folder call gets a folder of its own.
     let dir = pg_testkit::run_folder("scratch_rate", "finish").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     let files = make_files(&dir).unwrap();
@@ -838,7 +838,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
 /// nothing recorded, and every later start died on the same job.
 #[test]
 fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
-    // Its own folder, as the other tests here: run_folder keeps one folder per prefix.
+    // Its own folder, as the other tests here: each run_folder call gets a folder of its own.
     let dir = pg_testkit::run_folder("scratch_rate", "poisoned").unwrap();
     std::fs::create_dir_all(dir.join("images")).unwrap();
     make_files(&dir).unwrap();

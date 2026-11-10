@@ -22,10 +22,8 @@ the repository. The images are built with the versions the Justfile pins (`just_
 `aqtinstall_commit`) and the gungraun version in `Cargo.lock`, so each version is written once. Build the image by hand
 only through `linux-build`: without the build arguments the Dockerfile fails on purpose.
 
-The containers persist. The launcher creates three once and keeps them running, and each command runs in one with
-`docker exec`: `pg-checks-box` (the checks and `linux-shell`), `pg-tools-box` (the fuzzer) and `pg-bench-box` (the benches,
-which need the seccomp setting below). A container is recreated only when its image, its mounts or its flags change, so
-a rebuilt image is picked up on the next run. `docker rm -f pg-checks-box` (or the other names) removes one by hand.
+Each command runs in a new container, removed when the command ends, so its output is in that run's logs. The compiled
+state is in Docker's named volumes, which outlive the containers, so a run reuses the last run's build.
 
 `docker/check.py` runs the steps of CI's Linux job in CI's order and stops at the first failure. It also fails when a
 test prints `skipped:` (the test checked nothing).

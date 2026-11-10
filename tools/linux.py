@@ -7,21 +7,18 @@ benches (`just perf`) and the fuzzer (`just fuzz-smoke`). Docker Desktop must be
     linux.py perf [ARGS...]        tools/perf_check.py: the callgrind benches of HEAD, gated against docs/perf/baseline.json
     linux.py bench [ARGS...]       tools/profiling/bench.py: the benches without the gate (gungraun's options)
     linux.py fuzz [SECONDS]        tools/fuzz_smoke.py: each fuzz target for SECONDS (default 60)
-    linux.py shell                 a shell in the checks container, on the working tree
+    linux.py shell                 a shell in the checks image, on the working tree
 
-The containers are persistent: each is created once, kept running, and the commands run in it with `docker exec`. There
-are three, one per image and security profile: `pg-checks-box` (pg-dev, the checks and the shell), `pg-tools-box`
-(pg-tools, the fuzzer) and `pg-bench-box` (pg-tools with seccomp unconfined, which gungraun's valgrind needs). A container
-is recreated only when its image, its mounts or its flags change; `docker rm -f <name>` removes one by hand.
+Each command runs in a new container, removed when the command ends, so its output is in that run's logs and nothing is
+left running. The compiled state lives in Docker's named volumes (or, with PG_LINUX_CACHE=<folder>, folders under it),
+which outlive the containers: a new container reuses the build of the last one.
 
 The tool versions are read from the Justfile with `just --evaluate`, and the gungraun version from Cargo.lock, so each
-version is written once. The volumes are Docker's named volumes, or, with PG_LINUX_CACHE=<folder>, folders under it (CI
-restores them with actions/cache). PG_LINUX_BUILD_CACHE=gha builds with the GitHub Actions cache (CI).
+version is written once. PG_LINUX_BUILD_CACHE=gha builds with the GitHub Actions cache (CI). CI restores PG_LINUX_CACHE
+with actions/cache.
 """
 
 import argparse
-import hashlib
-import json
 import os
 import re
 import shutil
@@ -34,11 +31,6 @@ from typing import NoReturn
 REPO = Path(__file__).resolve().parent.parent
 CHECKS = "pg-dev"
 TOOLS = "pg-tools"
-# The persistent containers (see the module docstring). The label `pg.spec` on each holds the hash of its image, mounts
-# and flags, so a container made for something else is recreated.
-CHECKS_BOX = "pg-checks-box"
-TOOLS_BOX = "pg-tools-box"
-BENCH_BOX = "pg-bench-box"
 # The Justfile's variable behind each build argument of docker/Dockerfile.
 PINS = {
     "JUST_VERSION": "just_version",
@@ -49,8 +41,8 @@ PINS = {
     "AQTINSTALL_COMMIT": "aqtinstall_commit",
     "QT_VERSION": "qt_linux_version",
 }
-# The committed HEAD, extracted for the runs that take it. Every container mounts this folder at /head, so it is one fixed
-# folder: `refresh_head` refills it, and no container is recreated for a new HEAD.
+# The committed HEAD, extracted for the runs that take it. Every container mounts this folder at /head; `refresh_head`
+# refills it, and it is a fixed folder so the mount never changes.
 HEAD_FOLDER = REPO / "target" / "linux-head"
 
 
@@ -87,12 +79,6 @@ def posix(path):
 
 def docker_ok(*args):
     return subprocess.run(["docker", *args], capture_output=True, check=False).returncode == 0
-
-
-def docker(*args):
-    """`docker` with its output captured: (exit code, stdout, stripped)."""
-    result = subprocess.run(["docker", *args], capture_output=True, text=True, check=False)
-    return result.returncode, result.stdout.strip()
 
 
 def ensure_daemon():
@@ -182,7 +168,7 @@ def export_head(destination):
 
 def _clear_read_only(function, path, _error):
     """rmtree's error handler: git's object files are read-only on Windows, so they are made writable and removed."""
-    os.chmod(path, stat.S_IWRITE)
+    Path(path).chmod(stat.S_IWRITE)
     function(path)
 
 
@@ -200,54 +186,30 @@ def refresh_head():
     export_head(HEAD_FOLDER)
 
 
-def ensure_box(name, tag, target, flags, box_mounts):
-    """The persistent container `name` is running, on the image `tag` (built when missing). It is created once, with
-    `sleep infinity` as its command, and kept. It is recreated when its image, mounts or flags differ from the label
-    `pg.spec` it was made with."""
-    ensure_image(tag, target)
-    image_id = docker("image", "inspect", "-f", "{{.Id}}", tag)[1]
-    spec = hashlib.sha256(json.dumps([image_id, flags, box_mounts]).encode()).hexdigest()
-    code, current = docker("container", "inspect", "-f", '{{index .Config.Labels "pg.spec"}}', name)
-    if code == 0 and current == spec:
-        if docker("container", "inspect", "-f", "{{.State.Running}}", name)[1] != "true":
-            started = subprocess.run(["docker", "start", name], capture_output=True, text=True, check=False)
-            if started.returncode != 0:
-                fail(f"could not start {name}: {started.stderr.strip()}")
-        return
-    if code == 0:
-        docker("rm", "-f", name)
-    created = subprocess.run(
-        ["docker", "run", "-d", "--name", name, "--label", f"pg.spec={spec}", *flags, *box_mounts, tag, "sleep", "infinity"],
-        capture_output=True,
-        text=True,
-        check=False,
-    )
-    if created.returncode != 0:
-        fail(f"could not create {name}: {created.stderr.strip()}")
-
-
-def exec_in(name, command, workdir, env=(), tty=False):
-    """Runs `command` in the container `name`, in `workdir`; each name in `env` is passed on from this process."""
+def run(image, command, mounts_list, flags=(), env=(), workdir="/work", tty=False):
+    """Runs `command` in a new container of `image`, removed when it ends. `mounts_list` and `flags` are docker run's; each
+    name in `env` is passed on from this process."""
     interactive = ["-it"] if tty and sys.stdin.isatty() and sys.stdout.isatty() else []
     env_flags = [item for var in env for item in ("-e", var)]
-    return subprocess.run(["docker", "exec", *interactive, "-w", workdir, *env_flags, name, *command], check=False).returncode
-
-
-def head_run(box, tag, target, command, flags=(), extra_mounts=(), env=()):
-    """Runs a tools command in the container `box`: the launcher's tree at /work (the scripts), the committed HEAD at /head
-    (what the tool benches or fuzzes), and PG_HEAD_SHA set to HEAD's short hash."""
-    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True)
-    os.environ["PG_HEAD_SHA"] = sha.stdout.strip()
-    refresh_head()
-    ensure_box(box, tag, target, list(flags), [*mounts(), *extra_mounts])
-    return exec_in(box, command, "/work", env=env)
+    cmd = ["docker", "run", "--rm", *interactive, "-w", workdir, *env_flags, *flags, *mounts_list, image, *command]
+    return subprocess.run(cmd, check=False).returncode
 
 
 def check(head):
-    ensure_box(CHECKS_BOX, CHECKS, "base", [], mounts())
+    ensure_image(CHECKS, "base")
     if head:
         refresh_head()
-    return exec_in(CHECKS_BOX, ["python3", "docker/check.py"], "/head" if head else "/work")
+    return run(CHECKS, ["python3", "docker/check.py"], mounts(), workdir="/head" if head else "/work")
+
+
+def head_run(tag, target, command, flags=(), extra_mounts=(), env=()):
+    """Runs a tools command in a new container of `tag`: the launcher's tree at /work (the scripts), the committed HEAD at
+    /head (what the tool benches or fuzzes), and PG_HEAD_SHA set to HEAD's short hash."""
+    ensure_image(tag, target)
+    sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True)
+    os.environ["PG_HEAD_SHA"] = sha.stdout.strip()
+    refresh_head()
+    return run(tag, command, [*mounts(), *extra_mounts], flags=flags, env=env)
 
 
 # Gungraun runs valgrind under `setarch -R` (ASLR off, as the baseline was measured), which needs the personality
@@ -267,7 +229,6 @@ def perf(args):
     if not bench_source_mounts():
         fail("PG_BENCH_DATA_SOURCE must name the bench data folder (.env, docs/PROFILING.md)")
     code = head_run(
-        BENCH_BOX,
         TOOLS,
         "tools",
         ["python3", "tools/perf_check.py", *args],
@@ -280,7 +241,6 @@ def perf(args):
 
 def bench(args):
     code = head_run(
-        BENCH_BOX,
         TOOLS,
         "tools",
         ["python3", "tools/profiling/bench.py", *args],
@@ -293,12 +253,12 @@ def bench(args):
 
 def fuzz(seconds):
     command = ["python3", "tools/fuzz_smoke.py", *([seconds] if seconds else [])]
-    sys.exit(head_run(TOOLS_BOX, TOOLS, "tools", command))
+    sys.exit(head_run(TOOLS, "tools", command))
 
 
 def shell():
-    ensure_box(CHECKS_BOX, CHECKS, "base", [], mounts())
-    sys.exit(exec_in(CHECKS_BOX, ["bash"], "/work", tty=True))
+    ensure_image(CHECKS, "base")
+    sys.exit(run(CHECKS, ["bash"], mounts(), tty=True))
 
 
 def main():
@@ -314,7 +274,7 @@ def main():
     commands.add_parser("bench", help="the callgrind benches, ungated (gungraun's options, e.g. --save-baseline=x)")
     fuzz_parser = commands.add_parser("fuzz", help="each fuzz target for a short time")
     fuzz_parser.add_argument("seconds", nargs="?", default="", help="seconds per target (default 60)")
-    commands.add_parser("shell", help="a shell in the checks container")
+    commands.add_parser("shell", help="a shell in the checks image")
     options, rest = parser.parse_known_args()
     if rest and options.command not in ("perf", "bench"):
         parser.error(f"unrecognized arguments: {' '.join(rest)}")

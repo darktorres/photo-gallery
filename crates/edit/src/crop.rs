@@ -13,7 +13,7 @@
 
 use anyhow::{Result, bail, ensure};
 
-use crate::rewrite::{self, Op};
+use crate::rewrite::{self, op::Op};
 use pg_container::{png_chunks, webp_chunks};
 use pg_model::{format::Format, num};
 
@@ -36,24 +36,24 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
     let kept = |bytes: Vec<u8>| Ok(Cropped { bytes, cut, metadata: true });
     match format {
         Format::Jpeg => {
-            let (mw, mh) = rewrite::jpeg_mcu(bytes)?;
+            let (mw, mh) = rewrite::jpeg::mcu(bytes)?;
             let (l, t) = (l.next_multiple_of(u32::try_from(mw)?), t.next_multiple_of(u32::try_from(mh)?));
             ensure!(l + r < width && t + b < height, "the cut leaves nothing once on the JPEG's {mw}×{mh} grid");
-            let out = rewrite::jpeg(bytes, exact(l, t))?;
+            let out = rewrite::jpeg::rewrite(bytes, exact(l, t))?;
             let header = turbojpeg::read_header(&out)?;
             let want = (num::index(width - l - r), num::index(height - t - b));
             ensure!((header.width, header.height) == want, "the crop came out {}×{}", header.width, header.height);
             Ok(Cropped { bytes: out, cut: [l, t, r, b], metadata: true })
         }
         Format::Png if png_chunks(bytes).any(|c| &c.kind == b"acTL") => bail!("an animated PNG isn't cropped"),
-        Format::Png => kept(rewrite::png(bytes, exact(l, t))?),
+        Format::Png => kept(rewrite::png::rewrite(bytes, exact(l, t))?),
         Format::Webp if webp_chunks(bytes).any(|c| &c.kind == b"ANIM") => bail!("an animated WebP isn't cropped"),
-        Format::Webp => kept(rewrite::webp(bytes, exact(l, t))?),
-        Format::Gif => match rewrite::gif(bytes, exact(l, t))? {
+        Format::Webp => kept(rewrite::webp::rewrite(bytes, exact(l, t))?),
+        Format::Gif => match rewrite::gif::rewrite(bytes, exact(l, t))? {
             Some(out) => kept(out),
             None => bail!("an animated GIF isn't cropped"),
         },
-        Format::Bmp => match rewrite::bmp(bytes, exact(l, t))? {
+        Format::Bmp => match rewrite::bmp::rewrite(bytes, exact(l, t))? {
             Some(out) => kept(out),
             None => reencoded(bytes, Format::Bmp, l, t, width - l - r, height - t - b, cut),
         },

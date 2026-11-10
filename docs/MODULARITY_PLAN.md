@@ -406,6 +406,23 @@ Split by dependency layers, not by line count. Read each file over 500 productio
 
 `jobs/src/pipeline.rs`, `scan/src/lib.rs` and `query/src/lib.rs` fall under 500 and leave the list. Other sizes: `catalog/src/lib.rs` 1,547 production (old plan 1,534), `thumbcache/src/lib.rs` 1,302 (1,175), `metadata/src/lib.rs` 715 (655), `codec/src/codecs.rs` 822 (814), `analysis/src/borders.rs` 693, `library/src/crop.rs` 323 (204), `library/src/borders.rs` 83 (77).
 
+- **Result (committed in the M-12a commit; not yet validated, see the end of the plan):** measured again after M-12. `platform/src/dir.rs` fell under 500 (its `Lister` moved to the backends in M-19); `catalog/src/core.rs` (556, from M-7) and `library/src/runner.rs` (514) joined the list. `catalog/src/browse/read/tests.rs` (949) is a test file. Each file over 500 production lines was read; split or left:
+
+  | File | Lines | Decision |
+  |---|---|---|
+  | `client/src/text.rs` | 1,473 | Split. Three layers: `text/words.rs` (the Fluent files, the per-thread bundle, the pseudo-locale, `ui`, `shown`), `text/message.rs` (`Message`, `CacheStartOver`, their ids and values, `render`), and `text.rs` (the line builders). The public paths stay (`pub use message::{CacheStartOver, Message, render}`, `pub use words::{set_pseudo, ui}`). The test that the entries and the variants match is in `message.rs`, the file tests in `words.rs`, and `entries_in_file`, which both use, in `text/test_support.rs`. |
+  | `video/src/ffi.rs` | 812 | Leave: the FFmpeg declarations, one layer. |
+  | `writeback/src/lib.rs` | 794 | Split. The file operations (`stat`, `stat_of`, `unchanged`, `temp_of`, `sync`, `write_into`) are a leaf below the writer: `file.rs`, with their two tests; `lib.rs` re-exports `stat` and `temp_of`, the crate's API. The inline `pub mod fault` is `fault.rs`. The writer (`Writer`, `Inner`) stays in `lib.rs`: one type pair and its loop. |
+  | `desktop/src/shell.rs` | 667 | Leave: the bridge (about 250 lines) and one QObject's inherent methods, which hand QML's calls to the controller (`dispatch`) and carry out its commands (`execute`). One layer. |
+  | `catalog/src/schema.rs` | 630 | Leave: 330 lines are the baseline SQL; the rest is the version and migration path over it, one layer. |
+  | `desktop/src/yandex.rs` | 602 | Leave: the bridge, one model's methods, and the panel's words for the search's states, which only this model uses. |
+  | `app/src/yandex.rs` | 599 | Split what is a leaf: the saved file's naming and writing (`saved_stem`, `numbered`, `claim`, `temp_path`, `write_new`, `write_new_with`, `stem_of`, `MAX_CLAIMS`, with their five tests and `odd_stem`) is `yandex/save.rs`. The photo's reading stays: it returns the root's `SearchError`, so a child holding it would depend on its parent. |
+  | `edit/src/rewrite.rs` | 578 | Split by format, as M-10 split the codec: `rewrite/op.rs` (`Op`), `raster.rs` (`decoded_size`, `zeroed`, `unpack`, `pack`, `apply_rows`), `chunk.rs` (`png_chunk`, `chunk_bytes`), and `jpeg.rs`, `png.rs`, `webp.rs`, `gif.rs`, `bmp.rs`, each with a `rewrite` (and `jpeg::mcu`). `Imperfect` is in `jpeg.rs`, `NothingLeft` in `gif.rs`. `crop.rs` and `rotate.rs` call `rewrite::png::rewrite` and so on; no re-export. The GIF tests are in `gif.rs`; the test across formats (a huge declared size) stays in `rewrite.rs`. |
+  | `cli/src/lib.rs` | 566 | Split. `args.rs` (`Cli`, `PipelineArgs`, `Command`), `report.rs` (the progress lines, the thumbnail cache's events, a rebuilt catalog, a pass's failures), and `lib.rs` (`wants_cli`, `main`, `run_command` and its helpers). |
+  | `catalog/src/core.rs` | 556 | Leave: `Catalog` and its inherent impl. Its methods cannot move to other modules without the cycle M-7 found. |
+  | `yandex/src/lib.rs` | 520 | Split. `types.rs` (the results and `YandexError`), `parse.rs` (the answers read: pure functions of the bodies), `http.rs` (the agent, a transfer's bounds, the User-Agent, `read_response`), `client.rs` (the paced search), `fetch.rs` (the result files). `lib.rs` re-exports the public items, so `pg_yandex::Client` and the rest keep their paths. |
+  | `library/src/runner.rs` | 514 | Leave: M-15 found it coherent (the runner, its passes and its messages). |
+
 ## Platform boundary
 
 ### M-13: platform calls only in `pg-platform`

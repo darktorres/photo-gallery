@@ -18,7 +18,7 @@
 use anyhow::{Result, ensure};
 use pg_model::turns::Turns;
 
-use crate::rewrite::{self, Op};
+use crate::rewrite::{self, op::Op};
 use pg_container::{png_chunks, webp_chunks};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
@@ -54,28 +54,28 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
         Ok(Outcome::Rewritten(out))
     };
     Ok(match format {
-        Format::Jpeg => match rewrite::jpeg(bytes, Op::Orient(total)) {
+        Format::Jpeg => match rewrite::jpeg::rewrite(bytes, Op::Orient(total)) {
             Ok(out) => rewritten(out)?,
             // Not a perfect transform at this size, or a damaged file: the tag carries the turn.
-            Err(e) if e.is::<rewrite::Imperfect>() => tag(),
+            Err(e) if e.is::<rewrite::jpeg::Imperfect>() => tag(),
             Err(e) => return Err(e),
         },
         Format::Png if png_chunks(bytes).any(|c| &c.kind == b"acTL") => tag(),
-        Format::Png => rewritten(rewrite::png(bytes, Op::Orient(total))?)?,
+        Format::Png => rewritten(rewrite::png::rewrite(bytes, Op::Orient(total))?)?,
         Format::Webp
             if webp_chunks(bytes).any(|c| &c.kind == b"VP8L") && !webp_chunks(bytes).any(|c| &c.kind == b"ANIM") =>
         {
-            rewritten(rewrite::webp(bytes, Op::Orient(total))?)?
+            rewritten(rewrite::webp::rewrite(bytes, Op::Orient(total))?)?
         }
         Format::Webp | Format::Tiff => tag(),
-        Format::Gif => match rewrite::gif(bytes, Op::Orient(total)) {
+        Format::Gif => match rewrite::gif::rewrite(bytes, Op::Orient(total)) {
             Ok(Some(out)) => Outcome::Rewritten(out),
             Ok(None) => Outcome::Catalog,
             // A still GIF with nothing on its screen: no pixels to turn, and no tag a GIF can carry.
-            Err(e) if e.is::<rewrite::NothingLeft>() => Outcome::Catalog,
+            Err(e) if e.is::<rewrite::gif::NothingLeft>() => Outcome::Catalog,
             Err(e) => return Err(e),
         },
-        Format::Bmp => match rewrite::bmp(bytes, Op::Orient(total))? {
+        Format::Bmp => match rewrite::bmp::rewrite(bytes, Op::Orient(total))? {
             Some(out) => Outcome::Rewritten(out),
             None => Outcome::Catalog,
         },
@@ -85,7 +85,8 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::rewrite::{pack, png_chunk};
+    use crate::rewrite::chunk::png_chunk;
+    use crate::rewrite::raster::pack;
     use crate::testing::shown;
     use pg_codec::decode::orient;
     use pg_container::{GifBlock, gif_blocks};
@@ -285,9 +286,9 @@ mod tests {
             matches!(rotate(&good[..scan], Format::Jpeg, Turns::new(1)).unwrap(), Outcome::Orientation(o) if o.get() == 6)
         );
         assert!(
-            rewrite::jpeg(&good[..scan], Op::Orient(Orientation::new(6).unwrap()))
+            rewrite::jpeg::rewrite(&good[..scan], Op::Orient(Orientation::new(6).unwrap()))
                 .unwrap_err()
-                .is::<rewrite::Imperfect>()
+                .is::<rewrite::jpeg::Imperfect>()
         );
     }
 

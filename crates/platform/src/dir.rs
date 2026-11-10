@@ -581,7 +581,7 @@ mod unix {
         /// `FS_IOC_GETFSUUID`, `_IOR(0x15, 0, struct fsuuid2)`: the kernel's file system UUID (Linux 6.13 and later).
         const FS_IOC_GETFSUUID: u32 = 0x8011_1500;
 
-        pub fn volume_id(dev: u64, probe: &Path) -> Option<u64> {
+        pub(super) fn volume_id(dev: u64, probe: &Path) -> Option<u64> {
             uuid_from_kernel(probe).or_else(|| uuid_from_udev(dev)).or_else(|| ext_fsid(probe))
         }
 
@@ -938,23 +938,35 @@ mod listing_tests {
     #[cfg(target_os = "linux")]
     #[test]
     fn each_entry_carries_its_own_device_across_a_mount() {
-        // `/proc` is a mount of its own (procfs), so it is on a different device from `/`. Each entry carries the device
-        // of its own `lstat`: procfs's device, or, for a path a container masks with a bind mount (Docker does, for some
-        // of /proc), that mount's device. The check holds either way, and it fails if every entry took the folder's device.
+        // `/proc` is a mount of its own (procfs), so it is on a different device from `/`. Each entry carries the volume
+        // of its own `lstat`'s device: procfs's, or, for a path a container masks with a bind mount (Docker does, for
+        // some of /proc), that mount's. A volume is the device's stable identity (`Lister::folder_volume`), not its
+        // device number, so the check is that the identities follow the devices: one identity per device, a different
+        // one for each device, and procfs's own entries on the folder's. It fails if every entry took the folder's.
+        use std::collections::BTreeMap;
         use std::ffi::OsStr;
         use std::os::unix::ffi::OsStrExt;
         use std::os::unix::fs::MetadataExt;
         let mut lister = Lister::new();
         let root = lister.open(&units_of(b"/")).unwrap();
         let proc = lister.open(&units_of(b"/proc")).unwrap();
-        assert_ne!(lister.folder_volume(&root).unwrap(), lister.folder_volume(&proc).unwrap());
+        let proc_volume = lister.folder_volume(&proc).unwrap();
+        assert_ne!(lister.folder_volume(&root).unwrap(), proc_volume);
+        let proc_dev = std::fs::metadata("/proc").unwrap().dev();
         let mut seen = Vec::new();
         lister.each(&proc, |e| seen.push((e.name.to_vec(), e.volume))).unwrap();
         assert!(!seen.is_empty());
+        let mut by_device = BTreeMap::new();
         for (name, volume) in &seen {
-            let own =
-                std::fs::symlink_metadata(std::path::Path::new("/proc").join(OsStr::from_bytes(name))).unwrap().dev();
-            assert_eq!(*volume, Some(own), "the entry {:?} of /proc", OsStr::from_bytes(name));
+            let shown = OsStr::from_bytes(name);
+            let own = std::fs::symlink_metadata(std::path::Path::new("/proc").join(shown)).unwrap().dev();
+            let volume = volume.unwrap_or_else(|| panic!("the entry {shown:?} of /proc has no volume"));
+            assert_eq!(*by_device.entry(own).or_insert(volume), volume, "the entry {shown:?} of /proc");
+            if own == proc_dev {
+                assert_eq!(volume, proc_volume, "the entry {shown:?} of /proc");
+            }
         }
+        let identities: std::collections::BTreeSet<_> = by_device.values().collect();
+        assert_eq!(identities.len(), by_device.len(), "two devices share an identity: {by_device:?}");
     }
 }

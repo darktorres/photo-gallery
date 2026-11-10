@@ -67,7 +67,7 @@ Each proposed fix was then checked once more against the code, step by step, for
   - This review applies the same rule to the pass phase (M-45), the refusal reason (M-34) and the Yandex outcomes (M-32). It also adds the CLI as a second consumer of the notices, which that plan does not cover.
 - **R-2: a stored path reaches the file system only through `disk_path`.**
   - A catalog path (`RulePath`) becomes a plain `PathBuf` through `pg_platform::names::path_buf`, and on Windows a plain path drops a trailing dot or space from a folder's name.
-  - So the one way production code turns a stored path into one that std, FFmpeg or Qt opens is `pg_platform::native::disk_path(&PathRules, &RulePath) -> PathBuf`, the verbatim form (M-21).
+  - So the one way production code turns a stored path into one that std or FFmpeg opens is `pg_platform::native::disk_path(&PathRules, &RulePath) -> PathBuf`, the verbatim form (M-21). Qt never gets a path to open. Its file engine normalizes the name with `GetFullPathNameW`, which drops the dot again, so Qt gets the file already open (M-21).
   - `path_buf` of a whole path is for display and tests. A grep check in `just lint` enforces this, as the platform rule is.
 
 ## Bugs
@@ -85,8 +85,16 @@ Each fix gets a test that fails before it.
   - On Windows a plain path drops a trailing dot or space from a folder name. So a temp in such a folder is missed, or a file in a sibling folder is deleted. A photo, an animation or a video there does not open, or the sibling folder's file of the same name opens instead.
   - The passes avoid it only by writing `verbatim(path_buf(rules.join(p)))` by hand: import, thumbs, and writeback (four times).
   - Fix: R-2. Add `pg_platform::native::disk_path`, used by every site above, with `Catalogs::file_path` returning it. The grep check stops the next one.
+  - **The video player cannot take the file by name**, in either form (read in Qt 6.12's source, `C:\Qt\6.12.0\Src\qtbase\src\corelib\io`):
+    - `QFile` opens `QFileSystemEntry::nativeFilePath()`. On Windows that is `QFSFileEnginePrivate::longFileName`, which calls `nativeAbsoluteFilePath`, which calls `GetFullPathNameW`.
+    - `GetFullPathNameW` drops a trailing dot from a folder's name, even behind `\\?\` (checked with the real call: `\\?\D:\a.\x.mp4` becomes `\\?\D:\a\x.mp4`). So the plain form opens the sibling folder's file.
+    - `isUncPath` then takes `\\?\` for a UNC share. The verbatim form becomes `\\?\UNC\?\D:\a\x.mp4`, which names nothing.
+  - So the player gets an open file instead, as Unix already does:
+    - The desktop opens the file by `disk_path`, in Rust, and hands over its raw handle (a `HANDLE` on Windows, a descriptor on Unix) as one integer.
+    - On Windows, the C++ side turns it into a descriptor with `_open_osfhandle`. That is Qt's own descriptor table, because the workspace links the C runtime dynamically (no `crt-static`), so Rust, the desktop's C++ and Qt share one UCRT.
+    - Then `QFile::open(fd, ReadOnly, AutoCloseHandle)`, which reads the handle back with `_get_osfhandle` (`qfsfileengine_win.cpp`).
+  - `pg_platform::file::play_target`, the two `PlayTarget` variants and the per-platform match in `video_player.rs` become one `play_file`.
   - Tests: a still, an animation, a video and a queued temp, each in a folder named `a.` beside one named `a` (Windows). Each is reached in its own folder.
-  - Verify at the step: that Qt's player takes the `\\?\` form of the units.
 - **An unreadable preferences file overwrites the last one kept.**
   - `app/src/store.rs` (`quarantine`) renames the file to `<name>.bad`. A rename replaces its target on both systems, so the `.bad` an earlier failure kept is lost. The doc says it "is kept".
   - `pg_schema::move_aside` would number them, but it is the SQLite file's (it moves the sidecars, and it assumes its `Lock` is held), and `pg-app` does not depend on `pg-schema`.
@@ -309,7 +317,11 @@ Each fix gets a test that fails before it.
     - `placeholder(hash, turns)`;
     - the video poster, through `pg_video` (already a dependency of `pg-render`).
   - `Images` keeps what is the app's: the catalog lookup, the consistency check (`consistent`), the shared last decode and the makers.
-  - `pg-app` loses `pg-codec`, `pg-video` and `thumbhash` if nothing else of them is left. The upload type moves out (M-33). The layer file changes with it.
+  - `pg-app` loses `pg-codec`, `pg-video` and `thumbhash` as normal dependencies; checked, nothing else of them is left.
+    - Its other `pg_codec` use is a test (`app/src/yandex.rs`, after its `#[cfg(test)]`), so `pg-codec` stays a dev-dependency.
+    - `turn_jpeg` and `placeholder` stop naming codec types once `pg-render`'s display API takes its own size request (`display::decode_full(decoder, bytes, turns)`), not `MinSize`. The maker's decoder is passed through without being named.
+    - The upload type moves out (M-33).
+  - The layer file changes with it.
 - Gate: `just test`, `just shots`, perf (the viewer is not benched; the gate is that nothing moves).
 
 ### M-31: a pass does not reach a sibling pass for a helper
@@ -322,7 +334,8 @@ Each fix gets a test that fails before it.
   - `normalize_path` moves to `pg_platform::names`; its errors become a typed one, or stay `io::Error` with the path.
   - `exiftool_program` moves to `pg-exiftool`, and `stat` to `pg_platform::file`.
   - Callers are changed, with no re-export (ground rule 2).
-  - `pg-crop` loses `pg-scan` and `pg-writeback`, which leaves `crop: catalog edit exiftool jobs model platform` in the layer file. `pg-app` keeps `pg-scan` only if `check_folder` is still its; after M-22 it is `pg-library`'s.
+  - `pg-crop` loses `pg-scan` and `pg-writeback`, which leaves `crop: catalog edit exiftool jobs model platform` in the layer file.
+  - `pg-app` loses `pg-scan` entirely. It uses exactly two items of it: `normalize_path` (moved here) and `check_folder` (`pg-library`'s after M-22). Its tests use none.
   - The layer file changes in the same commit.
 - Gate: `just lint` (the layer check), `just test`, Linux checks.
 
@@ -339,7 +352,8 @@ Each fix gets a test that fails before it.
   - **The Yandex panel's result list** is kept in `desktop/src/yandex.rs` (`without_dead`, `drop_dead`, and `show`'s bookkeeping): its two groups, the picks that follow their results, and taking the dead results off.
 - **Fix.**
   - `pg_client::facets` gets `Counts`, `choices` (the order of each facet's choices) and the extension merge, tested without Qt.
-    - The counts live in the client's controller state with the query (`desktop/src/controller.rs`'s `CORE`), so `COUNTS` goes and `FacetChoices::refresh` reads both from one place.
+    - The counts are held beside the controller, not in it: `Core { controller, counts, recorder }` in `desktop/src/controller.rs`, read through `controller::counts()` as the listing is. `COUNTS` goes, and `FacetChoices::refresh` reads both from one place.
+    - Not inside `pg_client::controller::Controller`: that is the window's policy, driven by events and recorded for replay (`PG_RECORD`). The counts are display data that no command depends on, and recording each count as an event would only bloat the replays.
   - The yes/no/either mapping goes to `pg_client::input` (`tri_index`, `tri_of_index`), beside `Facet::from_index` and `Field::from_index`.
   - `Filters::sync` uses the setters.
   - The result list becomes a `pg_client` type, generic over its item (`Results<T>`: groups, picks, `drop(ids)`), which the panel's QObject holds. `Hit` stays `pg_app`'s.
@@ -548,15 +562,20 @@ Each fix gets a test that fails before it.
   - **The session is a store of text keys and values** (`session_get`, `session_set`, `session_set_many(key: &str, value: &str)`).
     - Its keys and encodings are in `app/src/views.rs`: `folder` as JSON, `recursive` as `"true"`, `query`, `sort`.
     - The catalog's rebuild knows the `folder` key and its JSON shape too (`schema::convert_text_folders`), so the session's format is written in two crates.
-    - Saved views, by contrast, are already stored typed, a column per field.
+    - The four keys are the whole session: a `Listing`, nothing else. The selected file is `Prefs::last_file` in `gallery.json`, so the schema's comment on `session` ("the open view and the selected file") is stale.
+    - Saved views store the same four fields as columns: `folder` as the joined parts (a blob), `recursive`, and `query` and `sort` as JSON.
   - **`SavedView` copies `Listing`.** `pg_model::view::SavedView` declares `Listing`'s four fields again, plus `name`. A `Listing` is rebuilt from it field by field in three places:
     - `client::controller::listing` (`ViewApplied`);
     - `desktop/src/controller.rs` (`start`);
     - `desktop/src/shell.rs` (`save_view`).
 - **Fix.**
   - `SavedView { name, #[serde(flatten)] listing: Listing }`, with no copies.
-  - The catalog stores the session's `Listing` as it stores a view, by column: `session_listing()` and `save_session_listing(&Listing)`.
-  - `app::views` and `convert_text_folders` lose their knowledge of the keys. A migration converts the key-value rows once. NOTIFICATIONS_PLAN takes `TO_3` and `TO_4`; this one is the next free number in whichever order they land, and the pre-migration backup that plan's S2 adds covers it.
+  - The session is an unnamed view.
+    - It gets a one-row table with the views' columns: `session(id INTEGER PRIMARY KEY CHECK (id = 1), folder, recursive, query, sort)`.
+    - The views' row code reads and writes it: one `listing_at(row)` reader and one writer, used by `views`, `session_listing()` and `save_session_listing(&Listing)`.
+  - `app::views` and `convert_text_folders` lose their knowledge of the keys. A migration converts the key-value rows once, and the rebuild's row copy learns the old shape once.
+  - The schema's stale comment on `session` is corrected.
+  - The migration's number: NOTIFICATIONS_PLAN takes `TO_3` and `TO_4` (both only planned), and this migration takes the next free one. The pre-migration backup that plan's S2 adds covers it.
   - `session_set` goes; it is used only by tests.
 - Gate: `just test`, `just shots` (the start restores the listing), Linux checks.
 
@@ -569,14 +588,16 @@ Each fix gets a test that fails before it.
     - the import and borders queues (`pending_import`, `mark_pending`, `pending_borders`, `pdq_hashes`);
     - lookups (`file_by_path`, `files_under`, `file_path`, `file_folder`);
     - crops (`crop_source`), marks (`set_border_mark`) and `status`.
-  - The other concerns are 58 free functions in their modules (`browse`, `writes`, `dups`, `pair`).
+  - The other concerns are 34 public free functions in their modules (`browse`, `writes`, `dups`, `pair`), beside one `pub(crate)` one and 47 private helpers. 33 of the 34 take a `&Catalog` or `&Tx` first. The 34th, `rating_in_file_possible`, is a pure function, which M-42 moves beside `can_hold_rating`.
+  - The size of the change, counted: the 33 have at most 327 call sites in 62 files. That count is an upper bound, because it matches by name and common names such as `entry`, `failed`, `done` and `views` inflate it.
   - Some concerns are split between the two forms. `set_border_mark` is a method, but `border_sides` is a free function. `mark_pending` is a method, beside the `writes` queue's free functions.
   - `browse::read` is seven `pub use x::*` globs, the source of M-3a's scan edges.
 - **Fix.**
   - `core.rs` keeps the lifecycle.
   - Each concern's operations go to that concern's module, in one form: methods, in an `impl Catalog` block in that module (`roots.rs`, `queues.rs`, `lookup.rs`, and the existing `browse`, `writes`, `dups`). Callers keep `catalog.x()`, and the module says where `x` lives.
   - The free functions become methods, with their callers changed (ground rule 2: no aliases). The globs go with them.
-  - NOTIFICATIONS_PLAN writes its notice and ledger functions as "free functions taking `&Catalog`". Whichever of the two lands second takes the one shape: methods in an `impl Catalog` block of the concern's module (`notices.rs`, `ledger.rs`).
+  - The 47 private helpers stay private free functions: a helper of one module is not part of the API.
+  - NOTIFICATIONS_PLAN writes its notice and ledger functions as "free functions taking `&Catalog`". That plan lands before this step (see the order), so it writes them in this step's shape from the start: methods in an `impl Catalog` block of `notices.rs` and `ledger.rs`. This step then has nothing of that plan's to convert, and M-49 amends that plan's sentence.
 - Gate: `just test`, Linux checks, perf (the catalog is benched).
 
 ### M-45: one name per concept
@@ -619,7 +640,7 @@ Each fix gets a test that fails before it.
 - **In the catalog:**
   - `stored_under` and `check_rules` both read `meta.path_rules` and word the same two reasons: one function.
   - `set_import_version`, `set_borders_version` and `set_taken_zone` share one shape: read the mark, an immediate transaction, read again, set, recompute. They become one `set_mark(key, value, recompute_sql)`.
-  - The change-stamp trigger body is spelled 13 times in `BASELINE` and `TO_2`. A `stamp!(new|old)` macro replaces it, but only if its expansion is byte for byte the same: the baseline is frozen and compared as text.
+  - The change-stamp trigger body is spelled 12 times: 8 in `BASELINE` (ratings, border marks, file writes) and 4 in `TO_2`, one of them with a `WHEN` clause. A `stamp!(name, event, table, new|old)` macro replaces it. It emits the same `concat!` pieces, so the text does not change. Even if it did, an existing catalog is compared with `pg_schema::canonical` (whitespace, comments and keyword case do not count), and the frozen baseline takes such edits.
   - The ratings upsert is in `AnalysisWriter::new` and in `writes::set_rating`. It becomes a constant, like `SET_FILE_RATING`.
   - `pair::rebind` and `pair::replace` write the same 11-column UPDATE.
   - The border colour's 0xRRGGBB packing is in `writers::store_borders`, and the unpacking in `details::border_sides_on`. `detection::Side` owns both.
@@ -678,7 +699,11 @@ These are additions to the plan's M-12a list.
 - **`desktop/src/picker.rs`:** `start_for`'s doc describes the shell's refusals, which are `pg-platform`'s now.
 - **`desktop/src/command_line.rs`:** `args` has a doc line that belongs to another function ("The part of `arg` after its first `=`").
 - **Fixed in their own steps:** the `pg-schema` header (M-24), `render/src/display.rs` (M-27), the `pg-writeback` `Cargo.toml` comment (M-38) and the jobs header (M-45).
-- **NOTIFICATIONS_PLAN.md:** its `RootRefused` and `MountRefused` carry the typed `RefusedReason` (M-34). Its notices name `pg_model::progress::Phase` where they name a pass (M-45). It adds the CLI as a consumer (M-22, M-26).
+- **NOTIFICATIONS_PLAN.md:**
+  - Its `RootRefused` and `MountRefused` carry the typed `RefusedReason` (M-34).
+  - Its notices name `pg_model::progress::Phase` where they name a pass (M-45).
+  - It adds the CLI as a consumer (M-22, M-26).
+  - Its notice and ledger functions are methods in `impl Catalog` blocks (M-44).
 - **After the other steps:**
   - the README's `app`, `library`, `crop`, `thumbcache`, `render` and `client` entries;
   - the layer file;
@@ -702,17 +727,16 @@ This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered toget
 
 ## Open decisions
 
-None block a step. Settled by the check of the fixes:
+None. Each was settled against the code, Qt's source included:
 
-- **M-25:** a PNG with an `acTL` after its IDAT is a still (the PNG spec).
-- **M-29:** the source goes into `Config` as data, `YandexSource`, not as the closure.
-- **M-39:** `pg-yandex` does not decide what can be decoded.
-- **M-42:** the queue's typed value needs no migration.
-
-Confirmed at their step:
-
-- **M-21.** That Qt's video player opens the `\\?\` form of a path's units.
-- **M-30.** Whether `pg-app` drops `pg-codec` entirely: `turn_jpeg` may keep it.
-- **M-32.** Whether the facet counts belong in the client's controller state or beside it. What `controller.rs`'s `CORE` already holds decides.
-- **M-43.** The session's migration number, after NOTIFICATIONS_PLAN's `TO_3` and `TO_4`, with `BASELINE` frozen.
-- **M-44.** The size of the change, which is every caller of the free functions. It is counted at the step and done in one sitting (ground rule 7).
+- **M-21.** Qt's video player cannot open a trailing-dot path by name, in either form. It gets the file already open, by its handle.
+- **M-25.** A PNG with an `acTL` after its IDAT is a still (the PNG spec).
+- **M-29.** The Yandex source goes into `Config` as data (`YandexSource`), not as the closure.
+- **M-30.** `pg-app` drops `pg-codec`, `pg-video` and `thumbhash` as normal dependencies; `pg-codec` stays a dev-dependency.
+- **M-31.** `pg-app` drops `pg-scan`.
+- **M-32.** The facet counts are held beside the controller, not in it.
+- **M-39.** `pg-yandex` does not decide what can be decoded.
+- **M-42.** The queue's typed value needs no migration.
+- **M-43.** The session becomes a one-row table with the views' columns, through one migration that takes the next free number.
+- **M-44.** The step is 33 functions with at most 327 call sites in 62 files. The notifications plan writes its functions as methods from the start.
+- **M-46.** The `stamp!` macro cannot change the schema's text, and the comparison is canonical anyway.

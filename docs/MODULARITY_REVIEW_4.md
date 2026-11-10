@@ -56,29 +56,52 @@ All 33 crates under `crates/` were read: `container`, `model`, `schema`, `testki
 
 The steps are grouped by kind: the bugs first, then work done twice, then code in the wrong crate, then types and names, then cleanup.
 
+Each proposed fix was then checked once more against the code, step by step, for whether it is the most proper one, with churn no concern. Where it was not, the step says the better fix. Two rules came out of that check, and several steps apply them.
+
+## Rules this review adds
+
+- **R-1: an outcome a front end words is pg-model data.**
+  - Each front end matches a lower crate's type and calls the client's words with its fields one by one. That is why the words exist twice. For example, the desktop's `notice_text` maps `pg_library::Notice` and the CLI writes its own English. The desktop also maps `pg_jobs::Phase` to a mirror enum, `pg_client::text::Pass`.
+  - `pg-client` depends on `pg-model` alone and cannot name those types. So every outcome that is put into words is a plain data type in `pg-model`, built by the crate that has the outcome. `pg_client::text` words it, and both front ends render it.
+  - For notices this is already [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md)'s design: `pg_model::notice::Notice` replaces the library's `Notice`, the app's `Note` and the desktop's messages, and the desktop's mapping layers go. The steps here that concern notices defer to that plan: M-21's third bug, M-26, M-22's words, M-32's outcome words and M-45's `ScanNote`.
+  - This review applies the same rule to the pass phase (M-45), the refusal reason (M-34) and the Yandex outcomes (M-32). It also adds the CLI as a second consumer of the notices, which that plan does not cover.
+- **R-2: a stored path reaches the file system only through `disk_path`.**
+  - A catalog path (`RulePath`) becomes a plain `PathBuf` through `pg_platform::names::path_buf`, and on Windows a plain path drops a trailing dot or space from a folder's name.
+  - So the one way production code turns a stored path into one that std, FFmpeg or Qt opens is `pg_platform::native::disk_path(&PathRules, &RulePath) -> PathBuf`, the verbatim form (M-21).
+  - `path_buf` of a whole path is for display and tests. A grep check in `just lint` enforces this, as the platform rule is.
+
 ## Bugs
 
 ### M-21: the bugs the read found
 
 Each fix gets a test that fails before it.
 
-- **A temp file reached by its plain path.**
-  - Both copies of the scan follow-up delete a replaced file's queued-write temp with `std::fs::remove_file(path_buf(..))`: `library/src/runner.rs` (`Scans::run`) and `cli/src/lib.rs` (`run_command`, `Scan`).
-  - The writer reaches files only by `verbatim(..)`. On Windows a plain path drops a trailing dot or space from a folder name, so a temp in such a folder is missed, or another folder's file is deleted.
-  - Fix: `verbatim`, in M-22's one `after_scan`.
-  - Test: a temp under a folder named `a.` is deleted, and its neighbour in `a` is kept.
+- **Files reached by their plain path.**
+  - The scan follow-up deletes a replaced file's queued-write temp with `std::fs::remove_file(path_buf(..))`, in both copies: `library/src/runner.rs` (`Scans::run`) and `cli/src/lib.rs` (`run_command`, `Scan`).
+  - The app hands out plain paths: `catalogs::path_of`, and through it `Catalogs::file_path`. These open the file by its plain path:
+    - the viewer's still image (`app/src/images.rs`, `Maker::read_file`, a std `File::open`);
+    - the animation player (`render::player`, `std::fs::read`);
+    - the video player (the UTF-16 units of the plain path).
+  - On Windows a plain path drops a trailing dot or space from a folder name. So a temp in such a folder is missed, or a file in a sibling folder is deleted. A photo, an animation or a video there does not open, or the sibling folder's file of the same name opens instead.
+  - The passes avoid it only by writing `verbatim(path_buf(rules.join(p)))` by hand: import, thumbs, and writeback (four times).
+  - Fix: R-2. Add `pg_platform::native::disk_path`, used by every site above, with `Catalogs::file_path` returning it. The grep check stops the next one.
+  - Tests: a still, an animation, a video and a queued temp, each in a folder named `a.` beside one named `a` (Windows). Each is reached in its own folder.
+  - Verify at the step: that Qt's player takes the `\\?\` form of the units.
 - **An unreadable preferences file overwrites the last one kept.**
   - `app/src/store.rs` (`quarantine`) renames the file to `<name>.bad`. A rename replaces its target on both systems, so the `.bad` an earlier failure kept is lost. The doc says it "is kept".
-  - Fix: `pg_schema::move_aside`, which numbers them (`.bad.1`, ...).
+  - `pg_schema::move_aside` would number them, but it is the SQLite file's (it moves the sidecars, and it assumes its `Lock` is held), and `pg-app` does not depend on `pg-schema`.
+  - Fix: the numbered rename that never replaces is a file operation: `pg_platform::file::keep_aside(path, mark)`. It renames without replacing (`MoveFileExW` without `MOVEFILE_REPLACE_EXISTING`, `renameat2` with `RENAME_NOREPLACE`), taking the next number when the name is taken. The preferences store uses it, and so does `pg_schema::move_aside`, for each file.
 - **Two notes of the wrong kind.**
   - `App::open` reports a thumbnail cache that cannot be opened as `Note::Thumbs(Event::NotStored { error: "cache disabled: .." })`. That event means one on-demand thumbnail was not stored.
   - `App::shutdown` reports a catalog that fails to close as `Note::Thumbs(Event::WalNotMerged { error: "catalog: .." })`, the cache's WAL event.
-  - Both front ends word a note by its variant, so the user reads the wrong sentence.
-  - Fix: `Note::CacheDisabled { error }` and `Note::CatalogNotClosed { error }`, each with its own words.
-- **A filter's shapes shown untranslated.**
-  - `client/src/text.rs` (`describe`) writes a chosen shape by its key (`o.key()`, English), where the bar uses `shape_label`.
-  - Fix: `shape_label`.
-  - Test: the pseudo-locale's description of a query with a shape has no English word.
+  - The note is worded by its variant, so the log (and, after NOTIFICATIONS_PLAN, the inbox) says the wrong thing.
+  - Fix: in NOTIFICATIONS_PLAN S1, which replaces `Note` with `pg_model::notice::Notice`. Each case gets a variant of its own there: `CacheDisabled`, and the catalog's close failure, which is logged only because it happens after the inbox has closed. No `Note` variant is added here for S2 to delete.
+- **A filter's description is not fully localized.**
+  - `client/src/text.rs` (`describe`) writes a chosen shape by its key (`o.key()`, English).
+  - It lowercases a localized status label in Rust (`to_lowercase`): wrong for German nouns and for the Turkish dotted i.
+  - It joins the parts with literal `", "` and `" – "`, and prints numbers with `f64::to_string`, whatever the locale.
+  - Fix: each chosen value is worded by `choice_label(&choice)`, the words the filter chips show, over the query's choices. The list separators, the case and the number format are the bundle's: a list message and Fluent's `NUMBER()`.
+  - Test: the pseudo-locale's description of a query with every facet has no English word.
 - Gate: Windows `just test`, Linux checks.
 
 ## Work done twice
@@ -91,12 +114,16 @@ Each fix gets a test that fails before it.
   - The CLI's scan notes are its own English (`"skipped as duplicates (another path to the same file)"`, ...), while the app's come from `scan-note` in `client/locales/en/text.ftl`.
   - Both copies delete temps by the plain path (M-21).
 - **Also twice: adding a folder.** `normalize_path`, then `check_folder`, then `Catalog::add_root`, in the CLI's `Scan` arm and in `app/src/library.rs` (`LibraryService::add_folder`).
-- **Fix.** `pg-library` gets the one copy of each, used by both front ends.
-  - `add_folder(catalog, path) -> Result<Added, AddError>` normalizes, checks and adds. `AddError` is typed: `Refused`, `NotAPath`, the catalog's error.
-  - `after_scan(catalog, thumbs, &ScanStats) -> Vec<Notice>` does the forgets and the deletions (by `verbatim`). It returns every note the scan's result carries as the runner's `Notice`s: its failures, `UnreadableFolders`, `MountRefused`, `VolumeFallback` and the `ScanNote` counts. The runner's `Scans::run` and the CLI call it.
-  - The CLI prints each `Notice` with the same `pg_client::text` words the window shows (`text::scan_note`, ...), so its hard-coded English goes.
-  - The CLI's scan opens the thumbnail cache only when `replaced_ids` is not empty, as now.
-  - `LibraryService::remove_folder` stops a running scan by queueing an empty one (`library.scan(Vec::new())`). It becomes `Runner::stop_scan`.
+- **Fix.** One copy of each, used by both front ends, split by concern.
+  - `pg_library::add_folder(catalog, path) -> Result<(RulePath, bool), AddError>` normalizes, checks and adds. `AddError` is typed: `Refused`, `NotAPath`, the catalog's error. It returns the `RulePath`, not display text; the front end displays it. Today the app returns `(String, bool)`, and `Error::FolderRefused { folder: String }`.
+  - **The temps are the write-back's.** It names them, reaches them and deletes its own. So deleting a replaced file's temps is `pg_writeback::discard_temps(rules, &temps) -> Vec<(RulePath, io::Error)>`, by `disk_path` (R-2). A file already gone is not an error.
+  - **Each part is its own function.** A single `after_scan(catalog, thumbs, ..)` would not fit the CLI, which opens the cache only when something was replaced. So there are three:
+    - `pg_library::forget_replaced(&ThumbCache, &ids)`;
+    - `discard_temps`;
+    - `pg_library::scan_notices(&ScanStats) -> Vec<Notice>`: every notice the scan's result carries (its failures, `UnreadableFolders`, `MountRefused`, the `ScanNote` counts with `VolumeFallback`). It is pure, and tested without a catalog.
+  - The runner calls all three; the CLI calls the first only when `replaced_ids` is not empty.
+  - **All of the CLI's output is worded by `pg_client::text`**, not only the notices: the notices are NOTIFICATIONS_PLAN's `pg_model::notice::Notice` (R-1), and so are its summary lines, "not scanned" and the failures. Otherwise a non-English locale prints half of a command in English. The CLI's own lines are messages in their own section of the bundle.
+  - **`LibraryService::remove_folder` stops a running scan by queueing an empty one** (`library.scan(Vec::new())`). That works only because the scan pass, once woken, skips paths no longer in the library. It becomes `Library::stop_scans_under(&root)`, which drops the queued scans under the root and preempts a running one under it.
 - **Test.** A `pg-cli` test over a `ScanStats` with a refused mount: `gallery scan` prints it. The runner's existing scan tests keep passing.
 - Gate: Windows `just test`, Linux checks.
 
@@ -113,9 +140,9 @@ Each fix gets a test that fails before it.
   - `pipeline::run` reports a worker whose setup failed by sending index `usize::MAX` on the results channel.
 - **Fix.**
   - `pg_jobs::pipeline::batched` takes the read, the work and the flush; the three passes become their work and their writer.
-  - `pg_platform::names::verbatim_of(&WorkList, FilePath)`.
+  - The video's path is `disk_path` (R-2).
   - `PathRules::display` for every shown path.
-  - The still-as-listed rule is one SQL fragment, and `thumbs` reads its result instead of comparing again.
+  - The still-as-listed rule is one function, `pg_catalog::is_current(&Catalog, id, &Listed) -> bool`. `Listed { size, mtime, rotation }` holds the work item's fields, and the function runs one query with `not_being_written!`. `AnalysisWriter::current`, `BordersWriter::current` and the thumbnail pass all call it; today the pass compares `file_state`'s fields in Rust.
   - The results channel carries an enum: `Done(index, result)` or `SetupFailed(error)`.
 - Gate: `just test`, Linux checks, perf (the per-file benches).
 
@@ -128,7 +155,11 @@ Each fix gets a test that fails before it.
     - moving a file aside (`move_damaged` against `rebuild`);
     - the shared and exclusive holds (`hold_shared` against `take_shared`), worded alike;
     - deleting a database and its sidecars: `thumbcache`'s `schema::open_once` loops over `["-wal", "-shm", "-journal", ""]`, and the catalog has `lifecycle::remove_database`.
-  - **`beside(path, suffix)` is written five times:** in `pg_schema` (and again inline in `Lock::take`), `catalog/src/lifecycle.rs`, `thumbcache/src/schema.rs`, and `app/src/store.rs` (`with_suffix`). `pg-catalog` already depends on `pg-schema`.
+  - **Both judge a file the same way, before writing to it:**
+    - Both tell a damaged file from a failure by rusqlite's codes: `thumbcache`'s `schema::damage` and `damage_in` (`NotADatabase`, `DatabaseCorrupt`), and the catalog's `NotADatabase` arms in `schema.rs`.
+    - Both build the expected schema in memory once, in a `OnceLock<Schema>`.
+    - Both check the application id.
+  - **`beside(path, suffix)` is written five times:** in `pg_schema` (and again inline in `Lock::take`), `catalog/src/lifecycle.rs`, `thumbcache/src/schema.rs`, and `app/src/store.rs` (`with_suffix`).
   - **`pg-schema`'s name and header say "schema" only**, though it holds `Lock`, `Live` and `move_aside`.
   - **The catalog's `schema.rs` holds three concerns:**
     - the schema: `BASELINE`, `MIGRATIONS`, the versions, `expected`, `mismatch`;
@@ -139,8 +170,13 @@ Each fix gets a test that fails before it.
     - the locks and the version marks;
     - the work lists: `pending_import_sql`, `work_list`, `max_folder_id`.
 - **Fix.**
-  - `pg-schema` gains `remove_database` (with the sidecars) and a public `beside`; the catalog, the cache and the app's store use them.
-  - Its header says it holds a SQLite file's lifecycle.
+  - `pg-schema` owns the judgement, and each owner keeps its policy: the catalog migrates, rebuilds and carries rows; the cache starts over. The judgement is:
+    - `judge(path, &Expected, application_id) -> Found`, with `Found { New, Usable, Older(version), Differs(Difference), Foreign { application_id }, Damaged(Damage) }`;
+    - `Damage::of(&rusqlite::Error)`;
+    - `Expected::new(make_layout)`, the schema built once, lazily.
+  - `pg-schema` also owns `remove_database` (with the sidecars) and the holds.
+  - `beside` and the rename that never replaces (`keep_aside`, M-21) are file operations below all three users, so they are `pg_platform::file`'s, not `pg-schema`'s. `pg_schema::move_aside` is built on them. `pg-schema` gains a `pg-platform` dependency, an acyclic edge (`pg-platform` depends on `pg-model` alone), and the layer file changes with it.
+  - The `pg-schema` header says it holds a SQLite file's lifecycle.
   - The catalog is split:
     - `rebuild.rs`: both halves of the rebuild;
     - `lifecycle.rs`: the locks, holds and marks;
@@ -161,11 +197,12 @@ Each fix gets a test that fails before it.
     - the GIF sub-blocks (`rewrite::gif::sub_blocks`), and a second sub-block reader for the LZW data.
   - **The GIF colour-table size** (`3 << ((packed & 7) + 1)`) is written three times: `pg_container::gif_header_len`, `GifBlocks::block`'s 0x2C arm, and `rewrite::gif`.
 - **Fix.**
-  - One rule, `pg_container::animated(bytes, format)` (and `webp_lossless`), used by the edit and the metadata.
+  - **One rule, the metadata's, which is the PNG spec's.** An `acTL` must come before the first IDAT, and an APNG decoder treats a file with one after it as a plain PNG. So such a file is a still.
+  - The rule is a `pg-container` predicate applied per chunk: `png_animation`, `webp_animation`, `webp_lossless`. `pg-metadata`'s single walk applies it as it goes, with no second pass over the file, and the edit's checks use the same predicates. It is not a whole-file function that the metadata would have to call again.
   - `pg-container` gains the writing half: `png_chunk`, `fix_png_crc`, `riff` and `gif_sub_blocks`.
   - `GifBlock::Image` carries the parsed descriptor: place, size, packed byte, table length and code size.
-  - The SQL rule "a still is an image of one frame" (`pg_query::media_sql`, `MEDIA_CASE`, and `pg_catalog::sql`'s analysable stills) reads `analysis.frames`, which is the metadata's count. It agrees with the edit once both use the container's rule.
-  - Test: a PNG with an `acTL` after its IDAT is the same kind to both.
+  - The SQL rule "a still is an image of one frame" (`pg_query::media_sql`, `MEDIA_CASE`, and `pg_catalog::sql`'s analysable stills) reads `analysis.frames`, which is the metadata's count. It then agrees with the edit.
+  - Test: a PNG with an `acTL` after its IDAT is a still to both.
 - Gate: `just test`, the fuzzer's container target (Linux).
 
 ### M-26: an event's words are written once
@@ -178,11 +215,13 @@ Each fix gets a test that fails before it.
   - Other English outside the Fluent bundle, which the pseudo-locale's clipping check therefore never sees:
     - the key hints in `client/src/keys.rs` (`SELECT`, `VIEW`, ...);
     - the selection line in `desktop/src/gallery/items.rs` (`refresh_derived`, `format!("{}   {symbol}")`).
+- **These are not log lines.** The desktop sends every app note to `gallery.log` only (`desktop/src/app.rs`, the "app notes" thread). So the user never sees that the catalog was rebuilt and moved aside, that the preferences were unreadable or not saved, or that the cache started over. A `Display` for `Event` and `Rebuilt` would only make that permanent.
 - **Fix.**
-  - The log lines are like an error's `Display`, so each type says itself: `impl Display for pg_thumbcache::Event` and `for pg_catalog::Rebuilt` (which takes in `carried_note`). The front ends print `{event}`.
-  - The UI's words for a start-over (`text::thumb_cache_started_over`, `CacheStartOver`) stay the client's, and `started_over_reason` is written once, where the UI shows it. If the log is to be localized later, the log lines move to the Fluent bundle together.
-  - The key hints and the selection line move to `ui.ftl`, through `pg_client::text`.
-- Gate: `just test`, `just shots` (the pseudo-locale).
+  - NOTIFICATIONS_PLAN's S1 and S2 (R-1). Every cache `Event`, `CatalogRebuilt`, `PrefsUnreadable` and `PrefsNotSaved` becomes a `pg_model::notice::Notice`, worded by `pg_client::text`. The window shows them in the inbox, and `pg-log` records them by their code. `note_text`, `started_over_reason` and the mirror enum `CacheStartOver` go.
+  - `Rebuilt::carried_note` goes: the notice carries the counts, and the client words them.
+  - This review adds the CLI as the second consumer: `thumb_event_text` and `report_rebuilt` render the same notices through `pg_client::text` (M-22).
+  - The key hints and the selection line are not notices. They move to `ui.ftl`, through `pg_client::text`.
+- Gate: as NOTIFICATIONS_PLAN's stages; then `just test`, `just shots` (the pseudo-locale).
 
 ### M-27: one JPEG encoder, and the maker decodes through `display`
 
@@ -191,14 +230,15 @@ Each fix gets a test that fails before it.
   - The codec owns decoding (and `encode::cropped`), but not this encoder.
   - `render/src/display.rs` says it is "the one place that reads a file's EXIF orientation for decoding". But `Maker::make_image` calls `pg_metadata::orientation` and `Decoder::decode_into` itself.
 - **Fix.**
-  - `pg_codec::encode::jpeg(&Rgb, quality, subsampling)`, used by both.
-  - The maker decodes through `display::decode_into`, into its own buffers, so the claim holds (with M-30).
+  - **A reusable encoder in the codec:** `pg_codec::encode::JpegEncoder::new(quality, subsampling)`, with `encode_into(&Rgb, &mut Vec<u8>)`, plus a one-shot `encode` for the transcode. It is a type, not a free function, because the maker keeps one compressor and one output buffer across all its thumbnails (`compress_to_slice` into its `jpeg` buffer). A free function would make a compressor per thumbnail on the hot path.
+  - **One display decode.** `Maker::make_into` is `display::decode`'s body with the maker's buffers. So there is one `display::decode_into(decoder, bytes, min, turns, &mut image, &mut spare)`, used by `display::decode` and by the maker (with M-30).
+  - The edit's two orientation-then-decode calls (`edit/src/lib.rs`) decode the file as stored, in a crate below `pg-render`. They stay. `display.rs`'s claim becomes "the one place for the display decodes".
 - Gate: `just test`, perf (`thumb_jpeg`), `just shots`.
 
 ### M-28: one numeric conversion, one fit, one decode cap
 
 - **Found.**
-  - **The clamped float-to-integer conversion is written eight times:**
+  - **Eight callers clamp a float before converting it to an integer:**
     - `pg_codec::decode` and `resize` (`to_pixels`);
     - `pg_app::images`;
     - `pg_video` (`whole_i64`, `whole_u32`);
@@ -213,8 +253,11 @@ Each fix gets a test that fails before it.
   - **The FILETIME epoch** is `pg_query`'s `filetime_unix_offset!` and `pg_platform::file::UNIX_EPOCH_TICKS`.
   - **BigTIFF is detected twice:** `pg_codec::encode::tiff_samples_cropped` and `pg_model::format::sniff`.
   - **The civil date of a day count** (Hinnant's `civil_from_days`) is in `model/src/date.rs` (`civil`), and inline in `platform/src/clock.rs` (`local_time`, Unix).
+- **The conversions already saturate.** Rust's float-to-integer `as` saturates and maps NaN to 0 (since Rust 1.45). So `pg_model::num::f64_to_*` already are saturating conversions. Their docs say otherwise ("after the caller clamps them to the target's range"), which is why the callers clamp first.
 - **Fix.**
-  - `pg_model::num` gets the clamping conversions (`clamp_to_i32`, `clamp_to_u32`, `clamp_to_i64`, `clamp_to_usize`), used by all eight.
+  - The helpers' docs and `expect` reasons say they saturate, by the language's rule.
+  - Every caller's clamp that only restates the target type's range goes.
+  - A clamp to a narrower range of the domain's (a pixel count of at least 1, a cap) stays where it is, as that domain's logic. No new conversion functions.
   - `MinSize::fit_scale` in the codec, used by all three fits (with M-30).
   - `Stream::display_width` and `Stream::ms`.
   - `MAX_PIXELS` is computed from `max_decode_bytes()`.
@@ -240,7 +283,7 @@ Each fix gets a test that fails before it.
   - The Yandex grid picture's height (220) is written three times: `yandex::images::GRID_HEIGHT`, the panel's `ROW_HEIGHT`, and `Prefs::row_height`'s default.
 - **Fix.**
   - `App` holds a `Yandex` service (`app.yandex()`), with the `Search` and the images of the search on screen as fields.
-    - It is built with the `Factory` from `Config`: the command line's `--yandex-fixture` goes into `Config`, not `desktop/src/command_line.rs::yandex_source`.
+    - It is built from `Config::yandex: YandexSource { Live, Replay(PathBuf) }`, and the app makes the factory from that. The command line's `--yandex-fixture` sets it, instead of `desktop/src/command_line.rs::yandex_source`. `Config` stays plain data (`Clone`, `Debug`, the environment read once); the closure `Factory` would have cost it `Debug` and put behaviour in it.
     - `CURRENT`, `set_current`, `current` and the free `image` go. The provider calls `app::get().yandex().image(id)`, and the QObject holds no `Search`.
     - `App::stop` stops the search's threads in its order, before the catalogs.
   - `LIBRARY` goes; the desktop reads `app::get().library()`.
@@ -301,7 +344,14 @@ Each fix gets a test that fails before it.
   - `Filters::sync` uses the setters.
   - The result list becomes a `pg_client` type, generic over its item (`Results<T>`: groups, picks, `drop(ids)`), which the panel's QObject holds. `Hit` stays `pg_app`'s.
   - What remains in the desktop is roles, Qt ints and signals.
-- **Not moved.** The outcome-to-words functions stay the desktop's: `desktop/src/yandex.rs` (`status_text`, `explain`, ...) and `desktop/src/library.rs` (`notice_text`, `write_error_text`). They match on `pg_app` and `pg_library` types, which `pg-client` may not name (it depends on `pg-model` alone). M-22 makes the command line use the same `text` functions for the scan.
+- **The outcome words move too (R-1).** They match on `pg_app` and `pg_library` types today, which `pg-client` may not name:
+  - `desktop/src/yandex.rs` (`status_text`, `explain`, ...);
+  - `desktop/src/library.rs` (`notice_text`, `write_error_text`, and the pass status built from `Phase`).
+
+  Once the outcomes are `pg-model` data, all of them are the client's:
+  - the library's notices and the write errors: NOTIFICATIONS_PLAN's `Notice`;
+  - the phase: M-45;
+  - the Yandex search's and save's outcomes: `pg_model::yandex`, with the errors' codes and the counts, built by `pg-app`.
 - Gate: `just test`, `just qmltest`, `just shots`.
 
 ### M-33: Qt's conventions stay in the Qt crate
@@ -343,7 +393,7 @@ Each fix gets a test that fails before it.
   - `pg-platform` reports facts as a typed value: the drive type, the file system's name or `f_type`, a reparse point, the real volume.
   - `pg-scan` holds the policy table. `scan` returns `Result<ScanStats, ScanError>`, with `ScanError::{Refused(Refused), Failed(anyhow::Error)}` and `Refused { reason: RefusedReason }`, and both callers match on it.
   - `check_mount` returns `Result<(), RefusedReason>`.
-  - The client words each `RefusedReason`.
+  - `RefusedReason` is `pg-model` data (R-1), and the client words each one. NOTIFICATIONS_PLAN's `Notice::RootRefused` and `MountRefused` carry it in place of their `reason: String`, stored by its code (kebab-case, like the notice tags). The inbox then shows a refusal in the reader's language, not in the one the scan ran in.
   - One `FolderRefused`, built from `pg_platform::native::AlteredFolder`, is carried by both `CropError` and `WriteError`.
   - The test-only items become `pub(crate)`, with their tests beside them.
   - This was the only typed outcome downcast across crates. The rest are within a crate, or `jobs`' own `Panicked`.
@@ -387,6 +437,7 @@ Each fix gets a test that fails before it.
 - **Fix.**
   - The folder count becomes part of the views: `thumb_clock` gains `max_folder_id`, or a new `thumb_folders` view.
   - `thumb_sources` gives `poster_ms` already resolved.
+  - The view, not the cache's query, decides which files can have a thumbnail. Today `pending_sql` decides it from the catalog's columns: `missing = 0`, `error IS NULL`, `analyzed_mtime = mtime`. Those columns become the view's own condition, and the cache's query only compares the view's rows with its `entries`.
   - `pg-thumbcache` loses its normal `pg-catalog` dependency; it keeps the `fixture` dev-dependency for its tests.
   - The catalog's test checks only its views. The join is tested in `pg-thumbcache`, which owns `entries`.
 - Gate: `just test`, Linux checks, perf (`pending_thumbs.at_height`).
@@ -398,7 +449,8 @@ Each fix gets a test that fails before it.
   - Its `Cargo.toml` comment lists "the edit, the metadata and ExifTool". It also depends on analysis, catalog, jobs and thumbcache.
   - `WriteStatus::thumbnail_error: Option<String>` is English made here (`"file {id}: {e:#}"`).
 - **Fix.**
-  - `file_hash` moves where both reach it without the analysis: `pg_model::analysis::FileHash`, with the `blake3` call in `pg-metadata`. `pg-writeback` loses `pg-analysis`, and the layer file changes with it.
+  - `file_hash` becomes `pg_model::analysis::FileHash::of(bytes)`, with `blake3` as a dependency of `pg-model`. A content hash is not metadata, so `pg-metadata` would be the wrong home. `blake3` is pure Rust and builds for wasm32, which `just lint` checks `pg-model` for.
+  - The analysis and the write-back call it. `pg-writeback` loses `pg-analysis`, and the layer file changes with it.
   - The comment states the dependencies as they are.
   - `thumbnail_error` is a typed `(FileId, Error)` that the client words.
 - Gate: `just lint` (the layer check), `just test`.
@@ -410,7 +462,11 @@ Each fix gets a test that fails before it.
   - `pg_yandex::sniffed` lists again which formats the app decodes (JPEG, PNG, WebP, GIF, BMP), where the codec's list is the rule.
 - **Fix.**
   - The app's `Source` returns its own error, `pg_app::yandex::SourceError { Yandex(YandexError), Undecodable, Recorded }`, and `pg-yandex` drops the two variants.
-  - `sniffed` takes the codec's list. `pg-yandex` depends on `pg-model` alone, so the list is either passed in or moved to `pg_model::format` (and the codec reads it there).
+  - `pg-yandex` does not decide what can be decoded, because the app decodes every download anyway (`app/src/yandex/images.rs`, `check`). So:
+    - `Download { bytes, format: Option<Format> }` is sniffed for any format;
+    - `pg-yandex` keeps only `plausibly_image`, the check on the content type before the body is read;
+    - the app refuses what its decoder refuses.
+  - The list is then written only in the codec.
 - Gate: `just test`, `just shots` (the `yandex` scenarios).
 
 ### M-40: the platform code left in the desktop
@@ -431,12 +487,15 @@ Each fix gets a test that fails before it.
 
 - **`pg_model::query::parse_number`** reads typed input (a comma or a point). `query.rs`'s header says the front end reads text typed into a filter. Its users are `client::input` and `desktop::filters`. It moves to `pg_client::input`.
 - **`pg_model::date::exif_date`** is EXIF's text format (kamadak-exif's rules), and only `pg-metadata` uses it. It moves to `metadata/src/exif.rs`; the model keeps `wall_clock_seconds`.
-- **`pg_thumbcache::config::parse_cap_gb`** reads the command line's `--cap-gb` and the app's `PG_THUMB_CAP_GB`, and makes English errors in the cache crate. It moves to `pg_client::input`, and the cache takes bytes.
+- **`pg_thumbcache::config::parse_cap_gb`** reads the command line's `--cap-gb` and the app's `PG_THUMB_CAP_GB`, and makes English errors in the cache crate. `pg_client::input` is not its home: `pg-app` does not depend on `pg-client`, and an environment variable is not typed UI input. So:
+  - The cache takes a `Cap` (bytes), with `Cap::from_gb(f64) -> Option<Cap>` (finite and positive) in `pg-thumbcache`.
+  - Each front end reads the number with `str::parse::<f64>` (clap's value parser for `--cap-gb`) and words its own error.
+  - `Config::thumb_cap_bytes` becomes an `Option<Cap>`.
 - **`pg_dedup::pdq_index` and `PdqIndex`** are public but used only through `Pairer` and `IndexFull`. The module becomes private.
 - **`pg_analysis::analyze::video(path, turns, &mut Analyzer)`** becomes `Analyzer::video`, beside `Analyzer::analyze`.
 - **`pg_scan::child_path`**, which extends a `RulePath` by a name, becomes a `RulePath` method.
-- **`pg_crop::place_of`** reads the anchor's bytes and drops `:` and `\` (the Windows anchor). It becomes a `PathRules` method.
-- **`cli::rule_path_of`** (taking the rules) duplicates `pg_platform::names::rule_path_of` (native). It becomes a `PathRules` method.
+- **`pg_crop::place_of`** reads the anchor's bytes and drops `:` and `\` (the Windows anchor). It becomes `Anchor::drive_letter()` in `pg-model`, which needs only the bytes.
+- **`cli::rule_path_of`** (taking the rules) duplicates `pg_platform::names::rule_path_of` (native). It cannot be a `PathRules` method: `pg-model` cannot turn an OS path into bytes, which is `canonical_of`'s job in `pg-platform`. So it becomes `pg_platform::names::rule_path_of(rules, path)`, with the native one as its wrapper.
 - **`ScanStats`** (`scan/src/lib.rs`) re-declares `Pairing`'s fields (`catalog/src/pair.rs`: `rebound`, `replaced`, `ambiguous`, `unpaired_with_data`, `replaced_ids`, `temps`) and copies them one by one. It holds the `Pairing` instead.
 - Gate: `just test`.
 
@@ -473,12 +532,12 @@ Each fix gets a test that fails before it.
     - `write_target` returns `WriteTarget { path, format: Option<Format>, kind: Kind }`.
     - `rating_in_file_possible(Kind, Option<Format>)`, beside M-17's `can_hold_rating`.
     - `Fresh { ext: Ext, kind: Kind }`.
-    - The queue's value is `enum Write { Rating(Option<Rating>), Turns(Turns) }`, in the job and in the temp. The `debug_assert!`s and `pg-writeback`'s conversions go.
+    - The queue's value is `enum Write { Rating(Option<Rating>), Turns(Turns) }`, in the job and in the temp. The `debug_assert!`s and `pg-writeback`'s conversions go. This needs no migration: the table keeps its `(kind, value)` columns, and the type is parsed from them at the row and written back to them.
     - `Rewrite::before` is an `Option`.
     - `ScanId` goes in `pg_model::ids`, beside `FileId`, `FolderId` and `RootId`.
   - **An unknown kind is an error**, as an unknown extension is.
   - **rusqlite leaves the public API.** The writers' constructors become `pub(crate)`, made by `Tx`'s methods, and `release_memory` returns the catalog's `Result`.
-  - **Every stored key is a `pg-model` macro**, as `min_side!` and `group_distance!` already are. The catalog's SQL, `query` and the cache all reach `pg-model`.
+  - **Every stored key is a `pg-model` macro**, as `min_side!` and `group_distance!` already are. The catalog's SQL, `query` and the cache all reach `pg-model`. The macro is the one spelling: `Kind::key()` and its kin return the macro's literal, so Rust and SQL cannot disagree.
   - **The reader gets an error of its own**, with a variant for each of its two cases.
   - **`Meta::rating` is an `Option<Rating>`.**
 - Gate: `just test`, Linux checks, perf (the import and the catalog are benched).
@@ -497,7 +556,7 @@ Each fix gets a test that fails before it.
 - **Fix.**
   - `SavedView { name, #[serde(flatten)] listing: Listing }`, with no copies.
   - The catalog stores the session's `Listing` as it stores a view, by column: `session_listing()` and `save_session_listing(&Listing)`.
-  - `app::views` and `convert_text_folders` lose their knowledge of the keys. A migration converts the key-value rows once.
+  - `app::views` and `convert_text_folders` lose their knowledge of the keys. A migration converts the key-value rows once. NOTIFICATIONS_PLAN takes `TO_3` and `TO_4`; this one is the next free number in whichever order they land, and the pre-migration backup that plan's S2 adds covers it.
   - `session_set` goes; it is used only by tests.
 - Gate: `just test`, `just shots` (the start restores the listing), Linux checks.
 
@@ -517,6 +576,7 @@ Each fix gets a test that fails before it.
   - `core.rs` keeps the lifecycle.
   - Each concern's operations go to that concern's module, in one form: methods, in an `impl Catalog` block in that module (`roots.rs`, `queues.rs`, `lookup.rs`, and the existing `browse`, `writes`, `dups`). Callers keep `catalog.x()`, and the module says where `x` lives.
   - The free functions become methods, with their callers changed (ground rule 2: no aliases). The globs go with them.
+  - NOTIFICATIONS_PLAN writes its notice and ledger functions as "free functions taking `&Catalog`". Whichever of the two lands second takes the one shape: methods in an `impl Catalog` block of the concern's module (`notices.rs`, `ledger.rs`).
 - Gate: `just test`, Linux checks, perf (the catalog is benched).
 
 ### M-45: one name per concept
@@ -534,7 +594,7 @@ Each fix gets a test that fails before it.
 - **The cache's start-over reason is three types.**
   - `pg_thumbcache::StartOverReason`, `pg_client::text::CacheStartOver`, and the re-export `ThumbStartOverReason`.
   - A mapping is written in each front end: `cli::report::started_over_reason`, and the desktop's.
-  - Fix: one enum in `pg-model`, which both the cache and the client reach, and no mappings.
+  - Fix: one enum in `pg-model`, which both the cache and the client reach, and no mappings. This is the reason NOTIFICATIONS_PLAN's cache `StartedOver { reason }` notice carries (R-1).
 - **`MediaType` is the grid's too.** `pg_model::grid::Entry::media_type` uses `query::MediaType`. Fix: it moves beside `media::Kind` (`model/src/media.rs`), and `query` uses it from there.
 - **One method with two names.** `pg_model::orientation::turns_swap(turns)` is `turns.swaps_axes()`. Fix: keep `Turns::swaps_axes` and change its five callers.
 - **Two `Prefs`.** `pg_client::controller::prefs::Prefs` is the grid's size; `pg_app::Prefs` is the preferences file. Fix: the client's becomes `size::GridSize`.
@@ -542,12 +602,14 @@ Each fix gets a test that fails before it.
 - **A failed file is recorded two ways.**
   - `pg_jobs::failure::Failure { path: String, error: String }` is a pass's stats, with 6 users.
   - `FileError { path: String, cause: Cause }` is used for the app's notices.
-  - Fix: one `Failure { path, cause: Cause }`.
-- **The jobs header contradicts its code.**
-  - `jobs/src/lib.rs` says "Nothing here knows what a pass does to a file". But `control::Phase` names the library's passes (`Crop`, `Scan { root: String }`, `Import`, `Borders`, `Thumbs { height }`). `events::Change` names the runner's and the writer's getters.
-  - They are the vocabulary scan, thumbcache, writeback and library share, and `pg-jobs` is the one crate all four reach.
-  - Fix: keep them there and correct the header. `Scan { root }` becomes a `RulePath`, not a display string.
-- **`pg_library::ScanNote::kind() -> &'static str`** is a second key for a typed enum. Fix: the app words the enum directly, and `kind` goes.
+  - Fix: one type, NOTIFICATIONS_PLAN's `pg_model::notice::FileFailure`. Do not add a third shape in `pg-jobs`.
+- **The jobs header contradicts its code, and the phase is mirrored.**
+  - `jobs/src/lib.rs` says "Nothing here knows what a pass does to a file". But `control::Phase` names the library's passes (`Crop`, `Scan { root: String }`, `Import`, `Borders`, `Thumbs { height }`).
+  - The front ends put the phase into words. `desktop/src/library.rs` maps every `Phase` by hand to a mirror enum, `pg_client::text::Pass`, and the CLI's report does the same.
+  - Fix (R-1): `pg_model::progress::{Phase, Progress}`, carried by `pg_jobs::Control`. `text::Pass` and both mappings go, and the jobs header becomes true as written.
+  - `Scan { root }` becomes a `RulePath`, not a display string.
+  - `events::Change` names the runner's and the writer's getters. NOTIFICATIONS_PLAN S2 removes `Change::Notice`; the rest stays, as the jobs' own vocabulary of what changed.
+- **`pg_library::ScanNote::kind() -> &'static str`** is a second key for a typed enum. Fix: `ScanNote` becomes NOTIFICATIONS_PLAN's `pg-model` type, which the client words directly, and `kind` goes.
 - Gate: `just test`, `just qmltest`, `just shots`.
 
 ## Cleanup
@@ -584,7 +646,7 @@ These are additions to the plan's M-12a list.
 
   It is split into `ffi/load.rs`, `ffi/io.rs` and the wrappers.
 - **`client/src/text.rs`** has about sixty one-line wrappers, each building one `Message`, so every message has two APIs. `message.rs` keeps three parallel matches per variant: the id, the arguments and the samples.
-  - The callers build the `Message` and call `render`, and the wrappers go.
+  - Most of the wrappers go with R-1, since `text::notice(&Notice)` words every notice. For the rest, the callers build the `Message` and call `render`, and the wrappers go.
   - A macro makes the three matches from one table per variant.
 - **`catalog/src/schema.rs`** is split as M-24 says.
 - Gate: `just test`, `just shots`.
@@ -616,6 +678,7 @@ These are additions to the plan's M-12a list.
 - **`desktop/src/picker.rs`:** `start_for`'s doc describes the shell's refusals, which are `pg-platform`'s now.
 - **`desktop/src/command_line.rs`:** `args` has a doc line that belongs to another function ("The part of `arg` after its first `=`").
 - **Fixed in their own steps:** the `pg-schema` header (M-24), `render/src/display.rs` (M-27), the `pg-writeback` `Cargo.toml` comment (M-38) and the jobs header (M-45).
+- **NOTIFICATIONS_PLAN.md:** its `RootRefused` and `MountRefused` carry the typed `RefusedReason` (M-34). Its notices name `pg_model::progress::Phase` where they name a pass (M-45). It adds the CLI as a consumer (M-22, M-26).
 - **After the other steps:**
   - the README's `app`, `library`, `crop`, `thumbcache`, `render` and `client` entries;
   - the layer file;
@@ -625,22 +688,31 @@ These are additions to the plan's M-12a list.
 
 ## Order
 
-1. **M-21**, the bugs, with their tests.
-2. **M-34** (the typed refusal), then **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
-3. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.
-4. **M-26**, **M-32**, **M-43** and **M-35**: the words, the client's logic, the session, and the image scheme.
-5. The catalog, with the perf gate: **M-37**, **M-42**, **M-24**, then **M-44**. Then **M-45** (the names), once the catalog's modules are settled.
-6. **M-23**, **M-25**, **M-28**, **M-36**, **M-38**, **M-39**, **M-40**, **M-41** and **M-47**, independent of one another.
-7. **M-46**, **M-48**, then **M-49**, and the Windows and Linux validation of the whole series.
+This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered together, because the notice steps here are that plan's stages (R-1).
+
+1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`** and its grep check come with the first bug.
+2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start.
+3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer.
+4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
+5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.
+6. **M-32** (the rest of it), **M-43** and **M-35**: the client's logic, the session, and the image scheme.
+7. The catalog, with the perf gate: **M-37**, **M-42**, **M-24**, then **M-44**. Then the rest of **M-45** (the names), once the catalog's modules are settled.
+8. **M-23**, **M-25**, **M-28**, **M-36**, **M-38**, **M-39**, **M-40**, **M-41** and **M-47**, independent of one another.
+9. **M-46**, **M-48**, then **M-49**, and the Windows and Linux validation of the whole series.
 
 ## Open decisions
 
-None block a step. These are confirmed at their step:
+None block a step. Settled by the check of the fixes:
 
-- **M-29.** Whether the search's `Factory` fits in `Config` as it is. It is an `Arc<dyn Fn>`, so `Config` may need to stop deriving what a closure cannot.
+- **M-25:** a PNG with an `acTL` after its IDAT is a still (the PNG spec).
+- **M-29:** the source goes into `Config` as data, `YandexSource`, not as the closure.
+- **M-39:** `pg-yandex` does not decide what can be decoded.
+- **M-42:** the queue's typed value needs no migration.
+
+Confirmed at their step:
+
+- **M-21.** That Qt's video player opens the `\\?\` form of a path's units.
 - **M-30.** Whether `pg-app` drops `pg-codec` entirely: `turn_jpeg` may keep it.
 - **M-32.** Whether the facet counts belong in the client's controller state or beside it. What `controller.rs`'s `CORE` already holds decides.
-- **M-42 and M-43.** The migration that converts the queue's values and the session's key-value rows: a new `TO_n`, with `BASELINE` frozen.
-- **M-25.** Which kind a PNG with an `acTL` after its IDAT is. The container's rule decides it, and the test pins it.
-- **M-39.** Whether the decodable formats are passed into `pg-yandex` or moved to `pg_model::format`. The codec's dependency on the model decides it.
+- **M-43.** The session's migration number, after NOTIFICATIONS_PLAN's `TO_3` and `TO_4`, with `BASELINE` frozen.
 - **M-44.** The size of the change, which is every caller of the free functions. It is counted at the step and done in one sitting (ground rule 7).

@@ -429,6 +429,13 @@ Each fix gets a test that fails before it.
   - `RefusedReason` is `pg-model` data (R-1), and the client words each one. NOTIFICATIONS_PLAN's `Notice::RootRefused` and `MountRefused` carry it in place of their `reason: String`, stored by its code (kebab-case, like the notice tags). The inbox then shows a refusal in the reader's language, not in the one the scan ran in.
   - The test-only items become `pub(crate)`, with their tests beside them.
   - This was the only typed outcome downcast across crates. The rest are within a crate, or `jobs`' own `Panicked`.
+- **Done in step 2.**
+  - `pg_model::refusal::RefusedReason` (with `Fact`, the fact a check could not read) and its `code()`, the kebab-case name the words select on and S1 stores. Its `Display` is the code, for logs and `pg_app::Error`'s text; the words are the client's `refused-reason` entry (`text::refused_reason`), under `root-refused`, `mount-refused` and `folder-refused`.
+  - `pg_platform::dir` holds the facts: `DriveType`, the `RootFacts` calls (`SystemFacts`, which says "unsupported" off Windows), `fs_type` (the `statfs` type, "unsupported" off Linux), and `ROOT_CHECK`, which checks this system's folders take (as `PATH_RULES` states the rules), so the policy names no platform. `RootFacts` stays public: it is the facts' interface, which the scanner reads and its tests fake, not a test-only item.
+  - `pg_scan::refusal` holds the policy: the NTFS decision, the `f_type` table and the mount check, private to the crate, with their tests (the fake-facts ones Windows-only, as their paths are). `check_folder` returns `Result<(), RefusedReason>`, `scan` returns `ScanError::{Refused(RefusedReason), Failed(anyhow::Error)}` (the reason itself, without a wrapper struct), and `Listing::check_mount` returns the reason. A refused mount is `RefusedMount { mount, reason }`.
+  - The runner, the app and the CLI match on it. The library's `Notice::RootRefused` and `MountRefused` and `pg_app::Error::FolderRefused` carry the reason, and the CLI prints the client's words for a refused folder.
+  - `NativePath::set_plain` is `pub(crate)`.
+  - The code is not yet stored: the notices are not stored until NOTIFICATIONS S1.
 - Gate: Windows `just test`, Linux checks (the refused-mount tests), `just shots` (the pseudo-locale).
 
 ### M-35: the `image://` scheme in one place
@@ -649,6 +656,10 @@ Each fix gets a test that fails before it.
   - Fix (R-1): `pg_model::progress::{Phase, Progress}`, carried by `pg_jobs::Control`. `text::Pass` and both mappings go, and the jobs header becomes true as written.
   - `Scan { root }` becomes a `RulePath`, not a display string.
   - `events::Change` names the runner's and the writer's getters. NOTIFICATIONS_PLAN S2 removes `Change::Notice`; the rest stays, as the jobs' own vocabulary of what changed.
+  - **Done in step 2.** `pg_model::progress::{Phase, Progress}`; `pg-jobs` and `pg-borders` depend on `pg-model`, and `pg_app::reexport` no longer names them (the desktop depends on `pg-model`).
+    - `Progress` holds `elapsed: Duration`, not the `Instant` it began at, so the model reads no clock (it stays WASM-safe), and `rate`, `eta` and `fraction` are pure. `Control` keeps the start and fills `elapsed` when it hands a progress out (a snapshot or an event).
+    - `text::pass_status(&Progress, rules)` and `text::pass_name(&Phase, rules)` word it. A scan's root is shown under the catalog's rules. `pass-scan` is the name alone, and `pass-found` adds the count.
+    - The command line's progress label is `pass_name` too, so its own English mapping (`phase_label`) went with the desktop's and with `text::Pass` and `text::Counts`.
 - **`pg_library::ScanNote::kind() -> &'static str`** is a second key for a typed enum. Fix: `ScanNote` becomes NOTIFICATIONS_PLAN's `pg-model` type, which the client words directly, and `kind` goes.
 - Gate: `just test`, `just qmltest`, `just shots`.
 
@@ -741,7 +752,7 @@ These are additions to the plan's M-12a list.
 This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered together, because the notice steps here are that plan's stages (R-1).
 
 1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`**, with `path_buf` made `pub(crate)`, comes with the first bug. Done.
-2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start.
+2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start. Done.
 3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer.
 4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
 5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.

@@ -12,10 +12,11 @@ use pg_analysis::analyze::{Analyzer, FileBorders};
 use pg_analysis::borders::{self as detector, Detector};
 use pg_catalog::Catalog;
 use pg_codec::pixels::Rgb;
-use pg_jobs::control::{Control, Phase};
+use pg_jobs::control::Control;
 use pg_jobs::pipeline::{self, Options};
 use pg_model::detection::{self, Reason, Side};
 use pg_model::media::{Ext, Kind};
+use pg_model::progress::Phase;
 use pg_model::turns::Turns;
 use pg_platform::native::set_os_str;
 

@@ -16,8 +16,9 @@ use std::path::Path;
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
-use pg_app::reexport::{Cause, Change, FileError, Notice, Phase, Progress, WriteError};
+use pg_app::reexport::{Cause, Change, FileError, Notice, WriteError};
 use pg_client::text;
+use pg_model::progress::Phase;
 
 use crate::app;
 use crate::picker::{self, Purpose};
@@ -62,20 +63,6 @@ impl Changes {
 fn lock(shared: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
     // A panic on the other side leaves the changes as they were: the next pass handles them.
     shared.lock().unwrap_or_else(PoisonError::into_inner)
-}
-
-/// The status line's text for a pass's progress; empty when idle.
-fn progress_status(p: &Progress) -> String {
-    let pass = match &p.phase {
-        Phase::Idle => text::Pass::Idle,
-        Phase::Scan { root } => text::Pass::Scan { root: root.as_str() },
-        Phase::Import => text::Pass::Import,
-        Phase::Borders => text::Pass::Borders,
-        Phase::Crop => text::Pass::Crop,
-        Phase::Thumbs { height } => text::Pass::Thumbs { height: *height },
-    };
-    let counts = text::Counts { done: p.done, total: p.total, failed: p.failed, rate: p.rate(), eta_secs: p.eta() };
-    text::pass_status(pass, &counts)
 }
 
 /// The words for a notice from the job; the wording is `pg_client::text`'s.
@@ -225,7 +212,8 @@ impl qobject::Library {
         let Some(library) = LIBRARY.get() else { return };
         let status = library.status();
         let p = &status.progress;
-        let pass = progress_status(p);
+        // A scanned folder is shown under the catalog's rules, this machine's.
+        let pass = text::pass_status(p, pg_platform::native::PATH_RULES);
         let line = if status.paused { text::paused_status(&pass) } else { pass };
         self.as_mut().set_busy(p.phase != Phase::Idle);
         self.as_mut().set_paused(status.paused);

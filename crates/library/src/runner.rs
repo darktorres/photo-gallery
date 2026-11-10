@@ -17,7 +17,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use pg_catalog::Catalog;
-use pg_jobs::control::{Control, Progress};
+use pg_jobs::control::Control;
 use pg_jobs::events::{Bus, Change};
 use pg_jobs::failure::FileError;
 use pg_jobs::panics;
@@ -25,8 +25,11 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
+use pg_model::progress::Progress;
+use pg_model::refusal::RefusedReason;
 use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
+use pg_scan::ScanError;
 use pg_thumbcache::ThumbCache;
 
 #[derive(Default)]
@@ -95,10 +98,10 @@ pub enum Notice {
     /// A scan that failed. Its batches before the error are in.
     ScanFailed { root: String, error: String },
     /// A folder the scanner refuses (decisions 6 and 13); it stays in the library until it is removed.
-    RootRefused { root: String, reason: String },
+    RootRefused { root: String, reason: RefusedReason },
     /// A folder under a scanned root, on another file system, that the scanner refuses (a network or pseudo file system
     /// mounted there). Its files are not in the scan; `mount` is the folder.
-    MountRefused { root: String, mount: String, reason: String },
+    MountRefused { root: String, mount: String, reason: RefusedReason },
     /// What a scan of a folder counted that the user may want to know, `count` of them (S-17.7 decision 12).
     ScanNote { root: String, note: ScanNote, count: u64 },
     /// A round that failed.
@@ -428,8 +431,8 @@ impl Pass<Cx<'_>> for Scans {
                     for refused in &s.refused_mount_list {
                         cx.inner.notify(Notice::MountRefused {
                             root: root.clone(),
-                            mount: refused.path.clone(),
-                            reason: refused.error.clone(),
+                            mount: refused.mount.clone(),
+                            reason: refused.reason.clone(),
                         });
                     }
                     let counts = [
@@ -449,9 +452,9 @@ impl Pass<Cx<'_>> for Scans {
                 }
                 Err(e) => {
                     let root = rules.display(&path);
-                    let notice = match e.downcast_ref::<pg_platform::dir::Refused>() {
-                        Some(refused) => Notice::RootRefused { root, reason: refused.reason.clone() },
-                        None => Notice::ScanFailed { root, error: format!("{e:#}") },
+                    let notice = match e {
+                        ScanError::Refused(reason) => Notice::RootRefused { root, reason },
+                        ScanError::Failed(e) => Notice::ScanFailed { root, error: format!("{e:#}") },
                     };
                     cx.inner.notify(notice);
                     // Its batches before the error are in.

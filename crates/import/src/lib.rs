@@ -11,8 +11,9 @@ use pg_model::analysis::Analyzed;
 use pg_model::media::Kind;
 use pg_model::pdq::MIN_QUALITY;
 
-use pg_jobs::control::{Control, Phase};
+use pg_jobs::control::Control;
 use pg_jobs::pipeline::{self, Options};
+use pg_model::progress::Phase;
 
 const BATCH: usize = 500;
 

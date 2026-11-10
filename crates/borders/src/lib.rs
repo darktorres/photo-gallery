@@ -5,8 +5,9 @@
 use anyhow::{Context, Result};
 use pg_analysis::analyze::{Analyzer, FileBorders};
 use pg_catalog::Catalog;
-use pg_jobs::control::{Control, Phase};
+use pg_jobs::control::Control;
 use pg_jobs::pipeline::{self, Options};
+use pg_model::progress::Phase;
 
 const BATCH: usize = 500;
 

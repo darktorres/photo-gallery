@@ -83,8 +83,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 for root in roots {
                     let root = pg_scan::normalize_path(&root)?;
                     // A refused folder is not added; the other folders still are.
-                    if let Err(refused) = pg_scan::check_folder(rules, &root) {
-                        println!("{} is not added: {refused}", rules.display(&root));
+                    if let Err(reason) = pg_scan::check_folder(rules, &root) {
+                        println!("{}", pg_client::text::folder_refused(&rules.display(&root), &reason));
                         continue;
                     }
                     if !catalog.add_root(&root)? {
@@ -99,13 +99,11 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let s = match pg_scan::scan(&mut catalog, &root, ctl) {
                     Ok(s) => s,
                     // A refused folder is reported and the others are still scanned; any other error stops the command.
-                    Err(e) => match e.downcast_ref::<pg_platform::dir::Refused>() {
-                        Some(refused) => {
-                            println!("{name}: not scanned, {refused}");
-                            continue;
-                        }
-                        None => return Err(e),
-                    },
+                    Err(pg_scan::ScanError::Refused(reason)) => {
+                        println!("{}", pg_client::text::root_refused(&name, &reason));
+                        continue;
+                    }
+                    Err(pg_scan::ScanError::Failed(e)) => return Err(e),
                 };
                 println!(
                     "{name}: {} files in {} folders, {} new or changed, {} now missing, {} unreadable folders ({:.1} s)",

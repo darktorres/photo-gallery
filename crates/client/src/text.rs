@@ -12,9 +12,12 @@ mod test_support;
 mod words;
 
 use pg_model::detection::Class;
+use pg_model::progress::{Phase, Progress};
 use pg_model::query::{
     BorderFacet, Choice, DateRange, ListFacet, MediaType, Query, Range, RatingFilter, Shape, Status,
 };
+use pg_model::refusal::RefusedReason;
+use pg_model::rules::PathRules;
 use pg_model::write::WriteKind;
 
 use crate::input::day_text;
@@ -221,49 +224,42 @@ pub fn info(
     render(&Message::InfoLine { path: path.to_string(), dims, size, kept, borders: borders_info(borders) })
 }
 
-/// A pass the job runs, as the status line names it.
-pub enum Pass<'a> {
-    Idle,
-    Scan { root: &'a str },
-    Import,
-    Borders,
-    Crop,
-    Thumbs { height: u32 },
-}
-
-/// A pass's counts: its files done and in all, the failures, the rate (files a second) and the time left (seconds).
-pub struct Counts {
-    pub done: u64,
-    pub total: u64,
-    pub failed: u64,
-    pub rate: f64,
-    pub eta_secs: f64,
-}
-
-/// The status line's text for a pass's progress; empty when idle.
-pub fn pass_status(pass: Pass<'_>, c: &Counts) -> String {
-    match pass {
-        Pass::Idle => String::new(),
-        Pass::Scan { root } => render(&Message::PassScan { root: root.to_string(), count: group_digits(c.done) }),
-        Pass::Import => working(&render(&Message::PassImport), c),
-        Pass::Borders => working(&render(&Message::PassBorders), c),
-        Pass::Crop => working(&render(&Message::PassCrop), c),
-        Pass::Thumbs { height } => working(&render(&Message::PassThumbs { height: height.to_string() }), c),
+/// The name of the pass in `phase`, as the status line and the command line's progress say it ("Importing",
+/// "Scanning D:\Photos"); empty when idle. A scanned folder is shown under `rules`, the catalog's.
+pub fn pass_name(phase: &Phase, rules: PathRules) -> String {
+    match phase {
+        Phase::Idle => String::new(),
+        Phase::Scan { root } => render(&Message::PassScan { root: rules.display(root) }),
+        Phase::Import => render(&Message::PassImport),
+        Phase::Borders => render(&Message::PassBorders),
+        Phase::Crop => render(&Message::PassCrop),
+        Phase::Thumbs { height } => render(&Message::PassThumbs { height: height.to_string() }),
     }
 }
 
-/// A pass that counts its files: how far it is, its rate, and what is left.
-fn working(what: &str, c: &Counts) -> String {
-    let failed =
-        if c.failed > 0 { render(&Message::PassFailed { count: group_digits(c.failed) }) } else { String::new() };
-    render(&Message::PassWorking {
-        what: what.to_string(),
-        done: group_digits(c.done),
-        total: group_digits(c.total),
-        rate: format!("{:.0}", c.rate),
-        eta: duration(c.eta_secs),
-        failed,
-    })
+/// The status line's text for a pass's progress; empty when idle. A scan counts what it found; the other passes how
+/// far they are, their rate and the time left.
+pub fn pass_status(p: &Progress, rules: PathRules) -> String {
+    let what = pass_name(&p.phase, rules);
+    match p.phase {
+        Phase::Idle => what,
+        Phase::Scan { .. } => render(&Message::PassFound { what, count: group_digits(p.done) }),
+        _ => {
+            let failed = if p.failed > 0 {
+                render(&Message::PassFailed { count: group_digits(p.failed) })
+            } else {
+                String::new()
+            };
+            render(&Message::PassWorking {
+                what,
+                done: group_digits(p.done),
+                total: group_digits(p.total),
+                rate: format!("{:.0}", p.rate()),
+                eta: duration(p.eta()),
+                failed,
+            })
+        }
+    }
 }
 
 /// A count with its thousands grouped: 1,234,567.
@@ -332,13 +328,23 @@ pub fn scan_failed(root: &str, error: &str) -> String {
 }
 
 /// A folder in the library that the scanner refuses (not on a local NTFS disk, or on a network file system).
-pub fn root_refused(root: &str, reason: &str) -> String {
-    render(&Message::RootRefused { root: root.to_string(), reason: reason.to_string() })
+pub fn root_refused(root: &str, reason: &RefusedReason) -> String {
+    render(&Message::RootRefused { root: root.to_string(), reason: refused_reason(reason) })
 }
 
 /// A folder under a scanned root that the scanner does not walk into, because its file system is refused.
-pub fn mount_refused(mount: &str, reason: &str) -> String {
-    render(&Message::MountRefused { mount: mount.to_string(), reason: reason.to_string() })
+pub fn mount_refused(mount: &str, reason: &RefusedReason) -> String {
+    render(&Message::MountRefused { mount: mount.to_string(), reason: refused_reason(reason) })
+}
+
+/// Why the scanner refuses a folder, as the refusal lines say it ("its drive is removable").
+pub fn refused_reason(reason: &RefusedReason) -> String {
+    let (file_system, error) = match reason {
+        RefusedReason::NotNtfs { file_system } | RefusedReason::Pseudo { file_system } => (file_system.clone(), ""),
+        RefusedReason::Unreadable { error, .. } => (String::new(), error.as_str()),
+        _ => (String::new(), ""),
+    };
+    render(&Message::RefusedReason { code: reason.code().to_string(), file_system, error: error.to_string() })
 }
 
 /// What a scan of a folder counted: `kind` is the note's kind (`duplicates`, `reparse`, `ambiguous`, `unpaired`,
@@ -446,8 +452,8 @@ pub fn folder_already_added(folder: &str) -> String {
 
 /// A folder not added, because the scanner refuses it for `reason` (not on a local NTFS disk, or on a network file
 /// system).
-pub fn folder_refused(folder: &str, reason: &str) -> String {
-    render(&Message::FolderRefused { folder: folder.to_string(), reason: reason.to_string() })
+pub fn folder_refused(folder: &str, reason: &RefusedReason) -> String {
+    render(&Message::FolderRefused { folder: folder.to_string(), reason: refused_reason(reason) })
 }
 
 /// A folder that couldn't be added, for `error`.
@@ -629,9 +635,17 @@ mod tests {
 
     #[test]
     fn a_pass_line_says_how_far_it_is() {
-        let c = Counts { done: 1500, total: 4000, failed: 2, rate: 100.0, eta_secs: 25.0 };
-        assert_eq!(pass_status(Pass::Import, &c), "Importing 1,500 of 4,000 · 100/s · 25 s left · 2 failed");
-        assert_eq!(pass_status(Pass::Idle, &c), "");
+        let rules = PathRules::Windows;
+        let elapsed = std::time::Duration::from_secs(15);
+        let p = Progress { phase: Phase::Import, done: 1500, total: 4000, failed: 2, bytes: 0, elapsed };
+        assert_eq!(pass_status(&p, rules), "Importing 1,500 of 4,000 · 100/s · 25 s left · 2 failed");
+        let thumbs = Progress { phase: Phase::Thumbs { height: 256 }, failed: 0, ..p.clone() };
+        assert_eq!(pass_status(&thumbs, rules), "Thumbnails at 256 px 1,500 of 4,000 · 100/s · 25 s left");
+        let root = rules.parse(r"D:\Photos").unwrap();
+        let scan = Progress { phase: Phase::Scan { root }, done: 1234, total: 0, ..p.clone() };
+        assert_eq!(pass_status(&scan, rules), "Scanning D:\\Photos · 1,234 images found");
+        assert_eq!(pass_name(&scan.phase, rules), "Scanning D:\\Photos");
+        assert_eq!(pass_status(&Progress { phase: Phase::Idle, ..p }, rules), "");
     }
 
     #[test]
@@ -652,7 +666,7 @@ mod tests {
         assert_eq!(notice_more("D:/p: offline".to_string(), 3), "D:/p: offline (and 3 more)");
         assert_eq!(folder_already_added(r"D:\Photos"), "D:\\Photos is already in the library: rescanning it");
         assert_eq!(
-            folder_refused(r"Z:\Photos", "its drive is a network drive"),
+            folder_refused(r"Z:\Photos", &RefusedReason::NetworkDrive),
             "Z:\\Photos can't be added: its drive is a network drive"
         );
         assert_eq!(folder_not_added("database is locked"), "The folder couldn't be added: database is locked");
@@ -668,6 +682,53 @@ mod tests {
         assert_eq!(folders_unreadable("locked"), "The library's folders couldn't be read: locked");
         assert_eq!(round_failed("disk full"), "The background job failed: disk full");
         assert_eq!(crop_failed("disk full"), "Saving cropped copies failed: disk full");
+    }
+
+    /// Each refusal has words of its own: none falls to the entry's default, and no two read the same.
+    #[test]
+    fn every_refusal_reason_is_worded() {
+        use pg_model::refusal::Fact;
+        let unreadable = |fact| RefusedReason::Unreadable { fact, error: "Access is denied.".into() };
+        let reasons = [
+            RefusedReason::NetworkPath,
+            unreadable(Fact::Volume),
+            unreadable(Fact::Folder),
+            unreadable(Fact::RealPath),
+            unreadable(Fact::RealVolume),
+            unreadable(Fact::FileSystem),
+            RefusedReason::NetworkDrive,
+            RefusedReason::RemovableDrive,
+            RefusedReason::OtherDrive,
+            RefusedReason::Link,
+            RefusedReason::RealNotLocal,
+            RefusedReason::RealOnOtherVolume,
+            RefusedReason::NotNtfs { file_system: "FAT32".into() },
+            RefusedReason::Nfs,
+            RefusedReason::Smb,
+            RefusedReason::Fat,
+            RefusedReason::ExFat,
+            RefusedReason::Pseudo { file_system: "proc".into() },
+            RefusedReason::UnsupportedSystem,
+        ];
+        let fallback =
+            render(&Message::RefusedReason { code: "no-such-code".into(), file_system: "".into(), error: "".into() });
+        let mut worded: Vec<String> = reasons.iter().map(refused_reason).collect();
+        for (reason, words) in reasons.iter().zip(&worded) {
+            assert_ne!(words, &fallback, "{reason:?} falls to the default");
+        }
+        assert_eq!(refused_reason(&RefusedReason::RemovableDrive), "its drive is removable");
+        assert_eq!(
+            refused_reason(&RefusedReason::NotNtfs { file_system: "FAT32".into() }),
+            "its file system is FAT32, not NTFS"
+        );
+        assert_eq!(refused_reason(&unreadable(Fact::Volume)), "its volume can't be read: Access is denied.");
+        assert_eq!(
+            root_refused(r"D:\p", &RefusedReason::Link),
+            "D:\\p is not scanned, because it is a link (a junction or a symbolic link). Remove it from the library to stop this notice."
+        );
+        worded.sort();
+        worded.dedup();
+        assert_eq!(worded.len(), reasons.len(), "two reasons read the same");
     }
 
     #[test]

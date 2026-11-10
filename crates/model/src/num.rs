@@ -22,7 +22,7 @@ pub fn count(x: usize) -> f64 {
     x as f64
 }
 
-/// A byte size, or a count of 100 ns ticks, as an `f64`.
+/// A byte size, a count of 100 ns ticks, or a pass's count of files, as an `f64`.
 #[expect(
     clippy::as_conversions,
     clippy::cast_precision_loss,

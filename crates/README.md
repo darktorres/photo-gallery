@@ -7,13 +7,16 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 
 - `model` (`pg-model`): the domain data: the analysis record, border detection, EXIF orientation, PDQ, formats, media
   kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
-  turns, writes, image keys and requests, saved views and the session place), and which formats can hold a rating
-  (`format::can_hold_rating`, which the catalog's writes and the write-back share). Pure and WASM-safe: no file,
-  catalog, decoder or platform calls.
+  turns, writes, image keys and requests, saved views and the session place), which formats can hold a rating
+  (`format::can_hold_rating`, which the catalog's writes and the write-back share), and the outcomes the front ends
+  word: a pass's phase and progress (`progress`) and why a folder is refused (`refusal`). Pure and WASM-safe: no file,
+  catalog, decoder, clock or platform calls.
 - `platform` (`pg-platform`): the operating system behind portable functions: file identity, directory handles,
   priorities, processes, the console, the shared libraries loaded at run time, the folder dialog, verbatim paths, the
   system's units of names and arguments, the path rules this machine's paths follow (`native::PATH_RULES`; `model`
-  holds both rule sets as data), and message boxes. No other crate's production code names a platform
+  holds both rule sets as data), the facts about the volume a folder is on (`dir::RootFacts`, `dir::fs_type`, and
+  which of them this system's folders are checked by, `dir::ROOT_CHECK`; the scanner decides from them), and message
+  boxes. No other crate's production code names a platform
   (`cfg(windows)`, `cfg(unix)`, `target_os`, `std::os::{windows,unix}`, `windows_sys`, `libloading::os`); the
   exception is the desktop's glue that must name a type of one platform: the folder dialog's
   (`pg_platform::picker::Dialog` exists on Windows only). The video player is handed an open file
@@ -52,7 +55,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `yandex` (`pg-yandex`): Yandex Images reverse search: the upload, the two result lists and the downloads (the only
   HTTP client).
 - `scan` (`pg-scan`): the folder walk: the directory listing (`pg-platform`), the skipped folders, and the catalog rows
-  for what it finds.
+  for what it finds; and which folders it takes (`refusal`: the policy, from the platform's facts, with a typed
+  reason).
 - `import` (`pg-import`): a file's analysis (`pg-analysis`) and its pairing (`pg-dedup`), written to the catalog.
 - `thumbs` (`pg-thumbs`): the thumbnail pass: makes the thumbnails the catalog says are missing (`pg-render`, into the
   thumbnail cache).

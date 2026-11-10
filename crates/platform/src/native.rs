@@ -10,7 +10,7 @@
 //! form then names `Acme Inc`, another folder or none). A stored path reaches std, FFmpeg and ExifTool through
 //! `names::disk_path`, its verbatim form: the one way production code turns a catalog's path into one it opens
 //! (MODULARITY_REVIEW_4 R-2). The volume calls (`GetVolumePathNameW`, `GetDriveTypeW`) take the plain form
-//! ([`NativePath::set_plain`]) as they always did.
+//! (`NativePath::set_plain`, the crate's own) as they always did.
 //!
 //! ExifTool reads and writes a verbatim path, through its stay-open argument file and its command line alike (checked
 //! with ExifTool 13.60, in a folder `Fotos ä.` beside `Fotos ä`). Two readers normalize every name they are given, the
@@ -57,7 +57,7 @@ impl NativePath {
 
     /// `parts` concatenated as they are, never in the verbatim form: for the volume calls, which are given the path
     /// as it was typed.
-    pub fn set_plain(&mut self, parts: &[&[Unit]]) {
+    pub(crate) fn set_plain(&mut self, parts: &[&[Unit]]) {
         self.0.clear();
         set_units(&mut self.0, parts, false);
     }

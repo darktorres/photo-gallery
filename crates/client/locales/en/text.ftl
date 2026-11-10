@@ -60,7 +60,9 @@ borders-info = { "   " }borders { $names } (L { $left } T { $top } R { $right } 
 borders-marked = { " — marked not a border" }
 
 # The status line of a pass (`text::pass_status`)
-pass-scan = Scanning { $root } · { $count } images found
+pass-scan = Scanning { $root }
+# A scan's status line: its name (`pass-scan`) and the images found so far
+pass-found = { $what } · { $count } images found
 pass-import = Importing
 pass-borders = Finding borders
 pass-crop = Saving cropped copies
@@ -106,6 +108,30 @@ unreadable-folders = { $root }: { $count } folders couldn't be read
 scan-failed = { $root }: { $error }
 root-refused = { $root } is not scanned, because { $reason }. Remove it from the library to stop this notice.
 mount-refused = { $mount } is not scanned, because { $reason }. The files there stay as the library has them.
+# Why the scanner refuses a folder (`pg_model::refusal::RefusedReason`), selected by its code: the `$reason` of
+# `root-refused`, `mount-refused` and `folder-refused`. `$fs` is a file system's name, `$error` the system's error.
+refused-reason = { $code ->
+    [network-path] it is a network (UNC) path
+    [unreadable-volume] its volume can't be read: { $error }
+    [unreadable-folder] the folder can't be read: { $error }
+    [unreadable-real-path] the folder's real path can't be read: { $error }
+    [unreadable-real-volume] its real volume can't be read: { $error }
+    [unreadable-file-system] its file system can't be read: { $error }
+    [network-drive] its drive is a network drive
+    [removable-drive] its drive is removable
+    [other-drive] its drive is not a fixed local disk
+    [link] it is a link (a junction or a symbolic link)
+    [real-not-local] its real location is not on a local drive
+    [real-on-other-volume] its real location is on another volume
+    [not-ntfs] its file system is { $fs }, not NTFS
+    [nfs] it is on an NFS mount
+    [smb] it is on an SMB or CIFS share
+    [fat] its file system is FAT, whose file numbers change when it is mounted again
+    [exfat] its file system is exFAT, whose file numbers change when it is mounted again
+    [pseudo] it is the kernel's { $fs } file system, not a disk
+    [unsupported-system] scanning is supported on Windows and Linux only
+   *[other] it can't be scanned for its files' identities
+}
 scan-note = { $root }: { $kind ->
     [duplicates] { $count } files were skipped as duplicates (another path to the same file)
     [reparse] { $count } links or placeholders were indexed without being followed

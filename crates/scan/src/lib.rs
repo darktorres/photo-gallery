@@ -30,9 +30,13 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::dir::{Entry, Lister};
 use pg_platform::native::Unit;
 
-use pg_jobs::control::{Control, Phase};
-use pg_jobs::failure::{Failure, keep_failure};
+use pg_jobs::control::Control;
+use pg_jobs::failure::{FAILURES_KEPT, Failure, keep_failure};
+use pg_model::progress::Phase;
+use pg_model::refusal::RefusedReason;
 use pg_platform::names::{name_from_native, rule_path_of, units_of};
+
+mod refusal;
 
 /// The folder listing a scan reads with: the platform's [`Lister`], or a fake in the tests.
 pub trait Listing {
@@ -43,7 +47,7 @@ pub trait Listing {
     fn volume(&mut self, dir: &Self::Dir) -> io::Result<u64>;
     fn each(&mut self, dir: &Self::Dir, each: impl FnMut(Entry<'_>)) -> io::Result<()>;
     /// Whether the folder at `path`, on a device other than the root's, may be walked into: the reason it may not, if not.
-    fn check_mount(&mut self, path: &[Unit]) -> Result<(), String>;
+    fn check_mount(&mut self, path: &[Unit]) -> Result<(), RefusedReason>;
     /// How many devices were given their device number as their identity (no UUID, or the UUID of another device).
     fn fallback_volumes(&self) -> u64;
 }
@@ -63,8 +67,8 @@ impl Listing for Lister {
         Lister::each(self, dir, each)
     }
 
-    fn check_mount(&mut self, path: &[Unit]) -> Result<(), String> {
-        pg_platform::dir::check_mount(path).map_err(|refused| refused.reason)
+    fn check_mount(&mut self, path: &[Unit]) -> Result<(), RefusedReason> {
+        refusal::check_mount(path)
     }
 
     fn fallback_volumes(&self) -> u64 {
@@ -226,7 +230,7 @@ pub struct ScanStats {
     /// a local root). Their files are not seen, so their rows are left as they are.
     pub refused_mounts: u64,
     /// The first of those folders, with the reason (`FAILURES_KEPT`).
-    pub refused_mount_list: Vec<Failure>,
+    pub refused_mount_list: Vec<RefusedMount>,
     /// Devices whose identity is their device number, not a file system's UUID: their identities can change at a restart.
     pub volume_fallbacks: u64,
     /// Rows that took the identity of a new row on another volume (pairing tiers 1 and 2).
@@ -243,18 +247,52 @@ pub struct ScanStats {
     pub temps: Vec<RulePath>,
 }
 
-/// Whether the folder `root` may be scanned for its identities (decisions 6 and 13). The scan makes this check first, and
-/// so does adding a folder to the library.
-pub fn check_folder(rules: PathRules, root: &RulePath) -> Result<(), pg_platform::dir::Refused> {
-    pg_platform::dir::check_root(&units_of(&rules.join(root)))
+/// A folder under a scanned root that the scan didn't walk into, because its file system is refused: its display path,
+/// and why.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefusedMount {
+    pub mount: String,
+    pub reason: RefusedReason,
+}
+
+/// Why a scan didn't run: the folder is refused (before anything is recorded), or the scan failed (its batches before
+/// the error are in).
+#[derive(Debug)]
+pub enum ScanError {
+    Refused(RefusedReason),
+    Failed(anyhow::Error),
+}
+
+impl From<anyhow::Error> for ScanError {
+    fn from(e: anyhow::Error) -> ScanError {
+        ScanError::Failed(e)
+    }
+}
+
+/// A log's or the command line's text: a refusal by its code (its words are the client's), a failure with its causes.
+impl std::fmt::Display for ScanError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            ScanError::Refused(reason) => write!(f, "refused: {reason}"),
+            ScanError::Failed(e) => write!(f, "{e:#}"),
+        }
+    }
+}
+
+impl std::error::Error for ScanError {}
+
+/// Whether the folder `root` may be scanned for its identities (decisions 6 and 13): the reason it may not, if not. The
+/// scan makes this check first, and so does adding a folder to the library.
+pub fn check_folder(rules: PathRules, root: &RulePath) -> Result<(), RefusedReason> {
+    refusal::check_root(&units_of(&rules.join(root)))
 }
 
 /// Record the media files under `root` (a folder of the catalog's rules); files it no longer holds are marked missing.
-/// A folder that [`check_folder`] refuses is an error that is a `Refused`, before anything is recorded.
-pub fn scan(catalog: &mut Catalog, root: &RulePath, ctl: &Control) -> Result<ScanStats> {
+/// A folder that [`check_folder`] refuses is [`ScanError::Refused`], before anything is recorded.
+pub fn scan(catalog: &mut Catalog, root: &RulePath, ctl: &Control) -> Result<ScanStats, ScanError> {
     // A refused root writes no scans row, and nothing is marked missing.
-    check_folder(catalog.rules(), root)?;
-    walk(catalog, root, ctl, &mut Lister::new())
+    check_folder(catalog.rules(), root).map_err(ScanError::Refused)?;
+    Ok(walk(catalog, root, ctl, &mut Lister::new())?)
 }
 
 /// The folder being walked: its path, the folders it is under (with itself last) as `(volume, file ID)`, which a
@@ -281,7 +319,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     let mut skipped: Vec<RulePath> = Vec::new();
     // The verdict on each device a folder under the root is on, by its first folder (the reason, if refused): one check
     // per mount, not per folder.
-    let mut mounts: BTreeMap<u64, Result<(), String>> = BTreeMap::new();
+    let mut mounts: BTreeMap<u64, Result<(), RefusedReason>> = BTreeMap::new();
     // Each identity recorded or seen this scan: the second path to a file is skipped (decision 5).
     let mut seen: BTreeSet<FileIdentity> = BTreeSet::new();
     let mut entries: Vec<DirEntry> = Vec::new();
@@ -290,7 +328,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     let mut in_tx = 0;
     let mut complete = true;
     // The phase ends when this is dropped, however the walk leaves.
-    let _phase = ctl.begin(Phase::Scan { root: root_name.clone() }, 0);
+    let _phase = ctl.begin(Phase::Scan { root: root.clone() }, 0);
 
     while let Some(frame) = stack.pop() {
         // A stop ends the walk here: nothing is marked missing and the scan's `finished` stays NULL. The pairing
@@ -358,7 +396,9 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                     };
                     if let Err(reason) = verdict {
                         stats.refused_mounts += 1;
-                        keep_failure(&mut stats.refused_mount_list, rules.display(&child), &reason);
+                        if stats.refused_mount_list.len() < FAILURES_KEPT {
+                            stats.refused_mount_list.push(RefusedMount { mount: rules.display(&child), reason });
+                        }
                         skipped.push(child);
                         continue;
                     }
@@ -528,9 +568,9 @@ mod tests {
             0
         }
 
-        fn check_mount(&mut self, path: &[Unit]) -> Result<(), String> {
+        fn check_mount(&mut self, path: &[Unit]) -> Result<(), RefusedReason> {
             if self.refused.iter().any(|p| p == path) {
-                return Err("the test refuses it".to_string());
+                return Err(RefusedReason::Nfs);
             }
             Ok(())
         }
@@ -767,7 +807,14 @@ mod tests {
         let mut refusing = FakeListing::new(1, &tree).refusing(pg_platform::native::PATH_RULES, "mnt");
         let second = walk(&mut c, &fake_root(), &Control::new(), &mut refusing).unwrap();
         assert_eq!(second.refused_mounts, 1);
-        assert!(second.refused_mount_list.first().is_some_and(|f| f.path.ends_with("mnt")));
+        assert!(
+            second
+                .refused_mount_list
+                .first()
+                .is_some_and(|f| f.mount.ends_with("mnt") && f.reason == RefusedReason::Nfs),
+            "the mount, with its reason: {:?}",
+            second.refused_mount_list
+        );
         assert_eq!((second.missing, c.status().unwrap().files), (0, 2));
     }
 

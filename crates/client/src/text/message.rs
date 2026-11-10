@@ -104,6 +104,10 @@ pub enum Message {
     BordersMarked,
     PassScan {
         root: String,
+    },
+    /// A scan's line: its name (`what`) and the images found so far.
+    PassFound {
+        what: String,
         count: String,
     },
     PassImport,
@@ -169,6 +173,13 @@ pub enum Message {
     MountRefused {
         mount: String,
         reason: String,
+    },
+    /// Why a folder is refused (`pg_model::refusal::RefusedReason`): its code, which selects the words, with the file
+    /// system's name or the system's error where the reason has one.
+    RefusedReason {
+        code: String,
+        file_system: String,
+        error: String,
     },
     ScanNote {
         root: String,
@@ -416,6 +427,7 @@ impl Message {
             Message::BordersInfo { .. } => "borders-info",
             Message::BordersMarked => "borders-marked",
             Message::PassScan { .. } => "pass-scan",
+            Message::PassFound { .. } => "pass-found",
             Message::PassImport => "pass-import",
             Message::PassBorders => "pass-borders",
             Message::PassCrop => "pass-crop",
@@ -435,6 +447,7 @@ impl Message {
             Message::ScanFailed { .. } => "scan-failed",
             Message::RootRefused { .. } => "root-refused",
             Message::MountRefused { .. } => "mount-refused",
+            Message::RefusedReason { .. } => "refused-reason",
             Message::ScanNote { .. } => "scan-note",
             Message::RoundPanicked { .. } => "round-panicked",
             Message::FilePanicked { .. } => "file-panicked",
@@ -542,8 +555,11 @@ impl Message {
                 a.set("bottom", bottom.as_str());
                 a.set("marked", marked.as_str());
             }
-            Message::PassScan { root, count } => {
+            Message::PassScan { root } => {
                 a.set("root", root.as_str());
+            }
+            Message::PassFound { what, count } => {
+                a.set("what", what.as_str());
                 a.set("count", count.as_str());
             }
             Message::PassThumbs { height } => {
@@ -608,6 +624,11 @@ impl Message {
             Message::MountRefused { mount, reason } => {
                 a.set("mount", mount.as_str());
                 a.set("reason", reason.as_str());
+            }
+            Message::RefusedReason { code, file_system, error } => {
+                a.set("code", code.as_str());
+                a.set("fs", file_system.as_str());
+                a.set("error", error.as_str());
             }
             Message::ScanNote { root, kind, count } => {
                 a.set("root", root.as_str());
@@ -766,7 +787,8 @@ impl Message {
             Message::ClassBlur,
             Message::BordersInfo { names: s(), left: s(), top: s(), right: s(), bottom: s(), marked: s() },
             Message::BordersMarked,
-            Message::PassScan { root: s(), count: s() },
+            Message::PassScan { root: s() },
+            Message::PassFound { what: s(), count: s() },
             Message::PassImport,
             Message::PassBorders,
             Message::PassCrop,
@@ -786,6 +808,7 @@ impl Message {
             Message::ScanFailed { root: s(), error: s() },
             Message::RootRefused { root: s(), reason: s() },
             Message::MountRefused { mount: s(), reason: s() },
+            Message::RefusedReason { code: "link".to_string(), file_system: s(), error: s() },
             Message::ScanNote { root: s(), kind: s(), count: s() },
             Message::RoundPanicked { message: s() },
             Message::FilePanicked { message: s() },

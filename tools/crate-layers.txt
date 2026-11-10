@@ -23,7 +23,7 @@ schema: platform
 catalog: model platform query schema
 edit: codec container metadata model
 exiftool: platform
-jobs: platform
+jobs: model platform
 trace: platform
 video: codec model platform
 analysis: codec metadata model video
@@ -34,7 +34,7 @@ render: codec metadata model video
 scan: catalog jobs model platform
 thumbcache: catalog jobs model platform schema
 bench: analysis catalog model render thumbcache
-borders: analysis catalog jobs platform
+borders: analysis catalog jobs model platform
 import: analysis catalog dedup jobs model platform
 thumbs: catalog jobs model platform render thumbcache
 writeback: analysis catalog edit exiftool jobs metadata model platform thumbcache

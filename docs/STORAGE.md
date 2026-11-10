@@ -51,12 +51,12 @@ catalog, scan and platform tests).
 
 - **Birth time** is `statx` btime (`std::fs::Metadata::created()`). A file system that gives none (drvfs) gives NULL,
   and NULL matches any creation time: the file is still the same file by its identity (S-17.7 decision 2).
-- **Refused:** NFS, CIFS and SMB roots, by their `statfs` magic numbers (`check_fs_type`). Their inode numbers come
+- **Refused:** NFS, CIFS and SMB roots, by their `statfs` magic numbers (`pg_scan::refusal`, from `pg_platform::dir::fs_type`). Their inode numbers come
   from the server and can be unstable or duplicated. FAT (`vfat`, `msdos`) and exFAT roots, as on Windows: they store
   no inode numbers, so the kernel derives each one while the volume is mounted, and a file's number is not the same
   after a remount. The kernel's pseudo file systems (`/proc`, `/sys`, ...). A mount under a root is checked the same
-  way (`check_mount`). Every other type is accepted, `9p` (WSL's drvfs) included. The other Unix systems refuse every
-  root (`check_root` fails closed).
+  way (`refusal::check_mount`). Every other type is accepted, `9p` (WSL's drvfs) included. The other Unix systems refuse every
+  root (`refusal::check_root` fails closed). Each refusal is a `pg_model::refusal::RefusedReason`, worded by the client.
 - **Bind mounts:** a folder whose identity is already on the walk's path is not descended and is counted as a loop
   (`ScanStats::loops`, S-17.7 decision 11).
 - **Open files:** a catalog or thumbnail cache that another process has open is not rebuilt or started over. Each holds

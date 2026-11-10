@@ -2,42 +2,61 @@
 //! this is NTFS's `FileIdBothDirectoryInfo`, which gives each file's identity with the listing: no file is opened, and
 //! no administrator rights are needed. On Unix it is `std::fs::read_dir`, with the identity from the metadata. The
 //! library decides which entries it keeps.
+//!
+//! The facts about the volume a folder is on are here too ([`RootFacts`], [`fs_type`]): the scanner decides from them
+//! which folders it accepts, and why it refuses one (`pg_scan::refusal`, MODULARITY_REVIEW_4 M-34).
 
-use crate::names::units_of;
 #[cfg(windows)]
 use crate::native::NativePath;
-use crate::native::{SEP, Unit};
+#[cfg(windows)]
+use crate::native::SEP;
+use crate::native::Unit;
 use std::io;
 
 mod listing;
 pub use listing::Entry;
 
-/// Why a folder can't be scanned: the reason, for the notice. `check_root` returns it.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Refused {
-    pub reason: String,
+/// Which checks a folder of this system takes before it is scanned for its identities: the facts there are to decide
+/// from. Stated here, as [`crate::native::PATH_RULES`] is, so the scanner's policy names no platform.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RootCheck {
+    /// Windows: the drive, the link, the real location and the file system ([`RootFacts`], [`SystemFacts`]).
+    Ntfs,
+    /// Linux: the file system's type ([`fs_type`]), of the root and of each mount under it.
+    FsType,
+    /// Any other system: no identity is checked, so nothing is scanned.
+    Unsupported,
 }
 
-impl std::fmt::Display for Refused {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(&self.reason)
-    }
+/// The checks this system's folders take.
+pub const ROOT_CHECK: RootCheck = if cfg!(windows) {
+    RootCheck::Ntfs
+} else if cfg!(target_os = "linux") {
+    RootCheck::FsType
+} else {
+    RootCheck::Unsupported
+};
+
+/// What kind of drive a volume is (`GetDriveTypeW`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum DriveType {
+    /// A fixed local disk, the only kind the scanner takes.
+    Fixed,
+    Removable,
+    /// A network drive.
+    Remote,
+    /// Anything else: an optical drive, a RAM disk, no root, or a type the system doesn't know.
+    Other,
 }
 
-impl std::error::Error for Refused {}
-
-fn refuse(reason: impl Into<String>) -> Refused {
-    Refused { reason: reason.into() }
-}
-
-/// The calls the NTFS checks make, behind a trait so the decision (`check_ntfs`) is tested with fakes. `Handle` is a
+/// The facts the Windows checks read, one call each, behind a trait so the decision is tested with fakes. `Handle` is a
 /// folder opened without following a link.
 pub trait RootFacts {
     type Handle;
     /// The volume root of `path`, with its separator (`GetVolumePathNameW`).
     fn volume_root(&self, path: &[Unit]) -> io::Result<Vec<Unit>>;
-    /// The drive type of a volume root (`GetDriveTypeW`): 3 fixed, 2 removable, 4 remote.
-    fn drive_type(&self, volume_root: &[Unit]) -> u32;
+    /// The kind of drive a volume root is (`GetDriveTypeW`).
+    fn drive_type(&self, volume_root: &[Unit]) -> DriveType;
     /// `path` opened for its attributes, without following a link (`FILE_FLAG_OPEN_REPARSE_POINT`).
     fn open(&self, path: &[Unit]) -> io::Result<Self::Handle>;
     fn is_reparse_point(&self, handle: &Self::Handle) -> io::Result<bool>;
@@ -47,74 +66,42 @@ pub trait RootFacts {
     fn file_system(&self, handle: &Self::Handle) -> io::Result<String>;
 }
 
-/// `GetDriveTypeW` values (WinBase.h). `DRIVE_FIXED` is what the scanner needs; the others are named in refusals.
-const DRIVE_REMOVABLE: u32 = 2;
-const DRIVE_FIXED: u32 = 3;
-const DRIVE_REMOTE: u32 = 4;
+/// The system's own facts: Win32's on Windows. Elsewhere ([`ROOT_CHECK`] is not [`RootCheck::Ntfs`]) none can be read,
+/// and each call says so.
+pub struct SystemFacts;
 
-/// The checks of decision 6 in docs/S17_7_PLAN.md, in order, before the folder is listed. A call that fails refuses (fail closed).
-pub fn check_ntfs<F: RootFacts>(facts: &F, path: &[Unit]) -> Result<(), Refused> {
-    let unreadable = |what: &str, e: io::Error| refuse(format!("{what} can't be read: {e}"));
-    // 1. A network path, refused by its text: no call is made.
-    if path.starts_with(&[SEP, SEP]) {
-        return Err(refuse("it is a network (UNC) path"));
-    }
-    // 2 and 3: the volume the path is on is a fixed local disk.
-    let volume = facts.volume_root(path).map_err(|e| unreadable("its volume", e))?;
-    check_drive(facts, &volume)?;
-    // 4: the folder itself is not a link (a junction or symbolic link), which the volume checks cannot see.
-    let handle = facts.open(path).map_err(|e| unreadable("the folder", e))?;
-    if facts.is_reparse_point(&handle).map_err(|e| unreadable("the folder", e))? {
-        return Err(refuse("it is a link (a junction or a symbolic link)"));
-    }
-    // 5: where the folder really is must be a local disk, on the same volume.
-    let real = facts.final_path(&handle).map_err(|e| unreadable("the folder's real path", e))?;
-    let local = local_drive_path(&real).ok_or_else(|| refuse("its real location is not on a local drive"))?;
-    let real_volume = facts.volume_root(local).map_err(|e| unreadable("its real volume", e))?;
-    check_drive(facts, &real_volume)?;
-    if !same_path(&real_volume, &volume) {
-        return Err(refuse("its real location is on another volume"));
-    }
-    // 6: the file system is NTFS (FAT32 has no file IDs that stay put; a drive-type check alone cannot see it).
-    let fs = facts.file_system(&handle).map_err(|e| unreadable("its file system", e))?;
-    if fs != "NTFS" {
-        return Err(refuse(format!("its file system is {fs}, not NTFS")));
-    }
-    Ok(())
-}
+/// No Win32 off Windows: every fact is unsupported, and no drive is a fixed one.
+#[cfg(not(windows))]
+impl RootFacts for SystemFacts {
+    type Handle = ();
 
-fn check_drive<F: RootFacts>(facts: &F, volume_root: &[Unit]) -> Result<(), Refused> {
-    match facts.drive_type(volume_root) {
-        DRIVE_FIXED => Ok(()),
-        DRIVE_REMOTE => Err(refuse("its drive is a network drive")),
-        DRIVE_REMOVABLE => Err(refuse("its drive is removable")),
-        _ => Err(refuse("its drive is not a fixed local disk")),
+    fn volume_root(&self, _path: &[Unit]) -> io::Result<Vec<Unit>> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    fn drive_type(&self, _volume_root: &[Unit]) -> DriveType {
+        DriveType::Other
+    }
+
+    fn open(&self, _path: &[Unit]) -> io::Result<()> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    fn is_reparse_point(&self, _handle: &()) -> io::Result<bool> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    fn final_path(&self, _handle: &()) -> io::Result<Vec<Unit>> {
+        Err(io::ErrorKind::Unsupported.into())
+    }
+
+    fn file_system(&self, _handle: &()) -> io::Result<String> {
+        Err(io::ErrorKind::Unsupported.into())
     }
 }
-
-/// The path after `\\?\` when it names a drive letter (`\\?\D:\...`); `None` for anything else, including UNC.
-fn local_drive_path(real: &[Unit]) -> Option<&[Unit]> {
-    let rest = real.strip_prefix(&units_of(br"\\?\")[..])?;
-    let letter = char::from_u32(u32::from(*rest.first()?))?;
-    let local = letter.is_ascii_alphabetic() && rest.get(1) == Some(&Unit::from(b':')) && rest.get(2) == Some(&SEP);
-    local.then_some(rest)
-}
-
-/// Two volume roots are the same volume (Windows paths compare without case).
-fn same_path(a: &[Unit], b: &[Unit]) -> bool {
-    // ASCII upper case to lower case; any other unit is itself. `Unit` is u8 on Unix and u16 on Windows.
-    fn fold(u: Unit) -> Unit {
-        if (u32::from(b'A')..=u32::from(b'Z')).contains(&u32::from(u)) { u + 32 } else { u }
-    }
-    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| fold(*x) == fold(*y))
-}
-
-/// The NTFS checks against Win32.
-#[cfg(windows)]
-struct WinFacts;
 
 #[cfg(windows)]
-impl RootFacts for WinFacts {
+impl RootFacts for SystemFacts {
     type Handle = std::os::windows::io::OwnedHandle;
 
     fn volume_root(&self, path: &[Unit]) -> io::Result<Vec<Unit>> {
@@ -131,12 +118,21 @@ impl RootFacts for WinFacts {
         Ok(until_nul(&out))
     }
 
-    fn drive_type(&self, volume_root: &[Unit]) -> u32 {
+    fn drive_type(&self, volume_root: &[Unit]) -> DriveType {
         use windows_sys::Win32::Storage::FileSystem::GetDriveTypeW;
+        // `GetDriveTypeW`'s values (WinBase.h; windows-sys has them behind a feature this crate doesn't take).
+        const DRIVE_REMOVABLE: u32 = 2;
+        const DRIVE_FIXED: u32 = 3;
+        const DRIVE_REMOTE: u32 = 4;
         let mut wide = NativePath::default();
         wide.set_plain(&[volume_root]);
         // SAFETY: `wide` is NUL-terminated and outlives the call.
-        unsafe { GetDriveTypeW(wide.units().as_ptr()) }
+        match unsafe { GetDriveTypeW(wide.units().as_ptr()) } {
+            DRIVE_FIXED => DriveType::Fixed,
+            DRIVE_REMOVABLE => DriveType::Removable,
+            DRIVE_REMOTE => DriveType::Remote,
+            _ => DriveType::Other,
+        }
     }
 
     fn open(&self, path: &[Unit]) -> io::Result<Self::Handle> {
@@ -236,81 +232,12 @@ fn until_nul(units: &[Unit]) -> Vec<Unit> {
     units.iter().copied().take_while(|&u| u != 0).collect()
 }
 
-/// Whether a folder may be scanned for its identities: decision 6 in docs/S17_7_PLAN.md on Windows (NTFS on a fixed local disk).
-#[cfg(windows)]
-pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
-    check_ntfs(&WinFacts, path)
-}
-
-/// Whether a folder may be scanned on Linux (decision 13 in docs/S17_7_PLAN.md): the file system's type is checked, and the
-/// network types (NFS, CIFS, SMB) are refused, because their inode numbers come from the server; FAT and exFAT, whose
-/// inode numbers the kernel makes up at mount time (as Windows refuses FAT32 and exFAT, which have no file IDs that stay
-/// put); and the kernel's pseudo file systems (`/proc`, `/sys`, ...), which hold no photos.
-#[cfg(target_os = "linux")]
-pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
-    let f_type = linux_fs_type(path).map_err(|e| refuse(format!("its file system can't be read: {e}")))?;
-    check_fs_type(f_type)
-}
-
-/// Whether a folder under a scanned root, on another device than the root's, may be walked into. On Linux a local root can
-/// hold a network or pseudo file system (`/proc` under `/`), so the mount is checked as the root is. On Windows a volume is
-/// a drive, which the root's check covers, and a junction is a reparse point the walk never follows.
-#[cfg(target_os = "linux")]
-pub fn check_mount(path: &[Unit]) -> Result<(), Refused> {
-    check_root(path)
-}
-
-/// On Windows a folder under the root is on the root's volume (see [`check_mount`]), so nothing is checked.
-#[cfg(not(target_os = "linux"))]
-pub fn check_mount(_path: &[Unit]) -> Result<(), Refused> {
-    Ok(())
-}
-
-/// Other systems are refused: the scanner's identities are checked on Windows and Linux only.
-#[cfg(all(unix, not(target_os = "linux")))]
-pub fn check_root(_path: &[Unit]) -> Result<(), Refused> {
-    Err(refuse("scanning is supported on Windows and Linux only"))
-}
-
-/// The `f_type` magic numbers refused, with the reason. The network file systems (kernel `uapi/linux/magic.h`) hand out
-/// inode numbers from the server. FAT (`vfat` and `msdos`, which share `MSDOS_SUPER_MAGIC`) and exFAT store no inode
-/// numbers: the kernel derives each from where the entry is found while the volume is mounted, so a file's number is not
-/// the same after the volume is mounted again, and the catalog would see every file as new. The pseudo file systems are the kernel's own entries, not files: a scan of `/proc`
-/// reads process state, and `/sys`'s entries are attributes. The numbers of the pseudo ones were read with `stat -f` on
-/// the kernel this was built on (7.0). `devtmpfs` is not here: it reports tmpfs's number, which is accepted.
-const REFUSED: &[(i64, &str)] = &[
-    (0x6969, "it is on an NFS mount"),
-    (0x517B, "it is on an SMB or CIFS share"),
-    (0xFF53_4D42, "it is on an SMB or CIFS share"),
-    (0xFE53_4D42, "it is on an SMB or CIFS share"),
-    (0x4D44, "its file system is FAT, whose file numbers change when it is mounted again"),
-    (0x2011_BAB0, "its file system is exFAT, whose file numbers change when it is mounted again"),
-    (0x9FA0, "it is the kernel's proc file system, not a disk"),
-    (0x6265_6572, "it is the kernel's sysfs file system, not a disk"),
-    (0x1CD1, "it is the kernel's devpts file system, not a disk"),
-    (0x6367_7270, "it is the kernel's cgroup2 file system, not a disk"),
-    (0x6462_6720, "it is the kernel's debugfs file system, not a disk"),
-    (0x7472_6163, "it is the kernel's tracefs file system, not a disk"),
-    (0x7363_6673, "it is the kernel's securityfs file system, not a disk"),
-    (0xCAFE_4A11, "it is the kernel's bpf file system, not a disk"),
-    (0x6165_676C, "it is the kernel's pstore file system, not a disk"),
-    (0x6265_6570, "it is the kernel's configfs file system, not a disk"),
-];
-
-/// Refuses the network, FAT and pseudo file systems by their `f_type`; every other type is accepted, including `9p` (WSL's
-/// drvfs).
-pub fn check_fs_type(f_type: i64) -> Result<(), Refused> {
-    match REFUSED.iter().find(|(magic, _)| *magic == f_type) {
-        Some((_, reason)) => Err(refuse(*reason)),
-        None => Ok(()),
-    }
-}
-
-/// The `f_type` of the file system holding `path` (`statfs`). `f_type` is `i64` on 64-bit Linux, where the conversion
-/// below is the identity, so the lint is allowed rather than the conversion dropped (it is needed on 32-bit).
+/// The `f_type` of the file system holding `path` (`statfs`), the fact the Linux checks read ([`RootCheck::FsType`]).
+/// Elsewhere there is none to read, and the call says so. `f_type` is `i64` on 64-bit Linux, where the conversion below
+/// is the identity, so the lint is allowed rather than the conversion dropped (it is needed on 32-bit).
 #[cfg(target_os = "linux")]
 #[expect(clippy::useless_conversion, reason = "the identity on 64-bit Linux, where f_type is i64; needed on 32-bit")]
-fn linux_fs_type(path: &[Unit]) -> io::Result<i64> {
+pub fn fs_type(path: &[Unit]) -> io::Result<i64> {
     let c = std::ffi::CString::new(path).map_err(|_| io::Error::other("the path has a NUL"))?;
     let mut st = std::mem::MaybeUninit::<libc::statfs>::uninit();
     // SAFETY: `c` is NUL-terminated and outlives the call; `st` is what the call fills when it returns 0.
@@ -319,6 +246,12 @@ fn linux_fs_type(path: &[Unit]) -> io::Result<i64> {
     }
     // SAFETY: statfs returned 0, so it filled `st`.
     Ok(i64::from(unsafe { st.assume_init() }.f_type))
+}
+
+/// No `statfs` type to read off Linux.
+#[cfg(not(target_os = "linux"))]
+pub fn fs_type(_path: &[Unit]) -> io::Result<i64> {
+    Err(io::ErrorKind::Unsupported.into())
 }
 
 #[cfg(unix)]
@@ -696,230 +629,36 @@ mod unix {
 }
 
 #[cfg(test)]
-mod root_tests {
+mod facts_tests {
     use super::*;
+    use crate::names::units_of;
 
+    /// Real calls: the test binary's folder is on a fixed NTFS disk, not a link, and really where it is.
+    #[cfg(windows)]
     #[test]
-    fn network_file_systems_are_refused_and_local_ones_accepted() {
-        // The magic numbers of the kernel's magic.h: NFS, SMB (smbfs), CIFS and SMB2 are refused.
-        for f_type in [0x6969, 0x517B, 0xFF53_4D42, 0xFE53_4D42] {
-            assert!(check_fs_type(f_type).is_err(), "{f_type:#x}");
-        }
-        // ext4, tmpfs, btrfs, and 9p (WSL's drvfs, the path to NTFS that the Linux tests use) are accepted.
-        // (FAT and exFAT: `fat_and_exfat_are_refused`.)
-        for f_type in [0xEF53, 0x0102_1994, 0x9123_683E, 0x0102_1997] {
-            assert_eq!(check_fs_type(f_type), Ok(()), "{f_type:#x}");
-        }
+    fn the_facts_of_a_folder_on_a_fixed_ntfs_disk() {
+        let dir = std::env::current_dir().unwrap();
+        let path = units_of(dir.to_str().unwrap().as_bytes());
+        let facts = SystemFacts;
+        let volume = facts.volume_root(&path).unwrap();
+        assert_eq!(facts.drive_type(&volume), DriveType::Fixed, "{}", dir.display());
+        let handle = facts.open(&path).unwrap();
+        assert!(!facts.is_reparse_point(&handle).unwrap());
+        assert!(facts.final_path(&handle).unwrap().starts_with(&units_of(br"\\?\")));
+        assert_eq!(facts.file_system(&handle).unwrap(), "NTFS");
+        assert_eq!(ROOT_CHECK, RootCheck::Ntfs);
     }
 
-    #[test]
-    fn fat_and_exfat_are_refused() {
-        // MSDOS_SUPER_MAGIC (vfat and msdos both report it) and EXFAT_SUPER_MAGIC, from the kernel's magic.h.
-        for (f_type, name) in [(0x4D44, "FAT"), (0x2011_BAB0, "exFAT")] {
-            let refused = check_fs_type(f_type).expect_err(name);
-            assert!(refused.reason.contains(name), "{}", refused.reason);
-        }
-    }
-
-    #[test]
-    fn the_kernels_pseudo_file_systems_are_refused() {
-        // The magic numbers measured on the kernel this was built on (see REFUSED).
-        let pseudo = [
-            0x9FA0,
-            0x6265_6572,
-            0x1CD1,
-            0x6367_7270,
-            0x6462_6720,
-            0x7472_6163,
-            0x7363_6673,
-            0xCAFE_4A11,
-            0x6165_676C,
-            0x6265_6570,
-        ];
-        for f_type in pseudo {
-            assert!(check_fs_type(f_type).is_err(), "{f_type:#x}");
-        }
-    }
-
+    /// Real calls: `/` and `/proc` have the type numbers of their file systems.
     #[cfg(target_os = "linux")]
     #[test]
-    fn this_systems_root_is_accepted_and_proc_is_refused() {
-        // Real calls: `/` is a local file system; `/proc` is procfs, which is refused.
-        assert_eq!(check_root(&units_of(b"/")), Ok(()));
-        assert!(check_root(&units_of(b"/proc")).is_err());
+    fn the_file_system_type_of_proc_is_procfs() {
+        assert_eq!(fs_type(&units_of(b"/proc")).unwrap(), 0x9FA0);
+        assert!(fs_type(&units_of(b"/")).is_ok());
+        assert!(fs_type(&units_of(b"/no/such/folder")).is_err());
+        assert_eq!(ROOT_CHECK, RootCheck::FsType);
     }
 }
-
-#[cfg(all(test, windows))]
-mod ntfs_tests {
-    use super::*;
-    use std::cell::Cell;
-
-    fn u(s: &str) -> Vec<Unit> {
-        units_of(s.as_bytes())
-    }
-
-    /// A call the fake can be told to fail.
-    #[derive(Clone, Copy, PartialEq, Debug)]
-    enum Call {
-        Volume,
-        Open,
-        Reparse,
-        Final,
-        Fs,
-    }
-
-    /// The system the checks see: the drive type of the folder's volume (D:) and of the volume it really is on
-    /// (E:), what the handle reports, and how many calls were made.
-    struct Fake {
-        drive: u32,
-        real_drive: u32,
-        real: &'static str,
-        reparse: bool,
-        fs: &'static str,
-        fail: Option<Call>,
-        calls: Cell<u32>,
-    }
-
-    impl Fake {
-        /// A folder on a fixed NTFS disk, not a link, really where it is.
-        fn local() -> Fake {
-            Fake {
-                drive: DRIVE_FIXED,
-                real_drive: DRIVE_FIXED,
-                real: r"\\?\D:\photos",
-                reparse: false,
-                fs: "NTFS",
-                fail: None,
-                calls: Cell::new(0),
-            }
-        }
-
-        fn call(&self, c: Call) -> io::Result<()> {
-            self.calls.set(self.calls.get() + 1);
-            if self.fail == Some(c) { Err(io::Error::other("injected")) } else { Ok(()) }
-        }
-    }
-
-    impl RootFacts for Fake {
-        type Handle = ();
-
-        fn volume_root(&self, path: &[Unit]) -> io::Result<Vec<Unit>> {
-            self.call(Call::Volume)?;
-            path.get(..3).map(<[Unit]>::to_vec).ok_or_else(|| io::Error::other("the path has no drive root"))
-        }
-
-        fn drive_type(&self, volume_root: &[Unit]) -> u32 {
-            if volume_root == u(r"D:\").as_slice() { self.drive } else { self.real_drive }
-        }
-
-        fn open(&self, _path: &[Unit]) -> io::Result<()> {
-            self.call(Call::Open)
-        }
-
-        fn is_reparse_point(&self, _: &()) -> io::Result<bool> {
-            self.call(Call::Reparse)?;
-            Ok(self.reparse)
-        }
-
-        fn final_path(&self, _: &()) -> io::Result<Vec<Unit>> {
-            self.call(Call::Final)?;
-            Ok(u(self.real))
-        }
-
-        fn file_system(&self, _: &()) -> io::Result<String> {
-            self.call(Call::Fs)?;
-            Ok(self.fs.to_string())
-        }
-    }
-
-    fn check(f: &Fake) -> Result<(), Refused> {
-        check_ntfs(f, &u(r"D:\photos"))
-    }
-
-    #[expect(clippy::panic, reason = "a test fails by panicking")]
-    fn refused_for(f: &Fake, why: &str) {
-        match check(f) {
-            Err(e) => assert!(e.reason.contains(why), "{} (wanted: {why})", e.reason),
-            Ok(()) => panic!("accepted; wanted a refusal for: {why}"),
-        }
-    }
-
-    #[test]
-    fn a_fixed_local_ntfs_folder_is_allowed() {
-        assert_eq!(check(&Fake::local()), Ok(()));
-    }
-
-    #[test]
-    fn a_remote_drive_is_refused() {
-        refused_for(&Fake { drive: DRIVE_REMOTE, ..Fake::local() }, "network drive");
-    }
-
-    #[test]
-    fn a_removable_drive_is_refused() {
-        refused_for(&Fake { drive: DRIVE_REMOVABLE, ..Fake::local() }, "removable");
-    }
-
-    #[test]
-    fn a_fixed_fat32_drive_is_refused_by_its_file_system() {
-        refused_for(&Fake { fs: "FAT32", ..Fake::local() }, "FAT32");
-    }
-
-    #[test]
-    fn a_reparse_root_is_refused() {
-        refused_for(&Fake { reparse: true, ..Fake::local() }, "link");
-    }
-
-    #[test]
-    fn a_real_location_on_a_remote_drive_is_refused() {
-        refused_for(&Fake { real: r"\\?\UNC\localhost\D$\photos", ..Fake::local() }, "not on a local drive");
-    }
-
-    #[test]
-    fn a_real_location_on_another_volume_is_refused() {
-        refused_for(&Fake { real: r"\\?\E:\photos", ..Fake::local() }, "another volume");
-    }
-
-    #[test]
-    fn a_real_location_on_a_remote_volume_is_refused() {
-        refused_for(&Fake { real: r"\\?\E:\photos", real_drive: DRIVE_REMOTE, ..Fake::local() }, "network drive");
-    }
-
-    #[test]
-    fn a_real_location_without_the_verbatim_drive_form_is_refused() {
-        refused_for(&Fake { real: r"D:\photos", ..Fake::local() }, "not on a local drive");
-    }
-
-    #[test]
-    fn each_failed_call_refuses() {
-        for call in [Call::Volume, Call::Open, Call::Reparse, Call::Final, Call::Fs] {
-            let f = Fake { fail: Some(call), ..Fake::local() };
-            assert!(check(&f).is_err(), "{call:?} failing must refuse");
-        }
-    }
-
-    #[test]
-    fn a_unc_path_is_refused_before_any_call() {
-        let f = Fake::local();
-        let r = check_ntfs(&f, &u(r"\\localhost\D$\photos"));
-        assert!(r.is_err());
-        assert_eq!(f.calls.get(), 0, "the text is refused without asking the system");
-    }
-
-    #[test]
-    fn a_folder_on_a_fixed_ntfs_disk_is_accepted() {
-        // A real call: the test binary's folder is on a fixed NTFS disk.
-        let dir = std::env::current_dir().unwrap();
-        assert_eq!(check_root(&u(dir.to_str().unwrap())), Ok(()), "{}", dir.display());
-    }
-
-    #[test]
-    fn drive_letters_compare_without_case() {
-        assert!(same_path(&u(r"d:\"), &u(r"D:\")));
-        assert!(!same_path(&u(r"D:\"), &u(r"E:\")));
-    }
-}
-
 #[cfg(test)]
 mod listing_tests {
     use super::*;

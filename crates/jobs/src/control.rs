@@ -1,63 +1,30 @@
 //! What a running pass shares with whoever started it: its progress, pause, and a stop request (a new job, a new
 //! thumbnail height, quitting). It holds no text: whoever shows the progress formats it (the command line, the app).
+//! The phase and the progress are the model's (`pg_model::progress`); the clock they are timed by is here.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
+use pg_model::progress::{Phase, Progress};
+
 use crate::events::{Bus, Subscription, Watch};
 
-/// The phase a pass is in, and what it works on.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Phase {
-    Idle,
-    Crop,
-    /// The folder being scanned.
-    Scan {
-        root: String,
-    },
-    Import,
-    Borders,
-    /// The thumbnails made at this height.
-    Thumbs {
-        height: u32,
-    },
+/// The progress of the phase running, and when it began: a [`Progress`] read from it has the time since then.
+#[derive(Clone)]
+struct Running {
+    progress: Progress,
+    started: Instant,
 }
 
-#[derive(Clone, Debug)]
-pub struct Progress {
-    pub phase: Phase,
-    pub done: u64,
-    /// 0 when unknown (scanning).
-    pub total: u64,
-    pub failed: u64,
-    pub bytes: u64,
-    pub started: Instant,
-}
-
-impl Progress {
-    fn idle() -> Progress {
-        Progress { phase: Phase::Idle, done: 0, total: 0, failed: 0, bytes: 0, started: Instant::now() }
+impl Running {
+    fn idle() -> Running {
+        Running { progress: Progress::idle(), started: Instant::now() }
     }
 
-    pub fn elapsed(&self) -> Duration {
-        self.started.elapsed()
-    }
-
-    /// Files per second so far.
-    pub fn rate(&self) -> f64 {
-        count(self.done) / self.elapsed().as_secs_f64().max(1e-3)
-    }
-
-    /// Seconds left at the rate so far (0 when there is no rate yet or nothing is known).
-    pub fn eta(&self) -> f64 {
-        let rate = self.rate();
-        if rate > 0.0 { count(self.total.saturating_sub(self.done)) / rate } else { 0.0 }
-    }
-
-    /// Done over total, 0 when the total is unknown.
-    pub fn fraction(&self) -> f64 {
-        if self.total == 0 { 0.0 } else { count(self.done) / count(self.total) }
+    /// The progress as it is now, with the time the phase has run.
+    fn read(&self) -> Progress {
+        Progress { elapsed: self.started.elapsed(), ..self.progress.clone() }
     }
 }
 
@@ -79,7 +46,7 @@ pub struct Control {
     /// checkpoint waits on `resumed`.
     paused: Mutex<bool>,
     resumed: Condvar,
-    progress: Watch<Progress>,
+    progress: Watch<Running>,
     events: Bus<Event>,
     /// Called whenever what `snapshot` or `is_paused` says changes (progress, the pause), for an owner that
     /// reads them on its own thread instead of polling.
@@ -94,7 +61,7 @@ impl Control {
             stop: AtomicBool::new(false),
             paused: Mutex::new(false),
             resumed: Condvar::new(),
-            progress: Watch::new(Progress::idle()),
+            progress: Watch::new(Running::idle()),
             events: Bus::new(EVENT_CAP),
             hook: OnceLock::new(),
             last_event: Mutex::new(Instant::now()),
@@ -174,7 +141,8 @@ impl Control {
     pub fn begin(&self, phase: Phase, total: u64) -> PhaseGuard<'_> {
         let now = Instant::now();
         *self.last_event.lock().unwrap_or_else(PoisonError::into_inner) = now;
-        self.progress.set(Progress { phase, done: 0, total, failed: 0, bytes: 0, started: now });
+        let progress = Progress { phase, total, ..Progress::idle() };
+        self.progress.set(Running { progress, started: now });
         self.changed();
         PhaseGuard { ctl: self }
     }
@@ -195,9 +163,9 @@ impl Control {
 
     fn update(&self, change: impl FnOnce(&mut Progress)) {
         let mut last = self.last_event.lock().unwrap_or_else(PoisonError::into_inner);
-        let due = self.progress.update(|p| {
-            change(p);
-            (last.elapsed() >= EVENT_INTERVAL).then(|| p.clone())
+        let due = self.progress.update(|running| {
+            change(&mut running.progress);
+            (last.elapsed() >= EVENT_INTERVAL).then(|| running.read())
         });
         if let Some(progress) = due {
             *last = Instant::now();
@@ -208,13 +176,14 @@ impl Control {
 
     /// The phase ended: its final progress goes out as an event, and the phase is idle. Called by [`PhaseGuard`]'s drop.
     fn finish(&self) {
-        let ended = self.progress.update(|p| std::mem::replace(p, Progress::idle()));
+        let ended = self.progress.update(|running| std::mem::replace(running, Running::idle()).read());
         self.events.publish(Event::Finished(ended));
         self.changed();
     }
 
+    /// The progress now, with the time its phase has run.
     pub fn snapshot(&self) -> Progress {
-        self.progress.get()
+        self.progress.get().read()
     }
 
     /// Progress and phase-end events from now on.
@@ -241,22 +210,23 @@ impl Drop for PhaseGuard<'_> {
     }
 }
 
-/// A count of a job's items as an `f64`: exact up to 2^53, which no job reaches.
-#[expect(
-    clippy::as_conversions,
-    clippy::cast_precision_loss,
-    reason = "an f64 holds integers exactly up to 2^53, which no job reaches"
-)]
-fn count(x: u64) -> f64 {
-    x as f64
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
     use std::sync::mpsc;
 
     use super::*;
+
+    #[test]
+    fn a_progress_read_has_the_time_its_phase_has_run() {
+        let ctl = Control::new();
+        let _phase = ctl.begin(Phase::Import, 4);
+        std::thread::sleep(Duration::from_millis(20));
+        let first = ctl.snapshot();
+        assert!(first.elapsed >= Duration::from_millis(20), "{:?}", first.elapsed);
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(ctl.snapshot().elapsed > first.elapsed, "read again, later");
+    }
 
     #[test]
     fn a_paused_checkpoint_waits_for_the_resume() {

@@ -14,9 +14,10 @@ use pg_model::path::{PathArena, PathRef};
 use pg_model::rules::Path as RulePath;
 
 use pg_exiftool::ExifTool;
-use pg_jobs::control::{Control, Phase};
+use pg_jobs::control::Control;
 use pg_jobs::failure::{Cause, FileError};
 use pg_jobs::pipeline::{self, Options};
+use pg_model::progress::Phase;
 use pg_platform::file::TempFile;
 use pg_platform::names::disk_path_of;
 use pg_platform::names::{set_path, shown};

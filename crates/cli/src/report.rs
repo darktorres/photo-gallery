@@ -6,8 +6,9 @@ use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
 use pg_client::text::{self, CacheStartOver};
-use pg_jobs::control::{Control, Event, Phase, Progress};
+use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
+use pg_model::progress::Progress;
 
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
 /// cache that holds the bus is dropped: joining it then means the last one is out. A cache that is leaked (`gallery
@@ -84,8 +85,10 @@ pub(crate) fn with_progress<T>(f: impl FnOnce(&Control) -> T) -> T {
 
 /// The command line's progress line for a phase.
 fn progress_line(p: &Progress) -> String {
-    let secs = p.elapsed().as_secs_f64().max(1e-3);
-    let label = phase_label(&p.phase);
+    let secs = p.elapsed.as_secs_f64().max(1e-3);
+    // The pass by the client's words, a scanned folder under this machine's rules (the command's catalogs are made
+    // under them).
+    let label = text::pass_name(&p.phase, pg_platform::native::PATH_RULES);
     if p.total == 0 {
         return format!("  {label}: {} files, {:.0} files/s, {secs:.0} s", p.done, p.rate());
     }
@@ -99,17 +102,6 @@ fn progress_line(p: &Progress) -> String {
         p.failed,
         p.eta()
     )
-}
-
-fn phase_label(phase: &Phase) -> String {
-    match phase {
-        Phase::Idle => "idle".into(),
-        Phase::Crop => "crop".into(),
-        Phase::Scan { root } => format!("scan {root}"),
-        Phase::Import => "import".into(),
-        Phase::Borders => "borders".into(),
-        Phase::Thumbs { height } => format!("thumbs {height} px"),
-    }
 }
 
 /// The first failures a pass kept, one per line on stderr, under `what`.

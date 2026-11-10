@@ -11,10 +11,10 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_catalog::Root;
-use pg_jobs::control::Progress;
 use pg_jobs::events::{Bus, Change};
 use pg_library::runner::{Generation, Messages, Runner};
 use pg_model::ids::{FileId, RootId};
+use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_scan::normalize_path;
 use pg_thumbcache::ThumbCache;
@@ -254,11 +254,8 @@ impl LibraryService {
     pub fn add_folder(&self, path: &std::path::Path) -> Result<(String, bool)> {
         let root = normalize_path(path).map_err(failed)?;
         // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
-        if let Err(refused) = pg_scan::check_folder(pg_platform::native::PATH_RULES, &root) {
-            return Err(Error::FolderRefused {
-                folder: pg_platform::native::PATH_RULES.display(&root),
-                reason: refused.reason,
-            });
+        if let Err(reason) = pg_scan::check_folder(pg_platform::native::PATH_RULES, &root) {
+            return Err(Error::FolderRefused { folder: pg_platform::native::PATH_RULES.display(&root), reason });
         }
         let added = self.catalogs.with_catalog(|c| c.add_root(&root))?;
         if let Some(library) = self.running() {

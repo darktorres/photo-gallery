@@ -11,10 +11,11 @@ use pg_catalog::Catalog;
 use pg_render::maker::Maker;
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
-use pg_jobs::control::{Control, Phase};
+use pg_jobs::control::Control;
 use pg_jobs::failure::{Failure, keep_failure};
 use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Options};
+use pg_model::progress::Phase;
 
 const BATCH: usize = 200;
 

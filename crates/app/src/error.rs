@@ -19,9 +19,9 @@ pub enum Error {
     #[error("original unavailable: {0}")]
     Original(String),
     /// A folder not added to the library, because the scanner refuses it (`LibraryService::add_folder`): its display path, and
-    /// why (`pg_platform::dir::Refused`'s reason). The front end words it (`pg_client::text::folder_refused`).
+    /// why. The front end words it (`pg_client::text::folder_refused`); this text names the reason by its code.
     #[error("{folder} can't be added: {reason}")]
-    FolderRefused { folder: String, reason: String },
+    FolderRefused { folder: String, reason: pg_model::refusal::RefusedReason },
     /// Anything else a lower layer failed with.
     #[error("{0}")]
     Failed(String),

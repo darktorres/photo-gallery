@@ -1660,6 +1660,7 @@ dependencies = [
  "pg-analysis",
  "pg-catalog",
  "pg-jobs",
+ "pg-model",
  "pg-platform",
 ]
 
@@ -1845,6 +1846,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
+ "pg-model",
  "pg-platform",
  "pg-testkit",
 ]

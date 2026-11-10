@@ -25,9 +25,9 @@ import json
 import os
 import re
 import shutil
+import stat
 import subprocess
 import sys
-import tarfile
 from pathlib import Path
 from typing import NoReturn
 
@@ -156,17 +156,34 @@ def mounts():
 
 
 def export_head(destination):
-    """The committed HEAD, extracted into `destination` (git archive: what is committed, nothing else)."""
-    archive = subprocess.Popen(["git", "archive", "--format=tar", "HEAD"], cwd=REPO, stdout=subprocess.PIPE)
-    assert archive.stdout is not None  # the pipe is set above
-    with tarfile.open(fileobj=archive.stdout, mode="r|") as tar:
-        tar.extractall(destination, filter="data")
-    # tarfile stops at the end-of-archive marker, but git pads the tar to a whole record after it. Unread, that padding
-    # fills the pipe and git blocks writing it, so `wait` would wait for ever (it did, for an archive whose size fell so).
-    archive.stdout.read()
-    archive.stdout.close()
-    if archive.wait() != 0:
-        fail("git archive HEAD failed")
+    """The committed HEAD, as a shallow clone of this repository in `destination`: what is committed, and its own .git, so
+    git works there as it does in the checkout (the scripts ask git for the tracked files). The clone takes the commit's
+    objects only (--depth 1), not the working tree's uncommitted work."""
+    head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO, capture_output=True, text=True, check=False)
+    if head.returncode != 0:
+        fail(f"git rev-parse HEAD failed: {head.stderr.strip()}")
+    clone = subprocess.run(
+        ["git", "clone", "--quiet", "--no-checkout", "--depth", "1", REPO.as_uri(), str(destination)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if clone.returncode != 0:
+        fail(f"git clone of HEAD failed: {clone.stderr.strip()}")
+    checkout = subprocess.run(
+        ["git", "-C", str(destination), "checkout", "--quiet", "--detach", head.stdout.strip()],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if checkout.returncode != 0:
+        fail(f"git checkout of HEAD failed: {checkout.stderr.strip()}")
+
+
+def _clear_read_only(function, path, _error):
+    """rmtree's error handler: git's object files are read-only on Windows, so they are made writable and removed."""
+    os.chmod(path, stat.S_IWRITE)
+    function(path)
 
 
 def refresh_head():
@@ -177,7 +194,7 @@ def refresh_head():
     HEAD_FOLDER.mkdir(parents=True, exist_ok=True)
     for entry in HEAD_FOLDER.iterdir():
         if entry.is_dir() and not entry.is_symlink():
-            shutil.rmtree(entry, ignore_errors=True)
+            shutil.rmtree(entry, onexc=_clear_read_only)
         else:
             entry.unlink(missing_ok=True)
     export_head(HEAD_FOLDER)

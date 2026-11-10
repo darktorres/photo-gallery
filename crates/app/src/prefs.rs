@@ -9,8 +9,9 @@ use std::sync::Arc;
 use pg_model::rules::Path as RulePath;
 use serde::{Deserialize, Serialize};
 
-use crate::notes::{Note, Notes};
+use crate::inbox::Inbox;
 use crate::store::JsonStore;
+use pg_model::notice::{ERROR_CAP, Key, Notice, tidy};
 
 /// The preferences file's content. Fields missing from a file take their defaults; fields the file has that this version
 /// doesn't know are ignored.
@@ -74,22 +75,31 @@ impl Default for Prefs {
 }
 
 /// The preferences in memory and in their file. A change is saved when it is made, atomically (`JsonStore`). A change that
-/// can't be saved holds in memory, and a note says so.
+/// can't be saved holds in memory, and a notice says so (until a save goes through).
 pub struct PrefStore {
     store: JsonStore<Prefs>,
     path: PathBuf,
-    notes: Arc<Notes>,
+    inbox: Arc<Inbox>,
 }
 
 impl PrefStore {
-    /// Read the preferences at `path`: the defaults where the file is missing or doesn't parse (a note says why, and where
+    /// Read the preferences at `path`: the defaults where the file is missing or doesn't parse (a notice says why, and where
     /// the unreadable file was kept).
-    pub(crate) fn open(path: PathBuf, notes: Arc<Notes>) -> PrefStore {
+    pub(crate) fn open(path: PathBuf, inbox: Arc<Inbox>) -> PrefStore {
         let (store, unreadable) = JsonStore::open(path.clone());
         if let Some(u) = unreadable {
-            notes.publish(Note::PrefsUnreadable { path: path.clone(), error: u.error, kept: u.kept });
+            let (kept, keep_error) = match u.kept {
+                Ok(kept) => (Some(kept.display().to_string()), None),
+                Err(e) => (None, Some(tidy(&e, ERROR_CAP))),
+            };
+            inbox.post(Notice::PrefsUnreadable {
+                path: path.display().to_string(),
+                error: tidy(&u.error, ERROR_CAP),
+                kept,
+                keep_error,
+            });
         }
-        PrefStore { store, path, notes }
+        PrefStore { store, path, inbox }
     }
 
     /// The preferences, as they are now.
@@ -101,8 +111,12 @@ impl PrefStore {
     /// it wasn't written.
     pub fn update(&self, change: impl FnOnce(&mut Prefs)) -> std::io::Result<()> {
         let result = self.store.update(change);
-        if let Err(e) = &result {
-            self.notes.publish(Note::PrefsNotSaved { path: self.path.clone(), error: e.to_string() });
+        match &result {
+            Ok(()) => self.inbox.clear(Key::all("prefs-not-saved", None).to_buf()),
+            Err(e) => self.inbox.post(Notice::PrefsNotSaved {
+                path: self.path.display().to_string(),
+                error: tidy(&e.to_string(), ERROR_CAP),
+            }),
         }
         result
     }

@@ -312,6 +312,7 @@ impl Controller {
             return Vec::new();
         }
         match global {
+            Global::Inbox => self.switch_to(PanelKind::Inbox),
             Global::Log if self.panels.dev_mode() => self.switch_to(PanelKind::Log),
             Global::Log => Vec::new(),
             Global::DevMode => {

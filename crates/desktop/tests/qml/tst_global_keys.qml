@@ -40,6 +40,8 @@ TestCase {
 
     function test_a_shortcut_fires_before_the_focused_items_keys_data() {
         return [
+            { tag: "inbox from the grid", key: Qt.Key_N, code: GlobalShortcuts.Inbox, target: "keyed" },
+            { tag: "inbox from a text field", key: Qt.Key_N, code: GlobalShortcuts.Inbox, target: "field" },
             { tag: "log from the grid", key: Qt.Key_L, code: GlobalShortcuts.Log, target: "keyed" },
             { tag: "log from a text field", key: Qt.Key_L, code: GlobalShortcuts.Log, target: "field" },
             { tag: "dev mode from the grid", key: Qt.Key_D, code: GlobalShortcuts.DevMode, target: "keyed" },

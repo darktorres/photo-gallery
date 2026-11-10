@@ -147,6 +147,8 @@ pub fn viewer(key: Key, mods: Mods, shown: Shown) -> Option<Viewer> {
 /// the controller decides what it does (`Controller`'s rule for the modal panels).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Global {
+    /// Open or close the inbox.
+    Inbox,
     /// Open or close the log view (in dev mode).
     Log,
     /// Turn dev mode on or off.
@@ -155,12 +157,13 @@ pub enum Global {
 
 impl Global {
     /// Every shortcut, in the order of `GlobalAction` in GlobalShortcuts.qml (its codes are these positions).
-    pub const ALL: [Global; 2] = [Global::Log, Global::DevMode];
+    pub const ALL: [Global; 3] = [Global::Inbox, Global::Log, Global::DevMode];
 
     /// Its key sequence, as Qt's `Shortcut.sequence` reads it (one sequence per shortcut: Qt does not fire a sequence two
     /// shortcuts share).
     pub fn sequence(self) -> &'static str {
         match self {
+            Global::Inbox => "Ctrl+Shift+N",
             Global::Log => "Ctrl+Shift+L",
             Global::DevMode => "Ctrl+Shift+D",
         }

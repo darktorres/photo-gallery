@@ -11,7 +11,7 @@ use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
 use pg_model::media::{Ext, Kind};
 use pg_model::name::Name;
-use pg_model::notice::Carried;
+use pg_model::notice::{Carried, ERROR_CAP, Notice, tidy};
 use pg_model::path::{FilePath, PathArena, PathRef};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
@@ -80,21 +80,15 @@ pub struct Rebuilt {
 }
 
 impl Rebuilt {
-    /// What was carried, for a note. It starts with `"; "`, so it follows the note's text.
-    pub fn carried_note(&self) -> String {
-        let count = |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
-        match &self.carried {
-            Carried::Rows { files: 0, folders: 0 } => String::new(),
-            Carried::Rows { files, folders } => format!(
-                "; {} and {} carried over",
-                count(*files, "file", "files"),
-                count(*folders, "library folder", "library folders")
-            ),
-            Carried::Nothing { reason } => format!("; nothing carried over ({reason}): scan the library again"),
+    /// The notice that says so.
+    pub fn notice(&self) -> Notice {
+        Notice::CatalogRebuilt {
+            kept: self.kept.display().to_string(),
+            why: tidy(&self.why, ERROR_CAP),
+            carried: self.carried.clone(),
         }
     }
 }
-
 /// The `meta.path_rules` value of a rule set.
 pub(crate) fn rules_name(rules: PathRules) -> &'static str {
     match rules {

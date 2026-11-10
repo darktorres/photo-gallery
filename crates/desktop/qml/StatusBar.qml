@@ -1,6 +1,6 @@
 // The status bar at the bottom: the selected file's info and rating (or the key hints), the write-back status, the
-// background job's latest message (a click dismisses it), its status, and its progress with pause, and in dev mode the log
-// view's button. The library calls are signals: Main makes them. A name, a path or an error is plain text: one holding
+// inbox's toast (a click opens the inbox; an info goes by itself), the background job's status and its progress with
+// pause, the inbox's button with its unread count, and in dev mode the log view's button. The library calls are signals: Main makes them. A name, a path or an error is plain text: one holding
 // markup (`<b>`) is shown as written, never as rich text.
 pragma ComponentBehavior: Bound
 
@@ -19,9 +19,12 @@ ToolBar {
     // The library's write-back status, and whether it failed.
     required property string writeStatus
     required property bool writeFailed
-    // The job's latest message, whether it is a warning, its status, and whether it is running, paused, and how far.
-    required property string message
-    required property bool messageWarning
+    // The inbox's toast (a notice's title; empty: none) and its level (0 info, 1 warning, 2 error), and how many of its
+    // entries are unread.
+    required property string toast
+    required property int toastLevel
+    required property int unread
+    // The job's status, and whether it is running, paused, and how far.
     required property string status
     required property bool busy
     required property bool paused
@@ -29,7 +32,9 @@ ToolBar {
     // Dev mode is on: the log view's button shows.
     required property bool devMode
 
-    signal messageDismissed()
+    // The toast went by itself (an info, after a while).
+    signal toastExpired()
+    signal inboxRequested()
     signal pauseToggled()
     signal logRequested()
 
@@ -58,15 +63,21 @@ ToolBar {
             elide: Text.ElideMiddle
             Layout.maximumWidth: 500
         }
-        // The latest error or note from the background job; click to dismiss.
+        // The newest notice, as a toast: a warning or an error stays until it is dismissed or replaced; a click opens
+        // the inbox.
         Label {
-            visible: bar.message.length > 0
-            text: (bar.messageWarning ? "⚠ " : "") + bar.message
+            visible: bar.toast.length > 0
+            text: (bar.toastLevel > 0 ? "⚠ " : "") + bar.toast
             textFormat: Text.PlainText
-            color: bar.messageWarning ? "#e0a050" : "#aaaaaa"
+            color: bar.toastLevel > 0 ? "#e0a050" : "#aaaaaa"
             elide: Text.ElideMiddle
             Layout.maximumWidth: 500
-            TapHandler { onTapped: bar.messageDismissed() }
+            TapHandler { onTapped: bar.inboxRequested() }
+        }
+        Timer {
+            interval: 6000
+            running: bar.toast.length > 0 && bar.toastLevel === 0
+            onTriggered: bar.toastExpired()
         }
         Label {
             visible: bar.status.length > 0
@@ -85,6 +96,13 @@ ToolBar {
             text: bar.paused ? words.text("ui-resume") : words.text("ui-pause")
             flat: true
             onClicked: bar.pauseToggled()
+        }
+        Button {
+            text: words.phrase("ui-inbox", bar.unread, "" + bar.unread, "")
+            Accessible.name: text
+            flat: true
+            highlighted: bar.unread > 0
+            onClicked: bar.inboxRequested()
         }
         Button {
             visible: bar.devMode

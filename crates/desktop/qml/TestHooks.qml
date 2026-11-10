@@ -16,7 +16,7 @@
 //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
 //   --borders=1  show the borders (as B does) from the start
 //   --dev=1  dev mode for the run, not saved (read by the shell, in Rust; PG_DEV=1 too)   --log=1  open the log view (in
-//            dev mode)
+//            dev mode)   --inbox=1  open the inbox
 //   --save-crops=<folder>  save cropped copies of the listed files with borders found
 //                        (GalleryModel.saveCroppedCopiesPicked)
 //   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
@@ -49,6 +49,7 @@ Item {
     signal addFolderRequested()
     signal saveCropsRequested()
     signal logPanelRequested()
+    signal inboxPanelRequested()
     // The viewer's calls (its functions), made by Main.
     signal viewerShowRequested(int index)
     signal viewerPlayRequested()
@@ -121,6 +122,7 @@ Item {
         if (commandLine.has("save-view")) saveViewDialogRequested()
         if (commandLine.has("find-similar")) similarRequested()
         if (commandLine.has("log")) logPanelRequested()
+        if (commandLine.has("inbox")) inboxPanelRequested()
     }
 
     // The hooks that run after the library job has started (Main's startHooks()).

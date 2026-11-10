@@ -247,11 +247,10 @@ pub struct ScanStats {
     pub temps: Vec<RulePath>,
 }
 
-/// A folder under a scanned root that the scan didn't walk into, because its file system is refused: its display path,
-/// and why.
+/// A folder under a scanned root that the scan didn't walk into, because its file system is refused: the folder, and why.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RefusedMount {
-    pub mount: String,
+    pub mount: RulePath,
     pub reason: RefusedReason,
 }
 
@@ -397,7 +396,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                     if let Err(reason) = verdict {
                         stats.refused_mounts += 1;
                         if stats.refused_mount_list.len() < FAILURES_KEPT {
-                            stats.refused_mount_list.push(RefusedMount { mount: rules.display(&child), reason });
+                            stats.refused_mount_list.push(RefusedMount { mount: child.clone(), reason });
                         }
                         skipped.push(child);
                         continue;
@@ -808,10 +807,12 @@ mod tests {
         let second = walk(&mut c, &fake_root(), &Control::new(), &mut refusing).unwrap();
         assert_eq!(second.refused_mounts, 1);
         assert!(
-            second
-                .refused_mount_list
-                .first()
-                .is_some_and(|f| f.mount.ends_with("mnt") && f.reason == RefusedReason::Nfs),
+            second.refused_mount_list.first().is_some_and(|f| f
+                .mount
+                .parts
+                .last()
+                .is_some_and(|n| n == &Name::from("mnt"))
+                && f.reason == RefusedReason::Nfs),
             "the mount, with its reason: {:?}",
             second.refused_mount_list
         );

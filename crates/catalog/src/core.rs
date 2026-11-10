@@ -1,5 +1,5 @@
 //! The catalog: `Catalog`, its transaction `Tx`, and their methods. Uses `lifecycle`, `writers`, `schema`, `types` and
-//! `error`. `browse`, `writes`, `dups` and `pair` call it; it calls none of them.
+//! `error`. `browse`, `writes`, `dups`, `pair` and `inbox` call it; it calls none of them.
 
 use std::path::Path;
 use std::sync::Arc;
@@ -18,7 +18,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::{Error, Result};
 use crate::lifecycle::{
-    check_rules, db_file, in_use, mark_unheld_missing, pending_import_sql, rebuild, set_borders_version,
+    back_up, check_rules, db_file, in_use, mark_unheld_missing, pending_import_sql, rebuild, set_borders_version,
     set_import_version, set_taken_zone, take_lock, take_shared, try_exclusive, work_list,
 };
 use crate::schema::{
@@ -42,6 +42,12 @@ pub struct Catalog {
 }
 
 impl Catalog {
+    /// A number that changes when another connection (in this process or another) commits a change to the catalog:
+    /// what tells a poll that something it reads may have changed. Read outside a transaction.
+    pub fn data_version(&self) -> Result<i64> {
+        Ok(self.conn.query_row("PRAGMA data_version", [], |r| r.get(0))?)
+    }
+
     /// Merge the WAL into the file, then close the connection (on drop, too, without the merge). The last connection
     /// to a file to close deletes its WAL; the merge keeps the file whole if the process ends before the others close.
     pub fn close(self) -> Result<()> {
@@ -89,6 +95,11 @@ impl Catalog {
             conn = Connection::open(db_file(path)?).with_context(|| format!("catalog {}", path.display()))?;
         }
         conn.execute_batch(SETTINGS)?;
+        // A catalog of this build's schema at an earlier version is copied aside before it is migrated (a rebuilt one
+        // was: the old file is kept as it was).
+        if let Some(found) = version.filter(|&found| rebuilt.is_none() && found > 0 && found < current && !memory) {
+            back_up(&conn, path, found)?;
+        }
         bring_to(&conn, BASELINE, MIGRATIONS, rules, current).with_context(|| format!("catalog {}", path.display()))?;
         if let Some(why) = mismatch(&conn, current, current_expected()?)? {
             return Err(Error::Other(anyhow!(
@@ -240,7 +251,7 @@ impl Catalog {
     }
 
     /// [`Catalog::roots`] on `conn`, which may be a transaction's.
-    fn roots_on(&self, conn: &Connection) -> Result<Vec<Root>> {
+    pub(crate) fn roots_on(&self, conn: &Connection) -> Result<Vec<Root>> {
         let mut stmt = conn.prepare("SELECT id, path FROM roots ORDER BY path")?;
         let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
         let mut roots = Vec::new();

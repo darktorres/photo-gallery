@@ -24,6 +24,7 @@ use pg_client::controller::panels;
 use pg_client::controller::prefs;
 use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
+use pg_model::notice::{Notice, ViewOp};
 use pg_model::view::SavedView;
 
 use crate::{app, command_line, controller, deadline, folders, gallery, keymap};
@@ -65,18 +66,24 @@ fn row_event(kind: folders::RowKind) -> ListingEvent {
     }
 }
 
+/// The inbox says that the change `op` to the saved views failed, for `error`.
+fn views_failed(op: ViewOp, error: &impl std::fmt::Display) {
+    app::post(Notice::ViewsFailed { op, error: app::error_text(error) });
+}
+
 /// The names of the saved views, sorted (`saved_views`).
 fn view_names() -> QStringList {
-    app::get()
-        .views()
-        .all()
-        .unwrap_or_else(|e| {
-            pg_log::warn("views", &format!("listing them: {e:#}"));
+    let views = match app::get().views().all() {
+        Ok(views) => {
+            app::resolved_part("views-failed", ViewOp::List.code());
+            views
+        }
+        Err(e) => {
+            views_failed(ViewOp::List, &e);
             Vec::new()
-        })
-        .iter()
-        .map(|v| QString::from(&v.name))
-        .collect()
+        }
+    };
+    views.iter().map(|v| QString::from(&v.name)).collect()
 }
 
 impl qobject::Shell {
@@ -269,15 +276,17 @@ impl qobject::Shell {
             query: listing.query,
             sort: listing.sort,
         };
-        if let Err(e) = app::get().views().save(&view) {
-            pg_log::warn("views", &format!("saving one: {e:#}"));
+        match app::get().views().save(&view) {
+            Ok(()) => app::resolved_part("views-failed", ViewOp::Save.code()),
+            Err(e) => views_failed(ViewOp::Save, &e),
         }
         self.as_mut().set_saved_views(view_names());
     }
 
     pub(crate) fn delete_view(mut self: Pin<&mut Self>, name: &QString) {
-        if let Err(e) = app::get().views().delete(&name.to_string()) {
-            pg_log::warn("views", &format!("deleting one: {e:#}"));
+        match app::get().views().delete(&name.to_string()) {
+            Ok(()) => app::resolved_part("views-failed", ViewOp::Delete.code()),
+            Err(e) => views_failed(ViewOp::Delete, &e),
         }
         self.as_mut().set_saved_views(view_names());
     }
@@ -389,11 +398,10 @@ impl qobject::Shell {
                 gallery::post(move |model| model.set_border_marked(item, marked));
             }
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
-            Command::SaveSession(listing) => {
-                if let Err(e) = app::get().views().save_listing(&listing) {
-                    pg_log::warn("session", &format!("{e:#}"));
-                }
-            }
+            Command::SaveSession(listing) => match app::get().views().save_listing(&listing) {
+                Ok(()) => app::resolved("session-not-saved"),
+                Err(e) => app::post(Notice::SessionNotSaved { error: app::error_text(&format!("{e:#}")) }),
+            },
             // Synchronous: the save must run at shutdown too (`flush`), and its handler calls no shell.
             Command::SaveLastFile => self.as_mut().session_due(),
             Command::Relayout { .. } => self.as_mut().later(|shell| shell.relayout_due()),

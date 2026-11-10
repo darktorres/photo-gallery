@@ -8,6 +8,8 @@ mod animation_bridge;
 mod app;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod app_icon;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod clipboard;
 mod command_line;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod command_line_bridge;
@@ -48,6 +50,9 @@ mod live_reload;
 mod log_model;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod log_model_bridge;
+mod notices;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod notices_bridge;
 mod panic_log;
 mod picker;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]

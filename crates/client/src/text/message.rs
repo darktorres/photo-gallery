@@ -2,8 +2,8 @@
 //! [`render`] words it.
 
 use fluent_bundle::FluentArgs;
-use pg_model::notice::StartOverReason;
-use pg_model::write::WriteKind;
+use pg_model::notice::{Notice, Source};
+use pg_model::rules::PathRules;
 
 use super::words::shown;
 
@@ -148,33 +148,6 @@ pub enum Message {
     WriteQueueFailed {
         error: String,
     },
-    WriteIncomplete {
-        file: String,
-        temp: String,
-        error: String,
-    },
-    WriteDropped {
-        kind: WriteKind,
-        count: usize,
-    },
-    /// The writer died too often and isn't started again until the app is.
-    WriteStopped,
-    UnreadableFolders {
-        root: String,
-        count: String,
-    },
-    ScanFailed {
-        root: String,
-        error: String,
-    },
-    RootRefused {
-        root: String,
-        reason: String,
-    },
-    MountRefused {
-        mount: String,
-        reason: String,
-    },
     /// Why a folder is refused (`pg_model::refusal::RefusedReason`): its code, which selects the words, with the file
     /// system's name or the system's error where the reason has one.
     RefusedReason {
@@ -182,31 +155,8 @@ pub enum Message {
         file_system: String,
         error: String,
     },
-    ScanNote {
-        root: String,
-        kind: String,
-        count: String,
-    },
-    RoundPanicked {
-        message: String,
-    },
     FilePanicked {
         message: String,
-    },
-    CacheFull {
-        height: String,
-        made: String,
-    },
-    CroppedSaved {
-        count: usize,
-        folder: String,
-    },
-    CroppedSkipped {
-        count: usize,
-    },
-    CroppedFailed {
-        failed: String,
-        error: String,
     },
     YandexCaptcha,
     YandexNotStill,
@@ -238,59 +188,11 @@ pub enum Message {
     FolderUnreadable {
         error: String,
     },
-    /// The thumbnail cache was started over, for `reason`; `path` is where the old file is kept (a damaged one) or the
-    /// cache file made anew (one this build can't use). Each reason has its own entry.
-    ThumbCacheStartedOver {
-        reason: StartOverReason,
-        path: String,
-    },
     /// The library's status line while the background work is paused and no pass is running.
     WorkPaused,
     /// The library's status line while the background work is paused in a pass (`status`: the pass's line).
     PausedPass {
         status: String,
-    },
-    /// The newest notice from the job, with how many others came in since the last one shown.
-    NoticeMore {
-        notice: String,
-        count: usize,
-    },
-    /// A folder added that was already in the library: it is rescanned.
-    FolderAlreadyAdded {
-        folder: String,
-    },
-    /// A folder not added because the scanner refuses it, for `reason`.
-    FolderRefused {
-        folder: String,
-        reason: String,
-    },
-    /// A folder that couldn't be added, for `error` (the catalog's).
-    FolderNotAdded {
-        error: String,
-    },
-    /// A folder that couldn't be removed from the library, for `error`.
-    FolderNotRemoved {
-        error: String,
-    },
-    /// A rescan of the library that couldn't start, for `error`.
-    RescanFailed {
-        error: String,
-    },
-    /// The background work (the job and the writer) couldn't start, for `error`: nothing is scanned or written.
-    LibraryUnavailable {
-        error: String,
-    },
-    /// The library's folders couldn't be read from the catalog, for `error`.
-    FoldersUnreadable {
-        error: String,
-    },
-    /// A round of the background job that failed, for `error`.
-    RoundFailed {
-        error: String,
-    },
-    /// A crop job that failed before it could save anything, for `error`.
-    CropFailed {
-        error: String,
     },
     /// The Yandex panel's line while a search or a save starts.
     YandexStarting,
@@ -362,6 +264,25 @@ pub enum Message {
         log: String,
         error: String,
     },
+    /// A notice's title (its inbox row, its toast), paths under `rules`. Its entry is its kind's (`notice-<code>-title`).
+    NoticeTitle {
+        notice: Notice,
+        rules: PathRules,
+    },
+    /// A notice's details (`notice-<code>-body`).
+    NoticeBody {
+        notice: Notice,
+        rules: PathRules,
+    },
+    /// A notice as one line: its title, then its details.
+    NoticeLine {
+        title: String,
+        body: String,
+    },
+    /// An inbox category's name (`source-<code>`).
+    SourceLabel {
+        source: Source,
+    },
 }
 
 impl Message {
@@ -427,21 +348,8 @@ impl Message {
             Message::WritingChanges { .. } => "writing-changes",
             Message::ChangesUnwritten { .. } => "changes-unwritten",
             Message::WriteQueueFailed { .. } => "write-queue-failed",
-            Message::WriteIncomplete { .. } => "write-incomplete",
-            Message::WriteDropped { .. } => "write-dropped",
-            Message::WriteStopped => "write-stopped",
-            Message::UnreadableFolders { .. } => "unreadable-folders",
-            Message::ScanFailed { .. } => "scan-failed",
-            Message::RootRefused { .. } => "root-refused",
-            Message::MountRefused { .. } => "mount-refused",
             Message::RefusedReason { .. } => "refused-reason",
-            Message::ScanNote { .. } => "scan-note",
-            Message::RoundPanicked { .. } => "round-panicked",
             Message::FilePanicked { .. } => "file-panicked",
-            Message::CacheFull { .. } => "cache-full",
-            Message::CroppedSaved { .. } => "cropped-saved",
-            Message::CroppedSkipped { .. } => "cropped-skipped",
-            Message::CroppedFailed { .. } => "cropped-failed",
             Message::YandexCaptcha => "yandex-captcha",
             Message::YandexNotStill => "yandex-not-still",
             Message::YandexUploading => "yandex-uploading",
@@ -455,24 +363,8 @@ impl Message {
             Message::YandexNothingPicked => "yandex-nothing-picked",
             Message::YandexNoFolder => "yandex-no-folder",
             Message::FolderUnreadable { .. } => "folder-unreadable",
-            Message::ThumbCacheStartedOver { reason, .. } => match reason {
-                StartOverReason::Damaged => "thumb-cache-damaged",
-                StartOverReason::NotADatabase => "thumb-cache-not-a-database",
-                StartOverReason::OtherCatalog => "thumb-cache-other-catalog",
-                StartOverReason::OtherBuild => "thumb-cache-other-build",
-            },
             Message::WorkPaused => "work-paused",
             Message::PausedPass { .. } => "paused-pass",
-            Message::NoticeMore { .. } => "notice-more",
-            Message::FolderAlreadyAdded { .. } => "folder-already-added",
-            Message::FolderRefused { .. } => "folder-refused",
-            Message::FolderNotAdded { .. } => "folder-not-added",
-            Message::FolderNotRemoved { .. } => "folder-not-removed",
-            Message::RescanFailed { .. } => "rescan-failed",
-            Message::LibraryUnavailable { .. } => "library-unavailable",
-            Message::FoldersUnreadable { .. } => "folders-unreadable",
-            Message::RoundFailed { .. } => "round-failed",
-            Message::CropFailed { .. } => "crop-failed",
             Message::YandexStarting => "yandex-starting",
             Message::YandexSaving { .. } => "yandex-saving",
             Message::YandexSavingFile { .. } => "yandex-saving-file",
@@ -490,6 +382,10 @@ impl Message {
             Message::InternalError => "internal-error",
             Message::DetailsInLog { .. } => "details-in-log",
             Message::DetailsNotLogged { .. } => "details-not-logged",
+            Message::NoticeTitle { notice, .. } => notice.title_id(),
+            Message::NoticeBody { notice, .. } => notice.body_id(),
+            Message::NoticeLine { .. } => "notice-line",
+            Message::SourceLabel { source } => super::notice::source_id(*source),
         }
     }
 
@@ -581,62 +477,13 @@ impl Message {
             Message::WriteQueueFailed { error } => {
                 a.set("error", error.as_str());
             }
-            Message::WriteIncomplete { file, temp, error } => {
-                a.set("file", file.as_str());
-                a.set("temp", temp.as_str());
-                a.set("error", error.as_str());
-            }
-            Message::WriteDropped { kind, count } => {
-                plural(&mut a, *count);
-                // A selector, not shown: the entry has the words for each kind.
-                let kind = match kind {
-                    WriteKind::Rating => "rating",
-                    WriteKind::Turns => "turns",
-                };
-                a.set("kind", kind);
-            }
-            Message::WriteStopped => {}
-            Message::UnreadableFolders { root, count } => {
-                a.set("root", root.as_str());
-                a.set("count", count.as_str());
-            }
-            Message::ScanFailed { root, error } => {
-                a.set("root", root.as_str());
-                a.set("error", error.as_str());
-            }
-            Message::RootRefused { root, reason } => {
-                a.set("root", root.as_str());
-                a.set("reason", reason.as_str());
-            }
-            Message::MountRefused { mount, reason } => {
-                a.set("mount", mount.as_str());
-                a.set("reason", reason.as_str());
-            }
             Message::RefusedReason { code, file_system, error } => {
                 a.set("code", code.as_str());
                 a.set("fs", file_system.as_str());
                 a.set("error", error.as_str());
             }
-            Message::ScanNote { root, kind, count } => {
-                a.set("root", root.as_str());
-                a.set("kind", kind.as_str());
-                a.set("count", count.as_str());
-            }
-            Message::RoundPanicked { message } | Message::FilePanicked { message } => {
+            Message::FilePanicked { message } => {
                 a.set("message", message.as_str());
-            }
-            Message::CacheFull { height, made } => {
-                a.set("height", height.as_str());
-                a.set("made", made.as_str());
-            }
-            Message::CroppedSaved { count, folder } => {
-                plural(&mut a, *count);
-                a.set("folder", folder.as_str());
-            }
-            Message::CroppedSkipped { count } => plural(&mut a, *count),
-            Message::CroppedFailed { failed, error } => {
-                a.set("failed", failed.as_str());
-                a.set("error", error.as_str());
             }
             Message::YandexUnreadablePhoto { error } => {
                 a.set("error", error.as_str());
@@ -651,13 +498,6 @@ impl Message {
             Message::YandexNotStarted { error }
             | Message::FolderDialogFailed { error }
             | Message::FolderUnreadable { error }
-            | Message::FolderNotAdded { error }
-            | Message::FolderNotRemoved { error }
-            | Message::RescanFailed { error }
-            | Message::LibraryUnavailable { error }
-            | Message::FoldersUnreadable { error }
-            | Message::RoundFailed { error }
-            | Message::CropFailed { error }
             | Message::YandexTransport { error }
             | Message::YandexRecorded { error }
             | Message::CatalogUnopened { error } => {
@@ -665,17 +505,6 @@ impl Message {
             }
             Message::PausedPass { status } => {
                 a.set("status", status.as_str());
-            }
-            Message::NoticeMore { notice, count } => {
-                plural(&mut a, *count);
-                a.set("notice", notice.as_str());
-            }
-            Message::FolderAlreadyAdded { folder } => {
-                a.set("folder", folder.as_str());
-            }
-            Message::FolderRefused { folder, reason } => {
-                a.set("folder", folder.as_str());
-                a.set("reason", reason.as_str());
             }
             Message::YandexSaving { count } => plural(&mut a, *count),
             Message::YandexSavingFile { n, of } => {
@@ -716,8 +545,12 @@ impl Message {
                 a.set("log", log.as_str());
                 a.set("error", error.as_str());
             }
-            Message::ThumbCacheStartedOver { path, .. } => {
-                a.set("path", path.as_str());
+            Message::NoticeTitle { notice, rules } | Message::NoticeBody { notice, rules } => {
+                super::notice::args(notice, *rules, &mut a);
+            }
+            Message::NoticeLine { title, body } => {
+                a.set("title", title.as_str());
+                a.set("body", body.as_str());
             }
             _ => {}
         };
@@ -728,7 +561,7 @@ impl Message {
     #[cfg(test)]
     pub(super) fn samples() -> Vec<Message> {
         let s = || "x".to_string();
-        vec![
+        let mut messages = vec![
             Message::TypeImage,
             Message::TypeAnimated,
             Message::TypeVideo,
@@ -788,21 +621,8 @@ impl Message {
             Message::WritingChanges { count: 1 },
             Message::ChangesUnwritten { count: 1, error: s() },
             Message::WriteQueueFailed { error: s() },
-            Message::WriteIncomplete { file: s(), temp: s(), error: s() },
-            Message::WriteDropped { kind: WriteKind::Rating, count: 1 },
-            Message::WriteStopped,
-            Message::UnreadableFolders { root: s(), count: s() },
-            Message::ScanFailed { root: s(), error: s() },
-            Message::RootRefused { root: s(), reason: s() },
-            Message::MountRefused { mount: s(), reason: s() },
             Message::RefusedReason { code: "link".to_string(), file_system: s(), error: s() },
-            Message::ScanNote { root: s(), kind: s(), count: s() },
-            Message::RoundPanicked { message: s() },
             Message::FilePanicked { message: s() },
-            Message::CacheFull { height: s(), made: s() },
-            Message::CroppedSaved { count: 1, folder: s() },
-            Message::CroppedSkipped { count: 1 },
-            Message::CroppedFailed { failed: s(), error: s() },
             Message::YandexCaptcha,
             Message::YandexNotStill,
             Message::YandexUploading,
@@ -816,22 +636,8 @@ impl Message {
             Message::YandexNothingPicked,
             Message::YandexNoFolder,
             Message::FolderUnreadable { error: s() },
-            Message::ThumbCacheStartedOver { reason: StartOverReason::Damaged, path: s() },
-            Message::ThumbCacheStartedOver { reason: StartOverReason::NotADatabase, path: s() },
-            Message::ThumbCacheStartedOver { reason: StartOverReason::OtherCatalog, path: s() },
-            Message::ThumbCacheStartedOver { reason: StartOverReason::OtherBuild, path: s() },
             Message::WorkPaused,
             Message::PausedPass { status: s() },
-            Message::NoticeMore { notice: s(), count: 1 },
-            Message::FolderAlreadyAdded { folder: s() },
-            Message::FolderRefused { folder: s(), reason: s() },
-            Message::FolderNotAdded { error: s() },
-            Message::FolderNotRemoved { error: s() },
-            Message::RescanFailed { error: s() },
-            Message::LibraryUnavailable { error: s() },
-            Message::FoldersUnreadable { error: s() },
-            Message::RoundFailed { error: s() },
-            Message::CropFailed { error: s() },
             Message::YandexStarting,
             Message::YandexSaving { count: 1 },
             Message::YandexSavingFile { n: s(), of: s() },
@@ -849,7 +655,15 @@ impl Message {
             Message::InternalError,
             Message::DetailsInLog { log: s() },
             Message::DetailsNotLogged { log: s(), error: s() },
-        ]
+        ];
+        let rules = PathRules::Windows;
+        for notice in Notice::samples() {
+            messages.push(Message::NoticeTitle { notice: notice.clone(), rules });
+            messages.push(Message::NoticeBody { notice, rules });
+        }
+        messages.push(Message::NoticeLine { title: s(), body: s() });
+        messages.extend(Source::ALL.into_iter().map(|source| Message::SourceLabel { source }));
+        messages
     }
 }
 

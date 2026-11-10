@@ -1,7 +1,8 @@
-//! The state of the `Library` QObject: the bridge's backing struct (the roots and the job's progress and messages).
+//! The state of the `Library` QObject: the bridge's backing struct (the roots, the job's progress and the writer's line).
 
 use cxx_qt_lib::{QString, QStringList};
 use pg_model::ids::RootId;
+use pg_model::notice::Notice;
 
 #[derive(Default)]
 #[expect(
@@ -16,12 +17,12 @@ pub struct LibraryRust {
     pub(crate) paused: bool,
     pub(crate) status: QString,
     pub(crate) progress: f64,
-    pub(crate) message: QString,
-    pub(crate) message_warning: bool,
     pub(crate) writes: QString,
     pub(crate) write_failed: bool,
-    /// The writer's count of dropped writes (`WriteStatus::dropped`) already shown: a note is shown when it grows.
+    /// The writer's count of dropped writes (`WriteStatus::dropped`) already told: a notice is posted when it grows.
     pub(super) dropped_seen: usize,
-    /// Whether the note that the writer has stopped for good has been shown (it is shown once).
+    /// Whether the notice that the writer has stopped for good has been posted (it is posted once).
     pub(super) writer_stopped_shown: bool,
+    /// The writer's failure the inbox was last told of: the same one again is not posted.
+    pub(super) write_failure: Option<Notice>,
 }

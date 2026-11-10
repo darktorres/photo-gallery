@@ -8,6 +8,7 @@ use pg_catalog::Catalog;
 use pg_client::text;
 use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
+use pg_model::notice::Notice;
 use pg_model::progress::Progress;
 
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
@@ -24,19 +25,14 @@ pub(crate) fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, JoinHandle<()>)
     (bus, printer)
 }
 
-/// What a thumbnail cache event says, on the command line.
+/// What a thumbnail cache event says, on the command line: its notice's words, and for a cache started over, the
+/// technical account too.
 fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
-    use pg_thumbcache::Event;
-    match event {
-        Event::TotalsFixed { kept, actual } => {
-            format!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed")
-        }
-        Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
-        Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
-        Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
-        Event::StartedOver { reason, path, detail } => {
-            format!("{}; detail: {detail}", text::thumb_cache_started_over(*reason, &path.display().to_string()))
-        }
+    let notice = event.clone().into_notice();
+    let line = text::notice_line(&notice, pg_platform::native::PATH_RULES);
+    match notice {
+        Notice::CacheStartedOver { detail, .. } => format!("{line} ({detail})"),
+        _ => line,
     }
 }
 
@@ -44,10 +40,9 @@ fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
 /// (or why nothing was, which says to scan the library again).
 pub(crate) fn report_rebuilt(catalog: &Catalog) {
     if let Some(r) = catalog.rebuilt() {
-        eprintln!("catalog rebuilt: {}; the old one is kept as {}{}", r.why, r.kept.display(), r.carried_note());
+        eprintln!("{}", text::notice_line(&r.notice(), catalog.rules()));
     }
 }
-
 /// Files left for the next pass because they changed while they were read, when there are any.
 pub(crate) fn changed_while_read(n: usize) -> String {
     if n == 0 { String::new() } else { format!(", {n} changed while read, left for the next pass") }

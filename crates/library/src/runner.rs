@@ -19,15 +19,14 @@ use anyhow::{Context, Result};
 use pg_catalog::Catalog;
 use pg_jobs::control::Control;
 use pg_jobs::events::{Bus, Change};
-use pg_jobs::failure::FileError;
+use pg_jobs::failure::{Cause, FileError};
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::notice::ScanNote;
+use pg_model::notice::{ERROR_CAP, FileFailure, Key, KeyBuf, Notice, ScanNote, tidy};
 use pg_model::progress::Progress;
-use pg_model::refusal::RefusedReason;
 use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
 use pg_scan::ScanError;
@@ -51,66 +50,43 @@ struct Inner {
     imports_done: AtomicU64,
     /// Rounds finished, however they ended: the app marks each one as a stage for measuring (docs/PROFILING.md).
     rounds: AtomicU64,
-    messages: Mutex<Messages>,
+    notices: Arc<dyn NoticeSink>,
     /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.
     changes: Arc<Bus<Change>>,
 }
 
-/// Something the job tells the user: a problem it ran into, or how a job asked for went. The job says what happened
-/// in values; the app words it.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Notice {
-    /// Folders of a scan that couldn't be read.
-    UnreadableFolders { root: String, count: u64 },
-    /// A scan that failed. Its batches before the error are in.
-    ScanFailed { root: String, error: String },
-    /// A folder the scanner refuses (decisions 6 and 13); it stays in the library until it is removed.
-    RootRefused { root: String, reason: RefusedReason },
-    /// A folder under a scanned root, on another file system, that the scanner refuses (a network or pseudo file system
-    /// mounted there). Its files are not in the scan; `mount` is the folder.
-    MountRefused { root: String, mount: String, reason: RefusedReason },
-    /// What a scan of a folder counted that the user may want to know, `count` of them (S-17.7 decision 12).
-    ScanNote { root: String, note: ScanNote, count: u64 },
-    /// A round that failed.
-    RoundFailed { error: String },
-    /// A round that panicked (caught): the job goes on with the next request.
-    RoundPanicked { message: String },
-    /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
-    CacheFull { height: u32, made: usize },
-    /// A crop job that ran to the end of its request.
-    Cropped { folder: PathBuf, saved: usize, skipped: usize, failed: usize, first_error: Option<FileError> },
-    /// A crop job that failed before it could save anything.
-    CropFailed { error: String },
-}
-
-impl Notice {
-    /// Whether it is a problem (shown as a warning), not a job that went as asked.
-    pub fn is_warning(&self) -> bool {
-        !matches!(self, Notice::Cropped { failed: 0, .. })
+/// Where the job's notices go (the app's inbox, a test's list): what it ran into, how a job asked for went, and which of
+/// its kept notices no longer hold. Called on the job's thread: an implementation queues, it doesn't wait.
+pub trait NoticeSink: Send + Sync {
+    /// Tell the user `notice`.
+    fn post(&self, notice: Notice);
+    /// The kept notices of `scope`'s kind and folder (and part, if it has one) are now `notices`: the others no longer
+    /// hold (`pg_catalog::inbox::replace`).
+    fn replace(&self, scope: KeyBuf, notices: Vec<Notice>);
+    /// The kept notices `key` names no longer hold (a key with no part names every part).
+    fn clear(&self, key: KeyBuf) {
+        self.replace(key, Vec::new());
     }
 }
 
-/// The most messages kept until the UI takes them.
-const MESSAGE_CAP: usize = 100;
-
-/// Messages for the UI, oldest first. Past `MESSAGE_CAP` the oldest are dropped and counted in `not_kept`, so the
-/// newest is always there and whoever takes them can say how many it did not see.
-#[derive(Default)]
-pub struct Messages {
-    pub kept: VecDeque<Notice>,
-    pub not_kept: usize,
+/// The notice of a crop job's file failure.
+fn file_failure(error: FileError) -> FileFailure {
+    let (error_text, panicked) = match error.cause {
+        Cause::Error(text) => (text, false),
+        Cause::Panicked(message) => (message, true),
+    };
+    FileFailure { path: error.path, error: tidy(&error_text, ERROR_CAP), panicked }
 }
 
-impl Messages {
-    fn push(&mut self, notice: Notice) {
-        if self.kept.len() == MESSAGE_CAP {
-            self.kept.pop_front();
-            self.not_kept += 1;
-        }
-        self.kept.push_back(notice);
-    }
+/// A count as a notice holds it.
+fn count(n: usize) -> u64 {
+    u64::try_from(n).unwrap_or(u64::MAX)
 }
 
+/// An error's text as a notice holds it: its causes after it, on one line, capped.
+fn error_text(error: &anyhow::Error) -> String {
+    tidy(&format!("{error:#}"), ERROR_CAP)
+}
 /// What the job has done so far, for the app to refresh its views.
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub struct Generation {
@@ -129,13 +105,14 @@ pub struct Runner {
 
 impl Runner {
     /// Start the job thread. It begins by importing whatever is pending and making the thumbnails still missing
-    /// at `thumb_height`. What it changes is published on `changes` (`Change`). An error if the thread can't be
-    /// spawned.
+    /// at `thumb_height`. What it changes is published on `changes` (`Change`), and what it tells the user goes to
+    /// `notices`. An error if the thread can't be spawned.
     pub fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
         thumb_height: u32,
         changes: Arc<Bus<Change>>,
+        notices: Arc<dyn NoticeSink>,
     ) -> Result<Runner> {
         let inner = Arc::new(Inner {
             catalog_path,
@@ -146,7 +123,7 @@ impl Runner {
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
             rounds: AtomicU64::new(0),
-            messages: Mutex::new(Messages::default()),
+            notices,
             changes,
         });
         let announce = inner.changes.clone();
@@ -223,11 +200,6 @@ impl Runner {
         self.inner.rounds.load(Ordering::Relaxed)
     }
 
-    /// Notices since the last call (a folder that couldn't be scanned, a full cache).
-    pub fn take_messages(&self) -> Messages {
-        std::mem::take(&mut *self.inner.messages.lock().unwrap_or_else(PoisonError::into_inner))
-    }
-
     /// The queue has a new request: stop the round in progress at its next file, and start one.
     fn wake_up(&self) {
         self.inner.ctl.request_stop();
@@ -243,8 +215,11 @@ impl Inner {
     }
 
     fn notify(&self, notice: Notice) {
-        self.messages.lock().unwrap_or_else(PoisonError::into_inner).push(notice);
-        self.changes.publish(Change::Notice);
+        self.notices.post(notice);
+    }
+
+    fn clear(&self, key: Key<'_>) {
+        self.notices.clear(key.to_buf());
     }
 
     fn scanned(&self) {
@@ -274,8 +249,11 @@ impl Inner {
                 return;
             }
             match self.round_caught(&mut catalog) {
-                Ok(Step::Done) => {}
-                Ok(Step::Preempted) => again = true,
+                Ok(step) => {
+                    // A round that ran is the end of a failed one's notice.
+                    self.clear(Key::all("round-failed", None));
+                    again = matches!(step, Step::Preempted);
+                }
                 Err(notice) => self.notify(notice),
             }
             self.rounds.fetch_add(1, Ordering::Relaxed);
@@ -283,15 +261,15 @@ impl Inner {
         }
     }
 
-    /// A round, with a panic in it caught: the job reports it (the status line, and the log through the panic hook)
+    /// A round, with a panic in it caught: the job reports it (the inbox, and the log through the panic hook)
     /// and goes on with the next request.
     fn round_caught(&self, catalog: &mut Option<Catalog>) -> std::result::Result<Step, Notice> {
         match panics::catch(AssertUnwindSafe(|| self.round(catalog))) {
-            Ok(result) => result.map_err(|e| Notice::RoundFailed { error: format!("{e:#}") }),
+            Ok(result) => result.map_err(|e| Notice::RoundFailed { error: error_text(&e) }),
             Err(panic) => {
                 // The connection a panicking pass held is not trusted: the next round opens a new one.
                 *catalog = None;
-                Err(Notice::RoundPanicked { message: panics::message(&*panic).to_string() })
+                Err(Notice::RoundPanicked { message: tidy(panics::message(&*panic), ERROR_CAP) })
             }
         }
     }
@@ -334,13 +312,13 @@ impl Pass<Cx<'_>> for Crops {
                     return Ok(Step::Preempted);
                 }
                 Ok(s) => cx.inner.notify(Notice::Cropped {
-                    folder,
-                    saved: s.saved,
-                    skipped: s.skipped,
-                    failed: s.failed,
-                    first_error: s.error,
+                    folder: folder.display().to_string(),
+                    saved: count(s.saved),
+                    skipped: count(s.skipped),
+                    failed: count(s.failed),
+                    first_error: s.error.map(file_failure),
                 }),
-                Err(e) => cx.inner.notify(Notice::CropFailed { error: format!("{e:#}") }),
+                Err(e) => cx.inner.notify(Notice::CropFailed { error: error_text(&e) }),
             }
         }
     }
@@ -363,7 +341,6 @@ impl Pass<Cx<'_>> for Scans {
             }
             match pg_scan::scan(cx.catalog, &path, &cx.inner.ctl) {
                 Ok(s) => {
-                    let root = rules.display(&path);
                     // A scan stopped early has committed what it recorded so far.
                     if s.changed > 0 || s.missing > 0 || s.rebound > 0 || s.replaced > 0 {
                         cx.inner.scanned();
@@ -372,19 +349,19 @@ impl Pass<Cx<'_>> for Scans {
                     // 7). Both come after the catalog's commit, which the scan made.
                     for id in &s.replaced_ids {
                         if let Err(e) = cx.inner.thumbs.forget(*id) {
-                            cx.inner.notify(Notice::ScanFailed { root: root.clone(), error: format!("{e:#}") });
+                            cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
                         }
                     }
                     for temp in &s.temps {
                         // By its disk path: the plain one would miss a temp in a folder whose name ends in a dot, or
                         // delete a sibling folder's file of the same name.
-                        let disk = pg_platform::names::disk_path(cx.catalog.rules(), temp);
+                        let disk = pg_platform::names::disk_path(rules, temp);
                         match std::fs::remove_file(&disk) {
                             Ok(()) => {}
                             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                             Err(e) => cx.inner.notify(Notice::ScanFailed {
-                                root: root.clone(),
-                                error: format!("can't delete {}: {e}", cx.catalog.rules().display(temp)),
+                                root: path.clone(),
+                                error: tidy(&format!("can't delete {}: {e}", rules.display(temp)), ERROR_CAP),
                             }),
                         }
                     }
@@ -392,12 +369,13 @@ impl Pass<Cx<'_>> for Scans {
                         cx.inner.queue().scans.push_front(path);
                         return Ok(Step::Preempted);
                     }
+                    let mut found = Vec::new();
                     if s.errors > 0 {
-                        cx.inner.notify(Notice::UnreadableFolders { root: root.clone(), count: s.errors });
+                        found.push(Notice::ScanUnreadable { root: path.clone(), count: s.errors });
                     }
                     for refused in &s.refused_mount_list {
-                        cx.inner.notify(Notice::MountRefused {
-                            root: root.clone(),
+                        found.push(Notice::MountRefused {
+                            root: path.clone(),
                             mount: refused.mount.clone(),
                             reason: refused.reason.clone(),
                         });
@@ -405,23 +383,35 @@ impl Pass<Cx<'_>> for Scans {
                     let counts = [
                         (ScanNote::Duplicates, s.duplicates),
                         (ScanNote::SkippedReparse, s.skipped_reparse),
-                        (ScanNote::Ambiguous, u64::try_from(s.ambiguous).unwrap_or(u64::MAX)),
-                        (ScanNote::UnpairedWithData, u64::try_from(s.unpaired_with_data).unwrap_or(u64::MAX)),
-                        (ScanNote::Replaced, u64::try_from(s.replaced).unwrap_or(u64::MAX)),
-                        (ScanNote::Rebound, u64::try_from(s.rebound).unwrap_or(u64::MAX)),
+                        (ScanNote::Ambiguous, count(s.ambiguous)),
+                        (ScanNote::UnpairedWithData, count(s.unpaired_with_data)),
+                        (ScanNote::Replaced, count(s.replaced)),
+                        (ScanNote::Rebound, count(s.rebound)),
                         (ScanNote::VolumeFallback, s.volume_fallbacks),
                     ];
                     for (note, count) in counts {
                         if count > 0 {
-                            cx.inner.notify(Notice::ScanNote { root: root.clone(), note, count });
+                            found.push(Notice::ScanNote { root: path.clone(), note, count });
+                        }
+                    }
+                    // A complete walk of a whole library folder is what holds for it now: its kept notices are
+                    // replaced by the ones it found. A walk of a folder under it adds its own and clears nothing (the
+                    // rest of the library folder wasn't looked at).
+                    if library.contains(&path) {
+                        for code in SCAN_STATES {
+                            let of_code = found.iter().filter(|n| n.code() == code).cloned().collect();
+                            cx.inner.notices.replace(Key::all(code, Some(&path)).to_buf(), of_code);
+                        }
+                    } else {
+                        for notice in found {
+                            cx.inner.notify(notice);
                         }
                     }
                 }
                 Err(e) => {
-                    let root = rules.display(&path);
                     let notice = match e {
-                        ScanError::Refused(reason) => Notice::RootRefused { root, reason },
-                        ScanError::Failed(e) => Notice::ScanFailed { root, error: format!("{e:#}") },
+                        ScanError::Refused(reason) => Notice::RootRefused { root: path, reason },
+                        ScanError::Failed(e) => Notice::ScanFailed { root: path, error: error_text(&e) },
                     };
                     cx.inner.notify(notice);
                     // Its batches before the error are in.
@@ -432,6 +422,8 @@ impl Pass<Cx<'_>> for Scans {
     }
 }
 
+/// The kept notices a scan of a library folder posts, which a complete walk of the whole folder replaces.
+const SCAN_STATES: [&str; 4] = ["scan-unreadable", "root-refused", "mount-refused", "scan-note"];
 /// Analyzes what the scans found.
 struct Import;
 
@@ -469,35 +461,10 @@ impl Pass<Cx<'_>> for Thumbs {
         let opts = Options::new(Priority::Idle);
         let s = pg_thumbs::run(cx.inner.thumbs, &cx.inner.catalog_path, height, &opts, &cx.inner.ctl)?;
         if s.cache_full {
-            cx.inner.notify(Notice::CacheFull { height, made: s.made });
+            cx.inner.notify(Notice::CacheFull { height, made: count(s.made) });
+        } else if s.complete {
+            cx.inner.clear(Key::all("cache-full", None));
         }
         Ok(Step::Done)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn the_newest_messages_are_kept_and_the_rest_counted() {
-        let mut messages = Messages::default();
-        for i in 0..MESSAGE_CAP + 5 {
-            messages.push(Notice::CacheFull { height: 0, made: i });
-        }
-        assert_eq!(messages.kept.len(), MESSAGE_CAP);
-        assert_eq!(messages.not_kept, 5);
-        assert_eq!(messages.kept.front(), Some(&Notice::CacheFull { height: 0, made: 5 }));
-        assert_eq!(messages.kept.back(), Some(&Notice::CacheFull { height: 0, made: MESSAGE_CAP + 4 }));
-    }
-
-    #[test]
-    fn only_a_crop_with_failures_is_a_warning() {
-        let folder = PathBuf::from("out");
-        let done = Notice::Cropped { folder: folder.clone(), saved: 2, skipped: 0, failed: 0, first_error: None };
-        assert!(!done.is_warning());
-        let some_failed = Notice::Cropped { folder, saved: 1, skipped: 0, failed: 1, first_error: None };
-        assert!(some_failed.is_warning());
-        assert!(Notice::RoundFailed { error: String::new() }.is_warning());
     }
 }

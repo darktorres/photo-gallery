@@ -1,16 +1,17 @@
 //! The application: the composition root of the app's services. It opens them in dependency order and owns them, and it is
-//! the one place that orders their shutdown: background work first ([`App::stop`]), then the thumbnail cache, then the
-//! catalog connections with the keeper last ([`App::shutdown`]). The last connection to a catalog file deletes its WAL, so
+//! the one place that orders their shutdown: background work first ([`App::stop`]), then the thumbnail cache and what it
+//! still tells, then the inbox, then the catalog connections with the keeper last ([`App::shutdown`]). The last connection to a catalog file deletes its WAL, so
 //! the keeper is the one that must close last. The front end holds one `App` for the process; nothing here is a `static`.
 //!
-//! The services are reached through the accessors: [`App::notes`], [`App::catalogs`], [`App::prefs`], [`App::images`],
+//! The services are reached through the accessors: [`App::inbox`], [`App::catalogs`], [`App::prefs`], [`App::images`],
 //! [`App::reading`], [`App::views`], [`App::edit`] and [`App::library`]. Each service holds `Arc` handles to the services
 //! below it, never to the `App`.
 //!
-//! The library prints nothing (its crates deny printing); what happens that the user should hear about is a [`Note`] on the
-//! notes bus, which the front end prints or shows.
+//! The library prints nothing (its crates deny printing); what happens that the user should hear about is a
+//! [`pg_model::notice::Notice`] posted to the inbox, which the front end words and shows.
 
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, PoisonError};
+use std::thread::JoinHandle;
 
 use pg_jobs::events::Bus;
 use pg_thumbcache::ThumbCache;
@@ -20,16 +21,19 @@ use crate::config::Config;
 use crate::edit::Edit;
 use crate::error::{Result, failed};
 use crate::images::Images;
+use crate::inbox::Inbox;
 use crate::library::LibraryService;
 use crate::makers::Makers;
-use crate::notes::{Note, Notes};
 use crate::prefs::PrefStore;
 use crate::reader::Reading;
 use crate::views::Views;
+use pg_model::notice::{ERROR_CAP, Notice, tidy};
 
 /// The app's services, opened by [`App::open`].
 pub struct App {
-    notes: Arc<Notes>,
+    inbox: Arc<Inbox>,
+    /// The thread that posts the thumbnail cache's events; it ends when the cache closes, and is joined at shutdown.
+    forwarder: Mutex<Option<JoinHandle<()>>>,
     /// The thumbnail cache, leaked to a `'static` reference so the library's threads can borrow it. Closed at shutdown.
     thumbs: &'static ThumbCache,
     catalogs: Arc<Catalogs>,
@@ -43,33 +47,34 @@ pub struct App {
 
 impl App {
     /// Open (and migrate) the catalog, the thumbnail cache, and the preferences. A cache that can't be opened only means
-    /// thumbnails aren't kept (a note says why). The library starts on first use ([`LibraryService::start`]).
+    /// thumbnails aren't kept (a notice says why). The library starts on first use ([`LibraryService::start`]).
     pub fn open(config: Config) -> Result<App> {
         std::fs::create_dir_all(&config.catalog_dir)
             .map_err(|e| failed(format!("{}: {e}", config.catalog_dir.display())))?;
         let catalog_path = config.catalog_path();
         let keeper = pg_library::open_catalog(&config.catalog_dir)?;
         let catalog_id = keeper.catalog_id()?;
-        let notes = Arc::new(Notes::new());
-        if let Some(r) = keeper.rebuilt() {
-            notes.publish(Note::CatalogRebuilt(r.clone()));
+        let rebuilt = keeper.rebuilt().cloned();
+        let catalogs = Arc::new(Catalogs::new(catalog_path.clone(), keeper));
+        let inbox = Inbox::start(catalog_path.clone())?;
+        if let Some(r) = rebuilt {
+            inbox.post(r.notice());
         }
         let thumb_events = Arc::new(Bus::new(64));
-        forward_thumb_events(thumb_events.clone(), notes.clone())?;
+        let forwarder = forward_thumb_events(thumb_events.clone(), inbox.clone())?;
         let thumbs = pg_library::open_thumbs(&config.catalog_dir, &catalog_id, config.thumb_cap_bytes, thumb_events)
             .unwrap_or_else(|e| {
-                notes
-                    .publish(Note::Thumbs(pg_thumbcache::Event::NotStored { error: format!("cache disabled: {e:#}") }));
+                inbox.post(Notice::CacheDisabled { error: tidy(&format!("{e:#}"), ERROR_CAP) });
                 ThumbCache::disabled()
             });
         let thumbs: &'static ThumbCache = Box::leak(Box::new(thumbs));
-        let prefs = Arc::new(PrefStore::open(config.prefs_path.clone(), notes.clone()));
-        let catalogs = Arc::new(Catalogs::new(catalog_path.clone(), keeper));
+        let prefs = Arc::new(PrefStore::open(config.prefs_path.clone(), inbox.clone()));
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
-        let library = Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs));
+        let library = Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs, inbox.clone()));
         Ok(App {
-            notes,
+            inbox,
+            forwarder: Mutex::new(Some(forwarder)),
             thumbs,
             images: Images::new(catalogs.clone(), makers, thumbs),
             views: Views::new(catalogs.clone()),
@@ -81,11 +86,10 @@ impl App {
         })
     }
 
-    /// What the app has to say (see [`Notes::subscribe`]).
-    pub fn notes(&self) -> &Notes {
-        &self.notes
+    /// What the app tells the user: post to it, read what it lists, and mark and dismiss its entries.
+    pub fn inbox(&self) -> &Inbox {
+        &self.inbox
     }
-
     /// The catalog connections, and a file's path as the system holds it.
     pub fn catalogs(&self) -> &Catalogs {
         &self.catalogs
@@ -134,26 +138,34 @@ impl App {
     /// so the last connection to the file deletes its WAL. Afterwards the app has no connections; it must not be used.
     pub fn shutdown(&self) {
         self.thumbs.close();
+        // The cache's last events are posted before the inbox writes what it has queued and stops.
+        if let Some(forwarder) = self.forwarder.lock().unwrap_or_else(PoisonError::into_inner).take()
+            && forwarder.join().is_err()
+        {
+            pg_log::error("app", "the thumbnail events' thread panicked");
+        }
+        self.inbox.close();
         if let Some(e) = self.catalogs.close() {
-            self.notes.publish(Note::Thumbs(pg_thumbcache::Event::WalNotMerged { error: format!("catalog: {e:#}") }));
+            // The inbox has closed: the log is all that hears it.
+            let notice = Notice::CatalogNotClosed { error: tidy(&format!("{e:#}"), ERROR_CAP) };
+            pg_log::warn("catalog", &serde_json::to_string(&notice).unwrap_or_else(|_| format!("{e:#}")));
         }
     }
 }
 
-/// Forward the thumbnail cache's events to the notes bus, on a thread that ends when the cache's bus is dropped. The
-/// writer thread owns that bus and drops it when it returns; `App::shutdown` stops it by closing the cache. An error
-/// if the thread can't be started.
-fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, notes: Arc<Notes>) -> Result<()> {
+/// Post the thumbnail cache's events to the inbox, on a thread that ends when the cache's bus is dropped. The writer
+/// thread owns that bus and drops it when it returns; `App::shutdown` stops it by closing the cache. An error if the
+/// thread can't be started.
+fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox>) -> Result<JoinHandle<()>> {
     let sub = events.subscribe();
     std::thread::Builder::new()
         .name("thumbnail events".into())
         .spawn(move || {
             while let Some(event) = sub.recv() {
-                notes.publish(Note::Thumbs(event));
+                inbox.post(event.into_notice());
             }
         })
-        .map_err(|e| failed(format!("can't start the thumbnail event forwarder: {e}")))?;
-    Ok(())
+        .map_err(|e| failed(format!("can't start the thumbnail event forwarder: {e}")))
 }
 
 #[cfg(test)]
@@ -197,6 +209,7 @@ mod tests {
         let text: &[u8] = if cfg!(windows) { b"D:\\a\\x\xED\xA0\x80.jpg" } else { b"/a/x\xED\xA0\x80.jpg" };
         assert_eq!(app.catalogs().file_path(FileId::new(1)).unwrap(), pg_platform::names::disk_path_of(text));
         assert!(matches!(app.catalogs().file_path(FileId::new(2)), Err(Error::UnknownFile(2))));
+        app.shutdown();
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
     }

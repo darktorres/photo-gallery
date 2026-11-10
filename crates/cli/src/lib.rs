@@ -13,7 +13,9 @@ mod borders;
 mod dups;
 mod report;
 
+use pg_client::text;
 use pg_model::ids::FileId;
+use pg_model::notice::Notice;
 use pg_model::rules::{Path as RulePath, PathRules};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -84,11 +86,11 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     let root = pg_scan::normalize_path(&root)?;
                     // A refused folder is not added; the other folders still are.
                     if let Err(reason) = pg_scan::check_folder(rules, &root) {
-                        println!("{}", pg_client::text::folder_refused(&rules.display(&root), &reason));
+                        println!("{}", text::notice_line(&Notice::FolderRefused { folder: root, reason }, rules));
                         continue;
                     }
                     if !catalog.add_root(&root)? {
-                        println!("{} is already in the library", rules.display(&root));
+                        println!("{}", text::notice_title(&Notice::FolderAlreadyAdded { folder: root.clone() }, rules));
                     }
                     normalized.push(root);
                 }
@@ -100,7 +102,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     Ok(s) => s,
                     // A refused folder is reported and the others are still scanned; any other error stops the command.
                     Err(pg_scan::ScanError::Refused(reason)) => {
-                        println!("{}", pg_client::text::root_refused(&name, &reason));
+                        println!("{}", text::notice_line(&Notice::RootRefused { root: root.clone(), reason }, rules));
                         continue;
                     }
                     Err(pg_scan::ScanError::Failed(e)) => return Err(e),

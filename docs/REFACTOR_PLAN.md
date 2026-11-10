@@ -95,7 +95,8 @@ The findings below are as of f3d2e60.
     `ingest/tests/{crop,video,writeback}.rs` (`scratch`).
 - **Service patterns** (`Runner`, `Writer`, `ui::loader`, the ThumbCache writer):
   - Progress reaches the UI by polling a message list with a single consumer (`runner.rs:183` `take_messages`,
-    `library.rs:226` `poll`), so a second front end would steal its messages.
+    `library.rs:226` `poll`), so a second front end would steal its messages. (Since gone: the job posts its notices to the
+    app's inbox, docs/NOTIFICATIONS.md.)
   - `Control::checkpoint` polls every 100 ms while paused (`control.rs:152-163`).
   - `ThumbCache` is passed as a leaked `&'static` (`cli.rs:278-279`, `tests/writeback.rs:101`).
   - Per-thread state: the UI's catalog connection and `Maker` (`state.rs:44-47`), the provider's JPEG buffer
@@ -504,7 +505,8 @@ features `heif`, `raw`.
   - `Offline` as a typed error;
   - `wait_idle()` for the CLI and tests;
 - `Catalog::prepare(path, Versions)` once at startup, before anything else opens the catalog;
-- events on a `Bus` instead of `on_round_done` (`runner.rs:228`), `on_pixels_changed`, `turned` and `take_messages`;
+- events on a `Bus` instead of `on_round_done` (`runner.rs:228`), `on_pixels_changed`, `turned` and `take_messages`
+  (the last since replaced by the inbox);
 - later: embeddings (a future `pg-embed` crate holds the GPU/ONNX runtime, banned elsewhere), the dedup batch, quarantine.
 
 The runner's hard-coded round (`runner.rs:240-308`) becomes a schedule of passes.

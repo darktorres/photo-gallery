@@ -118,6 +118,21 @@ fn turning_dev_mode_off_closes_the_log() {
     );
 }
 
+/// The inbox's key opens and closes it, in dev mode or not; from the log, it closes the log first.
+#[test]
+fn the_inbox_key_opens_and_closes_it() {
+    let mut c = controller();
+    assert_eq!(report(&mut c, Report::Global(Global::Inbox)), vec![Command::OpenPanel(PanelKind::Inbox)]);
+    report(&mut c, Report::Panel(Event::PanelOpened(PanelKind::Inbox)));
+    assert_eq!(report(&mut c, Report::Global(Global::Inbox)), vec![Command::ClosePanel(PanelKind::Inbox)]);
+    report(&mut c, Report::Panel(Event::PanelClosed(PanelKind::Inbox)));
+    report(&mut c, Report::Panel(Event::PanelOpened(PanelKind::Log)));
+    assert_eq!(
+        report(&mut c, Report::Global(Global::Inbox)),
+        vec![Command::ClosePanel(PanelKind::Log), Command::OpenPanel(PanelKind::Inbox)]
+    );
+}
+
 /// From the inbox, the log's key closes the inbox and opens the log.
 #[test]
 fn the_log_key_switches_from_the_inbox() {

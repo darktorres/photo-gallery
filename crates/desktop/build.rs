@@ -56,6 +56,7 @@ fn main() -> Result<(), String> {
                 "qml/Hud.qml",
                 "qml/Mascot.qml",
                 "qml/GlobalShortcuts.qml",
+                "qml/InboxPanel.qml",
                 "qml/LogPanel.qml",
                 "qml/PanelKind.qml",
             ])
@@ -72,6 +73,7 @@ fn main() -> Result<(), String> {
         "src/animation_bridge.rs",
         "src/frame_sink_bridge.rs",
         "src/app_icon.rs",
+        "src/clipboard.rs",
         "src/command_line_bridge.rs",
         "src/deadline_bridge.rs",
         "src/facet_choices_bridge.rs",
@@ -83,6 +85,7 @@ fn main() -> Result<(), String> {
         "src/picker_bridge.rs",
         "src/library_bridge.rs",
         "src/log_model_bridge.rs",
+        "src/notices_bridge.rs",
         "src/providers_bridge.rs",
         "src/screenshot_bridge.rs",
         "src/settings_bridge.rs",
@@ -96,6 +99,7 @@ fn main() -> Result<(), String> {
         "src/yandex_bridge.rs",
     ])
     .cpp_file("cpp/app_icon.cpp")
+    .cpp_file("cpp/clipboard.cpp")
     .cpp_file("cpp/deadline.cpp")
     .cpp_file("cpp/picker.cpp")
     .cpp_file("cpp/frame_sink.cpp")

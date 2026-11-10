@@ -524,13 +524,63 @@ pub enum Lifecycle<'a> {
     State(Key<'a>),
 }
 
-/// A kept notice's key: its kind, the library folder it is about (resolved to the folder of the library that holds it
-/// when it is posted, so removing that folder clears it), and the part of that folder's notices it is.
+/// A kept notice's key: its kind's code, the library folder it is about (resolved to the folder of the library that
+/// holds it when it is posted, so removing that folder clears it), and the part of that folder's notices it is.
+///
+/// A producer clears kept notices by a key too ([`Key::all`]): a key with no part clears every part of the kind and
+/// folder (a complete scan of a folder clears its refused mounts before it posts the ones it found).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Key<'a> {
-    pub kind: &'static str,
+    pub code: &'static str,
     pub root: Option<&'a RulePath>,
     pub part: Option<Part<'a>>,
+}
+
+impl<'a> Key<'a> {
+    /// Every kept notice of the kind with `code` (a [`Notice::code`]) about `root`, whatever its part.
+    pub fn all(code: &'static str, root: Option<&'a RulePath>) -> Key<'a> {
+        Key { code, root, part: None }
+    }
+
+    /// The key, owning its folders: to send it to another thread.
+    pub fn to_buf(&self) -> KeyBuf {
+        KeyBuf {
+            code: self.code,
+            root: self.root.cloned(),
+            part: self.part.as_ref().map(|part| match part {
+                Part::Path(path) => PartBuf::Path((*path).clone()),
+                Part::Code(code) => PartBuf::Code(code),
+            }),
+        }
+    }
+}
+
+/// A [`Key`] that owns its folders.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct KeyBuf {
+    pub code: &'static str,
+    pub root: Option<RulePath>,
+    pub part: Option<PartBuf>,
+}
+
+/// A [`Part`] that owns its folder.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum PartBuf {
+    Path(RulePath),
+    Code(&'static str),
+}
+
+impl KeyBuf {
+    pub fn key(&self) -> Key<'_> {
+        Key {
+            code: self.code,
+            root: self.root.as_ref(),
+            part: self.part.as_ref().map(|part| match part {
+                PartBuf::Path(path) => Part::Path(path),
+                PartBuf::Code(code) => Part::Code(code),
+            }),
+        }
+    }
 }
 
 /// What tells two kept notices of one kind and folder apart.
@@ -773,31 +823,27 @@ impl Notice {
 
     /// How the inbox keeps it.
     pub fn lifecycle(&self) -> Lifecycle<'_> {
-        fn key<'a>(kind: &'static str, root: Option<&'a RulePath>, part: Option<Part<'a>>) -> Lifecycle<'a> {
-            Lifecycle::State(Key { kind, root, part })
-        }
         match self {
-            Notice::ScanUnreadable { root, .. } => key("scan-unreadable", Some(root), None),
-            Notice::RootRefused { root, .. } => key("root-refused", Some(root), None),
-            Notice::MountRefused { root, mount, .. } => key("mount-refused", Some(root), Some(Part::Path(mount))),
-            Notice::ScanNote { root, note, .. } => key("scan-note", Some(root), Some(Part::Code(note.code()))),
-            Notice::RoundFailed { .. } => key("round-failed", None, None),
-            Notice::CacheFull { .. } => key("cache-full", None, None),
-            Notice::PrefsNotSaved { .. } => key("prefs-not-saved", None, None),
-            Notice::CacheTouchesNotWritten { .. } => key("cache-touches", None, None),
-            Notice::CacheNotStored { .. } => key("cache-not-stored", None, None),
-            Notice::WriteFailed { .. } => key("write-failed", None, None),
-            Notice::WriteStopped => key("write-stopped", None, None),
-            Notice::WriteDropped { .. } => key("write-dropped", None, None),
-            Notice::ListingFailed { .. } => key("listing-failed", None, None),
-            Notice::RowReadFailed { .. } => key("rowread-failed", None, None),
-            Notice::ReloadFailed { .. } => key("reload-failed", None, None),
-            Notice::FacetsFailed { .. } => key("facets-failed", None, None),
-            Notice::TreeFailed { .. } => key("tree-failed", None, None),
-            Notice::ViewsFailed { op, .. } => key("views-failed", None, Some(Part::Code(op.code()))),
-            Notice::SessionNotSaved { .. } => key("session-not-saved", None, None),
-            Notice::EditFailed { op, .. } => key("edit-failed", None, Some(Part::Code(op.code()))),
-            Notice::UnreadableFiles { pass, .. } => key("unreadable", None, Some(Part::Code(pass.code()))),
+            Notice::ScanUnreadable { root, .. } | Notice::RootRefused { root, .. } => self.key(Some(root), None),
+            Notice::MountRefused { root, mount, .. } => self.key(Some(root), Some(Part::Path(mount))),
+            Notice::ScanNote { root, note, .. } => self.key(Some(root), Some(Part::Code(note.code()))),
+            Notice::ViewsFailed { op, .. } => self.key(None, Some(Part::Code(op.code()))),
+            Notice::EditFailed { op, .. } => self.key(None, Some(Part::Code(op.code()))),
+            Notice::UnreadableFiles { pass, .. } => self.key(None, Some(Part::Code(pass.code()))),
+            Notice::RoundFailed { .. }
+            | Notice::CacheFull { .. }
+            | Notice::PrefsNotSaved { .. }
+            | Notice::CacheTouchesNotWritten { .. }
+            | Notice::CacheNotStored { .. }
+            | Notice::WriteFailed { .. }
+            | Notice::WriteStopped
+            | Notice::WriteDropped { .. }
+            | Notice::ListingFailed { .. }
+            | Notice::RowReadFailed { .. }
+            | Notice::ReloadFailed { .. }
+            | Notice::FacetsFailed { .. }
+            | Notice::TreeFailed { .. }
+            | Notice::SessionNotSaved { .. } => self.key(None, None),
             Notice::ThumbsFailed { .. } => Lifecycle::Ledger(FilePass::Thumbs),
             Notice::BordersFailed { .. } => Lifecycle::Ledger(FilePass::Borders),
             Notice::ImportFailed { .. } => Lifecycle::Ledger(FilePass::Import),
@@ -824,6 +870,66 @@ impl Notice {
             | Notice::PickerFailed { .. }
             | Notice::NoticesLost { .. }
             | Notice::UpdateAvailable { .. } => Lifecycle::Event,
+        }
+    }
+
+    /// A kept notice of this kind, under `root` and `part`.
+    fn key<'a>(&self, root: Option<&'a RulePath>, part: Option<Part<'a>>) -> Lifecycle<'a> {
+        Lifecycle::State(Key { code: self.code(), root, part })
+    }
+
+    /// The library folder it is about, if any: the inbox ties it to the folder of the library that holds it, so it goes
+    /// when that folder is removed, and a notice about a folder no longer in the library is not kept.
+    pub fn root(&self) -> Option<&RulePath> {
+        match self {
+            Notice::ScanUnreadable { root, .. }
+            | Notice::ScanFailed { root, .. }
+            | Notice::RootRefused { root, .. }
+            | Notice::MountRefused { root, .. }
+            | Notice::ScanNote { root, .. } => Some(root),
+            Notice::RoundFailed { .. }
+            | Notice::RoundPanicked { .. }
+            | Notice::CacheFull { .. }
+            | Notice::Cropped { .. }
+            | Notice::CropFailed { .. }
+            | Notice::CatalogRebuilt { .. }
+            | Notice::CatalogNotClosed { .. }
+            | Notice::PrefsUnreadable { .. }
+            | Notice::PrefsNotSaved { .. }
+            | Notice::CacheTotalsFixed { .. }
+            | Notice::CacheTouchesNotWritten { .. }
+            | Notice::CacheNotStored { .. }
+            | Notice::CacheWalNotMerged { .. }
+            | Notice::CacheStartedOver { .. }
+            | Notice::CacheDisabled { .. }
+            | Notice::WriteFailed { .. }
+            | Notice::WriteStopped
+            | Notice::WriteDropped { .. }
+            // Not yet in the library (an added folder), so not one of its folders.
+            | Notice::FolderAlreadyAdded { .. }
+            | Notice::FolderRefused { .. }
+            | Notice::FolderNotAdded { .. }
+            | Notice::FolderNotRemoved { .. }
+            | Notice::RescanFailed { .. }
+            | Notice::LibraryUnavailable { .. }
+            | Notice::FoldersUnreadable { .. }
+            | Notice::PickerFailed { .. }
+            | Notice::ListingFailed { .. }
+            | Notice::RowReadFailed { .. }
+            | Notice::ReloadFailed { .. }
+            | Notice::FacetsFailed { .. }
+            | Notice::TreeFailed { .. }
+            | Notice::ViewsFailed { .. }
+            | Notice::SessionNotSaved { .. }
+            | Notice::EditFailed { .. }
+            | Notice::ThumbsFailed { .. }
+            | Notice::BordersFailed { .. }
+            | Notice::ImportFailed { .. }
+            | Notice::UnreadableFiles { .. }
+            | Notice::NoticesLost { .. }
+            | Notice::FileNoLongerInLibrary
+            | Notice::UpdateAvailable { .. }
+            | Notice::Unknown { .. } => None,
         }
     }
 
@@ -1088,6 +1194,17 @@ mod tests {
                 (_, Lifecycle::Ledger(_)) => panic!("{notice:?} is no ledger entry"),
                 (_, Lifecycle::Transient) => assert!(notice.actions().is_empty(), "{notice:?}"),
                 (_, Lifecycle::Event | Lifecycle::State(_)) => assert!(!notice.actions().is_empty(), "{notice:?}"),
+            }
+        }
+    }
+
+    /// A kept notice's key names its kind by its code, and its folder is the notice's own.
+    #[test]
+    fn a_key_is_the_kinds_code_and_the_notices_folder() {
+        for notice in Notice::samples() {
+            if let Lifecycle::State(key) = notice.lifecycle() {
+                assert_eq!(key.code, notice.code());
+                assert_eq!(key.root, notice.root());
             }
         }
     }

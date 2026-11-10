@@ -1,6 +1,6 @@
 # Notifications plan: persistent inbox, failure ledger, dev log view
 
-Status (2026-11-10): S1 done (see "S1 as built" below); S2 and S3 to do. Re-checked against `d2cbc13`; delivered in
+Status (2026-11-10): S1 and S2 done (see "S1 as built" and "S2 as built" below); S3 to do. Re-checked against `d2cbc13`; delivered in
 three stages (S1, S2, S3), each its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 ## S1 as built
@@ -22,6 +22,35 @@ S1 is as the plan says, with these differences, each the more proper of the two:
 - `StartOverReason` (M-45), `ScanNote` and `Carried` moved to `pg_model::notice`, with their old enums gone, so the
   notice holds them without a copy and the client words them from one type.
 - The log sites were 36, not 34 (two added since `d2cbc13`); the table is in `NOTIFICATIONS.md`.
+
+## S2 as built
+
+S2 is as the plan says, with these differences:
+
+- The catalog owns the stored form: `pg_catalog::inbox` writes a `Notice` as JSON and reads it back typed (one of a kind
+  this build doesn't know is `Notice::Unknown`), so `pg-catalog` depends on `serde_json`, not `pg-app`. It is one module
+  of its own (`inbox.rs`, beside `pair` and `dups`), not `browse/read/notices.rs` and `browse/writes/notices.rs`: the
+  inbox is not browsing.
+- `notices.root` is a foreign key to `roots(id)` with `ON DELETE CASCADE`, not an `AFTER DELETE ON roots` trigger: the
+  same effect, declared, and it holds for every delete of a root. A `part` column beside the key lets a producer clear
+  every part of a kind and folder.
+- A state posted again with the same data keeps its read and dismissed marks (a held problem is not news each time);
+  one whose data changed is unread again. A complete scan of a library folder *replaces* its kept notices
+  (`inbox::replace`: posts what it found, clears the rest) instead of clearing and posting again, which would bring back
+  every note the user had read at every rescan.
+- The writer publishes the whole listing with each change, so the window never reads the catalog for the inbox; the
+  `Notices` model takes it as it comes. A dismissal and "mark all read" change the rows at once and are queued.
+- A clear of a kind the inbox holds none of sends nothing (an in-memory set of the kinds it may hold), so the window
+  clears a kind at every read that works without queueing a write.
+- `NoticeSink` is a trait (`post`, `replace`, `clear`), not an `Arc<dyn Fn>`: the job needs the three.
+- The cache's events become notices by `pg_thumbcache::Event::into_notice`, a rebuilt catalog by `Rebuilt::notice`
+  (replacing `carried_note`): the app and the command line share them, and the command line prints the notices' words
+  (`text::notice_line`) for its refused folders, its rebuilt catalog and the cache's events (M-26).
+- `LibraryService::add_folder` returns the folder, and `pg_scan::RefusedMount` holds it, as a `RulePath`, so the notices
+  keep the exact folder (not its display text).
+- The toast is in the status bar, where the job's message line was, and the bell is an "Inbox (N)" button: the status
+  bar keeps its layout. A populated inbox's screenshot waits for S3's failing fixture file.
+- The progress bar's "N failed" split is S3's, with the ledger it links to.
 
 ## Context
 

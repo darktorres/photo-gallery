@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use pg_model::ids::FileId;
-use pg_model::notice::StartOverReason;
+use pg_model::notice::{ERROR_CAP, Notice, StartOverReason, tidy};
 use pg_model::path::{FilePath, WorkList};
 use pg_model::turns::Turns;
 
@@ -78,6 +78,23 @@ pub enum Event {
     StartedOver { reason: StartOverReason, path: PathBuf, detail: String },
 }
 
+impl Event {
+    /// The notice that tells the user (the app's inbox, the command line).
+    pub fn into_notice(self) -> Notice {
+        let error = |e: String| tidy(&e, ERROR_CAP);
+        match self {
+            Event::TotalsFixed { kept: (kept_bytes, kept_count), actual: (bytes, count) } => {
+                Notice::CacheTotalsFixed { kept_bytes, kept_count, bytes, count }
+            }
+            Event::TouchesNotWritten { error: e } => Notice::CacheTouchesNotWritten { error: error(e) },
+            Event::NotStored { error: e } => Notice::CacheNotStored { error: error(e) },
+            Event::WalNotMerged { error: e } => Notice::CacheWalNotMerged { error: error(e) },
+            Event::StartedOver { reason, path, detail } => {
+                Notice::CacheStartedOver { reason, path: path.display().to_string(), detail: error(detail) }
+            }
+        }
+    }
+}
 /// What a cache holds (bytes, entries) and may hold (`cap`, bytes).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Usage {

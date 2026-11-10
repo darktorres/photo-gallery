@@ -12,7 +12,7 @@ Item {
     id: shortcuts
 
     // The shortcuts' codes, in the order of pg_client's Global (a Rust test, keymap.rs, checks the order).
-    enum GlobalAction { Log, DevMode }
+    enum GlobalAction { Inbox, Log, DevMode }
 
     // A shortcut fired: its GlobalAction code.
     signal activated(int code)
@@ -21,6 +21,12 @@ Item {
         id: keymap
     }
 
+    Shortcut {
+        sequence: keymap.globalSequence(GlobalShortcuts.Inbox)
+        context: Qt.ApplicationShortcut
+        autoRepeat: false
+        onActivated: shortcuts.activated(GlobalShortcuts.Inbox)
+    }
     Shortcut {
         sequence: keymap.globalSequence(GlobalShortcuts.Log)
         context: Qt.ApplicationShortcut

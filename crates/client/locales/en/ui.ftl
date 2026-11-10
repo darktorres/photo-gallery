@@ -60,6 +60,16 @@ ui-add-folder = Add folder…
 ui-rescan-all = Rescan all
 ui-close = Close
 # The log view (dev mode): its button in the status bar, its title, and what it shows with no record
+# The status bar's button that opens the inbox, with how many of its entries are unread (none: no count)
+ui-inbox = { $count ->
+    [0] Inbox
+   *[other] Inbox ({ $text })
+}
+ui-inbox-title = Inbox
+ui-inbox-empty = Nothing to tell
+ui-inbox-clear = Clear all
+ui-inbox-copy = Copy
+ui-inbox-dismiss = Dismiss
 ui-log = Log
 ui-log-title = Log
 ui-log-empty = Nothing logged yet

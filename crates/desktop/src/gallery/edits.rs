@@ -6,6 +6,7 @@ use cxx_qt::CxxQtType;
 use pg_client::grid::Changed;
 use pg_model::grid::Borders;
 use pg_model::ids::FileId;
+use pg_model::notice::{EditOp, Notice};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 
@@ -24,9 +25,10 @@ impl qobject::GalleryModel {
             return;
         }
         if let Err(e) = crate::app::get().library().turn(id, turns) {
-            pg_log::warn("edit", &format!("rotating: {e:#}"));
+            edit_failed(EditOp::Rotate, &e);
             return;
         }
+        crate::app::resolved_part("edit-failed", EditOp::Rotate.code());
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
@@ -75,9 +77,10 @@ impl qobject::GalleryModel {
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
         if let Err(e) = crate::app::get().edit().rate(id, rating) {
-            pg_log::warn("edit", &format!("rating: {e:#}"));
+            edit_failed(EditOp::Rate, &e);
             return;
         }
+        crate::app::resolved_part("edit-failed", EditOp::Rate.code());
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
@@ -96,9 +99,10 @@ impl qobject::GalleryModel {
             return;
         }
         if let Err(err) = crate::app::get().edit().set_border_mark(e.id, marked) {
-            pg_log::warn("edit", &format!("marking borders: {err:#}"));
+            edit_failed(EditOp::MarkBorder, &err);
             return;
         }
+        crate::app::resolved_part("edit-failed", EditOp::MarkBorder.code());
         let loading = self.loading;
         self.as_mut()
             .rust_mut()
@@ -121,4 +125,9 @@ impl qobject::GalleryModel {
         }
         n
     }
+}
+
+/// The inbox says that the edit `op` couldn't be saved, for `error`.
+fn edit_failed(op: EditOp, error: &impl std::fmt::Display) {
+    crate::app::post(Notice::EditFailed { op, error: crate::app::error_text(error) });
 }

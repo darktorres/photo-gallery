@@ -51,6 +51,28 @@ fn building_path(path: &Path) -> PathBuf {
     beside(path, ".building")
 }
 
+/// Where the copy of the catalog at `path` made before it is migrated from `version` is kept.
+pub(crate) fn backup_path(path: &Path, version: i64) -> PathBuf {
+    beside(path, &format!(".pre-v{version}.bak"))
+}
+
+/// Copy the catalog at `path`, at `version`, aside before it is migrated forward (the migrations can't be undone, and an
+/// older build refuses a catalog of a later version: going back to it is putting the copy back). Its `-wal` is merged
+/// into the file first, so the copy is whole; the caller holds the catalog exclusively. A copy already there (from an
+/// earlier try of the same migration) is kept: it is the older one.
+pub(crate) fn back_up(conn: &Connection, path: &Path, version: i64) -> Result<()> {
+    let backup = backup_path(path, version);
+    if backup.exists() {
+        return Ok(());
+    }
+    conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)")?;
+    let partial = beside(&backup, ".partial");
+    std::fs::copy(db_file(path)?, &partial)
+        .and_then(|_| std::fs::rename(&partial, &backup))
+        .with_context(|| format!("copying the catalog to {} before it is migrated", backup.display()))?;
+    Ok(())
+}
+
 /// Make the catalog `old` (at `path`) into a new one in this build's layout, carrying its rows ([`rebuild`]): the old file
 /// is moved aside, and the new one takes its name. `old` is the connection the change was found on; it is closed here.
 pub(crate) fn rebuild(old: Connection, path: &Path, rules: PathRules, why: String, readable: bool) -> Result<Rebuilt> {
@@ -317,7 +339,7 @@ pub fn max_folder_id(conn: &Connection, schema: &str) -> Result<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::{pending_import_sql, set_taken_zone};
+    use super::{backup_path, pending_import_sql, set_taken_zone};
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
     use crate::schema::{BASELINE, MIGRATIONS, bring_to, current_expected, current_version, mismatch};
@@ -923,7 +945,16 @@ mod tests {
         let roots = c.roots().unwrap();
         assert_eq!(roots.len(), 1);
         assert_eq!((roots[0].id, &roots[0].path), (RootId::new(7), &p(rules, r"D:\kept")));
+        // The file as it was before the migration is kept beside it, once: an older build can be gone back to.
+        let backup = backup_path(&path, crate::schema::BASELINE_VERSION);
+        let old = Connection::open(&backup).unwrap();
+        assert_eq!(pg_schema::user_version(&old).unwrap(), crate::schema::BASELINE_VERSION);
+        assert_eq!(old.query_row("SELECT count(*) FROM roots", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+        drop(old);
         drop(c);
+        let kept = std::fs::metadata(&backup).unwrap().modified().unwrap();
+        drop(Catalog::prepare(&path, versions(), rules).unwrap());
+        assert_eq!(std::fs::metadata(&backup).unwrap().modified().unwrap(), kept);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -7,19 +7,19 @@
 //! The words and the bundle are in `words`, the typed lines in `message`; this module builds the lines.
 
 mod message;
+mod notice;
 #[cfg(test)]
 mod test_support;
 mod words;
 
 use pg_model::detection::Class;
-use pg_model::notice::{ScanNote, StartOverReason};
+use pg_model::notice::{Notice, Source};
 use pg_model::progress::{Phase, Progress};
 use pg_model::query::{
     BorderFacet, Choice, DateRange, ListFacet, MediaType, Query, Range, RatingFilter, Shape, Status,
 };
 use pg_model::refusal::RefusedReason;
 use pg_model::rules::PathRules;
-use pg_model::write::WriteKind;
 
 use crate::input::day_text;
 pub use message::{Message, render};
@@ -302,42 +302,6 @@ pub fn write_status(queued: usize, error: Option<&str>) -> String {
     }
 }
 
-/// A copy into a file that failed up to the cap after it may have started: the file may be incomplete, and `temp`
-/// holds its whole new content (`error`: why the copy failed). The writer tries it again later.
-pub fn write_incomplete(file: &str, temp: &str, error: &str) -> String {
-    render(&Message::WriteIncomplete { file: file.to_string(), temp: temp.to_string(), error: error.to_string() })
-}
-
-/// Queued writes dropped because their files left the library: `count` since the last note, the latest of `kind`.
-pub fn write_dropped(kind: WriteKind, count: usize) -> String {
-    render(&Message::WriteDropped { kind, count })
-}
-
-/// The writer died too often in a row and isn't started again until the app is: the changes wait in the catalog.
-pub fn write_stopped() -> String {
-    render(&Message::WriteStopped)
-}
-
-/// A root whose folders a scan couldn't read.
-pub fn unreadable_folders(root: &str, count: u64) -> String {
-    render(&Message::UnreadableFolders { root: root.to_string(), count: count.to_string() })
-}
-
-/// A scan that failed.
-pub fn scan_failed(root: &str, error: &str) -> String {
-    render(&Message::ScanFailed { root: root.to_string(), error: error.to_string() })
-}
-
-/// A folder in the library that the scanner refuses (not on a local NTFS disk, or on a network file system).
-pub fn root_refused(root: &str, reason: &RefusedReason) -> String {
-    render(&Message::RootRefused { root: root.to_string(), reason: refused_reason(reason) })
-}
-
-/// A folder under a scanned root that the scanner does not walk into, because its file system is refused.
-pub fn mount_refused(mount: &str, reason: &RefusedReason) -> String {
-    render(&Message::MountRefused { mount: mount.to_string(), reason: refused_reason(reason) })
-}
-
 /// Why the scanner refuses a folder, as the refusal lines say it ("its drive is removable").
 pub fn refused_reason(reason: &RefusedReason) -> String {
     let (file_system, error) = match reason {
@@ -348,41 +312,30 @@ pub fn refused_reason(reason: &RefusedReason) -> String {
     render(&Message::RefusedReason { code: reason.code().to_string(), file_system, error: error.to_string() })
 }
 
-/// What a scan of a folder counted: the note (its code selects the words), and how many.
-pub fn scan_note(root: &str, note: ScanNote, count: u64) -> String {
-    render(&Message::ScanNote { root: root.to_string(), kind: note.code().to_string(), count: count.to_string() })
-}
-
-/// A round of the job that panicked (caught).
-pub fn round_panicked(message: &str) -> String {
-    render(&Message::RoundPanicked { message: message.to_string() })
-}
-
 /// A file a job panicked on (caught, so the job went on), with the panic's message: a crop's or a write's failure.
 pub fn file_panicked(message: &str) -> String {
     render(&Message::FilePanicked { message: message.to_string() })
 }
 
-/// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
-pub fn cache_full(height: u32, made: usize) -> String {
-    render(&Message::CacheFull { height: height.to_string(), made: made.to_string() })
+/// A notice's title: its row in the inbox, its toast. Its paths as `rules` write them.
+pub fn notice_title(notice: &Notice, rules: PathRules) -> String {
+    render(&Message::NoticeTitle { notice: notice.clone(), rules })
 }
 
-/// A crop job that ran to the end of its request: what it saved in `folder`, what it skipped and failed, and the first
-/// error when some failed.
-pub fn cropped(saved: usize, folder: &str, skipped: usize, failed: usize, first_error: Option<&str>) -> String {
-    let mut note = render(&Message::CroppedSaved { count: saved, folder: folder.to_string() });
-    if skipped > 0 {
-        note += "; ";
-        note += &render(&Message::CroppedSkipped { count: skipped });
-    }
-    if let Some(e) = first_error {
-        note += "; ";
-        note += &render(&Message::CroppedFailed { failed: failed.to_string(), error: e.to_string() });
-    }
-    note
+/// A notice's details.
+pub fn notice_body(notice: &Notice, rules: PathRules) -> String {
+    render(&Message::NoticeBody { notice: notice.clone(), rules })
 }
 
+/// A notice as one line, its title then its details: the command line's, and what the inbox copies.
+pub fn notice_line(notice: &Notice, rules: PathRules) -> String {
+    render(&Message::NoticeLine { title: notice_title(notice, rules), body: notice_body(notice, rules) })
+}
+
+/// The name of an inbox category.
+pub fn source_label(source: Source) -> String {
+    render(&Message::SourceLabel { source })
+}
 /// The photo to search couldn't be read, or (a TIFF) decoded to be sent as a JPEG.
 pub fn yandex_unreadable_photo(error: &str) -> String {
     render(&Message::YandexUnreadablePhoto { error: error.to_string() })
@@ -423,12 +376,6 @@ pub fn folder_unreadable(error: &str) -> String {
     render(&Message::FolderUnreadable { error: error.to_string() })
 }
 
-/// The thumbnail cache was started over when it was opened, for `reason`: `path` is where the old file is kept (a
-/// damaged one, moved aside) or the cache file made anew (one this build can't use, deleted).
-pub fn thumb_cache_started_over(reason: StartOverReason, path: &str) -> String {
-    render(&Message::ThumbCacheStartedOver { reason, path: path.to_string() })
-}
-
 /// The library's status line while the background work is paused: `pass` is the running pass's line, empty when none
 /// runs.
 pub fn paused_status(pass: &str) -> String {
@@ -437,58 +384,6 @@ pub fn paused_status(pass: &str) -> String {
     } else {
         render(&Message::PausedPass { status: pass.to_string() })
     }
-}
-
-/// The newest notice from the job, `notice`, with the `more` others that came in since the last one shown (none: the
-/// notice as it is).
-pub fn notice_more(notice: String, more: usize) -> String {
-    if more == 0 { notice } else { render(&Message::NoticeMore { notice, count: more }) }
-}
-
-/// A folder added that was already in the library: it is rescanned.
-pub fn folder_already_added(folder: &str) -> String {
-    render(&Message::FolderAlreadyAdded { folder: folder.to_string() })
-}
-
-/// A folder not added, because the scanner refuses it for `reason` (not on a local NTFS disk, or on a network file
-/// system).
-pub fn folder_refused(folder: &str, reason: &RefusedReason) -> String {
-    render(&Message::FolderRefused { folder: folder.to_string(), reason: refused_reason(reason) })
-}
-
-/// A folder that couldn't be added, for `error`.
-pub fn folder_not_added(error: &str) -> String {
-    render(&Message::FolderNotAdded { error: error.to_string() })
-}
-
-/// A folder that couldn't be removed from the library, for `error`.
-pub fn folder_not_removed(error: &str) -> String {
-    render(&Message::FolderNotRemoved { error: error.to_string() })
-}
-
-/// A rescan of the library that couldn't start, for `error`.
-pub fn rescan_failed(error: &str) -> String {
-    render(&Message::RescanFailed { error: error.to_string() })
-}
-
-/// The background work (the job and the writer) couldn't start, for `error`.
-pub fn library_unavailable(error: &str) -> String {
-    render(&Message::LibraryUnavailable { error: error.to_string() })
-}
-
-/// The library's folders couldn't be read from the catalog, for `error`.
-pub fn folders_unreadable(error: &str) -> String {
-    render(&Message::FoldersUnreadable { error: error.to_string() })
-}
-
-/// A round of the background job that failed, for `error`.
-pub fn round_failed(error: &str) -> String {
-    render(&Message::RoundFailed { error: error.to_string() })
-}
-
-/// A crop job that failed before it could save anything, for `error`.
-pub fn crop_failed(error: &str) -> String {
-    render(&Message::CropFailed { error: error.to_string() })
 }
 
 /// A Yandex save of `files` results about to start.
@@ -566,6 +461,8 @@ pub fn internal_error(message: &str, log: &str, log_error: Option<&str>) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::notice::{ScanNote, StartOverReason};
+    use pg_model::write::WriteKind;
 
     #[test]
     fn timecodes_drop_the_hour_until_there_is_one() {
@@ -612,27 +509,41 @@ mod tests {
         assert_eq!(write_status(0, Some("denied")), "A change couldn't be written into its file: denied");
     }
 
+    /// A rendered notice's title and body, under the Windows rules.
+    fn worded(notice: &Notice) -> (String, String) {
+        (notice_title(notice, PathRules::Windows), notice_body(notice, PathRules::Windows))
+    }
+
+    fn d(rules: PathRules, path: &str) -> pg_model::rules::Path {
+        rules.parse(path).unwrap()
+    }
+
     #[test]
-    fn a_dropped_write_and_an_incomplete_copy_are_worded() {
+    fn the_writers_notices_are_worded() {
         assert_eq!(
-            write_dropped(WriteKind::Rating, 1),
+            worded(&Notice::WriteDropped { write: WriteKind::Rating, count: 1 }).1,
             "A queued rating was dropped: its file is no longer in the library"
         );
         assert_eq!(
-            write_dropped(WriteKind::Turns, 3),
+            worded(&Notice::WriteDropped { write: WriteKind::Turns, count: 3 }).1,
             "3 queued changes were dropped, the latest a turn: their files are no longer in the library"
         );
         assert_eq!(
-            write_stopped(),
-            "Writing changes into the files has stopped after repeated failures. The changes are kept, and are written when the app starts again"
+            worded(&Notice::WriteFailed {
+                error: "disk full".into(),
+                panicked: false,
+                file: Some("D:/a.jpg".into()),
+                temp: Some("D:/.a.jpg.rating.pg-write".into()),
+            })
+            .1,
+            "D:/a.jpg may be incomplete: copying its change into it failed (disk full). Its whole new content is in \
+             D:/.a.jpg.rating.pg-write, and the copy is tried again."
         );
         assert_eq!(
-            write_incomplete("D:/a.jpg", "D:/.a.jpg.rating.pg-write", "disk full"),
-            "D:/a.jpg may be incomplete: copying its change into it failed (disk full). Its whole new content is in \
-             D:/.a.jpg.rating.pg-write, and the copy is tried again"
+            worded(&Notice::WriteFailed { error: "boom".into(), panicked: true, file: None, temp: None }).1,
+            "internal error on this file: boom. It is tried again later."
         );
     }
-
     #[test]
     fn a_pass_line_says_how_far_it_is() {
         let rules = PathRules::Windows;
@@ -649,41 +560,57 @@ mod tests {
     }
 
     #[test]
-    fn the_crop_note_pluralises() {
-        assert_eq!(cropped(1, "D:/out", 0, 0, None), "Saved 1 cropped copy in D:/out");
+    fn the_crop_notice_says_what_failed() {
+        let cropped = |failed, first_error| Notice::Cropped {
+            folder: "D:/out".into(),
+            saved: 2,
+            skipped: 1,
+            failed,
+            first_error,
+        };
+        assert_eq!(worded(&cropped(0, None)).1, "2 saved in D:/out; 1 had nothing to crop; none failed");
+        let first =
+            pg_model::notice::FileFailure { path: "D:/a.jpg".into(), error: "disk full".into(), panicked: false };
         assert_eq!(
-            cropped(2, "D:/out", 2, 1, Some("disk full")),
-            "Saved 2 cropped copies in D:/out; 2 files had nothing to crop any more; 1 failed, the first: disk full"
+            worded(&cropped(1, Some(first))).1,
+            "2 saved in D:/out; 1 had nothing to crop; 1 failed, the first: D:/a.jpg: disk full"
         );
     }
 
     #[test]
     fn the_library_lines_are_worded() {
+        let rules = PathRules::Windows;
         assert_eq!(paused_status(""), "Background work paused");
         assert_eq!(paused_status("Importing"), "Paused · Importing");
-        assert_eq!(notice_more("D:/p: offline".to_string(), 0), "D:/p: offline");
-        assert_eq!(notice_more("D:/p: offline".to_string(), 1), "D:/p: offline (and 1 more)");
-        assert_eq!(notice_more("D:/p: offline".to_string(), 3), "D:/p: offline (and 3 more)");
-        assert_eq!(folder_already_added(r"D:\Photos"), "D:\\Photos is already in the library: rescanning it");
         assert_eq!(
-            folder_refused(r"Z:\Photos", &RefusedReason::NetworkDrive),
+            worded(&Notice::FolderAlreadyAdded { folder: d(rules, r"D:\Photos") }).0,
+            "D:\\Photos is already in the library"
+        );
+        assert_eq!(
+            worded(&Notice::FolderRefused { folder: d(rules, r"Z:\Photos"), reason: RefusedReason::NetworkDrive }).1,
             "Z:\\Photos can't be added: its drive is a network drive"
         );
-        assert_eq!(folder_not_added("database is locked"), "The folder couldn't be added: database is locked");
         assert_eq!(
-            folder_not_removed("database is locked"),
-            "The folder couldn't be removed from the library: database is locked"
+            worded(&Notice::LibraryUnavailable { error: "no thread".into() }).1,
+            "Nothing is scanned, imported or written into the files: no thread"
         );
-        assert_eq!(rescan_failed("database is locked"), "The library couldn't be scanned again: database is locked");
         assert_eq!(
-            library_unavailable("no thread"),
-            "The background work couldn't start, so nothing is scanned, imported or written into the files: no thread"
+            worded(&Notice::ScanNote { root: d(rules, r"D:\p"), note: ScanNote::Duplicates, count: 2 }),
+            (
+                "Duplicate paths skipped".to_string(),
+                "D:\\p: 2 files were skipped as duplicates (another path to the same file)".to_string()
+            )
         );
-        assert_eq!(folders_unreadable("locked"), "The library's folders couldn't be read: locked");
-        assert_eq!(round_failed("disk full"), "The background job failed: disk full");
-        assert_eq!(crop_failed("disk full"), "Saving cropped copies failed: disk full");
+        assert_eq!(
+            worded(&Notice::ScanUnreadable { root: d(rules, r"D:\p"), count: 1 }).1,
+            "D:\\p: 1 folder couldn't be read, so its files weren't scanned"
+        );
+        assert_eq!(
+            notice_line(&Notice::RoundFailed { error: "disk full".into() }, rules),
+            "The background job failed: disk full"
+        );
+        assert_eq!(source_label(Source::Thumbs), "Thumbnails");
     }
-
     /// Each refusal has words of its own: none falls to the entry's default, and no two read the same.
     #[test]
     fn every_refusal_reason_is_worded() {
@@ -712,8 +639,8 @@ mod tests {
         ];
         let fallback =
             render(&Message::RefusedReason { code: "no-such-code".into(), file_system: "".into(), error: "".into() });
-        let mut worded: Vec<String> = reasons.iter().map(refused_reason).collect();
-        for (reason, words) in reasons.iter().zip(&worded) {
+        let mut all: Vec<String> = reasons.iter().map(refused_reason).collect();
+        for (reason, words) in reasons.iter().zip(&all) {
             assert_ne!(words, &fallback, "{reason:?} falls to the default");
         }
         assert_eq!(refused_reason(&RefusedReason::RemovableDrive), "its drive is removable");
@@ -723,12 +650,12 @@ mod tests {
         );
         assert_eq!(refused_reason(&unreadable(Fact::Volume)), "its volume can't be read: Access is denied.");
         assert_eq!(
-            root_refused(r"D:\p", &RefusedReason::Link),
+            worded(&Notice::RootRefused { root: d(PathRules::Windows, r"D:\p"), reason: RefusedReason::Link }).1,
             "D:\\p is not scanned, because it is a link (a junction or a symbolic link). Remove it from the library to stop this notice."
         );
-        worded.sort();
-        worded.dedup();
-        assert_eq!(worded.len(), reasons.len(), "two reasons read the same");
+        all.sort();
+        all.dedup();
+        assert_eq!(all.len(), reasons.len(), "two reasons read the same");
     }
 
     #[test]
@@ -777,18 +704,18 @@ mod tests {
 
     #[test]
     fn a_started_over_cache_says_why_and_where_the_old_file_is() {
+        let over = |reason, path: &str| Notice::CacheStartedOver { reason, path: path.into(), detail: "x".into() };
         assert_eq!(
-            thumb_cache_started_over(StartOverReason::Damaged, r"C:\cat\thumbs.sqlite.bad"),
-            "The thumbnail cache was damaged, so it was started over; its thumbnails are made again. The old file is \
-             kept as C:\\cat\\thumbs.sqlite.bad"
+            worded(&over(StartOverReason::Damaged, r"C:\cat\thumbs.sqlite.bad")).1,
+            "The cache was damaged, so it was started over; its thumbnails are made again. The old file is kept as \
+             C:\\cat\\thumbs.sqlite.bad"
         );
         assert_eq!(
-            thumb_cache_started_over(StartOverReason::OtherCatalog, r"C:\cat\thumbs.sqlite"),
-            "The thumbnail cache C:\\cat\\thumbs.sqlite was made for another catalog, so it was started over; its \
-             thumbnails are made again"
+            worded(&over(StartOverReason::OtherCatalog, r"C:\cat\thumbs.sqlite")).1,
+            "The cache C:\\cat\\thumbs.sqlite was made for another catalog, so it was started over; its thumbnails are \
+             made again"
         );
     }
-
     #[test]
     fn an_info_line_names_what_the_catalog_keeps() {
         let line = info("D:/a.jpg", (0, 0), 2_500_000, true, None);

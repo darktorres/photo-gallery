@@ -12,7 +12,7 @@ use std::time::{Duration, Instant};
 
 use pg_catalog::Root;
 use pg_jobs::events::{Bus, Change};
-use pg_library::runner::{Generation, Messages, Runner};
+use pg_library::runner::{Generation, NoticeSink, Runner};
 use pg_model::ids::{FileId, RootId};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
@@ -22,6 +22,7 @@ use pg_writeback::{WriteStatus, Writer};
 
 use crate::catalogs::Catalogs;
 use crate::error::{Error, Result, failed};
+use crate::inbox::Inbox;
 
 /// How long a stop waits for the job's file (or batch) in progress. A file that takes longer to read is left to end
 /// with the process, and its last changes are merged at the next open.
@@ -78,9 +79,15 @@ pub struct Status {
 
 impl Library {
     /// Start the job and the writer; they first finish whatever is pending.
-    pub(crate) fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, thumb_height: u32) -> Result<Library> {
+    pub(crate) fn start(
+        catalog_path: PathBuf,
+        thumbs: &'static ThumbCache,
+        thumb_height: u32,
+        notices: Arc<dyn NoticeSink>,
+    ) -> Result<Library> {
         let changes = Arc::new(Bus::new(256));
-        let runner = Runner::start(catalog_path.clone(), thumbs, thumb_height, changes.clone()).map_err(failed)?;
+        let runner =
+            Runner::start(catalog_path.clone(), thumbs, thumb_height, changes.clone(), notices).map_err(failed)?;
         let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone()).map_err(failed)?;
         let slot = WriterSlot {
             writer,
@@ -129,7 +136,7 @@ impl Library {
     }
 
     /// The bus the job and the writer announce on. Subscribe to it; a slow subscriber loses the oldest changes (counted),
-    /// and what they announce is read again from [`Library::status`] and [`Library::take_messages`].
+    /// and what they announce is read again from [`Library::status`]. What the job tells the user goes to the inbox.
     pub fn changes(&self) -> Arc<Bus<Change>> {
         self.changes.clone()
     }
@@ -193,11 +200,6 @@ impl Library {
             rounds: self.runner.rounds(),
         }
     }
-
-    /// The notices the job has made since the last call: the newest ones kept, and how many more were dropped.
-    pub fn take_messages(&self) -> Messages {
-        self.runner.take_messages()
-    }
 }
 
 /// The library's service: the job and the writer, started on first use, and the folder operations, which work on the catalog
@@ -206,13 +208,20 @@ pub struct LibraryService {
     catalog_path: PathBuf,
     catalogs: Arc<Catalogs>,
     thumbs: &'static ThumbCache,
+    /// Where the job's notices go.
+    inbox: Arc<Inbox>,
     /// The started job and writer; set once, by the first [`LibraryService::start`].
     cell: OnceLock<Library>,
 }
 
 impl LibraryService {
-    pub(crate) fn new(catalog_path: PathBuf, catalogs: Arc<Catalogs>, thumbs: &'static ThumbCache) -> LibraryService {
-        LibraryService { catalog_path, catalogs, thumbs, cell: OnceLock::new() }
+    pub(crate) fn new(
+        catalog_path: PathBuf,
+        catalogs: Arc<Catalogs>,
+        thumbs: &'static ThumbCache,
+        inbox: Arc<Inbox>,
+    ) -> LibraryService {
+        LibraryService { catalog_path, catalogs, thumbs, inbox, cell: OnceLock::new() }
     }
 
     /// The library, started at `thumb_height` device pixels on first use (later calls ignore the height: set it with
@@ -221,7 +230,7 @@ impl LibraryService {
         if let Some(library) = self.cell.get() {
             return Ok(library);
         }
-        let library = Library::start(self.catalog_path.clone(), self.thumbs, thumb_height)?;
+        let library = Library::start(self.catalog_path.clone(), self.thumbs, thumb_height, self.inbox.clone())?;
         Ok(self.cell.get_or_init(|| library))
     }
 
@@ -249,19 +258,19 @@ impl LibraryService {
         self.catalogs.with_catalog(|c| c.roots())
     }
 
-    /// Add a folder to the library, at the path given (exact): normalized, and scanned. Returns the normalized folder's
-    /// display path and whether it was new; a folder already in the library is rescanned.
-    pub fn add_folder(&self, path: &std::path::Path) -> Result<(String, bool)> {
+    /// Add a folder to the library, at the path given (exact): normalized, and scanned. Returns the normalized folder
+    /// and whether it was new; a folder already in the library is rescanned.
+    pub fn add_folder(&self, path: &std::path::Path) -> Result<(RulePath, bool)> {
         let root = normalize_path(path).map_err(failed)?;
         // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
         if let Err(reason) = pg_scan::check_folder(pg_platform::native::PATH_RULES, &root) {
-            return Err(Error::FolderRefused { folder: pg_platform::native::PATH_RULES.display(&root), reason });
+            return Err(Error::FolderRefused { folder: root, reason });
         }
         let added = self.catalogs.with_catalog(|c| c.add_root(&root))?;
         if let Some(library) = self.running() {
             library.scan(vec![root.clone()]);
         }
-        Ok((pg_platform::native::PATH_RULES.display(&root), added))
+        Ok((root, added))
     }
 
     /// Remove a folder from the library, by its id (from [`LibraryService::roots`]). A scan of it in progress stops. The

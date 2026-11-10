@@ -8,6 +8,7 @@ use pg_client::grid::Grid;
 use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
+use pg_model::notice::Notice;
 use pg_model::query::MediaType;
 
 /// The model's properties, the list and the details read last.
@@ -99,9 +100,12 @@ impl GalleryRust {
             memo.insert(0, found);
         } else {
             let details = match crate::app::get().reading().details(e.id) {
-                Ok(d) => d?,
+                Ok(d) => {
+                    crate::app::resolved("row-read-failed");
+                    d?
+                }
                 Err(err) => {
-                    pg_log::warn("gallery", &format!("reading {}: {err:#}", e.id.get()));
+                    crate::app::post(Notice::RowReadFailed { error: crate::app::error_text(&format!("{err:#}")) });
                     return None;
                 }
             };
@@ -117,12 +121,15 @@ impl GalleryRust {
     }
 }
 
-/// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).
+/// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the inbox says why).
 pub(super) fn fresh_entry(id: FileId) -> Option<Entry> {
     match crate::app::get().reading().entry(id) {
-        Ok(found) => found,
+        Ok(found) => {
+            crate::app::resolved("reload-failed");
+            found
+        }
         Err(e) => {
-            pg_log::warn("gallery", &format!("reloading {}: {e:#}", id.get()));
+            crate::app::post(Notice::ReloadFailed { error: crate::app::error_text(&format!("{e:#}")) });
             None
         }
     }

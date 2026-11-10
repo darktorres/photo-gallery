@@ -128,8 +128,6 @@ impl<E> Subscription<E> {
 pub enum Change {
     /// The pass's progress, or the pause.
     Progress,
-    /// A notice for the user (`Runner::take_messages`).
-    Notice,
     /// A folder scan changed the catalog (`Runner::generation`).
     Scanned,
     /// An import or border pass analyzed something (`Runner::generation`).

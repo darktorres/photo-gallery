@@ -15,6 +15,7 @@ use std::path::{Path, PathBuf};
 
 use cxx_qt_lib::{QString, QStringList};
 use pg_client::text;
+use pg_model::notice::Notice;
 
 /// What a chosen folder is for. The code is what QML passes (`pick`, `done`, `openInApp`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -163,6 +164,7 @@ impl qobject::FolderPicker {
                         "picker",
                         &format!("{purpose:?}: {call}: {e} (start folder {start:?}, owner window {owner:?})"),
                     );
+                    crate::app::post(Notice::PickerFailed { error: crate::app::error_text(&e) });
                     let message = QString::from(&text::folder_dialog_failed(&e.to_string()));
                     self.as_mut().failed(purpose.code(), message);
                 }
@@ -234,10 +236,12 @@ impl qobject::FolderPicker {
         LISTING.with(|listing| *listing.borrow_mut() = None);
     }
 
-    /// The app's dialog can't list `folder` (`error`): the purpose's picker says so (`failed`), and keeps what it
-    /// showed.
+    /// The app's dialog can't list `folder` (`error`): the inbox and the purpose's picker say so (`failed`), and the
+    /// dialog keeps what it showed.
     fn report_unlisted(self: Pin<&mut Self>, purpose: Purpose, folder: &Path, error: &std::io::Error) {
-        pg_log::warn("picker", &format!("{}: {error}", folder.display()));
+        crate::app::post(Notice::PickerFailed {
+            error: crate::app::error_text(&format!("{}: {error}", folder.display())),
+        });
         let message = QString::from(&text::folder_unreadable(&error.to_string()));
         self.failed(purpose.code(), message);
     }

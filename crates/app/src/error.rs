@@ -18,10 +18,10 @@ pub enum Error {
     /// The original can't be read (offline, or not decodable): why.
     #[error("original unavailable: {0}")]
     Original(String),
-    /// A folder not added to the library, because the scanner refuses it (`LibraryService::add_folder`): its display path, and
-    /// why. The front end words it (`pg_client::text::folder_refused`); this text names the reason by its code.
-    #[error("{folder} can't be added: {reason}")]
-    FolderRefused { folder: String, reason: pg_model::refusal::RefusedReason },
+    /// A folder not added to the library, because the scanner refuses it (`LibraryService::add_folder`): the folder, and
+    /// why. The front end words it (the notice `FolderRefused`); this text names the reason by its code.
+    #[error("{} can't be added: {reason}", pg_platform::native::PATH_RULES.display(folder))]
+    FolderRefused { folder: pg_model::rules::Path, reason: pg_model::refusal::RefusedReason },
     /// Anything else a lower layer failed with.
     #[error("{0}")]
     Failed(String),

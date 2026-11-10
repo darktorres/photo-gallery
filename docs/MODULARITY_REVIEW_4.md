@@ -755,7 +755,8 @@ This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered toget
 
 1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`**, with `path_buf` made `pub(crate)`, comes with the first bug. Done.
 2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start. Done.
-3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer. S1 done (the notice types, `pg-log`, dev mode, the log view, and M-45's start-over reason).
+3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer. S1 done (the notice types, `pg-log`, dev mode, the log view, and M-45's start-over reason). S2 done (the inbox; M-21's
+   third bug, a disabled cache and an unclosed catalog have notices of their own; M-26: the CLI prints the notices' words).
 4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
 5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.
 6. **M-32** (the rest of it), **M-43** and **M-35**: the client's logic, the session, and the image scheme.

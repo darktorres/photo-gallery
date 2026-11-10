@@ -1,26 +1,43 @@
-//! The window's one `pg_app::App`, held for the process, and what the window says about what the app notes. The app
-//! itself has no UI: the notes it publishes are printed here, on stderr, as the command line always did.
+//! The window's one `pg_app::App`, held for the process, and how the window tells the user what happened: it posts a
+//! notice to the app's inbox ([`post`]), and says when one no longer holds ([`resolved`]). The inbox logs each notice;
+//! the `Notices` object shows them.
 //!
 //! The order of shutdown is in `lib.rs` (`run`): [`stop`] (the reader, the library), then the engine goes (the image
-//! providers), then [`shutdown`] (the thumbnail cache, then the catalog connections, the keeper last).
+//! providers), then [`shutdown`] (the thumbnail cache, the inbox, then the catalog connections, the keeper last).
 
+use std::fmt::Display;
 use std::sync::OnceLock;
 
-use pg_app::{App, Config, Note};
-use pg_client::text;
+use pg_app::{App, Config};
+use pg_model::notice::{ERROR_CAP, Key, Notice, Part, tidy};
 
 static APP: OnceLock<App> = OnceLock::new();
 
-/// Open the app from `config` and start printing its notes. Call once, on the GUI thread, before the UI starts.
+/// Open the app from `config`. Call once, on the GUI thread, before the UI starts.
 pub(crate) fn open(config: Config) -> anyhow::Result<()> {
     let app = App::open(config)?;
-    let notes = app.notes().subscribe();
-    std::thread::Builder::new().name("app notes".into()).spawn(move || {
-        while let Some(note) = notes.recv() {
-            pg_log::warn("app", &note_text(&note));
-        }
-    })?;
     APP.set(app).map_err(|_| anyhow::anyhow!("the app was opened twice"))
+}
+
+/// Tell the user `notice`: the inbox keeps it (and logs it) as its kind says.
+pub(crate) fn post(notice: Notice) {
+    get().inbox().post(notice);
+}
+
+/// The kept notices of the kind `code` (a `Notice::code`) no longer hold: what they said failed went through. Costs
+/// nothing when the inbox holds none.
+pub(crate) fn resolved(code: &'static str) {
+    get().inbox().clear(Key::all(code, None).to_buf());
+}
+
+/// [`resolved`], for the kept notice of the kind `code` whose part is `part` (an edit's operation).
+pub(crate) fn resolved_part(code: &'static str, part: &'static str) {
+    get().inbox().clear(Key { code, root: None, part: Some(Part::Code(part)) }.to_buf());
+}
+
+/// An error's text as a notice keeps it: its causes after it (`{:#}`), on one line, capped.
+pub(crate) fn error_text(error: &impl Display) -> String {
+    tidy(&format!("{error:#}"), ERROR_CAP)
 }
 
 /// The app. Only after [`open`].
@@ -46,45 +63,5 @@ pub(crate) fn stop() {
 pub(crate) fn shutdown() {
     if let Some(app) = APP.get() {
         app.shutdown();
-    }
-}
-
-/// What a note says, on the command line.
-fn note_text(note: &Note) -> String {
-    match note {
-        Note::PrefsUnreadable { path, error, kept } => match kept {
-            Ok(bad) => format!(
-                "preferences: {} didn't parse ({error}); kept as {}, the defaults are in use",
-                path.display(),
-                bad.display()
-            ),
-            Err(e) => {
-                format!("preferences: {} didn't parse ({error}), and couldn't be kept aside: {e}", path.display())
-            }
-        },
-        Note::PrefsNotSaved { path, error } => {
-            format!(
-                "preferences: {} couldn't be saved ({error}); the change holds until the app closes",
-                path.display()
-            )
-        }
-        Note::CatalogRebuilt(r) => {
-            format!("catalog rebuilt: {}; the old one is kept as {}{}", r.why, r.kept.display(), r.carried_note())
-        }
-        Note::Thumbs(event) => {
-            use pg_app::reexport::ThumbEvent as Event;
-            match event {
-                Event::TotalsFixed { kept, actual } => {
-                    format!("thumbnail cache: totals were {kept:?}, the entries hold {actual:?}; fixed")
-                }
-                Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
-                Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
-                Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
-                Event::StartedOver { reason, path, detail } => format!(
-                    "{}; detail: {detail}",
-                    text::thumb_cache_started_over(*reason, &path.display().to_string())
-                ),
-            }
-        }
     }
 }

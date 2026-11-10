@@ -21,10 +21,6 @@ pub mod qobject {
         #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
         /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
         #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
-        /// The latest error or note from the job, until the next one.
-        #[qproperty(QString, message, READ, WRITE, NOTIFY, FINAL)]
-        /// Whether `message` is an error or a warning (otherwise news: a job done).
-        #[qproperty(bool, message_warning, cxx_name = "messageWarning", READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).
@@ -55,11 +51,6 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "addPicked"]
         fn add_picked(self: Pin<&mut Library>);
-
-        /// Show `text` as the library's message, as a warning: a folder dialog's failure (the picker's `failed`).
-        #[qinvokable]
-        #[cxx_name = "showWarning"]
-        fn show_warning(self: Pin<&mut Library>, text: &QString);
 
         /// Remove the library folder at `row` (its row in `roots`).
         #[qinvokable]

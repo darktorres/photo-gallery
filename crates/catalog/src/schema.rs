@@ -29,7 +29,7 @@ pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transacti
 /// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS];
+pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES];
 
 /// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -59,6 +59,40 @@ const TO_2_CHANGE_STAMPS: &str = concat!(
     ";\n    UPDATE files SET changed = ",
     seq!(),
     " WHERE id = old.file_id;\nEND;\n",
+);
+
+/// Version 3: the inbox (docs/NOTIFICATIONS.md), what the app told the user, kept until it is dismissed.
+///
+/// A row is a `pg_model::notice::Notice` as JSON (`data`), with what the inbox sorts and filters by beside it. A kept
+/// state (`key`, its kind's code, folder and part) is one row that the next post of its key replaces and counts; an event
+/// has no key, and each post is a row. `root` is the library folder it is about: removing the folder removes its rows
+/// (the folders' ids are reused, so a row must not outlive its folder). `uid` is `meta.seq` when the row was made: with
+/// the id (reused too) it names one row, so a mark or a dismissal the window sends for a row since gone does nothing.
+/// Times are Unix seconds, as `scans`'.
+const TO_3_NOTICES: &str = concat!(
+    "CREATE TABLE notices(\n",
+    "    id        INTEGER PRIMARY KEY,\n",
+    "    uid       INTEGER NOT NULL DEFAULT 0,\n",
+    "    key       TEXT UNIQUE,\n",
+    "    part      TEXT,\n",
+    "    root      INTEGER REFERENCES roots(id) ON DELETE CASCADE,\n",
+    "    level     INTEGER NOT NULL,   -- 0 info, 1 warning, 2 error\n",
+    "    source    TEXT NOT NULL,      -- Source::code\n",
+    "    kind      TEXT NOT NULL,      -- Notice::code\n",
+    "    data      TEXT NOT NULL,      -- the notice, JSON\n",
+    "    count     INTEGER NOT NULL DEFAULT 1,\n",
+    "    created   INTEGER NOT NULL,\n",
+    "    updated   INTEGER NOT NULL,\n",
+    "    read      INTEGER,\n",
+    "    dismissed INTEGER\n",
+    ");\n",
+    "CREATE INDEX notices_live ON notices(dismissed, updated DESC);\n",
+    "CREATE INDEX notices_root ON notices(root);\n",
+    "CREATE TRIGGER notices_uid AFTER INSERT ON notices BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE notices SET uid = ",
+    seq!(),
+    " WHERE id = new.id;\nEND;\n",
 );
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
@@ -172,7 +206,7 @@ pub(crate) fn mismatch(conn: &Connection, version: i64, want: &Schema) -> Result
 }
 
 /// The tables a rebuild carries over from the old catalog, in the order their foreign keys need (a table comes after the
-/// tables it references). Every table of [`BASELINE`] is here: none is derived, since a recomputed table would need a
+/// tables it references). Every table of the current schema (the baseline's and the migrations') is here: none is derived, since a recomputed table would need a
 /// version mark to say when it is stale, and one is added only with the change that needs it.
 pub(crate) const CARRIED: &[&str] = &[
     "meta",
@@ -189,6 +223,7 @@ pub(crate) const CARRIED: &[&str] = &[
     "roots",
     "views",
     "session",
+    "notices",
 ];
 
 /// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`BASELINE`]: each table of [`CARRIED`],
@@ -638,12 +673,12 @@ mod tests {
         pg_schema::user_version(conn).unwrap()
     }
 
-    /// A rebuild copies every table of the baseline, so a table added to the baseline has to be listed in `CARRIED` (or
+    /// A rebuild copies every table of the current schema, so a table a migration adds has to be listed in `CARRIED` (or
     /// the rebuild would leave its rows behind without a word).
     #[test]
-    fn carried_is_every_table_of_the_baseline() {
+    fn carried_is_every_table_of_the_current_schema() {
         let conn = Connection::open_in_memory().unwrap();
-        conn.execute_batch(BASELINE).unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, current_version().unwrap()).unwrap();
         let mut tables: Vec<String> = conn
             .prepare("SELECT name FROM sqlite_schema WHERE type = 'table' AND name NOT LIKE 'sqlite%' ORDER BY name")
             .unwrap()
@@ -709,9 +744,9 @@ mod tests {
     }
 
     /// The stamps of version 2 are its migration's, not the baseline's (which is frozen): a version-1 catalog taken
-    /// forward by it has this build's schema.
+    /// forward by the migrations has this build's schema.
     fn the_baseline_and_the_migration_make_the_current_schema(rules: PathRules) {
-        assert_eq!(current_version().unwrap(), BASELINE_VERSION + 1);
+        assert_eq!(current_version().unwrap(), BASELINE_VERSION + i64::try_from(MIGRATIONS.len()).unwrap());
         let stamps =
             ["analysis_cut_stamp", "analysis_removed_stamp", "border_sides_stamp_delete", "border_sides_stamp_insert"];
         let conn = Connection::open_in_memory().unwrap();
@@ -720,9 +755,10 @@ mod tests {
         assert!(stamps.iter().all(|s| !before.iter().any(|t| t == s)), "{before:?}");
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(&expected(BASELINE_VERSION).unwrap()), None);
         bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
-        assert_eq!(version(&conn), BASELINE_VERSION + 1);
+        assert_eq!(version(&conn), current_version().unwrap());
         let after = triggers(&conn);
         assert!(stamps.iter().all(|s| after.iter().any(|t| t == s)), "{after:?}");
+        assert!(after.iter().any(|t| t == "notices_uid"), "{after:?}");
         assert_eq!(Schema::read(&conn, SEEDS).unwrap().difference(current_expected().unwrap()), None);
     }
 

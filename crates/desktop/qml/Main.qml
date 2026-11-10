@@ -58,6 +58,15 @@ ApplicationWindow {
     // The log view is shown (dev mode); made the first time (logLoader).
     property bool logOpen: false
     onLogOpenChanged: if (logOpen) logLoader.active = true
+    // The inbox is shown; made the first time (inboxLoader). Opening it marks its entries read.
+    property bool inboxOpen: false
+    onInboxOpenChanged: {
+        if (inboxOpen) {
+            inboxLoader.active = true
+            inboxModel.markAllRead()
+            inboxModel.dismissToast()
+        }
+    }
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
     property bool ready: false
     // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
@@ -145,7 +154,6 @@ ApplicationWindow {
         id: addPicker
         onDone: library.addPicked()
         onOpenInApp: addDialog.open = true
-        onFailed: (purpose, message) => library.showWarning(message)
     }
     FolderPickerDialog {
         id: addDialog
@@ -163,7 +171,6 @@ ApplicationWindow {
         id: cropPicker
         onDone: galleryModel.saveCroppedCopiesPicked()
         onOpenInApp: cropDialog.open = true
-        onFailed: (purpose, message) => library.showWarning(message)
     }
     FolderPickerDialog {
         id: cropDialog
@@ -320,7 +327,7 @@ ApplicationWindow {
     KeyMap {
         id: keymap
     }
-    // The window's shortcuts (the log view, dev mode): matched before any item's keys, decided by the controller.
+    // The window's shortcuts (the inbox, the log view, dev mode): matched before any item's keys, decided by the controller.
     GlobalShortcuts {
         onActivated: (code) => shell.globalAction(code)
     }
@@ -328,6 +335,13 @@ ApplicationWindow {
     LogModel {
         id: logModel
     }
+    // The inbox: its entries, the bell's count and the toast. Followed from the start, so the opening's notices toast.
+    Notices {
+        id: inboxModel
+        Component.onCompleted: start()
+    }
+    // What another process changed in the inbox shows when the window comes back.
+    onActiveChanged: if (active) inboxModel.poke()
 
     // A modal panel opened or closed: the shell mirrors which are open, for the shortcuts' rule.
     function modalShown(kind: int, shown: bool) {
@@ -342,11 +356,15 @@ ApplicationWindow {
         if (kind === PanelKind.Log) {
             logModel.start()
             win.logOpen = true
+        } else if (kind === PanelKind.Inbox) {
+            win.inboxOpen = true
         }
     }
     function closePanel(kind: int) {
         if (kind === PanelKind.Log)
             win.logOpen = false
+        else if (kind === PanelKind.Inbox)
+            win.inboxOpen = false
     }
 
     // Back to where the keys were before a panel: the viewer when it is open, else the grid.
@@ -384,6 +402,7 @@ ApplicationWindow {
         onViewerTurnRequested: (turns) => viewerItem.turn(turns)
         onViewerRateRequested: (rating) => viewerItem.rate(rating)
         onLogPanelRequested: shell.globalAction(GlobalShortcuts.Log)
+        onInboxPanelRequested: shell.globalAction(GlobalShortcuts.Inbox)
     }
 
     Item {
@@ -433,17 +452,17 @@ ApplicationWindow {
             selection: win.selectionInfo
             writeStatus: library.writeStatus
             writeFailed: library.writeFailed
-            message: library.message
-            messageWarning: library.messageWarning
+            toast: inboxModel.toast
+            toastLevel: inboxModel.toastLevel
+            unread: inboxModel.unread
             status: library.status
             busy: library.busy
             paused: library.paused
             progress: library.progress
             devMode: shell.devMode
             onLogRequested: shell.globalAction(GlobalShortcuts.Log)
-            onMessageDismissed: {
-                library.message = ""
-            }
+            onToastExpired: inboxModel.dismissToast()
+            onInboxRequested: shell.globalAction(GlobalShortcuts.Inbox)
             onPauseToggled: library.togglePause()
         }
 
@@ -626,6 +645,25 @@ ApplicationWindow {
                     onDismissed: win.logOpen = false
                     onHidden: win.refocus()
                     onVisibleChanged: win.modalShown(PanelKind.Log, visible)
+                }
+            }
+        }
+
+        // The inbox, over the rest. Made the first time it is opened (inboxOpen), then kept.
+        Loader {
+            id: inboxLoader
+            anchors.fill: parent
+            active: false
+            sourceComponent: Component {
+                InboxPanel {
+                    open: win.inboxOpen
+                    notices: inboxModel
+                    onCopyRequested: (row) => inboxModel.copy(row)
+                    onDismissRequested: (row) => inboxModel.dismiss(row)
+                    onClearRequested: inboxModel.dismissAll()
+                    onDismissed: win.inboxOpen = false
+                    onHidden: win.refocus()
+                    onVisibleChanged: win.modalShown(PanelKind.Inbox, visible)
                 }
             }
         }

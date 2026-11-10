@@ -1,11 +1,12 @@
 //! The state of the `GalleryModel` QObject: the bridge's backing struct (the property values, the viewer's item's
-//! values, the grid and the details read last).
+//! values, the grid and the details read last), and what it reads of the catalog.
 
 use std::cell::RefCell;
 
 use cxx_qt_lib::{QRectF, QString, QStringList};
 use pg_client::grid::Grid;
 use pg_model::details::Details;
+use pg_model::grid::Entry;
 use pg_model::ids::FileId;
 use pg_model::query::MediaType;
 
@@ -80,6 +81,45 @@ impl Default for GalleryRust {
             viewed_border_marked: false,
             grid: Grid::default(),
             details: RefCell::new(Vec::new()),
+        }
+    }
+}
+
+impl GalleryRust {
+    /// `f` of an item's entry and details; `None` without the item, or when its file is gone from the catalog.
+    pub(super) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
+        let e = self.grid.item(item)?;
+        let mut memo = self.details.borrow_mut();
+        if let Some(at) = memo.iter().position(|(id, _)| *id == e.id) {
+            let found = memo.remove(at);
+            memo.insert(0, found);
+        } else {
+            let details = match crate::app::get().reading().details(e.id) {
+                Ok(d) => d?,
+                Err(err) => {
+                    crate::log::note(&format!("reading {}: {err:#}", e.id.get()));
+                    return None;
+                }
+            };
+            memo.truncate(1);
+            memo.insert(0, (e.id, details));
+        }
+        memo.first().map(|(_, details)| f(e, details))
+    }
+
+    /// A file changed, or a list is shown: what was read of it may be stale.
+    pub(super) fn forget_details(&mut self) {
+        self.details.get_mut().clear();
+    }
+}
+
+/// A file's entry as the catalog has it now; `None` when it is gone or can't be read (the error is printed).
+pub(super) fn fresh_entry(id: FileId) -> Option<Entry> {
+    match crate::app::get().reading().entry(id) {
+        Ok(found) => found,
+        Err(e) => {
+            crate::log::note(&format!("reloading {}: {e:#}", id.get()));
+            None
         }
     }
 }

@@ -384,6 +384,8 @@ The first action is a Windows `just build` after moving one method, to confirm t
 
 Gate: desktop gates, including `just shots`.
 
+- **Result (committed in the M-12 commit; not yet validated, see the end of the plan):** the split is `gallery/{model,items,edits,nav,roles}.rs` as listed. Per the user's direction (validation at the end of the plan), the one-method build came after the whole split, not before it. Every method moved into a child is `pub(super)` (or keeps its `pub(crate)`): the bridge's shims in `gallery::qobject` and the sibling modules call them. The desktop is invisible to the compiler graph (cxx-qt), so the text scan is the check, and a child that names an item of `gallery.rs` would close a cycle with its parent. So nothing a child uses stays in the root: `qt_int` and `cell_roles` are in `roles.rs` with the constants, and `fresh_entry` moved to `state.rs`. `impl GalleryRust` (`with_details`, `forget_details`) moved to `state.rs` too, so the type and its inherent impl are in one module. `gallery.rs` keeps the bridge, `MODEL`, `post` (`shell.rs`'s callers are unchanged) and `register_model`, which uses `MODEL`. Edges: `gallery` → its children; `model` → `qobject`, `roles`, `state`; `items` and `nav` → `qobject`; `edits` → `qobject`, `roles`, `state`; `qobject` → `state` (the alias). `model` is 312 lines, `items` 192, `edits` 124, `roles` 49, `nav` 28; `gallery.rs` is 230, most of it the bridge.
+
 ### M-12a: the rest of the large files (new)
 
 Split by dependency layers, not by line count. Read each file over 500 production lines and record "split" or "leave, with reason" in this section. Sizes at `905561d` (production lines, counted before the first line-start `#[cfg(test)]`):

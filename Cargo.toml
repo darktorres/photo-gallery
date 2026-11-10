@@ -55,6 +55,11 @@ zune-jpeg = "0.5"
 
 # Each crate opts in with `[lints] workspace = true`. Kept at "warn" so work in progress builds; `cargo clippy
 # --workspace --all-targets -- -D warnings` (just lint) holds the tree to them.
+[workspace.lints.rust]
+# A `pub` item is one another crate can name; one only this crate uses is `pub(crate)` or narrower, so the public
+# surface is what the compiler sees (docs/MODULARITY_PLAN.md, M-18).
+unreachable_pub = "warn"
+
 [workspace.lints.clippy]
 # Every unsafe block says why it is sound.
 undocumented_unsafe_blocks = "warn"

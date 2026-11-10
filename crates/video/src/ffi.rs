@@ -11,9 +11,11 @@
     non_camel_case_types,
     non_upper_case_globals,
     dead_code,
+    unreachable_pub,
     clippy::type_complexity,
-    reason = "FFmpeg's own names, from its headers, every constant of the enums they come with, and the callback types \
-              of its structs (AVCodecContext's execute2) as bindgen writes them"
+    reason = "FFmpeg's own names, from its headers, every constant of the enums they come with, the callback types \
+              of its structs (AVCodecContext's execute2) as bindgen writes them, and the `pub` bindgen puts on \
+              every item (the crate takes them as `pub(crate)`)"
 )]
 mod generated {
     include!(concat!(env!("OUT_DIR"), "/ffmpeg.rs"));

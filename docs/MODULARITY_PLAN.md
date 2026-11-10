@@ -258,6 +258,8 @@ Turn on rustc's `unreachable_pub` lint for the workspace (`[workspace.lints.rust
 
 Gate: Linux checks, Windows `just build` and `just test`.
 
+- **Result, part 1 (committed in the M-18 commit; not yet validated):** the root `Cargo.toml` has `[workspace.lints.rust] unreachable_pub = "warn"`, which `just lint`'s `-D warnings` makes an error. `pg-video`'s bindgen output is exempt at its include site: `unreachable_pub` joins the `#[expect]` on `mod generated` in `ffi.rs`, and the output is not edited. No item was narrowed in this commit. The list is the compiler's, and the counts above predate M-10 to M-15, which moved items and made new ones (most of the new ones `pub(super)` or `pub(crate)` already). Two questions about the cxx-qt bridges are open, and only the Windows build answers them: which generated items carry the bridge's spans (rustc does not report this lint in code spanned to an external macro), and whether a backing `XRust` narrowed to `pub(crate)` passes `private_interfaces` when the bridge's items are effectively crate-visible. M-20 found that the struct must stay `pub`, but for an alias-path reason. Part 2 is the narrowing itself, done in the validation run from the lint's list. It keeps one allow per bridge only where the macro's output forces `pub`.
+
 ### M-20: the cxx-qt backing types (group J, desktop)
 
 Each cxx-qt bridge is a `pub mod qobject` inside a desktop module X, and its first line is `type X = super::XRust;`: the Rust struct that backs the QObject lives in X, and X implements the bridge type (`impl qobject::X`). Each pair is a cycle. The scan finds 16 modules (the group J list; `viewport` included).

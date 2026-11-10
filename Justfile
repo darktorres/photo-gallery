@@ -5,6 +5,11 @@
 
 set dotenv-load := true
 
+# On Windows the recipes run under cmd, which every Windows has. just's default there is `sh`, which Git for Windows has
+# but does not put on PATH, so a recipe run from PowerShell or cmd could not start. Under cmd, `#` starts no comment and
+# single quotes quote nothing: a recipe line takes neither (comments go above it, arguments in double quotes).
+set windows-shell := ["cmd.exe", "/d", "/c"]
+
 # The pinned third-party build `just setup` fetches: BtbN's GPL shared build of FFmpeg 9.0 (the release's asset, and its
 # SHA-256 as GitHub's digest). CI runs `just setup` too, so these are the only place the pin is written.
 ffmpeg_url := "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2026-10-30-13-01/ffmpeg-n9.0.2-39-g7adfbe40dc-win64-gpl-shared-9.0.zip"
@@ -66,7 +71,7 @@ test *args: _qt
 
 # The eval tools' Python tests (stdlib unittest). The viewer imports Pillow. CI runs it in the Windows job.
 test-eval:
-    {{ py }} -m unittest discover -s eval -p 'test_*.py'
+    {{ py }} -m unittest discover -s eval -p "test_*.py"
 
 # Format the Rust and the Python code.
 fmt:
@@ -119,8 +124,9 @@ lint: _qt _lint-tools && lint-qml
 # the allowlist is empty (M-16): any module cycle fails. CI runs it on both targets.
 cargo_modules_version := "0.28.0"
 
+# The module-cycle check (above). Its install of cargo-modules does nothing when the pinned version is installed.
 modgraph: _qt
-    cargo install --locked cargo-modules --version {{ cargo_modules_version }}  # a no-op when that version is installed
+    cargo install --locked cargo-modules --version {{ cargo_modules_version }}
     {{ py }} tools/modgraph/module_graph.py
     {{ py }} tools/modgraph/compiler_graph.py
 

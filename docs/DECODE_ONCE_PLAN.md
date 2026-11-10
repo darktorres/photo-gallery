@@ -78,6 +78,7 @@ Tests: `Analyzer::hashes` == `analyze`; unchanged hashes for PNG/WebP/denom-1 JP
 ## Phase 4: incremental grid updates
 
 Recommended design (research): a **stamp-keyed delta merge** (the unused `changes_since` / `files.changed` mechanism was built for it, `catalog/src/browse/read/changes.rs`).
+
 - **Today:** `Session::grid(folder, recursive, query, sort, deliver)` (`app/src/reader.rs`, request `Kind::Grid`) delivers a full `Vec<Entry>` from `browse::read::list_grid` to a callback; rows live in `Grid.entries` on the GUI thread (`client/src/grid.rs`) and `GalleryModel` exposes one Qt row per layout row (`desktop/src/gallery/`, split by M-12: `model.rs`, `items.rs`, `state.rs`, ...); `onImported` (`Main.qml`) -> `refreshGrid()` -> `shell.reloadList()` re-queries everything. During an import the row set is already complete from the scan; imported batches mostly *update* entries (aspect 1.0 -> real, cut, borders),
   and for the 8 analysis-based sort keys (Taken, Megapixels, Width, Height, AspectRatio, Duration, Frames, Borders) rows also *move* (NULL sorts last).
 - **Catalog:** `list_grid_delta(folder, recursive, query, sort, since)` (beside `list_grid` in `catalog/src/browse/read/grid.rs`) returns, in one read transaction with the stamp, `(Entry, sort value)` for files with `changed > since` that match the current listing (same `grid_sql` WHERE clause, `AND f.changed > ?`), plus the changed ids (so rows that left the filter or went missing are found as "changed but not returned").
@@ -93,6 +94,7 @@ Recommended design (research): a **stamp-keyed delta merge** (the unused `change
 ## Phase 5: first-import merge (one decode per new file)
 
 For files whose analysis is due, one decode feeds every enabled stage; the catch-up passes (Thumbs, Borders, Dups) stay separate and unchanged. (A unified catch-up worklist was rejected: an OR join scans every file each round, depends on a healthy cache and needs watermark rework.)
+
 - **Decode choice** (F = full stored decode, T4 = `MinSize::Upright(0, 4*height)`): any of borders / dups on -> **1 F** (borders run on it as decoded, then `orient_into`, then hashes (Phase 3 `Analyzer::hashes` logic), ThumbHash, thumbnail via `Resizer::to_height` from F). Thumbnails only (borders and dups off) -> **1 T4** feeding ThumbHash and the thumbnail. All off -> one reduced decode.
   Accepted: modes that compute hashes now always use F, so dups-only and dups+thumbnails (borders off) cost more than before. Videos: the poster frame decoded for analysis also feeds the thumbnail (`Maker::encode_frame_into`), before `trim()` (`video()` is not reusable as written).
 - **Per-stage results:** the worker returns `analysis: Result<Analyzed>` (Err -> `store_failure`; the merged pass takes only analysis-due items), `borders: Skipped | Done(Option<Detection>) | Failed`, `thumb: Skipped | Done(Vec<u8>) | Failed`. Borders Failed (non-io) -> `store_borders(None)` as the catch-up does; Skipped -> nothing (`store_analysis` leaves `borders_due` armed);

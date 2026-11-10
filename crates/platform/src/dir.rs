@@ -243,8 +243,9 @@ pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
 }
 
 /// Whether a folder may be scanned on Linux (decision 13 in docs/S17_7_PLAN.md): the file system's type is checked, and the
-/// network types (NFS, CIFS, SMB) are refused, because their inode numbers come from the server, and the kernel's pseudo file
-/// systems (`/proc`, `/sys`, ...), which hold no photos.
+/// network types (NFS, CIFS, SMB) are refused, because their inode numbers come from the server; FAT and exFAT, whose
+/// inode numbers the kernel makes up at mount time (as Windows refuses FAT32 and exFAT, which have no file IDs that stay
+/// put); and the kernel's pseudo file systems (`/proc`, `/sys`, ...), which hold no photos.
 #[cfg(target_os = "linux")]
 pub fn check_root(path: &[Unit]) -> Result<(), Refused> {
     let f_type = linux_fs_type(path).map_err(|e| refuse(format!("its file system can't be read: {e}")))?;
@@ -272,7 +273,9 @@ pub fn check_root(_path: &[Unit]) -> Result<(), Refused> {
 }
 
 /// The `f_type` magic numbers refused, with the reason. The network file systems (kernel `uapi/linux/magic.h`) hand out
-/// inode numbers from the server. The pseudo file systems are the kernel's own entries, not files: a scan of `/proc`
+/// inode numbers from the server. FAT (`vfat` and `msdos`, which share `MSDOS_SUPER_MAGIC`) and exFAT store no inode
+/// numbers: the kernel derives each from where the entry is found while the volume is mounted, so a file's number is not
+/// the same after the volume is mounted again, and the catalog would see every file as new. The pseudo file systems are the kernel's own entries, not files: a scan of `/proc`
 /// reads process state, and `/sys`'s entries are attributes. The numbers of the pseudo ones were read with `stat -f` on
 /// the kernel this was built on (7.0). `devtmpfs` is not here: it reports tmpfs's number, which is accepted.
 const REFUSED: &[(i64, &str)] = &[
@@ -280,6 +283,8 @@ const REFUSED: &[(i64, &str)] = &[
     (0x517B, "it is on an SMB or CIFS share"),
     (0xFF53_4D42, "it is on an SMB or CIFS share"),
     (0xFE53_4D42, "it is on an SMB or CIFS share"),
+    (0x4D44, "its file system is FAT, whose file numbers change when it is mounted again"),
+    (0x2011_BAB0, "its file system is exFAT, whose file numbers change when it is mounted again"),
     (0x9FA0, "it is the kernel's proc file system, not a disk"),
     (0x6265_6572, "it is the kernel's sysfs file system, not a disk"),
     (0x1CD1, "it is the kernel's devpts file system, not a disk"),
@@ -292,7 +297,8 @@ const REFUSED: &[(i64, &str)] = &[
     (0x6265_6570, "it is the kernel's configfs file system, not a disk"),
 ];
 
-/// Refuses the network and pseudo file systems by their `f_type`; every other type is accepted, including `9p` (WSL's drvfs).
+/// Refuses the network, FAT and pseudo file systems by their `f_type`; every other type is accepted, including `9p` (WSL's
+/// drvfs).
 pub fn check_fs_type(f_type: i64) -> Result<(), Refused> {
     match REFUSED.iter().find(|(magic, _)| *magic == f_type) {
         Some((_, reason)) => Err(refuse(*reason)),
@@ -700,8 +706,18 @@ mod root_tests {
             assert!(check_fs_type(f_type).is_err(), "{f_type:#x}");
         }
         // ext4, tmpfs, btrfs, and 9p (WSL's drvfs, the path to NTFS that the Linux tests use) are accepted.
+        // (FAT and exFAT: `fat_and_exfat_are_refused`.)
         for f_type in [0xEF53, 0x0102_1994, 0x9123_683E, 0x0102_1997] {
             assert_eq!(check_fs_type(f_type), Ok(()), "{f_type:#x}");
+        }
+    }
+
+    #[test]
+    fn fat_and_exfat_are_refused() {
+        // MSDOS_SUPER_MAGIC (vfat and msdos both report it) and EXFAT_SUPER_MAGIC, from the kernel's magic.h.
+        for (f_type, name) in [(0x4D44, "FAT"), (0x2011_BAB0, "exFAT")] {
+            let refused = check_fs_type(f_type).expect_err(name);
+            assert!(refused.reason.contains(name), "{}", refused.reason);
         }
     }
 

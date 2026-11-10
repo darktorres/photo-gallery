@@ -35,7 +35,7 @@ either gives ~3× path order).
 
 | File system | What goes wrong | Severity |
 |---|---|---|
-| FAT32 / exFAT (SD cards, USB sticks) | Refused when added or scanned (not NTFS). The file ID comes from the directory entry, so it is not stable, and FAT's local-time mtimes shift by an hour at each DST change. | Refused |
+| FAT32 / exFAT (SD cards, USB sticks) | Refused when added or scanned (not NTFS; on Linux, `vfat`, `msdos` and `exfat` by type). The file ID comes from the directory entry, so it is not stable, and FAT's local-time mtimes shift by an hour at each DST change. | Refused |
 | ReFS | Refused when added or scanned (not NTFS). Its file IDs are 128-bit, and the 64-bit `FileId` collides when one doesn't fit. | Refused |
 | SMB shares without file IDs (some NAS / Samba setups) | `FileId` is 0. The folder is unreadable and reported with the other unreadable folders, not dropped silently (S-17.7 decision 10). | Reported |
 | OneDrive / cloud-synced folders (on NTFS) | Their files are reparse points (cloud tags) even when local. A placeholder file keeps its row and gets no content from the listing. A folder of placeholders is not descended, so its files are kept but not refreshed, and the scan counts the reparse points it indexed without following (S-17.7 decision 9). | Kept, not refreshed |
@@ -52,8 +52,11 @@ catalog, scan and platform tests).
 - **Birth time** is `statx` btime (`std::fs::Metadata::created()`). A file system that gives none (drvfs) gives NULL,
   and NULL matches any creation time: the file is still the same file by its identity (S-17.7 decision 2).
 - **Refused:** NFS, CIFS and SMB roots, by their `statfs` magic numbers (`check_fs_type`). Their inode numbers come
-  from the server and can be unstable or duplicated. Every other type is accepted, `9p` (WSL's drvfs) included. The
-  other Unix systems refuse every root (`check_root` fails closed).
+  from the server and can be unstable or duplicated. FAT (`vfat`, `msdos`) and exFAT roots, as on Windows: they store
+  no inode numbers, so the kernel derives each one while the volume is mounted, and a file's number is not the same
+  after a remount. The kernel's pseudo file systems (`/proc`, `/sys`, ...). A mount under a root is checked the same
+  way (`check_mount`). Every other type is accepted, `9p` (WSL's drvfs) included. The other Unix systems refuse every
+  root (`check_root` fails closed).
 - **Bind mounts:** a folder whose identity is already on the walk's path is not descended and is counted as a loop
   (`ScanStats::loops`, S-17.7 decision 11).
 - **Open files:** a catalog or thumbnail cache that another process has open is not rebuilt or started over. Each holds

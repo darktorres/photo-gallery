@@ -132,8 +132,13 @@ def cache_mounts():
 def export_head(destination):
     """The committed HEAD, extracted into `destination` (git archive: what is committed, nothing else)."""
     archive = subprocess.Popen(["git", "archive", "--format=tar", "HEAD"], cwd=REPO, stdout=subprocess.PIPE)
+    assert archive.stdout is not None  # the pipe is set above
     with tarfile.open(fileobj=archive.stdout, mode="r|") as tar:
         tar.extractall(destination, filter="data")
+    # tarfile stops at the end-of-archive marker, but git pads the tar to a whole record after it. Unread, that padding
+    # fills the pipe and git blocks writing it, so `wait` would wait for ever (it did, for an archive whose size fell so).
+    archive.stdout.read()
+    archive.stdout.close()
     if archive.wait() != 0:
         fail("git archive HEAD failed")
 

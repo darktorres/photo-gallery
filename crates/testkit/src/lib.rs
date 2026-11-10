@@ -141,7 +141,9 @@ pub fn run_folder(scratch: &str, prefix: &str) -> Result<PathBuf> {
     }
     // The name is claimed by creating the folder, which fails if the name is taken: by another run in this process, or by
     // another process with the same id (a process id is only unique within one container, so two containers sharing a
-    // base can both have process 18). The next number is tried then. Nothing is removed to make room.
+    // base can both have process 18). The next number is tried then. Nothing is removed to make room. The base itself is
+    // made first: `create_dir` makes no parents, and a fresh machine (a new container's `/tmp`) has none.
+    std::fs::create_dir_all(&base).with_context(|| format!("make the scratch folder {}", base.display()))?;
     let pid = std::process::id();
     let dir = loop {
         let n = RUN_FOLDERS.fetch_add(1, Ordering::Relaxed);

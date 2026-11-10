@@ -8,8 +8,12 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `model` (`pg-model`): the domain data: the analysis record, border detection, EXIF orientation, PDQ, formats, media
   kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
   turns, writes, image keys and requests, saved views and the session place). Pure and WASM-safe: no file, catalog, decoder or platform calls.
-- `platform` (`pg-platform`): the operating system behind portable functions. Win32 calls are made here and only here
-  (file identity, directory handles, priorities, processes, verbatim paths, message boxes; the `gallery` binary's console attach is the one exception).
+- `platform` (`pg-platform`): the operating system behind portable functions: file identity, directory handles,
+  priorities, processes, the console, the shared libraries loaded at run time, the folder dialog, verbatim paths, the
+  system's units of names and arguments, and message boxes. No other crate's production code names a platform
+  (`cfg(windows)`, `cfg(unix)`, `std::os::{windows,unix}`); the exceptions are the desktop's glue that must name the
+  platform's own signatures or types: the video player's declarations (`play_units` on Windows, `play_fd` on Unix) and
+  the folder dialog's (`pg_platform::picker::Dialog` exists on Windows only).
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges.

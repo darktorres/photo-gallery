@@ -440,6 +440,13 @@ After the moves, the README's "the one exception" (`crates/README.md`) is remove
 
 Gate: Linux checks (the platform crate's Linux code must still build), Windows `just test`, and the FFmpeg video tests on Windows.
 
+- **Result (committed in the M-13 commit; not yet validated, see the end of the plan):** no production code outside `pg-platform` names a platform, except `video_player.rs`'s bridge. The test-only `cfg`s that are left are M-14's `odd_name` copies and tests of one platform's behaviour.
+  - `pg_platform::library::Libraries` (new): `find(folders, probe)` picks, on Windows, the first folder that holds the probe library, and does nothing elsewhere. `open(stem, major)` is an `unsafe fn`, because loading a library runs its code. It opens `stem-major.dll` from that folder with the restricted search on Windows, and `libstem.so.major` (macOS: `.dylib`) by the system's rules elsewhere. `pg-video` keeps the folder list (`folders()`: the executable's, then `PG_FFMPEG_BIN`), the symbol lookup and its `libloading` dependency. Its `Lib::open`, `find_dir` and the `cfg`'d `PathBuf` import are gone. `pg-platform` depends on `libloading`.
+  - `pg_platform::console::attach_to_parent` (new) is `gallery/main.rs`'s `attach_console`. `pg-gallery` depends on `pg-platform` and no longer on `windows-sys`.
+  - `pg_platform::names` gains `units_of_os`, `os_string_of` and `argv_bytes`, and `units_of_path` is `units_of_os` of the path. `command_line::value_exact` is one portable function over the units (the `=` compared as `u32`, so neither platform's `Unit` is converted to itself). `gui_app` calls `argv_bytes`; its `arg_bytes` pair is gone.
+  - `pg_platform::picker` gains `HAS_DIALOG`, `system_dialog()` (an `Unsupported` error where there is none), `pick_in(dialog, start: Option<&Path>, owner)` (the start folder's units, then `pick_with`), and `start_folder(set)` with `has_drive_or_share`, whose Windows test moved with it. The desktop's `start_for`, `native`, `run_dialog` and `native_dialog` call them, with no `cfg`. `run_dialog` stays the desktop's test seam (`dialog_tests`).
+  - The README's platform entry states the rule and its one kind of exception.
+
 ## Dev-dependency cycles
 
 ### M-14: `testkit`, with no internal dependencies

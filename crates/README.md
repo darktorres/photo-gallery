@@ -51,11 +51,16 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `thumbs` (`pg-thumbs`): the thumbnail pass: makes the thumbnails the catalog says are missing (`pg-render`, into the
   thumbnail cache).
 - `writeback` (`pg-writeback`): writes the queued ratings and turns into the files (`pg-exiftool`, `pg-edit`).
-- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, the cropped copies, the
-  borders and the duplicates. Each pass that touches the files is its own crate, so its manifest shows what it may
-  reach: `scan` (`pg-scan`: the folder walk), `import` (`pg-import`: the analyses), `thumbs` (`pg-thumbs`: the
-  thumbnails) and `writeback` (`pg-writeback`: the ratings and turns into the files). Callers name these crates
-  directly; `pg-library` does not re-export them.
+- `borders` (`pg-borders`): the borders pass: looks for the borders due (`pg-analysis`) and stores them.
+- `crop` (`pg-crop`): the cropped copies: cuts the borders the catalog has off into copies (`pg-edit`), with the
+  original's metadata (`pg-exiftool`), never writing the originals.
+- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, and how a catalog
+  folder is opened for them (`open_catalog`, `open_thumbs`, `versions`). Each pass is its own crate, so its manifest
+  shows what it may reach: `scan` (`pg-scan`: the folder walk), `import` (`pg-import`: the analyses), `thumbs`
+  (`pg-thumbs`: the thumbnails), `borders` (`pg-borders`), `crop` (`pg-crop`: the cropped copies) and `writeback`
+  (`pg-writeback`: the ratings and turns into the files). Callers name these crates directly; `pg-library` does not
+  re-export them. The integration tests of `borders` and `crop` are `pg-library`'s, since they prepare a catalog with
+  its `versions`.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
   picks, input, keys, text and the folder tree.
 - `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through `pg-library`): opens the app from a `Config`, reads what the
@@ -63,7 +68,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   Yandex search (its source is the client, or a recorded session that `--yandex-fixture` names), the re-exports the
   front end names (`reexport.rs`), and reports through a notes bus.
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
-  borders and duplicates reports.
+  borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
   flat folder), the image providers and the GPU device. The only crate that links Qt.
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
@@ -370,7 +375,7 @@ made while a list was on its way is kept. Startup times are in FINDINGS "Startup
   file follows in the background, and its analysis and thumbnails are redone.
 - **Save cropped copies (N)…** (the filter bar's borders row) writes the listed files with their borders cut
   off into a folder of your choice, as `<folder>\<library folder name>\<path inside it>`, with the original's
-  modification time, in the background (`pg_library::crop`). The originals are never written: a folder whose copies
+  modification time, in the background (`pg_crop`). The originals are never written: a folder whose copies
   would land in the library is refused, and a file changed since its borders were found is skipped. JPEGs are
   cropped losslessly; their left and top cuts move inward to the 8 or 16 px block grid. PNG, BMP, GIF and WebP
   are cropped exactly and re-encoded losslessly with every other chunk kept (a lossy WebP comes out lossless,

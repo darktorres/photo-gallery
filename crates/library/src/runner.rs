@@ -29,8 +29,6 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use pg_platform::priority::Priority;
 use pg_thumbcache::ThumbCache;
 
-use crate::{borders, crop};
-
 #[derive(Default)]
 struct Queue {
     /// Folders to scan, normalized.
@@ -109,7 +107,7 @@ pub enum Notice {
     RoundPanicked { message: String },
     /// The thumbnail cache is full: `made` thumbnails at `height` px weren't made.
     CacheFull { height: u32, made: usize },
-    /// A crop job that ran to the end of its request. `refused` is the first refusal (`crop::Stats::refused`).
+    /// A crop job that ran to the end of its request. `refused` is the first refusal (`pg_crop::Stats::refused`).
     Cropped {
         folder: PathBuf,
         saved: usize,
@@ -118,7 +116,7 @@ pub enum Notice {
         first_error: Option<FileError>,
         /// Boxed: a refusal carries two strings, and a notice travels in the `Err` of a round, which clippy's
         /// `result_large_err` bounds.
-        refused: Option<Box<crop::CropError>>,
+        refused: Option<Box<pg_crop::CropError>>,
     },
     /// A crop job that failed before it could save anything.
     CropFailed { error: String },
@@ -135,7 +133,7 @@ impl Notice {
     pub fn crop_refusal(&self) -> Option<(&str, &str)> {
         match self {
             Notice::Cropped { refused: Some(refused), .. } => match &**refused {
-                crop::CropError::FolderRefused { file, folder } => Some((file.as_str(), folder.as_str())),
+                pg_crop::CropError::FolderRefused { file, folder } => Some((file.as_str(), folder.as_str())),
             },
             _ => None,
         }
@@ -233,7 +231,7 @@ impl Runner {
         self.wake_up();
     }
 
-    /// Save cropped copies of these files' borders into `folder` (`crop::save`), before anything else.
+    /// Save cropped copies of these files' borders into `folder` (`pg_crop::save`), before anything else.
     pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
         self.inner.queue().crops.push_back((ids, folder));
         self.wake_up();
@@ -380,7 +378,7 @@ impl Pass<Cx<'_>> for Crops {
             let Some((ids, folder)) = cx.inner.queue().crops.pop_front() else {
                 return Ok(Step::Done);
             };
-            match crop::save(cx.catalog, &ids, &folder, &Options::new(Priority::BelowNormal), &cx.inner.ctl) {
+            match pg_crop::save(cx.catalog, &ids, &folder, &Options::new(Priority::BelowNormal), &cx.inner.ctl) {
                 Ok(s) if !s.remaining.is_empty() => {
                     cx.inner.queue().crops.push_front((s.remaining, folder));
                     return Ok(Step::Preempted);
@@ -502,7 +500,7 @@ struct Borders;
 
 impl Pass<Cx<'_>> for Borders {
     fn run(&mut self, cx: &mut Cx<'_>) -> Result<Step> {
-        let s = borders::find(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
+        let s = pg_borders::find(cx.catalog, &Options::new(Priority::BelowNormal), &cx.inner.ctl)?;
         // Only what went into the catalog changes what the app shows: files that couldn't be read stored nothing.
         if s.stored > 0 {
             cx.inner.imported();

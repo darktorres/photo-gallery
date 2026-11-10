@@ -11,8 +11,7 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::borders;
-use pg_library::crop::{self, CropError};
+use pg_crop::CropError;
 use pg_model::ids::FileId;
 use pg_model::rules::PathRules;
 use pg_platform::native::verbatim;
@@ -63,7 +62,7 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
     pg_import::import(&mut c, &opts, false, &ctl)?;
-    borders::find(&mut c, &opts, &ctl)?;
+    pg_borders::find(&mut c, &opts, &ctl)?;
     let files = state::present_files(&c)?;
     anyhow::ensure!(files.len() == 2, "two files were expected: {files:?}");
     let (mut dotted_id, mut sibling_id) = (None, None);
@@ -91,7 +90,7 @@ fn a_source_in_a_folder_ending_in_a_dot_is_refused_and_leaves_no_temp() -> Resul
     );
     let out = dir.join("out");
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    let stats = crop::save(&c, &[dotted, sibling], &out, &opts, &Control::new())?;
+    let stats = pg_crop::save(&c, &[dotted, sibling], &out, &opts, &Control::new())?;
 
     assert_eq!((stats.saved, stats.failed), (1, 1), "{:?}", stats.error);
     assert!(
@@ -127,7 +126,7 @@ fn a_copy_into_a_folder_ending_in_a_dot_is_refused_and_makes_nothing() -> Result
     let original = std::fs::read(dir.join("images").join("Acme Inc").join("a.jpg"))?;
     let out = dir.join("Out.");
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    let stats = crop::save(&c, &[sibling], &out, &opts, &Control::new())?;
+    let stats = pg_crop::save(&c, &[sibling], &out, &opts, &Control::new())?;
 
     assert_eq!((stats.saved, stats.failed), (0, 1), "{:?}", stats.error);
     assert!(

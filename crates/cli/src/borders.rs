@@ -1,7 +1,7 @@
 //! The borders tools of the command line: a report on the borders the detector finds in files outside the library
 //! (in the Python prototype's `report.csv` columns, so the two can be compared), the detector for images piped in
 //! (`--stdin`, for the eval), and the review marks of the eval viewer's former Borders page taken into the catalog
-//! (`--import-review`). The pass that looks for the borders due in the library is `pg_library::borders`.
+//! (`--import-review`). The pass that looks for the borders due in the library is `pg_borders::find`.
 
 use std::io::{BufRead, Write};
 use std::path::{Path, PathBuf};

@@ -218,7 +218,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
                 println!("{marked} files marked as not a border; {unknown} not in the catalog");
             } else {
-                let s = pg_library::borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
+                let s = pg_borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
                 println!(
                     "borders looked for in {} files ({} failed, {} stored), {:.1} s",
                     s.files,

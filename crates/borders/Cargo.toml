@@ -1,0 +1,17 @@
+[package]
+name = "pg-borders"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The pass that looks for the borders due in the library (`pg_analysis::borders` on each file, decoded at full size)
+# and stores them. Its tests need a catalog, and are `pg-library`'s (they prepare one with `pg_library::versions`).
+[dependencies]
+pg-analysis = { path = "../analysis" }
+pg-catalog = { path = "../catalog" }
+pg-jobs = { path = "../jobs" }
+pg-platform = { path = "../platform" }
+anyhow.workspace = true

@@ -476,6 +476,8 @@ Gate: Linux checks, Windows `just test`. `cargo tree -d` must show no duplicate 
 
 Gate: Linux and Windows checks.
 
+- **Result (committed in the M-15 commit; not yet validated, see the end of the plan):** `crates/crop` (`pg-crop`, the former `library/src/crop.rs`, with its three `publish` unit tests, which need only `pg-testkit`) and `crates/borders` (`pg-borders`, the former `library/src/borders.rs`). One dependency the plan missed: `pg-crop` also depends on `pg-scan`, because it compares a copy's folder with the library in real form through `pg_scan::normalize_path`. `pg-library` now depends on `pg-borders` and `pg-crop`, and has lost `pg-dedup`, `pg-edit`, `pg-exiftool` and `pg-writeback`. It keeps `pg-writeback` only as the `fault` dev-dependency. The runner names `pg_crop::` and `pg_borders::` itself, with no alias. `dups` is in `cli/src/dups.rs` with its report, and `Found`, `find`, `IDENTITIES` and `PDQ_BANDS` are private to that module (their only caller is `report`). `pg-cli` gains `pg-borders` and `pg-dedup`. The five test files stay in `pg-library/tests` and name `pg_borders::` and `pg_crop::`, which they reach as normal dependencies of the package. The manifest comment, the `lib.rs` header, the doc references in `analysis` and `cli`, and the README (two new entries, the `library` and `cli` lines, and the crop feature's module path) say where things now are.
+
 ## Closing
 
 ### M-16: enforce, at four levels

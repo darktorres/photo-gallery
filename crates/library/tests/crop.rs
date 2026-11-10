@@ -12,7 +12,6 @@ use pg_catalog::fixture::state;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{borders, crop};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::path::PathArena;
@@ -63,7 +62,7 @@ fn ids(c: &Catalog) -> anyhow::Result<Vec<(i64, String)>> {
     Ok(state::present_files(c)?.into_iter().map(|(id, name)| (id.get(), name)).collect())
 }
 
-/// The place under `out` of the copies of the library folder `root`, as `crop::save` puts them: the drive's letter as a
+/// The place under `out` of the copies of the library folder `root`, as `pg_crop::save` puts them: the drive's letter as a
 /// part (none on Unix, where the root is no part), then the folder's parts.
 /// The copies' folder for a library folder: under `out`, the library folder's drive as a part, then its parts. The
 /// library folder is taken as the catalog holds it (its canonical spelling), which is what the copies are written under.
@@ -101,7 +100,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
             "the import doesn't look for borders"
         );
     }
-    borders::find(&mut c, &opts, &ctl).unwrap();
+    pg_borders::find(&mut c, &opts, &ctl).unwrap();
     let files_ids = ids(&c).unwrap();
     assert_eq!(files_ids.len(), files.len());
     // The bars, and the safety margin past the seam.
@@ -124,7 +123,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
 
     // Into the library: refused, nothing written.
     assert!(
-        crop::save(&c, &all, &dir.join("images"), &opts, &ctl).is_err(),
+        pg_crop::save(&c, &all, &dir.join("images"), &opts, &ctl).is_err(),
         "copies into the library were not refused: folder {:?}, the library's root {:?}, the catalog's roots {:?}",
         dir.join("images"),
         root,
@@ -132,7 +131,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     );
     // Copies go into a folder named by their library folder's whole path, so saving into the parent doesn't reach the
     // library any more; a folder inside a library folder still does.
-    assert!(crop::save(&c, &all, &dir.join("images").join("sub"), &opts, &ctl).is_err(), "copies into the library");
+    assert!(pg_crop::save(&c, &all, &dir.join("images").join("sub"), &opts, &ctl).is_err(), "copies into the library");
 
     // One marked as not a border, one changed since: both skipped.
     let id_of = |name: &str| files_ids.iter().find(|(_, n)| n == name).unwrap().0;
@@ -145,7 +144,7 @@ fn cropped_copies_cut_the_borders_and_leave_the_originals() {
     let out = dir.join("out");
     // The copies of the library folder `images`: under the copies' folder, in the library folder's place.
     let copies = place_in(&out, &root);
-    let s = crop::save(&c, &all, &out, &opts, &ctl).unwrap();
+    let s = pg_crop::save(&c, &all, &out, &opts, &ctl).unwrap();
     assert_eq!((s.saved, s.skipped, s.failed), (3, 2, 0), "{:?}", s.error);
     assert!(s.remaining.is_empty());
     for (i, path) in files.iter().enumerate() {

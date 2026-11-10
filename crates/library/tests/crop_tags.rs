@@ -9,7 +9,6 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{borders, crop};
 use pg_model::rules::PathRules;
 
 const W: u32 = 320;
@@ -60,14 +59,14 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
-    borders::find(&mut c, &opts, &ctl).unwrap();
+    pg_borders::find(&mut c, &opts, &ctl).unwrap();
     let id = state::file_id(&c, "d.tif").unwrap();
 
     // ExifTool can't run: the copy is published, then its tags can't be copied into it.
     // SAFETY: this test binary runs no other test that reads PG_EXIFTOOL, so nothing reads it concurrently.
     unsafe { std::env::set_var("PG_EXIFTOOL", dir.join("no-such-exiftool")) };
     let out = dir.join("out");
-    let stats = crop::save(&c, &[id], &out, &opts, &ctl).unwrap();
+    let stats = pg_crop::save(&c, &[id], &out, &opts, &ctl).unwrap();
     assert_eq!((stats.saved, stats.failed), (0, 1), "the copy's tags could not be written: a failure");
     let left = files_under(&out);
     assert!(left.is_empty(), "no untagged copy and no temporary is left: {left:?}");

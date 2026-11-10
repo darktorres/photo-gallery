@@ -1,4 +1,4 @@
-//! Borders (pg_analysis::borders): the pass after the import that looks for them in the files it analyzed, and in
+//! Borders (`pg_analysis::borders`): the pass after the import that looks for them in the files it analyzed, and in
 //! every file after a new detector (`analysis.borders_due`), each decoded at full size. The tools that report on
 //! borders, or take review marks into the catalog, are the command line's (`pg_cli::borders`).
 

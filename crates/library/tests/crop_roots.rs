@@ -6,7 +6,6 @@ use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_library::{borders, crop};
 use pg_model::ids::FileId;
 use pg_model::rules::PathRules;
 
@@ -55,13 +54,13 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
     }
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
-    borders::find(&mut c, &opts, &ctl).unwrap();
+    pg_borders::find(&mut c, &opts, &ctl).unwrap();
 
     let ids: Vec<FileId> = state::present_files(&c).unwrap().into_iter().map(|(id, _)| id).collect();
     assert_eq!(ids.len(), 2);
 
     let out = dir.join("out");
-    let s = crop::save(&c, &ids, &out, &opts, &ctl).unwrap();
+    let s = pg_crop::save(&c, &ids, &out, &opts, &ctl).unwrap();
     assert_eq!((s.saved, s.failed), (2, 0), "{:?}", s.error);
     assert_eq!(files_under(&out).len(), 2, "both copies are kept: {:?}", files_under(&out));
 }

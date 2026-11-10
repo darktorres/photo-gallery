@@ -1,4 +1,4 @@
-//! Saving cropped copies (pg_edit::crop): each file's borders as the catalog has them (found, not marked as not a
+//! Saving cropped copies (`pg_edit::crop`): each file's borders as the catalog has them (found, not marked as not a
 //! border), cut off into a copy at `<folder>\<library folder place>\<path inside it>`, with the original's
 //! modification time. The originals are never written: a folder whose copies would land in the library is refused
 //! up front, and each file is checked to still be the one its borders were found in.

@@ -10,35 +10,45 @@
 //! pixels go straight into the caller's buffer when they are 8-bit RGB or RGBA (an RGBA image is then flattened onto
 //! white in place), and other sample types are read into [`Codecs::raw`], which is kept from file to file, and
 //! converted from there into the caller's buffer in one pass.
+//!
+//! Each format is a module of free functions over the buffers it uses ([`png`], [`gif`], [`webp`], [`jpeg`],
+//! [`tiff`]); they share the conversions ([`convert`]) and the size cap ([`limits`]). This module holds the buffers
+//! and picks the format.
+
+mod convert;
+mod gif;
+mod jpeg;
+pub(crate) mod limits;
+mod png;
+#[cfg(test)]
+mod test_support;
+pub(crate) mod tiff;
+mod webp;
 
 use std::io::Cursor;
 
-use image::error::{
-    DecodingError, LimitError, LimitErrorKind, ParameterError, ParameterErrorKind, UnsupportedError,
-    UnsupportedErrorKind,
-};
-use image::{ColorType, ExtendedColorType, ImageDecoder, ImageError, ImageFormat, ImageResult, Limits};
+use image::ImageResult;
 
 use crate::pixels::{Rgb, release_over};
 use pg_model::format::Format;
-use pg_model::num;
 
-/// What the decoders keep from one file to the next, per worker (inside its [`crate::decode::Decoder`]).
+/// What the decoders keep from one file to the next, per worker (inside its [`crate::decode::Decoder`]). The format
+/// crates' names are written `::png` and so on: inside this module, `png` is the [`png`] module.
 #[derive(Default)]
 pub(crate) struct Codecs {
     /// Samples that aren't 8-bit RGB or RGBA (gray, 16-bit, float, CMYK, planar TIFF), and a GIF's frame when it
     /// doesn't span the image's width: read here, then converted or composed into the output.
     raw: Vec<u8>,
     /// The PNG decoder's buffers.
-    png: png::Scratch,
+    png: ::png::Scratch,
     /// The WebP decoder's buffers.
     webp: image_webp::Scratch,
     /// The GIF decoder's buffers.
-    gif: gif::Scratch,
+    gif: ::gif::Scratch,
     /// The JPEG fallback's buffers (vendored zune-jpeg's `Scratch`).
     jpeg: zune_jpeg::Scratch,
     /// The TIFF decoder's decompressors and buffers (vendored tiff's `Scratch`).
-    tiff: tiff::decoder::Scratch,
+    tiff: ::tiff::decoder::Scratch,
     /// A TIFF's sample formats.
     tiff_formats: Vec<u16>,
 }
@@ -46,13 +56,14 @@ pub(crate) struct Codecs {
 impl Codecs {
     /// Decode `bytes` (of `format`) into `out`, as 8-bit RGB with transparency flattened onto white.
     pub(crate) fn decode(&mut self, bytes: &[u8], format: Format, out: &mut Rgb) -> ImageResult<()> {
+        let raw = &mut self.raw;
         match format {
-            Format::Png => self.png(bytes, out),
-            Format::Gif => self.gif(bytes, out),
-            Format::Webp => self.webp(bytes, out),
-            Format::Bmp => self.read_with(image::codecs::bmp::BmpDecoder::new(Cursor::new(bytes))?, out),
-            Format::Tiff => self.tiff(bytes, out),
-            Format::Jpeg => self.jpeg(bytes, out),
+            Format::Png => png::decode(&mut self.png, raw, bytes, out),
+            Format::Gif => gif::decode(&mut self.gif, raw, bytes, out),
+            Format::Webp => webp::decode(&mut self.webp, raw, bytes, out),
+            Format::Bmp => convert::read_with(image::codecs::bmp::BmpDecoder::new(Cursor::new(bytes))?, raw, out),
+            Format::Tiff => tiff::decode(&mut self.tiff, &mut self.tiff_formats, raw, bytes, out),
+            Format::Jpeg => jpeg::decode(&mut self.jpeg, raw, bytes, out),
         }
     }
 
@@ -65,797 +76,23 @@ impl Codecs {
         self.jpeg.trim(bytes);
         self.tiff.trim(bytes);
     }
-
-    /// Any of `image`'s decoders, the way `ImageReader::decode` and `decoder_to_image` use it (BMP's: `image` is
-    /// its format crate).
-    fn read_with(&mut self, mut decoder: impl ImageDecoder, out: &mut Rgb) -> ImageResult<()> {
-        let ((w, h), color) = (decoder.dimensions(), decoder.color_type());
-        let mut limits = Limits::default();
-        limits.reserve(decoder.total_bytes())?;
-        decoder.set_limits(limits)?;
-        decoder.read_image(target(color, w, h, out, &mut self.raw))?;
-        finish(color, w, h, out, &self.raw)
-    }
-
-    /// `image`'s `PngDecoder::with_limits` and `read_image`, in the buffers of the PNG before (vendored png's
-    /// `Scratch`), which go back to `self.png` whatever happens.
-    fn png(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
-        // The PNG decoder is given `ImageReader`'s limits as they are before the image's size is reserved.
-        let max_bytes = usize::try_from(max_decode_bytes()).unwrap_or(usize::MAX);
-        let limits = png::Limits { bytes: max_bytes };
-        let mut decoder = png::Decoder::new_with_scratch(Cursor::new(bytes), limits, std::mem::take(&mut self.png));
-        // Text and ICC profiles are skipped, where `image` reads them for its metadata getters, which a decode
-        // doesn't call: the metadata reader finds the XMP itself, and colours aren't managed. The png crate
-        // ignores what is wrong in them, so skipping them changes no pixel and no error, except for a file whose
-        // text alone exceeds the 512 MiB limit; it spares a copy of each.
-        decoder.set_ignore_text_chunk(true);
-        decoder.set_ignore_iccp_chunk(true);
-        if let Err(err) = decoder.read_header_info() {
-            self.png = decoder.into_scratch();
-            return Err(png_error(err));
-        }
-        // 16-bit samples kept, samples of fewer bits expanded to 8, palettes to RGB(A), tRNS to alpha.
-        decoder.set_transformations(png::Transformations::EXPAND);
-        let mut reader = match decoder.read_info_or_scratch() {
-            Ok(reader) => reader,
-            Err((err, scratch)) => {
-                self.png = scratch;
-                return Err(png_error(err));
-            }
-        };
-        let result = self.png_image(&mut reader, out);
-        self.png = reader.into_scratch();
-        result
-    }
-
-    /// [`Codecs::png`]'s image, once the headers are read.
-    fn png_image(&mut self, reader: &mut png::Reader<Cursor<&[u8]>>, out: &mut Rgb) -> ImageResult<()> {
-        let color = png_color(reader.output_color_type())?;
-        let (w, h) = reader.info().size();
-        reserve(color, w, h)?;
-        let buf = target(color, w, h, out, &mut self.raw);
-        reader.next_frame(buf).map_err(png_error)?;
-        // PNG's samples are big-endian; `read_image` gives them in native order.
-        if color.bytes_per_pixel() / color.channel_count() == 2 {
-            for c in buf.as_chunks_mut::<2>().0 {
-                *c = u16::from_be_bytes(*c).to_ne_bytes();
-            }
-        }
-        finish(color, w, h, out, &self.raw)
-    }
-
-    /// `image`'s `GifDecoder::new` and `read_image`: the first frame, as RGBA. In the buffers of the GIF before
-    /// (vendored gif's `Scratch`), which go back to `self.gif` whatever happens, and read straight from `bytes`, where
-    /// `image` reads them through a `BufReader`.
-    fn gif(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
-        let mut options = gif::DecodeOptions::new();
-        options.set_color_output(gif::ColorOutput::RGBA);
-        // The XMP and ICC extensions are skipped, where `image`'s decoder collects them for its metadata getters,
-        // which a decode doesn't call: the metadata reader finds the XMP itself, and colours aren't managed. That
-        // changes no pixel and no error, except for a file whose XMP or ICC alone is over gif's 50 MB memory limit,
-        // which `image` fails and this decodes.
-        options.skip_metadata(true);
-        let mut reader = match options.read_info_with(Cursor::new(bytes), std::mem::take(&mut self.gif)) {
-            Ok(reader) => reader,
-            Err((err, scratch)) => {
-                self.gif = scratch;
-                return Err(gif_error(err));
-            }
-        };
-        let result = self.gif_image(&mut reader, out);
-        self.gif = reader.into_scratch();
-        result
-    }
-
-    /// [`Codecs::gif`]'s image, once the headers are read.
-    fn gif_image(&mut self, reader: &mut gif::Decoder<Cursor<&[u8]>, Cursor<&[u8]>>, out: &mut Rgb) -> ImageResult<()> {
-        let (w, h) = (u32::from(reader.width()), u32::from(reader.height()));
-        let mut limits = reserve(ColorType::Rgba8, w, h)?;
-        let buf = zeroed(&mut out.pixels, num::index(w) * num::index(h) * 4);
-        let Some(frame) = reader.next_frame_info().map_err(gif_error)? else {
-            return Err(ImageError::Parameter(ParameterError::from_kind(ParameterErrorKind::NoMoreData)));
-        };
-        let [left, top, fw, fh] = [frame.left, frame.top, frame.width, frame.height].map(u32::from);
-        let line = num::index(w) * 4;
-        if left == 0
-            && fw == w
-            && u64::from(top) + u64::from(fh) <= u64::from(h)
-            && let Some(rows) =
-                buf.get_mut(line * num::index(top)..).and_then(|rows| rows.get_mut(..line * num::index(fh)))
-        {
-            // A frame that spans the image's width is read in place; the rows above and below it stay zero.
-            reader.read_into_buffer(rows).map_err(gif_error)?;
-        } else {
-            // Any other frame is read on its own, then placed: what it doesn't cover stays zero (transparent).
-            let size = num::index(fw)
-                .checked_mul(num::index(fh))
-                .and_then(|s| s.checked_mul(4))
-                .ok_or(ImageError::Limits(LimitError::from_kind(LimitErrorKind::InsufficientMemory)))?;
-            limits.reserve_usize(size)?;
-            let frame = zeroed(&mut self.raw, size);
-            limits.free_usize(size);
-            reader.read_into_buffer(frame).map_err(gif_error)?;
-            // The frame's rows from row `top`, its pixels from column `left`, as far as the image goes. (A side of
-            // zero has no rows to place.)
-            let image_rows = buf.chunks_exact_mut(line.max(1)).skip(num::index(top));
-            for (row, frame_row) in image_rows.zip(frame.chunks_exact((num::index(fw) * 4).max(1))) {
-                let pixels = row.as_chunks_mut::<4>().0.iter_mut().skip(num::index(left));
-                for (d, s) in pixels.zip(frame_row.as_chunks::<4>().0) {
-                    *d = *s;
-                }
-            }
-        }
-        finish(ColorType::Rgba8, w, h, out, &self.raw)
-    }
-
-    /// `image`'s `WebPDecoder`, in the buffers of the WebP before (vendored image-webp's `Scratch`), which go back
-    /// to `self.webp` whatever happens.
-    fn webp(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
-        let mut decoder =
-            match image_webp::WebPDecoder::new_with_scratch(Cursor::new(bytes), std::mem::take(&mut self.webp)) {
-                Ok(decoder) => decoder,
-                Err((err, scratch)) => {
-                    self.webp = scratch;
-                    return Err(webp_error(err));
-                }
-            };
-        let result = self.webp_image(&mut decoder, out);
-        self.webp = decoder.into_scratch();
-        result
-    }
-
-    /// [`Codecs::webp`]'s image, once the headers are read: RGBA if it has alpha, RGB otherwise.
-    fn webp_image(&mut self, decoder: &mut image_webp::WebPDecoder<Cursor<&[u8]>>, out: &mut Rgb) -> ImageResult<()> {
-        let (w, h) = decoder.dimensions();
-        let color = if decoder.has_alpha() { ColorType::Rgba8 } else { ColorType::Rgb8 };
-        reserve(color, w, h)?;
-        decoder.read_image(target(color, w, h, out, &mut self.raw)).map_err(webp_error)?;
-        finish(color, w, h, out, &self.raw)
-    }
-
-    /// `image`'s `JpegDecoder` (zune-jpeg), for the JPEGs libjpeg-turbo rejects. As there, one decoder reads the
-    /// headers and another, set up from them, decodes: the colour conversion zune-jpeg uses is chosen as it reads
-    /// the headers, from the output colour space it was given. Both decode in the buffers of the JPEG before
-    /// (vendored zune-jpeg's `Scratch`), which go back to `self.jpeg` whatever happens.
-    ///
-    /// The metadata segments (EXIF, XMP, ICC, IPTC…) are checked as `image`'s decoder checks them, with the same
-    /// errors, but not copied (`set_skip_metadata`): `image` keeps them for its metadata getters, which a decode
-    /// doesn't call.
-    fn jpeg(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
-        use zune_core::bytestream::ZCursor;
-        use zune_core::colorspace::ColorSpace;
-        use zune_core::options::DecoderOptions;
-        use zune_jpeg::JpegDecoder;
-
-        let options =
-            || DecoderOptions::default().set_strict_mode(false).set_max_width(usize::MAX).set_max_height(usize::MAX);
-        let mut headers = JpegDecoder::new_with_scratch(ZCursor::new(bytes), options(), std::mem::take(&mut self.jpeg));
-        headers.set_skip_metadata(true);
-        let read = headers.decode_headers();
-        if let Err(e) = read {
-            self.jpeg = headers.into_scratch();
-            return Err(jpeg_error(e));
-        }
-        // Known once the headers are read; a JPEG's sides fit 16 bits.
-        let size = headers.dimensions().and_then(|(w, h)| Some((u16::try_from(w).ok()?, u16::try_from(h).ok()?)));
-        let input = headers.input_colorspace();
-        let scratch = headers.into_scratch();
-        let (Some((w, h)), Some(input)) = (size, input) else {
-            self.jpeg = scratch;
-            return Err(ImageError::Decoding(DecodingError::new(
-                ImageFormat::Jpeg.into(),
-                "the headers gave no size or colour space".to_string(),
-            )));
-        };
-        let (w, h) = (u32::from(w), u32::from(h));
-        // Gray and RGB(A) are kept; the rest (CMYK, YCCK…) is converted to RGB by the decoder.
-        let (space, color) = match input {
-            ColorSpace::RGB => (ColorSpace::RGB, ColorType::Rgb8),
-            ColorSpace::RGBA => (ColorSpace::RGBA, ColorType::Rgba8),
-            ColorSpace::Luma => (ColorSpace::Luma, ColorType::L8),
-            ColorSpace::LumaA => (ColorSpace::LumaA, ColorType::La8),
-            _ => (ColorSpace::RGB, ColorType::Rgb8),
-        };
-        if let Err(e) = reserve(color, w, h) {
-            self.jpeg = scratch;
-            return Err(e);
-        }
-        let mut decoder =
-            JpegDecoder::new_with_scratch(ZCursor::new(bytes), options().jpeg_set_out_colorspace(space), scratch);
-        decoder.set_skip_metadata(true);
-        let decoded = decoder.decode_into(target(color, w, h, out, &mut self.raw)).map_err(jpeg_error);
-        self.jpeg = decoder.into_scratch();
-        decoded?;
-        finish(color, w, h, out, &self.raw)
-    }
-
-    /// `image`'s `TiffDecoder`: its colour types, its split of the limits between the decoded image and the
-    /// decoder's own buffers, and its conversions (CMYK to RGB, 1-bit gray to 8, planes interleaved), here done as
-    /// the samples are converted into `out` rather than into a second full-size buffer first.
-    fn tiff(&mut self, bytes: &[u8], out: &mut Rgb) -> ImageResult<()> {
-        let mut decoder =
-            match tiff::decoder::Decoder::new_with_scratch(Cursor::new(bytes), std::mem::take(&mut self.tiff)) {
-                Ok(decoder) => decoder,
-                Err((e, scratch)) => {
-                    self.tiff = scratch;
-                    return Err(tiff_error(e));
-                }
-            };
-        // The decoder is given its limits between the two steps (`with_limits` takes it and gives it back).
-        let (decoder, decoded) = match self.tiff_plan(&mut decoder) {
-            Ok((plan, limits)) => {
-                let mut decoder = decoder.with_limits(limits);
-                let decoded = self.tiff_image(&mut decoder, plan, out);
-                (decoder, decoded)
-            }
-            Err(e) => (decoder, Err(e)),
-        };
-        self.tiff = decoder.into_scratch();
-        decoded
-    }
-
-    /// [`Codecs::tiff`]'s first step: the image's size and colour types from its tags, and the decoder's limits.
-    fn tiff_plan(&mut self, decoder: &mut TiffDecoder<'_>) -> ImageResult<(TiffPlan, tiff::decoder::Limits)> {
-        let (w, h) = decoder.dimensions().map_err(tiff_error)?;
-        let tiff_color = decoder.colortype().map_err(tiff_error)?;
-        // `find_tag_unsigned_vec`, into a kept vector; without the tag, unsigned integers.
-        let formats = &mut self.tiff_formats;
-        if decoder.find_tag_unsigned_vec_into(tiff::tags::Tag::SampleFormat, formats).map_err(tiff_error)? {
-            formats.iter().try_for_each(|&f| check_sample_format(f, tiff_color))?;
-        }
-        let (color, stored) = decoded_color(tiff_color)?;
-        let limits = tiff_limits(color, stored, w, h)?;
-        let decoding_size = limits.decoding_buffer_size;
-        Ok((TiffPlan { w, h, color, stored, decoding_size }, limits))
-    }
-
-    /// [`Codecs::tiff`]'s second step, once the decoder has its limits: the samples, into `out`.
-    fn tiff_image(&mut self, decoder: &mut TiffDecoder<'_>, plan: TiffPlan, out: &mut Rgb) -> ImageResult<()> {
-        use tiff::decoder::DecodingSampleType as Sample;
-
-        let TiffPlan { w, h, color, stored, decoding_size } = plan;
-        // `Decoder::read_image_to_buffer`: all planes if they fit the decoding limit, else the first (and `image`
-        // then fails); the buffer in whole samples, within the limit.
-        let layout = decoder.image_buffer_layout().map_err(tiff_error)?;
-        let sample_size = match layout.sample_type {
-            Some(Sample::U8 | Sample::I8) => 1,
-            Some(Sample::U16 | Sample::I16 | Sample::F16) => 2,
-            Some(Sample::U32 | Sample::I32 | Sample::F32) => 4,
-            Some(_) => 8,
-            // Sample formats and depths that `check_sample_format` and the colour types of `decoded_color` let through
-            // all have a sample type.
-            None => return Err(tiff_error(tiff::TiffError::LimitsExceeded)),
-        };
-        let plane_stride = layout.plane_stride.map_or(0, |n| n.get());
-        let extent =
-            if layout.complete_len <= decoding_size || layout.planes == 1 { layout.complete_len } else { plane_stride };
-        let samples = extent.div_ceil(sample_size);
-        if samples > decoding_size / sample_size {
-            return Err(tiff_error(tiff::TiffError::LimitsExceeded));
-        }
-        let len = samples * sample_size;
-        // Stored as the image is: read straight into `out`.
-        let direct = layout.planes == 1
-            && stored == Stored::Same
-            && matches!(color, ColorType::Rgb8 | ColorType::Rgba8)
-            && len == num::index(w) * num::index(h) * usize::from(color.bytes_per_pixel());
-        let buf = if direct { zeroed(&mut out.pixels, len) } else { zeroed(&mut self.raw, len) };
-        decoder.read_image_bytes(buf).map_err(tiff_error)?;
-        if len < layout.complete_len {
-            return Err(ImageError::Limits(LimitError::from_kind(LimitErrorKind::InsufficientMemory)));
-        }
-        if direct {
-            return finish(color, w, h, out, &self.raw);
-        }
-
-        let pixels = num::index(w) * num::index(h);
-        if layout.planes > 1 {
-            // `TiffDecoder::interleave_planes`.
-            if stored != Stored::Same {
-                return Err(ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-                    ImageFormat::Tiff.into(),
-                    UnsupportedErrorKind::GenericFeature(
-                        "Planar TIFF with CMYK color type is not supported".to_string(),
-                    ),
-                )));
-            }
-            // (The decoder refuses a zero width or height (tiff decoder `image.rs:325`), so an image has at least one
-            // plane here.)
-            if self.raw.len().checked_div(plane_stride).unwrap_or(0) < usize::from(color.channel_count()) {
-                return Err(ImageError::Decoding(DecodingError::new(
-                    ImageFormat::Tiff.into(),
-                    "Not enough planes read from TIFF image".to_string(),
-                )));
-            }
-            convert(&self.raw, color, Some(plane_stride), pixels, out)?;
-            (out.width, out.height) = (num::index(w), num::index(h));
-            return Ok(());
-        }
-        match stored {
-            Stored::Same => convert(&self.raw, color, None, pixels, out)?,
-            Stored::Cmyk8 => {
-                // `image` writes each pixel with `write_all` (its tiff.rs:396): short data leaves the rest of the
-                // pixels as they were, with no error.
-                check_len(self.raw.len(), pixels * 4)?;
-                let px = zeroed(&mut out.pixels, pixels * 3);
-                for (cmyk, rgb) in self.raw.as_chunks::<4>().0.iter().zip(px.as_chunks_mut::<3>().0) {
-                    *rgb = cmyk_to_rgb(cmyk);
-                }
-            }
-            Stored::Cmyk16 => {
-                // As Cmyk8: `image`'s tiff.rs:402 `write_all` leaves the rest of the pixels as they were.
-                check_len(self.raw.len(), pixels * 8)?;
-                let px = zeroed(&mut out.pixels, pixels * 3);
-                let samples = self.raw.as_chunks::<2>().0.as_chunks::<4>().0;
-                for (cmyk, rgb) in samples.iter().zip(px.as_chunks_mut::<3>().0) {
-                    *rgb = cmyk_to_rgb16(&cmyk.map(u16::from_ne_bytes)).map(rgb16);
-                }
-            }
-            Stored::Gray1 => {
-                // `expand_bits(1, …)` per row (0 or 255), then L8 to RGB.
-                let row_bytes = num::index(w).div_ceil(8);
-                // `image`'s tiff.rs:410 `chunks_exact` drops a short last row: its rows past the data are left unwritten.
-                check_len(self.raw.len(), row_bytes * num::index(h))?;
-                let px = zeroed(&mut out.pixels, pixels * 3);
-                for (row, out_row) in
-                    self.raw.chunks_exact(row_bytes.max(1)).zip(px.chunks_exact_mut(num::index(w) * 3))
-                {
-                    // Each byte holds eight pixels, the first in its high bit.
-                    for (&byte, rgbs) in row.iter().zip(out_row.as_chunks_mut::<3>().0.chunks_mut(8)) {
-                        for (x, rgb) in rgbs.iter_mut().enumerate() {
-                            let bit = byte >> (7 - x) & 1;
-                            *rgb = [luma8([bit * 255]); 3];
-                        }
-                    }
-                }
-            }
-        }
-        (out.width, out.height) = (num::index(w), num::index(h));
-        Ok(())
-    }
-}
-
-/// How a TIFF's samples are stored, against the colour type `image` gives the image.
-#[derive(Clone, Copy, PartialEq, Eq)]
-pub(crate) enum Stored {
-    /// As the colour type.
-    Same,
-    /// 1-bit gray, given as 8-bit (`L8`).
-    Gray1,
-    /// 8-bit CMYK, given as `Rgb8`.
-    Cmyk8,
-    /// 16-bit CMYK, given as `Rgb16`.
-    Cmyk16,
-}
-
-/// What [`Codecs::tiff_plan`] reads from a TIFF's tags, for [`Codecs::tiff_image`].
-struct TiffPlan {
-    w: u32,
-    h: u32,
-    /// The colour type `image` gives the image.
-    color: ColorType,
-    stored: Stored,
-    /// The decoder's limit for its decoding buffer.
-    decoding_size: usize,
-}
-
-/// The most bytes one decoded image may take: `ImageReader`'s default `max_alloc` (512 MiB). The one cap for every
-/// decoded buffer, the decoders' here and the lossless rewrites' (`pg_edit`), so a damaged header that declares a
-/// huge image is an error before anything that size is allocated, never an allocation failure (which aborts).
-pub fn max_decode_bytes() -> u64 {
-    Limits::default().max_alloc.unwrap_or(u64::MAX)
-}
-
-/// `ImageReader::decode`'s reservation of the decoded image's size (`total_bytes`) from the default limits: an
-/// image over 512 MiB fails here. The limits left are what the decoder is given.
-fn reserve(color: ColorType, w: u32, h: u32) -> ImageResult<Limits> {
-    let mut limits = Limits::default();
-    let total = (u64::from(w) * u64::from(h)).saturating_mul(u64::from(color.bytes_per_pixel()));
-    limits.reserve(total)?;
-    Ok(limits)
-}
-
-/// The colour type `image` decodes a TIFF of colour type `color` to, and how its samples are stored: `image`'s
-/// mapping, with its refusals of palette, YCbCr and the unknown types. Shared by [`Codecs::tiff_plan`] and the TIFF
-/// crop (`encode`).
-pub(crate) fn decoded_color(color: tiff::ColorType) -> ImageResult<(ColorType, Stored)> {
-    use tiff::ColorType as Tiff;
-
-    Ok(match color {
-        Tiff::Gray(1) => (ColorType::L8, Stored::Gray1),
-        Tiff::Gray(8) => (ColorType::L8, Stored::Same),
-        Tiff::Gray(16) => (ColorType::L16, Stored::Same),
-        Tiff::GrayA(8) => (ColorType::La8, Stored::Same),
-        Tiff::GrayA(16) => (ColorType::La16, Stored::Same),
-        Tiff::RGB(8) => (ColorType::Rgb8, Stored::Same),
-        Tiff::RGB(16) => (ColorType::Rgb16, Stored::Same),
-        Tiff::RGBA(8) => (ColorType::Rgba8, Stored::Same),
-        Tiff::RGBA(16) => (ColorType::Rgba16, Stored::Same),
-        Tiff::CMYK(8) => (ColorType::Rgb8, Stored::Cmyk8),
-        Tiff::CMYK(16) => (ColorType::Rgb16, Stored::Cmyk16),
-        Tiff::RGB(32) => (ColorType::Rgb32F, Stored::Same),
-        Tiff::RGBA(32) => (ColorType::Rgba32F, Stored::Same),
-        Tiff::Palette(n) | Tiff::Gray(n) => return Err(tiff_unknown_color(n)),
-        Tiff::GrayA(n) => return Err(tiff_unknown_color(n.saturating_mul(2))),
-        Tiff::RGB(n) | Tiff::YCbCr(n) => return Err(tiff_unknown_color(n.saturating_mul(3))),
-        Tiff::RGBA(n) | Tiff::CMYK(n) => return Err(tiff_unknown_color(n.saturating_mul(4))),
-        Tiff::Multiband { bit_depth, num_samples } => {
-            let samples = u8::try_from(num_samples.min(255)).unwrap_or(u8::MAX);
-            return Err(tiff_unknown_color(bit_depth.saturating_mul(samples)));
-        }
-        _ => return Err(tiff_unknown_color(0)),
-    })
-}
-
-/// The decoder's limits for a `w` × `h` TIFF decoded as `color` and stored as `stored`, the one construction used by
-/// [`Codecs::tiff_plan`] and the TIFF crop (`encode`), so both obey the same cap (`max_decode_bytes`). The decoded
-/// image is reserved from it as `image` reserves it (`reserve`). `TiffDecoder::set_limits` then splits the rest: what
-/// the stored samples take (CMYK's 4 or 8 bytes a pixel, more than the RGB image) for the decoding buffer, and the
-/// rest of the allowance for the decoder's intermediate buffers.
-pub(crate) fn tiff_limits(color: ColorType, stored: Stored, w: u32, h: u32) -> ImageResult<tiff::decoder::Limits> {
-    let reserved = reserve(color, w, h)?;
-    let max_alloc = reserved.max_alloc.unwrap_or(u64::MAX);
-    let stored_bpp = match stored {
-        Stored::Cmyk8 => 4,
-        Stored::Cmyk16 => 8,
-        _ => u64::from(color.bytes_per_pixel()),
-    };
-    let stored_bytes = (u64::from(w) * u64::from(h)).saturating_mul(stored_bpp);
-    let intermediate = max_alloc.saturating_sub(stored_bytes);
-    let mut limits = tiff::decoder::Limits::default();
-    limits.decoding_buffer_size = usize::try_from(max_alloc - intermediate).unwrap_or(usize::MAX);
-    limits.intermediate_buffer_size = usize::try_from(intermediate).unwrap_or(usize::MAX);
-    limits.ifd_value_size = limits.intermediate_buffer_size;
-    Ok(limits)
-}
-
-/// The buffer a decoder writes a `color` image into: `out`'s own when it is 8-bit RGB or RGBA, else `raw`. Zeroed,
-/// as `decoder_to_vec`'s new buffer is, so that what a decoder leaves unwritten is zero whatever the buffer held.
-fn target<'a>(color: ColorType, w: u32, h: u32, out: &'a mut Rgb, raw: &'a mut Vec<u8>) -> &'a mut [u8] {
-    let len = num::index(w) * num::index(h) * usize::from(color.bytes_per_pixel());
-    match color {
-        ColorType::Rgb8 | ColorType::Rgba8 => zeroed(&mut out.pixels, len),
-        _ => zeroed(raw, len),
-    }
-}
-
-/// `buf` resized to `len` bytes, all zero.
-fn zeroed(buf: &mut Vec<u8>, len: usize) -> &mut [u8] {
-    buf.clear();
-    buf.resize(len, 0);
-    buf
-}
-
-/// The decoded image into 8-bit RGB in `out`: as it is, flattened in place, or converted from `raw`.
-fn finish(color: ColorType, w: u32, h: u32, out: &mut Rgb, raw: &[u8]) -> ImageResult<()> {
-    let pixels = num::index(w) * num::index(h);
-    match color {
-        ColorType::Rgb8 => {}
-        ColorType::Rgba8 => {
-            // Each pixel is flattened in its own four bytes, then the alpha bytes are dropped, in place.
-            let px = &mut out.pixels;
-            check_len(px.len(), pixels * 4)?;
-            for p in px.as_chunks_mut::<4>().0 {
-                let [r, g, b, a] = *p;
-                *p = [over_white(r, a), over_white(g, a), over_white(b, a), a];
-            }
-            let mut at = 0usize;
-            px.retain(|_| {
-                at += 1;
-                !at.is_multiple_of(4)
-            });
-            px.truncate(pixels * 3);
-        }
-        _ => convert(raw, color, None, pixels, out)?,
-    }
-    (out.width, out.height) = (num::index(w), num::index(h));
-    Ok(())
-}
-
-/// `pixels` pixels of `color` (native-endian samples, interleaved, or in planes `plane_stride` bytes apart) into
-/// 8-bit RGB in `out.pixels`, as `image` converts them (`into_rgb8`, or `into_rgba8` then flattened onto white when
-/// the colour type has alpha).
-fn convert(src: &[u8], color: ColorType, plane_stride: Option<usize>, pixels: usize, out: &mut Rgb) -> ImageResult<()> {
-    let px = &mut out.pixels;
-    match color {
-        ColorType::L8 => to_rgb::<1, 1>(src, plane_stride, pixels, px, luma8),
-        ColorType::La8 => to_rgb::<2, 1>(src, plane_stride, pixels, px, luma8),
-        ColorType::Rgb8 => to_rgb::<3, 1>(src, plane_stride, pixels, px, |[v]| v),
-        ColorType::Rgba8 => to_rgb::<4, 1>(src, plane_stride, pixels, px, |[v]| v),
-        ColorType::L16 => to_rgb::<1, 2>(src, plane_stride, pixels, px, |s| luma16(u16::from_ne_bytes(s))),
-        ColorType::La16 => to_rgb::<2, 2>(src, plane_stride, pixels, px, |s| luma16(u16::from_ne_bytes(s))),
-        ColorType::Rgb16 => to_rgb::<3, 2>(src, plane_stride, pixels, px, |s| rgb16(u16::from_ne_bytes(s))),
-        ColorType::Rgba16 => to_rgb::<4, 2>(src, plane_stride, pixels, px, |s| rgb16(u16::from_ne_bytes(s))),
-        ColorType::Rgb32F => to_rgb::<3, 4>(src, plane_stride, pixels, px, |s| rgb_f32(f32::from_ne_bytes(s))),
-        ColorType::Rgba32F => to_rgb::<4, 4>(src, plane_stride, pixels, px, |s| rgb_f32(f32::from_ne_bytes(s))),
-        _ => Err(ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-            image::error::ImageFormatHint::Unknown,
-            UnsupportedErrorKind::Color(color.into()),
-        ))),
-    }
-}
-
-/// [`convert`] for `CH` channels of `N`-byte samples, each made 8-bit by `to_u8`. One or two channels are gray
-/// (and alpha), three or four RGB (and alpha); the last of two or four is alpha.
-fn to_rgb<const CH: usize, const N: usize>(
-    src: &[u8],
-    plane_stride: Option<usize>,
-    pixels: usize,
-    px: &mut Vec<u8>,
-    to_u8: impl Fn([u8; N]) -> u8,
-) -> ImageResult<()> {
-    match plane_stride {
-        None => check_len(src.len(), pixels * CH * N)?,
-        // The caller checked there are `CH` planes; checked again here, so each plane below is whole.
-        Some(stride) => {
-            check_len(stride, pixels * N)?;
-            check_len(src.len(), stride * CH)?;
-        }
-    }
-    let out = zeroed(px, pixels * 3).as_chunks_mut::<3>().0;
-    match plane_stride {
-        None => {
-            for (rgb, samples) in out.iter_mut().zip(src.as_chunks::<N>().0.as_chunks::<CH>().0) {
-                *rgb = flatten(samples.map(&to_u8));
-            }
-        }
-        Some(stride) => {
-            // The planes side by side, each a run of samples. (A zero stride has no pixels to read.)
-            let mut chunks = src.chunks_exact(stride.max(1));
-            let mut planes: [_; CH] =
-                std::array::from_fn(|_| chunks.next().unwrap_or_default().as_chunks::<N>().0.iter());
-            for rgb in out.iter_mut() {
-                *rgb = flatten(planes.each_mut().map(|plane| plane.next().map_or(0, |&s| to_u8(s))));
-            }
-        }
-    }
-    Ok(())
-}
-
-/// A pixel's `CH` 8-bit channels into RGB: one or two are gray (and alpha), three or four RGB (and alpha); alpha is
-/// flattened onto white.
-fn flatten<const CH: usize>(v: [u8; CH]) -> [u8; 3] {
-    match v.as_slice() {
-        [l] => [*l; 3],
-        [l, a] => [over_white(*l, *a); 3],
-        [r, g, b] => [*r, *g, *b],
-        [r, g, b, a] => [*r, *g, *b].map(|c| over_white(c, *a)),
-        // `convert` gives one to four channels.
-        _ => [0; 3],
-    }
-}
-
-/// The decoders give exactly the size the image takes: anything else is a decoder's bug. `image` would panic where
-/// the lengths differ at its `copy_from_slice` (tiff.rs:417–444), or leave pixels unwritten (tiff.rs:396, 402, 410).
-/// The sites stay errors: a panic would end a worker.
-fn check_len(len: usize, expected: usize) -> ImageResult<()> {
-    if len >= expected {
-        return Ok(());
-    }
-    Err(ImageError::Decoding(DecodingError::new(
-        image::error::ImageFormatHint::Unknown,
-        format!("decoded {len} bytes, the image takes {expected}"),
-    )))
-}
-
-/// A channel flattened onto white by its alpha, as the evaluation did (`eval/common.py::load_rgb`).
-fn over_white(v: u8, a: u8) -> u8 {
-    let (v, a) = (u32::from(v), u32::from(a));
-    u8::try_from((v * a + 255 * (255 - a) + 127) / 255).unwrap_or(u8::MAX)
-}
-
-/// An 8-bit gray sample into RGB: `image` converts gray to RGB through `f32` (`cast_pixels_by_fallback`:
-/// `expand_to_f32`, then `clamp_from_f32`).
-fn luma8([v]: [u8; 1]) -> u8 {
-    // 1 / u8::MAX, as a literal: `f32::from` is not `const`.
-    const R: f32 = 1.0 / 255.0;
-    clamp_u8(f32::from(v) * R)
-}
-
-/// [`luma8`] for 16-bit samples.
-fn luma16(v: u16) -> u8 {
-    // 1 / u16::MAX, as a literal: `f32::from` is not `const`.
-    const R: f32 = 1.0 / 65535.0;
-    clamp_u8(f32::from(v) * R)
-}
-
-/// `clamp_from_f32` for `u8`: [`f32_to_u8`] saturates.
-fn clamp_u8(v: f32) -> u8 {
-    f32_to_u8((v * f32::from(u8::MAX)).round())
-}
-
-/// A 16-bit RGB sample into 8 bits (`FromPrimitive<u16> for u8`): `round(v × 255 / 65535)`.
-fn rgb16(v: u16) -> u8 {
-    u8::try_from((u32::from(v) + 128) / 257).unwrap_or(u8::MAX)
-}
-
-/// A float RGB sample into 8 bits (`FromPrimitive<f32> for u8`, `normalize_float`): clamped to [0, 1], NaN to 1.
-#[expect(clippy::neg_cmp_op_on_partial_ord, reason = "NaN must take the first branch, which v < 1.0 alone would not")]
-fn rgb_f32(v: f32) -> u8 {
-    let clamped = if !(v < 1.0) { 1.0 } else { v.max(0.0) };
-    f32_to_u8((clamped * f32::from(u8::MAX)).round())
-}
-
-/// `image`'s `cmyk_to_rgb` (TIFF).
-fn cmyk_to_rgb(cmyk: &[u8; 4]) -> [u8; 3] {
-    let [c, m, y, k] = cmyk.map(f32::from);
-    let kf = 1. - k / 255.;
-    [f32_to_u8((255. - c) * kf), f32_to_u8((255. - m) * kf), f32_to_u8((255. - y) * kf)]
-}
-
-/// `image`'s `cmyk_to_rgb16` (TIFF).
-fn cmyk_to_rgb16(cmyk: &[u16; 4]) -> [u16; 3] {
-    let [c, m, y, k] = cmyk.map(f32::from);
-    let kf = 1. - k / 65535.;
-    [f32_to_u16((65535. - c) * kf), f32_to_u16((65535. - m) * kf), f32_to_u16((65535. - y) * kf)]
-}
-
-/// `v` rounded toward zero, as `as` gives it: saturating at 0 and 255, NaN to 0.
-fn f32_to_u8(v: f32) -> u8 {
-    num::f64_to_u8(f64::from(v.clamp(0.0, 255.0)))
-}
-
-/// `v` rounded toward zero, as `as` gives it: saturating at 0 and 65535, NaN to 0.
-fn f32_to_u16(v: f32) -> u16 {
-    num::f64_to_u16(f64::from(v.clamp(0.0, 65535.0)))
-}
-
-/// `image`'s colour type for a PNG's output (`PngDecoder::with_limits`).
-fn png_color((color, bits): (png::ColorType, png::BitDepth)) -> ImageResult<ColorType> {
-    use png::BitDepth as B;
-    use png::ColorType as C;
-    let unsupported = match (color, bits) {
-        (C::Grayscale, B::Eight) => return Ok(ColorType::L8),
-        (C::Grayscale, B::Sixteen) => return Ok(ColorType::L16),
-        (C::GrayscaleAlpha, B::Eight) => return Ok(ColorType::La8),
-        (C::GrayscaleAlpha, B::Sixteen) => return Ok(ColorType::La16),
-        (C::Rgb, B::Eight) => return Ok(ColorType::Rgb8),
-        (C::Rgb, B::Sixteen) => return Ok(ColorType::Rgb16),
-        (C::Rgba, B::Eight) => return Ok(ColorType::Rgba8),
-        (C::Rgba, B::Sixteen) => return Ok(ColorType::Rgba16),
-        (C::Grayscale, B::One) => ExtendedColorType::L1,
-        (C::GrayscaleAlpha, B::One) => ExtendedColorType::La1,
-        (C::Rgb, B::One) => ExtendedColorType::Rgb1,
-        (C::Rgba, B::One) => ExtendedColorType::Rgba1,
-        (C::Grayscale, B::Two) => ExtendedColorType::L2,
-        (C::GrayscaleAlpha, B::Two) => ExtendedColorType::La2,
-        (C::Rgb, B::Two) => ExtendedColorType::Rgb2,
-        (C::Rgba, B::Two) => ExtendedColorType::Rgba2,
-        (C::Grayscale, B::Four) => ExtendedColorType::L4,
-        (C::GrayscaleAlpha, B::Four) => ExtendedColorType::La4,
-        (C::Rgb, B::Four) => ExtendedColorType::Rgb4,
-        (C::Rgba, B::Four) => ExtendedColorType::Rgba4,
-        (C::Indexed, bits) => ExtendedColorType::Unknown(match bits {
-            B::One => 1,
-            B::Two => 2,
-            B::Four => 4,
-            B::Eight => 8,
-            B::Sixteen => 16,
-        }),
-    };
-    Err(ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-        ImageFormat::Png.into(),
-        UnsupportedErrorKind::Color(unsupported),
-    )))
-}
-
-/// `image`'s `check_sample_format` (TIFF).
-fn check_sample_format(sample_format: u16, color: tiff::ColorType) -> ImageResult<()> {
-    use tiff::ColorType as Tiff;
-    use tiff::tags::SampleFormat;
-    let unsupported = |feature: String| {
-        ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-            ImageFormat::Tiff.into(),
-            UnsupportedErrorKind::GenericFeature(feature),
-        ))
-    };
-    let bits = match color {
-        Tiff::CMYK(k) | Tiff::Gray(k) | Tiff::RGB(k) | Tiff::RGBA(k) | Tiff::GrayA(k) => k,
-        Tiff::Palette(k) | Tiff::YCbCr(k) => {
-            return Err(unsupported(format!("Unhandled TIFF color type {color:?} for {k} bits")));
-        }
-        _ => return Err(unsupported(format!("Unhandled TIFF color type {color:?}"))),
-    };
-    match SampleFormat::from_u16(sample_format) {
-        Some(SampleFormat::Uint) if bits <= 16 => Ok(()),
-        Some(SampleFormat::IEEEFP) if bits == 32 => Ok(()),
-        _ => Err(unsupported(format!("Unhandled TIFF sample format {sample_format:?} for {bits} bits"))),
-    }
-}
-
-/// `image`'s `err_unknown_color_type` (TIFF).
-fn tiff_unknown_color(value: u8) -> ImageError {
-    ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-        ImageFormat::Tiff.into(),
-        UnsupportedErrorKind::Color(ExtendedColorType::Unknown(value)),
-    ))
-}
-
-/// `ImageError::from_png`.
-fn png_error(err: png::DecodingError) -> ImageError {
-    match err {
-        png::DecodingError::IoError(err) => ImageError::IoError(err),
-        err @ png::DecodingError::Format(_) => ImageError::Decoding(DecodingError::new(ImageFormat::Png.into(), err)),
-        err @ png::DecodingError::Parameter(_) => {
-            ImageError::Parameter(ParameterError::from_kind(ParameterErrorKind::Generic(err.to_string())))
-        }
-        png::DecodingError::LimitsExceeded => {
-            ImageError::Limits(LimitError::from_kind(LimitErrorKind::InsufficientMemory))
-        }
-    }
-}
-
-/// `ImageError::from_decoding` (GIF).
-fn gif_error(err: gif::DecodingError) -> ImageError {
-    match err {
-        gif::DecodingError::Io(err) => ImageError::IoError(err),
-        other => ImageError::Decoding(DecodingError::new(ImageFormat::Gif.into(), other)),
-    }
-}
-
-/// `ImageError::from_webp_decode`.
-fn webp_error(err: image_webp::DecodingError) -> ImageError {
-    match err {
-        image_webp::DecodingError::IoError(err) => ImageError::IoError(err),
-        _ => ImageError::Decoding(DecodingError::new(ImageFormat::WebP.into(), err)),
-    }
-}
-
-/// The TIFF decoder over a file in memory.
-type TiffDecoder<'a> = tiff::decoder::Decoder<Cursor<&'a [u8]>>;
-
-/// `ImageError::from_jpeg` (zune-jpeg).
-fn jpeg_error(err: zune_jpeg::errors::DecodeErrors) -> ImageError {
-    use zune_jpeg::errors::DecodeErrors;
-    match err {
-        DecodeErrors::Unsupported(desc) => ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-            ImageFormat::Jpeg.into(),
-            UnsupportedErrorKind::GenericFeature(format!("{desc:?}")),
-        )),
-        DecodeErrors::LargeDimensions(_) => ImageError::Limits(LimitError::from_kind(LimitErrorKind::DimensionError)),
-        err => ImageError::Decoding(DecodingError::new(ImageFormat::Jpeg.into(), err)),
-    }
-}
-
-/// `ImageError::from_tiff_decode`.
-fn tiff_error(err: tiff::TiffError) -> ImageError {
-    use tiff::TiffError;
-    match err {
-        TiffError::IoError(err) => ImageError::IoError(err),
-        err @ (TiffError::FormatError(_) | TiffError::IntSizeError | TiffError::UsageError(_)) => {
-            ImageError::Decoding(DecodingError::new(ImageFormat::Tiff.into(), err))
-        }
-        TiffError::UnsupportedError(desc) => ImageError::Unsupported(UnsupportedError::from_format_and_kind(
-            ImageFormat::Tiff.into(),
-            UnsupportedErrorKind::GenericFeature(desc.to_string()),
-        )),
-        TiffError::LimitsExceeded => ImageError::Limits(LimitError::from_kind(LimitErrorKind::InsufficientMemory)),
-    }
 }
 
 #[cfg(test)]
 mod tests {
     use crate::fixtures::tiff_rgb8;
     use image::codecs::gif::GifEncoder;
-    use image::{DynamicImage, ImageBuffer, Rgba, RgbaImage};
+    use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 
     use super::*;
+    use pg_model::num;
+    use crate::codecs::test_support::{flattened, ne_bytes, noise};
 
     /// How the decode was done before this module: `image::load_from_memory_with_format`, then `into_rgba8` and
     /// the flattening onto white, or `into_rgb8`.
     fn reference(bytes: &[u8], format: ImageFormat) -> Result<(usize, usize, Vec<u8>), String> {
         let img = image::load_from_memory_with_format(bytes, format).map_err(|e| e.to_string())?;
         Ok(flattened(img))
-    }
-
-    fn flattened(img: DynamicImage) -> (usize, usize, Vec<u8>) {
-        let (w, h) = (num::index(img.width()), num::index(img.height()));
-        let px = if img.color().has_alpha() {
-            img.into_rgba8().pixels().flat_map(|p| [0, 1, 2].map(|c| over_white(p[c], p[3]))).collect()
-        } else {
-            img.into_rgb8().into_raw()
-        };
-        (w, h, px)
     }
 
     fn decoded(codecs: &mut Codecs, bytes: &[u8], format: Format) -> Result<(usize, usize, Vec<u8>), String> {
@@ -866,106 +103,12 @@ mod tests {
         Ok((out.width, out.height, out.pixels))
     }
 
-    fn ne_bytes<const N: usize, T: Copy>(values: &[T], to: impl Fn(T) -> [u8; N]) -> Vec<u8> {
-        values.iter().flat_map(|&v| to(v)).collect()
-    }
-
-    /// Each colour type's samples, every value of every channel (16-bit included), against `image`'s conversion.
-    #[test]
-    fn conversions_are_images() {
-        let check = |raw: Vec<u8>, color: ColorType, img: DynamicImage| {
-            let (w, h, want) = flattened(img);
-            let mut out = Rgb::default();
-            convert(&raw, color, None, w * h, &mut out).unwrap();
-            assert!(out.pixels == want, "{color:?}");
-        };
-        // Every 8-bit pair (value, alpha); every 16-bit value, with alphas across their range.
-        let pairs8: Vec<[u8; 2]> = (0..=255).flat_map(|a| (0..=255).map(move |v| [v, a])).collect();
-        let v16: Vec<u16> = (0..=u16::MAX).collect();
-        let pairs16: Vec<[u16; 2]> = v16.iter().map(|&v| [v, v.wrapping_mul(40503)]).collect();
-        let n8 = u32::try_from(pairs8.len()).unwrap();
-        let n16 = u32::try_from(v16.len()).unwrap();
-
-        let l8: Vec<u8> = pairs8.iter().map(|p| p[0]).collect();
-        check(l8.clone(), ColorType::L8, DynamicImage::ImageLuma8(ImageBuffer::from_raw(n8, 1, l8).unwrap()));
-        let la8: Vec<u8> = pairs8.iter().flatten().copied().collect();
-        check(la8.clone(), ColorType::La8, DynamicImage::ImageLumaA8(ImageBuffer::from_raw(n8, 1, la8).unwrap()));
-        let rgba8: Vec<u8> = pairs8.iter().flat_map(|&[v, a]| [v, v ^ 0x5A, 255 - v, a]).collect();
-        check(rgba8.clone(), ColorType::Rgba8, DynamicImage::ImageRgba8(ImageBuffer::from_raw(n8, 1, rgba8).unwrap()));
-        let rgb8: Vec<u8> = pairs8.iter().flat_map(|&[v, a]| [v, a, v ^ a]).collect();
-        check(rgb8.clone(), ColorType::Rgb8, DynamicImage::ImageRgb8(ImageBuffer::from_raw(n8, 1, rgb8).unwrap()));
-
-        let l16 = DynamicImage::ImageLuma16(ImageBuffer::from_raw(n16, 1, v16.clone()).unwrap());
-        check(ne_bytes(&v16, u16::to_ne_bytes), ColorType::L16, l16);
-        let la16: Vec<u16> = pairs16.iter().flatten().copied().collect();
-        let la16_bytes = ne_bytes(&la16, u16::to_ne_bytes);
-        check(la16_bytes, ColorType::La16, DynamicImage::ImageLumaA16(ImageBuffer::from_raw(n16, 1, la16).unwrap()));
-        let rgb16: Vec<u16> = v16.iter().flat_map(|&v| [v, !v, v.rotate_left(5)]).collect();
-        let rgb16_bytes = ne_bytes(&rgb16, u16::to_ne_bytes);
-        check(rgb16_bytes, ColorType::Rgb16, DynamicImage::ImageRgb16(ImageBuffer::from_raw(n16, 1, rgb16).unwrap()));
-        let rgba16: Vec<u16> = pairs16.iter().flat_map(|&[v, a]| [v, !v, v.rotate_left(5), a]).collect();
-        let rgba16_bytes = ne_bytes(&rgba16, u16::to_ne_bytes);
-        let rgba16 = DynamicImage::ImageRgba16(ImageBuffer::from_raw(n16, 1, rgba16).unwrap());
-        check(rgba16_bytes, ColorType::Rgba16, rgba16);
-
-        // Floats: the edges (NaN, infinities, signed zeros, out of range, each rounding boundary and its
-        // neighbours), then a million spread over [-0.5, 1.5].
-        let mut floats = vec![f32::NAN, -f32::NAN, f32::INFINITY, f32::NEG_INFINITY, 0.0, -0.0, -1.0, 2.0, 1.0];
-        floats.extend([f32::MIN_POSITIVE, -f32::MIN_POSITIVE, 1.0f32.next_up(), 1.0f32.next_down()]);
-        for k in 0..=u8::MAX {
-            let edge = (f32::from(k) + 0.5) / 255.0;
-            floats.extend([edge.next_down(), edge, edge.next_up()]);
-        }
-        let mut state = 0x2545_F491_4F6C_DD1Du64;
-        floats.extend((0..1_000_000).map(|_| {
-            state ^= state << 13;
-            state ^= state >> 7;
-            state ^= state << 17;
-            // A 24-bit value, as its high 16 and low 8 bits: each is exact in an f32, and so is their sum.
-            let sample = state >> 40;
-            let hi = f32::from(u16::try_from(sample >> 8).unwrap());
-            let lo = f32::from(u8::try_from(sample & 0xFF).unwrap());
-            let unit = (hi * 256.0 + lo) / 16_777_216.0;
-            unit * 2.0 - 0.5
-        }));
-        // Whole pixels of both 3 and 4 channels.
-        floats.truncate(floats.len() / 12 * 12);
-        let n = u32::try_from(floats.len() / 12).unwrap();
-        let float_bytes = ne_bytes(&floats, f32::to_ne_bytes);
-        let rgb = DynamicImage::ImageRgb32F(ImageBuffer::from_raw(n * 4, 1, floats.clone()).unwrap());
-        check(float_bytes.clone(), ColorType::Rgb32F, rgb);
-        let rgba = DynamicImage::ImageRgba32F(ImageBuffer::from_raw(n * 3, 1, floats).unwrap());
-        check(float_bytes, ColorType::Rgba32F, rgba);
-    }
-
-    /// Planes give what the same samples interleaved give.
-    #[test]
-    fn planes_convert_as_interleaved() {
-        let pixels = 300;
-        let chunky = noise(pixels * 4 * 2, 5);
-        let mut planar = vec![0; chunky.len()];
-        for i in 0..pixels {
-            for c in 0..4 {
-                planar[(c * pixels + i) * 2..][..2].copy_from_slice(&chunky[(i * 4 + c) * 2..][..2]);
-            }
-        }
-        let (mut a, mut b) = (Rgb::default(), Rgb::default());
-        convert(&chunky, ColorType::Rgba16, None, pixels, &mut a).unwrap();
-        convert(&planar, ColorType::Rgba16, Some(pixels * 2), pixels, &mut b).unwrap();
-        assert!(a.pixels == b.pixels);
-    }
-
     /// A test pattern: gradients and noise, with an alpha ramp.
     fn pattern(w: u32, h: u32, seed: u32) -> RgbaImage {
         RgbaImage::from_fn(w, h, |x, y| {
             let n = (x.wrapping_mul(2654435761) ^ y.wrapping_mul(40503) ^ seed).wrapping_mul(2246822519) >> 24;
             Rgba([x * 255 / w, y * 255 / h, n, (x + y) * 255 / (w + h)].map(|v| u8::try_from(v).unwrap()))
         })
-    }
-
-    fn noise(len: usize, seed: usize) -> Vec<u8> {
-        // The low byte of each hash.
-        (0..len).map(|i| ((i ^ seed).wrapping_mul(2654435761) >> 13).to_le_bytes()[0]).collect()
     }
 
     /// How a hand-made TIFF stores its samples.
@@ -1053,31 +196,31 @@ mod tests {
         let (w, h) = (37u32, 23u32);
         let mut files = Vec::new();
         for (ct, depths) in [
-            (png::ColorType::Grayscale, &[1u8, 2, 4, 8, 16][..]),
-            (png::ColorType::GrayscaleAlpha, &[8, 16]),
-            (png::ColorType::Rgb, &[8, 16]),
-            (png::ColorType::Rgba, &[8, 16]),
-            (png::ColorType::Indexed, &[1, 2, 4, 8]),
+            (::png::ColorType::Grayscale, &[1u8, 2, 4, 8, 16][..]),
+            (::png::ColorType::GrayscaleAlpha, &[8, 16]),
+            (::png::ColorType::Rgb, &[8, 16]),
+            (::png::ColorType::Rgba, &[8, 16]),
+            (::png::ColorType::Indexed, &[1, 2, 4, 8]),
         ] {
             for &depth in depths {
                 for trns in [false, true] {
-                    if trns && matches!(ct, png::ColorType::GrayscaleAlpha | png::ColorType::Rgba) {
+                    if trns && matches!(ct, ::png::ColorType::GrayscaleAlpha | ::png::ColorType::Rgba) {
                         continue;
                     }
                     let samples = match ct {
-                        png::ColorType::Grayscale | png::ColorType::Indexed => 1,
-                        png::ColorType::GrayscaleAlpha => 2,
-                        png::ColorType::Rgb => 3,
+                        ::png::ColorType::Grayscale | ::png::ColorType::Indexed => 1,
+                        ::png::ColorType::GrayscaleAlpha => 2,
+                        ::png::ColorType::Rgb => 3,
                         _ => 4,
                     };
                     let row_bits = num::index(w) * samples * usize::from(depth);
                     let data = noise(row_bits.div_ceil(8) * num::index(h), usize::from(depth));
                     let mut out = Vec::new();
                     {
-                        let mut e = png::Encoder::new(&mut out, w, h);
+                        let mut e = ::png::Encoder::new(&mut out, w, h);
                         e.set_color(ct);
-                        e.set_depth(png::BitDepth::from_u8(depth).unwrap());
-                        if ct == png::ColorType::Indexed {
+                        e.set_depth(::png::BitDepth::from_u8(depth).unwrap());
+                        if ct == ::png::ColorType::Indexed {
                             let n = 1usize << depth;
                             // The low byte of each product.
                             e.set_palette((0..n * 3).map(|i| (i * 37).to_le_bytes()[0]).collect::<Vec<_>>());
@@ -1086,7 +229,7 @@ mod tests {
                             }
                         } else if trns {
                             let v = if depth == 16 { vec![0, 40] } else { vec![0, 40 & (u8::MAX >> (8 - depth))] };
-                            e.set_trns(if ct == png::ColorType::Rgb { v.repeat(3) } else { v });
+                            e.set_trns(if ct == ::png::ColorType::Rgb { v.repeat(3) } else { v });
                         }
                         e.write_header().unwrap().write_image_data(&data).unwrap();
                     }
@@ -1096,8 +239,8 @@ mod tests {
         }
         {
             let mut out = Vec::new();
-            let mut e = png::Encoder::new(&mut out, w, h);
-            e.set_color(png::ColorType::Rgba);
+            let mut e = ::png::Encoder::new(&mut out, w, h);
+            e.set_color(::png::ColorType::Rgba);
             e.set_animated(2, 0).unwrap();
             let mut wr = e.write_header().unwrap();
             for f in 0..2 {
@@ -1118,10 +261,10 @@ mod tests {
             let mut out = Vec::new();
             {
                 let u16_of = |v: u32| u16::try_from(v).unwrap();
-                let mut e = gif::Encoder::new(&mut out, u16_of(w), u16_of(h), &[]).unwrap();
+                let mut e = ::gif::Encoder::new(&mut out, u16_of(w), u16_of(h), &[]).unwrap();
                 for (i, (left, top, fw, fh)) in frames.into_iter().enumerate() {
                     let mut rgba = pattern(fw, fh, u32::try_from(i).unwrap() + 1).into_raw();
-                    let mut frame = gif::Frame::from_rgba_speed(u16_of(fw), u16_of(fh), &mut rgba, 10);
+                    let mut frame = ::gif::Frame::from_rgba_speed(u16_of(fw), u16_of(fh), &mut rgba, 10);
                     (frame.left, frame.top) = (u16_of(left), u16_of(top));
                     e.write_frame(&frame).unwrap();
                 }

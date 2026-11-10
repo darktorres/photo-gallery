@@ -6,7 +6,7 @@ use image::ImageFormat;
 use pg_model::{format::Format, num};
 use std::io::Cursor;
 
-use crate::codecs::{decoded_color, tiff_limits};
+use crate::codecs::tiff::{decoded_color, tiff_limits};
 
 /// `bytes` (a BMP or a TIFF) decoded, cropped to the `w` × `h` rectangle at (`x`, `y`) and encoded again in the same
 /// format. The metadata is not carried over.

@@ -23,9 +23,11 @@ _ENV_LINE = re.compile(r"^\s*([^#=\s][^=]*?)\s*=\s*(.*?)\s*$")
 
 
 def load_env_file() -> None:
-    """Sets the keys of the repository's `.env` that the environment does not set (a variable already set wins)."""
+    """Sets the keys of the repository's `.env` that the environment does not set (a variable already set wins). The
+    container (docker/Dockerfile sets PG_CONTAINER) loads none: its `.env` is this machine's Windows paths, and the
+    container has its own environment."""
     env_file = REPO / ".env"
-    if not env_file.is_file():
+    if os.environ.get("PG_CONTAINER") or not env_file.is_file():
         return
     for line in env_file.read_text(encoding="utf-8").splitlines():
         match = _ENV_LINE.match(line)

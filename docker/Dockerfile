@@ -80,6 +80,9 @@ RUN cargo install --locked just --version ${JUST_VERSION} \
  && cargo install --locked cargo-machete --version ${CARGO_MACHETE_VERSION} \
  && cargo install --locked cargo-modules --version ${CARGO_MODULES_VERSION}
 
+# The `.env` in /work describes the Windows machine, so the scripts do not load it here (tools/pgtools.py).
+ENV PG_CONTAINER=1
+
 WORKDIR /work
 CMD ["python3", "docker/check.py"]
 

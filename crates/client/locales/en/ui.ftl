@@ -59,6 +59,10 @@ ui-write-files-tooltip = Ratings are always kept in the catalog. With this on, t
 ui-add-folder = Add folder…
 ui-rescan-all = Rescan all
 ui-close = Close
+# The log view (dev mode): its button in the status bar, its title, and what it shows with no record
+ui-log = Log
+ui-log-title = Log
+ui-log-empty = Nothing logged yet
 
 # The window and its dialogs
 ui-app-name = Photo Gallery

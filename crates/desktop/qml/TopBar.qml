@@ -39,6 +39,8 @@ ToolBar {
     // The sort box's index, and its text (the save-view dialog says it).
     property alias sortIndex: sortBox.currentIndex
     readonly property string sortText: sortBox.currentText
+    // The saved views menu is open.
+    readonly property bool viewsMenuOpen: viewsMenu.menuOpen
 
     signal filtersToggled()
     signal recursiveToggled(bool on)
@@ -64,6 +66,7 @@ ToolBar {
         anchors.rightMargin: 8
         spacing: 12
         Label {
+            textFormat: Text.PlainText
             // The empty folder's name comes from Rust (folderKind), so it matches the tree's row.
             text: bar.folder.length ? bar.folder
                 : bar.folderKind === 1 ? words.text("ui-drive-roots") : words.text("ui-all-folders")
@@ -72,6 +75,7 @@ ToolBar {
             Layout.maximumWidth: 600
         }
         Label {
+            textFormat: Text.PlainText
             color: "#999999"
             text: bar.loading && bar.fileCount === 0 ? words.text("ui-loading")
                 : bar.filterActive > 0

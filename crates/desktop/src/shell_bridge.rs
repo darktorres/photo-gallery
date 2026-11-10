@@ -36,6 +36,8 @@ pub mod qobject {
         #[qproperty(i32, row_height, cxx_name = "rowHeight", READ, NOTIFY, FINAL)]
         /// The thumbnail height: the row height times the screen's scale, settled after a pause.
         #[qproperty(i32, thumb_height, cxx_name = "thumbHeight", READ, NOTIFY, FINAL)]
+        /// Dev mode is on: the log view's button shows (`seedDevMode`, then Ctrl+Shift+D).
+        #[qproperty(bool, dev_mode, cxx_name = "devMode", READ, NOTIFY, FINAL)]
         type Shell = super::ShellRust;
     }
 
@@ -126,6 +128,37 @@ pub mod qobject {
         #[qinvokable]
         #[cxx_name = "setViewerOpen"]
         fn set_viewer_open(self: Pin<&mut Shell>, on: bool);
+
+        /// Dev mode as the window starts: the preferences', or on for this run with `--dev=1` or `PG_DEV=1` (not saved).
+        #[qinvokable]
+        #[cxx_name = "seedDevMode"]
+        fn seed_dev_mode(self: Pin<&mut Shell>);
+
+        /// A window shortcut fired (a `GlobalAction` code, GlobalShortcuts.qml): the controller decides what it does
+        /// (`panelOpenRequested`, `panelCloseRequested`, `devMode`).
+        #[qinvokable]
+        #[cxx_name = "globalAction"]
+        fn global_action(self: Pin<&mut Shell>, code: i32);
+
+        /// A modal panel opened (a `PanelKind.Kind` code): the controller mirrors which are open, for the shortcuts.
+        #[qinvokable]
+        #[cxx_name = "panelOpened"]
+        fn panel_opened(self: Pin<&mut Shell>, kind: i32);
+
+        /// A modal panel closed (a `PanelKind.Kind` code).
+        #[qinvokable]
+        #[cxx_name = "panelClosed"]
+        fn panel_closed(self: Pin<&mut Shell>, kind: i32);
+
+        /// Open this modal panel (a `PanelKind.Kind` code): a shortcut asked for it.
+        #[qsignal]
+        #[cxx_name = "panelOpenRequested"]
+        fn panel_open_requested(self: Pin<&mut Shell>, kind: i32);
+
+        /// Close this modal panel (a `PanelKind.Kind` code).
+        #[qsignal]
+        #[cxx_name = "panelCloseRequested"]
+        fn panel_close_requested(self: Pin<&mut Shell>, kind: i32);
 
         /// Whether a pause is still running (the screenshot waits for none).
         #[qinvokable]

@@ -18,7 +18,7 @@ pub enum Note {
     /// The preferences changed in memory but the file couldn't be written; the change holds until the app closes.
     PrefsNotSaved { path: PathBuf, error: String },
     /// The catalog didn't match this build's schema, so it was moved aside (its `kept` file) and a new one made from this
-    /// build's schema, which took the old rows ([`pg_catalog::Carried`]) or none, with the reason said.
+    /// build's schema, which took the old rows ([`pg_model::notice::Carried`]) or none, with the reason said.
     CatalogRebuilt(pg_catalog::Rebuilt),
 }
 

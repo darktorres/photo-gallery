@@ -25,6 +25,7 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
+use pg_model::notice::ScanNote;
 use pg_model::progress::Progress;
 use pg_model::refusal::RefusedReason;
 use pg_model::rules::Path as RulePath;
@@ -53,40 +54,6 @@ struct Inner {
     messages: Mutex<Messages>,
     /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.
     changes: Arc<Bus<Change>>,
-}
-
-/// What a scan counted (`Notice::ScanNote`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ScanNote {
-    /// Files skipped because another path (a hard link) or another folder of the library holds them.
-    Duplicates,
-    /// Reparse points (links, cloud placeholders) indexed without being followed.
-    SkippedReparse,
-    /// Files whose old row could not be told apart from another (nothing was bound).
-    Ambiguous,
-    /// Rows of files that went missing, kept with their ratings, whose new file wasn't found.
-    UnpairedWithData,
-    /// Rows whose file was replaced by another with the same name: their content was reset.
-    Replaced,
-    /// Rows whose file was found again under a new identity (a renumbered drive, or a move while closed).
-    Rebound,
-    /// Volumes with no file system UUID: their files are identified by a device number, which a restart can renumber.
-    VolumeFallback,
-}
-
-impl ScanNote {
-    /// The kind the app words the note by.
-    pub fn kind(self) -> &'static str {
-        match self {
-            ScanNote::Duplicates => "duplicates",
-            ScanNote::SkippedReparse => "reparse",
-            ScanNote::Ambiguous => "ambiguous",
-            ScanNote::UnpairedWithData => "unpaired",
-            ScanNote::Replaced => "replaced",
-            ScanNote::Rebound => "rebound",
-            ScanNote::VolumeFallback => "volume-id",
-        }
-    }
 }
 
 /// Something the job tells the user: a problem it ran into, or how a job asked for went. The job says what happened

@@ -51,6 +51,7 @@ ModalOverlay {
                     onClicked: overlay.goUp()
                 }
                 Label {
+                    textFormat: Text.PlainText
                     objectName: "here"
                     text: overlay.here
                     elide: Text.ElideMiddle

@@ -48,6 +48,7 @@ Item {
     }
 
     Label {
+        textFormat: Text.PlainText
         anchors.left: parent.left
         anchors.top: parent.top
         anchors.margins: 10
@@ -57,6 +58,7 @@ Item {
         text: (hud.index + 1) + " / " + hud.count
     }
     Label {
+        textFormat: Text.PlainText
         anchors.right: closeButton.left
         anchors.verticalCenter: closeButton.verticalCenter
         anchors.rightMargin: 10
@@ -75,6 +77,7 @@ Item {
     }
 
     Label {
+        textFormat: Text.PlainText
         anchors.left: parent.left
         anchors.right: ratingBar.left
         anchors.verticalCenter: ratingBar.verticalCenter

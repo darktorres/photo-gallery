@@ -34,7 +34,7 @@ impl qobject::VideoSource {
         match path {
             Ok(path) => video_player::play_path(player, &path),
             Err(err) => {
-                crate::log::note(&format!("video {file_id}: {err:#}"));
+                pg_log::warn("video", &format!("file {file_id}: {err:#}"));
                 player.clear();
             }
         }

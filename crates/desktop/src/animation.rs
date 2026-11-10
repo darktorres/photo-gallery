@@ -60,7 +60,7 @@ impl qobject::AnimationPlayer {
         let path = match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
             Ok(path) => path,
             Err(err) => {
-                crate::log::note(&format!("animation {file_id}: {err:#}"));
+                pg_log::warn("animation", &format!("file {file_id}: {err:#}"));
                 return;
             }
         };

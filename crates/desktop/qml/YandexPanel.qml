@@ -19,6 +19,9 @@ Rectangle {
 
     signal closed()
 
+    // A result is shown at full size (a modal panel over this one: Main reports it, PanelKind.YandexPreview).
+    readonly property bool previewOpen: preview.visible
+
     // The gallery's gap: the results are spaced as the grid's cells are.
     required property real gap
 
@@ -69,7 +72,7 @@ Rectangle {
 
         visible: count > 0
         spacing: 12
-        Label { text: header.title + " (" + header.count + ")"; font.bold: true }
+        Label { textFormat: Text.PlainText; text: header.title + " (" + header.count + ")"; font.bold: true }
         Button {
             text: header.picked === header.count ? words.text("ui-select-none") : words.text("ui-select-all")
             flat: true

@@ -2,6 +2,7 @@
 //! [`render`] words it.
 
 use fluent_bundle::FluentArgs;
+use pg_model::notice::StartOverReason;
 use pg_model::write::WriteKind;
 
 use super::words::shown;
@@ -240,7 +241,7 @@ pub enum Message {
     /// The thumbnail cache was started over, for `reason`; `path` is where the old file is kept (a damaged one) or the
     /// cache file made anew (one this build can't use). Each reason has its own entry.
     ThumbCacheStartedOver {
-        reason: CacheStartOver,
+        reason: StartOverReason,
         path: String,
     },
     /// The library's status line while the background work is paused and no pass is running.
@@ -363,20 +364,6 @@ pub enum Message {
     },
 }
 
-/// Why the thumbnail cache was started over: the cache's reasons (`pg_thumbcache::StartOverReason`), which the front
-/// end maps in, as this crate depends on no cache type.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CacheStartOver {
-    /// SQLite found the file damaged: moved aside to `path`.
-    Damaged,
-    /// The file was not a database at all: moved aside to `path`.
-    NotADatabase,
-    /// The cache was made for another catalog: deleted and made anew.
-    OtherCatalog,
-    /// The cache was made by another version of the app: deleted and made anew.
-    OtherBuild,
-}
-
 impl Message {
     /// The entry this message is worded by in `locales/en/text.ftl`.
     pub fn id(&self) -> &'static str {
@@ -469,10 +456,10 @@ impl Message {
             Message::YandexNoFolder => "yandex-no-folder",
             Message::FolderUnreadable { .. } => "folder-unreadable",
             Message::ThumbCacheStartedOver { reason, .. } => match reason {
-                CacheStartOver::Damaged => "thumb-cache-damaged",
-                CacheStartOver::NotADatabase => "thumb-cache-not-a-database",
-                CacheStartOver::OtherCatalog => "thumb-cache-other-catalog",
-                CacheStartOver::OtherBuild => "thumb-cache-other-build",
+                StartOverReason::Damaged => "thumb-cache-damaged",
+                StartOverReason::NotADatabase => "thumb-cache-not-a-database",
+                StartOverReason::OtherCatalog => "thumb-cache-other-catalog",
+                StartOverReason::OtherBuild => "thumb-cache-other-build",
             },
             Message::WorkPaused => "work-paused",
             Message::PausedPass { .. } => "paused-pass",
@@ -829,10 +816,10 @@ impl Message {
             Message::YandexNothingPicked,
             Message::YandexNoFolder,
             Message::FolderUnreadable { error: s() },
-            Message::ThumbCacheStartedOver { reason: CacheStartOver::Damaged, path: s() },
-            Message::ThumbCacheStartedOver { reason: CacheStartOver::NotADatabase, path: s() },
-            Message::ThumbCacheStartedOver { reason: CacheStartOver::OtherCatalog, path: s() },
-            Message::ThumbCacheStartedOver { reason: CacheStartOver::OtherBuild, path: s() },
+            Message::ThumbCacheStartedOver { reason: StartOverReason::Damaged, path: s() },
+            Message::ThumbCacheStartedOver { reason: StartOverReason::NotADatabase, path: s() },
+            Message::ThumbCacheStartedOver { reason: StartOverReason::OtherCatalog, path: s() },
+            Message::ThumbCacheStartedOver { reason: StartOverReason::OtherBuild, path: s() },
             Message::WorkPaused,
             Message::PausedPass { status: s() },
             Message::NoticeMore { notice: s(), count: 1 },

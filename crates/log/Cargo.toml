@@ -1,0 +1,19 @@
+[package]
+name = "pg-log"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# The app's log (docs/NOTIFICATIONS.md): `gallery.log`, JSON lines, capped and rotated, with the newest records in
+# memory for the window's log view. Qt-free; the levels are the notices' (pg-model), the local time is the platform's.
+[dependencies]
+pg-model = { path = "../model" }
+pg-platform = { path = "../platform" }
+serde.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }

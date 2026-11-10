@@ -55,6 +55,9 @@ ApplicationWindow {
     // The library panel is shown; made the first time (libraryLoader).
     property bool libraryOpen: false
     onLibraryOpenChanged: if (libraryOpen) libraryLoader.active = true
+    // The log view is shown (dev mode); made the first time (logLoader).
+    property bool logOpen: false
+    onLogOpenChanged: if (logOpen) logLoader.active = true
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
     property bool ready: false
     // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
@@ -96,6 +99,8 @@ ApplicationWindow {
         onSaveRowHeight: (height) => appSettings.rowHeight = height
         onSelectRequested: (i) => win.scrollTo(i)
         onViewerRequested: (i) => viewerItem.show(i)
+        onPanelOpenRequested: (kind) => win.openPanel(kind)
+        onPanelCloseRequested: (kind) => win.closePanel(kind)
     }
     // The core, for the screenshot hook's settle check: its pending pauses are asked (cpp/screenshot.cpp).
     readonly property var shellCore: shell
@@ -152,6 +157,7 @@ ApplicationWindow {
         onChooseRow: (row) => addPicker.choose(row)
         onChooseHere: addPicker.chooseHere()
         onCancelled: addPicker.cancel()
+        onVisibleChanged: win.modalShown(PanelKind.FolderPicker, visible)
     }
     FolderPicker {
         id: cropPicker
@@ -169,6 +175,7 @@ ApplicationWindow {
         onChooseRow: (row) => cropPicker.choose(row)
         onChooseHere: cropPicker.chooseHere()
         onCancelled: cropPicker.cancel()
+        onVisibleChanged: win.modalShown(PanelKind.FolderPicker, visible)
     }
 
     // Where the filter bar's "Save cropped copies" puts them: the folder is asked for, then they are made.
@@ -313,6 +320,42 @@ ApplicationWindow {
     KeyMap {
         id: keymap
     }
+    // The window's shortcuts (the log view, dev mode): matched before any item's keys, decided by the controller.
+    GlobalShortcuts {
+        onActivated: (code) => shell.globalAction(code)
+    }
+    // The log's records, for the log view; read when it first opens (LogModel.start).
+    LogModel {
+        id: logModel
+    }
+
+    // A modal panel opened or closed: the shell mirrors which are open, for the shortcuts' rule.
+    function modalShown(kind: int, shown: bool) {
+        if (shown)
+            shell.panelOpened(kind)
+        else
+            shell.panelClosed(kind)
+    }
+
+    // A shortcut asked for a panel (Shell.panelOpenRequested, panelCloseRequested).
+    function openPanel(kind: int) {
+        if (kind === PanelKind.Log) {
+            logModel.start()
+            win.logOpen = true
+        }
+    }
+    function closePanel(kind: int) {
+        if (kind === PanelKind.Log)
+            win.logOpen = false
+    }
+
+    // Back to where the keys were before a panel: the viewer when it is open, else the grid.
+    function refocus() {
+        if (viewerItem.visible)
+            viewerItem.forceActiveFocus()
+        else
+            grid.takeFocus()
+    }
 
     // The status bar's selection: the item's info and rating, or the key hints with none selected.
     readonly property string selectionInfo: win.current >= 0 ? galleryModel.selectionInfo : keymap.gridHint()
@@ -340,6 +383,7 @@ ApplicationWindow {
         onViewerSetZoomRequested: (z, px, py) => viewerItem.setZoom(z, px, py)
         onViewerTurnRequested: (turns) => viewerItem.turn(turns)
         onViewerRateRequested: (rating) => viewerItem.rate(rating)
+        onLogPanelRequested: shell.globalAction(GlobalShortcuts.Log)
     }
 
     Item {
@@ -381,6 +425,7 @@ ApplicationWindow {
                 win.libraryOpen = true
             }
             onSizeChosen: (h) => shell.sizeChosen(h)
+            onViewsMenuOpenChanged: win.modalShown(PanelKind.ViewsMenu, viewsMenuOpen)
         }
 
         StatusBar {
@@ -394,6 +439,8 @@ ApplicationWindow {
             busy: library.busy
             paused: library.paused
             progress: library.progress
+            devMode: shell.devMode
+            onLogRequested: shell.globalAction(GlobalShortcuts.Log)
             onMessageDismissed: {
                 library.message = ""
             }
@@ -509,6 +556,7 @@ ApplicationWindow {
                         win.libraryOpen = false
                     }
                     onHidden: grid.takeFocus()
+                    onVisibleChanged: win.modalShown(PanelKind.Library, visible)
                     onAddRequested: addPicker.pick(0)
                     onRemoveRequested: (row) => library.removeFolder(row)
                     onRescanRequested: library.rescan()
@@ -532,7 +580,9 @@ ApplicationWindow {
                     previewWhenFound: testHooks.yandexPreview
                     // Back to the viewer it was opened from, so its arrow keys work again; the grid only if the viewer
                     // is gone.
-                    onClosed: viewerItem.visible ? viewerItem.forceActiveFocus() : grid.takeFocus()
+                    onClosed: win.refocus()
+                    onVisibleChanged: win.modalShown(PanelKind.Yandex, visible)
+                    onPreviewOpenChanged: win.modalShown(PanelKind.YandexPreview, previewOpen)
                     Connections {
                         target: win
                         function onSimilarAsked(fileId: int) { yandexPanel.show(fileId) }
@@ -559,6 +609,23 @@ ApplicationWindow {
                     caret: !testHooks.screenshot
                     onSaved: (name) => shell.saveView(name)
                     onClosed: grid.takeFocus()
+                    onVisibleChanged: win.modalShown(PanelKind.SaveViewDialog, visible)
+                }
+            }
+        }
+
+        // The log view (dev mode), over the rest. Made the first time it is opened (logOpen), then kept.
+        Loader {
+            id: logLoader
+            anchors.fill: parent
+            active: false
+            sourceComponent: Component {
+                LogPanel {
+                    open: win.logOpen
+                    records: logModel
+                    onDismissed: win.logOpen = false
+                    onHidden: win.refocus()
+                    onVisibleChanged: win.modalShown(PanelKind.Log, visible)
                 }
             }
         }
@@ -577,6 +644,8 @@ ApplicationWindow {
         shell.setScale(Screen.devicePixelRatio)
         shell.sizeChosen(appSettings.rowHeight)
         shell.setShowBorders(appSettings.showBorders)
+        // Dev mode as the user left it, or on for this run (--dev=1, PG_DEV=1): the shell reads both (not saved here).
+        shell.seedDevMode()
         if (testHooks.hasFilters) shell.setFiltersOpen(true)
         if (testHooks.hasBorders) shell.setShowBorders(true)
         topBar.sortIndex = shell.sortIndex()

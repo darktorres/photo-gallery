@@ -45,6 +45,7 @@ Dialog {
 
     ColumnLayout {
         Label {
+            textFormat: Text.PlainText
             text: (dialog.folder.length ? dialog.folder
                        : dialog.folderKind === 1 ? words.text("ui-drive-roots") : words.text("ui-all-folders"))
                 + (dialog.recursive ? " " + words.text("ui-and-subfolders") : "") + " · " + dialog.filters + " · "

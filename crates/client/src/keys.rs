@@ -143,6 +143,30 @@ pub fn viewer(key: Key, mods: Mods, shown: Shown) -> Option<Viewer> {
     })
 }
 
+/// A window shortcut: it works wherever the focus is (Qt matches a shortcut before the focused item sees the key), and
+/// the controller decides what it does (`Controller`'s rule for the modal panels).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum Global {
+    /// Open or close the log view (in dev mode).
+    Log,
+    /// Turn dev mode on or off.
+    DevMode,
+}
+
+impl Global {
+    /// Every shortcut, in the order of `GlobalAction` in GlobalShortcuts.qml (its codes are these positions).
+    pub const ALL: [Global; 2] = [Global::Log, Global::DevMode];
+
+    /// Its key sequence, as Qt's `Shortcut.sequence` reads it (one sequence per shortcut: Qt does not fire a sequence two
+    /// shortcuts share).
+    pub fn sequence(self) -> &'static str {
+        match self {
+            Global::Log => "Ctrl+Shift+L",
+            Global::DevMode => "Ctrl+Shift+D",
+        }
+    }
+}
+
 /// A key in the Yandex panels: the background closes; the preview also steps to a neighbour and picks the shown result.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Panel {
@@ -293,6 +317,13 @@ mod tests {
             "Click to select · double-click or Enter to view · 0–5 rate · R / Shift+R turn · arrows move · F filters · \
              B borders · N not a border · Ctrl+wheel or Ctrl +/− resize"
         );
+    }
+
+    #[test]
+    fn each_global_shortcut_has_its_own_sequence_with_ctrl_and_shift() {
+        let sequences: std::collections::BTreeSet<&str> = Global::ALL.iter().map(|g| g.sequence()).collect();
+        assert_eq!(sequences.len(), Global::ALL.len());
+        assert!(sequences.iter().all(|s| s.starts_with("Ctrl+Shift+")));
     }
 
     #[test]

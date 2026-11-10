@@ -6,9 +6,8 @@
 
 use std::sync::OnceLock;
 
-use pg_app::reexport::ThumbStartOverReason;
 use pg_app::{App, Config, Note};
-use pg_client::text::{self, CacheStartOver};
+use pg_client::text;
 
 static APP: OnceLock<App> = OnceLock::new();
 
@@ -18,7 +17,7 @@ pub(crate) fn open(config: Config) -> anyhow::Result<()> {
     let notes = app.notes().subscribe();
     std::thread::Builder::new().name("app notes".into()).spawn(move || {
         while let Some(note) = notes.recv() {
-            crate::log::note(&note_text(&note));
+            pg_log::warn("app", &note_text(&note));
         }
     })?;
     APP.set(app).map_err(|_| anyhow::anyhow!("the app was opened twice"))
@@ -39,7 +38,7 @@ pub(crate) fn stop() {
     if let Some(app) = APP.get()
         && let Err(e) = app.stop()
     {
-        crate::log::note(&e.to_string());
+        pg_log::warn("app", &e.to_string());
     }
 }
 
@@ -83,19 +82,9 @@ fn note_text(note: &Note) -> String {
                 Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
                 Event::StartedOver { reason, path, detail } => format!(
                     "{}; detail: {detail}",
-                    text::thumb_cache_started_over(started_over_reason(*reason), &path.display().to_string())
+                    text::thumb_cache_started_over(*reason, &path.display().to_string())
                 ),
             }
         }
-    }
-}
-
-/// The client's words for why the thumbnail cache was started over.
-fn started_over_reason(reason: ThumbStartOverReason) -> CacheStartOver {
-    match reason {
-        ThumbStartOverReason::Damaged => CacheStartOver::Damaged,
-        ThumbStartOverReason::NotADatabase => CacheStartOver::NotADatabase,
-        ThumbStartOverReason::OtherCatalog => CacheStartOver::OtherCatalog,
-        ThumbStartOverReason::OtherBuild => CacheStartOver::OtherBuild,
     }
 }

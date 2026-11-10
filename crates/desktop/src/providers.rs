@@ -64,7 +64,7 @@ fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
             && pixels.is_err()
             && let Err(e) = app.images().forget_thumb(file, at)
         {
-            crate::log::note(&format!("thumbnail {} at {at} px: dropping it failed: {e:#}", file.get()));
+            pg_log::warn("providers", &format!("thumbnail {} at {at} px: dropping it failed: {e:#}", file.get()));
         }
         pixels
     })
@@ -110,7 +110,7 @@ fn yandex_picture(id: &str) -> Pixels {
     match result {
         Ok(image) => Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image },
         Err(e) => {
-            crate::log::note(&format!("image Yandex {id}: {e:#}"));
+            pg_log::warn("providers", &format!("image Yandex {id}: {e:#}"));
             failed()
         }
     }
@@ -122,7 +122,7 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         return yandex_picture(id);
     }
     let Some(request) = ImageRequest::parse(provider(kind), id) else {
-        crate::log::note(&format!("image {kind:?} {id}: not a request"));
+        pg_log::warn("providers", &format!("image {kind:?} {id}: not a request"));
         return failed();
     };
     let result = match request {
@@ -135,7 +135,7 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         }
     };
     result.unwrap_or_else(|e| {
-        crate::log::note(&format!("image {kind:?} {id}: {e:#}"));
+        pg_log::warn("providers", &format!("image {kind:?} {id}: {e:#}"));
         failed()
     })
 }

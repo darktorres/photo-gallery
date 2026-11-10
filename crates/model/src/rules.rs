@@ -20,8 +20,10 @@ pub enum PathRules {
     Posix,
 }
 
-/// A path: its anchor (the text before the root separator) and its parts, in order.
-#[derive(Clone, PartialEq, Eq, Debug)]
+/// A path: its anchor (the text before the root separator) and its parts, in order. Serialises as
+/// `{"anchor": name, "parts": [name, ...]}`, each a [`Name`] (its text, or its bytes when they are no UTF-8): a notice
+/// that names a folder keeps it exact (`notice::Notice`).
+#[derive(Clone, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Path {
     pub anchor: Name,
     pub parts: Vec<Name>,

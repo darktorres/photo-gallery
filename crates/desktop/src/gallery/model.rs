@@ -84,7 +84,7 @@ impl qobject::GalleryModel {
         let shown = pg_platform::native::PATH_RULES.display_merged(&folder);
         crate::app::get().reading().session().grid(folder, recursive, query, sort, move |entries| {
             let entries = entries.unwrap_or_else(|e| {
-                crate::log::note(&format!("listing {shown}: {e:#}"));
+                pg_log::warn("gallery", &format!("listing {shown}: {e:#}"));
                 Vec::new()
             });
             // Fails only when the model is gone (the window closing): nothing left to show it in.

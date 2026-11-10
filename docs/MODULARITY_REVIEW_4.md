@@ -642,6 +642,8 @@ Each fix gets a test that fails before it.
   - `pg_thumbcache::StartOverReason`, `pg_client::text::CacheStartOver`, and the re-export `ThumbStartOverReason`.
   - A mapping is written in each front end: `cli::report::started_over_reason`, and the desktop's.
   - Fix: one enum in `pg-model`, which both the cache and the client reach, and no mappings. This is the reason NOTIFICATIONS_PLAN's cache `StartedOver { reason }` notice carries (R-1).
+  - Done in step 3 (S1): `pg_model::notice::StartOverReason`; the cache, the client and the CLI use it, and the two
+    mappings and the re-export are gone. The scan's `ScanNote` moved there the same way.
 - **`MediaType` is the grid's too.** `pg_model::grid::Entry::media_type` uses `query::MediaType`. Fix: it moves beside `media::Kind` (`model/src/media.rs`), and `query` uses it from there.
 - **One method with two names.** `pg_model::orientation::turns_swap(turns)` is `turns.swaps_axes()`. Fix: keep `Turns::swaps_axes` and change its five callers.
 - **Two `Prefs`.** `pg_client::controller::prefs::Prefs` is the grid's size; `pg_app::Prefs` is the preferences file. Fix: the client's becomes `size::GridSize`.
@@ -753,7 +755,7 @@ This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered toget
 
 1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`**, with `path_buf` made `pub(crate)`, comes with the first bug. Done.
 2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start. Done.
-3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer.
+3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer. S1 done (the notice types, `pg-log`, dev mode, the log view, and M-45's start-over reason).
 4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
 5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.
 6. **M-32** (the rest of it), **M-43** and **M-35**: the client's logic, the session, and the image scheme.

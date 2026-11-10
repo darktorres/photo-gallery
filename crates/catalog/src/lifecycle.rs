@@ -10,13 +10,14 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
 
 use pg_model::ids::FileId;
 use pg_model::media::{Ext, Kind};
+use pg_model::notice::Carried;
 use pg_model::path::WorkList;
 use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 
 use crate::error::{Error, Result};
 use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, bring_to, carry_rows, current_version, write_transaction};
-use crate::types::{Carried, FOLDER_PATH, Rebuilt, TAKEN_ZONE_QUERY, WorkItem, folder_path, rules_name};
+use crate::types::{FOLDER_PATH, Rebuilt, TAKEN_ZONE_QUERY, WorkItem, folder_path, rules_name};
 
 /// Whether the rows of the catalog `old` may be carried into a catalog under `rules`: they were stored under those rules
 /// (`meta.path_rules`). Paths stored under other rules don't read as paths under these, so none of them is carried; the
@@ -40,6 +41,11 @@ fn beside(path: &Path, suffix: &str) -> PathBuf {
     PathBuf::from(name)
 }
 
+/// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
+fn count(rows: i64) -> u64 {
+    u64::try_from(rows).unwrap_or(0)
+}
+
 /// Where the replacement for the catalog at `path` is made before it takes the name ([`rebuild`]).
 fn building_path(path: &Path) -> PathBuf {
     beside(path, ".building")
@@ -60,17 +66,17 @@ pub(crate) fn rebuild(old: Connection, path: &Path, rules: PathRules, why: Strin
     remove_database(&replacement)?;
     let carried = match source {
         Ok(()) => match make_replacement(&replacement, rules, Some(path)) {
-            Ok((files, folders)) => Carried::Rows { files, folders },
+            Ok((files, folders)) => Carried::Rows { files: count(files), folders: count(folders) },
             Err(e) => {
                 // The copy is one transaction, so an error leaves no rows; the replacement is made again without them.
                 remove_database(&replacement)?;
                 make_replacement(&replacement, rules, None)?;
-                Carried::Nothing(format!("{e:#}"))
+                Carried::Nothing { reason: format!("{e:#}") }
             }
         },
         Err(reason) => {
             make_replacement(&replacement, rules, None)?;
-            Carried::Nothing(reason)
+            Carried::Nothing { reason }
         }
     };
     // To `catalog.sqlite.replaced`, then `.replaced.1`, and so on: kept whole, with its sidecars, for the user to
@@ -318,7 +324,9 @@ mod tests {
     use crate::test_support::*;
     use crate::types::TAKEN_ZONE_QUERY;
     use crate::types::rules_name;
-    use crate::{Carried, Catalog, Error, Result, ScannedFile};
+    use pg_model::notice::Carried;
+
+    use crate::{Catalog, Error, Result, ScannedFile};
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::Taken;
     use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
@@ -431,7 +439,7 @@ mod tests {
         // said. The earlier one is kept whole, rows and all, beside it.
         let r = c.rebuilt().expect("moved aside");
         assert!(
-            matches!(&r.carried, Carried::Nothing(why) if why.starts_with("NOT NULL constraint failed")),
+            matches!(&r.carried, Carried::Nothing { reason: why } if why.starts_with("NOT NULL constraint failed")),
             "{:?}",
             r.carried
         );
@@ -637,7 +645,7 @@ mod tests {
         drop(old);
         let c = Catalog::prepare(&path, versions(), PathRules::Posix).unwrap();
         let r = c.rebuilt().expect("moved aside");
-        assert_eq!(r.carried, Carried::Nothing("made with the windows path rules".to_string()));
+        assert_eq!(r.carried, Carried::Nothing { reason: "made with the windows path rules".to_string() });
         assert!(c.roots().unwrap().is_empty());
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();

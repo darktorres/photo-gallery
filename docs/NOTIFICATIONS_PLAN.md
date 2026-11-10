@@ -1,6 +1,27 @@
 # Notifications plan: persistent inbox, failure ledger, dev log view
 
-Status (2026-11-10): planned, not implemented. Re-checked against `d2cbc13`; delivered in three stages (S1, S2, S3), each its own commit.
+Status (2026-11-10): S1 done (see "S1 as built" below); S2 and S3 to do. Re-checked against `d2cbc13`; delivered in
+three stages (S1, S2, S3), each its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
+
+## S1 as built
+
+S1 is as the plan says, with these differences, each the more proper of the two:
+
+- The desktop depends on `pg-log` directly (`desktop: app client log model platform render trace`), not through
+  `pg_app::reexport`: `pg-log` is a layer below `app`, like `pg-model` and `pg-platform`, which the desktop already
+  names, and `app` does not use it in S1. S2's `Inbox` adds `log` to `app:`.
+- `RatingPopup` is not a modal kind: it is a popup the grid owns, closed by any other key, so a global key passes it
+  by. The kinds are `Inbox`, `Log`, `Library`, `SaveViewDialog`, `ViewsMenu`, `FolderPicker`, `Yandex`, `YandexPreview`.
+- Dev mode is saved by the controller's `Command::SaveDevMode`, which the shell carries out with `prefs().update`, not
+  by a `Settings` property: the shortcut's rule (save on the key, not on the start seed) is the controller's, and it is
+  tested there.
+- `ModalOverlay.qml` is a `FocusScope`: opening it gives the keys to the child with `focus: true`, so the log view's list
+  has them at once, without a deferred `forceActiveFocus`.
+- The plain-text rule covers every `Label`, `Text` and `TextArea` whose text isn't fixed words (22 of them), not the three
+  the plan named, and a test (`qml_text.rs`) keeps it so.
+- `StartOverReason` (M-45), `ScanNote` and `Carried` moved to `pg_model::notice`, with their old enums gone, so the
+  notice holds them without a copy and the client words them from one type.
+- The log sites were 36, not 34 (two added since `d2cbc13`); the table is in `NOTIFICATIONS.md`.
 
 ## Context
 

@@ -12,7 +12,7 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use crate::config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, cache_version, default_cap_bytes};
 use crate::maintenance::{Drift, heal_if_due};
-use crate::types::StartOverReason;
+use pg_model::notice::StartOverReason;
 
 /// A new cache file's tables, at [`CACHE_VERSION`].
 const SCHEMA: &str = concat!(

@@ -17,4 +17,5 @@ pub struct ShellRust {
     pub(crate) show_borders: bool,
     pub(crate) row_height: i32,
     pub(crate) thumb_height: i32,
+    pub(crate) dev_mode: bool,
 }

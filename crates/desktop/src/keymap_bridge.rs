@@ -36,6 +36,11 @@ pub mod qobject {
         #[cxx_name = "viewerHint"]
         fn viewer_hint(self: &KeyMap, kind: i32, has_borders: bool) -> QString;
 
+        /// The key sequence of a window shortcut (a `GlobalAction` code), for its `Shortcut`; empty for no code.
+        #[qinvokable]
+        #[cxx_name = "globalSequence"]
+        fn global_sequence(self: &KeyMap, code: i32) -> QString;
+
         /// The Yandex panels' action for a key press: a `PanelAction` code, or -1 for none.
         #[qinvokable]
         #[cxx_name = "panelAction"]

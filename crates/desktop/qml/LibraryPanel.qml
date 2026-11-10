@@ -50,7 +50,7 @@ ModalOverlay {
                     required property string modelData
                     required property int index
                     width: ListView.view.width
-                    Label { text: rootRow.modelData; elide: Text.ElideMiddle; Layout.fillWidth: true }
+                    Label { text: rootRow.modelData; textFormat: Text.PlainText; elide: Text.ElideMiddle; Layout.fillWidth: true }
                     Button {
                         text: words.text("ui-remove")
                         flat: true

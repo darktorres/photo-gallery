@@ -13,7 +13,7 @@ use crate::video_player_bridge::ffi;
 /// can't be opened is logged, and the player reports it as its error.
 pub(crate) fn play_path(player: Pin<&mut ffi::VideoPlayer>, path: &Path) {
     let handle = pg_platform::file::player_handle(path).unwrap_or_else(|e| {
-        crate::log::note(&format!("video: can't open {}: {e}", path.display()));
+        pg_log::warn("video", &format!("can't open {}: {e}", path.display()));
         -1
     });
     player.play_file(handle, ext_of(path));

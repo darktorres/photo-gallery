@@ -45,7 +45,9 @@ mod library_bridge;
 #[cfg(debug_assertions)]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod live_reload;
-mod log;
+mod log_model;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod log_model_bridge;
 mod panic_log;
 mod picker;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
@@ -53,6 +55,8 @@ mod picker_bridge;
 mod providers;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod providers_bridge;
+#[cfg(test)]
+mod qml_text;
 mod screenshot;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod screenshot_bridge;
@@ -117,16 +121,19 @@ pub fn run(args: &[OsString]) -> i32 {
         Ok(config) => config,
         Err(e) => fatal(&e),
     };
+    // The log is appended to, so each run's part of it starts with its session's record: the build and where the data is.
+    pg_log::init(
+        config.log_path.clone(),
+        &format!("gallery {}, data folder {}", env!("CARGO_PKG_VERSION"), config.home.display()),
+    );
     panic_log::install(config.log_path.clone());
-    // The log is appended to, so this line starts each run's part of it: where the data is.
-    log::note(&format!("data folder: {}", config.home.display()));
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap_bytes =
         std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_app::reexport::parse_thumb_cap_gb(&s) {
             Ok(bytes) => Some(bytes),
             Err(e) => {
-                log::note(&format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
+                pg_log::warn("config", &format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
                 None
             }
         });

@@ -9,8 +9,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
   turns, writes, image keys and requests, saved views and the session place), which formats can hold a rating
   (`format::can_hold_rating`, which the catalog's writes and the write-back share), and the outcomes the front ends
-  word: a pass's phase and progress (`progress`) and why a folder is refused (`refusal`). Pure and WASM-safe: no file,
-  catalog, decoder, clock or platform calls.
+  word: a pass's phase and progress (`progress`), why a folder is refused (`refusal`), and what the app tells the user
+  (`notice`: each kind of notice with its code, level, source, how the inbox keeps it and what can be done from it).
+  Pure and WASM-safe: no file, catalog, decoder, clock or platform calls.
 - `platform` (`pg-platform`): the operating system behind portable functions: file identity, directory handles,
   priorities, processes, the console, the shared libraries loaded at run time, the folder dialog, verbatim paths, the
   system's units of names and arguments, the path rules this machine's paths follow (`native::PATH_RULES`; `model`
@@ -24,6 +25,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   there. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
+- `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
+  memory for the window's log view (`docs/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges.
 - `schema` (`pg-schema`): the SQLite schema check the catalog and the thumbnail cache share: a file's `sqlite_schema`
@@ -105,9 +108,10 @@ it, which is why `testkit` and `jobs-testkit` are leaves), that a `pub use` name
 `app/src/reexport.rs`, and the platform rule above. Module cycles inside a crate are `just modgraph`'s (the compiler's
 module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI runs it on both targets.
 
-- `model`, `container` and `schema` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone.
+- `model`, `container` and `schema` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone,
+  and `log` on `model` and `platform`.
 - `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
-  `client`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
+  `client`, `log`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
   `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods and
   `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on
   `cli` and `desktop` (the latter behind its `desktop` feature).
@@ -213,9 +217,10 @@ The data folder (its home) is `PG_HOME` when set. Otherwise it is the parent of 
 `PG_CATALOG_DIR` (which `.env` sets for `just run` and `just dev` on Windows) or `--catalog-dir` on the command line.
 Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows, and `$XDG_DATA_HOME/photo-gallery`
 (`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and the
-thumbnail cache), `gallery.json` and `gallery.log`. `PG_PREFS` moves the preferences file alone. The app writes the
-data folder to `gallery.log` at each start, and `gallery status` prints it. The app's preferences (write-back, Real Size,
-borders, row height, the last file selected) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and
+thumbnail cache), `gallery.json` and `gallery.log`. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
+is the session's, with the build and the data folder (the log's format is in `docs/NOTIFICATIONS.md`), and
+`gallery status` prints the data folder. The app's preferences (write-back, Real Size, borders, row height, the last
+file selected, dev mode) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and
 where you were (folder, subfolders, filters, sort) are in the catalog. Each of these is resolved in one place,
 `crates/library/src/layout.rs`; for now they share the home folder.
 

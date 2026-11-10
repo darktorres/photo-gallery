@@ -12,6 +12,7 @@ mod test_support;
 mod words;
 
 use pg_model::detection::Class;
+use pg_model::notice::{ScanNote, StartOverReason};
 use pg_model::progress::{Phase, Progress};
 use pg_model::query::{
     BorderFacet, Choice, DateRange, ListFacet, MediaType, Query, Range, RatingFilter, Shape, Status,
@@ -21,7 +22,7 @@ use pg_model::rules::PathRules;
 use pg_model::write::WriteKind;
 
 use crate::input::day_text;
-pub use message::{CacheStartOver, Message, render};
+pub use message::{Message, render};
 pub use words::{set_pseudo, ui};
 
 /// The rating symbols, by rating (0 unrated, 5 best).
@@ -347,10 +348,9 @@ pub fn refused_reason(reason: &RefusedReason) -> String {
     render(&Message::RefusedReason { code: reason.code().to_string(), file_system, error: error.to_string() })
 }
 
-/// What a scan of a folder counted: `kind` is the note's kind (`duplicates`, `reparse`, `ambiguous`, `unpaired`,
-/// `replaced`, `rebound`), `count` how many.
-pub fn scan_note(root: &str, kind: &str, count: u64) -> String {
-    render(&Message::ScanNote { root: root.to_string(), kind: kind.to_string(), count: count.to_string() })
+/// What a scan of a folder counted: the note (its code selects the words), and how many.
+pub fn scan_note(root: &str, note: ScanNote, count: u64) -> String {
+    render(&Message::ScanNote { root: root.to_string(), kind: note.code().to_string(), count: count.to_string() })
 }
 
 /// A round of the job that panicked (caught).
@@ -425,7 +425,7 @@ pub fn folder_unreadable(error: &str) -> String {
 
 /// The thumbnail cache was started over when it was opened, for `reason`: `path` is where the old file is kept (a
 /// damaged one, moved aside) or the cache file made anew (one this build can't use, deleted).
-pub fn thumb_cache_started_over(reason: CacheStartOver, path: &str) -> String {
+pub fn thumb_cache_started_over(reason: StartOverReason, path: &str) -> String {
     render(&Message::ThumbCacheStartedOver { reason, path: path.to_string() })
 }
 
@@ -778,12 +778,12 @@ mod tests {
     #[test]
     fn a_started_over_cache_says_why_and_where_the_old_file_is() {
         assert_eq!(
-            thumb_cache_started_over(CacheStartOver::Damaged, r"C:\cat\thumbs.sqlite.bad"),
+            thumb_cache_started_over(StartOverReason::Damaged, r"C:\cat\thumbs.sqlite.bad"),
             "The thumbnail cache was damaged, so it was started over; its thumbnails are made again. The old file is \
              kept as C:\\cat\\thumbs.sqlite.bad"
         );
         assert_eq!(
-            thumb_cache_started_over(CacheStartOver::OtherCatalog, r"C:\cat\thumbs.sqlite"),
+            thumb_cache_started_over(StartOverReason::OtherCatalog, r"C:\cat\thumbs.sqlite"),
             "The thumbnail cache C:\\cat\\thumbs.sqlite was made for another catalog, so it was started over; its \
              thumbnails are made again"
         );

@@ -9,7 +9,7 @@ use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
 
-use crate::keys::Grid;
+use crate::keys::{Global, Grid};
 
 pub mod deadlines;
 pub mod input;
@@ -21,7 +21,7 @@ pub mod start;
 
 use deadlines::{Deadlines, Timer};
 use input::Input;
-use panels::Panels;
+use panels::{PanelKind, Panels};
 use prefs::Prefs;
 use start::StartGate;
 
@@ -56,9 +56,11 @@ pub enum Event {
     GridResized(f64),
     /// The filter bar's query was typed: the list is shown once the typing rests.
     QueryEdited,
-    /// A panel opened, closed or toggled: the filter bar, the borders shown, the viewer (the desktop's menus, bars and
-    /// keys).
+    /// A panel opened, closed or toggled: the filter bar, the borders shown, the viewer, dev mode as the window starts
+    /// with it, a modal panel (the desktop's menus, bars, keys and panels).
     Panel(panels::Event),
+    /// A window shortcut (`GlobalShortcuts.qml`): the log view, dev mode.
+    Global(Global),
     /// A size request: the grid's row height stepped, scaled or chosen, or the screen's scale changed.
     Size(prefs::Event),
     /// Where the grid looks changed by the user: the folder, the recursion, the sort, the query, a saved view.
@@ -126,6 +128,12 @@ pub enum Command {
     Relayout { width: f64, row_height: i32 },
     /// A panel changed.
     Panel(panels::Change),
+    /// Open this modal panel (a global shortcut).
+    OpenPanel(PanelKind),
+    /// Close this modal panel (a global shortcut).
+    ClosePanel(PanelKind),
+    /// Remember dev mode for the next start: the user turned it on or off (a start's `--dev=1` is not saved).
+    SaveDevMode(bool),
     /// The size changed: the thumbnails, or the saved row height.
     Size(prefs::Change),
 }
@@ -226,6 +234,7 @@ impl Controller {
                 Vec::new()
             }
             Event::Panel(event) => self.panel(event),
+            Event::Global(global) => self.global(global),
             Event::Size(event) => self.size(now_ms, event),
             Event::Listing(event) => self.listing_event(event),
             Event::Rate { item, rating } => vec![Command::Rate { item, rating }],
@@ -292,6 +301,45 @@ impl Controller {
 
     fn panel(&mut self, event: panels::Event) -> Vec<Command> {
         self.panels.update(event).into_iter().map(Command::Panel).collect()
+    }
+
+    /// A window shortcut. While a modal panel other than the inbox and the log view is open, it is that panel's (a dialog,
+    /// a menu): the shortcut does nothing. Otherwise the log view's key closes it when it is open, else opens it,
+    /// closing its sibling first (only in dev mode); dev mode's key turns it on or off, and saves it, and closes the
+    /// log view when it turns off.
+    fn global(&mut self, global: Global) -> Vec<Command> {
+        if self.panels.modals().iter().any(|k| !k.is_switchable()) {
+            return Vec::new();
+        }
+        match global {
+            Global::Log if self.panels.dev_mode() => self.switch_to(PanelKind::Log),
+            Global::Log => Vec::new(),
+            Global::DevMode => {
+                let on = !self.panels.dev_mode();
+                let mut out = self.panel(panels::Event::SetDevMode(on));
+                out.push(Command::SaveDevMode(on));
+                if !on && self.panels.is_open(PanelKind::Log) {
+                    out.push(Command::ClosePanel(PanelKind::Log));
+                }
+                out
+            }
+        }
+    }
+
+    /// Close `kind` when it is open; else open it, closing the other switchable panel first.
+    fn switch_to(&self, kind: PanelKind) -> Vec<Command> {
+        if self.panels.is_open(kind) {
+            return vec![Command::ClosePanel(kind)];
+        }
+        let mut out: Vec<Command> = self
+            .panels
+            .modals()
+            .iter()
+            .filter(|k| k.is_switchable() && **k != kind)
+            .map(|k| Command::ClosePanel(*k))
+            .collect();
+        out.push(Command::OpenPanel(kind));
+        out
     }
 
     fn size(&mut self, now_ms: u64, event: prefs::Event) -> Vec<Command> {

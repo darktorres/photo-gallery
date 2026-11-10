@@ -183,7 +183,7 @@ impl qobject::Filters {
         let shown = pg_platform::native::PATH_RULES.display_merged(&listing.folder);
         crate::app::get().reading().session().facets(listing.folder, listing.recursive, listing.query, move |facets| {
             let facets = facets.unwrap_or_else(|e| {
-                crate::log::note(&format!("facets of {shown}: {e:#}"));
+                pg_log::warn("filters", &format!("facets of {shown}: {e:#}"));
                 Facets::default()
             });
             // Fails only when the filter bar is gone (the window closing).

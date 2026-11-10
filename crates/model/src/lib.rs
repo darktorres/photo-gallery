@@ -15,6 +15,7 @@ pub mod ids;
 pub mod image;
 pub mod media;
 pub mod name;
+pub mod notice;
 pub mod num;
 pub mod orientation;
 pub mod path;

@@ -24,7 +24,7 @@ impl qobject::GalleryModel {
             return;
         }
         if let Err(e) = crate::app::get().library().turn(id, turns) {
-            crate::log::note(&format!("rotating: {e:#}"));
+            pg_log::warn("edit", &format!("rotating: {e:#}"));
             return;
         }
         let loading = self.loading;
@@ -75,7 +75,7 @@ impl qobject::GalleryModel {
         // Zero stars is no rating: the catalog keeps no row for it.
         let rating = Rating::new(stars).filter(|r| r.get() > 0);
         if let Err(e) = crate::app::get().edit().rate(id, rating) {
-            crate::log::note(&format!("rating: {e:#}"));
+            pg_log::warn("edit", &format!("rating: {e:#}"));
             return;
         }
         let loading = self.loading;
@@ -96,7 +96,7 @@ impl qobject::GalleryModel {
             return;
         }
         if let Err(err) = crate::app::get().edit().set_border_mark(e.id, marked) {
-            crate::log::note(&format!("marking borders: {err:#}"));
+            pg_log::warn("edit", &format!("marking borders: {err:#}"));
             return;
         }
         let loading = self.loading;

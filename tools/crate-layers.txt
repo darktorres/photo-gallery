@@ -24,6 +24,7 @@ catalog: model platform query schema
 edit: codec container metadata model
 exiftool: platform
 jobs: model platform
+log: model platform
 trace: platform
 video: codec model platform
 analysis: codec metadata model video
@@ -44,5 +45,5 @@ crop: catalog edit exiftool jobs model platform scan writeback
 library: analysis borders catalog crop import jobs model platform scan thumbcache thumbs
 app: catalog codec jobs library model platform query render scan thumbcache video writeback yandex
 cli: analysis borders catalog client codec dedup import jobs library model platform scan thumbcache thumbs writeback
-desktop: app client model platform render trace
+desktop: app client log model platform render trace
 gallery: cli desktop platform

@@ -55,6 +55,9 @@ fn main() -> Result<(), String> {
                 "qml/RatingPopup.qml",
                 "qml/Hud.qml",
                 "qml/Mascot.qml",
+                "qml/GlobalShortcuts.qml",
+                "qml/LogPanel.qml",
+                "qml/PanelKind.qml",
             ])
             .qml_file(QmlFile::from("qml/Ratings.qml").singleton(true))
             .qml_file(QmlFile::from("qml/Theme.qml").singleton(true)),
@@ -79,6 +82,7 @@ fn main() -> Result<(), String> {
         "src/gui_app_bridge.rs",
         "src/picker_bridge.rs",
         "src/library_bridge.rs",
+        "src/log_model_bridge.rs",
         "src/providers_bridge.rs",
         "src/screenshot_bridge.rs",
         "src/settings_bridge.rs",

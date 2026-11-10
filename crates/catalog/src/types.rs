@@ -11,6 +11,7 @@ use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
 use pg_model::media::{Ext, Kind};
 use pg_model::name::Name;
+use pg_model::notice::Carried;
 use pg_model::path::{FilePath, PathArena, PathRef};
 use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::turns::Turns;
@@ -67,31 +68,21 @@ pub struct Root {
 
 /// A catalog that `Catalog::prepare` moved aside, and why: its schema differed from this
 /// build's, or it was not a database. The new catalog is made from this build's schema and takes the old one's rows
-/// ([`Carried`]), so the library stays as it was; the old file is kept beside it, whole.
+/// ([`Carried`], the model's, which the notice of the rebuild carries), so the library stays as it was; the old file is kept beside it, whole.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Rebuilt {
     /// Where the old catalog is now (beside the new one, with its `-wal`, `-shm` and `-journal` moved with it).
     pub kept: PathBuf,
     /// The first difference from this build's schema, as [`pg_schema::Difference`] words it.
     pub why: String,
-    /// What the new catalog took from the old one.
+    /// What the new catalog took from the old one (with their ids).
     pub carried: Carried,
-}
-
-/// The rows a rebuilt catalog took from the old one, with their ids.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Carried {
-    /// The old catalog's rows, copied as they were: its files and its library folders (`roots`).
-    Rows { files: i64, folders: i64 },
-    /// No rows were copied (the old catalog was not one this build can read, or the copy failed): the reason. The new
-    /// catalog is empty, and the next scan fills it.
-    Nothing(String),
 }
 
 impl Rebuilt {
     /// What was carried, for a note. It starts with `"; "`, so it follows the note's text.
     pub fn carried_note(&self) -> String {
-        let count = |n: i64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
+        let count = |n: u64, one: &str, many: &str| format!("{n} {}", if n == 1 { one } else { many });
         match &self.carried {
             Carried::Rows { files: 0, folders: 0 } => String::new(),
             Carried::Rows { files, folders } => format!(
@@ -99,7 +90,7 @@ impl Rebuilt {
                 count(*files, "file", "files"),
                 count(*folders, "library folder", "library folders")
             ),
-            Carried::Nothing(reason) => format!("; nothing carried over ({reason}): scan the library again"),
+            Carried::Nothing { reason } => format!("; nothing carried over ({reason}): scan the library again"),
         }
     }
 }

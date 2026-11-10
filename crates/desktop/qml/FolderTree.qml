@@ -46,19 +46,21 @@ WheelListView {
             spacing: 4
             Item { Layout.preferredWidth: node.depth * 14 }
             Label {
+                textFormat: Text.PlainText
                 text: node.expandable ? (node.expanded ? "▾" : "▸") : ""
                 Layout.preferredWidth: 12
                 TapHandler { onTapped: tree.toggleRequested(node.index) }
             }
             Label {
+                textFormat: Text.PlainText
                 text: node.kind === 0 ? words.text("ui-all-folders")
                     : node.kind === 1 ? words.text("ui-drive-roots") : node.name
                 elide: Text.ElideRight
                 Layout.fillWidth: true
             }
             // Folders present on more than one drive are merged into this one node.
-            Label { text: node.drives; color: "#6fbf8f"; visible: node.merged; font.pixelSize: 11 }
-            Label { text: Qt.locale().toString(node.total, "f", 0); color: "#888888"; font.pixelSize: 11 }
+            Label { textFormat: Text.PlainText; text: node.drives; color: "#6fbf8f"; visible: node.merged; font.pixelSize: 11 }
+            Label { textFormat: Text.PlainText; text: Qt.locale().toString(node.total, "f", 0); color: "#888888"; font.pixelSize: 11 }
         }
         onClicked: {
             tree.currentIndex = node.index

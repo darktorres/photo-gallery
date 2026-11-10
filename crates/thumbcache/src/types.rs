@@ -1,9 +1,10 @@
 //! The data the cache's layers pass between them: the thumbnails and the work for them, the snapshot a pass read
-//! against, the events the writer reports, the usage and the reason a file was started over. A leaf.
+//! against, the events the writer reports and the usage. A leaf (the reason a file was started over is the model's, for the notice it becomes).
 
 use std::path::PathBuf;
 
 use pg_model::ids::FileId;
+use pg_model::notice::StartOverReason;
 use pg_model::path::{FilePath, WorkList};
 use pg_model::turns::Turns;
 
@@ -75,20 +76,6 @@ pub enum Event {
     /// SQLite's error), for a log: the words a person reads come from `reason` and `path`. Its thumbnails are made
     /// again; the cap it had is kept, except a damaged file's, which can't be read (the cap given, or the default).
     StartedOver { reason: StartOverReason, path: PathBuf, detail: String },
-}
-
-/// Why a cache file was started over ([`Event::StartedOver`]).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum StartOverReason {
-    /// SQLite found the file's pages don't hold together (`DatabaseCorrupt`): moved aside.
-    Damaged,
-    /// The file is not a database at all (`NotADatabase`): moved aside.
-    NotADatabase,
-    /// A cache made for another catalog: deleted, its cap kept.
-    OtherCatalog,
-    /// A cache made by another build (another layout version, schema, application id or vacuum setting): deleted, its
-    /// cap kept.
-    OtherBuild,
 }
 
 /// What a cache holds (bytes, entries) and may hold (`cap`, bytes).

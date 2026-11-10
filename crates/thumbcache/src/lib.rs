@@ -37,7 +37,7 @@ mod writer;
 pub use config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, cache_path, default_cap_bytes, parse_cap_gb};
 pub use maintenance::Drift;
 pub use reader::pending_in;
-pub use types::{Event, FORMAT_JPEG, Pending, Snapshot, Source, StartOverReason, Thumb, ThumbWork, Usage};
+pub use types::{Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
 
 use std::path::Path;
 use std::sync::{Arc, mpsc};
@@ -331,6 +331,7 @@ mod tests {
     use super::*;
     use pg_catalog::fixture::state;
     use pg_model::ids::FolderId;
+    use pg_model::notice::StartOverReason;
 
     #[test]
     fn the_cap_parser_refuses_what_would_be_no_cache() {

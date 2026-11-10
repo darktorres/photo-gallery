@@ -18,4 +18,6 @@ QtObject {
     function gridHint() { return "" }
     function viewerHint(kind, hasBorders) { return "" }
     function panelAction(key) { return -1 }
+    // The window's shortcuts' sequences, as pg_client's Global has them (GlobalShortcuts.GlobalAction's order).
+    function globalSequence(code) { return ["Ctrl+Shift+L", "Ctrl+Shift+D"][code] || "" }
 }

@@ -105,6 +105,7 @@ Rectangle {
         spacing: 10
 
         Label {
+            textFormat: Text.PlainText
             text: preview.item < 0 ? ""
                 : preview.item < preview.otherCount
                     ? words.phrase("ui-other-size", 0, ("" + (preview.item + 1)), ("" + (preview.otherCount)))
@@ -113,11 +114,13 @@ Rectangle {
         }
         // The file's own size once it is loaded; Yandex's until then.
         Label {
+            textFormat: Text.PlainText
             text: full.status === Image.Ready ? full.sourceSize.width + "×" + full.sourceSize.height
                 : preview.sizeText
             color: Theme.bodyText
         }
         Label {
+            textFormat: Text.PlainText
             text: full.status === Image.Loading ? words.phrase("ui-loading-percent", 0, ("" + Math.round(full.progress * 100)), "")
                 : full.status === Image.Error ? words.text("ui-cannot-decode") : ""
             color: full.status === Image.Error ? Theme.errorText : Theme.captionText

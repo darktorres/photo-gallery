@@ -1780,6 +1780,7 @@ dependencies = [
  "cxx-qt-lib",
  "pg-app",
  "pg-client",
+ "pg-log",
  "pg-model",
  "pg-platform",
  "pg-render",
@@ -1882,6 +1883,17 @@ dependencies = [
  "pg-thumbs",
  "pg-video",
  "pg-writeback",
+]
+
+[[package]]
+name = "pg-log"
+version = "0.1.0"
+dependencies = [
+ "pg-model",
+ "pg-platform",
+ "pg-testkit",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

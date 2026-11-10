@@ -103,7 +103,8 @@ Build scripts need nothing: clippy does not lint the `println!` directives that 
 The app's errors are not printed at all. `pg-desktop` had 21 `eprintln!` calls for errors and notes. A GUI build shows
 stderr only when started from a terminal, so most went nowhere. They now go through `panic_log::note`, which appends to
 `gallery.log` beside the catalog (the app's existing channel for this). When the log can't be written, or before it is
-installed, the line goes to stderr, so no message is dropped. `pg-trace` was the first candidate, but it is for
+installed, the line goes to stderr, so no message is dropped. (Since NOTIFICATIONS_PLAN S1 the log is `pg-log`'s, JSON
+lines: `docs/NOTIFICATIONS.md`.) `pg-trace` was the first candidate, but it is for
 the startup stages, not for errors.
 
 Results of the change (uncommitted):

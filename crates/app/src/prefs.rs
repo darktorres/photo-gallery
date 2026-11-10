@@ -1,6 +1,6 @@
 //! The preferences (`gallery.json`): every choice the app remembers across runs, the front ends' included, saved atomically
 //! beside the catalog folder (so they outlive a catalog rebuild). The window's Real Size, the borders shown and the row
-//! height are here with the library's write-back and the Yandex folder. The last file selected is here too: it is a
+//! height are here with the library's write-back and the Yandex folder, and dev mode. The last file selected is here too: it is a
 //! file's id in the catalog, so after a rebuild it may name another file (or none).
 
 use std::path::PathBuf;
@@ -30,6 +30,9 @@ pub struct Prefs {
     pub row_height: f64,
     /// The id of the file selected (or open in the viewer) last, -1 for none.
     pub last_file: i64,
+    /// Dev mode: the window's log view (Ctrl+Shift+D turns it on and off). A start's `--dev=1` or `PG_DEV=1` turns it on
+    /// for that run without saving it.
+    pub dev_mode: bool,
 }
 
 /// `yandex_folder` as the file holds it: the folder's path as a name (`Name`: its text when that is UTF-8, `{"b": hex}`
@@ -65,6 +68,7 @@ impl Default for Prefs {
             show_borders: false,
             row_height: 220.0,
             last_file: -1,
+            dev_mode: false,
         }
     }
 }
@@ -115,7 +119,8 @@ mod tests {
   "real_size": false,
   "show_borders": false,
   "row_height": 220.0,
-  "last_file": -1
+  "last_file": -1,
+  "dev_mode": false
 }"#;
 
     #[test]
@@ -130,11 +135,11 @@ mod tests {
 
     #[test]
     fn a_changed_value_is_written_as_its_own_text() {
-        let prefs = Prefs { real_size: true, row_height: 333.5, last_file: 42, ..Prefs::default() };
+        let prefs = Prefs { real_size: true, row_height: 333.5, last_file: 42, dev_mode: true, ..Prefs::default() };
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,
-            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":333.5,"last_file":42}"#
+            r#"{"write_back":true,"yandex_folder":"","real_size":true,"show_borders":false,"row_height":333.5,"last_file":42,"dev_mode":true}"#
         );
     }
 

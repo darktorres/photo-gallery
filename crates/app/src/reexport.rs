@@ -10,7 +10,6 @@ pub use pg_jobs::failure::{Cause, FileError};
 pub use pg_jobs::panics::caught as panic_caught;
 pub use pg_library::runner::Notice;
 pub use pg_thumbcache::Event as ThumbEvent;
-pub use pg_thumbcache::StartOverReason as ThumbStartOverReason;
 pub use pg_thumbcache::parse_cap_gb as parse_thumb_cap_gb;
 pub use pg_writeback::WriteError;
 pub use pg_yandex::YandexError;

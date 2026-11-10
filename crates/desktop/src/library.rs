@@ -72,7 +72,7 @@ fn notice_text(notice: &Notice) -> String {
         Notice::ScanFailed { root, error } => text::scan_failed(root, error),
         Notice::RootRefused { root, reason } => text::root_refused(root, reason),
         Notice::MountRefused { mount, reason, .. } => text::mount_refused(mount, reason),
-        Notice::ScanNote { root, note, count } => text::scan_note(root, note.kind(), *count),
+        Notice::ScanNote { root, note, count } => text::scan_note(root, *note, *count),
         Notice::RoundFailed { error } => text::round_failed(error),
         Notice::CropFailed { error } => text::crop_failed(error),
         Notice::RoundPanicked { message } => text::round_panicked(message),
@@ -116,7 +116,7 @@ impl qobject::Library {
         let roots = match app::get().library().roots() {
             Ok(roots) => roots,
             Err(e) => {
-                crate::log::note(&format!("library: the folders couldn't be read: {e}"));
+                pg_log::warn("library", &format!("the folders couldn't be read: {e}"));
                 self.as_mut().show(text::folders_unreadable(&e.to_string()), true);
                 Vec::new()
             }
@@ -136,7 +136,7 @@ impl qobject::Library {
             Ok(library) => library,
             Err(e) => {
                 // Nothing is scanned, imported or written: the panel says so, not only the log.
-                crate::log::note(&format!("library: {e}"));
+                pg_log::error("library", &format!("the background work didn't start: {e}"));
                 self.show(text::library_unavailable(&e.to_string()), true);
                 return;
             }
@@ -165,7 +165,7 @@ impl qobject::Library {
             }
         });
         if let Err(e) = pump {
-            crate::log::note(&format!("library: the change pump didn't start: {e}"));
+            pg_log::warn("library", &format!("the change pump didn't start: {e}"));
         }
         // The state as it is now, for what was announced before the pump.
         self.as_mut().refresh_progress();

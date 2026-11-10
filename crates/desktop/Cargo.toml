@@ -18,6 +18,7 @@ doctest = false
 # Not here: catalog, library, jobs, thumbcache, yandex and codec. The window reaches them through `pg-app` alone (its
 # typed methods and `pg_app::reexport`), so `cargo deny` and machete see the boundary.
 pg-client = { path = "../client" }
+pg-log = { path = "../log" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-trace = { path = "../trace" }

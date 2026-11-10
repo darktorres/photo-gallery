@@ -91,6 +91,7 @@ Item {
     }
 
     Label {
+        textFormat: Text.PlainText
         anchors.centerIn: parent
         visible: root.gallery.count === 0 && !root.gallery.loading
         text: root.noFolders ? words.text("ui-no-folders")
@@ -140,6 +141,7 @@ Item {
         border.color: "#555555"
         Label {
             id: readout
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             color: "#dddddd"
             font.pixelSize: 12

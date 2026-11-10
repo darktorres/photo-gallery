@@ -2,8 +2,10 @@
 //! platform's facts and `pg_client::text` words (MODULARITY_REVIEW_4, R-1 and M-34). Nothing here is English, so a
 //! refusal is shown in the reader's language, whichever one the scan ran in.
 
-/// Why a folder can't be scanned for its identities, or walked into under a scanned root.
-#[derive(Clone, Debug, PartialEq, Eq)]
+/// Why a folder can't be scanned for its identities, or walked into under a scanned root. A notice stores it as
+/// `{"reason": "<variant>", ...its fields}` (kebab-case); the words select on [`RefusedReason::code`].
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "reason", rename_all = "kebab-case")]
 pub enum RefusedReason {
     /// A network (UNC) path, refused by its text.
     NetworkPath,
@@ -39,7 +41,8 @@ pub enum RefusedReason {
 }
 
 /// A fact the refusal checks read.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "kebab-case")]
 pub enum Fact {
     /// The volume the folder's path is on.
     Volume,

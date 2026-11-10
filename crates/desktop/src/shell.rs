@@ -26,7 +26,7 @@ use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
 use pg_model::view::SavedView;
 
-use crate::{app, controller, deadline, folders, gallery, keymap};
+use crate::{app, command_line, controller, deadline, folders, gallery, keymap};
 
 impl Default for ShellRust {
     /// The controller's start, mirrored: the listing the window starts with, and the size's defaults (the window sets
@@ -44,6 +44,7 @@ impl Default for ShellRust {
             show_borders: false,
             row_height: prefs.row_height(),
             thumb_height: prefs.thumb_height(),
+            dev_mode: false,
         }
     }
 }
@@ -70,7 +71,7 @@ fn view_names() -> QStringList {
         .views()
         .all()
         .unwrap_or_else(|e| {
-            crate::log::note(&format!("views: {e:#}"));
+            pg_log::warn("views", &format!("listing them: {e:#}"));
             Vec::new()
         })
         .iter()
@@ -161,6 +162,30 @@ impl qobject::Shell {
         self.dispatch(Event::Panel(panels::Event::SetViewerOpen(on)));
     }
 
+    pub(crate) fn seed_dev_mode(self: Pin<&mut Self>) {
+        let seeded = command_line::value("dev") == Some("1") || std::env::var_os("PG_DEV").is_some_and(|v| v == "1");
+        let on = seeded || app::get().prefs().get().dev_mode;
+        self.dispatch(Event::Panel(panels::Event::SetDevMode(on)));
+    }
+
+    pub(crate) fn global_action(self: Pin<&mut Self>, code: i32) {
+        if let Some(global) = keymap::global_of(code) {
+            self.dispatch(Event::Global(global));
+        }
+    }
+
+    pub(crate) fn panel_opened(self: Pin<&mut Self>, kind: i32) {
+        if let Some(kind) = keymap::panel_kind_of(kind) {
+            self.dispatch(Event::Panel(panels::Event::PanelOpened(kind)));
+        }
+    }
+
+    pub(crate) fn panel_closed(self: Pin<&mut Self>, kind: i32) {
+        if let Some(kind) = keymap::panel_kind_of(kind) {
+            self.dispatch(Event::Panel(panels::Event::PanelClosed(kind)));
+        }
+    }
+
     pub(crate) fn pending(&self) -> bool {
         controller::with(|c| c.pending())
     }
@@ -245,14 +270,14 @@ impl qobject::Shell {
             sort: listing.sort,
         };
         if let Err(e) = app::get().views().save(&view) {
-            crate::log::note(&format!("saving view: {e:#}"));
+            pg_log::warn("views", &format!("saving one: {e:#}"));
         }
         self.as_mut().set_saved_views(view_names());
     }
 
     pub(crate) fn delete_view(mut self: Pin<&mut Self>, name: &QString) {
         if let Err(e) = app::get().views().delete(&name.to_string()) {
-            crate::log::note(&format!("deleting view: {e:#}"));
+            pg_log::warn("views", &format!("deleting one: {e:#}"));
         }
         self.as_mut().set_saved_views(view_names());
     }
@@ -366,13 +391,25 @@ impl qobject::Shell {
             Command::RefreshTurned => gallery::post(|model| model.refresh_turned()),
             Command::SaveSession(listing) => {
                 if let Err(e) = app::get().views().save_listing(&listing) {
-                    crate::log::note(&format!("session: {e:#}"));
+                    pg_log::warn("session", &format!("{e:#}"));
                 }
             }
             // Synchronous: the save must run at shutdown too (`flush`), and its handler calls no shell.
             Command::SaveLastFile => self.as_mut().session_due(),
             Command::Relayout { .. } => self.as_mut().later(|shell| shell.relayout_due()),
             Command::Panel(change) => self.as_mut().panel(change),
+            Command::OpenPanel(kind) => {
+                let kind = keymap::panel_kind_code(kind);
+                self.as_mut().later(move |shell| shell.panel_open_requested(kind));
+            }
+            Command::ClosePanel(kind) => {
+                let kind = keymap::panel_kind_code(kind);
+                self.as_mut().later(move |shell| shell.panel_close_requested(kind));
+            }
+            // A save that fails is the preferences' to report; dev mode holds for this run either way.
+            Command::SaveDevMode(on) => {
+                let _ = app::get().prefs().update(|p| p.dev_mode = on);
+            }
             Command::Size(change) => self.as_mut().size(change),
         }
     }
@@ -389,6 +426,10 @@ impl qobject::Shell {
                 self.as_mut().show_borders_changed();
             }
             panels::Change::ViewerOpen(_) => {}
+            panels::Change::DevMode(on) => {
+                self.as_mut().rust_mut().dev_mode = on;
+                self.as_mut().dev_mode_changed();
+            }
         }
     }
 

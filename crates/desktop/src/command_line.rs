@@ -81,10 +81,10 @@ pub(crate) fn start_options() -> StartOptions {
 pub(crate) fn yandex_source() -> pg_app::yandex::Factory {
     match path("yandex-fixture") {
         Some(dir) => {
-            crate::log::note(&format!(
-                "yandex: --yandex-fixture: answering from the recorded session in {}; nothing is sent",
-                dir.display()
-            ));
+            pg_log::info(
+                "yandex",
+                &format!("--yandex-fixture: answering from the recorded session in {}; nothing is sent", dir.display()),
+            );
             pg_app::yandex::replay(dir)
         }
         None => pg_app::yandex::client(),

@@ -114,6 +114,7 @@ Item {
         background: Rectangle { color: "#a0000000"; radius: 3 }
     }
     Text {
+        textFormat: Text.PlainText
         anchors.left: parent.left
         anchors.bottom: parent.bottom
         anchors.margins: 4
@@ -125,6 +126,7 @@ Item {
     }
     // Animated images (and, later, videos) say so.
     Label {
+        textFormat: Text.PlainText
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.margins: 4

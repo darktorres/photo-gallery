@@ -2,14 +2,17 @@
 //! keys are decided in `Shell` (`grid_key`: the grid's action for a key, which the controller carries out).
 //! The viewer's and the Yandex panels' actions come back as codes the QML switches on, with the argument (a rating) from a
 //! second call. The codes are the positions in each QML file's `enum` of the same name, so the two lists are kept in the
-//! same order. The map and the hint lines are pg-client's.
+//! same order: the viewer's and the panels' actions, the window's shortcuts (`GlobalAction` in GlobalShortcuts.qml, with
+//! their sequences from here) and the modal panels' kinds (`Kind` in PanelKind.qml). The map and the hint lines are
+//! pg-client's.
 
 pub(crate) mod state;
 
 use crate::keymap_bridge::qobject;
 
 use cxx_qt_lib::QString;
-use pg_client::keys::{self, Grid, Key, Media, Mods, Panel, Shown, Viewer};
+use pg_client::controller::panels::PanelKind;
+use pg_client::keys::{self, Global, Grid, Key, Media, Mods, Panel, Shown, Viewer};
 
 // Qt's key codes (`Qt::Key`) and modifier flags (`Qt::KeyboardModifier`): the values of Qt's stable ABI.
 const KEY_ESCAPE: i32 = 0x0100_0000;
@@ -110,6 +113,21 @@ fn viewer_code(action: Viewer) -> (i32, i32) {
     }
 }
 
+/// The window shortcut of a `GlobalAction` code.
+pub(crate) fn global_of(code: i32) -> Option<Global> {
+    usize::try_from(code).ok().and_then(|i| Global::ALL.get(i).copied())
+}
+
+/// The modal panel of a `PanelKind.Kind` code.
+pub(crate) fn panel_kind_of(code: i32) -> Option<PanelKind> {
+    usize::try_from(code).ok().and_then(|i| PanelKind::ALL.get(i).copied())
+}
+
+/// A modal panel's `PanelKind.Kind` code.
+pub(crate) fn panel_kind_code(kind: PanelKind) -> i32 {
+    PanelKind::ALL.iter().position(|k| *k == kind).and_then(|i| i32::try_from(i).ok()).unwrap_or(-1)
+}
+
 /// The grid's action for a key press, as the key map decides it (`None` when the grid doesn't use the key).
 pub(crate) fn grid_key(key: i32, modifiers: i32, has_current: bool) -> Option<Grid> {
     key_of(key).and_then(|k| keys::grid(k, mods_of(modifiers), has_current))
@@ -140,6 +158,10 @@ impl qobject::KeyMap {
 
     pub(crate) fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
         QString::from(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)))
+    }
+
+    pub(crate) fn global_sequence(&self, code: i32) -> QString {
+        global_of(code).map_or_else(QString::default, |g| QString::from(g.sequence()))
     }
 }
 
@@ -198,6 +220,27 @@ mod tests {
                 assert_eq!(names[usize::try_from(panel_code(action)).unwrap()], name);
             }
         }
+    }
+
+    #[test]
+    fn the_global_codes_are_the_qml_enum() {
+        let names = qml_enum(include_str!("../qml/GlobalShortcuts.qml"), "GlobalAction");
+        assert_eq!(names, Global::ALL.iter().map(|g| format!("{g:?}")).collect::<Vec<_>>());
+        for (i, global) in Global::ALL.into_iter().enumerate() {
+            assert_eq!(global_of(i32::try_from(i).unwrap()), Some(global));
+        }
+        assert_eq!(global_of(-1), None);
+        assert_eq!(global_of(i32::try_from(Global::ALL.len()).unwrap()), None);
+    }
+
+    #[test]
+    fn the_panel_kind_codes_are_the_qml_enum() {
+        let names = qml_enum(include_str!("../qml/PanelKind.qml"), "Kind");
+        assert_eq!(names, PanelKind::ALL.iter().map(|k| format!("{k:?}")).collect::<Vec<_>>());
+        for kind in PanelKind::ALL {
+            assert_eq!(panel_kind_of(panel_kind_code(kind)), Some(kind));
+        }
+        assert_eq!(panel_kind_of(-1), None);
     }
 
     #[test]

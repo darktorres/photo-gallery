@@ -75,6 +75,7 @@ Item {
         visible: caption.text !== ""
         Label {
             id: caption
+            textFormat: Text.PlainText
             anchors.centerIn: parent
             text: tile.imageWidth > 0 ? tile.imageWidth + "×" + tile.imageHeight : ""
             color: Theme.tileCaption

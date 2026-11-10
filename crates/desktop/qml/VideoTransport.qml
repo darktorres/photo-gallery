@@ -58,7 +58,7 @@ Rectangle {
             ToolTip.visible: hovered
             ToolTip.text: words.text("ui-play-pause")
         }
-        Label { text: transport.time(transport.position); color: "#cccccc" }
+        Label { textFormat: Text.PlainText; text: transport.time(transport.position); color: "#cccccc" }
         Slider {
             id: seek
             Layout.fillWidth: true
@@ -72,7 +72,7 @@ Rectangle {
                 value: transport.position
             }
         }
-        Label { text: transport.time(transport.duration); color: "#cccccc" }
+        Label { textFormat: Text.PlainText; text: transport.time(transport.duration); color: "#cccccc" }
         ToolButton {
             text: transport.muted || transport.volume === 0 ? "🔇" : "🔊"
             font.pixelSize: 16

@@ -101,7 +101,7 @@ impl GalleryRust {
             let details = match crate::app::get().reading().details(e.id) {
                 Ok(d) => d?,
                 Err(err) => {
-                    crate::log::note(&format!("reading {}: {err:#}", e.id.get()));
+                    pg_log::warn("gallery", &format!("reading {}: {err:#}", e.id.get()));
                     return None;
                 }
             };
@@ -122,7 +122,7 @@ pub(super) fn fresh_entry(id: FileId) -> Option<Entry> {
     match crate::app::get().reading().entry(id) {
         Ok(found) => found,
         Err(e) => {
-            crate::log::note(&format!("reloading {}: {e:#}", id.get()));
+            pg_log::warn("gallery", &format!("reloading {}: {e:#}", id.get()));
             None
         }
     }

@@ -177,7 +177,7 @@ impl qobject::FolderModel {
         let model = self.qt_thread();
         crate::app::get().reading().session().tree(move |tree| {
             let tree = tree.unwrap_or_else(|e| {
-                crate::log::note(&format!("folder tree: {e:#}"));
+                pg_log::warn("folders", &format!("the tree: {e:#}"));
                 FolderTree::empty(pg_platform::native::PATH_RULES)
             });
             // Fails only when the model is gone (the window closing).

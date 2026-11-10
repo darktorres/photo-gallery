@@ -5,7 +5,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
-use pg_client::text::{self, CacheStartOver};
+use pg_client::text;
 use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
 use pg_model::progress::Progress;
@@ -34,21 +34,9 @@ fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
         Event::TouchesNotWritten { error } => format!("thumbnail cache: touches not written yet: {error}"),
         Event::NotStored { error } => format!("thumbnail cache: a thumbnail not stored: {error}"),
         Event::WalNotMerged { error } => format!("thumbnail cache: the WAL was not merged at close: {error}"),
-        Event::StartedOver { reason, path, detail } => format!(
-            "{}; detail: {detail}",
-            text::thumb_cache_started_over(started_over_reason(*reason), &path.display().to_string())
-        ),
-    }
-}
-
-/// The client's words for why the thumbnail cache was started over.
-fn started_over_reason(reason: pg_thumbcache::StartOverReason) -> CacheStartOver {
-    use pg_thumbcache::StartOverReason as Reason;
-    match reason {
-        Reason::Damaged => CacheStartOver::Damaged,
-        Reason::NotADatabase => CacheStartOver::NotADatabase,
-        Reason::OtherCatalog => CacheStartOver::OtherCatalog,
-        Reason::OtherBuild => CacheStartOver::OtherBuild,
+        Event::StartedOver { reason, path, detail } => {
+            format!("{}; detail: {detail}", text::thumb_cache_started_over(*reason, &path.display().to_string()))
+        }
     }
 }
 

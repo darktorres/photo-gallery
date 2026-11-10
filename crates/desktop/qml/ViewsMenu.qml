@@ -16,6 +16,9 @@ Button {
     required property var savedViews
     required property bool hasSavedViews
 
+    // The menu is open (a modal panel: Main reports it, PanelKind.ViewsMenu).
+    readonly property bool menuOpen: viewsMenu.visible
+
     signal viewChosen(string name)
     signal viewDeleteRequested(string name)
     signal saveViewRequested()

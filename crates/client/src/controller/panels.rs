@@ -1,7 +1,45 @@
-//! The window's panels (S-12.20): whether the filter bar is open, whether the borders are shown, and whether the viewer is
-//! open (the grid's keys are the viewer's while it is). A change reports what changed, so the desktop shows it and
+//! The window's panels (S-12.20): whether the filter bar is open, whether the borders are shown, whether the viewer is
+//! open (the grid's keys are the viewer's while it is), whether dev mode is on (the log view's button and key), and which
+//! modal panels are open, in the order they opened. A change reports what changed, so the desktop shows it and
 //! remembers the borders' setting; setting a flag to the value it has is no change. Nothing here calls Qt.
+//!
+//! The modal panels' open state is the QML's: each panel reports its opening and its closing (`PanelOpened`,
+//! `PanelClosed`), and this only mirrors them, for the global keys' rule (`Controller`'s `Global`).
 use serde::{Deserialize, Serialize};
+
+/// A modal panel: one that takes the keys while it is open (a dialog, a menu, an overlay; not the viewer, whose keys are
+/// its own by `SetViewerOpen`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PanelKind {
+    Inbox,
+    Log,
+    Library,
+    SaveViewDialog,
+    ViewsMenu,
+    FolderPicker,
+    Yandex,
+    YandexPreview,
+}
+
+impl PanelKind {
+    /// Every kind, in the order of the enum `Kind` in PanelKind.qml (its codes are these positions).
+    pub const ALL: [PanelKind; 8] = [
+        PanelKind::Inbox,
+        PanelKind::Log,
+        PanelKind::Library,
+        PanelKind::SaveViewDialog,
+        PanelKind::ViewsMenu,
+        PanelKind::FolderPicker,
+        PanelKind::Yandex,
+        PanelKind::YandexPreview,
+    ];
+
+    /// Whether the global keys switch between it and its sibling (the inbox and the log view); the other modals take
+    /// every key while they are open.
+    pub fn is_switchable(self) -> bool {
+        matches!(self, PanelKind::Inbox | PanelKind::Log)
+    }
+}
 
 /// A request about a panel.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -11,6 +49,12 @@ pub enum Event {
     ToggleBorders,
     SetShowBorders(bool),
     SetViewerOpen(bool),
+    /// Dev mode on or off, as the window starts with it (the preferences, `--dev=1`, `PG_DEV=1`): not saved.
+    SetDevMode(bool),
+    /// A modal panel opened.
+    PanelOpened(PanelKind),
+    /// A modal panel closed: the one of that kind opened last.
+    PanelClosed(PanelKind),
 }
 
 /// A panel's flag that changed, with its new value.
@@ -19,14 +63,18 @@ pub enum Change {
     FiltersOpen(bool),
     ShowBorders(bool),
     ViewerOpen(bool),
+    DevMode(bool),
 }
 
 /// The panels' flags, as the core holds them.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Panels {
     filters_open: bool,
     show_borders: bool,
     viewer_open: bool,
+    dev_mode: bool,
+    /// The modal panels open, oldest first.
+    modals: Vec<PanelKind>,
 }
 
 impl Panels {
@@ -45,6 +93,21 @@ impl Panels {
         self.viewer_open
     }
 
+    /// Whether dev mode is on: the log view can be opened.
+    pub fn dev_mode(&self) -> bool {
+        self.dev_mode
+    }
+
+    /// The modal panels open, oldest first.
+    pub fn modals(&self) -> &[PanelKind] {
+        &self.modals
+    }
+
+    /// Whether a modal panel of this kind is open.
+    pub fn is_open(&self, kind: PanelKind) -> bool {
+        self.modals.contains(&kind)
+    }
+
     /// Apply `event`; the changes it makes, in order (none when a flag already has the value).
     pub fn update(&mut self, event: Event) -> Vec<Change> {
         match event {
@@ -53,6 +116,17 @@ impl Panels {
             Event::ToggleBorders => self.set_borders(!self.show_borders),
             Event::SetShowBorders(on) => self.set_borders(on),
             Event::SetViewerOpen(on) => self.set_viewer(on),
+            Event::SetDevMode(on) => self.set_dev_mode(on),
+            Event::PanelOpened(kind) => {
+                self.modals.push(kind);
+                Vec::new()
+            }
+            Event::PanelClosed(kind) => {
+                if let Some(at) = self.modals.iter().rposition(|k| *k == kind) {
+                    self.modals.remove(at);
+                }
+                Vec::new()
+            }
         }
     }
 
@@ -78,5 +152,13 @@ impl Panels {
         }
         self.show_borders = on;
         vec![Change::ShowBorders(on)]
+    }
+
+    fn set_dev_mode(&mut self, on: bool) -> Vec<Change> {
+        if self.dev_mode == on {
+            return Vec::new();
+        }
+        self.dev_mode = on;
+        vec![Change::DevMode(on)]
     }
 }

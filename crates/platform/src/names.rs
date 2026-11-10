@@ -174,16 +174,28 @@ fn stored_case(real: &Path) -> io::Result<PathBuf> {
 #[cfg(unix)]
 fn stored_name(folder: &Path, typed: &std::ffi::OsStr, identity: (u64, u64)) -> std::ffi::OsString {
     use std::os::unix::fs::MetadataExt;
-    let wanted = typed.to_string_lossy().to_lowercase();
     let Ok(listing) = std::fs::read_dir(folder) else {
         return typed.to_os_string();
     };
-    for entry in listing.flatten() {
+    let entries = listing.flatten().map(|entry| {
         let name = entry.file_name();
-        if name.to_string_lossy().to_lowercase() != wanted {
-            continue;
-        }
-        if entry.metadata().is_ok_and(|meta| (meta.dev(), meta.ino()) == identity) {
+        (name, move || entry.metadata().ok().map(|meta| (meta.dev(), meta.ino())))
+    });
+    pick_stored(typed, identity, entries)
+}
+
+/// The choice of [`stored_name`] over a folder's entries, each its name and a lookup of its device and inode (made only
+/// for a name equal to `typed` ignoring case): the first such entry whose identity is `identity`, else `typed`. Apart
+/// from the listing, so a case-insensitive folder's lookup is tested where the test machine has none.
+#[cfg(unix)]
+fn pick_stored<F: FnOnce() -> Option<(u64, u64)>>(
+    typed: &std::ffi::OsStr,
+    identity: (u64, u64),
+    entries: impl IntoIterator<Item = (std::ffi::OsString, F)>,
+) -> std::ffi::OsString {
+    let wanted = typed.to_string_lossy().to_lowercase();
+    for (name, identity_of) in entries {
+        if name.to_string_lossy().to_lowercase() == wanted && identity_of() == Some(identity) {
             return name;
         }
     }
@@ -268,18 +280,40 @@ mod stored_case_tests {
         std::fs::remove_dir_all(&base).unwrap();
     }
 
+    /// A folder's entries for `pick_stored`: each name with its (device, inode), and a count of the identity lookups made.
+    fn listing<'a>(
+        entries: &'a [(&'a str, (u64, u64))],
+        lookups: &'a std::cell::Cell<usize>,
+    ) -> impl Iterator<Item = (std::ffi::OsString, impl FnOnce() -> Option<(u64, u64)> + 'a)> + 'a {
+        entries.iter().map(move |&(name, identity)| {
+            (std::ffi::OsString::from(name), move || {
+                lookups.set(lookups.get() + 1);
+                Some(identity)
+            })
+        })
+    }
+
     #[test]
     fn a_case_insensitive_folder_is_spelled_as_it_is_stored() {
-        // Where the test folder is case-insensitive (vfat, exfat, a casefold ext4 folder), the typed lower-case name is
-        // stored as created. Elsewhere there is no such folder to look at.
-        let base = fresh("insensitive");
-        std::fs::create_dir_all(base.join("Photos")).unwrap();
-        if !base.join("photos").is_dir() {
-            pg_testkit::skip("this test folder's file system is case-sensitive: no folder is spelled differently");
-            std::fs::remove_dir_all(&base).unwrap();
-            return;
-        }
-        assert_eq!(real_path(&base.join("photos")).unwrap().file_name(), Some(std::ffi::OsStr::new("Photos")));
-        std::fs::remove_dir_all(&base).unwrap();
+        // On a case-insensitive folder (a casefold ext4 folder, a Windows folder mounted in) the typed `photos` is the
+        // folder the listing names `Photos`: same device and inode, so the stored spelling is taken. No such folder is on
+        // the test machines, so the choice is tested over a listing.
+        let lookups = std::cell::Cell::new(0);
+        let entries = [("Albums", (1, 10)), ("Photos", (1, 20)), ("photos.txt", (1, 30))];
+        let stored = pick_stored(std::ffi::OsStr::new("photos"), (1, 20), listing(&entries, &lookups));
+        assert_eq!(stored, "Photos");
+        // Only the name equal to it ignoring case was looked up.
+        assert_eq!(lookups.get(), 1);
+    }
+
+    #[test]
+    fn a_name_equal_ignoring_case_but_another_file_is_not_taken() {
+        // `PHOTOS` here is another folder (a case-sensitive file system keeps both): its identity differs, so it is not
+        // the typed one's spelling, and the typed name is kept when no entry is.
+        let lookups = std::cell::Cell::new(0);
+        let entries = [("PHOTOS", (1, 40)), ("photos", (1, 20))];
+        assert_eq!(pick_stored(std::ffi::OsStr::new("photos"), (1, 20), listing(&entries, &lookups)), "photos");
+        let other = [("PHOTOS", (1, 40))];
+        assert_eq!(pick_stored(std::ffi::OsStr::new("photos"), (1, 20), listing(&other, &lookups)), "photos");
     }
 }

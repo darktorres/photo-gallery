@@ -67,8 +67,8 @@ Each proposed fix was then checked against the code, step by step, for whether i
   - This review applies the same rule to the pass phase (M-45), the refusal reason (M-34) and the Yandex outcomes (M-32). It also adds the CLI as a second consumer of the notices, which that plan does not cover.
 - **R-2: a stored path reaches the file system only through `disk_path`.**
   - A catalog path (`RulePath`) becomes a plain `PathBuf` through `pg_platform::names::path_buf`, and on Windows a plain path drops a trailing dot or space from a folder's name.
-  - So the one way production code turns a stored path into one that std or FFmpeg opens is `pg_platform::native::disk_path(&PathRules, &RulePath) -> PathBuf`, the verbatim form (M-21). Qt never gets a path to open. Its file engine normalizes the name with `GetFullPathNameW`, which drops the dot again, so Qt gets the file already open (M-21).
-  - `path_buf` of a whole path is for display and tests. A grep check in `just lint` enforces this, as the platform rule is.
+  - So the one way production code turns a stored path into one that std, FFmpeg or ExifTool opens is `pg_platform::native::disk_path(&PathRules, &RulePath) -> PathBuf`, the verbatim form (M-21). Qt and the Windows shell never get a stored path to open by name: both normalize it and drop the dot again (M-21).
+  - **The compiler enforces it, not a grep.** A grep cannot tell a stored path's bytes from other bytes: `path_buf(` has 59 uses in 28 files. So `names::path_buf` becomes `pub(crate)`, and `disk_path` is `pg-platform`'s only public way from stored bytes to a `PathBuf`. A test that needs an odd name uses `names::os_name(&[u8]) -> OsString`, one name and never a whole path, or `disk_path` with its own rules. A shown path is `PathRules::display`.
 
 ## Bugs
 
@@ -83,8 +83,10 @@ Each fix gets a test that fails before it.
     - the animation player (`render::player`, `std::fs::read`);
     - the video player (the UTF-16 units of the plain path).
   - On Windows a plain path drops a trailing dot or space from a folder name. So a temp in such a folder is missed, or a file in a sibling folder is deleted. A photo, an animation or a video there does not open, or the sibling folder's file of the same name opens instead.
-  - The passes avoid it only by writing `verbatim(path_buf(rules.join(p)))` by hand: import, thumbs, and writeback (four times).
-  - Fix: R-2. Add `pg_platform::native::disk_path`, used by every site above, with `Catalogs::file_path` returning it. The grep check stops the next one.
+  - The passes avoid it only by writing `verbatim(path_buf(rules.join(p)))` by hand: import, thumbs, writeback (four times) and crop.
+  - **ExifTool is given the plain path, so a rating or a crop's tags go into the wrong file.** The write-back gives ExifTool the plain path on purpose (its comment: "its plain path, which ExifTool and the messages are given"), and so does the crop (`tag_copy(source, out)`, from `path_buf`). Checked with ExifTool 13.60, with folders `a.` and `a` side by side: `-Rating=5` on the plain `…\a.\x.jpg` wrote the rating into `a\x.jpg`. The verbatim `\\?\…\a.\x.jpg` reached the right file, for both the write and the read. ExifTool gets `disk_path`.
+  - **The Yandex save dialog opens in the wrong folder.** `pg_app::yandex::start_folder` makes the remembered `yandex_folder` a plain path, checks `is_dir` on it, and `pg_platform::picker::start_folder` canonicalizes that. Both reach the sibling `a`. The shell cannot take such a folder in either form (checked with `SHCreateItemFromParsingName`: the plain form parses to `a`, and the verbatim form fails with `E_INVALIDARG`). So `start_folder` takes the stored path, checks it by `disk_path`, and when the folder's names do not survive the shell's parse (`native::AlteredFolder`), it starts at the nearest ancestor that does.
+  - Fix: R-2. Add `pg_platform::native::disk_path`, used by every site above, ExifTool's arguments included, with `Catalogs::file_path` returning it. `path_buf` leaves the public API, so the next site does not compile.
   - **The video player cannot take the file by name**, in either form (read in Qt 6.12's source, `C:\Qt\6.12.0\Src\qtbase\src\corelib\io`):
     - `QFile` opens `QFileSystemEntry::nativeFilePath()`. On Windows that is `QFSFileEnginePrivate::longFileName`, which calls `nativeAbsoluteFilePath`, which calls `GetFullPathNameW`.
     - `GetFullPathNameW` drops a trailing dot from a folder's name, even behind `\\?\` (checked with the real call: `\\?\D:\a.\x.mp4` becomes `\\?\D:\a\x.mp4`). So the plain form opens the sibling folder's file.
@@ -94,7 +96,7 @@ Each fix gets a test that fails before it.
     - On Windows, the C++ side turns it into a descriptor with `_open_osfhandle`. That is Qt's own descriptor table, because the workspace links the C runtime dynamically (no `crt-static`), so Rust, the desktop's C++ and Qt share one UCRT.
     - Then `QFile::open(fd, ReadOnly, AutoCloseHandle)`, which reads the handle back with `_get_osfhandle` (`qfsfileengine_win.cpp`).
   - `pg_platform::file::play_target`, the two `PlayTarget` variants and the per-platform match in `video_player.rs` become one `play_file`.
-  - Tests: a still, an animation, a video and a queued temp, each in a folder named `a.` beside one named `a` (Windows). Each is reached in its own folder.
+  - Tests: a still, an animation, a video, a queued temp, a rating written back, a crop's tags and the save dialog's start folder, each in a folder named `a.` beside one named `a` (Windows). Each is reached in its own folder, and the file in `a` is unchanged.
 - **An unreadable preferences file overwrites the last one kept.**
   - `app/src/store.rs` (`quarantine`) renames the file to `<name>.bad`. A rename replaces its target on both systems, so the `.bad` an earlier failure kept is lost. The doc says it "is kept".
   - `pg_schema::move_aside` would number them, but it is the SQLite file's (it moves the sidecars, and it assumes its `Lock` is held), and `pg-app` does not depend on `pg-schema`.
@@ -717,7 +719,7 @@ These are additions to the plan's M-12a list.
 
 This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered together, because the notice steps here are that plan's stages (R-1).
 
-1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`** and its grep check come with the first bug.
+1. **M-21's first, second and fourth bugs**, with their tests. **R-2's `disk_path`**, with `path_buf` made `pub(crate)`, comes with the first bug.
 2. **M-34** (the typed refusal) and **M-45**'s move of `Phase` to `pg-model`. Both go before NOTIFICATIONS S1, so that S1's `Notice` carries the typed reason and phase from the start.
 3. **NOTIFICATIONS S1 to S3.** They fix M-21's third bug and do M-26 and the notice part of M-32, with the CLI added as a consumer.
 4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
@@ -731,7 +733,7 @@ This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered toget
 
 None. Each was settled against the code, Qt's source included:
 
-- **M-21.** Qt's video player cannot open a trailing-dot path by name, in either form. It gets the file already open, by its handle.
+- **M-21.** Qt's video player cannot open a trailing-dot path by name, in either form. It gets the file already open, by its handle. ExifTool takes the verbatim form (checked). The shell takes neither form, so the dialog starts at the nearest folder it can reach.
 - **M-25.** A PNG with an `acTL` after its IDAT is a still (the PNG spec).
 - **M-29.** The Yandex source goes into `Config` as data (`YandexSource`), not as the closure.
 - **M-30.** `pg-app` drops `pg-codec`, `pg-video` and `thumbhash` as normal dependencies; `pg-codec` stays a dev-dependency.

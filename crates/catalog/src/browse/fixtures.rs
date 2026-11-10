@@ -54,6 +54,7 @@ pub(crate) fn library(rules: PathRules) -> crate::Catalog {
         crate::Versions {
             import: pg_analysis::analyze::IMPORT_VERSION,
             borders: pg_analysis::borders::BORDERS_VERSION,
+            thumbs: 1,
         },
         rules,
     )

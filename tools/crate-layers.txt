@@ -42,7 +42,7 @@ writeback: analysis catalog edit exiftool jobs metadata model platform thumbcach
 crop: catalog edit exiftool jobs model platform scan writeback
 
 # The runner, the application layer, the front ends and the one program.
-library: analysis borders catalog crop import jobs model platform scan thumbcache thumbs
+library: analysis borders catalog crop import jobs model platform render scan thumbcache thumbs
 app: catalog codec jobs library log model platform query render scan thumbcache video writeback yandex
 cli: analysis borders catalog client codec dedup import jobs library model platform scan thumbcache thumbs writeback
 desktop: app client log model platform render trace

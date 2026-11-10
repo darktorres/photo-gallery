@@ -3,6 +3,7 @@
 
 use fluent_bundle::FluentArgs;
 use pg_model::notice::{Notice, Source};
+use pg_model::refusal::RefusedReason;
 use pg_model::rules::PathRules;
 
 use super::words::shown;
@@ -123,7 +124,6 @@ pub enum Message {
         total: String,
         rate: String,
         eta: String,
-        failed: String,
     },
     PassFailed {
         count: String,
@@ -448,13 +448,12 @@ impl Message {
             Message::PassThumbs { height } => {
                 a.set("height", height.as_str());
             }
-            Message::PassWorking { what, done, total, rate, eta, failed } => {
+            Message::PassWorking { what, done, total, rate, eta } => {
                 a.set("what", what.as_str());
                 a.set("done", done.as_str());
                 a.set("total", total.as_str());
                 a.set("rate", rate.as_str());
                 a.set("eta", eta.as_str());
-                a.set("failed", failed.as_str());
             }
             Message::PassFailed { count } => {
                 a.set("count", count.as_str());
@@ -546,7 +545,8 @@ impl Message {
                 a.set("error", error.as_str());
             }
             Message::NoticeTitle { notice, rules } | Message::NoticeBody { notice, rules } => {
-                super::notice::args(notice, *rules, &mut a);
+                let nested = super::notice::Nested { refused: &refused_reason, panicked: &file_panicked };
+                super::notice::args(notice, *rules, &nested, &mut a);
             }
             Message::NoticeLine { title, body } => {
                 a.set("title", title.as_str());
@@ -613,7 +613,7 @@ impl Message {
             Message::PassBorders,
             Message::PassCrop,
             Message::PassThumbs { height: s() },
-            Message::PassWorking { what: s(), done: s(), total: s(), rate: s(), eta: s(), failed: s() },
+            Message::PassWorking { what: s(), done: s(), total: s(), rate: s(), eta: s() },
             Message::PassFailed { count: s() },
             Message::EtaSeconds { seconds: s() },
             Message::EtaMinutes { minutes: s() },
@@ -684,6 +684,21 @@ fn set_end(a: &mut FluentArgs<'_>, key: &'static str, end: Option<f64>) {
 /// The line `message` reads as in the English words.
 pub fn render(message: &Message) -> String {
     shown(message.id(), &message.args())
+}
+
+/// Why the scanner refuses a folder, as the refusal lines say it ("its drive is removable").
+pub(super) fn refused_reason(reason: &RefusedReason) -> String {
+    let (file_system, error) = match reason {
+        RefusedReason::NotNtfs { file_system } | RefusedReason::Pseudo { file_system } => (file_system.clone(), ""),
+        RefusedReason::Unreadable { error, .. } => (String::new(), error.as_str()),
+        _ => (String::new(), ""),
+    };
+    render(&Message::RefusedReason { code: reason.code().to_string(), file_system, error: error.to_string() })
+}
+
+/// A file a job panicked on (caught, so the job went on), with the panic's message.
+pub(super) fn file_panicked(message: &str) -> String {
+    render(&Message::FilePanicked { message: message.to_string() })
 }
 
 #[cfg(test)]

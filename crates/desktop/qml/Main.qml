@@ -65,8 +65,12 @@ ApplicationWindow {
             inboxLoader.active = true
             inboxModel.markAllRead()
             inboxModel.dismissToast()
+        } else {
+            inboxExpandRow = -1
         }
     }
+    // The inbox's row to open with it (the status bar's "N failed": the pass's ledger; -1: none).
+    property int inboxExpandRow: -1
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
     property bool ready: false
     // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
@@ -284,6 +288,26 @@ ApplicationWindow {
         grid.takeFocus()
     }
 
+    // The inbox asked for a list of its own (a failed file's folder, the failed imports), which the shell has announced:
+    // the inbox and the viewer close, the filter bar shows the query, the tree the folder.
+    function showAsked() {
+        inboxOpen = false
+        if (viewerItem.visible)
+            viewerItem.close()
+        filterBar.reloadQuery()
+        const row = folderModel.revealListing(true)
+        tree.currentIndex = Math.max(row, 0)
+        if (row >= 0)
+            tree.positionViewAtIndex(row, ListView.Contain)
+        grid.takeFocus()
+    }
+
+    // An inbox entry's Reveal: the file in its folder, selected once shown; a file the library no longer has toasts.
+    function revealFile(fileId: real) {
+        if (shell.reveal(fileId))
+            showAsked()
+    }
+
     // Show item i in the grid: its row, brought into view. The selection is the model's (the shell sets it).
     function scrollTo(i: int) {
         const row = galleryModel.rowOf(i)
@@ -339,6 +363,10 @@ ApplicationWindow {
     Notices {
         id: inboxModel
         Component.onCompleted: start()
+    }
+    // The failed files of the inbox's ledger entry shown.
+    FailedFiles {
+        id: failedFilesModel
     }
     // What another process changed in the inbox shows when the window comes back.
     onActiveChanged: if (active) inboxModel.poke()
@@ -456,6 +484,7 @@ ApplicationWindow {
             toastLevel: inboxModel.toastLevel
             unread: inboxModel.unread
             status: library.status
+            failed: library.failed
             busy: library.busy
             paused: library.paused
             progress: library.progress
@@ -463,6 +492,11 @@ ApplicationWindow {
             onLogRequested: shell.globalAction(GlobalShortcuts.Log)
             onToastExpired: inboxModel.dismissToast()
             onInboxRequested: shell.globalAction(GlobalShortcuts.Inbox)
+            onFailedRequested: {
+                win.inboxExpandRow = inboxModel.rowOfPass(library.failedPass)
+                if (!win.inboxOpen)
+                    shell.globalAction(GlobalShortcuts.Inbox)
+            }
             onPauseToggled: library.togglePause()
         }
 
@@ -658,8 +692,18 @@ ApplicationWindow {
                 InboxPanel {
                     open: win.inboxOpen
                     notices: inboxModel
+                    failedFiles: failedFilesModel
+                    failedTotal: failedFilesModel.total
+                    expandRow: win.inboxExpandRow
                     onCopyRequested: (row) => inboxModel.copy(row)
                     onDismissRequested: (row) => inboxModel.dismiss(row)
+                    onRetryRequested: (row) => inboxModel.retry(row)
+                    onFilesRequested: (pass) => failedFilesModel.show(pass)
+                    onRevealRequested: (fileId) => win.revealFile(fileId)
+                    onShowFilesRequested: {
+                        shell.showFailedImports()
+                        win.showAsked()
+                    }
                     onClearRequested: inboxModel.dismissAll()
                     onDismissed: win.inboxOpen = false
                     onHidden: win.refocus()

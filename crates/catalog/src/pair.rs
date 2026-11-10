@@ -330,6 +330,9 @@ fn replace(
     tx.execute("DELETE FROM border_sides WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM border_marks WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1", [id])?;
+    // Another file's content now: what failed on the old one is not known to fail (the file's own trigger misses a
+    // replacement with the same size, time and turn).
+    tx.execute("DELETE FROM file_failures WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM files WHERE id = ?1", [from.id])?;
     tx.execute(
         "UPDATE files SET volume = ?2, file_ref = ?3, created = ?4, folder_id = ?5, name = ?6, ext = ?7, kind = ?8,
@@ -368,7 +371,8 @@ mod tests {
     }
 
     fn catalog(rules: PathRules) -> Catalog {
-        Catalog::prepare(std::path::Path::new(":memory:"), Versions { import: 1, borders: 1 }, rules).unwrap()
+        Catalog::prepare(std::path::Path::new(":memory:"), Versions { import: 1, borders: 1, thumbs: 1 }, rules)
+            .unwrap()
     }
 
     fn begin(c: &Catalog) -> i64 {
@@ -539,6 +543,14 @@ mod tests {
         c.conn
             .execute("INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rotation', 1, 0)", [id])
             .unwrap();
+        // Its thumbnail failed.
+        c.conn
+            .execute(
+                "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)
+                 SELECT id, 'thumbs', mtime, size, rotation, 'it panicked', 0, 0 FROM files WHERE id = ?1",
+                [id],
+            )
+            .unwrap();
 
         // Saved over: the name is taken by a new file, with another file ID and creation time.
         let second = begin(&c);
@@ -573,6 +585,9 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rating, (3, true), "the queued rating stays, without its temp file");
+        let failures: i64 =
+            c.conn.query_row("SELECT count(*) FROM file_failures WHERE file_id = ?1", [id], |r| r.get(0)).unwrap();
+        assert_eq!(failures, 0, "the old file's failure is not the new one's");
     }
 
     under_both_rules!(

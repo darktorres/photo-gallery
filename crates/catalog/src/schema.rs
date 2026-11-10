@@ -29,7 +29,7 @@ pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transacti
 /// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES];
+pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES];
 
 /// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -93,6 +93,47 @@ const TO_3_NOTICES: &str = concat!(
     ";\n    UPDATE notices SET uid = ",
     seq!(),
     " WHERE id = new.id;\nEND;\n",
+);
+
+/// Version 4: the failure ledger (`crate::ledger`): the files a pass couldn't make its result of, one row per file and
+/// pass, for the state of the file it failed on (`mtime`, `size`, `rotation`). A change to that state, or the file going
+/// missing, removes the row (`files_failures_stale`): the next pass tries the file as it is now. A pass's failure ledger
+/// is one inbox entry, read from these rows; `ledger_ack` is what the user has seen of each entry (`seen_to`: the newest
+/// row they were shown, by `serial`, which is `meta.seq` when the row was made) and whether they read or dismissed it.
+/// `retry`: the pass tries the file again (1), or not until it changes, a retry or a new `THUMBS_VERSION` (0: it
+/// panicked). `thumbs_version` is the `pg_render::THUMBS_VERSION` the thumbnails' rows were recorded under
+/// (`set_thumbs_version`).
+const TO_4_FAILURES: &str = concat!(
+    "CREATE TABLE file_failures(\n",
+    "    id         INTEGER PRIMARY KEY,\n",
+    "    file_id    INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,\n",
+    "    pass       TEXT NOT NULL,      -- FilePass::code: 'thumbs' | 'borders'\n",
+    "    mtime      INTEGER NOT NULL,   -- the file as it failed\n",
+    "    size       INTEGER NOT NULL,\n",
+    "    rotation   INTEGER NOT NULL,\n",
+    "    error      TEXT NOT NULL,\n",
+    "    retry      INTEGER NOT NULL,\n",
+    "    serial     INTEGER NOT NULL DEFAULT 0,\n",
+    "    first_seen INTEGER NOT NULL,   -- Unix seconds\n",
+    "    UNIQUE(file_id, pass)\n",
+    ");\n",
+    "CREATE INDEX file_failures_serial ON file_failures(pass, serial);\n",
+    "CREATE TABLE ledger_ack(\n",
+    "    kind      TEXT PRIMARY KEY,   -- FilePass::code: 'thumbs' | 'borders' | 'import'\n",
+    "    seen_to   INTEGER NOT NULL,   -- a serial (the import's: files.seq)\n",
+    "    read      INTEGER,\n",
+    "    dismissed INTEGER\n",
+    ");\n",
+    "CREATE TRIGGER file_failures_stamp AFTER INSERT ON file_failures BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE file_failures SET serial = ",
+    seq!(),
+    " WHERE id = new.id;\nEND;\n",
+    "CREATE TRIGGER files_failures_stale AFTER UPDATE OF mtime, size, rotation, missing ON files\n",
+    "WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation\n",
+    "    OR old.missing IS NOT new.missing\n",
+    "BEGIN\n    DELETE FROM file_failures WHERE file_id = new.id;\nEND;\n",
+    "INSERT INTO meta(key, value) VALUES ('thumbs_version', 0);\n",
 );
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
@@ -224,6 +265,8 @@ pub(crate) const CARRIED: &[&str] = &[
     "views",
     "session",
     "notices",
+    "file_failures",
+    "ledger_ack",
 ];
 
 /// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`BASELINE`]: each table of [`CARRIED`],

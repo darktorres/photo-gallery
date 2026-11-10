@@ -13,11 +13,13 @@ use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
+use pg_app::reexport::InboxEntryId;
 use pg_app::{InboxEvent, Listing};
 use pg_client::text;
-use pg_model::notice::{Level, Notice};
+use pg_model::notice::{Action, FilePass, Level, Notice};
 
 use crate::app;
+use crate::failed_files::{pass_code, pass_of};
 
 const ROLE_TITLE: i32 = 256;
 const ROLE_BODY: i32 = 257;
@@ -26,6 +28,20 @@ const ROLE_LEVEL: i32 = 259;
 const ROLE_UPDATED: i32 = 260;
 const ROLE_COUNT: i32 = 261;
 const ROLE_READ: i32 = 262;
+const ROLE_PASS: i32 = 263;
+const ROLE_CAN_RETRY: i32 = 264;
+const ROLE_CAN_SHOW_FILES: i32 = 265;
+
+/// The most failed files Copy puts on the clipboard for a ledger's entry.
+const COPIED_FILES: usize = 1000;
+
+/// The pass whose failure ledger the entry is, if it is one.
+fn ledger_pass(id: InboxEntryId) -> Option<FilePass> {
+    match id {
+        InboxEntryId::Ledger { pass, .. } => Some(pass),
+        InboxEntryId::Row { .. } => None,
+    }
+}
 
 /// What the inbox published that the Qt thread hasn't shown, and whether a pass is queued for it.
 #[derive(Default)]
@@ -69,6 +85,10 @@ impl qobject::Notices {
             ROLE_UPDATED => QVariant::from(&pg_model::num::signed(entry.updated)),
             ROLE_COUNT => QVariant::from(&qt_int(entry.count)),
             ROLE_READ => QVariant::from(&entry.read),
+            // A ledger's entry lists its files when it is opened (`FailedFiles.show`).
+            ROLE_PASS => QVariant::from(&pass_code(ledger_pass(entry.id))),
+            ROLE_CAN_RETRY => QVariant::from(&notice.actions().contains(&Action::Retry)),
+            ROLE_CAN_SHOW_FILES => QVariant::from(&notice.actions().contains(&Action::ShowFailedFiles)),
             _ => QVariant::default(),
         }
     }
@@ -83,6 +103,9 @@ impl qobject::Notices {
             (ROLE_UPDATED, "updated"),
             (ROLE_COUNT, "count"),
             (ROLE_READ, "read"),
+            (ROLE_PASS, "pass"),
+            (ROLE_CAN_RETRY, "canRetry"),
+            (ROLE_CAN_SHOW_FILES, "canShowFiles"),
         ] {
             roles.insert(role, QByteArray::from(name));
         }
@@ -201,8 +224,35 @@ impl qobject::Notices {
 
     pub(crate) fn copy(&self, row: i32) {
         let Some(entry) = usize::try_from(row).ok().and_then(|row| self.rows.get(row)) else { return };
-        let words = text::notice_line(&entry.notice, pg_platform::native::PATH_RULES);
+        let rules = pg_platform::native::PATH_RULES;
+        let mut words = text::notice_line(&entry.notice, rules);
+        // A ledger's entry: its files, one a line.
+        if let Some(pass) = ledger_pass(entry.id) {
+            match app::get().catalogs().failed_files(pass, COPIED_FILES) {
+                Ok(files) => {
+                    for file in files {
+                        words.push_str(&format!("\n{}: {}", rules.display(&file.path), file.error));
+                    }
+                }
+                Err(e) => pg_log::warn("inbox", &format!("the failed files couldn't be read: {e}")),
+            }
+        }
         crate::clipboard::ffi::copy_text(&QString::from(&words));
+    }
+
+    /// The row of a pass's entry (a `pass` code), -1 when the inbox lists none.
+    pub(crate) fn row_of_pass(&self, pass: i32) -> i32 {
+        let Some(pass) = pass_of(pass) else { return -1 };
+        self.rows.iter().position(|e| ledger_pass(e.id) == Some(pass)).map_or(-1, qt_int)
+    }
+
+    /// Try the failed files of the entry at `row` again (a pass's ledger with Retry), then wake the job to make them.
+    /// The entry goes: the files that still fail make it anew.
+    pub(crate) fn retry(mut self: Pin<&mut Self>, row: i32) {
+        let Some(at) = usize::try_from(row).ok().filter(|&at| at < self.rows.len()) else { return };
+        let Some(pass) = self.rows.get(at).and_then(|e| ledger_pass(e.id)) else { return };
+        self.as_mut().dismiss(row);
+        app::get().inbox().retry(pass, Box::new(|| app::get().library().wake_job()));
     }
 
     pub(crate) fn dismiss_toast(self: Pin<&mut Self>) {

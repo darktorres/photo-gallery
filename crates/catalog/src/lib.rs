@@ -21,6 +21,7 @@ pub mod dups;
 #[cfg(any(test, feature = "fixture"))]
 pub mod fixture;
 pub mod inbox;
+pub mod ledger;
 pub mod pair;
 pub mod writes;
 

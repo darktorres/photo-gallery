@@ -243,7 +243,7 @@ impl ViewOp {
 
 /// A pass whose failed files the failure ledger holds (the import's are its failed analyses): one inbox entry each,
 /// built when the inbox is read, never stored as a notice.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum FilePass {
     Thumbs,
@@ -491,6 +491,12 @@ pub enum Notice {
         pass: FilePass,
         count: u64,
     },
+    /// A pass's failures couldn't be written to the failure ledger (a catalog locked for long, a full disk): its files
+    /// are tried again by its next pass.
+    LedgerNotWritten {
+        pass: FilePass,
+        error: String,
+    },
 
     // The inbox itself, and the app.
     /// Notices that couldn't be kept (the inbox's queue was full, or its writes failed), `count` of them.
@@ -681,6 +687,7 @@ ids! {
     BordersFailed => "borders-failed",
     ImportFailed => "import-failed",
     UnreadableFiles => "unreadable-files",
+    LedgerNotWritten => "ledger-not-written",
     NoticesLost => "notices-lost",
     FileNoLongerInLibrary => "file-no-longer-in-library",
     UpdateAvailable => "update-available",
@@ -747,6 +754,7 @@ impl Notice {
             | Notice::BordersFailed { .. }
             | Notice::ImportFailed { .. }
             | Notice::UnreadableFiles { .. }
+            | Notice::LedgerNotWritten { .. }
             | Notice::NoticesLost { .. }
             | Notice::Unknown { .. } => Level::Warning,
             Notice::ScanFailed { .. }
@@ -811,7 +819,7 @@ impl Notice {
             Notice::EditFailed { .. } => Source::Edit,
             Notice::BordersFailed { .. } => Source::Borders,
             Notice::ImportFailed { .. } => Source::Import,
-            Notice::UnreadableFiles { pass, .. } => match pass {
+            Notice::UnreadableFiles { pass, .. } | Notice::LedgerNotWritten { pass, .. } => match pass {
                 FilePass::Thumbs => Source::Thumbs,
                 FilePass::Borders => Source::Borders,
                 FilePass::Import => Source::Import,
@@ -829,7 +837,9 @@ impl Notice {
             Notice::ScanNote { root, note, .. } => self.key(Some(root), Some(Part::Code(note.code()))),
             Notice::ViewsFailed { op, .. } => self.key(None, Some(Part::Code(op.code()))),
             Notice::EditFailed { op, .. } => self.key(None, Some(Part::Code(op.code()))),
-            Notice::UnreadableFiles { pass, .. } => self.key(None, Some(Part::Code(pass.code()))),
+            Notice::UnreadableFiles { pass, .. } | Notice::LedgerNotWritten { pass, .. } => {
+                self.key(None, Some(Part::Code(pass.code())))
+            }
             Notice::RoundFailed { .. }
             | Notice::CacheFull { .. }
             | Notice::PrefsNotSaved { .. }
@@ -926,6 +936,7 @@ impl Notice {
             | Notice::BordersFailed { .. }
             | Notice::ImportFailed { .. }
             | Notice::UnreadableFiles { .. }
+            | Notice::LedgerNotWritten { .. }
             | Notice::NoticesLost { .. }
             | Notice::FileNoLongerInLibrary
             | Notice::UpdateAvailable { .. }
@@ -1014,6 +1025,7 @@ impl Notice {
             Notice::BordersFailed { counts: Some(LedgerCounts { new: 0, earlier: 2 }) },
             Notice::ImportFailed { counts: Some(LedgerCounts { new: 3, earlier: 0 }) },
             Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 7 },
+            Notice::LedgerNotWritten { pass: FilePass::Borders, error: error() },
             Notice::NoticesLost { count: 4 },
             Notice::FileNoLongerInLibrary,
             Notice::UpdateAvailable { version: "1.2.0".into() },
@@ -1083,14 +1095,15 @@ mod tests {
             Notice::BordersFailed { .. } => 40,
             Notice::ImportFailed { .. } => 41,
             Notice::UnreadableFiles { .. } => 42,
-            Notice::NoticesLost { .. } => 43,
-            Notice::FileNoLongerInLibrary => 44,
-            Notice::UpdateAvailable { .. } => 45,
-            Notice::Unknown { .. } => 46,
+            Notice::LedgerNotWritten { .. } => 43,
+            Notice::NoticesLost { .. } => 44,
+            Notice::FileNoLongerInLibrary => 45,
+            Notice::UpdateAvailable { .. } => 46,
+            Notice::Unknown { .. } => 47,
         }
     }
 
-    const KINDS: usize = 47;
+    const KINDS: usize = 48;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {

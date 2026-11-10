@@ -83,6 +83,12 @@ pub enum Event {
     /// The folder the window spelled (its canonical name): the listing's folder is replaced, nothing is listed, and the
     /// session is remembered.
     FolderSpelled(Merged),
+    /// Show the file `file` (an inbox entry's Reveal): its folder, `folder`, is listed with nothing filtered, and the file
+    /// is selected once the list is shown ([`Command::Reveal`]).
+    Reveal {
+        file: i64,
+        folder: Merged,
+    },
     /// Remember the listing for the next start (the start's test hooks ask for it).
     RememberListing,
     /// The list is read again, the selection kept (the files changed on disk).
@@ -136,6 +142,9 @@ pub enum Command {
     SaveDevMode(bool),
     /// The size changed: the thumbnails, or the saved row height.
     Size(prefs::Change),
+    /// Select the file `file` in the list just shown, the one a reveal asked for (the model knows its item), or say it is
+    /// no longer in the library.
+    Reveal(i64),
 }
 
 /// The one controller: every sub-machine, and the pauses.
@@ -148,6 +157,8 @@ pub struct Controller {
     prefs: Prefs,
     deadlines: Deadlines,
     grid_width: f64,
+    /// The file a reveal waits to select, once its list is shown.
+    reveal: Option<i64>,
 }
 
 impl Controller {
@@ -161,6 +172,7 @@ impl Controller {
             prefs: Prefs::with(row_height, scale),
             deadlines: Deadlines::default(),
             grid_width: 0.0,
+            reveal: None,
         }
     }
 
@@ -216,6 +228,7 @@ impl Controller {
             Event::ListShown { count, last_file } => {
                 let mut out = self.input_update(input::Event::ListShown { count });
                 out.extend(self.start(start::Event::ListShown { last_file }));
+                out.extend(self.reveal.take().map(Command::Reveal));
                 out
             }
             Event::ListPositioned => self.start(start::Event::ListPositioned),
@@ -244,6 +257,10 @@ impl Controller {
             Event::FolderSpelled(folder) => {
                 self.listing.folder = folder;
                 vec![Command::SaveSession(self.listing.clone())]
+            }
+            Event::Reveal { file, folder } => {
+                self.reveal = Some(file);
+                self.listing_event(listing::Event::Reveal(folder))
             }
             Event::RememberListing => vec![Command::SaveSession(self.listing.clone())],
             Event::Reload => vec![Command::OpenList { listing: self.listing.clone(), keep: true }],

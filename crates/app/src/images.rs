@@ -7,10 +7,12 @@
 //! A thumbnail made on a miss goes to the cache's writer once it is shown, moved there rather than copied ([`Keep`]):
 //! the front end hands it back with [`Images::keep`] once it is done with the bytes.
 
+use std::collections::VecDeque;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_catalog::browse;
+use pg_catalog::ledger::Failure;
 use pg_codec::decode::{MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
@@ -19,10 +21,12 @@ use pg_model::image::{ImageKey, Version, View};
 use pg_model::orientation::Orientation;
 use pg_model::state::FileSource;
 use pg_model::turns::Turns;
+use pg_render::maker::MakeError;
 use pg_thumbcache::{self as thumbs, ThumbCache};
 
 use crate::catalogs::{Catalogs, path_of};
-use crate::error::{Error, Result, failed, original};
+use crate::error::{Error, Result, failed, made_error, original};
+use crate::inbox::Inbox;
 use crate::makers::Makers;
 
 /// How long a request waits for a write of the app's into its file to end before it fails.
@@ -30,6 +34,10 @@ const WRITE_WAIT: Duration = Duration::from_secs(10);
 
 /// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
 const DECODE_MARGIN: usize = 4;
+
+/// How many of the thumbnails that failed lately are remembered, so one asked for again (at every scroll past it) is not
+/// sent to the ledger again.
+const RECENT_FAILURES: usize = 256;
 
 /// `x` rounded toward zero, as a count of pixels.
 fn to_pixels(x: f64) -> usize {
@@ -47,8 +55,8 @@ enum Found {
     Kept(u32),
     /// Made from the original.
     Made(Vec<u8>),
-    /// The original can't be read (offline). The height of the best smaller thumbnail the cache keeps of the file as it
-    /// is, if it was read into the caller's buffer.
+    /// The original can't be read (offline), or doesn't decode. The height of the best smaller thumbnail the cache keeps
+    /// of the file as it is, if it was read into the caller's buffer.
     Offline(Error, Option<u32>),
 }
 
@@ -130,11 +138,48 @@ pub struct Images {
     thumbs: &'static ThumbCache,
     /// The last full-size decode (`Images::full_image`).
     last_decode: Mutex<Option<Decoded>>,
+    /// Where a thumbnail that doesn't decode is recorded (the thumbnails' failure ledger), and one made leaves it.
+    inbox: Arc<Inbox>,
+    /// The files whose thumbnail failed lately, as they were (id, mtime, size, turns): sent to the ledger once.
+    recent: Mutex<VecDeque<(i64, i64, i64, u8)>>,
 }
 
 impl Images {
-    pub(crate) fn new(catalogs: Arc<Catalogs>, makers: Arc<Makers>, thumbs: &'static ThumbCache) -> Images {
-        Images { catalogs, makers, thumbs, last_decode: Mutex::new(None) }
+    pub(crate) fn new(
+        catalogs: Arc<Catalogs>,
+        makers: Arc<Makers>,
+        thumbs: &'static ThumbCache,
+        inbox: Arc<Inbox>,
+    ) -> Images {
+        Images { catalogs, makers, thumbs, last_decode: Mutex::new(None), inbox, recent: Mutex::new(VecDeque::new()) }
+    }
+
+    /// A thumbnail of the file as `src` has it that doesn't decode: recorded in the thumbnails' ledger (once while it is
+    /// recent), and what the request found.
+    fn undecodable(&self, file_id: FileId, src: &FileSource, e: MakeError, kept: Option<u32>) -> Found {
+        let error = made_error(e);
+        if let Error::Undecodable(text) = &error {
+            let state = &src.state;
+            let key = (file_id.get(), state.mtime, state.size, state.rotation.get());
+            let mut recent = self.recent.lock().unwrap_or_else(PoisonError::into_inner);
+            if !recent.contains(&key) {
+                if recent.len() >= RECENT_FAILURES {
+                    recent.pop_front();
+                }
+                recent.push_back(key);
+                drop(recent);
+                pg_log::warn("thumbs", &format!("file {}: {text}", file_id.get()));
+                self.inbox.thumb_failed(Failure {
+                    file_id,
+                    mtime: state.mtime,
+                    size: state.size,
+                    rotation: state.rotation,
+                    error: text.clone(),
+                    retry: true,
+                });
+            }
+        }
+        Found::Offline(error, kept)
     }
 
     /// `read` of the file, consistent with the catalog: the file's state is read before and after it, and the result
@@ -204,27 +249,35 @@ impl Images {
             };
             // The file's disk path, which std and FFmpeg reach exactly.
             let path = path_of(&src.path);
+            // The maker's failures are the original's (gone, offline, not decodable), so the variant is made here:
+            // `with_maker` would make any error its closure returns an `Error::Failed`.
             let made = if let Some(at) = src.poster_ms {
                 // A video: its poster frame.
-                match self.makers.with_maker(|m| Ok(m.load_frame(&path, at, current.rotation)))? {
-                    Ok(()) => self.makers.with_maker(|m| m.encode_frame(pg_model::num::index(height)))?,
-                    Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
-                }
+                self.makers.with_maker(|m| {
+                    Ok(m.load_frame(&path, at, current.rotation)
+                        .and_then(|()| m.encode_frame(pg_model::num::index(height))))
+                })?
             } else {
                 // Read into the maker, which keeps the buffer for the next file.
                 match self.makers.with_maker(|m| Ok(m.read_file(&path)))? {
                     Ok(()) => {}
                     Err(e) => return Ok(Found::Offline(original(e), kept_smaller)),
                 }
-                self.makers.with_maker(|m| m.make_from_file(pg_model::num::index(height), current.rotation))?
+                self.makers.with_maker(|m| Ok(m.make_from_file(pg_model::num::index(height), current.rotation)))?
             };
-            Ok(Found::Made(made))
+            Ok(match made {
+                Ok(made) => Found::Made(made),
+                Err(MakeError::Unreadable(e)) => Found::Offline(original(e), kept_smaller),
+                Err(e @ MakeError::Undecodable(_)) => self.undecodable(file_id, src, e, kept_smaller),
+            })
         })?;
         let turns = src.state.turns;
         match found {
             Found::Kept(h) => Ok(kept(turns, h)),
             Found::Offline(_, Some(h)) => Ok(kept(turns, h)),
             Found::Made(made) => {
+                // A file whose thumbnail failed (in a pass, or here) and is made now leaves the ledger.
+                self.inbox.thumb_made(file_id);
                 let source = thumbs::Source { mtime: src.state.mtime, rotation: src.state.rotation };
                 Ok(Thumbnail { turns, made: Some((made, Keep { file_id, height, source })), kept_at: None })
             }
@@ -338,7 +391,7 @@ impl Images {
             let path = path_of(&src.path);
             let decoded = self.makers.with_maker(|m| {
                 Ok(match m.read_file(&path) {
-                    Ok(()) => m.decode_file(min, rotation).map_err(original),
+                    Ok(()) => m.decode_file(min, rotation).map_err(made_error),
                     Err(e) => Err(original(e)),
                 })
             })??;
@@ -414,6 +467,60 @@ mod tests {
             Ok(_) => panic!("a thumbnail of a file that isn't there"),
         }
         drop(app);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// The thumbnails' ledger, once the inbox's writer holds `want` files (it writes in the background).
+    fn ledger_until(app: &App, want: usize) -> Vec<FileId> {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        loop {
+            let held: Vec<FileId> = app
+                .catalogs()
+                .with_catalog(|c| pg_catalog::ledger::recorded(c, pg_model::notice::FilePass::Thumbs))
+                .unwrap()
+                .into_iter()
+                .collect();
+            if held.len() == want || Instant::now() > deadline {
+                return held;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    // A still image that doesn't decode is `Error::Undecodable` (not an unavailable original), and its thumbnail's failure
+    // is recorded in the ledger; once the file decodes, a thumbnail made of it takes it out.
+    #[test]
+    fn a_thumbnail_that_doesnt_decode_is_recorded_until_one_is_made() {
+        let dir = pg_testkit::test_folder("scratch_app", "thumb-undecodable").unwrap();
+        let images = dir.join("images");
+        std::fs::create_dir_all(&images).unwrap();
+        let file = images.join("bad.png");
+        std::fs::write(&file, b"not a picture").unwrap();
+        let app = App::open(Config::in_home(&dir)).unwrap();
+        let folder = images.to_str().unwrap();
+        app.catalogs()
+            .with_catalog(|c| {
+                fixture::state::add_scan(c, 1, folder).unwrap();
+                fixture::state::add_folder(c, 1, folder).unwrap();
+                fixture::insert(c, &[File::new(FileId::new(1), FolderId::new(1), "bad.png", 10, 0)]).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        let key = ImageKey { file: FileId::new(1), version: None };
+        for _ in 0..2 {
+            match app.images().thumbnail(key, 100, &mut Vec::new()) {
+                Err(Error::Undecodable(_)) => {}
+                Err(e) => panic!("not Error::Undecodable: {e:?}"),
+                Ok(_) => panic!("a thumbnail of a file that doesn't decode"),
+            }
+        }
+        assert_eq!(ledger_until(&app, 1), [FileId::new(1)]);
+        assert_eq!(app.images().recent.lock().unwrap().len(), 1, "asked twice, sent once");
+        std::fs::write(&file, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        assert!(app.images().thumbnail(key, 100, &mut Vec::new()).unwrap().made.is_some());
+        assert!(ledger_until(&app, 0).is_empty());
+        app.stop().unwrap();
+        app.shutdown();
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -21,6 +21,11 @@ pub mod qobject {
         #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
         /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
         #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
+        /// How many files the current pass failed on ("2 failed"), empty when none: the link to the inbox's entry of its
+        /// failed files.
+        #[qproperty(QString, failed, READ, WRITE, NOTIFY, FINAL)]
+        /// The pass `failed` is of: 0 the thumbnails, 1 the borders, 2 the import, -1 one without a failure ledger.
+        #[qproperty(i32, failed_pass, cxx_name = "failedPass", READ, WRITE, NOTIFY, FINAL)]
         /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
         #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
         /// Whether the latest write failed (the status says why).

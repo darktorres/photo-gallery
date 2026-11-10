@@ -1,12 +1,18 @@
 //! The values of a notice's entries (`notice-<code>-title`, `-body`): each kind's fields, its paths under the rules they
-//! were stored under, its codes as selectors, and the nested words (a refusal's reason) worded first.
+//! were stored under, its codes as selectors, and the nested words (a refusal's reason) worded first, by the caller
+//! ([`Nested`]: the words are `message.rs`'s, which calls this).
 
 use fluent_bundle::FluentArgs;
 use pg_model::notice::{Carried, FileFailure, LedgerCounts, Notice, Source};
+use pg_model::refusal::RefusedReason;
 use pg_model::rules::PathRules;
 use pg_model::write::WriteKind;
 
-use super::refused_reason;
+/// The words a notice's values nest, made by the caller: a refusal's reason, and a panicked file's error.
+pub(super) struct Nested<'n> {
+    pub(super) refused: &'n dyn Fn(&RefusedReason) -> String,
+    pub(super) panicked: &'n dyn Fn(&str) -> String,
+}
 
 /// The id of a source's name, `source-<code>`.
 pub(super) fn source_id(source: Source) -> &'static str {
@@ -29,7 +35,7 @@ pub(super) fn source_id(source: Source) -> &'static str {
 }
 
 /// Set the values of `notice`'s entries in `a`. The title and the body take the same values; each uses those it needs.
-pub(super) fn args(notice: &Notice, rules: PathRules, a: &mut FluentArgs<'_>) {
+pub(super) fn args(notice: &Notice, rules: PathRules, nested: &Nested<'_>, a: &mut FluentArgs<'_>) {
     match notice {
         Notice::ScanUnreadable { root, count } => {
             a.set("root", rules.display(root));
@@ -41,12 +47,12 @@ pub(super) fn args(notice: &Notice, rules: PathRules, a: &mut FluentArgs<'_>) {
         }
         Notice::RootRefused { root, reason } => {
             a.set("root", rules.display(root));
-            a.set("reason", refused_reason(reason));
+            a.set("reason", (nested.refused)(reason));
         }
         Notice::MountRefused { root, mount, reason } => {
             a.set("root", rules.display(root));
             a.set("mount", rules.display(mount));
-            a.set("reason", refused_reason(reason));
+            a.set("reason", (nested.refused)(reason));
         }
         Notice::ScanNote { root, note, count } => {
             a.set("root", rules.display(root));
@@ -130,7 +136,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, a: &mut FluentArgs<'_>) {
             a.set("path", path.clone());
         }
         Notice::WriteFailed { error, panicked, file, temp } => {
-            let error = if *panicked { super::file_panicked(error) } else { error.clone() };
+            let error = if *panicked { (nested.panicked)(error) } else { error.clone() };
             a.set("error", error);
             a.set("file", file.clone().unwrap_or_else(|| "none".to_string()));
             a.set("temp", temp.clone().unwrap_or_default());
@@ -150,7 +156,7 @@ pub(super) fn args(notice: &Notice, rules: PathRules, a: &mut FluentArgs<'_>) {
         }
         Notice::FolderRefused { folder, reason } => {
             a.set("folder", rules.display(folder));
-            a.set("reason", refused_reason(reason));
+            a.set("reason", (nested.refused)(reason));
         }
         Notice::ViewsFailed { op, error } => {
             a.set("op", op.code());
@@ -173,6 +179,10 @@ pub(super) fn args(notice: &Notice, rules: PathRules, a: &mut FluentArgs<'_>) {
         Notice::UnreadableFiles { pass, count } => {
             a.set("pass", pass.code());
             plural(a, *count);
+        }
+        Notice::LedgerNotWritten { pass, error } => {
+            a.set("pass", pass.code());
+            a.set("error", error.clone());
         }
         Notice::NoticesLost { count } => plural(a, *count),
         Notice::UpdateAvailable { version } => {

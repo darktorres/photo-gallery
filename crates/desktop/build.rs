@@ -83,6 +83,7 @@ fn main() -> Result<(), String> {
         "src/gpu_device_bridge.rs",
         "src/gui_app_bridge.rs",
         "src/picker_bridge.rs",
+        "src/failed_files_bridge.rs",
         "src/library_bridge.rs",
         "src/log_model_bridge.rs",
         "src/notices_bridge.rs",

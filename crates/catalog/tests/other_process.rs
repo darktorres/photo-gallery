@@ -10,7 +10,7 @@ use pg_catalog::{Catalog, Versions};
 use rusqlite::Connection;
 
 fn versions() -> Versions {
-    Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION }
+    Versions { import: pg_analysis::analyze::IMPORT_VERSION, borders: pg_analysis::borders::BORDERS_VERSION, thumbs: 1 }
 }
 
 /// Waits until `path` exists, for at most `within`.

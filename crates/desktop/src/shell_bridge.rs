@@ -266,6 +266,17 @@ pub mod qobject {
         #[cxx_name = "applyView"]
         fn apply_view(self: Pin<&mut Shell>, name: &QString) -> bool;
 
+        /// Show a file in its folder with nothing filtered, and select it once the list is shown (an inbox entry's
+        /// Reveal). `false` when the library no longer has it (a toast says so). The filter bar then reloads the query,
+        /// and the tree shows the folder (`FolderModel.revealListing`).
+        #[qinvokable]
+        fn reveal(self: Pin<&mut Shell>, file_id: f64) -> bool;
+
+        /// List the files the import failed on, in every folder. The filter bar then reloads the query.
+        #[qinvokable]
+        #[cxx_name = "showFailedImports"]
+        fn show_failed_imports(self: Pin<&mut Shell>);
+
         /// Order by the sort box's choice `index` (`pg_client::sort`): its key, and its way.
         #[qinvokable]
         #[cxx_name = "sortBy"]

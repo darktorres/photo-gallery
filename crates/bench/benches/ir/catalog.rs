@@ -54,7 +54,7 @@ fn copy_data() -> PathBuf {
 }
 
 fn open_catalog() -> Catalog {
-    let versions = Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION };
+    let versions = Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: 1 };
     let catalog = or_stop(Catalog::prepare(&copy_data().join("catalog.sqlite"), versions, RULES), "the catalog");
     // A catalog that doesn't match this build's schema is moved aside and an empty one made: the bench would measure
     // nothing. Regenerate the data instead.

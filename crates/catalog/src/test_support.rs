@@ -18,7 +18,7 @@ use std::path::Path;
 
 /// The versions this build's analyses are stamped with, as the library passes them to [`Catalog::prepare`].
 pub(crate) fn versions() -> Versions {
-    Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION }
+    Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: pg_render::THUMBS_VERSION }
 }
 
 /// A path under `rules`, from its text as the tests write it, in the Windows form (`D:\p\sub`), which [`spelled`]

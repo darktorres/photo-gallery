@@ -1,7 +1,9 @@
 // The inbox, over a dimmed window: what the app told the user, newest first (Notices, src/notices.rs). A row is the
 // notice's title, where it comes from, when it was last posted, and how many times; a click shows its details below,
-// with Copy and Dismiss, which the panel asks of Main (its signals), as Clear all. Opening it marks every entry read. Made
-// the first time it is opened (Main's inboxLoader), then kept. Escape or Close dismisses it; Tab stays within it.
+// with Copy and Dismiss, which the panel asks of Main (its signals), as Clear all. A pass's failure ledger is one row: its
+// details are its failed files (FailedFiles, src/failed_files.rs), each with Reveal, and the row has Retry (the
+// thumbnails) or "Show the failed files" (the import). Opening it marks every entry read. Made the first time it is
+// opened (Main's inboxLoader), then kept. Escape or Close dismisses it; Tab stays within it.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -14,21 +16,68 @@ ModalOverlay {
         id: words
     }
     id: panel
-    // The entries (Main's Notices).
+    // The entries (Main's Notices), and the failed files of the ledger's entry shown (Main's FailedFiles), of which the
+    // ledger holds `failedTotal`.
     required property var notices
-    // The row clicked: its details are shown below the list (-1: none).
+    required property var failedFiles
+    required property int failedTotal
+    // The row clicked: its details are shown below the list (-1: none). A ledger's row is its pass (-1: not one), with
+    // what it offers.
     property int selected: -1
     property string selectedText: ""
+    property int selectedPass: -1
+    property bool selectedCanRetry: false
+    property bool selectedCanShowFiles: false
+    // The row to open when the panel opens (the status bar's "N failed"; -1: none).
+    property int expandRow: -1
 
-    // The entry at `row` is to be copied, or dismissed; every entry is to be dismissed.
+    // The entry at `row` is to be copied, dismissed or retried; every entry is to be dismissed.
     signal copyRequested(int row)
     signal dismissRequested(int row)
+    signal retryRequested(int row)
     signal clearRequested()
+    // A ledger's entry is shown: its pass's files are to be listed (-1: none).
+    signal filesRequested(int pass)
+    // A failed file is to be shown in its folder; the import's failed files are to be listed in the grid.
+    signal revealRequested(real fileId)
+    signal showFilesRequested()
 
-    // A new listing moves the rows: the details shown are of a row that may be another now.
+    // The row at `row` (selected) says what it is: its details, and for a ledger its files.
+    function show(row: int, body: string, pass: int, canRetry: bool, canShowFiles: bool) {
+        selected = row
+        selectedText = body
+        selectedCanRetry = canRetry
+        selectedCanShowFiles = canShowFiles
+        selectedPass = pass
+        filesRequested(pass)
+    }
+
+    function unselect() {
+        selected = -1
+        selectedPass = -1
+        selectedCanRetry = false
+        selectedCanShowFiles = false
+        filesRequested(-1)
+    }
+
+    function expand() {
+        if (!open || expandRow < 0)
+            return
+        selected = expandRow
+        list.positionViewAtIndex(expandRow, ListView.Contain)
+    }
+    onOpenChanged: expand()
+    onExpandRowChanged: expand()
+    Component.onCompleted: expand()
+
+    // A new listing moves the rows: the details shown are of a row that may be another now. A ledger's row keeps its
+    // place by its pass (its delegate finds it, below); any other is let go.
     Connections {
         target: panel.notices
-        function onModelReset() { panel.selected = -1 }
+        function onModelReset() {
+            if (panel.selectedPass < 0)
+                panel.unselect()
+        }
     }
 
     Pane {
@@ -65,6 +114,19 @@ ModalOverlay {
                     required property real updated
                     required property int count
                     required property bool read
+                    required property int pass
+                    required property bool canRetry
+                    required property bool canShowFiles
+                    readonly property bool chosen: panel.selected === row.index
+                    function tell() { panel.show(row.index, row.body, row.pass, row.canRetry, row.canShowFiles) }
+                    onChosenChanged: if (chosen) tell()
+                    Component.onCompleted: {
+                        // The ledger's entry shown, after a new listing: wherever it is now.
+                        if (row.pass >= 0 && row.pass === panel.selectedPass && !chosen)
+                            panel.selected = row.index
+                        else if (chosen)
+                            tell()
+                    }
                     width: list.width
                     height: 30
                     color: panel.selected === row.index ? "#2f5f93" : (row.index % 2 ? "#242424" : "transparent")
@@ -109,8 +171,10 @@ ModalOverlay {
                     }
                     TapHandler {
                         onTapped: {
-                            panel.selected = row.index
-                            panel.selectedText = row.body
+                            if (row.chosen)
+                                row.tell()
+                            else
+                                panel.selected = row.index
                         }
                     }
                 }
@@ -121,11 +185,11 @@ ModalOverlay {
                     color: "#888888"
                 }
             }
-            // The row clicked: its details, selectable.
+            // The row clicked: its details, selectable; a ledger's, its files.
             ScrollView {
                 Layout.fillWidth: true
                 Layout.preferredHeight: 110
-                visible: panel.selected >= 0
+                visible: panel.selected >= 0 && panel.selectedPass < 0
                 TextArea {
                     text: panel.selectedText
                     textFormat: TextEdit.PlainText
@@ -134,7 +198,92 @@ ModalOverlay {
                     activeFocusOnTab: false
                 }
             }
+            ColumnLayout {
+                visible: panel.selected >= 0 && panel.selectedPass >= 0
+                Layout.fillWidth: true
+                spacing: 4
+                Label {
+                    text: panel.selectedText
+                    textFormat: Text.PlainText
+                    color: "#aaaaaa"
+                    Layout.fillWidth: true
+                    elide: Text.ElideRight
+                }
+                WheelListView {
+                    id: files
+                    objectName: "inboxFiles"
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: 180
+                    clip: true
+                    model: panel.failedFiles
+                    activeFocusOnTab: false
+                    ScrollBar.vertical: ScrollBar {}
+                    delegate: Item {
+                        id: file
+                        required property int index
+                        required property string path
+                        required property string error
+                        required property real fileId
+                        required property bool isNew
+                        width: files.width
+                        height: 40
+                        Accessible.role: Accessible.ListItem
+                        Accessible.name: file.path
+                        RowLayout {
+                            anchors.fill: parent
+                            anchors.rightMargin: 8
+                            spacing: 8
+                            ColumnLayout {
+                                Layout.fillWidth: true
+                                spacing: 0
+                                Label {
+                                    text: file.path
+                                    textFormat: Text.PlainText
+                                    font.bold: file.isNew
+                                    elide: Text.ElideMiddle
+                                    Layout.fillWidth: true
+                                }
+                                Label {
+                                    text: file.error
+                                    textFormat: Text.PlainText
+                                    color: "#aaaaaa"
+                                    elide: Text.ElideRight
+                                    Layout.fillWidth: true
+                                }
+                            }
+                            Button {
+                                objectName: "inboxReveal" + file.index
+                                text: words.text("ui-inbox-reveal")
+                                flat: true
+                                onClicked: panel.revealRequested(file.fileId)
+                            }
+                        }
+                    }
+                }
+                Label {
+                    visible: panel.failedTotal > files.count
+                    text: words.phrase("ui-inbox-more", panel.failedTotal, "" + panel.failedTotal, "" + files.count)
+                    textFormat: Text.PlainText
+                    color: "#888888"
+                }
+            }
             RowLayout {
+                Button {
+                    objectName: "inboxRetry"
+                    visible: panel.selectedCanRetry
+                    text: words.text("ui-inbox-retry")
+                    onClicked: {
+                        const row = panel.selected
+                        panel.unselect()
+                        panel.retryRequested(row)
+                    }
+                }
+                Button {
+                    objectName: "inboxShowFiles"
+                    visible: panel.selectedCanShowFiles
+                    text: words.text("ui-inbox-show-files")
+                    onClicked: panel.showFilesRequested()
+                }
                 Button {
                     objectName: "inboxCopy"
                     text: words.text("ui-inbox-copy")
@@ -147,7 +296,7 @@ ModalOverlay {
                     enabled: panel.selected >= 0
                     onClicked: {
                         const row = panel.selected
-                        panel.selected = -1
+                        panel.unselect()
                         panel.dismissRequested(row)
                     }
                 }
@@ -157,7 +306,7 @@ ModalOverlay {
                     text: words.text("ui-inbox-clear")
                     enabled: list.count > 0
                     onClicked: {
-                        panel.selected = -1
+                        panel.unselect()
                         panel.clearRequested()
                     }
                 }

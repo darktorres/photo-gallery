@@ -88,7 +88,7 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
 fn thumbs(dir: &Path, c: &Catalog) -> anyhow::Result<(&'static ThumbCache, Quiet<pg_thumbcache::Event>)> {
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(dir, &c.catalog_id()?, Some(1 << 30), events)?));
+        Box::leak(Box::new(ThumbCache::open(dir, &c.catalog_id()?, Some(1 << 30), 1, events)?));
     Ok((thumbs, quiet))
 }
 
@@ -138,7 +138,7 @@ fn ratings_and_turns_reach_the_files() {
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
@@ -261,7 +261,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap()));
     // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
     let made = pg_thumbs::run(thumbs, &catalog_path, 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
@@ -816,7 +816,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     writer.wake();
 
@@ -856,7 +856,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap()));
     let writer =
         Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInProcess(poisoned))
             .unwrap();
@@ -898,7 +898,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap()));
     let writer =
         Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain).unwrap();
     let start = Instant::now();
@@ -943,7 +943,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     assert_eq!(state::write_row(&c, id).unwrap().temp, Some(temp.clone()));
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
-        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        Box::leak(Box::new(ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap()));
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();

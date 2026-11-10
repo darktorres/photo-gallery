@@ -5,7 +5,9 @@ use std::path::PathBuf;
 use std::sync::{Mutex, PoisonError};
 
 use pg_catalog::Catalog;
+use pg_catalog::ledger::{self, FailedFile};
 use pg_model::ids::FileId;
+use pg_model::notice::FilePass;
 use pg_model::rules::Path as RulePath;
 
 use crate::error::{Error, Result};
@@ -48,6 +50,17 @@ impl Catalogs {
     pub fn file_path(&self, file_id: FileId) -> Result<PathBuf> {
         let path = self.with_catalog(|c| c.file_path(file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
         Ok(path_of(&path))
+    }
+
+    /// The folder of a file the library shows (present), where a reveal opens it; `None` for one gone or missing.
+    pub fn present_folder(&self, file_id: FileId) -> Result<Option<RulePath>> {
+        self.with_catalog(|c| c.present_file_folder(file_id))
+    }
+
+    /// The failed files of `pass`'s inbox entry, newest first, at most `limit` (`pg_catalog::ledger::files`): what the
+    /// entry lists when it is opened.
+    pub fn failed_files(&self, pass: FilePass, limit: usize) -> Result<Vec<FailedFile>> {
+        self.with_catalog(|c| ledger::files(c, pass, limit))
     }
 
     /// Close the pooled connections, then the keeper, so the last connection to the file deletes its WAL. Returns the

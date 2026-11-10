@@ -2,7 +2,7 @@
 //! each change it reports; this says what follows, as commands, with no Qt. Every change that is applied opens a list
 //! and remembers the session, except a sort choice that isn't one (it changes nothing).
 
-use pg_model::query::Query;
+use pg_model::query::{Query, Status};
 use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
@@ -29,6 +29,10 @@ pub enum Event {
     QueryChanged(Query),
     /// A saved view: its folder, subfolders, sort and query replace the listing's.
     ViewApplied(SavedView),
+    /// Show a folder with nothing filtered, so that a file in it is listed (the inbox's Reveal).
+    Reveal(Merged),
+    /// Show the files the import failed on, in every folder (the inbox's "Show the failed files").
+    FailedImports,
 }
 
 /// What follows a change.
@@ -55,6 +59,12 @@ pub fn update(listing: &mut Listing, event: Event) -> Vec<Command> {
         Event::QueryChanged(query) => listing.query = query,
         Event::ViewApplied(view) => {
             *listing = Listing { folder: view.folder, recursive: view.recursive, sort: view.sort, query: view.query };
+        }
+        Event::Reveal(folder) => (listing.folder, listing.query) = (folder, Query::default()),
+        Event::FailedImports => {
+            listing.folder = Merged::default();
+            listing.recursive = true;
+            listing.query = Query { status: vec![Status::Failed], ..Query::default() };
         }
     }
     vec![Command::OpenList, Command::SaveSession]

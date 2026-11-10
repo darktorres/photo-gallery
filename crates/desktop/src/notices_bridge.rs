@@ -95,5 +95,15 @@ pub mod qobject {
         /// Look for what another process changed (the window was activated).
         #[qinvokable]
         fn poke(self: &Notices);
+
+        /// The row of a pass's failure ledger (a `pass` code: 0 the thumbnails, 1 the borders, 2 the import), -1 when
+        /// none is listed.
+        #[qinvokable]
+        #[cxx_name = "rowOfPass"]
+        fn row_of_pass(self: &Notices, pass: i32) -> i32;
+
+        /// Try the failed files of the entry at `row` again (a ledger's entry whose `canRetry`).
+        #[qinvokable]
+        fn retry(self: Pin<&mut Notices>, row: i32);
     }
 }

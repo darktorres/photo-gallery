@@ -8,10 +8,10 @@ publish.workspace = true
 workspace = true
 
 # The job that runs the passes in order (`runner`), and how a catalog folder is opened (`open_catalog`, `open_thumbs`,
-# `versions`). The passes are their own crates (`pg-scan`, `pg-import`, `pg-thumbs`, `pg-borders`, `pg-crop`,
+# `versions`, which names the renderer's `THUMBS_VERSION`). The passes are their own crates (`pg-scan`, `pg-import`, `pg-thumbs`, `pg-borders`, `pg-crop`,
 # `pg-writeback`), which callers name directly: this crate re-exports none of them. The runner runs them all, so it
 # depends on all of them. The integration tests of `pg-borders` and `pg-crop` are here, because they prepare a catalog
-# with `versions`; they and the other tests dev-depend on the codecs and the renderer they check against.
+# with `versions`; they and the other tests dev-depend on the codecs they check against.
 [dependencies]
 pg-analysis = { path = "../analysis" }
 pg-borders = { path = "../borders" }
@@ -21,6 +21,7 @@ pg-import = { path = "../import" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
+pg-render = { path = "../render" }
 pg-scan = { path = "../scan" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-thumbs = { path = "../thumbs" }
@@ -32,7 +33,6 @@ pg-catalog = { path = "../catalog", features = ["fixture"] }
 image.workspace = true
 pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
-pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }
 pg-jobs-testkit = { path = "../jobs-testkit" }
 pg-video = { path = "../video" }

@@ -1,5 +1,5 @@
 //! What the command line prints besides its reports: the progress lines, the thumbnail cache's events, a
-//! rebuilt catalog, and a pass's failures.
+//! rebuilt catalog, and a pass's failures (its kept list, its unreadable files, its ledger's errors).
 
 use std::sync::Arc;
 use std::thread::JoinHandle;
@@ -85,6 +85,19 @@ fn progress_line(p: &Progress) -> String {
         p.failed,
         p.eta()
     )
+}
+
+/// What a pass's failures leave besides its kept list, on stderr, in the notices' words: the files it couldn't read,
+/// and a failure ledger it couldn't write.
+pub(crate) fn report_pass(pass: pg_model::notice::FilePass, unreadable: usize, ledger_error: Option<String>) {
+    let rules = pg_platform::native::PATH_RULES;
+    if unreadable > 0 {
+        let count = u64::try_from(unreadable).unwrap_or(u64::MAX);
+        eprintln!("{}", text::notice_line(&Notice::UnreadableFiles { pass, count }, rules));
+    }
+    if let Some(error) = ledger_error {
+        eprintln!("{}", text::notice_line(&Notice::LedgerNotWritten { pass, error }, rules));
+    }
 }
 
 /// The first failures a pass kept, one per line on stderr, under `what`.

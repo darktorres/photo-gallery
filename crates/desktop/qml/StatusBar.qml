@@ -1,7 +1,8 @@
 // The status bar at the bottom: the selected file's info and rating (or the key hints), the write-back status, the
-// inbox's toast (a click opens the inbox; an info goes by itself), the background job's status and its progress with
-// pause, the inbox's button with its unread count, and in dev mode the log view's button. The library calls are signals: Main makes them. A name, a path or an error is plain text: one holding
-// markup (`<b>`) is shown as written, never as rich text.
+// inbox's toast (a click opens the inbox; an info goes by itself), the background job's status, its "N failed" link
+// (a click opens the inbox at the pass's failed files) and its progress with pause, the inbox's button with its unread
+// count, and in dev mode the log view's button. The library calls are signals: Main makes them. A name, a path or an
+// error is plain text: one holding markup (`<b>`) is shown as written, never as rich text.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -26,6 +27,8 @@ ToolBar {
     required property int unread
     // The job's status, and whether it is running, paused, and how far.
     required property string status
+    // The pass's failures ("N failed"; empty: none).
+    required property string failed
     required property bool busy
     required property bool paused
     required property real progress
@@ -35,6 +38,7 @@ ToolBar {
     // The toast went by itself (an info, after a while).
     signal toastExpired()
     signal inboxRequested()
+    signal failedRequested()
     signal pauseToggled()
     signal logRequested()
 
@@ -84,6 +88,18 @@ ToolBar {
             text: bar.status
             textFormat: Text.PlainText
             color: "#aaaaaa"
+        }
+        Label {
+            objectName: "statusFailed"
+            visible: bar.failed.length > 0
+            text: bar.failed
+            textFormat: Text.PlainText
+            color: "#e0a050"
+            font.underline: true
+            Accessible.role: Accessible.Link
+            Accessible.name: words.text("ui-failed-link")
+            HoverHandler { cursorShape: Qt.PointingHandCursor }
+            TapHandler { onTapped: bar.failedRequested() }
         }
         ProgressBar {
             visible: bar.busy

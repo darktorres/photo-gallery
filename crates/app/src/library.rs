@@ -246,6 +246,13 @@ impl LibraryService {
         }
     }
 
+    /// Wake the job (the user retried a pass's failed files); a no-op until the library has started.
+    pub fn wake_job(&self) {
+        if let Some(library) = self.running() {
+            library.wake_job();
+        }
+    }
+
     /// Save cropped copies into `folder`; a no-op until the library has started.
     pub fn save_crops(&self, ids: Vec<FileId>, folder: PathBuf) {
         if let Some(library) = self.running() {

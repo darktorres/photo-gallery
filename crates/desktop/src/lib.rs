@@ -20,6 +20,9 @@ mod deadline_bridge;
 mod facet_choices;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod facet_choices_bridge;
+mod failed_files;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod failed_files_bridge;
 mod filters;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod filters_bridge;

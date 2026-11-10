@@ -614,7 +614,7 @@ mod tests {
     }
 
     fn versions() -> pg_catalog::Versions {
-        pg_catalog::Versions { import: 1, borders: 1 }
+        pg_catalog::Versions { import: 1, borders: 1, thumbs: 1 }
     }
 
     /// One scan of the fake tree into a catalog, under the catalog's rules.

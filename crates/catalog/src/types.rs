@@ -97,13 +97,14 @@ pub(crate) fn rules_name(rules: PathRules) -> &'static str {
     }
 }
 
-/// The versions of the analyses the build makes, which `files.pending` and `analysis.borders_due` are kept against
-/// (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`). The library passes them to
-/// `Catalog::prepare`: the catalog doesn't depend on the analysis.
+/// The versions of what the build makes, which `files.pending`, `analysis.borders_due` and the failure ledger are kept
+/// against (`analyze::IMPORT_VERSION`, `borders::BORDERS_VERSION`, `pg_render::THUMBS_VERSION`). The library passes them
+/// to `Catalog::prepare`: the catalog doesn't depend on the analysis or the renderer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Versions {
     pub import: i64,
     pub borders: i64,
+    pub thumbs: i64,
 }
 
 /// The local zone's UTC offsets, in seconds, on January 1 and July 1 of 2000 and of 2030: the zone's fingerprint, as

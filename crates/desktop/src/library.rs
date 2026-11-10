@@ -18,7 +18,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, WriteError};
 use pg_client::text;
-use pg_model::notice::Notice;
+use pg_model::notice::{FilePass, Notice};
 use pg_model::progress::Phase;
 
 use crate::app;
@@ -192,6 +192,17 @@ impl qobject::Library {
         self.as_mut().set_paused(status.paused);
         self.as_mut().set_status(QString::from(&line));
         self.as_mut().set_progress(if p.total > 0 { p.fraction() } else { -1.0 });
+        let failed = QString::from(&text::pass_failed(p));
+        if self.failed != failed {
+            self.as_mut().set_failed(failed);
+        }
+        let pass = match p.phase {
+            Phase::Thumbs { .. } => Some(FilePass::Thumbs),
+            Phase::Borders => Some(FilePass::Borders),
+            Phase::Import => Some(FilePass::Import),
+            Phase::Idle | Phase::Scan { .. } | Phase::Crop => None,
+        };
+        self.as_mut().set_failed_pass(crate::failed_files::pass_code(pass));
     }
 
     /// The writer's queue and its latest failure, on the status line. The inbox is told a failure once (the same one

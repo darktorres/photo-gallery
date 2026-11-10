@@ -11,10 +11,14 @@
 //!
 //! A transient notice (feedback on what the user just did) is only logged and toasted. A notice that the queue has no
 //! room for, or that couldn't be written, is counted, and a [`Notice::NoticesLost`] says how many.
+//!
+//! A pass's failure ledger (`pg_catalog::ledger`) is an entry of its own, listed with the rows. The writer also keeps
+//! the thumbnails' ledger for the thumbnails the window makes ([`Inbox::thumb_failed`], [`Inbox::thumb_made`]), and
+//! carries out the user's Retry ([`Inbox::retry`]).
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, SyncSender, TrySendError, sync_channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
@@ -22,9 +26,11 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use pg_catalog::Catalog;
 use pg_catalog::inbox::{self, Entry, EntryId, Mark};
+use pg_catalog::ledger::{self, Failure};
 use pg_jobs::events::{Bus, Subscription};
 use pg_library::runner::NoticeSink;
-use pg_model::notice::{KeyBuf, Level, Lifecycle, Notice};
+use pg_model::ids::FileId;
+use pg_model::notice::{FilePass, KeyBuf, Level, Lifecycle, Notice};
 
 use crate::error::{Result, failed};
 
@@ -61,9 +67,15 @@ enum Command {
     Post(Notice, i64),
     Replace(KeyBuf, Vec<Notice>, i64),
     MarkRead(Vec<EntryId>),
-    MarkAllRead,
+    /// Every row, and the ledgers as the last listing had them.
+    MarkAllRead(Vec<EntryId>),
     Dismiss(EntryId),
-    DismissAll,
+    DismissAll(Vec<EntryId>),
+    /// The user's Retry of a pass's failed files, then what follows it (the job woken).
+    Retry(FilePass, Box<dyn FnOnce() + Send>),
+    /// A thumbnail the window made failed, or was made (its failure is gone).
+    ThumbFailed(Failure),
+    ThumbMade(FileId),
     /// Look for what another process changed.
     Poke,
 }
@@ -82,6 +94,8 @@ pub struct Inbox {
     /// The kinds of kept notices the inbox may hold: a clear of another kind is not sent (the window clears a kind at
     /// every read that works, which must cost nothing when there is nothing to clear).
     held: Arc<Mutex<BTreeSet<&'static str>>>,
+    /// The thumbnails' ledger may hold files: a thumbnail the window makes is sent to clear its file only then.
+    thumb_failures: Arc<AtomicBool>,
     writer: Mutex<Option<JoinHandle<()>>>,
 }
 
@@ -95,8 +109,14 @@ impl Inbox {
         let lost = Arc::new(AtomicU64::new(0));
         let listing = Arc::new(Mutex::new(Arc::new(Listing::default())));
         let held = Arc::new(Mutex::new(BTreeSet::new()));
-        let writer =
-            Writer { events: events.clone(), listing: listing.clone(), lost: lost.clone(), held: held.clone() };
+        let thumb_failures = Arc::new(AtomicBool::new(true));
+        let writer = Writer {
+            events: events.clone(),
+            listing: listing.clone(),
+            lost: lost.clone(),
+            held: held.clone(),
+            thumb_failures: thumb_failures.clone(),
+        };
         let thread = std::thread::Builder::new()
             .name("inbox".into())
             .spawn(move || writer.run(&catalog_path, &receiver))
@@ -109,6 +129,7 @@ impl Inbox {
             listing,
             logged: Mutex::new(BTreeMap::new()),
             held,
+            thumb_failures,
             writer: Mutex::new(Some(thread)),
         }))
     }
@@ -165,16 +186,42 @@ impl Inbox {
         self.send(Command::MarkRead(ids));
     }
 
+    /// Mark every entry read: the ledgers as the last listing had them (a failure after it stays new).
     pub fn mark_all_read(&self) {
-        self.send(Command::MarkAllRead);
+        self.send(Command::MarkAllRead(self.listed_ledgers()));
     }
 
     pub fn dismiss(&self, id: EntryId) {
         self.send(Command::Dismiss(id));
     }
 
+    /// Dismiss every entry, the ledgers as the last listing had them.
     pub fn dismiss_all(&self) {
-        self.send(Command::DismissAll);
+        self.send(Command::DismissAll(self.listed_ledgers()));
+    }
+
+    fn listed_ledgers(&self) -> Vec<EntryId> {
+        self.listing().entries.iter().map(|e| e.id).filter(|id| matches!(id, EntryId::Ledger { .. })).collect()
+    }
+
+    /// Try `pass`'s failed files again (`pg_catalog::ledger::retry`); `then` runs once that is written (the job is woken
+    /// to make them).
+    pub fn retry(&self, pass: FilePass, then: Box<dyn FnOnce() + Send>) {
+        self.send(Command::Retry(pass, then));
+    }
+
+    /// A thumbnail the window asked for couldn't be made: the thumbnails' ledger records it.
+    pub fn thumb_failed(&self, failure: Failure) {
+        self.thumb_failures.store(true, Ordering::Relaxed);
+        self.send(Command::ThumbFailed(failure));
+    }
+
+    /// A thumbnail the window asked for was made: the file leaves the thumbnails' ledger, if it is there. Nothing is sent
+    /// while the ledger is empty.
+    pub fn thumb_made(&self, file_id: FileId) {
+        if self.thumb_failures.load(Ordering::Relaxed) {
+            self.send(Command::ThumbMade(file_id));
+        }
     }
 
     /// Look for what another process changed now, not at the next [`POLL`] (the window was activated, a pass ended).
@@ -209,7 +256,7 @@ impl Inbox {
         let Some(sender) = sender.as_ref() else { return };
         match sender.try_send(command) {
             Ok(()) => {}
-            Err(TrySendError::Full(Command::Post(..) | Command::Replace(..))) => {
+            Err(TrySendError::Full(Command::Post(..) | Command::Replace(..) | Command::ThumbFailed(_))) => {
                 if self.lost.fetch_add(1, Ordering::Relaxed) == 0 {
                     pg_log::warn("inbox", "the inbox's queue is full: notices are not kept");
                 }
@@ -258,6 +305,7 @@ struct Writer {
     listing: Arc<Mutex<Arc<Listing>>>,
     lost: Arc<AtomicU64>,
     held: Arc<Mutex<BTreeSet<&'static str>>>,
+    thumb_failures: Arc<AtomicBool>,
 }
 
 impl Writer {
@@ -326,13 +374,18 @@ impl Writer {
                 return;
             }
         };
+        // A ledger is one entry whatever it was listed up to: news when it turns unread.
         let news: Vec<EntryId> = marks
             .iter()
-            .filter(|m| !m.read && seen.get(&m.id).is_none_or(|before| before.read))
+            .filter(|m| !m.read && seen.get(&m.id.entry()).is_none_or(|before| before.read))
             .map(|m| m.id)
             .collect();
         let unread = u64::try_from(marks.iter().filter(|m| !m.read).count()).unwrap_or(u64::MAX);
-        *seen = marks.into_iter().map(|m| (m.id, m)).collect();
+        *seen = marks.into_iter().map(|m| (m.id.entry(), m)).collect();
+        match ledger::any(catalog, FilePass::Thumbs) {
+            Ok(any) => self.thumb_failures.store(any, Ordering::Relaxed),
+            Err(e) => pg_log::warn("inbox", &format!("the thumbnails' ledger couldn't be read: {e:#}")),
+        }
         // The kinds it holds (dismissed ones aside, which a clear may leave): another process's, and the earlier runs'.
         self.held.lock().unwrap_or_else(PoisonError::into_inner).extend(
             entries.iter().filter(|e| matches!(e.notice.lifecycle(), Lifecycle::State(_))).map(|e| e.notice.code()),
@@ -341,6 +394,11 @@ impl Writer {
         *self.listing.lock().unwrap_or_else(PoisonError::into_inner) = listing.clone();
         if toast {
             for entry in listing.entries.iter().filter(|e| news.contains(&e.id)) {
+                // A ledger's entry is never posted: it is logged when it is news.
+                if let EntryId::Ledger { .. } = entry.id {
+                    let text = serde_json::to_string(&entry.notice).unwrap_or_else(|e| format!("{e}"));
+                    pg_log::warn(entry.notice.source().code(), &format!("{text} ({} files)", entry.count));
+                }
                 self.events.publish(InboxEvent::Toast(entry.notice.clone()));
             }
         }
@@ -355,9 +413,16 @@ fn apply(catalog: &Catalog, command: Command) -> pg_catalog::Result<bool> {
         Command::Post(notice, at) => inbox::post(catalog, &notice, at),
         Command::Replace(scope, notices, at) => inbox::replace(catalog, &scope.key(), &notices, at).map(|()| true),
         Command::MarkRead(ids) => inbox::mark_read(catalog, &ids, now).map(|()| true),
-        Command::MarkAllRead => inbox::mark_all_read(catalog, now).map(|()| true),
+        Command::MarkAllRead(ledgers) => inbox::mark_all_read(catalog, &ledgers, now).map(|()| true),
         Command::Dismiss(id) => inbox::dismiss(catalog, id, now).map(|()| true),
-        Command::DismissAll => inbox::dismiss_all(catalog, now).map(|()| true),
+        Command::DismissAll(ledgers) => inbox::dismiss_all(catalog, &ledgers, now).map(|()| true),
+        Command::Retry(pass, then) => {
+            ledger::retry(catalog, pass)?;
+            then();
+            Ok(true)
+        }
+        Command::ThumbFailed(failure) => ledger::record(catalog, FilePass::Thumbs, &[failure], now).map(|()| true),
+        Command::ThumbMade(file) => ledger::clear(catalog, FilePass::Thumbs, &[file]).map(|()| true),
         Command::Poke => Ok(false),
     }
 }

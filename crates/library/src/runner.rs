@@ -25,7 +25,7 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, FileFailure, Key, KeyBuf, Notice, ScanNote, tidy};
+use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, KeyBuf, Notice, Part, ScanNote, tidy};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
@@ -220,6 +220,24 @@ impl Inner {
 
     fn clear(&self, key: Key<'_>) {
         self.notices.clear(key.to_buf());
+    }
+
+    /// A pass couldn't read `unreadable` of its files (they are tried again by its next pass): what its kept notice says,
+    /// gone once a complete pass read them all.
+    fn files_read(&self, pass: FilePass, unreadable: usize, complete: bool) {
+        if unreadable > 0 {
+            self.notify(Notice::UnreadableFiles { pass, count: count(unreadable) });
+        } else if complete {
+            self.clear(Key { code: "unreadable-files", root: None, part: Some(Part::Code(pass.code())) });
+        }
+    }
+
+    /// A pass wrote its failures to the ledger, or couldn't (`error`).
+    fn ledger_written(&self, pass: FilePass, error: Option<String>) {
+        match error {
+            Some(error) => self.notify(Notice::LedgerNotWritten { pass, error: tidy(&error, ERROR_CAP) }),
+            None => self.clear(Key { code: "ledger-not-written", root: None, part: Some(Part::Code(pass.code())) }),
+        }
     }
 
     fn scanned(&self) {
@@ -448,6 +466,8 @@ impl Pass<Cx<'_>> for Borders {
         if s.stored > 0 {
             cx.inner.imported();
         }
+        cx.inner.files_read(FilePass::Borders, s.unreadable, s.complete);
+        cx.inner.ledger_written(FilePass::Borders, s.ledger_error);
         Ok(Step::Done)
     }
 }
@@ -465,6 +485,8 @@ impl Pass<Cx<'_>> for Thumbs {
         } else if s.complete {
             cx.inner.clear(Key::all("cache-full", None));
         }
+        cx.inner.files_read(FilePass::Thumbs, s.unreadable, s.complete);
+        cx.inner.ledger_written(FilePass::Thumbs, s.ledger_error);
         Ok(Step::Done)
     }
 }

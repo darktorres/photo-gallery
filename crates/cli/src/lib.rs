@@ -15,7 +15,7 @@ mod report;
 
 use pg_client::text;
 use pg_model::ids::FileId;
-use pg_model::notice::Notice;
+use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
@@ -33,7 +33,7 @@ use pg_jobs::events::Bus;
 use pg_writeback::Writer;
 
 use args::{Cli, Command, PipelineArgs};
-use report::{changed_while_read, print_failures, report_rebuilt, thumb_events, with_progress};
+use report::{changed_while_read, print_failures, report_pass, report_rebuilt, thumb_events, with_progress};
 
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
 /// Asked from the derive's list of commands (`Subcommand::has_subcommand`): clap's `Command` isn't built at an
@@ -211,6 +211,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 pg_model::num::signed(cache.cap()?) / 1e9,
                 start.elapsed().as_secs_f64()
             );
+            report_pass(FilePass::Thumbs, s.unreadable, s.ledger_error);
             drop(cache);
             let _ = printer.join();
         }
@@ -227,6 +228,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     s.stored,
                     start.elapsed().as_secs_f64()
                 );
+                report_pass(FilePass::Borders, s.unreadable, s.ledger_error);
             }
         }
         Command::Status => {
@@ -383,8 +385,9 @@ mod tests {
         pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
         let (events, quiet) = pg_jobs_testkit::Quiet::bus();
-        let thumbs: &'static ThumbCache =
-            Box::leak(Box::new(ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
+        let thumbs: &'static ThumbCache = Box::leak(Box::new(
+            ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap(),
+        ));
         drop(catalog);
         let writer =
             Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain)

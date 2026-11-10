@@ -262,6 +262,30 @@ pub(crate) fn set_borders_version(conn: &Connection, current: i64) -> Result<()>
     if version(&tx)? != current {
         tx.execute("UPDATE meta SET value = ?1 WHERE key = 'borders_version'", [current])?;
         tx.execute_batch(concat!("UPDATE analysis SET borders_due = coalesce(", has_borders!(), ", 0)"))?;
+        // Every file is looked at again by the new detector: what the old one failed on is not known to fail.
+        tx.execute("DELETE FROM file_failures WHERE pass = 'borders'", [])?;
+    }
+    Ok(tx.commit()?)
+}
+
+/// Make the thumbnails' failure ledger this build's: when the catalog's `meta.thumbs_version` is another
+/// (`pg_render::THUMBS_VERSION`, a decoder that may take what the old one failed on), the files whose thumbnail panicked
+/// are listed again for the pass (the others are, by the pass's own rule), and the rows go: the next pass records what
+/// still fails. The cache's checkpoint holds the panicked files back too, and keeps a mark of its own
+/// (`pg_thumbcache::ThumbCache::open`). Like [`set_import_version`], in one write transaction.
+pub(crate) fn set_thumbs_version(conn: &Connection, current: i64) -> Result<()> {
+    let version = |c: &Connection| -> Result<i64> {
+        Ok(c.query_row("SELECT value FROM meta WHERE key = 'thumbs_version'", [], |r| r.get(0))?)
+    };
+    if version(conn)? == current {
+        return Ok(());
+    }
+    let tx = Transaction::new_unchecked(conn, TransactionBehavior::Immediate)?;
+    if version(&tx)? != current {
+        tx.execute("UPDATE meta SET value = ?1 WHERE key = 'thumbs_version'", [current])?;
+        tx.execute_batch(next_seq!())?;
+        tx.execute(failures_relisted!(" AND retry = 0"), ["thumbs"])?;
+        tx.execute("DELETE FROM file_failures WHERE pass = 'thumbs'", [])?;
     }
     Ok(tx.commit()?)
 }

@@ -1674,6 +1674,7 @@ dependencies = [
  "pg-model",
  "pg-platform",
  "pg-query",
+ "pg-render",
  "pg-schema",
  "pg-testkit",
  "rusqlite",
@@ -1956,6 +1957,7 @@ dependencies = [
  "pg-model",
  "pg-testkit",
  "pg-video",
+ "thiserror 2.0.21",
  "turbojpeg",
 ]
 

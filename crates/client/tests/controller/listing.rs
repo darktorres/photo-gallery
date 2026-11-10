@@ -1,8 +1,9 @@
 //! The listing's policy by traces: each change, applied to a listing, gives the listing it must and the commands.
 
 use pg_client::controller::listing::{Command, Event, update};
+use pg_client::controller::{Command as Do, Controller, Event as Report};
 use pg_model::name::Name;
-use pg_model::query::{Query, Sort, SortKey};
+use pg_model::query::{Query, Sort, SortKey, Status};
 use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 
@@ -104,4 +105,25 @@ fn a_saved_view_replaces_the_listing_whole() {
     assert_eq!(listing.recursive, view.recursive);
     assert_eq!(listing.sort, view.sort);
     assert_eq!(listing.query, view.query);
+}
+
+/// A reveal shows the file's folder with nothing filtered (the sort and the subfolders kept), and selects the file in
+/// the next list shown, once; the failed imports are listed from every folder.
+#[test]
+fn a_reveal_lists_the_files_folder_and_selects_it_once_shown() {
+    let mut listing = start();
+    listing.query = Query { name: "x".into(), ..Query::default() };
+    assert_eq!(update(&mut listing, Event::Reveal(folder(r"alpha\beta"))), OPEN);
+    assert_eq!((listing.folder.clone(), listing.query.clone()), (folder(r"alpha\beta"), Query::default()));
+    assert_eq!(update(&mut listing, Event::FailedImports), OPEN);
+    assert!(listing.folder.is_empty() && listing.recursive);
+    assert_eq!(listing.query, Query { status: vec![Status::Failed], ..Query::default() });
+
+    let mut c = Controller::new(start(), 200, 1.0);
+    let out = c.update(0, Report::Reveal { file: 7, folder: folder("beta") });
+    assert!(matches!(&out[..], [Do::OpenList { keep: false, .. }, Do::SaveSession(_)]), "{out:?}");
+    assert_eq!(c.listing().folder, folder("beta"));
+    let shown = |c: &mut Controller| c.update(1, Report::ListShown { count: 3, last_file: None });
+    assert!(shown(&mut c).contains(&Do::Reveal(7)));
+    assert!(!shown(&mut c).contains(&Do::Reveal(7)), "once");
 }

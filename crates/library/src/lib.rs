@@ -21,14 +21,14 @@ pub fn open_catalog(dir: &std::path::Path) -> pg_catalog::Result<pg_catalog::Cat
 }
 
 /// The thumbnail cache of the catalog `catalog_id`, in the folder `dir`, holding at most `cap` bytes (`None`: the cache's
-/// own cap). Its events go to `events`.
+/// own cap), for this build's thumbnails (`pg_render::THUMBS_VERSION`). Its events go to `events`.
 pub fn open_thumbs(
     dir: &std::path::Path,
     catalog_id: &str,
     cap: Option<i64>,
     events: std::sync::Arc<pg_jobs::events::Bus<pg_thumbcache::Event>>,
 ) -> anyhow::Result<pg_thumbcache::ThumbCache> {
-    pg_thumbcache::ThumbCache::open(dir, catalog_id, cap, events)
+    pg_thumbcache::ThumbCache::open(dir, catalog_id, cap, pg_render::THUMBS_VERSION, events)
 }
 
 /// The versions of the analyses this build makes, for `Catalog::prepare`: the library passes them when it prepares a
@@ -37,5 +37,6 @@ pub fn versions() -> pg_catalog::Versions {
     pg_catalog::Versions {
         import: pg_analysis::analyze::IMPORT_VERSION,
         borders: pg_analysis::borders::BORDERS_VERSION,
+        thumbs: pg_render::THUMBS_VERSION,
     }
 }

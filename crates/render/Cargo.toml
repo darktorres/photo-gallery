@@ -15,6 +15,7 @@ pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-video = { path = "../video" }
+thiserror.workspace = true
 turbojpeg.workspace = true
 
 [dev-dependencies]

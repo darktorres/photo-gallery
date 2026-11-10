@@ -73,6 +73,51 @@ is replaced or the inbox opens). The inbox (`InboxPanel.qml`) lists the entries,
 details, with Copy (to the clipboard) and Dismiss; Clear all dismisses every entry. **Ctrl+Shift+N** opens and closes
 it. `--inbox=1` opens it for the screenshots.
 
+## The failure ledger
+
+The files a pass failed on are the `file_failures` table of `catalog.sqlite` (migration `TO_4`), read and written by
+`pg_catalog::ledger`: one row per file and pass (thumbnails, borders), holding the file as the pass read it (mtime,
+size, rotation), the error, whether the pass tries it again by itself (`retry`), when it first failed and a serial
+(`meta.seq` when it was recorded). The import's failures are not copied: its ledger is its failed analyses
+(`analysis_failed`), with the file's `seq` as the serial.
+
+- A failure is recorded only while the catalog has the file as the pass read it. Recorded again unchanged, nothing is
+  written and the serial stays: a file that fails at every pass is not news each time. A new error updates the row and
+  keeps the serial.
+- A file whose mtime, size, rotation or missing mark changes leaves the ledger (the trigger `files_failures_stale`), as
+  does a file made since (the pass's flush, a thumbnail the window made on demand) and a replaced file (`pair.rs`). A
+  deleted file's rows go with it.
+- What a failure is decides what follows (`pg_render::maker::MakeError`): a file that can't be read (`Unreadable`: an
+  offline drive, a file in use or gone) is not recorded, only counted, and the pass tries it again; the job's
+  `UnreadableFiles` state says how many, and clears after a complete pass with none. A file that doesn't decode
+  (`Undecodable`) is recorded with `retry`, and the next pass tries it again. A thumbnail that panicked, and a border
+  search that failed or panicked, are recorded without `retry`: the pass doesn't list them again until the file
+  changes, or the user retries.
+- The pass buffers its failures and writes them in batches (or every 2 s) through its own connection, whatever ends the
+  pass; a write that fails doesn't fail the pass (its files are tried again) and posts `LedgerNotWritten` until one
+  works.
+
+Each pass's ledger is one entry of the inbox, beside the kept notices (`pg_catalog::inbox::EntryId::Ledger`), with its
+count and how many are new. `ledger_ack` holds its marks: `seen_to` (the newest serial the user saw), read and
+dismissed. It is shown while it has failures and isn't dismissed, or has failures newer than `seen_to`; it is unread
+while it has never been read, or has new ones. A mark never moves `seen_to` back. The window's on-demand thumbnail
+failures go to the inbox's writer (each file once while it is among the last 256), and a thumbnail it makes takes its
+file out, through the writer too, only while the ledger has rows.
+
+**`THUMBS_VERSION`** (`pg_render`) is the thumbnailer's version, bumped by hand when a change of the decoder or the
+maker could make a file that failed work. The catalog keeps the version it last ran under (`meta.thumbs_version`): a
+new one relists the thumbnails that won't be tried again (`retry = 0`) and empties the thumbnails' ledger. The cache
+keeps its own mark, and a new one makes every height forget how far it was checked, so the next pass looks at every
+file once. A new `BORDERS_VERSION` empties the borders' ledger, as the pass redoes them all.
+
+In the window: the status bar's job line says "N failed" as a link while a pass has failures (`Library.failed`,
+`Library.failedPass`); a click opens the inbox at that pass's entry. A ledger entry's details are its newest 200 files
+(`FailedFiles`, `src/failed_files.rs`), each with its path, error and Reveal: the file's folder is listed with nothing
+filtered, and the file selected once it is shown (or a toast says the library no longer has it). The thumbnails'
+entry has Retry (`ledger::retry`: the rows go, and the files are listed again by the next pass, which the job is woken
+for); the import's has "Show the failed files", which lists every file whose analysis failed (the `failed` status, in
+every folder). Copy puts the entry and its files on the clipboard.
+
 ## The log (`pg-log`)
 
 `gallery.log` in the data folder, written by the window only (the command line prints to stderr). Each record is one

@@ -72,11 +72,12 @@ impl App {
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let library = Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs, inbox.clone()));
+        let images = Images::new(catalogs.clone(), makers, thumbs, inbox.clone());
         Ok(App {
             inbox,
             forwarder: Mutex::new(Some(forwarder)),
             thumbs,
-            images: Images::new(catalogs.clone(), makers, thumbs),
+            images,
             views: Views::new(catalogs.clone()),
             edit: Edit::new(catalogs.clone(), prefs.clone(), library.clone()),
             catalogs,

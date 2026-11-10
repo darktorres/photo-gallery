@@ -239,16 +239,21 @@ enum Attempt {
 /// that is not a thumbnail cache is refused and left alone, and any other failure (busy, no permission, a full disk)
 /// stays an error. The lock beside the file is held while it is judged, checked and changed, so another process
 /// opening it finds the result.
-pub(crate) fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Writing> {
+pub(crate) fn open_writer(
+    path: &Path,
+    catalog_id: &str,
+    cap_bytes: Option<i64>,
+    thumbs_version: i64,
+) -> Result<Writing> {
     let _lock = pg_schema::Lock::take(path)
         .with_context(|| format!("{}: its lock file", path.display()))?
         .ok_or_else(|| anyhow!("{}: another process is changing it", path.display()))?;
-    let why = match open_once(path, catalog_id, cap_bytes)? {
+    let why = match open_once(path, catalog_id, cap_bytes, thumbs_version)? {
         Attempt::Opened(writing) => return Ok(writing),
         Attempt::Damaged(why) => why,
     };
     let kept = move_damaged(path, &why.detail)?;
-    match open_once(path, catalog_id, cap_bytes)? {
+    match open_once(path, catalog_id, cap_bytes, thumbs_version)? {
         Attempt::Opened(mut writing) => {
             let detail = format!("{}; the old file is kept as {}", why.detail, kept.display());
             writing.started_over = Some((Why { reason: why.reason, detail }, kept));
@@ -261,7 +266,7 @@ pub(crate) fn open_writer(path: &Path, catalog_id: &str, cap_bytes: Option<i64>)
 /// One try of [`open_writer`], under its lock: the file judged, started over if this build can't use it, opened, and
 /// its totals checked. Damage found on the way is [`Attempt::Damaged`], with every connection to the file closed and
 /// every hold on it let go, so the file can be moved aside.
-fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Attempt> {
+fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_version: i64) -> Result<Attempt> {
     let (usable, why, cap) = match judge(path, catalog_id)? {
         Found::Usable => (true, None, None),
         Found::New => (false, None, None),
@@ -303,7 +308,7 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<At
             }
         }
     }
-    let (conn, drift) = match ready(path, catalog_id, cap_bytes.or(cap), !usable) {
+    let (conn, drift) = match ready(path, catalog_id, cap_bytes.or(cap), thumbs_version, !usable) {
         Ok(ready) => ready,
         // The connection is closed (`ready` dropped it) and the exclusive hold goes with this return.
         Err(e) => return damage_in(&e).map(Attempt::Damaged).ok_or(e),
@@ -316,8 +321,15 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<At
 }
 
 /// The writer's connection to the judged file ([`open_file`]), and what the day's check of its totals fixed. A file
-/// made here (`made`) is judged again first, and must be this build's.
-fn ready(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, made: bool) -> Result<(Connection, Option<Drift>)> {
+/// made here (`made`) is judged again first, and must be this build's. The file's thumbnails are marked as made by
+/// `thumbs_version` ([`set_thumbs_version`]).
+fn ready(
+    path: &Path,
+    catalog_id: &str,
+    cap_bytes: Option<i64>,
+    thumbs_version: i64,
+    made: bool,
+) -> Result<(Connection, Option<Drift>)> {
     let mut conn = open_file(path, catalog_id, cap_bytes)?;
     if made && !matches!(judge(path, catalog_id)?, Found::Usable) {
         bail!("{}: not usable even when made anew", path.display());
@@ -330,7 +342,29 @@ fn ready(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, made: bool) -> R
     if let Some(cap) = cap_bytes {
         conn.execute("UPDATE limits SET cap = ?1", [cap])?;
     }
+    set_thumbs_version(&mut conn, thumbs_version)?;
     Ok((conn, drift))
+}
+
+/// Make the passes' checkpoints this build's: when the file's `meta.thumbs_version` is another (a thumbnailer that may
+/// make what the old one failed on, `pg_render::THUMBS_VERSION`), every height forgets how far it was checked, as an
+/// eviction makes it, so the next pass at each looks at every file again: the files that panicked are behind the
+/// checkpoint. The catalog's failure ledger has a mark of its own (`pg_catalog::Versions::thumbs`); each is set once,
+/// whatever order and whichever process opens them. In one write transaction.
+fn set_thumbs_version(conn: &mut Connection, current: i64) -> Result<()> {
+    let stored = |c: &Connection| -> Result<Option<i64>> {
+        Ok(c.query_row("SELECT value FROM meta WHERE key = 'thumbs_version'", [], |r| r.get(0)).optional()?)
+    };
+    if stored(conn)? == Some(current) {
+        return Ok(());
+    }
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    if stored(&tx)? != Some(current) {
+        tx.execute("UPDATE checked SET seq = NULL, evictions = evictions + 1", [])?;
+        tx.execute("INSERT OR REPLACE INTO meta(key, value) VALUES ('thumbs_version', ?1)", [current])?;
+    }
+    tx.commit()?;
+    Ok(())
 }
 
 /// Move the damaged cache at `path` aside, with its sidecars, to `<name>.bad` (or `.bad.1`, and so on): its new path.

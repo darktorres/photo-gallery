@@ -26,5 +26,6 @@ strum.workspace = true
 
 [dev-dependencies]
 pg-analysis = { path = "../analysis" }
+pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }
 thumbhash.workspace = true

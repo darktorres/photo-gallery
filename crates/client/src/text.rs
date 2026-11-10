@@ -239,27 +239,29 @@ pub fn pass_name(phase: &Phase, rules: PathRules) -> String {
 }
 
 /// The status line's text for a pass's progress; empty when idle. A scan counts what it found; the other passes how
-/// far they are, their rate and the time left.
+/// far they are, their rate and the time left. What failed is said apart ([`pass_failed`]).
 pub fn pass_status(p: &Progress, rules: PathRules) -> String {
     let what = pass_name(&p.phase, rules);
     match p.phase {
         Phase::Idle => what,
         Phase::Scan { .. } => render(&Message::PassFound { what, count: group_digits(p.done) }),
-        _ => {
-            let failed = if p.failed > 0 {
-                render(&Message::PassFailed { count: group_digits(p.failed) })
-            } else {
-                String::new()
-            };
-            render(&Message::PassWorking {
-                what,
-                done: group_digits(p.done),
-                total: group_digits(p.total),
-                rate: format!("{:.0}", p.rate()),
-                eta: duration(p.eta()),
-                failed,
-            })
-        }
+        _ => render(&Message::PassWorking {
+            what,
+            done: group_digits(p.done),
+            total: group_digits(p.total),
+            rate: format!("{:.0}", p.rate()),
+            eta: duration(p.eta()),
+        }),
+    }
+}
+
+/// How many files the pass in progress failed on ("2 failed": those it recorded, and those it couldn't read), the status
+/// bar's link to its failed files; empty when none did, or for a scan (its folders' failures are a notice of their own).
+pub fn pass_failed(p: &Progress) -> String {
+    match p.phase {
+        Phase::Idle | Phase::Scan { .. } => String::new(),
+        _ if p.failed == 0 => String::new(),
+        _ => render(&Message::PassFailed { count: group_digits(p.failed) }),
     }
 }
 
@@ -549,12 +551,15 @@ mod tests {
         let rules = PathRules::Windows;
         let elapsed = std::time::Duration::from_secs(15);
         let p = Progress { phase: Phase::Import, done: 1500, total: 4000, failed: 2, bytes: 0, elapsed };
-        assert_eq!(pass_status(&p, rules), "Importing 1,500 of 4,000 · 100/s · 25 s left · 2 failed");
+        assert_eq!(pass_status(&p, rules), "Importing 1,500 of 4,000 · 100/s · 25 s left");
+        assert_eq!(pass_failed(&p), "2 failed");
         let thumbs = Progress { phase: Phase::Thumbs { height: 256 }, failed: 0, ..p.clone() };
         assert_eq!(pass_status(&thumbs, rules), "Thumbnails at 256 px 1,500 of 4,000 · 100/s · 25 s left");
+        assert_eq!(pass_failed(&thumbs), "");
         let root = rules.parse(r"D:\Photos").unwrap();
         let scan = Progress { phase: Phase::Scan { root }, done: 1234, total: 0, ..p.clone() };
         assert_eq!(pass_status(&scan, rules), "Scanning D:\\Photos · 1,234 images found");
+        assert_eq!(pass_failed(&scan), "", "a scan's failures are its notice's");
         assert_eq!(pass_name(&scan.phase, rules), "Scanning D:\\Photos");
         assert_eq!(pass_status(&Progress { phase: Phase::Idle, ..p }, rules), "");
     }

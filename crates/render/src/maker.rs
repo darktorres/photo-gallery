@@ -22,6 +22,29 @@ const JPEG_QUALITY: i32 = 85;
 /// high one of a 3:2 photo. A larger image (a PNG, decoded at full size) frees its buffers once it is done.
 pub const KEEP_BYTES: usize = 3072 * 2048 * 3;
 
+/// Why an image wasn't made of a file, by what to do about it: tried again later, or not until the file changes.
+#[derive(Debug, thiserror::Error)]
+pub enum MakeError {
+    /// The file couldn't be read: an I/O failure (an offline drive, a file in use, a file gone), which the next try may
+    /// not have. Only a video's open is read here; an image's bytes are read before ([`Maker::read_file`]).
+    #[error(transparent)]
+    Unreadable(std::io::Error),
+    /// The file was read and doesn't decode (damaged, truncated, a format the decoder can't take), or the encoder failed:
+    /// it fails again until the file changes, or the decoder does ([`crate::THUMBS_VERSION`]).
+    #[error(transparent)]
+    Undecodable(anyhow::Error),
+}
+
+impl MakeError {
+    /// A video's frame error: [`MakeError::Unreadable`] when its file couldn't be opened ([`pg_video::Unopened`]).
+    fn of_video(e: anyhow::Error) -> MakeError {
+        match e.downcast::<pg_video::Unopened>() {
+            Ok(unopened) => MakeError::Unreadable(unopened.0),
+            Err(e) => MakeError::Undecodable(e),
+        }
+    }
+}
+
 /// A worker's codecs and buffers for thumbnails, kept from file to file: the import's background pass keeps one
 /// per worker, and the app one per image-provider thread.
 pub struct Maker {
@@ -74,35 +97,35 @@ impl Maker {
     }
 
     /// [`Maker::make`] of the file [`Maker::read_file`] read.
-    pub fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>> {
+    pub fn make_from_file(&mut self, height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
         let file = std::mem::take(&mut self.file);
         let mut out = Vec::new();
         let result = self.make_image(&file, height, turns, &mut out);
         self.file = file;
         self.trim();
-        result.map(|()| out)
+        result.map(|()| out).map_err(MakeError::Undecodable)
     }
 
     /// A one-off decode of the file [`Maker::read_file`] read (the viewer's): its pixels go to new buffers.
-    pub fn decode_file(&mut self, min: MinSize, turns: Turns) -> Result<Decoded> {
+    pub fn decode_file(&mut self, min: MinSize, turns: Turns) -> Result<Decoded, MakeError> {
         let result = crate::display::decode(&mut self.decoder, &self.file, min, turns);
         release_over(&mut self.file, KEEP_BYTES);
-        result
+        result.map_err(MakeError::Undecodable)
     }
 
     /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
     /// file's catalog rotation.
-    pub fn make(&mut self, bytes: &[u8], height: usize, turns: Turns) -> Result<Vec<u8>> {
+    pub fn make(&mut self, bytes: &[u8], height: usize, turns: Turns) -> Result<Vec<u8>, MakeError> {
         let mut out = Vec::new();
         self.make_into(bytes, height, turns, &mut out).map(|()| out)
     }
 
     /// [`Maker::make`] into `out` (replacing what it holds), a buffer the caller reuses: the background pass's,
     /// given back by the cache's writer (`pg_thumbcache::ThumbCache::put_batch`).
-    pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
+    pub fn make_into(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<(), MakeError> {
         let result = self.make_image(bytes, height, turns, out);
         self.trim();
-        result
+        result.map_err(MakeError::Undecodable)
     }
 
     fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
@@ -114,25 +137,25 @@ impl Maker {
     }
 
     /// Decode a video's frame (`video::frame`) into the maker, for [`Maker::encode_frame`].
-    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<()> {
+    pub fn load_frame(&mut self, path: &Path, at_ms: i64, turns: Turns) -> Result<(), MakeError> {
         let result = pg_video::frame_into(path, at_ms, turns, &mut self.image, &mut self.spare);
         if result.is_err() {
             self.trim();
         }
-        result
+        result.map_err(MakeError::of_video)
     }
 
     /// A thumbnail `height` px high (or the frame's own height) of the frame [`Maker::load_frame`] decoded.
-    pub fn encode_frame(&mut self, height: usize) -> Result<Vec<u8>> {
+    pub fn encode_frame(&mut self, height: usize) -> Result<Vec<u8>, MakeError> {
         let mut out = Vec::new();
         self.encode_frame_into(height, &mut out).map(|()| out)
     }
 
     /// [`Maker::encode_frame`] into `out`, as [`Maker::make_into`].
-    pub fn encode_frame_into(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
+    pub fn encode_frame_into(&mut self, height: usize, out: &mut Vec<u8>) -> Result<(), MakeError> {
         let result = self.encode_image(height, out);
         self.trim();
-        result
+        result.map_err(MakeError::Undecodable)
     }
 
     /// The thumbnail of `image`: scaled to `height`, then compressed into `jpeg`, sized for the worst case, and
@@ -271,6 +294,25 @@ mod tests {
             let err = maker.read_file(&missing).unwrap_err();
             assert_eq!(err.to_string(), std::fs::read(&missing).unwrap_err().to_string());
         }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    /// What a failure is decides whether it is tried again: a video whose file can't be opened is unreadable (an offline
+    /// drive), an image that is cut short doesn't decode, though the codec's own error under it is an I/O one.
+    #[test]
+    fn a_file_that_cant_be_opened_is_unreadable_and_a_damaged_one_undecodable() {
+        let dir = test_folder(SCRATCH, "make-errors").unwrap();
+        let mut maker = Maker::new().unwrap();
+        let gone = maker.load_frame(&dir.join("gone.mp4"), 0, Turns::NONE);
+        assert!(
+            matches!(gone, Err(MakeError::Unreadable(ref e)) if e.kind() == std::io::ErrorKind::NotFound),
+            "{gone:?}"
+        );
+        let whole = jpeg(640, 480, 1);
+        // Its header alone: a JPEG cut short past its first scan decodes, grey below the cut.
+        let cut = whole.get(..20).unwrap();
+        assert!(matches!(maker.make(cut, 64, Turns::NONE), Err(MakeError::Undecodable(_))));
+        assert!(matches!(maker.make(b"not an image", 64, Turns::NONE), Err(MakeError::Undecodable(_))));
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

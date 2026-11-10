@@ -346,8 +346,8 @@ impl Input {
     /// Windows would change (a trailing dot or space) reaches the file it names and not a sibling's.
     pub(crate) fn open(path: &Path) -> Result<Self> {
         let api = api()?;
-        let file = std::fs::File::open(path)?;
-        let len = file.metadata()?.len();
+        let file = std::fs::File::open(path).map_err(crate::unopened::Unopened)?;
+        let len = file.metadata().map_err(crate::unopened::Unopened)?.len();
         let source = Box::into_raw(Box::new(Source { file, len }));
         // SAFETY: `av_malloc` gives a buffer of `IO_BUFFER` bytes; the I/O context takes it over (see `free_io`).
         let buffer = unsafe { (api.av_malloc)(IO_BUFFER) }.cast::<u8>();

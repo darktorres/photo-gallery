@@ -3,17 +3,19 @@
 //! [`Notice::Unknown`]. Uses `core` (the connection and the library's folders) and `schema` (the write transaction).
 //!
 //! How a notice is kept is its [`Lifecycle`]: an event is a row each time it is posted; a state is one row per key, which
-//! the next post of the key replaces and counts and which its producer clears ([`clear`], [`replace`]); a transient one and a ledger
-//! entry are never rows here. A notice about a library folder is tied to the folder of the library that holds it, and
-//! goes with that folder; one about a folder no longer in the library is not kept.
+//! the next post of the key replaces and counts and which its producer clears ([`clear`], [`replace`]); a transient one is
+//! never a row. A notice about a library folder is tied to the folder of the library that holds it, and goes with that
+//! folder; one about a folder no longer in the library is not kept. A pass's failure ledger is an entry of its own, read
+//! from the ledger as the inbox is listed (`crate::ledger`), never a row here.
 
 use rusqlite::{Connection, params};
 
-use pg_model::notice::{Key, Level, Lifecycle, Notice, Part};
+use pg_model::notice::{FilePass, Key, Level, Lifecycle, Notice, Part};
 use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::Catalog;
 use crate::error::Result;
+use crate::ledger;
 use crate::schema::write_transaction;
 
 /// The most rows the inbox keeps that aren't dismissed ([`prune`]): past it, the oldest go, read ones first.
@@ -22,12 +24,25 @@ pub const KEPT_ROWS: i64 = 1000;
 /// How long a dismissed row is kept (seconds), so a mark sent for it still finds it.
 pub const DISMISSED_FOR: i64 = 30 * 24 * 60 * 60;
 
-/// One row: its id and its `uid` (`meta.seq` when it was made). Ids are reused, so the pair is what names it: a mark
-/// or a dismissal for a row since gone finds none.
+/// An entry of the inbox, as a listing names it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct EntryId {
-    pub id: i64,
-    pub uid: i64,
+pub enum EntryId {
+    /// A kept notice: its row's id and `uid` (`meta.seq` when it was made). Ids are reused, so the pair is what names
+    /// it: a mark or a dismissal for a row since gone finds none.
+    Row { id: i64, uid: i64 },
+    /// A pass's failure ledger, as listed: up to its newest failure (`ledger::Summary::newest`). A mark or a dismissal
+    /// covers the failures listed, and leaves the later ones new.
+    Ledger { pass: FilePass, seen: i64 },
+}
+
+impl EntryId {
+    /// The entry it names, whatever a ledger was listed up to: what tells whether two listings list the same entry.
+    pub fn entry(self) -> EntryId {
+        match self {
+            EntryId::Ledger { pass, .. } => EntryId::Ledger { pass, seen: 0 },
+            row @ EntryId::Row { .. } => row,
+        }
+    }
 }
 
 /// A row as the inbox lists it.
@@ -52,8 +67,8 @@ pub struct Mark {
     pub read: bool,
 }
 
-/// Keep `notice`, posted at `now`, as its lifecycle says. Whether it was kept: a transient notice and a ledger entry are
-/// not, nor is one about a folder no longer in the library.
+/// Keep `notice`, posted at `now`, as its lifecycle says. Whether it was kept: a transient notice and a ledger's are not
+/// (the ledger is its own), nor is one about a folder no longer in the library.
 ///
 /// A state posted again is counted and holds the latest; if it says something new (its data changed) it is listed as
 /// unread again, even if it was dismissed, and if not it keeps its marks: a problem that holds is not news each time.
@@ -147,18 +162,17 @@ fn upsert(catalog: &Catalog, tx: &Connection, notice: &Notice, now: i64) -> Resu
     )?;
     Ok(Some(key))
 }
-/// The rows not dismissed, newest first, at most `limit`.
+/// The entries listed, newest first, at most `limit`: the rows not dismissed, and the ledgers' entries.
 pub fn entries(catalog: &Catalog, limit: usize) -> Result<Vec<Entry>> {
-    let limit = i64::try_from(limit).unwrap_or(i64::MAX);
     let mut stmt = catalog.conn.prepare_cached(
         "SELECT id, uid, kind, data, count, created, updated, read IS NOT NULL FROM notices
          WHERE dismissed IS NULL ORDER BY updated DESC, id DESC LIMIT ?1",
     )?;
-    let rows = stmt.query_map([limit], |r| {
+    let rows = stmt.query_map([i64::try_from(limit).unwrap_or(i64::MAX)], |r| {
         let kind: String = r.get(2)?;
         let data: String = r.get(3)?;
         Ok(Entry {
-            id: EntryId { id: r.get(0)?, uid: r.get(1)? },
+            id: EntryId::Row { id: r.get(0)?, uid: r.get(1)? },
             notice: decode(&kind, &data),
             count: count(r.get(4)?),
             created: r.get(5)?,
@@ -166,70 +180,115 @@ pub fn entries(catalog: &Catalog, limit: usize) -> Result<Vec<Entry>> {
             read: r.get(7)?,
         })
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut out: Vec<Entry> = rows.collect::<rusqlite::Result<_>>()?;
+    out.extend(ledger::entries(catalog)?.into_iter().map(|s| Entry {
+        id: EntryId::Ledger { pass: s.pass, seen: s.newest },
+        notice: s.notice(),
+        count: s.total,
+        created: s.created,
+        updated: s.updated,
+        read: s.read,
+    }));
+    // Stable: rows of one time keep their order (newest id first).
+    out.sort_by_key(|e| std::cmp::Reverse(e.updated));
+    out.truncate(limit);
+    Ok(out)
 }
 
-/// What the rows not dismissed are now, newest first: to tell what changed since the last look without reading the
+/// What the entries listed are now, newest first: to tell what changed since the last look without reading the
 /// notices.
 pub fn marks(catalog: &Catalog) -> Result<Vec<Mark>> {
     let mut stmt = catalog.conn.prepare_cached(
-        "SELECT id, uid, count, level, read IS NOT NULL FROM notices
+        "SELECT id, uid, count, level, read IS NOT NULL, updated FROM notices
          WHERE dismissed IS NULL ORDER BY updated DESC, id DESC",
     )?;
     let rows = stmt.query_map([], |r| {
-        Ok(Mark {
-            id: EntryId { id: r.get(0)?, uid: r.get(1)? },
+        let mark = Mark {
+            id: EntryId::Row { id: r.get(0)?, uid: r.get(1)? },
             count: count(r.get(2)?),
             level: level_of(r.get(3)?),
             read: r.get(4)?,
-        })
+        };
+        Ok((mark, r.get::<_, i64>(5)?))
     })?;
-    Ok(rows.collect::<rusqlite::Result<_>>()?)
+    let mut out: Vec<(Mark, i64)> = rows.collect::<rusqlite::Result<_>>()?;
+    out.extend(ledger::entries(catalog)?.into_iter().map(|s| {
+        let mark = Mark {
+            id: EntryId::Ledger { pass: s.pass, seen: s.newest },
+            count: s.total,
+            level: s.notice().level(),
+            read: s.read,
+        };
+        (mark, s.updated)
+    }));
+    out.sort_by_key(|(_, updated)| std::cmp::Reverse(*updated));
+    Ok(out.into_iter().map(|(mark, _)| mark).collect())
 }
 
-/// Mark the rows `ids` read (a row since gone, or posted again under the same id, is left).
+/// Mark the entries `ids` read (a row since gone, or posted again under the same id, is left; a ledger is read up to
+/// what was listed).
 pub fn mark_read(catalog: &Catalog, ids: &[EntryId], now: i64) -> Result<()> {
     let tx = write_transaction(&catalog.conn)?;
     {
         let mut stmt = tx.prepare_cached("UPDATE notices SET read = ?3 WHERE id = ?1 AND uid = ?2 AND read IS NULL")?;
         for id in ids {
-            stmt.execute(params![id.id, id.uid, now])?;
+            match *id {
+                EntryId::Row { id, uid } => {
+                    stmt.execute(params![id, uid, now])?;
+                }
+                EntryId::Ledger { pass, seen } => ledger::mark_read(catalog, pass, seen, now)?,
+            }
         }
     }
     tx.commit()?;
     Ok(())
 }
 
-/// Mark every row read.
-pub fn mark_all_read(catalog: &Catalog, now: i64) -> Result<()> {
-    catalog.conn.execute("UPDATE notices SET read = ?1 WHERE read IS NULL", [now])?;
+/// Mark every row read, and the ledgers `ledgers` (as listed).
+pub fn mark_all_read(catalog: &Catalog, ledgers: &[EntryId], now: i64) -> Result<()> {
+    let tx = write_transaction(&catalog.conn)?;
+    tx.execute("UPDATE notices SET read = ?1 WHERE read IS NULL", [now])?;
+    for id in ledgers {
+        if let EntryId::Ledger { pass, seen } = *id {
+            ledger::mark_read(catalog, pass, seen, now)?;
+        }
+    }
+    tx.commit()?;
     Ok(())
 }
 
-/// Dismiss the row `id`: it is no longer listed (a kept state comes back when it is posted again).
+/// Dismiss the entry `id`: it is no longer listed (a kept state comes back when it is posted again, a ledger with its
+/// next new failure).
 pub fn dismiss(catalog: &Catalog, id: EntryId, now: i64) -> Result<()> {
-    catalog.conn.execute(
-        "UPDATE notices SET dismissed = ?3, read = coalesce(read, ?3) WHERE id = ?1 AND uid = ?2 AND dismissed IS NULL",
-        params![id.id, id.uid, now],
-    )?;
+    match id {
+        EntryId::Row { id, uid } => {
+            catalog.conn.execute(
+                "UPDATE notices SET dismissed = ?3, read = coalesce(read, ?3)
+                 WHERE id = ?1 AND uid = ?2 AND dismissed IS NULL",
+                params![id, uid, now],
+            )?;
+        }
+        EntryId::Ledger { pass, seen } => ledger::dismiss(catalog, pass, seen, now)?,
+    }
     Ok(())
 }
 
-/// Dismiss every row.
-pub fn dismiss_all(catalog: &Catalog, now: i64) -> Result<()> {
-    catalog
-        .conn
-        .execute("UPDATE notices SET dismissed = ?1, read = coalesce(read, ?1) WHERE dismissed IS NULL", [now])?;
+/// Dismiss every row, and the ledgers `ledgers` (as listed).
+pub fn dismiss_all(catalog: &Catalog, ledgers: &[EntryId], now: i64) -> Result<()> {
+    let tx = write_transaction(&catalog.conn)?;
+    tx.execute("UPDATE notices SET dismissed = ?1, read = coalesce(read, ?1) WHERE dismissed IS NULL", [now])?;
+    for id in ledgers {
+        if let EntryId::Ledger { pass, seen } = *id {
+            ledger::dismiss(catalog, pass, seen, now)?;
+        }
+    }
+    tx.commit()?;
     Ok(())
 }
 
-/// How many rows are listed and not read.
+/// How many entries are listed and not read.
 pub fn unread(catalog: &Catalog) -> Result<u64> {
-    let n: i64 =
-        catalog
-            .conn
-            .query_row("SELECT count(*) FROM notices WHERE dismissed IS NULL AND read IS NULL", [], |r| r.get(0))?;
-    Ok(count(n))
+    Ok(u64::try_from(marks(catalog)?.iter().filter(|m| !m.read).count()).unwrap_or(u64::MAX))
 }
 
 /// Keep the inbox bounded: dismissed rows older than [`DISMISSED_FOR`] go, and past [`KEPT_ROWS`] listed rows the
@@ -338,7 +397,8 @@ mod tests {
         a_state_is_one_row_and_an_event_a_row_each_posix
     );
 
-    // A read or dismissed state posted again keeps its marks when it says the same, and is new again when it says\n    // something new; a mark for a row since gone (its id reused) does nothing.
+    // A read or dismissed state posted again keeps its marks when it says the same, and is new again when it says
+    // something new; a mark for a row since gone (its id reused) does nothing.
     fn a_repeat_is_new_again_and_a_stale_mark_does_nothing(rules: PathRules) {
         let c = catalog(rules);
         post(&c, &failed("a"), 10).unwrap();
@@ -357,8 +417,11 @@ mod tests {
         clear(&c, &Key::all("edit-failed", None)).unwrap();
         post(&c, &Notice::FolderNotAdded { error: "x".into() }, 13).unwrap();
         let other = entries(&c, 10).unwrap()[0].id;
-        assert_eq!(other.id, first.id);
-        assert_ne!(other.uid, first.uid);
+        let (EntryId::Row { id: a, uid: was }, EntryId::Row { id: b, uid: now }) = (first, other) else {
+            panic!("rows")
+        };
+        assert_eq!(a, b);
+        assert_ne!(was, now);
         mark_read(&c, &[first], 14).unwrap();
         dismiss(&c, first, 14).unwrap();
         assert_eq!(unread(&c).unwrap(), 1);
@@ -436,6 +499,39 @@ mod tests {
         for notice in Notice::samples().into_iter().filter(|n| !matches!(n, Notice::Unknown { .. })) {
             assert_eq!(decode(notice.code(), &serde_json::to_string(&notice).unwrap()), notice);
         }
+    }
+
+    // A pass's failures are one entry, among the rows by its time; it is marked and dismissed as listed.
+    #[test]
+    fn a_ledger_is_listed_among_the_rows() {
+        let c = catalog(PathRules::Posix);
+        crate::fixture::state::add_scan(&c, 1, "/p").unwrap();
+        crate::fixture::state::add_folder(&c, 1, "/p").unwrap();
+        let file = pg_model::ids::FileId::new(1);
+        crate::fixture::insert(
+            &c,
+            &[crate::fixture::File::new(file, pg_model::ids::FolderId::new(1), "a.jpg", 10, 100)],
+        )
+        .unwrap();
+        post(&c, &failed("a"), 10).unwrap();
+        let failure = ledger::Failure {
+            file_id: file,
+            mtime: 100,
+            size: 10,
+            rotation: pg_model::turns::Turns::NONE,
+            error: "x".into(),
+            retry: false,
+        };
+        ledger::record(&c, FilePass::Thumbs, &[failure], 20).unwrap();
+        let listed = entries(&c, 10).unwrap();
+        assert_eq!(listed.iter().map(|e| e.notice.code()).collect::<Vec<_>>(), ["thumbs-failed", "edit-failed"]);
+        assert_eq!(unread(&c).unwrap(), 2);
+        let ledgers = [listed[0].id];
+        mark_all_read(&c, &ledgers, 30).unwrap();
+        assert_eq!(unread(&c).unwrap(), 0);
+        assert_eq!(marks(&c).unwrap()[0].id.entry(), EntryId::Ledger { pass: FilePass::Thumbs, seen: 0 });
+        dismiss_all(&c, &ledgers, 31).unwrap();
+        assert!(entries(&c, 10).unwrap().is_empty());
     }
 
     // Past the bound the oldest read rows go first, then the oldest unread; dismissed rows go after their time.

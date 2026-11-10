@@ -46,12 +46,14 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   detector (`BORDERS_VERSION`).
 - `dedup` (`pg-dedup`): the tier-1 duplicates: the PDQ index, the import's pairing and the union-find that groups
   pairs.
-- `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`), the viewer's
-  images (`display`), and a TIFF re-encoded as a JPEG for the Yandex search (`transcode`).
+- `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`, whose `MakeError` says
+  whether a file couldn't be read or doesn't decode, and `THUMBS_VERSION`), the viewer's images (`display`), and a TIFF
+  re-encoded as a JPEG for the Yandex search (`transcode`).
 - `query` (`pg-query`): the query compiler: a `Query` (`pg-model`'s) becomes the SQL of its conditions and their
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
-  schema, the writes, the reads (`browse`), the filters and sort (their SQL is `query`'s) and the duplicate reports.
+  schema, the writes, the reads (`browse`), the filters and sort (their SQL is `query`'s), the duplicate reports, the
+  inbox (`inbox`) and the files the passes failed on (`ledger`; `docs/NOTIFICATIONS.md`).
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
   pause, stop), the job thread and schedule, the panics it catches and the event bus.
 - `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.

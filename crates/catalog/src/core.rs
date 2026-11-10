@@ -19,7 +19,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use crate::error::{Error, Result};
 use crate::lifecycle::{
     back_up, check_rules, db_file, in_use, mark_unheld_missing, pending_import_sql, rebuild, set_borders_version,
-    set_import_version, set_taken_zone, take_lock, take_shared, try_exclusive, work_list,
+    set_import_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, work_list,
 };
 use crate::schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
@@ -111,6 +111,7 @@ impl Catalog {
         mark_unheld_missing(&conn).with_context(|| format!("catalog {}", path.display()))?;
         set_import_version(&conn, versions.import).with_context(|| format!("catalog {}", path.display()))?;
         set_borders_version(&conn, versions.borders).with_context(|| format!("catalog {}", path.display()))?;
+        set_thumbs_version(&conn, versions.thumbs).with_context(|| format!("catalog {}", path.display()))?;
         set_taken_zone(&conn).with_context(|| format!("catalog {}", path.display()))?;
         pg_query::register_functions(&conn)?;
         // The change is made: the catalog's own shared hold takes the exclusive one's place (no other holder can have
@@ -175,6 +176,19 @@ impl Catalog {
             .conn
             .query_row(
                 "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1",
+                [file_id.get()],
+                |r| r.get(0),
+            )
+            .optional()?;
+        Ok(bytes.and_then(|bytes| self.rules.parse_bytes(&bytes)))
+    }
+
+    /// The folder the file is in while the library shows it (present); `None` for a file gone, or missing.
+    pub fn present_file_folder(&self, file_id: FileId) -> Result<Option<RulePath>> {
+        let bytes: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT fo.path FROM files f JOIN folders fo ON fo.id = f.folder_id WHERE f.id = ?1 AND f.missing = 0",
                 [file_id.get()],
                 |r| r.get(0),
             )

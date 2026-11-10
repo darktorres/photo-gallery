@@ -25,6 +25,21 @@ macro_rules! seq {
     };
 }
 
+/// The files of a pass's failure ledger (`?1`, the pass's code), `$which` narrowing the rows, are listed again by the
+/// pass: their `seq` moves on to the number `next_seq!()` took, past the pass's checkpoint (`files.seq` triggers neither
+/// the ledger's trigger nor `files_source_changed`). The rows are then deleted by the caller.
+macro_rules! failures_relisted {
+    ($which:literal) => {
+        concat!(
+            "UPDATE files SET seq = ",
+            seq!(),
+            " WHERE id IN (SELECT file_id FROM file_failures WHERE pass = ?1",
+            $which,
+            ")"
+        )
+    };
+}
+
 /// The analyses borders are looked for in: still images that decoded and are big enough (detection::MIN_SIDE).
 macro_rules! has_borders {
     () => {

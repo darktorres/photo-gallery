@@ -86,15 +86,22 @@ impl ThumbCache {
     /// `thumbs.sqlite.bad` and made anew (an [`Event::StartedOver`] says so): damage in the file's header or layout is
     /// found here; damage SQLite finds in the entries' pages only at the day's check of the totals, so up to a day
     /// late. No check reads a JPEG's bytes: a thumbnail that doesn't decode is found by the reader (see
-    /// `crates/README.md`).
-    pub fn open(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>, events: Arc<Bus<Event>>) -> Result<ThumbCache> {
+    /// `crates/README.md`). `thumbs_version` is the thumbnailer's (`pg_render::THUMBS_VERSION`): a file whose mark is
+    /// another forgets how far each height was checked, so the next passes look at every file again.
+    pub fn open(
+        dir: &Path,
+        catalog_id: &str,
+        cap_bytes: Option<i64>,
+        thumbs_version: i64,
+        events: Arc<Bus<Event>>,
+    ) -> Result<ThumbCache> {
         if let Some(cap) = cap_bytes
             && cap < 0
         {
             bail!("a thumbnail cache cap of {cap} bytes");
         }
         let path = cache_path(dir);
-        let Writing { conn, started_over, drift, live } = open_writer(&path, catalog_id, cap_bytes)?;
+        let Writing { conn, started_over, drift, live } = open_writer(&path, catalog_id, cap_bytes, thumbs_version)?;
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
@@ -390,7 +397,7 @@ mod tests {
 
     fn open_quiet(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Opened {
         let (events, watch) = Quiet::bus();
-        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, events).unwrap();
+        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, 1, events).unwrap();
         Opened { cache, _events: watch }
     }
 
@@ -403,7 +410,7 @@ mod tests {
     ) -> (ThumbCache, StartOverReason, PathBuf, String) {
         let bus = Arc::new(Bus::new(8));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, bus).unwrap();
+        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, 1, bus).unwrap();
         let mut taken = events.take().items.into_iter();
         let first = taken.next();
         assert!(taken.next().is_none(), "one event expected");
@@ -558,7 +565,7 @@ mod tests {
         drop(open_quiet(&dir, CATALOG_ID, None));
         let usage = ThumbCache::read_usage(&dir).unwrap().unwrap();
         assert_eq!((usage.cap, usage.bytes, usage.count), (500, first.totals().unwrap().0, first.totals().unwrap().1));
-        assert!(ThumbCache::open(&dir, CATALOG_ID, Some(-1), Arc::new(Bus::new(1))).is_err());
+        assert!(ThumbCache::open(&dir, CATALOG_ID, Some(-1), 1, Arc::new(Bus::new(1))).is_err());
     }
 
     #[test]
@@ -666,7 +673,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "app-id-cache").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(999)));
         Connection::open(cache_path(&dir)).unwrap().pragma_update(None, "application_id", 9).unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(pg_schema::application_id(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 9);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -678,7 +685,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "foreign-db").unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute_batch("CREATE TABLE notes(text TEXT);").unwrap();
         let before = std::fs::read(cache_path(&dir)).unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), before);
         assert!(!bad_path(&dir).exists());
@@ -804,7 +811,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "damaged-held").unwrap();
         std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
         let held = pg_schema::Live::shared(&cache_path(&dir)).unwrap().unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), vec![b'x'; 8192]);
         assert!(!bad_path(&dir).exists());
@@ -907,7 +914,7 @@ mod tests {
         file.execute("UPDATE meta SET value = 0 WHERE key = 'healed'", []).unwrap();
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), bus).unwrap();
+        let cache = ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), 1, bus).unwrap();
         assert_eq!(events.take().items, vec![Event::TotalsFixed { kept: (999, 7), actual: (0, 0) }]);
         drop(cache);
     }
@@ -920,7 +927,7 @@ mod tests {
         // Within the day of the last check, an open doesn't check: the drift stays until the next day's open.
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        drop(ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), bus).unwrap());
+        drop(ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), 1, bus).unwrap());
         assert!(events.take().items.is_empty());
         let file = Connection::open(cache_path(&dir)).unwrap();
         assert_eq!(file.query_row("SELECT count FROM totals", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
@@ -935,6 +942,7 @@ mod tests {
             pg_catalog::Versions {
                 import: pg_analysis::analyze::IMPORT_VERSION,
                 borders: pg_analysis::borders::BORDERS_VERSION,
+                thumbs: 1,
             },
             rules,
         )
@@ -1066,6 +1074,29 @@ mod tests {
         assert_eq!(ids(&after), vec![file.get()]);
     }
 
+    /// A new thumbnailer (`thumbs_version`) looks at every file again, once: the files that failed under the old one are
+    /// behind the checkpoint. The same version again changes nothing.
+    #[test]
+    fn a_new_thumbnailer_forgets_how_far_each_height_was_checked() {
+        let dir = test_folder(SCRATCH, "thumbs-version").unwrap();
+        let (catalog, _c) = catalog_of_four(&dir);
+        let cache = open(&dir, 1 << 30);
+        let pass = cache.pending(&catalog, 100).unwrap();
+        cache.checked(&pass.snapshot, None).unwrap();
+        drop(cache);
+        let reopen = |version: i64| {
+            let (events, watch) = Quiet::bus();
+            Opened { cache: ThumbCache::open(&dir, CATALOG_ID, None, version, events).unwrap(), _events: watch }
+        };
+        assert!(reopen(1).pending(&catalog, 100).unwrap().snapshot.since_checked);
+        let newer = reopen(2);
+        let after = newer.pending(&catalog, 100).unwrap();
+        assert!(!after.snapshot.since_checked);
+        newer.checked(&after.snapshot, None).unwrap();
+        drop(newer);
+        assert!(reopen(2).pending(&catalog, 100).unwrap().snapshot.since_checked, "forgotten once");
+    }
+
     #[test]
     fn eviction_forgets_how_far_a_height_was_checked() {
         let dir = test_folder(SCRATCH, "forget").unwrap();
@@ -1113,7 +1144,7 @@ mod tests {
         assert!(reopened.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_none(), "file 1 is another file now");
         assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
         // Open elsewhere: it can't be deleted, so it isn't used.
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("another catalog"), "{e:#}");
     }
 

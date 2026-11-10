@@ -1,6 +1,6 @@
 # Notifications plan: persistent inbox, failure ledger, dev log view
 
-Status (2026-11-10): S1 and S2 done (see "S1 as built" and "S2 as built" below); S3 to do. Re-checked against `d2cbc13`; delivered in
+Status (2026-11-10): S1, S2 and S3 done (see "S1 as built", "S2 as built" and "S3 as built" below). Re-checked against `d2cbc13`; delivered in
 three stages (S1, S2, S3), each its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
 ## S1 as built
@@ -51,6 +51,29 @@ S2 is as the plan says, with these differences:
 - The toast is in the status bar, where the job's message line was, and the bell is an "Inbox (N)" button: the status
   bar keeps its layout. A populated inbox's screenshot waits for S3's failing fixture file.
 - The progress bar's "N failed" split is S3's, with the ledger it links to.
+
+## S3 as built
+
+S3 is as the plan says, with these differences:
+
+- A ledger's counts are read with each listing of the inbox (`ledger::entries`), not kept: the writer lists the inbox
+  after each change anyway, and a count kept beside the rows could drift from them.
+- The inbox's entry id is an enum (`inbox::EntryId`: `Row { id, uid }` or `Ledger { pass, seen }`), so a ledger entry
+  is marked by the serial the user saw, and a later failure stays new. "Mark all read" and "Clear all" cover the ledgers
+  as the last listing had them.
+- Retry goes through the inbox's writer (`Inbox::retry`), with a callback that wakes the job once the rows are gone,
+  so the pass that follows lists the files.
+- Reveal resolves the file's folder from the catalog (`Catalogs::present_folder`), not from the path in the page: the
+  folder's exact spelling is the catalog's, and a file gone since is told apart (a toast).
+- The window's on-demand failures go to the inbox's writer, each file once while it is among the last 256, not by a
+  write of their own on the image provider's thread.
+- A ledger write that fails posts a kind of its own, `LedgerNotWritten { pass, error }`, keyed by the pass and cleared
+  by the next write that works, rather than only a log line.
+- The failed files are a model of their own (`FailedFiles`), read when a ledger entry is opened, not rows of `Notices`:
+  the listing holds the entries' counts only.
+- A video file that can't be opened is `pg_video::Unopened`, which `MakeError` finds by downcast, so an offline drive's
+  video is unreadable, not undecodable.
+- No screenshot of a populated inbox yet: the fixture has no failing file, so the status split shows in no scenario.
 
 ## Context
 

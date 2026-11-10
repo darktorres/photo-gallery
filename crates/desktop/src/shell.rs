@@ -24,6 +24,7 @@ use pg_client::controller::panels;
 use pg_client::controller::prefs;
 use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
+use pg_model::ids::FileId;
 use pg_model::notice::{Notice, ViewOp};
 use pg_model::view::SavedView;
 
@@ -291,6 +292,31 @@ impl qobject::Shell {
         self.as_mut().set_saved_views(view_names());
     }
 
+    /// Show the file `file_id` in its folder, nothing filtered (an inbox entry's Reveal): the controller lists the folder
+    /// and selects the file once it is shown (`Command::Reveal`). `false`, with a toast, when the library no longer has it.
+    pub(crate) fn reveal(self: Pin<&mut Self>, file_id: f64) -> bool {
+        let file = pg_model::num::f64_to_i64(file_id);
+        let folder = match app::get().catalogs().present_folder(FileId::new(file)) {
+            Ok(Some(folder)) => folder,
+            Ok(None) => {
+                app::post(Notice::FileNoLongerInLibrary);
+                return false;
+            }
+            Err(e) => {
+                pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e}"));
+                return false;
+            }
+        };
+        let folder = pg_platform::native::PATH_RULES.merge(&folder);
+        self.dispatch(Event::Reveal { file, folder });
+        true
+    }
+
+    /// List the files the import failed on, in every folder (an inbox entry's "Show the failed files").
+    pub(crate) fn show_failed_imports(self: Pin<&mut Self>) {
+        self.dispatch(Event::Listing(ListingEvent::FailedImports));
+    }
+
     pub(crate) fn apply_view(self: Pin<&mut Self>, name: &QString) -> bool {
         let Some(v) = app::get().views().view(&name.to_string()).ok().flatten() else {
             return false;
@@ -348,6 +374,19 @@ impl qobject::Shell {
                     }
                 });
                 self.as_mut().later(move |shell| shell.select_requested(item));
+            }
+            // The file a reveal asked for, in the list just shown: selected and shown, or gone since.
+            Command::Reveal(file) => {
+                let shell = self.qt_thread();
+                gallery::post(move |mut model| {
+                    let item = model.index_of(file);
+                    if model.is_item(item) {
+                        model.as_mut().set_current_item(item);
+                        let _ = shell.queue(move |s| s.select_requested(item));
+                    } else {
+                        app::post(Notice::FileNoLongerInLibrary);
+                    }
+                });
             }
             Command::RestoreSelection(i) => {
                 let item = to_i32(i);

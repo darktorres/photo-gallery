@@ -15,9 +15,12 @@ pub enum Error {
     /// The file has no placeholder yet: it isn't imported.
     #[error("not imported yet")]
     NotImported,
-    /// The original can't be read (offline, or not decodable): why.
+    /// The original can't be read (offline, gone): why.
     #[error("original unavailable: {0}")]
     Original(String),
+    /// The original was read and doesn't decode (damaged, cut short, a format the decoder can't take): why.
+    #[error("the original doesn't decode: {0}")]
+    Undecodable(String),
     /// A folder not added to the library, because the scanner refuses it (`LibraryService::add_folder`): the folder, and
     /// why. The front end words it (the notice `FolderRefused`); this text names the reason by its code.
     #[error("{} can't be added: {reason}", pg_platform::native::PATH_RULES.display(folder))]
@@ -34,8 +37,16 @@ pub fn failed(e: impl Display) -> Error {
     Error::Failed(format!("{e:#}"))
 }
 
-/// The original can't be read (offline, or not decodable): [`Error::Original`], with the lower layer's text (`{:#}`:
-/// the causes included). Its `Display` adds "original unavailable: ", so the text given here doesn't say it.
+/// The original can't be read (offline, gone): [`Error::Original`], with the lower layer's text (`{:#}`: the causes
+/// included). Its `Display` adds "original unavailable: ", so the text given here doesn't say it.
 pub fn original(e: impl Display) -> Error {
     Error::Original(format!("{e:#}"))
+}
+
+/// What a maker's failure is for the app: the original unavailable when it couldn't be read, else it doesn't decode.
+pub fn made_error(e: pg_render::maker::MakeError) -> Error {
+    match e {
+        pg_render::maker::MakeError::Unreadable(e) => original(e),
+        pg_render::maker::MakeError::Undecodable(e) => Error::Undecodable(format!("{e:#}")),
+    }
 }

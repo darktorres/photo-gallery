@@ -67,8 +67,9 @@ pass-import = Importing
 pass-borders = Finding borders
 pass-crop = Saving cropped copies
 pass-thumbs = Thumbnails at { $height } px
-pass-working = { $what } { $done } of { $total } · { $rate }/s · { $eta }{ $failed }
-pass-failed = { " · " }{ $count } failed
+pass-working = { $what } { $done } of { $total } · { $rate }/s · { $eta }
+# The status bar's link to the pass's failed files, beside its line
+pass-failed = { $count } failed
 
 # A time left
 eta-seconds = { $seconds } s left
@@ -322,6 +323,12 @@ notice-unreadable-files-body = { $count ->
     [one] { $text } file couldn't be read (an offline drive, or a file in use): it is tried again by the next pass
    *[other] { $text } files couldn't be read (an offline drive, or files in use): they are tried again by the next pass
 }
+notice-ledger-not-written-title = { $pass ->
+    [thumbs] The thumbnails' failures couldn't be kept
+    [borders] The borders' failures couldn't be kept
+   *[import] The import's failures couldn't be kept
+}
+notice-ledger-not-written-body = The files that failed are tried again by the next pass: { $error }
 notice-notices-lost-title = Notices weren't kept
 notice-notices-lost-body = { $count ->
     [one] { $text } notice couldn't be kept in the inbox; it is in the log

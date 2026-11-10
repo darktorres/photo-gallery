@@ -883,6 +883,7 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
         crate::Versions {
             import: pg_analysis::analyze::IMPORT_VERSION,
             borders: pg_analysis::borders::BORDERS_VERSION,
+            thumbs: 1,
         },
         PathRules::Posix,
     )

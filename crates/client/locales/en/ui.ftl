@@ -70,6 +70,13 @@ ui-inbox-empty = Nothing to tell
 ui-inbox-clear = Clear all
 ui-inbox-copy = Copy
 ui-inbox-dismiss = Dismiss
+ui-inbox-retry = Retry
+ui-inbox-show-files = Show the failed files
+ui-inbox-reveal = Reveal
+# A ledger's entry lists its newest failed files: how many it holds ($text) and how many are listed ($other)
+ui-inbox-more = The newest { $other } of { $text } files
+# The status bar's link to the pass's failed files: its words are the pass line's (pass-failed); this names it
+ui-failed-link = Show the failed files
 ui-log = Log
 ui-log-title = Log
 ui-log-empty = Nothing logged yet

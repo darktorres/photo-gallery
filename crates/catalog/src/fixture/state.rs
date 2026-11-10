@@ -99,6 +99,15 @@ pub fn borders_due(c: &Catalog, name: &str) -> Result<i64> {
     )?)
 }
 
+/// Make the borders of the file called `name` due again, its file unchanged (as an analysis made again does).
+pub fn make_borders_due(c: &Catalog, name: &str) -> Result<()> {
+    c.conn.execute(
+        "UPDATE analysis SET borders_due = 1 WHERE file_id = (SELECT id FROM files WHERE name = ?1)",
+        [name.as_bytes()],
+    )?;
+    Ok(())
+}
+
 /// The width and height the analysis holds for each present file, by name.
 pub fn analysis_sizes(c: &Catalog) -> Result<Vec<(u32, u32)>> {
     let mut stmt =

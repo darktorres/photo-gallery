@@ -325,7 +325,6 @@ mod tests {
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::rules::PathRules;
-    use pg_platform::sqlite::sqlite_path;
     use pg_testkit::test_folder;
     use rusqlite::Connection;
     use std::path::Path;
@@ -604,7 +603,7 @@ mod tests {
         drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
         drop(Catalog::open(&path, pg_platform::native::PATH_RULES).unwrap());
         // The layout of before the queued temps were bytes: the rebuild carries the old file's rows, attached by name.
-        let old = Connection::open(sqlite_path(&path).unwrap()).unwrap();
+        let old = Connection::open(pg_platform::sqlite::sqlite_path(&path).unwrap()).unwrap();
         old.execute_batch(
             r"DROP TABLE file_writes;
               CREATE TABLE file_writes(

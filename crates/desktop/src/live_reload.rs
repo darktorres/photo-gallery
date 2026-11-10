@@ -13,7 +13,7 @@ pub mod ffi {
         type QUrl = cxx_qt_lib::QUrl;
         include!("pg-desktop/cpp/gpu_device.h");
         #[namespace = "pg"]
-        type GpuDevice = crate::gpu_device::ffi::GpuDevice;
+        type GpuDevice = crate::gpu_device_bridge::ffi::GpuDevice;
 
         include!("pg-desktop/cpp/live_reload.h");
         /// Fetch the QML files in `main`'s qrc: folder from `source_dir` instead. Call before the first load.
@@ -21,7 +21,7 @@ pub mod ffi {
         fn read_qml_from_source(engine: Pin<&mut QQmlApplicationEngine>, main: &QUrl, source_dir: &QString);
 
         /// Load `main` again whenever a file in `source_dir` changes; each new window is shown with
-        /// `gpu_device::ffi::show_windows`.
+        /// `gpu_device_bridge::ffi::show_windows`.
         ///
         /// # Safety
         ///

@@ -26,7 +26,7 @@
 #include <QtGui/QImage>
 #include <QtQuick/QQuickWindow>
 
-#include "pg-desktop/src/screenshot.cxx.h"
+#include "pg-desktop/src/screenshot_bridge.cxx.h"
 
 namespace pg {
 

@@ -10,14 +10,14 @@ use std::sync::OnceLock;
 static LOG: OnceLock<PathBuf> = OnceLock::new();
 
 /// Sets the log file that [`note`] appends to. Called once, at startup, before anything is noted.
-pub fn init(log: PathBuf) {
+pub(crate) fn init(log: PathBuf) {
     let _ = LOG.set(log);
 }
 
 /// Append a line to the log, for a problem a GUI program can't show on stderr. Before `init`, or when the log can't be
 /// written, the line goes to stderr instead.
 #[expect(clippy::print_stderr, reason = "the fallback: a line the log can't take still reaches a terminal")]
-pub fn note(line: &str) {
+pub(crate) fn note(line: &str) {
     let text = format!("{} {line}\n", local_time());
     match LOG.get().map(|log| append(log, &text)) {
         Some(Ok(())) => {}
@@ -26,12 +26,12 @@ pub fn note(line: &str) {
 }
 
 /// Appends `text` to the file at `log`, creating it when it is missing.
-pub fn append(log: &Path, text: &str) -> std::io::Result<()> {
+pub(crate) fn append(log: &Path, text: &str) -> std::io::Result<()> {
     std::fs::OpenOptions::new().create(true).append(true).open(log)?.write_all(text.as_bytes())
 }
 
 /// `2026-10-30 17:04:16`, local time.
-pub fn local_time() -> String {
+pub(crate) fn local_time() -> String {
     let t = pg_platform::clock::local_time();
     format!("{:04}-{:02}-{:02} {:02}:{:02}:{:02}", t.year, t.month, t.day, t.hour, t.minute, t.second)
 }

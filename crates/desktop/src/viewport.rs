@@ -2,106 +2,10 @@
 //! region rendered for a zoomed view. QML keeps the gestures, the keys and the signals; the numbers, the clamping and
 //! the image URLs are here. Each change is pushed back as the properties the QML binds to.
 
-mod state;
+pub(crate) mod state;
 use state::ViewportRust;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        /// Device pixels per image pixel.
-        #[qproperty(f64, zoom, READ, WRITE, NOTIFY, FINAL)]
-        /// The image's top-left corner, in logical pixels.
-        #[qproperty(f64, ox, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(f64, oy, READ, WRITE, NOTIFY, FINAL)]
-        /// The image's size on screen, in logical pixels.
-        #[qproperty(f64, dw, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(f64, dh, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(bool, zoomed, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(bool, pixels, READ, WRITE, NOTIFY, FINAL)]
-        /// The fitted image's size, in device pixels (the window's size times the device pixel ratio). The viewer
-        /// renders the fit at it once it has settled after a resize (`fitSource` takes the size it settled on).
-        #[qproperty(i64, fit_width, cxx_name = "fitWidth", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i64, fit_height, cxx_name = "fitHeight", READ, WRITE, NOTIFY, FINAL)]
-        type Viewport = super::ViewportRust;
-    }
-
-    unsafe extern "RustQt" {
-        /// A new image of this size (in image pixels). Returns whether the view was reset (fitted, and the size
-        /// changed): then the caller also signals the reset.
-        #[qinvokable]
-        #[cxx_name = "setMedia"]
-        fn set_media(self: Pin<&mut Viewport>, fw: f64, fh: f64, real_size: bool) -> bool;
-
-        /// Whether the image can zoom (a still image). Changing it doesn't reset the view.
-        #[qinvokable]
-        #[cxx_name = "setStill"]
-        fn set_still(self: Pin<&mut Viewport>, still: bool);
-
-        /// The window's size (logical pixels) and the device pixel ratio. Returns whether the view was reset.
-        #[qinvokable]
-        #[cxx_name = "setWindow"]
-        fn set_window(self: Pin<&mut Viewport>, width: f64, height: f64, dpr: f64, real_size: bool) -> bool;
-
-        /// Zoom to `zoom`, keeping the image point under (px, py) where it is.
-        #[qinvokable]
-        #[cxx_name = "setZoom"]
-        fn zoom_at(self: Pin<&mut Viewport>, zoom: f64, px: f64, py: f64);
-
-        /// Double-click: fit ↔ 1:1 at the point.
-        #[qinvokable]
-        #[cxx_name = "toggleOneToOne"]
-        fn toggle_one_to_one(self: Pin<&mut Viewport>, px: f64, py: f64);
-
-        /// Show the image fitted, or at 1:1 in Real Size mode.
-        #[qinvokable]
-        #[cxx_name = "resetView"]
-        fn reset_view(self: Pin<&mut Viewport>, real_size: bool);
-
-        /// Pan the image's corner to (ox, oy), kept on screen.
-        #[qinvokable]
-        fn pan(self: Pin<&mut Viewport>, ox: f64, oy: f64);
-
-        /// The image (by its key) fitted to `width` × `height` device pixels (the `fitWidth` and `fitHeight` the
-        /// viewer settled on): its URL. The size is an argument, so a QML binding to the URL follows it.
-        #[qinvokable]
-        #[cxx_name = "fitSource"]
-        fn fit_source(self: &Viewport, key: &QString, width: i64, height: i64) -> QString;
-
-        /// The region of the image on screen, rendered at the zoom: its URL, or "" when none of it shows. Its
-        /// fractions are `regionX`, `regionY`, `regionW` and `regionH`.
-        #[qinvokable]
-        #[cxx_name = "regionSource"]
-        fn region_source(self: &Viewport, key: &QString) -> QString;
-
-        /// Whether a count of quarter turns (player turns, 0 to 3) swaps the picture's width and height.
-        #[qinvokable]
-        #[cxx_name = "swapsAxes"]
-        fn swaps_axes(self: &Viewport, turns: i32) -> bool;
-
-        #[qinvokable]
-        #[cxx_name = "regionX"]
-        fn region_x(self: &Viewport) -> f64;
-
-        #[qinvokable]
-        #[cxx_name = "regionY"]
-        fn region_y(self: &Viewport) -> f64;
-
-        #[qinvokable]
-        #[cxx_name = "regionW"]
-        fn region_w(self: &Viewport) -> f64;
-
-        #[qinvokable]
-        #[cxx_name = "regionH"]
-        fn region_h(self: &Viewport) -> f64;
-    }
-}
+use crate::viewport_bridge::qobject;
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -150,39 +54,39 @@ impl Default for ViewportRust {
 }
 
 impl qobject::Viewport {
-    fn set_media(mut self: Pin<&mut Self>, fw: f64, fh: f64, real_size: bool) -> bool {
+    pub(crate) fn set_media(mut self: Pin<&mut Self>, fw: f64, fh: f64, real_size: bool) -> bool {
         let reset = self.as_mut().rust_mut().view.set_media(fw, fh, real_size);
         self.sync();
         reset
     }
 
-    fn set_still(mut self: Pin<&mut Self>, still: bool) {
+    pub(crate) fn set_still(mut self: Pin<&mut Self>, still: bool) {
         self.as_mut().rust_mut().view.set_still(still);
         self.sync();
     }
 
-    fn set_window(mut self: Pin<&mut Self>, width: f64, height: f64, dpr: f64, real_size: bool) -> bool {
+    pub(crate) fn set_window(mut self: Pin<&mut Self>, width: f64, height: f64, dpr: f64, real_size: bool) -> bool {
         let reset = self.as_mut().rust_mut().view.set_window(width, height, dpr, real_size);
         self.sync();
         reset
     }
 
-    fn zoom_at(mut self: Pin<&mut Self>, zoom: f64, px: f64, py: f64) {
+    pub(crate) fn zoom_at(mut self: Pin<&mut Self>, zoom: f64, px: f64, py: f64) {
         self.as_mut().rust_mut().view.set_zoom(zoom, px, py);
         self.sync();
     }
 
-    fn toggle_one_to_one(mut self: Pin<&mut Self>, px: f64, py: f64) {
+    pub(crate) fn toggle_one_to_one(mut self: Pin<&mut Self>, px: f64, py: f64) {
         self.as_mut().rust_mut().view.toggle_one_to_one(px, py);
         self.sync();
     }
 
-    fn reset_view(mut self: Pin<&mut Self>, real_size: bool) {
+    pub(crate) fn reset_view(mut self: Pin<&mut Self>, real_size: bool) {
         self.as_mut().rust_mut().view.reset(real_size);
         self.sync();
     }
 
-    fn pan(mut self: Pin<&mut Self>, ox: f64, oy: f64) {
+    pub(crate) fn pan(mut self: Pin<&mut Self>, ox: f64, oy: f64) {
         self.as_mut().rust_mut().view.pan(ox, oy);
         self.sync();
     }
@@ -201,34 +105,34 @@ impl qobject::Viewport {
         self.as_mut().set_fit_height(p.fit_height);
     }
 
-    fn fit_source(&self, key: &QString, width: i64, height: i64) -> QString {
+    pub(crate) fn fit_source(&self, key: &QString, width: i64, height: i64) -> QString {
         full_url(key, image::View::Fit(px(width), px(height)))
     }
 
-    fn region_source(&self, key: &QString) -> QString {
+    pub(crate) fn region_source(&self, key: &QString) -> QString {
         match self.view.region() {
             Some(r) => full_url(key, image::View::Region((r.x, r.y, r.w, r.h), px(r.px_w), px(r.px_h))),
             None => QString::default(),
         }
     }
 
-    fn swaps_axes(&self, turns: i32) -> bool {
+    pub(crate) fn swaps_axes(&self, turns: i32) -> bool {
         turns_swap(Turns::new(u8::try_from(turns.rem_euclid(4)).unwrap_or(0)))
     }
 
-    fn region_x(&self) -> f64 {
+    pub(crate) fn region_x(&self) -> f64 {
         self.view.region().map_or(0.0, |r| r.x)
     }
 
-    fn region_y(&self) -> f64 {
+    pub(crate) fn region_y(&self) -> f64 {
         self.view.region().map_or(0.0, |r| r.y)
     }
 
-    fn region_w(&self) -> f64 {
+    pub(crate) fn region_w(&self) -> f64 {
         self.view.region().map_or(0.0, |r| r.w)
     }
 
-    fn region_h(&self) -> f64 {
+    pub(crate) fn region_h(&self) -> f64 {
         self.view.region().map_or(0.0, |r| r.h)
     }
 }

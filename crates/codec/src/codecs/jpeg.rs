@@ -59,7 +59,8 @@ pub(super) fn decode(
         *scratch = kept;
         return Err(e);
     }
-    let mut decoder = JpegDecoder::new_with_scratch(ZCursor::new(bytes), options().jpeg_set_out_colorspace(space), kept);
+    let mut decoder =
+        JpegDecoder::new_with_scratch(ZCursor::new(bytes), options().jpeg_set_out_colorspace(space), kept);
     decoder.set_skip_metadata(true);
     let decoded = decoder.decode_into(target(color, w, h, out, raw)).map_err(jpeg_error);
     *scratch = decoder.into_scratch();

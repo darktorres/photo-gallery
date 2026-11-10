@@ -15,12 +15,13 @@ restores them with actions/cache). PG_LINUX_BUILD_CACHE=gha builds with the GitH
 """
 
 import argparse
+import contextlib
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tarfile
-import tempfile
 from pathlib import Path
 from typing import NoReturn
 
@@ -137,6 +138,21 @@ def export_head(destination):
         fail("git archive HEAD failed")
 
 
+@contextlib.contextmanager
+def head_export():
+    """A folder holding the committed HEAD (`export_head`), removed afterwards. It is made with a plain `mkdir`, under
+    target/: since Python 3.12.4, `tempfile.mkdtemp` gives its folder an ACL that admits only this user on Windows, and
+    Docker Desktop, whose service mounts it, is then refused ("Access denied")."""
+    folder = REPO / "target" / "linux-head" / f"pg-head-{os.getpid()}"
+    shutil.rmtree(folder, ignore_errors=True)
+    folder.mkdir(parents=True)
+    try:
+        export_head(folder)
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
 def run(image, command, mounts, extra=()):
     interactive = ["-it"] if sys.stdin.isatty() and sys.stdout.isatty() else []
     cmd = ["docker", "run", "--rm", *interactive, *extra, *mounts, image, *command]
@@ -147,18 +163,15 @@ def check(head):
     ensure_image(CHECKS, "base")
     if not head:
         return run(CHECKS, ["python3", "docker/check.py"], ["-v", f"{posix(REPO)}:/work", *cache_mounts()])
-    with tempfile.TemporaryDirectory(prefix="pg-head-") as export:
-        export_head(export)
+    with head_export() as export:
         return run(CHECKS, ["python3", "docker/check.py"], ["-v", f"{posix(export)}:/work", *cache_mounts()])
-
 
 def with_head(command, extra_mounts, extra_env=(), extra_flags=()):
     """Runs `command` in the tools image: the checkout at /work, a committed HEAD export at /head, the caches."""
     ensure_image(TOOLS, "tools")
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=REPO, capture_output=True, text=True, check=True)
     os.environ["PG_HEAD_SHA"] = sha.stdout.strip()
-    with tempfile.TemporaryDirectory(prefix="pg-head-") as export:
-        export_head(export)
+    with head_export() as export:
         mounts = ["-v", f"{posix(REPO)}:/work", "-v", f"{posix(export)}:/head", *extra_mounts, *cache_mounts()]
         env = [item for name in extra_env for item in ("-e", name)]
         return run(TOOLS, command, mounts, [*extra_flags, *env])

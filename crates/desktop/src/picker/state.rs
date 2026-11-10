@@ -2,8 +2,12 @@
 
 use cxx_qt_lib::{QString, QStringList};
 
+#[expect(
+    unreachable_pub,
+    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+)]
 pub struct PickerRust {
-    pub(super) native: bool,
-    pub(super) names: QStringList,
-    pub(super) here: QString,
+    pub(crate) native: bool,
+    pub(crate) names: QStringList,
+    pub(crate) here: QString,
 }

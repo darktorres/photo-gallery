@@ -19,13 +19,13 @@ use pg_model::media::{Ext, Kind};
 use pg_model::turns::Turns;
 use pg_platform::native::set_os_str;
 
-pub struct ReportStats {
-    pub files: usize,
-    pub borders: usize,
-    pub rejected: usize,
-    pub skipped: usize,
-    pub errors: usize,
-    pub seconds: f64,
+pub(crate) struct ReportStats {
+    pub(crate) files: usize,
+    pub(crate) borders: usize,
+    pub(crate) rejected: usize,
+    pub(crate) skipped: usize,
+    pub(crate) errors: usize,
+    pub(crate) seconds: f64,
 }
 
 /// The image files at `paths` (files, or folders searched recursively), sorted.
@@ -68,7 +68,7 @@ fn field(s: &str) -> String {
 
 /// Write `csv` with the prototype's `report.csv` columns for the image files at `paths`, as the borders pass
 /// finds their borders, so the two can be compared.
-pub fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> Result<ReportStats> {
+pub(crate) fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Control) -> Result<ReportStats> {
     let start = Instant::now();
     let files = image_files(paths)?;
     let mut rows: Vec<(usize, String)> = Vec::with_capacity(files.len());
@@ -146,7 +146,7 @@ const MAX_PIXELS: usize = (512 << 20) / 3;
 /// then its pixels (RGB, rows top to bottom). For each, a line on `output`: what is left without its borders, as
 /// `left top right bottom` (right and bottom exclusive; the whole image when it has none, or is too small to look
 /// at). Returns how many it read.
-pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
+pub(crate) fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
     let mut n = 0;
     let mut finder = Detector::default();
     let mut img = Rgb { width: 0, height: 0, pixels: Vec::new() };
@@ -176,7 +176,7 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<usize> {
 
 /// Take the false positives marked in a `review.json` of the eval viewer's Borders page (`{path: "false_positive"}`)
 /// into the catalog as marks. Returns (marked, not in the catalog).
-pub fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)> {
+pub(crate) fn import_review(catalog: &Catalog, review: &Path) -> Result<(usize, usize)> {
     let text = std::fs::read_to_string(review).with_context(|| format!("reading {}", review.display()))?;
     let verdicts: std::collections::BTreeMap<String, String> =
         serde_json::from_str(&text).with_context(|| format!("parsing {}", review.display()))?;

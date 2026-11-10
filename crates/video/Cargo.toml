@@ -17,9 +17,6 @@ pg-platform = { path = "../platform" }
 anyhow.workspace = true
 libloading.workspace = true
 
-[dev-dependencies]
-pg-platform = { path = "../platform" }
-
 [build-dependencies]
 # The same bindgen as ffmpeg-sys-next (its runtime feature: libclang is found at run time, as before).
 bindgen.workspace = true

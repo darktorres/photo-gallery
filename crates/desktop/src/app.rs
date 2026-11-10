@@ -13,7 +13,7 @@ use pg_client::text::{self, CacheStartOver};
 static APP: OnceLock<App> = OnceLock::new();
 
 /// Open the app from `config` and start printing its notes. Call once, on the GUI thread, before the UI starts.
-pub fn open(config: Config) -> anyhow::Result<()> {
+pub(crate) fn open(config: Config) -> anyhow::Result<()> {
     let app = App::open(config)?;
     let notes = app.notes().subscribe();
     std::thread::Builder::new().name("app notes".into()).spawn(move || {
@@ -25,7 +25,7 @@ pub fn open(config: Config) -> anyhow::Result<()> {
 }
 
 /// The app. Only after [`open`].
-pub fn get() -> &'static App {
+pub(crate) fn get() -> &'static App {
     #[expect(
         clippy::expect_used,
         reason = "`run` opens the app before Qt starts and quits when it can't, so no Qt call comes before it"
@@ -35,7 +35,7 @@ pub fn get() -> &'static App {
 }
 
 /// Stop the background work and say what it couldn't stop. Call after the event loop.
-pub fn stop() {
+pub(crate) fn stop() {
     if let Some(app) = APP.get()
         && let Err(e) = app.stop()
     {
@@ -44,7 +44,7 @@ pub fn stop() {
 }
 
 /// The app's end, after [`stop`] and once the image providers are gone.
-pub fn shutdown() {
+pub(crate) fn shutdown() {
     if let Some(app) = APP.get() {
         app.shutdown();
     }

@@ -4,7 +4,7 @@
 //! ([`render`]). The functions below build the messages for the values they are given, so this crate needs no Qt and no
 //! job type; the desktop maps the job's values in. Nothing here reads the catalog.
 //!
-//! The words and the bundle are in [`words`], the typed lines in [`message`]; this module builds the lines.
+//! The words and the bundle are in `words`, the typed lines in `message`; this module builds the lines.
 
 mod message;
 #[cfg(test)]

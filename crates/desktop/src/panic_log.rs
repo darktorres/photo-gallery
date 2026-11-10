@@ -15,7 +15,7 @@ use crate::{alert, log};
 
 /// Log panics to `gallery.log` at `log_path` (and to stderr, when there is one), and show a box for those that end the
 /// process.
-pub fn install(log_path: PathBuf) {
+pub(crate) fn install(log_path: PathBuf) {
     log::init(log_path.clone());
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {

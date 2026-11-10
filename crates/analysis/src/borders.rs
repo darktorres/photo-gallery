@@ -337,7 +337,6 @@ mod tests {
         assert!(d.sides.is_empty(), "{:?}", d.sides);
     }
 
-
     #[test]
     fn nested_borders_peel_off() {
         // Black letterbox bars, and inside them a white frame around the content. Above and below, the run of

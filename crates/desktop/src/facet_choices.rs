@@ -5,64 +5,10 @@
 //! published (`set_counts`), both read here, typed: `refresh` rebuilds the rows, and the filter bar calls it when the
 //! query or the counts change.
 
-mod state;
-use state::{FacetChoicesRust, Row};
+pub(crate) mod state;
+use state::Row;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QtCore/QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[base = QAbstractListModel]
-        #[qml_element]
-        /// Which list, by its index in `pg_client::facets::Facet` (the filter bar names them). Set it once.
-        #[qproperty(i32, facet, READ, WRITE = set_facet, FINAL)]
-        type FacetChoices = super::FacetChoicesRust;
-    }
-
-    unsafe extern "RustQt" {
-        fn set_facet(self: Pin<&mut FacetChoices>, value: i32);
-
-        /// Rebuild the rows from the listing's query and the counts (after a change to either).
-        #[qinvokable]
-        fn refresh(self: Pin<&mut FacetChoices>);
-
-        #[qinvokable]
-        #[cxx_override]
-        fn data(self: &FacetChoices, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[qinvokable]
-        #[cxx_override]
-        #[cxx_name = "roleNames"]
-        fn role_names(self: &FacetChoices) -> QHash_i32_QByteArray;
-
-        #[qinvokable]
-        #[cxx_override]
-        #[cxx_name = "rowCount"]
-        fn row_count(self: &FacetChoices, parent: &QModelIndex) -> i32;
-
-        #[inherit]
-        #[cxx_name = "beginResetModel"]
-        fn begin_reset_model(self: Pin<&mut FacetChoices>);
-
-        #[inherit]
-        #[cxx_name = "endResetModel"]
-        fn end_reset_model(self: Pin<&mut FacetChoices>);
-    }
-}
+use crate::facet_choices_bridge::qobject;
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
@@ -84,7 +30,7 @@ const ROLE_CHOSEN: i32 = 259;
 /// The counts `Filters` publishes for the list facets: a media type's and a borders value's, and the folder's
 /// extensions in the order the bar shows them (most files first, then any chosen one it doesn't have, at 0).
 #[derive(Clone, Debug, Default)]
-pub struct Counts {
+pub(crate) struct Counts {
     pub types: Vec<(MediaType, i64)>,
     pub borders: Vec<(BorderFacet, i64)>,
     pub exts: Vec<(String, i64)>,
@@ -149,12 +95,12 @@ fn rows(facet: Facet, query: &Query, counts: &Counts) -> Vec<Row> {
 }
 
 impl qobject::FacetChoices {
-    fn set_facet(mut self: Pin<&mut Self>, value: i32) {
+    pub(crate) fn set_facet(mut self: Pin<&mut Self>, value: i32) {
         self.as_mut().rust_mut().facet = value;
         self.refresh();
     }
 
-    fn refresh(mut self: Pin<&mut Self>) {
+    pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
         let counts = counts();
         let rows = Facet::from_index(self.facet).map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
@@ -167,7 +113,7 @@ impl qobject::FacetChoices {
         self.as_mut().end_reset_model();
     }
 
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+    pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Some(row) = usize::try_from(index.row()).ok().and_then(|i| self.rows.get(i)) else {
             return QVariant::default();
         };
@@ -180,7 +126,7 @@ impl qobject::FacetChoices {
         }
     }
 
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
+    pub(crate) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
         for (role, name) in [(ROLE_KEY, "key"), (ROLE_LABEL, "label"), (ROLE_COUNT, "count"), (ROLE_CHOSEN, "chosen")] {
             roles.insert(role, QByteArray::from(name));
@@ -188,7 +134,7 @@ impl qobject::FacetChoices {
         roles
     }
 
-    fn row_count(&self, _parent: &QModelIndex) -> i32 {
+    pub(crate) fn row_count(&self, _parent: &QModelIndex) -> i32 {
         i32::try_from(self.rows.len()).unwrap_or(i32::MAX)
     }
 }

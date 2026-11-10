@@ -76,7 +76,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one
-  flat folder), the image providers and the GPU device. The only crate that links Qt.
+  flat folder), the image providers and the GPU device. The only crate that links Qt. Each cxx-qt bridge is a module
+  of its own (`src/<x>_bridge.rs`, beside the `<x>.rs` that implements it), so the one allow its generated code needs
+  (`unreachable_pub`) covers nothing written by hand.
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
   command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
   the program runs commands only, and builds without Qt.

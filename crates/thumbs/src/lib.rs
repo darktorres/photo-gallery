@@ -177,9 +177,9 @@ mod tests {
     use std::sync::Mutex;
 
     use pg_catalog::fixture::state;
+    use pg_jobs_testkit::Quiet;
     use pg_model::ids::FileId;
     use pg_platform::priority::Priority;
-    use pg_jobs_testkit::Quiet;
 
     use super::*;
 

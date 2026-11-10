@@ -45,7 +45,12 @@ pub struct Tree {
 impl Tree {
     /// Only "All", until the first tree, whose paths follow `rules`.
     pub fn new(rules: PathRules) -> Tree {
-        Tree { tree: FolderTree::empty(rules), expanded: Vec::new(), visible: vec![Visible::All], key: RefCell::default() }
+        Tree {
+            tree: FolderTree::empty(rules),
+            expanded: Vec::new(),
+            visible: vec![Visible::All],
+            key: RefCell::default(),
+        }
     }
 }
 

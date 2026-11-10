@@ -38,6 +38,7 @@ REEXPORT_BOUNDARIES = {
 # Production code outside pg-platform that may name a platform, with the reason (ground rule 6).
 PLATFORM_GLUE = {
     "crates/desktop/src/video_player.rs": "the player's C++ calls differ by platform (UTF-16 units, or a descriptor)",
+    "crates/desktop/src/video_player_bridge.rs": "the declarations of those calls, one per platform",
     "crates/desktop/src/picker.rs": "the system's dialog is Windows' (pg_platform::picker::Dialog exists on Windows only)",
 }
 

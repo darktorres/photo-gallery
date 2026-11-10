@@ -43,7 +43,10 @@ mod tests {
             let error = format!("{:#}", png::rewrite(&huge, op).unwrap_err());
             assert!(error.contains("too large"), "{error}");
         }
-        assert!(png::rewrite(&file, Op::Orient(Orientation::new(6).unwrap())).is_ok(), "the test PNG itself is rewritten");
+        assert!(
+            png::rewrite(&file, Op::Orient(Orientation::new(6).unwrap())).is_ok(),
+            "the test PNG itself is rewritten"
+        );
 
         let rgb: Vec<u8> = (0..4 * 3 * 3).map(|i| u8::try_from(i % 256).unwrap()).collect();
         let mut gif_file = pg_testkit::gif_rgb(4, 3, &rgb).unwrap();

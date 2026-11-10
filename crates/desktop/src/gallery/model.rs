@@ -4,21 +4,23 @@
 use core::pin::Pin;
 
 use cxx_qt::{CxxQtType, Threading};
-use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QString, QStringList, QVariant};
+use cxx_qt_lib::{
+    QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QPointF, QString, QStringList, QVariant,
+};
 use pg_client::grid::{Arrival, Changed, Plan, Shape};
 use pg_client::text;
 use pg_model::grid::Entry;
 
 use super::qobject;
 use super::roles::{
-    CELL_ROLES, ROLE_ASPECTS, ROLE_BADGES, ROLE_BORDERS_MARKED, ROLE_CONTENT_HEIGHT, ROLE_CONTENT_WIDTH, ROLE_CONTENT_X,
-    ROLE_CONTENT_Y, ROLE_HEIGHT, ROLE_IMAGE_ASPECTS, ROLE_RATINGS, ROLE_SPAN, ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS,
-    ROLE_VERSION, cell_roles, qt_int,
+    CELL_ROLES, ROLE_ASPECTS, ROLE_BADGES, ROLE_BORDERS_MARKED, ROLE_CONTENT_HEIGHT, ROLE_CONTENT_WIDTH,
+    ROLE_CONTENT_X, ROLE_CONTENT_Y, ROLE_HEIGHT, ROLE_IMAGE_ASPECTS, ROLE_RATINGS, ROLE_SPAN, ROLE_THUMB_URLS,
+    ROLE_THUMBHASH_URLS, ROLE_VERSION, cell_roles, qt_int,
 };
 use super::state::fresh_entry;
 
 impl qobject::GalleryModel {
-    pub(super) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+    pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Ok(at) = usize::try_from(index.row()) else { return QVariant::default() };
         let Some(row) = self.grid.rows().get(at) else { return QVariant::default() };
         // The row's items as Qt's ints, which the item getters take.
@@ -52,7 +54,7 @@ impl qobject::GalleryModel {
         }
     }
 
-    pub(super) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
+    pub(crate) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
         roles.insert(ROLE_SPAN, QByteArray::from("span"));
         roles.insert(ROLE_HEIGHT, QByteArray::from("rowHeight"));
@@ -63,7 +65,7 @@ impl qobject::GalleryModel {
         roles
     }
 
-    pub(super) fn row_count(&self, _parent: &QModelIndex) -> i32 {
+    pub(crate) fn row_count(&self, _parent: &QModelIndex) -> i32 {
         qt_int(self.grid.rows().len())
     }
 
@@ -90,7 +92,7 @@ impl qobject::GalleryModel {
         });
     }
 
-    pub(super) fn set_viewing_holding(mut self: Pin<&mut Self>, value: i32) {
+    pub(crate) fn set_viewing_holding(mut self: Pin<&mut Self>, value: i32) {
         if self.viewing == value {
             return;
         }
@@ -143,7 +145,7 @@ impl qobject::GalleryModel {
         self.loaded(selection.anchor);
     }
 
-    pub(super) fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
+    pub(crate) fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
         let plan = {
             let mut this = self.as_mut().rust_mut();
             this.grid.set_size(width, row_height, spacing);
@@ -204,7 +206,7 @@ impl qobject::GalleryModel {
 
     /// The thumbnails' height changed: each row gets a new version and its cells' lists are read again (the URLs are
     /// made for the new height), in the same order as `items_changed`.
-    pub(super) fn set_thumb_height(mut self: Pin<&mut Self>, height: i32) {
+    pub(crate) fn set_thumb_height(mut self: Pin<&mut Self>, height: i32) {
         if height == self.thumb_height {
             return;
         }

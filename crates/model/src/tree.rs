@@ -78,7 +78,6 @@ fn node_u32(n: usize) -> u32 {
 }
 
 /// The folders a tree is made from: each one's parts and key written once, into the tree's bytes.
-#[derive(Default)]
 pub struct TreeBuilder {
     tree: FolderTree,
     rows: Vec<TreeRow>,

@@ -8,107 +8,9 @@
 //! the rows, the reveal of the listed folder and the spelling of a row's folder are read here and never passed as text:
 //! QML names a row by its number, and the folders go by value.
 
-mod state;
-use state::FolderRust;
+pub(crate) mod state;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QtCore/QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[base = QAbstractListModel]
-        #[qml_element]
-        /// The tree has been read at least once.
-        #[qproperty(bool, ready, READ, WRITE, NOTIFY, FINAL)]
-        type FolderModel = super::FolderRust;
-    }
-
-    impl cxx_qt::Threading for FolderModel {}
-
-    unsafe extern "RustQt" {
-        /// The tree `reload` asked for is shown.
-        #[qsignal]
-        fn loaded(self: Pin<&mut FolderModel>);
-
-        #[qinvokable]
-        #[cxx_override]
-        fn data(self: &FolderModel, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[qinvokable]
-        #[cxx_override]
-        #[cxx_name = "roleNames"]
-        fn role_names(self: &FolderModel) -> QHash_i32_QByteArray;
-
-        #[qinvokable]
-        #[cxx_override]
-        #[cxx_name = "rowCount"]
-        fn row_count(self: &FolderModel, parent: &QModelIndex) -> i32;
-
-        #[inherit]
-        #[cxx_name = "beginResetModel"]
-        fn begin_reset_model(self: Pin<&mut FolderModel>);
-
-        #[inherit]
-        #[cxx_name = "endResetModel"]
-        fn end_reset_model(self: Pin<&mut FolderModel>);
-
-        #[inherit]
-        #[cxx_name = "beginInsertRows"]
-        fn begin_insert_rows(self: Pin<&mut FolderModel>, parent: &QModelIndex, first: i32, last: i32);
-
-        #[inherit]
-        #[cxx_name = "endInsertRows"]
-        fn end_insert_rows(self: Pin<&mut FolderModel>);
-
-        #[inherit]
-        #[cxx_name = "beginRemoveRows"]
-        fn begin_remove_rows(self: Pin<&mut FolderModel>, parent: &QModelIndex, first: i32, last: i32);
-
-        #[inherit]
-        #[cxx_name = "endRemoveRows"]
-        fn end_remove_rows(self: Pin<&mut FolderModel>);
-
-        #[inherit]
-        #[cxx_name = "dataChanged"]
-        fn data_changed(self: Pin<&mut FolderModel>, top_left: &QModelIndex, bottom_right: &QModelIndex);
-
-        #[inherit]
-        fn index(self: &FolderModel, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
-
-        /// Read the tree from the catalog (at the start, after a scan); it is shown when it arrives (`loaded`).
-        #[qinvokable]
-        fn reload(self: Pin<&mut FolderModel>);
-
-        /// Expand or collapse a row.
-        #[qinvokable]
-        fn toggle(self: Pin<&mut FolderModel>, row: i32);
-
-        /// The tree arrived (`loaded`): the row of the listed folder. The first arrival opens the folders above it (the
-        /// start's reveal).
-        #[qinvokable]
-        #[cxx_name = "treeLoaded"]
-        fn tree_loaded(self: Pin<&mut FolderModel>) -> i32;
-
-        /// The row of the listed folder once the tree is in: `first` opens the folders above it (the start's reveal).
-        /// The row, or -1 for a folder under one the user collapsed, or -2 for a folder the tree doesn't have.
-        #[qinvokable]
-        #[cxx_name = "revealListing"]
-        fn reveal_listing(self: Pin<&mut FolderModel>, first: bool) -> i32;
-    }
-}
+use crate::folders_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::RefCell;
@@ -210,7 +112,7 @@ pub(crate) fn spelling_of(folder: &Merged, recursive: bool) -> Option<Merged> {
 }
 
 impl qobject::FolderModel {
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+    pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         with(|tree| {
             let Some(v) = tree.row(index.row()) else { return QVariant::default() };
             let (kind, total) = match v {
@@ -245,7 +147,7 @@ impl qobject::FolderModel {
         })
     }
 
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
+    pub(crate) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
         for (role, name) in [
             (ROLE_NAME, "name"),
@@ -262,11 +164,11 @@ impl qobject::FolderModel {
         roles
     }
 
-    fn row_count(&self, _parent: &QModelIndex) -> i32 {
+    pub(crate) fn row_count(&self, _parent: &QModelIndex) -> i32 {
         i32::try_from(with(|tree| tree.rows().len())).unwrap_or(i32::MAX)
     }
 
-    fn reload(mut self: Pin<&mut Self>) {
+    pub(crate) fn reload(mut self: Pin<&mut Self>) {
         let generation = {
             let mut this = self.as_mut().rust_mut();
             this.generation += 1;
@@ -295,7 +197,7 @@ impl qobject::FolderModel {
         self.loaded();
     }
 
-    fn toggle(mut self: Pin<&mut Self>, row: i32) {
+    pub(crate) fn toggle(mut self: Pin<&mut Self>, row: i32) {
         let Ok(at) = usize::try_from(row) else { return };
         // The rows it inserts or removes are the ones the tree says, from before the change.
         let Some(plan) = with(|tree| tree.plan_toggle(at)) else { return };
@@ -315,13 +217,13 @@ impl qobject::FolderModel {
         self.data_changed(&index, &index);
     }
 
-    fn tree_loaded(mut self: Pin<&mut Self>) -> i32 {
+    pub(crate) fn tree_loaded(mut self: Pin<&mut Self>) -> i32 {
         let first = !self.shown;
         self.as_mut().rust_mut().shown = true;
         self.reveal_listing(first)
     }
 
-    fn reveal_listing(mut self: Pin<&mut Self>, first: bool) -> i32 {
+    pub(crate) fn reveal_listing(mut self: Pin<&mut Self>, first: bool) -> i32 {
         let listing = controller::listing();
         let (folder, recursive) = (listing.folder, listing.recursive);
         let shown = with(|tree| tree.row_of(&folder, recursive));

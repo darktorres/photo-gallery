@@ -59,7 +59,9 @@ pub(crate) fn transfer_timeouts<B>(req: ureq::RequestBuilder<B>) -> ureq::Reques
 
 /// Reads a response body. A captcha page is reported as `Captcha` whatever its status. A body that can't be read is
 /// an error only when the status is a success; for an error status the status is what gets reported.
-pub(crate) fn read_response(result: Result<ureq::http::Response<ureq::Body>, ureq::Error>) -> Result<String, YandexError> {
+pub(crate) fn read_response(
+    result: Result<ureq::http::Response<ureq::Body>, ureq::Error>,
+) -> Result<String, YandexError> {
     let mut resp = result.map_err(|e| YandexError::Transport(e.to_string()))?;
     let status = resp.status();
     let body = match resp.body_mut().read_to_string() {

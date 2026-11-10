@@ -3,7 +3,7 @@
 use super::qobject;
 
 impl qobject::GalleryModel {
-    pub(super) fn row_of(&self, item: i32) -> i32 {
+    pub(crate) fn row_of(&self, item: i32) -> i32 {
         let Ok(at) = usize::try_from(item) else { return -1 };
         if self.grid.item(item).is_none() || self.grid.rows().is_empty() {
             return -1;

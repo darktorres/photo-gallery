@@ -48,12 +48,7 @@ pub(crate) fn in_drain(fault: Option<Fault>) {
 
 /// The save of [`Fault::SaveBeforeCopy`], the first time the job of its file reaches the copy (`fired` says
 /// whether it did).
-pub(crate) fn before_copy(
-    fault: Option<Fault>,
-    fired: &AtomicBool,
-    file: FileId,
-    path: &Path,
-) -> std::io::Result<()> {
+pub(crate) fn before_copy(fault: Option<Fault>, fired: &AtomicBool, file: FileId, path: &Path) -> std::io::Result<()> {
     if let Some(Fault::SaveBeforeCopy { file: saved, with }) = fault
         && saved == file
         && !fired.swap(true, Ordering::SeqCst)

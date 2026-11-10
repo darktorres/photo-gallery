@@ -376,7 +376,8 @@ mod tests {
         let dir = pg_testkit::run_folder_with("scratch_rate", "cli-write", &["images"]).unwrap();
         std::fs::write(dir.join("images").join("a.png"), pg_testkit::png_rgb(4, 4, &[0; 48]).unwrap()).unwrap();
         let catalog_path = dir.join("catalog.sqlite");
-        let mut catalog = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+        let mut catalog =
+            Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
         let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();

@@ -34,11 +34,7 @@ pub(super) fn decode(scratch: &mut gif::Scratch, raw: &mut Vec<u8>, bytes: &[u8]
 }
 
 /// [`decode`]'s image, once the headers are read.
-fn read(
-    reader: &mut gif::Decoder<Cursor<&[u8]>, Cursor<&[u8]>>,
-    raw: &mut Vec<u8>,
-    out: &mut Rgb,
-) -> ImageResult<()> {
+fn read(reader: &mut gif::Decoder<Cursor<&[u8]>, Cursor<&[u8]>>, raw: &mut Vec<u8>, out: &mut Rgb) -> ImageResult<()> {
     let (w, h) = (u32::from(reader.width()), u32::from(reader.height()));
     let mut limits = reserve(ColorType::Rgba8, w, h)?;
     let buf = zeroed(&mut out.pixels, num::index(w) * num::index(h) * 4);

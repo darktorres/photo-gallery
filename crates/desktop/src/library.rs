@@ -5,86 +5,9 @@
 //! in meanwhile, each kind once. The Qt thread reads the new state and updates the properties and emits `scanned`,
 //! `imported` and `filesChanged`. QML doesn't poll.
 
-mod state;
-use state::LibraryRust;
+pub(crate) mod state;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        #[qproperty(QStringList, roots, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(bool, paused, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
-        /// Done ÷ total of the current pass; -1 when the total isn't known (scanning).
-        #[qproperty(f64, progress, READ, WRITE, NOTIFY, FINAL)]
-        /// The latest error or note from the job, until the next one.
-        #[qproperty(QString, message, READ, WRITE, NOTIFY, FINAL)]
-        /// Whether `message` is an error or a warning (otherwise news: a job done).
-        #[qproperty(bool, message_warning, cxx_name = "messageWarning", READ, WRITE, NOTIFY, FINAL)]
-        /// Ratings and turns still to be written into the files, and the latest failure; empty when none.
-        #[qproperty(QString, writes, cxx_name = "writeStatus", READ, WRITE, NOTIFY, FINAL)]
-        /// Whether the latest write failed (the status says why).
-        #[qproperty(bool, write_failed, cxx_name = "writeFailed", READ, WRITE, NOTIFY, FINAL)]
-        type Library = super::LibraryRust;
-    }
-
-    impl cxx_qt::Threading for Library {}
-
-    unsafe extern "RustQt" {
-        #[qsignal]
-        fn scanned(self: Pin<&mut Library>);
-
-        #[qsignal]
-        fn imported(self: Pin<&mut Library>);
-
-        /// Files were turned (rewritten or turned in the catalog): their images and sizes changed.
-        #[qsignal]
-        #[cxx_name = "filesChanged"]
-        fn files_changed(self: Pin<&mut Library>);
-
-        /// Start the background job and the writer; they first finish whatever is pending.
-        #[qinvokable]
-        fn start(self: Pin<&mut Library>, thumb_height: i32);
-
-        /// Add the folder the picker chose for adding a folder (`FolderPicker`, purpose 0). The choice is taken here, not
-        /// passed through QML.
-        #[qinvokable]
-        #[cxx_name = "addPicked"]
-        fn add_picked(self: Pin<&mut Library>);
-
-        /// Show `text` as the library's message, as a warning: a folder dialog's failure (the picker's `failed`).
-        #[qinvokable]
-        #[cxx_name = "showWarning"]
-        fn show_warning(self: Pin<&mut Library>, text: &QString);
-
-        /// Remove the library folder at `row` (its row in `roots`).
-        #[qinvokable]
-        #[cxx_name = "removeFolder"]
-        fn remove_folder(self: Pin<&mut Library>, row: i32);
-
-        /// Scan every library folder again (new, changed, moved and deleted files).
-        #[qinvokable]
-        fn rescan(self: Pin<&mut Library>);
-
-        /// The grid's thumbnail height in device pixels; the job makes thumbnails at this one.
-        #[qinvokable]
-        #[cxx_name = "setThumbHeight"]
-        fn set_thumb_height(self: &Library, height: i32);
-
-        #[qinvokable]
-        #[cxx_name = "togglePause"]
-        fn toggle_pause(self: Pin<&mut Library>);
-    }
-}
+use crate::library_bridge::qobject;
 
 use core::pin::Pin;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
@@ -202,7 +125,7 @@ impl qobject::Library {
         self.set_message(QString::from(&text));
     }
 
-    fn show_warning(self: Pin<&mut Self>, text: &QString) {
+    pub(crate) fn show_warning(self: Pin<&mut Self>, text: &QString) {
         self.show(String::from(text), true);
     }
 
@@ -216,12 +139,13 @@ impl qobject::Library {
                 Vec::new()
             }
         };
-        let texts: QStringList = roots.iter().map(|r| QString::from(&pg_platform::native::PATH_RULES.display(&r.path))).collect();
+        let texts: QStringList =
+            roots.iter().map(|r| QString::from(&pg_platform::native::PATH_RULES.display(&r.path))).collect();
         self.as_mut().rust_mut().root_ids = roots.iter().map(|r| r.id).collect();
         self.set_roots(texts);
     }
 
-    fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
+    pub(crate) fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
         if LIBRARY.get().is_some() {
             return;
         }
@@ -350,7 +274,7 @@ impl qobject::Library {
         }
     }
 
-    fn add_picked(mut self: Pin<&mut Self>) {
+    pub(crate) fn add_picked(mut self: Pin<&mut Self>) {
         if let Some(path) = picker::take(Purpose::AddFolder) {
             self.as_mut().add_path(&path);
         }
@@ -373,7 +297,7 @@ impl qobject::Library {
         }
     }
 
-    fn remove_folder(mut self: Pin<&mut Self>, row: i32) {
+    pub(crate) fn remove_folder(mut self: Pin<&mut Self>, row: i32) {
         let Some(id) = usize::try_from(row).ok().and_then(|r| self.rust().root_ids.get(r).copied()) else {
             return;
         };
@@ -386,19 +310,19 @@ impl qobject::Library {
         }
     }
 
-    fn rescan(self: Pin<&mut Self>) {
+    pub(crate) fn rescan(self: Pin<&mut Self>) {
         if let Err(e) = app::get().library().rescan() {
             self.show(text::rescan_failed(&e.to_string()), true);
         }
     }
 
-    fn set_thumb_height(&self, height: i32) {
+    pub(crate) fn set_thumb_height(&self, height: i32) {
         if let Some(library) = LIBRARY.get() {
             library.set_thumb_height(u32::try_from(height.max(1)).unwrap_or(1));
         }
     }
 
-    fn toggle_pause(mut self: Pin<&mut Self>) {
+    pub(crate) fn toggle_pause(mut self: Pin<&mut Self>) {
         let Some(library) = LIBRARY.get() else { return };
         library.set_paused(!library.is_paused());
         self.as_mut().refresh_progress();

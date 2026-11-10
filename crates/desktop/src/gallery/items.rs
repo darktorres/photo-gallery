@@ -21,11 +21,11 @@ impl qobject::GalleryModel {
         if h > 0 { f64::from(w) / f64::from(h) } else { 1.0 }
     }
 
-    pub(super) fn file_id(&self, item: i32) -> i64 {
+    pub(crate) fn file_id(&self, item: i32) -> i64 {
         self.grid.id_at(item).map_or(-1, FileId::get)
     }
 
-    pub(super) fn index_of(&self, file_id: i64) -> i32 {
+    pub(crate) fn index_of(&self, file_id: i64) -> i32 {
         self.grid.position_of(Some(FileId::new(file_id)))
     }
 
@@ -157,7 +157,7 @@ impl qobject::GalleryModel {
     }
 
     /// `viewedKind`: the viewer's item's media type (`refresh_viewed`), as the bridge's enum.
-    pub(super) fn read_viewed_kind(&self) -> qobject::MediaKind {
+    pub(crate) fn read_viewed_kind(&self) -> qobject::MediaKind {
         match self.viewed_kind {
             MediaType::Image => qobject::MediaKind::Image,
             MediaType::Animated => qobject::MediaKind::Animated,

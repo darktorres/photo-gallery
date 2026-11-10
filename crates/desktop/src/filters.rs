@@ -4,96 +4,10 @@
 //! and the list facets' rows are `FacetChoices` (facet_choices.rs), which read the query and the counts directly. FilterBar.qml
 //! makes one and is the only QML that calls into it.
 
-mod state;
+pub(crate) mod state;
 use state::FiltersRust;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        /// How many facets filter.
-        #[qproperty(i32, active, READ, WRITE, NOTIFY, FINAL)]
-        /// Part of the file name, any case; `""` doesn't filter.
-        #[qproperty(QString, name, READ, WRITE = set_name_edited, NOTIFY, FINAL)]
-        /// The duplicates box: 0 either way; 1 files with a duplicate; 2 files without one.
-        #[qproperty(i32, duplicates_index, cxx_name = "duplicatesIndex", READ, NOTIFY, FINAL)]
-        /// The review box: 0 either way; 1 borders not marked; 2 borders marked as not a border.
-        #[qproperty(i32, border_marked_index, cxx_name = "borderMarkedIndex", READ, NOTIFY, FINAL)]
-        /// Files in the folder, unfiltered, and those the query keeps (`countFacets()`).
-        #[qproperty(i32, total, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i32, matching, READ, WRITE, NOTIFY, FINAL)]
-        /// One line saying what the query keeps, for the save-view dialog.
-        #[qproperty(QString, description, READ, WRITE, NOTIFY, FINAL)]
-        type Filters = super::FiltersRust;
-    }
-
-    impl cxx_qt::Threading for Filters {}
-
-    unsafe extern "RustQt" {
-        /// The counts `countFacets` asked for are in (and the choices show them).
-        #[qsignal]
-        fn counted(self: Pin<&mut Filters>);
-
-        fn set_name_edited(self: Pin<&mut Filters>, value: &QString);
-
-        /// Choose a box's index (`duplicatesIndex`, `borderMarkedIndex`).
-        #[qinvokable]
-        #[cxx_name = "setDuplicatesIndex"]
-        fn set_duplicates_index(self: Pin<&mut Filters>, index: i32);
-
-        #[qinvokable]
-        #[cxx_name = "setBorderMarkedIndex"]
-        fn set_border_marked_index(self: Pin<&mut Filters>, index: i32);
-
-        /// The user changed the query.
-        #[qsignal]
-        fn edited(self: Pin<&mut Filters>);
-
-        /// The query was replaced (a saved view, Clear): fields showing typed text reload it.
-        #[qsignal]
-        fn loaded(self: Pin<&mut Filters>);
-
-        /// Show the listing's query again: a saved view was applied, so the fields show its query (`loaded`).
-        #[qinvokable]
-        fn reload(self: Pin<&mut Filters>);
-
-        /// Choose a value of a list facet (its index in `pg_client::facets::Facet`), or unchoose it.
-        #[qinvokable]
-        fn toggle(self: Pin<&mut Filters>, facet: i32, value: &QString);
-
-        /// One end of a bound as text, `""` when open: `facet` is the bound's field's index in `input::Field::ALL`
-        /// (the range facets' numbers and the day facets' days), `end` its `input::Edge` index (0 low, 1 high).
-        #[qinvokable]
-        fn bound(self: &Filters, facet: i32, end: i32) -> QString;
-
-        /// Set one end of a bound from what was typed; text that doesn't parse leaves it open.
-        #[qinvokable]
-        #[cxx_name = "setBound"]
-        fn set_bound(self: Pin<&mut Filters>, facet: i32, end: i32, text: &QString);
-
-        /// Whether text typed for a bound's field is empty or parses (`input::bound_is_valid`).
-        #[qinvokable]
-        #[cxx_name = "boundValid"]
-        fn bound_valid(self: &Filters, facet: i32, text: &QString) -> bool;
-
-        /// Filter nothing.
-        #[qinvokable]
-        fn clear(self: Pin<&mut Filters>);
-
-        /// Count the files of the listed folder (the controller's listing: its folder, with or without its subfolders):
-        /// `total`, `matching`, the types', extensions' and borders' counts. Counted off the GUI thread; they change when
-        /// the counts are in (`counted`).
-        #[qinvokable]
-        #[cxx_name = "countFacets"]
-        fn count_facets(self: Pin<&mut Filters>);
-    }
-}
+use crate::filters_bridge::qobject;
 
 use core::pin::Pin;
 
@@ -187,19 +101,19 @@ impl qobject::Filters {
         self.edited();
     }
 
-    fn reload(mut self: Pin<&mut Self>) {
+    pub(crate) fn reload(mut self: Pin<&mut Self>) {
         self.as_mut().sync();
         self.loaded();
     }
 
-    fn set_name_edited(self: Pin<&mut Self>, value: &QString) {
+    pub(crate) fn set_name_edited(self: Pin<&mut Self>, value: &QString) {
         let name = value.to_string().trim().to_string();
         if name != controller::listing().query.name {
             self.edit(|q| q.name = name);
         }
     }
 
-    fn set_duplicates_index(self: Pin<&mut Self>, index: i32) {
+    pub(crate) fn set_duplicates_index(self: Pin<&mut Self>, index: i32) {
         let duplicates = match index {
             1 => Some(true),
             2 => Some(false),
@@ -210,7 +124,7 @@ impl qobject::Filters {
         }
     }
 
-    fn set_border_marked_index(self: Pin<&mut Self>, index: i32) {
+    pub(crate) fn set_border_marked_index(self: Pin<&mut Self>, index: i32) {
         let marked = match index {
             1 => Some(false),
             2 => Some(true),
@@ -221,14 +135,14 @@ impl qobject::Filters {
         }
     }
 
-    fn toggle(self: Pin<&mut Self>, facet: i32, value: &QString) {
+    pub(crate) fn toggle(self: Pin<&mut Self>, facet: i32, value: &QString) {
         let value = value.to_string();
         if let Some(choice) = Facet::from_index(facet).and_then(|facet| choice(facet, &value)) {
             self.edit(|q| q.toggle(choice));
         }
     }
 
-    fn bound(&self, facet: i32, end: i32) -> QString {
+    pub(crate) fn bound(&self, facet: i32, end: i32) -> QString {
         let query = controller::listing().query;
         let text = match (Field::from_index(facet), Edge::from_index(end)) {
             (Some(Field::Range(f)), Some(e)) => query.number(f, e.number()).map(|v| v.to_string()),
@@ -238,7 +152,7 @@ impl qobject::Filters {
         QString::from(&text.unwrap_or_default())
     }
 
-    fn set_bound(self: Pin<&mut Self>, facet: i32, end: i32, text: &QString) {
+    pub(crate) fn set_bound(self: Pin<&mut Self>, facet: i32, end: i32, text: &QString) {
         let text = text.to_string();
         match (Field::from_index(facet), Edge::from_index(end)) {
             (Some(Field::Range(f)), Some(e)) => self.edit(|q| q.set_number(f, e.number(), parse_number(&text))),
@@ -247,18 +161,18 @@ impl qobject::Filters {
         }
     }
 
-    fn bound_valid(&self, facet: i32, text: &QString) -> bool {
+    pub(crate) fn bound_valid(&self, facet: i32, text: &QString) -> bool {
         Field::from_index(facet).is_some_and(|field| bound_is_valid(field, &text.to_string()))
     }
 
-    fn clear(mut self: Pin<&mut Self>) {
+    pub(crate) fn clear(mut self: Pin<&mut Self>) {
         controller::query_changed(Query::default());
         self.as_mut().sync();
         self.as_mut().loaded();
         self.edited();
     }
 
-    fn count_facets(mut self: Pin<&mut Self>) {
+    pub(crate) fn count_facets(mut self: Pin<&mut Self>) {
         let generation = {
             let mut this = self.as_mut().rust_mut();
             this.generation += 1;

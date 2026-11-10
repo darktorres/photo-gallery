@@ -11,37 +11,41 @@ use pg_model::ids::FileId;
 use pg_model::query::MediaType;
 
 /// The model's properties, the list and the details read last.
+#[expect(
+    unreachable_pub,
+    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+)]
 pub struct GalleryRust {
-    pub(super) count: i32,
-    pub(super) revision: i32,
-    pub(super) croppable: i32,
-    pub(super) loading: bool,
-    pub(super) holding: bool,
-    pub(super) current: i32,
-    pub(super) selection_info: QString,
-    pub(super) viewing: i32,
-    pub(super) anchor: i32,
+    pub(crate) count: i32,
+    pub(crate) revision: i32,
+    pub(crate) croppable: i32,
+    pub(crate) loading: bool,
+    pub(crate) holding: bool,
+    pub(crate) current: i32,
+    pub(crate) selection_info: QString,
+    pub(crate) viewing: i32,
+    pub(crate) anchor: i32,
     // The viewer's item's values (`refresh_viewed`): the qproperties' backing fields. Before any refresh they are the
     // values of no item, which `refresh_viewed` gives with `viewing` out of range.
-    pub(super) viewed_key: QString,
-    pub(super) viewed_neighbour_keys: QStringList,
-    pub(super) viewed_turns: i32,
-    pub(super) viewed_rating: i32,
-    pub(super) viewed_full_width: i32,
-    pub(super) viewed_full_height: i32,
+    pub(crate) viewed_key: QString,
+    pub(crate) viewed_neighbour_keys: QStringList,
+    pub(crate) viewed_turns: i32,
+    pub(crate) viewed_rating: i32,
+    pub(crate) viewed_full_width: i32,
+    pub(crate) viewed_full_height: i32,
     /// `viewedKind`'s value, as the domain's type: the bridge's `MediaKind` is read from it (`read_viewed_kind`).
     pub(super) viewed_kind: MediaType,
-    pub(super) viewed_player_turns: i32,
-    pub(super) viewed_file_id: i64,
-    pub(super) viewed_full_url: QString,
-    pub(super) thumb_height: i32,
-    pub(super) viewed_info: QString,
-    pub(super) viewed_border_box: QRectF,
-    pub(super) viewed_rejected_top: f64,
-    pub(super) viewed_rejected_bottom: f64,
-    pub(super) viewed_rejected_left: f64,
-    pub(super) viewed_rejected_right: f64,
-    pub(super) viewed_border_marked: bool,
+    pub(crate) viewed_player_turns: i32,
+    pub(crate) viewed_file_id: i64,
+    pub(crate) viewed_full_url: QString,
+    pub(crate) thumb_height: i32,
+    pub(crate) viewed_info: QString,
+    pub(crate) viewed_border_box: QRectF,
+    pub(crate) viewed_rejected_top: f64,
+    pub(crate) viewed_rejected_bottom: f64,
+    pub(crate) viewed_rejected_left: f64,
+    pub(crate) viewed_rejected_right: f64,
+    pub(crate) viewed_border_marked: bool,
     /// The list, its rows and the list session (`pg_client::grid`).
     pub(super) grid: Grid,
     /// The details read last, of at most two files (the selection's and the viewer's), newest first. Emptied

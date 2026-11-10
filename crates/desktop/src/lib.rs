@@ -3,36 +3,82 @@
 
 mod alert;
 mod animation;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod animation_bridge;
 mod app;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod app_icon;
 mod command_line;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod command_line_bridge;
 mod controller;
 mod deadline;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod deadline_bridge;
 mod facet_choices;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod facet_choices_bridge;
 mod filters;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod filters_bridge;
 mod folders;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod folders_bridge;
 mod frame_sink;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod frame_sink_bridge;
 mod gallery;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod gallery_bridge;
 mod gpu_device;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod gpu_device_bridge;
 mod gui_app;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod gui_app_bridge;
 mod keymap;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod keymap_bridge;
 mod library;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod library_bridge;
 #[cfg(debug_assertions)]
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod live_reload;
 mod log;
 mod panic_log;
 mod picker;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod picker_bridge;
 mod providers;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod providers_bridge;
 mod screenshot;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod screenshot_bridge;
 mod settings;
+mod settings_bridge;
 mod shell;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod shell_bridge;
 mod trace;
+mod trace_bridge;
 mod video_player;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod video_player_bridge;
 mod video_source;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod video_source_bridge;
 mod viewport;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod viewport_bridge;
 mod words;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod words_bridge;
 
 mod yandex;
+#[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
+mod yandex_bridge;
 
 use std::ffi::OsString;
 
@@ -64,7 +110,7 @@ pub fn run(args: &[OsString]) -> i32 {
     // Meanwhile the catalog opens, Qt starts and the QML loads.
     let gpu_thread = gpu_device::make_in_background();
     // Declared before the engine, so dropped after it: Qt Quick renders with the device and keeps no reference.
-    let mut gpu: cxx::UniquePtr<gpu_device::ffi::GpuDevice>;
+    let mut gpu: cxx::UniquePtr<gpu_device_bridge::ffi::GpuDevice>;
     // The data folders, from the environment: no folder to keep the data in is an error the window can show, since it
     // is shown before the log exists.
     let mut config = match pg_app::Config::from_env() {
@@ -98,14 +144,15 @@ pub fn run(args: &[OsString]) -> i32 {
         {
             let mut qml: core::pin::Pin<&mut QQmlEngine> = engine.as_mut().upcast_pin();
             for (name, kind) in [
-                ("thumb", providers::ffi::ImageKind::Thumb),
-                ("thumbhash", providers::ffi::ImageKind::Thumbhash),
-                ("full", providers::ffi::ImageKind::Full),
-                ("yandex", providers::ffi::ImageKind::Yandex),
+                ("thumb", providers_bridge::ffi::ImageKind::Thumb),
+                ("thumbhash", providers_bridge::ffi::ImageKind::Thumbhash),
+                ("full", providers_bridge::ffi::ImageKind::Full),
+                ("yandex", providers_bridge::ffi::ImageKind::Yandex),
             ] {
                 // SAFETY: a new provider, which the engine takes ownership of.
                 unsafe {
-                    qml.as_mut().add_image_provider(&QString::from(name), providers::ffi::new_image_provider(kind))
+                    qml.as_mut()
+                        .add_image_provider(&QString::from(name), providers_bridge::ffi::new_image_provider(kind))
                 };
             }
         }
@@ -120,15 +167,18 @@ pub fn run(args: &[OsString]) -> i32 {
         // Only now: the device is made meanwhile. Qt Multimedia reads the decoding choice when the QML makes the
         // first player, which the load doesn't (the viewer's media Loader makes them with the first video).
         // Made here instead when its thread couldn't be made, or ended without one.
-        gpu = gpu_thread.ok().and_then(|thread| thread.join().ok()).unwrap_or_else(gpu_device::ffi::make_gpu_device);
-        gpu_device::ffi::choose_video_decoding(&gpu);
+        gpu = gpu_thread
+            .ok()
+            .and_then(|thread| thread.join().ok())
+            .unwrap_or_else(gpu_device_bridge::ffi::make_gpu_device);
+        gpu_device_bridge::ffi::choose_video_decoding(&gpu);
         #[cfg(debug_assertions)]
         // SAFETY: `gpu` is dropped after the engine.
         unsafe {
             live_reload::ffi::reload_on_change(engine.as_mut(), &main_qml, &qml_dir, gpu.pin_mut())
         };
         // SAFETY: as above.
-        unsafe { gpu_device::ffi::show_windows(engine.as_mut(), gpu.pin_mut()) };
+        unsafe { gpu_device_bridge::ffi::show_windows(engine.as_mut(), gpu.pin_mut()) };
         screenshot::schedule(engine);
     }
     let status = app.as_mut().map_or(1, |app| app.exec());

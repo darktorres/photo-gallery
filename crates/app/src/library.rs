@@ -255,7 +255,10 @@ impl LibraryService {
         let root = normalize_path(path).map_err(failed)?;
         // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
         if let Err(refused) = pg_scan::check_folder(pg_platform::native::PATH_RULES, &root) {
-            return Err(Error::FolderRefused { folder: pg_platform::native::PATH_RULES.display(&root), reason: refused.reason });
+            return Err(Error::FolderRefused {
+                folder: pg_platform::native::PATH_RULES.display(&root),
+                reason: refused.reason,
+            });
         }
         let added = self.catalogs.with_catalog(|c| c.add_root(&root))?;
         if let Some(library) = self.running() {

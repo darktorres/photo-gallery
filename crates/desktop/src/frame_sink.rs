@@ -5,30 +5,7 @@
 use cxx::UniquePtr;
 use pg_render::player::Sink;
 
-#[cxx_qt::bridge]
-pub mod ffi {
-    unsafe extern "C++" {
-        include!(<QtMultimedia/QVideoSink>);
-        type QVideoSink;
-
-        include!("pg-desktop/cpp/frame_sink.h");
-        #[namespace = "pg"]
-        type FrameSink;
-        #[namespace = "pg"]
-        type SinkRef;
-        /// A weak reference to `sink`, which must be alive.
-        #[namespace = "pg"]
-        unsafe fn new_sink_ref(sink: *mut QVideoSink) -> UniquePtr<SinkRef>;
-        #[namespace = "pg"]
-        fn frame_sink(self: &SinkRef) -> UniquePtr<FrameSink>;
-        /// Any thread: queues the frame for the sink's thread.
-        #[namespace = "pg"]
-        fn present(self: &FrameSink, width: u32, height: u32, rgba: &[u8]);
-        /// The sink's thread: frames still queued are dropped.
-        #[namespace = "pg"]
-        fn close(self: &FrameSink);
-    }
-}
+use crate::frame_sink_bridge::ffi;
 
 /// One animation's frame sink, used from its thread.
 pub(crate) struct Frames(UniquePtr<ffi::FrameSink>);

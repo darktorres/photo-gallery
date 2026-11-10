@@ -108,7 +108,7 @@ impl qobject::GalleryModel {
         self.as_mut().bump_revision();
     }
 
-    pub(super) fn save_cropped_copies_picked(&self) -> i32 {
+    pub(crate) fn save_cropped_copies_picked(&self) -> i32 {
         // The picker says `done` only with its folder, so no folder means nothing to save.
         let Some(folder) = crate::picker::take(crate::picker::Purpose::SaveCrops) else {
             return 0;

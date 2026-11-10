@@ -51,7 +51,8 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     letterboxed().write_to(&mut bytes, image::ImageFormat::Tiff).unwrap();
     std::fs::write(dir.join("images").join("d.tif"), bytes.get_ref()).unwrap();
 
-    let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
+    let mut c =
+        Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
     let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
     c.add_root(&root).unwrap();

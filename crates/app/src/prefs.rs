@@ -40,14 +40,14 @@ mod yandex_folder {
     use pg_model::rules::Path as RulePath;
     use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
-    pub fn serialize<S: Serializer>(folder: &Option<RulePath>, serializer: S) -> Result<S::Ok, S::Error> {
+    pub(crate) fn serialize<S: Serializer>(folder: &Option<RulePath>, serializer: S) -> Result<S::Ok, S::Error> {
         match folder {
             None => serializer.serialize_str(""),
             Some(path) => Name::from_raw(&pg_platform::native::PATH_RULES.join(path)).serialize(serializer),
         }
     }
 
-    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<RulePath>, D::Error> {
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<RulePath>, D::Error> {
         let name = Name::deserialize(deserializer)?;
         if name.as_bytes().is_empty() {
             return Ok(None);
@@ -107,7 +107,6 @@ impl PrefStore {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use pg_model::rules::PathRules;
 
     /// The file's text, pinned: the field names, their order and the number formats are the format on disk.
     const GOLDEN: &str = r#"{

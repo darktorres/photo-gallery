@@ -7,19 +7,7 @@ use std::pin::Pin;
 use cxx_qt::QObject;
 use cxx_qt::casting::Upcast;
 
-#[cxx_qt::bridge]
-pub mod ffi {
-    unsafe extern "C++" {
-        include!("pg-desktop/cpp/deadline.h");
-        type QObject = cxx_qt::QObject;
-        #[namespace = "pg"]
-        unsafe fn deadline_arm(owner: *mut QObject, ms: i64);
-        #[namespace = "pg"]
-        unsafe fn deadline_disarm(owner: *mut QObject);
-        #[namespace = "pg"]
-        fn deadline_now_ms() -> i64;
-    }
-}
+use crate::deadline_bridge::ffi;
 
 /// The shell's QObject, which the timer is a child of. The pointer lives as long as the shell, and only the shell's methods
 /// (on the GUI thread) use it.

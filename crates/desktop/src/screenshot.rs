@@ -5,24 +5,7 @@
 //! system gave it, so a name that isn't UTF-8 is written under its own bytes. For checking the UI without a person at the
 //! screen, with the QML's own hooks (TestHooks.qml).
 
-#[cxx_qt::bridge]
-pub mod ffi {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qqmlapplicationengine.h");
-        type QQmlApplicationEngine = cxx_qt_lib::QQmlApplicationEngine;
-
-        include!("pg-desktop/cpp/screenshot.h");
-        /// Once the window the engine shows has settled (at most `max_ms` after this call), hand it to
-        /// `screenshot_taken`, then quit.
-        #[namespace = "pg"]
-        fn save_screenshot_later(engine: Pin<&mut QQmlApplicationEngine>, max_ms: i32);
-    }
-
-    extern "Rust" {
-        #[namespace = "pg"]
-        fn screenshot_taken(png: &[u8], settled: bool, has_window: bool, report: &str);
-    }
-}
+use crate::screenshot_bridge::ffi;
 
 use core::pin::Pin;
 use std::io;
@@ -33,7 +16,7 @@ use cxx_qt_lib::QQmlApplicationEngine;
 use crate::command_line;
 
 /// Schedule the screenshot if the command line asks for one.
-pub fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
+pub(crate) fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     if command_line::path("screenshot").is_none() {
         return;
     }
@@ -48,7 +31,7 @@ pub fn schedule(engine: Pin<&mut QQmlApplicationEngine>) {
     clippy::print_stderr,
     reason = "a screenshot run is a test run: its failures go to the console that started it"
 )]
-fn screenshot_taken(png: &[u8], settled: bool, has_window: bool, report: &str) {
+pub(crate) fn screenshot_taken(png: &[u8], settled: bool, has_window: bool, report: &str) {
     let Some(path) = command_line::path("screenshot") else { return };
     if !settled {
         eprintln!("screenshot: the window did not settle: {report}");

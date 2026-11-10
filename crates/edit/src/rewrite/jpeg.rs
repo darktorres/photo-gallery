@@ -8,7 +8,7 @@ use super::op::Op;
 /// A JPEG transform that can't be done perfectly, so the file is left as it is and the orientation tag carries the
 /// turn (`rotate`). Every other error is a failure.
 #[derive(Debug)]
-pub struct Imperfect(pub String);
+pub(crate) struct Imperfect(pub(crate) String);
 
 impl std::fmt::Display for Imperfect {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

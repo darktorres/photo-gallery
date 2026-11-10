@@ -101,9 +101,14 @@ impl Meta {
 mod tests {
     use super::*;
     use crate::container::JPEG_XMP;
-    use crate::exif::{EXIF_TAG_RATING, EXIF_TAG_RATING_PERCENT, TIFF_TAG_XMP};
+    use crate::exif::{
+        EXIF_TAG_DATE_TIME_DIGITIZED, EXIF_TAG_DATE_TIME_ORIGINAL, EXIF_TAG_EXIF_IFD, EXIF_TAG_RATING,
+        EXIF_TAG_RATING_PERCENT, TIFF_TAG_XMP,
+    };
     use crate::test_support::png_chunk;
-    use crate::tiff::{EXIF_TAG_ORIENTATION, TIFF_ASCII, TIFF_BYTE, TIFF_LONG, TIFF_LONG8, TIFF_SHORT, TIFF_UNDEFINED, Tiff};
+    use crate::tiff::{
+        EXIF_TAG_ORIENTATION, TIFF_ASCII, TIFF_BYTE, TIFF_IFD8, TIFF_LONG, TIFF_LONG8, TIFF_SHORT, TIFF_UNDEFINED, Tiff,
+    };
     use pg_container::{JPEG_XMP_EXTENSION, gif_header_len};
     use pg_model::date::wall_clock_seconds;
     use pg_testkit::{apng, gif};

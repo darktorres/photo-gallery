@@ -3,9 +3,7 @@
 
 use std::io::Cursor;
 
-use image::error::{
-    DecodingError, LimitError, LimitErrorKind, UnsupportedError, UnsupportedErrorKind,
-};
+use image::error::{DecodingError, LimitError, LimitErrorKind, UnsupportedError, UnsupportedErrorKind};
 use image::{ColorType, ExtendedColorType, ImageError, ImageFormat, ImageResult};
 
 use super::convert::{check_len, cmyk_to_rgb, cmyk_to_rgb16, convert, finish, luma8, rgb16, zeroed};

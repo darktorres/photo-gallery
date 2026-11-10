@@ -94,7 +94,7 @@ mod windows {
     /// The junction at `root\<hash of folder>` to `folder`, made or reused. `root` must have a UTF-8 path (the link's
     /// name is ASCII, and SQLite is given `root\...`). Links in `root` whose folder is gone are removed first. A folder
     /// that holds the name but isn't a junction is an error, not replaced.
-    pub fn alias_under(root: &Path, folder: &Path) -> io::Result<PathBuf> {
+    pub(super) fn alias_under(root: &Path, folder: &Path) -> io::Result<PathBuf> {
         if root.to_str().is_none() {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "the alias folder has no UTF-8 path"));
         }

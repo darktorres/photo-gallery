@@ -3,14 +3,18 @@
 use cxx_qt_lib::{QString, QStringList};
 
 /// The properties the shell mirrors from the controller. Everything else is the controller's.
+#[expect(
+    unreachable_pub,
+    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+)]
 pub struct ShellRust {
-    pub(super) folder: QString,
-    pub(super) recursive: bool,
-    pub(super) folder_kind: i32,
-    pub(super) descending: bool,
-    pub(super) saved_views: QStringList,
-    pub(super) filters_open: bool,
-    pub(super) show_borders: bool,
-    pub(super) row_height: i32,
-    pub(super) thumb_height: i32,
+    pub(crate) folder: QString,
+    pub(crate) recursive: bool,
+    pub(crate) folder_kind: i32,
+    pub(crate) descending: bool,
+    pub(crate) saved_views: QStringList,
+    pub(crate) filters_open: bool,
+    pub(crate) show_borders: bool,
+    pub(crate) row_height: i32,
+    pub(crate) thumb_height: i32,
 }

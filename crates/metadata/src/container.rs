@@ -214,6 +214,7 @@ fn gif_xmp(bytes: &[u8], range: Range<usize>) -> Option<&[u8]> {
 mod tests {
     use super::*;
     use crate::test_support::png_chunk;
+    use pg_container::JPEG_XMP_EXTENSION;
 
     fn xorshift(state: &mut u64) -> u64 {
         *state ^= *state << 13;

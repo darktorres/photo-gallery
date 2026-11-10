@@ -85,8 +85,8 @@ mod tests {
     use image::{DynamicImage, ImageFormat, Rgba, RgbaImage};
 
     use super::*;
-    use pg_model::num;
     use crate::codecs::test_support::{flattened, ne_bytes, noise};
+    use pg_model::num;
 
     /// How the decode was done before this module: `image::load_from_memory_with_format`, then `into_rgba8` and
     /// the flattening onto white, or `into_rgb8`.

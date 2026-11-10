@@ -2,42 +2,9 @@
 //! `--screenshot` and `--wait` are read by screenshot.rs. A path option is read by `path`, exactly as given; the QML
 //! never gets a path from here.
 
-mod state;
-use state::CommandLineRust;
+pub(crate) mod state;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        type CommandLine = super::CommandLineRust;
-    }
-
-    unsafe extern "RustQt" {
-        /// Whether `--name=…` was given.
-        #[qinvokable]
-        fn has(self: &CommandLine, name: &QString) -> bool;
-
-        /// The value of `--name=…`; `""` without one.
-        #[qinvokable]
-        fn text(self: &CommandLine, name: &QString) -> QString;
-
-        /// The value as a number; `fallback` without one, or when it isn't one.
-        #[qinvokable]
-        fn number(self: &CommandLine, name: &QString, fallback: f64) -> f64;
-
-        /// The value as keys: a character each, but for `r` and the digit after it, which are one ("r3": rate 3).
-        #[qinvokable]
-        fn keys(self: &CommandLine, name: &QString) -> QStringList;
-    }
-}
+use crate::command_line_bridge::qobject;
 
 use std::ffi::OsString;
 use std::path::Path;
@@ -59,7 +26,7 @@ static ARGS: OnceLock<Vec<Arg>> = OnceLock::new();
 
 /// Read the command line's `--name=value` arguments: once, at start, from the arguments `main` read (the program's
 /// name first). The application is made from the same arguments (gui_app.rs). An error when it was read before.
-pub fn init(args: &[OsString]) -> anyhow::Result<()> {
+pub(crate) fn init(args: &[OsString]) -> anyhow::Result<()> {
     ARGS.set(parse(args)).map_err(|_| anyhow::anyhow!("the command line was read twice"))
 }
 
@@ -82,24 +49,24 @@ fn args() -> &'static [Arg] {
 }
 
 /// The value of `--name=…` (the first, if given twice).
-pub fn value(name: &str) -> Option<&'static str> {
+pub(crate) fn value(name: &str) -> Option<&'static str> {
     args().iter().find(|a| a.name == name).map(|a| a.value.as_str())
 }
 
 /// The value of `--name=…` as a path, exactly as given (the first, if given twice). `None` without one.
-pub fn path(name: &str) -> Option<&'static Path> {
+pub(crate) fn path(name: &str) -> Option<&'static Path> {
     args().iter().find(|a| a.name == name).map(|a| Path::new(&a.exact))
 }
 
 /// What the options that shape the first list ask for (`--query`, `--sort`, `--apply-view`), read here from the same
 /// arguments. A JSON value that doesn't read is the default, as it always was.
-pub struct StartOptions {
+pub(crate) struct StartOptions {
     pub query: Option<Query>,
     pub sort: Option<Sort>,
     pub apply_view: Option<String>,
 }
 
-pub fn start_options() -> StartOptions {
+pub(crate) fn start_options() -> StartOptions {
     StartOptions {
         query: value("query").map(pg_app::views::query_from_json),
         sort: value("sort").map(pg_app::views::sort_from_json),
@@ -111,7 +78,7 @@ pub fn start_options() -> StartOptions {
 /// session (`pg_app::yandex::replay`'s folder: `upload.json`, `other_sizes.html`, `similar-N.json`, `downloads.tsv`),
 /// which then answers in its place and sends nothing. Only that flag selects it; the default is never the fixture,
 /// because a search sends the photo to Yandex.
-pub fn yandex_source() -> pg_app::yandex::Factory {
+pub(crate) fn yandex_source() -> pg_app::yandex::Factory {
     match path("yandex-fixture") {
         Some(dir) => {
             crate::log::note(&format!(
@@ -150,19 +117,19 @@ fn named(name: &QString) -> Option<&'static str> {
 }
 
 impl qobject::CommandLine {
-    fn has(&self, name: &QString) -> bool {
+    pub(crate) fn has(&self, name: &QString) -> bool {
         named(name).is_some()
     }
 
-    fn text(&self, name: &QString) -> QString {
+    pub(crate) fn text(&self, name: &QString) -> QString {
         QString::from(named(name).unwrap_or_default())
     }
 
-    fn number(&self, name: &QString, fallback: f64) -> f64 {
+    pub(crate) fn number(&self, name: &QString, fallback: f64) -> f64 {
         number_of(named(name), fallback)
     }
 
-    fn keys(&self, name: &QString) -> QStringList {
+    pub(crate) fn keys(&self, name: &QString) -> QStringList {
         split_keys(named(name).unwrap_or_default()).iter().map(QString::from).collect()
     }
 }

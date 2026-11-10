@@ -8,144 +8,10 @@
 //! pick changes. The words the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed
 //! outcomes the app returns.
 
-mod state;
+pub(crate) mod state;
 use state::YandexSearchRust;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!(<QtCore/QAbstractListModel>);
-        type QAbstractListModel;
-
-        include!("cxx-qt-lib/qhash.h");
-        type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
-        include!("cxx-qt-lib/qmodelindex.h");
-        type QModelIndex = cxx_qt_lib::QModelIndex;
-        include!("cxx-qt-lib/qvariant.h");
-        type QVariant = cxx_qt_lib::QVariant;
-        include!("cxx-qt-lib/qlist.h");
-        type QList_i32 = cxx_qt_lib::QList<i32>;
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[base = QAbstractListModel]
-        #[qml_element]
-        #[qproperty(bool, busy, READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(QString, status, READ, WRITE, NOTIFY, FINAL)]
-        /// The results are the model's rows: the other sizes first, then the similar images.
-        #[qproperty(i32, other_count, cxx_name = "otherCount", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i32, similar_count, cxx_name = "similarCount", READ, WRITE, NOTIFY, FINAL)]
-        /// Results picked to be saved, and how many of each group are (its header's count).
-        #[qproperty(i32, picked_count, cxx_name = "pickedCount", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i32, other_picked, cxx_name = "otherPicked", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i32, similar_picked, cxx_name = "similarPicked", READ, WRITE, NOTIFY, FINAL)]
-        /// The width the results are laid out in: the panel sets it to its list's width, and they are laid out again.
-        #[qproperty(f64, layout_width, cxx_name = "layoutWidth", READ, WRITE = set_layout_width, NOTIFY, FINAL)]
-        /// The space between the results: the gallery's gap, so the two agree.
-        #[qproperty(f64, gap, READ, WRITE = set_gap, NOTIFY, FINAL)]
-        /// The height of each group's block of frames: the other sizes', and the similar images'.
-        #[qproperty(f64, other_height, cxx_name = "otherHeight", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(f64, similar_height, cxx_name = "similarHeight", READ, WRITE, NOTIFY, FINAL)]
-        /// The result the preview shows (-1: none). Setting it refreshes the four properties below.
-        #[qproperty(i32, preview_item, cxx_name = "previewItem", READ, WRITE = set_preview_item, NOTIFY, FINAL)]
-        /// What the preview shows of its item: its picture's URL (`""` for none), its size in pixels as Yandex gives
-        /// it (0 when it doesn't), and whether it is picked.
-        #[qproperty(QString, preview_url, cxx_name = "previewUrl", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i32, preview_width, cxx_name = "previewWidth", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(i32, preview_height, cxx_name = "previewHeight", READ, WRITE, NOTIFY, FINAL)]
-        #[qproperty(bool, preview_picked, cxx_name = "previewPicked", READ, WRITE, NOTIFY, FINAL)]
-        type YandexSearch = super::YandexSearchRust;
-    }
-
-    impl cxx_qt::Threading for YandexSearch {}
-
-    unsafe extern "RustQt" {
-        fn set_preview_item(self: Pin<&mut YandexSearch>, value: i32);
-
-        fn set_layout_width(self: Pin<&mut YandexSearch>, value: f64);
-
-        fn set_gap(self: Pin<&mut YandexSearch>, value: f64);
-
-        /// Upload the catalog's file `file_id` (the photo) and read its other sizes and similar images.
-        #[qinvokable]
-        #[cxx_name = "searchFile"]
-        fn search_file(self: Pin<&mut YandexSearch>, file_id: i64);
-
-        /// Upload the photo the command line names (`--find-similar=<path>`), as `searchFile` does for a catalog file.
-        #[qinvokable]
-        #[cxx_name = "searchCommandLine"]
-        fn search_command_line(self: Pin<&mut YandexSearch>);
-
-        #[qinvokable]
-        #[cxx_override]
-        fn data(self: &YandexSearch, index: &QModelIndex, role: i32) -> QVariant;
-
-        #[qinvokable]
-        #[cxx_override]
-        #[cxx_name = "roleNames"]
-        fn role_names(self: &YandexSearch) -> QHash_i32_QByteArray;
-
-        #[qinvokable]
-        #[cxx_override]
-        #[cxx_name = "rowCount"]
-        fn row_count(self: &YandexSearch, parent: &QModelIndex) -> i32;
-
-        #[inherit]
-        #[cxx_name = "beginResetModel"]
-        fn begin_reset_model(self: Pin<&mut YandexSearch>);
-
-        #[inherit]
-        #[cxx_name = "endResetModel"]
-        fn end_reset_model(self: Pin<&mut YandexSearch>);
-
-        #[inherit]
-        #[cxx_name = "dataChanged"]
-        fn data_changed(
-            self: Pin<&mut YandexSearch>,
-            top_left: &QModelIndex,
-            bottom_right: &QModelIndex,
-            roles: &QList_i32,
-        );
-
-        #[inherit]
-        fn index(self: &YandexSearch, row: i32, column: i32, parent: &QModelIndex) -> QModelIndex;
-
-        /// Pick a result to be saved, or unpick it. It becomes the anchor of the next `pickTo`.
-        #[qinvokable]
-        #[cxx_name = "togglePick"]
-        fn toggle_pick(self: Pin<&mut YandexSearch>, item: i32);
-
-        /// Shift-click: every result from the anchor (the last one toggled) to `item` takes the anchor's state, picked
-        /// or not. Without an anchor, toggles `item`.
-        #[qinvokable]
-        #[cxx_name = "pickTo"]
-        fn pick_to(self: Pin<&mut YandexSearch>, item: i32);
-
-        /// Pick (or unpick) the `count` results from `first`: a group's Select all and Select none.
-        #[qinvokable]
-        #[cxx_name = "setPicked"]
-        fn set_picked(self: Pin<&mut YandexSearch>, first: i32, count: i32, picked: bool);
-
-        /// Show `text` as the status line: the save's folder dialog failed (the picker's `failed`), and says why.
-        #[qinvokable]
-        #[cxx_name = "showFailure"]
-        fn show_failure(self: Pin<&mut YandexSearch>, text: &QString);
-
-        /// Before the save dialog opens: where it starts (the folder saved into last, while it exists, or else the photo's
-        /// folder), for the folder picker (`FolderPicker`, purpose 2).
-        #[qinvokable]
-        #[cxx_name = "prepareSave"]
-        fn prepare_save(self: &YandexSearch);
-
-        /// Save the picked results into the folder the picker chose for them (`FolderPicker`, purpose 2).
-        #[qinvokable]
-        #[cxx_name = "downloadPicked"]
-        fn download_picked(self: Pin<&mut YandexSearch>);
-    }
-}
+use crate::yandex_bridge::qobject;
 
 use std::path::Path;
 use std::pin::Pin;
@@ -287,7 +153,7 @@ fn hit_aspect(hit: &Hit) -> f64 {
 }
 
 impl qobject::YandexSearch {
-    fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
+    pub(crate) fn search_file(mut self: Pin<&mut Self>, file_id: i64) {
         match crate::app::get().catalogs().file_path(FileId::new(file_id)) {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
@@ -297,7 +163,7 @@ impl qobject::YandexSearch {
         }
     }
 
-    fn search_command_line(self: Pin<&mut Self>) {
+    pub(crate) fn search_command_line(self: Pin<&mut Self>) {
         if let Some(path) = crate::command_line::path("find-similar") {
             self.search_photo(path);
         }
@@ -375,7 +241,7 @@ impl qobject::YandexSearch {
     }
 
     /// The panel's width changed: the results are laid out in it again.
-    fn set_layout_width(mut self: Pin<&mut Self>, value: f64) {
+    pub(crate) fn set_layout_width(mut self: Pin<&mut Self>, value: f64) {
         if self.layout_width == value {
             return;
         }
@@ -385,7 +251,7 @@ impl qobject::YandexSearch {
     }
 
     /// The gallery's gap changed: the results are laid out again.
-    fn set_gap(mut self: Pin<&mut Self>, value: f64) {
+    pub(crate) fn set_gap(mut self: Pin<&mut Self>, value: f64) {
         if self.gap == value {
             return;
         }
@@ -462,7 +328,7 @@ impl qobject::YandexSearch {
         self.refresh_preview();
     }
 
-    fn set_preview_item(mut self: Pin<&mut Self>, value: i32) {
+    pub(crate) fn set_preview_item(mut self: Pin<&mut Self>, value: i32) {
         if self.preview_item == value {
             return;
         }
@@ -500,7 +366,7 @@ impl qobject::YandexSearch {
         self.set_busy(poll.busy);
     }
 
-    fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
+    pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Ok(i) = usize::try_from(index.row()) else {
             return QVariant::default();
         };
@@ -521,7 +387,7 @@ impl qobject::YandexSearch {
         }
     }
 
-    fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
+    pub(crate) fn role_names(&self) -> QHash<QHashPair_i32_QByteArray> {
         let mut roles = QHash::<QHashPair_i32_QByteArray>::default();
         for (role, name) in [
             (ROLE_THUMB, "thumb"),
@@ -538,38 +404,38 @@ impl qobject::YandexSearch {
         roles
     }
 
-    fn row_count(&self, _parent: &QModelIndex) -> i32 {
+    pub(crate) fn row_count(&self, _parent: &QModelIndex) -> i32 {
         qt_int(self.hits.len())
     }
 
-    fn toggle_pick(mut self: Pin<&mut Self>, item: i32) {
+    pub(crate) fn toggle_pick(mut self: Pin<&mut Self>, item: i32) {
         let Ok(i) = usize::try_from(item) else { return };
         self.as_mut().rust_mut().picks.toggle(i);
         self.picks_changed();
     }
 
-    fn pick_to(mut self: Pin<&mut Self>, item: i32) {
+    pub(crate) fn pick_to(mut self: Pin<&mut Self>, item: i32) {
         let Ok(i) = usize::try_from(item) else { return };
         self.as_mut().rust_mut().picks.pick_to(i);
         self.picks_changed();
     }
 
-    fn set_picked(mut self: Pin<&mut Self>, first: i32, count: i32, picked: bool) {
+    pub(crate) fn set_picked(mut self: Pin<&mut Self>, first: i32, count: i32, picked: bool) {
         let range = self.range(first, count);
         self.as_mut().rust_mut().picks.set(range, picked);
         self.picks_changed();
     }
 
-    fn show_failure(mut self: Pin<&mut Self>, text: &QString) {
+    pub(crate) fn show_failure(mut self: Pin<&mut Self>, text: &QString) {
         let text = String::from(text);
         self.as_mut().set_status(QString::from(&text));
     }
 
-    fn prepare_save(&self) {
+    pub(crate) fn prepare_save(&self) {
         crate::picker::set_start(self.search.start_folder(crate::app::get().prefs()));
     }
 
-    fn download_picked(mut self: Pin<&mut Self>) {
+    pub(crate) fn download_picked(mut self: Pin<&mut Self>) {
         let Some(folder) = crate::picker::take(crate::picker::Purpose::YandexSave) else {
             self.as_mut().set_status(QString::from(&text::yandex_no_folder()));
             return;

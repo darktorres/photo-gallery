@@ -10,7 +10,7 @@ use crate::pool::Pool;
 const KEEP_MAKERS: usize = 8;
 
 /// The thumbnail makers of the app.
-pub struct Makers {
+pub(crate) struct Makers {
     pool: Pool<Maker>,
 }
 

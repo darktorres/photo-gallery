@@ -3,15 +3,19 @@
 use pg_client::viewport::View;
 
 /// The view, and the values of its properties (kept in step by `sync`, so the bindings update).
+#[expect(
+    unreachable_pub,
+    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+)]
 pub struct ViewportRust {
     pub(super) view: View,
-    pub(super) zoom: f64,
-    pub(super) ox: f64,
-    pub(super) oy: f64,
-    pub(super) dw: f64,
-    pub(super) dh: f64,
-    pub(super) zoomed: bool,
-    pub(super) pixels: bool,
-    pub(super) fit_width: i64,
-    pub(super) fit_height: i64,
+    pub(crate) zoom: f64,
+    pub(crate) ox: f64,
+    pub(crate) oy: f64,
+    pub(crate) dw: f64,
+    pub(crate) dh: f64,
+    pub(crate) zoomed: bool,
+    pub(crate) pixels: bool,
+    pub(crate) fit_width: i64,
+    pub(crate) fit_height: i64,
 }

@@ -9,9 +9,9 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 use pg_catalog::Catalog;
 use pg_catalog::fixture::state;
+use pg_crop::CropError;
 use pg_jobs::control::Control;
 use pg_jobs::pipeline::Options;
-use pg_crop::CropError;
 use pg_model::ids::FileId;
 use pg_platform::native::verbatim;
 

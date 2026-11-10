@@ -2,64 +2,28 @@
 //! front end's own literals (the labels and tooltips, by their `ui.ftl` id). One object per component that needs them,
 //! made inside it (as the other facades are).
 
-mod state;
-use state::WordsRust;
+pub(crate) mod state;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        type Words = super::WordsRust;
-    }
-
-    unsafe extern "RustQt" {
-        /// The symbol of a rating (0 to 5; out of range is clamped).
-        #[qinvokable]
-        #[cxx_name = "ratingSymbol"]
-        fn rating_symbol(self: &Words, rating: i32) -> QString;
-
-        /// A time in whole seconds: m:ss, or h:mm:ss from an hour.
-        #[qinvokable]
-        #[cxx_name = "timecode"]
-        fn timecode(self: &Words, seconds: i32) -> QString;
-
-        /// The words of the literal `id` (an entry of `ui.ftl`, which starts with `ui-`).
-        #[qinvokable]
-        #[cxx_name = "text"]
-        fn text(self: &Words, id: &QString) -> QString;
-
-        /// The words of the literal `id`, which chooses its plural form by `count` and shows `value` and `second`
-        /// (the entry names them `$text` and `$other`; a number is passed as text).
-        #[qinvokable]
-        #[cxx_name = "phrase"]
-        fn phrase(self: &Words, id: &QString, count: f64, value: &QString, second: &QString) -> QString;
-    }
-}
+use crate::words_bridge::qobject;
 
 use cxx_qt_lib::QString;
 use pg_client::text;
 
 impl qobject::Words {
-    fn rating_symbol(&self, rating: i32) -> QString {
+    pub(crate) fn rating_symbol(&self, rating: i32) -> QString {
         let rating = u8::try_from(rating.clamp(0, 5)).unwrap_or(0);
         QString::from(&text::rating_symbol(rating).to_string())
     }
 
-    fn timecode(&self, seconds: i32) -> QString {
+    pub(crate) fn timecode(&self, seconds: i32) -> QString {
         QString::from(&text::timecode(u64::try_from(seconds).unwrap_or(0)))
     }
 
-    fn text(&self, id: &QString) -> QString {
+    pub(crate) fn text(&self, id: &QString) -> QString {
         QString::from(&text::ui(&String::from(id), 0.0, "", ""))
     }
 
-    fn phrase(&self, id: &QString, count: f64, value: &QString, second: &QString) -> QString {
+    pub(crate) fn phrase(&self, id: &QString, count: f64, value: &QString, second: &QString) -> QString {
         QString::from(&text::ui(&String::from(id), count, &String::from(value), &String::from(second)))
     }
 }

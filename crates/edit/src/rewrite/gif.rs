@@ -53,7 +53,7 @@ fn decode_indices(lzw: &[u8], min_code: u8, pixels: usize) -> Result<Vec<u8>> {
 /// screen): there is nothing to rewrite. `rotate` takes it as the catalog's, as it does an animation; `crop` reports
 /// it.
 #[derive(Debug)]
-pub struct NothingLeft;
+pub(crate) struct NothingLeft;
 
 impl std::fmt::Display for NothingLeft {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {

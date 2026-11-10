@@ -162,7 +162,6 @@ mod tests {
     use crate::catalogs::path_of;
     use crate::error::Error;
     use pg_model::ids::FileId;
-    use pg_model::rules::PathRules;
 
     // A catalog path becomes the exact system path, a name with no UTF-8 form included.
     #[test]

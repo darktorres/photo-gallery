@@ -4,48 +4,9 @@
 //! second call. The codes are the positions in each QML file's `enum` of the same name, so the two lists are kept in the
 //! same order. The map and the hint lines are pg-client's.
 
-mod state;
-use state::KeyMapRust;
+pub(crate) mod state;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        type KeyMap = super::KeyMapRust;
-    }
-
-    unsafe extern "RustQt" {
-        /// The viewer's action for a key press, for what it shows (`kind`: a `GalleryModel.MediaKind` value, passed as
-        /// its number): a `ViewerAction` code, or -1 for none.
-        #[qinvokable]
-        #[cxx_name = "viewerAction"]
-        fn viewer_action(self: &KeyMap, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32;
-
-        /// The argument of the viewer's action (the rating of `ViewerAction.Rate`), 0 for the others.
-        #[qinvokable]
-        #[cxx_name = "viewerArg"]
-        fn viewer_arg(self: &KeyMap, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32;
-
-        #[qinvokable]
-        #[cxx_name = "gridHint"]
-        fn grid_hint(self: &KeyMap) -> QString;
-
-        #[qinvokable]
-        #[cxx_name = "viewerHint"]
-        fn viewer_hint(self: &KeyMap, kind: i32, has_borders: bool) -> QString;
-
-        /// The Yandex panels' action for a key press: a `PanelAction` code, or -1 for none.
-        #[qinvokable]
-        #[cxx_name = "panelAction"]
-        fn panel_action(self: &KeyMap, key: i32) -> i32;
-    }
-}
+use crate::keymap_bridge::qobject;
 
 use cxx_qt_lib::QString;
 use pg_client::keys::{self, Grid, Key, Media, Mods, Panel, Shown, Viewer};
@@ -161,23 +122,23 @@ fn viewer_of(key: i32, modifiers: i32, kind: i32, has_borders: bool) -> (i32, i3
 }
 
 impl qobject::KeyMap {
-    fn viewer_action(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
+    pub(crate) fn viewer_action(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
         viewer_of(key, modifiers, kind, has_borders).0
     }
 
-    fn viewer_arg(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
+    pub(crate) fn viewer_arg(&self, key: i32, modifiers: i32, kind: i32, has_borders: bool) -> i32 {
         viewer_of(key, modifiers, kind, has_borders).1
     }
 
-    fn grid_hint(&self) -> QString {
+    pub(crate) fn grid_hint(&self) -> QString {
         QString::from(&keys::grid_hint())
     }
 
-    fn panel_action(&self, key: i32) -> i32 {
+    pub(crate) fn panel_action(&self, key: i32) -> i32 {
         key_of(key).and_then(keys::panel).map_or(-1, panel_code)
     }
 
-    fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
+    pub(crate) fn viewer_hint(&self, kind: i32, has_borders: bool) -> QString {
         QString::from(&keys::viewer_hint(media_of(kind), shown_of(kind, has_borders)))
     }
 }

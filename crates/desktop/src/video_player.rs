@@ -8,34 +8,11 @@ use core::pin::Pin;
 use std::ffi::OsStr;
 use std::path::Path;
 
-#[cxx_qt::bridge]
-pub mod ffi {
-    unsafe extern "C++" {
-        include!(<QtMultimedia/QMediaPlayer>);
-        type QMediaPlayer;
-
-        include!("pg-desktop/cpp/video_source.h");
-        #[namespace = "pg"]
-        type VideoPlayer;
-        /// The source of `player` (a live `QMediaPlayer`, or null: the source keeps a weak reference to it).
-        #[namespace = "pg"]
-        unsafe fn new_video_player(player: *mut QMediaPlayer) -> UniquePtr<VideoPlayer>;
-        /// Plays the file named by `units` (Windows: the file's UTF-16 units). `ext` is its extension, ASCII.
-        #[cfg(windows)]
-        #[namespace = "pg"]
-        fn play_units(self: Pin<&mut VideoPlayer>, units: &[u16], ext: &str);
-        /// Plays the file open at `fd` (Unix; a negative `fd` is a file that could not be opened).
-        #[cfg(unix)]
-        #[namespace = "pg"]
-        fn play_fd(self: Pin<&mut VideoPlayer>, fd: i32, ext: &str);
-        /// Clears the player's source, then releases the device.
-        #[namespace = "pg"]
-        fn clear(self: Pin<&mut VideoPlayer>);
-    }
-}
+use crate::video_player_bridge::ffi;
 
 /// Plays the file at `path`, in the form the system holds its name in (`pg_platform::file::play_target`): its units on
-/// Windows, its open descriptor on Unix. The player's declarations above are per platform, to take that form.
+/// Windows, its open descriptor on Unix. The player's declarations (`video_player_bridge`) are per platform, to take
+/// that form.
 pub(crate) fn play_path(player: Pin<&mut ffi::VideoPlayer>, path: &Path) {
     let ext = ext_of(path);
     match pg_platform::file::play_target(path) {

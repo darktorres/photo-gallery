@@ -11,7 +11,7 @@ use pg_dedup::UnionFind;
 use pg_model::ids::FileId;
 
 /// The PDQ distance that joins two files into a group by default.
-pub const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;
+pub(crate) const DEFAULT_GROUP_DISTANCE: u32 = pg_model::pdq::GROUP_DISTANCE;
 
 /// The identities of tiers 0a (identical files) and 0b (identical pixels).
 const IDENTITIES: [Identity; 2] = [Identity::File, Identity::Pixels];
@@ -31,7 +31,7 @@ struct Found {
 }
 
 /// Prints the report, with the files of the `show` largest groups.
-pub fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()> {
+pub(crate) fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Result<()> {
     let found = find(catalog, group_distance)?;
     for (by, groups, files) in &found.identical {
         let tier = match by {

@@ -5,12 +5,16 @@ use cxx::UniquePtr;
 use pg_render::player::Player;
 
 use crate::frame_sink::Frames;
-use crate::frame_sink::ffi::SinkRef;
+use crate::frame_sink_bridge::ffi::SinkRef;
 
 /// The file played, its sink, and the player playing it into the sink.
+#[expect(
+    unreachable_pub,
+    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+)]
 pub struct AnimationPlayerRust {
-    pub(super) file_id: i64,
-    pub(super) playing: bool,
+    pub(crate) file_id: i64,
+    pub(crate) playing: bool,
     pub(super) sink: Option<UniquePtr<SinkRef>>,
     pub(super) worker: Option<Player<Frames>>,
 }

@@ -6,23 +6,27 @@ use pg_client::layout::Frame;
 use pg_client::picks::Picks;
 
 #[derive(Default)]
+#[expect(
+    unreachable_pub,
+    reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
+)]
 pub struct YandexSearchRust {
-    pub(super) busy: bool,
-    pub(super) status: QString,
-    pub(super) other_count: i32,
-    pub(super) similar_count: i32,
-    pub(super) picked_count: i32,
-    pub(super) other_picked: i32,
-    pub(super) similar_picked: i32,
-    pub(super) preview_item: i32,
-    pub(super) preview_url: QString,
-    pub(super) preview_width: i32,
-    pub(super) preview_height: i32,
-    pub(super) preview_picked: bool,
-    pub(super) layout_width: f64,
-    pub(super) gap: f64,
-    pub(super) other_height: f64,
-    pub(super) similar_height: f64,
+    pub(crate) busy: bool,
+    pub(crate) status: QString,
+    pub(crate) other_count: i32,
+    pub(crate) similar_count: i32,
+    pub(crate) picked_count: i32,
+    pub(crate) other_picked: i32,
+    pub(crate) similar_picked: i32,
+    pub(crate) preview_item: i32,
+    pub(crate) preview_url: QString,
+    pub(crate) preview_width: i32,
+    pub(crate) preview_height: i32,
+    pub(crate) preview_picked: bool,
+    pub(crate) layout_width: f64,
+    pub(crate) gap: f64,
+    pub(crate) other_height: f64,
+    pub(crate) similar_height: f64,
     pub(super) search: Search,
     /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
     pub(super) pump: bool,

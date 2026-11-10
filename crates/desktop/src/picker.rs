@@ -4,82 +4,10 @@
 //! screen only learns that one was chosen for a purpose (`done`): the action that purpose names takes it (`take`). So
 //! the path never crosses to QML as text.
 
-mod state;
+pub(crate) mod state;
 use state::PickerRust;
 
-#[cxx_qt::bridge]
-pub mod qobject {
-    unsafe extern "C++" {
-        include!("cxx-qt-lib/qstring.h");
-        type QString = cxx_qt_lib::QString;
-        include!("cxx-qt-lib/qstringlist.h");
-        type QStringList = cxx_qt_lib::QStringList;
-
-        include!("pg-desktop/cpp/picker.h");
-        /// The app's window's native handle (its HWND on Windows), 0 when none is shown: the folder dialog's owner.
-        #[namespace = "pg"]
-        fn main_window_handle() -> usize;
-    }
-
-    extern "RustQt" {
-        #[qobject]
-        #[qml_element]
-        /// Whether the system's dialog is used (Windows). Otherwise `openInApp` asks QML to show the app's own dialog.
-        #[qproperty(bool, native, READ, FINAL)]
-        /// The app's dialog: the folders of the folder it is in (display names, in order).
-        #[qproperty(QStringList, names, READ, WRITE, NOTIFY, FINAL)]
-        /// The app's dialog: the folder it is in (display text).
-        #[qproperty(QString, here, READ, WRITE, NOTIFY, FINAL)]
-        type FolderPicker = super::PickerRust;
-    }
-
-    unsafe extern "RustQt" {
-        /// A folder was chosen for `purpose` (see `Purpose`): the action takes it.
-        #[qsignal]
-        fn done(self: Pin<&mut FolderPicker>, purpose: i32);
-
-        /// The app's own dialog should open for `purpose` (not on Windows, where the system's does).
-        #[qsignal]
-        #[cxx_name = "openInApp"]
-        fn open_in_app(self: Pin<&mut FolderPicker>, purpose: i32);
-
-        /// A folder dialog couldn't open, or couldn't give or list a folder, for `purpose`: `message` says why, and
-        /// nothing was chosen.
-        #[qsignal]
-        fn failed(self: Pin<&mut FolderPicker>, purpose: i32, message: QString);
-
-        /// Pick a folder for `purpose`: the system's dialog, or the app's (`openInApp`).
-        #[qinvokable]
-        fn pick(self: Pin<&mut FolderPicker>, purpose: i32);
-
-        /// The folder from the command line for `purpose` (`--add-folder=…` for 0, `--save-crops=…` for 1), chosen as the
-        /// dialog would choose it (`done`), with no dialog.
-        #[qinvokable]
-        #[cxx_name = "chooseCommandLine"]
-        fn choose_command_line(self: Pin<&mut FolderPicker>, purpose: i32);
-
-        /// The app's dialog: open the listed folder at `row`.
-        #[qinvokable]
-        fn enter(self: Pin<&mut FolderPicker>, row: i32);
-
-        /// The app's dialog: the folder above the one it is in.
-        #[qinvokable]
-        fn up(self: Pin<&mut FolderPicker>);
-
-        /// The app's dialog: choose the listed folder at `row`.
-        #[qinvokable]
-        fn choose(self: Pin<&mut FolderPicker>, row: i32);
-
-        /// The app's dialog: choose the folder it is in.
-        #[qinvokable]
-        #[cxx_name = "chooseHere"]
-        fn choose_here(self: Pin<&mut FolderPicker>);
-
-        /// The app's dialog: closed without a choice.
-        #[qinvokable]
-        fn cancel(self: Pin<&mut FolderPicker>);
-    }
-}
+use crate::picker_bridge::qobject;
 
 use core::pin::Pin;
 use std::cell::RefCell;
@@ -90,7 +18,7 @@ use pg_client::text;
 
 /// What a chosen folder is for. The code is what QML passes (`pick`, `done`, `openInApp`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Purpose {
+pub(crate) enum Purpose {
     /// A folder added to the library.
     AddFolder,
     /// The folder the cropped copies are saved into.
@@ -131,7 +59,7 @@ thread_local! {
 }
 
 /// The folder chosen for `purpose`, taken (it is then none). None when no folder was chosen for it.
-pub fn take(purpose: Purpose) -> Option<PathBuf> {
+pub(crate) fn take(purpose: Purpose) -> Option<PathBuf> {
     CHOSEN.with(|chosen| {
         let mut chosen = chosen.borrow_mut();
         match chosen.take() {
@@ -146,7 +74,7 @@ pub fn take(purpose: Purpose) -> Option<PathBuf> {
 
 /// Set the folder the next dialog opens in (taken by it), for a screen that knows one (the Yandex save's: the folder
 /// saved into last, or the photo's). Without one, the dialog opens in the user's folder.
-pub fn set_start(path: Option<PathBuf>) {
+pub(crate) fn set_start(path: Option<PathBuf>) {
     START.with(|start| *start.borrow_mut() = path);
 }
 
@@ -220,7 +148,7 @@ fn native_dialog() -> bool {
 }
 
 impl qobject::FolderPicker {
-    fn pick(mut self: Pin<&mut Self>, purpose: i32) {
+    pub(crate) fn pick(mut self: Pin<&mut Self>, purpose: i32) {
         let Some(purpose) = Purpose::from_code(purpose) else { return };
         let start = start_for();
         if pg_platform::picker::NATIVE {
@@ -252,7 +180,7 @@ impl qobject::FolderPicker {
         self.open_in_app(purpose.code());
     }
 
-    fn choose_command_line(self: Pin<&mut Self>, purpose: i32) {
+    pub(crate) fn choose_command_line(self: Pin<&mut Self>, purpose: i32) {
         let Some(purpose) = Purpose::from_code(purpose) else { return };
         let name = match purpose {
             Purpose::AddFolder => "add-folder",
@@ -264,7 +192,7 @@ impl qobject::FolderPicker {
         }
     }
 
-    fn enter(mut self: Pin<&mut Self>, row: i32) {
+    pub(crate) fn enter(mut self: Pin<&mut Self>, row: i32) {
         let Some(next) = LISTING.with(|listing| {
             let listing = listing.borrow();
             let listing = listing.as_ref()?;
@@ -275,7 +203,7 @@ impl qobject::FolderPicker {
         self.as_mut().show_folder(next);
     }
 
-    fn up(mut self: Pin<&mut Self>) {
+    pub(crate) fn up(mut self: Pin<&mut Self>) {
         let parent =
             LISTING.with(|listing| listing.borrow().as_ref().and_then(|l| l.here.parent().map(Path::to_path_buf)));
         if let Some(parent) = parent {
@@ -283,7 +211,7 @@ impl qobject::FolderPicker {
         }
     }
 
-    fn choose(self: Pin<&mut Self>, row: i32) {
+    pub(crate) fn choose(self: Pin<&mut Self>, row: i32) {
         let chosen = LISTING.with(|listing| {
             let listing = listing.borrow();
             let listing = listing.as_ref()?;
@@ -294,14 +222,14 @@ impl qobject::FolderPicker {
         }
     }
 
-    fn choose_here(self: Pin<&mut Self>) {
+    pub(crate) fn choose_here(self: Pin<&mut Self>) {
         let chosen = LISTING.with(|listing| listing.borrow().as_ref().map(|l| (l.purpose, l.here.clone())));
         if let Some(chosen) = chosen {
             self.choose_path(chosen);
         }
     }
 
-    fn cancel(self: Pin<&mut Self>) {
+    pub(crate) fn cancel(self: Pin<&mut Self>) {
         LISTING.with(|listing| *listing.borrow_mut() = None);
     }
 

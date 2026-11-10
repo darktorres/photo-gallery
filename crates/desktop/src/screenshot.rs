@@ -79,7 +79,6 @@ fn millis(seconds: f64) -> i32 {
 
 #[cfg(test)]
 mod tests {
-    use std::ffi::OsString;
     use std::path::PathBuf;
 
     use super::*;
@@ -102,22 +101,6 @@ mod tests {
         }
     }
 
-    /// A file name that is not UTF-8: a lone surrogate on Windows, a raw byte on Unix.
-    #[cfg(windows)]
-    fn odd_name() -> OsString {
-        use std::os::windows::ffi::OsStringExt;
-        let mut units: Vec<u16> = "shot".encode_utf16().collect();
-        units.push(0xD800);
-        OsString::from_wide(&units)
-    }
-
-    /// A file name that is not UTF-8: a lone surrogate on Windows, a raw byte on Unix.
-    #[cfg(unix)]
-    fn odd_name() -> OsString {
-        use std::os::unix::ffi::OsStringExt;
-        OsString::from_vec(b"shot\xFF".to_vec())
-    }
-
     fn log_of(path: &Path) -> PathBuf {
         let mut log = path.as_os_str().to_owned();
         log.push(".settle.txt");
@@ -127,7 +110,7 @@ mod tests {
     #[test]
     fn the_image_and_its_settle_log_are_written_at_the_exact_path() {
         let dir = Scratch::new("exact");
-        let path = dir.0.join(odd_name());
+        let path = dir.0.join(pg_testkit::odd_name("shot"));
         write_taken(&path, b"\x89PNG", true, "settled after 5 ms").unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"\x89PNG");
         assert_eq!(std::fs::read_to_string(log_of(&path)).unwrap(), "settled after 5 ms\n");
@@ -136,7 +119,7 @@ mod tests {
     #[test]
     fn a_window_that_cant_be_encoded_leaves_its_log_and_no_image() {
         let dir = Scratch::new("unencoded");
-        let path = dir.0.join(odd_name());
+        let path = dir.0.join(pg_testkit::odd_name("shot"));
         let err = write_taken(&path, &[], true, "timed out after 10000 ms").unwrap_err();
         assert_eq!(err.to_string(), "the window can't be encoded as a PNG");
         assert!(!path.exists());

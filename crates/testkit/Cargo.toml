@@ -7,12 +7,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# Test helpers only (a dev-dependency of the crates that have tests). Its dependencies are the encoders the
-# fixtures use (`image`, `png`), and `anyhow` for the errors the helpers return.
+# Test helpers only (a dev-dependency of the crates that have tests), with no dependency on a crate of this workspace,
+# so no crate's tests depend back on it through their own dependencies. Its dependencies are the encoders the fixtures
+# use (`image`, `png`), and `anyhow` for the errors the helpers return. The job layer's helpers are `pg-jobs-testkit`.
 [dependencies]
-# The catalog's test fixture (files as the scanner inserts them), re-exported below.
-pg-catalog = { path = "../catalog", features = ["fixture"] }
-pg-jobs = { path = "../jobs" }
 anyhow.workspace = true
 image.workspace = true
 png.workspace = true

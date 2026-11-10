@@ -375,16 +375,9 @@ mod tests {
         assert!(!got.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)));
     }
 
-    /// A folder whose name is no UTF-8: a lone surrogate on Windows, a raw `0xFF` byte on Unix.
-    #[cfg(windows)]
+    /// A folder whose name is no UTF-8 (`pg_testkit::odd_name`).
     fn odd_name() -> PathBuf {
-        pg_platform::names::path_buf(b"odd\xED\xA0\x80")
-    }
-
-    #[cfg(unix)]
-    fn odd_name() -> PathBuf {
-        use std::os::unix::ffi::OsStrExt;
-        PathBuf::from(std::ffi::OsStr::from_bytes(b"odd\xFF"))
+        PathBuf::from(pg_testkit::odd_name("odd"))
     }
 
     /// A temporary folder, removed when dropped.

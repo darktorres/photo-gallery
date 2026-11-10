@@ -38,14 +38,14 @@ fn argv_bytes(args: &[OsString]) -> Vec<u8> {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use std::os::unix::ffi::OsStringExt;
-
     use super::*;
 
     // A raw byte in an argument reaches Qt's argv as it is, the program's name first.
     #[test]
     fn a_raw_byte_argument_reaches_qts_argv_as_it_is() {
-        let args = [OsString::from("gallery"), OsString::from_vec(b"--screenshot=/a/\xFF.png".to_vec())];
+        let mut odd = pg_testkit::odd_name("--screenshot=/a/");
+        odd.push(".png");
+        let args = [OsString::from("gallery"), odd];
         assert_eq!(argv_bytes(&args), b"gallery\0--screenshot=/a/\xFF.png\0");
     }
 }

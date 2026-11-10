@@ -380,7 +380,7 @@ mod tests {
         let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
-        let (events, quiet) = pg_testkit::events::Quiet::bus();
+        let (events, quiet) = pg_jobs_testkit::Quiet::bus();
         let thumbs: &'static ThumbCache =
             Box::leak(Box::new(ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), events).unwrap()));
         drop(catalog);

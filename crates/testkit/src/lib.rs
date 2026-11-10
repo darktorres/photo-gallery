@@ -1,14 +1,31 @@
 //! Helpers for the crates' tests. Tests write their files under `PG_TEST_DIR` when it is set, and under the temp folder
 //! otherwise, in the folder each test names. Set `PG_TEST_DIR` to keep the files off the system drive.
 
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::PathBuf;
 
 use anyhow::{Context, Result, anyhow};
 
-pub mod events;
 pub mod held;
-pub use pg_catalog::fixture;
+
+/// `text` followed by a unit that is no UTF-8, as a name the system can hold: a lone surrogate (`0xD800`) on Windows, a
+/// raw `0xFF` byte on Unix. For the tests that a name, a path or an argument is kept exactly.
+pub fn odd_name(text: &str) -> OsString {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStringExt;
+        let mut units: Vec<u16> = text.encode_utf16().collect();
+        units.push(0xD800);
+        OsString::from_wide(&units)
+    }
+    #[cfg(not(windows))]
+    {
+        use std::os::unix::ffi::OsStringExt;
+        let mut bytes = text.as_bytes().to_vec();
+        bytes.push(0xFF);
+        OsString::from_vec(bytes)
+    }
+}
 
 /// A test needs an external tool that is not installed: the test returns after this call. Without `PG_REQUIRE_TOOLS`
 /// it prints that it skipped and passes; with it (CI sets it) the test fails, so a missing tool can't pass silently.

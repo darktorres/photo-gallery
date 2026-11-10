@@ -69,7 +69,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `gallery` (`pg-gallery`, binary `gallery`): the one program. Without arguments it opens the desktop app; with a
   command it runs that pass on the command line. Its `desktop` feature (on by default) builds the app; without it
   the program runs commands only, and builds without Qt.
-- `testkit` (`pg-testkit`): helpers for the crates' tests (scratch folders under `PG_TEST_DIR`, else the temp folder).
+- `testkit` (`pg-testkit`): helpers for the crates' tests (scratch folders under `PG_TEST_DIR`, else the temp folder,
+  the file generators, `odd_name`, `held`). It depends on no crate here, so no crate's tests depend back on it.
+- `jobs-testkit` (`pg-jobs-testkit`): the job layer's test helper, `Quiet` (a bus that fails its test when anything
+  published on it was not taken). A dev-dependency only.
 - `bench` (`pg-bench`): the callgrind benches (`benches/ir.rs`), built on Linux only.
 
 ## Dependencies

@@ -24,3 +24,4 @@ rusqlite.workspace = true
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
+pg-jobs-testkit = { path = "../jobs-testkit" }

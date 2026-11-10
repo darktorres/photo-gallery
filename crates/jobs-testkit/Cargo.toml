@@ -1,0 +1,13 @@
+[package]
+name = "pg-jobs-testkit"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# Test helpers over the job layer, a dev-dependency only: `Quiet`, the bus that fails its test when anything published
+# on it was not taken. Apart from `pg-testkit` so that crate stays a leaf with no internal dependencies.
+[dependencies]
+pg-jobs = { path = "../jobs" }

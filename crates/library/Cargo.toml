@@ -28,11 +28,14 @@ pg-writeback = { path = "../writeback" }
 anyhow.workspace = true
 
 [dev-dependencies]
+# The catalog's test fixture (files as the scanner inserts them).
+pg-catalog = { path = "../catalog", features = ["fixture"] }
 image.workspace = true
 pg-codec = { path = "../codec" }
 pg-metadata = { path = "../metadata" }
 pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }
+pg-jobs-testkit = { path = "../jobs-testkit" }
 pg-video = { path = "../video" }
 # The writer's faults, for the test that a panic in a job doesn't end it.
 pg-writeback = { path = "../writeback", features = ["fault"] }

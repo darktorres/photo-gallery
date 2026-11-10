@@ -23,7 +23,7 @@ use pg_model::rating::Rating;
 use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
-use pg_testkit::events::Quiet;
+use pg_jobs_testkit::Quiet;
 use pg_testkit::held::{Access, hold};
 use pg_thumbcache::ThumbCache;
 use pg_writeback::fault::Fault;

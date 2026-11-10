@@ -21,7 +21,7 @@ use pg_model::analysis::Taken;
 use pg_model::date::wall_clock_seconds;
 use pg_model::rules::PathRules;
 use pg_model::turns::Turns;
-use pg_testkit::events::Quiet;
+use pg_jobs_testkit::Quiet;
 use pg_thumbcache::ThumbCache;
 use pg_video::{frame, poster_ms, probe};
 

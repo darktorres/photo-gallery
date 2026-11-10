@@ -340,7 +340,7 @@ mod tests {
             assert!(parse_cap_gb(text).is_err(), "{text} is refused");
         }
     }
-    use pg_testkit::events::Quiet;
+    use pg_jobs_testkit::Quiet;
     use pg_testkit::test_folder;
 
     /// Where this module's tests write (`PG_TEST_DIR` when it is set).

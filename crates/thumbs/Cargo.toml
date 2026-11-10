@@ -18,7 +18,10 @@ pg-thumbcache = { path = "../thumbcache" }
 anyhow.workspace = true
 
 [dev-dependencies]
+# The catalog's test fixture (files as the scanner inserts them).
+pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-analysis = { path = "../analysis" }
 pg-import = { path = "../import" }
 pg-scan = { path = "../scan" }
 pg-testkit = { path = "../testkit" }
+pg-jobs-testkit = { path = "../jobs-testkit" }

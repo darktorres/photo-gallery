@@ -26,6 +26,9 @@ clap.workspace = true
 serde_json.workspace = true
 
 [dev-dependencies]
+# The catalog's test fixture (files as the scanner inserts them).
+pg-catalog = { path = "../catalog", features = ["fixture"] }
 pg-testkit = { path = "../testkit" }
+pg-jobs-testkit = { path = "../jobs-testkit" }
 # The writer's faults, for the test that `gallery write` returns when the writer ends.
 pg-writeback = { path = "../writeback", features = ["fault"] }

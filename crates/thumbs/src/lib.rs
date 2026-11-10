@@ -180,7 +180,7 @@ mod tests {
     use pg_catalog::fixture::state;
     use pg_model::ids::FileId;
     use pg_platform::priority::Priority;
-    use pg_testkit::events::Quiet;
+    use pg_jobs_testkit::Quiet;
 
     use super::*;
 

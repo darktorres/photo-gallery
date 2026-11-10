@@ -188,19 +188,8 @@ mod tests {
     // A path option keeps its exact units: a lone surrogate on Windows, a raw byte on Unix.
     #[test]
     fn a_path_argument_keeps_its_exact_bytes() {
-        #[cfg(windows)]
-        let value = {
-            use std::os::windows::ffi::OsStringExt;
-            let mut units: Vec<u16> = r"D:\a".encode_utf16().collect();
-            units.push(0xD800);
-            units.extend("b.jpg".encode_utf16());
-            OsString::from_wide(&units)
-        };
-        #[cfg(unix)]
-        let value = {
-            use std::os::unix::ffi::OsStringExt;
-            OsString::from_vec(b"/a/\xFF.jpg".to_vec())
-        };
+        let mut value = pg_testkit::odd_name("a");
+        value.push(".jpg");
         let mut raw = OsString::from("--find-similar=");
         raw.push(&value);
         let parsed = parse(&[OsString::from("program"), raw]);

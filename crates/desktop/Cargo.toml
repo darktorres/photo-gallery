@@ -29,5 +29,9 @@ cxx-qt.workspace = true
 cxx-qt-lib = { workspace = true, features = ["qt_gui", "qt_qml"] }
 serde_json.workspace = true
 
+[dev-dependencies]
+# The tests' names that are no UTF-8 (`odd_name`).
+pg-testkit = { path = "../testkit" }
+
 [build-dependencies]
 cxx-qt-build.workspace = true

@@ -96,20 +96,6 @@ pub(super) fn stem_of(photo: &Path) -> OsString {
 mod tests {
     use super::*;
 
-    /// A stem that is no UTF-8: a lone surrogate on Windows, a raw `0xFF` byte on Unix.
-    fn odd_stem() -> OsString {
-        #[cfg(windows)]
-        {
-            use std::os::windows::ffi::OsStringExt;
-            OsString::from_wide(&[u16::from(b'I'), 0xD800])
-        }
-        #[cfg(not(windows))]
-        {
-            use std::os::unix::ffi::OsStringExt;
-            OsString::from_vec(b"IMG_\xFF".to_vec())
-        }
-    }
-
     /// The names in `folder`, sorted.
     fn names_in(folder: &Path) -> Vec<OsString> {
         let mut names: Vec<OsString> =
@@ -171,7 +157,7 @@ mod tests {
 
     #[test]
     fn the_photos_stem_is_kept_exactly_and_only_the_suffix_is_cleaned() {
-        let stem = odd_stem();
+        let stem = pg_testkit::odd_name("IMG_");
         let mut expected = stem.clone();
         expected.push(" (a_b_c)");
         assert_eq!(saved_stem(&stem, "a/b:c"), expected);

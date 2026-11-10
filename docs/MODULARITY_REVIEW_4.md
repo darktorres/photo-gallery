@@ -239,10 +239,12 @@ Each fix gets a test that fails before it.
   - turbojpeg's `Compressor` is set up twice: `Maker::new`/`encode_image` at q85 with 4:2:0, and `transcode::to_jpeg` at q95 with 4:4:4. Each writes its own `Image { pixels, width, pitch: width * 3, height, RGB }`.
   - The codec owns decoding (and `encode::cropped`), but not this encoder.
   - `render/src/display.rs` says it is "the one place that reads a file's EXIF orientation for decoding". But `Maker::make_image` calls `pg_metadata::orientation` and `Decoder::decode_into` itself.
+  - `pg-edit`'s tests copy it too. `edit/src/lib.rs`'s `#[cfg(test)] mod testing` has `shown`, "a file decoded the way `pg_render::display` decodes it … so the tests here need nothing from pg_render". A dev-dependency on `pg-render` would be no cycle: `pg-render` depends on codec, metadata, model and video, not on edit.
 - **Fix.**
   - **A reusable encoder in the codec:** `pg_codec::encode::JpegEncoder::new(quality, subsampling)`, with `encode_into(&Rgb, &mut Vec<u8>)`, plus a one-shot `encode` for the transcode. It is a type, not a free function, because the maker keeps one compressor and one output buffer across all its thumbnails (`compress_to_slice` into its `jpeg` buffer). A free function would make a compressor per thumbnail on the hot path.
   - **One display decode.** `Maker::make_into` is `display::decode`'s body with the maker's buffers. So there is one `display::decode_into(decoder, bytes, min, turns, &mut image, &mut spare)`, used by `display::decode` and by the maker (with M-30).
-  - The edit's two orientation-then-decode calls (`edit/src/lib.rs`) decode the file as stored, in a crate below `pg-render`. They stay. `display.rs`'s claim becomes "the one place for the display decodes".
+  - **The edit's tests decode through `display`.** `pg-edit` dev-depends on `pg-render`, and `testing::shown` calls `display::decode`, so the tests check the edit against the real display decode, not a copy of it. `testing::stored` is the codec's own stored decode (`decode_stored_into`), not display's, and stays a codec call; so `display::decode_stored` has no user and goes (M-48).
+  - `display.rs`'s claim is then true as written, and stays.
 - Gate: `just test`, perf (`thumb_jpeg`), `just shots`.
 
 ### M-28: one numeric conversion, one fit, one decode cap
@@ -299,7 +301,10 @@ Each fix gets a test that fails before it.
   - `LIBRARY` goes; the desktop reads `app::get().library()`.
   - `grid_picture` uses the app's maker pool.
   - The panel's row height is the desktop's, so the desktop passes it to the search.
-- **Kept, with the reason written beside each.** The desktop's other process-wide state is one QObject's state that a sibling QObject reads: `controller::CORE`, `gallery::MODEL`, `folders::TREE`, and `picker`'s `CHOSEN`, `LISTING` and `START`. cxx-qt default-constructs the QObjects, and nothing hands them a reference. `facet_choices::COUNTS` goes in M-32.
+- **The picker's own state becomes its fields.**
+  - `picker::LISTING` (the in-app dialog's purpose, folder and listing) is read and written only by `FolderPicker`'s own methods (`enter`, `up`, `choose`, `choose_here`, `cancel`, `show_folder`, `choose_path`). It becomes a field of `PickerRust`. Today the three `FolderPicker` instances (two in `Main.qml`, one in `YandexPanel.qml`) share one listing.
+  - `picker::START` is set by the Yandex panel (`set_start`) for whichever picker opens next. It goes: the picker asks for its purpose's start itself, `app::get().yandex().start_folder(..)` for `Purpose::YandexSave` (an `App` service after this step).
+- **Kept, with the reason written beside each.** The desktop's other process-wide state is one QObject's state that a sibling QObject reads: `controller::CORE`, `gallery::MODEL`, `folders::TREE` (read by `Shell`), and `picker::CHOSEN` (taken by the library, the gallery's edits and the Yandex panel). cxx-qt default-constructs the QObjects, and nothing hands them a reference. `facet_choices::COUNTS` goes in M-32.
 - Gate: `just test`, `just shots` (the `yandex` scenarios), Linux checks.
 
 ### M-30: the viewer's images are `pg-render`'s
@@ -686,7 +691,12 @@ These are additions to the plan's M-12a list.
   - `model::name::Name::from_wtf8`: its other user is the property test in `model/tests/name_laws.rs`. That property moves into `name.rs`'s tests (`proptest` is already `pg-model`'s dev-dependency), and `from_wtf8` becomes `#[cfg(test)]`.
   - `ThumbCache::heal`: deleted. `heal_if_due` and the writer use `maintenance::heal`, and its test calls that.
   - The platform's and dedup's items, in M-34 and M-41.
-- **Kept, with a reason.** `catalog::browse::read::changes::changes_since` is used only by tests today, but `docs/DECODE_ONCE_PLAN.md` phase 4 builds the incremental grid on it.
+- **`changes_since` goes; the stamps stay.** `catalog::browse::read::changes::changes_since` has no caller, and none of its three planned consumers would call it as written:
+  - `REFACTOR_PLAN.md`'s event primitives: a `Bus` subscriber that lags resyncs through it. The `Bus` was built with payload-free invalidations (`pg_jobs::Change`), so a subscriber that lags just reads the state again; there is nothing to resync. That consumer will not exist.
+  - `DECODE_ONCE_PLAN.md` Phase 4 reads the column through its own `list_grid_delta` (the listing's `WHERE` plus `AND f.changed > ?`), not through this function.
+  - `BOUNDED_MEMORY_PLAN.md` 7.1 replaces it with a paged `ChangeFeed` over `(changed, id)` plus a `files_log` (its table of budgets marks this function's unbounded `Vec` as a cost to remove).
+
+  All three need `files.changed`, its index and its triggers, so those stay. The function's test, `each_user_visible_change_names_its_file`, is what guards the triggers. It is kept as a schema test that reads `files.changed` directly. `changes.rs`'s header goes with the function.
 - **A leftover attribute.** `analysis/src/pdq.rs` keeps a crate-level `#![cfg_attr(not(test), deny(clippy::print_stdout, ...))]`, left from when it was a crate. It goes; `lib.rs` has it.
 - **The survey is kept.** `review/api_surface.py`, `edges.py` and `dupes.py` go to `tools/modgraph/`, run by `just modgraph-report`, so the next review starts from them. They are reports, not gates: they match by name.
 - Gate: `just lint`, `just test`.
@@ -708,6 +718,7 @@ These are additions to the plan's M-12a list.
   - Its notices name `pg_model::progress::Phase` where they name a pass (M-45).
   - It adds the CLI as a consumer (M-22, M-26).
   - Its notice and ledger functions are methods in `impl Catalog` blocks (M-44).
+- **`REFACTOR_PLAN.md`:** the event primitives' "a subscriber that falls behind gets `Lagged` and resyncs through `changes_since`" gets a superseded note: the `Bus` carries payload-free `Change`s (M-48).
 - **After the other steps:**
   - the README's `app`, `library`, `crop`, `thumbcache`, `render` and `client` entries;
   - the layer file;

@@ -21,6 +21,7 @@ sys.path.insert(0, str(HERE))
 
 from win_env import Toolchain, setup  # noqa: E402
 
+from build_jpeg_turbo import FORK_COMMIT, FORK_URL  # noqa: E402
 from pgtools import run  # noqa: E402
 
 ORDER = ["turbo", "jpeggpu", "gpujpeg", "parajpeg", "debesheedas", "harness"]
@@ -40,11 +41,15 @@ def clone(env: Toolchain, name: str, url: str, commit: str) -> None:
 
 
 def turbo(env: Toolchain) -> None:
-    """The app's vendored libjpeg-turbo 3.1.0, static with SIMD: the reference and CPU baseline."""
+    """The app's libjpeg-turbo 3.1.0, static with SIMD: the reference and CPU baseline. Its source is the one the app
+    builds, the rust-turbojpeg fork's `turbojpeg-sys/libjpeg-turbo` at the commit the root Cargo.toml pins (the pin is
+    tools/build_jpeg_turbo.py's, which Qt's JPEG plugin is built from too). The repository vendored it before."""
+    clone(env, "rust-turbojpeg", FORK_URL, FORK_COMMIT)
+    source = env.jpeg_eval / "src" / "rust-turbojpeg" / "turbojpeg-sys" / "libjpeg-turbo"
     build = env.jpeg_eval / "build" / "libjpeg-turbo"
     run(
         [
-            "cmake", "-G", "Ninja", "-S", str(REPO / "vendor" / "turbojpeg-sys" / "libjpeg-turbo"), "-B", str(build),
+            "cmake", "-G", "Ninja", "-S", str(source), "-B", str(build),
             "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_C_COMPILER=cl", "-DENABLE_SHARED=OFF", "-DWITH_TURBOJPEG=ON",
             f"-DCMAKE_INSTALL_PREFIX={env.jpeg_eval / 'deps' / 'libjpeg-turbo'}",
         ],
@@ -64,7 +69,9 @@ def jpeggpu(env: Toolchain) -> None:
         ],
         quiet=True,
     )  # fmt: skip
-    run(["cmake", "--build", str(build), "-j", "4"])
+    # The library alone, which the harness links: the project's test program does not build with this MSVC (it passes a
+    # std::filesystem::path where a narrow string is wanted), and win-build.cmd let that failure through unchecked.
+    run(["cmake", "--build", str(build), "--target", "jpeggpu", "-j", "4"])
 
 
 def gpujpeg(env: Toolchain) -> None:

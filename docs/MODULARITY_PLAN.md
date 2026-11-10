@@ -330,6 +330,8 @@ Layers (checked as a DAG):
 
 Edges: `lib` → `{xmp, exif, container, orientation}`, `container` → `{xmp, exif}`, `orientation` → `{exif, tiff}`. Nothing calls back up. Gate: Linux checks, Windows `just test`.
 
+- **Result (committed in the M-9 commit; not yet validated, see the end of the plan):** `tiff.rs` (`Tiff`, `Entry`, the TIFF types, and `EXIF_TAG_ORIENTATION`, which the reader and the patcher both look for in IFD0, so `tiff` stays a leaf), `exif.rs`, `xmp.rs` (with `MetaScratch` and `Packet`), `container.rs` (with `JPEG_XMP`), `orientation.rs`, and `lib.rs` with `Meta` and its read. The edges are `lib` → `{container, exif, xmp, orientation}`, `container` → `xmp`, `orientation` → `{exif, tiff}`, `exif` → `tiff`: `container` uses nothing of `exif` (its EXIF block comes from `pg_container`). The public paths stay (`pub use orientation::{orientation, patch_orientation}` and `xmp::MetaScratch`). A test moves into a module only when it needs that module's private items: `extended_packets`, `inflate_zlib` and `MAX_INFLATED`'s four tests, with their random-data helpers, are in `container.rs`, and `percent_scale` is in `xmp.rs`. The end-to-end tests through `Meta::read` stay in `lib.rs`. `png_chunk`, which both use, is in `test_support.rs`.
+
 ### M-10: `codec`, by format
 
 `codecs.rs` is 814 production lines. The plan as first written creates a module cycle, the same shape as group D: `Codecs` is the scratch-buffer struct, `decode` dispatches with `self.png(...)` and so on, and each format module adds an `impl Codecs` block, so `codecs` ↔ each format.

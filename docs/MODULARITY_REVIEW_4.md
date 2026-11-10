@@ -56,7 +56,7 @@ All 33 crates under `crates/` were read: `container`, `model`, `schema`, `testki
 
 The steps are grouped by kind: the bugs first, then work done twice, then code in the wrong crate, then types and names, then cleanup.
 
-Each proposed fix was then checked once more against the code, step by step, for whether it is the most proper one, with churn no concern. Where it was not, the step says the better fix. Two rules came out of that check, and several steps apply them.
+Each proposed fix was then checked against the code, step by step, for whether it is the most proper one, with churn no concern. Where it was not, the step says the better fix. A second pass looked for the fixes still chosen to save work (a header fixed where the name was wrong, a choice left as "or", a step with no gate) and replaced them. Two rules came out of that check, and several steps apply them.
 
 ## Rules this review adds
 
@@ -184,7 +184,7 @@ Each fix gets a test that fails before it.
     - `Expected::new(make_layout)`, the schema built once, lazily.
   - `pg-schema` also owns `remove_database` (with the sidecars) and the holds.
   - `beside` and the rename that never replaces (`keep_aside`, M-21) are file operations below all three users, so they are `pg_platform::file`'s, not `pg-schema`'s. `pg_schema::move_aside` is built on them. `pg-schema` gains a `pg-platform` dependency, an acyclic edge (`pg-platform` depends on `pg-model` alone), and the layer file changes with it.
-  - The `pg-schema` header says it holds a SQLite file's lifecycle.
+  - **The crate is renamed for what it holds: `pg-dbfile`**, a SQLite database file's lifecycle, of which the schema comparison is one part. Correcting only the header would leave the name wrong in its three dependents' `Cargo.toml`, every `use` and the layer file. Its one `lib.rs` is split by concern: `schema.rs` (`Schema`, `canonical`, `Difference`), `judge.rs` (`judge`, `Found`, `Damage`, `Expected`), `lock.rs` (`Lock`, `Live`, the holds) and `remove.rs` (`move_aside`, `remove_database`). Every `pg_schema::` in this review names the renamed crate.
   - The catalog is split:
     - `rebuild.rs`: both halves of the rebuild;
     - `lifecycle.rs`: the locks, holds and marks;
@@ -322,7 +322,8 @@ Each fix gets a test that fails before it.
     - `turn_jpeg` and `placeholder` stop naming codec types once `pg-render`'s display API takes its own size request (`display::decode_full(decoder, bytes, turns)`), not `MinSize`. The maker's decoder is passed through without being named.
     - The upload type moves out (M-33).
   - The layer file changes with it.
-- Gate: `just test`, `just shots`, perf (the viewer is not benched; the gate is that nothing moves).
+- **A bench first.** The viewer is not benched, so a move of its pipeline has no perf gate. `pg-bench` gains a `viewer` bench (a full decode and a fit, for a JPEG, a PNG and a video poster), recorded before the move.
+- Gate: `just test`, `just shots`, perf (the new `viewer` bench).
 
 ### M-31: a pass does not reach a sibling pass for a helper
 
@@ -331,7 +332,7 @@ Each fix gets a test that fails before it.
   - `pg_writeback::exiftool_program`: `PG_EXIFTOOL`, else `exiftool`. This is ExifTool's concern.
   - `pg_writeback::stat`: a file's size and last-write time. This is `pg_platform::file`'s concern (`last_write_time` is there).
 - **Fix.**
-  - `normalize_path` moves to `pg_platform::names`; its errors become a typed one, or stay `io::Error` with the path.
+  - `normalize_path` moves to `pg_platform::names`, with a typed error: `NormalizeError { Unreadable { path, error: io::Error }, NotAPath { path } }`. Today it returns `anyhow` with English context ("can't open …", "… is not a path"), words made below the client (R-1). M-22's `AddError` carries it, and the client words both cases.
   - `exiftool_program` moves to `pg-exiftool`, and `stat` to `pg_platform::file`.
   - Callers are changed, with no re-export (ground rule 2).
   - `pg-crop` loses `pg-scan` and `pg-writeback`, which leaves `crop: catalog edit exiftool jobs model platform` in the layer file.
@@ -449,7 +450,7 @@ Each fix gets a test that fails before it.
   - The rest of the contract is the catalog's views (`thumb_sources`, `thumb_clock`, `catalog/src/schema.rs`). That is the designed interface.
   - In the other direction, the catalog's test `thumb_sources_is_the_analysed_files_with_their_folders` (`catalog/src/writers.rs`) copies the cache's pending join, written against the cache's private `entries` table.
 - **Fix.**
-  - The folder count becomes part of the views: `thumb_clock` gains `max_folder_id`, or a new `thumb_folders` view.
+  - The folder count becomes a view of its own, `thumb_folders AS SELECT max(id) AS max_id FROM folders`. It is not a column of `thumb_clock`: that view is the change number the pass takes its snapshot at, and the folder count only sizes the work list's table (`WorkList::with_capacity`). One view per fact.
   - `thumb_sources` gives `poster_ms` already resolved.
   - The view, not the cache's query, decides which files can have a thumbnail. Today `pending_sql` decides it from the catalog's columns: `missing = 0`, `error IS NULL`, `analyzed_mtime = mtime`. Those columns become the view's own condition, and the cache's query only compares the view's rows with its `entries`.
   - `pg-thumbcache` loses its normal `pg-catalog` dependency; it keeps the `fixture` dev-dependency for its tests.
@@ -466,7 +467,7 @@ Each fix gets a test that fails before it.
   - `file_hash` becomes `pg_model::analysis::FileHash::of(bytes)`, with `blake3` as a dependency of `pg-model`. A content hash is not metadata, so `pg-metadata` would be the wrong home. `blake3` is pure Rust and builds for wasm32, which `just lint` checks `pg-model` for.
   - The analysis and the write-back call it. `pg-writeback` loses `pg-analysis`, and the layer file changes with it.
   - The comment states the dependencies as they are.
-  - `thumbnail_error` is a typed `(FileId, Error)` that the client words.
+  - `thumbnail_error` is `pg-model` data (R-1): the file's `FileId` and the cache's error as detail text, the shape NOTIFICATIONS_PLAN's notices carry an error in. The client words it. A `pg_thumbcache` error type would be one the client cannot name.
 - Gate: `just lint` (the layer check), `just test`.
 
 ### M-39: `pg-yandex`'s error holds only the client's cases
@@ -546,7 +547,8 @@ Each fix gets a test that fails before it.
     - `write_target` returns `WriteTarget { path, format: Option<Format>, kind: Kind }`.
     - `rating_in_file_possible(Kind, Option<Format>)`, beside M-17's `can_hold_rating`.
     - `Fresh { ext: Ext, kind: Kind }`.
-    - The queue's value is `enum Write { Rating(Option<Rating>), Turns(Turns) }`, in the job and in the temp. The `debug_assert!`s and `pg-writeback`'s conversions go. This needs no migration: the table keeps its `(kind, value)` columns, and the type is parsed from them at the row and written back to them.
+    - The queue's value is `enum Write { Rating(Option<Rating>), Turns(Turns) }`, in the job and in the temp. The `debug_assert!`s and `pg-writeback`'s conversions go. The table keeps its `(kind, value)` columns; the type is parsed from them at the row and written back to them.
+    - **The schema states the same rule.** `file_writes.value` and `temp_value` have no `CHECK` today, while `ratings.rating` has one. They get one that ties the value to the kind: a rating's range for `'rating'`, 0 to 3 for `'rotation'`. SQLite cannot add a `CHECK` to a table in place, so this is a migration that rebuilds the table, the next free number after M-43's. A row that breaks it was never valid, and the migration drops it (the write is lost; it is logged).
     - `Rewrite::before` is an `Option`.
     - `ScanId` goes in `pg_model::ids`, beside `FileId`, `FolderId` and `RootId`.
   - **An unknown kind is an error**, as an unknown extension is.
@@ -642,9 +644,9 @@ Each fix gets a test that fails before it.
   - `set_import_version`, `set_borders_version` and `set_taken_zone` share one shape: read the mark, an immediate transaction, read again, set, recompute. They become one `set_mark(key, value, recompute_sql)`.
   - The change-stamp trigger body is spelled 12 times: 8 in `BASELINE` (ratings, border marks, file writes) and 4 in `TO_2`, one of them with a `WHEN` clause. A `stamp!(name, event, table, new|old)` macro replaces it. It emits the same `concat!` pieces, so the text does not change. Even if it did, an existing catalog is compared with `pg_schema::canonical` (whitespace, comments and keyword case do not count), and the frozen baseline takes such edits.
   - The ratings upsert is in `AnalysisWriter::new` and in `writes::set_rating`. It becomes a constant, like `SET_FILE_RATING`.
-  - `pair::rebind` and `pair::replace` write the same 11-column UPDATE.
+  - `pair::rebind` and `pair::replace` write the same 11-column UPDATE. It becomes one constant, used by both.
   - The border colour's 0xRRGGBB packing is in `writers::store_borders`, and the unpacking in `details::border_sides_on`. `detection::Side` owns both.
-  - `fixture::raw::{add_scan, add_folder}` repeat `fixture::state::{add_scan, add_folder}`.
+  - `fixture::raw::{add_scan, add_folder}` repeat `fixture::state::{add_scan, add_folder}`, unwrapping where those return a `Result`. The `raw` copies go; their callers use `state`'s.
   - `facets` sizes its sums with a literal 5. It uses `BorderFacet::COUNT` (strum).
   - `pg_query`'s `MARKED` repeats `bordered!`'s cut sum.
 - **In the thumbnail cache:**
@@ -675,12 +677,12 @@ These are additions to the plan's M-12a list.
 ### M-48: public items nothing uses, and the survey kept
 
 - **Dead.** `render::display::decode_stored` has no caller anywhere. Its doc says "what a lossless crop cuts", and the crop does not call it. It is deleted.
-- **Used by tests only.** Each is made `pub(crate)` or `#[cfg(test)]`, or deleted with its test when the test checks nothing else.
-  - `catalog::browse::writes::session_set`: `session_set_many` is the one in use (M-43).
+- **Used by tests only.** Each one is decided:
+  - `catalog::browse::writes::session_set`: deleted; `session_set_many` is the one in use, and M-43 replaces both.
   - `codec::decode::orient`: `pg-edit`'s and `pg-library`'s tests use it, so it goes to `pg-codec`'s `fixtures`.
-  - `analysis::pdq::Hasher::hash_rgb`.
-  - `model::name::Name::from_wtf8`: `model/tests/name_laws.rs` also uses it. It stays public if that law test needs it, and says so.
-  - `ThumbCache::heal`: `heal_if_due` and the writer use the module's `heal`.
+  - `analysis::pdq::Hasher::hash_rgb`: only `pdq.rs`'s own tests call it, to check `hash_rgb_dihedral`. It becomes `#[cfg(test)]`.
+  - `model::name::Name::from_wtf8`: its other user is the property test in `model/tests/name_laws.rs`. That property moves into `name.rs`'s tests (`proptest` is already `pg-model`'s dev-dependency), and `from_wtf8` becomes `#[cfg(test)]`.
+  - `ThumbCache::heal`: deleted. `heal_if_due` and the writer use `maintenance::heal`, and its test calls that.
   - The platform's and dedup's items, in M-34 and M-41.
 - **Kept, with a reason.** `catalog::browse::read::changes::changes_since` is used only by tests today, but `docs/DECODE_ONCE_PLAN.md` phase 4 builds the incremental grid on it.
 - **A leftover attribute.** `analysis/src/pdq.rs` keeps a crate-level `#![cfg_attr(not(test), deny(clippy::print_stdout, ...))]`, left from when it was a crate. It goes; `lib.rs` has it.
@@ -698,7 +700,7 @@ These are additions to the plan's M-12a list.
 - **`model/src/lib.rs`:** its header names only some of its modules.
 - **`desktop/src/picker.rs`:** `start_for`'s doc describes the shell's refusals, which are `pg-platform`'s now.
 - **`desktop/src/command_line.rs`:** `args` has a doc line that belongs to another function ("The part of `arg` after its first `=`").
-- **Fixed in their own steps:** the `pg-schema` header (M-24), `render/src/display.rs` (M-27), the `pg-writeback` `Cargo.toml` comment (M-38) and the jobs header (M-45).
+- **Fixed in their own steps:** the `pg-schema` rename (M-24), `render/src/display.rs` (M-27), the `pg-writeback` `Cargo.toml` comment (M-38) and the jobs header (M-45).
 - **NOTIFICATIONS_PLAN.md:**
   - Its `RootRefused` and `MountRefused` carry the typed `RefusedReason` (M-34).
   - Its notices name `pg_model::progress::Phase` where they name a pass (M-45).
@@ -736,7 +738,7 @@ None. Each was settled against the code, Qt's source included:
 - **M-31.** `pg-app` drops `pg-scan`.
 - **M-32.** The facet counts are held beside the controller, not in it.
 - **M-39.** `pg-yandex` does not decide what can be decoded.
-- **M-42.** The queue's typed value needs no migration.
+- **M-42.** The queue's typed value keeps the `(kind, value)` columns, and a migration adds the `CHECK` that ties them.
 - **M-43.** The session becomes a one-row table with the views' columns, through one migration that takes the next free number.
 - **M-44.** The step is 33 functions with at most 327 call sites in 62 files. The notifications plan writes its functions as methods from the start.
 - **M-46.** The `stamp!` macro cannot change the schema's text, and the comparison is canonical anyway.

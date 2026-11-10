@@ -15,6 +15,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+# pgtools is in tools/, two folders up: Python puts only this script's own folder on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from pgtools import REPO, WINDOWS, load_env_file
 
 
@@ -28,12 +31,24 @@ def newest(pattern: Path) -> Path:
 
 
 def windows_kit_root() -> Path:
-    """The Windows SDK's root (KitsRoot10, in the registry)."""
+    """The Windows SDK's root (KitsRoot10, in the registry): the first of the registry's two views whose folder holds the
+    SDK's libraries. The SDK installs under Program Files (x86), which the 32-bit view names; the 64-bit view can name a
+    folder under Program Files that holds no `Lib` (an installer that wrote only its own parts there)."""
     import winreg
 
-    key = winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Kits\Installed Roots")
-    value, _ = winreg.QueryValueEx(key, "KitsRoot10")
-    return Path(value)
+    roots = []
+    for view in (winreg.KEY_WOW64_32KEY, winreg.KEY_WOW64_64KEY):
+        try:
+            key = winreg.OpenKey(
+                winreg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows Kits\Installed Roots", 0, winreg.KEY_READ | view
+            )
+            roots.append(Path(winreg.QueryValueEx(key, "KitsRoot10")[0]))
+        except OSError:
+            continue
+    for root in roots:
+        if (root / "Lib").is_dir():
+            return root
+    sys.exit(f"build.py: no Windows SDK libraries under KitsRoot10 ({', '.join(map(str, roots)) or 'not in the registry'})")
 
 
 def tool(path: Path) -> str:

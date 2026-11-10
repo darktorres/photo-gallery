@@ -30,7 +30,15 @@ def load_env_file() -> None:
     for line in env_file.read_text(encoding="utf-8").splitlines():
         match = _ENV_LINE.match(line)
         if match and match.group(1) not in os.environ:
-            os.environ[match.group(1)] = match.group(2)
+            os.environ[match.group(1)] = env_value(match.group(2))
+
+
+def env_value(raw: str) -> str:
+    """A `.env` value as `just`'s dotenv loader reads it: without the quotes around it (`"C:/Program Files/LLVM"`, a value
+    with a space, is written quoted), so a script run directly sees what it sees under `just`."""
+    if len(raw) >= 2 and raw[0] == raw[-1] and raw[0] in "\"'":
+        return raw[1:-1]
+    return raw
 
 
 def venv_exe(name: str) -> Path:

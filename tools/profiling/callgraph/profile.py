@@ -21,6 +21,9 @@ import sys
 import time
 from pathlib import Path
 
+# pgtools is in tools/, two folders up: Python puts only this script's own folder on the path.
+sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+
 from pgtools import REPO, WINDOWS, load_env_file
 
 HERE = Path(__file__).resolve().parent

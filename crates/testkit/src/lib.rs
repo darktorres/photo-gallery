@@ -2,8 +2,11 @@
 //! otherwise, in the folder each test names. Set `PG_TEST_DIR` to keep the files off the system drive.
 
 use std::ffi::{OsStr, OsString};
-use std::path::PathBuf;
+use std::fs::{File, OpenOptions, TryLockError};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Mutex, PoisonError};
+use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow};
 
@@ -78,35 +81,82 @@ pub fn test_folder(scratch: &str, name: &str) -> Result<PathBuf> {
     Ok(dir)
 }
 
+/// The name of the file each run folder holds, locked by the process that made the folder until the process ends.
+const OWNER: &str = ".owner";
+
+/// How long a run folder without an owner file is left alone. The owner file is made just after its folder, so a folder
+/// this young is being made, not a leftover.
+const GRACE: Duration = Duration::from_secs(60);
+
+/// The owner files this process holds locked. They stay open until the process ends, so no run takes their folders for
+/// leftovers.
+static HELD: Mutex<Vec<File>> = Mutex::new(Vec::new());
+
 /// Numbers the run folders this process makes, so that every call gets a name of its own.
 static RUN_FOLDERS: AtomicU64 = AtomicU64::new(0);
 
+/// Whether a run folder is in use. Its owner file locked, by this process or another, means it is. A folder with no owner
+/// file is in use only while it is young (see [`GRACE`]): an earlier build's folders have none, and are leftovers. If the
+/// owner file can't be tested, the folder is kept.
+fn in_use(folder: &Path) -> bool {
+    let file = match OpenOptions::new().read(true).write(true).open(folder.join(OWNER)) {
+        Ok(file) => file,
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => return young(folder),
+        Err(_) => return true,
+    };
+    match file.try_lock() {
+        Ok(()) => false,
+        Err(TryLockError::WouldBlock) => true,
+        Err(TryLockError::Error(_)) => true,
+    }
+}
+
+/// Whether a folder was made within [`GRACE`]. A time it can't be read, or that lies in the future, counts as young.
+fn young(folder: &Path) -> bool {
+    match folder.metadata().and_then(|meta| meta.modified()) {
+        Ok(modified) => modified.elapsed().is_ok_and(|age| age < GRACE),
+        Err(_) => true,
+    }
+}
+
 /// A fresh folder for one test (or one part of a test) in a test binary's run: `prefix-<process id>-<n>` under the base,
-/// where `n` counts this process's calls, so the tests that run at once in one process each have their own. The folders
-/// of other processes that earlier runs left (`prefix-<id>` or `prefix-<id>-<n>`) are removed first. This process's own
-/// are kept: another test of it may be using one. Two test binaries run at once on one base can still remove each
-/// other's folders, as before. Fails if it can't be made.
+/// where `n` counts this process's calls, so the tests that run at once in one process each have their own. The run
+/// folders of `prefix` that no running process holds are removed first (the ones earlier runs left, and any that have
+/// ended). A folder another running process holds is kept, so two test binaries can share a base. Fails if it can't be
+/// made.
 pub fn run_folder(scratch: &str, prefix: &str) -> Result<PathBuf> {
     let base = base(scratch);
-    let pid = std::process::id().to_string();
     let earlier = format!("{prefix}-");
     for old in std::fs::read_dir(&base).into_iter().flatten().flatten() {
         let name = old.file_name().to_string_lossy().into_owned();
         let Some(rest) = name.strip_prefix(&earlier) else { continue };
-        // Exactly `<id>` or `<id>-<n>`, digits only: a folder of another prefix that ends in digits (`run-5` with
-        // prefix `run`) has more segments, so it is not taken for a run folder.
+        // Exactly `<id>-<n>` (or an earlier build's `<id>`), digits only: a folder of another prefix that ends in digits
+        // (`run-5` with prefix `run`) has more segments, so it is not taken for a run folder.
         let parts: Vec<&str> = rest.split('-').collect();
-        let numbers = parts.len() <= 2
+        let numbers = (1..=2).contains(&parts.len())
             && parts.iter().all(|part| !part.is_empty() && part.bytes().all(|byte| byte.is_ascii_digit()));
-        if numbers && parts.first() != Some(&pid.as_str()) {
+        if numbers && !in_use(&old.path()) {
             let _ = std::fs::remove_dir_all(old.path());
         }
     }
-    let n = RUN_FOLDERS.fetch_add(1, Ordering::Relaxed);
-    let dir = base.join(format!("{earlier}{pid}-{n}"));
-    // A folder of the same name left by an earlier process with this id: it is emptied, as `test_folder` does.
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).with_context(|| format!("make the run folder {}", dir.display()))?;
+    // The name is claimed by creating the folder, which fails if the name is taken: by another run in this process, or by
+    // another process with the same id (a process id is only unique within one container, so two containers sharing a
+    // base can both have process 18). The next number is tried then. Nothing is removed to make room.
+    let pid = std::process::id();
+    let dir = loop {
+        let n = RUN_FOLDERS.fetch_add(1, Ordering::Relaxed);
+        let candidate = base.join(format!("{earlier}{pid}-{n}"));
+        match std::fs::create_dir(&candidate) {
+            Ok(()) => break candidate,
+            Err(err) if err.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(err) => {
+                return Err(err).with_context(|| format!("make the run folder {}", candidate.display()));
+            }
+        }
+    };
+    let owner = File::create(dir.join(OWNER)).with_context(|| format!("make the owner file of {}", dir.display()))?;
+    owner.lock().with_context(|| format!("lock the owner file of {}", dir.display()))?;
+    HELD.lock().unwrap_or_else(PoisonError::into_inner).push(owner);
     Ok(dir)
 }
 
@@ -204,11 +254,25 @@ mod tests {
         assert_eq!(first, again);
         assert_eq!(std::fs::read_dir(&again).unwrap().count(), 0, "emptied");
 
+        // An earlier run's folder, whose owner file is no longer locked: the run has ended.
         let earlier = base(scratch).join("run-999999999");
         std::fs::create_dir_all(&earlier).unwrap();
+        File::create(earlier.join(OWNER)).unwrap();
         let run = run_folder(scratch, "run").unwrap();
         assert!(run.is_dir());
         assert!(!earlier.exists(), "an earlier run's folder is removed");
+    }
+
+    #[test]
+    fn a_folder_without_an_owner_file_is_kept_while_young() {
+        let scratch = "pg-testkit-check-young";
+        // Made just now: another process may be between making the folder and its owner file, so it is kept.
+        let young = base(scratch).join("grace-999999999-0");
+        // Made fresh: a folder left by an earlier run of this test is older than the grace period.
+        let _ = std::fs::remove_dir_all(&young);
+        std::fs::create_dir_all(&young).unwrap();
+        let _ = run_folder(scratch, "grace").unwrap();
+        assert!(young.is_dir(), "a folder made just now is not removed");
     }
 
     #[test]
@@ -228,6 +292,21 @@ mod tests {
         let _ = run_folder(scratch, "shared").unwrap();
         assert!(other.is_dir(), "a folder of another prefix is not removed");
         assert!(longer.is_dir(), "a folder of a prefix that ends in digits is not removed");
+    }
+
+    #[test]
+    fn a_run_folder_whose_owner_still_holds_it_is_kept() {
+        let scratch = "pg-testkit-check-owner";
+        // Another process's run folder, held the way a running process holds its own.
+        let held = base(scratch).join("owned-999999999-0");
+        std::fs::create_dir_all(&held).unwrap();
+        let owner = File::create(held.join(OWNER)).unwrap();
+        owner.lock().unwrap();
+        let _ = run_folder(scratch, "owned").unwrap();
+        assert!(held.join(OWNER).is_file(), "a folder its owner holds is not removed");
+        drop(owner);
+        let _ = run_folder(scratch, "owned").unwrap();
+        assert!(!held.exists(), "once its owner has ended, its folder is removed");
     }
 
     #[test]

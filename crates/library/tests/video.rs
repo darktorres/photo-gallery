@@ -8,6 +8,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::sync::{Mutex, PoisonError};
 
 use anyhow::{Context, anyhow};
 use pg_analysis::analyze;
@@ -44,9 +45,39 @@ fn run(exe: &Path, args: &[&str]) -> anyhow::Result<()> {
     Ok(())
 }
 
-/// The clips, made once per run.
+/// The clips, encoded once for this test binary (an encode takes seconds, and the tests only read the clips).
+static ENCODED: Mutex<Option<PathBuf>> = Mutex::new(None);
+
+/// A fresh folder for one test, with copies of the clips (`media` and `anim`): the test writes its catalog and caches
+/// into its own folder, so the folder of the clips itself is never written by a test.
 fn clips(exe: &Path) -> anyhow::Result<PathBuf> {
+    let source = {
+        let mut encoded = ENCODED.lock().unwrap_or_else(PoisonError::into_inner);
+        match encoded.as_ref() {
+            Some(source) => source.clone(),
+            None => {
+                let source = encode_clips(exe)?;
+                *encoded = Some(source.clone());
+                source
+            }
+        }
+    };
     let dir = pg_testkit::run_folder("scratch_video", "video")?;
+    for sub in ["media", "anim"] {
+        let to = dir.join(sub);
+        std::fs::create_dir_all(&to).with_context(|| format!("make the folder {}", to.display()))?;
+        for entry in std::fs::read_dir(source.join(sub))? {
+            let entry = entry?;
+            std::fs::copy(entry.path(), to.join(entry.file_name()))
+                .with_context(|| format!("copy the clip {}", entry.path().display()))?;
+        }
+    }
+    Ok(dir)
+}
+
+/// Encodes the clips into a folder of their own, which no test writes to.
+fn encode_clips(exe: &Path) -> anyhow::Result<PathBuf> {
+    let dir = pg_testkit::run_folder("scratch_video", "video-clips")?;
     let media = dir.join("media");
     std::fs::create_dir_all(&media).with_context(|| format!("make the media folder {}", media.display()))?;
     let out = |name: &str| media.join(name).to_string_lossy().into_owned();

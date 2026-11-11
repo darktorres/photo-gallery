@@ -13,6 +13,7 @@ use pg_model::format::Format;
 use pg_model::turns::Turns;
 use pg_yandex::{Download, Fetcher, YandexError};
 
+use super::source::SourceError;
 use crate::makers::Makers;
 
 /// How many files are fetched at once.
@@ -20,12 +21,12 @@ const FETCHERS: usize = 4;
 
 /// Fetches a result's file from the host it is on.
 pub trait Fetch: Send + Sync {
-    fn fetch(&self, url: &str) -> Result<Download, YandexError>;
+    fn fetch(&self, url: &str) -> Result<Download, SourceError>;
 }
 
 impl Fetch for Fetcher {
-    fn fetch(&self, url: &str) -> Result<Download, YandexError> {
-        self.download(url)
+    fn fetch(&self, url: &str) -> Result<Download, SourceError> {
+        Ok(self.download(url)?)
     }
 }
 
@@ -33,11 +34,12 @@ impl Fetch for Fetcher {
 /// The app's is `grid_picture`, with its makers and the panel's row height.
 pub type Check = Arc<dyn Fn(&[u8]) -> Result<Vec<u8>, &'static str> + Send + Sync>;
 
-/// A result's file, kept: the file as Yandex's host gave it (what a save writes), and its grid picture (a JPEG as high
-/// as the panel's rows, which the grid shows).
+/// A result's file, kept: the file as Yandex's host gave it (what a save writes), its format (a save's extension), and
+/// its grid picture (a JPEG as high as the panel's rows, which the grid shows).
 #[derive(Debug)]
 pub struct Fetched {
     pub file: Download,
+    pub format: Format,
     pub grid: Vec<u8>,
 }
 
@@ -48,7 +50,7 @@ enum State {
     /// Being fetched now, by a fetcher or by a caller that asked for it.
     Fetching,
     Ready(Arc<Fetched>),
-    Dead(YandexError),
+    Dead(SourceError),
 }
 
 struct Slot {
@@ -147,23 +149,26 @@ impl Images {
         None
     }
 
-    fn fetch_checked(&self, url: &str) -> Result<Arc<Fetched>, YandexError> {
+    /// The file at `url`, fetched, and kept only when the app decodes it: a format the model knows, which the check makes
+    /// a grid picture of.
+    fn fetch_checked(&self, url: &str) -> Result<Arc<Fetched>, SourceError> {
         let file = self.fetch.fetch(url)?;
-        let grid = (self.check)(&file.bytes).map_err(YandexError::Undecodable)?;
-        Ok(Arc::new(Fetched { file, grid }))
+        let format = file.format.ok_or(SourceError::Undecodable("not a format this app knows"))?;
+        let grid = (self.check)(&file.bytes).map_err(SourceError::Undecodable)?;
+        Ok(Arc::new(Fetched { file, format, grid }))
     }
 
     /// [`Images::fetch_checked`], where a panic (the decoder's, on a malformed file) ends the result as dead: a result
     /// left in `Fetching` would hold up every caller that waits for it.
-    fn fetch_caught(&self, url: &str) -> Result<Arc<Fetched>, YandexError> {
+    fn fetch_caught(&self, url: &str) -> Result<Arc<Fetched>, SourceError> {
         match pg_jobs::panics::catch(AssertUnwindSafe(|| self.fetch_checked(url))) {
             Ok(outcome) => outcome,
-            Err(_) => Err(YandexError::Undecodable("the decoder stopped on this file")),
+            Err(_) => Err(SourceError::Undecodable("the decoder stopped on this file")),
         }
     }
 
     /// Keeps the outcome of a fetch: its file, or the death of the result (announced on `changes`).
-    fn settle(&self, id: u64, outcome: Result<Arc<Fetched>, YandexError>) {
+    fn settle(&self, id: u64, outcome: Result<Arc<Fetched>, SourceError>) {
         let dead = outcome.is_err();
         {
             let mut t = lock(&self.table);
@@ -186,7 +191,7 @@ impl Images {
 
     /// The file of the result `id`, which is at `url`: kept when it is in, waited for when a fetcher is on it, and
     /// fetched now otherwise. A dead result is an error.
-    pub fn get(&self, id: u64, url: &str) -> Result<Arc<Fetched>, YandexError> {
+    pub fn get(&self, id: u64, url: &str) -> Result<Arc<Fetched>, SourceError> {
         let mut t = lock(&self.table);
         let url = loop {
             match t.slots.get(&id) {
@@ -206,12 +211,12 @@ impl Images {
     }
 
     /// The file of the result `id`, at the URL it was queued with. An id that no search has is an error.
-    pub fn get_known(&self, id: u64) -> Result<Arc<Fetched>, YandexError> {
+    pub fn get_known(&self, id: u64) -> Result<Arc<Fetched>, SourceError> {
         let url = lock(&self.table)
             .slots
             .get(&id)
             .map(|slot| slot.url.clone())
-            .ok_or(YandexError::Unexpected("no such result"))?;
+            .ok_or(SourceError::Yandex(YandexError::Unexpected("no such result")))?;
         self.get(id, &url)
     }
 
@@ -248,12 +253,12 @@ mod tests {
     }
 
     impl Fetch for Counting {
-        fn fetch(&self, url: &str) -> Result<Download, YandexError> {
+        fn fetch(&self, url: &str) -> Result<Download, SourceError> {
             self.calls.fetch_add(1, Ordering::SeqCst);
             if self.fail.contains(&url) {
-                return Err(YandexError::Status(404));
+                return Err(YandexError::Status(404).into());
             }
-            Ok(Download { bytes: b"picture".to_vec(), format: Format::Jpeg })
+            Ok(Download { bytes: b"picture".to_vec(), format: Some(Format::Jpeg) })
         }
     }
 
@@ -307,7 +312,7 @@ mod tests {
         let fetch = Arc::new(Counting { calls: AtomicUsize::new(0), fail: vec![] });
         let images = images(fetch, reject);
         let error = images.get(3, "https://a.example/3.png").unwrap_err();
-        assert!(matches!(error, YandexError::Undecodable("no")), "{error:?}");
+        assert!(matches!(error, SourceError::Undecodable("no")), "{error:?}");
         assert_eq!(images.take_dead(), vec![3]);
     }
 

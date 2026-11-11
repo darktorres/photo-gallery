@@ -30,7 +30,7 @@ impl Fetcher {
     }
 
     /// Fetches a result image. A response whose type says it is not an image (an error page, a video) is an error
-    /// before its body is read ([`plausibly_image`]); the bytes of one that may be decide what it is ([`sniffed`]).
+    /// before its body is read ([`plausibly_image`]); the bytes of one that may be decide what it is (`Format::sniff`).
     /// Its bounds are a transfer's (`transfer_timeouts`): a large file on a slow link takes minutes.
     pub fn download(&self, url: &str) -> Result<Download, YandexError> {
         let resp = transfer_timeouts(self.agent.get(url).header("User-Agent", USER_AGENT))
@@ -52,30 +52,22 @@ impl Fetcher {
         if u64::try_from(bytes.len()).unwrap_or(u64::MAX) > MAX_DOWNLOAD_BYTES {
             return Err(YandexError::Unexpected("the image is larger than the download limit"));
         }
-        let format = sniffed(&bytes)?;
+        let format = Format::sniff(&bytes);
         Ok(Download { bytes, format })
     }
 }
 
 /// Whether a response's Content-Type lets its body be read as one of the images: any `image/*` type (the names real
-/// servers send, `image/jpg`, `image/pjpeg` and `image/x-png` among them, and types `sniffed` may refuse, such as
+/// servers send, `image/jpg`, `image/pjpeg` and `image/x-png` among them, and types the app may not decode, such as
 /// `image/tiff` or `image/avif`), except SVG, which is markup that can run scripts; or no type that says anything
 /// (none, `application/octet-stream`, `binary/octet-stream`). Anything else (a page, a video, a PDF, an SVG) is refused
-/// before the body is read. The type only rules out: the bytes decide what the file is ([`sniffed`]), whatever the type
+/// before the body is read. The type only rules out: the bytes decide what the file is (`Format::sniff`), whatever the type
 /// or the URL say.
 pub fn plausibly_image(content_type: &str) -> bool {
     let essence = content_type.split(';').next().unwrap_or("").trim().to_ascii_lowercase();
     match essence.as_str() {
         "" | "application/octet-stream" | "binary/octet-stream" => true,
         _ => essence.strip_prefix("image/").is_some_and(|kind| !kind.starts_with("svg")),
-    }
-}
-
-/// The format of a downloaded file, from its bytes: one of the kinds the search returns. Anything else is not an image.
-pub fn sniffed(bytes: &[u8]) -> Result<Format, YandexError> {
-    match Format::sniff(bytes) {
-        Some(format @ (Format::Jpeg | Format::Png | Format::Webp | Format::Gif | Format::Bmp)) => Ok(format),
-        _ => Err(YandexError::Unexpected("the result is not an image")),
     }
 }
 
@@ -92,7 +84,7 @@ mod tests {
         for content_type in ["image/jpg", "image/pjpeg", "image/x-png", "binary/octet-stream"] {
             assert!(plausibly_image(content_type), "{content_type}");
         }
-        // Image types `sniffed` may refuse are still read: the bytes decide, not the type.
+        // Image types the app may not decode are still read: the bytes decide, not the type.
         for content_type in ["image/avif", "image/tiff", "image/heic"] {
             assert!(plausibly_image(content_type), "{content_type}");
         }
@@ -111,13 +103,5 @@ mod tests {
         for content_type in ["video/mp4", "application/pdf", "image/svg+xml", "IMAGE/SVG+XML; charset=utf-8"] {
             assert!(!plausibly_image(content_type), "{content_type}");
         }
-    }
-
-    #[test]
-    fn the_bytes_decide_the_format() {
-        // A PNG sent as a JPEG is a PNG; a page or a TIFF is not a kind the search returns.
-        assert_eq!(sniffed(b"\x89PNG\r\n\x1a\n....").unwrap(), Format::Png);
-        assert!(sniffed(b"<html>").is_err());
-        assert!(sniffed(b"II*\0\x08\0\0\0").is_err());
     }
 }

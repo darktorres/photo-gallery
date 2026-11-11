@@ -577,6 +577,7 @@ Each fix gets a test that fails before it.
     - the app refuses what its decoder refuses.
   - The list is then written only in the codec.
 - Gate: `just test`, `just shots` (the `yandex` scenarios).
+- **Done in step 8.** `pg_app::yandex::SourceError { Yandex, Undecodable, Recorded }` (in `yandex/source.rs`, with its `RequestError` conversion) is what `Source`, `Fetch`, the images and the factory return; `YandexError` lost the two variants and `sniffed` is gone. `Download::format` is `Format::sniff` of the bytes; the images refuse a file with no format or one the check does not decode, and `Fetched::format` is the save's extension.
 
 ### M-40: the platform code left in the desktop
 

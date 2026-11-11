@@ -28,23 +28,23 @@ pub mod images;
 pub use images::Fetch;
 use images::{Check, Fetched, Images};
 pub mod source;
-pub use source::Source;
+pub use source::{Source, SourceError};
 pub mod replay;
 pub use replay::{Recording, Replay};
 mod save;
 use save::{saved_stem, stem_of, write_new};
 
 impl Source for Client {
-    fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {
-        Client::upload(self, image)
+    fn upload(&mut self, image: &[u8]) -> Result<Upload, SourceError> {
+        Ok(Client::upload(self, image)?)
     }
 
-    fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, YandexError> {
-        Client::other_sizes(self, up)
+    fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, SourceError> {
+        Ok(Client::other_sizes(self, up)?)
     }
 
-    fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError> {
-        Client::similar(self, up, max_pages)
+    fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, SourceError> {
+        Ok(Client::similar(self, up, max_pages)?)
     }
 }
 
@@ -66,11 +66,11 @@ pub enum YandexSource {
 }
 
 /// Makes the connection for one search: [`client()`], or [`replay()`] for a recorded session.
-pub type Factory = Arc<dyn Fn() -> Result<Connection, YandexError> + Send + Sync>;
+pub type Factory = Arc<dyn Fn() -> Result<Connection, SourceError> + Send + Sync>;
 
 /// The real Yandex client, made for each search. The default.
 pub fn client() -> Factory {
-    Arc::new(|| -> Result<Connection, YandexError> {
+    Arc::new(|| -> Result<Connection, SourceError> {
         Ok(Connection { source: Box::new(Client::new()?), fetch: Arc::new(Fetcher::new()) })
     })
 }
@@ -84,7 +84,7 @@ pub fn replay(dir: &Path) -> Factory {
             source: Box::new(Replay::new(recording.clone())),
             fetch: Arc::new(Replay::new(recording.clone())),
         }),
-        Err(why) => Err(YandexError::Recorded(why.clone())),
+        Err(why) => Err(SourceError::Recorded(why.clone())),
     })
 }
 
@@ -146,7 +146,7 @@ impl Yandex {
     }
 
     /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
-    pub fn image(&self, id: u64) -> Result<Arc<Fetched>, YandexError> {
+    pub fn image(&self, id: u64) -> Result<Arc<Fetched>, SourceError> {
         self.search.image(id)
     }
 
@@ -261,7 +261,7 @@ fn unreadable(e: io::Error) -> SearchError {
 }
 
 /// A request that failed before any results came.
-fn request(e: YandexError) -> SearchError {
+fn request(e: SourceError) -> SearchError {
     SearchError::Request(e.into())
 }
 
@@ -335,7 +335,7 @@ fn number(found: &mut Found, generation: u64) {
 /// next to the photo ([`write_new`]).
 fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
     let kept = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error: error.into() })?;
-    write_new(folder, &saved_stem(stem, &hit.suffix), kept.file.format.extension(), &kept.file.bytes)
+    write_new(folder, &saved_stem(stem, &hit.suffix), kept.format.extension(), &kept.file.bytes)
         .map(drop)
         .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path: shown(&path), error: error.to_string() })
 }
@@ -352,7 +352,7 @@ fn search(photo: &Path, make: &Factory, shared: &Mutex<Shared>, changes: &Bus<()
 }
 
 /// The outcome of a save with no search on screen to take its files from: nothing downloaded, every hit failed.
-fn save_refused(hits: &[Hit], folder: &Path, error: YandexError) -> Saved {
+fn save_refused(hits: &[Hit], folder: &Path, error: SourceError) -> Saved {
     let failed = hits.len();
     Saved { folder: shown(folder), written: 0, failed, first_error: Some(SaveFailure::Client(error.into())) }
 }
@@ -487,8 +487,8 @@ impl Search {
     }
 
     /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
-    pub fn image(&self, id: u64) -> Result<Arc<Fetched>, YandexError> {
-        self.pictures().ok_or(YandexError::Unexpected("no search"))?.get_known(id)
+    pub fn image(&self, id: u64) -> Result<Arc<Fetched>, SourceError> {
+        self.pictures().ok_or(SourceError::Yandex(YandexError::Unexpected("no search")))?.get_known(id)
     }
 
     /// No search or save starts from now on, and the fetchers take no more results. Waits up to `wait` for the running
@@ -554,7 +554,7 @@ impl Search {
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
             let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match pictures {
                 Some(pictures) => save_all(&hits, &stem, &folder, &pictures, &shared, &changes),
-                None => save_refused(&hits, &folder, YandexError::Unexpected("no search on screen")),
+                None => save_refused(&hits, &folder, YandexError::Unexpected("no search on screen").into()),
             })) {
                 Ok(saved) => Status::Saved(saved),
                 Err(_) => Status::Stopped,
@@ -592,7 +592,7 @@ mod tests {
         let search = Search::default();
         assert!(search.stop(Duration::ZERO), "nothing ran");
         let check: Check = Arc::new(|_| Ok(Vec::new()));
-        let make: Factory = Arc::new(|| Err(YandexError::Unexpected("not called")));
+        let make: Factory = Arc::new(|| Err(YandexError::Unexpected("not called").into()));
         assert!(matches!(search.start(Path::new("photo.jpg"), make, check), Ok(false)));
         assert!(!lock(&search.shared).busy);
     }

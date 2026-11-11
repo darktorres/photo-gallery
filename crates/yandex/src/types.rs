@@ -5,9 +5,6 @@ use pg_model::format::Format;
 /// Why a Yandex request failed.
 #[derive(Clone, Debug, thiserror::Error)]
 pub enum YandexError {
-    /// A result file that is not an image this app can decode (the reason is what failed).
-    #[error("not an image this app can decode: {0}")]
-    Undecodable(&'static str),
     /// Yandex asked for an anti-robot check. Nothing is retried; the user has to resolve it in a browser.
     #[error("Yandex asked for a captcha")]
     Captcha,
@@ -20,9 +17,6 @@ pub enum YandexError {
     /// A response that did not have the data we read.
     #[error("unexpected Yandex response: {0}")]
     Unexpected(&'static str),
-    /// A recorded session (`pg_app::yandex`'s fixture) that can't answer: why. Never made by the client.
-    #[error("recorded Yandex session: {0}")]
-    Recorded(String),
 }
 
 impl From<YandexError> for pg_model::yandex::RequestError {
@@ -30,12 +24,10 @@ impl From<YandexError> for pg_model::yandex::RequestError {
     fn from(e: YandexError) -> Self {
         use pg_model::yandex::RequestError;
         match e {
-            YandexError::Undecodable(reason) => RequestError::Undecodable(reason.to_string()),
             YandexError::Captcha => RequestError::Captcha,
             YandexError::Status(status) => RequestError::Status(status),
             YandexError::Transport(error) => RequestError::Transport(error),
             YandexError::Unexpected(detail) => RequestError::Unexpected(detail.to_string()),
-            YandexError::Recorded(error) => RequestError::Recorded(error),
         }
     }
 }
@@ -69,8 +61,9 @@ pub struct SimilarItem {
 #[derive(Debug)]
 pub struct Download {
     pub bytes: Vec<u8>,
-    /// The format of the bytes, from the bytes themselves (`Format::sniff`).
-    pub format: Format,
+    /// The format of the bytes, from the bytes themselves (`Format::sniff`): any the model knows, or none. Whether the
+    /// app can decode it is the app's to say.
+    pub format: Option<Format>,
 }
 
 /// One page of the similar endpoint.

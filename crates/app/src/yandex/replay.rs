@@ -18,13 +18,14 @@ use std::collections::BTreeMap;
 use std::path::Path;
 use std::sync::Arc;
 
+use pg_model::format::Format;
 use pg_yandex::{
     Download, OtherSize, Similar, SimilarPage, Upload, YandexError, is_captcha_page, parse_other_sizes,
-    parse_similar_page, parse_upload, read_similar_pages, sniffed,
+    parse_similar_page, parse_upload, read_similar_pages,
 };
 
 use super::images::Fetch;
-use super::source::Source;
+use super::source::{Source, SourceError};
 
 /// A recorded session, read into memory.
 pub struct Recording {
@@ -75,20 +76,20 @@ impl Replay {
 }
 
 impl Source for Replay {
-    fn upload(&mut self, _image: &[u8]) -> Result<Upload, YandexError> {
+    fn upload(&mut self, _image: &[u8]) -> Result<Upload, SourceError> {
         parse_upload(&self.recording.upload)
     }
 
-    fn other_sizes(&mut self, _up: &Upload) -> Result<Vec<OtherSize>, YandexError> {
+    fn other_sizes(&mut self, _up: &Upload) -> Result<Vec<OtherSize>, SourceError> {
         parse_other_sizes(&self.recording.other_sizes)
     }
 
-    fn similar(&mut self, _up: &Upload, max_pages: u32) -> Result<Similar, YandexError> {
+    fn similar(&mut self, _up: &Upload, max_pages: u32) -> Result<Similar, SourceError> {
         let recording = &self.recording;
         read_similar_pages(max_pages, |page| match recording.similar.get(pg_model::num::index(page)) {
             // Past the recorded pages the list is over, as an empty page is for the client.
             None => Ok(SimilarPage { items: Vec::new(), has_next: false }),
-            Some(body) if is_captcha_page(body) => Err(YandexError::Captcha),
+            Some(body) if is_captcha_page(body) => Err(YandexError::Captcha.into()),
             Some(body) => parse_similar_page(body),
         })
     }
@@ -96,13 +97,13 @@ impl Source for Replay {
 
 /// The recorded result files stand in for the fetcher's downloads.
 impl Fetch for Replay {
-    fn fetch(&self, url: &str) -> Result<Download, YandexError> {
+    fn fetch(&self, url: &str) -> Result<Download, SourceError> {
         let bytes = self
             .recording
             .downloads
             .get(url)
-            .ok_or_else(|| YandexError::Recorded(format!("no recorded result file for {url}")))?;
-        Ok(Download { bytes: bytes.clone(), format: sniffed(bytes)? })
+            .ok_or_else(|| SourceError::Recorded(format!("no recorded result file for {url}")))?;
+        Ok(Download { bytes: bytes.clone(), format: Format::sniff(bytes) })
     }
 }
 
@@ -126,15 +127,15 @@ mod tests {
     }
 
     impl Source for Logged {
-        fn upload(&mut self, image: &[u8]) -> Result<Upload, YandexError> {
+        fn upload(&mut self, image: &[u8]) -> Result<Upload, SourceError> {
             self.calls.push("upload");
             self.inner.upload(image)
         }
-        fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, YandexError> {
+        fn other_sizes(&mut self, up: &Upload) -> Result<Vec<OtherSize>, SourceError> {
             self.calls.push("other_sizes");
             self.inner.other_sizes(up)
         }
-        fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, YandexError> {
+        fn similar(&mut self, up: &Upload, max_pages: u32) -> Result<Similar, SourceError> {
             self.calls.push("similar");
             self.inner.similar(up, max_pages)
         }
@@ -204,6 +205,6 @@ mod tests {
         assert!(why.contains("upload.json"), "{why}");
         // The search reports the reason as its request failure; no client is made.
         let factory = super::super::replay(&dir);
-        assert!(matches!(factory(), Err(YandexError::Recorded(_))));
+        assert!(matches!(factory(), Err(SourceError::Recorded(_))));
     }
 }

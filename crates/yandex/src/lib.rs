@@ -23,6 +23,6 @@ mod parse;
 mod types;
 
 pub use client::{Client, DEFAULT_MAX_SIMILAR_PAGES};
-pub use fetch::{Fetcher, MAX_DOWNLOAD_BYTES, plausibly_image, sniffed};
+pub use fetch::{Fetcher, MAX_DOWNLOAD_BYTES, plausibly_image};
 pub use parse::{is_captcha_page, parse_other_sizes, parse_similar_page, parse_upload, read_similar_pages};
 pub use types::{Download, OtherSize, Similar, SimilarItem, SimilarPage, Upload, YandexError};

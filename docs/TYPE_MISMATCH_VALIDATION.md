@@ -2,7 +2,20 @@
 
 Validation of the 39 confirmed findings in `docs/TYPE_MISMATCH_WORKFLOW_OUTPUT.json`, against the code at HEAD `c988b9c`.
 
+Re-checked 2026-11-11 at HEAD `362888c`. Each section now has a **Status at HEAD** line giving the current verdict and current file:line. The original c988b9c verdicts and claims are kept as history. The re-check read the current source for all 39 indices, and I spot-checked the key claims myself (the `folder_key` consolidation, the `IS NOT NULL` guard, `Cap::from_bytes`, the `uint` narrowing, the lossy XMP decode, the unchecked `buffer_mb << 20`, the `cast_signed` version cast). The reasoning is read-only and nothing was built or run.
+
 Note (2026-11-06): the verdicts and line numbers are as of `c988b9c`, which is not in the current history (the history was squashed). Every source file the document cites still exists (33 paths), but several cited lines have moved: for example `add_folder` is at `crates/app/src/library.rs:161`, and the `views` table is at `crates/catalog/src/schema.rs:402`. This was not re-validated against the current tree. The S-17.3 to S-17.5 rows of `docs/REFACTOR_PLAN.md` list which of the surrogate-name items are still open.
+
+## Status at HEAD 362888c
+
+| Status | Count | Indices |
+|---|---|---|
+| FIXED | 30 | 0–14, 16, 17, 20–23, 26, 28, 30–32, 34–37 |
+| STILL PRESENT (low) | 5 | 15, 27, 29, 33, 38 |
+| PARTLY still present (low) | 1 | 25 |
+| No live defect (stale or refuted stands) | 3 | 18, 19, 24 |
+
+Only 6 findings still describe a live defect, all rated low. Of the 17 surrogate-name items the summary below calls out, almost all are now fixed: exact names flow through `Name`/`RulePath`/`disk_path`, and the desktop picks folders by typed values rather than by display text. Findings 0 and 1 (the Greek sigma) are fixed too.
 
 ## Method
 
@@ -31,6 +44,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 0. crates/model/src/path.rs:47
 
+**Status at HEAD 362888c:** FIXED. `path::folder_key` no longer exists (path.rs:47 is now a doc comment on `WorkList`). The writer (`crates/catalog/src/writers.rs:145`) and the scope (`crates/catalog/src/browse/read/scope.rs:11`) both call `PathRules::folder_key` (`crates/model/src/rules.rs:250`), so a word-final Σ is σ on both sides. Covered by the test `a_folder_ending_in_sigma_lists_its_files`.
+
 **Verdict:** CONFIRMED. **Severity:** high → medium.
 
 **Claim:** Two definitions of the same folder key disagree for any component with a word-final Σ: path::folder_key gives "ΑΣ" -> ...CF 82 (ς), PathRules::folder_key gives ...CF 83 (σ). Files are stored under the PathRules key and listed under the path key.
@@ -38,6 +53,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The mismatch and the failure hold at HEAD: stored folder keys come from PathRules::folder_key (σ), and the grid's scope from the legacy path::folder_key (ς), with no guard between them. Severity is lowered from high to medium: the trigger is a component with a word-final capital Σ (in practice Greek all-caps names), the failure is silent but loses no data, and the folder's files still appear in every ancestor's recursive listing.
 
 ### 1. crates/catalog/src/browse/read.rs:28
+
+**Status at HEAD 362888c:** FIXED. The scope is now `crates/catalog/src/browse/read/scope.rs:11`, which calls `rules.scope_keys` (`crates/model/src/rules.rs:266`). Scope and stored key come from the same `folder_key`, so neither the Windows Σ case nor the Posix separator case occurs.
 
 **Verdict:** PARTLY. **Severity:** high → medium.
 
@@ -49,6 +66,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 2. crates/writeback/src/lib.rs:224
 
+**Status at HEAD 362888c:** FIXED. `finish_copy` (`crates/writeback/src/lib.rs:649`) records the carried value (`lib.rs:660`). `write_done` (`crates/catalog/src/queue.rs:224`) deletes only the matching `value = ?3`, so a newer request stays queued.
+
 **Verdict:** CONFIRMED. **Severity:** medium → medium.
 
 **Claim:** A queued job holds two values: value (the newest request) and temp_value (what the finished temp file contains). The copy writes temp_value into the file, but the effect and the catalog update record job.value.
@@ -57,6 +76,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 3. crates/model/src/state.rs:29
 
+**Status at HEAD 362888c:** FIXED. `FileSource.path` is an exact `rules::Path` (`crates/model/src/state.rs:31`). The providers open it through `path_of` (`crates/app/src/catalogs.rs:19-21`, `disk_path`), and the background pass uses `disk_path_of` (`crates/thumbs/src/lib.rs:311`). They agree on the same file.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** A name is exact (WTF-8 with the surrogate, kept by the scanner per the S-17.5 test). The provider's file open uses the lossy display text, so it opens a different path. The background thumbs pass (crates/thumbs/src/lib.rs, via work.parts and path_buf) uses the exact bytes, so the two disagree on the same file. Not in the S-17.5 documented list.
@@ -64,6 +85,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** Real: the viewer and on-demand thumbnails open the lossy display text, while the background pass uses the exact name, against S-17.5. Lowered from medium to low because it needs a name with an unpaired surrogate (rare on NTFS), and the grid thumbnail from the background pass still works.
 
 ### 4. crates/model/src/tree.rs:84
+
+**Status at HEAD 362888c:** FIXED. Node paths and keys are built from exact name bytes (`crates/model/src/tree.rs:115` `add`, `:264` `merged`). The desktop opens folders by `Merged` (`crates/desktop/src/folders.rs:80`), not by display text.
 
 **Verdict:** PARTLY. **Severity:** medium → low.
 
@@ -75,6 +98,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 5. crates/catalog/src/dups.rs:66
 
+**Status at HEAD 362888c:** FIXED. The `groups!` macro now adds `AND ... IS NOT NULL` before `GROUP BY` (`crates/catalog/src/dups.rs:18-32`), so NULL hashes form no group, and `identical_groups` and `identical_edges` agree. A test pins the pixel NULL-hash case at (0, 0). The printing is in `crates/cli/src/dups.rs:75-83`.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** SQL GROUP BY puts every NULL pixel_hash in one group, so identical_groups(Pixels) counts all videos as one identical-pixels group. identical_edges(Pixels) uses `pixel_hash IN (...)`, which is never true for NULL, so no edges are produced for them. The two readers of the same concept disagree. The count is reported as `Found.identical` (library/src/dups.rs:33 and :14-15, printed by the dups report).
@@ -82,6 +107,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The mismatch and the failure scenario hold exactly as written: identical_groups(Pixels) counts the NULL video group, while identical_edges returns nothing for it. The effect is limited to the pixel-count line of the dups report, which disagrees with its own group listing; no file is grouped or acted on wrongly.
 
 ### 6. crates/catalog/src/browse/read/details.rs:40
+
+**Status at HEAD 362888c:** FIXED. `details()` (`crates/catalog/src/browse/read/details.rs:39`) and `set_rating` (`crates/catalog/src/queue.rs:55-56`) now share `rating_in_file_possible` (`crates/model/src/format.rs:70-72`) with the same `failed` term, so they agree for a NULL format.
 
 **Verdict:** CONFIRMED. **Severity:** medium → medium.
 
@@ -91,6 +118,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 7. crates/catalog/src/browse/read/state.rs:67
 
+**Status at HEAD 362888c:** FIXED. The file path is exact (`crates/catalog/src/browse/read/state.rs:72`, `file_path_of`). No `text_path` exists in the tree, so the writeback-versus-providers split the claim describes is gone.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** A file's path is passed back to the platform to open it, but it is carried as lossy display text (unpaired surrogates become U+FFFD). The lossless RulePath / NativePath is the contract. The writeback crate refuses such names (text_path); the image providers do not.
@@ -98,6 +127,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The mismatch is real: the lossy display text is reopened as a path, so a surrogate-named file fails to open, and a sibling literally named with U+FFFD could supply pixels that are cached under this file's id. The trigger needs a lone surrogate in a file name, which most Windows tools will not create, and the damage is one file's thumbnail or viewer, so the severity is lowered from medium to low.
 
 ### 8. crates/catalog/src/lib.rs:285
+
+**Status at HEAD 362888c:** FIXED. `crates/catalog/src/lib.rs` is now module declarations only. A view's folder is stored as an exact joined BLOB (`crates/catalog/src/schema.rs:680-686`, the `views` table), saved by `crates/catalog/src/browse/views.rs:26-31`, and parsed back with `parse_merged`.
 
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
@@ -107,6 +138,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 9. crates/catalog/src/browse/read/tree.rs:37
 
+**Status at HEAD 362888c:** FIXED. Tree rows are read as stored bytes via `parse_bytes` (`crates/catalog/src/browse/read/tree.rs:34-36`), and the desktop opens by `Merged` (`crates/desktop/src/folders.rs:80`). A surrogate-named folder's grid is keyed by its exact path.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** The tree's node path is lossy text, and the desktop uses it as the lookup key for a folder's files. The lossless path is available (rules.join / PathRules) but is not used for the node.
@@ -115,6 +148,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 10. crates/app/src/images.rs:189
 
+**Status at HEAD 362888c:** FIXED. `FileSource.path` is an exact `rules::Path` (`crates/model/src/state.rs:31`). Every provider open goes through `path_of`, which builds the native disk path (`crates/app/src/catalogs.rs:19-21`). The maker's `read_file` (`crates/render/src/maker.rs:83`) gets that path as given.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** FileSource.path is a lossy display String, and the thumbnail and viewer providers open the original by it. The exact name the catalog holds (WTF-8 with unpaired surrogates on Windows) is replaced by U+FFFD before the file is opened. The ledger (S-17.5) says the file open takes native units, but the app's image path does not.
@@ -122,6 +157,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** FileSource.path is a lossy display String, and the providers open the original by that text (maker.rs:69 opens the path as given). A file whose name holds an unpaired surrogate therefore opens a U+FFFD name, goes offline, and cannot be shown full size. The defect is real and not in the documented limits, but it needs an unusual name and fails visibly without data loss.
 
 ### 11. crates/app/src/library.rs:151
+
+**Status at HEAD 362888c:** FIXED. `roots()` returns exact `Root`s (`crates/app/src/library.rs:288-290`). `remove_folder` takes a `RootId` (`:310`), not a text key, and the catalog's `Catalog::remove_root` is in `crates/catalog/src/roots.rs`. Roots round-trip as exact bytes via `parse_bytes` (`crates/catalog/src/types.rs:64-72`).
 
 **Verdict:** PARTLY. **Severity:** medium → low.
 
@@ -133,6 +170,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 12. crates/cli/src/borders.rs:40
 
+**Status at HEAD 362888c:** FIXED. The file list is `Vec<PathBuf>` (`crates/cli/src/borders.rs:54-62`), `is_image` reads name bytes without `to_str` (`:47-51`), and the open uses the exact path (`:82`). The one lossy step left is the CSV label (`:92`), a deliberate display choice.
+
 **Verdict:** PARTLY. **Severity:** medium → low.
 
 **Claim:** The file list for the borders report is `Vec<String>` built with to_string_lossy, and the file is re-opened from that text. Non-UTF-8 names are also dropped silently by to_str() in is_image. Both lose the exact path the platform has (the lister keeps native units, S-17.5 is not applied to the borders command).
@@ -143,6 +182,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 13. crates/app/src/reader.rs:194
 
+**Status at HEAD 362888c:** FIXED. The grid API takes a typed `Merged` (`crates/app/src/reader.rs:245-262`, `crates/model/src/rules.rs:46-51`), and the desktop picks a folder by row, not by text (`crates/desktop/src/folders.rs:85-110`). `display()` is only the label (`:140`). The S-17.3 item this cited is closed.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** The folder the grid lists is the text merged path. The catalog turns it back into a key by parsing text, and the tree that produces the text is built from display() (lossy). The folder identity is therefore carried as text across the boundary, and the lookup is not exact for unpaired surrogates.
@@ -150,6 +191,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The folder tree and the grid use display text as a folder's identity, so selecting a folder whose name holds an unpaired surrogate lists nothing, though its files are stored under exact keys. The mismatch is real at HEAD and is a recorded open item in the S-17.3 ledger. The impact is limited to rare names, and no data is wrongly written or lost.
 
 ### 14. crates/app/src/library.rs:157
+
+**Status at HEAD 362888c:** FIXED. `add_folder` takes `&Path` (`crates/app/src/library.rs:294`). `normalize_path` keeps unpaired surrogates (`crates/platform/src/names.rs:171-175`). The desktop passes the picker's `PathBuf` (`crates/desktop/src/library.rs:204-205`), not a string built from Qt, so a surrogate-named folder is no longer refused.
 
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
@@ -159,6 +202,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 15. crates/metadata/src/lib.rs:350
 
+**Status at HEAD 362888c:** STILL PRESENT (low). `lib.rs:350` is now a test helper. The narrowing is in `uint` (`crates/metadata/src/tiff.rs:155-163`), which returns `None` above `u32::MAX` for LONG8/IFD8, and `exif.rs:60` uses it for the Exif IFD pointer. Dates are lost only when the XMP fallback (`crates/metadata/src/lib.rs:95`) also has none.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** The Exif IFD pointer in a BigTIFF is an 8-byte offset (LONG8 or IFD8). The rest of the reader keeps offsets as u64/usize (`offset_at`, line 299), but this pointer is narrowed to u32 through `uint`, which returns None for any value above u32::MAX. The offset type disagrees with the file's offset width.
@@ -166,6 +211,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The u32 narrowing at lib.rs:350 is applied to the Exif IFD pointer, which is an offset, so DateTimeOriginal and DateTimeDigitized are silently lost for such files and analyze.rs:120 stores no date. The uint doc shows the u32 limit was chosen for values, not offsets, so the mismatch is real but rare. Severity lowered from medium to low for that reason.
 
 ### 16. crates/client/src/controller.rs:76
+
+**Status at HEAD 362888c:** FIXED. The folder crosses the controller as a typed `Merged` (`crates/client/src/controller.rs:90-91`, `controller/listing.rs:14-16`), and the desktop selects by row kind (`crates/desktop/src/shell.rs:264-266`). No string conversion remains on the folder path.
 
 **Verdict:** PARTLY. **Severity:** medium → low.
 
@@ -177,6 +224,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 17. crates/app/src/reader.rs:191
 
+**Status at HEAD 362888c:** FIXED. The reader doc (`crates/app/src/reader.rs:245-246`) now says the empty folder is every file with `recursive`, otherwise the drive roots' own files. That matches `scope_keys` (`crates/model/src/rules.rs:266-277`) and the tests (`crates/catalog/src/browse/read/tests.rs`). The doc/behaviour contradiction is gone.
+
 **Verdict:** CONFIRMED. **Severity:** medium → low.
 
 **Claim:** The empty string is used for two meanings: 'all folders' (in the listing and the reader doc) and 'a drive root' (in merged_path). With recursive=false, scope_keys('') gives the range [0x00, 0x01), which holds only files directly in a drive root, not all folders. The reader doc says '' means all folders with or without recursive. The test comment at tests.rs:494 documents the drive-root reading. The two documents disagree.
@@ -184,6 +233,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The code and its test agree that a non-recursive empty folder means drive-root files only, but reader.rs:191 states that empty means all folders with or without recursive, so the caller contract is wrong. The reachable effect is that All folders with Include subfolders unchecked shows only files sitting directly in a drive root. That is a real doc/behaviour contradiction, but not the defect the claim suggests.
 
 ### 18. crates/platform/src/dir.rs:183
+
+**Status at HEAD 362888c:** STALE, confirmed. No 32-bit truncation remains. Unix volume identity is the file-system UUID, falling back to udev or `f_fsid` (`crates/platform/src/dir.rs:516-545`), and a device-number collision keeps the whole device number and is counted (`:459-470`). The stale comment is `crates/model/src/ids.rs:30`, which still says "the Unix device number whole" and contradicts `ids.rs:23`.
 
 **Verdict:** STALE. **Severity:** low → none.
 
@@ -193,6 +244,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 19. crates/platform/src/dir.rs:153
 
+**Status at HEAD 362888c:** No live defect; REFUTED stands. The 64-bit file ID is now at `crates/platform/src/dir.rs:399`. The scanner refuses any non-NTFS root before listing (`crates/scan/src/refusal.rs:61-64`, called from `crates/scan/src/lib.rs:282`), so a ReFS volume never reaches the 64-bit listing. The ReFS row is `docs/STORAGE.md:41`.
+
 **Verdict:** REFUTED. **Severity:** low → none.
 
 **Claim:** The 64-bit listing class cannot carry a 128-bit file ID (ReFS), so the identity loses its upper 64 bits on such volumes. The model's FileIdentity is documented as the file's identity, but the platform only supplies a truncation of it.
@@ -200,6 +253,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The scanner refuses a non-NTFS root before it lists anything, so a ReFS volume never reaches the 64-bit listing and the claimed collision cannot occur. The documented refusal (STORAGE.md:39, ledger row REFACTOR_PLAN.md:823) matches the code, so the finding is refuted rather than a known limit.
 
 ### 20. crates/catalog/src/lib.rs:273
+
+**Status at HEAD 362888c:** FIXED, severity none. The rating decode now rejects out-of-range values (`crates/model/src/write.rs:94-97`, `u8::try_from(value).ok()?`), so no `as u8` wrap or `min(5)` clamp remains. The v7 schema rebuild adds a `BETWEEN 0 AND 5` CHECK on `file_writes.value` (`crates/catalog/src/schema.rs:198-226`). `catalog/src/lib.rs` is no longer the code site.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -211,6 +266,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 21. crates/catalog/src/lib.rs:800
 
+**Status at HEAD 362888c:** FIXED for the misclassification, severity none. `kind_at` now returns a row-read error for an unknown kind (`crates/catalog/src/types.rs:182-185`, `Kind::from_key` at `crates/model/src/media.rs:43-49`) instead of falling back to Image. `files.kind` still has no CHECK (`crates/catalog/src/schema.rs:514`). A bad row now fails the query that reads it; that failure mode was not assessed.
+
 **Verdict:** CONFIRMED. **Severity:** low → low.
 
 **Claim:** A kind string the Kind enum does not know is silently read as Image instead of being an error. The schema admits any text, and the code treats an unknown value as impossible without checking it.
@@ -218,6 +275,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The silent fallback is real and the scenario holds as written, but only a hand-edited or foreign catalog can produce an unknown kind, so the impact is low. The repeated re-analysis is a cost for such a catalog, not a correctness hazard for catalogs the app writes.
 
 ### 22. crates/thumbcache/src/lib.rs:327
+
+**Status at HEAD 362888c:** FIXED, severity none. The cap is a typed `Cap` built only by `Cap::from_bytes` or `from_gb`, and `from_bytes` rejects 0 (`crates/thumbcache/src/config.rs:52-55`). `open` takes `Option<Cap>` (`crates/thumbcache/src/lib.rs:93`), so a zero cap cannot reach the cache file.
 
 **Verdict:** CONFIRMED. **Severity:** low → low.
 
@@ -227,6 +286,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 23. crates/app/src/yandex.rs:423
 
+**Status at HEAD 362888c:** FIXED, severity none. The preference is now `Option<RulePath>` (`crates/app/src/prefs.rs:25-26`), read back exactly (`crates/app/src/yandex.rs:521`). REFUTED still stands, but for a different reason: the claimed mismatch no longer exists because the stored value is exact.
+
 **Verdict:** REFUTED. **Severity:** low → none.
 
 **Claim:** The folder remembered for the next save is stored as lossy text in Prefs.yandex_folder: String, while the save itself used the exact PathBuf. The remembered value does not equal the folder saved into.
@@ -235,6 +296,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 24. crates/app/src/edit.rs:12
 
+**Status at HEAD 362888c:** No live defect; REFUTED stands. `Rating::new` still accepts 0 (`crates/model/src/rating.rs:24-29`), but the desktop maps 0 to `None` (`crates/desktop/src/gallery/edits.rs:77`), and the table's `CHECK (rating BETWEEN 1 AND 5)` rejects a stored 0 (`crates/catalog/src/schema.rs:647-649`).
+
 **Verdict:** REFUTED. **Severity:** low → none.
 
 **Claim:** The type of a user rating admits 0 stars, which the model documents as impossible for a user rating (1 to 5, with 0 meaning no rating, i.e. None). The only guard is in one caller; app::rate and set_rating store a 0 without a check.
@@ -242,6 +305,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The CHECK constraint makes the scenario's stored 0 impossible: the call errors and nothing is written, so no file shows zero stars or writes Some(0) back. The API does lack a check of its own, which is a weaker contract, but it produces no data defect, so the finding is refuted.
 
 ### 25. crates/app/src/prefs.rs:24
+
+**Status at HEAD 362888c:** PARTLY, still present (low). `app::Prefs.last_file` is `Option<FileId>` (`crates/app/src/prefs.rs:34-35`). The -1 sentinel survives only as the on-disk encoding (`prefs.rs:65-79`) and in the Qt bridge, which takes an i64 (`crates/desktop/src/settings.rs:40-41, 73-77`). The ambiguity remains at that bridge.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -253,6 +318,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 26. crates/app/src/yandex.rs:292
 
+**Status at HEAD 362888c:** FIXED, severity none. The saved names are built from the photo's exact `OsStr` stem (`crates/app/src/yandex/save.rs:91-93`), and uniqueness is checked on that name (`save.rs:13-18`, `:63-82`). The claim that `stem_of` is lossy no longer holds. REFUTED stands.
+
 **Verdict:** REFUTED. **Severity:** low → none.
 
 **Claim:** The name of each saved file is built from the photo's name as lossy text. Each output name is therefore not the photo's name, and the uniqueness check runs on the lossy name.
@@ -261,6 +328,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 27. crates/cli/src/lib.rs:88
 
+**Status at HEAD 362888c:** STILL PRESENT (low), moved. The field is `Thumbs { height: u32 }` at `crates/cli/src/args.rs:85-88`. Neither the parser nor `pg_thumbs::run` (`crates/thumbs/src/lib.rs:172`) refuses 0. The 16..=2048 range is enforced only in the client (`crates/client/src/image.rs:42, 58-60`). The zero-height failure mode was not traced.
+
 **Verdict:** CONFIRMED. **Severity:** low → low.
 
 **Claim:** The CLI accepts any u32 for the thumbnail height, including 0, which the model's THUMB_HEIGHT range excludes. Nothing at the parser or in pg_thumbs::run refuses 0.
@@ -268,6 +337,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The mismatch is real: the height is an unchecked u32 with no up-front check, and 0 is outside THUMB_HEIGHT. Height 0 makes every file fail at encode and stores nothing, without a top-level error. It needs a deliberate operator value of 0, so low stands.
 
 ### 28. crates/cli/src/lib.rs:69
+
+**Status at HEAD 362888c:** FIXED, severity none. CLI path arguments are `PathBuf` (`crates/cli/src/args.rs:17, 64, 71, 82, 104, 107, 111`), and `normalized(path: &Path)` (`crates/cli/src/lib.rs:65-68`) passes them to `normalize_path` exactly. The clap-rejects-invalid-UTF-8 scenario no longer applies.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -279,6 +350,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 29. crates/cli/src/lib.rs:59
 
+**Status at HEAD 362888c:** STILL PRESENT (low). The cited line was wrong; the code is `crates/cli/src/args.rs:53`, `opts.buffer_bytes = self.buffer_mb.map_or(budget, |mb| mb.max(1) << 20)`, and nothing clamps `buffer_mb` before the unchecked shift. The wrapped budget still reaches `Pool::new` (`crates/jobs/src/pipeline.rs:118`).
+
 **Verdict:** CONFIRMED. **Severity:** low → low.
 
 **Claim:** A megabyte count is multiplied by 2^20 in usize with <<, which discards the high bits silently in release and debug alike. Any value at or above 2^44 MB has no representable byte count.
@@ -286,6 +359,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The silent wrap is real, and the finding's arithmetic checks out (2^44 MB gives 0; larger values wrap to small budgets). The only effect is serialised reads for an absurd argument, with no data or hang impact, so low stands.
 
 ### 30. crates/testkit/src/lib.rs:67
+
+**Status at HEAD 362888c:** FIXED. `gif` uses `i.checked_mul(60).and_then(|l| u8::try_from(l).ok())` and errors with "a test GIF has at most 5 frames" (`crates/testkit/src/lib.rs:177-190`). Frames of 6 or more no longer overflow or wrap.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -297,6 +372,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 31. crates/exiftool/src/lib.rs:79
 
+**Status at HEAD 362888c:** FIXED. A path with a line break or trailing whitespace is routed to a one-shot ExifTool process with exact OS arguments (`crates/exiftool/src/lib.rs:121` `exec`, `:157` `copy_tags`, `:191` `needs_argv`, `:200` `oneshot`), so it can no longer become several arguments. The `text_of` helper the claim cites no longer exists. A line break cannot occur in a Windows file name.
+
 **Verdict:** CONFIRMED. **Severity:** low → low.
 
 **Claim:** ExifTool's `-@ -` protocol uses one argument per line, but a path is carried as an unescaped &str that may contain '\n'. Valid UTF-8 with a newline is a legal POSIX file name, and it passes text_of. The text form of the path cannot represent the argument boundary, so one path becomes several ExifTool arguments.
@@ -304,6 +381,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The mismatch is real: a path carried as text with a newline becomes several ExifTool arguments, so copy_tags with -overwrite_original can also rewrite another named file in place. It is confined to POSIX names with a newline in a library folder, so the low severity is unchanged.
 
 ### 32. crates/render/src/player.rs:35
+
+**Status at HEAD 362888c:** FIXED. `Player::start` takes an exact `PathBuf` (`crates/render/src/player.rs:36`), built from the catalog's `RulePath` by `path_of` / `disk_path` (`crates/app/src/catalogs.rs:19-20`). A test covers a name that is not UTF-8 (`player.rs:173`, `plays_a_file_whose_name_is_not_utf8`).
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -315,6 +394,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 33. crates/metadata/src/lib.rs:157
 
+**Status at HEAD 362888c:** STILL PRESENT (low). The XMP packet is still decoded as lossy UTF-8 with `String::from_utf8_lossy` (`crates/metadata/src/xmp.rs:62`), called from `crates/metadata/src/lib.rs:75`. There is no BOM or UTF-16/32 detection in `crates/metadata/src`. `lib.rs:157` is now inside a test.
+
 **Verdict:** CONFIRMED. **Severity:** low → low.
 
 **Claim:** The XMP packet is bytes whose encoding the file declares (UTF-8, UTF-16 or UTF-32, marked by a BOM, per the XMP specification), but it is decoded as lossy UTF-8 and handed to an XML reader that expects text. The packet's type disagrees with its contents.
@@ -322,6 +403,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Validation:** The mismatch is real and not yet handled: BOM-declared bytes are decoded as lossy UTF-8, so rating and dates are dropped for a JPEG whose XMP is UTF-16 (the EXIF fallback still applies). The planned port would add BOM and UTF-16/32 detection (EXIFTOOL_PORT_PLAN.md:204), which is not done at HEAD. Such packets are rare, and the spec point rests on ExifTool's behaviour rather than the spec text, so severity stays low.
 
 ### 34. crates/desktop/src/gallery.rs:932
+
+**Status at HEAD 362888c:** FIXED. The folder comes from the picker as an exact `PathBuf` (`crates/desktop/src/gallery/edits.rs:117-122`, `picker::take(Purpose::SaveCrops)`). `save_crops` takes a `PathBuf` (`crates/app/src/library.rs:281-284`). The URL-to-String step and its fallback are gone. `gallery.rs` is now 59 lines.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -333,6 +416,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 35. crates/desktop/src/yandex.rs:418
 
+**Status at HEAD 362888c:** FIXED. The download folder comes from `picker::take(Purpose::YandexSave)` as a `PathBuf` (`crates/desktop/src/yandex.rs:343-361`), and `save(hits, folder: PathBuf)` takes it (`crates/app/src/yandex.rs:144`). The remembered default is an exact `RulePath` (`crates/app/src/prefs.rs:25-26`, read at `crates/app/src/yandex.rs:520-523`).
+
 **Verdict:** PARTLY. **Severity:** low → low.
 
 **Claim:** The download destination is converted from a QUrl through a lossy QString-to-String step, then used as a filesystem path. Non-local URLs fall back to the raw URL text.
@@ -342,6 +427,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Scope:** Affected: a download folder whose name contains an unpaired UTF-16 surrogate. Each file then fails with a reported write error, and the lossy path is remembered as the next default folder. Misplacement happens only if a folder literally named with U+FFFD already exists. Not affected: ordinary folder names and the non-local fallback.
 
 ### 36. crates/desktop/src/library.rs:299
+
+**Status at HEAD 362888c:** FIXED. `add_picked` passes a `&Path` (`crates/desktop/src/library.rs:197-217`) to `add_folder(&Path)` (`crates/app/src/library.rs:294`). The parser keeps WTF-8 bytes (`crates/model/src/rules.rs:100-129`), so a surrogate-named folder is added exactly rather than refused. `pg_library::folders::add_folder` was not traced beyond its call site.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 
@@ -353,6 +440,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 ### 37. crates/desktop/src/library.rs:313
 
+**Status at HEAD 362888c:** FIXED. `remove_folder(row)` maps the row to a stored `RootId` (`crates/desktop/src/library.rs:219-223`, `root_ids` set at `:88-89`), and `remove_folder(id: RootId)` is at `crates/app/src/library.rs:310`. No name round-trip happens.
+
 **Verdict:** PARTLY. **Severity:** low → low.
 
 **Claim:** The removal key is the root's display text, which the QML sends back as a QString. It is converted to a lossy String and re-parsed as a rule path. The lossless RulePath is not used on this round trip.
@@ -362,6 +451,8 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 **Scope:** Affected: removing a root whose stored name contains an unpaired UTF-16 surrogate; the removal is a silent no-op and the root stays listed. Such a root can only be stored by a CLI scan given a short-name alias of the folder. Not affected: every root with an ordinary name, which round-trips exactly.
 
 ### 38. crates/desktop/src/gallery.rs:429
+
+**Status at HEAD 362888c:** STILL PRESENT (low). The cited line was wrong; the cast is at `crates/desktop/src/gallery/model.rs:38`, `QVariant::from(&(self.grid.version(at).cast_signed()))`. The `u32` counter (`crates/client/src/grid.rs:169-170`) wraps negative at 2^31, and `GridCell.qml` (`crates/desktop/qml/GridCell.qml:25-26`) gates on `>= 0`, so such cells read as unversioned. Practically unreachable.
 
 **Verdict:** CONFIRMED. **Severity:** low → low.
 

@@ -32,7 +32,6 @@ either gives ~3× path order).
 | HDD | What it's tuned for: MFT order and queue depth each reach the disk's sequential speed. |
 | SATA SSD / NVMe | MFT order is irrelevant but free. 8 in flight is shallow for NVMe, but FINDINGS "I/O" already has decoding as the bottleneck above ~1,600 files/s, so an SSD runs at decode speed. A deeper queue (picked from `IOCTL_STORAGE_QUERY_PROPERTY` / `StorageDeviceSeekPenaltyProperty`) is only worth it if a measurement shows readers waiting on the disk. |
 | USB HDD | MFT order still helps. Behind a bridge without UAS (USB mass storage "bulk-only"), there's no NCQ, so the drive can't reorder the 8 reads and the queue-depth gain shrinks; the MFT order is what's left. |
-| Network share (SMB) | Latency-bound: reads in flight help, the order hardly matters. Long paths are handled (`\\?\UNC\`, `pg_platform::native`). Identity depends on the server's file IDs (below). |
 
 ## Other file systems (unsupported)
 
@@ -40,7 +39,8 @@ either gives ~3× path order).
 |---|---|---|
 | FAT32 / exFAT (SD cards, USB sticks) | Refused when added or scanned (not NTFS; on Linux, `vfat`, `msdos` and `exfat` by type). The file ID comes from the directory entry, so it is not stable, and FAT's local-time mtimes shift by an hour at each DST change. | Refused |
 | ReFS | Refused when added or scanned (not NTFS). Its file IDs are 128-bit, and the 64-bit `FileId` collides when one doesn't fit. | Refused |
-| SMB shares without file IDs (some NAS / Samba setups) | `FileId` is 0. The folder is unreadable and reported with the other unreadable folders, not dropped silently (S-17.7 decision 10). | Reported |
+| Network shares (SMB; on Linux, NFS, CIFS and SMB) | Refused when added or scanned: on Windows a UNC path by its text and a mapped network drive by its drive type, as a removable drive is (`crates/scan/src/refusal.rs`). The file IDs come from the server, which may give none or unstable ones. | Refused |
+| An accepted root that reports zero file IDs | `FileId` is 0. The folder is unreadable and reported with the other unreadable folders, not dropped silently (S-17.7 decision 10). | Reported |
 | OneDrive / cloud-synced folders (on NTFS) | Their files are reparse points (cloud tags) even when local. A placeholder file keeps its row and gets no content from the listing. A folder of placeholders is not descended, so its files are kept but not refreshed, and the scan counts the reparse points it indexed without following (S-17.7 decision 9). | Kept, not refreshed |
 
 On the non-NTFS volumes, masking to 48 bits makes the read order meaningless, which is harmless: queue depth
@@ -69,12 +69,12 @@ catalog, scan and platform tests).
   `<db>.live` shared while it is open, and a rebuild or a start-over takes it exclusively (`crates/schema`). Before
   S-17 Unit F, Linux moved an open catalog aside and the other process went on writing to the moved file, while Windows
   refused the rename; both now refuse.
-- **Tests:** the Linux job runs the whole workspace (`ci.yml:270-271`), with the five library tests that were ignored on
+- **Tests:** the Linux job runs the whole workspace (`just test`), with the five library tests that were ignored on
   Linux before S-17 Unit F. Two tests need a file that can't be read or written (the borders file, the writeback copy);
   as root that can't be made, so they are skipped there, and the container runs them as the user `pg` (`docker/check.py`), where they check.
 - **Timed:** a 10,000-file library scans in about 1.6 s warm and 4.8 s cold on WSL's ext4 disk, and a rescan after
-  renumbering pairs every file with its row (`docs/PROFILING.md`, Measurements, 2026-11-07). Not measured: a Windows
-  run, and the cold VM after `wsl --shutdown`.
+  renumbering pairs every file with its row (`docs/PROFILING.md`, Measurements, 2026-11-07). The Windows run (10,000
+  files on `D:`, first scan 1.316 s) and the cold VM after `wsl --shutdown` (1.353 s) are in the same section.
 
 ## If support is ever needed
 

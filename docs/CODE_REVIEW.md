@@ -715,7 +715,7 @@ reading (see "Limits"), and the probes that rows name (C-24's weezl probe, C-55'
 during the review. No saved output for them is named in the repository, so they are not evidence in this record.
 
 - **Pending, the list above:** run it once in the pg-dev container, after the last edit and once the uncommitted
-  edits in the working tree (see "Status") are committed. Run `docker/check.sh`, and the wasm32 check that CI runs
+  edits in the working tree (see "Status") are committed. Run `just check-linux` (`docker/check.py`, which replaced `docker/check.sh`), and the wasm32 check that CI runs
   (`.github/workflows/ci.yml:290`; the ledger cites `:286`). Record each command's result here.
 - **Pending, C-16 shot references:** the shot references are not recorded again. No commit so far changes
   `tools/shots/reference/` (its last change is in 856ce1b). The recipe is: commit first, `just shots -Expect borders`

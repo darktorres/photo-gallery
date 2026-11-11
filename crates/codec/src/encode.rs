@@ -1,12 +1,70 @@
-//! Re-encoding: a crop of a format the lossless rewriters don't cut (TIFF and BMP), decoded, cropped and encoded
-//! again in the same format.
+//! Encoding: decoded pixels as a JPEG ([`JpegEncoder`]: the thumbnails, and a photo re-encoded for a service), and a
+//! crop of a format the lossless rewriters don't cut (TIFF and BMP), decoded, cropped and encoded again in the same
+//! format ([`cropped`]).
 
 use anyhow::{Context, Result, bail, ensure};
 use image::ImageFormat;
 use pg_model::{format::Format, num};
 use std::io::Cursor;
+use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
 
 use crate::codecs::tiff::{decoded_color, tiff_limits};
+use crate::pixels::{Rgb, release_over};
+
+/// How a JPEG keeps the colour: at half resolution each way (4:2:0, a thumbnail's), or at full resolution (4:4:4).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Chroma {
+    Half,
+    Full,
+}
+
+/// libjpeg-turbo's compressor at one quality and chroma, and its output buffer, kept from one image to the next (a
+/// thumbnail worker encodes every thumbnail with one).
+pub struct JpegEncoder {
+    compressor: Compressor,
+    /// The compressor's output, at its worst-case size.
+    buf: Vec<u8>,
+}
+
+impl JpegEncoder {
+    /// An encoder at `quality` (libjpeg-turbo's 1–100) with `chroma`.
+    pub fn new(quality: i32, chroma: Chroma) -> Result<JpegEncoder> {
+        let mut compressor = Compressor::new()?;
+        compressor.set_quality(quality)?;
+        compressor.set_subsamp(match chroma {
+            Chroma::Half => Subsamp::Sub2x2,
+            Chroma::Full => Subsamp::None,
+        })?;
+        Ok(JpegEncoder { compressor, buf: Vec::new() })
+    }
+
+    /// `img` as a JPEG, into `out` (replacing what it holds), a buffer the caller reuses. The encoder's own buffer
+    /// keeps its capacity for the next image ([`JpegEncoder::trim`]).
+    pub fn encode_into(&mut self, img: &Rgb, out: &mut Vec<u8>) -> Result<()> {
+        // Every byte libjpeg-turbo returns is written by it: a grown buffer only zeroes what it grew by.
+        self.buf.resize(self.compressor.buf_len(img.width, img.height)?, 0);
+        let n = self.compressor.compress_to_slice(image_of(img)?, &mut self.buf)?;
+        out.clear();
+        out.extend_from_slice(self.buf.get(..n).context("libjpeg-turbo gave a size past its buffer")?);
+        Ok(())
+    }
+
+    /// `img` as a JPEG, once: a buffer of its own, nothing kept.
+    pub fn encode(&mut self, img: &Rgb) -> Result<Vec<u8>> {
+        Ok(self.compressor.compress_to_vec(image_of(img)?)?)
+    }
+
+    /// Free the output buffer when one large image grew it over `bytes` ([`release_over`]).
+    pub fn trim(&mut self, bytes: usize) {
+        release_over(&mut self.buf, bytes);
+    }
+}
+
+/// `img` as libjpeg-turbo takes it: packed RGB rows.
+fn image_of(img: &Rgb) -> Result<Image<&[u8]>> {
+    let pitch = img.width.checked_mul(3).context("the image's row is longer than memory")?;
+    Ok(Image { pixels: img.pixels.as_slice(), width: img.width, pitch, height: img.height, format: PixelFormat::RGB })
+}
 
 /// `bytes` (a BMP or a TIFF) decoded, cropped to the `w` × `h` rectangle at (`x`, `y`) and encoded again in the same
 /// format. The metadata is not carried over.

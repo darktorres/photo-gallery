@@ -1628,7 +1628,6 @@ dependencies = [
  "pg-render",
  "pg-testkit",
  "pg-thumbcache",
- "pg-video",
  "pg-writeback",
  "pg-yandex",
  "proptest",
@@ -1636,7 +1635,6 @@ dependencies = [
  "serde_json",
  "strum",
  "thiserror 2.0.21",
- "thumbhash",
 ]
 
 [[package]]
@@ -1651,7 +1649,6 @@ dependencies = [
  "pg-render",
  "pg-testkit",
  "pg-thumbcache",
- "pg-video",
  "rusqlite",
 ]
 
@@ -1803,6 +1800,7 @@ dependencies = [
  "pg-container",
  "pg-metadata",
  "pg-model",
+ "pg-render",
  "pg-testkit",
  "png 0.18.1",
  "turbojpeg",
@@ -1959,7 +1957,7 @@ dependencies = [
  "pg-testkit",
  "pg-video",
  "thiserror 2.0.21",
- "turbojpeg",
+ "thumbhash",
 ]
 
 [[package]]

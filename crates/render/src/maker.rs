@@ -2,19 +2,19 @@
 //! resize and the JPEG encode, with the buffers a worker keeps from file to file. What a thumbnail is made of;
 //! where thumbnails are kept is `pg_thumbcache`.
 
+use pg_model::image::View;
 use pg_model::turns::Turns;
 use std::path::Path;
 
-use anyhow::{Context, Result};
-use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
+use anyhow::Result;
 
-use pg_codec::decode::{Decoded, Decoder, MinSize};
+use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::encode::{Chroma, JpegEncoder};
 use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
-use pg_model::format::Format;
 
-/// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
-const DECODE_MARGIN: usize = 4;
+use crate::display::{self, DECODE_MARGIN, Shown};
+
 /// libjpeg-turbo q85, 4:2:0 (SSIMULACRA2 ~82; FINDINGS "Thumbnails"). The cache format is still open (PLAN §9.1):
 /// JPEG is the fastest to make on demand (~1 ms) and to show (~0.6 ms).
 const JPEG_QUALITY: i32 = 85;
@@ -50,30 +50,24 @@ impl MakeError {
 pub struct Maker {
     decoder: Decoder,
     resizer: Resizer,
-    compressor: Compressor,
+    encoder: JpegEncoder,
     /// The decoded image (or a video's frame), the buffer it is oriented through, and its scaled copy.
     image: Rgb,
     spare: Vec<u8>,
     small: Rgb,
-    /// libjpeg-turbo's output, at its worst-case size.
-    jpeg: Vec<u8>,
     /// The file a request read (the app's: a thumbnail made on a miss, the viewer's decode).
     file: Vec<u8>,
 }
 
 impl Maker {
     pub fn new() -> Result<Maker> {
-        let mut compressor = Compressor::new()?;
-        compressor.set_quality(JPEG_QUALITY)?;
-        compressor.set_subsamp(Subsamp::Sub2x2)?;
         Ok(Maker {
             decoder: Decoder::new()?,
             resizer: Resizer::new(),
-            compressor,
+            encoder: JpegEncoder::new(JPEG_QUALITY, Chroma::Half)?,
             image: Rgb::default(),
             spare: Vec::new(),
             small: Rgb::default(),
-            jpeg: Vec::new(),
             file: Vec::new(),
         })
     }
@@ -106,11 +100,12 @@ impl Maker {
         result.map(|()| out).map_err(MakeError::Undecodable)
     }
 
-    /// A one-off decode of the file [`Maker::read_file`] read (the viewer's): its pixels go to new buffers.
-    pub fn decode_file(&mut self, min: MinSize, turns: Turns) -> Result<Decoded, MakeError> {
-        let result = crate::display::decode(&mut self.decoder, &self.file, min, turns);
+    /// A one-off decode of the file [`Maker::read_file`] read, for the viewer's `view` ([`display::min_size`]): its
+    /// pixels go to new buffers.
+    pub fn decode_file(&mut self, view: View, turns: Turns) -> Result<Shown, MakeError> {
+        let result = display::decode(&mut self.decoder, &self.file, display::min_size(view), turns);
         release_over(&mut self.file, KEEP_BYTES);
-        result.map_err(MakeError::Undecodable)
+        result.map(Shown::from).map_err(MakeError::Undecodable)
     }
 
     /// A thumbnail `height` px high (or the image's own height, if smaller), aspect ratio kept. `turns` is the
@@ -129,10 +124,8 @@ impl Maker {
     }
 
     fn make_image(&mut self, bytes: &[u8], height: usize, turns: Turns, out: &mut Vec<u8>) -> Result<()> {
-        let format = Format::sniff(bytes).context("unknown image format")?;
         let min = MinSize::Upright(0, height * DECODE_MARGIN);
-        let exif = pg_metadata::orientation(bytes, format);
-        self.decoder.decode_into(bytes, format, exif, min, turns, &mut self.image, &mut self.spare)?;
+        display::decode_into(&mut self.decoder, bytes, min, turns, &mut self.image, &mut self.spare)?;
         self.encode_image(height, out)
     }
 
@@ -158,32 +151,18 @@ impl Maker {
         result.map_err(MakeError::Undecodable)
     }
 
-    /// The thumbnail of `image`: scaled to `height`, then compressed into `jpeg`, sized for the worst case, and
-    /// copied into `out` at its length.
+    /// The thumbnail of `image`: scaled to `height`, then encoded into `out`.
     fn encode_image(&mut self, height: usize, out: &mut Vec<u8>) -> Result<()> {
         let img = if self.resizer.to_height(&self.image, height, &mut self.small)? { &self.small } else { &self.image };
-        // Every byte libjpeg-turbo returns is written by it: a grown buffer only zeroes what it grew by.
-        self.jpeg.resize(self.compressor.buf_len(img.width, img.height)?, 0);
-        let n = self.compressor.compress_to_slice(
-            Image {
-                pixels: img.pixels.as_slice(),
-                width: img.width,
-                pitch: img.width * 3,
-                height: img.height,
-                format: PixelFormat::RGB,
-            },
-            &mut self.jpeg,
-        )?;
-        out.clear();
-        out.extend_from_slice(self.jpeg.get(..n).context("libjpeg-turbo gave a size past its buffer")?);
-        Ok(())
+        self.encoder.encode_into(img, out)
     }
 
     /// Free what one oversize image grew (see [`KEEP_BYTES`]).
     fn trim(&mut self) {
-        for buf in [&mut self.image.pixels, &mut self.spare, &mut self.small.pixels, &mut self.jpeg, &mut self.file] {
+        for buf in [&mut self.image.pixels, &mut self.spare, &mut self.small.pixels, &mut self.file] {
             release_over(buf, KEEP_BYTES);
         }
+        self.encoder.trim(KEEP_BYTES);
         self.decoder.trim(KEEP_BYTES);
     }
 }
@@ -203,15 +182,8 @@ mod tests {
     }
 
     fn jpeg(w: usize, h: usize, seed: usize) -> Vec<u8> {
-        let pixels = pattern(w, h, seed);
-        let image = turbojpeg::Image {
-            pixels: &pixels[..],
-            width: w,
-            pitch: w * 3,
-            height: h,
-            format: turbojpeg::PixelFormat::RGB,
-        };
-        turbojpeg::compress(image, 90, turbojpeg::Subsamp::Sub2x2).unwrap().to_vec()
+        let image = Rgb { width: w, height: h, pixels: pattern(w, h, seed) };
+        JpegEncoder::new(90, Chroma::Half).unwrap().encode(&image).unwrap()
     }
 
     /// A PNG with transparency, flattened onto white when decoded.
@@ -284,10 +256,10 @@ mod tests {
                 let expected = Maker::new().unwrap().make(bytes, 120, Turns::new(1)).map_err(|e| format!("{e:#}"));
                 assert_eq!(made, expected, "{}", path.display());
                 maker.read_file(path).unwrap();
-                let decoded =
-                    maker.decode_file(MinSize::Fit(300, 300), Turns::new(3)).map(|d| (d.image.width, d.image.pixels));
+                let view = View::Fit(75, 75);
+                let decoded = maker.decode_file(view, Turns::new(3)).map(|d| (d.image.width, d.image.pixels));
                 let expected =
-                    crate::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Fit(300, 300), Turns::new(3));
+                    crate::display::decode(&mut Decoder::new().unwrap(), bytes, display::min_size(view), Turns::new(3));
                 let expected = expected.map(|d| (d.image.width, d.image.pixels));
                 assert_eq!(decoded.map_err(|e| format!("{e:#}")), expected.map_err(|e| format!("{e:#}")));
             }

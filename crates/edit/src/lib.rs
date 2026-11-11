@@ -10,8 +10,8 @@ pub mod crop;
 mod rewrite;
 pub mod rotate;
 
-/// Test helpers: a file decoded the way `pg_render::display` decodes it (the EXIF orientation from the metadata reader, then
-/// the codec), so the tests here need nothing from pg_render.
+/// Test helpers: a file decoded as the viewer shows it (`pg_render::display`), so the edits are checked against the real
+/// display decode; and as it is stored, which is what a lossless crop cuts (the codec's own decode).
 #[cfg(test)]
 pub(crate) mod testing {
     use pg_codec::decode::{Decoder, MinSize};
@@ -21,13 +21,8 @@ pub(crate) mod testing {
 
     /// `bytes` decoded upright at full size: (width, height, pixels).
     pub(crate) fn shown(bytes: &[u8]) -> (usize, usize, Vec<u8>) {
-        let format = Format::sniff(bytes).unwrap();
-        let mut image = Rgb::default();
-        let exif = pg_metadata::orientation(bytes, format);
-        Decoder::new()
-            .unwrap()
-            .decode_into(bytes, format, exif, MinSize::Full, Turns::NONE, &mut image, &mut Vec::new())
-            .unwrap();
+        let image =
+            pg_render::display::decode(&mut Decoder::new().unwrap(), bytes, MinSize::Full, Turns::NONE).unwrap().image;
         (image.width, image.height, image.pixels)
     }
 

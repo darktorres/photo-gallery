@@ -32,7 +32,7 @@ pub use catalogs::Catalogs;
 pub use config::Config;
 pub use edit::Edit;
 pub use error::{Error, Result};
-pub use images::{Images, Keep, Thumbnail, Upload};
+pub use images::{Images, Keep, Thumbnail};
 pub use inbox::{Inbox, InboxEvent, Listing};
 pub use library::{Library, LibraryService, Status};
 pub use prefs::{PrefStore, Prefs};

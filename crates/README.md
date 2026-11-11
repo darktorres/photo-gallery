@@ -48,8 +48,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `dedup` (`pg-dedup`): the tier-1 duplicates: the PDQ index, the import's pairing and the union-find that groups
   pairs.
 - `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`, whose `MakeError` says
-  whether a file couldn't be read or doesn't decode, and `THUMBS_VERSION`), the viewer's images (`display`), and a TIFF
-  re-encoded as a JPEG for the Yandex search (`transcode`).
+  whether a file couldn't be read or doesn't decode, and `THUMBS_VERSION`), the viewer's images (`display`: the decode a
+  view asks for, a kept decode reused while it covers the view, the fit and the zoomed region, a video's poster, the
+  ThumbHash placeholder, in the format the window uploads), and a TIFF re-encoded as a JPEG for the Yandex search
+  (`transcode`). Both encoders are the codec's `JpegEncoder`.
 - `query` (`pg-query`): the query compiler: a `Query` (`pg-model`'s) becomes the SQL of its conditions and their
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the

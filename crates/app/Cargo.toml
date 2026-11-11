@@ -11,7 +11,6 @@ workspace = true
 # and writer, the images, the edits, the views, Yandex and the app's preferences. Sync, runtime-free, no Qt.
 [dependencies]
 pg-catalog = { path = "../catalog" }
-pg-codec = { path = "../codec" }
 pg-jobs = { path = "../jobs" }
 pg-library = { path = "../library" }
 pg-log = { path = "../log" }
@@ -21,16 +20,16 @@ pg-platform = { path = "../platform" }
 pg-query = { path = "../query" }
 pg-render = { path = "../render" }
 pg-thumbcache = { path = "../thumbcache" }
-pg-video = { path = "../video" }
 pg-yandex = { path = "../yandex" }
 anyhow.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
-thumbhash.workspace = true
 
 [dev-dependencies]
 pg-catalog = { path = "../catalog", features = ["fixture"] }
+# A test decodes the JPEG the Yandex search sends.
+pg-codec = { path = "../codec" }
 pg-testkit = { path = "../testkit" }
 proptest.workspace = true
 # `SortKey::iter`, so the listing laws cover every sort key.

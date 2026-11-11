@@ -23,4 +23,6 @@ weezl.workspace = true
 
 [dev-dependencies]
 pg-codec = { path = "../codec", features = ["fixtures"] }
+# The tests decode a file the way the viewer shows it (`pg_render::display`).
+pg-render = { path = "../render" }
 pg-testkit = { path = "../testkit" }

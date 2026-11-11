@@ -13,14 +13,11 @@ use std::time::{Duration, Instant};
 
 use pg_catalog::browse;
 use pg_catalog::ledger::Failure;
-use pg_codec::decode::{MinSize, orient_pixels};
-use pg_codec::pixels::Rgb;
-use pg_codec::resize::Resizer;
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version, View};
-use pg_model::orientation::Orientation;
 use pg_model::state::FileSource;
 use pg_model::turns::Turns;
+use pg_render::display::{self, Shown, Upload};
 use pg_render::maker::MakeError;
 use pg_thumbcache::{self as thumbs, ThumbCache};
 
@@ -32,17 +29,9 @@ use crate::makers::Makers;
 /// How long a request waits for a write of the app's into its file to end before it fails.
 const WRITE_WAIT: Duration = Duration::from_secs(10);
 
-/// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails").
-const DECODE_MARGIN: usize = 4;
-
 /// How many of the thumbnails that failed lately are remembered, so one asked for again (at every scroll past it) is not
 /// sent to the ledger again.
 const RECENT_FAILURES: usize = 256;
-
-/// `x` rounded toward zero, as a count of pixels.
-fn to_pixels(x: f64) -> usize {
-    pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
-}
 
 /// The thumbnail cache's source of a key's version: the file as the grid showed it when the key was made.
 fn source_of(v: Version) -> thumbs::Source {
@@ -79,42 +68,6 @@ pub struct Keep {
     pub source: thumbs::Source,
 }
 
-/// An image in a format Qt's scene graph uploads as it is (`QSGPlainTexture`): 4 bytes a pixel, RGBX8888 or RGBA8888
-/// premultiplied. Any other format it converts on the render thread, a copy of the whole image at every upload.
-pub struct Upload {
-    pub width: usize,
-    pub height: usize,
-    pub pixels: Vec<u8>,
-    /// RGBA8888 premultiplied; else RGBX8888 (X = 255).
-    pub premultiplied: bool,
-}
-
-impl Upload {
-    /// `img` as RGBX8888.
-    pub fn opaque(img: &Rgb) -> Upload {
-        let mut pixels = vec![255u8; img.width * img.height * 4];
-        for (out, rgb) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(img.pixels.as_chunks::<3>().0) {
-            out[..3].copy_from_slice(rgb);
-        }
-        Upload { width: img.width, height: img.height, pixels, premultiplied: false }
-    }
-
-    /// Straight RGBA as RGBA8888 premultiplied, in place, rounded as Qt premultiplies (`qPremultiply`), so the texture is
-    /// the one Qt's own conversion made.
-    pub fn straight(width: usize, height: usize, mut pixels: Vec<u8>) -> Upload {
-        for px in pixels.as_chunks_mut::<4>().0 {
-            let a = u32::from(px[3]);
-            if a != 255 {
-                for c in &mut px[..3] {
-                    let t = u32::from(*c) * a;
-                    *c = u8::try_from((t + (t >> 8) + 0x80) >> 8).unwrap_or(u8::MAX);
-                }
-            }
-        }
-        Upload { width, height, pixels, premultiplied: true }
-    }
-}
-
 /// The last full-size decode, kept for the zoom regions that follow each other while the user zooms and pans one image.
 /// It is kept for the app, until the next decode: a 24 MP image is about 72 MB of RGB.
 pub(crate) struct Decoded {
@@ -124,9 +77,8 @@ pub(crate) struct Decoded {
     size: i64,
     /// With the turns not yet written.
     rotation: Turns,
-    /// Upright full size, and the decode (possibly DCT-scaled).
-    full: (usize, usize),
-    image: Arc<Rgb>,
+    /// Upright, possibly DCT-scaled, with its full size.
+    image: Arc<Shown>,
 }
 
 /// The images the front end shows: thumbnails, placeholders, and the viewer's original, as the catalog, the thumbnail cache
@@ -309,10 +261,7 @@ impl Images {
 
     /// A thumbnail (a JPEG) turned by `turns` quarter turns clockwise, for a turn not yet written into the file.
     pub fn turn_jpeg(&self, jpeg: &[u8], turns: Turns) -> Result<Upload> {
-        self.makers.with_maker(|m| {
-            let decoded = pg_render::display::decode(m.decoder(), jpeg, MinSize::Full, turns)?;
-            Ok(Upload::opaque(&decoded.image))
-        })
+        self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.upload(View::Full))
     }
 
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now.
@@ -322,51 +271,24 @@ impl Images {
             .with_catalog(|c| browse::read::placeholder(c, file_id))?
             .ok_or(Error::UnknownFile(file_id.get()))?;
         let hash = p.hash.ok_or(Error::NotImported)?;
-        let (w, h, rgba) =
-            thumbhash::thumb_hash_to_rgba(hash.as_slice()).map_err(|_| Error::Failed("bad thumbhash".to_string()))?;
-        let (rgba, w, h) = orient_pixels(rgba, w, h, 4, Orientation::UPRIGHT.compose(p.turns));
-        Ok(Upload::straight(w, h, rgba))
+        display::placeholder(hash.as_slice(), p.turns).map_err(failed)
     }
 
     /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as the
     /// viewer asks for it.
     pub fn full_image(&self, file_id: FileId, view: View) -> Result<Upload> {
-        let min = match view {
-            View::Fit(w, h) => MinSize::Fit(w * DECODE_MARGIN, h * DECODE_MARGIN),
-            View::Full => MinSize::Full,
-            // The whole image at a scale where the region keeps ≥ DECODE_MARGIN× the output pixels.
-            View::Region((_, _, rw, rh), w, h) => MinSize::Fit(
-                to_pixels((pg_model::num::count(w) * pg_model::num::count(DECODE_MARGIN) / rw.max(1e-6)).ceil()),
-                to_pixels((pg_model::num::count(h) * pg_model::num::count(DECODE_MARGIN) / rh.max(1e-6)).ceil()),
-            ),
-        };
-        let (_, (img, fresh)) = self.consistent(file_id, |src| self.decode(file_id, src, min))?;
+        let (_, (img, fresh)) = self.consistent(file_id, |src| self.decode(file_id, src, view))?;
         // Kept once it is known to be of the file as the catalog has it.
         if let Some(fresh) = fresh {
             *self.last_decode.lock().unwrap_or_else(PoisonError::into_inner) = Some(fresh);
         }
         // The decode stays shared (`last_decode`); what is shown is made from it in the upload format.
-        match view {
-            View::Fit(w, h) => {
-                let mut fitted = Rgb::default();
-                Resizer::new().fit_box(&img, w, h, &mut fitted).map_err(failed)?;
-                Ok(Upload::opaque(&fitted))
-            }
-            View::Full => Ok(Upload::opaque(&img)),
-            View::Region((x, y, rw, rh), w, h) => {
-                let (iw, ih) = (pg_model::num::count(img.width), pg_model::num::count(img.height));
-                let mut out = Rgb::default();
-                Resizer::new()
-                    .resize_region(&img, (x * iw, y * ih, rw * iw, rh * ih), w, h, &mut out)
-                    .map_err(failed)?;
-                Ok(Upload::opaque(&out))
-            }
-        }
+        img.upload(view).map_err(failed)
     }
 
-    /// Decode at least `min`, turned as the catalog says, reusing the last decode of the file in that state when it is big
-    /// enough; a new decode comes with what to keep of it.
-    fn decode(&self, file_id: FileId, src: &FileSource, min: MinSize) -> Result<(Arc<Rgb>, Option<Decoded>)> {
+    /// Decode what `view` needs (`display::min_size`), turned as the catalog says, reusing the last decode of the file in
+    /// that state when it is big enough; a new decode comes with what to keep of it.
+    fn decode(&self, file_id: FileId, src: &FileSource, view: View) -> Result<(Arc<Shown>, Option<Decoded>)> {
         let rotation = src.state.rotation.plus(src.state.turns);
         {
             let last = self.last_decode.lock().unwrap_or_else(PoisonError::into_inner);
@@ -375,15 +297,14 @@ impl Images {
                 && d.mtime == src.state.mtime
                 && d.size == src.state.size
                 && d.rotation == rotation
-                && big_enough(d.image.width, d.image.height, d.full, min)
+                && d.image.covers(view)
             {
                 return Ok((d.image.clone(), None));
             }
         }
-        let (full, image) = if let Some(at) = src.poster_ms {
+        let image = if let Some(at) = src.poster_ms {
             // A video: its poster frame stands for it until it plays.
-            let frame = pg_video::frame(&path_of(&src.path), at, rotation).map_err(original)?;
-            ((frame.width, frame.height), Arc::new(frame))
+            Arc::new(display::poster(&path_of(&src.path), at, rotation).map_err(original)?)
         } else {
             // The read's and the decode's failures are the original's (gone, offline, not decodable), so the variant is
             // made here: `with_maker` would make any error its closure returns an `Error::Failed`. A maker that can't
@@ -391,40 +312,13 @@ impl Images {
             let path = path_of(&src.path);
             let decoded = self.makers.with_maker(|m| {
                 Ok(match m.read_file(&path) {
-                    Ok(()) => m.decode_file(min, rotation).map_err(made_error),
+                    Ok(()) => m.decode_file(view, rotation).map_err(made_error),
                     Err(e) => Err(original(e)),
                 })
             })??;
-            (
-                (pg_model::num::index(decoded.info.full_width), pg_model::num::index(decoded.info.full_height)),
-                Arc::new(decoded.image),
-            )
+            Arc::new(decoded)
         };
-        Ok((
-            image.clone(),
-            Some(Decoded { file_id, mtime: src.state.mtime, size: src.state.size, rotation, full, image }),
-        ))
-    }
-}
-
-/// Whether a decode of `w × h` (of an upright full size `full`) satisfies `min`.
-fn big_enough(w: usize, h: usize, full: (usize, usize), min: MinSize) -> bool {
-    if (w, h) == full {
-        return true;
-    }
-    match min {
-        MinSize::Full => false,
-        MinSize::Fit(bw, bh) => {
-            let scale = (pg_model::num::count(bw) / pg_model::num::count(full.0))
-                .min(pg_model::num::count(bh) / pg_model::num::count(full.1))
-                .min(1.0);
-            pg_model::num::count(w) >= (pg_model::num::count(full.0) * scale).floor()
-                && pg_model::num::count(h) >= (pg_model::num::count(full.1) * scale).floor()
-        }
-        MinSize::Upright(mw, mh) => w >= mw.min(full.0) && h >= mh.min(full.1),
-        MinSize::Sides(long, short) => {
-            w.max(h) >= long.min(full.0.max(full.1)) && w.min(h) >= short.min(full.0.min(full.1))
-        }
+        Ok((image.clone(), Some(Decoded { file_id, mtime: src.state.mtime, size: src.state.size, rotation, image })))
     }
 }
 

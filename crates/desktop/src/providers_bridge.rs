@@ -19,7 +19,7 @@ pub mod ffi {
     }
 
     /// How a `Pixels` holds its image: `Image` is a `QImage` (a decoded thumbnail, in `image`); the others are raw
-    /// pixels in `data` (`pg_app::Upload`), which Qt takes as they are, without a copy.
+    /// pixels in `data` (`pg_render::display::Upload`), which Qt takes as they are, without a copy.
     #[namespace = "pg"]
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     #[repr(u8)]

@@ -263,6 +263,7 @@ Each fix gets a test that fails before it.
   - **The edit's tests decode through `display`.** `pg-edit` dev-depends on `pg-render`, and `testing::shown` calls `display::decode`, so the tests check the edit against the real display decode, not a copy of it. `testing::stored` is the codec's own stored decode (`decode_stored_into`), not display's, and stays a codec call; so `display::decode_stored` has no user and goes (M-48).
   - `display.rs`'s claim is then true as written, and stays.
 - Gate: `just test`, perf (`thumb_jpeg`), `just shots`.
+- **Done in step 5**, with M-30. `JpegEncoder::new(quality, Chroma)` (`Chroma::Half` is 4:2:0, `Full` 4:4:4, so the codec's users name no turbojpeg type); `encode_into` and `trim` for the maker, `encode` for the transcode. `pg-render` no longer depends on turbojpeg; the maker's tests make their JPEGs with the encoder too. `display::decode_into` is what the maker and `display::decode` call. `display::decode_stored` is left for M-48.
 
 ### M-28: one numeric conversion, one fit, one decode cap
 
@@ -356,6 +357,11 @@ Each fix gets a test that fails before it.
   - The layer file changes with it.
 - **A bench first.** The viewer is not benched, so a move of its pipeline has no perf gate. `pg-bench` gains a `viewer` bench (a full decode and a fit, for a JPEG, a PNG and a video poster), recorded before the move.
 - Gate: `just test`, `just shots`, perf (the new `viewer` bench).
+- **Done in step 5.** The bench came first (`viewer_still` for the sample JPEG and a PNG of its pixels, `viewer_poster` for the video tests' clip; baseline at fafa7d8), then the move:
+  - `display::min_size(view)`; `display::Shown` (the decode the viewer keeps: upright, with its full size) with `covers(view)` (was `big_enough`), `resized(view)` (the fit and the region) and `upload(view)`; `decode_full`, `poster` and `placeholder`. `Maker::decode_file` takes the view and returns a `Shown`.
+  - `Upload` moved with them, to `pg_render::display::Upload` (the desktop already depends on `pg-render`). M-33 still takes its Qt format out.
+  - `DECODE_MARGIN` is `display`'s, used by the maker (M-28's duplicate).
+  - `pg-app` names no `pg-codec`, `pg-video` or `thumbhash` item: they left its normal dependencies, and `pg-codec` stays a dev-dependency for the Yandex test. The app passes a `View`, not a `MinSize`.
 
 ### M-31: a pass does not reach a sibling pass for a helper
 

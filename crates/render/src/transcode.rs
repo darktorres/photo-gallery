@@ -2,10 +2,10 @@
 //! (`pg_app::yandex`). The pixels come from [`display::decode`], the one place that reads the EXIF orientation, so the
 //! JPEG shows the photo upright, as the viewer does.
 
-use anyhow::{Context, Result};
-use turbojpeg::{Compressor, Image, PixelFormat, Subsamp};
+use anyhow::Result;
 
 use pg_codec::decode::{Decoder, MinSize};
+use pg_codec::encode::{Chroma, JpegEncoder};
 use pg_model::turns::Turns;
 
 use crate::display;
@@ -18,19 +18,7 @@ const QUALITY: i32 = 95;
 pub fn to_jpeg(bytes: &[u8]) -> Result<Vec<u8>> {
     let mut decoder = Decoder::new()?;
     let decoded = display::decode(&mut decoder, bytes, MinSize::Full, Turns::NONE)?;
-    let image = &decoded.image;
-    let pitch = image.width.checked_mul(3).context("the image's row is longer than memory")?;
-    let mut compressor = Compressor::new()?;
-    compressor.set_quality(QUALITY)?;
-    compressor.set_subsamp(Subsamp::None)?;
-    let jpeg = compressor.compress_to_vec(Image {
-        pixels: image.pixels.as_slice(),
-        width: image.width,
-        pitch,
-        height: image.height,
-        format: PixelFormat::RGB,
-    })?;
-    Ok(jpeg)
+    JpegEncoder::new(QUALITY, Chroma::Full)?.encode(&decoded.image)
 }
 
 #[cfg(test)]

@@ -8,8 +8,9 @@ use gungraun::prelude::*;
 use pg_analysis::analyze::Analyzer;
 use pg_codec::decode::{Decoder, MinSize};
 use pg_codec::pixels::Rgb;
-use pg_codec::resize::Resizer;
 use pg_model::analysis::Analyzed;
+use pg_model::image::View;
+use pg_render::display::{self, Shown};
 use pg_model::turns::Turns;
 use pg_render::maker::Maker;
 
@@ -61,8 +62,7 @@ const CLIP: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../video/tests/sample.m
 
 /// The viewer's window, in device pixels: the image is fitted into it. Its decode keeps 4× the window (the viewer's
 /// margin), so the sample decodes at full size.
-const WINDOW: (usize, usize) = (640, 400);
-const WINDOW_DECODE: MinSize = MinSize::Fit(WINDOW.0 * 4, WINDOW.1 * 4);
+const WINDOW: View = View::Fit(640, 400);
 
 fn for_viewer_jpeg() -> (Vec<u8>, Decoder) {
     (read_sample(), or_stop(Decoder::new(), "the decoder"))
@@ -78,27 +78,24 @@ fn for_viewer_png() -> (Vec<u8>, Decoder) {
 }
 
 /// The image fitted into the window, as the viewer shows it.
-fn fitted(image: &Rgb) -> Rgb {
-    let mut out = Rgb::default();
-    or_stop(Resizer::new().fit_box(image, WINDOW.0, WINDOW.1, &mut out), "fit");
-    out
+fn fitted(image: &Shown) -> Option<Rgb> {
+    or_stop(image.resized(WINDOW), "fit")
 }
 
 // The viewer's image of a still: the decode its window asks for, then the fit. (The path import is catalog.rs's.)
 #[library_benchmark]
 #[bench::jpeg(setup = for_viewer_jpeg)]
 #[bench::png(setup = for_viewer_png)]
-fn viewer_still((bytes, mut decoder): (Vec<u8>, Decoder)) -> Rgb {
-    let decoded =
-        or_stop(pg_render::display::decode(&mut decoder, black_box(&bytes), WINDOW_DECODE, Turns::NONE), "decode");
-    black_box(fitted(&decoded.image))
+fn viewer_still((bytes, mut decoder): (Vec<u8>, Decoder)) -> Option<Rgb> {
+    let decoded = or_stop(display::decode(&mut decoder, black_box(&bytes), display::min_size(WINDOW), Turns::NONE), "decode");
+    black_box(fitted(&Shown::from(decoded)))
 }
 
 // The viewer's image of a video: its poster frame, then the fit.
 #[library_benchmark]
 #[bench::mp4(CLIP)]
-fn viewer_poster(clip: &str) -> Rgb {
-    let frame = or_stop(pg_video::frame(black_box(Path::new(clip)), 0, Turns::NONE), "the poster frame");
+fn viewer_poster(clip: &str) -> Option<Rgb> {
+    let frame = or_stop(display::poster(black_box(Path::new(clip)), 0, Turns::NONE), "the poster frame");
     black_box(fitted(&frame))
 }
 

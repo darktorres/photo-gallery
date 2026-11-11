@@ -23,9 +23,9 @@ use anyhow::Context;
 use cxx_qt_lib::QImage;
 use ffi::{ImageKind, PixelFormat, Pixels};
 
-use pg_app::Upload;
 use pg_model::image::{ImageKey, ImageRequest};
 use pg_model::turns::Turns;
+use pg_render::display::Upload;
 
 use crate::app;
 

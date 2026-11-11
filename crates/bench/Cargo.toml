@@ -16,7 +16,6 @@ pg-codec = { path = "../codec" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-render = { path = "../render" }
 pg-model = { path = "../model" }
-pg-video = { path = "../video" }
 rusqlite.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]

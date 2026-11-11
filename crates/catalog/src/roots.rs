@@ -2,6 +2,8 @@
 //! end, the files a finished walk didn't see, and the folder ledger's rows a walk records or sweeps. Methods of
 //! `Catalog`.
 
+use std::collections::BTreeMap;
+
 use anyhow::anyhow;
 use rusqlite::{Connection, OptionalExtension, params};
 
@@ -176,20 +178,37 @@ impl Catalog {
         Ok(written > 0)
     }
 
-    /// The catalog's rows for `identities` as they are now (their size and mtime; `None` for an identity with no row),
-    /// read in one snapshot outside any transaction of a walk's: what a walk reads when it lists a folder, so that its
-    /// batch, written later, changes only rows still so ([`crate::ScannedFile::prior`]).
-    pub fn prior_states(&self, identities: &[FileIdentity]) -> Result<Vec<Option<Prior>>> {
+    /// The catalog's rows for `identities`, the files a walk listed in `folder`, as they are now (their size and mtime;
+    /// `None` for an identity with no row), read in one snapshot outside any transaction of a walk's: what a walk reads
+    /// when it lists a folder, so that its batch, written later, changes only rows still so
+    /// ([`crate::ScannedFile::prior`]).
+    ///
+    /// The folder's rows are read at once, which is where a listed file's row is but for a file new to the folder (or
+    /// to the catalog); those are looked up by identity, one by one. So the answer doesn't depend on `folder`, only
+    /// the cost: one statement for a folder walked before, rather than one per file.
+    pub fn prior_states(&self, folder: &RulePath, identities: &[FileIdentity]) -> Result<Vec<Option<Prior>>> {
         let snapshot = self.conn.unchecked_transaction()?;
         let mut out = Vec::with_capacity(identities.len());
         {
-            let mut stmt =
+            let mut in_folder = snapshot.prepare_cached(
+                "SELECT volume, file_ref, size, mtime FROM files
+                 WHERE folder_id = (SELECT id FROM folders WHERE path = ?1) AND volume IS NOT NULL",
+            )?;
+            let known: BTreeMap<(i64, i64), Prior> = in_folder
+                .query_map([self.rules.join(folder)], |r| {
+                    Ok(((r.get(0)?, r.get(1)?), Prior { size: r.get(2)?, mtime: r.get(3)? }))
+                })?
+                .collect::<rusqlite::Result<_>>()?;
+            let mut by_identity =
                 snapshot.prepare_cached("SELECT size, mtime FROM files WHERE volume = ?1 AND file_ref = ?2")?;
             for identity in identities {
-                let (volume, file_ref) = (identity.volume.cast_signed(), identity.file_index.cast_signed());
-                let prior = stmt
-                    .query_row(params![volume, file_ref], |r| Ok(Prior { size: r.get(0)?, mtime: r.get(1)? }))
-                    .optional()?;
+                let key = (identity.volume.cast_signed(), identity.file_index.cast_signed());
+                let prior = match known.get(&key) {
+                    Some(prior) => Some(*prior),
+                    None => by_identity
+                        .query_row(params![key.0, key.1], |r| Ok(Prior { size: r.get(0)?, mtime: r.get(1)? }))
+                        .optional()?,
+                };
                 out.push(prior);
             }
         }
@@ -567,11 +586,15 @@ mod tests {
             tx.commit().unwrap();
             recorded
         };
-        let listed = |c: &Catalog| c.prior_states(&[identity]).unwrap().remove(0);
+        let listed = |c: &Catalog| c.prior_states(&root, &[identity]).unwrap().remove(0);
         let scan = begin(&mut c, &root);
         let prior = listed(&c);
         assert_eq!(found(&mut c, scan, 10, 100, prior), Recorded::Changed);
         let id = fixture::state::file_id(&c, "a.jpg").unwrap();
+        // The folder says where to look first, not what is found: the row of a file listed in another folder (moved
+        // there), or in one the catalog has no row for, is the same; an identity with no row has none.
+        let elsewhere = c.prior_states(&p(rules, r"D:\r\new"), &[identity, FileIdentity::new(1, 8)]).unwrap();
+        assert_eq!(elsewhere, [Some(Prior { size: 10, mtime: 100 }), None]);
         // Listed, then rewritten by the app before the batch: the row is the newer.
         let prior = listed(&c);
         assert_eq!(prior, Some(Prior { size: 10, mtime: 100 }));

@@ -64,7 +64,7 @@ pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> pg_model::ids::ScanId {
 pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, size: u64, mtime: i64) -> bool {
     let rules = c.rules();
     let identity = FileIdentity::new(1, 7);
-    let prior = c.prior_states(&[identity]).unwrap().remove(0);
+    let prior = c.prior_states(&p(rules, r"D:\x"), &[identity]).unwrap().remove(0);
     let tx = c.tx().unwrap();
     let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
     let folder = writer.folder(&p(rules, r"D:\x")).unwrap();

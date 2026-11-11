@@ -503,7 +503,7 @@ fn walk_leased<L: Listing>(
             // The rows as they are now, read as the folder is listed and outside any transaction: the batch, written
             // later, changes only those still so (a write-back in between is kept).
             let identities: Vec<FileIdentity> = files.iter().map(|f| f.identity).collect();
-            let priors = lease.prior_states(&identities)?;
+            let priors = lease.prior_states(&frame.path, &identities)?;
             ensure!(priors.len() == files.len(), "the catalog gave {} rows for {} files", priors.len(), files.len());
             for (file, prior) in files.iter_mut().zip(priors) {
                 file.prior = prior;

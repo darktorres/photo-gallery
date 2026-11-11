@@ -606,7 +606,7 @@ mod tests {
     /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
     fn found_as(c: &mut Catalog, scan: ScanId, identity: FileIdentity, created: Option<i64>) -> Recorded {
         let rules = c.rules();
-        let prior = c.prior_states(&[identity]).unwrap().remove(0);
+        let prior = c.prior_states(&p(rules, r"D:\x"), &[identity]).unwrap().remove(0);
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
         let folder = writer.folder(&p(rules, r"D:\x")).unwrap();

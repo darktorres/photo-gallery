@@ -436,7 +436,7 @@ mod tests {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let put = |c: &mut Catalog, scan: pg_model::ids::ScanId, folder: &str, name: &str, file_ref: u64| {
             let identity = FileIdentity::new(1, file_ref);
-            let prior = c.prior_states(&[identity]).unwrap().remove(0);
+            let prior = c.prior_states(&p(rules, folder), &[identity]).unwrap().remove(0);
             let tx = c.tx().unwrap();
             let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
             let folder = writer.folder(&p(rules, folder)).unwrap();

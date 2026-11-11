@@ -17,12 +17,12 @@
 //! A candidate counts when it matches exactly one row, every row counted (missing or not); several bind nothing and
 //! are counted as ambiguous. A fresh row with children is never paired: pairing deletes it, and its children with it.
 //!
-//! Each tier, and the clearing of the rows nothing paired, runs over the fresh rows in batches of at most `WRITE_BATCH`
-//! by id, each in a short write transaction of its own, which reads its batch and runs the tier's queries inside it, so
-//! a decision sees the rows as they are (an edit committed between two batches is part of that state), and no other
-//! writer waits behind the whole pass. A batch is a seek on the `files_fresh` index, so the passes read each fresh row
-//! once each, and a scan with nothing fresh reads nothing. The walk's lease keeps any other walk of the root out
-//! meanwhile.
+//! Each tier runs over the fresh rows in batches of at most `WRITE_BATCH` by id, each in a short write transaction of
+//! its own, which reads its batch and runs the tier's queries inside it, so a decision sees the rows as they are (an
+//! edit committed between two batches is part of that state), and no other writer waits behind the whole pass. The
+//! last tier's batches also clear the rows nothing paired. A batch is a seek on the `files_fresh` index, so each pass
+//! reads each fresh row once, and a scan with nothing fresh reads nothing. The walk's lease keeps any other walk of the
+//! root out meanwhile.
 
 use std::collections::BTreeSet;
 
@@ -184,6 +184,15 @@ impl Catalog {
             // Replacement: the file that took a name, in the same folder, with a changed or unknown creation time.
             // Candidates are rows displaced or still unpaired, or live rows this scan did not see. They are in the
             // fresh row's folder, which the scan listed.
+            //
+            // Then, in the same batch, the clearing: the fresh rows nothing paired, which have no children, are
+            // genuinely new files, and stop being unpaired (outside the skipped folders, which no batch has). A fresh
+            // row's fate is settled once this tier has looked at it, since no tier takes a row this scan saw as a
+            // candidate (each asks for `last_scan` before the scan), so clearing it here is clearing it after every
+            // tier; an ambiguous row is counted as it is cleared, while it is still unpaired. Only the rows this scan
+            // saw are cleared: an unpaired row it did not see is a file that is gone for now, and stays unpaired, so
+            // the file coming back under its identity is paired with its row (and its data) rather than taken for a
+            // new file. Displaced rows (no identity) stay as they are, as tombstones a later file can replace.
             in_batches(conn, &under, scan, &skipped, |tx, fresh| {
                 let mut replaced_by = tx.prepare_cached(
                     "SELECT id FROM files WHERE folder_id = ?1 AND name = ?2 AND id <> ?3
@@ -192,6 +201,7 @@ impl Catalog {
                      AND (created IS NULL OR ?5 IS NULL OR created <> ?5)
                      ORDER BY id",
                 )?;
+                let mut clear = tx.prepare_cached("UPDATE files SET unpaired = 0 WHERE id = ?1 AND unpaired = 1")?;
                 for f in fresh {
                     if !f.unpaired_still(tx)? {
                         continue;
@@ -210,12 +220,18 @@ impl Catalog {
                             ambiguous.insert(f.id);
                         }
                     }
+                    // A replaced row is gone (its row took the file), so nothing is cleared for it.
+                    if clear.execute([f.id])? > 0 && ambiguous.remove(&f.id) {
+                        out.ambiguous += 1;
+                    }
                 }
                 Ok(())
             })?;
         }
 
-        // Counted before the clearing below, which makes the rows nothing paired no longer unpaired.
+        // The ambiguous rows not counted as they were cleared: all of them on a scan that was not complete, which
+        // clears nothing; on a complete one, those that stopped being fresh between the tiers (a rating given
+        // meanwhile, say), still unpaired.
         {
             let snapshot = conn.unchecked_transaction()?;
             let mut stmt = snapshot.prepare_cached("SELECT unpaired FROM files WHERE id = ?1")?;
@@ -227,21 +243,6 @@ impl Catalog {
             }
             drop(stmt);
             snapshot.commit()?;
-        }
-        if coverage.complete {
-            // The fresh rows nothing paired, which have no children, are genuinely new files: cleared, outside the
-            // skipped folders, in the same batches by id as the tiers (each batch's rows read, with every condition, in
-            // the transaction that clears them). Only the rows this scan saw are cleared: an unpaired row it did not see
-            // is a file that is gone for now, and stays unpaired, so the file coming back under its identity is paired
-            // with its row (and its data) rather than taken for a new file. Displaced rows (no identity) stay as they
-            // are, as tombstones a later file can replace.
-            in_batches(conn, &under, scan, &skipped, |tx, fresh| {
-                let mut clear = tx.prepare_cached("UPDATE files SET unpaired = 0 WHERE id = ?1")?;
-                for f in fresh {
-                    clear.execute([f.id])?;
-                }
-                Ok(())
-            })?;
         }
 
         out.unpaired_with_data = conn.query_row(
@@ -486,7 +487,7 @@ mod tests {
     ) -> Recorded {
         let rules = c.rules();
         let identity = FileIdentity::new(volume, file);
-        let prior = c.prior_states(&[identity]).unwrap().remove(0);
+        let prior = c.prior_states(&p(rules, folder), &[identity]).unwrap().remove(0);
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
         let folder = writer.folder(&p(rules, folder)).unwrap();

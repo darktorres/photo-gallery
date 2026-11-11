@@ -184,7 +184,7 @@ Each step landed with its tests. The tests named below that did not exist when t
 - **Step 7.** A hard-link second path is skipped and counted, and the row does not flip between two scans (`a_second_path_to_a_file_is_skipped_and_counted_and_the_row_does_not_flip`); a missing row in another root does not claim the identity (`a_missing_row_in_another_root_does_not_claim_the_identity`). Both in `crates/scan/src/lib.rs`.
 - **Step 8.** The wall-clock timing is recorded in `docs/PROFILING.md`, not gated.
 - **Manual, WSL.** A tmpfs mounted under a scanned root scans twice with no row flipping. Done, recorded in `docs/PROFILING.md` (Measurements): 40 rows and 0 missing after each scan.
-- **Manual, end to end.** The plan: build the catalog with the old binary (`main`), rate a file, run `wsl --shutdown`, and scan with the new binary; check `stat -c %d` before and after, and repeat the run if the device number did not change; the rows keep their ids, the rating is on a present row, and analysis is kept; stop `docker-desktop` first and restart it afterwards. The run across `wsl --shutdown` is recorded in `docs/PROFILING.md` (Measurements): the device number changed twice (201 to 145, then 74), and every row kept its id, rating and analysis. Both scans used HEAD's binary, and the run predates 94a2530. A run from a catalog built by an older binary has not been done.
+- **Manual, end to end.** The plan: build the catalog with the old binary (`main`), rate a file, run `wsl --shutdown`, and scan with the new binary; check `stat -c %d` before and after, and repeat the run if the device number did not change; the rows keep their ids, the rating is on a present row, and analysis is kept; stop `docker-desktop` first and restart it afterwards. The run across `wsl --shutdown` is recorded in `docs/PROFILING.md` (Measurements): the device number changed twice (201 to 145, then 74), and every row kept its id, rating and analysis. Both scans used HEAD's binary, and the run predates 94a2530. It was run again after 94a2530 (2026-11-11, `docs/PROFILING.md`): the HEAD binary built in the container, the volume reported as having no UUID, renumbered by a distro restart (85 to 52) and by `wsl --shutdown` (52 to 74); all 40 rows kept their ids, the rating and the analysis. The older-binary step can't be run: the history is squashed at `88e780b`, which already holds S-17.7.
 
 ## Verification
 
@@ -218,5 +218,6 @@ Each step landed with its tests. The tests named below that did not exist when t
 
 ## Not verified yet
 
-- The trigger that replaces `/mnt/d`'s mount. The mechanism is known (each drvfs mount has its own device number). Not reproduced: within boot `229876ad`, `/mnt/d` went from 160 to 195 and `/mnt/c` from 159 to 194, and the kernel log shows no 9p event. The design does not depend on it.
-- The end-to-end run from a catalog built by an older binary (Tests, Manual, end to end).
+- The end-to-end run from a catalog built by an older binary (Tests, Manual, end to end): not possible, since the history is squashed at `88e780b`, which already holds S-17.7.
+
+The trigger that replaces `/mnt/d`'s mount, unknown when this was planned, is a start of the distro (`docs/S17_7_PROBES.md`): `wsl --terminate` and a new shell, within one VM boot, renumbered `/mnt/d` (85 to 52).

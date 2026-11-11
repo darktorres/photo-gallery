@@ -50,4 +50,7 @@ The `statfs` magic numbers in the WSL section come from the kernel headers (`/us
 - drvfs inode reuse on delete-then-create: 0 of 50, and 0 of 2000. The 95% upper bound for a 2000-cycle run is about 0.15% per cycle. This is evidence against reuse, not proof that it cannot happen.
 - Distinct devices have distinct `st_dev`: `/dev/shm` 75, `/tmp` 133, `$HOME` 2096, `/mnt/c` 115, `/mnt/d` 117 (this boot).
 - Device renumbering across boots: `/mnt/d` was 214 before one restart and 146 after it; then 146 → 74 after a later restart; then 74 → 74 after the next. `/mnt/c` followed the same pattern (145, 73).
+- The within-boot trigger (2026-11-11): restarting the distro alone renumbers drvfs. With the VM kept up,
+  `wsl --terminate Ubuntu-26.04` and a new shell in it left the boot id as it was (`bd10bdba`) and changed `/mnt/d`
+  from 85 to 52: the distro's start mounts drvfs again, and each mount gets a new device number. `wsl --shutdown` then gave a new boot id and 74.
 - Device renumbering within one VM boot: `/mnt/d` went from 74 to 117 (and `/mnt/c` from 73 to 115) with the same boot id (`229876ad`). Stopping and restarting `docker-desktop` did not change the numbers. The trigger is unknown; the window also included Windows directory scans of D: and C:, which were not isolated.

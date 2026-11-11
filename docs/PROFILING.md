@@ -296,6 +296,15 @@ Not gated: wall-clock time on this machine, not instructions, so it is a ledger 
   names, none missing, the rating and the analysis kept. A second restart changed it again (145 to 74), with the same
   result. Not done here: the plan's first step, a catalog built with the older binary; this check used HEAD's binary
   for both scans.
+- **Device change across a restart, after 94a2530** (2026-11-11, HEAD `3aa7efd`): the headless `gallery` built in the
+  container (`just linux-gallery`), run in WSL Ubuntu-26.04, nothing built there. A 40-file library
+  (`synthetic_library.py --folders 4 --per-folder 10 --seed 1`) on drvfs (`/mnt/d`), scanned and imported (40 analysis
+  rows), one rating set to 4. The scan says the volume has no UUID (`ScanNote::VolumeFallback`), so its identity is
+  the device number. A distro restart inside one VM boot (`wsl --terminate Ubuntu-26.04`, the same boot id) changed the
+  device 85 to 52; `wsl --shutdown` (a new boot id) changed it 52 to 74. After each, the rescan found all 40 files
+  under a new identity (`Files found again`: 40): the same ids, names and file IDs, none missing or unpaired, the
+  rating and the 40 analysis rows kept. The older-binary step can't be run: the history is squashed at `88e780b`,
+  which already holds S-17.7, so there is no earlier build to make the catalog.
 - **Windows** (the same script, under Git Bash with the Windows Python; `gallery.exe` release build of the working tree,
   whose crates are HEAD's, on NTFS, the 10,000-file library on `D:`): first 1.316 s, unchanged 0.146 s, renumbered
   0.322 s. The renumbered scan paired every row: 10,000 rows, none missing.

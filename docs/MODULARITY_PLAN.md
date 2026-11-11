@@ -566,6 +566,32 @@ M-9 to M-16 and M-18, built and checked together for the first time, on Windows 
 
 The fourth review (2026-11-10) is in [MODULARITY_REVIEW_4.md](MODULARITY_REVIEW_4.md): how every crate was checked, the steps M-21 to M-49, their order and their open decisions.
 
+## Validation 4 (2026-11-11, Windows and Linux): review 4, steps 5 to 9
+
+Steps 5 to 9 of [MODULARITY_REVIEW_4.md](MODULARITY_REVIEW_4.md) (`a0996ca` to `225d2fb`) were written without building, and built and checked together here for the first time. Everything the run found is fixed at its cause in `37b8e9b`; the perf gate's data is `e7576f0`.
+
+- Compile and clippy (five rounds): imports the moves left or lacked; the typed ids of M-42 (`ScanId`, `FileHash`, `Rating`, `Turns`) in the tests; `ThumbCache::open`'s `Option<Cap>` (M-41); replay's errors as M-39's `SourceError`; `Turns::of` without an `as`; a macro used before its definition; an `#[allow]` that is an `#[expect]`; `Results`' groups without a slice that can panic.
+- Tests: since M-36 the catalog and the cache open the path they are given, so the tests of a folder SQLite can't name alias it first (`pg_platform::sqlite::openable_folder`), and the cache's tests pass the cache file, not its folder. The thumbnail pass since a change number reads `files_seq` again: M-37 moved the filters into the catalog's view, after which the test catalog planned the pass by the files' `(volume, file_ref)` index for its order; the volume sort term of that query is now an expression (`+f.volume`).
+- Module cycles (`just modgraph`), three, each broken by moving the item down:
+  - `pg-catalog`, text scan: `write_transaction` is a leaf (`transaction.rs`), so are the current-row check (`current.rs`) and a listing's columns (`listing.rs`); the modules name `core::Catalog`, not the root's re-export; `schema.rs`'s comments no longer link `core` and `rebuild`.
+  - `pg-catalog`, compiler graph: M-44 put each concern's methods in an `impl Catalog` of its module, and the compiler graph puts an inherent method in its type's module (the M-7 and M-10 finding), so a method that takes its module's own type made `core` depend on that module. The types those methods take are in leaf children, re-exported where they were: `inbox::id` (`EntryId`), `queue::job` (`Job`, `Rewrite`, `WriteEffect`), `dups::identity`, `pair::coverage`, `ledger::failure`.
+  - `pg-app`: `ReadError` is in `error.rs`, beside its `From` impl, which the graph files under `Error`.
+- Lint: rustdoc links (the write macros, which are defined after the module docs; `PdqIndex`, now `pub(crate)`; `judge`, a function and a module); ruff on M-48's `tools/modgraph` scripts (and `api_surface.py` now fails when `cargo-modules` does, instead of reading nothing); `deny.toml`'s `turbojpeg` wrappers (`pg-render` is no longer one, M-27); `fuzz/Cargo.lock` (`blake3`); formatting. Linux only: the `ir` bench's unused import.
+- Windows: `just lint` passes (every step, the four boundary checks included); `just test`: 88 suites, 840 pass, 3 ignored; `just qmltest`: 71 pass; `just modgraph`: no cycle group in the text scan or the Windows compiler graph.
+- Linux (`just check-linux`, `pg-dev`): every step passes: the lint, the module cycles (the text scan and the Linux compiler graph), and the tests (88 suites, 824 pass, 3 ignored).
+- Screenshots (`just shots --base cae2f7a28c`): the fixture had changed since that reference was recorded, so it is recorded again. 18 of 21 scenarios match. `query`, `apply-view` and `borders` differ by at most 1 per channel, in thumbnails only, and are the thumbnail flake of the earlier validations: across three reruns each matched at least once, by the same repeating pixel counts (`apply-view` in two variants), and `query` differs from the working tree's own earlier run. Still open. The two recording attempts that ran beside the tests or the lint timed out (a scenario not settled in 10 s, then 30 s); alone, the recording passed.
+- Perf (`just perf`): the pending-thumbnails bench stopped (`no such table: cat.thumb_folders`). It read its copy of the data without opening it through `Catalog::prepare`, as the other catalog benches do, so it met `v5-windows-rules`' schema, `user_version` 1, without migration 6's views. The data is `v6-windows-rules` (`e7576f0`): v5's catalog opened once by this build (migrations 2 to 7), the same 4,000 files and rows, made by `tools/profiling/bench_data.py`; the cache's schema is unchanged. Against the baseline (`fafa7d8`), twelve benches are within 0.21%, and two moved:
+
+  | Bench | Baseline | `e7576f0` | Change |
+  | --- | --- | --- | --- |
+  | `pending_thumbs.at_height` | 3,412,526 | 3,998,089 | +17.16% |
+  | `analyze_jpeg.sample` | 69,779,013 | 67,719,462 | -2.95% |
+
+  - `pending_thumbs.at_height`: per function, the 585,563 instructions are SQLite's parse of the attached catalog's schema (`sqlite3RunParser`, `yy_reduce`, the tokenizer, `triggerStepAllocate`, `sqlite3AddColumn`, their allocations). The query's own execution (`sqlite3VdbeExec`) is up 13,616. The old data's schema was version 1, which the app's catalogs left behind with the notifications' migrations; the bench now opens the schema the app opens. `e7576f0`'s message says a change between v5 and v6 is the code's; the schema is part of the data, so this one is the data's.
+  - `analyze_jpeg.sample`: M-48 made `Hasher::hash_rgb` test-only, so `dct16` has one caller left and is inlined into `hash_rgb_dihedral` (19,350,092 instructions in `dct16` before, 2,059,551 fewer in all).
+  - The baseline is re-measured at `e7576f0` (`just perf --update`), with the profiles in `docs/perf/callgrind/e7576f0.tar.zst`; it reproduced the gated run's counts exactly.
+- Not committed by this validation: another session's two edits in the working tree, which `pg-client` and `pg-desktop` need to build: `crates/client/src/text.rs` names the Yandex `Status` as `YandexStatus` (M-47 left two `Status` imports), and `crates/desktop/src/gallery/state.rs`'s `entry` reads `self.grid.item(i)` (M-45 left it calling itself). Every check above ran on the working tree with them.
+
 ## Open decisions
 
 None. Unverified until their step, and confirmed there:

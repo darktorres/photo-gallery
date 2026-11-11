@@ -876,11 +876,12 @@ This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered toget
    S3 done (the failure ledger: the files the passes failed on, in the inbox, with Reveal and Retry; the CLI reports the
    unreadable files and an unwritten ledger).
 4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends). Done.
-5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.
-6. **M-32** (the rest of it), **M-43** and **M-35**: the client's logic, the session, and the image scheme.
-7. The catalog, with the perf gate: **M-37**, **M-42**, **M-24**, then **M-44**. Then the rest of **M-45** (the names), once the catalog's modules are settled.
-8. **M-23**, **M-25**, **M-28**, **M-36**, **M-38**, **M-39**, **M-40**, **M-41** and **M-47**, independent of one another.
-9. **M-46**, **M-48**, then **M-49**, and the Windows and Linux validation of the whole series.
+5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`. Done.
+6. **M-32** (the rest of it), **M-43** and **M-35**: the client's logic, the session, and the image scheme. Done.
+7. The catalog, with the perf gate: **M-37**, **M-42**, **M-24**, then **M-44**. Then the rest of **M-45** (the names), once the catalog's modules are settled. Done.
+8. **M-23**, **M-25**, **M-28**, **M-36**, **M-38**, **M-39**, **M-40**, **M-41** and **M-47**, independent of one another. Done.
+9. **M-46**, **M-48**, then **M-49**, and the Windows and Linux validation of the whole series. Done: steps 5 to 9 were
+   written without building, and built and checked together (`37b8e9b`; MODULARITY_PLAN.md, "Validation 4").
 
 ## Open decisions
 

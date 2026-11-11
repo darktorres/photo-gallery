@@ -99,7 +99,7 @@ impl GridSize {
     }
 }
 
-/// `v` rounded to the nearest whole pixel, held to `i32`'s range (NaN gives 0, as a float cast does).
+/// `v` rounded to the nearest whole pixel; the conversion saturates at `i32`'s range (NaN gives 0).
 fn round_i32(v: f64) -> i32 {
-    pg_model::num::f64_to_i32(v.round().clamp(f64::from(i32::MIN), f64::from(i32::MAX)))
+    pg_model::num::f64_to_i32(v.round())
 }

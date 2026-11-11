@@ -21,9 +21,7 @@ impl Format {
             [b'R', b'I', b'F', b'F', _, _, _, _, b'W', b'E', b'B', b'P', ..] => Format::Webp,
             [b'B', b'M', ..] => Format::Bmp,
             [b'I', b'I', 0x2A, 0x00, ..] | [b'M', b'M', 0x00, 0x2A, ..] => Format::Tiff,
-            // BigTIFF: 43, then 8 (the offset size) and 0.
-            [b'I', b'I', 0x2B, 0x00, 0x08, 0x00, 0x00, 0x00, ..]
-            | [b'M', b'M', 0x00, 0x2B, 0x00, 0x08, 0x00, 0x00, ..] => Format::Tiff,
+            _ if is_bigtiff(bytes) => Format::Tiff,
             _ => return None,
         })
     }
@@ -48,6 +46,15 @@ impl Format {
     pub fn name(self) -> &'static str {
         self.into()
     }
+}
+
+/// Whether a TIFF's header is a BigTIFF's: 43 after the byte order, where a classic TIFF has 42, then 8 (the offset
+/// size) and 0.
+pub fn is_bigtiff(bytes: &[u8]) -> bool {
+    matches!(
+        bytes,
+        [b'I', b'I', 0x2B, 0x00, 0x08, 0x00, 0x00, 0x00, ..] | [b'M', b'M', 0x00, 0x2B, 0x00, 0x08, 0x00, 0x00, ..]
+    )
 }
 
 /// Whether the format can carry a rating (an XMP packet) that other programs read. BMP can't: its rating lives in the

@@ -54,10 +54,9 @@ fn six_places(v: f64) -> f64 {
     (v * 1e6).round() / 1e6
 }
 
-/// `v` rounded to a whole number of device pixels, held to `i64`'s range: a value past it gives -2⁶³, or the largest
-/// `f64` below 2⁶³ (9,223,372,036,854,774,784); NaN gives 0, as a float cast does.
+/// `v` rounded to a whole number of device pixels; the conversion saturates at `i64`'s range (NaN gives 0).
 fn round_i64(v: f64) -> i64 {
-    pg_model::num::f64_to_i64(v.round().clamp(-9_223_372_036_854_775_808.0, 9_223_372_036_854_774_784.0))
+    pg_model::num::f64_to_i64(v.round())
 }
 
 impl View {

@@ -37,8 +37,7 @@ impl Resizer {
     /// The image fitted into `width × height` into `out`, keeping its aspect ratio: down when it is larger than the
     /// box, up when it is smaller.
     pub fn fit_box(&mut self, img: &Rgb, width: usize, height: usize, out: &mut Rgb) -> Result<()> {
-        let scale = (pg_model::num::count(width) / pg_model::num::count(img.width))
-            .min(pg_model::num::count(height) / pg_model::num::count(img.height));
+        let scale = crate::decode::MinSize::fit_scale(width, height, img.width, img.height);
         let w = to_pixels((pg_model::num::count(img.width) * scale).round()).max(1);
         let h = to_pixels((pg_model::num::count(img.height) * scale).round()).max(1);
         self.resize(img, w, h, out)

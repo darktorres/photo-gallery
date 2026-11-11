@@ -315,6 +315,13 @@ Each fix gets a test that fails before it.
     - BigTIFF detection, in `pg_model::format`;
     - `pg_model::date::civil`, made public.
 - Gate: `just test`, perf.
+- **Done in step 8.**
+  - `pg_model::num`'s docs and expect reasons say a float-to-integer cast saturates (NaN to 0). The clamps that only restated the target's range went: the borders' and the PDQ's channels, the colour conversion's `f32_to_u8` and `f32_to_u16`, the XMP rating, the grid's crop, the client's `round_i32`, `round_u64` and `round_i64`, the screenshot's `millis`, and `pg-video`'s `whole_i64` and `whole_u32`, whose callers convert directly. The clamps to a domain's range stay: a pixel count to `u32`'s range (`to_pixels`, `to_count`), the PDQ's `i16` range, the cache's cap.
+  - `MinSize::fit_scale`, used by the JPEG decode's `Fit`, `Resizer::fit_box` and `Shown::covers`.
+  - `pg-video`'s `display_width(width, sar)` and `ticks_ms(ticks, time_base)`, free functions of the rational (a `Stream` method would hold the input borrowed while it reads packets).
+  - The command line's `max_pixels()` is `max_decode_bytes() / 3`.
+  - `DECODE_MARGIN` was once already (M-30).
+  - `pg_model::filetime_unix_seconds!` and `date::FILETIME_UNIX_EPOCH_TICKS`; `format::is_bigtiff`, which `sniff` and the TIFF crop use; `date::civil`, which the platform's Unix clock uses.
 
 ## Code in the wrong crate
 

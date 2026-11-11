@@ -138,10 +138,11 @@ pub(crate) fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Contro
     Ok(stats)
 }
 
-/// The most pixels one image may have: `image`'s default allocation limit (512 MiB, which the app's decoders keep to)
-/// at three bytes a pixel. A header above it is refused before any pixel is read, so the pipe can't ask for a 3 GB
-/// buffer.
-const MAX_PIXELS: usize = (512 << 20) / 3;
+/// The most pixels one image may have: the decoders' cap (`pg_codec::max_decode_bytes`) at three bytes a pixel. A
+/// header above it is refused before any pixel is read, so the pipe can't ask for a 3 GB buffer.
+fn max_pixels() -> usize {
+    usize::try_from(pg_codec::max_decode_bytes() / 3).unwrap_or(usize::MAX)
+}
 
 /// Look for borders in images read from `input` until it ends: each one's width and height (u32, little-endian),
 /// then its pixels (RGB, rows top to bottom). For each, a line on `output`: what is left without its borders, as
@@ -159,7 +160,7 @@ pub(crate) fn serve(mut input: impl BufRead, mut output: impl Write) -> Result<u
         input.read_exact(size.as_flattened_mut()).context("reading an image's size")?;
         let dims = size.map(u32::from_le_bytes);
         let [w, h] = dims.map(pg_model::num::index);
-        ensure!(w.checked_mul(h).is_some_and(|p| p <= MAX_PIXELS), "image {n}: {w} × {h} is too large");
+        ensure!(w.checked_mul(h).is_some_and(|p| p <= max_pixels()), "image {n}: {w} × {h} is too large");
         (img.width, img.height) = (w, h);
         img.pixels.resize(w * h * 3, 0);
         input.read_exact(&mut img.pixels).with_context(|| format!("reading image {n}'s pixels"))?;
@@ -273,7 +274,7 @@ mod tests {
 
     #[test]
     fn a_header_above_the_pixel_limit_is_refused_before_its_pixels() {
-        // 20000 × 20000 is 400 M pixels, over MAX_PIXELS; no pixel bytes follow, so the refusal is the header's.
+        // 20000 × 20000 is 400 M pixels, over `max_pixels`; no pixel bytes follow, so the refusal is the header's.
         let mut input = Vec::new();
         input.extend_from_slice(&20_000u32.to_le_bytes());
         input.extend_from_slice(&20_000u32.to_le_bytes());

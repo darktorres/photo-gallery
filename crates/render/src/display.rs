@@ -97,7 +97,7 @@ impl Shown {
         match min_size(view) {
             MinSize::Full => false,
             MinSize::Fit(bw, bh) => {
-                let scale = (count(bw) / count(full.0)).min(count(bh) / count(full.1)).min(1.0);
+                let scale = MinSize::fit_scale(bw, bh, full.0, full.1).min(1.0);
                 count(w) >= (count(full.0) * scale).floor() && count(h) >= (count(full.1) * scale).floor()
             }
             MinSize::Upright(mw, mh) => w >= mw.min(full.0) && h >= mh.min(full.1),

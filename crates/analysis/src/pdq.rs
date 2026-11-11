@@ -297,7 +297,7 @@ mod tests {
 
     /// `x` rounded toward zero, as a channel value.
     fn channel(x: f32) -> u8 {
-        pg_model::num::f64_to_u8(f64::from(x.clamp(0.0, 255.0)))
+        pg_model::num::f64_to_u8(f64::from(x))
     }
 
     fn reference(rgb: &[u8], w: usize, h: usize) -> ([u8; 32], f32) {

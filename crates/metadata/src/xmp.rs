@@ -129,7 +129,7 @@ pub(crate) fn percent(v: f64) -> u8 {
 
 /// `v` rounded to the nearest whole number, held to 0..=255 (NaN reads as 0).
 fn round_u8(v: f64) -> u8 {
-    pg_model::num::f64_to_u8(v.round().clamp(0.0, 255.0))
+    pg_model::num::f64_to_u8(v.round())
 }
 
 #[cfg(test)]

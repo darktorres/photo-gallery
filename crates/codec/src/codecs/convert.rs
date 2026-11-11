@@ -207,12 +207,12 @@ pub(super) fn cmyk_to_rgb16(cmyk: &[u16; 4]) -> [u16; 3] {
 
 /// `v` rounded toward zero, as `as` gives it: saturating at 0 and 255, NaN to 0.
 fn f32_to_u8(v: f32) -> u8 {
-    num::f64_to_u8(f64::from(v.clamp(0.0, 255.0)))
+    num::f64_to_u8(f64::from(v))
 }
 
 /// `v` rounded toward zero, as `as` gives it: saturating at 0 and 65535, NaN to 0.
 fn f32_to_u16(v: f32) -> u16 {
-    num::f64_to_u16(f64::from(v.clamp(0.0, 65535.0)))
+    num::f64_to_u16(f64::from(v))
 }
 
 #[cfg(test)]

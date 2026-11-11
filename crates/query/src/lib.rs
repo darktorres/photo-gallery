@@ -17,13 +17,6 @@ use pg_model::group_distance;
 use pg_model::query::{BorderFacet, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
 use pg_model::media::MediaType;
 
-/// FILETIME (100 ns since 1601) of the Unix epoch, in seconds. A macro, for SQL made at compile time.
-macro_rules! filetime_unix_offset {
-    () => {
-        11_644_473_600_i64
-    };
-}
-
 // SQL used in more than one place is a macro, so every piece is a constant (`concat!`).
 
 /// A file with borders found that the user didn't mark as not a border.
@@ -270,7 +263,7 @@ pub fn condition_without(query: &Query, skip: Option<Counted>) -> Condition {
     // Taken is wall-clock time (`analysis.taken`, already in this computer's zone): compared as is. Modified is a UTC
     // FILETIME: the local day's bounds are converted, to the instant the local clock first reads them (`local_start_sql`).
     let modified =
-        |cmp: &str| format!("f.mtime {cmp} ((({}) + {}) * 10000000)", local_start_sql(), filetime_unix_offset!());
+        |cmp: &str| format!("f.mtime {cmp} ((({}) + {}) * 10000000)", local_start_sql(), pg_model::filetime_unix_seconds!());
     let bounds = [
         (query.taken.from, "a.taken >= ?".to_string(), 0),
         (query.taken.to, "a.taken < ?".to_string(), 86_400),
@@ -358,7 +351,7 @@ pub fn key_sql(sort: Sort) -> Option<&'static str> {
         SortKey::Modified => Some("f.mtime"),
         SortKey::Taken => Some(concat!(
             "coalesce(a.taken, unixepoch(f.mtime / 10000000 - ",
-            filetime_unix_offset!(),
+            pg_model::filetime_unix_seconds!(),
             ", 'unixepoch', 'localtime'))"
         )),
         SortKey::Created => Some("f.created"),

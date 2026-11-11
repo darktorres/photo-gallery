@@ -114,8 +114,7 @@ fn tiff_samples_cropped(bytes: &[u8], rect: [u32; 4]) -> Result<Option<Vec<u8>>>
     // the decoder's buffers from the rest.
     let (image, stored) = decoded_color(color).context("decoding")?;
     let mut decoder = decoder.with_limits(tiff_limits(image, stored, width, height).context("decoding")?);
-    // BigTIFF: 43 after the byte order, where a classic TIFF has 42.
-    let big = matches!(bytes.get(..4), Some(b"II\x2B\0" | b"MM\0\x2B"));
+    let big = pg_model::format::is_bigtiff(bytes);
     let [_, _, w, h] = rect;
     let mut out = Cursor::new(Vec::new());
     match (color, decoder.read_image().context("decoding")?) {

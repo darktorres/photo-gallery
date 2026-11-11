@@ -21,7 +21,7 @@ use anyhow::{Context, Result, bail};
 use ffi::{
     AV_LOG_FATAL, AVColorRange_AVCOL_RANGE_JPEG, AVColorRange_AVCOL_RANGE_MPEG, AVColorRange_AVCOL_RANGE_UNSPECIFIED,
     AVColorSpace_AVCOL_SPC_BT470BG, AVColorSpace_AVCOL_SPC_BT709, AVColorSpace_AVCOL_SPC_UNSPECIFIED,
-    AVPixelFormat_AV_PIX_FMT_RGB24, Decoder, Frame, Input, NOPTS_VALUE, Packet, Scaler, Stream,
+    AVPixelFormat_AV_PIX_FMT_RGB24, AVRational, Decoder, Frame, Input, NOPTS_VALUE, Packet, Scaler, Stream,
 };
 
 use pg_codec::decode::orient_into;
@@ -92,9 +92,24 @@ fn matrix_orientation(m: [i32; 9]) -> Orientation {
     }
     // av_display_rotation_get is the counterclockwise angle; turning clockwise by the opposite shows it upright.
     let clockwise = (b / s1).atan2(a / s0).to_degrees();
-    let turns = whole_i64((clockwise / 90.0).round());
+    let turns = pg_model::num::f64_to_i64((clockwise / 90.0).round());
     // EXIF mirrors the stored picture before the rotation: the same picture with the turn reversed.
     Orientation::from_parts(mirrored, Turns::of(if mirrored { -turns } else { turns }))
+}
+
+/// The width a picture of `width` stored pixels shows at, its pixels made square by the sample aspect ratio `sar` (one
+/// that says nothing, 0 or negative, leaves it as stored).
+fn display_width(width: u32, sar: AVRational) -> u32 {
+    if sar.num > 0 && sar.den > 0 {
+        pg_model::num::f64_to_u32((f64::from(width) * f64::from(sar.num) / f64::from(sar.den)).round()).max(1)
+    } else {
+        width
+    }
+}
+
+/// `ticks` of a stream's `time_base`, in milliseconds.
+fn ticks_ms(ticks: i64, time_base: AVRational) -> f64 {
+    pg_model::num::signed(ticks) * f64::from(time_base.num) * 1000.0 / f64::from(time_base.den.max(1))
 }
 
 pub fn probe(path: &Path) -> Result<Probe> {
@@ -102,21 +117,16 @@ pub fn probe(path: &Path) -> Result<Probe> {
     let stream = input.best_video().context("no video stream")?;
     let decoder = Decoder::open(&stream)?;
     let codec = ffi::codec_name(stream.codec_id());
-    let (mut w, h) = (decoder.width(), decoder.height());
+    let (w, h) = (decoder.width(), decoder.height());
     if w == 0 || h == 0 {
         bail!("no picture size");
     }
-    let sar = decoder.sample_aspect_ratio();
-    if sar.num > 0 && sar.den > 0 && sar.num != sar.den {
-        w = whole_u32((f64::from(w) * f64::from(sar.num) / f64::from(sar.den)).round());
-    }
+    let w = display_width(w, decoder.sample_aspect_ratio());
     let orientation = display_orientation(&stream);
     let (width, height) = if orientation.swaps_axes() { (h, w) } else { (w, h) };
 
-    let tb = stream.time_base();
-    let in_ms = |t: i64| pg_model::num::signed(t) * f64::from(tb.num) * 1000.0 / f64::from(tb.den.max(1));
     let duration_ms = if stream.duration() > 0 {
-        whole_i64(in_ms(stream.duration()))
+        pg_model::num::f64_to_i64(ticks_ms(stream.duration(), stream.time_base()))
     } else {
         // The container's, in AV_TIME_BASE (µs).
         input.duration().max(0) / 1000
@@ -126,7 +136,7 @@ pub fn probe(path: &Path) -> Result<Probe> {
         n if n > 0 => n,
         _ if rate.num > 0 && rate.den > 0 => {
             let frames = pg_model::num::signed(duration_ms) / 1000.0 * f64::from(rate.num) / f64::from(rate.den);
-            whole_i64(frames.round())
+            pg_model::num::f64_to_i64(frames.round())
         }
         _ => 1,
     };
@@ -152,19 +162,9 @@ pub fn probe(path: &Path) -> Result<Probe> {
 
 /// Where the poster frame is in a video of this length.
 pub fn poster_ms(duration_ms: i64) -> i64 {
-    whole_i64(pg_model::num::signed(duration_ms) * POSTER_FRACTION).clamp(0, POSTER_MAX_MS)
+    pg_model::num::f64_to_i64(pg_model::num::signed(duration_ms) * POSTER_FRACTION).clamp(0, POSTER_MAX_MS)
 }
 
-/// `v` with its fraction dropped, held to `i64`'s range (NaN reads as 0).
-fn whole_i64(v: f64) -> i64 {
-    let bound = 2f64.powi(63);
-    pg_model::num::f64_to_i64(v.clamp(-bound, bound))
-}
-
-/// `v` with its fraction dropped, held to `u32`'s range (NaN reads as 0).
-fn whole_u32(v: f64) -> u32 {
-    pg_model::num::f64_to_u32(v.clamp(0.0, f64::from(u32::MAX)))
-}
 
 /// The frame shown at `at_ms` (the first at or after it; the last one if the video is shorter), upright and
 /// turned `turns` quarter turns clockwise further (the catalog rotation), as RGB at its display size, in a new
@@ -185,8 +185,7 @@ pub fn frame_into(path: &Path, at_ms: i64, turns: Turns, out: &mut Rgb, spare: &
     let tb = stream.time_base();
     let start = if stream.start_time() == NOPTS_VALUE { 0 } else { stream.start_time() };
     let mut decoder = Decoder::open(&stream)?;
-    let ms =
-        |t: i64| whole_i64(pg_model::num::signed(t - start) * f64::from(tb.num) * 1000.0 / f64::from(tb.den.max(1)));
+    let ms = |t: i64| pg_model::num::f64_to_i64(ticks_ms(t - start, tb));
     if at_ms > 0 {
         // To the keyframe at or before it (AV_TIME_BASE = µs); decoding goes on from there. A file that can't
         // seek is decoded from the start.
@@ -231,12 +230,7 @@ pub fn frame_into(path: &Path, at_ms: i64, turns: Turns, out: &mut Rgb, spare: &
 /// and range. HD video that doesn't say is taken as BT.709, as players do.
 fn to_rgb(mut src: Frame, out: &mut Rgb) -> Result<()> {
     let (w, h) = (src.width(), src.height());
-    let sar = src.sample_aspect_ratio();
-    let dw = if sar.num > 0 && sar.den > 0 {
-        whole_u32((f64::from(w) * f64::from(sar.num) / f64::from(sar.den)).round()).max(1)
-    } else {
-        w
-    };
+    let dw = display_width(w, src.sample_aspect_ratio());
     if src.color_space() == AVColorSpace_AVCOL_SPC_UNSPECIFIED {
         src.set_color_space(if h >= 720 { AVColorSpace_AVCOL_SPC_BT709 } else { AVColorSpace_AVCOL_SPC_BT470BG });
     }

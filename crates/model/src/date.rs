@@ -115,8 +115,20 @@ impl<'de> Deserialize<'de> for Day {
     }
 }
 
+/// FILETIME (100 ns ticks since 1601-01-01) of the Unix epoch, in seconds: a macro, for the SQL made at compile time
+/// (`pg_query`), and the platform's tick count ([`FILETIME_UNIX_EPOCH_TICKS`]).
+#[macro_export]
+macro_rules! filetime_unix_seconds {
+    () => {
+        11_644_473_600_i64
+    };
+}
+
+/// The Unix epoch in FILETIME's 100 ns ticks since 1601-01-01.
+pub const FILETIME_UNIX_EPOCH_TICKS: i64 = filetime_unix_seconds!() * 10_000_000;
+
 /// The civil year, month and day of a day count from 1970-01-01 (Howard Hinnant's civil_from_days).
-fn civil(days: i64) -> (i64, i64, i64) {
+pub fn civil(days: i64) -> (i64, i64, i64) {
     let z = days + 719_468;
     let era = z.div_euclid(146_097);
     let doe = z - era * 146_097;

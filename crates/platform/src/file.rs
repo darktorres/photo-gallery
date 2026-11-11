@@ -140,15 +140,11 @@ pub fn stat_of(file: &File) -> io::Result<(i64, i64)> {
     size_and_time(&file.metadata()?)
 }
 
-/// From 1601-01-01 to 1970-01-01, in 100 ns ticks.
-#[cfg(unix)]
-const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;
-
 /// Elsewhere, the same count from the Unix time.
 #[cfg(unix)]
 pub fn last_write_time(meta: &Metadata) -> i64 {
     use std::os::unix::fs::MetadataExt;
-    meta.mtime() * 10_000_000 + meta.mtime_nsec() / 100 + UNIX_EPOCH_TICKS
+    meta.mtime() * 10_000_000 + meta.mtime_nsec() / 100 + pg_model::date::FILETIME_UNIX_EPOCH_TICKS
 }
 
 /// The birth time in FILETIME ticks, where the file system gives one (`statx` with `STATX_BTIME`, which std asks for in
@@ -157,7 +153,7 @@ pub fn last_write_time(meta: &Metadata) -> i64 {
 pub fn created_time(meta: &Metadata) -> Option<i64> {
     let since = meta.created().ok()?.duration_since(std::time::UNIX_EPOCH).ok()?;
     let secs = i64::try_from(since.as_secs()).ok()?;
-    Some(UNIX_EPOCH_TICKS + secs * 10_000_000 + i64::from(since.subsec_nanos() / 100))
+    Some(pg_model::date::FILETIME_UNIX_EPOCH_TICKS + secs * 10_000_000 + i64::from(since.subsec_nanos() / 100))
 }
 
 /// The file at `path` (a `names::disk_path`), open for reading, as the raw handle the video player takes over and

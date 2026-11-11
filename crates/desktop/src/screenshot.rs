@@ -55,9 +55,9 @@ fn write_taken(path: &Path, png: &[u8], has_window: bool, report: &str) -> io::R
     std::fs::write(path, png)
 }
 
-/// Seconds as whole milliseconds, within an int's range (NaN is 0).
+/// Seconds as whole milliseconds; the conversion saturates at an int's range (NaN is 0).
 fn millis(seconds: f64) -> i32 {
-    pg_model::num::f64_to_i32((seconds * 1000.0).clamp(f64::from(i32::MIN), f64::from(i32::MAX)))
+    pg_model::num::f64_to_i32(seconds * 1000.0)
 }
 
 #[cfg(test)]

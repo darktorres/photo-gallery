@@ -98,7 +98,7 @@ impl Entry {
         let [x, y, w, h] = self.content()?;
         let (sw, sh) = self.shown_size();
         let px =
-            |f: f64, side: u32| crate::num::f64_to_u32((f * f64::from(side)).round().clamp(0.0, f64::from(u32::MAX)));
+            |f: f64, side: u32| crate::num::f64_to_u32((f * f64::from(side)).round());
         Some([px(x, sw), px(y, sh), px(1.0 - x - w, sw), px(1.0 - y - h, sh)])
     }
 

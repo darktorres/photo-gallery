@@ -289,10 +289,9 @@ pub fn duration(secs: f64) -> String {
     })
 }
 
-/// `v` rounded to a whole number, held to `u64`'s range: a negative value gives 0, and one past the range the largest
-/// `f64` below 2⁶⁴ (18,446,744,073,709,549,568); NaN gives 0, as a float cast does.
+/// `v` rounded to a whole number; the conversion saturates at `u64`'s range (a negative value and NaN give 0).
 fn round_u64(v: f64) -> u64 {
-    pg_model::num::f64_to_u64(v.round().clamp(0.0, 18_446_744_073_709_549_568.0))
+    pg_model::num::f64_to_u64(v.round())
 }
 
 /// The write-back line: the changes not yet in the files, or the latest failure; empty when there are none.

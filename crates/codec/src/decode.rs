@@ -66,6 +66,16 @@ pub enum MinSize {
     Fit(usize, usize),
 }
 
+impl MinSize {
+    /// The scale that fits a `width × height` image into a `box_w × box_h` box, its aspect kept: the smaller of the two
+    /// sides' scales (above 1 for an image smaller than the box). The one fit the decode, the resizer and the viewer's
+    /// check use.
+    pub fn fit_scale(box_w: usize, box_h: usize, width: usize, height: usize) -> f64 {
+        let count = pg_model::num::count;
+        (count(box_w) / count(width)).min(count(box_h) / count(height))
+    }
+}
+
 /// Per-thread decoder state, reused across images: libjpeg-turbo's handle, and the other formats' decoders' buffers
 /// (`Codecs`). The pixels go into the caller's buffers ([`Decoder::decode_into`], or
 /// [`Decoder::decode_stored_into`] for the file as stored).
@@ -152,8 +162,7 @@ impl Decoder {
             MinSize::Sides(long, short) => (short, long),
             MinSize::Fit(bw, bh) => {
                 let (bw, bh) = if quarter_turn { (bh, bw) } else { (bw, bh) };
-                let scale = (pg_model::num::count(bw) / pg_model::num::count(w))
-                    .min(pg_model::num::count(bh) / pg_model::num::count(h));
+                let scale = MinSize::fit_scale(bw, bh, w, h);
                 (
                     to_pixels((pg_model::num::count(w) * scale).ceil()),
                     to_pixels((pg_model::num::count(h) * scale).ceil()),

@@ -26,7 +26,7 @@ pub enum Error {
     #[error("{} can't be added: {reason}", pg_platform::native::PATH_RULES.display(folder))]
     FolderRefused { folder: pg_model::rules::Path, reason: pg_model::refusal::RefusedReason },
     /// A folder not added because its path can't be opened, or isn't one. The front end words it (the client's
-    /// `path_unreadable` and `not_a_path`).
+    /// `Message::PathUnreadable` and `Message::NotAPath`).
     #[error(transparent)]
     FolderPath(pg_platform::names::NormalizeError),
     /// Anything else a lower layer failed with.

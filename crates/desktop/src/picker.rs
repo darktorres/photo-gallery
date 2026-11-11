@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 
 use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList};
-use pg_client::text;
+use pg_client::text::{self, Message};
 use pg_model::notice::Notice;
 
 /// The folder chosen and not yet taken, with its purpose.
@@ -93,7 +93,7 @@ impl qobject::FolderPicker {
                         &format!("{purpose:?}: {call}: {e} (start folder {start:?}, owner window {owner:?})"),
                     );
                     crate::app::post(Notice::PickerFailed { error: crate::app::error_text(&e) });
-                    let message = QString::from(&text::folder_dialog_failed(&e.to_string()));
+                    let message = QString::from(&text::render(&Message::FolderDialogFailed { error: e.to_string() }));
                     self.as_mut().failed(purpose.code(), message);
                 }
             }
@@ -162,7 +162,7 @@ impl qobject::FolderPicker {
         crate::app::post(Notice::PickerFailed {
             error: crate::app::error_text(&format!("{}: {error}", folder.display())),
         });
-        let message = QString::from(&text::folder_unreadable(&error.to_string()));
+        let message = QString::from(&text::render(&Message::FolderUnreadable { error: error.to_string() }));
         self.failed(purpose.code(), message);
     }
 

@@ -15,7 +15,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_app::reexport::InboxEntryId;
 use pg_app::{InboxEvent, Listing};
-use pg_client::text;
+use pg_client::text::{self, Message, render};
 use pg_model::notice::{Action, FilePass, Level, Notice};
 
 use crate::app;
@@ -77,9 +77,9 @@ impl qobject::Notices {
         let rules = pg_platform::native::PATH_RULES;
         let notice = &entry.notice;
         match role {
-            ROLE_TITLE => QVariant::from(&QString::from(&text::notice_title(notice, rules))),
-            ROLE_BODY => QVariant::from(&QString::from(&text::notice_body(notice, rules))),
-            ROLE_SOURCE => QVariant::from(&QString::from(&text::source_label(notice.source()))),
+            ROLE_TITLE => QVariant::from(&QString::from(&render(&Message::NoticeTitle { notice: notice.clone(), rules }))),
+            ROLE_BODY => QVariant::from(&QString::from(&render(&Message::NoticeBody { notice: notice.clone(), rules }))),
+            ROLE_SOURCE => QVariant::from(&QString::from(&render(&Message::SourceLabel { source: notice.source() }))),
             ROLE_LEVEL => QVariant::from(&level_code(notice.level())),
             // Unix seconds, as a number QML makes a `Date` of.
             ROLE_UPDATED => QVariant::from(&pg_model::num::signed(entry.updated)),
@@ -162,7 +162,7 @@ impl qobject::Notices {
             self.as_mut().show(&listing);
         }
         if let Some(notice) = toasts.last() {
-            let words = text::notice_title(notice, pg_platform::native::PATH_RULES);
+            let words = render(&Message::NoticeTitle { notice: notice.clone(), rules: pg_platform::native::PATH_RULES });
             self.as_mut().set_toast_shown(QString::from(&words), level_code(notice.level()));
         }
     }

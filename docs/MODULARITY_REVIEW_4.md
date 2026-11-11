@@ -803,6 +803,10 @@ These are additions to the plan's M-12a list.
   - A macro makes the three matches from one table per variant.
 - **`catalog/src/schema.rs`** is split as M-24 says.
 - Gate: `just test`, `just shots`.
+- **Done in step 8.**
+  - `video/src/ffi.rs` keeps the wrappers and the generated bindings; `ffi/load.rs` holds `Api`, `api`, `load`, `Lib` and the version checks (and the callback types `Api`'s fields name); `ffi/io.rs` holds `Source`, the callbacks, `hint_name` and `free_io`, with the end-of-file test. Both children import from `ffi::generated` and `load`, never from the root, so no module cycle.
+  - `client/src/text.rs` lost its 25 one-line wrappers (the notices' title and body, the inbox's category, the refusal and the panic, and the Yandex, path and dialog lines); the callers build the `Message` and call `render`, and the tests word their values through the functions that remain (`yandex_request`, `yandex_phase`, the save failure). `message.rs` is one `messages!` table: each variant, its fields and its entry, with `id`, `args` and `samples` made from it; a field is its entry's argument of the same name (`Arg` for `String`, `Option<f64>` and the plural `usize`), so the refusal's `$fs` is `$file_system`. The notices and the categories, whose entries are their kinds', are added by hand.
+  - `catalog/src/schema.rs` was split in step 7 (M-24).
 
 ### M-48: public items nothing uses, and the survey kept
 

@@ -13,7 +13,7 @@ mod borders;
 mod dups;
 mod report;
 
-use pg_client::text;
+use pg_client::text::{self, Message};
 use pg_client::text::cli::{Line, line};
 use pg_library::folders::AddError;
 use pg_model::ids::FileId;
@@ -72,8 +72,10 @@ fn normalized(path: &Path) -> Result<RulePath> {
 /// Why a path couldn't be taken, in the client's words.
 fn path_words(e: &NormalizeError) -> String {
     match e {
-        NormalizeError::Unreadable { path, error } => text::path_unreadable(&shown(path), &error.to_string()),
-        NormalizeError::NotAPath { path } => text::not_a_path(&shown(path)),
+        NormalizeError::Unreadable { path, error } => {
+            text::render(&Message::PathUnreadable { path: shown(path), error: error.to_string() })
+        }
+        NormalizeError::NotAPath { path } => text::render(&Message::NotAPath { path: shown(path) }),
     }
 }
 
@@ -129,7 +131,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                         Ok((root, new)) => {
                             if !new {
                                 let notice = Notice::FolderAlreadyAdded { folder: root.clone() };
-                                println!("{}", text::notice_title(&notice, rules));
+                                println!("{}", text::render(&Message::NoticeTitle { notice, rules }));
                             }
                             added.push(root);
                         }
@@ -184,7 +186,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
                 Err(_) => pg_platform::names::rule_path_in(rules, &root)
-                    .ok_or_else(|| anyhow!(text::not_a_path(&shown(&root))))?,
+                    .ok_or_else(|| anyhow!(text::render(&Message::NotAPath { path: shown(&root) })))?,
             };
             let name = rules.display(&root);
             let removed = match catalog.root_id(&root)? {

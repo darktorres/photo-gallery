@@ -17,7 +17,7 @@ use std::path::Path;
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, WriteError};
-use pg_client::text;
+use pg_client::text::{self, Message};
 use pg_model::notice::{FilePass, Notice};
 use pg_model::progress::Phase;
 
@@ -71,7 +71,7 @@ fn lock(shared: &Mutex<Pending>) -> MutexGuard<'_, Pending> {
 fn cause_text(cause: &Cause) -> String {
     match cause {
         Cause::Error(error) => error.clone(),
-        Cause::Panicked(message) => text::file_panicked(message),
+        Cause::Panicked(message) => text::render(&Message::FilePanicked { message: message.clone() }),
     }
 }
 
@@ -91,8 +91,10 @@ fn write_failed(error: &WriteError) -> Notice {
 fn path_words(e: &pg_platform::names::NormalizeError) -> String {
     use pg_platform::names::{NormalizeError, shown};
     match e {
-        NormalizeError::Unreadable { path, error } => text::path_unreadable(&shown(path), &error.to_string()),
-        NormalizeError::NotAPath { path } => text::not_a_path(&shown(path)),
+        NormalizeError::Unreadable { path, error } => {
+            text::render(&Message::PathUnreadable { path: shown(path), error: error.to_string() })
+        }
+        NormalizeError::NotAPath { path } => text::render(&Message::NotAPath { path: shown(path) }),
     }
 }
 

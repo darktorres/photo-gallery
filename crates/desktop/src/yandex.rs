@@ -24,7 +24,7 @@ use pg_app::yandex::Hit;
 use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::results::Results;
-use pg_client::text;
+use pg_client::text::{self, Message, render};
 use pg_model::ids::FileId;
 use pg_model::yandex::{Phase, Status};
 
@@ -85,7 +85,7 @@ impl qobject::YandexSearch {
             Ok(path) => self.search_photo(&path),
             Err(err) => {
                 pg_log::warn("yandex", &format!("file {file_id}: {err:#}"));
-                self.as_mut().set_status(QString::from(&text::yandex_unreadable_photo(&format!("{err:#}"))));
+                self.as_mut().set_status(QString::from(&render(&Message::YandexUnreadablePhoto { error: format!("{err:#}") })));
             }
         }
     }
@@ -347,12 +347,12 @@ impl qobject::YandexSearch {
 
     pub(crate) fn download_picked(mut self: Pin<&mut Self>) {
         let Some(folder) = crate::picker::take(crate::picker::state::Purpose::YandexSave) else {
-            self.as_mut().set_status(QString::from(&text::yandex_no_folder()));
+            self.as_mut().set_status(QString::from(&render(&Message::YandexNoFolder)));
             return;
         };
         let hits: Vec<Hit> = self.results.picked().cloned().collect();
         if hits.is_empty() {
-            self.as_mut().set_status(QString::from(&text::yandex_nothing_picked()));
+            self.as_mut().set_status(QString::from(&render(&Message::YandexNothingPicked)));
             return;
         }
         let files = hits.len();
@@ -373,7 +373,7 @@ impl qobject::YandexSearch {
     fn not_started(mut self: Pin<&mut Self>, what: &str, e: &std::io::Error) {
         pg_log::warn("yandex", &format!("the {what} didn't start: {e}"));
         self.as_mut().set_busy(false);
-        self.as_mut().set_status(QString::from(&text::yandex_not_started(&e.to_string())));
+        self.as_mut().set_status(QString::from(&render(&Message::YandexNotStarted { error: e.to_string() })));
     }
 }
 

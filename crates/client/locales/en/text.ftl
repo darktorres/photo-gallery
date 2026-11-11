@@ -89,7 +89,7 @@ changes-unwritten = { $count ->
 write-queue-failed = A change couldn't be written into its file: { $error }
 
 # Why the scanner refuses a folder (`pg_model::refusal::RefusedReason`), selected by its code: the `$reason` of
-# the notices `root-refused`, `mount-refused` and `folder-refused`. `$fs` is a file system's name, `$error` the system's error.
+# the notices `root-refused`, `mount-refused` and `folder-refused`. `$file_system` is a file system's name, `$error` the system's error.
 refused-reason = { $code ->
     [network-path] it is a network (UNC) path
     [unreadable-volume] its volume can't be read: { $error }
@@ -103,12 +103,12 @@ refused-reason = { $code ->
     [link] it is a link (a junction or a symbolic link)
     [real-not-local] its real location is not on a local drive
     [real-on-other-volume] its real location is on another volume
-    [not-ntfs] its file system is { $fs }, not NTFS
+    [not-ntfs] its file system is { $file_system }, not NTFS
     [nfs] it is on an NFS mount
     [smb] it is on an SMB or CIFS share
     [fat] its file system is FAT, whose file numbers change when it is mounted again
     [exfat] its file system is exFAT, whose file numbers change when it is mounted again
-    [pseudo] it is the kernel's { $fs } file system, not a disk
+    [pseudo] it is the kernel's { $file_system } file system, not a disk
     [unsupported-system] scanning is supported on Windows and Linux only
    *[other] it can't be scanned for its files' identities
 }

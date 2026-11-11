@@ -9,7 +9,7 @@ use pg_model::rules::Path as RulePath;
 use pg_platform::names::NormalizeError;
 
 /// Why a folder wasn't added. The front end words it: a refusal by its notice (`FolderRefused`), a path by the
-/// client's `path_unreadable` and `not_a_path`; the `Display` form is for the log.
+/// client's `Message::PathUnreadable` and `Message::NotAPath`; the `Display` form is for the log.
 #[derive(Debug, thiserror::Error)]
 pub enum AddError {
     /// The scanner refuses the folder (`pg_scan::check_folder`): it would stay in the library with a notice on every

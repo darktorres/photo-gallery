@@ -14,11 +14,10 @@ mod test_support;
 mod words;
 
 use pg_model::detection::Class;
-use pg_model::notice::{Notice, Source};
+use pg_model::notice::Notice;
 use pg_model::progress::{Phase, Progress};
 use pg_model::query::{BorderFacet, Choice, DateRange, ListFacet, Query, Range, RatingFilter, Shape, Status};
 use pg_model::media::MediaType;
-use pg_model::refusal::RefusedReason;
 use pg_model::rules::PathRules;
 use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status};
 
@@ -304,88 +303,11 @@ pub fn write_status(queued: usize, error: Option<&str>) -> String {
     }
 }
 
-/// Why the scanner refuses a folder, as the refusal lines say it ("its drive is removable").
-pub fn refused_reason(reason: &RefusedReason) -> String {
-    let (file_system, error) = match reason {
-        RefusedReason::NotNtfs { file_system } | RefusedReason::Pseudo { file_system } => (file_system.clone(), ""),
-        RefusedReason::Unreadable { error, .. } => (String::new(), error.as_str()),
-        _ => (String::new(), ""),
-    };
-    render(&Message::RefusedReason { code: reason.code().to_string(), file_system, error: error.to_string() })
-}
-
-/// A file a job panicked on (caught, so the job went on), with the panic's message: a crop's or a write's failure.
-pub fn file_panicked(message: &str) -> String {
-    render(&Message::FilePanicked { message: message.to_string() })
-}
-
-/// A notice's title: its row in the inbox, its toast. Its paths as `rules` write them.
-pub fn notice_title(notice: &Notice, rules: PathRules) -> String {
-    render(&Message::NoticeTitle { notice: notice.clone(), rules })
-}
-
-/// A notice's details.
-pub fn notice_body(notice: &Notice, rules: PathRules) -> String {
-    render(&Message::NoticeBody { notice: notice.clone(), rules })
-}
-
 /// A notice as one line, its title then its details: the command line's, and what the inbox copies.
 pub fn notice_line(notice: &Notice, rules: PathRules) -> String {
-    render(&Message::NoticeLine { title: notice_title(notice, rules), body: notice_body(notice, rules) })
-}
-
-/// The name of an inbox category.
-pub fn source_label(source: Source) -> String {
-    render(&Message::SourceLabel { source })
-}
-/// The photo to search couldn't be read, or (a TIFF) decoded to be sent as a JPEG.
-pub fn yandex_unreadable_photo(error: &str) -> String {
-    render(&Message::YandexUnreadablePhoto { error: error.to_string() })
-}
-
-/// The similar images stopped after `shown` results, for `reason`.
-pub fn yandex_similar_stopped(shown: usize, reason: &str) -> String {
-    render(&Message::YandexSimilarStopped { shown: shown.to_string(), reason: reason.to_string() })
-}
-
-/// The similar images failed, for `reason` (the other sizes are still shown).
-pub fn yandex_similar_failed(reason: &str) -> String {
-    render(&Message::YandexSimilarFailed { reason: reason.to_string() })
-}
-
-/// A search or a save couldn't start: the system refused its thread, for `error`.
-pub fn yandex_not_started(error: &str) -> String {
-    render(&Message::YandexNotStarted { error: error.to_string() })
-}
-
-/// The folder dialog couldn't open, or didn't give a folder, for `error`: nothing was chosen.
-pub fn folder_dialog_failed(error: &str) -> String {
-    render(&Message::FolderDialogFailed { error: error.to_string() })
-}
-
-/// The save was asked with no image picked.
-pub fn yandex_nothing_picked() -> String {
-    render(&Message::YandexNothingPicked)
-}
-
-/// The save's folder dialog gave no folder: nothing is saved.
-pub fn yandex_no_folder() -> String {
-    render(&Message::YandexNoFolder)
-}
-
-/// A path given to add (a folder; a file named on the command line) can't be opened, for `error`.
-pub fn path_unreadable(path: &str, error: &str) -> String {
-    render(&Message::PathUnreadable { path: path.to_string(), error: error.to_string() })
-}
-
-/// A path given has no path form under the rules (a NUL).
-pub fn not_a_path(path: &str) -> String {
-    render(&Message::NotAPath { path: path.to_string() })
-}
-
-/// The app's own folder dialog can't list a folder, for `error`.
-pub fn folder_unreadable(error: &str) -> String {
-    render(&Message::FolderUnreadable { error: error.to_string() })
+    let title = render(&Message::NoticeTitle { notice: notice.clone(), rules });
+    let body = render(&Message::NoticeBody { notice: notice.clone(), rules });
+    render(&Message::NoticeLine { title, body })
 }
 
 /// The library's status line while the background work is paused: `pass` is the running pass's line, empty when none
@@ -396,16 +318,6 @@ pub fn paused_status(pass: &str) -> String {
     } else {
         render(&Message::PausedPass { status: pass.to_string() })
     }
-}
-
-/// A Yandex save of `files` results about to start.
-pub fn yandex_saving(files: usize) -> String {
-    render(&Message::YandexSaving { count: files })
-}
-
-/// The `n`th of `of` results of a Yandex save being downloaded (counted from 1).
-pub fn yandex_saving_file(n: usize, of: usize) -> String {
-    render(&Message::YandexSavingFile { n: n.to_string(), of: of.to_string() })
 }
 
 /// A Yandex save that ended: `written` files into `folder`, and when some failed, how many and the first failure.
@@ -420,51 +332,16 @@ pub fn yandex_saved(written: usize, folder: &str, failed: usize, first_error: Op
     }
 }
 
-/// A Yandex result at `url` that couldn't be downloaded, for `error`.
-pub fn yandex_download_failed(url: &str, error: &str) -> String {
-    render(&Message::YandexDownloadFailed { url: url.to_string(), error: error.to_string() })
-}
-
-/// A Yandex result at `url`, downloaded, that couldn't be written to `path`, for `error`.
-pub fn yandex_write_failed(url: &str, path: &str, error: &str) -> String {
-    render(&Message::YandexWriteFailed { url: url.to_string(), path: path.to_string(), error: error.to_string() })
-}
-
-/// Yandex answered with the HTTP `status`, not a success.
-pub fn yandex_http_status(status: u16) -> String {
-    render(&Message::YandexHttpStatus { status: status.to_string() })
-}
-
-/// A Yandex request that failed to connect, in TLS or by a timeout, for `error`.
-pub fn yandex_transport(error: &str) -> String {
-    render(&Message::YandexTransport { error: error.to_string() })
-}
-
-/// A Yandex answer without the data the app reads: `detail` says what was missing.
-pub fn yandex_unexpected(detail: &str) -> String {
-    render(&Message::YandexUnexpected { detail: detail.to_string() })
-}
-
-/// A recorded Yandex session that can't answer, for `error`.
-pub fn yandex_recorded(error: &str) -> String {
-    render(&Message::YandexRecorded { error: error.to_string() })
-}
-
-/// A result's file that is not an image this app decodes, for `reason`.
-pub fn yandex_undecodable(reason: &str) -> String {
-    render(&Message::YandexUndecodable { reason: reason.to_string() })
-}
-
 /// What the user reads when a Yandex request fails: each error has its own words; the values they carry (the
 /// transport's error, what an answer lacked) are the lower layers' text.
 pub fn yandex_request(e: &RequestError) -> String {
     match e {
         RequestError::Captcha => render(&Message::YandexCaptcha),
-        RequestError::Status(status) => yandex_http_status(*status),
-        RequestError::Transport(error) => yandex_transport(error),
-        RequestError::Unexpected(detail) => yandex_unexpected(detail),
-        RequestError::Recorded(error) => yandex_recorded(error),
-        RequestError::Undecodable(reason) => yandex_undecodable(reason),
+        RequestError::Status(status) => render(&Message::YandexHttpStatus { status: status.to_string() }),
+        RequestError::Transport(error) => render(&Message::YandexTransport { error: error.clone() }),
+        RequestError::Unexpected(detail) => render(&Message::YandexUnexpected { detail: detail.clone() }),
+        RequestError::Recorded(error) => render(&Message::YandexRecorded { error: error.clone() }),
+        RequestError::Undecodable(reason) => render(&Message::YandexUndecodable { reason: reason.clone() }),
     }
 }
 
@@ -476,31 +353,39 @@ pub fn yandex_phase(phase: pg_model::yandex::Phase) -> String {
         Phase::Uploading => render(&Message::YandexUploading),
         Phase::OtherSizes => render(&Message::YandexOtherSizes),
         Phase::Similar => render(&Message::YandexSimilar),
-        Phase::Saving { files } => yandex_saving(files),
-        Phase::SavingFile { n, of } => yandex_saving_file(n, of),
+        Phase::Saving { files } => render(&Message::YandexSaving { count: files }),
+        Phase::SavingFile { n, of } => render(&Message::YandexSavingFile { n: n.to_string(), of: of.to_string() }),
     }
 }
 
 fn yandex_search_error(e: &SearchError) -> String {
     match e {
         SearchError::NotStill => render(&Message::YandexNotStill),
-        SearchError::Unreadable(e) | SearchError::Undecodable(e) => yandex_unreadable_photo(e),
+        SearchError::Unreadable(e) | SearchError::Undecodable(e) => {
+            render(&Message::YandexUnreadablePhoto { error: e.clone() })
+        }
         SearchError::Request(e) => yandex_request(e),
     }
 }
 
 fn yandex_similar_note(note: &SimilarNote) -> String {
     match note {
-        SimilarNote::Stopped { shown, error } => yandex_similar_stopped(*shown, &yandex_request(error)),
-        SimilarNote::Failed(error) => yandex_similar_failed(&yandex_request(error)),
+        SimilarNote::Stopped { shown, error } => {
+            render(&Message::YandexSimilarStopped { shown: shown.to_string(), reason: yandex_request(error) })
+        }
+        SimilarNote::Failed(error) => render(&Message::YandexSimilarFailed { reason: yandex_request(error) }),
     }
 }
 
 fn yandex_failure(failure: &SaveFailure) -> String {
     match failure {
         SaveFailure::Client(e) => yandex_request(e),
-        SaveFailure::Download { url, error } => yandex_download_failed(url, &yandex_request(error)),
-        SaveFailure::Write { url, path, error } => yandex_write_failed(url, path, error),
+        SaveFailure::Download { url, error } => {
+            render(&Message::YandexDownloadFailed { url: url.clone(), error: yandex_request(error) })
+        }
+        SaveFailure::Write { url, path, error } => {
+            render(&Message::YandexWriteFailed { url: url.clone(), path: path.clone(), error: error.clone() })
+        }
     }
 }
 
@@ -513,14 +398,9 @@ pub fn yandex_status(status: &Status) -> String {
         Status::Saved(Saved { folder, written, failed, first_error }) => {
             yandex_saved(*written, folder, *failed, first_error.as_ref().map(yandex_failure).as_deref())
         }
-        // The panic that stopped it is in gallery.log (a thread the system refused is `yandex_not_started`'s line).
+        // The panic that stopped it is in gallery.log (a thread the system refused is `YandexNotStarted`'s line).
         Status::Stopped => render(&Message::YandexStopped),
     }
-}
-
-/// The catalog couldn't be opened at start, for `error`.
-pub fn catalog_unopened(error: &str) -> String {
-    render(&Message::CatalogUnopened { error: error.to_string() })
 }
 
 /// The box for a panic that ends the app: the panic's `message`, then where its details are: in `log`, or, when
@@ -536,6 +416,8 @@ pub fn internal_error(message: &str, log: &str, log_error: Option<&str>) -> Stri
 #[cfg(test)]
 mod tests {
     use super::*;
+    use pg_model::notice::Source;
+    use pg_model::refusal::RefusedReason;
     use pg_model::notice::{ScanNote, StartOverReason};
     use pg_model::write::WriteKind;
 
@@ -586,7 +468,8 @@ mod tests {
 
     /// A rendered notice's title and body, under the Windows rules.
     fn worded(notice: &Notice) -> (String, String) {
-        (notice_title(notice, PathRules::Windows), notice_body(notice, PathRules::Windows))
+        let rules = PathRules::Windows;
+        (render(&Message::NoticeTitle { notice: notice.clone(), rules }), render(&Message::NoticeBody { notice: notice.clone(), rules }))
     }
 
     fn d(rules: PathRules, path: &str) -> pg_model::rules::Path {
@@ -687,7 +570,7 @@ mod tests {
             notice_line(&Notice::RoundFailed { error: "disk full".into() }, rules),
             "The background job failed: disk full"
         );
-        assert_eq!(source_label(Source::Thumbs), "Thumbnails");
+        assert_eq!(render(&Message::SourceLabel { source: Source::Thumbs }), "Thumbnails");
     }
     /// Each refusal has words of its own: none falls to the entry's default, and no two read the same.
     #[test]
@@ -717,16 +600,16 @@ mod tests {
         ];
         let fallback =
             render(&Message::RefusedReason { code: "no-such-code".into(), file_system: "".into(), error: "".into() });
-        let mut all: Vec<String> = reasons.iter().map(refused_reason).collect();
+        let mut all: Vec<String> = reasons.iter().map(message::refused_reason).collect();
         for (reason, words) in reasons.iter().zip(&all) {
             assert_ne!(words, &fallback, "{reason:?} falls to the default");
         }
-        assert_eq!(refused_reason(&RefusedReason::RemovableDrive), "its drive is removable");
+        assert_eq!(message::refused_reason(&RefusedReason::RemovableDrive), "its drive is removable");
         assert_eq!(
-            refused_reason(&RefusedReason::NotNtfs { file_system: "FAT32".into() }),
+            message::refused_reason(&RefusedReason::NotNtfs { file_system: "FAT32".into() }),
             "its file system is FAT32, not NTFS"
         );
-        assert_eq!(refused_reason(&unreadable(Fact::Volume)), "its volume can't be read: Access is denied.");
+        assert_eq!(message::refused_reason(&unreadable(Fact::Volume)), "its volume can't be read: Access is denied.");
         assert_eq!(
             worded(&Notice::RootRefused { root: d(PathRules::Windows, r"D:\p"), reason: RefusedReason::Link }).1,
             "D:\\p is not scanned, because it is a link (a junction or a symbolic link). Remove it from the library to stop this notice."
@@ -739,9 +622,10 @@ mod tests {
     #[test]
     fn the_yandex_lines_are_worded() {
         assert_eq!(render(&Message::YandexStarting), "Starting…");
-        assert_eq!(yandex_saving(1), "Saving 1 file…");
-        assert_eq!(yandex_saving(3), "Saving 3 files…");
-        assert_eq!(yandex_saving_file(2, 5), "Saving 2 of 5…");
+        use pg_model::yandex::Phase;
+        assert_eq!(yandex_phase(Phase::Saving { files: 1 }), "Saving 1 file…");
+        assert_eq!(yandex_phase(Phase::Saving { files: 3 }), "Saving 3 files…");
+        assert_eq!(yandex_phase(Phase::SavingFile { n: 2, of: 5 }), "Saving 2 of 5…");
         let failed = Saved {
             folder: "D:/out".into(),
             written: 2,
@@ -750,37 +634,43 @@ mod tests {
         };
         assert_eq!(
             yandex_status(&Status::Saved(failed)),
-            yandex_saved(2, "D:/out", 1, Some(&yandex_download_failed("u", &render(&Message::YandexCaptcha))))
+            yandex_saved(2, "D:/out", 1, Some(&yandex_failure(&SaveFailure::Download { url: "u".into(), error: RequestError::Captcha })))
         );
         assert_eq!(yandex_status(&Status::Searched(None)), "", "a search with no note shows nothing");
         assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
         assert_eq!(yandex_saved(3, "D:/out", 0, None), "Saved 3 files to D:/out");
         assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");
-        assert_eq!(
-            yandex_download_failed("https://a/b.jpg", "Yandex answered HTTP 404"),
-            "https://a/b.jpg couldn't be downloaded: Yandex answered HTTP 404"
-        );
-        assert_eq!(
-            yandex_write_failed("https://a/b.jpg", "D:/out/b.jpg", "disk full"),
-            "https://a/b.jpg couldn't be written to D:/out/b.jpg: disk full"
-        );
+        let download = SaveFailure::Download { url: "https://a/b.jpg".into(), error: RequestError::Status(404) };
+        assert_eq!(yandex_failure(&download), "https://a/b.jpg couldn't be downloaded: Yandex answered HTTP 404");
+        let write =
+            SaveFailure::Write { url: "https://a/b.jpg".into(), path: "D:/out/b.jpg".into(), error: "disk full".into() };
+        assert_eq!(yandex_failure(&write), "https://a/b.jpg couldn't be written to D:/out/b.jpg: disk full");
         assert_eq!(render(&Message::YandexStopped), "Stopped by an internal error; the details are in gallery.log.");
-        assert_eq!(yandex_http_status(503), "Yandex answered HTTP 503");
-        assert_eq!(yandex_transport("timed out"), "Yandex request failed: timed out");
-        assert_eq!(yandex_unexpected("no cbir_id"), "unexpected Yandex response: no cbir_id");
-        assert_eq!(yandex_recorded("no such step"), "recorded Yandex session: no such step");
+        assert_eq!(yandex_request(&RequestError::Status(503)), "Yandex answered HTTP 503");
+        assert_eq!(yandex_request(&RequestError::Transport("timed out".into())), "Yandex request failed: timed out");
+        assert_eq!(
+            yandex_request(&RequestError::Unexpected("no cbir_id".into())),
+            "unexpected Yandex response: no cbir_id"
+        );
+        assert_eq!(
+            yandex_request(&RequestError::Recorded("no such step".into())),
+            "recorded Yandex session: no such step"
+        );
         assert_eq!(
             render(&Message::YandexNotStill),
             "Yandex search takes still images (JPEG, PNG, WebP, GIF, BMP or TIFF)."
         );
-        assert_eq!(yandex_not_started("thread limit"), "Couldn't start the search or the save: thread limit");
-        assert_eq!(yandex_nothing_picked(), "Pick at least one image to save.");
-        assert_eq!(yandex_no_folder(), "No folder was chosen, so nothing was saved.");
+        assert_eq!(
+            render(&Message::YandexNotStarted { error: "thread limit".into() }),
+            "Couldn't start the search or the save: thread limit"
+        );
+        assert_eq!(render(&Message::YandexNothingPicked), "Pick at least one image to save.");
+        assert_eq!(render(&Message::YandexNoFolder), "No folder was chosen, so nothing was saved.");
     }
 
     #[test]
     fn the_start_and_crash_boxes_are_worded() {
-        assert_eq!(catalog_unopened("locked"), "Can't open the catalog: locked");
+        assert_eq!(render(&Message::CatalogUnopened { error: "locked".into() }), "Can't open the catalog: locked");
         assert_eq!(
             internal_error("boom", r"C:\gallery.log", None),
             "Photo Gallery hit an internal error:\n\nboom\n\nThe details are in C:\\gallery.log."

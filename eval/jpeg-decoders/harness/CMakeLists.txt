@@ -4,7 +4,7 @@
 #   jpegli:    JPEGLI_SRC, JPEGLI_BUILD (its CMake build directory)
 #   Wuffs:     WUFFS_SRC (the repository)
 #   GPU:       WITH_CUDA=ON for nvJPEG (CUDA toolkit); JPEGGPU_SRC, JPEGGPU_BUILD; GPUJPEG_SRC, GPUJPEG_BUILD
-# eval/jpeg-decoders/win_build.py and wsl_build.py configure it.
+# eval/jpeg-decoders/win_build.py and linux_build.py configure it.
 cmake_minimum_required(VERSION 3.20)
 project(jpeg_harness CXX)
 set(CMAKE_CXX_STANDARD 17)

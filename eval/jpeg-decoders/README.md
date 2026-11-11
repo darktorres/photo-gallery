@@ -1,11 +1,11 @@
 # JPEG decoder comparison
 
-`wsl.py` runs the comparison under WSL. Its `inputs` step reads one `<name>.jpg` per entry of `NAMES` from the
+`linux.py` runs the comparison on Linux, in the container (`just linux-eval eval/jpeg-decoders/linux.py STEP...`) or natively. Its `inputs` step reads one `<name>.jpg` per entry of `NAMES` from the
 directory in `JPEG_SRC_DIR`. `win_build.py` builds the decoders on Windows.
 
 ## Third-party patches
 
-`patches/` holds local patches to two upstream projects. `wsl_build.py` and `win_build.py` apply each one to a
+`patches/` holds local patches to two upstream projects. `linux_build.py` and `win_build.py` apply each one to a
 clone of its upstream. Each patch modifies its upstream project, so it stays under that project's license. The
 upstream license text is saved next to the patch:
 

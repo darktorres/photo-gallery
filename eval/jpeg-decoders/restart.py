@@ -2,22 +2,22 @@
 """Restart markers and progressive -> baseline, both lossless (jpegtran), on the 7 decoder inputs (docs/JPEG_DECODERS.md
 "Restart markers and lossless baseline conversion"): size, pixel identity (djpeg, full and 1/2), and libjpeg-turbo's cost
 (the vendored 3.1, through the eval harness): callgrind instructions per decode (3 decodes minus 1, halved) and wall ms per
-decode (best of 3 runs of N decodes). It was restart.sh; natively, no WSL. Run after `wsl.py inputs` and `wsl.py time`
-(which copy the inputs and build the decoder binary):
-    python3 eval/jpeg-decoders/restart.py      (needs apt-get install libjpeg-turbo-progs, for jpegtran and djpeg)
+decode (best of 3 runs of N decodes). It was restart.sh. Run after `linux.py inputs` and `linux.py time`
+(which copy the inputs and build the decoder binary), in the container (`just linux-eval eval/jpeg-decoders/restart.py`) or
+natively:
+    python3 eval/jpeg-decoders/restart.py      (natively, needs libjpeg-turbo-progs, for jpegtran and djpeg)
 Environment: JPEG_INPUTS (default ~/jpeg-inputs), JPEG_RESTART_OUT (default ~/jpeg-restart), PG_BENCH_CLONE.
 """
 
-import os
 import subprocess
 import tempfile
 import time
 from pathlib import Path
 
-from wsl import CLONE, INPUTS, NAMES, callgrind_total
+from linux import CLONE, INPUTS, NAMES, callgrind_total
+from linux import RESTART as OUT  # the variants, kept for GPU tests
 
-OUT = Path(os.environ.get("JPEG_RESTART_OUT", Path.home() / "jpeg-restart"))  # the variants, kept for GPU tests
-BIN = CLONE / "eval" / "jpeg-decoders" / "target" / "release" / "jpeg-decoders"  # wsl.py builds it
+BIN = CLONE / "eval" / "jpeg-decoders" / "target" / "release" / "jpeg-decoders"  # linux.py builds it
 VARIANTS = ["orig", "base", "rst10b", "rstrow"]
 
 
@@ -42,7 +42,7 @@ def make_variant(name: str, variant: str) -> Path:
 
 
 def instructions(mode: str, file: Path) -> str:
-    """M instructions per decode, all threads; ERR when valgrind fails (as wsl.py's)."""
+    """M instructions per decode, all threads; ERR when valgrind fails (as linux.py's)."""
     totals = []
     with tempfile.TemporaryDirectory() as folder:
         for count in (1, 3):

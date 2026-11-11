@@ -1,7 +1,7 @@
 # The Linux environment of CI's Linux job (.github/workflows/ci.yml), for building, checking, benchmarking and fuzzing this
 # repository. Built and run by tools/linux.py (docker/README.md), which passes the versions below from the Justfile, so
-# each version is written once. Two targets: `base` runs the checks (docker/check.py); `tools` adds the callgrind benches
-# and the fuzzer on top of it.
+# each version is written once. Three targets: `base` runs the checks (docker/check.py); `tools` adds the callgrind
+# benches and the fuzzer on top of it; `eval` adds the eval's Linux parts (eval/ann's CPU worker, the JPEG comparisons).
 # The base image is pinned by digest (the index: `docker buildx imagetools inspect ubuntu:26.04`), so a rebuild does not
 # change it under the pinned versions. Moving to a newer one is a commit, with its digest.
 FROM ubuntu:26.04@sha256:6a06111c3b0a8600feadb270aec771dc239bf407b25625f93f44ab00e11f4d3c AS base
@@ -105,3 +105,22 @@ USER pg
 # published lock pins yoke-derive 0.8.3, which was yanked, so cargo picks the non-yanked release.
 RUN cargo install gungraun-runner --version ${GUNGRAUN_VERSION} \
  && cargo install --locked cargo-fuzz --version ${CARGO_FUZZ_VERSION}
+
+# The eval's Linux parts (docs/JPEG_DECODERS.md, docs/JPEG_ENCODERS.md, docs/TIER2_ANN_BAKEOFF_PLAN.md): the packages the
+# JPEG builds and runs need (apt-packages-eval.txt), and a venv with the Python packages the scripts import, at the versions
+# eval/requirements.txt pins (EVAL_PACKAGES, passed by the launcher). /eval is the pg-eval volume's mount point.
+FROM tools AS eval
+
+ARG EVAL_PACKAGES
+
+USER root
+COPY docker/apt-packages-eval.txt /opt/pg/apt-packages-eval.txt
+RUN apt-get update \
+ && grep -v '^#' /opt/pg/apt-packages-eval.txt | grep -v '^$' | xargs apt-get install -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/*
+RUN test -n "${EVAL_PACKAGES}" \
+ && python3 -m venv /opt/eval \
+ && /opt/eval/bin/pip install --quiet ${EVAL_PACKAGES} \
+ && install -d -o pg -g pg /eval
+
+USER pg

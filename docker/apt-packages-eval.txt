@@ -1,0 +1,9 @@
+# The apt packages only the eval's Linux parts need, on top of apt-packages.txt and apt-packages-bench.txt: the JPEG
+# comparison's builds (eval/jpeg-decoders/linux_build.py: ninja, and libpng and zlib for mozjpeg, guetzli and jpegli's
+# tools), libvips for its decoder crate (linux.py), and jpegtran and djpeg for restart.py. The container's eval stage
+# installs them.
+ninja-build
+libpng-dev
+zlib1g-dev
+libvips-dev
+libjpeg-turbo-progs

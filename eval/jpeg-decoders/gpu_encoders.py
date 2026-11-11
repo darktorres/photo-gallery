@@ -1,7 +1,8 @@
 """GPU JPEG encoders for docs/JPEG_ENCODERS.md: nvJPEG (through nvImageCodec) and GPUJPEG (gpujpegtool), from the
-PPMs encoders.py prepared in WSL, into its out/ directory, named as encoders.py names its own outputs. Then
-encoders.py score rates them with the CPU encoders. Also the encode time per megapixel at Q75 (in-process for nvJPEG:
-host pixels in, JPEG bytes on the host out; gpujpegtool's own per-iteration encode time for GPUJPEG).
+PPMs encoders.py prepared (in the container, in the host folder PG_JPEG_ENC_DIR), into its out/ directory, named as
+encoders.py names its own outputs. Then encoders.py score rates them with the CPU encoders. Also the encode time per
+megapixel at Q75 (in-process for nvJPEG: host pixels in, JPEG bytes on the host out; gpujpegtool's own per-iteration
+encode time for GPUJPEG).
 
     $JPEG_EVAL/venv/Scripts/python.exe eval/jpeg-decoders/gpu_encoders.py --gpujpeg EXE   (bin/python on Linux)
 """
@@ -20,7 +21,7 @@ from nvidia import nvimgcodec as nv
 from PIL import Image
 
 if not os.environ.get("PG_JPEG_ENC_DIR"):
-    raise SystemExit(r"set PG_JPEG_ENC_DIR to the WSL work dir, e.g. \\wsl.localhost\<distro>\root\jpeg-enc")
+    raise SystemExit("set PG_JPEG_ENC_DIR (.env) to encoders.py's work folder, the one the container mounts")
 W = Path(os.environ["PG_JPEG_ENC_DIR"])
 QUALITIES = [50, 60, 70, 75, 80, 85, 90, 95]
 BUDGET_S = 2.0

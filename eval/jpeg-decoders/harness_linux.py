@@ -1,13 +1,14 @@
 #!/usr/bin/env python3
-"""The harness's CPU decoders (docs/JPEG_DECODERS.md), after wsl_build.py (it was harness-wsl.sh; natively, no WSL). Usage:
-    python3 eval/jpeg-decoders/harness_wsl.py STEP...
+"""The harness's CPU decoders (docs/JPEG_DECODERS.md), after linux_build.py (it was harness-wsl.sh), on Linux: in the
+container (`just linux-eval eval/jpeg-decoders/harness_linux.py STEP...`) or natively. Usage:
+    python3 eval/jpeg-decoders/harness_linux.py STEP...
 Steps:
   compare     output against libjpeg-turbo (time mode with no budget: the times are not meant to be read)
   ir          callgrind, every thread: (repeat 3 - repeat 1) / 2 = instructions for one decode, setup excluded
   time        median wall ms and CPU ms per decode (needs an idle machine)
   throughput  12 workers, one image each at a time: images/s and CPU ms per image (needs an idle machine)
-Inputs: ~/jpeg-restart (restart.py): each file as it is (.orig), the progressive one converted losslessly to baseline
-(.base), and each with a restart marker every MCU row (.rstrow).
+Inputs: JPEG_RESTART_OUT (restart.py; default ~/jpeg-restart): each file as it is (.orig), the progressive one converted
+losslessly to baseline (.base), and each with a restart marker every MCU row (.rstrow).
 """
 
 import sys
@@ -15,11 +16,9 @@ import tempfile
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
-from wsl import NAMES, callgrind_total, run
+from linux import EVAL, NAMES, RESTART, callgrind_total, run
 
-HOME = Path.home()
-HARNESS = HOME / "jpeg-eval" / "bin" / "harness"
-RESTART = HOME / "jpeg-restart"
+HARNESS = EVAL / "bin" / "harness"
 ORIGINALS = [f"{name}.orig.jpg" for name in NAMES]
 RESTARTS = [f"{name}.rstrow.jpg" for name in NAMES]
 FILES = [*ORIGINALS, "pin-prog420-1mp.base.jpg", *RESTARTS]
@@ -67,7 +66,7 @@ def instructions() -> None:
 def main() -> None:
     steps = sys.argv[1:]
     if not steps:
-        sys.exit(__doc__ or "usage: harness_wsl.py STEP...")
+        sys.exit(__doc__ or "usage: harness_linux.py STEP...")
     for step in steps:
         cwd = RESTART
         if step == "compare":

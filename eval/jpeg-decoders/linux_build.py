@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""The CPU side of docs/JPEG_DECODERS.md (it was wsl-build.sh; natively on Linux, no WSL): the decoders and encoders under
-~/jpeg-eval, and the harness (harness/) with libjpeg-turbo, parajpeg, jpegli and Wuffs. Usage, from the repository:
-    python3 eval/jpeg-decoders/wsl_build.py [STEP...]
+"""The CPU side of docs/JPEG_DECODERS.md, on Linux (it was wsl-build.sh): the decoders and encoders under JPEG_EVAL
+(default ~/jpeg-eval), and the harness (harness/) with libjpeg-turbo, parajpeg, jpegli and Wuffs. Usage, from the
+repository: `just linux-eval eval/jpeg-decoders/linux_build.py [STEP...]` (the container, whose pg-eval volume keeps the
+builds), or natively:
+    python3 eval/jpeg-decoders/linux_build.py [STEP...]
 Steps (default: all): turbo mozjpeg jpegli guetzli wuffs parajpeg harness. Sources are cloned once at the pinned commits
-below; the command-line tools land in ~/jpeg-eval/bin. Needs clang, cmake, git, make, and the apt packages of
-docker/apt-packages-bench.txt; ninja is installed if it is missing.
+below; the command-line tools land in JPEG_EVAL/bin. Natively it needs the apt packages of docker/apt-packages.txt and
+docker/apt-packages-eval.txt, which the container's eval image has.
 """
 
 import os
@@ -13,8 +15,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+from linux import EVAL as E
+
 HERE = Path(__file__).resolve().parent
-E = Path.home() / "jpeg-eval"
 JOBS = str(os.cpu_count() or 1)
 ENV = {**os.environ, "CC": "clang", "CXX": "clang++"}
 
@@ -35,8 +38,7 @@ def run_logged(command: list[str], log: Path, cwd: Path | None = None) -> None:
 
 def ensure_ninja() -> None:
     if shutil.which("ninja") is None:
-        prefix = [] if os.geteuid() == 0 else ["sudo"]
-        subprocess.run([*prefix, "apt-get", "install", "-y", "-q", "ninja-build"], check=True)
+        sys.exit("ninja is missing: install ninja-build (docker/apt-packages-eval.txt), or run in the container")
 
 
 def clone(name: str, url: str, commit: str, submodules: bool = False) -> None:

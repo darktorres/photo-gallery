@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""The JPEG decoder comparison (docs/JPEG_DECODERS.md), natively on Linux or in the container (it was wsl.sh; there is no WSL
-now). Usage, from the repository:
-    python3 eval/jpeg-decoders/wsl.py STEP...
+"""The JPEG decoder comparison (docs/JPEG_DECODERS.md), on Linux: in the container (`just linux-eval
+eval/jpeg-decoders/linux.py STEP...`, docker/README.md) or natively (it was wsl.sh). Usage, from the repository:
+    python3 eval/jpeg-decoders/linux.py STEP...
 Steps: inputs (copy the 7 files to the inputs folder), check (clippy, rustfmt), compare (output vs libjpeg-turbo), time
 (median wall ms), bench (callgrind through gungraun, then the table), marginal (callgrind on whole runs, all threads: libvips
 and jpeg-decoder decode in their own threads, which gungraun doesn't count).
-Needs tools/profiling/ci_setup.py's toolchain, `apt-get install libvips-dev`, and wsl_build.py's decoders in ~/jpeg-eval.
-Environment: JPEG_INPUTS (default ~/jpeg-inputs), JPEG_SRC_DIR (for `inputs`: one <name>.jpg per NAMES entry),
-PG_BENCH_CLONE (default ~/photo-gallery, a clone of this repository that the benches are built in).
+Needs the container's eval image (or, natively, tools/profiling/ci_setup.py's toolchain and docker/apt-packages-eval.txt),
+and linux_build.py's decoders in JPEG_EVAL.
+Environment (the container sets each to a folder of its pg-eval volume): JPEG_EVAL (default ~/jpeg-eval, linux_build.py's
+sources, builds and tools), JPEG_INPUTS (default ~/jpeg-inputs), JPEG_SRC_DIR (for `inputs`: one <name>.jpg per NAMES
+entry), JPEG_RESTART_OUT (default ~/jpeg-restart, restart.py's variants), PG_JPEG_ENC_DIR (default ~/jpeg-enc,
+encoders.py's work folder), PG_BENCH_CLONE (default ~/photo-gallery, a clone of this repository that the benches are built
+in).
 """
 
 import os
@@ -21,6 +25,9 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parent.parent.parent
 CLONE = Path(os.environ.get("PG_BENCH_CLONE", Path.home() / "photo-gallery"))
 INPUTS = Path(os.environ.get("JPEG_INPUTS", Path.home() / "jpeg-inputs"))
+EVAL = Path(os.environ.get("JPEG_EVAL", Path.home() / "jpeg-eval"))
+RESTART = Path(os.environ.get("JPEG_RESTART_OUT", Path.home() / "jpeg-restart"))
+ENCODES = Path(os.environ.get("PG_JPEG_ENC_DIR", Path.home() / "jpeg-enc"))
 # Its Cargo.toml takes turbojpeg-sys from the darktorres fork by rev (vendor/README.md).
 DST = CLONE / "eval" / "jpeg-decoders"
 NAMES = [
@@ -65,6 +72,9 @@ def environment() -> dict[str, str]:
     env["FFMPEG_DIR"] = str(ffmpeg_prefix())
     env["LIBCLANG_PATH"] = libclang_path()
     env["JPEG_INPUTS"] = str(INPUTS)
+    # The crate's own target folder, which marginal, restart.py and table.py read, whatever CARGO_TARGET_DIR says (the
+    # container sets it to the workspace's).
+    env["CARGO_TARGET_DIR"] = str(DST / "target")
     return env
 
 
@@ -145,13 +155,14 @@ def inputs() -> None:
 def main() -> None:
     steps = sys.argv[1:]
     if not steps:
-        sys.exit(__doc__ or "usage: wsl.py STEP...")
+        sys.exit(__doc__ or "usage: linux.py STEP...")
     env = environment()
     if not (CLONE / ".git").exists():
         run(["git", "clone", "-q", str(REPO), str(CLONE)], cwd=Path.home(), env=env)
     # The crate is built from a copy of the parts that build it, in the clone.
     DST.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(REPO / "eval" / "jpeg-decoders" / "Cargo.toml", DST / "Cargo.toml")
+    for file in ["Cargo.toml", "Cargo.lock", "build.rs"]:
+        shutil.copy2(REPO / "eval" / "jpeg-decoders" / file, DST / file)
     for folder in ["src", "benches"]:
         shutil.copytree(REPO / "eval" / "jpeg-decoders" / folder, DST / folder, dirs_exist_ok=True)
     for step in steps:

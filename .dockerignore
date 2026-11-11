@@ -5,6 +5,7 @@
 docker/*
 !docker/apt-packages.txt
 !docker/apt-packages-bench.txt
+!docker/apt-packages-eval.txt
 !tools/lint/requirements.txt
 !tools/lint/package.json
 !tools/lint/package-lock.json

@@ -3,13 +3,14 @@ times and memory; metrics.py rescores and scores them.
 
 - GPU (here, Windows torch): k-means, and the IVF self-join (each row probes its nearest lists and is compared
   exactly, in fp16, with their members).
-- CPU indexes (USearch, FAISS) run in WSL2 through cpu_worker.py, whose Linux wheels have SIMD kernels; the
-  Windows pip wheels of both have none (FINDINGS).
+- CPU indexes (USearch, FAISS) run in the Linux container through cpu_worker.py (`tools/linux.py ann-worker`), whose
+  Linux wheels have SIMD kernels; the Windows pip wheels of both have none (FINDINGS).
 """
 
 import json
 import shutil
 import subprocess
+import sys
 import time
 from pathlib import Path
 
@@ -18,20 +19,12 @@ import torch
 
 from ann.data import KMAX, OUT
 
-WSL_DISTRO = "Ubuntu-26.04"
-WSL_PYTHON = "/root/annenv/bin/python"
-WORKER = Path(__file__).with_name("cpu_worker.py")
-# FAISS's own OpenMP threads plus a multithreaded BLAS oversubscribe the 12 threads: OPQ training (10k x 512, 4
-# iterations) took >53 s that way, 25.9 s with BLAS on one thread, 16.6 s with passive OpenMP waits as well.
-WORKER_ENV = ("OPENBLAS_NUM_THREADS=1", "OMP_WAIT_POLICY=PASSIVE")
+# The launcher that runs cpu_worker.py in the container, with the job's folders mounted (the worker's environment, the
+# BLAS and OpenMP thread settings, is the launcher's too).
+LAUNCHER = Path(__file__).resolve().parents[2] / "tools" / "linux.py"
 # A sweep (one build, every search width) stops once its searches have taken this long in total: a self-join
 # over the main base that needs more than 10 minutes of search is not a practical setting, and wider ones cost more.
 MAX_SEARCH_S = 600
-
-
-def wsl_path(p: Path) -> str:
-    s = str(p.resolve()).replace("\\", "/")
-    return f"/mnt/{s[0].lower()}{s[2:]}"
 
 
 def kmeans(x: np.ndarray, nlist: int, iters: int = 25, seed: int = 0) -> np.ndarray:
@@ -109,28 +102,29 @@ def gpu_ivf(x: np.ndarray, nlist: int, r: int, nprobes: list[int], seed: int = 0
 
 
 def run_cpu(tag: str, base_file: Path, family: str, config: dict, params: list[dict], **job) -> tuple[dict, list[dict]]:
-    """Builds and searches one CPU index in the WSL worker (self-join over base_file). Returns (build info, one
-    result per param: ids + seconds)."""
+    """Builds and searches one CPU index in the container's worker (self-join over base_file). Returns (build info, one
+    result per param: ids + seconds). The job names this machine's paths; the launcher mounts their folders and gives the
+    worker its own paths for them."""
     work = OUT / "jobs" / tag
     if work.exists():
         shutil.rmtree(work)
     work.mkdir(parents=True)
     spec = {
-        "base": wsl_path(base_file),
+        "base": str(base_file.resolve()),
         "queries": None,
         "metric": "ip",
         "family": family,
         "config": config,
         "params": params,
         "k": KMAX,
-        "out": wsl_path(work),
+        "out": str(work.resolve()),
         "order": "file",
         "max_search_s": MAX_SEARCH_S,
-        **{k: (wsl_path(v) if isinstance(v, Path) else v) for k, v in job.items()},
+        **{k: (str(v.resolve()) if isinstance(v, Path) else v) for k, v in job.items()},
     }
     (work / "job.json").write_text(json.dumps(spec), encoding="utf-8")
     proc = subprocess.run(
-        ["wsl.exe", "-d", WSL_DISTRO, "--", "env", *WORKER_ENV, WSL_PYTHON, wsl_path(WORKER), wsl_path(work / "job.json")],
+        [sys.executable, str(LAUNCHER), "ann-worker", str(work / "job.json")],
         capture_output=True,
         check=False,
         text=True,

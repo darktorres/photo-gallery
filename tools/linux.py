@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """The Linux side of the repository, in the pg-dev container (docker/): the checks of CI's Linux job, the callgrind
-benches (`just perf`) and the fuzzer (`just fuzz-smoke`). Docker Desktop must be running.
+benches (`just perf`), the fuzzer (`just fuzz-smoke`) and the eval's Linux parts (`just linux-eval`). Docker Desktop must
+be running.
 
-    linux.py build                 build the images: `pg-dev` (the checks) and `pg-tools` (the benches and the fuzzer)
+    linux.py build                 build the images: `pg-dev` (the checks), `pg-tools` (the benches and the fuzzer) and
+                                   `pg-eval` (the eval's Linux parts)
     linux.py check [--head]        docker/check.py on the working tree, or on the committed HEAD with --head
     linux.py perf [ARGS...]        tools/perf_check.py: the callgrind benches of HEAD, gated against docs/perf/baseline.json
     linux.py bench [ARGS...]       tools/profiling/bench.py: the benches without the gate (gungraun's options)
     linux.py fuzz [SECONDS]        tools/fuzz_smoke.py: each fuzz target for SECONDS (default 60)
+    linux.py eval SCRIPT [ARGS...] an eval script (a path under eval/), on the working tree, with the pg-eval volume
+    linux.py ann-worker JOB        eval/ann/cpu_worker.py on one job file (eval/ann/methods.py runs it)
     linux.py shell                 a shell in the checks image, on the working tree
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs and nothing is
@@ -19,6 +23,7 @@ with actions/cache.
 """
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -31,6 +36,10 @@ from typing import NoReturn
 REPO = Path(__file__).resolve().parent.parent
 CHECKS = "pg-dev"
 TOOLS = "pg-tools"
+EVAL = "pg-eval"
+# The eval image's Python packages, at the versions eval/requirements.txt pins (the Windows eval venv's), so each version is
+# written once: numpy, FAISS and USearch for the ANN worker, Pillow for the JPEG encoder comparison.
+EVAL_PACKAGES = ("numpy", "faiss-cpu", "usearch", "pillow")
 # The Justfile's variable behind each build argument of docker/Dockerfile.
 PINS = {
     "JUST_VERSION": "just_version",
@@ -65,11 +74,30 @@ def gungraun_version():
     return match.group(1)
 
 
+def eval_packages():
+    """The pins of EVAL_PACKAGES in eval/requirements.txt (`name==version`), space-separated."""
+    pins = {}
+    for line in (REPO / "eval" / "requirements.txt").read_text(encoding="utf-8").splitlines():
+        name, sep, version = line.strip().partition("==")
+        if sep:
+            pins[name.lower()] = f"{name}=={version}"
+    missing = [name for name in EVAL_PACKAGES if name not in pins]
+    if missing:
+        fail(f"eval/requirements.txt pins no {', '.join(missing)}")
+    return " ".join(pins[name] for name in EVAL_PACKAGES)
+
+
 def build_args():
     args = []
     for arg, variable in PINS.items():
         args += ["--build-arg", f"{arg}={just_value(variable)}"]
-    return [*args, "--build-arg", f"GUNGRAUN_VERSION={gungraun_version()}"]
+    return [
+        *args,
+        "--build-arg",
+        f"GUNGRAUN_VERSION={gungraun_version()}",
+        "--build-arg",
+        f"EVAL_PACKAGES={eval_packages()}",
+    ]
 
 
 def posix(path):
@@ -188,7 +216,7 @@ def refresh_head():
 
 def run(image, command, mounts_list, flags=(), env=(), workdir="/work", tty=False):
     """Runs `command` in a new container of `image`, removed when it ends. `mounts_list` and `flags` are docker run's; each
-    name in `env` is passed on from this process."""
+    name in `env` is passed on from this process, and each `NAME=value` is set to that value."""
     interactive = ["-it"] if tty and sys.stdin.isatty() and sys.stdout.isatty() else []
     env_flags = [item for var in env for item in ("-e", var)]
     cmd = ["docker", "run", "--rm", *interactive, "-w", workdir, *env_flags, *flags, *mounts_list, image, *command]
@@ -256,6 +284,86 @@ def fuzz(seconds):
     sys.exit(head_run(TOOLS, "tools", command))
 
 
+# The eval's folders in the container: the pg-eval volume (or PG_LINUX_CACHE/eval) at /eval, which keeps the sources,
+# builds, inputs and clone the scripts make between runs. Two host folders from .env are mounted when set: the photos the
+# JPEG comparison starts from (JPEG_SRC_DIR, read-only) and the JPEG encoder comparison's work folder (PG_JPEG_ENC_DIR), which
+# gpu_encoders.py on Windows writes into too.
+EVAL_ENV = [
+    "JPEG_EVAL=/eval/jpeg-eval",
+    "JPEG_INPUTS=/eval/jpeg-inputs",
+    "JPEG_RESTART_OUT=/eval/jpeg-restart",
+    "PG_BENCH_CLONE=/eval/photo-gallery",
+]
+
+
+def eval_mounts_and_env():
+    cache = os.environ.get("PG_LINUX_CACHE")
+    if cache:
+        (Path(cache) / "eval").mkdir(parents=True, exist_ok=True)
+        volume = posix(Path(cache) / "eval")
+    else:
+        volume = "pg-eval"
+    mounts_list = ["-v", f"{volume}:/eval"]
+    env = list(EVAL_ENV)
+    encodes = os.environ.get("PG_JPEG_ENC_DIR", "")
+    if encodes:
+        Path(encodes).mkdir(parents=True, exist_ok=True)
+        mounts_list += ["-v", f"{posix(encodes)}:/jpeg-enc"]
+        env.append("PG_JPEG_ENC_DIR=/jpeg-enc")
+    else:
+        env.append("PG_JPEG_ENC_DIR=/eval/jpeg-enc")
+    source = os.environ.get("JPEG_SRC_DIR", "")
+    if source:
+        if not Path(source).is_dir():
+            fail(f"JPEG_SRC_DIR is not a folder: {source}")
+        mounts_list += ["-v", f"{posix(source)}:/jpeg-src:ro"]
+        env.append("JPEG_SRC_DIR=/jpeg-src")
+    return mounts_list, env
+
+
+def eval_script(script, args):
+    """Runs an eval script on the working tree, in the eval image's Python, with the bench flags (the JPEG comparison runs
+    callgrind through gungraun)."""
+    path = (REPO / script).resolve()
+    if not path.is_file() or not path.is_relative_to(REPO / "eval"):
+        fail(f"not a script under eval/: {script}")
+    ensure_image(EVAL, "eval")
+    extra, env = eval_mounts_and_env()
+    command = ["/opt/eval/bin/python", path.relative_to(REPO).as_posix(), *args]
+    sys.exit(run(EVAL, command, [*mounts(), *extra], flags=BENCH_FLAGS, env=env))
+
+
+# The job keys of eval/ann/cpu_worker.py that name files (and `out`, a folder).
+ANN_PATH_KEYS = ("base", "queries", "train", "centroids", "out")
+# FAISS's own OpenMP threads plus a multithreaded BLAS oversubscribe the 12 threads: OPQ training (10k x 512, 4
+# iterations) took >53 s that way, 25.9 s with BLAS on one thread, 16.6 s with passive OpenMP waits as well.
+ANN_ENV = ["OPENBLAS_NUM_THREADS=1", "OMP_WAIT_POLICY=PASSIVE"]
+
+
+def ann_worker(job_file):
+    """Runs cpu_worker.py on `job_file`, a job that names this machine's paths. Each path's folder is mounted (`out`
+    read-write, the inputs read-only) at /ann/<n>, and the worker reads a copy of the job with those paths, written into
+    `out` as job.container.json."""
+    job = json.loads(Path(job_file).read_text(encoding="utf-8"))
+    out = Path(job["out"])
+    folders = {out: "/ann/0"}
+    mounts_list = ["-v", f"{posix(out)}:/ann/0"]
+    container_job = dict(job, out="/ann/0")
+    for key in ANN_PATH_KEYS[:-1]:
+        if not job.get(key):
+            continue
+        path = Path(job[key])
+        folder = path.parent
+        if folder not in folders:
+            folders[folder] = f"/ann/{len(folders)}"
+            mounts_list += ["-v", f"{posix(folder)}:{folders[folder]}:ro"]
+        container_job[key] = f"{folders[folder]}/{path.name}"
+    (out / "job.container.json").write_text(json.dumps(container_job), encoding="utf-8")
+    ensure_image(EVAL, "eval")
+    command = ["/opt/eval/bin/python", "eval/ann/cpu_worker.py", "/ann/0/job.container.json"]
+    sys.exit(run(EVAL, command, ["-v", f"{posix(REPO)}:/work:ro", *mounts_list], env=ANN_ENV))
+
+
 def shell():
     ensure_image(CHECKS, "base")
     sys.exit(run(CHECKS, ["bash"], mounts(), tty=True))
@@ -274,14 +382,20 @@ def main():
     commands.add_parser("bench", help="the callgrind benches, ungated (gungraun's options, e.g. --save-baseline=x)")
     fuzz_parser = commands.add_parser("fuzz", help="each fuzz target for a short time")
     fuzz_parser.add_argument("seconds", nargs="?", default="", help="seconds per target (default 60)")
+    # eval hands the arguments after the script to it, as perf and bench do.
+    eval_parser = commands.add_parser("eval", help="an eval script, e.g. eval/jpeg-decoders/linux.py compare")
+    eval_parser.add_argument("script", help="the script, a path under eval/")
+    ann_parser = commands.add_parser("ann-worker", help="eval/ann/cpu_worker.py on one job file")
+    ann_parser.add_argument("job", help="the job file (job.json), with this machine's paths")
     commands.add_parser("shell", help="a shell in the checks image")
     options, rest = parser.parse_known_args()
-    if rest and options.command not in ("perf", "bench"):
+    if rest and options.command not in ("perf", "bench", "eval"):
         parser.error(f"unrecognized arguments: {' '.join(rest)}")
 
     if options.command == "build":
         build("base", CHECKS)
         build("tools", TOOLS)
+        build("eval", EVAL)
     elif options.command == "check":
         sys.exit(check(options.head))
     elif options.command == "perf":
@@ -290,6 +404,10 @@ def main():
         bench(rest)
     elif options.command == "fuzz":
         fuzz(options.seconds)
+    elif options.command == "eval":
+        eval_script(options.script, rest)
+    elif options.command == "ann-worker":
+        ann_worker(options.job)
     elif options.command == "shell":
         shell()
 

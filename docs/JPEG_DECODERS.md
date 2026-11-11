@@ -102,7 +102,7 @@ for the A6000.
 ## Instructions per decode
 
 Millions of instructions; callgrind, Linux build. Most come from gungraun. libvips and jpeg-decoder do
-their work in threads gungraun doesn't count, so their figures come from whole runs instead (`wsl.py marginal`:
+their work in threads gungraun doesn't count, so their figures come from whole runs instead (`linux.py marginal`:
 3 decodes minus 1, halved, all threads). That method gives the same numbers as gungraun for libjpeg-turbo, to
 within 0.5 M.
 
@@ -572,23 +572,25 @@ Not measured:
 
 ## To rerun
 
-- **CPU decoders (Rust harness)**, on Linux (natively or in the container; there is no WSL step any more): `python3
-  eval/jpeg-decoders/wsl.py inputs check compare time bench marginal`. This needs `apt-get install libvips-dev`. The inputs
-  are library photos, so they're copied to `~/jpeg-inputs` and never into the repo.
+- **CPU decoders (Rust harness)**, in the container: `just linux-eval eval/jpeg-decoders/linux.py inputs check compare
+  time bench marginal`, with `JPEG_SRC_DIR` in `.env` naming the folder of the seven photos (mounted read-only). The
+  inputs are library photos, so they're copied into the `pg-eval` volume (`/eval/jpeg-inputs`) and never into the repo.
+  Natively on Linux, `python3 eval/jpeg-decoders/linux.py ...` with the packages of `docker/apt-packages-eval.txt`.
 - **GPU through Python:** `D:\PhotoGallery\venv-eval\Scripts\python.exe eval\jpeg-decoders\gpu.py FILE...`
   (torchvision), and `... eval\jpeg-decoders\nvjpeg.py [--interpolate] [--batches 1,64] FILE...` (the two nvJPEG
   backends).
-- **Restart markers and baseline conversion:** `python3 eval/jpeg-decoders/restart.py`
-  (needs `apt-get install libjpeg-turbo-progs`). It keeps the variants in `~/jpeg-restart`.
+- **Restart markers and baseline conversion:** `just linux-eval eval/jpeg-decoders/restart.py`. It keeps the
+  variants in the `pg-eval` volume (`/eval/jpeg-restart`).
 - **The C++ harness:**
   - Build: `python eval\jpeg-decoders\win_build.py` on Windows (VS Build Tools, CUDA 13.4, CMake, Ninja, NASM, LLVM;
-    `win_env.py` sets them up) and `python3 eval/jpeg-decoders/wsl_build.py`. Both
-    clone the third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or `~/jpeg-eval` and apply
+    `win_env.py` sets them up) and `just linux-eval eval/jpeg-decoders/linux_build.py` in the container. Both
+    clone the third-party code at pinned commits into `D:\PhotoGallery\tools\jpeg-eval` or the `pg-eval` volume's
+    `/eval/jpeg-eval` and apply
     `eval/jpeg-decoders/patches/`: for jpeggpu, C++20 and binary file reads for MSVC; for parajpeg, its GCC flags
     kept off nvcc and MSVC equivalents of two builtins.
   - Windows: `harness.exe time --secs 2 FILE...` and `harness.exe throughput --workers N DECODER FILE...`, with
     CUDA 13.4's `bin\x64` on PATH; `harness.exe list` names the decoders.
-  - WSL: `python3 eval/jpeg-decoders/harness_wsl.py compare ir time throughput`.
+  - Linux, in the container: `just linux-eval eval/jpeg-decoders/harness_linux.py compare ir time throughput`.
   - nvImageCodec, in its own venv (`python -m pip install -r eval/jpeg-decoders/requirements.txt`, which pins
     nvImageCodec 0.10.0.9 and nvJPEG 13.3.2.43; an unpinned `[all]` extra replaced the shared nvJPEG DLL):
     `nvimgcodec_bench.py --ref-dir DIR

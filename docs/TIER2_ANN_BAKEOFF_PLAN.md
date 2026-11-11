@@ -48,7 +48,7 @@ Done, **not yet committed**:
    intervals are wide), dups2 recall, true-duplicate recall with Clopper-Pearson bounds.
 6. **Docs:** add a FINDINGS section (validation exceptions, characterization, Pareto tables, finalists, trend,
    planted per edit, true-duplicate recall; flag that GPU IVF timings are inflated by its Python per-list loop and
-   that Windows pip wheels of FAISS/USearch lack SIMD, so CPU numbers come from the WSL Linux wheels). Update PLAN §9
+   that Windows pip wheels of FAISS/USearch lack SIMD, so CPU numbers come from the Linux wheels, then in WSL and now in the container). Update PLAN §9
    decision 5 and the M0 line from "being redone" to the result.
 7. **Cleanup:** delete `eval/bench_ann.py` and the `cache/ann/5M_*` files (~5 GB); delete the unused 206k caches
    (`base_all.npy`, `exact_all.npz`) after the report is read; add the plant / `ann.run` / `--draft` lines to the
@@ -76,8 +76,10 @@ NN-descent) stay as designed.
   Required pair = in the k=10 / cosine ≥ 0.4 rule set and beating the row's 11th neighbour by 1e-6.
 - Every method's candidates are rescored exactly before the rule (`metrics.rescore`). Settings are chosen on a
   random half of the pairs and reported on the other half (splitmix hash of the pair key).
-- CPU indexes run in WSL (`/root/annenv`, Linux wheels with SIMD) through `eval/ann/cpu_worker.py` with
-  `OPENBLAS_NUM_THREADS=1 OMP_WAIT_POLICY=PASSIVE`; GPU methods run in `<data root>/venv-eval`.
+- CPU indexes run in the Linux container (the `pg-eval` image's `/opt/eval`, Linux wheels with SIMD, at the pins of
+  `eval/requirements.txt`) through `eval/ann/cpu_worker.py`, which `methods.run_cpu` starts with `tools/linux.py
+  ann-worker` (`OPENBLAS_NUM_THREADS=1 OMP_WAIT_POLICY=PASSIVE`); GPU methods run in `<data root>/venv-eval`. They ran
+  in WSL (`/root/annenv`) until 2026-11-11.
 
 ## Constraints while working
 

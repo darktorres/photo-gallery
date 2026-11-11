@@ -117,16 +117,18 @@ iteration excluded, also including the copies to and from the GPU.
 
 ## To rerun
 
-In WSL, after `eval/jpeg-decoders/wsl_build.py` (which builds every encoder and `ssimulacra2`), from the repo:
+In the container, after `just linux-eval eval/jpeg-decoders/linux_build.py` (which builds every encoder and
+`ssimulacra2`) and `linux.py inputs`, from the repo. `PG_JPEG_ENC_DIR` in `.env` names the work folder on this machine;
+the container mounts it, so both sides see the same files:
 
 ```sh
-python3 eval/jpeg-decoders/encoders.py prepare   # PPMs in ~/jpeg-enc/src
-python3 eval/jpeg-decoders/encoders.py encode    # CPU encoders into ~/jpeg-enc/out
-python3 eval/jpeg-decoders/encoders.py speed
-python3 eval/jpeg-decoders/encoders.py score     # scores (cached in ~/jpeg-enc/scores.csv) and the tables
+just linux-eval eval/jpeg-decoders/encoders.py prepare   # PPMs in PG_JPEG_ENC_DIR/src
+just linux-eval eval/jpeg-decoders/encoders.py encode    # CPU encoders into PG_JPEG_ENC_DIR/out
+just linux-eval eval/jpeg-decoders/encoders.py speed
+just linux-eval eval/jpeg-decoders/encoders.py score     # scores (cached in PG_JPEG_ENC_DIR/scores.csv) and the tables
 ```
 
-The GPU encoders run on Windows in between `encode` and `score`, writing into the same folder through
-`\\wsl.localhost`: `D:\PhotoGallery\tools\jpeg-eval\venv\Scripts\python.exe eval\jpeg-decoders\gpu_encoders.py
+The GPU encoders run on Windows in between `encode` and `score`, writing into the same folder:
+`D:\PhotoGallery\tools\jpeg-eval\venv\Scripts\python.exe eval\jpeg-decoders\gpu_encoders.py
 --gpujpeg D:\PhotoGallery\tools\jpeg-eval\build\GPUJPEG\gpujpegtool.exe`. The inputs are library photos and stay
-in WSL's `~/jpeg-enc`, never in the repo.
+in `PG_JPEG_ENC_DIR`, never in the repo. (The figures above were measured in WSL, before the container.)

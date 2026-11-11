@@ -1,6 +1,6 @@
-"""Builds one CPU index and searches it; runs in WSL2 (methods.run_cpu), whose pip wheels of FAISS (AVX2) and
-USearch (SimSIMD) have the SIMD kernels the Windows wheels lack. Only numpy, faiss and usearch: no torch, no eval
-imports.
+"""Builds one CPU index and searches it; runs in the Linux container (methods.run_cpu, through `tools/linux.py
+ann-worker`), whose pip wheels of FAISS (AVX2) and USearch (SimSIMD) have the SIMD kernels the Windows wheels lack. Only
+numpy, faiss and usearch: no torch, no eval imports.
 
 Usage: python cpu_worker.py <job.json>
 

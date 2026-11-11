@@ -1,9 +1,10 @@
 """JPEG encoders against each other for docs/JPEG_ENCODERS.md: bytes at equal SSIMULACRA2, and encode speed.
 
-In WSL (Ubuntu-26.04), with wsl_build.py's tools in ~/jpeg-eval/bin:
+On Linux, with linux_build.py's tools in JPEG_EVAL/bin; in the container, each step is
+`just linux-eval eval/jpeg-decoders/encoders.py STEP`, with PG_JPEG_ENC_DIR (.env) the host folder it works in:
     python3 eval/jpeg-decoders/encoders.py prepare      # the inputs decoded once (libjpeg-turbo) to PPM
     python3 eval/jpeg-decoders/encoders.py encode       # CPU encoders, every quality, in parallel
-    (Windows: gpu_encoders.py writes its nvJPEG and GPUJPEG outputs into the same out/ directory)
+    (Windows: gpu_encoders.py writes its nvJPEG and GPUJPEG outputs into the same out/ directory, PG_JPEG_ENC_DIR)
     python3 eval/jpeg-decoders/encoders.py speed        # one encode at a time, Q75: ms per megapixel
     python3 eval/jpeg-decoders/encoders.py score        # SSIMULACRA2 of every output, then the tables
 
@@ -27,9 +28,10 @@ from pathlib import Path
 
 import env
 
-BIN = Path.home() / "jpeg-eval/bin"
-W = Path.home() / "jpeg-enc"
-INPUTS = Path.home() / "jpeg-inputs"
+from linux import ENCODES as W
+from linux import EVAL, INPUTS
+
+BIN = EVAL / "bin"
 NAMES = [
     "pin-base444-1mp",
     "pin-base444-3mp",
@@ -54,7 +56,7 @@ def png_of(ppm):  # guetzli reads PNG only
     """The PNG of a PPM, written to a temp name and renamed, so a concurrent caller never sees a half-written file."""
     png = ppm.with_suffix(".png")
     if not png.exists():
-        from PIL import Image  # python3-pil
+        from PIL import Image  # the eval image's venv
 
         tmp = png.with_name(png.name + ".tmp")
         Image.open(ppm).save(tmp, format="PNG", compress_level=1)

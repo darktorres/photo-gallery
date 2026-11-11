@@ -181,6 +181,13 @@ fuzz-smoke *args:
 linux-bench *args:
     {{ py }} tools/linux.py bench {{ args }}
 
+# An eval script's Linux part, in the container's eval image (docker/README.md): the JPEG comparisons
+# (`just linux-eval eval/jpeg-decoders/linux_build.py`, then `linux.py`, `harness_linux.py`, `restart.py`, `encoders.py`
+# with their steps). Its sources, builds and inputs stay in the pg-eval volume; JPEG_SRC_DIR and PG_JPEG_ENC_DIR (.env)
+# are mounted when set. The ANN bake-off's CPU worker runs the same way, through `tools/linux.py ann-worker`.
+linux-eval *args:
+    {{ py }} tools/linux.py eval {{ args }}
+
 # A shell in the container, on the working tree.
 linux-shell:
     {{ py }} tools/linux.py shell

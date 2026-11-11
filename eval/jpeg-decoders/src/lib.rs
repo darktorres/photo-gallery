@@ -138,9 +138,7 @@ impl Decoders {
     fn ffmpeg_decode(&mut self, mode: Mode, bytes: &[u8]) -> Result<Rgb> {
         let (w, h) = dimensions(bytes)?;
         let lowres = denom(mode, w, h).trailing_zeros() as usize;
-        let Some(decoder) = self.ffmpeg.get_mut(lowres) else {
-            bail!("no MJPEG decoder for lowres {lowres}")
-        };
+        let Some(decoder) = self.ffmpeg.get_mut(lowres) else { bail!("no MJPEG decoder for lowres {lowres}") };
         decoder.send_packet(&ffmpeg::Packet::copy(bytes))?;
         let mut frame = ffmpeg::frame::Video::empty();
         if decoder.receive_frame(&mut frame).is_err() {

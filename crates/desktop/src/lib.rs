@@ -160,17 +160,10 @@ pub fn run(args: &[OsString]) -> i32 {
     if let Some(mut engine) = engine.as_mut() {
         {
             let mut qml: core::pin::Pin<&mut QQmlEngine> = engine.as_mut().upcast_pin();
-            for (name, kind) in [
-                ("thumb", providers_bridge::ffi::ImageKind::Thumb),
-                ("thumbhash", providers_bridge::ffi::ImageKind::Thumbhash),
-                ("full", providers_bridge::ffi::ImageKind::Full),
-                ("yandex", providers_bridge::ffi::ImageKind::Yandex),
-            ] {
+            for provider in pg_client::image::Provider::ALL {
+                let image_provider = providers_bridge::ffi::new_image_provider(providers::kind_of(provider));
                 // SAFETY: a new provider, which the engine takes ownership of.
-                unsafe {
-                    qml.as_mut()
-                        .add_image_provider(&QString::from(name), providers_bridge::ffi::new_image_provider(kind))
-                };
+                unsafe { qml.as_mut().add_image_provider(&QString::from(provider.name()), image_provider) };
             }
         }
         let main_qml = QUrl::from("qrc:/qt/qml/pg/gallery/qml/Main.qml");

@@ -5,10 +5,8 @@
 //! image methods): a thumbnail the cache keeps for the file as the key names it, from the key alone; anything else from
 //! the catalog alone, turned by its own turns. A request racing a written turn then shows the file turned once, either
 //! way, and the model's refresh changes the key.
-//! - `image://thumb/<file>/<height>`
-//! - `image://thumbhash/<file>`
-//! - `image://full/<file>/<width>x<height>` (fitted), `…/full`, or `…/region/<x>,<y>,<w>,<h>/<width>x<height>` (the
-//!   part of the image on screen while zoomed between fit and 1:1, `x`…`h` as fractions of the upright image).
+//! The URLs are `pg_client::image`'s, which builds and reads them; a provider is registered for each of its
+//! `Provider`s (lib.rs), and its requests come here as that provider's `ImageKind`.
 //!
 //! A thin C++ `QQuickAsyncImageProvider` (cpp/providers.cpp) queues each request on a thread pool and calls
 //! `load_image` here. A thumbnail is decoded here, by Qt (`QImage::fromData`, as an `Image` would), from the
@@ -23,7 +21,8 @@ use anyhow::Context;
 use cxx_qt_lib::QImage;
 use ffi::{ImageKind, PixelFormat, Pixels};
 
-use pg_model::image::{ImageKey, ImageRequest};
+use pg_client::image::{ImageRequest, Provider};
+use pg_model::image::ImageKey;
 use pg_model::turns::Turns;
 use pg_render::display::Rgba;
 
@@ -83,47 +82,29 @@ fn upload(img: Rgba) -> anyhow::Result<Pixels> {
     })
 }
 
-/// The `image://` name `kind` is registered under.
-fn provider(kind: ImageKind) -> &'static str {
-    match kind {
-        ImageKind::Thumb => "thumb",
-        ImageKind::Thumbhash => "thumbhash",
-        ImageKind::Full => "full",
-        ImageKind::Yandex => "yandex",
-        _ => "",
+/// The bridge's kind of the provider `provider`: the one map between the two.
+pub(crate) fn kind_of(provider: Provider) -> ImageKind {
+    match provider {
+        Provider::Thumb => ImageKind::Thumb,
+        Provider::Thumbhash => ImageKind::Thumbhash,
+        Provider::Full => ImageKind::Full,
+        Provider::Yandex => ImageKind::Yandex,
     }
 }
 
-/// A Yandex result's picture, by its id: the grid picture (the JPEG the search made of its file), or with a `/original`
-/// suffix the file as its host gave it (the preview's). Each is fetched now when the search doesn't keep it yet.
-fn yandex_picture(id: &str) -> Pixels {
-    let (id, original) = match id.strip_suffix("/original") {
-        Some(id) => (id, true),
-        None => (id, false),
-    };
-    let result = id
-        .parse::<u64>()
-        .map_err(anyhow::Error::from)
-        .and_then(|id| crate::app::get().yandex().image(id).map_err(anyhow::Error::from))
-        .and_then(|picture| {
-            let bytes = if original { &picture.file.bytes } else { &picture.grid };
-            QImage::from_data(bytes, None).context("not an image Qt reads")
-        });
-    match result {
-        Ok(image) => Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image },
-        Err(e) => {
-            pg_log::warn("providers", &format!("image Yandex {id}: {e:#}"));
-            failed()
-        }
-    }
+/// A Yandex result's picture, by its id: the grid picture (the JPEG the search made of its file), or the file as its
+/// host gave it (the preview's). Each is fetched now when the search doesn't keep it yet.
+fn yandex_picture(id: u64, original: bool) -> anyhow::Result<Pixels> {
+    let picture = crate::app::get().yandex().image(id)?;
+    let bytes = if original { &picture.file.bytes } else { &picture.grid };
+    let image = QImage::from_data(bytes, None).context("not an image Qt reads")?;
+    Ok(Pixels { width: 0, height: 0, format: PixelFormat::Image, data: Vec::new(), image })
 }
 
-/// The image a request for `kind` and `id` (the URL's part after the provider's name, `pg_model::image`) asks for.
+/// The image a request for `kind` and `id` (the URL's part after the provider's name, `pg_client::image`) asks for.
 pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
-    if kind == ImageKind::Yandex {
-        return yandex_picture(id);
-    }
-    let Some(request) = ImageRequest::parse(provider(kind), id) else {
+    let provider = Provider::ALL.into_iter().find(|&p| kind_of(p) == kind);
+    let Some(request) = provider.and_then(|provider| ImageRequest::parse(provider, id)) else {
         pg_log::warn("providers", &format!("image {kind:?} {id}: not a request"));
         return failed();
     };
@@ -135,6 +116,7 @@ pub(crate) fn load_image(kind: ImageKind, id: &str) -> Pixels {
         ImageRequest::Full { key, view } => {
             app::get().images().full_image(key.file, view).map_err(anyhow::Error::from).and_then(upload)
         }
+        ImageRequest::Yandex { id, original } => yandex_picture(id, original),
     };
     result.unwrap_or_else(|e| {
         pg_log::warn("providers", &format!("image {kind:?} {id}: {e:#}"));

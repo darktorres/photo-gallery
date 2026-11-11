@@ -28,6 +28,6 @@ QtObject {
     function pan(x, y) { ox = x; oy = y }
     function resetView(realSize) { zoom = stubFitZoom; zoomed = false }
     function toggleOneToOne(px, py) { zoom = zoomed ? stubFitZoom : 1; zoomed = !zoomed }
-    // The fitted image's URL, with the size it is rendered at (the real one: pg_model::image); "" for no key.
+    // The fitted image's URL, with the size it is rendered at (the real one: pg_client::image); "" for no key.
     function fitSource(key, w, h) { return key.length ? "image://full/" + key + "/fit/" + w + "x" + h : "" }
 }

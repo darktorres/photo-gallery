@@ -7,9 +7,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 
 - `model` (`pg-model`): the domain data: the analysis record, border detection, EXIF orientation, PDQ, formats, media
   kinds, dates, path rules, and the types the catalog's reads and the front ends exchange (grid, tree, query, ratings,
-  turns, writes, image keys and requests, saved views and the session place), which formats can hold a rating
+  turns, writes, image keys and views, saved views and the session's listing), which formats can hold a rating
   (`format::can_hold_rating`, which the catalog's writes and the write-back share), and the outcomes the front ends
-  word: a pass's phase and progress (`progress`), why a folder is refused (`refusal`), and what the app tells the user
+  word: a pass's phase and progress (`progress`), why a folder is refused (`refusal`), a Yandex search's and save's
+  outcomes (`yandex`), and what the app tells the user
   (`notice`: each kind of notice with its code, level, source, how the inbox keeps it and what can be done from it).
   Pure and WASM-safe: no file, catalog, decoder, clock or platform calls.
 - `platform` (`pg-platform`): the operating system behind portable functions: file identity, directory handles,
@@ -83,7 +84,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   its `versions`.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
   picks, input, keys, text and the folder tree; the filter bar's facet choices and counts (`facets`), and the Yandex
-  panel's result list (`results`). The words of the search's outcomes (`pg_model::yandex`) are its `text`.
+  panel's result list (`results`); the `image://` scheme (`image`: every provider's URL, built and read). The words of the search's outcomes (`pg_model::yandex`) are its `text`.
 - `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through
   `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
   `app.inbox()` (what the user is told, kept in the catalog), `catalogs()`, `prefs()`, `images()`, `reading()` (what

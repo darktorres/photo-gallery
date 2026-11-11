@@ -480,6 +480,10 @@ Each fix gets a test that fails before it.
   - The URL half moves to `pg_client::image`: `ImageRequest` gains `Yandex { id, original }`, and `provider` and `parse` are the one map between requests and names.
   - The desktop builds and parses every URL through it.
 - Gate: `just test`, `just shots` (every provider).
+- **Done in step 6.**
+  - `pg_client::image` has `Provider` (the four names, `ALL`), `ImageRequest` with `Yandex { id, original }` and the `thumb` constructor that clamps the height, `view_path` and `view_of`, and `THUMB_HEIGHT`; the URL tests and laws moved with it (`client/tests/image_laws.rs`).
+  - `pg_model::image` keeps `ImageKey`, `Version` and `View`.
+  - The desktop registers a provider per `Provider` (`providers::kind_of` is the one map to the bridge's `ImageKind`), parses every request through `ImageRequest::parse`, and the Yandex panel and the grid build their URLs from requests.
 
 ### M-36: `Layout` names every file of the data folder
 

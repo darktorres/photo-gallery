@@ -25,7 +25,7 @@ Item {
     // The row's version: the values are read again when it changes (a version of -1 reads nothing).
     required property int version
     required property real rowHeight
-    // The image URLs, made by the model (the grammar is Rust's: pg_model::image): the thumbnail at the thumbnail height,
+    // The image URLs, made by the model (the grammar is Rust's: pg_client::image): the thumbnail at the thumbnail height,
     // and the placeholder (ROLE_THUMB_URLS, ROLE_THUMBHASH_URLS). Their image key (GalleryModel's image_key) changes
     // when the file is rewritten or turned, so the cell shows the new image.
     required property string itemThumbUrl

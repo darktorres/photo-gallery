@@ -9,7 +9,8 @@ use pg_client::text::{self, FoundBorders};
 use pg_model::detection::{Class, Edge};
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
-use pg_model::image::{ImageKey, ImageRequest, Version};
+use pg_client::image::ImageRequest;
+use pg_model::image::{ImageKey, Version};
 use pg_model::query::MediaType;
 
 use super::qobject;
@@ -75,14 +76,17 @@ impl qobject::GalleryModel {
     /// The URL of a file's thumbnail at a device-pixel height (`image://thumb/<key>/<height>`), or empty when the key
     /// doesn't read.
     pub(super) fn thumb_url(&self, key: &QString, height: i32) -> QString {
-        // The request's own grammar: the height is clamped to the thumbnails there is (`ImageRequest::parse`).
-        let id = format!("{key}/{height}");
-        ImageRequest::parse("thumb", &id).map_or_else(QString::default, |r| QString::from(&r.url()))
+        // The height is clamped to the thumbnails there are (`ImageRequest::thumb`).
+        match (ImageKey::parse(&key.to_string()), u32::try_from(height)) {
+            (Some(key), Ok(height)) => QString::from(&ImageRequest::thumb(key, height).url()),
+            _ => QString::default(),
+        }
     }
 
     /// The URL of a file's placeholder (`image://thumbhash/<key>`), or empty when the key doesn't read.
     pub(super) fn thumbhash_url(&self, key: &QString) -> QString {
-        ImageRequest::parse("thumbhash", &key.to_string()).map_or_else(QString::default, |r| QString::from(&r.url()))
+        ImageKey::parse(&key.to_string())
+            .map_or_else(QString::default, |key| QString::from(&ImageRequest::Thumbhash { key }.url()))
     }
 
     /// Upright size in pixels, as shown (pending turns included); 0 before the import.

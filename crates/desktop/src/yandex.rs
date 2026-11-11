@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
 use pg_app::yandex::Hit;
+use pg_client::image::ImageRequest;
 use pg_client::layout;
 use pg_client::results::Results;
 use pg_client::text;
@@ -55,12 +56,12 @@ impl YandexSearchRust {
 
 /// The URL of a result's grid picture: the image provider serves it from the search's files.
 fn picture_url(id: u64) -> String {
-    format!("image://yandex/{id}")
+    ImageRequest::Yandex { id, original: false }.url()
 }
 
 /// The URL of a result's file as its host gave it, for the preview at full size.
 fn original_url(id: u64) -> String {
-    format!("image://yandex/{id}/original")
+    ImageRequest::Yandex { id, original: true }.url()
 }
 
 /// A count or a row as Qt's int, saturating: a Qt model holds no more rows than an int counts.

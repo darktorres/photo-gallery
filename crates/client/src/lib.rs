@@ -5,6 +5,7 @@
 pub mod controller;
 pub mod facets;
 pub mod grid;
+pub mod image;
 pub mod input;
 pub mod keys;
 pub mod layout;

@@ -296,7 +296,7 @@ Independent of the port; its own commit. Not done yet.
 
 ### 8. Docs
 
-- A FINDINGS entry: the rules ported, mismatch counts per corpus and run, and every behaviour change, including step
+- A measurement entry (where they live: `docs/FINDINGS.md`): the rules ported, mismatch counts per corpus and run, and every behaviour change, including step
   0's bug.
 - Module docs name ExifTool 13.60 as the source.
 - **License:** the port derives from ExifTool (Artistic 1.0 or GPL). The repo has no license today. A note in

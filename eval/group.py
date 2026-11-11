@@ -54,7 +54,7 @@ def pdq_distances(files: list[str]):
 
 def shortcut(pdq_d: int | None, similarity: float, max_pdq: int, min_sim: float) -> str:
     """Why a candidate pair is accepted without the verifier ("pdq" / "sscd"), or "" if it needs verifying.
-    Measured on the k-NN subset (FINDINGS: "Which candidate pairs need the verifier"): PDQ <= 22 matched
+    Measured on the k-NN subset (VERIFIER.md: "Which candidate pairs need the verifier"): PDQ <= 22 matched
     99.5-100%, SSCD >= 0.95 100%, and by eye the shortcut was right on every disagreement."""
     if pdq_d is not None and pdq_d <= max_pdq:
         return "pdq"

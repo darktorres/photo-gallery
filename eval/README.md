@@ -1,6 +1,6 @@
 # M0 model bake-off
 
-One-time evaluation (see `docs/PLAN.md` §8, M0; results go in `docs/FINDINGS.md`) to pick the near-duplicate descriptor, its
+One-time evaluation (see `docs/PLAN.md` §8, M0; results go in the matching doc under `docs/`; the index is `docs/FINDINGS.md`) to pick the near-duplicate descriptor, its
 precision/resolution, and thresholds, measured on the ~190k-image Pinterest test set.
 Python is used only here; everything that runs at library scale is Rust.
 

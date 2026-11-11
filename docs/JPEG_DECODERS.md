@@ -225,7 +225,7 @@ the decoded size.
   - **Camera photos:** it's no faster or slower (26–62 ms against 24–49 ms), since the CPU decode skips most of
     the IDCT and nvJPEG can't scale.
 - **Throughput:** libjpeg-turbo spreads over 12 threads, while nvJPEG here is bounded by its one Huffman thread.
-  The GPU is also what SSCD needs (FINDINGS "I/O": the full pass is GPU-bound at 410 img/s).
+  The GPU is also what SSCD needs (IO.md "I/O": the full pass is GPU-bound at 410 img/s).
 - **Windows against WSL:** Pillow on Windows (libjpeg-turbo) is within 10% of the WSL libjpeg-turbo times on
   camera files (111 against 124 ms, 47 against 49 ms), so the two tables compare.
 
@@ -281,7 +281,7 @@ Per image, decoded pixels copied to pinned host memory. Batches are N copies of 
 - **Throughput, not latency:** the GPU at about 820–880 small files/s (to host, batch 64) is likely less than all
   12 CPU threads decode at 1/2 (one thread: 200–270/s; not measured across threads). It adds decode capacity and
   frees the CPU for PDQ, ThumbHash and the resizes, but its GPU time competes with SSCD, which keeps this GPU busy
-  at 410 img/s (FINDINGS "I/O").
+  at 410 img/s (IO.md "I/O").
 
 ## Restart markers and lossless baseline conversion
 
@@ -596,3 +596,31 @@ Not measured:
     `nvimgcodec_bench.py --ref-dir DIR
     FILE...`, with references from `harness.exe dump turbo FILE DIR\NAME.ppm`. debesheedas: `debesheedas.py --exe
     DECODER.exe --ref-dir DIR FILE...`.
+
+
+## Decode benchmark (`eval/bench_decode.py`, subset, 2026-10-29)
+
+1,000 random JPEGs (median 0.96 MP, 120 KB), each turned into SSCD's 320×320 input, files already in
+RAM, machine otherwise idle. Cosine = SSCD fp16 embedding vs the same image through `pil_full`.
+
+| Pipeline | img/s, 1 process | img/s, 12 processes | Cosine vs reference: min / p1 / p50 |
+|---|---|---|---|
+| PIL full decode + bilinear (current harness, reference) | 65 | 263 | 1 / 1 / 1 |
+| **PIL `draft()`: libjpeg-turbo DCT-scaled decode + bilinear** | **123** | **550** | 0.973 / 0.992 / 0.999 |
+| libvips `thumbnail` (shrink-on-load + Lanczos3) | 78 | 293 | 0.920 / 0.972 / 0.993 |
+| nvJPEG batched on the GPU + antialiased GPU resize | 267 | – (one process) | 0.991 / 0.995 / 0.999 |
+
+- **DCT-scaled decode is the winner: 2.1× full decode on the CPU, nearly the same embedding.** In
+  Rust: libjpeg-turbo's scaling factors (`turbojpeg` crate), the same mechanism.
+- **nvJPEG** gives the most faithful fast output but only 267 img/s. The 2060 has no hardware JPEG
+  engine, so Huffman decoding still runs on the CPU, and it competes with SSCD for the GPU.
+- **libvips is the slowest fast option here and moves embeddings the most** (min cosine 0.92):
+  Lanczos3 sharpens differently from the bilinear antialias the model was evaluated with. It may
+  speed up with `VIPS_CONCURRENCY=1` per process (12 processes each starting vips threads
+  oversubscribe the CPU). Not pursued, since `draft()` already wins.
+- **The rule that matters: index and query images must go through the same decode + resize.** A
+  0.97–0.99 cosine shift is harmless when it applies to every image, and harmful when only one side
+  of a pair gets it.
+- At 550 img/s, decoding 70M images takes ~1.5 days on the CPU. The disk (~1,600 files/s in MFT
+  order) and SSCD fp16 (410 img/s) are now within the same range, so the pass is GPU-bound at
+  ~2 days.

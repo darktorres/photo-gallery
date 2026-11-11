@@ -141,7 +141,7 @@ systems the target's `main` only prints where to run them, so `cargo clippy --al
 `Analyzer::analyze` and `Maker::make` (height 256) on one synthetic photo, `crates/bench/benches/ir/sample.jpg`
 (126 KB, 1280×1017 baseline JPEG, quality 80, 4:2:0), which `tools/profiling/make_bench_jpeg.py` generates: 1/f noise,
 the spectrum of a natural photo but few hard edges. It's committed, so CI runs the same benches. Its numbers are not
-comparable with the ones from the real photo that the benches used before (FINDINGS records those). `PG_BENCH_JPEG`
+comparable with the ones from the real photo that the benches used before (the old numbers are in the former FINDINGS log, indexed in `docs/FINDINGS.md`). `PG_BENCH_JPEG`
 at build time picks another file. Reading it and creating the `Analyzer` and the `Maker` happen in gungraun's `setup`, outside
 the measured function. Their buffers start empty, so each run measures a worker's first file. The bench also has
 catalog benches (`crates/bench/benches/ir/catalog.rs`: the grid's list, the tree and the background job, on a
@@ -429,7 +429,7 @@ The ThumbHash row includes its own resize, which is also in the resize row.
 
 - **The thumbnail decode is at full scale.** `DECODE_MARGIN = 4` (`crates/render/src/maker.rs`) asks for ≥ 1024 px high, and the image is 1017
   high, so no DCT scaling is applied. That costs 28.5 M here against `analyze`'s 21.2 M. The margin is a quality decision
-  (FINDINGS "Thumbnails"); this measures its price for images just under 4× the thumbnail height.
+  (THUMBNAILS.md "Thumbnails"); this measures its price for images just under 4× the thumbnail height.
 - **`pdq::box_1d` is 21% of `analyze`, and the cache misses are concentrated there.** It has 65% of the
   benchmark's L1 read misses and 84% of its L1 write misses. `dct16` makes 2 passes, and each runs it over every
   row and then over every column (`stride = width`). That gives 1,838 calls (2 × 919 rows plus columns of the PDQ input) at

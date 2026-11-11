@@ -1,6 +1,6 @@
 # The crates: library, import and desktop UI (Rust)
 
-See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/FINDINGS.md` ("M1 import"). The layering and the steps
+See `docs/PLAN.md` §4–7 and §8 (M1, M2); measurements are in `docs/IMPORT.md`. The layering and the steps
 that built it are in `docs/REFACTOR_PLAN.md` (its crate table, and the rows for each step).
 
 Every directory under `crates/` is one package, named `pg-<directory>`. From the bottom up:
@@ -307,7 +307,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   their posters look washed out.
   - Layout (`crates/thumbcache/src/lib.rs`): the entries (a few dozen bytes each) and the JPEGs are separate tables, and the totals
     are one row that triggers keep, so opening the cache and listing what's missing never read the JPEGs
-    (FINDINGS "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
+    (START_PROFILE.md "Startup"). Reads take no lock; writes go through one writer thread, in IMMEDIATE transactions, so
     the app and `gallery thumbs` can share the file. "Least recently used" is to the hour: a hit rewrites its
     entry only when it is older, and those writes are batched. A cache far over its cap (the cap lowered) comes
     down in slices of 256 MB, one transaction each, so the other process never waits long for the file.
@@ -324,7 +324,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
     changes (a new mtime or rotation makes the entry stale), the cache is started over, or the entry is evicted. A
     shown entry is touched hourly, so it stays. Damage SQLite finds in the entries' pages is found only by the day's
     check, which runs at an open (up to a day late), and then the file is moved aside.
-- **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, which is not in this repo; FINDINGS
+- **Borders** (`crates/analysis/src/borders.rs`, a port of the Python prototype `tools/borders.py`, which is not in this repo; BORDERS.md
   "Border cleaning"): solid borders (black, white or any colour, JPEG noise included) and blurred padding bars, on
   the stored pixels at full size.
   A pass of its own after the import (`gallery borders`, or the background job before the thumbnails) reads and
@@ -347,7 +347,7 @@ The window comes up before anything is read from the catalog: the folder tree, t
 counts are read by a thread of their own (`crates/app/src/reader.rs`), oldest request first, each kind keeping only its newest
 (which cancels one of its kind running), and shown when they arrive ("Loading…" meanwhile). The selection stays
 with its file when a list is refreshed; while the viewer is open a new list waits for it to close. A rating or a turn
-made while a list was on its way is kept. Startup times are in FINDINGS "Startup".
+made while a list was on its way is kept. Startup times are in START_PROFILE.md "Startup".
 
 - **Folder tree** (left): folders with the same path on different drives are one node (their drives are shown
   in green). "All folders" lists everything (it turns subfolders on); "Drive roots", shown when files lie directly

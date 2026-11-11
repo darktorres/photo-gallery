@@ -74,7 +74,7 @@ Also weighed and kept: **MVU/commands over reactive signals** (replay and virtua
 
 **S-16 Performance.**
 
-- S-16.1 Run S-13.5 now at HEAD: gungraun counts (WSL + valgrind) vs the S-00 baseline, Pinterest import throughput, startup stages; dated FINDINGS entry; machine-readable baseline in `docs/`.
+- S-16.1 Run S-13.5 now at HEAD: gungraun counts (WSL + valgrind) vs the S-00 baseline, Pinterest import throughput, startup stages; dated entry in `docs/REFACTOR_MEASUREMENTS.md`; machine-readable baseline in `docs/`.
 - S-16.2 `just perf` compares at ±1% (configurable).
 - S-16.3 LTO/inlining by measurement (thin LTO, `codegen-units`, `#[inline]` audit of cross-crate hot calls). Adopt only what counts and startup stages justify.
 - S-16.4 Checkpoints after S-12, after S-17/S-20, and at the end. S-17.2 re-baselines the gates once (one predictable branch per key call, about 2 instructions per file).
@@ -206,7 +206,7 @@ State, by sub-machine: `StartGate` (phase enum: tree/list/layout seen, `pending_
 
 **S-21 Remaining REVIEW rows** (the performance and async rows previously deferred): R-75, R-76, R-77, R-78, R-80, R-83, R-101, R-112, R-113, R-127, R-66. Each is read from `REVIEW.md` at the time, fixed with its own measured before/after (S-16 counts or startup stages) and closed with its commit.
 
-Final S-16 run against S-00 (S-13.5 completed) and its FINDINGS entry; the plan's "Now" paragraph and ledger rows S-14 to S-20 filled in; README crate map and dependency rules; REVIEW.md rows closed.
+Final S-16 run against S-00 (S-13.5 completed) and its entry in `docs/REFACTOR_MEASUREMENTS.md`; the plan's "Now" paragraph and ledger rows S-14 to S-20 filled in; README crate map and dependency rules; REVIEW.md rows closed.
 
 ## Reuse
 

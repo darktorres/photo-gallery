@@ -1,4 +1,4 @@
-//! The window's catalog reads off its thread: the grid's files, the folder tree and the filter bar's counts (FINDINGS
+//! The window's catalog reads off its thread: the grid's files, the folder tree and the filter bar's counts (START_PROFILE.md
 //! "Startup"), and the inbox's own reads: a ledger entry's files (or folders) when it is expanded, what Copy puts on the
 //! clipboard, and the folder a Reveal opens, so the inbox reads nothing on the window's thread. One thread with its own
 //! catalog connection runs them, one at a time, oldest request first. The inbox's reads are the user's, so waiting

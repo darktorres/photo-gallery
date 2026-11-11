@@ -1,4 +1,4 @@
-//! Borders around images (FINDINGS "Border cleaning"): solid ones (black, white, colored, JPEG-noisy) and blurred
+//! Borders around images (BORDERS.md "Border cleaning"): solid ones (black, white, colored, JPEG-noisy) and blurred
 //! padding bars (a blurred, enlarged copy of the image filling the letterbox). A port of the Python prototype that
 //! measured them (`tools/borders.py`, removed once this matched it file for file; it is not in this repo), run on the stored
 //! pixels at full size (no EXIF orientation: a crop of the stored image keeps the tag
@@ -293,7 +293,7 @@ mod tests {
         let found = accepted(&d);
         assert_eq!(found.len(), 2, "{:?}", d.sides);
         // The seam is found where the detail below the row jumps, which a few lines of content already make; the
-        // exact depth is pinned by the parity check against borders.py (FINDINGS), not here.
+        // exact depth is pinned by the parity check against borders.py (BORDERS.md), not here.
         assert!(found.iter().all(|&(_, k, depth)| k == Kind::Blur && (100..=113).contains(&depth)), "{found:?}");
         assert_eq!(found[0].2, found[1].2);
     }

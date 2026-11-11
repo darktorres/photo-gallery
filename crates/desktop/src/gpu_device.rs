@@ -16,7 +16,7 @@
 //! D3D11. `PG_FORCE_AV1=1` takes the GPU branch on any GPU, for testing.
 //!
 //! Both of Qt's lists are always set, the encoders' to none: without a list Qt probes every kind of device FFmpeg
-//! knows (CUDA, QSV, Vulkan…), 1.4 s on the GUI thread when the first player is made (FINDINGS "Startup"). A value
+//! knows (CUDA, QSV, Vulkan…), 1.4 s on the GUI thread when the first player is made (START_PROFILE.md "Startup"). A value
 //! set by the user is kept.
 
 use crate::gpu_device_bridge::ffi;

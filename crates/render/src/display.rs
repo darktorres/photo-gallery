@@ -18,7 +18,7 @@ use pg_model::num::count;
 use pg_model::orientation::Orientation;
 use pg_model::turns::Turns;
 
-/// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (FINDINGS "Thumbnails"): the
+/// Lanczos3 from a DCT-scaled decode keeping ≥ 4× the target matches a full decode (THUMBNAILS.md "Thumbnails"): the
 /// thumbnails' decode and the viewer's keep this margin.
 pub(crate) const DECODE_MARGIN: usize = 4;
 

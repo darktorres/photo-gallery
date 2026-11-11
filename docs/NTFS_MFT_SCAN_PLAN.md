@@ -343,7 +343,7 @@ pass. The rescan button becomes a fallback; "full rescan" forces the MFT read.
 8. **Measure once, at the end:**
    - on E:, a cold walk vs a warm walk vs the MFT read (1 vs 2 in flight) vs a journal pass, and the helper's
      peak memory;
-   - results in FINDINGS "I/O", STORAGE.md, PLAN M1 and `crates/README.md`.
+   - results in IO.md "I/O", STORAGE.md, PLAN M1 and `crates/README.md`.
 
    Also fix STORAGE.md: the Z: finding (FileId 0, silently empty), and "only NTFS, others refused".
 

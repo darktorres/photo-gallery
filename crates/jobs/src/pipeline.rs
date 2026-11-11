@@ -1,7 +1,7 @@
 //! The shape every pass over the originals shares (PLAN §4): files read in the given (on-disk) order with a few
 //! reads in flight, processed on a CPU pool, results handed to one writer on the calling thread.
 //!
-//! Reads go to the disk in list order from `readers` threads at once. FINDINGS "I/O": ≥ 8 reads in flight let
+//! Reads go to the disk in list order from `readers` threads at once. IO.md "I/O": ≥ 8 reads in flight let
 //! the drive reorder them and reach sequential speed even in path order, and sparse reads only speed up with
 //! queue depth.
 //!
@@ -56,14 +56,14 @@ impl Options {
     }
 
     /// The default count of files in flight: one per read, and two per worker (the one it processes and the next,
-    /// so that it doesn't wait for the disk). As fast as no bound by count (FINDINGS "I/O": 24 MP JPEGs on the HDD,
+    /// so that it doesn't wait for the disk). As fast as no bound by count (IO.md "I/O": 24 MP JPEGs on the HDD,
     /// 8 readers and 12 workers: 273 MB/s with 32 slots, or 56, or unbounded; 271 with 20).
     pub fn slots(readers: usize, workers: usize) -> usize {
         readers + 2 * workers
     }
 
     /// The default budget: a large camera file for each read in flight and each worker, since a worker holds its
-    /// file while it processes it. Less starves the readers (FINDINGS "I/O": 24 MP JPEGs on the HDD, 8 readers and
+    /// file while it processes it. Less starves the readers (IO.md "I/O": 24 MP JPEGs on the HDD, 8 readers and
     /// 12 workers, read 4% slower with 128 MB at the default slots, and no faster with 512 MB than with this,
     /// 240 MB).
     pub fn budget(readers: usize, workers: usize) -> usize {

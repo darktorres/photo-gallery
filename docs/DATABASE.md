@@ -30,7 +30,7 @@ From the code (`crates/catalog/src/lib.rs`, `crates/catalog/src/browse/`, `crate
 - **Two processes write the same file** at once: the app and `gallery` (import, thumbs).
 - **Windows, from Rust, in-process.** Batched writes plus point updates (ratings, rotations), reads while writing.
 
-Later: semantic search (SigLIP 2 B/16, 768-d, ~107 GB in fp16 at 70M, FINDINGS "A second model"), text search over
+Later: semantic search (SigLIP 2 B/16, 768-d, ~107 GB in fp16 at 70M, MODELS.md "A second model"), text search over
 names, folders, tags and maybe captions or OCR, the duplicate groups.
 
 ## Verdict
@@ -229,7 +229,7 @@ Sizes at 70M:
 | 1-bit | 4.5 GB | 6.7 GB |
 
 The machine has 64 GB of RAM, a 6 GB RTX 2060, and D: is an NVMe SSD (Kingston NV2), so exact re-ranking from the fp16
-file is cheap. The approximate-index comparison (FINDINGS "Nearest-neighbour search, first attempt") ran on synthetic data
+file is cheap. The approximate-index comparison (TIER2_ANN_BAKEOFF_PLAN.md "Nearest-neighbour search, first attempt") ran on synthetic data
 that had no cluster structure, so it says nothing about how well HNSW or IVF would find duplicates in real embeddings; that
 comparison is being redone (PLAN §9 decision 5).
 

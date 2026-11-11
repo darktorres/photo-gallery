@@ -2,7 +2,7 @@
 //!
 //! A port of Meta's reference `pdqhashing.cpp`, following the arithmetic of the `pdqhash` crate, which is
 //! bit-exact with Meta's Java hasher (tested against it in `tests`). That crate has no dihedral variants, which
-//! the query side needs (FINDINGS "PDQ": mirrors and 90° rotations are only found with the 8-variant query).
+//! the query side needs (QUALITY.md "PDQ": mirrors and 90° rotations are only found with the 8-variant query).
 //!
 //! The input is the image already fitted into 512 px (see `analyze`), as Meta's hasher recommends and as M0
 //! evaluated it (`eval/pdq.py`).

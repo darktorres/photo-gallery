@@ -32,5 +32,5 @@ just deploy     # the release build, with Qt's DLLs and QML modules next to gall
 - `docs/PLAN.md`: goals, constraints and milestones.
 - `docs/REFACTOR_PLAN.md` and `docs/REFACTOR_DESIGN.md`: how the code was restructured, and why.
 - `crates/README.md`: the crates, their layers, and the build in detail.
-- `docs/FINDINGS.md`: measurements and what they showed.
+- `docs/FINDINGS.md`: index of the measurement docs. The measurements are in `docs/TEST_SET.md`, `IO.md`, `THUMBNAILS.md`, `MODELS.md`, `QUALITY.md`, `VERIFIER.md`, `BORDERS.md`, `IMPORT.md`, `REVERSE_SEARCH.md`, `DECISIONS.md`, `REFACTOR_MEASUREMENTS.md` and `OPEN_ITEMS.md`, and in `JPEG_DECODERS.md`, `TIER2_ANN_BAKEOFF_PLAN.md`, `VIDEO_PLAYER.md` and `START_PROFILE.md`.
 - `docs/PROFILING.md`: the callgrind benches and the instruction-count gate.

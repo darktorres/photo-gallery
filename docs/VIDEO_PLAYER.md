@@ -1,7 +1,6 @@
 # Video player: options (2026-10-30, not decided)
 
-The viewer plays videos with Qt Multimedia today. That is a stopgap. FINDINGS, "Videos and animations (M2,
-2026-10-30)", has the measurements and the web research behind this page. In short:
+The viewer plays videos with Qt Multimedia today. That is a stopgap. The section "Videos and animations (M2, 2026-10-30)" at the end of this page has the measurements and the web research behind it. In short:
 
 - On this RTX 2060, Qt's FFmpeg backend plays AV1 as 0 frames. Qt picks the decoder by device type and pixel
   format, with no check of the GPU, and opens FFmpeg's native `av1` decoder. That decoder can only use the
@@ -353,3 +352,93 @@ first step of either doubles as the decision test.
 
 **Decisions before shipping either:** the app's own licence (it has none yet), and for B whether way 1's
 toolchain is acceptable (way 2 means two FFmpeg copies).
+
+
+## Videos and animations (M2, 2026-10-30)
+
+Our FFmpeg was BtbN's `lgpl-shared` 9.0 build (`D:\PhotoGallery\tools\ffmpeg-9.0`), shared with Qt 6.12's player.
+From 2026-11-02 it is BtbN's `gpl-shared` build of the same 9.0.2 commit, the only FFmpeg on this machine's tools path:
+the app and the video test use one copy, and the test's x264 clips need the GPL encoders.
+
+### Measured here
+
+- **Dataset videos** (`pinterest`, 1,712 files copied to `D:\PhotoGallery\scratch_videos_all`): 837 H.264,
+  748 VP9 and 127 VP8. There is no AV1, HEVC or HDR among them, and 45 are larger than 1080p. Import: 1,712
+  files with 0 failed, in 20 s (84 files/s, about 200 MB/s). Thumbnails (poster frames at 256 px): 1,712 with
+  0 failed, in 19.5 s. 63 H.264 files carry a creation date.
+- **What the dataset videos test** (header-only ffprobe of all 1,712, one at a time; 1,689 answered, and a
+  re-run of a failed one worked, so the 23 failures were the run's):
+  - All 8-bit 4:2:0; profiles: VP9 profile 0, H.264 Constrained Baseline (581), High (232) and Main (23).
+  - 3 are HLG with BT.2020 primaries (`tumblr_*`), 8-bit. No PQ, no 10-bit, no Dolby Vision.
+  - No display-matrix rotation; 1,409 are stored portrait.
+  - 1,057 have no audio. The other 632 are AAC, all but 7 stereo, mostly 44.1 kHz.
+  - One has a variable frame rate; two start more than 0.1 s late (an edit list or a delay).
+  - Median length 6.4 s, longest 9 min.
+  - So a player test bed also needs generated or sourced HEVC, AV1, 10-bit, PQ, Dolby Vision, rotated and
+    mirrored, and surround files.
+- **A display matrix's mirror comes after its rotation** (`av_display_matrix_flip` negates the first column;
+  Qt's player reads it as "mirrored horizontally after rotation"). EXIF mirrors before rotating, so a mirrored
+  matrix's turn is reversed. The importer had it the other way round, so every mirror came out wrong (a
+  horizontal flip stored as a vertical one). Fixed 2026-10-31; the eight matrices ffmpeg writes are a unit test.
+- **Qt's player can't play AV1 on this GPU** (RTX 2060, Turing, which has no AV1 decoder):
+  - Qt picks FFmpeg's built-in `av1` decoder with d3d11va. That decoder only decodes on the GPU. Qt checks
+    only that a D3D11 device can be created, not that the GPU decodes the codec. FFmpeg then fails its
+    hardware setup on every frame, and the decoder has no software path.
+  - Qt falls back to software only when the decoder fails to open (`qffmpegcodeccontext.cpp`,
+    `qffmpeghwaccel.cpp`, v6.12.0 and the dev branch alike), so the result is 0 frames and no error shown.
+  - The only switch is `QT_FFMPEG_DECODING_HW_DEVICE_TYPES`. It's private API, global for every codec, and
+    read once per process.
+  - Our stopgap (`crates/desktop/src/gpu_device.rs`): ask D3D11 for the AV1 profile at startup and, without
+    it, turn hardware decoding off. Then AV1 plays through libdav1d (61 frames in 2.4 s), but every codec
+    decodes on the CPU on this machine.
+  - Rust's `std::env::set_var` doesn't reach Qt here. Qt reads the C runtime's copy of the environment,
+    which `SetEnvironmentVariableW` doesn't update, so the variable is set with `qputenv`.
+- **FFmpeg can't loop animated WebP:** its `webp_anim` demuxer can't seek back to the start.
+  `ffmpeg -stream_loop 2` gives 10 frames instead of 30, while GIF and APNG give 30. Through Qt's player, an
+  animated WebP plays once, then restarts tens of thousands of times a second.
+  - Qt's `AnimatedImage` has no APNG, and WebP only with the Qt Image Formats add-on, which isn't installed.
+  - So animations play through our own player (`crates/desktop/src/animation.rs`: the `image` crate's decoders,
+    frames pushed into the VideoOutput's sink). Verified for WebP (70 ms frames, loops), GIF and APNG (200 ms
+    frames, loop), and pause.
+- **libwebp_anim merges identical frames:** 10 identical frames became one still VP8L image. Tests check the
+  total duration, not frame counts.
+- **Offscreen Qt (software scene graph) draws no video frames.** Playback can only be checked through the
+  sink's frame count and the player's position.
+
+### Video player options (web research, 2026-10-30; player not chosen yet)
+
+- **Qt Multimedia:**
+  - The same failure shows on other hardware (Qt Forum, "Qt Multimedia 6.7.2 with ffmpeg cannot decode h264
+    on Pi5", topic 159939; a reply blames missing checks that the chosen hardware decoder can work).
+  - Qt's GStreamer backend page calls Qt Multimedia "not a general purpose streaming framework". That backend
+    is for embedded Linux, not Windows.
+- **libmpv:**
+  - Its manual says that when hardware decoding isn't possible, "mpv will fall back on software decoding";
+    it goes down the list of hardware decoders, then software, for each file.
+  - It has `loop-file`, `frame-step` and HDR tone mapping.
+  - Qt Quick integrations (KDE MpvQt, mpv-examples, 2026 guides) render through OpenGL, so they force Qt
+    Quick off Direct3D (`QQuickWindow::setGraphicsApi(OpenGL)`).
+  - mpv PR #17764, "libmpv: add D3D11 render API backend", is merged (milestone 0.42.0). mpv renders into an
+    application-owned `ID3D11Texture2D` on the application's device. The latest release is still 0.41.0
+    (2025-12-21).
+  - Daily LGPL builds of libmpv from mpv's git exist (zhongfly/mpv-winbuild, `mpv-dev-lgpl-x86_64-…`; the
+    2026-10-29 build). They link their own FFmpeg statically.
+- **GStreamer:**
+  - It registers its D3D11 decoders (`d3d11av1dec`, …) only when the GPU supports them, so falling back per
+    codec is built in (GStreamer `d3d11` plugin documentation).
+  - `qml6d3d11sink` (gst-plugins-bad) shows D3D11 frames in a Qt 6 QQuickItem without copies.
+  - Costs: a third media stack and a large runtime. The Qt plugin is built against a Qt version (not checked
+    for 6.12).
+- **QtAVPlayer** (github.com/valbok/QtAVPlayer: MIT, 454 stars, active October 2026):
+  - FFmpeg decoding, frames into `QVideoSink` (D3D11 frames without copies are claimed), sound through
+    `QAudioSink`, accurate seeking, frame stepping.
+  - It claims an automatic fallback to software decoding. Not verified for the AV1 case above.
+- **Rust:**
+  - No mature player library. A July 2026 survey of Rust media crates lists decoding toolkits only, and
+    ffmpeg-next is in "maintenance-only mode".
+  - GUI crates wrap GStreamer (`iced_video_player`) or libmpv (`egui_sharkplayer`, through `libmpv2`), or
+    hand-roll FFmpeg playback (`egui-video`).
+- **Options (not decided):** third-party wrappers (QtAVPlayer, MpvQt, `libmpv2`) are out: the integration
+  stays ours. The two candidates are our own engine on our FFmpeg 9, or libmpv on a pinned master commit
+  with the D3D11 render API. Both are written up, with spikes, in [VIDEO_PLAYER.md](VIDEO_PLAYER.md).
+  Animations stay on our own decoders either way.

@@ -15,7 +15,7 @@ use pg_codec::resize::Resizer;
 
 use crate::display::{self, DECODE_MARGIN, Shown};
 
-/// libjpeg-turbo q85, 4:2:0 (SSIMULACRA2 ~82; FINDINGS "Thumbnails"). The cache format is still open (PLAN §9.1):
+/// libjpeg-turbo q85, 4:2:0 (SSIMULACRA2 ~82; THUMBNAILS.md "Thumbnails"). The cache format is still open (PLAN §9.1):
 /// JPEG is the fastest to make on demand (~1 ms) and to show (~0.6 ms).
 const JPEG_QUALITY: i32 = 85;
 /// What a worker keeps of each buffer: a thumbnail decode is DCT-scaled to 4× its height, so this holds a 2048 px

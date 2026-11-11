@@ -3,7 +3,7 @@
 Which JPEG encoder ImageReduce (and the thumbnail cache) should use: libjpeg-turbo at ImageReduce's settings
 against mozjpeg, jpegli, guetzli, nvJPEG and GPUJPEG, by the bytes each needs for the same perceived quality
 (`eval/jpeg-decoders/encoders.py`, 2026-10-31). Decoders are in [JPEG_DECODERS.md](JPEG_DECODERS.md); the thumbnail
-encoder comparison (jpegli −9% bytes, AVIF −38%) is in FINDINGS "Thumbnails".
+encoder comparison (jpegli −9% bytes, AVIF −38%) is in THUMBNAILS.md "Thumbnails".
 
 ## Verdict
 
@@ -113,7 +113,7 @@ iteration excluded, also including the copies to and from the GPU.
   at equal quality. The Pinterest results say a file that already matches libjpeg-turbo's Q75 tables loses quality
   on any switch, so ImageReduce should keep its "keep the original if the re-encode isn't smaller" rule.
 - **Not progressive:** for any encoder.
-- **The thumbnail cache:** FINDINGS "Thumbnails" already measured jpegli at −9% bytes; nothing here changes that.
+- **The thumbnail cache:** THUMBNAILS.md "Thumbnails" already measured jpegli at −9% bytes; nothing here changes that.
 
 ## To rerun
 

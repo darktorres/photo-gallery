@@ -63,7 +63,7 @@ fn max_folder_id(conn: &Connection) -> Result<i64> {
 
 impl Catalog {
     /// Files whose analysis is absent or stale (`files.pending`), and with `retry_errors` those that failed, in
-    /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD (FINDINGS
+    /// on-disk order (volume, then MFT record number), which reads ~3× faster than path order on an HDD (IO.md
     /// "I/O"). Without `retry_errors` it's read in that order from `files_to_import`, so nothing pending is one probe.
     pub fn pending_import(&self, retry_errors: bool) -> Result<WorkList<WorkItem>> {
         // Counted in the same snapshot: an upper bound (a failure may also be pending), each count read from its

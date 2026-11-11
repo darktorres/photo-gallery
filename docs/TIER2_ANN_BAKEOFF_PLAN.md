@@ -3,7 +3,7 @@
 ## Context
 
 The first ANN bake-off (`eval/bench_ann.py`, 41eaa1c) used one unclustered Gaussian and untuned indexes, so its index
-numbers are invalid (FINDINGS says so). The redo runs on real SSCD embeddings with tuned indexes and a validated
+numbers are invalid (the first-attempt section below says so). The redo runs on real SSCD embeddings with tuned indexes and a validated
 harness, to settle PLAN §9 decision 5 (exact GPU search vs an approximate index for Tier 2).
 
 Decisions that bound it: **no 70M targets or extrapolation, no reads from E:** (2026-11-01); **much smaller sizes,
@@ -20,11 +20,11 @@ Done and committed or cached (`<data root>` is the directory outside the repo th
 Done, **not yet committed**:
 
 - `eval/ann/` (data, exact, methods, cpu_worker, metrics, charact, run, report), `eval/plant.py`, the `--draft`
-  changes in `common.py` / `imgload.py` / `embed.py`, the `verify.py --list` option, and the FINDINGS / PLAN edits.
+  changes in `common.py` / `imgload.py` / `embed.py`, the `verify.py --list` option, and the docs / PLAN edits.
   Checked 2026-11-06: none of the harness is in the tree. `eval/ann/` holds only `__pycache__` (its `.pyc` files are
   dated 2026-11-02), `eval/plant.py` is absent, `common.py`, `imgload.py` and `embed.py` have no `--draft`, and
   `verify.py` has no `--list` (its `--pairs` choices are `labeled`, `cross_groups` and `knn`). `eval/bench_ann.py` is
-  tracked, and FINDINGS has no edit for this work. Remaining step 1 applies: recover the files before going on.
+  tracked, and no measurement doc has an edit for this work. Remaining step 1 applies: recover the files before going on.
 - Scale change: `MAIN = 50_000` (50k test rows + ~4.8k planted copies), trend sizes 12.5k / 25k, `VALIDATE = 25_000`;
   100k and the full base are gone. Sweep cap is now **600 s of total search per configuration** (plus the convergence
   rule: fewer than 0.01% of rows change their top 10).
@@ -46,7 +46,7 @@ Done, **not yet committed**:
    --rotations 45` on ~250 pairs per kind × band stratum plus 400 misses per family.
 5. **Read `cache/ann/report.md`** and sanity-check it: exact ceiling, planted per edit (~265 pairs per edit, so
    intervals are wide), dups2 recall, true-duplicate recall with Clopper-Pearson bounds.
-6. **Docs:** add a FINDINGS section (validation exceptions, characterization, Pareto tables, finalists, trend,
+6. **Docs:** add a results section here (validation exceptions, characterization, Pareto tables, finalists, trend,
    planted per edit, true-duplicate recall; flag that GPU IVF timings are inflated by its Python per-list loop and
    that Windows pip wheels of FAISS/USearch lack SIMD, so CPU numbers come from the Linux wheels, then in WSL and now in the container). Update PLAN §9
    decision 5 and the M0 line from "being redone" to the result.
@@ -93,3 +93,26 @@ NN-descent) stay as designed.
 - `report.md` shows the exact ceiling at 1.0 and every planted source↔copy pair present in the exact join.
 - The viewer's k-NN tab shows the verifier samples and misses (`verify_knn_sscd_trt_fp16_trim_draft.csv`).
 - `ruff check .` and `ruff format --check .` pass; `just lint` for the repo.
+
+
+## Nearest-neighbour search, first attempt: invalid (5M synthetic vectors, 2026-10-31)
+
+The first index bake-off (`eval/bench_ann.py` at 41eaa1c) ran on 5M vectors drawn from **one Gaussian** fitted to
+the subset's SSCD mean and covariance, with 10,000 planted partners. **Its index results are not valid:** a single
+Gaussian has no cluster structure (a query's background neighbours all sit at ~0.29), so HNSW and IVF had nothing to
+navigate by, and the indexes ran at one untuned setting each. It measured the generator, not the indexes (USearch
+HNSW int8 found at most 26% of planted partners, FAISS IVF 77%). The redo, on real library embeddings with tuned
+indexes, is PLAN §9 decision 5.
+
+What stands, because it doesn't depend on the data:
+
+- **Exact search speed:** an fp16 GEMM (fp32 accumulation) plus top-10 runs at **10.4 G pairs/s** on the 2060, so
+  70M × 70M is ~131 GPU hours (~5.5 days; half that if only one triangle is computed), and 10,000 new images
+  against 70M ~70 s. Streaming the base from disk is not included.
+- **USearch's int8 storage** of 512-d unit vectors moves cosines by 0.003 on average (p99 0.009).
+- **The Windows pip wheels of both libraries have no SIMD kernels** (found 2026-11-01): FAISS 1.15.1 loads its
+  generic build (`get_compile_options()` is empty; there is no `swigfaiss_avx2` on Windows), and USearch 2.26.6 is
+  built without SimSIMD (`hardware_acceleration` is `serial` for every type). So the first run's USearch build speed
+  (1,320 vectors/s at 5M) and all its CPU index timings are scalar-code numbers. The Linux wheels of the same
+  versions have them (FAISS `AVX2`, USearch `haswell`), so the redo runs the CPU indexes in WSL2. For production
+  in Rust on Windows, the SIMD build has to be checked the same way.

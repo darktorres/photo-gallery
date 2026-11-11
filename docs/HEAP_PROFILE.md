@@ -194,11 +194,11 @@ as before (302, 715, 742). Two causes, read in `pipeline.rs`:
   too-small idle buffer is replaced by a new one of the file's size, so a file larger than every idle buffer is a new
   allocation too.
 
-What the pass needs is a file per read in flight and per worker (FINDINGS "Read buffers"), plus whatever covers the
+What the pass needs is a file per read in flight and per worker (IO.md "Read buffers"), plus whatever covers the
 disk's bursts. Bounding the files in flight by count as well as by bytes would give that. Readers would take a slot
 before reading, with readers + 2 × workers slots, for example. The pool would then hold at most that many buffers,
 reused and grown in place. The raw channel could be bounded at the same count (an array, made once). That changes
-the pipeline's design and its read-ahead, so its throughput on the HDD has to be measured again (FINDINGS "Read
+the pipeline's design and its read-ahead, so its throughput on the HDD has to be measured again (IO.md "Read
 buffers" has the current pool's).
 
 ### What is left after the second fixes
@@ -534,7 +534,7 @@ into a copy of the pinterest catalog first, to measure it rather than estimate i
 Each reader holds a whole file (`std::fs::read`). The read channel holds `readers * 4` of them (`pipeline.rs:60`),
 on top of the one each blocked reader holds and the one each worker analyzes: 8 × 4 + 8 + 12 = 52 files with the
 defaults on this machine's 12 logical CPUs, the 52 measured at the 12-worker peak. Here that is 0.9 MB. With camera
-JPEGs of 5–10 MB it would be 260–520 MB, far above everything else, and it would be the import's peak. FINDINGS
+JPEGs of 5–10 MB it would be 260–520 MB, far above everything else, and it would be the import's peak. IO.md
 "I/O" asks for 8 reads in flight to reach the HDD's sequential speed; the four-deep queue per reader on top of them
 is what to question, or a bound in bytes rather than files.
 

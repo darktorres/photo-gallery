@@ -7,7 +7,7 @@
 //! `open` changes it when asked. The background task fills it up to the cap and may evict other heights to make
 //! room for the current one; on-demand requests evict the least recently used entries of any height.
 //!
-//! The layout keeps every scan off the pixels (FINDINGS "Startup"): the entries (a few dozen bytes each) and the
+//! The layout keeps every scan off the pixels (START_PROFILE.md "Startup"): the entries (a few dozen bytes each) and the
 //! JPEGs are separate tables, so the entries pack densely while the JPEGs stay in their own pages, and the totals
 //! are one row kept by triggers, so nothing ever sums the entries. Opening reads the totals, not the entries: they
 //! are checked against the entries at most once a day (`HEAL_INTERVAL`, a scan of the entries' sizes), so opening

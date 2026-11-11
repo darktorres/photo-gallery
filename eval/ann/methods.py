@@ -4,7 +4,7 @@ times and memory; metrics.py rescores and scores them.
 - GPU (here, Windows torch): k-means, and the IVF self-join (each row probes its nearest lists and is compared
   exactly, in fp16, with their members).
 - CPU indexes (USearch, FAISS) run in the Linux container through cpu_worker.py (`tools/linux.py ann-worker`), whose
-  Linux wheels have SIMD kernels; the Windows pip wheels of both have none (FINDINGS).
+  Linux wheels have SIMD kernels; the Windows pip wheels of both have none (docs/TIER2_ANN_BAKEOFF_PLAN.md).
 """
 
 import json

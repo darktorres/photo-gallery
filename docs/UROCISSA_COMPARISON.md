@@ -8,7 +8,7 @@ built with Rust (Rocket, redb) and Vue. Its stated goal is to serve a million ph
 a Rust core with a Qt 6 Quick desktop UI. The goals overlap; the platforms do not.
 
 This report compares the two on performance. Urocissa's numbers come from its own README and
-docs and have not been re-measured here. Our numbers come from `docs/FINDINGS.md` and the code.
+docs and have not been re-measured here. Our numbers come from the measurement docs (index: `docs/FINDINGS.md`) and the code.
 Our paths are relative to the repo root. Urocissa paths are relative to its `gallery-backend/src/`
 (Rust) or `gallery-frontend/src/` (Vue), or to its `docs/` folder. Line references were checked
 against the working tree on 2026-11-03 unless marked "not re-checked"; a "not re-checked"
@@ -57,7 +57,7 @@ reference was read from Urocissa's source but not verified against a checkout.
   triggers on every change (`next_seq!` in `crates/catalog/src/lib.rs:59-63`, used by the triggers in
   `crates/catalog/src/schema.rs`), so invalidation is
   already available. A cache hit is a map lookup; a miss is today's cost.
-- **Measure:** the existing `catalog::facets.all` benchmark (93,581,775 Ir in `docs/FINDINGS.md:1397`),
+- **Measure:** the existing `catalog::facets.all` benchmark (93,581,775 Ir in `docs/REFACTOR_MEASUREMENTS.md`, Phase 0 baseline),
   and a timed facet request on a 2M-row library.
 - **Overlap:** `docs/DATABASE.md:43-44` already proposes keeping counts up to date or holding facet
   columns in RAM (~0.8 GB at 70M). A cache is the smaller first step.
@@ -112,7 +112,7 @@ reference was read from Urocissa's source but not verified against a checkout.
   (`crates/analysis/src/analyze.rs:32-34`, scaling in `crates/codec/src/decode.rs`). Urocissa decodes at full
   resolution.
 - **Near-duplicate detection.** We run PDQ with 16-chunk multi-index lookup at radius ≤ 31
-  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/FINDINGS.md`. Urocissa
+  (`crates/dedup/src/pdq_index.rs`), with labelled recall measured in `docs/QUALITY.md`. Urocissa
   does exact hashing only. Its perceptual hash is computed but not used.
 - **Layout runs in Rust.** Our justified rows are computed in `crates/client/src/layout.rs`.
   Urocissa does Knuth–Plass wrapping in the client and updates every loaded row's offset each

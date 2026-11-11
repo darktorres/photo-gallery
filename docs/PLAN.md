@@ -81,11 +81,11 @@ overhead across 70M files, it is more like **1–3 days**. A second pass costs t
   background task makes them afterwards (§6).
 - **Neither are borders** (user decision, 2026-11-01): the detector needs full-size pixels and the import's decode
   is DCT-scaled. A background pass after the import decodes each still image at full size, which reads it a
-  second time (FINDINGS "Border detector in the gallery"). This bears on where embeddings run (§9, decision 6).
+  second time (BORDERS.md "Border detector in the gallery"). This bears on where embeddings run (§9, decision 6).
 - **Read in on-disk order with a single reader thread per HDD.** Parallel random reads on one spindle thrash
   the head. M0 compared path order, NTFS file-ID (MFT record) order and physical order (first-extent LCN via
   `FSCTL_GET_RETRIEVAL_POINTERS`): MFT order, or 8 reads in flight, reaches the disk's sequential speed, ~3× path
-  order (FINDINGS "I/O"). The import reads in MFT order with 8 reads in flight.
+  order (IO.md "I/O"). The import reads in MFT order with 8 reads in flight.
 
 ```text
 Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-disk location
@@ -107,7 +107,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 - **File identity is (volume serial, NTFS file ID), plus size and mtime.** Moves and renames then need no
   rehash. Later, the NTFS USN journal (or Everything) provides incremental changes.
 - **Compute estimates:**
-  - Decoding with DCT scaling measured ~550 img/s on 12 threads (M0, FINDINGS "Design conclusions so far"), not
+  - Decoding with DCT scaling measured ~550 img/s on 12 threads (M0, "Design conclusions so far" below), not
     the ~3k img/s first estimated, so the CPU, not the disk (~1,600 files/s), sets the pace.
   - SSCD at 320 px, fp16 on TensorRT (via `ort`'s TensorRT provider), measured at ~1,390 img/s on the 2060
     (M0), i.e. ~14 h. The pass is then CPU-bound on decoding, roughly **1.5–2 days** for the first pass. After
@@ -151,7 +151,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
   - Geometric check: Hough pre-filter, then clique-filtered RANSAC. That paper reports about 12 ms per pair
     (RANSAC 2D Cliques).
 - **Vision-language model as a last-resort judge** (option, later): only for pairs the verifier can't settle
-  geometrically, e.g. a liquify/slimming edit vs another frame, or a hair recolor (FINDINGS: the gray zone).
+  geometrically, e.g. a liquify/slimming edit vs another frame, or a hair recolor (VERIFIER.md, "Gray zone").
   Ask a VLM (e.g. Claude vision) "same picture, possibly edited, or a different picture?", cache the answer per
   pair, and treat it like a review label. Expected to be a small fraction of pairs; cost and latency per pair
   decide whether it's worth it over hand review.
@@ -160,7 +160,7 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 
 - Verified edges, signed (match / aligned-but-different, weighted by the verifier's margin) → correlation
   clustering by greedy additive edge contraction (multicut). Measured in M0 to beat union-find plus a split
-  pass (FINDINGS: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
+  pass (QUALITY.md: "Shortcut and grouping"). Union-find stays useful for sharding: clusters never cross components.
 - Each group gets a canonical **keeper**: the largest pixel area that contains the others, then the highest
   quality. **Folder preferences** override this: an ordered list of patterns (e.g. prefer `originals\` over
   `backup\` or `pinterest\`); newest/oldest as further tie-breakers.
@@ -191,13 +191,13 @@ Everything SDK / MFT ──► work list (file id, size, mtime), sorted by on-di
 **Thumbnails (user decision, 2026-10-30):** made by a **background task after the import**, never during it,
 at the size the grid currently uses. The size is **adjustable at runtime**: changing it queues new
 thumbnails, and visible items are made first, on demand. Placeholders (ThumbHash) and the dimensions come from
-the import, so the grid lays out instantly while thumbnails fill in. Thumbnails are display-only (FINDINGS
+the import, so the grid lays out instantly while thumbnails fill in. Thumbnails are display-only (THUMBNAILS.md
 "Thumbnails": compression moves embeddings too much to re-analyse them), so the cache can be evicted and rebuilt
 at any time. It costs a second read of the originals, in the background and in on-disk order.
 
 **Cache layout now (2026-10-31):** one SQLite file, `thumbs.sqlite`, with the entries (file, height, source,
 size, last use) apart from the JPEGs and the totals kept by triggers, so nothing that runs often reads the JPEGs
-(FINDINGS "Startup"). The JPEGs are keyed by entry id, so they can move to packed shard files later without
+(START_PROFILE.md "Startup"). The JPEGs are keyed by entry id, so they can move to packed shard files later without
 touching the entries. Format and cap are still open (§9.1).
 
 ---
@@ -245,7 +245,7 @@ can be added later against the same crates.
   classes: duplicate, crop/edit duplicate, not a duplicate.
 - **Model bake-off** on crop recall at very low false-positive rates:
   - SSCD (`disc_mixup`) vs DINOv2 vs CLIP vs PDQ (done: SSCD fp16; PDQ as a cheap tier for near-exact copies;
-    FINDINGS "Design conclusions so far").
+    "Design conclusions so far" below).
   - Measure flip tolerance, to decide whether to embed mirrored images too (done on the subset: SSCD tolerates
     flips, so no mirrored embedding; to confirm on the full set).
   - Measure crop-size limits, to decide whether reference images need *region embeddings* (partly: a global
@@ -253,20 +253,19 @@ can be added later against the same crates.
     §9 decision 4).
   - Python is used here only for ONNX export and the evaluation notebooks.
 - **I/O benchmark** of read orderings on E: (path vs file ID vs LCN) (done: MFT order, or 8 reads in flight, ~3×
-  path order; FINDINGS "I/O").
+  path order; IO.md "I/O").
 - **Throughput benchmarks:**
-  - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image` (done: DCT-scaled decode, FINDINGS "Decode
-    benchmark"; the import uses libjpeg-turbo).
+  - Decode with `turbojpeg` DCT scaling vs `zune-jpeg` vs `image` (done: DCT-scaled decode, JPEG_DECODERS.md "Decode benchmark"; the import uses libjpeg-turbo).
   - Resize with `fast_image_resize`, verified with the aliasing paper's downsampled-circle test (not done).
-  - Thumbnail encode with JPEG (turbo/jpegli) vs WebP (done: AVIF/WebP/JPEG XL too, FINDINGS "Thumbnails").
-  - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, FINDINGS "TensorRT and ONNX Runtime").
+  - Thumbnail encode with JPEG (turbo/jpegli) vs WebP (done: AVIF/WebP/JPEG XL too, THUMBNAILS.md "Thumbnails").
+  - `ort` with CUDA vs TensorRT EP, fp16 vs int8 (done: TensorRT fp16, MODELS.md "TensorRT and ONNX Runtime").
 - **ANN bake-off** on 5M vectors: USearch HNSW int8 vs FAISS IVF-PQ, measuring recall at radius, RAM and
-  insert speed. A first run on synthetic vectors was invalid (unclustered data, untuned indexes; FINDINGS
+  insert speed. A first run on synthetic vectors was invalid (unclustered data, untuned indexes; TIER2_ANN_BAKEOFF_PLAN.md
   "Nearest-neighbour search, first attempt"); it is being redone on the test set's real embeddings plus planted
   edits, with tuned indexes (§9 decision 5).
 - **Exit criteria:** chosen model, thresholds, thumbnail format and size, index type, and read order, each
   backed by a number. Met: the model and the read order; the thumbnail size is no longer fixed (§6). Open: the
-  thresholds (they wait on the hand marks, FINDINGS "Pending"), the thumbnail cache's format and cap, and the
+  thresholds (they wait on the hand marks, OPEN_ITEMS.md "Pending"), the thumbnail cache's format and cap, and the
   index type (§9 decision 5).
 
 ### M1 — Core and ingest (on the sample)
@@ -276,7 +275,7 @@ can be added later against the same crates.
   `pg-analysis`, `pg-jobs`, `pg-library`, `pg-cli`, `pg-desktop` and others; `core`, `ingest` and `ui` no longer
   exist, see `docs/REFACTOR_PLAN.md`.)
 - Background thumbnail task (after import, size chosen at runtime) and its cache.
-- **Status (2026-10-30):** built and verified on `dups2` (FINDINGS "M1 import"; usage in `crates/README.md`).
+- **Status (2026-10-30):** built and verified on `dups2` (IMPORT.md "M1 import"; usage in `crates/README.md`).
   The scanner lists directories by handle (NTFS file IDs, no admin) instead of Everything: the installed
   Everything is 1.4, whose SDK has no file IDs. Not yet run on the full 190k sample.
 
@@ -314,7 +313,7 @@ can be added later against the same crates.
 - **Yandex reverse image search (user request, 2026-10-30):** the viewer's ≈ button uploads the photo and shows two
   groups in a panel: the photo's other sizes (to find a better copy) and similar images (to find more), all of
   them, not just the first page (`pg_yandex`, ported from the crawlers repo's `search.py`; why the browser
-  sees more is in `docs/FINDINGS.md`). Picking and saving (done 2026-11-01):
+  sees more is in `docs/REVERSE_SEARCH.md`). Picking and saving (done 2026-11-01):
   - A click picks a result, **Shift-click** a range (to the anchor's state), and each group has **Select all**.
   - **Double-click** shows a result at full size, fitted or 1:1 (←/→ step, Space picks, Escape goes back).
   - **Save N images…** opens its folder dialog at the folder saved into last (kept in `gallery.json`), or else
@@ -408,8 +407,7 @@ can be added later against the same crates.
    So400m/16 NaFlex** (native aspect ratio, 256 patches; TensorRT fp16), so keywords and semantic search need no
    second decode of the originals. Cost: ~154 GPU hours for 70M (~6.4 days), so the GPU, not decoding (~1.5 days),
    becomes the limit of that pass. NaFlex needs only ~208 × 304 px at 256 patches, so it can also run as a
-   background GPU task on the import's downscaled working image instead of holding up the import (FINDINGS: "A
-   second model" and "NaFlex").
+   background GPU task on the import's downscaled working image instead of holding up the import (MODELS.md: "A second model" and "NaFlex").
 3. **Mirrors in tier 2:** rely on SSCD's flip tolerance, or embed the flipped image too (2× GPU time). Measured
    on the subset: SSCD tolerates flips, so no flipped embedding, pending confirmation on the full set.
 4. **Heavy crops:** if M0 shows SSCD misses small crops, consider region embeddings for reference images. That
@@ -417,13 +415,38 @@ can be added later against the same crates.
 5. **ANN backend:** USearch (simple, about 27 GB RAM) vs FAISS (about 3 GB, training step, harder Windows
    build), or exact search on the GPU (10.4 G pairs/s on the 2060). Open: the comparison is being redone on the
    test set's real SSCD embeddings plus planted hard edits, with every index tuned to its best and the harness
-   validated first; the first run, on unclustered synthetic vectors, was invalid (FINDINGS "Nearest-neighbour
-   search, first attempt").
+   validated first; the first run, on unclustered synthetic vectors, was invalid (TIER2_ANN_BAKEOFF_PLAN.md "Nearest-neighbour search, first attempt").
 
 6. **Embeddings and trimming:** design conclusion 3 trims borders before embedding, but the borders now come from
    a pass after the import (§4), while §4 puts embeddings in the import. Either embeddings move after the borders
    pass (a background GPU task, as decision 2 already allows for SigLIP 2), or the embedding pass runs the
    detector itself on a full-size decode. Not decided yet.
+
+## Design conclusions so far
+
+1. **Mirrors:** SSCD is flip-tolerant, so there is no need to store a flipped embedding
+   (resolves PLAN §9 decision 3, pending confirmation on the full set).
+2. **Heavy crops:** a single global threshold fails, but rank still works. Use k-NN rank plus a
+   verifier for the ~0.4–0.88 band (Pinterest-style), not a lower global threshold.
+3. **Borders:** trim borders before embedding, including blurred padding bars (a common
+   Pinterest/TikTok edit seen in `dups2/075`). Measured 2026-10-30: fixes letterboxed copies, neutral elsewhere
+   ("Trimming before embedding").
+4. **Rotation:** SSCD still ranks copies at any rotation in the top 10 (R@10 1.00), but far below
+   threshold, so rank + verifier covers it: the verifier retries a pair that doesn't match with the other
+   image rotated in 45° (or 90°) steps, with no new false matches ("Verifier: TensorRT, rotations, SIFT,
+   resolution"). Gate the retries to keep their cost down. Apply EXIF orientation everywhere; PDQ's dihedral
+   query covers the exact-copy tier.
+5. **Throughput:** read in MFT order with a deep queue (~1,600 files/s), decode with DCT scaling
+   (~550 img/s on 12 threads), embed with SSCD fp16 on TensorRT (1,390 img/s; 410 in torch). The CPU is
+   now the limit: decoding ~1.5 days for 70M, plus thumbnail encoding. SSCD fp16 is the model; 288px is
+   the same quality (R@10, cross-group 0) if speed is ever needed. SSCD-large, DINOv2 and CLIP are
+   dropped as candidate models. int8 is not used (see "TensorRT and ONNX Runtime").
+6. **PDQ** is an optional cheap tier for near-exact copies (~80% of labeled pairs at d ≤ 22 with
+   0 false positives), never a replacement for SSCD.
+7. **Thumbnails:** Lanczos3 from a DCT-scaled decode kept ≥ 4× the target; display-only (not a
+   re-analysis source). **Decision 2026-10-30:** not made during the import; a background task makes
+   them afterwards at a size adjustable at runtime, into a size-capped cache (PLAN §6). The size/format
+   numbers in "Thumbnails" now size that cache rather than a fixed 70M store.
 
 ## 10. Key references (in `Research/`)
 

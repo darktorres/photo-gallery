@@ -24,13 +24,13 @@ folder ledger (`folder_failures`), which the inbox shows as one entry; the schem
 
 ## Drive kinds (on NTFS)
 
-The two storage-specific choices, MFT order and 8 reads in flight, come from the HDD bench (FINDINGS "I/O":
+The two storage-specific choices, MFT order and 8 reads in flight, come from the HDD bench (IO.md "I/O":
 either gives ~3× path order).
 
 | Drive | Behaviour |
 |---|---|
 | HDD | What it's tuned for: MFT order and queue depth each reach the disk's sequential speed. |
-| SATA SSD / NVMe | MFT order is irrelevant but free. 8 in flight is shallow for NVMe, but FINDINGS "I/O" already has decoding as the bottleneck above ~1,600 files/s, so an SSD runs at decode speed. A deeper queue (picked from `IOCTL_STORAGE_QUERY_PROPERTY` / `StorageDeviceSeekPenaltyProperty`) is only worth it if a measurement shows readers waiting on the disk. |
+| SATA SSD / NVMe | MFT order is irrelevant but free. 8 in flight is shallow for NVMe, but IO.md "I/O" already has decoding as the bottleneck above ~1,600 files/s, so an SSD runs at decode speed. A deeper queue (picked from `IOCTL_STORAGE_QUERY_PROPERTY` / `StorageDeviceSeekPenaltyProperty`) is only worth it if a measurement shows readers waiting on the disk. |
 | USB HDD | MFT order still helps. Behind a bridge without UAS (USB mass storage "bulk-only"), there's no NCQ, so the drive can't reorder the 8 reads and the queue-depth gain shrinks; the MFT order is what's left. |
 
 ## Other file systems (unsupported)
@@ -103,7 +103,7 @@ default settings.
 
 **What it gains (estimates; the walk hasn't been timed on E:).**
 
-- An MFT record is 1 KiB: at 70M files, ~70 GB, ~5 min at the HDD's ~230 MB/s (FINDINGS "I/O"). A cold folder
+- An MFT record is 1 KiB: at 70M files, ~70 GB, ~5 min at the HDD's ~230 MB/s (IO.md "I/O"). A cold folder
   walk pays a few seeks per folder: ~20 min per 100k folders, 3–4 h at 1M. Both are small next to the first
   import (~1.5 days at decode speed). Rescans are where the time matters.
 - An MFT read always covers the whole volume, so a small folder is far cheaper to walk. Use it for drive roots

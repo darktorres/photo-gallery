@@ -3,7 +3,7 @@
 
 pub const HASH_BYTES: usize = 32;
 
-/// Meta's recommended match threshold (FINDINGS "PDQ": d ≤ 31 finds 82.8% of the labeled pairs).
+/// Meta's recommended match threshold (QUALITY.md "PDQ": d ≤ 31 finds 82.8% of the labeled pairs).
 pub const MATCH_DISTANCE: u32 = 31;
 /// Below this quality the hash is unreliable (flat or near-flat images); Meta's recommendation.
 pub const MIN_QUALITY: u8 = 50;
@@ -14,7 +14,7 @@ macro_rules! group_distance {
         22
     };
 }
-/// Distance up to which a tier-1 pair counts as the same picture when grouping and filtering (FINDINGS "Shortcut and
+/// Distance up to which a tier-1 pair counts as the same picture when grouping and filtering (QUALITY.md "Shortcut and
 /// grouping": PDQ ≤ 22 between reliable hashes was right on every pair checked).
 pub const GROUP_DISTANCE: u32 = group_distance!();
 

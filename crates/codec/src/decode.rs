@@ -1,9 +1,9 @@
 //! Decoding to upright 8-bit RGB, the way M0 evaluated it (`eval/common.py::load_rgb`): EXIF orientation applied,
 //! transparency flattened onto white, and JPEGs decoded at a reduced scale in the DCT when the caller needs fewer
-//! pixels (FINDINGS "Decode benchmark": 2.1× faster than a full decode, nearly the same embedding).
+//! pixels (JPEG_DECODERS.md "Decode benchmark": 2.1× faster than a full decode, nearly the same embedding).
 //!
 //! The scale is a pure function of the stored dimensions and the caller's minimum size, so the same file always
-//! decodes to the same pixels. Index and query images must go through the same decode (FINDINGS: "The rule that
+//! decodes to the same pixels. Index and query images must go through the same decode (JPEG_DECODERS.md: "The rule that
 //! matters").
 
 use anyhow::{Context, Result};

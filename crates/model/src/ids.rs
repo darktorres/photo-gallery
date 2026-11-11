@@ -27,7 +27,7 @@ impl FileId {
 /// harmless where the file system doesn't follow it). An inode can be reused after a file is deleted; the size and
 /// mtime the catalog also keeps tell the scanner when a row is a different file.
 ///
-/// The volume is 64 bits on both platforms: the NTFS `FileIdInfo` serial, or the Unix device number whole. A 32-bit
+/// The volume is 64 bits on both platforms: the NTFS `FileIdInfo` serial, or on Unix the file system's UUID (the device number where there is none). A 32-bit
 /// serial is not unique (two NTFS volumes on one machine can share its low 32 bits), so a catalog from before the
 /// 64-bit volume is moved aside and rebuilt, not converted (S-17.7 decision 1).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]

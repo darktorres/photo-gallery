@@ -29,7 +29,7 @@ pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transacti
 /// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES, TO_5_SESSION];
+pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES, TO_5_SESSION, TO_6_THUMB_VIEWS];
 
 /// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -168,6 +168,25 @@ WHERE EXISTS (SELECT 1 FROM session);
 DROP TABLE session;
 ALTER TABLE session_row RENAME TO session;
 "#;
+
+/// Version 6: the thumbnail cache reads the catalog through its views alone. `thumb_sources` decides which files can
+/// have a thumbnail (present, and analyzed without an error for the file as it is now), and gives a video's poster
+/// time resolved (0 where the analysis has none; NULL for an image), so the cache's query only compares the rows with
+/// its own entries. It is still one table with lookups by key, which SQLite flattens into the pass's query (the
+/// `files_seq` index is kept). `thumb_folders` is the largest folder id (-1 for none): it sizes the pass's work list,
+/// and is a view of its own, since `thumb_clock` is the change number the pass takes its snapshot at.
+const TO_6_THUMB_VIEWS: &str = "DROP VIEW thumb_sources;
+CREATE VIEW thumb_sources AS
+    SELECT f.id, f.volume, f.file_ref, f.folder_id,
+           (SELECT path FROM folders WHERE id = f.folder_id) AS folder,
+           f.name, f.mtime, f.rotation, f.size, f.seq,
+           CASE WHEN f.kind = 'video' THEN coalesce((SELECT poster_ms FROM analysis WHERE file_id = f.id), 0)
+           END AS poster_ms
+    FROM files f
+    WHERE f.missing = 0
+      AND EXISTS (SELECT 1 FROM analysis WHERE file_id = f.id AND error IS NULL AND mtime = f.mtime);
+CREATE VIEW thumb_folders AS SELECT coalesce(max(id), -1) AS max_id FROM folders;
+";
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
 /// schema, so a SQLite file that merely has the same tables is not taken for a catalog.
@@ -570,7 +589,7 @@ CREATE VIEW present_pdq_pairs AS
     SELECT p.* FROM pdq_pairs p JOIN files fa ON fa.id = p.a JOIN files fb ON fb.id = p.b
     WHERE fa.missing = 0 AND fb.missing = 0;
 -- What the thumbnail cache's pass reads (its own file, so it knows the catalog only through this): the files with an
--- analysis, and their folder's path. One table and no join, with the analysis and the folder as lookups by key: SQLite
+-- analysis, and their folder's path. Version 6 remakes it (TO_6_THUMB_VIEWS). One table and no join, with the analysis and the folder as lookups by key: SQLite
 -- flattens it into the pass's query only then (two joins never flatten together), which keeps the files_seq index.
 CREATE VIEW thumb_sources AS
     SELECT f.id, f.volume, f.file_ref, f.folder_id,

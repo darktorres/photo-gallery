@@ -997,6 +997,25 @@ mod tests {
         assert_eq!(cache.pending(&catalog, 200).unwrap().work.len(), 3);
     }
 
+    /// The pending query since a change number reads the catalog's change index: the catalog's view flattens into it
+    /// (`thumb_sources` is one table with lookups by key), so a pass after a few changes reads only those files.
+    #[test]
+    fn the_pending_query_since_a_change_reads_the_change_index() {
+        let dir = test_folder(SCRATCH, "pending-plan").unwrap();
+        let (catalog, _c) = catalog_of_four(&dir);
+        drop(open(&dir, 1 << 30));
+        let conn = Connection::open(cache_path(&dir)).unwrap();
+        conn.execute("ATTACH DATABASE ?1 AS cat", [pg_platform::sqlite::attach_bytes(&catalog).unwrap()]).unwrap();
+        let plan: Vec<String> = conn
+            .prepare(&format!("EXPLAIN QUERY PLAN {}", reader::pending_sql(true)))
+            .unwrap()
+            .query_map([100, -1], |r| r.get(3))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert!(plan.iter().any(|p| p.contains("files_seq")), "{plan:?}");
+    }
+
     #[test]
     fn a_complete_pass_is_where_the_next_one_starts() {
         let dir = test_folder(SCRATCH, "watermark").unwrap();

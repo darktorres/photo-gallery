@@ -592,26 +592,22 @@ mod tests {
             ],
         )
         .unwrap();
-        // File 1 analyzed, file 2 failed (still a source: the pass leaves it out), file 3 not analyzed (not a source).
+        // File 1 analyzed (a source), file 2 failed and file 3 not analyzed (neither can have a thumbnail).
         raw::insert_analysis(&c, &raw::AnalysisRow::image(1, 10, 100));
         raw::insert_analysis(
             &c,
             &raw::AnalysisRow { error: Some("unreadable"), ..raw::AnalysisRow::image(2, 10, 100) },
         );
-        assert_eq!(raw::thumb_sources(&c), [(1, spelled(rules, r"D:\x")), (2, spelled(rules, r"D:\x\sub"))]);
-        // The clock is the catalog's change number, as the pass reads it.
+        assert_eq!(raw::thumb_sources(&c), [(1, spelled(rules, r"D:\x"))]);
+        // An image has no poster time.
+        let poster: Option<i64> = c.conn.query_row("SELECT poster_ms FROM thumb_sources", [], |r| r.get(0)).unwrap();
+        assert_eq!(poster, None);
+        // The clock is the catalog's change number, and the folders' bound the largest folder id, as the pass reads them.
         assert_eq!(raw::thumb_clock(&c), raw::meta_seq(&c));
-        // The pass's shape over it, with a TEMP stub of the thumbnail cache's entries: a change number's range still
-        // reads files_seq, and a file with no thumbnail yet is the one listed.
-        raw::stub_thumb_entries(&c);
-        let sql = "SELECT f.id FROM thumb_sources f LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
-                   WHERE f.seq > ?2 AND f.missing = 0 AND f.error IS NULL AND f.analyzed_mtime = f.mtime
-                     AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
-                   ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF";
-        let plan = raw::query_plan(&c, sql, [100, -1]);
+        assert_eq!(c.conn.query_row("SELECT max_id FROM thumb_folders", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
+        // A change number's range of the view still reads files_seq (the cache's join over it is tested there).
+        let plan = raw::query_plan(&c, "SELECT id FROM thumb_sources WHERE seq > ?1", [-1]);
         assert!(plan.contains("files_seq"), "{plan:?}");
-        let listed = raw::rows_of(&c, sql, [100, -1], |r| r.get::<_, i64>(0));
-        assert_eq!(listed, [1]);
     }
 
     under_both_rules!(

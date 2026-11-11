@@ -9,11 +9,10 @@ workspace = true
 
 # The thumbnail cache: one SQLite file of the grid's JPEG thumbnails, keyed by (file, height) and capped in bytes, with
 # its writer thread. The storage only: making a thumbnail is `pg-render`'s, and the pass that makes them is the
-# library's. `pg-catalog` is a transitional dependency (`max_folder_id`, the work list's folder count) until the catalog
-# reads the work list itself (S-08.4).
+# library's. It reads the catalog through the catalog's views alone (`thumb_sources`, `thumb_clock`, `thumb_folders`),
+# with no dependency on `pg-catalog`; the tests make catalogs with its fixture.
 [dependencies]
 anyhow.workspace = true
-pg-catalog = { path = "../catalog" }
 pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }

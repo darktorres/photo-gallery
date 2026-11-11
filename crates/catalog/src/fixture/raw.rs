@@ -134,13 +134,6 @@ pub(crate) fn meta_seq(c: &Catalog) -> i64 {
 }
 
 /// The stub of the thumbnail cache's `entries` the pass's statement reads, as a temporary table.
-pub(crate) fn stub_thumb_entries(c: &Catalog) {
-    c.conn
-        .execute_batch(
-            "CREATE TEMP TABLE entries(file_id INTEGER, height INTEGER, mtime INTEGER, rotation INTEGER, UNIQUE(file_id, height));",
-        )
-        .unwrap();
-}
 
 /// The borders the analysis holds: the content's left, top, right and bottom cut, for the only analysis.
 pub(crate) fn cut_sides(c: &Catalog) -> [Option<i64>; 4] {

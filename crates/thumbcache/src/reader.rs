@@ -37,7 +37,8 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
         None => vec![i64::from(height)],
     };
     // The folder ids' table is sized up front. The items are not: counting them first would scan the view.
-    let mut work = WorkList::with_capacity(0, pg_catalog::max_folder_id(&tx, "cat.")?);
+    let folders: i64 = tx.query_row("SELECT max_id FROM cat.thumb_folders", [], |r| r.get(0))?;
+    let mut work = WorkList::with_capacity(0, folders);
     {
         let mut stmt = tx.prepare(pending_sql(since.is_some()))?;
         let mut rows = stmt.query(rusqlite::params_from_iter(values))?;
@@ -60,18 +61,18 @@ pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> 
 }
 
 /// `pending_in`'s query, with the catalog attached as `cat`: ?1 the height, and with `since_checked` ?2 the
-/// change number checked up to.
+/// change number checked up to. Which files can have a thumbnail is the catalog's view's to say (`thumb_sources`):
+/// this only compares its rows with the cache's entries.
 pub(crate) fn pending_sql(since_checked: bool) -> &'static str {
     macro_rules! pending {
         ($changed:literal) => {
             concat!(
-                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, CASE WHEN f.kind = 'video' THEN coalesce(f.poster_ms, 0) END, f.seq, f.folder, f.size
+                "SELECT f.id, f.folder_id, f.name, f.mtime, f.rotation, f.poster_ms, f.seq, f.folder, f.size
                  FROM cat.thumb_sources f
                  LEFT JOIN entries t ON t.file_id = f.id AND t.height = ?1
                  WHERE ",
                 $changed,
-                "f.missing = 0 AND f.error IS NULL AND f.analyzed_mtime = f.mtime
-                   AND (t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
+                "(t.file_id IS NULL OR t.mtime != f.mtime OR t.rotation != f.rotation)
                  ORDER BY f.volume, f.file_ref & 0xFFFFFFFFFFFF"
             )
         };

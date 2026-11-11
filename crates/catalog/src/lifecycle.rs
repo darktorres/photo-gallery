@@ -337,7 +337,7 @@ pub(crate) fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound
     while let Some(r) = rows.next()? {
         if folder.is_none() {
             // Only once there is work: a round with nothing to do reads nothing more.
-            list = WorkList::with_capacity(bound, max_folder_id(conn, "")?);
+            list = WorkList::with_capacity(bound, max_folder_id(conn)?);
             folder = Some(conn.prepare_cached(FOLDER_PATH)?);
         }
         let Some(folder) = folder.as_mut() else { unreachable!("made above") };
@@ -354,11 +354,10 @@ pub(crate) fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound
     Ok(list)
 }
 
-/// The largest folder id of the catalog (`schema`: `""`, or `"cat."` where it is attached under that name): an
-/// O(1) read of the table's last row.
-pub fn max_folder_id(conn: &Connection, schema: &str) -> Result<i64> {
-    let sql = format!("SELECT coalesce(max(id), -1) FROM {schema}folders");
-    Ok(conn.query_row(&sql, [], |r| r.get(0))?)
+/// The largest folder id of the catalog (-1 for none): an O(1) read of the table's last row. The thumbnail cache reads
+/// the same through the `thumb_folders` view.
+fn max_folder_id(conn: &Connection) -> Result<i64> {
+    Ok(conn.query_row("SELECT coalesce(max(id), -1) FROM folders", [], |r| r.get(0))?)
 }
 
 #[cfg(test)]
@@ -718,7 +717,7 @@ mod tests {
     OR old.size IS NOT new.size",
             "",
         );
-        let old_view = view.replace("f.size, f.missing", "f.missing");
+        let old_view = view.replace("f.size, f.seq", "f.seq");
         assert!(old_trigger != trigger && old_view != view);
         fresh
             .execute_batch(&format!(
@@ -740,7 +739,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert!(current.contains("old.size IS NOT new.size") && current.contains("f.size, f.missing"), "{current}");
+        assert!(current.contains("old.size IS NOT new.size") && current.contains("f.size, f.seq"), "{current}");
         assert!(dir.join("catalog.sqlite.replaced").exists());
         drop(disk);
         drop(c);

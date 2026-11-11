@@ -33,7 +33,7 @@ render: codec metadata model video
 
 # The passes, each its own crate.
 scan: catalog jobs model platform
-thumbcache: catalog jobs model platform schema
+thumbcache: jobs model platform schema
 bench: analysis catalog codec model render thumbcache
 borders: analysis catalog jobs model platform
 import: analysis catalog dedup jobs model platform

@@ -35,7 +35,6 @@ pub use error::{Error, Result};
 mod schema;
 
 pub use self::core::{Catalog, Tx};
-pub use lifecycle::max_folder_id;
 pub use types::{CropSource, Folder, Rebuilt, Recorded, Root, ScannedFile, Status, Versions, WorkItem};
 pub use writers::{AnalysisWriter, BordersWriter, ScanWriter};
 

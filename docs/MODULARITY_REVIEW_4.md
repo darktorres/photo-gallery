@@ -515,6 +515,10 @@ Each fix gets a test that fails before it.
   - `pg-thumbcache` loses its normal `pg-catalog` dependency; it keeps the `fixture` dev-dependency for its tests.
   - The catalog's test checks only its views. The join is tested in `pg-thumbcache`, which owns `entries`.
 - Gate: `just test`, Linux checks, perf (`pending_thumbs.at_height`).
+- **Done in step 7.**
+  - Migration `TO_6_THUMB_VIEWS` remakes `thumb_sources` (present files analyzed without an error for the file as it is, a video's `poster_ms` resolved; still one table with lookups by key) and adds `thumb_folders`.
+  - `pending_sql` compares the view's rows with `entries` only; the work list is sized from `thumb_folders`. `max_folder_id` is the catalog's own (private), and `pg-thumbcache` keeps `pg-catalog` as a dev-dependency only (`crate-layers.txt`).
+  - The catalog's test checks its views (rows, poster time, clock, folders' bound, `files_seq` for a range); the join's plan is tested in `pg-thumbcache` (`the_pending_query_since_a_change_reads_the_change_index`).
 
 ### M-38: `pg-writeback`'s dependencies
 

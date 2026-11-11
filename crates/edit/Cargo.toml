@@ -15,7 +15,6 @@ pg-container = { path = "../container" }
 pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 anyhow.workspace = true
-crc32fast.workspace = true
 image-webp.workspace = true
 png.workspace = true
 turbojpeg.workspace = true

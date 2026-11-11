@@ -243,6 +243,12 @@ Each fix gets a test that fails before it.
   - The SQL rule "a still is an image of one frame" (`pg_query::media_sql`, `MEDIA_CASE`, and `pg_catalog::sql`'s analysable stills) reads `analysis.frames`, which is the metadata's count. It then agrees with the edit.
   - Test: a PNG with an `acTL` after its IDAT is a still to both.
 - Gate: `just test`, the fuzzer's container target (Linux).
+- **Done in step 8.**
+  - `pg_container::PngAnimation` and `WebpAnimation` are the rule, folded chunk by chunk (`see`); the metadata's walk applies them as it goes, and the edit's checks (`rewrite::chunk::png_animated`, `webp_animated`, `webp_is_lossless`) fold the same ones. A WebP's animation is its `VP8X` flag, as the metadata had it, not an `ANIM` chunk.
+  - The writing half: `png_chunk`, `fix_png_crc`, `riff`, `vp8x_with_canvas`, `gif_sub_blocks`, and `gif_sub_block_data`, the reader the LZW data used. `pg-edit` and `pg-metadata` no longer depend on crc32fast; the codec's test helper dev-depends on `pg-container`.
+  - `GifBlock::Image { range, image: GifImage }`, with `gif_table_len` the one colour-table size.
+  - The SQL already read `analysis.frames`.
+  - The test is the container's (`an_actl_after_the_image_data_is_a_still`): both sides fold the same type.
 
 ### M-26: an event's words are written once
 

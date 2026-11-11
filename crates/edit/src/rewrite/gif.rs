@@ -1,21 +1,10 @@
 //! A still GIF: its one image decoded from LZW, turned or cropped, and encoded again, its other blocks kept.
 
 use anyhow::{Context, Result, bail, ensure};
-use pg_container::{GifBlock, gif_blocks, gif_header_len};
+use pg_container::{GifBlock, GifImage, gif_blocks, gif_header_len, gif_sub_block_data, gif_sub_blocks};
 
 use super::op::Op;
 use super::raster::{decoded_size, zeroed};
-
-/// `data` as GIF sub-blocks of at most 255 bytes each, ended by an empty one.
-fn sub_blocks(data: &[u8]) -> Vec<u8> {
-    let mut out = Vec::with_capacity(data.len() + data.len() / 255 + 1);
-    for chunk in data.chunks(255) {
-        out.push(u8::try_from(chunk.len()).unwrap_or(u8::MAX));
-        out.extend_from_slice(chunk);
-    }
-    out.push(0);
-    out
-}
 
 /// The `pixels` color indices of a GIF image, from its LZW data with its minimum code size. The stream must end with
 /// its end code. What it holds past the image's pixels (some encoders write more) is decoded into a small buffer and
@@ -68,17 +57,16 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
     let mut blocks = gif_blocks(bytes);
     let (mut images, mut image) = (0, None);
     for b in blocks.by_ref() {
-        if let GifBlock::Image { range } = b {
+        if let GifBlock::Image { range, image: descriptor } = b {
             images += 1;
-            image = Some(range);
+            image = Some((range, descriptor));
         }
     }
     if !blocks.complete() {
         bail!("damaged GIF");
     }
-    let (1, Some(range)) = (images, image) else { return Ok(None) };
+    let (1, Some((range, descriptor))) = (images, image) else { return Ok(None) };
     let header = gif_header_len(bytes).context("damaged GIF")?;
-    let byte_at = |i: usize| bytes.get(i).copied().context("damaged GIF");
     let u16_at = |i: usize| {
         bytes
             .get(i..)
@@ -90,29 +78,18 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
     // The logical screen, as the app's decoder reserves it (RGBA): a GIF it can't show isn't rewritten.
     decoded_size("the GIF's screen", &[sw, sh, 4])?;
     let d = range.start;
-    let (left, top, w, h, packed) = (u16_at(d + 1)?, u16_at(d + 3)?, u16_at(d + 5)?, u16_at(d + 7)?, byte_at(d + 9)?);
-    let table = if packed & 0x80 != 0 { 3 << ((packed & 7) + 1) } else { 0 };
-    let code_at = d + 10 + table;
-    let min_code = byte_at(code_at)?;
+    let GifImage { left, top, width, height, packed, code_size: min_code, .. } = descriptor;
+    let (left, top, w, h) = (usize::from(left), usize::from(top), usize::from(width), usize::from(height));
+    let code_at = d + descriptor.code_at();
     // The sizes the app's GIF decoder takes (the `gif` crate refuses others): a GIF the viewer can't show isn't
     // rewritten, and weezl's coders, which panic for a size above 12, are never given one.
     ensure!((1..=11).contains(&min_code), "damaged GIF: an LZW minimum code size of {min_code}");
 
     // The LZW stream, from its sub-blocks.
-    let mut lzw = Vec::new();
-    let mut rest = bytes.get(code_at + 1..).context("damaged GIF")?;
-    loop {
-        let Some((&n, after)) = rest.split_first() else { bail!("damaged GIF") };
-        if n == 0 {
-            break;
-        }
-        let Some((block, after)) = after.split_at_checked(usize::from(n)) else { bail!("damaged GIF") };
-        lzw.extend_from_slice(block);
-        rest = after;
-    }
+    let (lzw, _) = gif_sub_block_data(bytes, code_at + 1).context("damaged GIF")?;
     let mut indices = decode_indices(&lzw, min_code, decoded_size("the GIF's image", &[w, h])?)?;
     // (An image no pixel wide has no rows to reorder.)
-    if packed & 0x40 != 0 && w > 0 {
+    if descriptor.interlaced() && w > 0 {
         // Interlaced: rows stored in four passes. Each stored row is paired with its place, then put back in order.
         let order = (0..h).step_by(8).chain((4..h).step_by(8)).chain((2..h).step_by(4)).chain((1..h).step_by(2));
         let mut rows: Vec<(usize, &[u8])> = order.zip(indices.chunks_exact(w)).collect();
@@ -139,7 +116,7 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Option<Vec<u8>>> {
     }
     out.push(packed & !0x40); // written non-interlaced
     out.extend_from_slice(bytes.get(d + 10..code_at + 1).context("damaged GIF")?); // local color table, LZW code size
-    out.extend(sub_blocks(&data));
+    out.extend(gif_sub_blocks(&data));
     out.extend_from_slice(bytes.get(range.end..).context("damaged GIF")?);
     Ok(Some(out))
 }
@@ -152,15 +129,12 @@ mod tests {
 
     /// The offset of the LZW minimum code size of `gif`'s one image: after its descriptor and local color table.
     fn min_code_at(gif: &[u8]) -> usize {
-        let range = gif_blocks(gif)
+        gif_blocks(gif)
             .find_map(|b| match b {
-                GifBlock::Image { range } => Some(range),
+                GifBlock::Image { range, image } => Some(range.start + image.code_at()),
                 _ => None,
             })
-            .unwrap();
-        let packed = gif[range.start + 9];
-        let table = if packed & 0x80 != 0 { 3 << ((packed & 7) + 1) } else { 0 };
-        range.start + 10 + table
+            .unwrap()
     }
 
     /// A minimum code size the app's GIF decoder refuses is a damaged GIF, not a panic in weezl (above 12) or a
@@ -202,7 +176,7 @@ mod tests {
     fn descriptor(gif: &[u8]) -> (usize, [usize; 4]) {
         let d = gif_blocks(gif)
             .find_map(|b| match b {
-                GifBlock::Image { range } => Some(range.start),
+                GifBlock::Image { range, .. } => Some(range.start),
                 _ => None,
             })
             .unwrap();

@@ -13,8 +13,8 @@
 
 use anyhow::{Result, bail, ensure};
 
+use crate::rewrite::chunk::{png_animated, webp_animated};
 use crate::rewrite::{self, op::Op};
-use pg_container::{png_chunks, webp_chunks};
 use pg_model::{format::Format, num};
 
 pub struct Cropped {
@@ -45,9 +45,9 @@ pub fn crop(bytes: &[u8], format: Format, width: u32, height: u32, cut: [u32; 4]
             ensure!((header.width, header.height) == want, "the crop came out {}×{}", header.width, header.height);
             Ok(Cropped { bytes: out, cut: [l, t, r, b], metadata: true })
         }
-        Format::Png if png_chunks(bytes).any(|c| &c.kind == b"acTL") => bail!("an animated PNG isn't cropped"),
+        Format::Png if png_animated(bytes) => bail!("an animated PNG isn't cropped"),
         Format::Png => kept(rewrite::png::rewrite(bytes, exact(l, t))?),
-        Format::Webp if webp_chunks(bytes).any(|c| &c.kind == b"ANIM") => bail!("an animated WebP isn't cropped"),
+        Format::Webp if webp_animated(bytes) => bail!("an animated WebP isn't cropped"),
         Format::Webp => kept(rewrite::webp::rewrite(bytes, exact(l, t))?),
         Format::Gif => match rewrite::gif::rewrite(bytes, exact(l, t))? {
             Some(out) => kept(out),

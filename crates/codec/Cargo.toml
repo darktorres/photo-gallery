@@ -27,6 +27,6 @@ zune-jpeg.workspace = true
 fixtures = []
 
 [dev-dependencies]
-crc32fast.workspace = true
+pg-container = { path = "../container" } # a PNG chunk with its CRC, for the decode tests
 miniz_oxide.workspace = true
 pg-testkit = { path = "../testkit" }

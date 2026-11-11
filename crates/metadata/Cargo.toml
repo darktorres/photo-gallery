@@ -12,7 +12,6 @@ workspace = true
 [dependencies]
 pg-container = { path = "../container" }
 pg-model = { path = "../model" }
-crc32fast.workspace = true
 miniz_oxide.workspace = true
 quick-xml.workspace = true
 

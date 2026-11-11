@@ -379,10 +379,7 @@ mod tests {
 
     /// A PNG with one chunk inserted before its first IDAT, its CRC right: the damage is in the chunk's data.
     fn png_with_chunk(png: &[u8], kind: &[u8; 4], data: &[u8]) -> Vec<u8> {
-        let mut chunk = u32::try_from(data.len()).unwrap().to_be_bytes().to_vec();
-        chunk.extend(kind);
-        chunk.extend(data);
-        chunk.extend(crc32fast::hash(&[&kind[..], data].concat()).to_be_bytes());
+        let chunk = pg_container::png_chunk(kind, data).unwrap();
         let idat = png.windows(4).position(|w| w == b"IDAT").unwrap() - 4;
         [&png[..idat], &chunk, &png[idat..]].concat()
     }

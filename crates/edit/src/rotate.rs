@@ -18,8 +18,8 @@
 use anyhow::{Result, ensure};
 use pg_model::turns::Turns;
 
+use crate::rewrite::chunk::{png_animated, webp_animated, webp_is_lossless};
 use crate::rewrite::{self, op::Op};
-use pg_container::{png_chunks, webp_chunks};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
 
@@ -60,11 +60,9 @@ pub fn rotate(bytes: &[u8], format: Format, turns: Turns) -> Result<Outcome> {
             Err(e) if e.is::<rewrite::jpeg::Imperfect>() => tag(),
             Err(e) => return Err(e),
         },
-        Format::Png if png_chunks(bytes).any(|c| &c.kind == b"acTL") => tag(),
+        Format::Png if png_animated(bytes) => tag(),
         Format::Png => rewritten(rewrite::png::rewrite(bytes, Op::Orient(total))?)?,
-        Format::Webp
-            if webp_chunks(bytes).any(|c| &c.kind == b"VP8L") && !webp_chunks(bytes).any(|c| &c.kind == b"ANIM") =>
-        {
+        Format::Webp if webp_is_lossless(bytes) && !webp_animated(bytes) => {
             rewritten(rewrite::webp::rewrite(bytes, Op::Orient(total))?)?
         }
         Format::Webp | Format::Tiff => tag(),
@@ -210,7 +208,7 @@ mod tests {
         // The frame's left edge moved past the 4-pixel screen.
         let d = gif_blocks(&file)
             .find_map(|b| match b {
-                GifBlock::Image { range } => Some(range.start),
+                GifBlock::Image { range, .. } => Some(range.start),
                 _ => None,
             })
             .unwrap();

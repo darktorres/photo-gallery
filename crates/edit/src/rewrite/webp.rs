@@ -3,7 +3,7 @@
 use std::io::Cursor;
 
 use anyhow::{Context, Result};
-use pg_container::webp_chunks;
+use pg_container::{riff, vp8x_with_canvas, webp_chunks, webp_lossless};
 use pg_model::num;
 
 use super::chunk::chunk_bytes;
@@ -11,7 +11,7 @@ use super::op::Op;
 use super::raster::{decoded_size, zeroed};
 
 /// A still WebP, written lossless (VP8L, alpha included): a lossy one becomes lossless, larger but with no
-/// generation loss. The caller checks for `ANIM`.
+/// generation loss. The caller checks that it is no animation.
 pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     let mut decoder = image_webp::WebPDecoder::new(Cursor::new(bytes))?;
     let (w, h) = decoder.dimensions();
@@ -25,20 +25,17 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
     let mut encoded = Vec::new();
     let color = if alpha { image_webp::ColorType::Rgba8 } else { image_webp::ColorType::Rgb8 };
     image_webp::WebPEncoder::new(&mut encoded).encode(&pixels, nw, nh, color)?;
-    let vp8l = webp_chunks(&encoded).find(|c| &c.kind == b"VP8L").context("encoder wrote no VP8L chunk")?;
+    let vp8l = webp_chunks(&encoded).find(webp_lossless).context("encoder wrote no VP8L chunk")?;
     let vp8l = chunk_bytes(&encoded, &vp8l)?.to_vec();
 
     let mut body = b"WEBP".to_vec();
     let mut image_written = false;
     for c in webp_chunks(bytes) {
-        // VP8X: flags (4 bytes), then the canvas width and height less one (3 bytes each).
+        // VP8X: its flags and canvas, the canvas set to the new size.
         match (&c.kind, c.data.split_first_chunk::<10>()) {
             (b"VP8X", Some((fields, extra))) => {
-                let mut fields = *fields;
-                fields[4..7].copy_from_slice(&(nw - 1).to_le_bytes()[..3]);
-                fields[7..10].copy_from_slice(&(nh - 1).to_le_bytes()[..3]);
                 body.extend_from_slice(chunk_bytes(bytes, &c)?.get(..8).context("damaged WebP")?);
-                body.extend_from_slice(&fields);
+                body.extend_from_slice(&vp8x_with_canvas(*fields, nw, nh));
                 body.extend_from_slice(extra);
                 if c.data.len() % 2 == 1 {
                     body.push(0);
@@ -53,8 +50,5 @@ pub(crate) fn rewrite(bytes: &[u8], op: Op) -> Result<Vec<u8>> {
             _ => body.extend_from_slice(chunk_bytes(bytes, &c)?),
         }
     }
-    let mut out = b"RIFF".to_vec();
-    out.extend_from_slice(&u32::try_from(body.len())?.to_le_bytes());
-    out.extend(body);
-    Ok(out)
+    riff(&body).context("the WebP is too large for a RIFF file")
 }

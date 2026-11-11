@@ -7,9 +7,10 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The file containers, walked without allocating (JPEG segments, extended XMP chunks, PNG and RIFF chunks, GIF blocks).
-# No dependencies: the walks are over bytes.
+# The file containers, walked without allocating (JPEG segments, extended XMP chunks, PNG and RIFF chunks, GIF blocks),
+# and written: a PNG chunk and its CRC (crc32fast), a RIFF file, GIF sub-blocks.
 [dependencies]
+crc32fast.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true

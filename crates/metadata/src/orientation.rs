@@ -3,7 +3,7 @@
 
 use std::ops::Range;
 
-use pg_container::{chunk_data, jpeg_exif, jpeg_segments, png_chunks, webp_chunks, webp_exif};
+use pg_container::{chunk_data, fix_png_crc, jpeg_exif, jpeg_segments, png_chunks, webp_chunks, webp_exif};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
 
@@ -70,10 +70,8 @@ pub fn patch_orientation(bytes: &[u8], format: Format, o: Orientation) -> Option
     }
     if format == Format::Png {
         // The eXIf chunk's CRC covers its type and data.
-        let chunk = png_chunks(&out).find(|c| &c.kind == b"eXIf")?;
-        let (start, end) = (chunk.at + 4, chunk.at + 8 + chunk.data.len());
-        let crc = crc32fast::hash(out.get(start..end)?);
-        out.get_mut(end..end + 4)?.copy_from_slice(&crc.to_be_bytes());
+        let at = png_chunks(&out).find(|c| &c.kind == b"eXIf")?.at;
+        fix_png_crc(&mut out, at)?;
     }
     Some(out)
 }

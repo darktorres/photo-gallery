@@ -7,8 +7,8 @@ use std::ops::Range;
 use miniz_oxide::inflate::TINFLStatus;
 use miniz_oxide::inflate::core::{DecompressorOxide, decompress, inflate_flags};
 use pg_container::{
-    ExtendedChunk, GifBlock, add_extended_chunk, chunk_data, find, gif_blocks, jpeg_exif, jpeg_segments, png_chunks,
-    range_in, webp_chunks, webp_exif,
+    ExtendedChunk, GifBlock, PngAnimation, WebpAnimation, add_extended_chunk, chunk_data, find, gif_blocks, jpeg_exif,
+    jpeg_segments, png_chunks, range_in, webp_chunks, webp_exif,
 };
 use pg_model::format::Format;
 
@@ -49,9 +49,11 @@ impl Container {
                 extended_packets(bytes, chunks, assembled, packets);
             }
             Format::Png => {
-                // acTL counts before the first IDAT.
-                let (mut image_data, mut animation) = (false, None);
+                // The animation's rule is the container's (an acTL counts before the first IDAT), applied as the
+                // walk goes.
+                let mut animation = PngAnimation::default();
                 for chunk in png_chunks(bytes) {
+                    animation.see(&chunk);
                     match &chunk.kind {
                         b"eXIf" if c.exif.is_none() => c.exif = Some(chunk_data(&chunk)),
                         b"iTXt" => match png_itxt_xmp(chunk.data) {
@@ -64,27 +66,22 @@ impl Container {
                             }
                             None => {}
                         },
-                        b"IDAT" => image_data = true,
-                        b"acTL" if !image_data && animation.is_none() => {
-                            animation = Some(chunk.data.first_chunk::<4>().map(|&n| u32::from_be_bytes(n)));
-                        }
                         _ => {}
                     }
                 }
-                c.frames = animation.flatten().unwrap_or(1).max(1);
+                c.frames = animation.frames();
             }
             Format::Webp => {
-                let (mut animated, mut frames) = (false, 0);
+                let mut animation = WebpAnimation::default();
                 for chunk in webp_chunks(bytes) {
+                    animation.see(&chunk);
                     match &chunk.kind {
-                        b"VP8X" => animated |= chunk.data.first().is_some_and(|f| f & 0x02 != 0),
-                        b"ANMF" => frames += 1,
                         b"EXIF" if c.exif.is_none() => c.exif = Some(webp_exif(&chunk)),
                         b"XMP " => packets.push(Packet::InFile(chunk_data(&chunk))),
                         _ => {}
                     }
                 }
-                c.frames = if animated { frames.max(1) } else { 1 };
+                c.frames = animation.frames();
             }
             Format::Gif => {
                 let mut blocks = gif_blocks(bytes);

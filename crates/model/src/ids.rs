@@ -20,8 +20,8 @@ impl FileId {
 }
 
 /// A file's identity on its volume: on Windows, the volume's serial number and the file's NTFS file ID; on Unix,
-/// the device and the inode (the Unix volume is the whole device number, a u64; the `dev` number itself can change
-/// across reboots, which is an open item for the Linux build). The file ID survives renames and moves, so a moved
+/// the volume and the inode (on Linux the volume is the file system's UUID, `pg_platform::dir`; a device without one
+/// keeps its device number, which can change across a restart, and the scan says so). The file ID survives renames and moves, so a moved
 /// file keeps its row and its analysis (PLAN §4). On NTFS its low 48 bits are the MFT record number, which the
 /// catalog reads its files in (`files.file_ref & 0xFFFFFFFFFFFF` in SQL: a locality order, a heuristic that is
 /// harmless where the file system doesn't follow it). An inode can be reused after a file is deleted; the size and

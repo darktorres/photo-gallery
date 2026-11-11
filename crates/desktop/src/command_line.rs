@@ -43,7 +43,7 @@ fn arg_of(arg: &OsString) -> Option<Arg> {
     Some(Arg { name: name.to_string(), value: value.to_string(), exact: pg_platform::args::after_first_equals(arg)? })
 }
 
-/// The part of `arg` after its first `=`, as the system holds it.
+/// The program's `--name=value` arguments, as `init` read them (none before it).
 fn args() -> &'static [Arg] {
     ARGS.get().map_or(&[], Vec::as_slice)
 }

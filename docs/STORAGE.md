@@ -45,8 +45,11 @@ still helps.
 
 ## Linux
 
-The identity is `(st_dev, st_ino)`. `st_dev` is kept whole, 64 bits, per entry, because a mount has a device of its
-own (`/` and `/proc` are two devices in the tests). The Linux tests run in CI on each commit (the Linux job runs the
+The identity is the volume and the inode. The volume is the file system's UUID (`pg_platform::dir`: from the kernel,
+or from udev's database, or an ext file system's `f_fsid`, which the kernel builds from it), so a device renumbered at
+a restart keeps its files. It is found per entry, because a mount has a device of its own (`/` and `/proc` are two
+devices in the tests). A device without one (procfs, tmpfs, a FAT volume udev doesn't know), or a clone of another's,
+keeps its device number, which can change across a restart; the scan counts it (`ScanNote::VolumeFallback`). The Linux tests run in CI on each commit (the Linux job runs the
 catalog, scan and platform tests).
 
 - **Birth time** is `statx` btime (`std::fs::Metadata::created()`). A file system that gives none (drvfs) gives NULL,

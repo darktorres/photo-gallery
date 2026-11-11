@@ -1,13 +1,10 @@
 //! Scanner: walks a folder tree and records every media file's identity, size and mtime in the catalog (which
 //! files are media: `media::Ext::of_name`).
 //!
-//! Directories are listed with `GetFileInformationByHandleEx(FileIdBothDirectoryInfo)`, which returns each
-//! entry's NTFS file ID along with its size and times, without opening the files and without admin rights. The
-//! file ID gives both the catalog identity (moves and renames keep their analysis) and the MFT record number the
-//! import sorts by (FINDINGS "I/O": ~3× path order on the HDD).
-//!
-//! PLAN §8 named an Everything-based scanner: the running Everything is 1.5, whose SDK has no file IDs, so the
-//! scanner lists directories itself. Everything (or the USN journal) remains the option for incremental changes.
+//! The listing is the platform's (`pg_platform::dir::Lister`): each entry's identity comes with its size and times,
+//! without opening the files (on Windows the NTFS file ID, whose record number the import sorts by; on Linux the inode
+//! on the volume's UUID). The identity is what keeps a moved or renamed file's analysis. Which folders are taken is
+//! `refusal`'s, from the platform's facts.
 //!
 //! Names and folders are exact: a listed name is a [`Name`] (its units as the system gave them), a folder is a
 //! [`RulePath`] that the walk extends by its names, and a folder is opened by its units. Nothing is decoded lossily.

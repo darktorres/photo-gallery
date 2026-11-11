@@ -465,7 +465,8 @@ features `heif`, `raw`.
   - `Watch<T>`, latest value wins: progress, write status, library status;
   - `Bus<E>` with a bounded queue per subscriber. Invalidations carry the catalog's `meta.seq`
     (`FilesChanged{seq}`, `TreeChanged`). A subscriber that falls behind gets `Lagged` and resyncs through
-    `changes_since`.
+    `changes_since`. (Superseded: the `Bus` carries payload-free invalidations, `pg_jobs::Change`, so a subscriber
+    that lags reads the state again, and `changes_since` is gone; MODULARITY_REVIEW_4 M-48.)
 
 **`pg-render` contents:**
 

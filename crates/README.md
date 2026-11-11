@@ -29,7 +29,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in
   memory for the window's log view (`docs/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
-  GIF chunks, extended XMP packets, as byte ranges.
+  GIF chunks, extended XMP packets, as byte ranges; and what the edit and the metadata read of them, written once (a
+  PNG's or WebP's animation and frames, a lossless WebP, a GIF's image descriptors, a PNG chunk's CRC put right).
 - `dbfile` (`pg-dbfile`): a SQLite database file's lifecycle, which the catalog and the thumbnail cache share, each
   keeping its own policy: the schema check (a file's `sqlite_schema` compared with the one this build creates, comments
   and whitespace ignored, and the seed rows), the judgement of what a file is before it is written (`judge`: new,
@@ -50,7 +51,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   detector (`BORDERS_VERSION`).
 - `dedup` (`pg-dedup`): the tier-1 duplicates: the PDQ index, the import's pairing and the union-find that groups
   pairs.
-- `render` (`pg-render`): the display images made from the files: the grid's thumbnails (`maker`, whose `MakeError` says
+- `render` (`pg-render`): the display images made from the files, upright (the one reader of the EXIF orientation for
+  a decode): the grid's thumbnails (`maker`, whose `MakeError` says
   whether a file couldn't be read or doesn't decode, and `THUMBS_VERSION`), the viewer's images (`display`: the decode a
   view asks for, a kept decode reused while it covers the view, the fit and the zoomed region, a video's poster, the
   ThumbHash placeholder, in the format the window uploads), and a TIFF re-encoded as a JPEG for the Yandex search
@@ -64,9 +66,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); `core` is the lifecycle.
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
   pause, stop), the job thread and schedule, the panics it catches and the event bus.
-- `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
+- `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`, at the path the
+  layout names), capped in bytes (`Cap`, which the front ends read from their own input).
 - `yandex` (`pg-yandex`): Yandex Images reverse search: the upload, the two result lists and the downloads (the only
-  HTTP client).
+  HTTP client). Its error holds the client's cases only; what the app can decode is the app's to say.
 - `scan` (`pg-scan`): the folder walk: the directory listing (`pg-platform`), the skipped folders, and the catalog rows
   for what it finds; and which folders it takes (`refusal`: the policy, from the platform's facts, with a typed
   reason).
@@ -77,8 +80,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `borders` (`pg-borders`): the borders pass: looks for the borders due (`pg-analysis`) and stores them.
 - `crop` (`pg-crop`): the cropped copies: cuts the borders the catalog has off into copies (`pg-edit`), with the
   original's metadata (`pg-exiftool`), never writing the originals.
-- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, how a catalog
-  folder is opened for them (`open_catalog`, `open_thumbs`, `versions`), and what both front ends do around them, once:
+- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, the data folder's
+  layout (`layout::Layout`, which names every file the app keeps: the catalog, the cache, the preferences, the log and
+  SQLite's aliases), how a catalog folder is opened for the passes (`open_catalog`, `open_thumbs`, `versions`), and
+  what both front ends do around them, once:
   adding a folder (`folders::add_folder`: its real path, the scanner's check, the catalog's row) and what follows a scan
   (`scans`: the replaced files' thumbnails forgotten, the notices its result carries). Each pass is its own crate, so its manifest
   shows what it may reach: `scan` (`pg-scan`: the folder walk), `import` (`pg-import`: the analyses), `thumbs`
@@ -87,8 +92,11 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   re-export them. The integration tests of `borders` and `crop` are `pg-library`'s, since they prepare a catalog with
   its `versions`.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
-  picks, input, keys, text and the folder tree; the filter bar's facet choices and counts (`facets`), and the Yandex
-  panel's result list (`results`); the `image://` scheme (`image`: every provider's URL, built and read). The words of the search's outcomes (`pg_model::yandex`) are its `text`.
+  picks, input (the filter bar's typed values), keys and the folder tree; the filter bar's facets and counts
+  (`facets`), the grid's row height (`controller::size`) and the Yandex panel's result list (`results`); the
+  `image://` scheme (`image`: every provider's URL, built and read). Its `text` words everything the user reads, the
+  notices and the search's outcomes included: each line is a `Message`, one table of variants and their entries,
+  worded by `render`.
 - `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through
   `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
   `app.inbox()` (what the user is told, kept in the catalog), `catalogs()`, `prefs()`, `images()`, `reading()` (what
@@ -182,7 +190,7 @@ Linux the headers come from the FFmpeg development packages, through pkg-config.
 either. The pin and its SHA-256 are in the `Justfile`). It has dav1d for AV1, which Qt's copy lacks, and the x264, libvpx, libaom and libwebp encoders the
 video test needs. The app is linked against this GPL build, so a distributed build would be under the GPL; the app
 is not distributed. The bindings to its types are generated from its headers with libclang (LLVM; `LIBCLANG_PATH` in `.env` names its `bin` folder when libclang isn't in the usual place).
-Nothing links FFmpeg: `pg-video` loads its DLLs at run time by full path (`crates/video/src/ffi.rs`), from the folder
+Nothing links FFmpeg: `pg-video` loads its DLLs at run time by full path (`crates/video/src/ffi/load.rs`), from the folder
 of the executable, then from the `bin` the build script found, so PATH plays no part. Its build script copies the DLLs
 into the profile folder, so `gallery.exe` finds them beside it. Qt Multimedia plays videos with
 the same DLLs: Qt 6.12 is built against FFmpeg 9, the same major version. So `just deploy` runs `windeployqt
@@ -231,7 +239,8 @@ The data folder (its home) is `PG_HOME` when set. Otherwise it is the parent of 
 `PG_CATALOG_DIR` (which `.env` sets for `just run` and `just dev` on Windows) or `--catalog-dir` on the command line.
 Otherwise it is the platform's default: `%LOCALAPPDATA%\PhotoGallery` on Windows, and `$XDG_DATA_HOME/photo-gallery`
 (`~/.local/share/photo-gallery`) on Linux. Under the home are `catalog` (the catalog folder: `catalog.sqlite` and the
-thumbnail cache), `gallery.json` and `gallery.log`. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
+thumbnail cache), `gallery.json`, `gallery.log` and, on Windows, `sqlite-aliases` (where a folder whose name SQLite
+can't open is reached by an alias): nothing of the app's is written outside it. `PG_PREFS` moves the preferences file alone. Each start's first record in `gallery.log`
 is the session's, with the build and the data folder (the log's format is in `docs/NOTIFICATIONS.md`), and
 `gallery status` prints the data folder. The app's preferences (write-back, Real Size, borders, row height, the last
 file selected, dev mode) are in `gallery.json`, so they survive rebuilding the catalog. Saved views and

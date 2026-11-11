@@ -3,6 +3,17 @@
 Status (2026-11-10): S1, S2 and S3 done (see "S1 as built", "S2 as built" and "S3 as built" below). Re-checked against `d2cbc13`; delivered in
 three stages (S1, S2, S3), each its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
+**Since the plan (MODULARITY_REVIEW_4).** The code differs from the text below in four ways:
+
+- `RootRefused` and `MountRefused` carry the typed `pg_model::refusal::RefusedReason`, which the client words (M-34),
+  not a string.
+- A notice that names a pass names it by `pg_model::progress::Phase` (M-45).
+- The command line is a consumer too: a scan's result and the cache's events become the same notices the app posts
+  (`pg_library::scans`, the cache's `Event` as a `Notice`), and it prints them in their words (`text::notice_line`)
+  (M-22, M-26).
+- The inbox's and the ledger's functions are methods in `impl Catalog` blocks of their modules (`inbox.rs`,
+  `ledger.rs`: `post_notice`, `inbox_entries`, `record_failures`, `ledger_entries`, ...), not free functions (M-44).
+
 ## S1 as built
 
 S1 is as the plan says, with these differences, each the more proper of the two:

@@ -1,4 +1,5 @@
-//! The application layer: what the front ends share, without any UI. The desktop (`pg-desktop`) is Qt glue over this crate:
+//! The application layer the window uses, without any UI (the command line drives the passes directly through
+//! `pg-library`). The desktop (`pg-desktop`) is Qt glue over this crate:
 //! it opens an [`App`] from a [`Config`], reads what it shows through the services the app holds, and runs the work on the
 //! threads these services start. Nothing here prints: what the user should hear is a notice posted to the [`Inbox`], and the
 //! front end words it.

@@ -863,6 +863,7 @@ These are additions to the plan's M-12a list.
   - a ledger row per step in `docs/REFACTOR_PLAN.md`;
   - a "Validation 4" section in `MODULARITY_PLAN.md`.
 - Gate: `just lint` (markdownlint).
+- **Done in step 9.** The README's `platform` entry was rewritten in M-40 (its run-on line with it). `app/src/lib.rs`'s header says what the README says; `FileIdentity` and `docs/STORAGE.md` give the Linux volume as the file system's UUID, with the device number as the fallback the scan counts; `scan/src/lib.rs`'s header says the listing is the platform's; `model/src/lib.rs`'s names every module; `start_for` and `args` have their own docs. `NOTIFICATIONS_PLAN.md` has a "Since the plan" list of the four changes, and `REFACTOR_PLAN.md`'s event primitives a superseded note. The README's `container`, `render`, `thumbcache`, `yandex`, `library` and `client` entries, its FFmpeg loader path and the data folder's files follow steps 5 to 9. The ledger rows, the layer file's check and "Validation 4" are the validation's.
 
 ## Order
 

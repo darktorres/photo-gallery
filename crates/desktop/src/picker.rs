@@ -43,9 +43,8 @@ pub(crate) fn take(purpose: Purpose) -> Option<PathBuf> {
 }
 
 /// The folder the dialog for `purpose` opens in: its purpose's own (a Yandex save's is the folder saved into last, or
-/// the photo's: `pg_app::yandex::Yandex::start_folder`) while it is still a folder, else the user's folder. The folder is given in its real form (`canonicalize`), which the shell takes where the path as given may
-/// not be: it refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is only spaces. A folder
-/// under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path as given is kept.
+/// the photo's: `pg_app::yandex::Yandex::start_folder`) while it is still a folder, else the user's folder, in the form
+/// the system's dialog takes (`pg_platform::picker::start_folder`).
 fn start_for(purpose: Purpose) -> Option<PathBuf> {
     let requested = match purpose {
         Purpose::YandexSave => crate::app::get().yandex().start_folder(),

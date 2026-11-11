@@ -188,6 +188,15 @@ pub enum Message {
     FolderUnreadable {
         error: String,
     },
+    /// A path given to add (a folder, a file named on the command line) can't be opened, for `error`.
+    PathUnreadable {
+        path: String,
+        error: String,
+    },
+    /// A path given has no path form under the rules (a NUL).
+    NotAPath {
+        path: String,
+    },
     /// The library's status line while the background work is paused and no pass is running.
     WorkPaused,
     /// The library's status line while the background work is paused in a pass (`status`: the pass's line).
@@ -363,6 +372,8 @@ impl Message {
             Message::YandexNothingPicked => "yandex-nothing-picked",
             Message::YandexNoFolder => "yandex-no-folder",
             Message::FolderUnreadable { .. } => "folder-unreadable",
+            Message::PathUnreadable { .. } => "path-unreadable",
+            Message::NotAPath { .. } => "not-a-path",
             Message::WorkPaused => "work-paused",
             Message::PausedPass { .. } => "paused-pass",
             Message::YandexStarting => "yandex-starting",
@@ -493,6 +504,13 @@ impl Message {
             }
             Message::YandexSimilarFailed { reason } => {
                 a.set("reason", reason.as_str());
+            }
+            Message::PathUnreadable { path, error } => {
+                a.set("path", path.as_str());
+                a.set("error", error.as_str());
+            }
+            Message::NotAPath { path } => {
+                a.set("path", path.as_str());
             }
             Message::YandexNotStarted { error }
             | Message::FolderDialogFailed { error }
@@ -636,6 +654,8 @@ impl Message {
             Message::YandexNothingPicked,
             Message::YandexNoFolder,
             Message::FolderUnreadable { error: s() },
+            Message::PathUnreadable { path: s(), error: s() },
+            Message::NotAPath { path: s() },
             Message::WorkPaused,
             Message::PausedPass { status: s() },
             Message::YandexStarting,

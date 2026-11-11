@@ -1626,7 +1626,6 @@ dependencies = [
  "pg-platform",
  "pg-query",
  "pg-render",
- "pg-scan",
  "pg-testkit",
  "pg-thumbcache",
  "pg-video",
@@ -1760,9 +1759,7 @@ dependencies = [
  "pg-jobs",
  "pg-model",
  "pg-platform",
- "pg-scan",
  "pg-testkit",
- "pg-writeback",
 ]
 
 [[package]]
@@ -1886,6 +1883,7 @@ dependencies = [
  "pg-thumbs",
  "pg-video",
  "pg-writeback",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

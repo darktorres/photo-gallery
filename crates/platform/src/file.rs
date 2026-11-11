@@ -124,6 +124,22 @@ pub fn last_write_time(meta: &Metadata) -> i64 {
     i64::try_from(meta.last_write_time()).unwrap_or(i64::MAX)
 }
 
+/// A file's size and last write time ([`last_write_time`]), as the scanner records them, from its metadata.
+pub fn size_and_time(meta: &Metadata) -> io::Result<(i64, i64)> {
+    let size = i64::try_from(meta.len()).map_err(io::Error::other)?;
+    Ok((size, last_write_time(meta)))
+}
+
+/// [`size_and_time`] of the file at `path` (a `names::disk_path`, which names it exactly).
+pub fn stat(path: &Path) -> io::Result<(i64, i64)> {
+    size_and_time(&std::fs::metadata(path)?)
+}
+
+/// [`size_and_time`] of an open file, from its handle.
+pub fn stat_of(file: &File) -> io::Result<(i64, i64)> {
+    size_and_time(&file.metadata()?)
+}
+
 /// From 1601-01-01 to 1970-01-01, in 100 ns ticks.
 #[cfg(unix)]
 const UNIX_EPOCH_TICKS: i64 = 116_444_736_000_000_000;

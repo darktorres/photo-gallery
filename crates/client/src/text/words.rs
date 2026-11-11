@@ -12,6 +12,9 @@ pub(super) const ENGLISH: &str = include_str!("../../locales/en/text.ftl");
 /// The English words of the front end's own literals, by id (`ui`): the labels, tooltips and prompts the QML shows.
 const ENGLISH_UI: &str = include_str!("../../locales/en/ui.ftl");
 
+/// The English words of the command line's own lines (`cli::Line`).
+pub(super) const ENGLISH_CLI: &str = include_str!("../../locales/en/cli.ftl");
+
 thread_local! {
     // Fluent's bundle is not thread-safe, so each thread that words a line builds its own from the files once.
     static BUNDLE: FluentBundle<FluentResource> = english();
@@ -33,7 +36,7 @@ fn english() -> FluentBundle<FluentResource> {
     bundle.set_use_isolating(false);
     // NUMBER() and DATETIME(), for an entry that formats its number (a range's ends are passed as numbers).
     let _ = bundle.add_builtins();
-    for source in [ENGLISH, ENGLISH_UI] {
+    for source in [ENGLISH, ENGLISH_UI, ENGLISH_CLI] {
         let resource = FluentResource::try_new(source.to_string()).unwrap_or_else(|(resource, _)| resource);
         // The English entries name no id twice (the tests check it); were one named twice, its first entry is kept
         // and the rest of the file is added all the same.

@@ -214,7 +214,7 @@ fn videos() {
     let mut catalog =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&media).unwrap();
+    let root = pg_platform::names::normalize_path(&media).unwrap();
     catalog.add_root(&root).unwrap();
     pg_scan::scan(&mut catalog, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);

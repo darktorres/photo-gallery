@@ -6,6 +6,7 @@ use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
 use pg_client::text;
+use pg_client::text::cli::{Line, line};
 use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
 use pg_model::notice::Notice;
@@ -31,7 +32,7 @@ fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
     let notice = event.clone().into_notice();
     let line = text::notice_line(&notice, pg_platform::native::PATH_RULES);
     match notice {
-        Notice::CacheStartedOver { detail, .. } => format!("{line} ({detail})"),
+        Notice::CacheStartedOver { detail, .. } => text::cli::line(&Line::WithDetail { line, detail }),
         _ => line,
     }
 }
@@ -43,9 +44,9 @@ pub(crate) fn report_rebuilt(catalog: &Catalog) {
         eprintln!("{}", text::notice_line(&r.notice(), catalog.rules()));
     }
 }
-/// Files left for the next pass because they changed while they were read, when there are any.
+/// Files left for the next pass because they changed while they were read, when there are any (else empty).
 pub(crate) fn changed_while_read(n: usize) -> String {
-    if n == 0 { String::new() } else { format!(", {n} changed while read, left for the next pass") }
+    if n == 0 { String::new() } else { line(&Line::ChangedWhileRead { count: n.to_string() }) }
 }
 
 /// Runs `f` with a control whose progress is printed on stderr while it runs: a line every few seconds for each
@@ -72,19 +73,27 @@ fn progress_line(p: &Progress) -> String {
     // The pass by the client's words, a scanned folder under this machine's rules (the command's catalogs are made
     // under them).
     let label = text::pass_name(&p.phase, pg_platform::native::PATH_RULES);
-    if p.total == 0 {
-        return format!("  {label}: {} files, {:.0} files/s, {secs:.0} s", p.done, p.rate());
-    }
-    format!(
-        "  {label}: {}/{} ({:.1}%), {:.0} files/s, {:.0} MB/s, {} failed, {secs:.0} s elapsed, ETA {:.0} s",
-        p.done,
-        p.total,
-        100.0 * p.fraction(),
-        p.rate(),
-        pg_model::num::size(p.bytes) / secs / 1e6,
-        p.failed,
-        p.eta()
-    )
+    let words = if p.total == 0 {
+        line(&Line::ProgressCount {
+            pass: label,
+            done: p.done.to_string(),
+            rate: format!("{:.0}", p.rate()),
+            seconds: format!("{secs:.0}"),
+        })
+    } else {
+        line(&Line::Progress {
+            pass: label,
+            done: p.done.to_string(),
+            total: p.total.to_string(),
+            percent: format!("{:.1}", 100.0 * p.fraction()),
+            rate: format!("{:.0}", p.rate()),
+            mbps: format!("{:.0}", pg_model::num::size(p.bytes) / secs / 1e6),
+            failed: p.failed.to_string(),
+            seconds: format!("{secs:.0}"),
+            eta: format!("{:.0}", p.eta()),
+        })
+    };
+    format!("  {words}")
 }
 
 /// What a pass's failures leave besides its kept list, on stderr, in the notices' words: the files it couldn't read,
@@ -100,9 +109,21 @@ pub(crate) fn report_pass(pass: pg_model::notice::FilePass, unreadable: usize, l
     }
 }
 
-/// The first failures a pass kept, one per line on stderr, under `what`.
-pub(crate) fn print_failures(what: &str, failures: &[pg_jobs::failure::Failure]) {
+/// What a pass's kept failures were: files a scan skipped, or files a pass failed on.
+#[derive(Clone, Copy)]
+pub(crate) enum Kept {
+    Skipped,
+    Failed,
+}
+
+/// The first failures a pass kept, one per line on stderr.
+pub(crate) fn print_failures(kept: Kept, failures: &[pg_jobs::failure::Failure]) {
     for f in failures {
-        eprintln!("{what}: {}: {}", f.path, f.error);
+        let (path, error) = (f.path.clone(), f.error.clone());
+        let words = match kept {
+            Kept::Skipped => Line::Skipped { path, error },
+            Kept::Failed => Line::Failed { path, error },
+        };
+        eprintln!("{}", line(&words));
     }
 }

@@ -49,7 +49,7 @@ fn library_folders_with_one_name_keep_their_copies_apart() {
         let mut img = letterboxed();
         img.put_pixel(160, 120, image::Rgb(pixel));
         img.save(folder.join("a.png")).unwrap();
-        let root = pg_scan::normalize_path(&folder).unwrap();
+        let root = pg_platform::names::normalize_path(&folder).unwrap();
         c.add_root(&root).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
     }

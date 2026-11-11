@@ -14,15 +14,19 @@ mod dups;
 mod report;
 
 use pg_client::text;
+use pg_client::text::cli::{Line, line};
+use pg_library::folders::AddError;
 use pg_model::ids::FileId;
 use pg_model::notice::{FilePass, Notice};
 use pg_model::rules::{Path as RulePath, PathRules};
+use pg_platform::names::{NormalizeError, shown};
+use pg_scan::ScanStats;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use clap::{Parser, Subcommand};
 use pg_catalog::Catalog;
 use pg_platform::priority::Priority;
@@ -33,7 +37,7 @@ use pg_jobs::events::Bus;
 use pg_writeback::Writer;
 
 use args::{Cli, Command, PipelineArgs};
-use report::{changed_while_read, print_failures, report_pass, report_rebuilt, thumb_events, with_progress};
+use report::{Kept, changed_while_read, print_failures, report_pass, report_rebuilt, thumb_events, with_progress};
 
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
 /// Asked from the derive's list of commands (`Subcommand::has_subcommand`): clap's `Command` isn't built at an
@@ -61,9 +65,52 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
 
 /// `path` as a path under the catalog's rules, from its exact bytes; a path that is none is an error.
 fn rule_path_of(rules: PathRules, path: &Path) -> Result<RulePath> {
-    rules
-        .parse_bytes(&pg_platform::names::canonical_of(path))
-        .ok_or_else(|| anyhow::anyhow!("{} is not a path", path.display()))
+    rules.parse_bytes(&pg_platform::names::canonical_of(path)).ok_or_else(|| anyhow!(text::not_a_path(&shown(path))))
+}
+
+/// A path given on the command line, as the catalog has it ([`pg_platform::names::normalize_path`]); one that can't
+/// be opened, or isn't one, is an error in the client's words.
+fn normalized(path: &Path) -> Result<RulePath> {
+    pg_platform::names::normalize_path(path).map_err(|e| anyhow!(path_words(&e)))
+}
+
+/// Why a path couldn't be taken, in the client's words.
+fn path_words(e: &NormalizeError) -> String {
+    match e {
+        NormalizeError::Unreadable { path, error } => text::path_unreadable(&shown(path), &error.to_string()),
+        NormalizeError::NotAPath { path } => text::not_a_path(&shown(path)),
+    }
+}
+
+/// Print a line of the command line's own.
+fn say(l: &Line) {
+    println!("{}", line(l));
+}
+
+/// Seconds as the command line shows them: one decimal.
+fn secs(seconds: f64) -> String {
+    format!("{seconds:.1}")
+}
+
+/// Gigabytes as the command line shows them, from bytes: two decimals.
+fn gigabytes(bytes: f64) -> String {
+    format!("{:.2}", bytes / 1e9)
+}
+
+/// What `gallery scan` says of a root it scanned in `seconds`: its counts, then the notices its result carries
+/// (`pg_library::scans::scan_notices`: unreadable folders, refused mounts, the notes), as the window's inbox words them.
+fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -> Vec<String> {
+    let summary = line(&Line::ScanSummary {
+        root: rules.display(root),
+        files: s.files.to_string(),
+        folders: s.folders.to_string(),
+        changed: s.changed.to_string(),
+        missing: s.missing.to_string(),
+        unreadable: s.errors.to_string(),
+        seconds: secs(seconds),
+    });
+    let notices = pg_library::scans::scan_notices(root, s);
+    std::iter::once(summary).chain(notices.iter().map(|n| text::notice_line(n, rules))).collect()
 }
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
@@ -81,20 +128,25 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let roots: Vec<RulePath> = if roots.is_empty() {
                 catalog.roots()?.into_iter().map(|r| r.path).collect()
             } else {
-                let mut normalized = Vec::new();
+                let mut added = Vec::new();
                 for root in roots {
-                    let root = pg_scan::normalize_path(&root)?;
-                    // A refused folder is not added; the other folders still are.
-                    if let Err(reason) = pg_scan::check_folder(rules, &root) {
-                        println!("{}", text::notice_line(&Notice::FolderRefused { folder: root, reason }, rules));
-                        continue;
+                    match pg_library::folders::add_folder(&catalog, &root) {
+                        Ok((root, new)) => {
+                            if !new {
+                                let notice = Notice::FolderAlreadyAdded { folder: root.clone() };
+                                println!("{}", text::notice_title(&notice, rules));
+                            }
+                            added.push(root);
+                        }
+                        // A refused folder is not added; the other folders still are.
+                        Err(AddError::Refused { folder, reason }) => {
+                            println!("{}", text::notice_line(&Notice::FolderRefused { folder, reason }, rules));
+                        }
+                        Err(AddError::Path(e)) => bail!(path_words(&e)),
+                        Err(AddError::Catalog(e)) => return Err(e.into()),
                     }
-                    if !catalog.add_root(&root)? {
-                        println!("{}", text::notice_title(&Notice::FolderAlreadyAdded { folder: root.clone() }, rules));
-                    }
-                    normalized.push(root);
                 }
-                normalized
+                added
             };
             for root in roots {
                 let name = rules.display(&root);
@@ -107,85 +159,62 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     }
                     Err(pg_scan::ScanError::Failed(e)) => return Err(e),
                 };
-                println!(
-                    "{name}: {} files in {} folders, {} new or changed, {} now missing, {} unreadable folders ({:.1} s)",
-                    s.files,
-                    s.folders,
-                    s.changed,
-                    s.missing,
-                    s.errors,
-                    start.elapsed().as_secs_f64()
-                );
-                print_failures("skipped", &s.failures);
+                let mut report = scan_report(&root, &s, rules, start.elapsed().as_secs_f64()).into_iter();
+                if let Some(summary) = report.next() {
+                    println!("{summary}");
+                }
+                print_failures(Kept::Skipped, &s.failures);
                 // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision 7).
+                // The cache is opened only then.
                 if !s.replaced_ids.is_empty() {
                     let (events, printer) = thumb_events();
                     let cache = pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, None, events)?;
-                    for id in &s.replaced_ids {
-                        if let Err(e) = cache.forget(*id) {
-                            println!("{name}: a replaced file's thumbnail wasn't deleted: {e:#}");
-                        }
+                    for (_, e) in pg_library::scans::forget_replaced(&cache, &s.replaced_ids) {
+                        say(&Line::ThumbNotForgotten { root: name.clone(), error: format!("{e:#}") });
                     }
                     drop(cache);
                     let _ = printer.join();
                 }
-                for temp in &s.temps {
-                    // By its disk path, as the runner does: the plain one could reach a sibling folder's file.
-                    let disk = pg_platform::names::disk_path(rules, temp);
-                    match std::fs::remove_file(&disk) {
-                        Ok(()) => {}
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => println!("{name}: can't delete {}: {e}", rules.display(temp)),
-                    }
+                for (temp, e) in pg_writeback::discard_temps(rules, &s.temps) {
+                    say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() });
                 }
-                // The same notes the app shows, counted; a zero is not said.
-                let to_u64 = |n: usize| u64::try_from(n).unwrap_or(u64::MAX);
-                let notes = [
-                    ("skipped as duplicates (another path to the same file)", s.duplicates),
-                    ("indexed without following (links or placeholders)", s.skipped_reparse),
-                    ("matched more than one earlier row, so nothing was carried over", to_u64(s.ambiguous)),
-                    ("missing, with data and no file found for them", to_u64(s.unpaired_with_data)),
-                    ("replaced by new files with the same name; content reset", to_u64(s.replaced)),
-                    ("found under a new identity; their data was kept", to_u64(s.rebound)),
-                ];
-                for (what, count) in notes.iter().filter(|(_, count)| *count > 0) {
-                    println!("  {count} {what}");
+                for notice in report {
+                    println!("{notice}");
                 }
             }
         }
         Command::Remove { root } => {
             // A folder deleted from disk can't be normalized, and it is the one to remove: its path as given is then
             // the catalog's, and the catalog says whether it is a library folder.
-            let root = match pg_scan::normalize_path(&root) {
+            let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
                 Err(_) => rule_path_of(rules, &root)?,
             };
-            let text = rules.display(&root);
+            let name = rules.display(&root);
             let removed = match catalog.root_id(&root)? {
                 Some(id) => catalog.remove_root(id)?,
                 None => None,
             };
             match removed {
-                Some(n) => println!("{text}: removed from the library, {n} files hidden"),
-                None => anyhow::bail!("{text}: not in the library"),
+                Some(n) => say(&Line::Removed { root: name, hidden: n.to_string() }),
+                None => bail!(line(&Line::NotInLibrary { root: name })),
             }
         }
         Command::Import { pipeline, retry_errors, again } => {
             if !again.is_empty() {
                 let marked = catalog.mark_pending(&files_named(&catalog, &again)?)?;
-                println!("{marked} files to analyze again");
+                say(&Line::MarkedAgain { count: marked.to_string() });
             }
             let opts = pipeline.options(Priority::Normal);
             let s = pg_import::import(&mut catalog, &opts, retry_errors, ctl)?;
-            println!("{} files to import; the tier-1 index held {} hashes", s.pending, s.indexed);
-            println!(
-                "imported {} files ({} failed{}), {} PDQ pairs, {:.1} s",
-                s.files,
-                s.failed,
-                changed_while_read(s.changed),
-                s.pairs,
-                start.elapsed().as_secs_f64()
-            );
+            say(&Line::ImportPending { pending: s.pending.to_string(), indexed: s.indexed.to_string() });
+            say(&Line::ImportDone {
+                files: s.files.to_string(),
+                failed: s.failed.to_string(),
+                changed: changed_while_read(s.changed),
+                pairs: s.pairs.to_string(),
+                seconds: secs(start.elapsed().as_secs_f64()),
+            });
         }
         Command::Thumbs { height, cap, pipeline, foreground } => {
             // Idle: only the cores the user leaves free. I/O priority stays normal: Windows' background mode
@@ -195,22 +224,22 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let cache = pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, cap, events)?;
             let s = pg_thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
-            println!(
-                "{} files needed a {height} px thumbnail; the cache held {:.2} GB",
-                s.needed,
-                pg_model::num::size(s.cache_bytes) / 1e9
-            );
-            print_failures("failed", &s.failures);
-            println!(
-                "{} thumbnails at {height} px ({} failed{}){}; cache {:.2} of {:.2} GB, {:.1} s",
-                s.made,
-                s.failed,
-                changed_while_read(s.changed),
-                if s.cache_full { ", stopped: cache full" } else { "" },
-                pg_model::num::signed(cache.totals()?.0) / 1e9,
-                pg_model::num::signed(cache.cap()?) / 1e9,
-                start.elapsed().as_secs_f64()
-            );
+            say(&Line::ThumbsNeeded {
+                needed: s.needed.to_string(),
+                height: height.to_string(),
+                held: gigabytes(pg_model::num::size(s.cache_bytes)),
+            });
+            print_failures(Kept::Failed, &s.failures);
+            say(&Line::ThumbsDone {
+                made: s.made.to_string(),
+                height: height.to_string(),
+                failed: s.failed.to_string(),
+                changed: changed_while_read(s.changed),
+                full: if s.cache_full { line(&Line::CacheFull) } else { String::new() },
+                used: gigabytes(pg_model::num::signed(cache.totals()?.0)),
+                cap: gigabytes(pg_model::num::signed(cache.cap()?)),
+                seconds: secs(start.elapsed().as_secs_f64()),
+            });
             report_pass(FilePass::Thumbs, s.unreadable, s.ledger_error);
             drop(cache);
             let _ = printer.join();
@@ -218,39 +247,42 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Borders { import_review, pipeline, .. } => {
             if let Some(review) = import_review {
                 let (marked, unknown) = borders::import_review(&catalog, &review)?;
-                println!("{marked} files marked as not a border; {unknown} not in the catalog");
+                say(&Line::ReviewImported { marked: marked.to_string(), unknown: unknown.to_string() });
             } else {
                 let s = pg_borders::find(&mut catalog, &pipeline.options(Priority::Normal), ctl)?;
-                println!(
-                    "borders looked for in {} files ({} failed, {} stored), {:.1} s",
-                    s.files,
-                    s.failed,
-                    s.stored,
-                    start.elapsed().as_secs_f64()
-                );
+                say(&Line::BordersDone {
+                    files: s.files.to_string(),
+                    failed: s.failed.to_string(),
+                    stored: s.stored.to_string(),
+                    seconds: secs(start.elapsed().as_secs_f64()),
+                });
                 report_pass(FilePass::Borders, s.unreadable, s.ledger_error);
             }
         }
         Command::Status => {
-            println!("data folder: {}", layout.home().display());
+            say(&Line::StatusHome { folder: shown(layout.home()) });
             for root in catalog.roots()? {
-                println!("library: {}", rules.display(&root.path));
+                say(&Line::StatusLibrary { folder: rules.display(&root.path) });
             }
             let s = catalog.status()?;
-            println!(
-                "{} files ({} missing), {} analyzed, {} failed, {} pending, {} PDQ pairs",
-                s.files, s.missing, s.analyzed, s.failed, s.pending, s.pdq_pairs
-            );
-            println!("{} changes to write into files ({} failing)", s.queued_writes, s.failed_writes);
+            say(&Line::StatusFiles {
+                files: s.files.to_string(),
+                missing: s.missing.to_string(),
+                analyzed: s.analyzed.to_string(),
+                failed: s.failed.to_string(),
+                pending: s.pending.to_string(),
+                pairs: s.pdq_pairs.to_string(),
+            });
+            say(&Line::StatusWrites { queued: s.queued_writes.to_string(), failing: s.failed_writes.to_string() });
             match ThumbCache::read_usage(&catalog_dir)? {
-                Some(u) => println!(
-                    "thumbnail cache: {} thumbnails, {:.2} of {:.2} GB",
-                    u.count,
-                    pg_model::num::signed(u.bytes) / 1e9,
-                    pg_model::num::signed(u.cap) / 1e9
-                ),
-                None => println!("thumbnail cache: none yet"),
+                Some(u) => say(&Line::StatusCache {
+                    count: u.count.to_string(),
+                    used: gigabytes(pg_model::num::signed(u.bytes)),
+                    cap: gigabytes(pg_model::num::signed(u.cap)),
+                }),
+                None => say(&Line::StatusNoCache),
             }
+            // The write errors are the writer's own text, listed under the counts.
             for e in pg_catalog::writes::recent_errors(&catalog, 5)? {
                 println!("  {e}");
             }
@@ -265,18 +297,17 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             writer.wake();
             wait_for_writes(&writer, &catalog)?;
             if let Some(e) = writer.status().thumbnail_error {
-                eprintln!("thumbnails: {e}");
+                eprintln!("{}", line(&Line::ThumbnailsError { error: e.to_string() }));
             }
             drop(writer);
             cache.close();
             let s = catalog.status()?;
-            println!(
-                "written; {} left ({} failing), {} files to re-import (turned), {:.1} s",
-                s.queued_writes,
-                s.failed_writes,
-                s.pending,
-                start.elapsed().as_secs_f64()
-            );
+            say(&Line::WriteDone {
+                left: s.queued_writes.to_string(),
+                failing: s.failed_writes.to_string(),
+                pending: s.pending.to_string(),
+                seconds: secs(start.elapsed().as_secs_f64()),
+            });
         }
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
     }
@@ -294,8 +325,11 @@ fn wait_for_writes(writer: &Writer, catalog: &Catalog) -> Result<()> {
             return Ok(());
         }
         if !writer.is_running() {
-            let why = writer.status().error.map(|e| format!(" (the last failure: {e})")).unwrap_or_default();
-            bail!("the file writer stopped with {left} changes still to write{why}");
+            let left = left.to_string();
+            bail!(line(&match writer.status().error {
+                Some(error) => Line::WriterStoppedFailing { left, error: error.to_string() },
+                None => Line::WriterStopped { left },
+            }));
         }
     }
 }
@@ -305,7 +339,7 @@ fn wait_for_writes(writer: &Writer, catalog: &Catalog) -> Result<()> {
 fn files_named(catalog: &Catalog, paths: &[PathBuf]) -> Result<Vec<FileId>> {
     let mut ids = Vec::new();
     for path in paths {
-        let rule = pg_scan::normalize_path(path)?;
+        let rule = normalized(path)?;
         let before = ids.len();
         if path.is_dir() {
             ids.extend(catalog.files_under(&rule)?);
@@ -313,7 +347,7 @@ fn files_named(catalog: &Catalog, paths: &[PathBuf]) -> Result<Vec<FileId>> {
             ids.extend(catalog.file_by_path(&rule)?);
         }
         if ids.len() == before {
-            bail!("{}: no file of the library there", path.display());
+            bail!(line(&Line::NoFileThere { path: shown(path) }));
         }
     }
     ids.sort_unstable();
@@ -325,24 +359,22 @@ fn files_named(catalog: &Catalog, paths: &[PathBuf]) -> Result<Vec<FileId>> {
 fn borders_outside(paths: &[PathBuf], csv: Option<&Path>, stdin: bool, pipeline: &PipelineArgs) -> Result<()> {
     if stdin {
         let n = borders::serve(std::io::stdin().lock(), std::io::stdout().lock())?;
-        eprintln!("borders looked for in {n} images");
+        eprintln!("{}", line(&Line::BordersServed { count: n.to_string() }));
         return Ok(());
     }
-    let csv = csv.context("--csv: where the report goes")?;
+    let csv = csv.with_context(|| line(&Line::CsvMissing))?;
     let s = with_progress(|ctl| borders::report(paths, csv, &pipeline.options(Priority::Normal), ctl))?;
-    println!(
-        "{} files: {} with borders, {} rejected candidates only, {} skipped, {} errors; {:.1} s ({:.0} files/s)",
-        s.files,
-        s.borders,
-        s.rejected,
-        s.skipped,
-        s.errors,
-        s.seconds,
-        pg_model::num::count(s.files) / s.seconds.max(1e-3)
-    );
+    say(&Line::BordersReport {
+        files: s.files.to_string(),
+        borders: s.borders.to_string(),
+        rejected: s.rejected.to_string(),
+        skipped: s.skipped.to_string(),
+        errors: s.errors.to_string(),
+        seconds: secs(s.seconds),
+        rate: format!("{:.0}", pg_model::num::count(s.files) / s.seconds.max(1e-3)),
+    });
     Ok(())
 }
-
 #[cfg(test)]
 mod tests {
     use clap::CommandFactory;
@@ -363,6 +395,28 @@ mod tests {
         }
     }
 
+    /// `gallery scan` says what a scan's result carries, as the window's inbox does: a mount the scan refused is a
+    /// line of its own, after the counts.
+    #[test]
+    fn gallery_scan_prints_a_refused_mount() {
+        use pg_model::refusal::RefusedReason;
+
+        let rules = PathRules::Posix;
+        let (root, mount) = (rules.parse("/photos").unwrap(), rules.parse("/photos/usb").unwrap());
+        let reason = RefusedReason::NotNtfs { file_system: "vfat".into() };
+        let stats = ScanStats {
+            files: 3,
+            refused_mount_list: vec![pg_scan::RefusedMount { mount: mount.clone(), reason: reason.clone() }],
+            ..ScanStats::default()
+        };
+        let lines = scan_report(&root, &stats, rules, 1.25);
+        let refused = text::notice_line(&Notice::MountRefused { root: root.clone(), mount, reason }, rules);
+        assert_eq!(lines.len(), 2, "{lines:?}");
+        assert!(lines[0].starts_with("/photos: 3 files in 0 folders"), "{lines:?}");
+        assert_eq!(lines[1], refused);
+        assert!(refused.contains("/photos/usb"), "{refused}");
+    }
+
     #[test]
     fn the_catalog_flag_is_catalog_dir() {
         let cli = Cli::try_parse_from(["gallery", "--catalog-dir", "X", "status"]).unwrap();
@@ -381,7 +435,7 @@ mod tests {
         let catalog_path = dir.join("catalog.sqlite");
         let mut catalog =
             Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
-        let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+        let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut catalog, &root, &Control::new()).unwrap();
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
         let (events, quiet) = pg_jobs_testkit::Quiet::bus();

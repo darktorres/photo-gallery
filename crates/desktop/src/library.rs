@@ -84,6 +84,15 @@ fn write_failed(error: &WriteError) -> Notice {
     };
     Notice::WriteFailed { error, panicked, file, temp }
 }
+/// Why a folder's path couldn't be added, in the client's words.
+fn path_words(e: &pg_platform::names::NormalizeError) -> String {
+    use pg_platform::names::{NormalizeError, shown};
+    match e {
+        NormalizeError::Unreadable { path, error } => text::path_unreadable(&shown(path), &error.to_string()),
+        NormalizeError::NotAPath { path } => text::not_a_path(&shown(path)),
+    }
+}
+
 impl qobject::Library {
     /// The library's folders, as the catalog has them. When they can't be read, none is listed and the inbox says why.
     fn load_roots(mut self: Pin<&mut Self>) {
@@ -246,7 +255,7 @@ impl qobject::Library {
         }
     }
 
-    /// Add the folder at `path` (exact), and say so when it was already there.
+    /// Add the folder at `path` (exact), and say so when it was already there, or why it wasn't added.
     fn add_path(mut self: Pin<&mut Self>, path: &Path) {
         match app::get().library().add_folder(path) {
             Ok((root, added)) => {
@@ -257,6 +266,7 @@ impl qobject::Library {
                 self.as_mut().load_roots();
             }
             Err(pg_app::Error::FolderRefused { folder, reason }) => app::post(Notice::FolderRefused { folder, reason }),
+            Err(pg_app::Error::FolderPath(e)) => app::post(Notice::FolderNotAdded { error: path_words(&e) }),
             Err(e) => app::post(Notice::FolderNotAdded { error: app::error_text(&e) }),
         }
     }

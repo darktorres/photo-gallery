@@ -12,11 +12,11 @@ use std::time::{Duration, Instant};
 
 use pg_catalog::Root;
 use pg_jobs::events::{Bus, Change};
+use pg_library::folders::AddError;
 use pg_library::runner::{Generation, NoticeSink, Runner};
 use pg_model::ids::{FileId, RootId};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
-use pg_scan::normalize_path;
 use pg_thumbcache::ThumbCache;
 use pg_writeback::{WriteStatus, Writer};
 
@@ -174,6 +174,11 @@ impl Library {
         self.runner.scan(roots);
     }
 
+    /// A library folder was removed: its scans are dropped, and one in progress stops (`Runner::stop_scans_under`).
+    pub fn stop_scans_under(&self, root: &RulePath) {
+        self.runner.stop_scans_under(root);
+    }
+
     pub fn set_thumb_height(&self, height: u32) {
         self.runner.set_thumb_height(height);
     }
@@ -268,12 +273,12 @@ impl LibraryService {
     /// Add a folder to the library, at the path given (exact): normalized, and scanned. Returns the normalized folder
     /// and whether it was new; a folder already in the library is rescanned.
     pub fn add_folder(&self, path: &std::path::Path) -> Result<(RulePath, bool)> {
-        let root = normalize_path(path).map_err(failed)?;
-        // A folder the scanner refuses is not added: it would stay in the library with a notice on every scan.
-        if let Err(reason) = pg_scan::check_folder(pg_platform::native::PATH_RULES, &root) {
-            return Err(Error::FolderRefused { folder: root, reason });
-        }
-        let added = self.catalogs.with_catalog(|c| c.add_root(&root))?;
+        let (root, added) =
+            self.catalogs.with_catalog(|c| Ok(pg_library::folders::add_folder(c, path)))?.map_err(|e| match e {
+                AddError::Refused { folder, reason } => Error::FolderRefused { folder, reason },
+                AddError::Path(e) => Error::FolderPath(e),
+                AddError::Catalog(e) => Error::Catalog(e),
+            })?;
         if let Some(library) = self.running() {
             library.scan(vec![root.clone()]);
         }
@@ -284,9 +289,13 @@ impl LibraryService {
     /// files it had are marked missing at once (`Catalog::remove_root`), not deleted: adding the folder back brings them
     /// back with their analyses and ratings.
     pub fn remove_folder(&self, id: RootId) -> Result<()> {
-        self.catalogs.with_catalog(|c| c.remove_root(id).map(|_| ()))?;
-        if let Some(library) = self.running() {
-            library.scan(Vec::new());
+        let root = self.catalogs.with_catalog(|c| {
+            let root = c.roots()?.into_iter().find(|r| r.id == id).map(|r| r.path);
+            c.remove_root(id)?;
+            Ok(root)
+        })?;
+        if let (Some(library), Some(root)) = (self.running(), root) {
+            library.stop_scans_under(&root);
         }
         Ok(())
     }

@@ -1,26 +1,17 @@
-//! The file side of a write: a file's size and mtime, the temp beside it, the check that it is as it was read,
-//! and the copy into it in place.
+//! The file side of a write: the temp beside it, the check that it is as it was read (by its size and mtime,
+//! `pg_platform::file::stat`), and the copy into it in place.
 
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
 use anyhow::{Context, Result, bail};
-use pg_model::rules::Path as RulePath;
+use pg_model::rules::{Path as RulePath, PathRules};
 use pg_model::write::WriteKind;
 
-/// Size and mtime (FILETIME, as the scanner records it), of the file at `path` (its disk path,
-/// `pg_platform::names::disk_path`, which names it exactly).
-pub fn stat(path: impl AsRef<Path>) -> Result<(i64, i64)> {
-    let path = path.as_ref();
-    let m = std::fs::metadata(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))?;
-    Ok((i64::try_from(m.len())?, pg_platform::file::last_write_time(&m)))
-}
-
-/// [`stat`] of an open file, from its handle.
-pub(crate) fn stat_of(file: &File) -> Result<(i64, i64)> {
-    let m = file.metadata()?;
-    Ok((i64::try_from(m.len())?, pg_platform::file::last_write_time(&m)))
+/// The size and mtime of the file at `path` (its disk path), with the file named in the error.
+pub(crate) fn stat(path: &Path) -> Result<(i64, i64)> {
+    pg_platform::file::stat(path).with_context(|| format!("reading {}", pg_platform::names::shown(path)))
 }
 
 /// The original, opened for the copy (`now`, its size and mtime), is as it was when it was read (`before`): another
@@ -30,6 +21,19 @@ pub(crate) fn unchanged(shown: &str, before: (i64, i64), now: (i64, i64)) -> Res
         bail!("{shown} changed while its change was being prepared: it is read again at the next try");
     }
     Ok(())
+}
+
+/// Delete the temp files `temps` (under `rules`) of the writes queued for files a scan replaced (decision 7), by their
+/// disk paths: a plain path would miss a temp in a folder whose name ends in a dot, or delete a sibling folder's file of
+/// the same name. A temp already gone is no error; the ones that couldn't be deleted, with why.
+pub fn discard_temps(rules: PathRules, temps: &[RulePath]) -> Vec<(RulePath, std::io::Error)> {
+    temps
+        .iter()
+        .filter_map(|temp| match std::fs::remove_file(pg_platform::names::disk_path(rules, temp)) {
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Some((temp.clone(), e)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// The temp file of a file for a kind of write: beside the original, so it is on the same drive, named by the

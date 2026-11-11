@@ -165,6 +165,43 @@ pub fn after_first_equals(arg: &OsStr) -> Option<OsString> {
     Some(OsString::from_wide(units.get(at + 1..)?))
 }
 
+/// Why a path the user gave isn't one the catalog can hold ([`normalize_path`]). Its words are the client's; the
+/// `Display` form is for the log.
+#[derive(Debug)]
+pub enum NormalizeError {
+    /// The path can't be opened: gone, out of reach, or not allowed.
+    Unreadable { path: PathBuf, error: io::Error },
+    /// Its real path has no path form under the native rules (a NUL).
+    NotAPath { path: PathBuf },
+}
+
+impl std::fmt::Display for NormalizeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NormalizeError::Unreadable { path, .. } => write!(f, "can't open {}", shown(path)),
+            NormalizeError::NotAPath { path } => write!(f, "{} is not a path", shown(path)),
+        }
+    }
+}
+
+impl std::error::Error for NormalizeError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            NormalizeError::Unreadable { error, .. } => Some(error),
+            NormalizeError::NotAPath { .. } => None,
+        }
+    }
+}
+
+/// The absolute path of a folder or file as the catalog has it: in its real case ([`real_path`]), without the verbatim
+/// prefix and a trailing separator (a drive root is `D:`). Exact: a name with an unpaired surrogate keeps it, so a
+/// folder whose real name has one (a short name such as `PROGRA~1` can resolve to it) is still the folder it is.
+pub fn normalize_path(root: &Path) -> Result<RulePath, NormalizeError> {
+    let real = real_path(root).map_err(|error| NormalizeError::Unreadable { path: root.to_path_buf(), error })?;
+    // Trailing and doubled separators are dropped by the parse.
+    rule_path_of(&real).ok_or(NormalizeError::NotAPath { path: real })
+}
+
 /// The real path of an existing folder, as the catalog keys it: its names in the case the file system stores them, and
 /// on Windows without the verbatim prefix.
 #[cfg(windows)]
@@ -243,6 +280,34 @@ fn pick_stored<F: FnOnce() -> Option<(u64, u64)>>(
 mod tests {
     use super::*;
 
+    #[test]
+    fn a_root_whose_real_name_is_not_unicode_keeps_it() {
+        // The folder is made with the name (an unpaired surrogate, or a byte no UTF-8 sequence holds), then normalized:
+        // its last part is that name, exactly, where a lossy text form would have U+FFFD.
+        #[cfg(windows)]
+        let (os, name): (OsString, Vec<crate::native::Unit>) = {
+            use std::os::windows::ffi::OsStringExt;
+            (OsString::from_wide(&[0x61, 0xD800]), vec![0x61, 0xD800])
+        };
+        #[cfg(unix)]
+        let (os, name): (OsString, Vec<crate::native::Unit>) = {
+            use std::os::unix::ffi::OsStringExt;
+            (OsString::from_vec(vec![0x61, 0xFF]), vec![0x61, 0xFF])
+        };
+        let base = std::env::var_os("PG_TEST_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(std::env::temp_dir)
+            .join(format!("pg-normalize-{}", std::process::id()));
+        let folder = base.join(&os);
+        std::fs::create_dir_all(&folder).unwrap();
+        let path = normalize_path(&folder).unwrap();
+        assert_eq!(path.parts.last(), Some(&name_from_native(&name)));
+        // A path that isn't there can't be opened: the error says which, with the system's own error under it.
+        let gone = base.join("gone");
+        let Err(NormalizeError::Unreadable { path, error }) = normalize_path(&gone) else { panic!("not unreadable") };
+        assert_eq!((path, error.kind()), (gone, io::ErrorKind::NotFound));
+        std::fs::remove_dir_all(&base).unwrap();
+    }
     #[test]
     fn a_name_with_a_surrogate_keeps_it_through_the_units() {
         #[cfg(windows)]

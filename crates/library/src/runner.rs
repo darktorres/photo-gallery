@@ -25,12 +25,14 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, KeyBuf, Notice, Part, ScanNote, tidy};
+use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, KeyBuf, Notice, Part, tidy};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
 use pg_scan::ScanError;
 use pg_thumbcache::ThumbCache;
+
+use crate::scans;
 
 #[derive(Default)]
 struct Queue {
@@ -45,6 +47,8 @@ struct Inner {
     thumbs: &'static ThumbCache,
     ctl: Control,
     queue: Mutex<Queue>,
+    /// The folder a scan is walking now ([`Runner::stop_scans_under`]).
+    scanning: Mutex<Option<RulePath>>,
     thumb_height: AtomicU32,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
@@ -119,6 +123,7 @@ impl Runner {
             thumbs,
             ctl: Control::new(),
             queue: Mutex::new(Queue::default()),
+            scanning: Mutex::new(None),
             thumb_height: AtomicU32::new(thumb_height),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
@@ -156,6 +161,18 @@ impl Runner {
             }
         }
         self.wake_up();
+    }
+
+    /// A library folder was removed: the scans asked for under `root` are dropped, and one walking a folder under it now
+    /// stops at its next batch (what it recorded is committed; it isn't asked for again, as the folder is no longer in
+    /// the library).
+    pub fn stop_scans_under(&self, root: &RulePath) {
+        let rules = pg_platform::native::PATH_RULES;
+        self.inner.queue().scans.retain(|path| !rules.is_under(path, root));
+        let running = self.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner).clone();
+        if running.is_some_and(|path| rules.is_under(&path, root)) {
+            self.wake_up();
+        }
     }
 
     /// Save cropped copies of these files' borders into `folder` (`pg_crop::save`), before anything else.
@@ -357,7 +374,10 @@ impl Pass<Cx<'_>> for Scans {
             if !library.iter().any(|l| rules.is_under(&path, l)) {
                 continue;
             }
-            match pg_scan::scan(cx.catalog, &path, &cx.inner.ctl) {
+            *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = Some(path.clone());
+            let scanned = pg_scan::scan(cx.catalog, &path, &cx.inner.ctl);
+            *cx.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner) = None;
+            match scanned {
                 Ok(s) => {
                     // A scan stopped early has committed what it recorded so far.
                     if s.changed > 0 || s.missing > 0 || s.rebound > 0 || s.replaced > 0 {
@@ -365,53 +385,20 @@ impl Pass<Cx<'_>> for Scans {
                     }
                     // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision
                     // 7). Both come after the catalog's commit, which the scan made.
-                    for id in &s.replaced_ids {
-                        if let Err(e) = cx.inner.thumbs.forget(*id) {
-                            cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
-                        }
+                    for (_, e) in scans::forget_replaced(cx.inner.thumbs, &s.replaced_ids) {
+                        cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
                     }
-                    for temp in &s.temps {
-                        // By its disk path: the plain one would miss a temp in a folder whose name ends in a dot, or
-                        // delete a sibling folder's file of the same name.
-                        let disk = pg_platform::names::disk_path(rules, temp);
-                        match std::fs::remove_file(&disk) {
-                            Ok(()) => {}
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                            Err(e) => cx.inner.notify(Notice::ScanFailed {
-                                root: path.clone(),
-                                error: tidy(&format!("can't delete {}: {e}", rules.display(temp)), ERROR_CAP),
-                            }),
-                        }
+                    for (temp, e) in pg_writeback::discard_temps(rules, &s.temps) {
+                        cx.inner.notify(Notice::ScanFailed {
+                            root: path.clone(),
+                            error: tidy(&format!("can't delete {}: {e}", rules.display(&temp)), ERROR_CAP),
+                        });
                     }
                     if !s.complete {
                         cx.inner.queue().scans.push_front(path);
                         return Ok(Step::Preempted);
                     }
-                    let mut found = Vec::new();
-                    if s.errors > 0 {
-                        found.push(Notice::ScanUnreadable { root: path.clone(), count: s.errors });
-                    }
-                    for refused in &s.refused_mount_list {
-                        found.push(Notice::MountRefused {
-                            root: path.clone(),
-                            mount: refused.mount.clone(),
-                            reason: refused.reason.clone(),
-                        });
-                    }
-                    let counts = [
-                        (ScanNote::Duplicates, s.duplicates),
-                        (ScanNote::SkippedReparse, s.skipped_reparse),
-                        (ScanNote::Ambiguous, count(s.ambiguous)),
-                        (ScanNote::UnpairedWithData, count(s.unpaired_with_data)),
-                        (ScanNote::Replaced, count(s.replaced)),
-                        (ScanNote::Rebound, count(s.rebound)),
-                        (ScanNote::VolumeFallback, s.volume_fallbacks),
-                    ];
-                    for (note, count) in counts {
-                        if count > 0 {
-                            found.push(Notice::ScanNote { root: path.clone(), note, count });
-                        }
-                    }
+                    let found = scans::scan_notices(&path, &s);
                     // A complete walk of a whole library folder is what holds for it now: its kept notices are
                     // replaced by the ones it found. A walk of a folder under it adds its own and clears nothing (the
                     // rest of the library folder wasn't looked at).

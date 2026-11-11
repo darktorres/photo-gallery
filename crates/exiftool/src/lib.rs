@@ -26,6 +26,11 @@ const COMMAND_TIMEOUT: Duration = Duration::from_secs(120);
 /// How long a closing ExifTool gets to exit after `-stay_open False` before it is killed.
 const CLOSE_TIMEOUT: Duration = Duration::from_secs(5);
 
+/// The ExifTool program: `PG_EXIFTOOL`, or `exiftool` on PATH. Read by the writes and the copies as they start it.
+pub fn program() -> OsString {
+    std::env::var_os("PG_EXIFTOOL").unwrap_or_else(|| "exiftool".into())
+}
+
 /// One ExifTool kept running (`-stay_open`), as starting it costs ~0.3 s per call.
 pub struct ExifTool {
     /// The program, for the commands that take the argument route.

@@ -4,9 +4,10 @@
 
 use std::collections::BTreeMap;
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use pg_catalog::Catalog;
 use pg_catalog::dups::{self, Identity};
+use pg_client::text::cli::{Line, Tier, line};
 use pg_dedup::UnionFind;
 use pg_model::ids::FileId;
 
@@ -35,26 +36,32 @@ pub(crate) fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Res
     let found = find(catalog, group_distance)?;
     for (by, groups, files) in &found.identical {
         let tier = match by {
-            Identity::File => "0a identical files",
-            Identity::Pixels => "0b identical pixels",
+            Identity::File => Tier::File,
+            Identity::Pixels => Tier::Pixels,
         };
-        println!("tier {tier}: {groups} groups, {files} files");
+        println!("{}", line(&Line::DupsIdentical { tier, groups: groups.to_string(), files: files.to_string() }));
     }
-    println!("tier 1 PDQ pairs by distance:");
+    println!("{}", line(&Line::DupsPdq));
     for (lo, hi, pairs) in &found.pdq_bands {
-        println!("  {lo:>2}–{hi:<2}: {pairs}");
+        let band = Line::DupsBand { lo: format!("{lo:>2}"), hi: format!("{hi:<2}"), pairs: pairs.to_string() };
+        println!("  {}", line(&band));
     }
     let files: usize = found.groups.iter().map(Vec::len).sum();
     println!(
-        "groups (tiers 0a + 0b + PDQ ≤ {group_distance}): {} groups, {files} files, largest {:?}",
-        found.groups.len(),
-        found.groups.iter().take(5).map(Vec::len).collect::<Vec<_>>()
+        "{}",
+        line(&Line::DupsGroups {
+            distance: group_distance.to_string(),
+            groups: found.groups.len().to_string(),
+            files: files.to_string(),
+            largest: format!("{:?}", found.groups.iter().take(5).map(Vec::len).collect::<Vec<_>>()),
+        })
     );
     for g in found.groups.iter().take(show) {
-        println!("\n{} files:", g.len());
+        println!("\n{}", line(&Line::DupsGroup { count: g.len().to_string() }));
         for id in g.iter().take(20) {
-            let path =
-                catalog.file_path(*id)?.ok_or_else(|| anyhow::anyhow!("file {} is not in the catalog", id.get()))?;
+            let path = catalog
+                .file_path(*id)?
+                .ok_or_else(|| anyhow!(line(&Line::FileNotInCatalog { id: id.get().to_string() })))?;
             println!("  {}", catalog.rules().display(&path));
         }
     }

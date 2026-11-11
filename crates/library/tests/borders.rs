@@ -28,7 +28,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&images).unwrap();
+    let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
@@ -71,7 +71,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&images).unwrap();
+    let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();

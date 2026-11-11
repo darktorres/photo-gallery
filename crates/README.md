@@ -16,8 +16,9 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   priorities, processes, the console, the shared libraries loaded at run time, the folder dialog, verbatim paths, the
   system's units of names and arguments, the path rules this machine's paths follow (`native::PATH_RULES`; `model`
   holds both rule sets as data), the facts about the volume a folder is on (`dir::RootFacts`, `dir::fs_type`, and
-  which of them this system's folders are checked by, `dir::ROOT_CHECK`; the scanner decides from them), and message
-  boxes. No other crate's production code names a platform
+  which of them this system's folders are checked by, `dir::ROOT_CHECK`; the scanner decides from them), a path given
+  as the catalog keys it (`names::normalize_path`, with a typed error the client words), a file's size and last write
+  time (`file::stat`), and message boxes. No other crate's production code names a platform
   (`cfg(windows)`, `cfg(unix)`, `target_os`, `std::os::{windows,unix}`, `windows_sys`, `libloading::os`); the
   exception is the desktop's glue that must name a type of one platform: the folder dialog's
   (`pg_platform::picker::Dialog` exists on Windows only). The video player is handed an open file
@@ -39,7 +40,7 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `video` (`pg-video`): videos through FFmpeg: the probe, the poster frame, the file hash. Its build script finds the
   FFmpeg build and copies its DLLs.
 - `exiftool` (`pg-exiftool`): ExifTool kept running (`-stay_open`), for writing ratings and orientation and copying
-  metadata.
+  metadata, and which program it is (`program`: `PG_EXIFTOOL`, else `exiftool` on `PATH`).
 - `edit` (`pg-edit`): the lossless edits of a file in its own bytes: the turns and the crops (`rotate.rs`, `crop.rs`,
   `rewrite.rs`).
 - `analysis` (`pg-analysis`): the import's analysis of a file: its hashes (BLAKE3, XXH3, PDQ, ThumbHash) and the border
@@ -69,8 +70,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `borders` (`pg-borders`): the borders pass: looks for the borders due (`pg-analysis`) and stores them.
 - `crop` (`pg-crop`): the cropped copies: cuts the borders the catalog has off into copies (`pg-edit`), with the
   original's metadata (`pg-exiftool`), never writing the originals.
-- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, and how a catalog
-  folder is opened for them (`open_catalog`, `open_thumbs`, `versions`). Each pass is its own crate, so its manifest
+- `library` (`pg-library`): the job (`runner`) that runs the passes over the originals in order, how a catalog
+  folder is opened for them (`open_catalog`, `open_thumbs`, `versions`), and what both front ends do around them, once:
+  adding a folder (`folders::add_folder`: its real path, the scanner's check, the catalog's row) and what follows a scan
+  (`scans`: the replaced files' thumbnails forgotten, the notices its result carries). Each pass is its own crate, so its manifest
   shows what it may reach: `scan` (`pg-scan`: the folder walk), `import` (`pg-import`: the analyses), `thumbs`
   (`pg-thumbs`: the thumbnails), `borders` (`pg-borders`), `crop` (`pg-crop`: the cropped copies) and `writeback`
   (`pg-writeback`: the ratings and turns into the files). Callers name these crates directly; `pg-library` does not

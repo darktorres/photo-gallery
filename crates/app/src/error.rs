@@ -25,6 +25,10 @@ pub enum Error {
     /// why. The front end words it (the notice `FolderRefused`); this text names the reason by its code.
     #[error("{} can't be added: {reason}", pg_platform::native::PATH_RULES.display(folder))]
     FolderRefused { folder: pg_model::rules::Path, reason: pg_model::refusal::RefusedReason },
+    /// A folder not added because its path can't be opened, or isn't one. The front end words it (the client's
+    /// `path_unreadable` and `not_a_path`).
+    #[error(transparent)]
+    FolderPath(pg_platform::names::NormalizeError),
     /// Anything else a lower layer failed with.
     #[error("{0}")]
     Failed(String),

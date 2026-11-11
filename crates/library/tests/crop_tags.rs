@@ -54,7 +54,7 @@ fn a_copy_that_cannot_be_tagged_fails_and_leaves_nothing_behind() {
     let mut c =
         Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     c.add_root(&root).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);

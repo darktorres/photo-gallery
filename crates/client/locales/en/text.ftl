@@ -127,6 +127,9 @@ yandex-similar-failed = Similar images failed: { $reason }
 yandex-not-started = Couldn't start the search or the save: { $error }
 folder-dialog-failed = Couldn't open the folder dialog: { $error }
 folder-unreadable = Couldn't read the folder: { $error }
+# A path given to add (a folder, or a file named on the command line) that can't be opened, or isn't one
+path-unreadable = Can't open { $path }: { $error }
+not-a-path = { $path } is not a path
 yandex-nothing-picked = Pick at least one image to save.
 yandex-no-folder = No folder was chosen, so nothing was saved.
 

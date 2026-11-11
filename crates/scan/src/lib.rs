@@ -18,7 +18,6 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::io;
-use std::path::Path;
 
 use anyhow::{Context, Result};
 use pg_catalog::pair::{self, Coverage};
@@ -34,7 +33,7 @@ use pg_jobs::control::Control;
 use pg_jobs::failure::{FAILURES_KEPT, Failure, keep_failure};
 use pg_model::progress::Phase;
 use pg_model::refusal::RefusedReason;
-use pg_platform::names::{name_from_native, rule_path_of, units_of};
+use pg_platform::names::{name_from_native, units_of};
 
 mod refusal;
 
@@ -192,17 +191,6 @@ fn open_folder<L: Listing>(lister: &mut L, rules: PathRules, path: &RulePath) ->
 /// A path under `parent`, extended by one name.
 fn child_path(parent: &RulePath, name: &Name) -> RulePath {
     RulePath { anchor: parent.anchor.clone(), parts: parent.parts.iter().cloned().chain([name.clone()]).collect() }
-}
-
-/// The absolute path of a folder or file as the catalog has it: in its real case, without the verbatim prefix and a
-/// trailing separator (a drive root is `D:`). Exact: a name with an unpaired surrogate keeps it, so a folder whose
-/// real name has one (a short name such as `PROGRA~1` can resolve to it) is still the folder it is.
-pub fn normalize_path(root: &Path) -> Result<RulePath> {
-    // The real path: the names in the case the file system stores them, so a folder typed in another case still matches
-    // the catalog's paths (`names::real_path`).
-    let real = pg_platform::names::real_path(root).with_context(|| format!("can't open {}", root.display()))?;
-    // Trailing and doubled separators are dropped by the parse.
-    rule_path_of(&real).with_context(|| format!("{} is not a path", real.display()))
 }
 
 /// What a scan of a root did. The counts are for the report; `replaced_ids` and `temps` are for the caller to act on
@@ -460,31 +448,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
 mod tests {
     use super::*;
     use pg_platform::native::Unit;
-
-    #[test]
-    fn a_root_whose_real_name_is_not_unicode_keeps_it() {
-        // The folder is made with the name (an unpaired surrogate, or a byte no UTF-8 sequence holds), then normalized:
-        // its last part is that name, exactly, where a lossy text form would have U+FFFD.
-        #[cfg(windows)]
-        let (os, name): (std::ffi::OsString, Vec<Unit>) = {
-            use std::os::windows::ffi::OsStringExt;
-            (std::ffi::OsString::from_wide(&[0x61, 0xD800]), vec![0x61, 0xD800])
-        };
-        #[cfg(unix)]
-        let (os, name): (std::ffi::OsString, Vec<Unit>) = {
-            use std::os::unix::ffi::OsStringExt;
-            (std::ffi::OsString::from_vec(vec![0x61, 0xFF]), vec![0x61, 0xFF])
-        };
-        let base = std::env::var_os("PG_TEST_DIR")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(std::env::temp_dir)
-            .join(format!("pg-normalize-{}", std::process::id()));
-        let folder = base.join(&os);
-        std::fs::create_dir_all(&folder).unwrap();
-        let path = normalize_path(&folder).unwrap();
-        assert_eq!(path.parts.last(), Some(&name_from_native(&name)));
-        std::fs::remove_dir_all(&base).unwrap();
-    }
+    use std::path::Path;
 
     #[test]
     fn a_listed_name_is_kept_exactly() {

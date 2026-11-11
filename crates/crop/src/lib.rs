@@ -21,7 +21,6 @@ use pg_model::progress::Phase;
 use pg_platform::file::TempFile;
 use pg_platform::names::disk_path_of;
 use pg_platform::names::{set_path, shown};
-use pg_writeback::{exiftool_program, stat};
 
 pub struct Stats {
     pub saved: usize,
@@ -56,7 +55,7 @@ fn real_folder(folder: &Path) -> Result<RulePath> {
     if !existing.exists() {
         return pg_platform::names::rule_path_of(folder).context("the folder for the copies isn't a path");
     }
-    let mut real = pg_scan::normalize_path(existing)?;
+    let mut real = pg_platform::names::normalize_path(existing)?;
     if !missing.is_empty() {
         let tail: PathBuf = missing.iter().rev().collect();
         let tail = pg_platform::names::rule_path_of(&tail).context("the folder for the copies isn't a path")?;
@@ -189,7 +188,11 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) ->
     // Each by its disk path, which reaches it exactly: a folder whose name ends in a dot or a space is the one read and
     // written, not a sibling without it.
     let (source_path, out_path) = (disk_path_of(source), disk_path_of(out));
-    if stat(&source_path)? != (s.size, s.mtime) || usize::try_from(s.size).ok() != Some(bytes.len()) {
+    if pg_platform::file::stat(&source_path)
+        .with_context(|| format!("reading {}", pg_platform::names::shown(&source_path)))?
+        != (s.size, s.mtime)
+        || usize::try_from(s.size).ok() != Some(bytes.len())
+    {
         return Ok(Written::Skipped);
     }
     let cropped = crop(bytes, s.format, s.width, s.height, s.cut)?;
@@ -207,7 +210,7 @@ fn write_copy(job: &Job, paths: &PathArena, bytes: &[u8], temp: &mut Vec<u8>) ->
 
 /// Give the published copy at `out` the tags of `source` that the crop left out (ExifTool), and its modification time.
 fn tag_copy(exiftool: &mut Option<ExifTool>, source: &Path, out: &Path) -> Result<()> {
-    ExifTool::running(exiftool, &exiftool_program())?.copy_tags(source, out)?;
+    ExifTool::running(exiftool, &pg_exiftool::program())?.copy_tags(source, out)?;
     keep_time(source, out)
 }
 

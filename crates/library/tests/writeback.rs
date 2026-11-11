@@ -78,7 +78,7 @@ fn imported(prefix: &str) -> anyhow::Result<Imported> {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images"))?;
+    let root = pg_platform::names::normalize_path(&dir.join("images"))?;
     pg_scan::scan(&mut c, &root, &ctl)?;
     pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl)?;
     Ok((dir, files, catalog_path, c))
@@ -129,7 +129,7 @@ fn ratings_and_turns_reach_the_files() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
@@ -251,7 +251,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&images).unwrap();
+    let root = pg_platform::names::normalize_path(&images).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
     pg_import::import(&mut c, &opts, false, &ctl).unwrap();
@@ -485,7 +485,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     std::fs::write(sibling.join("a.jpg"), &jpeg).unwrap();
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
     // The scan lists both folders, each by its own name.
     let files = state::present_files(&c).unwrap();
@@ -618,7 +618,7 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
     let (bmp, jpg) = (state::file_id(&c, "f.bmp").unwrap(), state::file_id(&c, "g.jpg").unwrap());
@@ -802,7 +802,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 
@@ -845,7 +845,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
     // Turns: a PNG's is rewritten without ExifTool.
@@ -892,7 +892,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_catalog::writes::queue_rotation(&c, state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
 
@@ -922,7 +922,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
     let catalog_path = dir.join("catalog.sqlite");
     let mut c = Catalog::prepare(&catalog_path, pg_library::versions(), pg_platform::native::PATH_RULES).unwrap();
     let ctl = Control::new();
-    let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+    let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     pg_import::import(&mut c, &Options::new(pg_platform::priority::Priority::Normal), false, &ctl).unwrap();
 

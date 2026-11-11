@@ -51,8 +51,8 @@ use pg_jobs::events::Change;
 pub mod fault;
 mod file;
 
-pub use file::{stat, temp_of};
-use file::{stat_of, sync, unchanged, write_into};
+pub use file::{discard_temps, temp_of};
+use file::{stat, sync, unchanged, write_into};
 
 /// A rating is written once it has been left alone this long, so quick changes (triage) coalesce.
 const SETTLE_SECS: i64 = 2;
@@ -444,7 +444,7 @@ impl Inner {
         let (data, pixels_changed) = match job.kind {
             WriteKind::Rating => {
                 let rating = u8::try_from(job.value).with_context(|| format!("{shown}: no rating is {}", job.value))?;
-                let tool = ExifTool::running(exiftool, &exiftool_program())?;
+                let tool = ExifTool::running(exiftool, &pg_exiftool::program())?;
                 tool.write_rating(&path, &temp, rating)?;
                 let written = std::fs::read(&temp).with_context(|| format!("reading {shown_temp}"))?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
@@ -465,7 +465,7 @@ impl Inner {
                         None => {
                             // No tag to change: ExifTool adds one. A format it can't add EXIF to keeps the turn in
                             // the catalog.
-                            let tool = ExifTool::running(exiftool, &exiftool_program())?;
+                            let tool = ExifTool::running(exiftool, &pg_exiftool::program())?;
                             let written = match tool.write_orientation(&path, &temp, o.get()) {
                                 Ok(()) => Some(std::fs::read(&temp)?)
                                     .filter(|written| pg_metadata::orientation(written, format) == o),
@@ -550,7 +550,7 @@ impl Inner {
         before: (i64, i64),
     ) -> Result<File> {
         let file = pg_platform::file::open_for_copy(native).with_context(|| format!("opening {shown} for writing"))?;
-        unchanged(shown, before, stat_of(&file)?)?;
+        unchanged(shown, before, pg_platform::file::stat_of(&file)?)?;
         sync(temp).with_context(|| format!("writing {shown_temp}"))?;
         Ok(file)
     }
@@ -650,11 +650,6 @@ fn shown_file(catalog: &Catalog, job: &Job) -> String {
 /// The quarter turns a turn job writes (its value, taken modulo 4).
 fn job_turns(job: &Job) -> Turns {
     Turns::new(u8::try_from(job.value.rem_euclid(4)).unwrap_or(u8::MAX))
-}
-
-/// The ExifTool program: `PG_EXIFTOOL`, or `exiftool` on PATH. Read here, where the writes start it.
-pub fn exiftool_program() -> std::ffi::OsString {
-    std::env::var_os("PG_EXIFTOOL").unwrap_or_else(|| "exiftool".into())
 }
 
 #[cfg(test)]

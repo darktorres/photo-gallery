@@ -147,6 +147,12 @@ Each fix gets a test that fails before it.
   - **`LibraryService::remove_folder` stops a running scan by queueing an empty one** (`library.scan(Vec::new())`). That works only because the scan pass, once woken, skips paths no longer in the library. It becomes `Library::stop_scans_under(&root)`, which drops the queued scans under the root and preempts a running one under it.
 - **Test.** A `pg-cli` test over a `ScanStats` with a refused mount: `gallery scan` prints it. The runner's existing scan tests keep passing.
 - Gate: Windows `just test`, Linux checks.
+- **Done in step 4.** As written, with these differences:
+  - The functions are in modules of `pg-library`, not at its root: `folders::{add_folder, AddError}` and `scans::{forget_replaced, scan_notices}`. `AddError` is `Refused`, `Path(NormalizeError)` (which holds M-31's `NotAPath` and `Unreadable`) and `Catalog`.
+  - `pg-client` can't name `NormalizeError` (R-1), so the two cases are worded from plain values (`text::path_unreadable`, `text::not_a_path`); each front end has the five-line match that hands them in.
+  - The CLI's own lines are `pg_client::text::cli::Line`, worded by `locales/en/cli.ftl`, with the same id test as `Message`; their English is the old output, unchanged. The borders report's CSV, its side descriptions and the `--stdin` protocol are data compared with the prototype, not words, and stay as they are, as do clap's help texts.
+  - `Runner::stop_scans_under` finds a running scan by the folder it is walking, which the scan pass records.
+  - `scan_notices` returns the notices only; the files a scan skipped stay its kept failures, which the CLI lists.
 
 ### M-23: one skeleton for the per-file passes
 
@@ -357,6 +363,7 @@ Each fix gets a test that fails before it.
   - `pg-app` loses `pg-scan` entirely. It uses exactly two items of it: `normalize_path` (moved here) and `check_folder` (`pg-library`'s after M-22). Its tests use none.
   - The layer file changes in the same commit.
 - Gate: `just lint` (the layer check), `just test`, Linux checks.
+- **Done in step 4.** `NormalizeError`'s `Display` is the log's form; the front ends word it. `pg-writeback`'s writes keep a crate-private `stat` that names the file in the error. The test of a root whose real name is not Unicode moved with `normalize_path`, with a check of the `Unreadable` case.
 
 ### M-32: the Qt crate holds no logic that needs no Qt
 
@@ -759,7 +766,7 @@ This review and [NOTIFICATIONS_PLAN.md](NOTIFICATIONS_PLAN.md) are ordered toget
    third bug, a disabled cache and an unclosed catalog have notices of their own; M-26: the CLI prints the notices' words).
    S3 done (the failure ledger: the files the passes failed on, in the inbox, with Reveal and Retry; the CLI reports the
    unreadable files and an unwritten ledger).
-4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends).
+4. **M-31** (the helpers move down), then **M-22** (one follow-up and one add-folder, for both front ends). Done.
 5. **M-29**, **M-30** with **M-27**, then **M-33**: the app's services, `pg-render`, and the Qt conventions. Each gets `just shots`.
 6. **M-32** (the rest of it), **M-43** and **M-35**: the client's logic, the session, and the image scheme.
 7. The catalog, with the perf gate: **M-37**, **M-42**, **M-24**, then **M-44**. Then the rest of **M-45** (the names), once the catalog's modules are settled.

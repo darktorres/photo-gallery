@@ -6,6 +6,7 @@
 //!
 //! The words and the bundle are in `words`, the typed lines in `message`; this module builds the lines.
 
+pub mod cli;
 mod message;
 mod notice;
 #[cfg(test)]
@@ -371,6 +372,16 @@ pub fn yandex_nothing_picked() -> String {
 /// The save's folder dialog gave no folder: nothing is saved.
 pub fn yandex_no_folder() -> String {
     render(&Message::YandexNoFolder)
+}
+
+/// A path given to add (a folder; a file named on the command line) can't be opened, for `error`.
+pub fn path_unreadable(path: &str, error: &str) -> String {
+    render(&Message::PathUnreadable { path: path.to_string(), error: error.to_string() })
+}
+
+/// A path given has no path form under the rules (a NUL).
+pub fn not_a_path(path: &str) -> String {
+    render(&Message::NotAPath { path: path.to_string() })
 }
 
 /// The app's own folder dialog can't list a folder, for `error`.

@@ -56,7 +56,7 @@ fn library(dir: &Path) -> Result<(Catalog, FileId, FileId)> {
     let mut c = Catalog::prepare(&dir.join("catalog.sqlite"), pg_library::versions(), pg_platform::native::PATH_RULES)?;
     let ctl = Control::new();
     let opts = Options::new(pg_platform::priority::Priority::Normal);
-    let root = pg_scan::normalize_path(&images)?;
+    let root = pg_platform::names::normalize_path(&images)?;
     c.add_root(&root)?;
     pg_scan::scan(&mut c, &root, &ctl)?;
     pg_import::import(&mut c, &opts, false, &ctl)?;

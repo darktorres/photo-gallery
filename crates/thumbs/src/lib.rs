@@ -330,7 +330,7 @@ mod tests {
         )
         .unwrap();
         let ctl = Control::new();
-        let root = pg_scan::normalize_path(&dir.join("images")).unwrap();
+        let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &ctl).unwrap();
@@ -370,7 +370,7 @@ mod tests {
         let catalog_path = dir.join("catalog.sqlite");
         let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
         let ctl = Control::new();
-        let root = pg_scan::normalize_path(&images).unwrap();
+        let root = pg_platform::names::normalize_path(&images).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &ctl).unwrap();

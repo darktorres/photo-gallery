@@ -1,0 +1,48 @@
+# The GitHub Pages site: site/ is one static page, published as is. The images are not kept in site/: this workflow
+# copies the app icon and the mascots the page shows from crates/desktop/resources into the folder before it uploads
+# it, so the site always shows the app's own icon. Actions are pinned to commit SHAs with the tag in the comment;
+# .github/dependabot.yml proposes updates. Pages must be set to "GitHub Actions" in the repository settings.
+name: Pages
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "site/**"
+      - "crates/desktop/resources/app-icon.png"
+      - "crates/desktop/resources/mascots/**"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; a newer push waits instead of cancelling one in progress.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - name: Copy the images into the site
+        run: |
+          cp crates/desktop/resources/app-icon.png site/
+          mkdir -p site/mascots
+          # The mascots site/index.html shows.
+          for n in 01 08 15 19 27; do cp "crates/desktop/resources/mascots/$n.png" site/mascots/; done
+      - uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+      - uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: site
+      - id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

@@ -1,0 +1,110 @@
+<!doctype html>
+<!--
+  The project's GitHub Pages site: one static page, no build step. The images are not stored here: the Pages workflow
+  (.github/workflows/pages.yml) copies crates/desktop/resources/app-icon.png and a few mascots next to this file before
+  it uploads the folder, so the page always shows the app's own icon. URLs are relative, because Pages serves the site
+  under /photo-gallery/.
+-->
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Photo Gallery</title>
+  <meta name="description" content="A desktop photo gallery for very large libraries, built around near-duplicate detection. Rust core, Qt and QML window.">
+  <link rel="icon" type="image/png" href="app-icon.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="hero">
+    <div class="wrap hero-inner">
+      <img class="hero-icon" src="app-icon.png" alt="The app icon: a crab in a red Rust bucket" width="256" height="256">
+      <div>
+        <h1>Photo Gallery</h1>
+        <p class="lede">A desktop photo gallery for very large libraries, built around near-duplicate detection: many crops
+          and edits of the same picture, and the same pin saved at different sizes.</p>
+        <p class="promise">Non-destructive by design: nothing is deleted automatically.</p>
+        <p class="actions">
+          <a class="button primary" href="https://github.com/darktorres/photo-gallery">Source on GitHub</a>
+          <a class="button" href="#build">Build it</a>
+        </p>
+      </div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Screenshot: add site/screenshot.png and uncomment.
+    <section class="wrap">
+      <img class="screenshot" src="screenshot.png" alt="The gallery window" width="1600" height="1000">
+    </section>
+    -->
+
+    <section class="wrap" aria-labelledby="what">
+      <h2 id="what">What it is made of</h2>
+      <ul class="cards">
+        <li>
+          <h3>Rust core</h3>
+          <p>Scanning, the SQLite catalog, decoding and thumbnails, and duplicate detection.</p>
+        </li>
+        <li>
+          <h3>Qt 6.12 and QML</h3>
+          <p>The window is QML, bridged to Rust through cxx-qt.</p>
+        </li>
+        <li>
+          <h3>Windows only, for now</h3>
+          <p>The app targets Windows; the workspace also builds and tests on Linux in CI.</p>
+        </li>
+      </ul>
+    </section>
+
+    <section class="wrap" aria-labelledby="build">
+      <h2 id="build">Build</h2>
+      <p>The compiler is pinned in <code>rust-toolchain.toml</code>, so <code>rustup</code> installs the right one on first
+        use. The Qt kit, the FFmpeg build and ExifTool are described in
+        <a href="https://github.com/darktorres/photo-gallery/blob/main/crates/README.md#build">crates/README.md</a>.
+        This machine's paths go in <code>.env</code> (copy <code>.env.example</code>): <code>just doctor</code> says what is
+        missing, and <code>just setup</code> fetches the pinned FFmpeg. The commands need
+        <a href="https://just.systems">just</a>:</p>
+<pre><code>just            # lists the commands
+just lint       # formatting, clippy, dependency checks, Python and Markdown, QML
+just test       # the Rust tests
+just qmltest    # the QML tests
+just deploy     # the release build, with Qt's DLLs and QML modules next to gallery.exe</code></pre>
+    </section>
+
+    <section class="wrap" aria-labelledby="docs">
+      <h2 id="docs">Documentation</h2>
+      <ul class="docs">
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/README.md">README</a>
+          <span>the overview and the commands</span></li>
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/crates/README.md">crates/README.md</a>
+          <span>the crates, their layers, and the build in detail</span></li>
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/docs/PLAN.md">PLAN</a>
+          <span>goals, constraints and milestones</span></li>
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/docs/DATABASE.md">DATABASE</a>
+          <span>whether the catalog stays on SQLite, and what holds search, vectors and the duplicate graph</span></li>
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/docs/STORAGE.md">STORAGE</a>
+          <span>drive kinds and file systems</span></li>
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/docs/FINDINGS.md">FINDINGS</a>
+          <span>measurements and what they showed</span></li>
+        <li><a href="https://github.com/darktorres/photo-gallery/blob/main/docs/PROFILING.md">PROFILING</a>
+          <span>the callgrind benches and the instruction-count gate</span></li>
+      </ul>
+    </section>
+
+    <section class="wrap mascots" aria-label="Mascots">
+      <img src="mascots/01.png" alt="" width="291" height="238" loading="lazy">
+      <img src="mascots/08.png" alt="" width="303" height="246" loading="lazy">
+      <img src="mascots/15.png" alt="" width="288" height="225" loading="lazy">
+      <img src="mascots/19.png" alt="" width="290" height="226" loading="lazy">
+      <img src="mascots/27.png" alt="" width="273" height="257" loading="lazy">
+    </section>
+  </main>
+
+  <footer class="wrap footer">
+    <a href="https://github.com/darktorres/photo-gallery">github.com/darktorres/photo-gallery</a>
+    <a href="https://github.com/darktorres/photo-gallery/actions/workflows/ci.yml"><img
+      src="https://github.com/darktorres/photo-gallery/actions/workflows/ci.yml/badge.svg?branch=main" alt="CI status"
+      height="20"></a>
+  </footer>
+</body>
+</html>

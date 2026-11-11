@@ -10,6 +10,8 @@ same picture, and the same pin saved at different sizes. Non-destructive by desi
 - **Qt 6.12 and QML** for the window, through cxx-qt.
 - **Windows only** for now.
 
+The project page: <https://darktorres.github.io/photo-gallery/> (its source is `site/`).
+
 ## Building
 
 The compiler is pinned in `rust-toolchain.toml`, so `rustup` installs the right one on first use. The Qt kit, the FFmpeg

@@ -8,10 +8,10 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use anyhow::{Context, Result};
 use pg_analysis::analyze::{Analyzer, FileBorders};
 use pg_catalog::Catalog;
-use pg_catalog::ledger::{self, Failure};
+use pg_catalog::ledger::Failure;
 use pg_jobs::control::Control;
 use pg_jobs::panics;
-use pg_jobs::pipeline::{self, Options};
+use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
@@ -53,7 +53,6 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Borders)?;
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Borders, u64::try_from(items.len()).unwrap_or(u64::MAX));
-    let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
     let mut flush = |batch: &mut Vec<(usize, Result<FileBorders>)>, stats: &mut Stats| -> Result<()> {
         let tx = catalog.tx()?;
         let mut writer = tx.borders_writer()?;
@@ -105,27 +104,20 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         }
         Ok(())
     };
-    pipeline::run(
+    pipeline::batched(
         items,
         |item, wide| {
             let [folder, name] = work.parts(item.path);
             pg_platform::names::set_file(wide, folder, name);
-            true
+            Read::File
         },
         opts,
         ctl,
         Analyzer::new,
         |analyzer, i, bytes| analyzer.borders(bytes, items.get(i).context("an item outside the pass")?.rotation),
-        |i, result, len| {
-            ctl.add(len, result.is_err());
-            batch.push((i, result));
-            if batch.len() >= BATCH {
-                flush(&mut batch, &mut stats)?;
-            }
-            Ok(true)
-        },
+        Batch { size: BATCH, every: None },
+        |batch| flush(batch, &mut stats).map(|()| true),
     )?;
-    flush(&mut batch, &mut stats)?;
     stats.complete = stats.files == items.len();
     Ok(stats)
 }

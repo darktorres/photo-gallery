@@ -9,8 +9,8 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
-use pg_catalog::Catalog;
-use pg_catalog::ledger::{self, Failure as LedgerFailure};
+use pg_catalog::ledger::Failure as LedgerFailure;
+use pg_catalog::{Catalog, Listed};
 use pg_render::maker::{MakeError, Maker};
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
@@ -18,7 +18,7 @@ use pg_jobs::control::Control;
 use pg_jobs::failure::keep_failure;
 use pg_model::notice::FileFailure;
 use pg_jobs::panics;
-use pg_jobs::pipeline::{self, Options};
+use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::ids::FileId;
 use pg_model::notice::FilePass;
 use pg_model::progress::Phase;
@@ -144,11 +144,13 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     stats.cache_bytes = u64::try_from(cache.totals()?.0)?;
     // To check each file against before its thumbnail is kept, and for the failure ledger.
     let catalog = Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
-    let sep = catalog.rules().sep_byte();
+    let rules = catalog.rules();
+    let sep = rules.sep_byte();
     // The files the ledger holds: only those leave it when they are made (a clear of every file made would take the
     // catalog's write lock at every batch).
     let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Thumbs)?;
-    let mut batch = Vec::with_capacity(BATCH);
+    // The thumbnails made from the files as listed, to keep (put in the cache) with each batch.
+    let mut thumbs: Vec<Thumb> = Vec::with_capacity(BATCH);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
     let spare: Mutex<Vec<Vec<u8>>> = Mutex::new(Vec::new());
@@ -158,11 +160,67 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     // pass leaves early (an error, a panic).
     let phase = ctl.begin(Phase::Thumbs { height }, u64::try_from(items.len()).unwrap_or(u64::MAX));
 
-    let flush = |batch: &mut Vec<Thumb>, stats: &mut ThumbStats| -> Result<bool> {
-        let n = batch.len();
-        let made_known: Vec<FileId> = batch.iter().map(|t| t.file_id).filter(|id| known.contains(id)).collect();
-        let stored = cache.put_batch(batch, Some(height))?;
-        spare.lock().unwrap_or_else(PoisonError::into_inner).extend(batch.drain(..).map(|t| t.data));
+    // A batch of results: the thumbnails made from the file as listed are kept, the failures recorded; false once the
+    // cache is full.
+    let mut flush = |batch: &mut Vec<(usize, Result<Vec<u8>>)>, stats: &mut ThumbStats| -> Result<bool> {
+        for (i, result) in batch.drain(..) {
+            tried += 1;
+            let item = items.get(i).context("a thumbnail result for no work item")?;
+            match result {
+                // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
+                // decides), nor being rewritten by the app (`Catalog::is_current`). Otherwise tried again by the next
+                // pass, from its change number on.
+                Ok(data) => {
+                    let listed = Listed { size: item.size, mtime: item.source.mtime, rotation: item.source.rotation };
+                    if catalog.is_current(item.id, &listed)? {
+                        thumbs.push(Thumb { file_id: item.id, height, source: item.source, data });
+                    } else {
+                        spare.lock().unwrap_or_else(PoisonError::into_inner).push(data);
+                        stats.changed += 1;
+                        fold(&mut first_failed, item.seq);
+                    }
+                }
+                Err(e) => {
+                    stats.failed += 1;
+                    let failed = Failed::of(&e);
+                    let retry = match failed {
+                        Failed::Panicked => Some(false),
+                        Failed::Undecodable => Some(true),
+                        Failed::Unreadable | Failed::Other => None,
+                    };
+                    if matches!(failed, Failed::Unreadable) {
+                        stats.unreadable += 1;
+                    }
+                    if !matches!(failed, Failed::Panicked) {
+                        fold(&mut first_failed, item.seq);
+                    }
+                    let path = rules.display_stored(&work.path(item.path, sep));
+                    let error = format!("{e:#}");
+                    if let Some(retry) = retry {
+                        let failure = LedgerFailure {
+                            file_id: item.id,
+                            mtime: item.source.mtime,
+                            size: item.size,
+                            rotation: item.source.rotation,
+                            error: error.clone(),
+                            retry,
+                        };
+                        unwritten.failures.push((failure, item.seq));
+                    }
+                    keep_failure(&mut stats.failures, path, error);
+                }
+            }
+        }
+        if unwritten.failures.len() >= BATCH || unwritten.since.elapsed() >= LEDGER_EVERY {
+            unwritten.write(&catalog, &mut first_failed, &mut stats.ledger_error);
+        }
+        if thumbs.is_empty() {
+            return Ok(true);
+        }
+        let n = thumbs.len();
+        let made_known: Vec<FileId> = thumbs.iter().map(|t| t.file_id).filter(|id| known.contains(id)).collect();
+        let stored = cache.put_batch(&mut thumbs, Some(height))?;
+        spare.lock().unwrap_or_else(PoisonError::into_inner).extend(thumbs.drain(..).map(|t| t.data));
         if stored {
             stats.made += n;
             if let Err(e) = catalog.clear_failures(FilePass::Thumbs, &made_known) {
@@ -174,16 +232,16 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         Ok(stored)
     };
 
-    let ran = pipeline::run(
+    let ran = pipeline::batched(
         items,
         |item, wide| {
-            // A video's poster frame is read by FFmpeg, from its path.
-            let whole = item.poster_ms.is_none();
-            if whole {
-                let [folder, name] = work.parts(item.path);
-                pg_platform::names::set_file(wide, folder, name);
+            // A video's poster frame is read by FFmpeg, from its path: a part of the file, not counted as read.
+            if item.poster_ms.is_some() {
+                return Read::Streamed { bytes: 0 };
             }
-            whole
+            let [folder, name] = work.parts(item.path);
+            pg_platform::names::set_file(wide, folder, name);
+            Read::File
         },
         opts,
         ctl,
@@ -212,73 +270,14 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 }
             }
         },
-        |i, result, len| {
-            ctl.add(len, result.is_err());
-            tried += 1;
-            let item = items.get(i).context("a thumbnail result for no work item")?;
-            match result {
-                // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
-                // decides), nor being rewritten by the app
-                // (pg_model::state::FileState). Otherwise tried again by the next pass, from its change number on.
-                Ok(data) => match catalog.file_state(item.id)? {
-                    Some(s)
-                        if !s.writing
-                            && (s.mtime, s.size, s.rotation)
-                                == (item.source.mtime, item.size, item.source.rotation) =>
-                    {
-                        batch.push(Thumb { file_id: item.id, height, source: item.source, data });
-                    }
-                    _ => {
-                        spare.lock().unwrap_or_else(PoisonError::into_inner).push(data);
-                        stats.changed += 1;
-                        fold(&mut first_failed, item.seq);
-                    }
-                },
-                Err(e) => {
-                    stats.failed += 1;
-                    let failed = Failed::of(&e);
-                    let retry = match failed {
-                        Failed::Panicked => Some(false),
-                        Failed::Undecodable => Some(true),
-                        Failed::Unreadable | Failed::Other => None,
-                    };
-                    if matches!(failed, Failed::Unreadable) {
-                        stats.unreadable += 1;
-                    }
-                    if !matches!(failed, Failed::Panicked) {
-                        fold(&mut first_failed, item.seq);
-                    }
-                    let path = String::from_utf8_lossy(&work.path(item.path, sep)).into_owned();
-                    let error = format!("{e:#}");
-                    if let Some(retry) = retry {
-                        let failure = LedgerFailure {
-                            file_id: item.id,
-                            mtime: item.source.mtime,
-                            size: item.size,
-                            rotation: item.source.rotation,
-                            error: error.clone(),
-                            retry,
-                        };
-                        unwritten.failures.push((failure, item.seq));
-                    }
-                    keep_failure(&mut stats.failures, path, error);
-                }
-            }
-            if unwritten.failures.len() >= BATCH || unwritten.since.elapsed() >= LEDGER_EVERY {
-                unwritten.write(&catalog, &mut first_failed, &mut stats.ledger_error);
-            }
-            if batch.len() >= BATCH {
-                return flush(&mut batch, &mut stats);
-            }
-            Ok(true)
-        },
+        // The failures go to the ledger at least every `LEDGER_EVERY`, so the inbox follows a long pass.
+        Batch { size: BATCH, every: Some(LEDGER_EVERY) },
+        |batch| flush(batch, &mut stats),
     );
+    drop(flush);
     // The failures are written whatever ended the pass (an error, a stop, the cache full), before its checkpoint.
     unwritten.write(&catalog, &mut first_failed, &mut stats.ledger_error);
     ran?;
-    if !stats.cache_full {
-        flush(&mut batch, &mut stats)?;
-    }
     drop(phase);
     stats.complete = !stats.cache_full && tried == items.len();
     if stats.complete {

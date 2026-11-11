@@ -172,6 +172,13 @@ Each fix gets a test that fails before it.
   - The still-as-listed rule is one function, `pg_catalog::is_current(&Catalog, id, &Listed) -> bool`. `Listed { size, mtime, rotation }` holds the work item's fields, and the function runs one query with `not_being_written!`. `AnalysisWriter::current`, `BordersWriter::current` and the thumbnail pass all call it; today the pass compares `file_state`'s fields in Rust.
   - The results channel carries an enum: `Done(index, result)` or `SetupFailed(error)`.
 - Gate: `just test`, Linux checks, perf (the per-file benches).
+- **Done in step 8.**
+  - `pg_jobs::pipeline::batched(items, read, opts, ctl, init, process, Batch { size, every }, flush)`: it counts each result on the control and hands `flush` the batch when it is due and at the end. The borders and the import pass are their work and their writer's flush; the thumbnail pass's flush keeps the thumbnails made from the file as listed and records the failures, with `every` keeping the ledger's two-second pace.
+  - `read` returns `pipeline::Read`: `File`, or `Streamed { bytes }` for a video its worker opens. The bytes counted as read are the pipeline's, so the import's per-video size count went.
+  - The still-as-listed rule is `Catalog::is_current(id, &Listed)`: one SQL (`lookup::IS_CURRENT`) and one binding, which `AnalysisWriter`, `BordersWriter` and the thumbnail pass use (`WorkItem::listed`). The borders' check now reads the file's row too, rotation included, as the other two do.
+  - The thumbnail and crop passes show a failed file's path with `PathRules::display_stored`.
+  - The results channel carries `Outcome::Done { index, result, read }` or `Outcome::SetupFailed(error)`.
+  - The video's disk path was R-2's (step 1).
 
 ### M-24: a database file's lifecycle is `pg-schema`'s, and the catalog's `schema.rs` is split
 

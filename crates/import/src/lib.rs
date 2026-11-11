@@ -12,7 +12,7 @@ use pg_model::media::Kind;
 use pg_model::pdq::MIN_QUALITY;
 
 use pg_jobs::control::Control;
-use pg_jobs::pipeline::{self, Options};
+use pg_jobs::pipeline::{self, Batch, Options, Read};
 use pg_model::progress::Phase;
 
 const BATCH: usize = 500;
@@ -44,7 +44,6 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
     pairer.reserve(items.len() * 8);
     stats.indexed = pairer.len();
 
-    let mut batch: Vec<(usize, Result<Analyzed>)> = Vec::with_capacity(BATCH);
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Import, u64::try_from(items.len()).unwrap_or(u64::MAX));
 
@@ -85,18 +84,16 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         Ok(())
     };
 
-    // The item at `i` when it is a video.
-    let video = |i: usize| items.get(i).filter(|item| item.kind == Kind::Video);
-    pipeline::run(
+    pipeline::batched(
         items,
         |item, wide| {
-            // A video is read by FFmpeg, from its path.
-            let whole = item.kind != Kind::Video;
-            if whole {
-                let [folder, name] = work.parts(item.path);
-                pg_platform::names::set_file(wide, folder, name);
+            if item.kind == Kind::Video {
+                // A video is read by FFmpeg, from its path: its size is counted as read.
+                return Read::Streamed { bytes: u64::try_from(item.size).unwrap_or(0) };
             }
-            whole
+            let [folder, name] = work.parts(item.path);
+            pg_platform::names::set_file(wide, folder, name);
+            Read::File
         },
         opts,
         ctl,
@@ -112,22 +109,8 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                 analyzer.analyze(bytes, item.rotation)
             }
         },
-        |i, result, len| {
-            // A video is streamed by its worker: count its size as read.
-            let read = match video(i) {
-                Some(item) => {
-                    usize::try_from(item.size).with_context(|| format!("a video's size of {} bytes", item.size))?
-                }
-                None => len,
-            };
-            ctl.add(read, result.is_err());
-            batch.push((i, result));
-            if batch.len() >= BATCH {
-                flush(&mut batch, &mut stats)?;
-            }
-            Ok(true)
-        },
+        Batch { size: BATCH, every: None },
+        |batch| flush(batch, &mut stats).map(|()| true),
     )?;
-    flush(&mut batch, &mut stats)?;
     Ok(stats)
 }

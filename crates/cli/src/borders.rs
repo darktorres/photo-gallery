@@ -13,7 +13,7 @@ use pg_analysis::borders::{self as detector, Detector};
 use pg_catalog::Catalog;
 use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
-use pg_jobs::pipeline::{self, Options};
+use pg_jobs::pipeline::{self, Options, Read};
 use pg_model::detection::{self, Reason, Side};
 use pg_model::media::{Ext, Kind};
 use pg_model::progress::Phase;
@@ -80,7 +80,7 @@ pub(crate) fn report(paths: &[PathBuf], csv: &Path, opts: &Options, ctl: &Contro
         &files,
         |file, wide| {
             set_os_str(wide, file.as_os_str());
-            true
+            Read::File
         },
         opts,
         ctl,

@@ -40,7 +40,9 @@ pub use error::{Error, Result};
 mod schema;
 
 pub use self::core::{Catalog, Tx};
-pub use types::{CropSource, Folder, Rebuilt, Recorded, Root, ScannedFile, Status, Versions, WorkItem, WriteTarget};
+pub use types::{
+    CropSource, Folder, Listed, Rebuilt, Recorded, Root, ScannedFile, Status, Versions, WorkItem, WriteTarget,
+};
 pub use writers::{AnalysisWriter, BordersWriter, ScanWriter};
 
 #[cfg(test)]

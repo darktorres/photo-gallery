@@ -186,10 +186,7 @@ impl<'tx> AnalysisWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction, import: i64) -> Result<AnalysisWriter<'tx>> {
         Ok(AnalysisWriter {
             import,
-            current: tx.prepare(concat!(
-                "SELECT EXISTS(SELECT 1 FROM files WHERE id = ?1 AND size = ?2 AND mtime = ?3 AND rotation = ?4) AND ",
-                not_being_written!()
-            ))?,
+            current: tx.prepare(crate::lookup::IS_CURRENT)?,
             delete_pairs: tx.prepare("DELETE FROM pdq_pairs WHERE a = ?1 OR b = ?1")?,
             analysis: tx.prepare(
                 "INSERT OR REPLACE INTO analysis(file_id, version, size, mtime, rotation, kind, analyzed, error,
@@ -235,7 +232,7 @@ impl<'tx> AnalysisWriter<'tx> {
     /// then is what was read from it stored. Otherwise it is left as it is, due again (a changed file is stale; a
     /// file whose metadata was rewritten keeps the analysis made before, which the writer carried over).
     fn current(&mut self, item: &WorkItem) -> Result<bool> {
-        Ok(self.current.query_row(params![item.id.get(), item.size, item.mtime, item.rotation.get()], |r| r.get(0))?)
+        crate::lookup::query_current(&mut self.current, item.id, &item.listed())
     }
 
     /// Store an analysis, unless the file changed since it was listed (see `current`). Whether it was stored.
@@ -341,10 +338,7 @@ pub struct BordersWriter<'tx> {
 impl<'tx> BordersWriter<'tx> {
     pub(crate) fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
         Ok(BordersWriter {
-            current: tx.prepare(concat!(
-                "SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3) AND ",
-                not_being_written!()
-            ))?,
+            current: tx.prepare(crate::lookup::IS_CURRENT)?,
             cut: tx.prepare(
                 "UPDATE analysis SET cut_left = ?2, cut_top = ?3, cut_right = ?4, cut_bottom = ?5, borders_due = 0
                  WHERE file_id = ?1",
@@ -362,8 +356,7 @@ impl<'tx> BordersWriter<'tx> {
     /// for), replacing what was there, unless the file changed meanwhile (the import then analyzes it again, and the
     /// borders are due again) or a write of the app's into it is in progress (they stay due).
     pub fn store_borders(&mut self, item: &WorkItem, borders: Option<&Detection>) -> Result<()> {
-        let current: bool = self.current.query_row(params![item.id.get(), item.size, item.mtime], |r| r.get(0))?;
-        if !current {
+        if !crate::lookup::query_current(&mut self.current, item.id, &item.listed())? {
             return Ok(());
         }
         let cut = borders.map(Detection::cut);

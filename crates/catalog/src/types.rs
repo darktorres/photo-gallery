@@ -192,6 +192,24 @@ pub struct WorkItem {
     pub kind: Kind,
 }
 
+impl WorkItem {
+    /// The file as it was listed, to check against before what was read from it is kept ([`Catalog::is_current`]).
+    ///
+    /// [`Catalog::is_current`]: crate::Catalog::is_current
+    pub fn listed(&self) -> Listed {
+        Listed { size: self.size, mtime: self.mtime, rotation: self.rotation }
+    }
+}
+
+/// A file as a pass listed it: what the pass read must still be the file's for it to be kept (`Catalog::is_current`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Listed {
+    pub size: i64,
+    pub mtime: i64,
+    /// The catalog's rotation, which the pass applied.
+    pub rotation: Turns,
+}
+
 /// A file with borders to crop off (`Catalog::crop_source`).
 pub struct CropSource {
     /// In the arena `crop_source` was given.

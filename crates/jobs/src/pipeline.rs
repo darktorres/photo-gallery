@@ -11,10 +11,11 @@
 //! the workers, a folder of large files holds no more than one of small files, and the buffers are reused from file
 //! to file: a pass makes about `slots` of them, whatever its length.
 
-use std::io::Read;
+use std::io::Read as _;
 use std::panic::AssertUnwindSafe;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Condvar, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use crossbeam_channel::bounded;
@@ -70,20 +71,36 @@ impl Options {
     }
 }
 
+/// How an item is read, as `read` says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Read {
+    /// Whole, from the path `read` wrote into the reader's buffer ([`NativePath::set`]): `process` gets its bytes.
+    File,
+    /// Not by the pipeline: `process` gets no bytes and opens the file itself (a video, which is streamed, not
+    /// loaded). `bytes` is what it counts as read (the file's size, or 0 for a part of it).
+    Streamed { bytes: u64 },
+}
+
+/// What a worker sends back: an item's result with the bytes it counts as read, or the error of a setup that failed
+/// (or panicked), after which the worker stops.
+enum Outcome<R> {
+    Done { index: usize, result: Result<R>, read: usize },
+    SetupFailed(anyhow::Error),
+}
+
 /// Read each item's file, run `process(state, i, bytes)` (with per-worker state from `init`), and call
 /// `sink(i, result, bytes read)` in completion order. `sink` returns false to stop early; so does a stop request on
 /// `ctl`, and reading waits while `ctl` is paused.
 ///
-/// `read(item, wide)` writes the file's path into `wide` ([`NativePath::set`]), and returns
-/// true; the reader's buffer is reused from file to file, so no path is made per file. An item it returns false
-/// for isn't read: `process` gets no bytes and opens the file itself (videos, which are streamed, not loaded).
+/// `read(item, wide)` says how the item is read ([`Read`]); for a file, it writes the path into `wide`, the reader's
+/// buffer, reused from file to file, so no path is made per file.
 ///
 /// A panic in `read` or `process` is that item's error ([`panics::Panicked`], through [`panics::guard`]), and the
 /// pass goes on: a worker whose `process` panicked makes its state again with `init`. A panic in `init`, or an error
 /// from it, fails the pass, as does a pass that ends with items sent to the workers and no result for them.
 pub fn run<T, S, R>(
     items: &[T],
-    read: impl Fn(&T, &mut NativePath) -> bool + Sync,
+    read: impl Fn(&T, &mut NativePath) -> Read + Sync,
     opts: &Options,
     ctl: &Control,
     init: impl Fn() -> Result<S> + Sync,
@@ -100,8 +117,8 @@ where
     let stop = AtomicBool::new(false);
     let pool = Pool::new(opts.buffer_bytes, opts.slots);
     // A place per slot (an array, made once): a read file waits for the workers, never for the channel.
-    let (raw_tx, raw_rx) = bounded::<(usize, std::io::Result<Lease>)>(pool.slots);
-    let (res_tx, res_rx) = bounded::<(usize, Result<R>, usize)>(opts.workers * 4);
+    let (raw_tx, raw_rx) = bounded::<(usize, std::io::Result<Lease>, usize)>(pool.slots);
+    let (res_tx, res_rx) = bounded::<Outcome<R>>(opts.workers * 4);
 
     std::thread::scope(|s| {
         // However the pass ends (done, stopped, an error from `sink`), readers waiting on the pool or paused at a
@@ -116,24 +133,24 @@ where
                 while ctl.checkpoint_until(stop) {
                     let i = next.fetch_add(1, Ordering::Relaxed);
                     let Some(item) = items.get(i) else { break };
-                    let bytes = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
-                        Ok(true) => match read_whole(pool, i, &wide) {
-                            Some(bytes) => bytes,
+                    let (bytes, streamed) = match panics::catch(AssertUnwindSafe(|| read(item, &mut wide))) {
+                        Ok(Read::File) => match read_whole(pool, i, &wide) {
+                            Some(bytes) => (bytes, 0),
                             None => break, // stopped
                         },
-                        Ok(false) => {
+                        Ok(Read::Streamed { bytes }) => {
                             pool.pass(i);
-                            Ok(Lease::empty())
+                            (Ok(Lease::empty()), usize::try_from(bytes).unwrap_or(usize::MAX))
                         }
                         Err(payload) => {
                             // The item's turn in the pool is passed all the same, or the items after it would wait
                             // for it forever; the path it left half-written is not used again.
                             pool.pass(i);
                             wide = NativePath::default();
-                            Err(std::io::Error::other(Panicked(panics::message(&*payload).to_string())))
+                            (Err(std::io::Error::other(Panicked(panics::message(&*payload).to_string()))), 0)
                         }
                     };
-                    if raw_tx.send((i, bytes)).is_err() {
+                    if raw_tx.send((i, bytes, streamed)).is_err() {
                         break;
                     }
                     sent.fetch_add(1, Ordering::SeqCst);
@@ -147,19 +164,19 @@ where
             let (init, process) = (&init, &process);
             s.spawn(move || {
                 priority::set_current_thread(opts.priority);
-                // A worker whose setup failed (or panicked) sends its error with `usize::MAX`, and stops.
+                // A worker whose setup failed (or panicked) sends its error, and stops.
                 let setup = || match panics::guard(AssertUnwindSafe(init)) {
                     Ok(st) => Some(st),
                     Err(e) => {
-                        let _ = res_tx.send((usize::MAX, Err(e), 0));
+                        let _ = res_tx.send(Outcome::SetupFailed(e));
                         None
                     }
                 };
                 let Some(mut state) = setup() else { return };
-                for (i, read) in raw_rx {
+                for (i, read, streamed) in raw_rx {
                     let (out, len, rebuild) = match read {
                         Ok(lease) => {
-                            let len = lease.bytes.len();
+                            let len = lease.bytes.len().saturating_add(streamed);
                             let out = panics::guard(AssertUnwindSafe(|| process(&mut state, i, &lease.bytes)));
                             // The buffer goes back to the pool before the result is sent.
                             drop(lease);
@@ -169,7 +186,7 @@ where
                         }
                         Err(e) => (Err(read_error(e)), 0, false),
                     };
-                    if res_tx.send((i, out, len)).is_err() {
+                    if res_tx.send(Outcome::Done { index: i, result: out, read: len }).is_err() {
                         break;
                     }
                     if rebuild {
@@ -185,12 +202,11 @@ where
 
         // Leaving this closure drops `res_rx`, which unblocks and ends the workers, then the readers.
         let mut received = 0usize;
-        for (i, out, len) in res_rx {
-            if i == usize::MAX {
-                // A worker whose setup failed sends its error with this index, and nothing else.
-                let error = out.err().unwrap_or_else(|| anyhow::anyhow!("a worker failed without an error"));
-                return Err(error.context("worker setup"));
-            }
+        for outcome in res_rx {
+            let (i, out, len) = match outcome {
+                Outcome::Done { index, result, read } => (index, result, read),
+                Outcome::SetupFailed(error) => return Err(error.context("worker setup")),
+            };
             received += 1;
             if !sink(i, out, len)? || ctl.stop_requested() {
                 return Ok(());
@@ -203,6 +219,51 @@ where
         }
         Ok(())
     })
+}
+
+/// How a batched pass writes what it made: `size` results at a time, and with `every`, also once that long has passed
+/// since the last write (so what a slow pass finds is not held back for long).
+#[derive(Clone, Copy, Debug)]
+pub struct Batch {
+    pub size: usize,
+    pub every: Option<Duration>,
+}
+
+/// [`run`] for a pass that writes its results in batches, the skeleton the per-file passes share: each result is
+/// counted on `ctl` (its bytes, and whether it failed) and kept, and `flush` gets the kept ones (`(index, result)`, in
+/// completion order) to write and empty, when the batch is due ([`Batch`]) and once more when the pass ends. `flush`
+/// returns false to stop the pass, with no last flush. An error (of the pass, or of `flush`) loses the batch kept.
+#[allow(clippy::too_many_arguments)]
+pub fn batched<T, S, R>(
+    items: &[T],
+    read: impl Fn(&T, &mut NativePath) -> Read + Sync,
+    opts: &Options,
+    ctl: &Control,
+    init: impl Fn() -> Result<S> + Sync,
+    process: impl Fn(&mut S, usize, &[u8]) -> Result<R> + Sync,
+    batch: Batch,
+    mut flush: impl FnMut(&mut Vec<(usize, Result<R>)>) -> Result<bool>,
+) -> Result<()>
+where
+    T: Sync,
+    R: Send,
+{
+    let mut kept: Vec<(usize, Result<R>)> = Vec::with_capacity(batch.size);
+    let mut since = Instant::now();
+    let mut going = true;
+    run(items, read, opts, ctl, init, process, |i, result, len| {
+        ctl.add(len, result.is_err());
+        kept.push((i, result));
+        if kept.len() >= batch.size || batch.every.is_some_and(|every| since.elapsed() >= every) {
+            since = Instant::now();
+            going = flush(&mut kept)?;
+        }
+        Ok(going)
+    })?;
+    if going {
+        flush(&mut kept)?;
+    }
+    Ok(())
 }
 
 /// The error of an item that couldn't be read. A panic in `read` comes as an I/O error holding it, and stays a panic.
@@ -525,7 +586,7 @@ mod tests {
             &paths,
             |p, wide| {
                 wide.set(&[&units(p)]);
-                true
+                Read::File
             },
             &opts,
             &Control::new(),
@@ -581,7 +642,7 @@ mod tests {
             |(i, p), wide| {
                 assert!(!(in_read && *i == 3), "item 3 can't be read");
                 wide.set(&[&units(p)]);
-                true
+                Read::File
             },
             &opts,
             &Control::new(),
@@ -634,7 +695,7 @@ mod tests {
                 &items,
                 |(_, p), wide| {
                     wide.set(&[&units(p)]);
-                    true
+                    Read::File
                 },
                 &opts,
                 &Control::new(),
@@ -661,7 +722,7 @@ mod tests {
                 &items,
                 |(_, p), wide| {
                     wide.set(&[&units(p)]);
-                    true
+                    Read::File
                 },
                 &opts,
                 &ctl,

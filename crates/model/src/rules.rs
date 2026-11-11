@@ -184,6 +184,12 @@ impl PathRules {
         Name::from_raw(&self.join(path)).to_wide()
     }
 
+    /// A stored path (its bytes as [`PathRules::join`] wrote them) as text, as [`PathRules::display`] shows it; bytes that
+    /// are no path (a NUL) show lossily as they are.
+    pub fn display_stored(self, bytes: &[u8]) -> String {
+        self.parse_bytes(bytes).map_or_else(|| String::from_utf8_lossy(bytes).into_owned(), |p| self.display(&p))
+    }
+
     /// The path as text, lossy (for display and messages only): anchor, root separator, parts. A UNC path's anchor
     /// is its leading `\`, so the leading backslashes come back. A path is rooted, so the separator is always
     /// there (a POSIX root is `/`).

@@ -188,6 +188,11 @@ linux-bench *args:
 linux-eval *args:
     {{ py }} tools/linux.py eval {{ args }}
 
+# A headless Linux `gallery` (release, no Qt) of the working tree, built in the container and copied into OUT: a binary
+# to run elsewhere, e.g. in WSL, which only runs binaries (docker/README.md).
+linux-gallery out:
+    {{ py }} tools/linux.py gallery {{ out }}
+
 # A shell in the container, on the working tree.
 linux-shell:
     {{ py }} tools/linux.py shell

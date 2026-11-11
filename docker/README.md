@@ -15,6 +15,7 @@ From the repository root, through the Justfile:
 | `just perf` | the callgrind benches of HEAD, gated against `docs/perf/baseline.json` (±1%); `just perf --update` after a change that should move the counts |
 | `just fuzz-smoke 60` | each fuzz target for 60 seconds (`fuzz/`); a crash leaves its input in `fuzz/artifacts/` |
 | `just linux-eval SCRIPT ARGS` | an eval script under `eval/` in `pg-eval`, on the working tree: the JPEG comparisons (`eval/jpeg-decoders/linux_build.py`, `linux.py`, `harness_linux.py`, `restart.py`, `encoders.py`) |
+| `just linux-gallery OUT` | a headless Linux `gallery` (release, no Qt) of the working tree, copied into the host folder `OUT`: a binary to run elsewhere (WSL only runs binaries) |
 | `just linux-shell` | a shell in `pg-dev`, on the working tree |
 
 `tools/linux.py` is what those recipes run. It builds an image when it is missing, passes the versions in, and mounts
@@ -58,6 +59,12 @@ device, so masked paths under `/proc` are correct, not a failure.
   `eval/ann/methods.py` calls with a job file: the folders the job names are mounted (its output folder read-write, its
   inputs read-only), and the worker reads a copy of the job with the container's paths.
 - CI sets `PG_LINUX_CACHE` to a folder it restores and saves (`actions/cache`), in place of the named volumes.
+- Every host folder mounted must be one Docker Desktop shares (Settings > Resources > File sharing, its
+  `FilesharingDirectories`). For any other folder, `docker run` waits, printing nothing, until the "share this
+  folder?" prompt in Docker Desktop's window is answered. `tools/linux.py` checks each host folder against that list
+  before it starts a container, and fails at once on one that isn't shared. The folders the recipes mount: the checkout,
+  `PG_BENCH_DATA_SOURCE`, `JPEG_SRC_DIR`, `PG_JPEG_ENC_DIR`, and the folders of an ANN job (by default under
+  `PG_CACHE_DIR`'s `ann`).
 
 ## Scope
 

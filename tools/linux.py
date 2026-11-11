@@ -11,6 +11,8 @@ be running.
     linux.py fuzz [SECONDS]        tools/fuzz_smoke.py: each fuzz target for SECONDS (default 60)
     linux.py eval SCRIPT [ARGS...] an eval script (a path under eval/), on the working tree, with the pg-eval volume
     linux.py ann-worker JOB        eval/ann/cpu_worker.py on one job file (eval/ann/methods.py runs it)
+    linux.py gallery OUT           a headless Linux `gallery` (release, no desktop) of the working tree, copied into OUT,
+                                   to run elsewhere (WSL runs binaries, and builds nothing)
     linux.py shell                 a shell in the checks image, on the working tree
 
 Each command runs in a new container, removed when the command ends, so its output is in that run's logs and nothing is
@@ -23,6 +25,7 @@ with actions/cache.
 """
 
 import argparse
+import itertools
 import json
 import os
 import re
@@ -214,9 +217,60 @@ def refresh_head():
     export_head(HEAD_FOLDER)
 
 
+def mount_sources(mounts_list):
+    """The host folders among docker run's `-v SOURCE:TARGET[:MODE]` arguments: the Windows drive paths (`D:/x`), not the
+    named volumes."""
+    sources = []
+    for flag, value in itertools.pairwise(mounts_list):
+        if flag == "-v" and re.match(r"^[A-Za-z]:[/\\]", value):
+            end = value.find(":", 2)
+            sources.append(value[:end] if end != -1 else value)
+    return sources
+
+
+def unshared(sources, shared):
+    """The folders of `sources` under none of the `shared` folders (compared as Windows compares paths: without case,
+    either separator)."""
+
+    def norm(path):
+        return os.path.normcase(os.path.normpath(path)).rstrip("\\/")
+
+    roots = [norm(folder) for folder in shared]
+    return [s for s in sources if not any(norm(s) == r or norm(s).startswith(r + os.sep) for r in roots)]
+
+
+def docker_desktop_shared():
+    """The folders Docker Desktop shares with its containers (`FilesharingDirectories` in its settings), or None where
+    there is no such list (another host, or a settings file without it): then nothing is checked."""
+    if sys.platform != "win32" or not os.environ.get("APPDATA"):
+        return None
+    settings = Path(os.environ["APPDATA"]) / "Docker" / "settings-store.json"
+    try:
+        shared = json.loads(settings.read_text(encoding="utf-8")).get("FilesharingDirectories")
+    except (OSError, ValueError):
+        return None
+    return shared if isinstance(shared, list) else None
+
+
+def shared_or_fail(mounts_list):
+    """Fails at once when a host folder to mount is one Docker Desktop doesn't share: `docker run` would otherwise wait,
+    with no message here, for its "share this folder?" approval in Docker Desktop's window."""
+    shared = docker_desktop_shared()
+    if shared is None:
+        return
+    missing = unshared(mount_sources(mounts_list), shared)
+    if missing:
+        fail(
+            f"Docker Desktop doesn't share {', '.join(missing)}: add it (Settings > Resources > File sharing), or use a "
+            "folder under one it shares"
+        )
+
+
 def run(image, command, mounts_list, flags=(), env=(), workdir="/work", tty=False):
     """Runs `command` in a new container of `image`, removed when it ends. `mounts_list` and `flags` are docker run's; each
-    name in `env` is passed on from this process, and each `NAME=value` is set to that value."""
+    name in `env` is passed on from this process, and each `NAME=value` is set to that value. A host folder Docker
+    Desktop doesn't share fails first ([`shared_or_fail`])."""
+    shared_or_fail(list(mounts_list))
     interactive = ["-it"] if tty and sys.stdin.isatty() and sys.stdout.isatty() else []
     env_flags = [item for var in env for item in ("-e", var)]
     cmd = ["docker", "run", "--rm", *interactive, "-w", workdir, *env_flags, *flags, *mounts_list, image, *command]
@@ -364,6 +418,22 @@ def ann_worker(job_file):
     sys.exit(run(EVAL, command, ["-v", f"{posix(REPO)}:/work:ro", *mounts_list], env=ANN_ENV))
 
 
+def gallery(out):
+    """Builds the command-line `gallery` (release, `--no-default-features`: no Qt) of the working tree in the checks image,
+    and copies it into the host folder `out`, which is made if it is missing."""
+    ensure_image(CHECKS, "base")
+    folder = Path(out).resolve()
+    folder.mkdir(parents=True, exist_ok=True)
+    script = (
+        "cargo build --release --locked -p pg-gallery --no-default-features --bin gallery && cp "
+        "/cargo-target/release/gallery /out/gallery"
+    )
+    code = run(CHECKS, ["bash", "-c", script], [*mounts(), "-v", f"{posix(folder)}:/out"])
+    if code == 0:
+        print(f"gallery: {folder / 'gallery'}")
+    sys.exit(code)
+
+
 def shell():
     ensure_image(CHECKS, "base")
     sys.exit(run(CHECKS, ["bash"], mounts(), tty=True))
@@ -387,6 +457,8 @@ def main():
     eval_parser.add_argument("script", help="the script, a path under eval/")
     ann_parser = commands.add_parser("ann-worker", help="eval/ann/cpu_worker.py on one job file")
     ann_parser.add_argument("job", help="the job file (job.json), with this machine's paths")
+    gallery_parser = commands.add_parser("gallery", help="a headless Linux gallery binary, copied into a host folder")
+    gallery_parser.add_argument("out", help="the host folder to copy it into")
     commands.add_parser("shell", help="a shell in the checks image")
     options, rest = parser.parse_known_args()
     if rest and options.command not in ("perf", "bench", "eval"):
@@ -408,6 +480,8 @@ def main():
         eval_script(options.script, rest)
     elif options.command == "ann-worker":
         ann_worker(options.job)
+    elif options.command == "gallery":
+        gallery(options.out)
     elif options.command == "shell":
         shell()
 

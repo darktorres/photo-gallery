@@ -154,8 +154,8 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 | D26 | PDQ storage | Thin sheets (light files) and fat sheets (heavy files, full dihedral). Heavy core with exactly-once emission. Attribute planes (plane P mirrors `files.pend_batch`). Published generations. Cursor-idempotent writer. HEAVY_ENTER = 512. | [G3], [G4], [G8], [G9]. |
 | D27 | Duplicates filter | Pure SQL. `hash_runs.present` with `present_xor`, `pdq_near.n` over rows, and `pdq_heavy.near` plus an exact unsettled correction. Duplicate-status flips stamp `files.changed`, so Duplicates views get deltas. | [S12], [G10], [PRX4]. |
 | D28 | Ordered sinks | Non-blocking spilling reorder buffer (`Order::Index`). The pipeline carries the item through to the sink on every path. | [S4], [F2]. |
-| D29 | Qt numeric edge | Ranks and counts as exact f64 (n < 2^48 by the SQLite file format). File ids as decimal strings. The scene graph sees only viewport-relative px < 2^14. Every queued rank is an `ItemRef`. | [QT1], [QT3]. |
-| D30 | View layer | `WindowView.qml` (a plain Flickable plus a non-moving slot layer) over a Rust `SlotWindow`. The ListView behaviours the views relied on are ported from Qt 6.12 and pinned by a golden table. | [QT4]-[QT7]. |
+| D29 | Qt numeric edge | Ranks and counts as exact f64 (n < 2^48 by the SQLite file format). File ids as decimal strings. The scene graph sees only viewport-relative px < 2^14, and the slot layer sits outside the Flickable's content item (P10). Rectangles snap to whole pixels (sub-pixel probe). Every queued rank is an `ItemRef`. | [QT1], [QT3]. |
+| D30 | View layer | `WindowView.qml` (a plain Flickable plus a non-moving slot layer that is a sibling of its content item, P10) over a Rust `SlotWindow`. The ListView behaviours the views relied on are ported from Qt 6.12 and pinned by a golden table. | [QT4]-[QT7]. |
 | D31 | Read snapshots | READ_TX_MAX = 2 s for every catalog and cache read, except the rebuild's building file. Long sets are read by converging paged reads, which give an exact snapshot at their final instant. The harness enforces a census. | [U13]. |
 | D32 | Gates | `Catalog::gate(Need)` is checked inside the catalog API (import_work, borders_work, crops, groups), never in callers. | [U1]. |
 | D33 | GUI writes | No catalog write runs on the GUI thread. An edit worker plus a client overlay is held until the commit stamp is covered. | [S11]. |
@@ -1465,6 +1465,8 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 
 ### Phase 7: Grid, browse, tree, Qt edge, edits
 
+**Probe findings (2026-11-11), evidence and not decisions.** Each finding is noted under its step below. Measured (see the step notes below): scene-graph precision (a render test, P10), sub-pixel snapping, the aspect distribution (3000 photo headers; the catalog itself is empty), the window size, the density formula, `ItemRef` bursts under assumed flick speeds, `RankMap` cost from 1e6 to 1e9, and re-sync reach from 1e5 to 1e7 with three row caps. Still unmeasured: `ItemRef` queue depth in the real pipeline (no pipeline exists yet). Recommended, not confirmed: a capped re-sync with a frozen tail (7.6), and the rule for a move from none (7.9). The grid design is not final.
+
 **Closes:** grid-F01..F10, F12, F13, F17, R2-desktop-01..06, A6, A7, A9, S2-held, the review's residual 10, [PRX22], [RR4], plus all [QT] items.
 
 **Files:**
@@ -1495,30 +1497,45 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
   - The name driver (7.16) and the range-index driver (7.17).
   - **Sorted views:** a live top-K preview (K = 4096, a bounded heap over rows examined so far, marked provisional) while the build runs. It re-anchors at the same top item when the build lands ([PRX22]).
 - **7.5 refresh_run:** uncapped two-phase delta (converging), RankMap, persistence across restarts. A pending removal arrives as a filtered delete over its key range.
+  - *Probe P9:* rank updates through a Fenwick tree are O(log n) and bit-equal to a full recompute. The row-layout delta regenerates the tail, so it inherits 7.6's invalidation problem. At 1e7 items with 1e4 changes it regenerates 104k to 110k of about 120k rows, a 1.2 to 3x gain over a full relayout.
+  - *Probe RankMap:* a Fenwick over every slot of `i32` costs 5 bytes per slot, 4.66 GiB at 1e9 slots, so the plan's scale rules it out. A blocked form (u64 presence words, a Fenwick over per-word counts, popcount inside a word) gives checksums equal to the plain form at 1e6 and 1e7, passes brute-force checks at 1e6 through 1e9, and costs 0.19 bytes per slot (179 MiB at 1e9). Rank takes 13 to 83 ns and update 12 to 77 ns. The universe's Fenwick should be the blocked form.
 - **7.6 Directory** ([QT2]):
+  - *Probe P4, not supported:* after one edit, the layout's re-sync with the old boundaries is heavy-tailed. On continuous aspects, over 1000 edits at 1e6 items, p99 is 103,112 items and 1,244 rows past the edit. On photo-like aspects 69 of 1000 edits never re-sync. Uniform 3:2 never re-syncs in 200 edits. Bounded invalidation is therefore not supported. *On the user's aspects* (3000 header aspects resampled to 1e6 items, probe `real`): 980 of 1000 edits re-sync. Median 796 items and 9 rows past the edit; p99 264,079 items and 2,712 rows; max 444,031 items and 4,561 rows. The other 20 never re-sync. The synthetic result holds, and the real tail is no shorter. Re-sync reach grows with the catalog (probe `scale`): p99 items past the edit are 37k at 1e5, 148k at 1e6 and 448k at 1e7 (4.5% of N); the max at 1e7 is 1.75M (17% of N). Exact regeneration stays cheap (47 to 138 µs per edit). A cap on the regenerated rows, with a frozen tail, keeps the y error within about one row pitch: max 65 px at 1e7 for caps 256 to 4096. The cost is membership: in the frozen tail, items sit in the wrong row until the background re-sync catches up. Recommended, not confirmed: cap at 4096 rows, which covers 95% of edits at 1e6 and 99% at 1e7.
+  - *Density formula (derived and checked):* ρ ≈ (W+S) / ((ā·T + S)(T + S)), where ā is the mean of the clamped aspects. Row height is at most T and close to it, so a row holds about (W+S)/(ā·T+S) items and has pitch T+S. Predictions against measurements at W 7680: user's aspects (ā = 1.2557) 1.513 against 1.530; synthetic Photo 1.592 against 1.607; Continuous 1.284 against 1.311; densest (ā = 0.05) 17.15 against 17.16. The clamp caps the density at 17.15 items/px at W 7680, below the 22.91 in the plan.
+  - *Open:* the re-anchor that completes a capped re-sync in the background, and whether a frozen tail's membership error is acceptable in the UI. The density formula is now stated (above).
   - u128 fixed-point checkpoints, bit-identical across parallel, splice and sequential builds.
-  - `density.rs`: k_max, h_min, min_pitch and rho, proven from greedy's closure (rho = 22.91 items/px at 7680 px, T 60, s 4).
+  - `density.rs`: k_max, h_min, min_pitch and rho, its rho = 22.91 is unreachable (see the formula above). Replace it with the formula, evaluated from the catalog's own mean aspect.
   - `Directory::periodic` is compiled unconditionally.
   - **ProvisionalGeometry** and a re-anchor that keeps contentY.
 - **7.7 Client grid** ([QT3] + [U11] + [S11]):
+  - *Probes P2 and P3, semantics hold, not implemented:* epoch-checked `ItemRef` dispatch misapplied 0 of 100k random interleavings, and the index-only control misapplied in 99,964. `RefBook` with two retained maps resolves in-window references and rejects older ones without silently remapping them. The largest map was 78 KiB at 10k entries.
+  - *Probe P8:* a checkpoint is 32 B. The full row list at 1e9 items is 224 to 276 MiB. The 11 MiB client figure holds only with checkpoints every 4096 items (7.45 MiB at 1e9), not with the row list.
   - Rank everywhere; u64 versions.
   - **RefBook** (≤ 2 retained RankMaps, proven bound).
   - The overlay folds stamped Pendings until s ≥ c.
   - `held` becomes a pinned run handle.
   - `position_of`, `entries` and full relayout are removed.
 - **7.8 SlotWindow** ([QT4]):
+  - *Probe P6, golden rows for `listview_rules.json`:* (1) a same-count reset with no current row: a ListView goes to the top, while a Flickable keeps `contentY`, so the port saves and restores it. (2) A same-count reset with a current row: a ListView scrolls to show it. (3) A current item moved by reset: a ListView scrolls to its row index, and following by identity needs an explicit lookup. (4) A window origin move of +3 slots by reset: a ListView resets to the top, and the port needs `contentY -= 600`. (5) The same +3 move by removing the top three and appending three: a ListView keeps the visible content, and the port needs `contentY -= 600`. All five were run against a running Qt 6.12 ListView (slotprobe run 2) and match. `golden/listview_rules.json` is not yet in the repo.
   - Synchronous slot assignment for viewport ± 1500 px.
-  - Slot capacity from the density bound.
+  - *Window size (probe `window`, and `real` for the user's aspects):* the window (viewport ±1500 px) holds 1,705 items at 1920×1080, 4,140 at 3840×2160, 4,698 at 5120×1440 and 11,462 at 7680×4320 for the user's aspects. Synthetic aspects give similar figures. The clamp's densest case (aspect 0.05) holds up to 127,368 items at 7680×4320. The capacity bound is ρ_max·(vh + 2·1500) + 2·k_max, with ρ_max = (W+S)/((0.05·T+S)(T+S)) and k_max the item count of the densest row. At 7680×4320 that is about 127,700, against 127,368 measured.
+  - *Items entering per frame (assumed flick speeds):* at 10,000 px/s, at most 316 items enter per frame at 7680×4320 on the user's aspects, and 86 at 1920×1080. Entries arrive in row-sized bursts. A seek replaces the whole window, so its burst is the window's count (11,462 at 8K). This is the queue model only; no pipeline exists to measure it.
   - Slab rebase only at idle and only beyond 2^40.
   - ListView rules ported from the Qt 6.12 sources (current remap, keys, follow, Contain/Beginning, reset), pinned by `golden/listview_rules.json`.
   - The bar's seek is coalesced per frame.
 - **7.9 Desktop Qt edge** ([QT5]):
+  - *Probe P1, absence at QML receivers:* a typed `int` receiver or `int` parameter turns an absent value into 0, and `select(int)` given `undefined` or `null` selected row 0. Only a `var` or a Rust-checked `QVariant` keeps absence, so Rust must check before a value reaches a typed side.
+  - *Probe P5 (property level):* QML doubles round-trip exactly to 2^53 for integers, and `contentY` 2e11 reads back exactly. This does not show what the scene graph renders.
+  - *Probe P10 (rendered, supersedes the P5 claim that a Flickable at 2e11 positions its children correctly):* a 1 px marker inside the Flickable's content item, moved by `-contentY` in the scene graph, lands on the wrong row from `contentY` 2^24. Float32 spacing explains it: 2 px in [2^24, 2^25), 4 px in [2^25, 2^26). By 2^28 the markers collapse to one row. A sibling marker whose y is computed in double is exact at every offset tested, up to 2e11. The slot layer must therefore be a sibling of the Flickable's content item, never a child. *Probe sub-pixel:* a 1 px rectangle at y = 10 + 0.25 renders in row 10, and at 10.5 or 10.75 in row 11. Qt snaps positions to whole pixels, for literal and double-computed positions alike, so float error does not reach the rendered result. Images and text were not tested.
+  - *Probe P7, read-only:* the controller cannot yet be the sole writer of the grid's current item. Click selection is written in QML (`Main.qml:574`). The controller learns of changes by echo (`input.rs:65`). The viewer's index shares its field (`Main.qml:605`). The anchor is the view's top item, which needs view geometry (`GalleryGrid.qml:41-42`).
+  - *Rule for a move from none (recommended, not confirmed):* from none the position is −1, so a step of +d lands on row d−1, and the result is clamped to the rows. Up from none lands on row 0. The probe's old comment ("starts at row 0") was wrong for steps above 1. The code is kept.
+  - *Version width (reconciled with the validation doc, item 7):* versions are `u64` in Rust. They cross as `i64` with a checked conversion, and QML's `real` holds them exactly up to 2^53. A version above 2^53 fails loudly.
   - f64 properties; `viewedFile` string.
   - `loadedAnchor`; the `lastFileIndex()` invokable; `save_last_file(Option)`.
   - ItemRef stamping on every queue hop.
   - `to_i32` and `qt_int` deleted; i32 conversions carry a `qt-edge-bound` reason.
 - **7.10 QML WindowView** ([QT6]):
-  - A plain Flickable plus a non-moving slots layer plus a Repeater.
+  - A plain Flickable plus a non-moving slots layer plus a Repeater. The slots layer is a sibling of the Flickable's content item (P10).
   - Typed scalar signals.
   - doubles throughout; `'f',0` formatting; `file` strings.
 - **7.11 Folder tree** ([r1 grid S15] + [QT7]):

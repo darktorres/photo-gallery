@@ -103,7 +103,8 @@ impl qobject::FacetChoices {
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
         let counts = counts();
-        let rows = Facet::from_index(self.facet).map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
+        let facet = crate::rows::row_of(self.facet).and_then(Facet::from_index);
+        let rows = facet.map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.
         if rows == self.rows {
             return;

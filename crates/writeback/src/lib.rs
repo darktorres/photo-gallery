@@ -649,7 +649,7 @@ fn shown_file(catalog: &Catalog, job: &Job) -> String {
 
 /// The quarter turns a turn job writes (its value, taken modulo 4).
 fn job_turns(job: &Job) -> Turns {
-    Turns::new(u8::try_from(job.value.rem_euclid(4)).unwrap_or(u8::MAX))
+    Turns::of(job.value)
 }
 
 #[cfg(test)]

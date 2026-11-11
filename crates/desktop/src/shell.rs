@@ -26,6 +26,7 @@ use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
 use pg_model::ids::FileId;
 use pg_model::notice::{Notice, ViewOp};
+use pg_model::rating::Rating;
 use pg_model::view::SavedView;
 
 use crate::{app, command_line, controller, deadline, folders, gallery, keymap};
@@ -203,8 +204,10 @@ impl qobject::Shell {
         self.dispatch(Event::Flush);
     }
 
+    /// `rating` is 0 to 5 stars (0 takes the rating away); out of that range, nothing is rated.
     pub(crate) fn rate(self: Pin<&mut Self>, item: i32, rating: i32) {
-        if let Ok(item) = usize::try_from(item) {
+        let rating = u8::try_from(rating).ok().and_then(Rating::new);
+        if let (Some(item), Some(rating)) = (crate::rows::row_of(item), rating) {
             self.dispatch(Event::Rate { item, rating });
         }
     }
@@ -253,11 +256,13 @@ impl qobject::Shell {
     }
 
     pub(crate) fn sort_by(self: Pin<&mut Self>, index: i32) {
-        self.dispatch(Event::Listing(ListingEvent::SortChoice(index)));
+        if let Some(index) = crate::rows::row_of(index) {
+            self.dispatch(Event::Listing(ListingEvent::SortChoice(index)));
+        }
     }
 
     pub(crate) fn sort_index(&self) -> i32 {
-        choice_index(controller::listing().sort.key)
+        crate::rows::to_row(Some(choice_index(controller::listing().sort.key)))
     }
 
     pub(crate) fn remember_listing(self: Pin<&mut Self>) {
@@ -418,7 +423,6 @@ impl qobject::Shell {
                 self.as_mut().later(|shell| shell.listing_changed());
             }
             Command::Rate { item, rating } => {
-                let item = to_i32(item);
                 gallery::post(move |model| model.set_rating(item, rating));
             }
             Command::Turn { item, turns } => {

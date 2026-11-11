@@ -66,8 +66,8 @@ impl Tree {
     }
 
     /// The row a number shows, if it is a row.
-    pub fn row(&self, row: i32) -> Option<Visible> {
-        usize::try_from(row).ok().and_then(|r| self.visible.get(r)).copied()
+    pub fn row(&self, row: usize) -> Option<Visible> {
+        self.visible.get(row).copied()
     }
 
     /// Whether a folder is open (not, for a node outside the tree).

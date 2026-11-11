@@ -53,8 +53,8 @@ impl Field {
     ];
 
     /// The field at `index` (its position in `ALL`); `None` out of range.
-    pub fn from_index(index: i32) -> Option<Field> {
-        usize::try_from(index).ok().and_then(|i| Self::ALL.get(i).copied())
+    pub fn from_index(index: usize) -> Option<Field> {
+        Self::ALL.get(index).copied()
     }
 }
 
@@ -67,7 +67,7 @@ pub enum Edge {
 
 impl Edge {
     /// The end at `index` (0 low, 1 high); `None` out of range.
-    pub fn from_index(index: i32) -> Option<Edge> {
+    pub fn from_index(index: usize) -> Option<Edge> {
         match index {
             0 => Some(Edge::Low),
             1 => Some(Edge::High),
@@ -116,7 +116,6 @@ mod tests {
         assert_eq!(Field::from_index(0), Some(Field::Range(RangeFacet::SizeMb)));
         assert_eq!(Field::from_index(3), Some(Field::Day(DateFacet::Taken)));
         assert_eq!(Field::from_index(5), None);
-        assert_eq!(Field::from_index(-1), None);
         assert_eq!(Edge::from_index(0), Some(Edge::Low));
         assert_eq!(Edge::from_index(1), Some(Edge::High));
         assert_eq!(Edge::from_index(2), None);

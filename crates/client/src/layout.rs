@@ -116,31 +116,35 @@ impl<A: Fn(usize) -> f64> Placement<'_, A> {
 
     /// The item `dx` along the row, or `dy` rows along: in the other row, the item under the centre of this one (or the
     /// row's last item, when the row is shorter). Clamped to the grid, so an item stays where it is when there is no row
-    /// that way; `-1` for an empty grid.
-    pub fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
-        let n = i32::try_from(self.len).unwrap_or(i32::MAX);
-        if n == 0 || self.rows.is_empty() {
-            return -1;
+    /// that way; `None` for an empty grid.
+    pub fn neighbor(&self, item: usize, dx: i32, dy: i32) -> Option<usize> {
+        if self.len == 0 || self.rows.is_empty() {
+            return None;
         }
-        let item = item.clamp(0, n - 1);
+        let last = self.len - 1;
+        let item = item.min(last);
         if dy == 0 {
-            return (item + dx).clamp(0, n - 1);
+            return Some(step(item, dx, last));
         }
-        // `item` is clamped to 0..n above, so it is an index.
-        let at = usize::try_from(item).unwrap_or(0);
-        let row = i32::try_from(self.row_index(at)).unwrap_or(i32::MAX);
-        let target = (row + dy).clamp(0, i32::try_from(self.rows.len()).unwrap_or(i32::MAX) - 1);
+        let row = self.row_index(item);
+        let target = step(row, dy, self.rows.len() - 1);
         if target == row {
-            return item;
+            return Some(item);
         }
-        let Some((x, w)) = self.span(at) else { return item };
+        let Some((x, w)) = self.span(item) else { return Some(item) };
         let center = x + w / 2.0;
-        let Some(&r) = self.rows.get(usize::try_from(target).unwrap_or(0)) else { return item };
+        let Some(&r) = self.rows.get(target) else { return Some(item) };
         let found = (r.first..r.first + r.count)
             .find(|&i| self.span(i).is_some_and(|(x, w)| center < x + w + self.spacing))
             .unwrap_or(r.first + r.count - 1);
-        i32::try_from(found).unwrap_or(n - 1)
+        Some(found.min(last))
     }
+}
+
+/// `at` moved `by` places, kept within `0..=last`.
+fn step(at: usize, by: i32, last: usize) -> usize {
+    let by_abs = usize::try_from(by.unsigned_abs()).unwrap_or(usize::MAX);
+    if by < 0 { at.saturating_sub(by_abs) } else { at.saturating_add(by_abs).min(last) }
 }
 
 /// How a new layout changes the rows shown, so that a view keeps the delegates of the rows that stay: the rows
@@ -352,14 +356,14 @@ mod tests {
         assert_eq!(p.span(2), Some((200.0, 200.0)));
         assert_eq!(p.span(4), Some((50.0, 50.0)));
         // Along the row, clamped at its ends.
-        assert_eq!((p.neighbor(1, 1, 0), p.neighbor(0, -1, 0), p.neighbor(4, 1, 0)), (2, 0, 4));
+        assert_eq!((p.neighbor(1, 1, 0), p.neighbor(0, -1, 0), p.neighbor(4, 1, 0)), (Some(2), Some(0), Some(4)));
         // Down from item 2 (its centre at 300 px): row 1 has no item that far right, so its last one.
-        assert_eq!(p.neighbor(2, 0, 1), 4);
+        assert_eq!(p.neighbor(2, 0, 1), Some(4));
         // Up from item 3 (its centre at 25 px): item 0 is the first in row 0 with its right edge past it.
-        assert_eq!(p.neighbor(3, 0, -1), 0);
+        assert_eq!(p.neighbor(3, 0, -1), Some(0));
         // No row that way: the item stays.
-        assert_eq!(p.neighbor(3, 0, 1), 3);
+        assert_eq!(p.neighbor(3, 0, 1), Some(3));
         let none = Placement { rows: &[], spacing: 0.0, len: 0, aspect: |_: usize| 1.0 };
-        assert_eq!(none.neighbor(0, 1, 0), -1);
+        assert_eq!(none.neighbor(0, 1, 0), None);
     }
 }

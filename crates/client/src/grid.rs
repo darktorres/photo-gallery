@@ -99,12 +99,11 @@ pub enum Arrival {
     Ready(Vec<Entry>),
 }
 
-/// Where the selection goes once a list is shown (`Grid::selection_after`): the item current and the anchor, -1 for
-/// none.
+/// Where the selection goes once a list is shown (`Grid::selection_after`): the item current and the anchor, if any.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Selection {
-    pub current: i32,
-    pub anchor: i32,
+    pub current: Option<usize>,
+    pub anchor: Option<usize>,
 }
 
 #[derive(Default)]
@@ -147,8 +146,8 @@ impl Grid {
     }
 
     /// The item at an index (`None` outside the list).
-    pub fn item(&self, item: i32) -> Option<&Entry> {
-        usize::try_from(item).ok().and_then(|i| self.entries.get(i))
+    pub fn item(&self, item: usize) -> Option<&Entry> {
+        self.entries.get(item)
     }
 
     /// The number of items.
@@ -172,13 +171,13 @@ impl Grid {
     }
 
     /// The file of an item (`None` outside the list).
-    pub fn id_at(&self, item: i32) -> Option<FileId> {
+    pub fn id_at(&self, item: usize) -> Option<FileId> {
         self.item(item).map(|e| e.id)
     }
 
-    /// The index of a file in the list, -1 when it is not there (or `None`).
-    pub fn position_of(&self, id: Option<FileId>) -> i32 {
-        id.and_then(|id| self.entries.iter().position(|e| e.id == id)).and_then(|i| i32::try_from(i).ok()).unwrap_or(-1)
+    /// The index of a file in the list; `None` when it is not there.
+    pub fn position_of(&self, id: FileId) -> Option<usize> {
+        self.entries.iter().position(|e| e.id == id)
     }
 
     /// The layout's rows as they are placed: the items' clamped aspects, read from the entries (1 past them).
@@ -355,8 +354,8 @@ impl Grid {
 
     /// Changes an item the user edited (rated, turned, marked). While the list loads, the file is noted, so it is
     /// read again when the list arrives.
-    pub fn edit(&mut self, item: i32, loading: bool, change: impl FnOnce(&mut Entry)) {
-        let Some(e) = usize::try_from(item).ok().and_then(|i| self.entries.get_mut(i)) else { return };
+    pub fn edit(&mut self, item: usize, loading: bool, change: impl FnOnce(&mut Entry)) {
+        let Some(e) = self.entries.get_mut(item) else { return };
         let id = e.id;
         let before = is_bordered(e);
         change(&mut *e);
@@ -419,19 +418,17 @@ impl Grid {
     pub fn selection_after(
         &self,
         keep: bool,
-        old_current: i32,
+        old_current: Option<usize>,
         current: Option<FileId>,
         anchor: Option<FileId>,
     ) -> Selection {
-        let count = i32::try_from(self.entries.len()).unwrap_or(i32::MAX);
         let current = match (keep, old_current) {
-            (false, _) | (true, -1) => -1,
-            (true, old) => {
-                let i = self.position_of(current);
-                if i >= 0 || count == 0 { i } else { old.min(count - 1) }
-            }
+            (false, _) | (true, None) => None,
+            (true, Some(old)) => current
+                .and_then(|id| self.position_of(id))
+                .or_else(|| self.entries.len().checked_sub(1).map(|last| old.min(last))),
         };
-        let anchor = if keep { self.position_of(anchor) } else { -1 };
+        let anchor = if keep { anchor.and_then(|id| self.position_of(id)) } else { None };
         Selection { current, anchor }
     }
 }
@@ -648,16 +645,19 @@ mod tests {
         g.swap_entries(vec![entry(1, 1, 1), entry(2, 1, 1), entry(3, 1, 1)]);
         // Kept, the file is there: it's selected where it is now; the anchor too.
         assert_eq!(
-            g.selection_after(true, 1, Some(FileId::new(2)), Some(FileId::new(1))),
-            Selection { current: 1, anchor: 0 }
+            g.selection_after(true, Some(1), Some(FileId::new(2)), Some(FileId::new(1))),
+            Selection { current: Some(1), anchor: Some(0) }
         );
         // Kept, the file left the list: the item at its old index (clamped), and no anchor.
         g.swap_entries(vec![entry(1, 1, 1), entry(3, 1, 1)]);
         assert_eq!(
-            g.selection_after(true, 1, Some(FileId::new(2)), Some(FileId::new(9))),
-            Selection { current: 1, anchor: -1 }
+            g.selection_after(true, Some(1), Some(FileId::new(2)), Some(FileId::new(9))),
+            Selection { current: Some(1), anchor: None }
         );
         // Not kept: nothing is selected.
-        assert_eq!(g.selection_after(false, 1, Some(FileId::new(3)), None), Selection { current: -1, anchor: -1 });
+        assert_eq!(
+            g.selection_after(false, Some(1), Some(FileId::new(3)), None),
+            Selection { current: None, anchor: None }
+        );
     }
 }

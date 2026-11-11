@@ -17,7 +17,7 @@ use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, Version, View};
 use pg_model::state::FileSource;
 use pg_model::turns::Turns;
-use pg_render::display::{self, Shown, Upload};
+use pg_render::display::{self, Rgba, Shown};
 use pg_render::maker::MakeError;
 use pg_thumbcache::{self as thumbs, ThumbCache};
 
@@ -153,14 +153,14 @@ impl Images {
                 }
             }
             if start.elapsed() > WRITE_WAIT {
-                return Err(Error::Rewriting(file_id.get()));
+                return Err(Error::Rewriting(file_id));
             }
             std::thread::sleep(Duration::from_millis(20));
         }
     }
 
     fn source(&self, file_id: FileId) -> Result<FileSource> {
-        self.catalogs.with_catalog(|c| browse::read::file_source(c, file_id))?.ok_or(Error::UnknownFile(file_id.get()))
+        self.catalogs.with_catalog(|c| browse::read::file_source(c, file_id))?.ok_or(Error::UnknownFile(file_id))
     }
 
     /// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps one at
@@ -260,30 +260,30 @@ impl Images {
     }
 
     /// A thumbnail (a JPEG) turned by `turns` quarter turns clockwise, for a turn not yet written into the file.
-    pub fn turn_jpeg(&self, jpeg: &[u8], turns: Turns) -> Result<Upload> {
-        self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.upload(View::Full))
+    pub fn turn_jpeg(&self, jpeg: &[u8], turns: Turns) -> Result<Rgba> {
+        self.makers.with_maker(|m| display::decode_full(m.decoder(), jpeg, turns)?.rgba(View::Full))
     }
 
     /// The ThumbHash placeholder as a tiny image, shown as the catalog has the file now.
-    pub fn placeholder(&self, file_id: FileId) -> Result<Upload> {
+    pub fn placeholder(&self, file_id: FileId) -> Result<Rgba> {
         let p = self
             .catalogs
             .with_catalog(|c| browse::read::placeholder(c, file_id))?
-            .ok_or(Error::UnknownFile(file_id.get()))?;
+            .ok_or(Error::UnknownFile(file_id))?;
         let hash = p.hash.ok_or(Error::NotImported)?;
         display::placeholder(hash.as_slice(), p.turns).map_err(failed)
     }
 
     /// The original as the catalog has it now, upright (EXIF and catalog rotation, then the turns not yet written), as the
     /// viewer asks for it.
-    pub fn full_image(&self, file_id: FileId, view: View) -> Result<Upload> {
+    pub fn full_image(&self, file_id: FileId, view: View) -> Result<Rgba> {
         let (_, (img, fresh)) = self.consistent(file_id, |src| self.decode(file_id, src, view))?;
         // Kept once it is known to be of the file as the catalog has it.
         if let Some(fresh) = fresh {
             *self.last_decode.lock().unwrap_or_else(PoisonError::into_inner) = Some(fresh);
         }
-        // The decode stays shared (`last_decode`); what is shown is made from it in the upload format.
-        img.upload(view).map_err(failed)
+        // The decode stays shared (`last_decode`); what is shown is made from it.
+        img.rgba(view).map_err(failed)
     }
 
     /// Decode what `view` needs (`display::min_size`), turned as the catalog says, reusing the last decode of the file in

@@ -61,12 +61,13 @@ fn mods_of(modifiers: i32) -> Mods {
     Mods { ctrl: modifiers & MOD_CTRL != 0, shift: modifiers & MOD_SHIFT != 0 }
 }
 
-/// The media a `GalleryModel.MediaKind` value is (its position in that enum, gallery.rs): 0 a still, 1 an animation, 2 a
-/// video.
+/// The media a `GalleryModel.MediaKind` value is (QML passes the enum's value as an int): the bridge's enum read by its
+/// values, so a reordering of it changes nothing here. An unknown value is a still.
 fn media_of(kind: i32) -> Media {
+    use crate::gallery_bridge::qobject::MediaKind;
     match kind {
-        1 => Media::Animated,
-        2 => Media::Video,
+        k if k == MediaKind::Animated.repr => Media::Animated,
+        k if k == MediaKind::Video.repr => Media::Video,
         _ => Media::Still,
     }
 }
@@ -245,8 +246,9 @@ mod tests {
 
     #[test]
     fn a_media_kind_value_is_its_media() {
-        assert_eq!(media_of(0), Media::Still);
-        assert_eq!(media_of(1), Media::Animated);
-        assert_eq!(media_of(2), Media::Video);
+        use crate::gallery_bridge::qobject::MediaKind;
+        assert_eq!(media_of(MediaKind::Image.repr), Media::Still);
+        assert_eq!(media_of(MediaKind::Animated.repr), Media::Animated);
+        assert_eq!(media_of(MediaKind::Video.repr), Media::Video);
     }
 }

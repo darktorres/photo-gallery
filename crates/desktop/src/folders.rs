@@ -76,7 +76,7 @@ pub(crate) enum RowKind {
 
 impl RowKind {
     pub(crate) fn of(tree: &Tree, row: i32) -> RowKind {
-        match tree.row(row) {
+        match crate::rows::row_of(row).and_then(|row| tree.row(row)) {
             Some(Visible::Folder(n)) => RowKind::Folder(tree.folders().merged(n)),
             Some(Visible::DriveRoots) => RowKind::DriveRoots,
             Some(Visible::All) | None => RowKind::All,
@@ -114,7 +114,7 @@ pub(crate) fn spelling_of(folder: &Merged, recursive: bool) -> Option<Merged> {
 impl qobject::FolderModel {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         with(|tree| {
-            let Some(v) = tree.row(index.row()) else { return QVariant::default() };
+            let Some(v) = crate::rows::row_of(index.row()).and_then(|row| tree.row(row)) else { return QVariant::default() };
             let (kind, total) = match v {
                 Visible::All => (KIND_ALL, tree.folders().total()),
                 Visible::DriveRoots => (KIND_DRIVE_ROOTS, tree.folders().root_files()),

@@ -6,6 +6,7 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
+use pg_model::ids::FileId;
 use pg_model::rules::Path as RulePath;
 use serde::{Deserialize, Serialize};
 
@@ -29,8 +30,9 @@ pub struct Prefs {
     pub show_borders: bool,
     /// The grid's row height in logical pixels.
     pub row_height: f64,
-    /// The id of the file selected (or open in the viewer) last, -1 for none.
-    pub last_file: i64,
+    /// The file selected (or open in the viewer) last, if any.
+    #[serde(with = "last_file")]
+    pub last_file: Option<FileId>,
     /// Dev mode: the window's log view (Ctrl+Shift+D turns it on and off). A start's `--dev=1` or `PG_DEV=1` turns it on
     /// for that run without saving it.
     pub dev_mode: bool,
@@ -60,6 +62,21 @@ mod yandex_folder {
     }
 }
 
+/// `last_file` as the file holds it: the file's id, or `-1` for none. A negative number reads as none.
+mod last_file {
+    use pg_model::ids::FileId;
+    use serde::{Deserialize, Deserializer, Serializer};
+
+    pub(crate) fn serialize<S: Serializer>(file: &Option<FileId>, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_i64(file.map_or(-1, FileId::get))
+    }
+
+    pub(crate) fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Option<FileId>, D::Error> {
+        let id = i64::deserialize(deserializer)?;
+        Ok((id >= 0).then(|| FileId::new(id)))
+    }
+}
+
 impl Default for Prefs {
     fn default() -> Prefs {
         Prefs {
@@ -68,7 +85,7 @@ impl Default for Prefs {
             real_size: false,
             show_borders: false,
             row_height: 220.0,
-            last_file: -1,
+            last_file: None,
             dev_mode: false,
         }
     }
@@ -149,7 +166,7 @@ mod tests {
 
     #[test]
     fn a_changed_value_is_written_as_its_own_text() {
-        let prefs = Prefs { real_size: true, row_height: 333.5, last_file: 42, dev_mode: true, ..Prefs::default() };
+        let prefs = Prefs { real_size: true, row_height: 333.5, last_file: Some(FileId::new(42)), dev_mode: true, ..Prefs::default() };
         let text = serde_json::to_string(&prefs).unwrap();
         assert_eq!(
             text,

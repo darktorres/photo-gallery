@@ -4,7 +4,7 @@
 //!
 //! The viewer's pipeline is here too: the decode a [`View`] asks for ([`min_size`]), a kept decode reused while it is
 //! big enough ([`Shown::covers`]), the fit and the zoomed region ([`Shown::resized`]), a video's poster frame
-//! ([`poster`]) and the ThumbHash placeholder ([`placeholder`]), in the format the window uploads ([`Upload`]).
+//! ([`poster`]) and the ThumbHash placeholder ([`placeholder`]), as premultiplied RGBA ([`Rgba`]).
 
 use std::path::Path;
 
@@ -123,11 +123,11 @@ impl Shown {
         Ok(Some(out))
     }
 
-    /// What the viewer shows for `view` ([`Shown::resized`]), in the upload format.
-    pub fn upload(&self, view: View) -> Result<Upload> {
+    /// What the viewer shows for `view` ([`Shown::resized`]), as RGBA.
+    pub fn rgba(&self, view: View) -> Result<Rgba> {
         Ok(match self.resized(view)? {
-            Some(resized) => Upload::opaque(&resized),
-            None => Upload::opaque(&self.image),
+            Some(resized) => Rgba::opaque(&resized),
+            None => Rgba::opaque(&self.image),
         })
     }
 }
@@ -144,35 +144,33 @@ pub fn poster(path: &Path, at_ms: i64, turns: Turns) -> Result<Shown> {
 }
 
 /// The ThumbHash placeholder `hash` as a tiny image, turned by `turns`.
-pub fn placeholder(hash: &[u8], turns: Turns) -> Result<Upload> {
+pub fn placeholder(hash: &[u8], turns: Turns) -> Result<Rgba> {
     let (w, h, rgba) = thumbhash::thumb_hash_to_rgba(hash).ok().context("bad thumbhash")?;
     let (rgba, w, h) = orient_pixels(rgba, w, h, 4, Orientation::UPRIGHT.compose(turns));
-    Ok(Upload::straight(w, h, rgba))
+    Ok(Rgba::premultiply(w, h, rgba))
 }
 
-/// An image in a format Qt's scene graph uploads as it is (`QSGPlainTexture`): 4 bytes a pixel, RGBX8888 or RGBA8888
-/// premultiplied. Any other format it converts on the render thread, a copy of the whole image at every upload.
-pub struct Upload {
+/// An image as RGBA rows premultiplied by alpha, 4 bytes a pixel: what the viewer shows. `opaque` says every alpha is
+/// 255 (an image with no transparency), so a front end may take the fourth byte as padding.
+pub struct Rgba {
     pub width: usize,
     pub height: usize,
     pub pixels: Vec<u8>,
-    /// RGBA8888 premultiplied; else RGBX8888 (X = 255).
-    pub premultiplied: bool,
+    pub opaque: bool,
 }
 
-impl Upload {
-    /// `img` as RGBX8888.
-    pub fn opaque(img: &Rgb) -> Upload {
+impl Rgba {
+    /// `img` with an alpha of 255.
+    pub fn opaque(img: &Rgb) -> Rgba {
         let mut pixels = vec![255u8; img.width * img.height * 4];
         for (out, rgb) in pixels.as_chunks_mut::<4>().0.iter_mut().zip(img.pixels.as_chunks::<3>().0) {
             out[..3].copy_from_slice(rgb);
         }
-        Upload { width: img.width, height: img.height, pixels, premultiplied: false }
+        Rgba { width: img.width, height: img.height, pixels, opaque: true }
     }
 
-    /// Straight RGBA as RGBA8888 premultiplied, in place, rounded as Qt premultiplies (`qPremultiply`), so the texture is
-    /// the one Qt's own conversion made.
-    pub fn straight(width: usize, height: usize, mut pixels: Vec<u8>) -> Upload {
+    /// Straight RGBA premultiplied in place: each colour times its alpha over 255, rounded to the nearest.
+    pub fn premultiply(width: usize, height: usize, mut pixels: Vec<u8>) -> Rgba {
         for px in pixels.as_chunks_mut::<4>().0 {
             let a = u32::from(px[3]);
             if a != 255 {
@@ -182,7 +180,7 @@ impl Upload {
                 }
             }
         }
-        Upload { width, height, pixels, premultiplied: true }
+        Rgba { width, height, pixels, opaque: false }
     }
 }
 

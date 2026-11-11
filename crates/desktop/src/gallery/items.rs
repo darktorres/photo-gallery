@@ -6,7 +6,7 @@ use std::io::Write;
 use cxx_qt_lib::{QRectF, QString, QStringList};
 use pg_client::layout;
 use pg_client::text::{self, FoundBorders};
-use pg_model::detection::Class;
+use pg_model::detection::{Class, Edge};
 use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_model::image::{ImageKey, ImageRequest, Version};
@@ -22,22 +22,22 @@ impl qobject::GalleryModel {
     }
 
     pub(crate) fn file_id(&self, item: i32) -> i64 {
-        self.grid.id_at(item).map_or(-1, FileId::get)
+        self.file_at(item).map_or(-1, FileId::get)
     }
 
     pub(crate) fn index_of(&self, file_id: i64) -> i32 {
-        self.grid.position_of(Some(FileId::new(file_id)))
+        crate::rows::to_row(self.grid.position_of(FileId::new(file_id)))
     }
 
     /// Width ÷ height, as laid out (`ROLE_ASPECTS`).
     pub(super) fn aspect(&self, item: i32) -> f64 {
-        self.grid.item(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
+        self.entry(item).map_or(1.0, |i| layout::clamp_aspect(i.aspect()))
     }
 
     /// What names the item's image for the providers (`ImageKey`: `<file id>@<mtime>.<rotation>.<pending turns>`, see
     /// `providers`): it changes whenever the image does, so no stale image is shown.
     pub(super) fn image_key(&self, item: i32) -> QString {
-        self.grid.item(item).map_or_else(QString::default, |e| {
+        self.entry(item).map_or_else(QString::default, |e| {
             let key = ImageKey {
                 file: e.id,
                 version: Some(Version { mtime: e.mtime, rotation: e.rotation, turns: e.pending_turns }),
@@ -57,12 +57,12 @@ impl qobject::GalleryModel {
 
     /// The image keys of the items up to `reach` before and after `item`, nearest first, for the viewer to preload.
     pub(super) fn keys_around(&self, item: i32, reach: i32) -> QStringList {
-        if self.grid.item(item).is_none() {
+        if self.entry(item).is_none() {
             return QStringList::default();
         }
         (1..=reach)
             .flat_map(|d| [item - d, item + d])
-            .filter(|&i| self.grid.item(i).is_some())
+            .filter(|&i| self.entry(i).is_some())
             .map(|i| self.image_key(i))
             .collect()
     }
@@ -87,34 +87,34 @@ impl qobject::GalleryModel {
 
     /// Upright size in pixels, as shown (pending turns included); 0 before the import.
     pub(super) fn full_width(&self, item: i32) -> i32 {
-        self.grid.item(item).map_or(0, |e| i32::try_from(e.shown_size().0).unwrap_or(i32::MAX))
+        self.entry(item).map_or(0, |e| i32::try_from(e.shown_size().0).unwrap_or(i32::MAX))
     }
 
     pub(super) fn full_height(&self, item: i32) -> i32 {
-        self.grid.item(item).map_or(0, |e| i32::try_from(e.shown_size().1).unwrap_or(i32::MAX))
+        self.entry(item).map_or(0, |e| i32::try_from(e.shown_size().1).unwrap_or(i32::MAX))
     }
 
     /// Quarter turns clockwise asked for but not yet written into the file (the images are served turned).
     pub(super) fn pending_turns(&self, item: i32) -> i32 {
-        self.grid.item(item).map_or(0, |i| i32::from(i.pending_turns.get()))
+        self.entry(item).map_or(0, |i| i32::from(i.pending_turns.get()))
     }
 
     /// The item's rating, 0 for none (`ROLE_RATINGS`, the status bar's symbol).
     pub(super) fn rating(&self, item: i32) -> i32 {
-        self.grid.item(item).and_then(|i| i.rating).map_or(0, |r| i32::from(r.get()))
+        self.entry(item).and_then(|i| i.rating).map_or(0, |r| i32::from(r.get()))
     }
 
     /// What the grid marks on a thumbnail besides its rating (`ROLE_BADGES`): a video's length (`▶ 1:23`), the
     /// format of an animated image (`GIF`, `APNG`, `WEBP`), or nothing.
     pub(super) fn badge(&self, item: i32) -> QString {
-        let Some(e) = self.grid.item(item) else { return QString::default() };
+        let Some(e) = self.entry(item) else { return QString::default() };
         QString::from(&text::badge(e.media_type(), e.duration_ms(), e.ext.name()))
     }
 
     /// What is left of the image without its borders, as fractions of the image as shown (pending turns included);
     /// an empty rectangle without borders found. Marked ones (`borderMarked`) have theirs.
     pub(super) fn border_box(&self, item: i32) -> QRectF {
-        match self.grid.item(item).and_then(Entry::content) {
+        match self.entry(item).and_then(Entry::content) {
             Some([x, y, w, h]) => QRectF::new(x, y, w, h),
             None => QRectF::default(),
         }
@@ -122,19 +122,19 @@ impl qobject::GalleryModel {
 
     /// Whether the item's borders are marked as not a border (the review).
     pub(crate) fn border_marked(&self, item: i32) -> bool {
-        self.grid.item(item).is_some_and(|e| e.borders == Borders::Marked)
+        self.entry(item).is_some_and(|e| e.borders == Borders::Marked)
     }
 
-    /// Where the border detector's first rejected candidate at an edge of the image as shown (`top`, `bottom`, `left`,
-    /// `right`) would have cut, as a fraction of the image from that edge; -1 for none.
-    pub(super) fn border_rejected(&self, item: i32, edge: &str) -> f64 {
+    /// Where the border detector's first rejected candidate at `edge` of the image as shown would have cut, as a
+    /// fraction of the image from that edge; -1 for none.
+    pub(super) fn border_rejected(&self, item: i32, edge: Edge) -> f64 {
         self.with_details(item, |e, d| {
             // A side's line, as the shown edge it is nearest (borders cut less than half a side) and the distance.
             let shown = |[x, y, w, _]: [f64; 4]| match (w == 0.0, x < 0.5, y < 0.5) {
-                (true, true, _) => ("left", x),
-                (true, false, _) => ("right", 1.0 - x),
-                (false, _, true) => ("top", y),
-                (false, _, false) => ("bottom", 1.0 - y),
+                (true, true, _) => (Edge::Left, x),
+                (true, false, _) => (Edge::Right, 1.0 - x),
+                (false, _, true) => (Edge::Top, y),
+                (false, _, false) => (Edge::Bottom, 1.0 - y),
             };
             d.border_sides
                 .iter()
@@ -153,7 +153,7 @@ impl qobject::GalleryModel {
 
     /// What the viewer shows the item with (`viewedKind`): its media type, a still without an item.
     pub(super) fn media_type(&self, item: i32) -> MediaType {
-        self.grid.item(item).map_or(MediaType::Image, Entry::media_type)
+        self.entry(item).map_or(MediaType::Image, Entry::media_type)
     }
 
     /// `viewedKind`: the viewer's item's media type (`refresh_viewed`), as the bridge's enum.
@@ -168,7 +168,7 @@ impl qobject::GalleryModel {
     /// Quarter turns clockwise Qt's players must add to show the file upright: its catalog rotation and the turns not
     /// yet written. (A video's own rotation tag is applied by the player.)
     pub(super) fn player_turns(&self, item: i32) -> i32 {
-        self.grid.item(item).map_or(0, |e| i32::from(e.rotation.plus(e.pending_turns).get()))
+        self.entry(item).map_or(0, |e| i32::from(e.rotation.plus(e.pending_turns).get()))
     }
 
     /// One line for the status bar: path, dimensions, file size, where the rating is kept if not in the file (the

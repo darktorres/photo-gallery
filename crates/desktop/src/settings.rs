@@ -9,6 +9,8 @@ use crate::settings_bridge::qobject;
 
 use core::pin::Pin;
 
+use pg_model::ids::FileId;
+
 use crate::app;
 
 /// Change the preferences and save them. A save that fails is a note on the app's bus (the window prints it), and the
@@ -34,8 +36,9 @@ impl qobject::Settings {
         app::get().prefs().get().row_height
     }
 
+    /// The last file's id as QML takes it: -1 for none.
     pub(crate) fn read_last_file(&self) -> i64 {
-        app::get().prefs().get().last_file
+        app::get().prefs().get().last_file.map_or(-1, FileId::get)
     }
 
     pub(crate) fn set_write_back_saved(self: Pin<&mut Self>, value: bool) {
@@ -66,7 +69,9 @@ impl qobject::Settings {
         }
     }
 
+    /// `value` is a file's id, or -1 (any negative) for none.
     pub(crate) fn set_last_file_saved(self: Pin<&mut Self>, value: i64) {
+        let value = (value >= 0).then(|| FileId::new(value));
         if app::get().prefs().get().last_file != value {
             change_prefs(|p| p.last_file = value);
             self.last_file_changed();

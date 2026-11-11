@@ -1,10 +1,25 @@
 //! A star rating: what the file itself says (`file_ratings`, 0 to 5 stars), and the rating the user gave (`ratings`,
 //! 1 to 5). An unrated file has no rating at all, so it is `Option<Rating>`.
 
-/// Stars, 0 to 5.
+/// Stars, 0 to 5. Serialized as its number of stars; a number past 5 doesn't read.
 #[cfg_attr(feature = "specta", derive(specta::Type), specta(type = u8))]
-#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug, serde::Serialize, serde::Deserialize)]
+#[serde(try_from = "u8", into = "u8")]
 pub struct Rating(u8);
+
+impl TryFrom<u8> for Rating {
+    type Error = String;
+
+    fn try_from(stars: u8) -> Result<Rating, String> {
+        Rating::new(stars).ok_or_else(|| format!("{stars} stars: a rating has at most {}", Rating::MAX))
+    }
+}
+
+impl From<Rating> for u8 {
+    fn from(rating: Rating) -> u8 {
+        rating.0
+    }
+}
 
 impl Rating {
     /// The most stars a rating has.

@@ -164,8 +164,9 @@ pub struct Hit {
     pub id: u64,
     /// The file the result is, at its host.
     pub url: String,
-    pub width: i32,
-    pub height: i32,
+    /// Its size as Yandex gives it, in pixels; 0 when it gives none.
+    pub width: u32,
+    pub height: u32,
     /// What follows the photo's name in the saved file's name, inside the brackets: `yandex 1920x1080`.
     pub suffix: String,
 }
@@ -340,10 +341,6 @@ fn set_status(shared: &Mutex<Shared>, changes: &Bus<()>, status: Status) {
     changes.publish(());
 }
 
-fn dimension(n: u32) -> i32 {
-    i32::try_from(n).unwrap_or(i32::MAX)
-}
-
 /// The search, on its own thread: upload, other sizes, similar. Returns what it found, with a note when the similar
 /// images stopped or failed (the other sizes are still shown, as the crawler keeps them).
 fn find_similar<S: Source + ?Sized>(
@@ -373,8 +370,8 @@ fn find_similar<S: Source + ?Sized>(
             .map(|s| Hit {
                 id: 0,
                 url: s.url,
-                width: dimension(s.width),
-                height: dimension(s.height),
+                width: s.width,
+                height: s.height,
                 suffix: format!("yandex {}x{}", s.width, s.height),
             })
             .collect(),
@@ -383,8 +380,8 @@ fn find_similar<S: Source + ?Sized>(
             .map(|s| Hit {
                 id: 0,
                 url: s.image_url,
-                width: dimension(s.width),
-                height: dimension(s.height),
+                width: s.width,
+                height: s.height,
                 suffix: format!("yandex similar {}", s.pos + 1),
             })
             .collect(),

@@ -65,6 +65,7 @@ mod providers;
 mod providers_bridge;
 #[cfg(test)]
 mod qml_text;
+mod rows;
 mod screenshot;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod screenshot_bridge;

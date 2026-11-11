@@ -9,6 +9,7 @@ use cxx_qt_lib::{
 };
 use pg_client::grid::{Arrival, Changed, Plan, Shape};
 use pg_client::text;
+use pg_model::detection::Edge;
 use pg_model::grid::Entry;
 
 use super::qobject;
@@ -126,7 +127,7 @@ impl qobject::GalleryModel {
         };
         self.as_mut().about_to_load();
         let keep = self.grid.keep();
-        let (current, anchor) = (self.grid.id_at(self.current), self.grid.id_at(self.anchor));
+        let (current, anchor) = (self.file_at(self.current), self.file_at(self.anchor));
         let count = qt_int(entries.len());
         let shown = {
             let mut this = self.as_mut().rust_mut();
@@ -144,12 +145,12 @@ impl qobject::GalleryModel {
             self.as_mut().refresh_turned();
         }
         // The selection stays with its file; if the file left the list (rated out of "Unrated"), what took its place.
-        let selection = self.grid.selection_after(keep, self.current, current, anchor);
-        self.as_mut().set_current_item(selection.current);
+        let selection = self.grid.selection_after(keep, crate::rows::row_of(self.current), current, anchor);
+        self.as_mut().set_current_item(crate::rows::to_row(selection.current));
         self.as_mut().set_anchor(-1);
         self.as_mut().bump_revision();
         pg_trace::pg_stage_list_shown();
-        self.loaded(selection.anchor);
+        self.loaded(crate::rows::to_row(selection.anchor));
     }
 
     pub(crate) fn relayout(mut self: Pin<&mut Self>, width: f64, row_height: f64, spacing: f64) {
@@ -307,13 +308,13 @@ impl qobject::GalleryModel {
         self.as_mut().set_viewed_info(info);
         let border_box = self.border_box(item);
         self.as_mut().set_viewed_border_box(border_box);
-        let top = self.border_rejected(item, "top");
+        let top = self.border_rejected(item, Edge::Top);
         self.as_mut().set_viewed_rejected_top(top);
-        let bottom = self.border_rejected(item, "bottom");
+        let bottom = self.border_rejected(item, Edge::Bottom);
         self.as_mut().set_viewed_rejected_bottom(bottom);
-        let left = self.border_rejected(item, "left");
+        let left = self.border_rejected(item, Edge::Left);
         self.as_mut().set_viewed_rejected_left(left);
-        let right = self.border_rejected(item, "right");
+        let right = self.border_rejected(item, Edge::Right);
         self.as_mut().set_viewed_rejected_right(right);
         let marked = self.border_marked(item);
         self.as_mut().set_viewed_border_marked(marked);

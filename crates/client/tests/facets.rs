@@ -6,8 +6,7 @@ use pg_client::facets::Facet;
 fn the_facets_keep_their_indices() {
     assert_eq!(Facet::ALL.map(Facet::key), ["types", "orientations", "status", "borders", "ratings", "exts"]);
     for (i, facet) in Facet::ALL.into_iter().enumerate() {
-        assert_eq!(Facet::from_index(i32::try_from(i).unwrap()), Some(facet));
+        assert_eq!(Facet::from_index(i), Some(facet));
     }
     assert_eq!(Facet::from_index(6), None);
-    assert_eq!(Facet::from_index(-1), None);
 }

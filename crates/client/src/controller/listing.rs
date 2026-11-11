@@ -22,7 +22,7 @@ pub enum Event {
     /// With, or without, the files of its subfolders.
     Recursive(bool),
     /// The sort box's choice (`pg_client::sort`).
-    SortChoice(i32),
+    SortChoice(usize),
     /// The sort's way turned.
     DescendingToggled,
     /// The filter bar's query, edited.

@@ -1,19 +1,21 @@
 //! Navigation: an item's row, its neighbours, and whether it is an item of the list.
 
 use super::qobject;
+use crate::rows::{row_of, to_row};
 
 impl qobject::GalleryModel {
     pub(crate) fn row_of(&self, item: i32) -> i32 {
-        let Ok(at) = usize::try_from(item) else { return -1 };
-        if self.grid.item(item).is_none() || self.grid.rows().is_empty() {
+        let Some(at) = row_of(item).filter(|&at| self.grid.item(at).is_some()) else { return -1 };
+        if self.grid.rows().is_empty() {
             return -1;
         }
-        i32::try_from(self.grid.row_index(at)).unwrap_or(-1)
+        to_row(Some(self.grid.row_index(at)))
     }
 
     /// Keyboard navigation: the item `dx` to the side, or the one above/below (`dy`) nearest horizontally.
     pub(super) fn neighbor(&self, item: i32, dx: i32, dy: i32) -> i32 {
-        self.grid.placement().neighbor(item, dx, dy)
+        // An item before the first is the first.
+        to_row(self.grid.placement().neighbor(row_of(item).unwrap_or(0), dx, dy))
     }
 
     /// Whether `item` is an item of the list (the selection can only be one of them).

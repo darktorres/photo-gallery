@@ -23,6 +23,7 @@ use pg_client::text;
 
 use crate::controller;
 use crate::facet_choices::{Counts, count};
+use crate::rows::row_of;
 
 impl Default for FiltersRust {
     /// The query the window starts with (the listing's).
@@ -137,14 +138,14 @@ impl qobject::Filters {
 
     pub(crate) fn toggle(self: Pin<&mut Self>, facet: i32, value: &QString) {
         let value = value.to_string();
-        if let Some(choice) = Facet::from_index(facet).and_then(|facet| choice(facet, &value)) {
+        if let Some(choice) = row_of(facet).and_then(Facet::from_index).and_then(|facet| choice(facet, &value)) {
             self.edit(|q| q.toggle(choice));
         }
     }
 
     pub(crate) fn bound(&self, facet: i32, end: i32) -> QString {
         let query = controller::listing().query;
-        let text = match (Field::from_index(facet), Edge::from_index(end)) {
+        let text = match (row_of(facet).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
             (Some(Field::Range(f)), Some(e)) => query.number(f, e.number()).map(|v| v.to_string()),
             (Some(Field::Day(f)), Some(e)) => query.day(f, e.day()).map(|d| d.to_string()),
             _ => None,
@@ -154,7 +155,7 @@ impl qobject::Filters {
 
     pub(crate) fn set_bound(self: Pin<&mut Self>, facet: i32, end: i32, text: &QString) {
         let text = text.to_string();
-        match (Field::from_index(facet), Edge::from_index(end)) {
+        match (row_of(facet).and_then(Field::from_index), row_of(end).and_then(Edge::from_index)) {
             (Some(Field::Range(f)), Some(e)) => self.edit(|q| q.set_number(f, e.number(), parse_number(&text))),
             (Some(Field::Day(f)), Some(e)) => self.edit(|q| q.set_day(f, e.day(), Day::parse(&text))),
             _ => {}
@@ -162,7 +163,7 @@ impl qobject::Filters {
     }
 
     pub(crate) fn bound_valid(&self, facet: i32, text: &QString) -> bool {
-        Field::from_index(facet).is_some_and(|field| bound_is_valid(field, &text.to_string()))
+        row_of(facet).and_then(Field::from_index).is_some_and(|field| bound_is_valid(field, &text.to_string()))
     }
 
     pub(crate) fn clear(mut self: Pin<&mut Self>) {

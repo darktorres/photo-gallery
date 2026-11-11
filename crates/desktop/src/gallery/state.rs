@@ -91,9 +91,19 @@ impl Default for GalleryRust {
 }
 
 impl GalleryRust {
+    /// The entry of an item as QML numbers it (`None` for -1, or past the list).
+    pub(super) fn entry(&self, item: i32) -> Option<&Entry> {
+        crate::rows::row_of(item).and_then(|i| self.entry(i))
+    }
+
+    /// The file of an item as QML numbers it (`None` for -1, or past the list).
+    pub(super) fn file_at(&self, item: i32) -> Option<FileId> {
+        self.entry(item).map(|e| e.id)
+    }
+
     /// `f` of an item's entry and details; `None` without the item, or when its file is gone from the catalog.
     pub(super) fn with_details<R>(&self, item: i32, f: impl FnOnce(&Entry, &Details) -> R) -> Option<R> {
-        let e = self.grid.item(item)?;
+        let e = self.entry(item)?;
         let mut memo = self.details.borrow_mut();
         if let Some(at) = memo.iter().position(|(id, _)| *id == e.id) {
             let found = memo.remove(at);

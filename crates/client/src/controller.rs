@@ -5,6 +5,7 @@
 //! (tests/replay.rs). The desktop keeps the one controller on the GUI thread and carries the commands out (desktop
 //! `controller.rs`, `shell.rs`).
 
+use pg_model::rating::Rating;
 use pg_model::rules::Merged;
 use pg_model::view::{Listing, SavedView};
 use serde::{Deserialize, Serialize};
@@ -68,7 +69,8 @@ pub enum Event {
     /// A rating, a quarter turn, or a border mark, asked for by the user (the viewer's or the grid's keys).
     Rate {
         item: usize,
-        rating: i32,
+        /// Zero stars takes the rating away.
+        rating: Rating,
     },
     Turn {
         item: usize,
@@ -117,7 +119,7 @@ pub enum Command {
     /// List the files of this listing (model: the grid model executes it). keep: the selection is kept, else the list shows from the top.
     OpenList { listing: Listing, keep: bool },
     /// Set the rating of an item (model).
-    Rate { item: usize, rating: i32 },
+    Rate { item: usize, rating: Rating },
     /// Turn an item by quarter turns (model).
     Turn { item: usize, turns: i32 },
     /// Toggle an item's border mark (model).
@@ -298,7 +300,8 @@ impl Controller {
             input::Command::Act(grid) => {
                 let item = self.input.current()?;
                 match grid {
-                    Grid::Rate(rating) => Command::Rate { item, rating: i32::from(rating) },
+                    // The key map rates 0 to 5 only.
+                    Grid::Rate(stars) => Command::Rate { item, rating: Rating::new(stars)? },
                     Grid::Turn { forward } => Command::Turn { item, turns: if forward { 1 } else { -1 } },
                     _ => Command::ToggleBorderMark(item),
                 }

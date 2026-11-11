@@ -36,7 +36,7 @@ struct Link {
 
 // A thumbnail comes decoded (Rust decodes it with QImage::fromData, from the bytes where they are). Rust's pixels
 // become the QImage's own: the QImage keeps the buffer and frees it with its last copy. Their formats are ones the
-// scene graph uploads as they are (pg_render::display::Upload), so neither side copies the image.
+// scene graph uploads as they are (pg_render::display::Rgba, as providers.rs hands it), so neither side copies the image.
 QImage to_qimage(Pixels px) {
     if (px.format == PixelFormat::Image) return std::move(px.image);
     if (px.data.empty()) return {};

@@ -48,7 +48,7 @@ impl Catalogs {
     /// `disk_path`, so a folder whose name ends in a dot or a space is the folder it names. Not for display (it has the
     /// verbatim prefix on Windows). `UnknownFile` when the catalog has no such file.
     pub fn file_path(&self, file_id: FileId) -> Result<PathBuf> {
-        let path = self.with_catalog(|c| c.file_path(file_id))?.ok_or(Error::UnknownFile(file_id.get()))?;
+        let path = self.with_catalog(|c| c.file_path(file_id))?.ok_or(Error::UnknownFile(file_id))?;
         Ok(path_of(&path))
     }
 

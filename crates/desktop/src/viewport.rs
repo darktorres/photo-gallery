@@ -117,7 +117,7 @@ impl qobject::Viewport {
     }
 
     pub(crate) fn swaps_axes(&self, turns: i32) -> bool {
-        turns_swap(Turns::new(u8::try_from(turns.rem_euclid(4)).unwrap_or(0)))
+        turns_swap(Turns::of(i64::from(turns)))
     }
 
     pub(crate) fn region_x(&self) -> f64 {

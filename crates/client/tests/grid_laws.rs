@@ -68,10 +68,9 @@ proptest! {
         for item in 0..n {
             let r = grid.row_index(item);
             prop_assert!(rows[r].first <= item && item < rows[r].first + rows[r].count, "item {item} in row {r}");
-            let position = i32::try_from(item).unwrap();
-            prop_assert_eq!(grid.position_of(grid.id_at(position)), position);
+            let id = grid.id_at(item);
+            prop_assert_eq!(id.and_then(|id| grid.position_of(id)), Some(item));
         }
-        prop_assert_eq!(grid.position_of(None), -1);
-        prop_assert!(ids.iter().all(|&id| grid.position_of(Some(id)) >= 0));
+        prop_assert!(ids.iter().all(|&id| grid.position_of(id).is_some()));
     }
 }

@@ -26,7 +26,7 @@ pub mod qobject {
     }
 
     /// What the viewer shows of its item (`viewedKind`): a still, an animation or a video. QML compares it by name
-    /// (`GalleryModel.Video`); the key map takes it as its value, the position here (`keymap.rs`).
+    /// (`GalleryModel.Video`); the key map reads the int QML passes by these values (`keymap.rs`).
     #[qenum(GalleryModel)]
     enum MediaKind {
         Image,

@@ -434,6 +434,11 @@ Each fix gets a test that fails before it.
   - The desktop's own calls take `Edge` and the bridge's `MediaKind`.
   - One `Turns` constructor, from any quarter-turn count, goes in `pg-model`.
 - Gate: `just test`, `just qmltest`, `just shots`.
+- **Done in step 5** (built and checked with the rest of steps 5 to 9, at their end):
+  - `pg-client`: `Grid::item`, `id_at` and `edit` take a `usize`; `position_of(FileId) -> Option<usize>`; `Selection` and `selection_after` are `Option<usize>`; `Placement::neighbor(usize, dx, dy) -> Option<usize>`; `Tree::row(usize)`; `from_index(usize)`, `sort_choice(usize)`, `choice_index -> usize`; `Event::Rate` and `Command::Rate` carry a `Rating` (zero stars clears it). `Rating` serializes as its number of stars, so the recorded sessions still read.
+  - `pg-app`: `Prefs::last_file: Option<FileId>`, still `-1` for none in `gallery.json` (the golden text is unchanged); `Hit` is `u32` wide and high; `Error::UnknownFile` and `Rewriting` hold a `FileId`.
+  - `pg_render::display::Rgba` (premultiplied RGBA, with `opaque`) replaces `Upload`; the desktop's provider picks Qt's texture format (RGBX8888 for an opaque image).
+  - The desktop: `rows.rs` (`row_of`, `to_row`) at every bridge that takes or gives a row; `GalleryRust::entry` and `file_at` for the QML-numbered item; `border_rejected` takes `detection::Edge`; `keymap::media_of` reads the bridge's `MediaKind` values; `Turns::of(i64)` in the viewport, the edits, the catalog's writes, the write-back and the video's display matrix.
 
 ### M-34: a refused folder is a typed value, decided by the scanner and worded by the client
 

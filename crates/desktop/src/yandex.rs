@@ -153,6 +153,11 @@ fn qt_int(n: usize) -> i32 {
     i32::try_from(n).unwrap_or(i32::MAX)
 }
 
+/// A side in pixels as Qt's int, saturating.
+fn qt_side(n: u32) -> i32 {
+    i32::try_from(n).unwrap_or(i32::MAX)
+}
+
 /// A result's aspect ratio, for its frame: its size as Yandex gives it, or square when it gives none.
 fn hit_aspect(hit: &Hit) -> f64 {
     if hit.width > 0 && hit.height > 0 { f64::from(hit.width) / f64::from(hit.height) } else { 1.0 }
@@ -347,7 +352,9 @@ impl qobject::YandexSearch {
     fn refresh_preview(mut self: Pin<&mut Self>) {
         let shown = usize::try_from(self.preview_item).ok().and_then(|i| self.hits.get(i).map(|hit| (i, hit)));
         let (url, width, height, picked) = match shown {
-            Some((i, hit)) => (QString::from(&original_url(hit.id)), hit.width, hit.height, self.picks.is_picked(i)),
+            Some((i, hit)) => {
+                (QString::from(&original_url(hit.id)), qt_side(hit.width), qt_side(hit.height), self.picks.is_picked(i))
+            }
             None => (QString::default(), 0, 0, false),
         };
         self.as_mut().set_preview_url(url);
@@ -382,8 +389,8 @@ impl qobject::YandexSearch {
         let frame = self.frames.get(i).copied().unwrap_or_default();
         match role {
             ROLE_THUMB => QVariant::from(&QString::from(&picture_url(hit.id))),
-            ROLE_IMAGE_WIDTH => QVariant::from(&hit.width),
-            ROLE_IMAGE_HEIGHT => QVariant::from(&hit.height),
+            ROLE_IMAGE_WIDTH => QVariant::from(&qt_side(hit.width)),
+            ROLE_IMAGE_HEIGHT => QVariant::from(&qt_side(hit.height)),
             ROLE_PICKED => QVariant::from(&self.picks.is_picked(i)),
             ROLE_FRAME_X => QVariant::from(&frame.x),
             ROLE_FRAME_Y => QVariant::from(&frame.y),

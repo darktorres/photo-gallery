@@ -19,8 +19,8 @@ impl qobject::GalleryModel {
     /// controller's `Turn` command.
     pub(crate) fn rotate(mut self: Pin<&mut Self>, item: i32, turns: i32) {
         let Ok(at) = usize::try_from(item) else { return };
-        let Some(id) = self.grid.id_at(item) else { return };
-        let turns = Turns::new(u8::try_from(turns.rem_euclid(4)).unwrap_or(u8::MAX));
+        let Some(id) = self.file_at(item) else { return };
+        let turns = Turns::of(i64::from(turns));
         if turns == Turns::NONE {
             return;
         }
@@ -32,7 +32,9 @@ impl qobject::GalleryModel {
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
-            this.grid.edit(item, loading, |e| e.pending_turns = e.pending_turns.plus(turns));
+            if let Some(item) = crate::rows::row_of(item) {
+                this.grid.edit(item, loading, |e| e.pending_turns = e.pending_turns.plus(turns));
+            }
             this.forget_details();
         }
         // An odd turn changes the item's shape, and so the rows.
@@ -70,12 +72,10 @@ impl qobject::GalleryModel {
 
     /// Rate the item (0 takes its rating away), in the catalog and, through the writer, in its file: the controller's
     /// `Rate` command.
-    pub(crate) fn set_rating(mut self: Pin<&mut Self>, item: i32, rating: i32) {
-        let Ok(at) = usize::try_from(item) else { return };
-        let Some(id) = self.grid.id_at(item) else { return };
-        let stars = u8::try_from(rating.clamp(0, 5)).unwrap_or(0);
+    pub(crate) fn set_rating(mut self: Pin<&mut Self>, at: usize, stars: Rating) {
+        let Some(id) = self.grid.id_at(at) else { return };
         // Zero stars is no rating: the catalog keeps no row for it.
-        let rating = Rating::new(stars).filter(|r| r.get() > 0);
+        let rating = Some(stars).filter(|r| r.get() > 0);
         if let Err(e) = crate::app::get().edit().rate(id, rating) {
             edit_failed(EditOp::Rate, &e);
             return;
@@ -84,7 +84,7 @@ impl qobject::GalleryModel {
         let loading = self.loading;
         {
             let mut this = self.as_mut().rust_mut();
-            this.grid.edit(item, loading, |e| e.rating = rating);
+            this.grid.edit(at, loading, |e| e.rating = rating);
             this.forget_details();
         }
         self.as_mut().items_changed(&[at]);
@@ -93,8 +93,8 @@ impl qobject::GalleryModel {
 
     /// Mark the item's borders as not a border, or take the mark back. Only items with borders found.
     pub(crate) fn set_border_marked(mut self: Pin<&mut Self>, item: i32, marked: bool) {
-        let Ok(at) = usize::try_from(item) else { return };
-        let Some(e) = self.grid.item(item).copied() else { return };
+        let Some(at) = crate::rows::row_of(item) else { return };
+        let Some(e) = self.grid.item(at).copied() else { return };
         if !matches!(e.borders, Borders::Found | Borders::Marked) || (e.borders == Borders::Marked) == marked {
             return;
         }
@@ -107,7 +107,7 @@ impl qobject::GalleryModel {
         self.as_mut()
             .rust_mut()
             .grid
-            .edit(item, loading, |entry| entry.borders = if marked { Borders::Marked } else { Borders::Found });
+            .edit(at, loading, |entry| entry.borders = if marked { Borders::Marked } else { Borders::Found });
         self.as_mut().items_changed(&[at]);
         self.as_mut().bump_revision();
     }

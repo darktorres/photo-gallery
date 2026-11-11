@@ -7,11 +7,11 @@ use std::fmt::Display;
 pub enum Error {
     #[error(transparent)]
     Catalog(#[from] pg_catalog::Error),
-    #[error("unknown file {0}")]
-    UnknownFile(i64),
+    #[error("unknown file {}", .0.get())]
+    UnknownFile(pg_model::ids::FileId),
     /// A write of the app's into the file was still in progress when the wait for it ended.
-    #[error("file {0} is being rewritten")]
-    Rewriting(i64),
+    #[error("file {} is being rewritten", .0.get())]
+    Rewriting(pg_model::ids::FileId),
     /// The file has no placeholder yet: it isn't imported.
     #[error("not imported yet")]
     NotImported,

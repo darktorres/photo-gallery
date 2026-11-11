@@ -25,7 +25,7 @@ use ffi::{ImageKind, PixelFormat, Pixels};
 
 use pg_model::image::{ImageKey, ImageRequest};
 use pg_model::turns::Turns;
-use pg_render::display::Upload;
+use pg_render::display::Rgba;
 
 use crate::app;
 
@@ -70,12 +70,14 @@ fn thumbnail(key: ImageKey, height: u32) -> anyhow::Result<Pixels> {
     })
 }
 
-/// `img` for Qt; an error when a side is past what Qt's int sizes hold.
-fn upload(img: Upload) -> anyhow::Result<Pixels> {
+/// `img` as a texture Qt's scene graph uploads as it is (`QSGPlainTexture`): RGBX8888 for an opaque image, RGBA8888
+/// premultiplied otherwise (any other format it converts on the render thread, a copy at every upload). The
+/// premultiplication rounds as Qt's own (`qPremultiply`). An error when a side is past what Qt's int sizes hold.
+fn upload(img: Rgba) -> anyhow::Result<Pixels> {
     Ok(Pixels {
         width: i32::try_from(img.width).context("image too wide for Qt")?,
         height: i32::try_from(img.height).context("image too high for Qt")?,
-        format: if img.premultiplied { PixelFormat::Rgba8888Premultiplied } else { PixelFormat::Rgbx8888 },
+        format: if img.opaque { PixelFormat::Rgbx8888 } else { PixelFormat::Rgba8888Premultiplied },
         data: img.pixels,
         image: QImage::default(),
     })

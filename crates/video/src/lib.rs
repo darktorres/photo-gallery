@@ -92,9 +92,9 @@ fn matrix_orientation(m: [i32; 9]) -> Orientation {
     }
     // av_display_rotation_get is the counterclockwise angle; turning clockwise by the opposite shows it upright.
     let clockwise = (b / s1).atan2(a / s0).to_degrees();
-    let turns = u8::try_from(whole_i64((clockwise / 90.0).round()).rem_euclid(4)).unwrap_or(u8::MAX);
+    let turns = whole_i64((clockwise / 90.0).round());
     // EXIF mirrors the stored picture before the rotation: the same picture with the turn reversed.
-    Orientation::from_parts(mirrored, Turns::new(if mirrored { (4 - turns) % 4 } else { turns }))
+    Orientation::from_parts(mirrored, Turns::of(if mirrored { -turns } else { turns }))
 }
 
 pub fn probe(path: &Path) -> Result<Probe> {

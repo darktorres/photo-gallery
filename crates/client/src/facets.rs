@@ -19,8 +19,8 @@ impl Facet {
         [Facet::Types, Facet::Orientations, Facet::Status, Facet::Borders, Facet::Ratings, Facet::Exts];
 
     /// The facet at `index` (its position in `ALL`); `None` out of range.
-    pub fn from_index(index: i32) -> Option<Facet> {
-        usize::try_from(index).ok().and_then(|i| Self::ALL.get(i).copied())
+    pub fn from_index(index: usize) -> Option<Facet> {
+        Self::ALL.get(index).copied()
     }
 
     /// The facet's name in the query's terms.

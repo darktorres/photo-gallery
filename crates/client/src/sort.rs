@@ -22,13 +22,12 @@ pub const KEYS: [SortKey; 14] = [
 ];
 
 /// The sort the box's choice `index` makes: its key, descending except for name and file type. `None` out of range.
-pub fn sort_choice(index: i32) -> Option<Sort> {
-    let index = usize::try_from(index).ok()?;
+pub fn sort_choice(index: usize) -> Option<Sort> {
     let key = *KEYS.get(index)?;
     Some(Sort { key, descending: !matches!(key, SortKey::Name | SortKey::Extension) })
 }
 
 /// The box's index for a sort's key.
-pub fn choice_index(key: SortKey) -> i32 {
-    KEYS.iter().position(|&k| k == key).and_then(|i| i32::try_from(i).ok()).unwrap_or(0)
+pub fn choice_index(key: SortKey) -> usize {
+    KEYS.iter().position(|&k| k == key).unwrap_or(0)
 }

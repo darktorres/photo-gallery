@@ -82,7 +82,8 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   re-export them. The integration tests of `borders` and `crop` are `pg-library`'s, since they prepare a catalog with
   its `versions`.
 - `client` (`pg-client`): the front end's logic, Qt-free and WASM-safe: the justified layout, the grid's viewport,
-  picks, input, keys, text and the folder tree.
+  picks, input, keys, text and the folder tree; the filter bar's facet choices and counts (`facets`), and the Yandex
+  panel's result list (`results`). The words of the search's outcomes (`pg_model::yandex`) are its `text`.
 - `app` (`pg-app`): the application layer the window uses (the command line drives the passes directly through
   `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
   `app.inbox()` (what the user is told, kept in the catalog), `catalogs()`, `prefs()`, `images()`, `reading()` (what

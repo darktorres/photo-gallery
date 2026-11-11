@@ -1,8 +1,8 @@
 //! Reverse image search on Yandex (`pg_yandex`): the other sizes of a photo and the images that look like it, and the
 //! saving of the results the user picks: the app's [`Yandex`] service. The search and the saves run on background
 //! threads. The front end subscribes ([`Yandex::subscribe`]) and calls [`Yandex::poll`] on each change, and shows what
-//! comes back ([`Poll::busy`] says whether one is still running). Results and words are typed values: nothing here
-//! formats text or prints. The files go into the folder the user picks, named after the photo (`IMG_1234 (yandex
+//! comes back ([`Poll::busy`] says whether one is still running). Results and outcomes are typed values
+//! (`pg_model::yandex`): nothing here formats text or prints. The files go into the folder the user picks, named after the photo (`IMG_1234 (yandex
 //! 1920x1080).jpg`), and that folder is remembered in the preferences (`yandex_folder`) for the next save.
 
 use std::ffi::OsStr;
@@ -16,8 +16,8 @@ use std::time::{Duration, Instant};
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
-use pg_platform::names::disk_path;
-use pg_platform::names::rule_path_of;
+use pg_model::yandex::{Phase, SaveFailure, Saved, SearchError, SimilarNote, Status};
+use pg_platform::names::{disk_path, rule_path_of, shown};
 use pg_platform::native::PATH_RULES;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
 
@@ -184,88 +184,12 @@ fn hit_id(generation: u64, index: usize) -> u64 {
     (generation << 32) | u64::try_from(index).unwrap_or(u64::MAX)
 }
 
-/// Where a search or a save is, while it runs.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Phase {
-    Starting,
-    Uploading,
-    OtherSizes,
-    Similar,
-    /// A save is about to write `files` files.
-    Saving {
-        files: usize,
-    },
-    /// The `n`th of `of` files (counted from 1) is being downloaded.
-    SavingFile {
-        n: usize,
-        of: usize,
-    },
-}
-
-/// A search that ended with a note: the similar images stopped early or failed. The other sizes are still found.
-#[derive(Debug)]
-pub enum SimilarNote {
-    /// The list stopped after its first page: `shown` items were read before `error`.
-    Stopped { shown: usize, error: YandexError },
-    /// The similar images could not be read.
-    Failed(YandexError),
-}
-
-/// Why a search ended without results.
-#[derive(Debug)]
-pub enum SearchError {
-    /// Refused before anything is sent: only still images are searched. Decided by the file's first bytes, so a
-    /// video is refused without being read.
-    NotStill,
-    /// The photo could not be read from disk.
-    Unreadable(std::io::Error),
-    /// The photo is in a format Yandex may refuse (TIFF), and it could not be decoded to be sent as a JPEG.
-    Undecodable(String),
-    /// A request to Yandex failed before any results came (the client, the upload or the other sizes).
-    Request(YandexError),
-}
-
-/// Why one save failed. The first one is kept in [`Saved`].
-#[derive(Debug)]
-pub enum SaveFailure {
-    /// The client could not be made, so nothing was downloaded.
-    Client(YandexError),
-    /// A file could not be downloaded.
-    Download { url: String, error: YandexError },
-    /// A downloaded file could not be written.
-    Write { url: String, path: PathBuf, error: std::io::Error },
-}
-
-/// What a save did: where, how many files were written and how many failed, and the first failure.
-#[derive(Debug)]
-pub struct Saved {
-    pub folder: PathBuf,
-    pub written: usize,
-    pub failed: usize,
-    pub first_error: Option<SaveFailure>,
-}
-
-/// A step's outcome, as the front end reads it from [`Poll::status`].
-#[derive(Debug)]
-pub enum Status {
-    /// A step in progress.
-    Working(Phase),
-    /// The search ended. The note is there when the similar images stopped early or failed.
-    Searched(Option<SimilarNote>),
-    /// The search ended without results.
-    SearchFailed(SearchError),
-    /// The save ended.
-    Saved(Saved),
-    /// The search or the save stopped at an internal error (the panic is in the log).
-    Stopped,
-}
-
 /// What the front end reads on each poll.
 #[derive(Debug)]
 pub struct Poll {
     /// A search or a save is running.
     pub busy: bool,
-    /// The status since the last poll, when it changed.
+    /// The status since the last poll, when it changed: data, which the front end words.
     pub status: Option<Status>,
     /// The results that came in since the last poll, once.
     pub found: Option<Found>,
@@ -312,7 +236,7 @@ const SNIFF_BYTES: u64 = 16;
 /// What the search uploads of the photo at `path`: its bytes, read once from one open of the file. See
 /// [`photo_bytes`].
 fn read_photo(path: &Path) -> Result<Vec<u8>, SearchError> {
-    let file = File::open(path).map_err(SearchError::Unreadable)?;
+    let file = File::open(path).map_err(unreadable)?;
     photo_bytes(file)
 }
 
@@ -322,13 +246,23 @@ fn read_photo(path: &Path) -> Result<Vec<u8>, SearchError> {
 /// sent as a JPEG of the same size ([`pg_render::transcode::to_jpeg`]).
 fn photo_bytes(mut file: impl Read) -> Result<Vec<u8>, SearchError> {
     let mut bytes = Vec::new();
-    file.by_ref().take(SNIFF_BYTES).read_to_end(&mut bytes).map_err(SearchError::Unreadable)?;
+    file.by_ref().take(SNIFF_BYTES).read_to_end(&mut bytes).map_err(unreadable)?;
     let format = Format::sniff(&bytes).ok_or(SearchError::NotStill)?;
-    file.read_to_end(&mut bytes).map_err(SearchError::Unreadable)?;
+    file.read_to_end(&mut bytes).map_err(unreadable)?;
     match format {
         Format::Jpeg | Format::Png | Format::Webp | Format::Gif | Format::Bmp => Ok(bytes),
         Format::Tiff => pg_render::transcode::to_jpeg(&bytes).map_err(|e| SearchError::Undecodable(format!("{e:#}"))),
     }
+}
+
+/// The photo could not be read: the error's text.
+fn unreadable(e: io::Error) -> SearchError {
+    SearchError::Unreadable(e.to_string())
+}
+
+/// A request that failed before any results came.
+fn request(e: YandexError) -> SearchError {
+    SearchError::Request(e.into())
 }
 
 fn lock(shared: &Mutex<Shared>) -> MutexGuard<'_, Shared> {
@@ -351,17 +285,17 @@ fn find_similar<S: Source + ?Sized>(
 ) -> Result<(Found, Option<SimilarNote>), SearchError> {
     let bytes = read_photo(photo)?;
     set_status(shared, changes, Status::Working(Phase::Uploading));
-    let upload = source.upload(&bytes).map_err(SearchError::Request)?;
+    let upload = source.upload(&bytes).map_err(request)?;
     set_status(shared, changes, Status::Working(Phase::OtherSizes));
-    let other = source.other_sizes(&upload).map_err(SearchError::Request)?;
+    let other = source.other_sizes(&upload).map_err(request)?;
     set_status(shared, changes, Status::Working(Phase::Similar));
     let (similar, note) = match source.similar(&upload, DEFAULT_MAX_SIMILAR_PAGES) {
         Ok(list) => {
             let shown = list.items.len();
-            let note = list.stopped.map(|error| SimilarNote::Stopped { shown, error });
+            let note = list.stopped.map(|error| SimilarNote::Stopped { shown, error: error.into() });
             (list.items, note)
         }
-        Err(error) => (Vec::new(), Some(SimilarNote::Failed(error))),
+        Err(error) => (Vec::new(), Some(SimilarNote::Failed(error.into()))),
     };
     // The ids are numbered when the search's results are known (`number`).
     let found = Found {
@@ -400,10 +334,10 @@ fn number(found: &mut Found, generation: u64) {
 /// Writes a result's file (kept by the search, or fetched now) into `folder`, named `<stem> (<suffix>)` so it sorts
 /// next to the photo ([`write_new`]).
 fn save_one(images: &Images, hit: &Hit, stem: &OsStr, folder: &Path) -> Result<(), SaveFailure> {
-    let kept = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error })?;
+    let kept = images.get(hit.id, &hit.url).map_err(|error| SaveFailure::Download { url: hit.url.clone(), error: error.into() })?;
     write_new(folder, &saved_stem(stem, &hit.suffix), kept.file.format.extension(), &kept.file.bytes)
         .map(drop)
-        .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path, error })
+        .map_err(|(path, error)| SaveFailure::Write { url: hit.url.clone(), path: shown(&path), error: error.to_string() })
 }
 
 /// What a search found, its note, and the fetcher of its results' files.
@@ -412,7 +346,7 @@ type Searched = (Found, Option<SimilarNote>, Arc<dyn Fetch>);
 /// The search on its thread: its connection is made first (a recorded session or the client), then the search runs on
 /// its source. The fetcher goes with the results, for their files.
 fn search(photo: &Path, make: &Factory, shared: &Mutex<Shared>, changes: &Bus<()>) -> Result<Searched, SearchError> {
-    let mut connection = make().map_err(SearchError::Request)?;
+    let mut connection = make().map_err(request)?;
     let (found, note) = find_similar(photo, &mut *connection.source, shared, changes)?;
     Ok((found, note, connection.fetch))
 }
@@ -420,7 +354,7 @@ fn search(photo: &Path, make: &Factory, shared: &Mutex<Shared>, changes: &Bus<()
 /// The outcome of a save with no search on screen to take its files from: nothing downloaded, every hit failed.
 fn save_refused(hits: &[Hit], folder: &Path, error: YandexError) -> Saved {
     let failed = hits.len();
-    Saved { folder: folder.to_path_buf(), written: 0, failed, first_error: Some(SaveFailure::Client(error)) }
+    Saved { folder: shown(folder), written: 0, failed, first_error: Some(SaveFailure::Client(error.into())) }
 }
 
 /// Writes every hit into `folder`, one at a time, from the search's images.
@@ -432,7 +366,7 @@ fn save_all(
     shared: &Mutex<Shared>,
     changes: &Bus<()>,
 ) -> Saved {
-    let mut saved = Saved { folder: folder.to_path_buf(), written: 0, failed: 0, first_error: None };
+    let mut saved = Saved { folder: shown(folder), written: 0, failed: 0, first_error: None };
     for (i, hit) in hits.iter().enumerate() {
         set_status(shared, changes, Status::Working(Phase::SavingFile { n: i + 1, of: hits.len() }));
         match save_one(images, hit, stem, folder) {

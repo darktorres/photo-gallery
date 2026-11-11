@@ -9,6 +9,7 @@ pub mod input;
 pub mod keys;
 pub mod layout;
 pub mod picks;
+pub mod results;
 pub mod sort;
 pub mod text;
 pub mod tree;

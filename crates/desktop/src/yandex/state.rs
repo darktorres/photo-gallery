@@ -3,7 +3,7 @@
 use cxx_qt_lib::QString;
 use pg_app::yandex::Hit;
 use pg_client::layout::Frame;
-use pg_client::picks::Picks;
+use pg_client::results::Results;
 
 #[derive(Default)]
 #[expect(
@@ -29,9 +29,8 @@ pub struct YandexSearchRust {
     pub(crate) similar_height: f64,
     /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
     pub(super) pump: bool,
-    /// The other sizes, then the similar images, as the latest search found them.
-    pub(super) hits: Vec<Hit>,
+    /// The other sizes, then the similar images, as the latest search found them, and their picks.
+    pub(super) results: Results<Hit>,
     /// Each result's frame in the panel's layout (`relayout`), by its index in `hits`.
     pub(super) frames: Vec<Frame>,
-    pub(super) picks: Picks,
 }

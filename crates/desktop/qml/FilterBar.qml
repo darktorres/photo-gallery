@@ -217,7 +217,7 @@ Pane {
                     ComboBox {
                         model: bar.duplicateChoices
                         currentIndex: filters.duplicatesIndex
-                        onActivated: (i) => filters.setDuplicatesIndex(i)
+                        onActivated: (i) => filters.chooseDuplicates(i)
                         font.pixelSize: 12
                         Layout.preferredWidth: 140
                     }
@@ -245,7 +245,7 @@ Pane {
                     ComboBox {
                         model: bar.reviewChoices
                         currentIndex: filters.borderMarkedIndex
-                        onActivated: (i) => filters.setBorderMarkedIndex(i)
+                        onActivated: (i) => filters.chooseBorderMarked(i)
                         font.pixelSize: 12
                         Layout.preferredWidth: 170
                     }
@@ -272,7 +272,7 @@ Pane {
                         // Not bound to the query's name, which is trimmed: a space typed between two words
                         // would vanish.
                         function reload() { text = filters.name }
-                        onTextEdited: filters.name = text
+                        onTextEdited: filters.editName(text)
                         Component.onCompleted: reload()
                         Connections {
                             target: filters

@@ -107,6 +107,25 @@ pub fn day_text(day: Option<Day>) -> String {
     day.map(|d| d.to_string()).unwrap_or_default()
 }
 
+/// A yes/no/either box's index for a query's choice: 0 either way, 1 for `first`, 2 for the other. (The duplicates
+/// box lists "with a duplicate" first; the review box "not marked".)
+pub fn tri_index(value: Option<bool>, first: bool) -> usize {
+    match value {
+        None => 0,
+        Some(v) if v == first => 1,
+        Some(_) => 2,
+    }
+}
+
+/// The choice a yes/no/either box's `index` is ([`tri_index`]'s inverse): either way for 0, or out of range.
+pub fn tri_of_index(index: usize, first: bool) -> Option<bool> {
+    match index {
+        1 => Some(first),
+        2 => Some(!first),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -121,6 +140,18 @@ mod tests {
         assert_eq!(Edge::from_index(2), None);
         assert_eq!(Edge::Low.number(), End::Min);
         assert_eq!(Edge::High.day(), DayEnd::To);
+    }
+
+    #[test]
+    fn a_yes_no_either_box_reads_back_its_index() {
+        for first in [true, false] {
+            for value in [None, Some(true), Some(false)] {
+                assert_eq!(tri_of_index(tri_index(value, first), first), value);
+            }
+        }
+        assert_eq!(tri_index(Some(true), true), 1);
+        assert_eq!(tri_index(Some(true), false), 2);
+        assert_eq!(tri_of_index(7, true), None);
     }
 
     #[test]

@@ -16,11 +16,11 @@ pub mod qobject {
         /// How many facets filter.
         #[qproperty(i32, active, READ, WRITE, NOTIFY, FINAL)]
         /// Part of the file name, any case; `""` doesn't filter.
-        #[qproperty(QString, name, READ, WRITE = set_name_edited, NOTIFY, FINAL)]
+        #[qproperty(QString, name, READ, WRITE, NOTIFY, FINAL)]
         /// The duplicates box: 0 either way; 1 files with a duplicate; 2 files without one.
-        #[qproperty(i32, duplicates_index, cxx_name = "duplicatesIndex", READ, NOTIFY, FINAL)]
+        #[qproperty(i32, duplicates_index, cxx_name = "duplicatesIndex", READ, WRITE, NOTIFY, FINAL)]
         /// The review box: 0 either way; 1 borders not marked; 2 borders marked as not a border.
-        #[qproperty(i32, border_marked_index, cxx_name = "borderMarkedIndex", READ, NOTIFY, FINAL)]
+        #[qproperty(i32, border_marked_index, cxx_name = "borderMarkedIndex", READ, WRITE, NOTIFY, FINAL)]
         /// Files in the folder, unfiltered, and those the query keeps (`countFacets()`).
         #[qproperty(i32, total, READ, WRITE, NOTIFY, FINAL)]
         #[qproperty(i32, matching, READ, WRITE, NOTIFY, FINAL)]
@@ -36,16 +36,19 @@ pub mod qobject {
         #[qsignal]
         fn counted(self: Pin<&mut Filters>);
 
-        fn set_name_edited(self: Pin<&mut Filters>, value: &QString);
-
-        /// Choose a box's index (`duplicatesIndex`, `borderMarkedIndex`).
+        /// The user typed a name: the query takes it (`name` then shows it).
         #[qinvokable]
-        #[cxx_name = "setDuplicatesIndex"]
-        fn set_duplicates_index(self: Pin<&mut Filters>, index: i32);
+        #[cxx_name = "editName"]
+        fn edit_name(self: Pin<&mut Filters>, value: &QString);
+
+        /// The user chose a box's index (`duplicatesIndex`, `borderMarkedIndex` then show it).
+        #[qinvokable]
+        #[cxx_name = "chooseDuplicates"]
+        fn choose_duplicates(self: Pin<&mut Filters>, index: i32);
 
         #[qinvokable]
-        #[cxx_name = "setBorderMarkedIndex"]
-        fn set_border_marked_index(self: Pin<&mut Filters>, index: i32);
+        #[cxx_name = "chooseBorderMarked"]
+        fn choose_border_marked(self: Pin<&mut Filters>, index: i32);
 
         /// The user changed the query.
         #[qsignal]

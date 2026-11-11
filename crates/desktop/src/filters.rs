@@ -17,13 +17,13 @@ use pg_app::reexport::Facets;
 use pg_model::date::Day;
 use pg_model::query::{Query, parse_number};
 
-use pg_client::facets::Facet;
-use pg_client::input::{Edge, Field, bound_is_valid, choice};
+use pg_client::facets::{Counts, Facet};
+use pg_client::input::{Edge, Field, bound_is_valid, choice, tri_index, tri_of_index};
 use pg_client::text;
 
 use crate::controller;
-use crate::facet_choices::{Counts, count};
-use crate::rows::row_of;
+use crate::facet_choices::count;
+use crate::rows::{row_of, to_row};
 
 impl Default for FiltersRust {
     /// The query the window starts with (the listing's).
@@ -43,47 +43,31 @@ impl Default for FiltersRust {
     }
 }
 
+/// The duplicates box lists "with a duplicate" first.
+const DUPLICATES_FIRST: bool = true;
+/// The review box lists "borders not marked" first.
+const REVIEW_FIRST: bool = false;
+
 /// The duplicates box's index for a query's choice: 0 either way, 1 with a duplicate, 2 without one.
 fn duplicates_index(d: Option<bool>) -> i32 {
-    match d {
-        None => 0,
-        Some(true) => 1,
-        Some(false) => 2,
-    }
+    to_row(Some(tri_index(d, DUPLICATES_FIRST)))
 }
 
 /// The review box's index for a query's choice: 0 either way, 1 borders not marked, 2 borders marked.
 fn review_index(marked: Option<bool>) -> i32 {
-    match marked {
-        None => 0,
-        Some(false) => 1,
-        Some(true) => 2,
-    }
+    to_row(Some(tri_index(marked, REVIEW_FIRST)))
 }
 
 impl qobject::Filters {
     /// After the query changed: the properties that show it, and the counts the choices show.
     fn sync(mut self: Pin<&mut Self>) {
         let q = controller::listing().query;
-        let (name, duplicates_index, border_marked_index, description) = (
-            QString::from(&q.name),
-            duplicates_index(q.duplicates),
-            review_index(q.border_marked),
-            QString::from(&text::describe(&q)),
-        );
         publish_counts(&self.facets, &q);
-        if self.name != name {
-            self.as_mut().rust_mut().name = name;
-            self.as_mut().name_changed();
-        }
-        if self.duplicates_index != duplicates_index {
-            self.as_mut().rust_mut().duplicates_index = duplicates_index;
-            self.as_mut().duplicates_index_changed();
-        }
-        if self.border_marked_index != border_marked_index {
-            self.as_mut().rust_mut().border_marked_index = border_marked_index;
-            self.as_mut().border_marked_index_changed();
-        }
+        // The generated setters notify only on a change.
+        self.as_mut().set_name(QString::from(&q.name));
+        self.as_mut().set_duplicates_index(duplicates_index(q.duplicates));
+        self.as_mut().set_border_marked_index(review_index(q.border_marked));
+        let description = QString::from(&text::describe(&q));
         self.as_mut().set_active(i32::try_from(q.active()).unwrap_or(i32::MAX));
         self.as_mut().set_description(description);
     }
@@ -107,30 +91,22 @@ impl qobject::Filters {
         self.loaded();
     }
 
-    pub(crate) fn set_name_edited(self: Pin<&mut Self>, value: &QString) {
+    pub(crate) fn edit_name(self: Pin<&mut Self>, value: &QString) {
         let name = value.to_string().trim().to_string();
         if name != controller::listing().query.name {
             self.edit(|q| q.name = name);
         }
     }
 
-    pub(crate) fn set_duplicates_index(self: Pin<&mut Self>, index: i32) {
-        let duplicates = match index {
-            1 => Some(true),
-            2 => Some(false),
-            _ => None,
-        };
+    pub(crate) fn choose_duplicates(self: Pin<&mut Self>, index: i32) {
+        let duplicates = row_of(index).and_then(|i| tri_of_index(i, DUPLICATES_FIRST));
         if duplicates != controller::listing().query.duplicates {
             self.edit(|q| q.duplicates = duplicates);
         }
     }
 
-    pub(crate) fn set_border_marked_index(self: Pin<&mut Self>, index: i32) {
-        let marked = match index {
-            1 => Some(false),
-            2 => Some(true),
-            _ => None,
-        };
+    pub(crate) fn choose_border_marked(self: Pin<&mut Self>, index: i32) {
+        let marked = row_of(index).and_then(|i| tri_of_index(i, REVIEW_FIRST));
         if marked != controller::listing().query.border_marked {
             self.edit(|q| q.border_marked = marked);
         }
@@ -214,10 +190,7 @@ impl qobject::Filters {
     }
 }
 
-/// Publish what the list facets show: a media type's and a border's count, and the folder's extensions (most files
-/// first, then the chosen ones it doesn't have, at 0, so they can be unchosen).
+/// Publish what the list facets show (`Counts::new`): the catalog's counts for the query.
 fn publish_counts(facets: &Facets, q: &Query) {
-    let mut exts: Vec<(String, i64)> = facets.exts.clone();
-    exts.extend(q.exts.iter().filter(|e| !facets.exts.iter().any(|(x, _)| x == *e)).map(|e| (e.clone(), 0)));
-    crate::facet_choices::set_counts(Counts { types: facets.types.clone(), borders: facets.borders.clone(), exts });
+    controller::set_counts(Counts::new(facets.types.clone(), facets.borders.clone(), &facets.exts, q));
 }

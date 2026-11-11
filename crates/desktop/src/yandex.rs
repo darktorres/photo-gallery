@@ -5,8 +5,8 @@
 //! `frameX`, `frameY`, `frameWidth` and `frameHeight` roles) places it in the panel's justified layout: the panel sets
 //! `layoutWidth` and the gallery's `gap`; each group's block is `otherHeight` or `similarHeight` high.
 //! The preview shows one result (`previewItem`): its URL, size and pick are properties, set whenever the item or its
-//! pick changes. The words the panel shows are formatted here (`pg_client::text` and the QML's own), from the typed
-//! outcomes the app returns.
+//! pick changes. The words the panel shows are `pg_client::text`'s (and the QML's own), from the outcomes the app
+//! returns as data (`pg_model::yandex`).
 
 pub(crate) mod state;
 use state::YandexSearchRust;
@@ -20,12 +20,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QList, QModelIndex, QString, QVariant};
-use pg_app::reexport::YandexError;
-use pg_app::yandex::{Hit, Phase, SaveFailure, Saved, SearchError, SimilarNote, Status};
+use pg_app::yandex::Hit;
 use pg_client::layout;
-use pg_client::picks::Picks;
+use pg_client::results::Results;
 use pg_client::text;
 use pg_model::ids::FileId;
+use pg_model::yandex::{Phase, Status};
 
 const ROLE_THUMB: i32 = 256;
 const ROLE_IMAGE_WIDTH: i32 = 257;
@@ -48,27 +48,9 @@ fn search() -> &'static pg_app::yandex::Yandex {
 impl YandexSearchRust {
     /// The results `first..first + count` that exist.
     fn range(&self, first: i32, count: i32) -> std::ops::Range<usize> {
-        self.picks.range(usize::try_from(first).unwrap_or(0), usize::try_from(count).unwrap_or(0))
+        let (first, count) = (crate::rows::row_of(first).unwrap_or(0), crate::rows::row_of(count).unwrap_or(0));
+        self.results.picks().range(first, count)
     }
-}
-
-/// The results left when the dead ones are taken off: in order, each with whether it is picked (the picks follow their
-/// results, not their positions), and how many of the first `other` are left.
-fn without_dead(hits: &[Hit], picks: &Picks, other: usize, dead: &[u64]) -> (Vec<Hit>, Vec<bool>, usize) {
-    let mut kept = Vec::new();
-    let mut picked = Vec::new();
-    let mut other_kept = 0;
-    for (i, hit) in hits.iter().enumerate() {
-        if dead.contains(&hit.id) {
-            continue;
-        }
-        if i < other {
-            other_kept += 1;
-        }
-        kept.push(hit.clone());
-        picked.push(picks.is_picked(i));
-    }
-    (kept, picked, other_kept)
 }
 
 /// The URL of a result's grid picture: the image provider serves it from the search's files.
@@ -79,73 +61,6 @@ fn picture_url(id: u64) -> String {
 /// The URL of a result's file as its host gave it, for the preview at full size.
 fn original_url(id: u64) -> String {
     format!("image://yandex/{id}/original")
-}
-
-/// What the user reads when a request fails: each of the client's errors has its own words; the values they carry (the
-/// transport's error, what an answer lacked) are the lower layers' text.
-fn explain(e: &YandexError) -> String {
-    match e {
-        YandexError::Captcha => text::render(&text::Message::YandexCaptcha),
-        YandexError::Status(status) => text::yandex_http_status(*status),
-        YandexError::Transport(error) => text::yandex_transport(error),
-        YandexError::Unexpected(detail) => text::yandex_unexpected(detail),
-        YandexError::Recorded(error) => text::yandex_recorded(error),
-        YandexError::Undecodable(reason) => text::yandex_undecodable(reason),
-    }
-}
-
-fn phase_text(phase: Phase) -> String {
-    match phase {
-        Phase::Starting => text::render(&text::Message::YandexStarting),
-        Phase::Uploading => text::render(&text::Message::YandexUploading),
-        Phase::OtherSizes => text::render(&text::Message::YandexOtherSizes),
-        Phase::Similar => text::render(&text::Message::YandexSimilar),
-        Phase::Saving { files } => text::yandex_saving(files),
-        Phase::SavingFile { n, of } => text::yandex_saving_file(n, of),
-    }
-}
-
-fn search_error_text(e: SearchError) -> String {
-    match e {
-        SearchError::NotStill => text::render(&text::Message::YandexNotStill),
-        SearchError::Unreadable(e) => text::yandex_unreadable_photo(&e.to_string()),
-        SearchError::Undecodable(e) => text::yandex_unreadable_photo(&e),
-        SearchError::Request(e) => explain(&e),
-    }
-}
-
-fn similar_note_text(note: SimilarNote) -> String {
-    match note {
-        SimilarNote::Stopped { shown, error } => text::yandex_similar_stopped(shown, &explain(&error)),
-        SimilarNote::Failed(error) => text::yandex_similar_failed(&explain(&error)),
-    }
-}
-
-fn failure_text(failure: SaveFailure) -> String {
-    match failure {
-        SaveFailure::Client(e) => explain(&e),
-        SaveFailure::Download { url, error } => text::yandex_download_failed(&url, &explain(&error)),
-        SaveFailure::Write { url, path, error } => {
-            text::yandex_write_failed(&url, &pg_platform::names::shown(&path), &error.to_string())
-        }
-    }
-}
-
-fn saved_text(saved: Saved) -> String {
-    let Saved { folder, written, failed, first_error } = saved;
-    let first_error = first_error.map(failure_text);
-    text::yandex_saved(written, &pg_platform::names::shown(&folder), failed, first_error.as_deref())
-}
-
-fn status_text(status: Status) -> String {
-    match status {
-        Status::Working(phase) => phase_text(phase),
-        Status::Searched(note) => note.map_or_else(String::new, similar_note_text),
-        Status::SearchFailed(e) => search_error_text(e),
-        Status::Saved(saved) => saved_text(saved),
-        // The panic that stopped it is in gallery.log (a thread the system refused is `not_started`'s line instead).
-        Status::Stopped => text::render(&text::Message::YandexStopped),
-    }
 }
 
 /// A count or a row as Qt's int, saturating: a Qt model holds no more rows than an int counts.
@@ -191,8 +106,8 @@ impl qobject::YandexSearch {
         }
         // The pump's poll reads `busy` with the rest of the state; set it here too, so the panel doesn't wait for it.
         self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from(&phase_text(Phase::Starting)));
-        self.as_mut().show(Vec::new(), Vec::new());
+        self.as_mut().set_status(QString::from(&text::yandex_phase(Phase::Starting)));
+        self.as_mut().show(Results::default());
     }
 
     /// Start the thread that polls on each change of the search (once, unless it couldn't start). It subscribes before
@@ -235,18 +150,18 @@ impl qobject::YandexSearch {
     }
 
     /// Show these results, none picked.
-    fn show(mut self: Pin<&mut Self>, other: Vec<Hit>, similar: Vec<Hit>) {
-        let (other_count, similar_count) = (qt_int(other.len()), qt_int(similar.len()));
+    fn show(mut self: Pin<&mut Self>, results: Results<Hit>) {
         self.as_mut().begin_reset_model();
-        {
-            let mut this = self.as_mut().rust_mut();
-            this.hits = other.into_iter().chain(similar).collect();
-            let count = this.hits.len();
-            this.picks.reset(count);
-        }
+        self.as_mut().rust_mut().results = results;
         self.as_mut().end_reset_model();
-        self.as_mut().set_other_count(other_count);
-        self.as_mut().set_similar_count(similar_count);
+        self.as_mut().groups_changed();
+    }
+
+    /// After the results changed: the groups' counts, the layout and the picks.
+    fn groups_changed(mut self: Pin<&mut Self>) {
+        let (other, similar) = (qt_int(self.results.first().len()), qt_int(self.results.second().len()));
+        self.as_mut().set_other_count(other);
+        self.as_mut().set_similar_count(similar);
         self.as_mut().relayout();
         self.picks_changed();
     }
@@ -277,38 +192,22 @@ impl qobject::YandexSearch {
     /// The results whose files died are taken off the grid: the layout is rebuilt without them, and the picks of the
     /// others stay on their results.
     fn drop_dead(mut self: Pin<&mut Self>, dead: &[u64]) {
-        let other = usize::try_from(self.other_count).unwrap_or(0);
-        let (hits, picked, other) = without_dead(&self.hits, &self.picks, other, dead);
-        if hits.len() == self.hits.len() {
+        // The model is reset around the change only when one goes.
+        if !self.results.items().iter().any(|hit| dead.contains(&hit.id)) {
             return;
         }
-        let len = hits.len();
         self.as_mut().begin_reset_model();
-        {
-            let mut this = self.as_mut().rust_mut();
-            this.hits = hits;
-            this.picks.reset(len);
-            for (i, is_picked) in picked.into_iter().enumerate() {
-                if is_picked {
-                    this.picks.set(i..i + 1, true);
-                }
-            }
-        }
+        self.as_mut().rust_mut().results.drop_where(|hit| dead.contains(&hit.id));
         self.as_mut().end_reset_model();
-        let similar = self.hits.len() - other;
-        self.as_mut().set_other_count(qt_int(other));
-        self.as_mut().set_similar_count(qt_int(similar));
-        self.as_mut().relayout();
-        self.picks_changed();
+        self.as_mut().groups_changed();
     }
 
     fn relayout(mut self: Pin<&mut Self>) {
-        let other = usize::try_from(self.other_count).unwrap_or(0).min(self.hits.len());
-        let aspects: Vec<f64> = self.hits.iter().map(hit_aspect).collect();
-        let (other_aspects, similar_aspects) = aspects.split_at(other);
+        let other_aspects: Vec<f64> = self.results.first().iter().map(hit_aspect).collect();
+        let similar_aspects: Vec<f64> = self.results.second().iter().map(hit_aspect).collect();
         let (width, height, gap) = (self.layout_width, f64::from(ROW_HEIGHT), self.gap);
-        let (mut frames, other_height) = layout::frames(other_aspects, width, height, gap);
-        let (similar, similar_height) = layout::frames(similar_aspects, width, height, gap);
+        let (mut frames, other_height) = layout::frames(&other_aspects, width, height, gap);
+        let (similar, similar_height) = layout::frames(&similar_aspects, width, height, gap);
         frames.extend(similar);
         let rows = qt_int(frames.len());
         self.as_mut().rust_mut().frames = frames;
@@ -324,15 +223,16 @@ impl qobject::YandexSearch {
 
     /// After the picks change: each row's `picked` role, the counts, and the preview's pick.
     fn picks_changed(mut self: Pin<&mut Self>) {
-        let rows = qt_int(self.hits.len());
+        let rows = qt_int(self.results.len());
         if rows > 0 {
             let root = QModelIndex::default();
             let (top, bottom) = (self.index(0, 0, &root), self.index(rows - 1, 0, &root));
             self.as_mut().data_changed(&top, &bottom, &QList::from(&[ROLE_PICKED][..]));
         }
-        let other_picked = qt_int(self.picks.picked_in(self.range(0, self.other_count)));
-        let similar_picked = qt_int(self.picks.picked_in(self.range(self.other_count, self.similar_count)));
-        let picked_count = qt_int(self.picks.count());
+        let picks = self.results.picks();
+        let other_picked = qt_int(picks.picked_in(self.results.first_range()));
+        let similar_picked = qt_int(picks.picked_in(self.results.second_range()));
+        let picked_count = qt_int(picks.count());
         self.as_mut().set_picked_count(picked_count);
         self.as_mut().set_other_picked(other_picked);
         self.as_mut().set_similar_picked(similar_picked);
@@ -350,10 +250,10 @@ impl qobject::YandexSearch {
 
     /// The preview's values for its item: the picture's URL, its size and its pick (empty for no item).
     fn refresh_preview(mut self: Pin<&mut Self>) {
-        let shown = usize::try_from(self.preview_item).ok().and_then(|i| self.hits.get(i).map(|hit| (i, hit)));
+        let shown = crate::rows::row_of(self.preview_item).and_then(|i| self.results.get(i).map(|hit| (i, hit)));
         let (url, width, height, picked) = match shown {
             Some((i, hit)) => {
-                (QString::from(&original_url(hit.id)), qt_side(hit.width), qt_side(hit.height), self.picks.is_picked(i))
+                (QString::from(&original_url(hit.id)), qt_side(hit.width), qt_side(hit.height), self.results.picks().is_picked(i))
             }
             None => (QString::default(), 0, 0, false),
         };
@@ -367,23 +267,23 @@ impl qobject::YandexSearch {
         let poll = search().poll();
         // The results first: whatever watches `busy` going off finds them in place.
         if let Some(found) = poll.found {
-            self.as_mut().show(found.other, found.similar);
+            self.as_mut().show(Results::new(found.other, found.similar));
         }
         // The results whose files died come off the grid (their ids are the search's, so an older search's are ignored).
         if !poll.dead.is_empty() {
             self.as_mut().drop_dead(&poll.dead);
         }
         if let Some(status) = poll.status {
-            self.as_mut().set_status(QString::from(&status_text(status)));
+            self.as_mut().set_status(QString::from(&text::yandex_status(&status)));
         }
         self.set_busy(poll.busy);
     }
 
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
-        let Ok(i) = usize::try_from(index.row()) else {
+        let Some(i) = crate::rows::row_of(index.row()) else {
             return QVariant::default();
         };
-        let Some(hit) = self.hits.get(i) else {
+        let Some(hit) = self.results.get(i) else {
             return QVariant::default();
         };
         let frame = self.frames.get(i).copied().unwrap_or_default();
@@ -391,7 +291,7 @@ impl qobject::YandexSearch {
             ROLE_THUMB => QVariant::from(&QString::from(&picture_url(hit.id))),
             ROLE_IMAGE_WIDTH => QVariant::from(&qt_side(hit.width)),
             ROLE_IMAGE_HEIGHT => QVariant::from(&qt_side(hit.height)),
-            ROLE_PICKED => QVariant::from(&self.picks.is_picked(i)),
+            ROLE_PICKED => QVariant::from(&self.results.picks().is_picked(i)),
             ROLE_FRAME_X => QVariant::from(&frame.x),
             ROLE_FRAME_Y => QVariant::from(&frame.y),
             ROLE_FRAME_WIDTH => QVariant::from(&frame.width),
@@ -418,24 +318,24 @@ impl qobject::YandexSearch {
     }
 
     pub(crate) fn row_count(&self, _parent: &QModelIndex) -> i32 {
-        qt_int(self.hits.len())
+        qt_int(self.results.len())
     }
 
     pub(crate) fn toggle_pick(mut self: Pin<&mut Self>, item: i32) {
-        let Ok(i) = usize::try_from(item) else { return };
-        self.as_mut().rust_mut().picks.toggle(i);
+        let Some(i) = crate::rows::row_of(item) else { return };
+        self.as_mut().rust_mut().results.picks_mut().toggle(i);
         self.picks_changed();
     }
 
     pub(crate) fn pick_to(mut self: Pin<&mut Self>, item: i32) {
-        let Ok(i) = usize::try_from(item) else { return };
-        self.as_mut().rust_mut().picks.pick_to(i);
+        let Some(i) = crate::rows::row_of(item) else { return };
+        self.as_mut().rust_mut().results.picks_mut().pick_to(i);
         self.picks_changed();
     }
 
     pub(crate) fn set_picked(mut self: Pin<&mut Self>, first: i32, count: i32, picked: bool) {
         let range = self.range(first, count);
-        self.as_mut().rust_mut().picks.set(range, picked);
+        self.as_mut().rust_mut().results.picks_mut().set(range, picked);
         self.picks_changed();
     }
 
@@ -449,7 +349,7 @@ impl qobject::YandexSearch {
             self.as_mut().set_status(QString::from(&text::yandex_no_folder()));
             return;
         };
-        let hits: Vec<Hit> = self.picks.indices().filter_map(|i| self.hits.get(i).cloned()).collect();
+        let hits: Vec<Hit> = self.results.picked().cloned().collect();
         if hits.is_empty() {
             self.as_mut().set_status(QString::from(&text::yandex_nothing_picked()));
             return;
@@ -464,7 +364,7 @@ impl qobject::YandexSearch {
             Err(e) => return self.not_started("save", &e),
         }
         self.as_mut().set_busy(true);
-        self.as_mut().set_status(QString::from(&status_text(Status::Working(Phase::Saving { files }))));
+        self.as_mut().set_status(QString::from(&text::yandex_status(&Status::Working(Phase::Saving { files }))));
     }
 
     /// A search or a save (`what`) whose thread the system refused: the log says why, and so does the status line.
@@ -476,24 +376,3 @@ impl qobject::YandexSearch {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn hit(id: u64) -> Hit {
-        Hit { id, url: format!("https://a.example/{id}.jpg"), width: 1, height: 1, suffix: String::new() }
-    }
-
-    /// The picks follow their results when a dead one is taken off: the picked results stay picked, in order.
-    #[test]
-    fn the_picks_stay_on_their_results_when_a_dead_one_goes() {
-        let hits = vec![hit(1), hit(2), hit(3), hit(4)];
-        let mut picks = Picks::new(4);
-        picks.set(0..1, true);
-        picks.set(2..4, true);
-        let (kept, picked, other) = without_dead(&hits, &picks, 2, &[2]);
-        assert_eq!(kept.iter().map(|h| h.id).collect::<Vec<_>>(), [1, 3, 4]);
-        assert_eq!(picked, [true, true, true]);
-        assert_eq!(other, 1, "result 2 was one of the other sizes; one of them is left");
-    }
-}

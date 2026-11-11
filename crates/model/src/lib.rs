@@ -30,3 +30,4 @@ pub mod tree;
 pub mod turns;
 pub mod view;
 pub mod write;
+pub mod yandex;

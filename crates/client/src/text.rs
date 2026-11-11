@@ -21,6 +21,7 @@ use pg_model::query::{
 };
 use pg_model::refusal::RefusedReason;
 use pg_model::rules::PathRules;
+use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status};
 
 use crate::input::day_text;
 pub use message::{Message, render};
@@ -456,6 +457,69 @@ pub fn yandex_undecodable(reason: &str) -> String {
     render(&Message::YandexUndecodable { reason: reason.to_string() })
 }
 
+/// What the user reads when a Yandex request fails: each error has its own words; the values they carry (the
+/// transport's error, what an answer lacked) are the lower layers' text.
+pub fn yandex_request(e: &RequestError) -> String {
+    match e {
+        RequestError::Captcha => render(&Message::YandexCaptcha),
+        RequestError::Status(status) => yandex_http_status(*status),
+        RequestError::Transport(error) => yandex_transport(error),
+        RequestError::Unexpected(detail) => yandex_unexpected(detail),
+        RequestError::Recorded(error) => yandex_recorded(error),
+        RequestError::Undecodable(reason) => yandex_undecodable(reason),
+    }
+}
+
+/// Where a Yandex search or save is.
+pub fn yandex_phase(phase: pg_model::yandex::Phase) -> String {
+    use pg_model::yandex::Phase;
+    match phase {
+        Phase::Starting => render(&Message::YandexStarting),
+        Phase::Uploading => render(&Message::YandexUploading),
+        Phase::OtherSizes => render(&Message::YandexOtherSizes),
+        Phase::Similar => render(&Message::YandexSimilar),
+        Phase::Saving { files } => yandex_saving(files),
+        Phase::SavingFile { n, of } => yandex_saving_file(n, of),
+    }
+}
+
+fn yandex_search_error(e: &SearchError) -> String {
+    match e {
+        SearchError::NotStill => render(&Message::YandexNotStill),
+        SearchError::Unreadable(e) | SearchError::Undecodable(e) => yandex_unreadable_photo(e),
+        SearchError::Request(e) => yandex_request(e),
+    }
+}
+
+fn yandex_similar_note(note: &SimilarNote) -> String {
+    match note {
+        SimilarNote::Stopped { shown, error } => yandex_similar_stopped(*shown, &yandex_request(error)),
+        SimilarNote::Failed(error) => yandex_similar_failed(&yandex_request(error)),
+    }
+}
+
+fn yandex_failure(failure: &SaveFailure) -> String {
+    match failure {
+        SaveFailure::Client(e) => yandex_request(e),
+        SaveFailure::Download { url, error } => yandex_download_failed(url, &yandex_request(error)),
+        SaveFailure::Write { url, path, error } => yandex_write_failed(url, path, error),
+    }
+}
+
+/// A Yandex search's or save's outcome, as the panel's status line shows it: empty for a search that ended with no note.
+pub fn yandex_status(status: &Status) -> String {
+    match status {
+        Status::Working(phase) => yandex_phase(*phase),
+        Status::Searched(note) => note.as_ref().map_or_else(String::new, yandex_similar_note),
+        Status::SearchFailed(e) => yandex_search_error(e),
+        Status::Saved(Saved { folder, written, failed, first_error }) => {
+            yandex_saved(*written, folder, *failed, first_error.as_ref().map(yandex_failure).as_deref())
+        }
+        // The panic that stopped it is in gallery.log (a thread the system refused is `yandex_not_started`'s line).
+        Status::Stopped => render(&Message::YandexStopped),
+    }
+}
+
 /// The catalog couldn't be opened at start, for `error`.
 pub fn catalog_unopened(error: &str) -> String {
     render(&Message::CatalogUnopened { error: error.to_string() })
@@ -680,6 +744,17 @@ mod tests {
         assert_eq!(yandex_saving(1), "Saving 1 file…");
         assert_eq!(yandex_saving(3), "Saving 3 files…");
         assert_eq!(yandex_saving_file(2, 5), "Saving 2 of 5…");
+        let failed = Saved {
+            folder: "D:/out".into(),
+            written: 2,
+            failed: 1,
+            first_error: Some(SaveFailure::Download { url: "u".into(), error: RequestError::Captcha }),
+        };
+        assert_eq!(
+            yandex_status(&Status::Saved(failed)),
+            yandex_saved(2, "D:/out", 1, Some(&yandex_download_failed("u", &render(&Message::YandexCaptcha))))
+        );
+        assert_eq!(yandex_status(&Status::Searched(None)), "", "a search with no note shows nothing");
         assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
         assert_eq!(yandex_saved(3, "D:/out", 0, None), "Saved 3 files to D:/out");
         assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");

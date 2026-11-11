@@ -110,7 +110,8 @@ impl Fetch for Replay {
 mod tests {
     use super::*;
     use crate::yandex::images::Images;
-    use crate::yandex::{Hit, Saved, SimilarNote, find_similar, number, save_all};
+    use crate::yandex::{Hit, find_similar, number, save_all};
+    use pg_model::yandex::{RequestError, Saved, SimilarNote};
     use pg_jobs::events::Bus;
     use std::sync::Mutex;
 
@@ -181,7 +182,7 @@ mod tests {
         assert_eq!(found.other[0].suffix, "yandex 714x320");
         let urls: Vec<&str> = found.similar.iter().map(|h| h.url.as_str()).collect();
         assert_eq!(urls, ["https://a.example/one.png", "https://b.example/two.png"]);
-        assert!(matches!(note, Some(SimilarNote::Stopped { shown: 2, error: YandexError::Captcha })));
+        assert!(matches!(note, Some(SimilarNote::Stopped { shown: 2, error: RequestError::Captcha })));
 
         // The save path writes the recorded bytes of the first result, from the search's images.
         let pictures = Images::new(Arc::new(Replay::new(recording)), Arc::new(accept), changes.clone());

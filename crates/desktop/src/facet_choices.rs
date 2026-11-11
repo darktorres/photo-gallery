@@ -1,9 +1,9 @@
 //! One list facet of the filter bar as a model: a row per choice (a media type, a shape, an import status, a borders
 //! value, a rating, or an extension of the folder), with the choice's count (how many files choosing it would show,
 //! `countFacets()`, or 0 where the bar shows none) and whether the query has it. `facet` is the list's index in
-//! `pg_client::facets::Facet`. The query is the listing's (`controller.rs`) and the counts are the ones `Filters` last
-//! published (`set_counts`), both read here, typed: `refresh` rebuilds the rows, and the filter bar calls it when the
-//! query or the counts change.
+//! `pg_client::facets::Facet`, whose `choices` decides the rows. The query and the counts are both read from
+//! `controller.rs` (the counts as `Filters` last set them): `refresh` rebuilds the rows, and the filter bar calls it when
+//! the query or the counts change.
 
 pub(crate) mod state;
 use state::Row;
@@ -12,13 +12,12 @@ use crate::facet_choices_bridge::qobject;
 
 use core::pin::Pin;
 use cxx_qt::CxxQtType;
-use std::cell::RefCell;
 
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_client::facets::Facet;
+use pg_client::facets::{Counts, Facet, choices};
 use pg_client::input::key_of;
 use pg_client::text;
-use pg_model::query::{BorderFacet, Choice, MediaType, Query, RatingFilter, Shape, Status};
+use pg_model::query::Query;
 
 use crate::controller;
 
@@ -26,55 +25,6 @@ const ROLE_KEY: i32 = 256;
 const ROLE_LABEL: i32 = 257;
 const ROLE_COUNT: i32 = 258;
 const ROLE_CHOSEN: i32 = 259;
-
-/// The counts `Filters` publishes for the list facets: a media type's and a borders value's, and the folder's
-/// extensions in the order the bar shows them (most files first, then any chosen one it doesn't have, at 0).
-#[derive(Clone, Debug, Default)]
-pub(crate) struct Counts {
-    pub types: Vec<(MediaType, i64)>,
-    pub borders: Vec<(BorderFacet, i64)>,
-    pub exts: Vec<(String, i64)>,
-}
-
-thread_local! {
-    /// The counts `Filters` last published (`set_counts`); the GUI thread's only copy.
-    static COUNTS: RefCell<Counts> = RefCell::new(Counts::default());
-}
-
-/// Publish the counts the list facets show (`Filters` does, when they are in or the query changed).
-pub(crate) fn set_counts(counts: Counts) {
-    COUNTS.with(|c| *c.borrow_mut() = counts);
-}
-
-fn counts() -> Counts {
-    COUNTS.with(|c| c.borrow().clone())
-}
-
-/// The choices of a list facet, in the bar's order, each with its count (`None` where the bar shows none).
-fn choices(facet: Facet, counts: &Counts) -> Vec<(Choice, Option<i64>)> {
-    let media = |t: MediaType| counts.types.iter().find(|(x, _)| *x == t).map_or(0, |(_, n)| *n);
-    let border = |b: BorderFacet| counts.borders.iter().find(|(x, _)| *x == b).map_or(0, |(_, n)| *n);
-    match facet {
-        Facet::Types => [MediaType::Image, MediaType::Animated, MediaType::Video]
-            .map(|t| (Choice::Type(t), Some(media(t))))
-            .to_vec(),
-        Facet::Orientations => {
-            [Shape::Landscape, Shape::Portrait, Shape::Square].map(|s| (Choice::Shape(s), None)).to_vec()
-        }
-        Facet::Status => {
-            [Status::Imported, Status::Pending, Status::Failed].map(|s| (Choice::Status(s), None)).to_vec()
-        }
-        Facet::Borders => {
-            [BorderFacet::None, BorderFacet::Black, BorderFacet::White, BorderFacet::Color, BorderFacet::Blur]
-                .map(|b| (Choice::Border(b), Some(border(b))))
-                .to_vec()
-        }
-        Facet::Ratings => {
-            (0u8..6).filter_map(|n| RatingFilter::try_from(n).ok()).map(|r| (Choice::Rating(r), None)).collect()
-        }
-        Facet::Exts => counts.exts.iter().map(|(e, n)| (Choice::Ext(e.clone()), Some(*n))).collect(),
-    }
-}
 
 /// Counts saturate: the properties are ints, as QML's are. (`Filters` shows its totals with the same function.)
 pub(crate) fn count(n: i64) -> i32 {
@@ -102,7 +52,7 @@ impl qobject::FacetChoices {
 
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
-        let counts = counts();
+        let counts = controller::counts();
         let facet = crate::rows::row_of(self.facet).and_then(Facet::from_index);
         let rows = facet.map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.

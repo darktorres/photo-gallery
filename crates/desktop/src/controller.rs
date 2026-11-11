@@ -3,6 +3,9 @@
 //! carries out the commands that come back (`shell.rs`); the filter bar and the grid model read the listing through
 //! `listing`. Nothing crosses the bridge as JSON.
 //!
+//! Beside the controller, not in it: the filter bar's counts (`counts`, `set_counts`). They are display data that no
+//! command depends on, so they are not events (recording each would only bloat the replays).
+//!
 //! With `PG_RECORD` set to a file, every event and the commands it gave are written there as JSON lines
 //! (`pg_client::controller::replay`), for `pg-client`'s replay test.
 
@@ -12,13 +15,15 @@ use std::io::Write;
 use pg_client::controller::prefs::Prefs;
 use pg_client::controller::replay::{self, Record};
 use pg_client::controller::{Command, Controller, Event};
+use pg_client::facets::Counts;
 use pg_model::view::Listing;
 
 use crate::{app, command_line, deadline};
 
-/// The controller and its recorder (`None` unless `PG_RECORD` names a file).
+/// The controller, the filter bar's counts, and the recorder (`None` unless `PG_RECORD` names a file).
 struct Core {
     controller: Controller,
+    counts: Counts,
     recorder: Option<std::fs::File>,
 }
 
@@ -37,7 +42,7 @@ impl Core {
                 None
             }
         });
-        let mut core = Core { controller, recorder };
+        let mut core = Core { controller, counts: Counts::default(), recorder };
         let init = replay::init(&core.controller);
         core.write(&init);
         core
@@ -101,6 +106,16 @@ pub(crate) fn with<T>(read: impl FnOnce(&Controller) -> T) -> T {
 /// The listing as it is now.
 pub(crate) fn listing() -> Listing {
     with(|c| c.listing().clone())
+}
+
+/// The counts the filter bar's list facets show, as `Filters` last set them.
+pub(crate) fn counts() -> Counts {
+    CORE.with(|core| core.borrow().counts.clone())
+}
+
+/// The counts the list facets show (`Filters` sets them when they are in or the query changed).
+pub(crate) fn set_counts(counts: Counts) {
+    CORE.with(|core| core.borrow_mut().counts = counts);
 }
 
 /// The filter bar's query was edited: the listing takes it at once; the list is shown after the controller's pause

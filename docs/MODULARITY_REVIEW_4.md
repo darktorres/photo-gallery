@@ -322,7 +322,7 @@ Each fix gets a test that fails before it.
 - **The picker's own state becomes its fields.**
   - `picker::LISTING` (the in-app dialog's purpose, folder and listing) is read and written only by `FolderPicker`'s own methods (`enter`, `up`, `choose`, `choose_here`, `cancel`, `show_folder`, `choose_path`). It becomes a field of `PickerRust`. Today the three `FolderPicker` instances (two in `Main.qml`, one in `YandexPanel.qml`) share one listing.
   - `picker::START` is set by the Yandex panel (`set_start`) for whichever picker opens next. It goes: the picker asks for its purpose's start itself, `app::get().yandex().start_folder(..)` for `Purpose::YandexSave` (an `App` service after this step).
-- **Kept, with the reason written beside each.** The desktop's other process-wide state is one QObject's state that a sibling QObject reads: `controller::CORE`, `gallery::MODEL`, `folders::TREE` (read by `Shell`), and `picker::CHOSEN` (taken by the library, the gallery's edits and the Yandex panel). cxx-qt default-constructs the QObjects, and nothing hands them a reference. `facet_choices::COUNTS` goes in M-32.
+- **Kept, with the reason written beside each.** The desktop's other process-wide state is one QObject's state that a sibling QObject reads: `controller::CORE`, `gallery::MODEL`, `folders::TREE` (read by `Shell`), and `picker::CHOSEN` (taken by the library, the gallery's edits and the Yandex panel). cxx-qt default-constructs the QObjects, and nothing hands them a reference. `facet_choices::COUNTS` went in M-32.
 - Gate: `just test`, `just shots` (the `yandex` scenarios), Linux checks.
 - **Done in step 5.** As written, with these details:
   - `pg_app::yandex::Yandex` holds the `Search`, the factory, the preferences and the makers; `Search` holds the images of the search on screen. `Images::Check` is a closure (the makers and the height), and `grid_picture` takes a maker from `Makers::with_maker`.
@@ -407,6 +407,11 @@ Each fix gets a test that fails before it.
   - the phase: M-45;
   - the Yandex search's and save's outcomes: `pg_model::yandex`, with the errors' codes and the counts, built by `pg-app`.
 - Gate: `just test`, `just qmltest`, `just shots`.
+- **Done in step 6.**
+  - `pg_client::facets` has `Counts` (with the extension merge, `Counts::new`) and `choices`; the desktop's `Core` holds the counts (`controller::counts`, `set_counts`), and `COUNTS` is gone.
+  - `pg_client::input` has `tri_index` and `tri_of_index`. The bar's three choices are plain-WRITE properties set by `Filters::sync`'s generated setters; the user's edits are invokables (`editName`, `chooseDuplicates`, `chooseBorderMarked`).
+  - `pg_client::results::Results<T>` holds the panel's groups and picks (`drop_where` keeps the picks on their results); its test moved from the desktop.
+  - `pg_model::yandex` holds the outcomes (`Status`, `Phase`, `SearchError`, `SimilarNote`, `SaveFailure`, `Saved`, `RequestError`), built by `pg-app` (`pg-yandex` converts its error); `pg_client::text::yandex_status` and `yandex_phase` word them. `pg_app::reexport` drops `YandexError`.
 
 ### M-33: Qt's conventions stay in the Qt crate
 

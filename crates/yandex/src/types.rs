@@ -25,6 +25,21 @@ pub enum YandexError {
     Recorded(String),
 }
 
+impl From<YandexError> for pg_model::yandex::RequestError {
+    /// The error as data, for the front ends to word.
+    fn from(e: YandexError) -> Self {
+        use pg_model::yandex::RequestError;
+        match e {
+            YandexError::Undecodable(reason) => RequestError::Undecodable(reason.to_string()),
+            YandexError::Captcha => RequestError::Captcha,
+            YandexError::Status(status) => RequestError::Status(status),
+            YandexError::Transport(error) => RequestError::Transport(error),
+            YandexError::Unexpected(detail) => RequestError::Unexpected(detail.to_string()),
+            YandexError::Recorded(error) => RequestError::Recorded(error),
+        }
+    }
+}
+
 /// The ids Yandex gives an upload. `orig_url` is the uploaded photo on Yandex's CDN.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Upload {

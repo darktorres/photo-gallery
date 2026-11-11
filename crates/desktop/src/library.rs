@@ -175,7 +175,7 @@ impl qobject::Library {
             Phase::Import => Some(FilePass::Import),
             Phase::Idle | Phase::Scan { .. } | Phase::Crop => None,
         };
-        self.as_mut().set_failed_pass(crate::failed_files::kind_code(pass.map(LedgerKind::File)));
+        self.as_mut().set_failed_pass(crate::ledgers::kind_code(pass.map(LedgerKind::File)));
     }
 
     /// The writer's queue and its latest failure, on the status line: display only. The inbox hears of the writer from

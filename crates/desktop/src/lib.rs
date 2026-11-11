@@ -44,6 +44,7 @@ mod gui_app_bridge;
 mod keymap;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod keymap_bridge;
+mod ledgers;
 mod library;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod library_bridge;

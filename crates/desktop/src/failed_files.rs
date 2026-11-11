@@ -16,10 +16,9 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
 use pg_app::{Failed, FailedItems};
 use pg_client::text;
-use pg_model::notice::LedgerKind;
 use pg_model::rules::Path as RulePath;
 
-use crate::app;
+use crate::{app, ledgers};
 use state::Shown;
 
 /// The most rows an entry lists.
@@ -44,18 +43,6 @@ thread_local! {
 /// The folder the list shows at `row`, if it shows folders.
 pub(crate) fn shown_folder(row: usize) -> Option<RulePath> {
     FOLDERS.with(|folders| folders.borrow().get(row).cloned())
-}
-
-/// A ledger's code in QML (a `Notices` row's `pass`, a bit of `Notices.passes`, `Library.failedPass`, `--inbox-expand`):
-/// its place in [`LedgerKind::ALL`], -1 for none. A pass's ledger has the pass's place in `FilePass::ALL`, which
-/// `LedgerKind::ALL` lists first.
-pub(crate) fn kind_code(kind: Option<LedgerKind>) -> i32 {
-    kind.and_then(|k| LedgerKind::ALL.iter().position(|&q| q == k)).and_then(|i| i32::try_from(i).ok()).unwrap_or(-1)
-}
-
-/// The ledger of a QML code ([`kind_code`]).
-pub(crate) fn kind_of(code: i32) -> Option<LedgerKind> {
-    usize::try_from(code).ok().and_then(|i| LedgerKind::ALL.get(i)).copied()
 }
 
 /// The rows of a delivered read.
@@ -136,10 +123,10 @@ impl qobject::FailedFiles {
         qt_int(self.rows.len())
     }
 
-    /// Ask for the list of the ledger `code` ([`kind_code`]; -1 shows none). Another ledger's rows go at once; the same
+    /// Ask for the list of the ledger `code` ([`ledgers::kind_code`]; -1 shows none). Another ledger's rows go at once; the same
     /// ledger's (asked again because its newest failure changed) stay until the new read is delivered.
     pub(crate) fn show(mut self: Pin<&mut Self>, code: i32) {
-        let kind = kind_of(code);
+        let kind = ledgers::kind_of(code);
         let asked = self.asked + 1;
         self.as_mut().rust_mut().asked = asked;
         if kind != self.kind {
@@ -213,29 +200,6 @@ impl qobject::FailedFiles {
         if self.total != total {
             self.as_mut().rust_mut().total = total;
             self.total_changed();
-        }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use pg_model::notice::FilePass;
-
-    /// The codes QML holds: a pass's ledger keeps the pass's place, the scans' folders come after, and none is -1.
-    #[test]
-    fn a_ledgers_code_is_its_place() {
-        assert_eq!(kind_code(Some(LedgerKind::File(FilePass::Thumbs))), 0);
-        assert_eq!(kind_code(Some(LedgerKind::File(FilePass::Import))), 2);
-        assert_eq!(kind_code(Some(LedgerKind::ScanFolders)), 3);
-        assert_eq!(kind_code(None), -1);
-        for kind in LedgerKind::ALL {
-            assert_eq!(kind_of(kind_code(Some(kind))), Some(kind));
-        }
-        assert_eq!(kind_of(-1), None);
-        assert_eq!(kind_of(99), None);
-        for (i, pass) in FilePass::ALL.into_iter().enumerate() {
-            assert_eq!(kind_code(Some(LedgerKind::File(pass))), i32::try_from(i).unwrap());
         }
     }
 }

@@ -32,7 +32,7 @@ use pg_model::notice::{Action, LedgerKind, Level, Notice};
 use pg_model::rules::PathRules;
 
 use crate::app;
-use crate::failed_files::{kind_code, kind_of};
+use crate::ledgers::{kind_code, kind_of};
 use crate::list_diff::{self, Op};
 
 thread_local! {

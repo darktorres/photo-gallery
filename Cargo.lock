@@ -1646,9 +1646,12 @@ dependencies = [
  "gungraun",
  "pg-analysis",
  "pg-catalog",
+ "pg-codec",
  "pg-model",
  "pg-render",
+ "pg-testkit",
  "pg-thumbcache",
+ "pg-video",
  "rusqlite",
 ]
 

@@ -12,13 +12,19 @@ workspace = true
 [dependencies]
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }
+pg-codec = { path = "../codec" }
 pg-thumbcache = { path = "../thumbcache" }
 pg-render = { path = "../render" }
 pg-model = { path = "../model" }
+pg-video = { path = "../video" }
 rusqlite.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 gungraun.workspace = true
+
+# The viewer bench's PNG, made in its setup from the sample's pixels.
+[dev-dependencies]
+pg-testkit = { path = "../testkit" }
 
 [[bench]]
 name = "ir"

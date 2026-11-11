@@ -130,6 +130,14 @@ modgraph: _qt
     {{ py }} tools/modgraph/module_graph.py
     {{ py }} tools/modgraph/compiler_graph.py
 
+# The survey a modularity review starts from (docs/MODULARITY_REVIEW_4.md, M-48): every public item and where it is
+# used (tools/modgraph/api_surface.py, which needs cargo-modules; the JSON goes to target/modgraph), every internal
+# dependency edge and what goes through it (edges.py), and the duplicate code (dupes.py). Reports, not gates: they match by name.
+modgraph-report: _qt
+    {{ py }} tools/modgraph/api_surface.py
+    {{ py }} tools/modgraph/edges.py
+    {{ py }} tools/modgraph/dupes.py
+
 # Screenshot comparison: the test-hook matrix on one fixture, the working tree against a recorded reference, pixel by
 # pixel (tools/compare_shots.py). `just shots --record <commit>` builds that commit and records its screenshots under
 # tools/shots/reference (once); `just shots` then builds only the working tree. `--expect a,b` declares scenarios

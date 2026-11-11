@@ -29,7 +29,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     TO_7_WRITE_CHECKS,
 ];
 
-/// Version 2: `files.changed` (`Catalog::changes_since`) is stamped for what the grid shows of a file's borders,
+/// Version 2: `files.changed` (what a client that kept its list fetches again by) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
 /// its sides (`Catalog::store_borders`); a pairing's replacement deletes them, and the analysis with them. `files.seq`
 /// is not touched: the thumbnails are not made from the borders.
@@ -375,7 +375,7 @@ CREATE TABLE files(
     order_key BLOB NOT NULL,     -- where it sorts by name, all drives merged (PathRules::order_key)
     pending   INTEGER NOT NULL DEFAULT 1,  -- the import has to analyze it (again): kept by the triggers below
     seq       INTEGER NOT NULL DEFAULT 0,  -- meta.seq when its thumbnails' source last changed: kept by triggers
-    changed   INTEGER NOT NULL DEFAULT 0,  -- meta.seq at its last user-visible change (changes_since): kept by triggers
+    changed   INTEGER NOT NULL DEFAULT 0,  -- meta.seq at its last user-visible change (a client's resync): kept by triggers
     -- Not yet resolved by the scanner's pairing: a row made for a file it has not seen before, or a displaced row. The
     -- pairing runs at the end of every scan of its root and clears the flag from the rows it leaves as new files.
     unpaired  INTEGER NOT NULL DEFAULT 0,
@@ -393,7 +393,7 @@ CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
 CREATE INDEX files_to_import ON files(volume, file_ref & 0xFFFFFFFFFFFF) WHERE missing = 0 AND pending = 1;
 -- The files changed since the thumbnail pass last looked (thumbs::pending_in).
 CREATE INDEX files_seq ON files(seq);
--- The files changed since a change number (crate::Catalog::changes_since).
+-- The files changed since a change number (a client's resync).
 CREATE INDEX files_changed ON files(changed);
 CREATE TABLE analysis(
     file_id     INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
@@ -639,6 +639,12 @@ END;
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::browse::fixtures::library;
+    use crate::test_support::changed_since;
+    use pg_model::ids::FileId;
+    use pg_model::rating::Rating;
+    use pg_model::rules::PathRules;
+    use pg_model::turns::Turns;
     use crate::browse::fixtures::under_both_rules;
     use pg_dbfile::Difference;
 
@@ -811,4 +817,37 @@ mod tests {
         the_baseline_and_the_migration_make_the_current_schema_windows,
         the_baseline_and_the_migration_make_the_current_schema_posix
     );
+
+    /// Every user-visible change stamps its file (`files.changed`), in the same statement as the change: the file
+    /// itself, its analysis, its rating, its border mark and its queued write. A view is not a file's change.
+    #[test]
+    fn each_user_visible_change_names_its_file() {
+        let c = library(PathRules::Windows);
+        let (all, now) = changed_since(&c, 0);
+        assert!(all.len() >= 4, "every file the library made is a change: {all:?}");
+        // Nothing has changed since `now`.
+        assert_eq!(changed_since(&c, now), (vec![], now));
+
+        c.set_rating(FileId::new(1), Rating::new(3), false).unwrap();
+        c.set_border_mark(FileId::new(2), true).unwrap();
+        c.queue_rotation(FileId::new(3), Turns::new(1)).unwrap();
+        let (changed, after) = changed_since(&c, now);
+        assert_eq!(changed, [FileId::new(1), FileId::new(2), FileId::new(3)]);
+        assert!(after > now);
+        // What was seen at `after` is not reported again.
+        assert_eq!(changed_since(&c, after), (vec![], after));
+
+        // A view is not a file's change.
+        c.save_view(
+            &pg_model::view::SavedView {
+                name: "v".into(),
+                listing: pg_model::view::Listing {
+                    folder: pg_model::rules::Merged::from(vec![pg_model::name::Name::from("p")]),
+                    ..Default::default()
+                },
+            },
+        )
+        .unwrap();
+        assert_eq!(changed_since(&c, after), (vec![], after));
+    }
 }

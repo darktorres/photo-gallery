@@ -14,7 +14,7 @@ use pg_model::ids::FileId;
 use rusqlite::{Connection, Transaction, TransactionBehavior, params};
 
 use crate::config::TOUCH_FLUSH;
-use crate::maintenance::{Drift, heal, shrink};
+use crate::maintenance::shrink;
 use crate::types::{Event, FORMAT_JPEG, Snapshot, Thumb};
 
 /// Eviction frees this much more than it must (1% of the cap, at most this), so a full cache doesn't evict on
@@ -116,8 +116,6 @@ pub(crate) enum Op {
         through: i64,
         reply: Sender<Result<()>>,
     },
-    /// Check the totals against the entries, and fix them.
-    Heal(Sender<Result<Option<Drift>>>),
     Shrink(Sender<Result<()>>),
     /// Write what's waiting (touches), then answer.
     Flush(Sender<()>),
@@ -247,9 +245,6 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Even
                 .map(drop)
                 .map_err(anyhow::Error::from);
             let _ = reply.send(done);
-        }
-        Op::Heal(reply) => {
-            let _ = reply.send(heal(conn));
         }
         Op::Shrink(reply) => {
             let _ = reply.send(shrink(conn));

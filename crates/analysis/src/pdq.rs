@@ -6,9 +6,6 @@
 //!
 //! The input is the image already fitted into 512 px (see `analyze`), as Meta's hasher recommends and as M0
 //! evaluated it (`eval/pdq.py`).
-// A library reports through its results; printing is for the command line and the app.
-#![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
-
 use std::sync::OnceLock;
 
 use pg_model::pdq::{HASH_BYTES, Hash, Pdq};
@@ -26,7 +23,9 @@ pub struct Hasher {
 }
 
 impl Hasher {
-    /// The hash of the image as is, plus its quality.
+    /// The hash of the image as is, plus its quality: what [`Hasher::hash_rgb_dihedral`]'s first variant is checked
+    /// against.
+    #[cfg(test)]
     pub fn hash_rgb(&mut self, rgb: &[u8], width: usize, height: usize) -> Pdq {
         let (dct, quality) = self.dct16(rgb, width, height);
         Pdq { hash: to_bits(&dct), quality }

@@ -831,6 +831,13 @@ These are additions to the plan's M-12a list.
 - **A leftover attribute.** `analysis/src/pdq.rs` keeps a crate-level `#![cfg_attr(not(test), deny(clippy::print_stdout, ...))]`, left from when it was a crate. It goes; `lib.rs` has it.
 - **The survey is kept.** `review/api_surface.py`, `edges.py` and `dupes.py` go to `tools/modgraph/`, run by `just modgraph-report`, so the next review starts from them. They are reports, not gates: they match by name.
 - Gate: `just lint`, `just test`.
+- **Done in step 9.**
+  - `render::display::decode_stored` is gone, with `pg_codec::decode::Stored`, which only it made. `session_set` was already gone (M-43).
+  - `orient` is `pg_codec::fixtures::orient` (the codec's tests, `pg-edit`'s and `pg-library`'s, whose `pg-codec` dev-dependency takes the feature); `Hasher::hash_rgb` and `Name::from_wtf8` are `#[cfg(test)]`, and the name laws are `name.rs`'s `laws` module (`model/tests/name_laws.rs` is gone).
+  - `ThumbCache::heal` is gone, with the writer's `Op::Heal`; its test calls `maintenance::heal` on a connection of its own.
+  - `changes_since` and `changes.rs` are gone. The test is `schema.rs`'s `each_user_visible_change_names_its_file`, over `test_support::changed_since`, which reads `files.changed` and `meta.seq` in one snapshot, as the writers' borders test does. The schema's comments name the stamps' consumer, not the function.
+  - `pdq.rs`'s crate-level attribute is gone.
+  - `tools/modgraph/{api_surface,edges,dupes}.py`, which take the repository from their own path, and `just modgraph-report`.
 
 ### M-49: the documents
 

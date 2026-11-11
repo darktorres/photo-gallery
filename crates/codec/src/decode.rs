@@ -47,12 +47,6 @@ pub struct Decoded {
     pub info: Info,
 }
 
-/// An image as it is stored: decoded, not oriented (`pg_render::display::decode_stored`).
-pub struct Stored {
-    pub image: Rgb,
-    pub info: Info,
-}
-
 /// The least a JPEG may be DCT-scaled down to.
 #[derive(Clone, Copy, Debug)]
 pub enum MinSize {
@@ -199,12 +193,6 @@ fn to_pixels(x: f64) -> usize {
     pg_model::num::f64_to_usize(x.clamp(0.0, f64::from(u32::MAX)))
 }
 
-/// Apply an EXIF orientation, giving the upright image.
-pub fn orient(img: Rgb, orientation: Orientation) -> Rgb {
-    let (pixels, width, height) = orient_pixels(img.pixels, img.width, img.height, 3, orientation);
-    Rgb { width, height, pixels }
-}
-
 /// Apply an EXIF orientation to `img` in place, through `spare` (which gets `img`'s old buffer).
 pub fn orient_into(img: &mut Rgb, orientation: Orientation, spare: &mut Vec<u8>) {
     if orientation == Orientation::UPRIGHT {
@@ -266,6 +254,7 @@ pub fn transform_into(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fixtures::orient;
 
     #[test]
     fn sniffs_classic_tiff_and_bigtiff() {

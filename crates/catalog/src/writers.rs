@@ -726,7 +726,7 @@ mod tests {
         borders_are_looked_for_after_the_import_and_again_after_a_new_detector_posix
     );
 
-    /// The borders the grid shows are a change of the file (`changes_since`): storing them, a changed cut, removed
+    /// The borders the grid shows are a change of the file (`files.changed`): storing them, a changed cut, removed
     /// sides and a removed analysis each stamp it. Its thumbnails' source (`files.seq`) is not touched.
     fn borders_stamp_the_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
         use pg_model::detection::{Edge, Kind as SideKind, Side};
@@ -756,12 +756,12 @@ mod tests {
         let thumbs = seq(&c);
         // Each step is a change of the file, after the change number before it.
         let stamped = |c: &Catalog, since: i64| -> i64 {
-            let (changed, now) = c.changes_since(since).unwrap();
+            let (changed, now) = changed_since(c, since);
             assert_eq!(changed, [item.id]);
             assert_eq!(seq(c), thumbs, "the thumbnails' source is not changed");
             now
         };
-        let (_, before) = c.changes_since(0).unwrap();
+        let (_, before) = changed_since(&c, 0);
 
         let top = Side {
             pass: 0,
@@ -783,7 +783,7 @@ mod tests {
 
         // The same cut written again changes nothing.
         c.conn.execute("UPDATE analysis SET cut_top = cut_top WHERE file_id = ?1", [item.id.get()]).unwrap();
-        assert_eq!(c.changes_since(now).unwrap(), (vec![], now));
+        assert_eq!(changed_since(&c, now), (vec![], now));
         c.conn.execute("UPDATE analysis SET cut_top = 7 WHERE file_id = ?1", [item.id.get()]).unwrap();
         let now = stamped(&c, now);
         c.conn.execute("DELETE FROM border_sides WHERE file_id = ?1", [item.id.get()]).unwrap();

@@ -123,3 +123,19 @@ pub(crate) fn taken_columns(c: &Catalog) -> (Option<i64>, Option<i64>) {
 pub(crate) fn local_of(c: &Catalog, instant: i64) -> i64 {
     c.conn.query_row("SELECT unixepoch(?1, 'unixepoch', 'localtime')", [instant], |r| r.get(0)).unwrap()
 }
+
+/// The files whose `files.changed` stamp is after `since`, in id order, and the catalog's change number now (`meta.seq`),
+/// read in one snapshot: what a client that kept its list as of `since` would fetch again. The stamps are the schema's
+/// triggers; nothing in the app reads them yet (`docs/BOUNDED_MEMORY_PLAN.md` 7.1 and `DECODE_ONCE_PLAN.md` phase 4 will).
+pub(crate) fn changed_since(c: &Catalog, since: i64) -> (Vec<FileId>, i64) {
+    let snapshot = c.conn.unchecked_transaction().unwrap();
+    let now: i64 = snapshot.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0)).unwrap();
+    let files = snapshot
+        .prepare("SELECT id FROM files WHERE changed > ?1 ORDER BY id")
+        .unwrap()
+        .query_map([since], |r| Ok(FileId::new(r.get(0)?)))
+        .unwrap()
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .unwrap();
+    (files, now)
+}

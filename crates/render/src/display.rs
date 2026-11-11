@@ -9,7 +9,7 @@
 use std::path::Path;
 
 use anyhow::{Context, Result};
-use pg_codec::decode::{Decoded, Decoder, Info, MinSize, Stored, orient_pixels};
+use pg_codec::decode::{Decoded, Decoder, Info, MinSize, orient_pixels};
 use pg_codec::pixels::Rgb;
 use pg_codec::resize::Resizer;
 use pg_model::format::Format;
@@ -44,15 +44,6 @@ pub fn decode(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: Turns) -
     let mut image = Rgb::default();
     let info = decode_into(decoder, bytes, min, turns, &mut image, &mut Vec::new())?;
     Ok(Decoded { image, info })
-}
-
-/// [`decode`] without the orientation, into new buffers: the pixels as stored, which is what a lossless crop cuts.
-pub fn decode_stored(decoder: &mut Decoder, bytes: &[u8], min: MinSize, turns: Turns) -> Result<Stored> {
-    let format = Format::sniff(bytes).context("unknown image format")?;
-    let exif = pg_metadata::orientation(bytes, format);
-    let mut image = Rgb::default();
-    let info = decoder.decode_stored_into(bytes, format, exif, min, turns, &mut image)?;
-    Ok(Stored { image, info })
 }
 
 /// The least the viewer decodes for `view`: enough that the image it shows keeps 4× its pixels (the margin the thumbnails keep too).

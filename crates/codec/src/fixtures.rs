@@ -1,5 +1,17 @@
 //! Test fixtures for the crates that test their files: a TIFF the tiff crate's encoder writes (BigTIFF, which `image`
-//! doesn't write). Built with the `fixtures` feature, which the crates' dev-dependencies enable.
+//! doesn't write), and an image turned by an EXIF orientation, which the edit's and the library's tests compare against.
+//! Built with the `fixtures` feature, which the crates' dev-dependencies enable.
+
+use pg_model::orientation::Orientation;
+
+use crate::decode::orient_pixels;
+use crate::pixels::Rgb;
+
+/// Apply an EXIF orientation, giving the upright image.
+pub fn orient(img: Rgb, orientation: Orientation) -> Rgb {
+    let (pixels, width, height) = orient_pixels(img.pixels, img.width, img.height, 3, orientation);
+    Rgb { width, height, pixels }
+}
 
 /// An RGB8 TIFF written by the tiff crate's encoder, classic or BigTIFF (`image` writes only classic). Fails as the
 /// encoder does, for one when `pixels` doesn't hold `w × h` RGB pixels.

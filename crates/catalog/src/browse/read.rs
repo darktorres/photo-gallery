@@ -2,7 +2,6 @@
 //! sorted, and what the viewer and the thumbnails need of one file, each a method of `Catalog` in its module. Nothing
 //! here writes; the saved views and the session are `browse::views`'.
 
-mod changes;
 mod details;
 pub mod facets;
 pub(crate) mod grid;

@@ -86,7 +86,7 @@ mod tests {
     use crate::rewrite::chunk::png_chunk;
     use crate::rewrite::raster::pack;
     use crate::testing::shown;
-    use pg_codec::decode::orient;
+    use pg_codec::fixtures::orient;
     use pg_container::{GifBlock, gif_blocks};
 
     /// A test image with distinct, smoothly varying pixels (so a wrong turn can't match by chance).

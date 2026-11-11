@@ -275,15 +275,6 @@ impl ThumbCache {
         self.call(|reply| Op::Checked { snapshot: *snapshot, through, reply })?
     }
 
-    /// Check the totals against the entries, and fix them if they differ (only a writer that bypassed the
-    /// triggers could cause that); returns what was fixed. A scan of the entries: `open` does it at most once a day.
-    pub fn heal(&self) -> Result<Option<Drift>> {
-        if self.store.is_none() {
-            return Ok(None);
-        }
-        self.call(Op::Heal)?
-    }
-
     /// Give back free pages to the file system, a bounded amount (the task does this at idle).
     pub fn shrink(&self) -> Result<()> {
         if self.store.is_none() {
@@ -880,10 +871,11 @@ mod tests {
         let dir = test_folder(SCRATCH, "heal").unwrap();
         let cache = open(&dir, 1 << 30);
         cache.put_batch(&mut vec![thumb(1, 100, 5, 10), thumb(2, 100, 5, 20)], None).unwrap();
-        Connection::open(cache_path(&dir)).unwrap().execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
-        assert_eq!(cache.heal().unwrap(), Some(Drift { kept: (999, 7), actual: (30, 2) }));
+        let mut file = Connection::open(cache_path(&dir)).unwrap();
+        file.execute("UPDATE totals SET bytes = 999, count = 7", []).unwrap();
+        assert_eq!(crate::maintenance::heal(&mut file).unwrap(), Some(Drift { kept: (999, 7), actual: (30, 2) }));
         assert_eq!(cache.totals().unwrap(), (30, 2));
-        assert_eq!(cache.heal().unwrap(), None);
+        assert_eq!(crate::maintenance::heal(&mut file).unwrap(), None);
     }
 
     #[test]

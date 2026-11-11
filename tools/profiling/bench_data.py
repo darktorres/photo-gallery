@@ -23,9 +23,9 @@ layout name ending in `-large` (`v6-windows-rules-large` at schema v6), from `sy
         $PG_ROOT\\synthetic\\catalog-large $PG_ROOT\\bench-data
 
 A `-large` layout also gets the failure ledger seeded (`seed_ledger`) to --ledger-rows rows (100,000 by default; 0 for
-none; other layouts default to 0), when the copy's schema has the ledger the inbox reads: `file_failures` with its
-`hidden` column (the notifications migration). An older schema is left as it is, with a note: its inbox does not read
-the ledger that way, and its `inbox-refresh` is not measured on it.
+none; other layouts default to 0), counting the import's failures, on either side of the notifications migration:
+F0's baseline is measured on the catalog the build before it made, and F1 on that catalog opened by the build after
+it, so both have the same failures.
 
 `just perf` (tools/linux.py) mounts the bench data folder into the container, which copies it to its own
 volume before the benches run.
@@ -82,36 +82,45 @@ def columns(conn: sqlite3.Connection, table: str) -> set[str]:
 
 
 def seed_ledger(catalog: Path, rows: int) -> None:
-    """Tops the copy's `file_failures` up to `rows` rows: the import's own (one per failed analysis, kept by the schema's
-    triggers) and then thumbs rows, then borders rows, for the files by id that have none of that pass. Each row records
-    the file as it is (mtime, size, rotation), `hidden` as the schema keeps it for those passes (the file missing), and
-    the same error and first-seen time; the schema's own trigger stamps its serial, as the app's writes are."""
+    """Tops the copy's failure ledger up to `rows` rows: the import's own (one per failed analysis) and then thumbs rows,
+    then borders rows, for the files by id that have none of that pass. Each row records the file as it is (mtime, size,
+    rotation) and the same error and first-seen time; the schema's own trigger stamps its serial, as the app's writes are.
+
+    Both sides of the notifications' migration are seeded alike, so a comparison across it measures the same failures:
+    after it (file_failures has `hidden`), the import's rows are in file_failures and each seeded row's `hidden` is the
+    file's `missing`, as the schema keeps it for those passes; before it, the import's failures are its failed analyses
+    (not in file_failures, which has no `hidden`), and they count toward `rows` the same. A catalog made before the
+    migration and then opened by a build after it (which backfills the import's rows) has the same rows either way."""
     conn = sqlite3.connect(catalog)
     ledger = columns(conn, "file_failures")
-    if "hidden" not in ledger:
-        print(f"{catalog}: file_failures has no hidden column (the ledger before the notifications migration): not seeded")
-        conn.close()
-        return
-    have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0]
+    after = "hidden" in ledger
+    if after:
+        have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0]
+    else:
+        have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0] + conn.execute(
+            "SELECT count(*) FROM analysis WHERE error IS NOT NULL"
+        ).fetchone()[0]
     files = conn.execute("SELECT count(*) FROM files").fetchone()[0]
     for pass_ in ("thumbs", "borders"):
         wanted = rows - have
         if wanted <= 0:
             break
+        hidden_column, hidden_value = (", hidden", ", f.missing") if after else ("", "")
         conn.execute(
-            "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)\n"
-            "SELECT f.id, ?, f.mtime, f.size, f.rotation, ?, 1, ?, f.missing FROM files f\n"
+            f"INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen{hidden_column})\n"
+            f"SELECT f.id, ?, f.mtime, f.size, f.rotation, ?, 1, ?{hidden_value} FROM files f\n"
             "WHERE NOT EXISTS (SELECT 1 FROM file_failures x WHERE x.file_id = f.id AND x.pass = ?)\n"
             "ORDER BY f.id LIMIT ?",
             (pass_, SEED_ERROR, SEED_FIRST_SEEN, pass_, wanted),
         )
-        have = conn.execute("SELECT count(*) FROM file_failures").fetchone()[0]
+        have += conn.execute("SELECT changes()").fetchone()[0]
     conn.commit()
-    by_pass = conn.execute("SELECT pass, count(*), sum(hidden) FROM file_failures GROUP BY pass ORDER BY pass").fetchall()
+    by_pass = conn.execute("SELECT pass, count(*) FROM file_failures GROUP BY pass ORDER BY pass").fetchall()
     conn.execute("VACUUM")
     conn.close()
-    shown = ", ".join(f"{name} {count} ({hidden} hidden)" for name, count, hidden in by_pass)
-    print(f"{catalog}: {have} ledger rows over {files} files: {shown}")
+    shown = ", ".join(f"{name} {count}" for name, count in by_pass)
+    where = "file_failures" if after else "file_failures and the failed analyses (before the migration)"
+    print(f"{catalog}: {have} ledger rows over {files} files, in {where}: {shown}")
     if have < rows:
         print(f"{catalog}: only {have} of the {rows} ledger rows asked for fit (two passes per file)", file=sys.stderr)
 

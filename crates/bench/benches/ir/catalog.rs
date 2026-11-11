@@ -34,12 +34,15 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
 // name is bumped whenever the schema changes, so data made before it is never read as current. v6 is v5's catalog
 // opened once by the build of schema version 7 (migrations 2 to 7: the borders' change stamps, the inbox, the ledger,
 // the session row, the thumbnail views, the typed queue), so its rows are v5's and a change between the two is the
-// code's; the cache's schema is unchanged.
-const LAYOUT: &str = "v6-windows-rules";
+// code's; the cache's schema is unchanged. v7 is v6's catalog opened once by the build of schema version 8 (the
+// notifications' migration), the same way.
+const LAYOUT: &str = "v7-windows-rules";
 // The large layout (tools/profiling/bench_data.py, `-large`): 200,000 files of the synthetic library's large profile,
 // 50,000 of them broken (the import's failures), and the failure ledger seeded to 100,000 rows. Made and named as
-// LAYOUT is; the inbox's refresh is measured on it.
-const LARGE_LAYOUT: &str = "v6-windows-rules-large";
+// LAYOUT is; the inbox's refresh is measured on it. v6-large was made by the build of schema version 7 (the F0
+// baseline's), and v7-large is v6-large's catalog opened once by the build of schema version 8, so both hold the same
+// failures.
+const LARGE_LAYOUT: &str = "v7-windows-rules-large";
 // The path rules the layout was made under (its meta.path_rules). Not pg_platform::native::PATH_RULES: the benches
 // run on Linux, where that is posix, and a catalog keeps the rules it was made with.
 const RULES: pg_model::rules::PathRules = pg_model::rules::PathRules::Windows;

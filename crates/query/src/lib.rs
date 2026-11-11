@@ -89,15 +89,18 @@ const MB: f64 = 1_048_576.0;
 /// The condition of a type's value.
 fn media_sql(media: MediaType) -> &'static str {
     match media {
-        MediaType::Image => "(f.kind = 'image' AND coalesce(a.frames, 1) <= 1)",
-        MediaType::Animated => "(f.kind = 'image' AND a.frames > 1)",
-        MediaType::Video => "f.kind = 'video'",
+        MediaType::Image => concat!("(f.kind = '", pg_model::kind_image!(), "' AND coalesce(a.frames, 1) <= 1)"),
+        MediaType::Animated => concat!("(f.kind = '", pg_model::kind_image!(), "' AND a.frames > 1)"),
+        MediaType::Video => concat!("f.kind = '", pg_model::kind_video!(), "'"),
     }
 }
 
-/// The type of a row, for the counts (`browse::read::facets`).
-pub const MEDIA_CASE: &str =
-    "CASE WHEN f.kind = 'video' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END";
+/// The type of a row, for the counts (`browse::read::facets`): a `MediaType`'s key, from the stored kind.
+pub const MEDIA_CASE: &str = concat!(
+    "CASE WHEN f.kind = '",
+    pg_model::kind_video!(),
+    "' THEN 'video' WHEN a.frames > 1 THEN 'animated' ELSE 'image' END"
+);
 
 /// The condition of a shape's value.
 fn shape_sql(shape: Shape) -> &'static str {

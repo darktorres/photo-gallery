@@ -26,7 +26,6 @@ use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
 use pg_model::view::{Listing, SavedView};
-use pg_model::write::WriteKind;
 use rusqlite::params_from_iter;
 
 /// A folder given as its Windows path text, merged: the spelling the Windows-only tests use.
@@ -123,9 +122,14 @@ fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rule
     assert_eq!((state().rotation, state().turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
-    let job = writes::Job { file_id: FileId::new(1), kind: WriteKind::Turns, value: 2, temp: None, attempts: 0 };
+    let job = writes::Job {
+        file_id: FileId::new(1),
+        write: pg_model::write::Write::Turns(Turns::new(2)),
+        temp: None,
+        attempts: 0,
+    };
     let temp = rules.parse(&spelled(rules, r"D:\p\b.jpg.tmp")).unwrap();
-    writes::record_temp(&c, &job, &temp, 1).unwrap();
+    writes::record_temp(&c, &job, &temp, pg_model::write::Write::Turns(Turns::new(1))).unwrap();
     assert!(state().writing);
     assert_eq!(file_state(&c, FileId::new(99)).unwrap(), None);
     assert!(placeholder(&c, FileId::new(99)).unwrap().is_none());

@@ -2,7 +2,6 @@
 //! out before any thumbnail exists. No thumbnails here: they are a background task after the import (PLAN §6).
 
 use anyhow::{Context, Result};
-use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 use std::fs::File;
 use std::io;
@@ -120,7 +119,7 @@ impl Analyzer {
             taken: meta.taken.map(Taken::Wall),
             media: Media::Image(ImageFacts {
                 format: info.format,
-                file_rating: meta.rating.and_then(Rating::new),
+                file_rating: meta.rating,
                 pixels: PixelHashes { pixel_hash: pixel_hash(img)?, pdq },
             }),
         };

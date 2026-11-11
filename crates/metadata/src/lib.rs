@@ -26,6 +26,7 @@ use pg_container::range_in;
 use pg_model::date::{exif_date, parse_iso_date};
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
+use pg_model::rating::Rating;
 
 use crate::container::Container;
 use crate::exif::Exif;
@@ -40,7 +41,7 @@ pub struct Meta {
     /// The file's own rating: 0–5 (0 = explicitly unrated), or `None` when it holds none. XMP `xmp:Rating` first
     /// (the standard packet, then the extended one), then `MicrosoftPhoto:Rating`, then EXIF Rating and
     /// RatingPercent. XMP's -1 ("rejected") has no equivalent here and reads as no rating.
-    pub rating: Option<u8>,
+    pub rating: Option<Rating>,
     /// When the picture was taken, as wall-clock time (no time zone: what the camera's clock showed) in Unix
     /// seconds: EXIF DateTimeOriginal, then DateTimeDigitized, then XMP `exif:DateTimeOriginal`,
     /// `photoshop:DateCreated` and `xmp:CreateDate`. `None` when the file says nothing.
@@ -90,7 +91,7 @@ impl Meta {
         };
         Meta {
             orientation: exif.orientation(),
-            rating: xmp_rating.or(microsoft).or_else(exif_rating),
+            rating: xmp_rating.or(microsoft).or_else(exif_rating).and_then(Rating::new),
             taken: exif.dates.iter().flatten().find_map(|d| exif_date(d)).or(xmp_taken),
             frames: container.frames,
         }
@@ -118,7 +119,7 @@ mod tests {
     }
 
     fn rating(bytes: &[u8], format: Format) -> Option<u8> {
-        meta_of(bytes, format).rating
+        meta_of(bytes, format).rating.map(Rating::get)
     }
 
     fn taken(bytes: &[u8], format: Format) -> Option<i64> {
@@ -294,10 +295,10 @@ mod tests {
             ];
             assert_eq!(read(&twice, &[]).orientation.get(), 3);
             // Rating, capped at 5; RatingPercent only without it.
-            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating, Some(5));
+            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[7]))], &[]).rating.map(Rating::get), Some(5));
             let percent = (EXIF_TAG_RATING_PERCENT, TIFF_SHORT, 1, short(&[50]));
-            assert_eq!(read(std::slice::from_ref(&percent), &[]).rating, Some(3));
-            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating, Some(1));
+            assert_eq!(read(std::slice::from_ref(&percent), &[]).rating.map(Rating::get), Some(3));
+            assert_eq!(read(&[(EXIF_TAG_RATING, TIFF_SHORT, 1, short(&[1])), percent], &[]).rating.map(Rating::get), Some(1));
 
             // A value pointing outside the block reads as absent; the rest is still read.
             let mut block = tiff_block_as(
@@ -317,7 +318,7 @@ mod tests {
             let value = exif_at + count_w + 4 + width;
             block[value..value + width].copy_from_slice(&offset_bytes(big, le, len));
             let m = meta_of(&block, Format::Tiff);
-            assert_eq!((m.rating, m.taken), (Some(2), wall_clock_seconds(2020, 1, 2, 3, 4, 5)));
+            assert_eq!((m.rating.map(Rating::get), m.taken), (Some(2), wall_clock_seconds(2020, 1, 2, 3, 4, 5)));
         }
         // The library's case (6 files, which kamadak-exif read no rating from): a block that ends 4 bytes early,
         // cutting off the Exif IFD's next-IFD offset. IFD0's rating is whole, and read.
@@ -325,7 +326,7 @@ mod tests {
         let mut block =
             tiff_block(false, &[(EXIF_TAG_RATING, TIFF_SHORT, 1, 4u16.to_be_bytes().to_vec())], &[exif_version]);
         block.truncate(block.len() - 4);
-        assert_eq!(meta_of(&block, Format::Tiff).rating, Some(4));
+        assert_eq!(meta_of(&block, Format::Tiff).rating.map(Rating::get), Some(4));
         // Not a TIFF structure without its 42. A 43 is BigTIFF only with its offset size (8) after it.
         let mut block = tiff_block(true, &[(EXIF_TAG_ORIENTATION, TIFF_SHORT, 1, 6u16.to_le_bytes().to_vec())], &[]);
         assert_eq!(orientation(&block, Format::Tiff).get(), 6);
@@ -353,7 +354,7 @@ mod tests {
             let big = meta_of(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff);
             assert_eq!(big, classic);
             // XMP's rating first (3), then the date.
-            assert_eq!((big.orientation.get(), big.rating, big.taken), (6, Some(3), Some(1_689_445_805)));
+            assert_eq!((big.orientation.get(), big.rating.map(Rating::get), big.taken), (6, Some(3), Some(1_689_445_805)));
             // The orientation is patched in place, as in a classic file.
             let patched =
                 patch_orientation(&tiff_block_as(true, le, &ifd0, &exif), Format::Tiff, Orientation::new(3).unwrap())

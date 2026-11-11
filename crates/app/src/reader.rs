@@ -31,6 +31,28 @@ use pg_model::tree::FolderTree;
 use crate::catalogs::Catalogs;
 use crate::error::{Error, Result, failed};
 
+/// Why a read gave no result: the catalog's error, or one of the reader's own two cases.
+#[derive(Debug, thiserror::Error)]
+pub enum ReadError {
+    #[error(transparent)]
+    Catalog(#[from] pg_catalog::Error),
+    /// The read panicked (the panic hook logged it); the reader goes on serving the others.
+    #[error("the catalog read failed (an internal error)")]
+    Panicked,
+    /// The reader's connection couldn't be opened: why.
+    #[error("the catalog can't be opened: {0}")]
+    Unopened(String),
+}
+
+impl From<ReadError> for Error {
+    fn from(e: ReadError) -> Error {
+        match e {
+            ReadError::Catalog(e) => Error::Catalog(e),
+            e => crate::error::failed(e),
+        }
+    }
+}
+
 /// What a request is for.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Kind {
@@ -155,20 +177,18 @@ impl Session {
         &self,
         kind: Kind,
         read: impl FnOnce(&Catalog) -> pg_catalog::Result<T> + Send + 'static,
-        deliver: impl FnOnce(pg_catalog::Result<T>) + Send + 'static,
+        deliver: impl FnOnce(Result<T, ReadError>) + Send + 'static,
     ) {
         let job: Job = Box::new(move |catalog| {
             let result = match catalog {
                 // A panic is logged by the panic hook and reported here; the thread goes on serving the others.
-                Ok(c) => pg_jobs::panics::catch(AssertUnwindSafe(|| read(c))).unwrap_or_else(|_| {
-                    Err(pg_catalog::Error::Io(std::io::Error::other("the catalog read failed (an internal error)")))
-                }),
-                Err(e) => {
-                    Err(pg_catalog::Error::Io(std::io::Error::other(format!("the catalog can't be opened: {e:#}"))))
-                }
+                Ok(c) => pg_jobs::panics::catch(AssertUnwindSafe(|| read(c)))
+                    .map_err(|_| ReadError::Panicked)
+                    .and_then(|read| read.map_err(ReadError::from)),
+                Err(e) => Err(ReadError::Unopened(format!("{e:#}"))),
             };
             // A read that the next request (or `stop`) cut short is not delivered.
-            if !matches!(&result, Err(pg_catalog::Error::Interrupted)) {
+            if !matches!(&result, Err(ReadError::Catalog(pg_catalog::Error::Interrupted))) {
                 deliver(result);
             }
         });

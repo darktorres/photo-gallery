@@ -43,7 +43,12 @@ macro_rules! failures_relisted {
 /// The analyses borders are looked for in: still images that decoded and are big enough (detection::MIN_SIDE).
 macro_rules! has_borders {
     () => {
-        concat!("error IS NULL AND kind = 'image' AND frames <= 1 AND min(width, height) >= ", pg_model::min_side!())
+        concat!(
+            "error IS NULL AND kind = '",
+            pg_model::kind_image!(),
+            "' AND frames <= 1 AND min(width, height) >= ",
+            pg_model::min_side!()
+        )
     };
 }
 

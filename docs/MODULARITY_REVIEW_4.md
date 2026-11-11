@@ -620,6 +620,14 @@ Each fix gets a test that fails before it.
   - **The reader gets an error of its own**, with a variant for each of its two cases.
   - **`Meta::rating` is an `Option<Rating>`.**
 - Gate: `just test`, Linux checks, perf (the import and the catalog are benched).
+- **Done in step 7.**
+  - `Catalog::write_target` returns `WriteTarget { path, format, kind }`, read at the row (`types::kind_at`, `ext_at`, `format_at`: a value that doesn't read is an error); `rating_in_file_possible(Kind, Option<Format>)`; `pair`'s `Fresh` holds an `Ext` and a `Kind`; `file_source` and `work_list` read the kind typed, and an unknown one is an error.
+  - The queue's value is `pg_model::write::Write`: `Rating(Rating)` (0 stars clears the file's rating, so it is a `Rating`, not an `Option`) or `Turns(Turns)`, in `Job::write` and in the temp, read with `Write::from_stored`. `WriteEffect::FileRating` carries a `Rating`; `done`'s `debug_assert!`s and `pg-writeback`'s conversions (`job_turns`, the `u8` casts) are gone. `Rewrite::before` is an `Option`.
+  - Migration `TO_7_WRITE_CHECKS` remakes `file_writes` with a `CHECK` tying the value and the temp's value to the kind, keeping the rows that keep it, and remakes its index and stamps; a rebuild's copy leaves such a row out too (`INSERT OR IGNORE`). The dropped rows are not logged: `pg-catalog` is below `pg-log`.
+  - `ScanId` is in `pg_model::ids`; `begin_scan`, `finish_scan`, `mark_missing`, `Tx::scan_writer` and `pair::after_scan` take it.
+  - The writers' constructors are `pub(crate)` (made by `Tx`), and `release_memory` returns the catalog's `Result`.
+  - The stored keys are `pg-model` macros (`kind_image!`, `kind_video!`, `write_rating!`, `write_rotation!`): `Kind::key`, `WriteKind::key` (and its JSON) and the SQL of the catalog and `pg-query` all use them. The baseline's and the old-layout test fixtures' SQL keep their text.
+  - `pg_app::reader::ReadError { Catalog, Panicked, Unopened }`; `Meta::rating` is an `Option<Rating>`.
 
 ### M-43: the session is a typed `Listing`, stored by the catalog
 

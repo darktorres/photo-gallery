@@ -348,7 +348,7 @@ pub(crate) fn work_list(conn: &Connection, stmt: &mut rusqlite::Statement, bound
             size: r.get(3)?,
             mtime: r.get(4)?,
             rotation: Turns::new(r.get(5)?),
-            kind: Kind::from_key(r.get_ref(6)?.as_str()?).unwrap_or(Kind::Image),
+            kind: crate::types::kind_at(r, 6)?,
         });
     }
     Ok(list)

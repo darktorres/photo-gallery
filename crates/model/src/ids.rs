@@ -57,6 +57,21 @@ impl FolderId {
     }
 }
 
+/// A scan's row in the catalog (`scans.id`): the scan a file was last seen by.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
+pub struct ScanId(i64);
+
+impl ScanId {
+    pub const fn new(id: i64) -> ScanId {
+        ScanId(id)
+    }
+
+    /// The row number, for binding it in a statement or reading it from a row.
+    pub const fn get(self) -> i64 {
+        self.0
+    }
+}
+
 /// A library folder's row in the catalog (`roots.id`).
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Debug)]
 pub struct RootId(i64);

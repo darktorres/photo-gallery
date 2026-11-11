@@ -7,7 +7,7 @@ use rusqlite::{OptionalExtension, Statement, Transaction, params};
 
 use pg_model::analysis::Analyzed;
 use pg_model::detection::Detection;
-use pg_model::ids::{FileId, FileIdentity, FolderId};
+use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
 use pg_model::rating::Rating;
 use pg_model::rules::{Path as RulePath, PathRules};
 
@@ -60,9 +60,9 @@ pub struct ScanWriter<'tx> {
 }
 
 impl<'tx> ScanWriter<'tx> {
-    pub fn new(tx: &'tx Transaction, scan: i64, rules: PathRules, root: &RulePath) -> Result<ScanWriter<'tx>> {
+    pub(crate) fn new(tx: &'tx Transaction, scan: ScanId, rules: PathRules, root: &RulePath) -> Result<ScanWriter<'tx>> {
         Ok(ScanWriter {
-            scan,
+            scan: scan.get(),
             rules,
             under: under_params(rules, root),
             folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
@@ -183,7 +183,7 @@ pub struct AnalysisWriter<'tx> {
 }
 
 impl<'tx> AnalysisWriter<'tx> {
-    pub fn new(tx: &'tx Transaction, import: i64) -> Result<AnalysisWriter<'tx>> {
+    pub(crate) fn new(tx: &'tx Transaction, import: i64) -> Result<AnalysisWriter<'tx>> {
         Ok(AnalysisWriter {
             import,
             current: tx.prepare(concat!(
@@ -211,8 +211,11 @@ impl<'tx> AnalysisWriter<'tx> {
             ))?,
             delete_sides: tx.prepare(DELETE_SIDES)?,
             known_rating: tx.prepare("SELECT value FROM file_ratings WHERE file_id = ?1")?,
-            queued_rating: tx
-                .prepare("SELECT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND kind = 'rating')")?,
+            queued_rating: tx.prepare(concat!(
+                "SELECT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND kind = '",
+                pg_model::write_rating!(),
+                "')"
+            ))?,
             set_rating: tx.prepare(
                 "INSERT INTO ratings(file_id, rating, updated) VALUES (?1, ?2, unixepoch())
                  ON CONFLICT(file_id) DO UPDATE SET rating = excluded.rating, updated = excluded.updated",
@@ -336,7 +339,7 @@ pub struct BordersWriter<'tx> {
 }
 
 impl<'tx> BordersWriter<'tx> {
-    pub fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
+    pub(crate) fn new(tx: &'tx Transaction) -> Result<BordersWriter<'tx>> {
         Ok(BordersWriter {
             current: tx.prepare(concat!(
                 "SELECT EXISTS(SELECT 1 FROM analysis WHERE file_id = ?1 AND size = ?2 AND mtime = ?3) AND ",
@@ -401,7 +404,7 @@ mod tests {
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::{Analysis, Taken, ThumbHash};
     use pg_model::detection::Detection;
-    use pg_model::ids::{FileId, FileIdentity, FolderId};
+    use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
     use pg_model::media::Ext;
     use pg_model::name::Name;
     use pg_model::orientation::Orientation;
@@ -417,11 +420,11 @@ mod tests {
             let folder = rules.merge(&p(rules, r"D:\x"));
             rules.order_key(&rules.merged_key(&folder), &Name::from(name))
         };
-        let scans: Vec<i64> = (0..9).map(|_| c.begin_scan(&p(rules, r"D:\x")).unwrap()).collect();
+        let scans: Vec<ScanId> = (0..9).map(|_| c.begin_scan(&p(rules, r"D:\x")).unwrap()).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
-        assert_eq!(raw::file_row(&c), (scans[1], "a.jpg".into(), 10, 100, 0, key("a.jpg")));
+        assert_eq!(raw::file_row(&c), (scans[1].get(), "a.jpg".into(), 10, 100, 0, key("a.jpg")));
         for (scan, name, size, mtime) in [
             (scans[2], "A.jpg", 10, 100),
             (scans[3], "b.jpg", 10, 100),
@@ -429,7 +432,7 @@ mod tests {
             (scans[5], "b.jpg", 11, 101),
         ] {
             assert!(scanned(&mut c, scan, name, size, mtime), "{name} {size} {mtime}");
-            assert_eq!(raw::file_row(&c), (scan, name.into(), i64::try_from(size).unwrap(), mtime, 0, key(name)));
+            assert_eq!(raw::file_row(&c), (scan.get(), name.into(), i64::try_from(size).unwrap(), mtime, 0, key(name)));
         }
         // Back from missing.
         raw::set_missing(&c, FileId::new(1));
@@ -449,7 +452,7 @@ mod tests {
     );
 
     /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
-    fn found_as(c: &mut Catalog, scan: i64, identity: FileIdentity, created: Option<i64>) -> Recorded {
+    fn found_as(c: &mut Catalog, scan: ScanId, identity: FileIdentity, created: Option<i64>) -> Recorded {
         let rules = c.rules();
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();

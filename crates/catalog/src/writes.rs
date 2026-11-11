@@ -19,7 +19,8 @@ use pg_model::orientation::turns_swap;
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
-use pg_model::write::WriteKind;
+use pg_model::write::{Write, WriteKind};
+use pg_model::{write_rating, write_rotation};
 
 use crate::types::{DELETE_FILE_RATING, SET_FILE_RATING};
 
@@ -30,32 +31,38 @@ pub const MAX_ATTEMPTS: i64 = 5;
 #[derive(Clone, Debug, PartialEq)]
 pub struct Job {
     pub file_id: FileId,
-    pub kind: WriteKind,
-    /// The rating, or the quarter turns still to write (0 to 3).
-    pub value: i64,
+    /// The rating, or the quarter turns still to write.
+    pub write: Write,
     /// Set once the copy of the new content into the original may have started (the temp is complete, and the
-    /// original is open for it): the temp's path, and the value it carries.
-    pub temp: Option<(RulePath, i64)>,
+    /// original is open for it): the temp's path, and the write it carries (of the job's kind).
+    pub temp: Option<(RulePath, Write)>,
     /// Failed attempts so far.
     pub attempts: i64,
 }
 
-/// A file a write rewrote: its (size, mtime) on disk before and after (`before` is (-1, -1) when it isn't known), and
-/// the BLAKE3 of the new bytes when only metadata changed (the analysis stays valid, and follows the file). `None` when
-/// the pixels did, so the analysis is redone.
+impl Job {
+    /// What the job writes: a rating, or turns.
+    pub fn kind(&self) -> WriteKind {
+        self.write.kind()
+    }
+}
+
+/// A file a write rewrote: its (size, mtime) on disk before (`None` when it isn't known) and after, and the BLAKE3 of
+/// the new bytes when only metadata changed (the analysis stays valid, and follows the file). `None` when the pixels
+/// did, so the analysis is redone.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Rewrite {
-    pub before: (i64, i64),
+    pub before: Option<(i64, i64)>,
     pub after: (i64, i64),
     pub metadata_only: Option<[u8; 32]>,
 }
 
 /// What a finished write changed in the catalog. Applied in the transaction that takes the job off the queue
-/// (`done`), so the catalog and the queue never disagree. The effect's value is the job's: `done` checks it.
+/// (`done`), so the catalog and the queue never disagree. The effect's value is the job's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum WriteEffect {
-    /// The rating is in the file, which was rewritten to hold it (`rating`, 0 to 5).
-    FileRating { rewrite: Rewrite, rating: u8 },
+    /// The rating is in the file, which was rewritten to hold it (0 stars: it holds none).
+    FileRating { rewrite: Rewrite, rating: Rating },
     /// The turns are in the file, which was rewritten to show them: the analysis is turned back to match.
     TurnedBack { rewrite: Rewrite, turns: Turns },
     /// The file can't hold the turns: the catalog keeps them (`files.rotation`).
@@ -64,11 +71,12 @@ pub enum WriteEffect {
     Nothing,
 }
 
-/// Whether a file of `kind` (`files.kind`) and analyzed `format` (`None` when it isn't analyzed yet) may hold a rating
-/// of its own: an image (a video keeps its rating in the catalog, as rewriting it would copy GBs), whose format can hold
-/// one or isn't known yet. The writer decides for an unknown format once it has read the file (`pg_writeback`).
-pub fn rating_in_file_possible(kind: &str, format: Option<&str>) -> bool {
-    kind == Kind::Image.key() && format.and_then(Format::from_name).is_none_or(pg_model::format::can_hold_rating)
+/// Whether a file of `kind` and analyzed `format` (`None` when it isn't analyzed yet) may hold a rating of its own: an
+/// image (a video keeps its rating in the catalog, as rewriting it would copy GBs), whose format can hold one or isn't
+/// known yet. The writer decides for an unknown format once it has read the file (`pg_writeback`). Beside
+/// `pg_model::format::can_hold_rating`, which it asks.
+pub fn rating_in_file_possible(kind: Kind, format: Option<Format>) -> bool {
+    kind == Kind::Image && format.is_none_or(pg_model::format::can_hold_rating)
 }
 
 /// Rate a file: 1–5, or `None` to clear. The catalog changes at once. With `write_back`, the rating is also queued
@@ -89,16 +97,15 @@ pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, wr
     };
     // The file's kind, its analyzed format, and whether its analysis failed (a file the import couldn't read isn't
     // written into).
-    let target: Option<(String, Option<String>, bool)> = tx
+    let target: Option<(Kind, Option<Format>, bool)> = tx
         .query_row(
             "SELECT f.kind, a.format, a.error IS NOT NULL FROM files f LEFT JOIN analysis a ON a.file_id = f.id
              WHERE f.id = ?1",
             [file_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((crate::types::kind_at(r, 0)?, crate::types::format_at(r, 1)?, r.get(2)?)),
         )
         .optional()?;
-    let can_hold =
-        target.is_some_and(|(kind, format, failed)| !failed && rating_in_file_possible(&kind, format.as_deref()));
+    let can_hold = target.is_some_and(|(kind, format, failed)| !failed && rating_in_file_possible(kind, format));
     let in_file: Option<u8> =
         tx.query_row("SELECT value FROM file_ratings WHERE file_id = ?1", [file_id], |r| r.get(0)).optional()?;
     // What the file should hold: the rating, or none (0) if it holds one and the rating is cleared.
@@ -109,18 +116,25 @@ pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, wr
     };
     if write_back && can_hold && wanted != in_file {
         tx.execute(
-            "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rating', ?2, unixepoch())
+            concat!(
+                "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, '",
+                write_rating!(),
+                "', ?2, unixepoch())
              ON CONFLICT(file_id, kind) DO UPDATE SET value = excluded.value, queued = excluded.queued,
-                attempts = 0, error = NULL",
+                attempts = 0, error = NULL"
+            ),
             params![file_id, wanted],
         )?;
     } else {
         // Back to what the file holds (or not written back): nothing left to write. A write already being
         // copied in finishes, and then this value follows it; its attempts start again, so a copy that had failed
         // up to the cap is tried again for the change.
-        tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rating' AND temp IS NULL", [file_id])?;
         tx.execute(
-            "UPDATE file_writes SET value = ?2, attempts = 0 WHERE file_id = ?1 AND kind = 'rating'",
+            concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", write_rating!(), "' AND temp IS NULL"),
+            [file_id],
+        )?;
+        tx.execute(
+            concat!("UPDATE file_writes SET value = ?2, attempts = 0 WHERE file_id = ?1 AND kind = '", write_rating!(), "'"),
             params![file_id, wanted.unwrap_or(0)],
         )?;
     }
@@ -135,13 +149,21 @@ pub fn queue_rotation(catalog: &Catalog, file_id: FileId, turns: Turns) -> Resul
     let tx = crate::schema::write_transaction(conn)?;
     let (file_id, turns) = (file_id.get(), turns.get());
     tx.execute(
-        "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, 'rotation', ?2 % 4, unixepoch())
+        concat!(
+            "INSERT INTO file_writes(file_id, kind, value, queued) VALUES (?1, '",
+            write_rotation!(),
+            "', ?2 % 4, unixepoch())
          ON CONFLICT(file_id, kind) DO UPDATE SET value = (value + excluded.value) % 4, queued = excluded.queued,
-            attempts = 0, error = NULL",
+            attempts = 0, error = NULL"
+        ),
         params![file_id, turns],
     )?;
     tx.execute(
-        "DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation' AND value = 0 AND temp IS NULL",
+        concat!(
+            "DELETE FROM file_writes WHERE file_id = ?1 AND kind = '",
+            write_rotation!(),
+            "' AND value = 0 AND temp IS NULL"
+        ),
         [file_id],
     )?;
     tx.commit()?;
@@ -160,8 +182,16 @@ pub fn next_ready(catalog: &Catalog, settle_secs: i64) -> Result<Option<Job>> {
     let job = conn
         .query_row(NEXT_READY, params![MAX_ATTEMPTS, settle_secs], |r| {
             let kind: String = r.get(1)?;
+            let kind = WriteKind::from_key(&kind).ok_or_else(|| rusqlite::Error::InvalidColumnType(1, kind, Type::Text))?;
+            // The value read with its kind: one out of the kind's range is a damaged row (the schema's CHECK).
+            let write_at = |i: usize| -> rusqlite::Result<Option<Write>> {
+                let Some(value) = r.get::<_, Option<i64>>(i)? else { return Ok(None) };
+                Write::from_stored(kind, value)
+                    .map(Some)
+                    .ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("{} {value}", kind.key()), Type::Integer))
+            };
             let temp: Option<Vec<u8>> = r.get(3)?;
-            let temp_value: Option<i64> = r.get(4)?;
+            let temp_value = write_at(4)?;
             // The temp's path is the rules' bytes (`record_temp`); one that doesn't parse is a damaged row.
             let temp = match temp {
                 Some(bytes) => Some(
@@ -174,9 +204,7 @@ pub fn next_ready(catalog: &Catalog, settle_secs: i64) -> Result<Option<Job>> {
             };
             Ok(Job {
                 file_id: FileId::new(r.get(0)?),
-                kind: WriteKind::from_key(&kind)
-                    .ok_or_else(|| rusqlite::Error::InvalidColumnType(1, kind.clone(), Type::Text))?,
-                value: r.get(2)?,
+                write: write_at(2)?.ok_or_else(|| rusqlite::Error::InvalidColumnType(2, "value".into(), Type::Null))?,
                 temp: temp.zip(temp_value),
                 attempts: r.get(5)?,
             })
@@ -221,18 +249,18 @@ pub fn recent_errors(catalog: &Catalog, limit: usize) -> Result<Vec<String>> {
     Ok(errors)
 }
 
-/// The new content of a job is complete and durable at `temp`, carrying `value`, and the original is open for the copy
+/// The new content of a job is complete and durable at `temp`, carrying `write`, and the original is open for the copy
 /// into it, which starts next: from here the original may be part-written. Until `done`, readers see the file as being
 /// written (`pg_model::state::FileState::writing`), and the writer finishes the copy from `temp` before anything else.
 ///
 /// `false` when the job's row is no longer there (it was removed after the writer read it, so nothing is recorded): the
 /// copy must not start then. The caller leaves the original as it is.
-pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, value: i64) -> Result<bool> {
+pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, write: Write) -> Result<bool> {
     let conn = &catalog.conn;
     let bytes = catalog.rules().join(temp);
     let recorded = conn.execute(
         "UPDATE file_writes SET temp = ?3, temp_value = ?4 WHERE file_id = ?1 AND kind = ?2",
-        params![job.file_id.get(), job.kind.key(), bytes, value],
+        params![job.file_id.get(), job.kind().key(), bytes, write.stored()],
     )?;
     Ok(recorded == 1)
 }
@@ -242,40 +270,42 @@ pub fn record_temp(catalog: &Catalog, job: &Job, temp: &RulePath, value: i64) ->
 /// queued for the rest).
 pub fn done(catalog: &Catalog, job: &Job, effect: WriteEffect) -> Result<()> {
     let conn = &catalog.conn;
-    let (file_id, kind) = (job.file_id.get(), job.kind.key());
+    let (file_id, kind) = (job.file_id.get(), job.kind().key());
     // What the queue records as written: the job's rating, or its turns.
-    let written = job.value;
+    let written = job.write.stored();
     let tx = crate::schema::write_transaction(conn)?;
     match effect {
         WriteEffect::FileRating { rewrite, rating } => {
-            debug_assert!(job.kind == WriteKind::Rating && i64::from(rating) == written);
-            file_rewritten(&tx, job.file_id, rewrite.before, rewrite.after, rewrite.metadata_only)?;
-            set_file_rating(&tx, job.file_id, Rating::new(rating))?;
+            file_rewritten(&tx, job.file_id, rewrite)?;
+            set_file_rating(&tx, job.file_id, Some(rating))?;
         }
         WriteEffect::TurnedBack { rewrite, turns } => {
-            debug_assert!(job.kind == WriteKind::Turns && i64::from(turns.get()) == written.rem_euclid(4));
-            file_rewritten(&tx, job.file_id, rewrite.before, rewrite.after, rewrite.metadata_only)?;
+            file_rewritten(&tx, job.file_id, rewrite)?;
             analysis_turned_back(&tx, job.file_id, turns)?;
         }
-        WriteEffect::KeptInCatalog(turns) => {
-            debug_assert!(job.kind == WriteKind::Turns && i64::from(turns.get()) == written.rem_euclid(4));
-            add_catalog_rotation(&tx, job.file_id, turns)?;
-        }
+        WriteEffect::KeptInCatalog(turns) => add_catalog_rotation(&tx, job.file_id, turns)?,
         WriteEffect::Nothing => {}
     }
-    match job.kind {
-        WriteKind::Turns => {
+    match job.write {
+        Write::Turns(turns) => {
             tx.execute(
-                "UPDATE file_writes SET value = (value - ?2 + 4) % 4 WHERE file_id = ?1 AND kind = 'rotation'",
+                concat!(
+                    "UPDATE file_writes SET value = (value - ?2 + 4) % 4 WHERE file_id = ?1 AND kind = '",
+                    write_rotation!(),
+                    "'"
+                ),
                 params![file_id, written],
             )?;
-            tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation' AND value = 0", [file_id])?;
+            tx.execute(
+                concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", write_rotation!(), "' AND value = 0"),
+                [file_id],
+            )?;
             // The upright size at once: the grid lays the file out turned before its analysis is redone.
-            if turns_swap(Turns::of(written)) {
+            if turns_swap(turns) {
                 tx.execute("UPDATE analysis SET width = height, height = width WHERE file_id = ?1", [file_id])?;
             }
         }
-        WriteKind::Rating => {
+        Write::Rating(_) => {
             tx.execute(
                 "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2 AND value = ?3",
                 params![file_id, kind, written],
@@ -298,7 +328,7 @@ pub fn failed(catalog: &Catalog, job: &Job, message: &str, offline: bool) -> Res
     conn.execute(
         "UPDATE file_writes SET attempts = attempts + ?3, error = ?4, queued = unixepoch()
          WHERE file_id = ?1 AND kind = ?2",
-        params![job.file_id.get(), job.kind.key(), if offline { 0 } else { 1 }, message],
+        params![job.file_id.get(), job.kind().key(), if offline { 0 } else { 1 }, message],
     )?;
     Ok(())
 }
@@ -308,7 +338,7 @@ pub fn drop_gone(catalog: &Catalog, job: &Job) -> Result<()> {
     let conn = &catalog.conn;
     conn.execute(
         "DELETE FROM file_writes WHERE file_id = ?1 AND kind = ?2",
-        params![job.file_id.get(), job.kind.key()],
+        params![job.file_id.get(), job.kind().key()],
     )?;
     Ok(())
 }
@@ -331,19 +361,14 @@ pub(crate) fn set_file_rating(conn: &Connection, file_id: FileId, value: Option<
 }
 
 /// The file was rewritten in place: record its new size and mtime, so the scanner and the import see it as the file
-/// it is. `before` is the (size, mtime) the file had on disk just before the write. After a metadata-only change
-/// (`metadata_only` = the new BLAKE3) an analysis made from exactly those bytes stays valid and follows the file:
-/// nothing is re-imported. After a pixel change it is left stale, so the import redoes it (new upright size, hashes,
-/// PDQ).
-fn file_rewritten(
-    tx: &Transaction,
-    file_id: FileId,
-    before: (i64, i64),
-    after: (i64, i64),
-    metadata_only: Option<[u8; 32]>,
-) -> Result<()> {
+/// it is. `before` is the (size, mtime) the file had on disk just before the write, when it is known. After a
+/// metadata-only change (`metadata_only` = the new BLAKE3) an analysis made from exactly those bytes stays valid and
+/// follows the file: nothing is re-imported. After a pixel change, or from a file whose state before isn't known, it is
+/// left stale, so the import redoes it (new upright size, hashes, PDQ).
+fn file_rewritten(tx: &Transaction, file_id: FileId, rewrite: Rewrite) -> Result<()> {
+    let Rewrite { before, after, metadata_only } = rewrite;
     tx.execute("UPDATE files SET size = ?2, mtime = ?3 WHERE id = ?1", params![file_id.get(), after.0, after.1])?;
-    if let Some(file_hash) = metadata_only {
+    if let (Some(file_hash), Some(before)) = (metadata_only, before) {
         tx.execute(
             "UPDATE analysis SET size = ?2, mtime = ?3, file_hash = ?4
              WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
@@ -409,16 +434,16 @@ mod tests {
         queue_rotation(&c, FileId::new(2), Turns::new(1)).unwrap();
         // Both are new: nothing is ready until they settle (a settle time of 0 takes them now).
         let first = next_ready(&c, 0).unwrap().unwrap();
-        assert_eq!((first.file_id, first.kind, first.value), (FileId::new(1), WriteKind::Rating, 3));
+        assert_eq!((first.file_id, first.write), (FileId::new(1), Write::Rating(Rating::new(3).unwrap())));
         // The rating is in the file: the catalog records it, and the job leaves the queue.
         let after = (11, 101);
-        let rewrite = Rewrite { before: (10, 1), after, metadata_only: Some([7; 32]) };
-        done(&c, &first, WriteEffect::FileRating { rewrite, rating: 3 }).unwrap();
+        let rewrite = Rewrite { before: Some((10, 1)), after, metadata_only: Some([7; 32]) };
+        done(&c, &first, WriteEffect::FileRating { rewrite, rating: Rating::new(3).unwrap() }).unwrap();
         assert_eq!(raw::queued(&c, 1, "rating"), None);
         assert_eq!(raw::file_size(&c, FileId::new(1)), 11);
         // The turn can't go in the file: the catalog keeps it, and the upright size swaps at once.
         let turn = next_ready(&c, 0).unwrap().unwrap();
-        assert_eq!((turn.file_id, turn.kind, turn.value), (FileId::new(2), WriteKind::Turns, 1));
+        assert_eq!((turn.file_id, turn.write), (FileId::new(2), Write::Turns(Turns::new(1))));
         done(&c, &turn, WriteEffect::KeptInCatalog(Turns::new(1))).unwrap();
         assert_eq!(raw::queued(&c, 2, "rotation"), None);
         assert_eq!(raw::rotation_and_width(&c, FileId::new(2)), (1, 3));
@@ -487,15 +512,17 @@ mod tests {
         queue_rotation(&c, FileId::new(1), Turns::new(3)).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
         let temp = PathRules::Windows.parse(r"D:\p\.b.jpg.turns.pg-write").unwrap();
-        record_temp(&c, &job, &temp, 3).unwrap();
+        let three = Write::Turns(Turns::new(3));
+        record_temp(&c, &job, &temp, three).unwrap();
         queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
         assert_eq!(raw::queued(&c, 1, "rotation"), Some(0), "kept while its temp is recorded");
         let job = next_ready(&c, 0).unwrap().unwrap();
-        assert_eq!(job.temp, Some((temp.clone(), 3)));
+        assert_eq!(job.temp, Some((temp.clone(), three)));
         failed(&c, &job, "locked", false).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
-        let rewrite = Rewrite { before: (-1, -1), after: (31, 7), metadata_only: None };
-        done(&c, &Job { value: 3, ..job.clone() }, WriteEffect::TurnedBack { rewrite, turns: Turns::new(3) }).unwrap();
+        let rewrite = Rewrite { before: None, after: (31, 7), metadata_only: None };
+        done(&c, &Job { write: three, ..job.clone() }, WriteEffect::TurnedBack { rewrite, turns: Turns::new(3) })
+            .unwrap();
         // Three turns are in the file: one is left to make the full circle.
         assert_eq!(raw::queued(&c, 1, "rotation"), Some(1));
         assert_eq!(attempts(&c, 1, "rotation"), 0);
@@ -506,14 +533,19 @@ mod tests {
         // A rating of 3 recorded in a temp, then 5: the copy of 3 is done, and 5 stays queued.
         set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
-        assert_eq!((job.file_id, job.kind), (FileId::new(2), WriteKind::Rating));
+        assert_eq!((job.file_id, job.kind()), (FileId::new(2), WriteKind::Rating));
         let temp = PathRules::Windows.parse(r"E:\p\.a.png.rating.pg-write").unwrap();
-        record_temp(&c, &job, &temp, 3).unwrap();
-        set_rating(&c, FileId::new(2), Rating::new(5), true).unwrap();
+        let (three, five) = (Rating::new(3).unwrap(), Rating::new(5).unwrap());
+        record_temp(&c, &job, &temp, Write::Rating(three)).unwrap();
+        set_rating(&c, FileId::new(2), Some(five), true).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
-        assert_eq!((job.file_id, job.value, job.temp.as_ref().map(|t| t.1)), (FileId::new(2), 5, Some(3)));
-        let rewrite = Rewrite { before: (-1, -1), after: (11, 9), metadata_only: None };
-        done(&c, &Job { value: 3, ..job.clone() }, WriteEffect::FileRating { rewrite, rating: 3 }).unwrap();
+        assert_eq!(
+            (job.file_id, job.write, job.temp.as_ref().map(|t| t.1)),
+            (FileId::new(2), Write::Rating(five), Some(Write::Rating(three)))
+        );
+        let rewrite = Rewrite { before: None, after: (11, 9), metadata_only: None };
+        done(&c, &Job { write: Write::Rating(three), ..job.clone() }, WriteEffect::FileRating { rewrite, rating: three })
+            .unwrap();
         assert_eq!(raw::queued(&c, 2, "rating"), Some(5));
         let in_file: u8 =
             c.conn.query_row("SELECT value FROM file_ratings WHERE file_id = 2", [], |r| r.get(0)).unwrap();
@@ -528,7 +560,8 @@ mod tests {
         set_rating(&c, FileId::new(2), Rating::new(3), true).unwrap();
         let job = next_ready(&c, 0).unwrap().unwrap();
         let temp = PathRules::Windows.parse(r"E:\p\.a.png.rating.pg-write").unwrap();
-        record_temp(&c, &job, &temp, 3).unwrap();
+        let three = Write::Rating(Rating::new(3).unwrap());
+        record_temp(&c, &job, &temp, three).unwrap();
         let stuck = |c: &Catalog| {
             for _ in 0..MAX_ATTEMPTS {
                 failed(c, &job, "locked", false).unwrap();
@@ -540,13 +573,13 @@ mod tests {
         // Back to what the file holds (none): the row stays for its copy, with its attempts back.
         set_rating(&c, FileId::new(2), None, true).unwrap();
         assert_eq!(attempts(&c, 2, "rating"), 0);
-        assert_eq!(next_ready(&c, 0).unwrap().unwrap().temp, Some((temp, 3)));
+        assert_eq!(next_ready(&c, 0).unwrap().unwrap().temp, Some((temp, three)));
         stuck(&c);
         assert_eq!(retry_copies(&c).unwrap(), 1);
         assert_eq!(attempts(&c, 2, "rating"), 0);
         // A failing write without a temp is not a copy: it keeps its attempts.
         queue_rotation(&c, FileId::new(1), Turns::new(1)).unwrap();
-        let turn = Job { file_id: FileId::new(1), kind: WriteKind::Turns, value: 1, temp: None, attempts: 0 };
+        let turn = Job { file_id: FileId::new(1), write: Write::Turns(Turns::new(1)), temp: None, attempts: 0 };
         failed(&c, &turn, "locked", false).unwrap();
         assert_eq!(retry_copies(&c).unwrap(), 0);
         assert_eq!(attempts(&c, 1, "rotation"), 1);
@@ -563,10 +596,10 @@ mod tests {
         }
         let queued: Vec<Option<i64>> = [4, 5, 7, 8].iter().map(|&id| raw::queued(&c, id, "rating")).collect();
         assert_eq!(queued, [None, None, None, Some(4)]);
-        assert!(rating_in_file_possible("image", None));
-        assert!(rating_in_file_possible("image", Some("jpeg")));
-        assert!(!rating_in_file_possible("image", Some("bmp")));
-        assert!(!rating_in_file_possible("video", None));
+        assert!(rating_in_file_possible(Kind::Image, None));
+        assert!(rating_in_file_possible(Kind::Image, Some(Format::Jpeg)));
+        assert!(!rating_in_file_possible(Kind::Image, Some(Format::Bmp)));
+        assert!(!rating_in_file_possible(Kind::Video, None));
     }
 
     #[test]

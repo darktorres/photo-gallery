@@ -152,7 +152,7 @@ fn ratings_and_turns_reach_the_files() {
     for (n, (path, format)) in files.iter().enumerate() {
         let expected = if *format == Format::Bmp { None } else { Some(u8::try_from(n % 5 + 1).unwrap()) };
         assert_eq!(
-            Meta::read(&std::fs::read(path).unwrap(), *format, &mut MetaScratch::default()).rating,
+            Meta::read(&std::fs::read(path).unwrap(), *format, &mut MetaScratch::default()).rating.map(Rating::get),
             expected,
             "{path}"
         );
@@ -270,7 +270,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
-    assert_eq!(Meta::read(&std::fs::read(&jpeg).unwrap(), Format::Jpeg, &mut MetaScratch::default()).rating, Some(4));
+    assert_eq!(Meta::read(&std::fs::read(&jpeg).unwrap(), Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(4));
     // Written in place: the same identities, and no other file beside them.
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
     assert_eq!(ids(&c).unwrap(), before);
@@ -286,7 +286,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let now =
         pg_render::display::decode(&mut Decoder::new().unwrap(), &turned, MinSize::Full, Turns::NONE).unwrap().image;
     assert_eq!((now.width, now.height), (48, 64), "the JPEG is turned in place");
-    assert_eq!(Meta::read(&turned, Format::Jpeg, &mut MetaScratch::default()).rating, Some(4));
+    assert_eq!(Meta::read(&turned, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(4));
     let clip = include_bytes!("../../video/tests/sample.mp4");
     assert_eq!(
         std::fs::read(images.join(pg_platform::names::os_name(&pg_model::name::Name::from_raw(video_name)))).unwrap(),
@@ -388,7 +388,7 @@ fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
     let bytes = std::fs::read(&files[1].0).unwrap();
-    assert_eq!(Meta::read(&bytes, Format::Png, &mut MetaScratch::default()).rating, Some(5), "the later rating");
+    assert_eq!(Meta::read(&bytes, Format::Png, &mut MetaScratch::default()).rating.map(Rating::get), Some(5), "the later rating");
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(5));
 
     drop(writer);
@@ -503,7 +503,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
     let written = std::fs::read(verbatim(&dotted.join("a.jpg"))).unwrap();
-    assert_eq!(Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating, Some(4), "the dotted file");
+    assert_eq!(Meta::read(&written, Format::Jpeg, &mut MetaScratch::default()).rating.map(Rating::get), Some(4), "the dotted file");
     assert_eq!(std::fs::read(sibling.join("a.jpg")).unwrap(), jpeg, "the other folder's file changed");
     for folder in [verbatim(&dotted), sibling.clone()] {
         assert!(!folder.join(".a.jpg.rating.pg-write").exists(), "a temp in {}", folder.display());
@@ -634,7 +634,7 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     assert_eq!(writer.status().error, None);
     assert_eq!(std::fs::read(&junk).unwrap(), b"not an image at all");
     let bmp_bytes = std::fs::read(&files[5].0).unwrap();
-    assert_eq!(Meta::read(&bmp_bytes, Format::Bmp, &mut MetaScratch::default()).rating, None);
+    assert_eq!(Meta::read(&bmp_bytes, Format::Bmp, &mut MetaScratch::default()).rating.map(Rating::get), None);
 
     drop(writer);
     drop(c);

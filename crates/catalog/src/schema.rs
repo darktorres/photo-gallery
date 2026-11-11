@@ -29,7 +29,14 @@ pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transacti
 /// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES, TO_5_SESSION, TO_6_THUMB_VIEWS];
+pub(crate) const MIGRATIONS: &[&str] = &[
+    TO_2_CHANGE_STAMPS,
+    TO_3_NOTICES,
+    TO_4_FAILURES,
+    TO_5_SESSION,
+    TO_6_THUMB_VIEWS,
+    TO_7_WRITE_CHECKS,
+];
 
 /// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -175,18 +182,83 @@ ALTER TABLE session_row RENAME TO session;
 /// its own entries. It is still one table with lookups by key, which SQLite flattens into the pass's query (the
 /// `files_seq` index is kept). `thumb_folders` is the largest folder id (-1 for none): it sizes the pass's work list,
 /// and is a view of its own, since `thumb_clock` is the change number the pass takes its snapshot at.
-const TO_6_THUMB_VIEWS: &str = "DROP VIEW thumb_sources;
+const TO_6_THUMB_VIEWS: &str = concat!(
+    "DROP VIEW thumb_sources;
 CREATE VIEW thumb_sources AS
     SELECT f.id, f.volume, f.file_ref, f.folder_id,
            (SELECT path FROM folders WHERE id = f.folder_id) AS folder,
            f.name, f.mtime, f.rotation, f.size, f.seq,
-           CASE WHEN f.kind = 'video' THEN coalesce((SELECT poster_ms FROM analysis WHERE file_id = f.id), 0)
+           CASE WHEN f.kind = '",
+    pg_model::kind_video!(),
+    "' THEN coalesce((SELECT poster_ms FROM analysis WHERE file_id = f.id), 0)
            END AS poster_ms
     FROM files f
     WHERE f.missing = 0
       AND EXISTS (SELECT 1 FROM analysis WHERE file_id = f.id AND error IS NULL AND mtime = f.mtime);
 CREATE VIEW thumb_folders AS SELECT coalesce(max(id), -1) AS max_id FROM folders;
-";
+"
+);
+
+/// The rule a queued write's value follows (`pg_model::write::Write::from_stored`): a rating's stars 0 to 5, or 0 to 3
+/// quarter turns, in the value and in the temp's.
+macro_rules! write_value_ok {
+    () => {
+        concat!(
+            "CASE kind WHEN '",
+            pg_model::write_rating!(),
+            "' THEN value BETWEEN 0 AND 5 AND coalesce(temp_value BETWEEN 0 AND 5, 1)
+                ELSE value BETWEEN 0 AND 3 AND coalesce(temp_value BETWEEN 0 AND 3, 1) END"
+        )
+    };
+}
+
+/// Version 7: the write queue's value is tied to its kind by a `CHECK`, as `ratings.rating` is: the rule the rows are
+/// read with (`write_value_ok!`). SQLite adds no `CHECK` in place, so the table is made again with it and takes the
+/// rows that keep it: one that breaks it was never a valid write, and is dropped (the write is lost). The index and
+/// the stamps go with the old table, and are made again as they were.
+const TO_7_WRITE_CHECKS: &str = concat!(
+    "CREATE TABLE file_writes_checked(
+    file_id  INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    kind     TEXT NOT NULL CHECK (kind IN ('",
+    pg_model::write_rating!(),
+    "', '",
+    pg_model::write_rotation!(),
+    "')),
+    value    INTEGER NOT NULL,  -- write::Write::stored: a rating's stars, or quarter turns
+    queued   INTEGER NOT NULL,  -- Unix seconds
+    attempts INTEGER NOT NULL DEFAULT 0,
+    error    TEXT,
+    temp       BLOB,
+    temp_value INTEGER,
+    PRIMARY KEY(file_id, kind),
+    CHECK (",
+    write_value_ok!(),
+    ")
+);
+INSERT INTO file_writes_checked(file_id, kind, value, queued, attempts, error, temp, temp_value)
+    SELECT file_id, kind, value, queued, attempts, error, temp, temp_value FROM file_writes WHERE ",
+    write_value_ok!(),
+    ";
+DROP TABLE file_writes;
+ALTER TABLE file_writes_checked RENAME TO file_writes;
+CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
+",
+    "CREATE TRIGGER file_writes_stamp_insert AFTER INSERT ON file_writes BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER file_writes_stamp_update AFTER UPDATE ON file_writes BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = new.file_id;\nEND;\n",
+    "CREATE TRIGGER file_writes_stamp_delete AFTER DELETE ON file_writes BEGIN\n    ",
+    next_seq!(),
+    ";\n    UPDATE files SET changed = ",
+    seq!(),
+    " WHERE id = old.file_id;\nEND;\n",
+);
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
 /// schema, so a SQLite file that merely has the same tables is not taken for a catalog.
@@ -371,6 +443,13 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
                     "INSERT OR REPLACE INTO main.meta ({columns}) SELECT {columns} FROM carried.meta \
                      WHERE key IN (SELECT key FROM main.meta) AND key <> 'path_rules'"
                 ),
+                [],
+            )?;
+        } else if *table == "file_writes" {
+            // A queued write whose value breaks its kind's rule (version 7's CHECK) was never valid: it is left out, as
+            // the migration drops it.
+            tx.execute(
+                &format!("INSERT OR IGNORE INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"),
                 [],
             )?;
         } else {
@@ -883,6 +962,44 @@ mod tests {
         the_session_keys_become_its_row,
         the_session_keys_become_its_row_windows,
         the_session_keys_become_its_row_posix
+    );
+
+    /// Version 7 keeps the queued writes whose value fits their kind and drops the others; from then on the CHECK
+    /// refuses one, and the stamps still fire.
+    fn a_write_out_of_its_kinds_range_is_dropped_and_refused(rules: PathRules) {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 5).unwrap();
+        conn.execute_batch(
+            "INSERT INTO scans(id, root, started) VALUES (1, x'00', 0);
+             INSERT INTO folders(id, path, key) VALUES (1, x'01', x'01');
+             INSERT INTO files(id, volume, file_ref, folder_id, name, ext, kind, size, mtime, last_scan, order_key)
+                 VALUES (1, 1, 1, 1, x'61', 'jpg', 'image', 1, 1, 1, x'61'), (2, 1, 2, 1, x'62', 'jpg', 'image', 1, 1, 1, x'62');
+             INSERT INTO file_writes(file_id, kind, value, queued) VALUES (1, 'rating', 4, 0), (1, 'rotation', 7, 0),
+                 (2, 'rating', 9, 0), (2, 'rotation', 3, 0);",
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        let kept: Vec<(i64, String, i64)> = conn
+            .prepare("SELECT file_id, kind, value FROM file_writes ORDER BY file_id, kind")
+            .unwrap()
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(kept, [(1, "rating".to_string(), 4), (2, "rotation".to_string(), 3)]);
+        assert!(conn.execute("UPDATE file_writes SET value = 6 WHERE file_id = 1", []).is_err(), "the CHECK holds");
+        assert!(
+            conn.execute("UPDATE file_writes SET temp_value = 4 WHERE file_id = 2", []).is_err(),
+            "and for the temp's value"
+        );
+        let stamps = triggers(&conn);
+        assert!(stamps.iter().any(|t| t == "file_writes_stamp_update"), "{stamps:?}");
+    }
+
+    under_both_rules!(
+        a_write_out_of_its_kinds_range_is_dropped_and_refused,
+        a_write_out_of_its_kinds_range_is_dropped_and_refused_windows,
+        a_write_out_of_its_kinds_range_is_dropped_and_refused_posix
     );
 
     fn triggers(conn: &Connection) -> Vec<String> {

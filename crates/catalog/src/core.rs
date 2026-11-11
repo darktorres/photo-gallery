@@ -10,7 +10,8 @@ use rusqlite::types::Type;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params};
 
 use pg_model::format::Format;
-use pg_model::ids::{FileId, RootId};
+use pg_model::ids::{FileId, RootId, ScanId};
+use pg_model::media::Kind;
 use pg_model::name::Name;
 use pg_model::orientation::Orientation;
 use pg_model::path::{PathArena, WorkList};
@@ -26,7 +27,7 @@ use crate::schema::{
     write_transaction,
 };
 use crate::types::{
-    CropSource, Rebuilt, Root, Status, Versions, WorkItem, folders_under, skipped_folders, under_params,
+    CropSource, Rebuilt, Root, Status, Versions, WorkItem, WriteTarget, folders_under, skipped_folders, under_params,
 };
 use crate::writers::{AnalysisWriter, BordersWriter, ScanWriter};
 
@@ -196,15 +197,16 @@ impl Catalog {
         Ok(bytes.and_then(|bytes| self.rules.parse_bytes(&bytes)))
     }
 
-    /// What a queued write needs of its file: its path, its analyzed format, and its kind (`files.kind`).
-    pub fn write_target(&self, file_id: FileId) -> Result<(RulePath, Option<String>, String)> {
-        let (folder, name, format, kind): (Vec<u8>, Vec<u8>, Option<String>, String) = self.conn.query_row(
+    /// What a queued write needs of its file: its path, its analyzed format, and its kind, each read at the row (a
+    /// format or a kind that doesn't read is a damaged row, and an error).
+    pub fn write_target(&self, file_id: FileId) -> Result<WriteTarget> {
+        let (folder, name, format, kind): (Vec<u8>, Vec<u8>, Option<Format>, Kind) = self.conn.query_row(
             "SELECT fo.path, f.name, a.format, f.kind FROM files f JOIN folders fo ON fo.id = f.folder_id
              LEFT JOIN analysis a ON a.file_id = f.id WHERE f.id = ?1",
             [file_id.get()],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, crate::types::format_at(r, 2)?, crate::types::kind_at(r, 3)?)),
         )?;
-        Ok((self.file_path_of(&folder, &name)?, format, kind))
+        Ok(WriteTarget { path: self.file_path_of(&folder, &name)?, format, kind })
     }
 
     /// A file's path from its folder's stored bytes and its name's: the folder, the separator, the name.
@@ -228,20 +230,20 @@ impl Catalog {
         Ok(self.conn.progress_handler(1000, Some(move || cancel.load(Ordering::Relaxed)))?)
     }
 
-    pub fn begin_scan(&self, root: &RulePath) -> Result<i64> {
+    pub fn begin_scan(&self, root: &RulePath) -> Result<ScanId> {
         self.conn.execute("INSERT INTO scans(root, started) VALUES (?1, unixepoch())", [self.rules.join(root)])?;
-        Ok(self.conn.last_insert_rowid())
+        Ok(ScanId::new(self.conn.last_insert_rowid()))
     }
 
-    pub fn finish_scan(&self, scan: i64) -> Result<()> {
-        self.conn.execute("UPDATE scans SET finished = unixepoch() WHERE id = ?1", [scan])?;
+    pub fn finish_scan(&self, scan: ScanId) -> Result<()> {
+        self.conn.execute("UPDATE scans SET finished = unixepoch() WHERE id = ?1", [scan.get()])?;
         Ok(())
     }
 
     /// Mark files under `root` that this scan didn't see as missing. Their rows stay (ratings, decisions). Files in
     /// `skipped` folders (and their subfolders) are left as they are: the scan didn't list them (it couldn't, or they
     /// are reparse folders it doesn't follow), so it saw nothing there to compare with.
-    pub fn mark_missing(&self, root: &RulePath, scan: i64, skipped: &[RulePath]) -> Result<usize> {
+    pub fn mark_missing(&self, root: &RulePath, scan: ScanId, skipped: &[RulePath]) -> Result<usize> {
         // One transaction: all of the folders are marked, or none, and the commit is one for the whole pass.
         let tx = write_transaction(&self.conn)?;
         let skipped = skipped_folders(&tx, self.rules, skipped)?;
@@ -251,7 +253,7 @@ impl Catalog {
                 tx.prepare("UPDATE files SET missing = 1 WHERE folder_id = ?1 AND missing = 0 AND last_scan < ?2")?;
             for folder in folders_under(&tx, self.rules, root)? {
                 if !skipped.contains(&folder) {
-                    marked += mark.execute(params![folder, scan])?;
+                    marked += mark.execute(params![folder, scan.get()])?;
                 }
             }
         }
@@ -514,8 +516,8 @@ impl Catalog {
     }
 
     /// Give back this connection's page cache (the reader does it after each list it made).
-    pub fn release_memory(&self) -> rusqlite::Result<()> {
-        self.conn.release_memory()
+    pub fn release_memory(&self) -> Result<()> {
+        Ok(self.conn.release_memory()?)
     }
 
     /// Each count from its own index where there is one (`files_present`, `files_to_import`, `analysis_failed`).
@@ -558,7 +560,7 @@ impl Catalog {
 
 impl Tx<'_> {
     /// The writer of the scan `scan` of `root`, in this transaction.
-    pub fn scan_writer(&self, scan: i64, root: &RulePath) -> Result<ScanWriter<'_>> {
+    pub fn scan_writer(&self, scan: ScanId, root: &RulePath) -> Result<ScanWriter<'_>> {
         ScanWriter::new(&self.inner, scan, self.rules, root)
     }
 
@@ -669,9 +671,9 @@ mod tests {
         // Rewritten by the app: a metadata write carries the analysis along; a pixel write leaves it stale.
         let rewritten = |c: &Catalog, before, after, metadata_only| {
             // A write that leaves what the file holds as it was (no turn), so only its size and mtime change.
-            let job =
-                writes::Job { file_id: id, kind: pg_model::write::WriteKind::Turns, value: 0, temp: None, attempts: 0 };
-            let rewrite = writes::Rewrite { before, after, metadata_only };
+            let write = pg_model::write::Write::Turns(Turns::NONE);
+            let job = writes::Job { file_id: id, write, temp: None, attempts: 0 };
+            let rewrite = writes::Rewrite { before: Some(before), after, metadata_only };
             writes::done(c, &job, writes::WriteEffect::TurnedBack { rewrite, turns: Turns::NONE }).unwrap();
         };
         rewritten(&c, (11, 101), (12, 102), Some([0; 32]));

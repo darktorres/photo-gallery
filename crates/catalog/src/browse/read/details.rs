@@ -23,8 +23,8 @@ pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
                 r.get::<_, Vec<u8>>(0)?,
                 r.get::<_, Vec<u8>>(1)?,
                 r.get::<_, i64>(2)?,
-                r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?,
+                crate::types::kind_at(r, 3)?,
+                crate::types::format_at(r, 4)?,
                 r.get::<_, bool>(5)?,
             ))
         })
@@ -36,7 +36,7 @@ pub fn details(catalog: &Catalog, file_id: FileId) -> Result<Option<Details>> {
                 size,
                 // The rule the rating's write-back follows (`writes::set_rating`): videos keep theirs in the catalog
                 // (rewriting a video to add XMP would copy GBs), and so does a file the import couldn't read.
-                rating_in_file: !failed && crate::writes::rating_in_file_possible(&kind, format.as_deref()),
+                rating_in_file: !failed && crate::writes::rating_in_file_possible(kind, format),
                 border_sides: detection::Sides::new(),
             })
         }

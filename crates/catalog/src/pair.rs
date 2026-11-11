@@ -18,7 +18,8 @@
 //! are counted as ambiguous. A fresh row with children is never paired: pairing deletes it, and its children with it.
 //! Each binding is in the one transaction of the pass.
 
-use pg_model::ids::FileId;
+use pg_model::ids::{FileId, ScanId};
+use pg_model::media::{Ext, Kind};
 use pg_model::rules::{Path as RulePath, PathRules};
 use rusqlite::{OptionalExtension, Transaction, params};
 
@@ -62,8 +63,8 @@ struct Fresh {
     created: Option<i64>,
     folder_id: i64,
     name: Vec<u8>,
-    ext: String,
-    kind: String,
+    ext: Ext,
+    kind: Kind,
     size: i64,
     mtime: i64,
     order_key: Vec<u8>,
@@ -73,7 +74,8 @@ struct Fresh {
 /// runs on any scan that reached this point. Tier 2, the replacements and the clearing run when the walk was
 /// complete, since they need the tree to have been looked through: they leave out the folders it skipped, whose
 /// rows were not seen, and pair only the fresh rows this scan saw.
-pub fn after_scan(c: &mut Catalog, root: &RulePath, scan: i64, coverage: Coverage<'_>) -> Result<Pairing> {
+pub fn after_scan(c: &mut Catalog, root: &RulePath, scan: ScanId, coverage: Coverage<'_>) -> Result<Pairing> {
+    let scan = scan.get();
     let under = under_params(c.rules, root);
     let tx = write_transaction(&c.conn)?;
     let skipped = skipped_folders(&tx, c.rules, coverage.skipped)?;
@@ -131,7 +133,7 @@ pub fn after_scan(c: &mut Catalog, root: &RulePath, scan: i64, coverage: Coverag
             let candidates: Vec<(i64, i64, i64)> = moved
                 .query_map(
                     params![
-                        under[0], under[1], under[2], f.volume, f.file_ref, f.size, f.mtime, f.ext, f.created, scan,
+                        under[0], under[1], under[2], f.volume, f.file_ref, f.size, f.mtime, f.ext.name(), f.created, scan,
                         f.id
                     ],
                     |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
@@ -264,8 +266,8 @@ fn fresh_rows(tx: &Transaction, under: &[Vec<u8>; 3], scan: i64) -> Result<Vec<F
                 created: r.get(3)?,
                 folder_id: r.get(4)?,
                 name: r.get(5)?,
-                ext: r.get(6)?,
-                kind: r.get(7)?,
+                ext: crate::types::ext_at(r, 6)?,
+                kind: crate::types::kind_at(r, 7)?,
                 size: r.get(8)?,
                 mtime: r.get(9)?,
                 order_key: r.get(10)?,
@@ -290,8 +292,8 @@ fn rebind(tx: &Transaction, id: i64, from: &Fresh, scan: i64) -> Result<()> {
             from.created,
             from.folder_id,
             from.name,
-            from.ext,
-            from.kind,
+            from.ext.name(),
+            from.kind.key(),
             from.size,
             from.mtime,
             scan,
@@ -323,8 +325,15 @@ fn replace(
             temps.push(temp);
         }
     }
-    tx.execute("DELETE FROM file_writes WHERE file_id = ?1 AND kind = 'rotation'", [id])?;
-    tx.execute("UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = 'rating'", [id])?;
+    tx.execute(concat!("DELETE FROM file_writes WHERE file_id = ?1 AND kind = '", pg_model::write_rotation!(), "'"), [id])?;
+    tx.execute(
+        concat!(
+            "UPDATE file_writes SET temp = NULL, temp_value = NULL WHERE file_id = ?1 AND kind = '",
+            pg_model::write_rating!(),
+            "'"
+        ),
+        [id],
+    )?;
     tx.execute("DELETE FROM file_ratings WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM analysis WHERE file_id = ?1", [id])?;
     tx.execute("DELETE FROM border_sides WHERE file_id = ?1", [id])?;
@@ -345,8 +354,8 @@ fn replace(
             from.created,
             from.folder_id,
             from.name,
-            from.ext,
-            from.kind,
+            from.ext.name(),
+            from.kind.key(),
             from.size,
             from.mtime,
             scan,
@@ -375,7 +384,7 @@ mod tests {
             .unwrap()
     }
 
-    fn begin(c: &Catalog) -> i64 {
+    fn begin(c: &Catalog) -> ScanId {
         let rules = c.rules();
         c.begin_scan(&p(rules, r"D:\x")).unwrap()
     }
@@ -383,7 +392,7 @@ mod tests {
     /// The scanner finding a file in D:\x with this identity, name, size and creation time (mtime 100).
     fn found(
         c: &mut Catalog,
-        scan: i64,
+        scan: ScanId,
         volume: u64,
         file: u64,
         name: &str,
@@ -397,7 +406,7 @@ mod tests {
     #[expect(clippy::too_many_arguments, reason = "a test helper: the facts of one scanned file")]
     fn found_in(
         c: &mut Catalog,
-        scan: i64,
+        scan: ScanId,
         folder: &str,
         volume: u64,
         file: u64,

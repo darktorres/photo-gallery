@@ -38,9 +38,9 @@ pub(crate) fn one_file(rules: PathRules) -> (Catalog, i64) {
 
 /// A turn the file can't hold, written by the writer: the catalog keeps it.
 pub(crate) fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
-    let job =
-        writes::Job { file_id: id, kind: pg_model::write::WriteKind::Turns, value: turns, temp: None, attempts: 0 };
-    writes::done(c, &job, writes::WriteEffect::KeptInCatalog(Turns::new(u8::try_from(turns).unwrap()))).unwrap();
+    let turns = Turns::new(u8::try_from(turns).unwrap());
+    let job = writes::Job { file_id: id, write: pg_model::write::Write::Turns(turns), temp: None, attempts: 0 };
+    writes::done(c, &job, writes::WriteEffect::KeptInCatalog(turns)).unwrap();
 }
 
 /// Whether the import would analyze file `id` now.
@@ -54,7 +54,7 @@ pub(crate) fn state(c: &Catalog, id: FileId) -> (bool, i64) {
 }
 
 /// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
-pub(crate) fn scanned(c: &mut Catalog, scan: i64, name: &str, size: u64, mtime: i64) -> bool {
+pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, size: u64, mtime: i64) -> bool {
     let rules = c.rules();
     let tx = c.tx().unwrap();
     let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();

@@ -6,8 +6,24 @@ const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jfif", "png", "gif", "webp",
 /// Extensions recorded as videos (FFmpeg: `video`).
 const VIDEO_EXTENSIONS: &[&str] = &["mp4", "m4v", "mov", "webm", "mkv", "avi", "wmv", "mpg", "mpeg", "3gp"];
 
-#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
+/// The catalog's `files.kind` of an image: the one spelling of the stored key, for Rust ([`Kind::key`]) and the SQL
+/// that tests it (`concat!`).
+#[macro_export]
+macro_rules! kind_image {
+    () => {
+        "image"
+    };
+}
+
+/// The catalog's `files.kind` of a video (see [`kind_image!`]).
+#[macro_export]
+macro_rules! kind_video {
+    () => {
+        "video"
+    };
+}
+
+#[derive(Clone, Copy, PartialEq, Eq, Debug, strum::EnumIter)]
 pub enum Kind {
     Image,
     Video,
@@ -16,11 +32,18 @@ pub enum Kind {
 impl Kind {
     /// The catalog's `files.kind`.
     pub fn key(self) -> &'static str {
-        self.into()
+        match self {
+            Kind::Image => kind_image!(),
+            Kind::Video => kind_video!(),
+        }
     }
 
     pub fn from_key(key: &str) -> Option<Kind> {
-        key.parse().ok()
+        match key {
+            kind_image!() => Some(Kind::Image),
+            kind_video!() => Some(Kind::Video),
+            _ => None,
+        }
     }
 }
 

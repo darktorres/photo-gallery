@@ -15,10 +15,14 @@ use pg_model::turns::Turns;
 /// [`FileState`]'s columns, `f` the file.
 macro_rules! file_state_columns {
     () => {
-        "f.mtime, f.rotation,
-        coalesce((SELECT value FROM file_writes WHERE file_id = f.id AND kind = 'rotation'), 0),
+        concat!(
+            "f.mtime, f.rotation,
+        coalesce((SELECT value FROM file_writes WHERE file_id = f.id AND kind = '",
+            pg_model::write_rotation!(),
+            "'), 0),
         EXISTS(SELECT 1 FROM file_writes WHERE file_id = f.id AND temp IS NOT NULL),
         f.size"
+        )
     };
 }
 
@@ -54,7 +58,7 @@ pub fn file_source(catalog: &Catalog, file_id: FileId) -> Result<Option<FileSour
             Ok((
                 r.get::<_, Vec<u8>>(0)?,
                 r.get::<_, Vec<u8>>(1)?,
-                r.get::<_, String>(2)?,
+                crate::types::kind_at(r, 2)?,
                 r.get::<_, Option<i64>>(3)?,
                 file_state_at(r, 4)?,
             ))
@@ -62,7 +66,7 @@ pub fn file_source(catalog: &Catalog, file_id: FileId) -> Result<Option<FileSour
         .optional()?;
     Ok(match row {
         Some((folder, name, kind, poster_ms, state)) => {
-            let video = kind == Kind::Video.key();
+            let video = kind == Kind::Video;
             Some(FileSource {
                 path: catalog.file_path_of(&folder, &name)?,
                 state,

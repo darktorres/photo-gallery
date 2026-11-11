@@ -26,7 +26,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
-use pg_catalog::Catalog;
+use pg_catalog::{Catalog, WriteTarget};
 use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
@@ -39,7 +39,7 @@ use pg_model::format::Format;
 use pg_model::media::Kind;
 use pg_model::rules::Path as RulePath;
 
-use pg_model::write::WriteKind;
+use pg_model::write::{Write, WriteKind};
 use pg_platform::names::disk_path;
 use pg_platform::names::set_path;
 use pg_platform::native::NativePath;
@@ -324,7 +324,7 @@ impl Inner {
                 writes::drop_gone(catalog, &job)?;
                 self.update_status(|s| {
                     s.dropped = s.dropped.saturating_add(1);
-                    s.last_dropped = Some(job.kind);
+                    s.last_dropped = Some(job.kind());
                     if s.error_file == Some(job.file_id) {
                         s.error = None;
                         s.error_file = None;
@@ -388,14 +388,14 @@ impl Inner {
     fn process(&self, catalog: &Catalog, job: &Job, exiftool: &mut Option<ExifTool>) -> Result<()> {
         #[cfg(any(test, feature = "fault"))]
         fault::in_process(self.fault, job.file_id);
-        let (path_rule, format, kind) = catalog.write_target(job.file_id)?;
+        let WriteTarget { path: path_rule, format: known, kind } = catalog.write_target(job.file_id)?;
 
         // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog. A rating isn't queued for
         // one (`writes::rating_in_file_possible` asks for an image first); one queued before that rule is done here.
-        if kind == Kind::Video.key() && job.temp.is_none() {
-            match job.kind {
-                WriteKind::Turns => self.keep_turn_in_catalog(catalog, job)?,
-                WriteKind::Rating => writes::done(catalog, job, WriteEffect::Nothing)?,
+        if kind == Kind::Video && job.temp.is_none() {
+            match job.write {
+                Write::Turns(turns) => self.keep_turn_in_catalog(catalog, job, turns)?,
+                Write::Rating(_) => writes::done(catalog, job, WriteEffect::Nothing)?,
             }
             return Ok(());
         }
@@ -408,16 +408,15 @@ impl Inner {
         let shown = rules.display(&path_rule);
 
         // A copy that may have started finishes.
-        if let Some((temp, temp_value)) = &job.temp {
+        if let Some((temp, carried)) = &job.temp {
             let original = Original { path: &path, native: &native, shown: &shown };
             return self
-                .finish_copy(catalog, job, (temp, *temp_value), &original)
+                .finish_copy(catalog, job, (temp, *carried), &original)
                 .with_context(|| CopyStarted { temp: rules.display(temp) });
         }
 
         // A rating for a format that can't hold one (known from the analysis) is done: the catalog keeps it.
-        let known = format.as_deref().and_then(Format::from_name);
-        if job.kind == WriteKind::Rating && known.is_some_and(|f| !pg_model::format::can_hold_rating(f)) {
+        if job.kind() == WriteKind::Rating && known.is_some_and(|f| !pg_model::format::can_hold_rating(f)) {
             return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
         }
         // Taken before the read: a save by another program after it shows when the original is opened for the copy.
@@ -426,14 +425,14 @@ impl Inner {
         let format = match known.or_else(|| Format::sniff(&bytes)) {
             // Not a format the app reads (an analysis that failed, a file that isn't what its name says), or one that
             // can't hold a rating: a rating stays in the catalog, and the write is done. A turn can't be made.
-            Some(f) if job.kind == WriteKind::Rating && !pg_model::format::can_hold_rating(f) => {
+            Some(f) if job.kind() == WriteKind::Rating && !pg_model::format::can_hold_rating(f) => {
                 return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
             }
             Some(f) => f,
-            None if job.kind == WriteKind::Rating => return Ok(writes::done(catalog, job, WriteEffect::Nothing)?),
+            None if job.kind() == WriteKind::Rating => return Ok(writes::done(catalog, job, WriteEffect::Nothing)?),
             None => bail!("{shown}: unknown format"),
         };
-        let temp_rule = temp_of(&path_rule, job.kind);
+        let temp_rule = temp_of(&path_rule, job.kind());
         let temp = disk_path(rules, &temp_rule);
         let shown_temp = rules.display(&temp_rule);
         // Not recorded (the job has no temp), so not a copy that may have started: what is there is a leftover (a
@@ -441,11 +440,10 @@ impl Inner {
         let _ = std::fs::remove_file(&temp);
 
         // Step 1: the new content, complete, in the temp.
-        let (data, pixels_changed) = match job.kind {
-            WriteKind::Rating => {
-                let rating = u8::try_from(job.value).with_context(|| format!("{shown}: no rating is {}", job.value))?;
+        let (data, pixels_changed) = match job.write {
+            Write::Rating(rating) => {
                 let tool = ExifTool::running(exiftool, &pg_exiftool::program())?;
-                tool.write_rating(&path, &temp, rating)?;
+                tool.write_rating(&path, &temp, rating.get())?;
                 let written = std::fs::read(&temp).with_context(|| format!("reading {shown_temp}"))?;
                 if Meta::read(&written, format, &mut MetaScratch::default()).rating != Some(rating) {
                     let _ = std::fs::remove_file(&temp);
@@ -453,12 +451,12 @@ impl Inner {
                 }
                 (written, false)
             }
-            WriteKind::Turns => {
+            Write::Turns(turns) => {
                 let write_temp = |new: Vec<u8>| -> Result<Vec<u8>> {
                     std::fs::write(&temp, &new).with_context(|| format!("writing {shown_temp}"))?;
                     Ok(new)
                 };
-                let new = match rotate(&bytes, format, job_turns(job))? {
+                let new = match rotate(&bytes, format, turns)? {
                     Outcome::Rewritten(new) => write_temp(new)?,
                     Outcome::Orientation(o) => match patch_orientation(&bytes, format, o) {
                         Some(new) => write_temp(new)?,
@@ -475,12 +473,12 @@ impl Inner {
                                 Some(written) => written,
                                 None => {
                                     let _ = std::fs::remove_file(&temp);
-                                    return self.keep_turn_in_catalog(catalog, job);
+                                    return self.keep_turn_in_catalog(catalog, job, turns);
                                 }
                             }
                         }
                     },
-                    Outcome::Catalog => return self.keep_turn_in_catalog(catalog, job),
+                    Outcome::Catalog => return self.keep_turn_in_catalog(catalog, job, turns),
                 };
                 (new, true)
             }
@@ -502,7 +500,7 @@ impl Inner {
         fault::before_record(self.fault, &self.fault_fired, job, &self.catalog_path)?;
         // Nothing is recorded (the error, or the job's row gone since it was read): the original is not touched, and the
         // temp goes. A row gone means the write was cancelled; the job is over.
-        let recorded = match writes::record_temp(catalog, job, &temp_rule, job.value) {
+        let recorded = match writes::record_temp(catalog, job, &temp_rule, job.write) {
             Ok(recorded) => recorded,
             Err(e) => {
                 drop(file);
@@ -525,7 +523,7 @@ impl Inner {
         // The write is recorded: the temp is a leftover now, and one that can't be removed is cleared by the next
         // write of the file.
         let _ = std::fs::remove_file(&temp);
-        if job.kind == WriteKind::Rating {
+        if job.kind() == WriteKind::Rating {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
@@ -563,27 +561,27 @@ impl Inner {
         fault::in_copy(self.fault, job.file_id)?;
         write_into(copy.file, copy.data)?;
         let after = stat(path)?;
-        let rewrite = Rewrite { before: copy.before, after, metadata_only: copy.new_hash };
+        let rewrite = Rewrite { before: Some(copy.before), after, metadata_only: copy.new_hash };
         writes::done(catalog, job, Self::rewrote(job, rewrite))?;
         Ok(after)
     }
 
-    /// Finish a copy that may have started (its temp recorded): copy the temp in, and record the write with the value
-    /// the temp carries, so a change made since stays queued. What the file held before is unknown now, so its
+    /// Finish a copy that may have started (its temp recorded): copy the temp in, and record the write the temp
+    /// carries, so a change made since stays queued. What the file held before is unknown now, so its
     /// analysis is redone rather than carried over. The original isn't compared: it may already be partly the temp's.
     /// The caller gives every failure here `CopyStarted`, since the copy may have started.
     fn finish_copy(
         &self,
         catalog: &Catalog,
         job: &Job,
-        (temp, temp_value): (&RulePath, i64),
+        (temp, carried): (&RulePath, Write),
         original: &Original<'_>,
     ) -> Result<()> {
         #[cfg(any(test, feature = "fault"))]
         fault::in_copy(self.fault, job.file_id)?;
         let Original { path, native, shown } = *original;
         let rules = catalog.rules();
-        let written = Job { value: temp_value, ..job.clone() };
+        let written = Job { write: carried, ..job.clone() };
         let temp_path = disk_path(rules, temp);
         match std::fs::read(&temp_path) {
             Ok(data) => {
@@ -598,10 +596,10 @@ impl Inner {
             Err(e) => return Err(e.into()),
         }
         let after = stat(path)?;
-        let rewrite = Rewrite { before: (-1, -1), after, metadata_only: None };
+        let rewrite = Rewrite { before: None, after, metadata_only: None };
         writes::done(catalog, &written, Self::rewrote(&written, rewrite))?;
         let _ = std::fs::remove_file(&temp_path);
-        if job.kind == WriteKind::Turns {
+        if job.kind() == WriteKind::Turns {
             self.pixels_changed();
         }
         Ok(())
@@ -609,17 +607,14 @@ impl Inner {
 
     /// The effect of a job that rewrote its file: the rating it now holds, or the turns it shows.
     fn rewrote(job: &Job, rewrite: Rewrite) -> WriteEffect {
-        match job.kind {
-            WriteKind::Rating => {
-                WriteEffect::FileRating { rewrite, rating: u8::try_from(job.value.clamp(0, 5)).unwrap_or(u8::MAX) }
-            }
-            WriteKind::Turns => WriteEffect::TurnedBack { rewrite, turns: job_turns(job) },
+        match job.write {
+            Write::Rating(rating) => WriteEffect::FileRating { rewrite, rating },
+            Write::Turns(turns) => WriteEffect::TurnedBack { rewrite, turns },
         }
     }
 
-    /// A turn the file can't hold is kept in the catalog instead.
-    fn keep_turn_in_catalog(&self, catalog: &Catalog, job: &Job) -> Result<()> {
-        let turns = job_turns(job);
+    /// A turn the file can't hold (`turns`, the job's) is kept in the catalog instead.
+    fn keep_turn_in_catalog(&self, catalog: &Catalog, job: &Job, turns: Turns) -> Result<()> {
         writes::done(catalog, job, WriteEffect::KeptInCatalog(turns))?;
         self.pixels_changed();
         Ok(())
@@ -645,11 +640,6 @@ fn shown_file(catalog: &Catalog, job: &Job) -> String {
         Ok(Some(path)) => catalog.rules().display(&path),
         _ => format!("file {}", job.file_id.get()),
     }
-}
-
-/// The quarter turns a turn job writes (its value, taken modulo 4).
-fn job_turns(job: &Job) -> Turns {
-    Turns::of(job.value)
 }
 
 #[cfg(test)]

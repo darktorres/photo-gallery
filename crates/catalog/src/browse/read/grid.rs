@@ -37,10 +37,14 @@ const SORT_COLUMN: usize = 16;
 /// What the entries and the filters read besides the file.
 macro_rules! file_joins {
     () => {
-        "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
+        concat!(
+            "LEFT JOIN analysis a ON a.file_id = f.id AND a.error IS NULL
     LEFT JOIN ratings r ON r.file_id = f.id
-    LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = 'rotation'
+    LEFT JOIN file_writes w ON w.file_id = f.id AND w.kind = '",
+            pg_model::write_rotation!(),
+            "'
     LEFT JOIN border_marks m ON m.file_id = f.id"
+        )
     };
 }
 

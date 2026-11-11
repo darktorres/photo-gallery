@@ -5,7 +5,8 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
-use rusqlite::{Connection, params};
+use rusqlite::types::Type;
+use rusqlite::{Connection, Row, params};
 
 use pg_model::format::Format;
 use pg_model::ids::{FileId, FileIdentity, FolderId, RootId};
@@ -90,6 +91,38 @@ impl Rebuilt {
     }
 }
 /// The `meta.path_rules` value of a rule set.
+/// The kind in column `i` (`files.kind`): an error for one that doesn't read, as an unknown extension is.
+pub(crate) fn kind_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Kind> {
+    let key = r.get_ref(i)?.as_str()?;
+    Kind::from_key(key).ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("kind {key}"), Type::Text))
+}
+
+/// The extension in column `i` (`files.ext`): an error for one the library doesn't hold.
+pub(crate) fn ext_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Ext> {
+    let ext = r.get_ref(i)?.as_str()?;
+    Ext::of(ext).ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("ext {ext}"), Type::Text))
+}
+
+/// The analyzed format in column `i` (`analysis.format`): `None` when there is none (no analysis, or a failed one), and
+/// an error for a name that doesn't read.
+pub(crate) fn format_at(r: &Row<'_>, i: usize) -> rusqlite::Result<Option<Format>> {
+    let Some(name) = r.get_ref(i)?.as_str_or_null()? else {
+        return Ok(None);
+    };
+    Format::from_name(name)
+        .map(Some)
+        .ok_or_else(|| rusqlite::Error::InvalidColumnType(i, format!("format {name}"), Type::Text))
+}
+
+/// What a queued write needs of its file ([`crate::Catalog::write_target`]): its path, its analyzed format (`None`
+/// before the import, or when it failed), and its kind.
+#[derive(Clone, Debug, PartialEq)]
+pub struct WriteTarget {
+    pub path: RulePath,
+    pub format: Option<Format>,
+    pub kind: Kind,
+}
+
 pub(crate) fn rules_name(rules: PathRules) -> &'static str {
     match rules {
         PathRules::Windows => "windows",

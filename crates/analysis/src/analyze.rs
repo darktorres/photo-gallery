@@ -14,7 +14,7 @@ use pg_codec::pixels::{Rgb, release_over};
 use pg_codec::resize::Resizer;
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::analysis::{
-    Analysis, Analyzed, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts,
+    Analysis, Analyzed, FileHash, ImageFacts, Media, PixelHashes, THUMBHASH_MAX, Taken, ThumbHash, VideoFacts,
 };
 use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
@@ -35,17 +35,9 @@ const PDQ_SIDE: usize = 512;
 /// ThumbHash input limit (the format's own maximum).
 const THUMBHASH_SIDE: usize = 100;
 
-/// The BLAKE3 of a file's bytes, loaded.
-pub fn file_hash(bytes: &[u8]) -> [u8; 32] {
-    *blake3::hash(bytes).as_bytes()
-}
-
-/// [`file_hash`] of a file streamed from `path`, for a video (not read whole): the same digest, the hasher reading the
-/// file in chunks.
-pub fn file_hash_of(path: &Path) -> io::Result<[u8; 32]> {
-    let mut hasher = blake3::Hasher::new();
-    hasher.update_reader(File::open(path)?)?;
-    Ok(*hasher.finalize().as_bytes())
+/// The content hash of a file streamed from `path`, for a video (not read whole): `FileHash::of` its bytes.
+fn file_hash_of(path: &Path) -> io::Result<FileHash> {
+    FileHash::of_reader(File::open(path)?)
 }
 
 /// A worker's buffers for one file's decode, scaled copies and hashes, kept from file to file (a file larger than
@@ -96,7 +88,7 @@ impl Analyzer {
     }
 
     fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analyzed> {
-        let file_hash = file_hash(bytes);
+        let file_hash = FileHash::of(bytes);
         let format = Format::sniff(bytes).context("unknown image format")?;
         let meta = Meta::read(bytes, format, &mut self.meta);
         let min = MinSize::Sides(DECODE_MIN_LONG, DECODE_MIN_SHORT);
@@ -233,7 +225,7 @@ mod tests {
             (0..3_000_000u32).map(|i| u8::try_from(i.wrapping_mul(2_654_435_761) >> 24).unwrap()).collect();
         let path = dir.join("streamed.bin");
         std::fs::write(&path, &bytes).unwrap();
-        assert_eq!(file_hash_of(&path).unwrap(), file_hash(&bytes));
+        assert_eq!(file_hash_of(&path).unwrap(), FileHash::of(&bytes));
         assert!(file_hash_of(&dir.join("missing.bin")).is_err());
     }
 

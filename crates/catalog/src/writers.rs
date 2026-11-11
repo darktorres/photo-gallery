@@ -253,7 +253,7 @@ impl<'tx> AnalysisWriter<'tx> {
             a.version,
             item.size,
             item.mtime,
-            &a.file_hash[..],
+            &a.file_hash.0[..],
             image.map(|i| &i.pixels.pixel_hash[..]),
             a.format(),
             a.orientation.get(),
@@ -652,7 +652,7 @@ mod tests {
         };
         let analysis = Analysis {
             version: IMPORT_VERSION,
-            file_hash: [1; 32],
+            file_hash: pg_model::analysis::FileHash([1; 32]),
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
@@ -741,7 +741,7 @@ mod tests {
         let item = next_work(&c);
         let analysis = Analysis {
             version: IMPORT_VERSION,
-            file_hash: [1; 32],
+            file_hash: pg_model::analysis::FileHash([1; 32]),
             orientation: Orientation::UPRIGHT,
             width: 400,
             height: 300,
@@ -835,7 +835,7 @@ mod tests {
             let (width, height) = if Orientation::from_tag(orientation).swaps_axes() { (300, 400) } else { (400, 300) };
             let analysis = Analysis {
                 version: IMPORT_VERSION,
-                file_hash: [u8::try_from(n).unwrap(); 32],
+                file_hash: pg_model::analysis::FileHash([u8::try_from(n).unwrap(); 32]),
                 orientation: Orientation::from_tag(orientation),
                 width,
                 height,

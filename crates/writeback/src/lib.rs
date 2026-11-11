@@ -25,7 +25,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{Context, Result, bail};
-use pg_analysis::analyze::file_hash;
+use pg_model::analysis::FileHash;
 use pg_catalog::{Catalog, WriteTarget};
 use pg_catalog::queue::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
@@ -71,9 +71,8 @@ pub struct WriteStatus {
     pub dropped: usize,
     /// The kind of the latest of them.
     pub last_dropped: Option<WriteKind>,
-    /// The latest thumbnail that couldn't follow a rewritten file (the cache busy or closing). The thumbnail is made
-    /// again, and the write is done all the same.
-    pub thumbnail_error: Option<String>,
+    /// The latest thumbnail that couldn't follow a rewritten file (the cache busy or closing), which the app words.
+    pub thumbnail_error: Option<pg_model::notice::ThumbnailLag>,
 }
 
 /// Why a write failed, for the app to word.
@@ -130,7 +129,7 @@ struct CopyInto<'a> {
     file: File,
     data: &'a [u8],
     before: (i64, i64),
-    new_hash: Option<[u8; 32]>,
+    new_hash: Option<FileHash>,
 }
 
 struct Inner {
@@ -483,7 +482,7 @@ impl Inner {
                 (new, true)
             }
         };
-        let new_hash = if pixels_changed { None } else { Some(file_hash(&data)) };
+        let new_hash = if pixels_changed { None } else { Some(FileHash::of(&data)) };
 
         // Step 2: the original, open for the copy and as it was read, with the temp durable. Until it is recorded, a
         // failure leaves the original untouched: the temp goes, and the next attempt starts from the file.
@@ -527,8 +526,8 @@ impl Inner {
             // The pixels didn't change: the thumbnails still show the file. If they can't follow it (the cache
             // busy or closing), they are only made again: the write is done all the same.
             if let Err(e) = self.thumbs.retag(job.file_id, before.1, after.1) {
-                let message = format!("file {}: {e:#}", job.file_id.get());
-                self.update_status(|s| s.thumbnail_error = Some(message));
+                let lag = pg_model::notice::ThumbnailLag { file: job.file_id, error: format!("{e:#}") };
+                self.update_status(|s| s.thumbnail_error = Some(lag));
             }
         }
         if pixels_changed {

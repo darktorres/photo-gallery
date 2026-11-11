@@ -38,7 +38,7 @@ bench: analysis catalog codec model render thumbcache
 borders: analysis catalog jobs model platform
 import: analysis catalog dedup jobs model platform
 thumbs: catalog jobs model platform render thumbcache
-writeback: analysis catalog edit exiftool jobs metadata model platform thumbcache
+writeback: catalog edit exiftool jobs metadata model platform thumbcache
 crop: catalog edit exiftool jobs model platform
 
 # The runner, the application layer, the front ends and the one program.

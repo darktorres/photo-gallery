@@ -297,7 +297,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             writer.wake();
             wait_for_writes(&writer, &catalog)?;
             if let Some(e) = writer.status().thumbnail_error {
-                eprintln!("{}", line(&Line::ThumbnailsError { error: e.to_string() }));
+                eprintln!("{}", line(&Line::ThumbnailsError { file: e.file.get().to_string(), error: e.error }));
             }
             drop(writer);
             cache.close();

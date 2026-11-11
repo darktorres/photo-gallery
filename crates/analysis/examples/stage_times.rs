@@ -35,7 +35,7 @@ fn main() -> anyhow::Result<()> {
     let mut t = [Duration::ZERO; 7];
     for b in &bytes {
         let s = Instant::now();
-        let _ = analyze::file_hash(b);
+        let _ = pg_model::analysis::FileHash::of(b);
         t[0] += s.elapsed();
         let format = Format::sniff(b).context("a file is not an image")?;
         let s = Instant::now();

@@ -7,13 +7,14 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The writer: puts the ratings and the turns into the files (ExifTool, the rotation edit) and keeps the queue of those writes. Its dependencies are the edit, the metadata and ExifTool.
+# The writer: puts the ratings and the turns into the files (ExifTool, the rotation edit) and keeps the queue of those
+# writes. Its dependencies: the catalog (the queue), the edit, the metadata and ExifTool (the writes), the thumbnail cache
+# (a rewritten file's thumbnails follow it), the jobs (its thread's control and panics), the model and the platform.
 # The `fault` feature lets the tests of the crates above start a writer that panics where they ask (`pg_writeback::fault`).
 [features]
 fault = []
 
 [dependencies]
-pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }
 pg-edit = { path = "../edit" }
 pg-exiftool = { path = "../exiftool" }

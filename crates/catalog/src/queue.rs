@@ -53,7 +53,7 @@ impl Job {
 pub struct Rewrite {
     pub before: Option<(i64, i64)>,
     pub after: (i64, i64),
-    pub metadata_only: Option<[u8; 32]>,
+    pub metadata_only: Option<pg_model::analysis::FileHash>,
 }
 
 /// What a finished write changed in the catalog. Applied in the transaction that takes the job off the queue
@@ -365,7 +365,7 @@ fn file_rewritten(tx: &Transaction, file_id: FileId, rewrite: Rewrite) -> Result
         tx.execute(
             "UPDATE analysis SET size = ?2, mtime = ?3, file_hash = ?4
              WHERE file_id = ?1 AND size = ?5 AND mtime = ?6",
-            params![file_id.get(), after.0, after.1, &file_hash[..], before.0, before.1],
+            params![file_id.get(), after.0, after.1, &file_hash.0[..], before.0, before.1],
         )?;
     }
     Ok(())
@@ -430,7 +430,7 @@ mod tests {
         assert_eq!((first.file_id, first.write), (FileId::new(1), Write::Rating(Rating::new(3).unwrap())));
         // The rating is in the file: the catalog records it, and the job leaves the queue.
         let after = (11, 101);
-        let rewrite = Rewrite { before: Some((10, 1)), after, metadata_only: Some([7; 32]) };
+        let rewrite = Rewrite { before: Some((10, 1)), after, metadata_only: Some(pg_model::analysis::FileHash([7; 32])) };
         c.write_done(&first, WriteEffect::FileRating { rewrite, rating: Rating::new(3).unwrap() }).unwrap();
         assert_eq!(raw::queued(&c, 1, "rating"), None);
         assert_eq!(raw::file_size(&c, FileId::new(1)), 11);

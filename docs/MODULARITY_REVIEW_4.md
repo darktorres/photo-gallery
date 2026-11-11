@@ -562,6 +562,7 @@ Each fix gets a test that fails before it.
   - The comment states the dependencies as they are.
   - `thumbnail_error` is `pg-model` data (R-1): the file's `FileId` and the cache's error as detail text, the shape NOTIFICATIONS_PLAN's notices carry an error in. The client words it. A `pg_thumbcache` error type would be one the client cannot name.
 - Gate: `just lint` (the layer check), `just test`.
+- **Done in step 8.** `pg_model::analysis::FileHash(of, of_reader)`, the analysis's `file_hash` and the queue's `Rewrite::metadata_only`; `pg-analysis` no longer depends on blake3, nor `pg-writeback` on `pg-analysis`. `WriteStatus::thumbnail_error` is a `pg_model::notice::ThumbnailLag { file, error }`, which the command line words with the file (`cli-thumbnails-error`).
 
 ### M-39: `pg-yandex`'s error holds only the client's cases
 

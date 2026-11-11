@@ -160,6 +160,7 @@ pub enum Line {
     },
     StatusNoCache,
     ThumbnailsError {
+        file: String,
         error: String,
     },
     WriteDone {
@@ -322,7 +323,7 @@ impl Line {
             ],
             Line::StatusWrites { queued, failing } => vec![("queued", queued), ("failing", failing)],
             Line::StatusCache { count, used, cap } => vec![("count", count), ("used", used), ("cap", cap)],
-            Line::ThumbnailsError { error } => vec![("error", error)],
+            Line::ThumbnailsError { file, error } => vec![("file", file), ("error", error)],
             Line::WriteDone { left, failing, pending, seconds } => {
                 vec![("left", left), ("failing", failing), ("pending", pending), ("seconds", seconds)]
             }
@@ -413,7 +414,7 @@ impl Line {
             Line::StatusWrites { queued: s(), failing: s() },
             Line::StatusCache { count: s(), used: s(), cap: s() },
             Line::StatusNoCache,
-            Line::ThumbnailsError { error: s() },
+            Line::ThumbnailsError { file: s(), error: s() },
             Line::WriteDone { left: s(), failing: s(), pending: s(), seconds: s() },
             Line::WriterStopped { left: s() },
             Line::WriterStoppedFailing { left: s(), error: s() },

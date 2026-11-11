@@ -188,6 +188,14 @@ pub enum Carried {
     Nothing { reason: String },
 }
 
+/// A thumbnail that couldn't follow a rewrite of its file (the cache busy or closing): the file, and the cache's error
+/// as its detail text. The thumbnail is made again, and the write is done all the same.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ThumbnailLag {
+    pub file: crate::ids::FileId,
+    pub error: String,
+}
+
 /// A file a pass or the writer failed on: its path as the user sees it, and why (the error's text, or a caught panic's
 /// message).
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

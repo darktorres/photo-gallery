@@ -15,7 +15,6 @@ pg-metadata = { path = "../metadata" }
 pg-model = { path = "../model" }
 pg-video = { path = "../video" }
 anyhow.workspace = true
-blake3.workspace = true
 thumbhash.workspace = true
 xxhash-rust.workspace = true
 

@@ -51,7 +51,7 @@ cli-status-cache = thumbnail cache: { $count } thumbnails, { $used } of { $cap }
 cli-status-no-cache = thumbnail cache: none yet
 
 # gallery write
-cli-thumbnails-error = thumbnails: { $error }
+cli-thumbnails-error = thumbnails: file { $file }: { $error }
 cli-write-done = written; { $left } left ({ $failing } failing), { $pending } files to re-import (turned), { $seconds } s
 cli-writer-stopped = the file writer stopped with { $left } changes still to write
 cli-writer-stopped-failing = the file writer stopped with { $left } changes still to write (the last failure: { $error })

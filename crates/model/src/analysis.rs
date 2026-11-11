@@ -1,9 +1,30 @@
 //! What the import computes from one file, as data: the record the catalog stores and the grid reads. Producing it
 //! is the job of pg-analysis's `analyze` module. This module is the shape of the result, with no decoding and no I/O.
 
+use std::io::{self, Read};
+
 use crate::format::Format;
 use crate::orientation::Orientation;
 use crate::pdq;
+
+/// A file's content hash: the BLAKE3 of its bytes (tier 0a). The import stores it; the write-back makes it again for a
+/// file whose metadata it rewrote, so the analysis made from the same pixels stays.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub struct FileHash(pub [u8; 32]);
+
+impl FileHash {
+    /// The hash of `bytes`, loaded.
+    pub fn of(bytes: &[u8]) -> FileHash {
+        FileHash(*blake3::hash(bytes).as_bytes())
+    }
+
+    /// The hash of what `reader` gives, streamed (a video, not read whole): the same as [`FileHash::of`] its bytes.
+    pub fn of_reader(reader: impl Read) -> io::Result<FileHash> {
+        let mut hasher = blake3::Hasher::new();
+        hasher.update_reader(reader)?;
+        Ok(FileHash(*hasher.finalize().as_bytes()))
+    }
+}
 
 /// One file's analysis: what every file has, and the facts of its kind (an image's or a video's).
 #[derive(Clone)]
@@ -11,7 +32,7 @@ pub struct Analysis {
     /// The version of the producer that made it (pg-analysis's `analyze::IMPORT_VERSION`); an older one's are redone.
     pub version: i64,
     /// BLAKE3 of the file bytes (tier 0a).
-    pub file_hash: [u8; 32],
+    pub file_hash: FileHash,
     /// EXIF orientation (1–8) the file asks for (a video's display matrix).
     pub orientation: Orientation,
     /// Upright full-size dimensions.

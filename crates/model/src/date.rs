@@ -1,25 +1,9 @@
 //! Civil dates as the files and the catalog write them (model-shaped: pure arithmetic over calendar fields, no
-//! time zone): an EXIF `DateTime` value, an ISO 8601 date or date and time, and the Unix seconds of a wall-clock
-//! time. The times are wall-clock: a zone in the text is dropped, as the camera's clock showed it. A calendar day
+//! time zone): an ISO 8601 date or date and time, and the Unix seconds of a wall-clock time (an EXIF date's text is
+//! the metadata's, `pg_metadata`'s `exif`). The times are wall-clock: a zone in the text is dropped, as the camera's clock showed it. A calendar day
 //! ([`Day`]) is the same count of days, for a query's date bounds.
 
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
-
-/// An EXIF date, `YYYY:MM:DD HH:MM:SS` (anything after it ignored), as wall-clock seconds; `None` when blank,
-/// malformed or impossible. The format rules are kamadak-exif's (`DateTime::from_ascii`), which read them before.
-pub fn exif_date(data: &[u8]) -> Option<i64> {
-    if data == b"    :  :     :  :  " || data == b"                   " || data.len() < 19 {
-        return None;
-    }
-    if [(4, b':'), (7, b':'), (10, b' '), (13, b':'), (16, b':')].iter().any(|&(i, c)| data.get(i) != Some(&c)) {
-        return None;
-    }
-    let num = |r: std::ops::Range<usize>| {
-        let digits = data.get(r)?;
-        digits.iter().all(u8::is_ascii_digit).then(|| digits.iter().fold(0, |n, &d| n * 10 + i64::from(d - b'0')))
-    };
-    wall_clock_seconds(num(0..4)?, num(5..7)?, num(8..10)?, num(11..13)?, num(14..16)?, num(17..19)?)
-}
 
 /// `YYYY-MM-DD`, optionally followed by `THH:MM[:SS[.fff]]` and a zone (ignored: the wall-clock time is kept).
 pub fn parse_iso_date(s: &str) -> Option<i64> {

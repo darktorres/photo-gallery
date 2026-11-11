@@ -203,7 +203,7 @@ fn videos() {
     // composed with the turn. With a turn, the orientation is the one that shows the stored pixels turned.
     let mut analyzer = analyze::Analyzer::new().unwrap();
     for (path, turns, want) in [(&rotated, 0, 8), (&rotated, 1, 1), (&mirrored, 0, 2), (&mirrored, 1, 7)] {
-        let a = analyze::video(path, Turns::new(turns), &mut analyzer).unwrap();
+        let a = analyzer.video(path, Turns::new(turns)).unwrap();
         assert_eq!(a.record.orientation.get(), want, "{} with {turns} turn(s)", path.display());
     }
 
@@ -234,7 +234,7 @@ fn videos() {
     assert_eq!(taken, Some(local));
 
     let (events, _quiet) = Quiet::bus();
-    let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &catalog.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap();
+    let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &catalog.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap();
     let made = pg_thumbs::run(&cache, &dir.join("catalog.sqlite"), 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (6, 0));
 }
@@ -260,6 +260,6 @@ fn a_video_in_a_folder_ending_in_a_dot_is_read_from_that_folder() {
     std::fs::copy(verbatim(&media.join("h264.mp4")), verbatim(&dotted.join("a.mp4"))).unwrap();
     std::fs::copy(verbatim(&media.join("mirrored.mp4")), verbatim(&plain.join("a.mp4"))).unwrap();
     let mut analyzer = analyze::Analyzer::new().unwrap();
-    let a = analyze::video(&verbatim(&dotted.join("a.mp4")), Turns::new(0), &mut analyzer).unwrap();
+    let a = analyzer.video(&verbatim(&dotted.join("a.mp4")), Turns::new(0)).unwrap();
     assert_eq!(a.record.orientation.get(), 1, "the dotted folder's own file");
 }

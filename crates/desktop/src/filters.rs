@@ -15,7 +15,8 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::QString;
 use pg_app::reexport::Facets;
 use pg_model::date::Day;
-use pg_model::query::{Query, parse_number};
+use pg_client::input::parse_number;
+use pg_model::query::Query;
 
 use pg_client::facets::{Counts, from_index};
 use pg_client::input::{Edge, Field, bound_is_valid, choice, tri_index, tri_of_index};

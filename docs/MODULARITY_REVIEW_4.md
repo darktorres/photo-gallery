@@ -609,6 +609,7 @@ Each fix gets a test that fails before it.
 - **`cli::rule_path_of`** (taking the rules) duplicates `pg_platform::names::rule_path_of` (native). It cannot be a `PathRules` method: `pg-model` cannot turn an OS path into bytes, which is `canonical_of`'s job in `pg-platform`. So it becomes `pg_platform::names::rule_path_of(rules, path)`, with the native one as its wrapper.
 - **`ScanStats`** (`scan/src/lib.rs`) re-declares `Pairing`'s fields (`catalog/src/pair.rs`: `rebound`, `replaced`, `ambiguous`, `unpaired_with_data`, `replaced_ids`, `temps`) and copies them one by one. It holds the `Pairing` instead.
 - Gate: `just test`.
+- **Done in step 8.** `pg_client::input::parse_number`; `exif_date` in `metadata/src/exif.rs`; `pg_thumbcache::Cap { from_gb, from_bytes, bytes }` (`ThumbCache::open` and `open_thumbs` take an `Option<Cap>`, `Config::thumb_cap`, `pg_app::reexport::ThumbCap`; the command line's `cap_gb` value parser and the desktop's `PG_THUMB_CAP_GB` read the number and word their errors); `pdq_index` private, `PdqIndex` `pub(crate)`; `Analyzer::video`; `RulePath::child` and `RulePath::drive_letter` (there is no `Anchor` type: the anchor is a `Name`, so the letter is the path's); `pg_platform::names::rule_path_in(rules, path)` with `rule_path_of` its native wrapper (the command line's `Remove` now drops a verbatim prefix too); `ScanStats::pairing`.
 
 ## Types and names
 

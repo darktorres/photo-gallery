@@ -5,8 +5,13 @@
 //! is `pg_model::query`; nothing here reads the catalog.
 
 use pg_model::date::Day;
-use pg_model::query::{BorderFacet, Choice, DateFacet, DayEnd, End, ListFacet, RangeFacet, RatingFilter, Shape, Status, parse_number};
+use pg_model::query::{BorderFacet, Choice, DateFacet, DayEnd, End, ListFacet, RangeFacet, RatingFilter, Shape, Status};
 use pg_model::media::MediaType;
+
+/// A number as typed, with a comma or a point before the decimals; `None` when it doesn't parse or isn't finite.
+pub fn parse_number(text: &str) -> Option<f64> {
+    text.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite())
+}
 
 /// A list facet's value from the key the bar sends (the key `key_of` gives it).
 pub fn choice(facet: ListFacet, value: &str) -> Option<Choice> {
@@ -126,6 +131,15 @@ pub fn tri_of_index(index: usize, first: bool) -> Option<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbers_parse_with_a_comma_or_a_point() {
+        assert_eq!(parse_number(" 1,5 "), Some(1.5));
+        assert_eq!(parse_number("12"), Some(12.0));
+        assert_eq!(parse_number("inf"), None);
+        assert_eq!(parse_number("1 MB"), None);
+        assert_eq!(parse_number(""), None);
+    }
 
     #[test]
     fn fields_and_ends_are_the_bars_indices() {

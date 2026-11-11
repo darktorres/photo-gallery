@@ -375,15 +375,15 @@ impl Pass<Cx<'_>> for Scans {
             match scanned {
                 Ok(s) => {
                     // A scan stopped early has committed what it recorded so far.
-                    if s.changed > 0 || s.missing > 0 || s.rebound > 0 || s.replaced > 0 {
+                    if s.changed > 0 || s.missing > 0 || s.pairing.rebound > 0 || s.pairing.replaced > 0 {
                         cx.inner.scanned();
                     }
                     // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision
                     // 7). Both come after the catalog's commit, which the scan made.
-                    for (_, e) in scans::forget_replaced(cx.inner.thumbs, &s.replaced_ids) {
+                    for (_, e) in scans::forget_replaced(cx.inner.thumbs, &s.pairing.replaced_ids) {
                         cx.inner.notify(Notice::ScanFailed { root: path.clone(), error: error_text(&e) });
                     }
-                    for (temp, e) in pg_writeback::discard_temps(rules, &s.temps) {
+                    for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
                         cx.inner.notify(Notice::ScanFailed {
                             root: path.clone(),
                             error: tidy(&format!("can't delete {}: {e}", rules.display(&temp)), ERROR_CAP),

@@ -104,7 +104,7 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
                 // FFmpeg and the hash open the file by its disk path: the plain one would lose a trailing dot or space
                 // in a folder's name, and open a sibling's file.
                 let disk = pg_platform::names::disk_path_of(&work.path(item.path, sep));
-                pg_analysis::analyze::video(&disk, item.rotation, analyzer)
+                analyzer.video(&disk, item.rotation)
             } else {
                 analyzer.analyze(bytes, item.rotation)
             }

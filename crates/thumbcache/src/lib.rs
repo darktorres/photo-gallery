@@ -34,7 +34,7 @@ mod schema;
 mod types;
 mod writer;
 
-pub use config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, default_cap_bytes, parse_cap_gb};
+pub use config::{CACHE_VERSION, Cap, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
 pub use maintenance::Drift;
 pub use reader::pending_in;
 pub use types::{Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
@@ -90,16 +90,11 @@ impl ThumbCache {
     pub fn open(
         path: &Path,
         catalog_id: &str,
-        cap_bytes: Option<i64>,
+        cap: Option<Cap>,
         thumbs_version: i64,
         events: Arc<Bus<Event>>,
     ) -> Result<ThumbCache> {
-        if let Some(cap) = cap_bytes
-            && cap < 0
-        {
-            bail!("a thumbnail cache cap of {cap} bytes");
-        }
-        let Writing { conn, started_over, drift, live } = open_writer(path, catalog_id, cap_bytes, thumbs_version)?;
+        let Writing { conn, started_over, drift, live } = open_writer(path, catalog_id, cap.map(Cap::bytes), thumbs_version)?;
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
@@ -343,12 +338,14 @@ mod tests {
     use pg_model::notice::StartOverReason;
 
     #[test]
-    fn the_cap_parser_refuses_what_would_be_no_cache() {
-        assert_eq!(parse_cap_gb("2"), Ok(2_000_000_000));
-        assert_eq!(parse_cap_gb(" 0.5 "), Ok(500_000_000));
-        for text in ["0", "-1", "NaN", "inf", "1e-12", "1e12", "lots"] {
-            assert!(parse_cap_gb(text).is_err(), "{text} is refused");
+    fn a_cap_is_refused_when_it_would_be_no_cache() {
+        assert_eq!(Cap::from_gb(2.0).map(Cap::bytes), Some(2_000_000_000));
+        assert_eq!(Cap::from_gb(0.5).map(Cap::bytes), Some(500_000_000));
+        for gb in [0.0, -1.0, f64::NAN, f64::INFINITY, 1e-12, 1e12] {
+            assert_eq!(Cap::from_gb(gb), None, "{gb} is refused");
         }
+        assert_eq!(Cap::from_bytes(-1), None);
+        assert_eq!(Cap::from_bytes(0), None);
     }
     use pg_jobs_testkit::Quiet;
     use pg_testkit::test_folder;
@@ -399,7 +396,8 @@ mod tests {
 
     fn open_quiet(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Opened {
         let (events, watch) = Quiet::bus();
-        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap_bytes, 1, events).unwrap();
+        let cap = cap_bytes.map(|bytes| Cap::from_bytes(bytes).expect("a cap"));
+        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap, 1, events).unwrap();
         Opened { cache, _events: watch }
     }
 
@@ -412,7 +410,8 @@ mod tests {
     ) -> (ThumbCache, StartOverReason, PathBuf, String) {
         let bus = Arc::new(Bus::new(8));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap_bytes, 1, bus).unwrap();
+        let cap = cap_bytes.map(|bytes| Cap::from_bytes(bytes).expect("a cap"));
+        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap, 1, bus).unwrap();
         let mut taken = events.take().items.into_iter();
         let first = taken.next();
         assert!(taken.next().is_none(), "one event expected");
@@ -567,7 +566,6 @@ mod tests {
         drop(open_quiet(&dir, CATALOG_ID, None));
         let usage = ThumbCache::read_usage(&cache_path(&dir)).unwrap().unwrap();
         assert_eq!((usage.cap, usage.bytes, usage.count), (500, first.totals().unwrap().0, first.totals().unwrap().1));
-        assert!(ThumbCache::open(&cache_path(&dir), CATALOG_ID, Some(-1), 1, Arc::new(Bus::new(1))).is_err());
     }
 
     #[test]
@@ -916,7 +914,7 @@ mod tests {
         file.execute("UPDATE meta SET value = 0 WHERE key = 'healed'", []).unwrap();
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(&cache_path(&dir), CATALOG_ID, Some(1 << 30), 1, bus).unwrap();
+        let cache = ThumbCache::open(&cache_path(&dir), CATALOG_ID, Cap::from_bytes(1 << 30), 1, bus).unwrap();
         assert_eq!(events.take().items, vec![Event::TotalsFixed { kept: (999, 7), actual: (0, 0) }]);
         drop(cache);
     }
@@ -929,7 +927,7 @@ mod tests {
         // Within the day of the last check, an open doesn't check: the drift stays until the next day's open.
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        drop(ThumbCache::open(&cache_path(&dir), CATALOG_ID, Some(1 << 30), 1, bus).unwrap());
+        drop(ThumbCache::open(&cache_path(&dir), CATALOG_ID, Cap::from_bytes(1 << 30), 1, bus).unwrap());
         assert!(events.take().items.is_empty());
         let file = Connection::open(cache_path(&dir)).unwrap();
         assert_eq!(file.query_row("SELECT count FROM totals", [], |r| r.get::<_, i64>(0)).unwrap(), 7);

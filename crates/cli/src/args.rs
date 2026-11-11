@@ -82,8 +82,8 @@ pub(crate) enum Command {
         height: u32,
         /// Set the cache's size limit in GB, kept in the cache: the app keeps to it too. Without it, the limit
         /// stays as it is (50 GB for a new cache).
-        #[arg(long = "cap-gb", value_parser = pg_thumbcache::parse_cap_gb)]
-        cap: Option<i64>,
+        #[arg(long = "cap-gb", value_parser = cap_gb)]
+        cap: Option<pg_thumbcache::Cap>,
         #[command(flatten)]
         pipeline: PipelineArgs,
         /// Run at normal CPU priority instead of idle.
@@ -125,4 +125,11 @@ pub(crate) enum Command {
         #[arg(long, default_value_t = 0)]
         show: usize,
     },
+}
+
+/// `--cap-gb`: a number of GB above zero, as the thumbnail cache's cap.
+fn cap_gb(text: &str) -> Result<pg_thumbcache::Cap, String> {
+    let gb: f64 = text.trim().parse().map_err(|_| format!("{text} isn't a number of GB"))?;
+    pg_thumbcache::Cap::from_gb(gb)
+        .ok_or_else(|| format!("{text} GB isn't a size a cache can have (a number of GB above zero)"))
 }

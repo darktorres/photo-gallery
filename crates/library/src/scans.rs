@@ -31,10 +31,10 @@ pub fn scan_notices(root: &RulePath, stats: &ScanStats) -> Vec<Notice> {
     let notes = [
         (ScanNote::Duplicates, stats.duplicates),
         (ScanNote::SkippedReparse, stats.skipped_reparse),
-        (ScanNote::Ambiguous, count(stats.ambiguous)),
-        (ScanNote::UnpairedWithData, count(stats.unpaired_with_data)),
-        (ScanNote::Replaced, count(stats.replaced)),
-        (ScanNote::Rebound, count(stats.rebound)),
+        (ScanNote::Ambiguous, count(stats.pairing.ambiguous)),
+        (ScanNote::UnpairedWithData, count(stats.pairing.unpaired_with_data)),
+        (ScanNote::Replaced, count(stats.pairing.replaced)),
+        (ScanNote::Rebound, count(stats.pairing.rebound)),
         (ScanNote::VolumeFallback, stats.volume_fallbacks),
     ];
     for (note, count) in notes {

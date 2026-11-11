@@ -29,6 +29,20 @@ pub struct Path {
     pub parts: Vec<Name>,
 }
 
+impl Path {
+    /// This path extended by one name.
+    pub fn child(&self, name: &Name) -> Path {
+        Path { anchor: self.anchor.clone(), parts: self.parts.iter().cloned().chain([name.clone()]).collect() }
+    }
+
+    /// The anchor's drive letter as a name (`D` for `D:\`); none for a UNC root or a Unix one, whose anchor has no
+    /// letter once the `:` and the `\` are dropped.
+    pub fn drive_letter(&self) -> Option<Name> {
+        let letter: Vec<u8> = self.anchor.as_bytes().iter().copied().filter(|&b| b != b':' && b != b'\\').collect();
+        (!letter.is_empty()).then(|| Name::from_raw(&letter))
+    }
+}
+
 /// A folder as the tree and the catalog hold it (S-17.8): its parts, the anchor (the drive, or the UNC root) dropped.
 /// The same folder on two drives is one `Merged`. The empty `Merged` is every folder: with `recursive` the whole
 /// library, without it the files directly in the drive roots. Serialises as the array of its parts.

@@ -66,7 +66,7 @@ impl App {
         }
         let thumb_events = Arc::new(Bus::new(64));
         let forwarder = forward_thumb_events(thumb_events.clone(), inbox.clone())?;
-        let thumbs = pg_library::open_thumbs(&layout, &catalog_id, config.thumb_cap_bytes, thumb_events)
+        let thumbs = pg_library::open_thumbs(&layout, &catalog_id, config.thumb_cap, thumb_events)
             .unwrap_or_else(|e| {
                 inbox.post(Notice::CacheDisabled { error: tidy(&format!("{e:#}"), ERROR_CAP) });
                 ThumbCache::disabled()

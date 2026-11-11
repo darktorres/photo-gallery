@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use pg_catalog::{Catalog, CropSource};
 use pg_edit::crop::crop;
-use pg_model::name::Name;
 use pg_model::path::{PathArena, PathRef};
 use pg_model::rules::Path as RulePath;
 
@@ -90,7 +89,7 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
         // `D:\Photos\2019` is `D\Photos\2019`). Two library folders can't share a place, whatever their last names.
         let tree = RulePath {
             anchor: folder.anchor.clone(),
-            parts: folder.parts.iter().cloned().chain(place_of(root)).collect(),
+            parts: folder.parts.iter().cloned().chain(root.drive_letter()).chain(root.parts.iter().cloned()).collect(),
         };
         if let Some(r) = roots.iter().find(|r| rules.is_under(&tree, r) || rules.is_under(r, &tree)) {
             bail!(
@@ -164,13 +163,6 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
     drop(phase);
     stats.remaining = jobs.iter().zip(&done).filter(|(_, d)| !**d).map(|(j, _)| j.id).collect();
     Ok(stats)
-}
-
-/// A library folder's place in the copies' folder: its drive's letter as a part (none for a UNC or a Unix root),
-/// then its parts. Two library folders can't share a place.
-fn place_of(root: &RulePath) -> impl Iterator<Item = Name> + '_ {
-    let letter: Vec<u8> = root.anchor.as_bytes().iter().copied().filter(|&b| b != b':' && b != b'\\').collect();
-    (!letter.is_empty()).then(|| Name::from_raw(&letter)).into_iter().chain(root.parts.iter().cloned())
 }
 
 enum Written {

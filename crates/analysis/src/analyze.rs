@@ -87,6 +87,14 @@ impl Analyzer {
         result
     }
 
+    /// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
+    /// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
+    pub fn video(&mut self, path: &Path, turns: Turns) -> Result<Analyzed> {
+        let result = analyze_video(path, turns, self);
+        self.trim();
+        result
+    }
+
     fn analyze_image(&mut self, bytes: &[u8], turns: Turns) -> Result<Analyzed> {
         let file_hash = FileHash::of(bytes);
         let format = Format::sniff(bytes).context("unknown image format")?;
@@ -181,14 +189,6 @@ fn thumbhash(img: &Rgb, resizer: &mut Resizer, small: &mut Rgb, encoder: &mut th
     let mut bytes = [0; THUMBHASH_MAX];
     let len = encoder.rgb_to_thumb_hash_into(small.width, small.height, &small.pixels, &mut bytes);
     Ok(ThumbHash::encoded(bytes, len))
-}
-
-/// The import's analysis of a video: tier 0a, upright size, duration, codec, recording date, and the ThumbHash
-/// of the poster frame (decoded into the worker's buffers). `turns` is the catalog rotation.
-pub fn video(path: &Path, turns: Turns, analyzer: &mut Analyzer) -> Result<Analyzed> {
-    let result = analyze_video(path, turns, analyzer);
-    analyzer.trim();
-    result
 }
 
 fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analyzed> {

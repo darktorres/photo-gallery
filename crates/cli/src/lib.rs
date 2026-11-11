@@ -63,11 +63,6 @@ pub fn main(args: impl IntoIterator<Item = OsString>) -> Result<()> {
     with_progress(|ctl| run_command(cli, ctl))
 }
 
-/// `path` as a path under the catalog's rules, from its exact bytes; a path that is none is an error.
-fn rule_path_of(rules: PathRules, path: &Path) -> Result<RulePath> {
-    rules.parse_bytes(&pg_platform::names::canonical_of(path)).ok_or_else(|| anyhow!(text::not_a_path(&shown(path))))
-}
-
 /// A path given on the command line, as the catalog has it ([`pg_platform::names::normalize_path`]); one that can't
 /// be opened, or isn't one, is an error in the client's words.
 fn normalized(path: &Path) -> Result<RulePath> {
@@ -166,16 +161,16 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 print_failures(Kept::Skipped, &s.failures);
                 // What the pairing replaced loses its thumbnails and the temp files of its queued writes (decision 7).
                 // The cache is opened only then.
-                if !s.replaced_ids.is_empty() {
+                if !s.pairing.replaced_ids.is_empty() {
                     let (events, printer) = thumb_events();
                     let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
-                    for (_, e) in pg_library::scans::forget_replaced(&cache, &s.replaced_ids) {
+                    for (_, e) in pg_library::scans::forget_replaced(&cache, &s.pairing.replaced_ids) {
                         say(&Line::ThumbNotForgotten { root: name.clone(), error: format!("{e:#}") });
                     }
                     drop(cache);
                     let _ = printer.join();
                 }
-                for (temp, e) in pg_writeback::discard_temps(rules, &s.temps) {
+                for (temp, e) in pg_writeback::discard_temps(rules, &s.pairing.temps) {
                     say(&Line::TempNotDeleted { root: name.clone(), temp: rules.display(&temp), error: e.to_string() });
                 }
                 for notice in report {
@@ -188,7 +183,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // the catalog's, and the catalog says whether it is a library folder.
             let root = match pg_platform::names::normalize_path(&root) {
                 Ok(path) => path,
-                Err(_) => rule_path_of(rules, &root)?,
+                Err(_) => pg_platform::names::rule_path_in(rules, &root)
+                    .ok_or_else(|| anyhow!(text::not_a_path(&shown(&root))))?,
             };
             let name = rules.display(&root);
             let removed = match catalog.root_id(&root)? {

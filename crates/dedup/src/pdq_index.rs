@@ -21,7 +21,7 @@ const CHUNKS: usize = 16;
 /// `CHUNKS`, as the radius counts.
 const CHUNK_COUNT: u32 = 16;
 /// The largest radius the one-bit probes guarantee to find.
-pub const MAX_RADIUS: u32 = 2 * CHUNK_COUNT - 1;
+pub(crate) const MAX_RADIUS: u32 = 2 * CHUNK_COUNT - 1;
 const VALUES: usize = 1 << 16;
 /// The fewest chained entries a rebuild of the flat tables waits for.
 const MIN_REINDEX: usize = 4096;
@@ -43,7 +43,7 @@ impl std::fmt::Display for IndexFull {
 impl std::error::Error for IndexFull {}
 
 #[derive(Default)]
-pub struct PdqIndex {
+pub(crate) struct PdqIndex {
     ids: Vec<FileId>,
     hashes: Vec<[u64; 4]>,
     /// How many entries (the first ones) are in the flat tables; the rest are chained.
@@ -179,24 +179,24 @@ fn value(words: &[u64; 4], c: usize) -> u16 {
 
 impl PdqIndex {
     /// The index of these entries: `ids[i]`'s hash words are `hashes[i]`.
-    pub fn build(ids: Vec<FileId>, hashes: Vec<[u64; 4]>) -> PdqIndex {
+    pub(crate) fn build(ids: Vec<FileId>, hashes: Vec<[u64; 4]>) -> PdqIndex {
         assert_eq!(ids.len(), hashes.len());
         let mut index = PdqIndex { seen: vec![0; ids.len()], ids, hashes, ..PdqIndex::default() };
         index.reindex();
         index
     }
 
-    pub fn len(&self) -> usize {
+    pub(crate) fn len(&self) -> usize {
         self.ids.len()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.ids.is_empty()
     }
 
     /// Room for `additional` more entries: the import reserves its whole work list once, so neither the entries
     /// nor the chains grow per insert (the chains only up to the next reindex).
-    pub fn reserve(&mut self, additional: usize) {
+    pub(crate) fn reserve(&mut self, additional: usize) {
         self.ids.reserve(additional);
         self.hashes.reserve(additional);
         self.seen.reserve(additional);
@@ -208,7 +208,7 @@ impl PdqIndex {
     }
 
     /// Store `hash` under `id`. [`IndexFull`], and nothing stored, when the index holds 2³² − 1 entries already.
-    pub fn insert(&mut self, id: FileId, hash: &Hash) -> Result<(), IndexFull> {
+    pub(crate) fn insert(&mut self, id: FileId, hash: &Hash) -> Result<(), IndexFull> {
         let words = hash.words();
         let link = u32::try_from(self.ids.len() + 1).map_err(|_| IndexFull)?;
         for (c, chunk) in self.chunks.iter_mut().enumerate() {
@@ -269,7 +269,7 @@ impl PdqIndex {
     /// Store every orientation of an image under its id. A pair matches when some orientation of one is within the
     /// radius of some orientation of the other, so the index needs all of them to find it whichever of the two is
     /// imported first. [`IndexFull`], and none of them stored, when they don't all fit.
-    pub fn insert_orientations(&mut self, id: FileId, orientations: &[Hash]) -> Result<(), IndexFull> {
+    pub(crate) fn insert_orientations(&mut self, id: FileId, orientations: &[Hash]) -> Result<(), IndexFull> {
         // The last one's link must fit too: then every link before it does.
         u32::try_from(self.ids.len() + orientations.len()).map_err(|_| IndexFull)?;
         for hash in orientations {
@@ -280,7 +280,7 @@ impl PdqIndex {
 
     /// The entries matching any of `orientations` within `radius`: for each neighbour, the least distance and the
     /// index of the orientation it matched, in `best`. `found` and `best` are the caller's buffers (cleared here).
-    pub fn best_matches(
+    pub(crate) fn best_matches(
         &mut self,
         orientations: &[Hash],
         radius: u32,
@@ -302,7 +302,7 @@ impl PdqIndex {
 
     /// Every entry within `radius` (≤ [`MAX_RADIUS`]) of `hash`, as (id, distance), into `out` (cleared first), in
     /// no particular order.
-    pub fn query(&mut self, hash: &Hash, radius: u32, out: &mut Vec<(FileId, u32)>) {
+    pub(crate) fn query(&mut self, hash: &Hash, radius: u32, out: &mut Vec<(FileId, u32)>) {
         assert!(radius <= MAX_RADIUS);
         out.clear();
         self.query_no = self.query_no.wrapping_add(1);

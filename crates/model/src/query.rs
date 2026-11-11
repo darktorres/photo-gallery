@@ -1,7 +1,8 @@
 //! The query a view filters by and the order it sorts in (PLAN §7): the data, and the edits a filter bar makes to it, as
 //! typed values. Facets combine with AND, the values inside one list facet with OR, and an empty facet filters nothing.
 //! The SQL is the query compiler's (`pg_query`), and so is the JSON the views and the session store: the serde names
-//! kept here are the stored ones. Text typed into a filter is read by the front end, which gives this module values.
+//! kept here are the stored ones. Text typed into a filter is read by the client (`pg_client::input`), which gives this
+//! module values.
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -445,11 +446,6 @@ impl Query {
     }
 }
 
-/// A number as typed, with a comma or a point before the decimals; `None` when it doesn't parse or isn't finite.
-pub fn parse_number(text: &str) -> Option<f64> {
-    text.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -508,15 +504,6 @@ mod tests {
         q.set_day(DateFacet::Taken, DayEnd::From, None);
         assert!(q.size_mb.is_empty() && q.taken.is_empty());
         assert_eq!(q.active(), 1);
-    }
-
-    #[test]
-    fn numbers_parse_with_a_comma_or_a_point() {
-        assert_eq!(parse_number(" 1,5 "), Some(1.5));
-        assert_eq!(parse_number("12"), Some(12.0));
-        assert_eq!(parse_number("inf"), None);
-        assert_eq!(parse_number("1 MB"), None);
-        assert_eq!(parse_number(""), None);
     }
 
     #[test]

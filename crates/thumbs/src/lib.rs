@@ -337,7 +337,7 @@ mod tests {
         *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
 
         let (events, _quiet) = Quiet::bus();
-        let cache = ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap();
+        let cache = ThumbCache::open(&dir, &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap();
         let first = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((first.needed, first.made, first.failed, first.complete), (2, 1, 1, true));
         assert_eq!((first.unreadable, first.ledger_error), (0, None));
@@ -386,7 +386,7 @@ mod tests {
         std::fs::remove_file(images.join("b.png")).unwrap();
 
         let (events, _quiet) = Quiet::bus();
-        let cache = ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap();
+        let cache = ThumbCache::open(&dir, &c.catalog_id().unwrap(), pg_thumbcache::Cap::from_bytes(1 << 30), 1, events).unwrap();
         let first = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((first.needed, first.made, first.failed, first.unreadable), (3, 1, 2, 1));
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };

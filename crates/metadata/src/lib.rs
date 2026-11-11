@@ -23,13 +23,13 @@ pub use orientation::{orientation, patch_orientation};
 pub use xmp::MetaScratch;
 
 use pg_container::range_in;
-use pg_model::date::{exif_date, parse_iso_date};
+use pg_model::date::parse_iso_date;
 use pg_model::format::Format;
 use pg_model::orientation::Orientation;
 use pg_model::rating::Rating;
 
 use crate::container::Container;
-use crate::exif::Exif;
+use crate::exif::{Exif, exif_date};
 use crate::xmp::{Packet, XMP_WANTED, percent, xmp_properties, xmp_value};
 
 /// What the import reads from a file's metadata: one walk of its container, one read of its EXIF block, and one

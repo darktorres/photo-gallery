@@ -13,8 +13,8 @@ pub struct Config {
     /// The data folders and the files in them (`PG_HOME`, or the default): the catalog folder, the preferences
     /// (`gallery.json`), the log (`gallery.log`), SQLite's aliases.
     pub layout: Layout,
-    /// The thumbnail cache's cap in bytes; `None` keeps the cap the cache has.
-    pub thumb_cap_bytes: Option<i64>,
+    /// The thumbnail cache's cap; `None` keeps the cap the cache has.
+    pub thumb_cap: Option<pg_thumbcache::Cap>,
     /// Where the Yandex search gets its calls: Yandex, unless the front end was given a recorded session.
     pub yandex: YandexSource,
 }
@@ -28,7 +28,7 @@ impl Config {
 
     /// The configuration of a resolved layout, with the thumbnail cache's cap unset and the live Yandex search.
     pub fn from_layout(layout: Layout) -> Config {
-        Config { layout, thumb_cap_bytes: None, yandex: YandexSource::Live }
+        Config { layout, thumb_cap: None, yandex: YandexSource::Live }
     }
 
     /// The configuration of everything under one `home` folder, as the defaults give it (for tests and scratch runs).

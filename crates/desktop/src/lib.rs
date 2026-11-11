@@ -138,14 +138,16 @@ pub fn run(args: &[OsString]) -> i32 {
     panic_log::install(config.layout.log().to_path_buf());
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
-    config.thumb_cap_bytes =
-        std::env::var("PG_THUMB_CAP_GB").ok().and_then(|s| match pg_app::reexport::parse_thumb_cap_gb(&s) {
-            Ok(bytes) => Some(bytes),
-            Err(e) => {
-                pg_log::warn("config", &format!("PG_THUMB_CAP_GB: {e}; the thumbnail cache keeps its cap"));
-                None
-            }
-        });
+    config.thumb_cap = std::env::var("PG_THUMB_CAP_GB").ok().and_then(|text| {
+        let cap = text.trim().parse::<f64>().ok().and_then(pg_app::reexport::ThumbCap::from_gb);
+        if cap.is_none() {
+            pg_log::warn(
+                "config",
+                &format!("PG_THUMB_CAP_GB: {text} isn't a number of GB above zero; the thumbnail cache keeps its cap"),
+            );
+        }
+        cap
+    });
     config.yandex = command_line::yandex_source();
     if let Err(e) = app::open(config) {
         fatal(&pg_client::text::catalog_unopened(&format!("{e:#}")));

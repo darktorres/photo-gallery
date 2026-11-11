@@ -6,7 +6,7 @@
 #![cfg_attr(not(test), deny(clippy::print_stdout, clippy::print_stderr))]
 
 pub mod pairer;
-pub mod pdq_index;
+mod pdq_index;
 pub mod union_find;
 
 pub use pairer::Pairer;

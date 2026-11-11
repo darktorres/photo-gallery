@@ -104,11 +104,16 @@ pub fn canonical_of(path: &Path) -> Vec<u8> {
     }
 }
 
-/// `path` under the native rules, exactly, the verbatim prefix dropped (`\\?\D:\a.` is `D:\a.`: the catalog keeps the
-/// plain bytes, and [`disk_path`] puts the prefix back). `None` when it has no path form under them (a NUL,
-/// which no name holds).
-pub fn rule_path_of(path: &Path) -> Option<pg_model::rules::Path> {
-    crate::native::PATH_RULES.parse_bytes(&without_verbatim(canonical_of(path)))
+/// `path` under `rules`, exactly, the verbatim prefix dropped (`\\?\D:\a.` is `D:\a.`: the catalog keeps the plain
+/// bytes, and [`disk_path`] puts the prefix back). `None` when it has no path form under them (a NUL, which no name
+/// holds). The command line takes a catalog's rules; the app's are the native ones ([`rule_path_of`]).
+pub fn rule_path_in(rules: PathRules, path: &Path) -> Option<RulePath> {
+    rules.parse_bytes(&without_verbatim(canonical_of(path)))
+}
+
+/// [`rule_path_in`] the native rules.
+pub fn rule_path_of(path: &Path) -> Option<RulePath> {
+    rule_path_in(crate::native::PATH_RULES, path)
 }
 
 /// `path` as the user is shown it: without the verbatim prefix, lossy where a name has no UTF-8 form. A stored path is

@@ -20,9 +20,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io;
 
 use anyhow::{Context, Result};
-use pg_catalog::pair::{self, Coverage};
+use pg_catalog::pair::{self, Coverage, Pairing};
 use pg_catalog::{Catalog, Recorded, ScannedFile};
-use pg_model::ids::{FileId, FileIdentity};
+use pg_model::ids::FileIdentity;
 use pg_model::media::Ext;
 use pg_model::name::Name;
 use pg_model::rules::{Path as RulePath, PathRules};
@@ -189,11 +189,6 @@ fn open_folder<L: Listing>(lister: &mut L, rules: PathRules, path: &RulePath) ->
     lister.open(&units_of(&rules.join(path)))
 }
 
-/// A path under `parent`, extended by one name.
-fn child_path(parent: &RulePath, name: &Name) -> RulePath {
-    RulePath { anchor: parent.anchor.clone(), parts: parent.parts.iter().cloned().chain([name.clone()]).collect() }
-}
-
 /// What a scan of a root did. The counts are for the report; `replaced_ids` and `temps` are for the caller to act on
 /// after the scan's commit (the thumbnails and the temp files of the replaced files; decision 7).
 #[derive(Debug, Default)]
@@ -222,18 +217,8 @@ pub struct ScanStats {
     pub refused_mount_list: Vec<RefusedMount>,
     /// Devices whose identity is their device number, not a file system's UUID: their identities can change at a restart.
     pub volume_fallbacks: u64,
-    /// Rows that took the identity of a new row on another volume (pairing tiers 1 and 2).
-    pub rebound: usize,
-    /// Rows that took the identity of the file that replaced them (pairing's replacement).
-    pub replaced: usize,
-    /// Fresh rows whose pairing candidates were several: nothing bound.
-    pub ambiguous: usize,
-    /// Unpaired rows with children (a rating, a rotation, an analysis) that no tier pairs.
-    pub unpaired_with_data: usize,
-    /// The replaced rows, whose thumbnails the caller deletes.
-    pub replaced_ids: Vec<FileId>,
-    /// The temp files of queued writes dropped with a replacement, which the caller deletes.
-    pub temps: Vec<RulePath>,
+    /// What the pairing did: its counts, and the replaced rows and dropped temp files the caller acts on.
+    pub pairing: Pairing,
 }
 
 /// A folder under a scanned root that the scan didn't walk into, because its file system is refused: the folder, and why.
@@ -354,7 +339,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                 stats.skipped_reparse += 1;
                 match e.ext {
                     // A reparse folder is not descended into (it may lead anywhere, and its listing may be a download).
-                    None => skipped.push(child_path(&frame.path, &e.name)),
+                    None => skipped.push(frame.path.child(&e.name)),
                     // A reparse file keeps its row if it has one: its listing gives no content, so none is queued.
                     Some(_) => {
                         writer.seen_identity(identity)?;
@@ -372,7 +357,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
                     stats.loops += 1;
                     continue;
                 }
-                let child = child_path(&frame.path, &e.name);
+                let child = frame.path.child(&e.name);
                 if e.volume != frame.volume {
                     let verdict = match mounts.get(&e.volume) {
                         Some(verdict) => verdict.clone(),
@@ -430,12 +415,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
     // and outside the folders it skipped.
     let pairing = catalog.pair_after_scan(root, scan_id, Coverage { complete, skipped: &skipped })?;
-    stats.rebound = pairing.rebound;
-    stats.replaced = pairing.replaced;
-    stats.ambiguous = pairing.ambiguous;
-    stats.unpaired_with_data = pairing.unpaired_with_data;
-    stats.replaced_ids = pairing.replaced_ids;
-    stats.temps = pairing.temps;
+    stats.pairing = pairing;
     if complete {
         stats.missing = catalog.mark_missing(root, scan_id, &skipped)?;
         catalog.finish_scan(scan_id)?;
@@ -653,7 +633,7 @@ mod tests {
         let tree = [("", vec![file("a.jpg", 7, 1), folder("sub", 20)]), ("sub", vec![file("b.jpg", 8, 2)])];
         scan_fake(&mut c, &tree, 1);
         let stats = scan_fake(&mut c, &tree, 2);
-        assert_eq!((stats.rebound, stats.ambiguous, stats.unpaired_with_data, stats.missing), (2, 0, 0, 0));
+        assert_eq!((stats.pairing.rebound, stats.pairing.ambiguous, stats.pairing.unpaired_with_data, stats.missing), (2, 0, 0, 0));
         assert_eq!(c.status().unwrap().files, 2);
     }
 
@@ -668,7 +648,7 @@ mod tests {
         let link = FakeEntry { reparse: true, ..folder("sub", 20) };
         let stats = scan_fake(&mut c, &[("", vec![file("d.jpg", 5, 3), link]), ("sub", vec![])], 2);
         assert!(stats.complete);
-        assert_eq!((stats.skipped_reparse, stats.rebound, stats.ambiguous), (1, 1, 0));
+        assert_eq!((stats.skipped_reparse, stats.pairing.rebound, stats.pairing.ambiguous), (1, 1, 0));
         assert_eq!(stats.missing, 0);
         assert_eq!(c.status().unwrap().missing, 0);
     }
@@ -681,7 +661,7 @@ mod tests {
         scan_fake(&mut c, &before, 1);
         let stats = scan_fake(&mut c, &[("", vec![file("d.jpg", 5, 3), folder("sub", 20)])], 2);
         assert!(stats.complete);
-        assert_eq!((stats.errors, stats.rebound), (1, 1));
+        assert_eq!((stats.errors, stats.pairing.rebound), (1, 1));
         assert_eq!(c.status().unwrap().missing, 0);
     }
 

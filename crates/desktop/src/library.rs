@@ -10,7 +10,7 @@ pub(crate) mod state;
 use crate::library_bridge::qobject;
 
 use core::pin::Pin;
-use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use std::path::Path;
 
@@ -22,10 +22,13 @@ use pg_model::notice::{FilePass, Notice};
 use pg_model::progress::Phase;
 
 use crate::app;
-use crate::picker::{self, Purpose};
+use crate::picker;
+use crate::picker::state::Purpose;
 
 /// The library, once `start` has started it: what the change pump and the folder operations read.
-static LIBRARY: OnceLock<&'static pg_app::Library> = OnceLock::new();
+fn running() -> Option<&'static pg_app::Library> {
+    app::get().library().running()
+}
 
 /// The changes the pump has taken off the bus and the Qt thread hasn't handled, and whether a pass is queued for them.
 /// At most one pass is queued at a time, so the Qt thread runs one per event-loop turn at most.
@@ -110,7 +113,7 @@ impl qobject::Library {
     }
 
     pub(crate) fn start(mut self: Pin<&mut Self>, thumb_height: i32) {
-        if LIBRARY.get().is_some() {
+        if running().is_some() {
             return;
         }
         self.as_mut().load_roots();
@@ -124,7 +127,6 @@ impl qobject::Library {
         };
         // Subscribed before the pump starts, so no change is missed between the start and the first one it handles.
         let changes = library.changes().subscribe();
-        let _ = LIBRARY.set(library);
         let shared: Arc<Mutex<Pending>> = Arc::default();
         let thread = self.qt_thread();
         // Without its thread the window isn't told the library's changes; the log says why.
@@ -168,7 +170,7 @@ impl qobject::Library {
         }
         if taken.turned {
             // A turned file's analysis is stale: the job re-analyzes it, and the views reload it.
-            if let Some(library) = LIBRARY.get() {
+            if let Some(library) = running() {
                 library.wake_job();
             }
             self.as_mut().files_changed();
@@ -191,7 +193,7 @@ impl qobject::Library {
 
     /// The job's pass and its pause: the status line, the busy state and the progress.
     fn refresh_progress(mut self: Pin<&mut Self>) {
-        let Some(library) = LIBRARY.get() else { return };
+        let Some(library) = running() else { return };
         let status = library.status();
         let p = &status.progress;
         // A scanned folder is shown under the catalog's rules, this machine's.
@@ -218,7 +220,7 @@ impl qobject::Library {
     /// again is not news) and that it went once a write has gone through; that the writer stopped, once; and the writes
     /// dropped since the last time (a drop is not a failure: it doesn't light `write_failed`).
     fn refresh_writes(mut self: Pin<&mut Self>) {
-        let Some(library) = LIBRARY.get() else { return };
+        let Some(library) = running() else { return };
         let status = library.status();
         if status.writer_stopped && !self.writer_stopped_shown {
             self.as_mut().rust_mut().writer_stopped_shown = true;
@@ -291,13 +293,13 @@ impl qobject::Library {
     }
 
     pub(crate) fn set_thumb_height(&self, height: i32) {
-        if let Some(library) = LIBRARY.get() {
+        if let Some(library) = running() {
             library.set_thumb_height(u32::try_from(height.max(1)).unwrap_or(1));
         }
     }
 
     pub(crate) fn toggle_pause(mut self: Pin<&mut Self>) {
-        let Some(library) = LIBRARY.get() else { return };
+        let Some(library) = running() else { return };
         library.set_paused(!library.is_paused());
         self.as_mut().refresh_progress();
     }

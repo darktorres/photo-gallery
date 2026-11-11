@@ -1,7 +1,7 @@
 //! Reverse image search on Yandex (`pg_yandex`): the other sizes of a photo and the images that look like it, and the
-//! saving of the results the user picks. The search and the saves run on background threads. The front end subscribes
-//! ([`Search::subscribe`]) and calls [`Search::poll`] on each change, and shows what comes back ([`Poll::busy`] says
-//! whether one is still running). Results and words are typed values: nothing here
+//! saving of the results the user picks: the app's [`Yandex`] service. The search and the saves run on background
+//! threads. The front end subscribes ([`Yandex::subscribe`]) and calls [`Yandex::poll`] on each change, and shows what
+//! comes back ([`Poll::busy`] says whether one is still running). Results and words are typed values: nothing here
 //! formats text or prints. The files go into the folder the user picks, named after the photo (`IMG_1234 (yandex
 //! 1920x1080).jpg`), and that folder is remembered in the preferences (`yandex_folder`) for the next save.
 
@@ -10,8 +10,9 @@ use std::fs::File;
 use std::io::{self, Read};
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 use std::thread;
+use std::time::{Duration, Instant};
 
 use pg_jobs::events::{Bus, Subscription};
 use pg_model::format::Format;
@@ -20,11 +21,12 @@ use pg_platform::names::rule_path_of;
 use pg_platform::native::PATH_RULES;
 use pg_yandex::{Client, DEFAULT_MAX_SIMILAR_PAGES, Fetcher, OtherSize, Similar, Upload, YandexError};
 
+use crate::makers::Makers;
 use crate::prefs::PrefStore;
 
 pub mod images;
 pub use images::Fetch;
-use images::Images;
+use images::{Check, Fetched, Images};
 pub mod source;
 pub use source::Source;
 pub mod replay;
@@ -53,8 +55,17 @@ pub struct Connection {
     pub fetch: Arc<dyn Fetch>,
 }
 
-/// Makes the connection for one search. The front end passes [`client()`], or [`replay()`] when it is given a recorded
-/// session explicitly.
+/// Where the searches get their calls: Yandex (the default), or the recorded session in a folder (the `replay`
+/// module's layout), which answers in its place and sends nothing. Only an explicit choice selects a recording, because
+/// a search sends the photo to Yandex.
+#[derive(Clone, Debug, Default)]
+pub enum YandexSource {
+    #[default]
+    Live,
+    Replay(PathBuf),
+}
+
+/// Makes the connection for one search: [`client()`], or [`replay()`] for a recorded session.
 pub type Factory = Arc<dyn Fn() -> Result<Connection, YandexError> + Send + Sync>;
 
 /// The real Yandex client, made for each search. The default.
@@ -77,9 +88,73 @@ pub fn replay(dir: &Path) -> Factory {
     })
 }
 
-/// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
-pub fn image(id: u64) -> Result<Arc<images::Fetched>, YandexError> {
-    images::current().ok_or(YandexError::Unexpected("no search"))?.get_known(id)
+/// The app's reverse image search: one [`Search`] at a time, its calls made by the configured source, its grid
+/// pictures made by the app's makers, and the save folder remembered in the preferences.
+pub struct Yandex {
+    search: Search,
+    factory: Factory,
+    prefs: Arc<PrefStore>,
+    makers: Arc<Makers>,
+}
+
+/// How long [`Yandex::stop`] waits for a search, a save and the fetchers to end. A request to Yandex can't be cut short,
+/// so a slow one is left to end with the process.
+const STOP_WAIT: Duration = Duration::from_secs(2);
+
+impl Yandex {
+    pub(crate) fn new(source: &YandexSource, prefs: Arc<PrefStore>, makers: Arc<Makers>) -> Yandex {
+        let factory = match source {
+            YandexSource::Live => client(),
+            YandexSource::Replay(dir) => {
+                pg_log::info(
+                    "yandex",
+                    &format!("answering from the recorded session in {}; nothing is sent", dir.display()),
+                );
+                replay(dir)
+            }
+        };
+        Yandex { search: Search::default(), factory, prefs, makers }
+    }
+
+    /// Start a search for the photo at `photo`, a local path, its results' grid pictures `grid_height` px high (the
+    /// panel's rows). False when a search or a save is running, or the service has stopped (nothing changes); an error
+    /// when its thread couldn't start (nothing runs, and nothing stays busy).
+    pub fn start(&self, photo: &Path, grid_height: usize) -> io::Result<bool> {
+        let makers = self.makers.clone();
+        let check: Check = Arc::new(move |bytes| images::grid_picture(&makers, bytes, grid_height));
+        self.search.start(photo, self.factory.clone(), check)
+    }
+
+    /// See [`Search::subscribe`].
+    pub fn subscribe(&self) -> Subscription<()> {
+        self.search.subscribe()
+    }
+
+    /// See [`Search::poll`].
+    pub fn poll(&self) -> Poll {
+        self.search.poll()
+    }
+
+    /// See [`Search::start_folder`].
+    pub fn start_folder(&self) -> Option<PathBuf> {
+        self.search.start_folder(&self.prefs)
+    }
+
+    /// See [`Search::save`].
+    pub fn save(&self, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
+        self.search.save(&self.prefs, hits, folder)
+    }
+
+    /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
+    pub fn image(&self, id: u64) -> Result<Arc<Fetched>, YandexError> {
+        self.search.image(id)
+    }
+
+    /// No search or save starts from now on, and the fetchers take no more results; waits a while for what runs to end.
+    /// False when something still ran after the wait.
+    pub(crate) fn stop(&self) -> bool {
+        self.search.stop(STOP_WAIT)
+    }
 }
 
 /// One result as the panel shows and saves it.
@@ -209,6 +284,8 @@ struct Shared {
     status: Option<Status>,
     /// The results, not yet read by `poll`.
     found: Option<Found>,
+    /// Set by [`Search::stop`]: nothing starts any more.
+    closed: bool,
 }
 
 /// One reverse image search at a time, and the saves of its results. A search or a save that starts while another runs
@@ -216,12 +293,15 @@ struct Shared {
 pub struct Search {
     shared: Arc<Mutex<Shared>>,
     changes: Arc<Bus<()>>,
+    /// The results' files of the search on screen: what the grid's picture requests and a save read. A new search
+    /// replaces them.
+    pictures: Arc<RwLock<Option<Arc<Images>>>>,
 }
 
 impl Default for Search {
     fn default() -> Self {
         // Each subscriber keeps a few changes; a slow one loses the oldest, and `poll` reads the whole state anyway.
-        Search { shared: Arc::default(), changes: Arc::new(Bus::new(16)) }
+        Search { shared: Arc::default(), changes: Arc::new(Bus::new(16)), pictures: Arc::default() }
     }
 }
 
@@ -370,6 +450,11 @@ fn save_all(
 }
 
 impl Search {
+    /// The results' files of the search on screen, if there is one.
+    fn pictures(&self) -> Option<Arc<Images>> {
+        self.pictures.read().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
     /// Runs `work` (a search or a save, which has set `busy`) on a thread of its own, named `name`. When the system
     /// refuses the thread, `busy` and the status are cleared again, the change is announced, and the error returned:
     /// nothing ran, so the next search or save may start.
@@ -398,13 +483,13 @@ impl Search {
     }
 
     /// Start a search for the photo at `photo`, a local path, with the source `make` gives (the client, or a recorded
-    /// session). False when a search or a save is running (nothing changes); an error when its thread couldn't start
-    /// (nothing runs, and nothing stays busy).
-    pub fn start(&self, photo: &Path, make: Factory) -> io::Result<bool> {
+    /// session), its results' grid pictures made by `check`. False when a search or a save is running, or the search
+    /// has stopped (nothing changes); an error when its thread couldn't start (nothing runs, and nothing stays busy).
+    pub fn start(&self, photo: &Path, make: Factory, check: Check) -> io::Result<bool> {
         let photo = photo.to_path_buf();
         {
             let mut s = lock(&self.shared);
-            if s.busy {
+            if s.busy || s.closed {
                 return Ok(false);
             }
             s.busy = true;
@@ -414,6 +499,7 @@ impl Search {
         self.changes.publish(());
         let shared = self.shared.clone();
         let changes = self.changes.clone();
+        let slot = self.pictures.clone();
         self.spawn_worker("yandex search", move || {
             // A panic here is logged (the hook), and the search ends with a status, so `busy` is always cleared.
             let outcome = pg_jobs::panics::catch(AssertUnwindSafe(|| search(&photo, &make, &shared, &changes)));
@@ -427,9 +513,18 @@ impl Search {
                     number(&mut found, s.generation);
                     let results: Vec<(u64, String)> =
                         found.other.iter().chain(&found.similar).map(|hit| (hit.id, hit.url.clone())).collect();
-                    let pictures = Images::new(fetch, images::grid_picture, changes.clone());
-                    images::set_current(Some(pictures.clone()));
-                    fetching = Some((pictures, results));
+                    let pictures = Images::new(fetch, check, changes.clone());
+                    let last = slot.write().unwrap_or_else(PoisonError::into_inner).replace(pictures.clone());
+                    // The last search's fetchers stop: its results left the screen.
+                    if let Some(last) = last {
+                        last.stop();
+                    }
+                    // A search that ends after the stop keeps its results but fetches nothing.
+                    if s.closed {
+                        pictures.stop();
+                    } else {
+                        fetching = Some((pictures, results));
+                    }
                     s.found = Some(found);
                     s.status = Some(Status::Searched(note));
                 }
@@ -456,8 +551,34 @@ impl Search {
     /// poll. Each result and status is returned once.
     pub fn poll(&self) -> Poll {
         let mut s = lock(&self.shared);
-        let dead = images::current().map(|pictures| pictures.take_dead()).unwrap_or_default();
+        let dead = self.pictures().map(|pictures| pictures.take_dead()).unwrap_or_default();
         Poll { busy: s.busy, status: s.status.take(), found: s.found.take(), dead }
+    }
+
+    /// The grid picture of the result `id` of the search on screen: fetched now if it is not kept yet.
+    pub fn image(&self, id: u64) -> Result<Arc<Fetched>, YandexError> {
+        self.pictures().ok_or(YandexError::Unexpected("no search"))?.get_known(id)
+    }
+
+    /// No search or save starts from now on, and the fetchers take no more results. Waits up to `wait` for the running
+    /// search or save and the fetchers to end; false when one still ran after it.
+    pub fn stop(&self, wait: Duration) -> bool {
+        lock(&self.shared).closed = true;
+        let pictures = self.pictures();
+        if let Some(pictures) = &pictures {
+            pictures.stop();
+        }
+        let deadline = Instant::now() + wait;
+        loop {
+            let ended = !lock(&self.shared).busy && pictures.as_ref().is_none_or(|p| p.idle());
+            if ended {
+                return true;
+            }
+            if Instant::now() >= deadline {
+                return false;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
     }
 
     /// Where the save dialog opens: the folder saved into last (`yandex_folder`) while it exists, or else the photo's
@@ -474,7 +595,7 @@ impl Search {
 
     /// Save the picked `hits` into `folder`, one file each, named after the photo, from the files the search kept. The
     /// folder is remembered in the preferences for the next save, whether or not every save works. False when nothing
-    /// is picked or a search or a save is running (nothing changes); an error when its thread couldn't start (nothing
+    /// is picked, a search or a save is running, or the search has stopped (nothing changes); an error when its thread couldn't start (nothing
     /// is written, and nothing stays busy). The save's outcome comes from [`Search::poll`].
     pub fn save(&self, prefs: &PrefStore, hits: Vec<Hit>, folder: PathBuf) -> io::Result<bool> {
         if hits.is_empty() {
@@ -482,7 +603,7 @@ impl Search {
         }
         let stem = {
             let mut s = lock(&self.shared);
-            if s.busy {
+            if s.busy || s.closed {
                 return Ok(false);
             }
             s.busy = true;
@@ -497,9 +618,10 @@ impl Search {
         }
         let shared = self.shared.clone();
         let changes = self.changes.clone();
+        let pictures = self.pictures();
         self.spawn_worker("yandex save", move || {
             // A panic here is logged (the hook), and the save ends with a status, so `busy` is always cleared.
-            let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match images::current() {
+            let status = match pg_jobs::panics::catch(AssertUnwindSafe(|| match pictures {
                 Some(pictures) => save_all(&hits, &stem, &folder, &pictures, &shared, &changes),
                 None => save_refused(&hits, &folder, YandexError::Unexpected("no search on screen")),
             })) {
@@ -532,6 +654,16 @@ mod tests {
         let s = lock(&search.shared);
         assert!(!s.busy, "the next search or save may start");
         assert!(s.status.is_none(), "no status is left for a search that never ran");
+    }
+
+    #[test]
+    fn a_stopped_search_starts_nothing() {
+        let search = Search::default();
+        assert!(search.stop(Duration::ZERO), "nothing ran");
+        let check: Check = Arc::new(|_| Ok(Vec::new()));
+        let make: Factory = Arc::new(|| Err(YandexError::Unexpected("not called")));
+        assert!(matches!(search.start(Path::new("photo.jpg"), make, check), Ok(false)));
+        assert!(!lock(&search.shared).busy);
     }
 
     #[test]

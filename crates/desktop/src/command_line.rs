@@ -78,16 +78,10 @@ pub(crate) fn start_options() -> StartOptions {
 /// session (`pg_app::yandex::replay`'s folder: `upload.json`, `other_sizes.html`, `similar-N.json`, `downloads.tsv`),
 /// which then answers in its place and sends nothing. Only that flag selects it; the default is never the fixture,
 /// because a search sends the photo to Yandex.
-pub(crate) fn yandex_source() -> pg_app::yandex::Factory {
+pub(crate) fn yandex_source() -> pg_app::yandex::YandexSource {
     match path("yandex-fixture") {
-        Some(dir) => {
-            pg_log::info(
-                "yandex",
-                &format!("--yandex-fixture: answering from the recorded session in {}; nothing is sent", dir.display()),
-            );
-            pg_app::yandex::replay(dir)
-        }
-        None => pg_app::yandex::client(),
+        Some(dir) => pg_app::yandex::YandexSource::Replay(dir.to_path_buf()),
+        None => pg_app::yandex::YandexSource::Live,
     }
 }
 

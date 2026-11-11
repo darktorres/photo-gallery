@@ -323,6 +323,14 @@ Each fix gets a test that fails before it.
   - `picker::START` is set by the Yandex panel (`set_start`) for whichever picker opens next. It goes: the picker asks for its purpose's start itself, `app::get().yandex().start_folder(..)` for `Purpose::YandexSave` (an `App` service after this step).
 - **Kept, with the reason written beside each.** The desktop's other process-wide state is one QObject's state that a sibling QObject reads: `controller::CORE`, `gallery::MODEL`, `folders::TREE` (read by `Shell`), and `picker::CHOSEN` (taken by the library, the gallery's edits and the Yandex panel). cxx-qt default-constructs the QObjects, and nothing hands them a reference. `facet_choices::COUNTS` goes in M-32.
 - Gate: `just test`, `just shots` (the `yandex` scenarios), Linux checks.
+- **Done in step 5.** As written, with these details:
+  - `pg_app::yandex::Yandex` holds the `Search`, the factory, the preferences and the makers; `Search` holds the images of the search on screen. `Images::Check` is a closure (the makers and the height), and `grid_picture` takes a maker from `Makers::with_maker`.
+  - `App::stop` stops the search first: no search or save starts, the fetchers take no more results, and it waits two seconds for what runs (a request to Yandex can't be cut short; the log says when one still ran). A new search also stops the last one's fetchers.
+  - The panel's `ROW_HEIGHT` is the one constant; `Yandex::start` takes the height. `Prefs::row_height`'s default is the grid's and stays.
+  - The desktop reads the started library through `LibraryService::running`, now public.
+  - `Purpose` and the listing are in `picker/state.rs` (the field's type, so `picker` ↔ `state` is no cycle); `CHOSEN` stays, with its reason beside it. The panel's `prepareSave` went with `START`.
+  - `--yandex-fixture`'s log line is the app's (`Yandex::new`).
+  - Shots: `find-similar` is the same; the ±1 drawing race showed on two or three of the grid scenarios per run, a different set each run.
 
 ### M-30: the viewer's images are `pg-render`'s
 

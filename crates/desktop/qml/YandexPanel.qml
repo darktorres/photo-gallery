@@ -163,7 +163,6 @@ Rectangle {
                     enabled: yandex.pickedCount > 0 && !yandex.busy
                     onClicked: {
                         // The picker opens in the folder saved into last, or the photo's.
-                        yandex.prepareSave()
                         savePicker.pick(2)
                     }
                 }

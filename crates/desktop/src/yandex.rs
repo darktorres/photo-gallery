@@ -36,8 +36,14 @@ const ROLE_FRAME_Y: i32 = 261;
 const ROLE_FRAME_WIDTH: i32 = 262;
 const ROLE_FRAME_HEIGHT: i32 = 263;
 
-/// The height a row of results is laid out at: fixed, at the size the gallery's rows start at.
-const ROW_HEIGHT: f64 = 220.0;
+/// The height a row of results is laid out at, in px: fixed, at the size the gallery's rows start at. The search makes
+/// its grid pictures at this height.
+const ROW_HEIGHT: u16 = 220;
+
+/// The app's search, which the panel shows.
+fn search() -> &'static pg_app::yandex::Yandex {
+    crate::app::get().yandex()
+}
 
 impl YandexSearchRust {
     /// The results `first..first + count` that exist.
@@ -173,7 +179,7 @@ impl qobject::YandexSearch {
     /// one's progress.
     fn search_photo(mut self: Pin<&mut Self>, path: &Path) {
         self.as_mut().ensure_pump();
-        match self.search.start(path, crate::command_line::yandex_source()) {
+        match search().start(path, usize::from(ROW_HEIGHT)) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => return self.not_started("search", &e),
@@ -191,7 +197,7 @@ impl qobject::YandexSearch {
             return;
         }
         self.as_mut().rust_mut().pump = true;
-        let changes = self.search.subscribe();
+        let changes = search().subscribe();
         let thread = self.qt_thread();
         // Set while a poll is queued. A poll reads the whole state, so a change that comes in while one is queued is
         // read by it: the pump queues no more until it has run (at most one per event-loop turn).
@@ -295,7 +301,7 @@ impl qobject::YandexSearch {
         let other = usize::try_from(self.other_count).unwrap_or(0).min(self.hits.len());
         let aspects: Vec<f64> = self.hits.iter().map(hit_aspect).collect();
         let (other_aspects, similar_aspects) = aspects.split_at(other);
-        let (width, height, gap) = (self.layout_width, ROW_HEIGHT, self.gap);
+        let (width, height, gap) = (self.layout_width, f64::from(ROW_HEIGHT), self.gap);
         let (mut frames, other_height) = layout::frames(other_aspects, width, height, gap);
         let (similar, similar_height) = layout::frames(similar_aspects, width, height, gap);
         frames.extend(similar);
@@ -351,7 +357,7 @@ impl qobject::YandexSearch {
     }
 
     fn poll(mut self: Pin<&mut Self>) {
-        let poll = self.search.poll();
+        let poll = search().poll();
         // The results first: whatever watches `busy` going off finds them in place.
         if let Some(found) = poll.found {
             self.as_mut().show(found.other, found.similar);
@@ -431,12 +437,8 @@ impl qobject::YandexSearch {
         self.as_mut().set_status(QString::from(&text));
     }
 
-    pub(crate) fn prepare_save(&self) {
-        crate::picker::set_start(self.search.start_folder(crate::app::get().prefs()));
-    }
-
     pub(crate) fn download_picked(mut self: Pin<&mut Self>) {
-        let Some(folder) = crate::picker::take(crate::picker::Purpose::YandexSave) else {
+        let Some(folder) = crate::picker::take(crate::picker::state::Purpose::YandexSave) else {
             self.as_mut().set_status(QString::from(&text::yandex_no_folder()));
             return;
         };
@@ -449,7 +451,7 @@ impl qobject::YandexSearch {
         self.as_mut().ensure_pump();
         // The app refuses a search or a save already running (the status line keeps showing its progress), and
         // remembers the folder when it saves.
-        match self.search.save(crate::app::get().prefs(), hits, folder) {
+        match search().save(hits, folder) {
             Ok(true) => {}
             Ok(false) => return,
             Err(e) => return self.not_started("save", &e),

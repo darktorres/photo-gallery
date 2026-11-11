@@ -182,7 +182,8 @@ or a log record when it stays a diagnostic. A state is cleared by the next succe
 | `panic_log.rs` hook | `panic`, error | A panic, with its backtrace | log (the box, for a fatal one) |
 | `app.rs` `stop` | `app`, warning | The background work didn't stop | log |
 | `controller.rs` `Core` (3) | `record`, warning | `PG_RECORD` couldn't be written | log |
-| `command_line.rs` `yandex_source` | `yandex`, info | `--yandex-fixture` answers from a recording | log |
+| `pg_app` `yandex::Yandex::new` (from `--yandex-fixture`) | `yandex`, info | A recording answers the searches | log |
+| `pg_app` `App::stop` | `yandex`, warning | A search, a save or a fetch still ran at the stop | log |
 | `gallery/state.rs` `with_details` | `gallery`, warning | A file's row couldn't be read | `RowReadFailed` |
 | `gallery/state.rs` `fresh_entry` | `gallery`, warning | A file's row couldn't be read again | `ReloadFailed` |
 | `gallery/model.rs` `open_listing` | `gallery`, warning | The list couldn't be read | `ListingFailed` |

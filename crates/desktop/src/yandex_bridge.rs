@@ -126,12 +126,6 @@ pub mod qobject {
         #[cxx_name = "showFailure"]
         fn show_failure(self: Pin<&mut YandexSearch>, text: &QString);
 
-        /// Before the save dialog opens: where it starts (the folder saved into last, while it exists, or else the photo's
-        /// folder), for the folder picker (`FolderPicker`, purpose 2).
-        #[qinvokable]
-        #[cxx_name = "prepareSave"]
-        fn prepare_save(self: &YandexSearch);
-
         /// Save the picked results into the folder the picker chose for them (`FolderPicker`, purpose 2).
         #[qinvokable]
         #[cxx_name = "downloadPicked"]

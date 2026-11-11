@@ -102,7 +102,7 @@ fn yandex_picture(id: &str) -> Pixels {
     let result = id
         .parse::<u64>()
         .map_err(anyhow::Error::from)
-        .and_then(|id| pg_app::yandex::image(id).map_err(anyhow::Error::from))
+        .and_then(|id| crate::app::get().yandex().image(id).map_err(anyhow::Error::from))
         .and_then(|picture| {
             let bytes = if original { &picture.file.bytes } else { &picture.grid };
             QImage::from_data(bytes, None).context("not an image Qt reads")

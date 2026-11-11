@@ -4,7 +4,7 @@
 //! the keeper is the one that must close last. The front end holds one `App` for the process; nothing here is a `static`.
 //!
 //! The services are reached through the accessors: [`App::inbox`], [`App::catalogs`], [`App::prefs`], [`App::images`],
-//! [`App::reading`], [`App::views`], [`App::edit`] and [`App::library`]. Each service holds `Arc` handles to the services
+//! [`App::reading`], [`App::views`], [`App::edit`], [`App::library`] and [`App::yandex`]. Each service holds `Arc` handles to the services
 //! below it, never to the `App`.
 //!
 //! The library prints nothing (its crates deny printing); what happens that the user should hear about is a
@@ -27,6 +27,7 @@ use crate::makers::Makers;
 use crate::prefs::PrefStore;
 use crate::reader::Reading;
 use crate::views::Views;
+use crate::yandex::Yandex;
 use pg_model::notice::{ERROR_CAP, Notice, tidy};
 
 /// The app's services, opened by [`App::open`].
@@ -43,6 +44,7 @@ pub struct App {
     views: Views,
     edit: Edit,
     library: Arc<LibraryService>,
+    yandex: Yandex,
 }
 
 impl App {
@@ -72,6 +74,7 @@ impl App {
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let library = Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs, inbox.clone()));
+        let yandex = Yandex::new(&config.yandex, prefs.clone(), makers.clone());
         let images = Images::new(catalogs.clone(), makers, thumbs, inbox.clone());
         Ok(App {
             inbox,
@@ -84,6 +87,7 @@ impl App {
             prefs,
             reading,
             library,
+            yandex,
         })
     }
 
@@ -126,10 +130,19 @@ impl App {
         &self.library
     }
 
-    /// Stop the background work: the catalog reader, then the library's writer and job. Waits for each to end. After this
+    /// The reverse image search on Yandex, and the saves of its results.
+    pub fn yandex(&self) -> &Yandex {
+        &self.yandex
+    }
+
+    /// Stop the background work: the Yandex search, the catalog reader, then the library's writer and job. Waits for each
+    /// to end (a Yandex request only a while: it is left to end with the process). After this
     /// nothing runs on its own, so the front end can drop what borrows the app and then [`App::shutdown`]. An error says
     /// the job was still running after its wait (its last changes are merged at the next open).
     pub fn stop(&self) -> Result<()> {
+        if !self.yandex.stop() {
+            pg_log::warn("yandex", "a search, a save or a fetch was still running at the stop");
+        }
         self.reading.stop();
         self.library.stop()
     }

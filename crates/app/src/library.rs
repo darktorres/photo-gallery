@@ -240,7 +240,7 @@ impl LibraryService {
     }
 
     /// The started library, if it has started. The folder operations scan through it, and do nothing with it until then.
-    fn running(&self) -> Option<&Library> {
+    pub fn running(&self) -> Option<&Library> {
         self.cell.get()
     }
 

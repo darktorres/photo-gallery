@@ -1,9 +1,12 @@
-//! What the app is opened with: the data folders (`pg_library::layout::Layout`) and the thumbnail cache's cap. The
+//! What the app is opened with: the data folders (`pg_library::layout::Layout`), the thumbnail cache's cap, and where
+//! the Yandex search gets its calls. The
 //! environment is read here, once (`from_env`); the owner may change a field before the app is opened.
 
 use std::path::{Path, PathBuf};
 
 use pg_library::layout::Layout;
+
+use crate::yandex::YandexSource;
 
 #[derive(Clone, Debug)]
 pub struct Config {
@@ -17,6 +20,8 @@ pub struct Config {
     pub log_path: PathBuf,
     /// The thumbnail cache's cap in bytes; `None` keeps the cap the cache has.
     pub thumb_cap_bytes: Option<i64>,
+    /// Where the Yandex search gets its calls: Yandex, unless the front end was given a recorded session.
+    pub yandex: YandexSource,
 }
 
 impl Config {
@@ -26,7 +31,7 @@ impl Config {
         Ok(Config::from_layout(&Layout::resolve(|name| std::env::var_os(name), None)?))
     }
 
-    /// The configuration of a resolved layout, with the thumbnail cache's cap unset.
+    /// The configuration of a resolved layout, with the thumbnail cache's cap unset and the live Yandex search.
     pub fn from_layout(layout: &Layout) -> Config {
         Config {
             home: layout.home().to_path_buf(),
@@ -34,6 +39,7 @@ impl Config {
             prefs_path: layout.prefs().to_path_buf(),
             log_path: layout.log().to_path_buf(),
             thumb_cap_bytes: None,
+            yandex: YandexSource::Live,
         }
     }
 

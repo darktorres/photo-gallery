@@ -1,7 +1,7 @@
-//! The state of the `YandexSearch` QObject: the bridge's backing struct (the search, its results and the preview).
+//! The state of the `YandexSearch` QObject: the bridge's backing struct (the results of the app's search, and the preview).
 
 use cxx_qt_lib::QString;
-use pg_app::yandex::{Hit, Search};
+use pg_app::yandex::Hit;
 use pg_client::layout::Frame;
 use pg_client::picks::Picks;
 
@@ -27,7 +27,6 @@ pub struct YandexSearchRust {
     pub(crate) gap: f64,
     pub(crate) other_height: f64,
     pub(crate) similar_height: f64,
-    pub(super) search: Search,
     /// Whether the change pump runs: it starts with the first search or save, which subscribes before it starts one.
     pub(super) pump: bool,
     /// The other sizes, then the similar images, as the latest search found them.

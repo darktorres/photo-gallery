@@ -5,7 +5,7 @@
 //! the path never crosses to QML as text.
 
 pub(crate) mod state;
-use state::PickerRust;
+use state::{Listing, PickerRust, Purpose};
 
 use crate::picker_bridge::qobject;
 
@@ -13,50 +13,19 @@ use core::pin::Pin;
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
+use cxx_qt::CxxQtType;
 use cxx_qt_lib::{QString, QStringList};
 use pg_client::text;
 use pg_model::notice::Notice;
 
-/// What a chosen folder is for. The code is what QML passes (`pick`, `done`, `openInApp`).
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum Purpose {
-    /// A folder added to the library.
-    AddFolder,
-    /// The folder the cropped copies are saved into.
-    SaveCrops,
-    /// The folder the Yandex pictures are saved into.
-    YandexSave,
-}
-
-impl Purpose {
-    fn code(self) -> i32 {
-        match self {
-            Purpose::AddFolder => 0,
-            Purpose::SaveCrops => 1,
-            Purpose::YandexSave => 2,
-        }
-    }
-
-    fn from_code(code: i32) -> Option<Purpose> {
-        [Purpose::AddFolder, Purpose::SaveCrops, Purpose::YandexSave].into_iter().find(|p| p.code() == code)
-    }
-}
-
 /// The folder chosen and not yet taken, with its purpose.
 type Chosen = (Purpose, PathBuf);
 
-/// The app's dialog: the purpose, the folder it is in, and the folders in it, in order.
-struct Listing {
-    purpose: Purpose,
-    here: PathBuf,
-    folders: Vec<PathBuf>,
-}
-
 thread_local! {
-    // GUI thread only, like the other Qt-facing state (`crate::controller`).
+    // GUI thread only, like the other Qt-facing state (`crate::controller`). One picker chooses and another QObject
+    // takes it (the library, the gallery's edits, the Yandex panel); cxx-qt default-constructs both, so nothing hands
+    // one a reference to the other.
     static CHOSEN: RefCell<Option<Chosen>> = const { RefCell::new(None) };
-    static LISTING: RefCell<Option<Listing>> = const { RefCell::new(None) };
-    static START: RefCell<Option<PathBuf>> = const { RefCell::new(None) };
 }
 
 /// The folder chosen for `purpose`, taken (it is then none). None when no folder was chosen for it.
@@ -73,18 +42,16 @@ pub(crate) fn take(purpose: Purpose) -> Option<PathBuf> {
     })
 }
 
-/// Set the folder the next dialog opens in (taken by it), for a screen that knows one (the Yandex save's: the folder
-/// saved into last, or the photo's). Without one, the dialog opens in the user's folder.
-pub(crate) fn set_start(path: Option<PathBuf>) {
-    START.with(|start| *start.borrow_mut() = path);
-}
-
-/// The folder the dialog opens in: the one set for it (`set_start`, taken) while it is still a folder, else the user's
-/// folder. The folder is given in its real form (`canonicalize`), which the shell takes where the path as given may
+/// The folder the dialog for `purpose` opens in: its purpose's own (a Yandex save's is the folder saved into last, or
+/// the photo's: `pg_app::yandex::Yandex::start_folder`) while it is still a folder, else the user's folder. The folder is given in its real form (`canonicalize`), which the shell takes where the path as given may
 /// not be: it refuses (`0x80070057`) a `.` or `..` part, a doubled separator, and a part that is only spaces. A folder
 /// under a volume with no drive letter canonicalizes to a volume path the shell refuses, so its path as given is kept.
-fn start_for() -> Option<PathBuf> {
-    pg_platform::picker::start_folder(START.with(|start| start.borrow_mut().take()))
+fn start_for(purpose: Purpose) -> Option<PathBuf> {
+    let requested = match purpose {
+        Purpose::YandexSave => crate::app::get().yandex().start_folder(),
+        Purpose::AddFolder | Purpose::SaveCrops => None,
+    };
+    pg_platform::picker::start_folder(requested)
 }
 
 /// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own). An error when `dir`
@@ -139,7 +106,7 @@ fn run_dialog(
 
 impl Default for PickerRust {
     fn default() -> Self {
-        PickerRust { native: native_dialog(), names: QStringList::default(), here: QString::default() }
+        PickerRust { native: native_dialog(), names: QStringList::default(), here: QString::default(), listing: None }
     }
 }
 
@@ -151,7 +118,7 @@ fn native_dialog() -> bool {
 impl qobject::FolderPicker {
     pub(crate) fn pick(mut self: Pin<&mut Self>, purpose: i32) {
         let Some(purpose) = Purpose::from_code(purpose) else { return };
-        let start = start_for();
+        let start = start_for(purpose);
         if pg_platform::picker::NATIVE {
             // The system's dialog runs its own loop: nothing of the app is borrowed across it (`native`).
             let owner = owner();
@@ -179,7 +146,7 @@ impl qobject::FolderPicker {
         let names = names_of(&folders);
         self.as_mut().set_here(QString::from(here.to_string_lossy().as_ref()));
         self.as_mut().set_names(names);
-        LISTING.with(|listing| *listing.borrow_mut() = Some(Listing { purpose, here, folders }));
+        self.as_mut().rust_mut().listing = Some(Listing { purpose, here, folders });
         self.open_in_app(purpose.code());
     }
 
@@ -196,44 +163,36 @@ impl qobject::FolderPicker {
     }
 
     pub(crate) fn enter(mut self: Pin<&mut Self>, row: i32) {
-        let Some(next) = LISTING.with(|listing| {
-            let listing = listing.borrow();
-            let listing = listing.as_ref()?;
-            listing.folders.get(usize::try_from(row).ok()?).cloned()
-        }) else {
+        let Some(next) = self.listing.as_ref().and_then(|l| l.folders.get(usize::try_from(row).ok()?).cloned()) else {
             return;
         };
         self.as_mut().show_folder(next);
     }
 
     pub(crate) fn up(mut self: Pin<&mut Self>) {
-        let parent =
-            LISTING.with(|listing| listing.borrow().as_ref().and_then(|l| l.here.parent().map(Path::to_path_buf)));
+        let parent = self.listing.as_ref().and_then(|l| l.here.parent().map(Path::to_path_buf));
         if let Some(parent) = parent {
             self.as_mut().show_folder(parent);
         }
     }
 
     pub(crate) fn choose(self: Pin<&mut Self>, row: i32) {
-        let chosen = LISTING.with(|listing| {
-            let listing = listing.borrow();
-            let listing = listing.as_ref()?;
-            Some((listing.purpose, listing.folders.get(usize::try_from(row).ok()?)?.clone()))
-        });
+        let chosen =
+            self.listing.as_ref().and_then(|l| Some((l.purpose, l.folders.get(usize::try_from(row).ok()?)?.clone())));
         if let Some(chosen) = chosen {
             self.choose_path(chosen);
         }
     }
 
     pub(crate) fn choose_here(self: Pin<&mut Self>) {
-        let chosen = LISTING.with(|listing| listing.borrow().as_ref().map(|l| (l.purpose, l.here.clone())));
+        let chosen = self.listing.as_ref().map(|l| (l.purpose, l.here.clone()));
         if let Some(chosen) = chosen {
             self.choose_path(chosen);
         }
     }
 
     pub(crate) fn cancel(self: Pin<&mut Self>) {
-        LISTING.with(|listing| *listing.borrow_mut() = None);
+        self.rust_mut().listing = None;
     }
 
     /// The app's dialog can't list `folder` (`error`): the inbox and the purpose's picker say so (`failed`), and the
@@ -251,7 +210,7 @@ impl qobject::FolderPicker {
         let folders = match folders_in(&folder) {
             Ok(folders) => folders,
             Err(e) => {
-                if let Some(purpose) = LISTING.with(|listing| listing.borrow().as_ref().map(|l| l.purpose)) {
+                if let Some(purpose) = self.listing.as_ref().map(|l| l.purpose) {
                     self.as_mut().report_unlisted(purpose, &folder, &e);
                 }
                 return;
@@ -260,19 +219,17 @@ impl qobject::FolderPicker {
         let names = names_of(&folders);
         self.as_mut().set_here(QString::from(folder.to_string_lossy().as_ref()));
         self.as_mut().set_names(names);
-        LISTING.with(|listing| {
-            if let Some(listing) = listing.borrow_mut().as_mut() {
-                listing.here = folder;
-                listing.folders = folders;
-            }
-        });
+        if let Some(listing) = self.as_mut().rust_mut().listing.as_mut() {
+            listing.here = folder;
+            listing.folders = folders;
+        }
     }
 
     /// `chosen` is the folder for its purpose: kept for the action, which is told by `done`. The app's dialog is closed.
     fn choose_path(mut self: Pin<&mut Self>, chosen: Chosen) {
         let purpose = chosen.0;
         CHOSEN.with(|slot| *slot.borrow_mut() = Some(chosen));
-        LISTING.with(|listing| *listing.borrow_mut() = None);
+        self.as_mut().rust_mut().listing = None;
         self.as_mut().set_names(QStringList::default());
         self.done(purpose.code());
     }
@@ -282,7 +239,7 @@ impl qobject::FolderPicker {
 mod tests {
     use std::path::{Component, Path, PathBuf};
 
-    use super::{folders_in, set_start, start_for};
+    use super::folders_in;
 
     /// A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
     /// A path under a volume with no drive letter is not a drive or share, so the start folder keeps its path as given;
@@ -302,8 +259,7 @@ mod tests {
     fn a_start_folder_is_given_in_its_real_form() {
         let tree = Tree::new("start");
         std::fs::create_dir(tree.0.join("inner")).unwrap();
-        set_start(Some(tree.0.join("inner").join("..")));
-        let got = start_for().expect("the start folder");
+        let got = pg_platform::picker::start_folder(Some(tree.0.join("inner").join(".."))).expect("the start folder");
         assert_eq!(got, std::fs::canonicalize(&tree.0).unwrap());
         assert!(!got.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)));
     }
@@ -359,7 +315,7 @@ mod dialog_tests {
 
     use pg_platform::picker::{FolderDialog, ShellItem};
 
-    use super::{CHOSEN, LISTING, Purpose, START, run_dialog};
+    use super::{CHOSEN, Purpose, run_dialog};
 
     /// What the dialog was opened with: its start folder's units and its owner.
     type Opened = (Option<Vec<u16>>, Option<usize>);
@@ -382,8 +338,6 @@ mod dialog_tests {
         fn run(&mut self, start: Option<&[u16]>, owner: Option<usize>) -> io::Result<bool> {
             // A borrow held across the dialog by the picker would make these panic.
             CHOSEN.with(|c| drop(c.borrow_mut()));
-            LISTING.with(|l| drop(l.borrow_mut()));
-            START.with(|s| drop(s.borrow_mut()));
             *self.opened.borrow_mut() = Some((start.map(<[u16]>::to_vec), owner));
             Ok(true)
         }

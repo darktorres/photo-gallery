@@ -184,7 +184,7 @@ mod tests {
         assert!(matches!(note, Some(SimilarNote::Stopped { shown: 2, error: YandexError::Captcha })));
 
         // The save path writes the recorded bytes of the first result, from the search's images.
-        let pictures = Images::new(Arc::new(Replay::new(recording)), accept, changes.clone());
+        let pictures = Images::new(Arc::new(Replay::new(recording)), Arc::new(accept), changes.clone());
         let folder = dir.join("saved");
         std::fs::create_dir_all(&folder).unwrap();
         let hits: Vec<Hit> = found.similar.into_iter().take(1).collect();

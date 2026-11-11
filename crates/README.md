@@ -85,9 +85,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   `pg-library`). `App` opens from a `Config` and holds the services, each built on the ones below it and reached as
   `app.inbox()` (what the user is told, kept in the catalog), `catalogs()`, `prefs()`, `images()`, `reading()` (what
   the window shows, read off the UI thread), `views()` (the place the grid shows, saved views), `edit()` (ratings and
-  marks) and `library()` (the folders, the scan, the write-back); `App` orders their shutdown. Beside them: the Yandex search (its source is the client, or a
-  recorded session that `--yandex-fixture` names), the preferences file (`gallery.json`), and the re-exports the front
-  end names (`reexport.rs`). What the user should hear is a notice posted to its inbox, which logs it.
+  marks), `library()` (the folders, the scan, the write-back) and `yandex()` (the reverse image search and its saves;
+  `Config::yandex` says whether a recorded session that `--yandex-fixture` names answers in Yandex's place); `App`
+  orders their shutdown. Beside them: the preferences file (`gallery.json`), and the re-exports the front end names
+  (`reexport.rs`). What the user should hear is a notice posted to its inbox, which logs it.
 - `cli` (`pg-cli`): the command line (`gallery scan`, `gallery import`, …): its commands, every print, and the
   borders and duplicates reports (the duplicates it finds itself, from the catalog's reads and `pg-dedup`).
 - `desktop` (`pg-desktop`, a library): the desktop app, Qt 6 Quick over CXX-Qt: the window, the QML (`qml/`, one

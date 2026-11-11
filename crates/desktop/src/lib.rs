@@ -145,6 +145,7 @@ pub fn run(args: &[OsString]) -> i32 {
                 None
             }
         });
+    config.yandex = command_line::yandex_source();
     if let Err(e) = app::open(config) {
         fatal(&pg_client::text::catalog_unopened(&format!("{e:#}")));
     }

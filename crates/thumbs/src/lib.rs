@@ -15,7 +15,8 @@ use pg_render::maker::{MakeError, Maker};
 use pg_thumbcache::{Pending, Thumb, ThumbCache};
 
 use pg_jobs::control::Control;
-use pg_jobs::failure::{Failure, keep_failure};
+use pg_jobs::failure::keep_failure;
+use pg_model::notice::FileFailure;
 use pg_jobs::panics;
 use pg_jobs::pipeline::{self, Options};
 use pg_model::ids::FileId;
@@ -39,7 +40,7 @@ pub struct ThumbStats {
     /// and not recorded in the failure ledger.
     pub unreadable: usize,
     /// The first failures (`FAILURES_KEPT`), for whoever shows the pass.
-    pub failures: Vec<Failure>,
+    pub failures: Vec<FileFailure>,
     /// Files changed while they were read (or being rewritten by the app): not kept, tried again.
     pub changed: usize,
     pub cache_full: bool,

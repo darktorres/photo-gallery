@@ -16,14 +16,14 @@ pub mod deadlines;
 pub mod input;
 pub mod listing;
 pub mod panels;
-pub mod prefs;
+pub mod size;
 pub mod replay;
 pub mod start;
 
 use deadlines::{Deadlines, Timer};
 use input::Input;
 use panels::{PanelKind, Panels};
-use prefs::Prefs;
+use size::GridSize;
 use start::StartGate;
 
 /// The space between the grid's rows and between its cells, in pixels.
@@ -63,7 +63,7 @@ pub enum Event {
     /// A window shortcut (`GlobalShortcuts.qml`): the log view, dev mode.
     Global(Global),
     /// A size request: the grid's row height stepped, scaled or chosen, or the screen's scale changed.
-    Size(prefs::Event),
+    Size(size::Event),
     /// Where the grid looks changed by the user: the folder, the recursion, the sort, the query, a saved view.
     Listing(listing::Event),
     /// A rating, a quarter turn, or a border mark, asked for by the user (the viewer's or the grid's keys).
@@ -143,7 +143,7 @@ pub enum Command {
     /// Remember dev mode for the next start: the user turned it on or off (a start's `--dev=1` is not saved).
     SaveDevMode(bool),
     /// The size changed: the thumbnails, or the saved row height.
-    Size(prefs::Change),
+    Size(size::Change),
     /// Select the file `file` in the list just shown, the one a reveal asked for (the model knows its item), or say it is
     /// no longer in the library.
     Reveal(i64),
@@ -156,7 +156,7 @@ pub struct Controller {
     listing: Listing,
     input: Input,
     panels: Panels,
-    prefs: Prefs,
+    grid_size: GridSize,
     deadlines: Deadlines,
     grid_width: f64,
     /// The file a reveal waits to select, once its list is shown.
@@ -171,7 +171,7 @@ impl Controller {
             listing,
             input: Input::default(),
             panels: Panels::default(),
-            prefs: Prefs::with(row_height, scale),
+            grid_size: GridSize::with(row_height, scale),
             deadlines: Deadlines::default(),
             grid_width: 0.0,
             reveal: None,
@@ -199,8 +199,8 @@ impl Controller {
     }
 
     /// The size, as it is now.
-    pub fn prefs(&self) -> &Prefs {
-        &self.prefs
+    pub fn grid_size(&self) -> &GridSize {
+        &self.grid_size
     }
 
     /// Whether the start is over.
@@ -312,7 +312,7 @@ impl Controller {
 
     fn key(&mut self, now_ms: u64, grid: Grid) -> Vec<Command> {
         match grid {
-            Grid::Resize { grow } => self.size(now_ms, prefs::Event::Resize { grow }),
+            Grid::Resize { grow } => self.size(now_ms, size::Event::Resize { grow }),
             Grid::Filters => self.panel(panels::Event::ToggleFilters),
             Grid::Borders => self.panel(panels::Event::ToggleBorders),
             _ => self.input_update(input::Event::Key(grid)),
@@ -363,12 +363,12 @@ impl Controller {
         out
     }
 
-    fn size(&mut self, now_ms: u64, event: prefs::Event) -> Vec<Command> {
-        let changes = self.prefs.update(event);
+    fn size(&mut self, now_ms: u64, event: size::Event) -> Vec<Command> {
+        let changes = self.grid_size.update(event);
         let mut out = Vec::new();
         for change in changes {
             match change {
-                prefs::Change::RowHeight(height) => {
+                size::Change::RowHeight(height) => {
                     self.deadlines.arm(Timer::Size, now_ms);
                     out.push(Command::Size(change));
                     out.push(Command::Relayout { width: self.grid_width, row_height: height });
@@ -431,10 +431,10 @@ impl Controller {
                     out.push(Command::SaveLastFile);
                 }
                 Timer::Layout => {
-                    out.push(Command::Relayout { width: self.grid_width, row_height: self.prefs.row_height() })
+                    out.push(Command::Relayout { width: self.grid_width, row_height: self.grid_size.row_height() })
                 }
                 Timer::Size => {
-                    for change in self.prefs.settled() {
+                    for change in self.grid_size.settled() {
                         out.push(Command::Size(change));
                     }
                 }

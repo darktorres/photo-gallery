@@ -15,7 +15,6 @@ use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
 use pg_model::media::Kind;
-use pg_model::orientation::turns_swap;
 use pg_model::rating::Rating;
 use pg_model::rules::Path as RulePath;
 use pg_model::turns::Turns;
@@ -289,7 +288,7 @@ impl Catalog {
                     [file_id],
                 )?;
                 // The upright size at once: the grid lays the file out turned before its analysis is redone.
-                if turns_swap(turns) {
+                if turns.swaps_axes() {
                     tx.execute("UPDATE analysis SET width = height, height = width WHERE file_id = ?1", [file_id])?;
                 }
             }

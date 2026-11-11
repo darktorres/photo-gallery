@@ -30,7 +30,8 @@ use pg_platform::dir::{Entry, Lister};
 use pg_platform::native::Unit;
 
 use pg_jobs::control::Control;
-use pg_jobs::failure::{FAILURES_KEPT, Failure, keep_failure};
+use pg_jobs::failure::{FAILURES_KEPT, keep_failure};
+use pg_model::notice::FileFailure;
 use pg_model::progress::Phase;
 use pg_model::refusal::RefusedReason;
 use pg_platform::names::{name_from_native, units_of};
@@ -207,7 +208,7 @@ pub struct ScanStats {
     /// False when stopped early; nothing is marked missing then.
     pub complete: bool,
     /// The first folders that couldn't be read (`FAILURES_KEPT`).
-    pub failures: Vec<Failure>,
+    pub failures: Vec<FileFailure>,
     /// Paths of the same file (a hard link, or a row of another root) that were skipped, not recorded (decision 5).
     pub duplicates: u64,
     /// Reparse points indexed without following them: a file's row is kept, a folder's subtree is kept (decision 9).

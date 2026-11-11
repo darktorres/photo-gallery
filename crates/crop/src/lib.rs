@@ -15,7 +15,8 @@ use pg_model::rules::Path as RulePath;
 
 use pg_exiftool::ExifTool;
 use pg_jobs::control::Control;
-use pg_jobs::failure::{Cause, FileError};
+use pg_jobs::failure::file_failure;
+use pg_model::notice::FileFailure;
 use pg_jobs::pipeline::{self, Options};
 use pg_model::progress::Phase;
 use pg_platform::file::TempFile;
@@ -29,7 +30,7 @@ pub struct Stats {
     pub failed: usize,
     /// The first failure, with its file. A panic on a file is a failure of that file (`Cause::Panicked`), which is
     /// not queued again.
-    pub error: Option<FileError>,
+    pub error: Option<FileFailure>,
     /// What a stop left (to queue again).
     pub remaining: Vec<FileId>,
 }
@@ -152,9 +153,8 @@ pub fn save(catalog: &Catalog, ids: &[FileId], folder: &Path, opts: &Options, ct
                 Ok(false) => stats.skipped += 1,
                 Err(e) => {
                     stats.failed += 1;
-                    stats.error.get_or_insert_with(|| FileError {
-                        path: String::from_utf8_lossy(paths.get(job.source.path)).into_owned(),
-                        cause: Cause::of(&e),
+                    stats.error.get_or_insert_with(|| {
+                        file_failure(String::from_utf8_lossy(paths.get(job.source.path)).into_owned(), &e)
                     });
                 }
             }

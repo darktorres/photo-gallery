@@ -12,7 +12,7 @@
 use std::cell::RefCell;
 use std::io::Write;
 
-use pg_client::controller::prefs::Prefs;
+use pg_client::controller::size::GridSize;
 use pg_client::controller::replay::{self, Record};
 use pg_client::controller::{Command, Controller, Event};
 use pg_client::facets::Counts;
@@ -34,7 +34,7 @@ thread_local! {
 
 impl Core {
     fn new() -> Core {
-        let controller = Controller::new(start(), Prefs::default().row_height(), Prefs::default().scale());
+        let controller = Controller::new(start(), GridSize::default().row_height(), GridSize::default().scale());
         let recorder = std::env::var_os("PG_RECORD").and_then(|path| match std::fs::File::create(&path) {
             Ok(file) => Some(file),
             Err(e) => {

@@ -18,7 +18,6 @@ use pg_model::analysis::{
 };
 use pg_model::detection::{self, Detection};
 use pg_model::format::Format;
-use pg_model::orientation;
 
 /// The version of what the import computes, stored with each analysis; files analyzed by an older one are redone,
 /// in place, which keeps the library, ratings and views. Not a schema version. Until the first release it is not
@@ -205,7 +204,7 @@ fn analyze_video(path: &Path, turns: Turns, a: &mut Analyzer) -> Result<Analyzed
     let p = pg_video::probe(path)?;
     let poster = pg_video::poster_ms(p.duration_ms);
     pg_video::frame_into(path, poster, turns, &mut a.image, &mut a.spare)?;
-    let (width, height) = if orientation::turns_swap(turns) { (p.height, p.width) } else { (p.width, p.height) };
+    let (width, height) = if turns.swaps_axes() { (p.height, p.width) } else { (p.width, p.height) };
     let record = Analysis {
         version: IMPORT_VERSION,
         file_hash,

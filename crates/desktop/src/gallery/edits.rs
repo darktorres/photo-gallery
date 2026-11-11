@@ -38,7 +38,7 @@ impl qobject::GalleryModel {
             this.forget_details();
         }
         // An odd turn changes the item's shape, and so the rows.
-        if pg_model::orientation::turns_swap(turns) {
+        if turns.swaps_axes() {
             let plan = self.as_mut().rust_mut().grid.plan(Changed::Items(&[at]));
             self.as_mut().show(plan);
         } else {

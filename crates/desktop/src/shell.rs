@@ -21,7 +21,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_client::controller::listing::Event as ListingEvent;
 use pg_client::controller::panels;
-use pg_client::controller::prefs;
+use pg_client::controller::size;
 use pg_client::controller::{Command, Event};
 use pg_client::sort::choice_index;
 use pg_model::ids::FileId;
@@ -36,7 +36,7 @@ impl Default for ShellRust {
     /// the size and the scale when it is made).
     fn default() -> ShellRust {
         let listing = controller::listing();
-        let prefs = controller::with(|c| *c.prefs());
+        let size = controller::with(|c| *c.grid_size());
         ShellRust {
             folder: QString::from(&pg_platform::native::PATH_RULES.display_merged(&listing.folder)),
             recursive: listing.recursive,
@@ -45,8 +45,8 @@ impl Default for ShellRust {
             saved_views: view_names(),
             filters_open: false,
             show_borders: false,
-            row_height: prefs.row_height(),
-            thumb_height: prefs.thumb_height(),
+            row_height: size.row_height(),
+            thumb_height: size.thumb_height(),
             dev_mode: false,
         }
     }
@@ -140,15 +140,15 @@ impl qobject::Shell {
     }
 
     pub(crate) fn size_chosen(self: Pin<&mut Self>, height: f64) {
-        self.dispatch(Event::Size(prefs::Event::Chosen(height)));
+        self.dispatch(Event::Size(size::Event::Chosen(height)));
     }
 
     pub(crate) fn size_stepped(self: Pin<&mut Self>, factor: f64) {
-        self.dispatch(Event::Size(prefs::Event::Factor(factor)));
+        self.dispatch(Event::Size(size::Event::Factor(factor)));
     }
 
     pub(crate) fn set_scale(self: Pin<&mut Self>, scale: f64) {
-        self.dispatch(Event::Size(prefs::Event::Scale(scale)));
+        self.dispatch(Event::Size(size::Event::Scale(scale)));
     }
 
     pub(crate) fn toggle_filters(self: Pin<&mut Self>) {
@@ -478,17 +478,17 @@ impl qobject::Shell {
     }
 
     /// A size's change, mirrored; the saved row height is QML's to store (`Shell.saveRowHeight`).
-    fn size(mut self: Pin<&mut Self>, change: prefs::Change) {
+    fn size(mut self: Pin<&mut Self>, change: size::Change) {
         match change {
-            prefs::Change::RowHeight(height) => {
+            size::Change::RowHeight(height) => {
                 self.as_mut().rust_mut().row_height = height;
                 self.as_mut().row_height_changed();
             }
-            prefs::Change::ThumbHeight(height) => {
+            size::Change::ThumbHeight(height) => {
                 self.as_mut().rust_mut().thumb_height = height;
                 self.as_mut().thumb_height_changed();
             }
-            prefs::Change::SaveRowHeight(height) => self.as_mut().save_row_height(height),
+            size::Change::SaveRowHeight(height) => self.as_mut().save_row_height(height),
         }
     }
 

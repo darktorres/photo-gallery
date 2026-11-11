@@ -117,7 +117,7 @@ pub(crate) enum Kept {
 }
 
 /// The first failures a pass kept, one per line on stderr.
-pub(crate) fn print_failures(kept: Kept, failures: &[pg_jobs::failure::Failure]) {
+pub(crate) fn print_failures(kept: Kept, failures: &[pg_model::notice::FileFailure]) {
     for f in failures {
         let (path, error) = (f.path.clone(), f.error.clone());
         let words = match kept {

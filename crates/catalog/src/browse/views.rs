@@ -88,7 +88,8 @@ impl Catalog {
 mod tests {
     use super::*;
     use crate::browse::fixtures::{by, library, under_both_rules};
-    use pg_model::query::{MediaType, Query, RatingFilter, SortKey};
+    use pg_model::query::{Query, RatingFilter, SortKey};
+    use pg_model::media::MediaType;
     use pg_model::rules::Merged;
 
     fn views_keep_their_query(rules: PathRules) {

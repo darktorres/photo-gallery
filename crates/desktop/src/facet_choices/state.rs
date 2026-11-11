@@ -16,7 +16,7 @@ pub(super) struct Row {
     reason = "the bridge\'s generated code names it in a public interface (E0446), so it is `pub`"
 )]
 pub struct FacetChoicesRust {
-    /// The facet: the list's index in `Facet`; 0 (the default) is Types.
+    /// The facet: the list's index in `pg_client::facets::ALL`; 0 (the default) is Types.
     pub(crate) facet: i32,
     pub(super) rows: Vec<Row>,
 }

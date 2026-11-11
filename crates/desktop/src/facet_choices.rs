@@ -1,7 +1,7 @@
 //! One list facet of the filter bar as a model: a row per choice (a media type, a shape, an import status, a borders
 //! value, a rating, or an extension of the folder), with the choice's count (how many files choosing it would show,
 //! `countFacets()`, or 0 where the bar shows none) and whether the query has it. `facet` is the list's index in
-//! `pg_client::facets::Facet`, whose `choices` decides the rows. The query and the counts are both read from
+//! `pg_client::facets::ALL`, whose `choices` decides the rows. The query and the counts are both read from
 //! `controller.rs` (the counts as `Filters` last set them): `refresh` rebuilds the rows, and the filter bar calls it when
 //! the query or the counts change.
 
@@ -14,10 +14,10 @@ use core::pin::Pin;
 use cxx_qt::CxxQtType;
 
 use cxx_qt_lib::{QByteArray, QHash, QHashPair_i32_QByteArray, QModelIndex, QString, QVariant};
-use pg_client::facets::{Counts, Facet, choices};
+use pg_client::facets::{Counts, choices, from_index};
 use pg_client::input::key_of;
 use pg_client::text;
-use pg_model::query::Query;
+use pg_model::query::{ListFacet, Query};
 
 use crate::controller;
 
@@ -32,7 +32,7 @@ pub(crate) fn count(n: i64) -> i32 {
 }
 
 /// The rows of `facet` for a query and counts.
-fn rows(facet: Facet, query: &Query, counts: &Counts) -> Vec<Row> {
+fn rows(facet: ListFacet, query: &Query, counts: &Counts) -> Vec<Row> {
     choices(facet, counts)
         .into_iter()
         .map(|(choice, shown)| Row {
@@ -53,7 +53,7 @@ impl qobject::FacetChoices {
     pub(crate) fn refresh(mut self: Pin<&mut Self>) {
         let query = controller::listing().query;
         let counts = controller::counts();
-        let facet = crate::rows::row_of(self.facet).and_then(Facet::from_index);
+        let facet = crate::rows::row_of(self.facet).and_then(from_index);
         let rows = facet.map_or_else(Vec::new, |facet| rows(facet, &query, &counts));
         // A list whose rows are as they were is not reset: the chips it shows don't redraw for a count that didn't move.
         if rows == self.rows {

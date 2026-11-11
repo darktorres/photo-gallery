@@ -1,6 +1,8 @@
 //! What kind of media a file is, judged by its name: which files the scanner records, and what the type filter
 //! starts from. Whether an image is animated is only known after the import (`analysis.frames`).
 
+use serde::{Deserialize, Serialize};
+
 /// Extensions recorded as images (decoded by `decode`).
 const IMAGE_EXTENSIONS: &[&str] = &["jpg", "jpeg", "jfif", "png", "gif", "webp", "bmp", "tif", "tiff"];
 /// Extensions recorded as videos (FFmpeg: `video`).
@@ -44,6 +46,29 @@ impl Kind {
             kind_video!() => Some(Kind::Video),
             _ => None,
         }
+    }
+}
+
+/// Type, as the filter and the grid see it: the file's kind ([`Kind`]), with animated images apart from still ones.
+#[cfg_attr(feature = "specta", derive(specta::Type))]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
+#[serde(rename_all = "lowercase")]
+#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
+#[strum(serialize_all = "snake_case")]
+pub enum MediaType {
+    Image,
+    Animated,
+    Video,
+}
+
+impl MediaType {
+    /// The name in JSON and in `CASE` (strum's snake_case, which serde's names are too).
+    pub fn key(self) -> &'static str {
+        self.into()
+    }
+
+    pub fn from_key(key: &str) -> Option<MediaType> {
+        key.parse().ok()
     }
 }
 

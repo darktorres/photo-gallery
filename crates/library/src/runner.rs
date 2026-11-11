@@ -19,7 +19,6 @@ use anyhow::{Context, Result};
 use pg_catalog::Catalog;
 use pg_jobs::control::Control;
 use pg_jobs::events::{Bus, Change};
-use pg_jobs::failure::{Cause, FileError};
 use pg_jobs::panics;
 use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
@@ -73,13 +72,9 @@ pub trait NoticeSink: Send + Sync {
     }
 }
 
-/// The notice of a crop job's file failure.
-fn file_failure(error: FileError) -> FileFailure {
-    let (error_text, panicked) = match error.cause {
-        Cause::Error(text) => (text, false),
-        Cause::Panicked(message) => (message, true),
-    };
-    FileFailure { path: error.path, error: tidy(&error_text, ERROR_CAP), panicked }
+/// The notice of a crop job's file failure: its error capped as a notice holds it.
+fn file_failure(failure: FileFailure) -> FileFailure {
+    FileFailure { error: tidy(&failure.error, ERROR_CAP), ..failure }
 }
 
 /// A count as a notice holds it.

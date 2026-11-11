@@ -62,7 +62,7 @@ pub mod qobject {
         #[qinvokable]
         fn reload(self: Pin<&mut Filters>);
 
-        /// Choose a value of a list facet (its index in `pg_client::facets::Facet`), or unchoose it.
+        /// Choose a value of a list facet (its index in `pg_client::facets::ALL`), or unchoose it.
         #[qinvokable]
         fn toggle(self: Pin<&mut Filters>, facet: i32, value: &QString);
 

@@ -23,7 +23,7 @@ pub mod qobject {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
-        /// Which list, by its index in `pg_client::facets::Facet` (the filter bar names them). Set it once.
+        /// Which list, by its index in `pg_client::facets::ALL` (the filter bar names them). Set it once.
         #[qproperty(i32, facet, READ, WRITE = set_facet, FINAL)]
         type FacetChoices = super::FacetChoicesRust;
     }

@@ -9,7 +9,7 @@ use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
 use pg_model::notice::Notice;
-use pg_model::query::MediaType;
+use pg_model::media::MediaType;
 
 /// The model's properties, the list and the details read last.
 #[expect(

@@ -14,7 +14,8 @@ use serde::de::DeserializeOwned;
 use strum::IntoEnumIterator;
 
 use pg_model::group_distance;
-use pg_model::query::{BorderFacet, MediaType, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
+use pg_model::query::{BorderFacet, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
+use pg_model::media::MediaType;
 
 /// FILETIME (100 ns since 1601) of the Unix epoch, in seconds. A macro, for SQL made at compile time.
 macro_rules! filetime_unix_offset {
@@ -167,10 +168,10 @@ pub fn local_start_sql() -> String {
 /// One the user marked.
 const MARKED: &str = "(a.cut_left + a.cut_top + a.cut_right + a.cut_bottom > 0 AND m.file_id IS NOT NULL)";
 
-/// A facet whose own values are left out when counting it (`browse::read::facets`): each value's count is what choosing
-/// it would show, given the other facets.
+/// A facet whose own values are left out when counting it (`Catalog::facets`): each value's count is what choosing it
+/// would show, given the other facets.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum Facet {
+pub enum Counted {
     Types,
     Exts,
     Borders,
@@ -188,7 +189,7 @@ pub fn condition(query: &Query) -> Condition {
 }
 
 /// The condition, leaving one facet out.
-pub fn condition_without(query: &Query, skip: Option<Facet>) -> Condition {
+pub fn condition_without(query: &Query, skip: Option<Counted>) -> Condition {
     // Written into one string: each part ANDed on, a facet's values ORed in parentheses.
     let mut sql = String::new();
     let mut params: Vec<Value> = Vec::new();
@@ -219,10 +220,10 @@ pub fn condition_without(query: &Query, skip: Option<Facet>) -> Condition {
         sql.push(')');
     }
 
-    if !query.types.is_empty() && skip != Some(Facet::Types) {
+    if !query.types.is_empty() && skip != Some(Counted::Types) {
         any(&mut sql, query.types.iter().map(|&t| media_sql(t)));
     }
-    if !query.exts.is_empty() && skip != Some(Facet::Exts) {
+    if !query.exts.is_empty() && skip != Some(Counted::Exts) {
         among(and(&mut sql), "f.ext", query.exts.len());
         params.extend(query.exts.iter().map(|e| Value::Text(e.trim_start_matches('.').to_lowercase())));
     }
@@ -293,7 +294,7 @@ pub fn condition_without(query: &Query, skip: Option<Facet>) -> Condition {
     if !query.status.is_empty() {
         any(&mut sql, query.status.iter().map(|&s| status_sql(s)));
     }
-    if !query.borders.is_empty() && skip != Some(Facet::Borders) {
+    if !query.borders.is_empty() && skip != Some(Counted::Borders) {
         any(&mut sql, query.borders.iter().map(|&b| border_sql(b)));
     }
     match query.border_marked {

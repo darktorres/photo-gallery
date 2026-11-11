@@ -701,6 +701,7 @@ Each fix gets a test that fails before it.
     - The client keeps the bar's order over it (`ALL`), and the choices' order (M-32).
     - `pg_query`'s enum becomes `Counted`.
     - `Choice::facet` is the one mapping.
+  - Done in step 7: `pg_client::facets::{ALL, from_index}` order `ListFacet` as the bar does (its shapes are `Shapes`, not `Orientations`; the unused `key` went), and `input::choice` and `choices` take it. `pg_query::Counted`.
 - **The cache's start-over reason is three types.**
   - `pg_thumbcache::StartOverReason`, `pg_client::text::CacheStartOver`, and the re-export `ThumbStartOverReason`.
   - A mapping is written in each front end: `cli::report::started_over_reason`, and the desktop's.
@@ -708,14 +709,18 @@ Each fix gets a test that fails before it.
   - Done in step 3 (S1): `pg_model::notice::StartOverReason`; the cache, the client and the CLI use it, and the two
     mappings and the re-export are gone. The scan's `ScanNote` moved there the same way.
 - **`MediaType` is the grid's too.** `pg_model::grid::Entry::media_type` uses `query::MediaType`. Fix: it moves beside `media::Kind` (`model/src/media.rs`), and `query` uses it from there.
+  - Done in step 7: `pg_model::media::MediaType`; its users import it from there.
 - **One method with two names.** `pg_model::orientation::turns_swap(turns)` is `turns.swaps_axes()`. Fix: keep `Turns::swaps_axes` and change its five callers.
+  - Done in step 7.
 - **Two `Prefs`.** `pg_client::controller::prefs::Prefs` is the grid's size; `pg_app::Prefs` is the preferences file. Fix: the client's becomes `size::GridSize`.
+  - Done in step 7: `pg_client::controller::size::GridSize`, the controller's `grid_size()`.
 - **Two `writes` modules in the catalog.** `crate::writes` is the file-write queue; `browse::writes` is the views and the session. Fix: `queue` and `browse::views` (with M-44).
   - Done in step 7, with M-44.
 - **A failed file is recorded two ways.**
   - `pg_jobs::failure::Failure { path: String, error: String }` is a pass's stats, with 6 users.
   - `FileError { path: String, cause: Cause }` is used for the app's notices.
   - Fix: one type, NOTIFICATIONS_PLAN's `pg_model::notice::FileFailure`. Do not add a third shape in `pg-jobs`.
+  - Done in step 7: the passes' stats keep `FileFailure`s (`keep_failure`), and a caught failure is one too (`pg_jobs::failure::file_failure`, which reads the panic through `Cause::of`). `Cause` stays, for the writer's `WriteError`. `Failure`, `FileError` and the runner's mapping are gone.
 - **The jobs header contradicts its code, and the phase is mirrored.**
   - `jobs/src/lib.rs` says "Nothing here knows what a pass does to a file". But `control::Phase` names the library's passes (`Crop`, `Scan { root: String }`, `Import`, `Borders`, `Thumbs { height }`).
   - The front ends put the phase into words. `desktop/src/library.rs` maps every `Phase` by hand to a mirror enum, `pg_client::text::Pass`, and the CLI's report does the same.
@@ -727,7 +732,9 @@ Each fix gets a test that fails before it.
     - `text::pass_status(&Progress, rules)` and `text::pass_name(&Phase, rules)` word it. A scan's root is shown under the catalog's rules. `pass-scan` is the name alone, and `pass-found` adds the count.
     - The command line's progress label is `pass_name` too, so its own English mapping (`phase_label`) went with the desktop's and with `text::Pass` and `text::Counts`.
 - **`pg_library::ScanNote::kind() -> &'static str`** is a second key for a typed enum. Fix: `ScanNote` becomes NOTIFICATIONS_PLAN's `pg-model` type, which the client words directly, and `kind` goes.
+  - Done in step 3 (S1), with the start-over reason.
 - Gate: `just test`, `just qmltest`, `just shots`.
+- **Done in step 7**, every part (the parts above say which step).
 
 ## Cleanup
 

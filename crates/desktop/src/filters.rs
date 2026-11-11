@@ -17,7 +17,7 @@ use pg_app::reexport::Facets;
 use pg_model::date::Day;
 use pg_model::query::{Query, parse_number};
 
-use pg_client::facets::{Counts, Facet};
+use pg_client::facets::{Counts, from_index};
 use pg_client::input::{Edge, Field, bound_is_valid, choice, tri_index, tri_of_index};
 use pg_client::text;
 
@@ -114,7 +114,7 @@ impl qobject::Filters {
 
     pub(crate) fn toggle(self: Pin<&mut Self>, facet: i32, value: &QString) {
         let value = value.to_string();
-        if let Some(choice) = row_of(facet).and_then(Facet::from_index).and_then(|facet| choice(facet, &value)) {
+        if let Some(choice) = row_of(facet).and_then(from_index).and_then(|facet| choice(facet, &value)) {
             self.edit(|q| q.toggle(choice));
         }
     }

@@ -9,7 +9,7 @@ mod input;
 mod listing;
 #[path = "controller/panels.rs"]
 mod panels;
-#[path = "controller/prefs.rs"]
-mod prefs;
+#[path = "controller/size.rs"]
+mod size;
 #[path = "controller/start.rs"]
 mod start;

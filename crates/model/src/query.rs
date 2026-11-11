@@ -6,30 +6,8 @@
 use serde::{Deserialize, Deserializer, Serialize};
 
 use crate::date::Day;
+use crate::media::MediaType;
 use crate::rating::Rating;
-
-/// Type, as the filter sees it: the file's kind (`media::Kind`), with animated images apart from still ones.
-#[cfg_attr(feature = "specta", derive(specta::Type))]
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Debug)]
-#[serde(rename_all = "lowercase")]
-#[derive(strum::EnumString, strum::IntoStaticStr, strum::EnumIter)]
-#[strum(serialize_all = "snake_case")]
-pub enum MediaType {
-    Image,
-    Animated,
-    Video,
-}
-
-impl MediaType {
-    /// The name in JSON and in `CASE` (strum's snake_case, which serde's names are too).
-    pub fn key(self) -> &'static str {
-        self.into()
-    }
-
-    pub fn from_key(key: &str) -> Option<MediaType> {
-        key.parse().ok()
-    }
-}
 
 /// Upright shape. Within 1% of square counts as square.
 #[cfg_attr(feature = "specta", derive(specta::Type))]
@@ -277,7 +255,8 @@ pub struct Query {
     pub name: String,
 }
 
-/// A list facet of the query.
+/// A list facet of the query: one field whose values the filter bar lists (`Choice::facet` says which a value is of;
+/// the client keeps the bar's order, `pg_client::facets::ALL`).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum ListFacet {
     Types,

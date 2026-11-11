@@ -123,12 +123,6 @@ impl Orientation {
     }
 }
 
-/// Whether `turns` quarter turns (clockwise) swap the picture's sides: an odd number does. The catalog's turns are
-/// counted this way, before they are composed with the file's own orientation ([`Orientation::compose`]).
-pub fn turns_swap(turns: Turns) -> bool {
-    turns.swaps_axes()
-}
-
 /// The one coordinate map. `last` is how far the last index lies below its extent: 1 for pixels (the last pixel of a
 /// width `w` is `w - 1`), 0 for fractions of a unit extent. Precondition: the point is in the picture (`x <= w -
 /// last`, `y <= h - last`); otherwise an unsigned `T` underflows. [`Orientation::shown_pixel`] asserts it in debug
@@ -193,12 +187,12 @@ mod tests {
 
     #[test]
     fn the_catalog_turns_swap_exactly_when_the_composed_orientation_does() {
-        // The catalog stores turns on their own (`turns_swap`); the file's own orientation is composed in afterwards
+        // The catalog stores turns on their own (`Turns::swaps_axes`); the file's own orientation is composed in afterwards
         // (`compose`). Both must agree on whether the sides swap, for every file orientation.
         for tag in 1..=8 {
             for turns in 0..4 {
                 assert_eq!(
-                    turns_swap(Turns::new(turns)),
+                    Turns::new(turns).swaps_axes(),
                     o(tag).compose(Turns::new(turns)).swaps_axes() != o(tag).swaps_axes(),
                     "o = {tag}, turns = {turns}"
                 );

@@ -11,9 +11,10 @@ use strum::IntoEnumIterator;
 
 use super::grid::FILE_JOINS;
 use super::scope::scope;
-use pg_model::query::{BorderFacet, MediaType, Query};
+use pg_model::query::{BorderFacet, Query};
+use pg_model::media::MediaType;
 use pg_model::rules::Merged;
-use pg_query::{Facet, MEDIA_CASE, border_counts, condition_without};
+use pg_query::{Counted, MEDIA_CASE, border_counts, condition_without};
 
 /// What the filter bar shows next to its choices, for a view's folder.
 #[derive(Default, Debug, PartialEq)]
@@ -39,9 +40,9 @@ impl Catalog {
         let conn = &self.conn;
         let (scope, scope_values) = scope(self.rules(), folder, recursive);
         let all = condition_without(query, None);
-        let types = condition_without(query, Some(Facet::Types));
-        let exts = condition_without(query, Some(Facet::Exts));
-        let borders = condition_without(query, Some(Facet::Borders));
+        let types = condition_without(query, Some(Counted::Types));
+        let exts = condition_without(query, Some(Counted::Exts));
+        let borders = condition_without(query, Some(Counted::Borders));
 
         // The select list, in order: the group's type and extension, the files, the matching files, the files of each
         // type and of each extension, and of each border value. Each condition's values are bound where it appears.

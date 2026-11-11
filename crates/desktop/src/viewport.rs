@@ -14,7 +14,6 @@ use cxx_qt_lib::QString;
 use pg_client::viewport::View;
 use pg_client::image::ImageRequest;
 use pg_model::image::{self, ImageKey};
-use pg_model::orientation::turns_swap;
 use pg_model::turns::Turns;
 
 /// A device-pixel count as the model's `usize` (a view's size is never negative).
@@ -118,7 +117,7 @@ impl qobject::Viewport {
     }
 
     pub(crate) fn swaps_axes(&self, turns: i32) -> bool {
-        turns_swap(Turns::of(i64::from(turns)))
+        Turns::of(i64::from(turns)).swaps_axes()
     }
 
     pub(crate) fn region_x(&self) -> f64 {

@@ -1,42 +1,24 @@
-//! The list facets of the filter bar, typed: which choices each offers, in the bar's order, with the counts the bar shows
-//! beside them. The desktop's FacetChoices and Filters take a facet by its index in `Facet::ALL` (Qt's int at the
-//! bridge, where the bar names each one by a constant); the order is pinned by a test.
+//! The list facets of the filter bar (`pg_model::query::ListFacet`): which choices each offers, in the bar's order, with
+//! the counts the bar shows beside them. The desktop's FacetChoices and Filters take a facet by its index in [`ALL`]
+//! (Qt's int at the bridge, where the bar names each one by a constant); the order is pinned by a test. Each choice is
+//! sent to the bar as a key (`input::key_of`; `input::choice` reads it back) and named by `text::choice_label`.
 
-use pg_model::query::{BorderFacet, Choice, MediaType, Query, RatingFilter, Shape, Status};
+use pg_model::query::{BorderFacet, Choice, ListFacet, Query, RatingFilter, Shape, Status};
+use pg_model::media::MediaType;
 
-/// A list facet: the choices of one field, each sent to the bar as a key (`input::key_of`; `input::choice` reads it back)
-/// and named by `text::choice_label`.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Facet {
-    Types,
-    Orientations,
-    Status,
-    Borders,
-    Ratings,
-    Exts,
-}
+/// Every list facet, in the filter bar's index order.
+pub const ALL: [ListFacet; 6] = [
+    ListFacet::Types,
+    ListFacet::Shapes,
+    ListFacet::Status,
+    ListFacet::Borders,
+    ListFacet::Ratings,
+    ListFacet::Exts,
+];
 
-impl Facet {
-    /// Every facet, in the filter bar's index order.
-    pub const ALL: [Facet; 6] =
-        [Facet::Types, Facet::Orientations, Facet::Status, Facet::Borders, Facet::Ratings, Facet::Exts];
-
-    /// The facet at `index` (its position in `ALL`); `None` out of range.
-    pub fn from_index(index: usize) -> Option<Facet> {
-        Self::ALL.get(index).copied()
-    }
-
-    /// The facet's name in the query's terms.
-    pub fn key(self) -> &'static str {
-        match self {
-            Facet::Types => "types",
-            Facet::Orientations => "orientations",
-            Facet::Status => "status",
-            Facet::Borders => "borders",
-            Facet::Ratings => "ratings",
-            Facet::Exts => "exts",
-        }
-    }
+/// The facet at `index` (its position in [`ALL`]); `None` out of range.
+pub fn from_index(index: usize) -> Option<ListFacet> {
+    ALL.get(index).copied()
 }
 
 /// The counts the list facets show: a media type's and a borders value's, and the folder's extensions in the order the
@@ -64,28 +46,28 @@ impl Counts {
 }
 
 /// The choices of a list facet, in the bar's order, each with its count (`None` where the bar shows none).
-pub fn choices(facet: Facet, counts: &Counts) -> Vec<(Choice, Option<i64>)> {
+pub fn choices(facet: ListFacet, counts: &Counts) -> Vec<(Choice, Option<i64>)> {
     let media = |t: MediaType| counts.types.iter().find(|(x, _)| *x == t).map_or(0, |(_, n)| *n);
     let border = |b: BorderFacet| counts.borders.iter().find(|(x, _)| *x == b).map_or(0, |(_, n)| *n);
     match facet {
-        Facet::Types => {
+        ListFacet::Types => {
             [MediaType::Image, MediaType::Animated, MediaType::Video].map(|t| (Choice::Type(t), Some(media(t)))).to_vec()
         }
-        Facet::Orientations => {
+        ListFacet::Shapes => {
             [Shape::Landscape, Shape::Portrait, Shape::Square].map(|s| (Choice::Shape(s), None)).to_vec()
         }
-        Facet::Status => {
+        ListFacet::Status => {
             [Status::Imported, Status::Pending, Status::Failed].map(|s| (Choice::Status(s), None)).to_vec()
         }
-        Facet::Borders => {
+        ListFacet::Borders => {
             [BorderFacet::None, BorderFacet::Black, BorderFacet::White, BorderFacet::Color, BorderFacet::Blur]
                 .map(|b| (Choice::Border(b), Some(border(b))))
                 .to_vec()
         }
-        Facet::Ratings => {
+        ListFacet::Ratings => {
             (0u8..6).filter_map(|n| RatingFilter::try_from(n).ok()).map(|r| (Choice::Rating(r), None)).collect()
         }
-        Facet::Exts => counts.exts.iter().map(|(e, n)| (Choice::Ext(e.clone()), Some(*n))).collect(),
+        ListFacet::Exts => counts.exts.iter().map(|(e, n)| (Choice::Ext(e.clone()), Some(*n))).collect(),
     }
 }
 
@@ -103,7 +85,7 @@ mod tests {
     #[test]
     fn a_facet_offers_its_choices_in_the_bars_order_with_their_counts() {
         let counts = Counts { types: vec![(MediaType::Video, 3)], ..Counts::default() };
-        let types = choices(Facet::Types, &counts);
+        let types = choices(ListFacet::Types, &counts);
         assert_eq!(
             types,
             [
@@ -112,7 +94,7 @@ mod tests {
                 (Choice::Type(MediaType::Video), Some(3)),
             ]
         );
-        assert!(choices(Facet::Orientations, &counts).iter().all(|(_, n)| n.is_none()), "shapes show no count");
-        assert_eq!(choices(Facet::Ratings, &counts).len(), 6, "unrated, then one to five stars");
+        assert!(choices(ListFacet::Shapes, &counts).iter().all(|(_, n)| n.is_none()), "shapes show no count");
+        assert_eq!(choices(ListFacet::Ratings, &counts).len(), 6, "unrated, then one to five stars");
     }
 }

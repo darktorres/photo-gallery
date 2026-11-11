@@ -16,9 +16,8 @@ mod words;
 use pg_model::detection::Class;
 use pg_model::notice::{Notice, Source};
 use pg_model::progress::{Phase, Progress};
-use pg_model::query::{
-    BorderFacet, Choice, DateRange, ListFacet, MediaType, Query, Range, RatingFilter, Shape, Status,
-};
+use pg_model::query::{BorderFacet, Choice, DateRange, ListFacet, Query, Range, RatingFilter, Shape, Status};
+use pg_model::media::MediaType;
 use pg_model::refusal::RefusedReason;
 use pg_model::rules::PathRules;
 use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status};

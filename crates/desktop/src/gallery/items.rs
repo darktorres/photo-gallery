@@ -11,7 +11,7 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::FileId;
 use pg_client::image::ImageRequest;
 use pg_model::image::{ImageKey, Version};
-use pg_model::query::MediaType;
+use pg_model::media::MediaType;
 
 use super::qobject;
 

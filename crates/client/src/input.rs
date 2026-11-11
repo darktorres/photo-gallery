@@ -1,25 +1,22 @@
-//! The filter bar's typed input. The bar names its list facets by their index in `Facet::ALL` and its bounds by a
+//! The filter bar's typed input. The bar names its list facets by their index in `facets::ALL` and its bounds by a
 //! `Field` index (`Field::ALL`) and an `Edge` index (0 the low end, 1 the high end), so no facet name is a string
 //! inside the core. A list value comes back from the bar as the key `key_of` gave it, read here at that edge only; the
 //! text typed for a bound is empty (an open end), or a number, or a calendar day for the day fields. The query itself
 //! is `pg_model::query`; nothing here reads the catalog.
 
 use pg_model::date::Day;
-use pg_model::query::{
-    BorderFacet, Choice, DateFacet, DayEnd, End, MediaType, RangeFacet, RatingFilter, Shape, Status, parse_number,
-};
-
-use crate::facets::Facet;
+use pg_model::query::{BorderFacet, Choice, DateFacet, DayEnd, End, ListFacet, RangeFacet, RatingFilter, Shape, Status, parse_number};
+use pg_model::media::MediaType;
 
 /// A list facet's value from the key the bar sends (the key `key_of` gives it).
-pub fn choice(facet: Facet, value: &str) -> Option<Choice> {
+pub fn choice(facet: ListFacet, value: &str) -> Option<Choice> {
     match facet {
-        Facet::Types => MediaType::from_key(value).map(Choice::Type),
-        Facet::Exts => Some(Choice::Ext(value.to_string())),
-        Facet::Ratings => value.parse::<u8>().ok().and_then(|n| RatingFilter::try_from(n).ok()).map(Choice::Rating),
-        Facet::Orientations => Shape::from_key(value).map(Choice::Shape),
-        Facet::Status => Status::from_key(value).map(Choice::Status),
-        Facet::Borders => BorderFacet::from_key(value).map(Choice::Border),
+        ListFacet::Types => MediaType::from_key(value).map(Choice::Type),
+        ListFacet::Exts => Some(Choice::Ext(value.to_string())),
+        ListFacet::Ratings => value.parse::<u8>().ok().and_then(|n| RatingFilter::try_from(n).ok()).map(Choice::Rating),
+        ListFacet::Shapes => Shape::from_key(value).map(Choice::Shape),
+        ListFacet::Status => Status::from_key(value).map(Choice::Status),
+        ListFacet::Borders => BorderFacet::from_key(value).map(Choice::Border),
     }
 }
 
@@ -156,8 +153,8 @@ mod tests {
 
     #[test]
     fn an_unknown_list_value_is_no_choice() {
-        assert!(choice(Facet::Types, "no-such-type").is_none());
-        assert!(choice(Facet::Exts, "jpg").is_some());
+        assert!(choice(ListFacet::Types, "no-such-type").is_none());
+        assert!(choice(ListFacet::Exts, "jpg").is_some());
     }
 
     #[test]
@@ -170,7 +167,7 @@ mod tests {
             Choice::Rating(RatingFilter::Unrated),
             Choice::Ext("jpg".to_string()),
         ];
-        let facets = [Facet::Types, Facet::Orientations, Facet::Status, Facet::Borders, Facet::Ratings, Facet::Exts];
+        let facets = [ListFacet::Types, ListFacet::Shapes, ListFacet::Status, ListFacet::Borders, ListFacet::Ratings, ListFacet::Exts];
         for (value, facet) in values.into_iter().zip(facets) {
             assert_eq!(choice(facet, &key_of(&value)), Some(value));
         }

@@ -4,8 +4,8 @@
 use crate::detection;
 use crate::ids::FileId;
 use crate::media::{Ext, Kind};
-use crate::orientation::{Orientation, turns_swap};
-use crate::query::MediaType;
+use crate::orientation::Orientation;
+use crate::media::MediaType;
 use crate::rating::Rating;
 use crate::turns::Turns;
 
@@ -72,7 +72,7 @@ impl Entry {
 
     /// Width and height as shown, pending turns included; 0 before the import.
     pub fn shown_size(&self) -> (u32, u32) {
-        if turns_swap(self.pending_turns) { (self.height, self.width) } else { (self.width, self.height) }
+        if self.pending_turns.swaps_axes() { (self.height, self.width) } else { (self.width, self.height) }
     }
 
     /// Width ÷ height as shown; 1 before the import.

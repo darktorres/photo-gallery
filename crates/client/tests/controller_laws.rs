@@ -3,7 +3,7 @@
 //! clamps and thumbnails, the grid's actions without a current item, and the events' serde round trip (the recordings).
 
 use pg_client::controller::listing as listing_event;
-use pg_client::controller::prefs::{self, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT};
+use pg_client::controller::size::{self, MAX_ROW_HEIGHT, MIN_ROW_HEIGHT};
 use pg_client::controller::{Command, Controller, Event};
 use pg_client::keys::Grid;
 use pg_model::name::Name;
@@ -21,12 +21,12 @@ fn listing(text: &str) -> Listing {
     Listing { folder: folder(text), recursive: false, sort: Sort::default(), query: Query::default() }
 }
 
-fn size_event() -> impl Strategy<Value = prefs::Event> {
+fn size_event() -> impl Strategy<Value = size::Event> {
     prop_oneof![
-        any::<bool>().prop_map(|grow| prefs::Event::Resize { grow }),
-        (0.1f64..4.0).prop_map(prefs::Event::Factor),
-        (-100.0f64..2000.0).prop_map(prefs::Event::Chosen),
-        (0.5f64..3.0).prop_map(prefs::Event::Scale),
+        any::<bool>().prop_map(|grow| size::Event::Resize { grow }),
+        (0.1f64..4.0).prop_map(size::Event::Factor),
+        (-100.0f64..2000.0).prop_map(size::Event::Chosen),
+        (0.5f64..3.0).prop_map(size::Event::Scale),
     ]
 }
 
@@ -49,14 +49,14 @@ proptest! {
         for event in events {
             now += 10;
             c.update(now, Event::Size(event));
-            let row = c.prefs().row_height();
+            let row = c.grid_size().row_height();
             prop_assert!((MIN_ROW_HEIGHT..=MAX_ROW_HEIGHT).contains(&row));
         }
         if let Some(at) = c.next_deadline() {
             let settled = c.update(at, Event::Timeout);
-            let row = c.prefs().row_height();
-            prop_assert!(settled.contains(&Command::Size(prefs::Change::ThumbHeight(c.prefs().thumb_height()))));
-            prop_assert!(settled.contains(&Command::Size(prefs::Change::SaveRowHeight(row))));
+            let row = c.grid_size().row_height();
+            prop_assert!(settled.contains(&Command::Size(size::Change::ThumbHeight(c.grid_size().thumb_height()))));
+            prop_assert!(settled.contains(&Command::Size(size::Change::SaveRowHeight(row))));
         }
     }
 

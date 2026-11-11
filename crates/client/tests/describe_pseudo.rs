@@ -4,7 +4,8 @@
 
 use pg_client::text::{describe, set_pseudo};
 use pg_model::date::Day;
-use pg_model::query::{BorderFacet, DateRange, MediaType, Query, Range, RatingFilter, Shape, Status};
+use pg_model::query::{BorderFacet, DateRange, Query, Range, RatingFilter, Shape, Status};
+use pg_model::media::MediaType;
 
 #[test]
 fn every_word_of_the_filter_line_is_the_bundles() {

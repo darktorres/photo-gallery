@@ -36,21 +36,21 @@ pub enum Change {
 
 /// The size, as the core holds it.
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Prefs {
+pub struct GridSize {
     row_height: i32,
     scale: f64,
 }
 
-impl Default for Prefs {
-    fn default() -> Prefs {
-        Prefs { row_height: 200, scale: 1.0 }
+impl Default for GridSize {
+    fn default() -> GridSize {
+        GridSize { row_height: 200, scale: 1.0 }
     }
 }
 
-impl Prefs {
+impl GridSize {
     /// The size a window starts with: the row height (clamped like any size) and the screen's scale.
-    pub fn with(row_height: i32, scale: f64) -> Prefs {
-        Prefs { row_height: row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT), scale }
+    pub fn with(row_height: i32, scale: f64) -> GridSize {
+        GridSize { row_height: row_height.clamp(MIN_ROW_HEIGHT, MAX_ROW_HEIGHT), scale }
     }
 
     /// The row height the grid has.

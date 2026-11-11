@@ -19,7 +19,8 @@ use pg_model::grid::{Borders, Entry};
 use pg_model::ids::{FileId, FolderId};
 use pg_model::media::Ext;
 use pg_model::name::Name;
-use pg_model::query::{BorderFacet, DateRange, MediaType, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
+use pg_model::query::{BorderFacet, DateRange, Query, Range, RatingFilter, Shape, Sort, SortKey, Status};
+use pg_model::media::MediaType;
 use pg_model::rules::{Merged, PathRules};
 use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
@@ -786,11 +787,11 @@ under_both_rules!(facet_counts, facet_counts_windows, facet_counts_posix);
 /// The facets as they were before the one pass: a statement per facet, each with its own scan of the folder. The
 /// reference the pass is checked against.
 fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, query: &Query) -> Result<Facets> {
-    use pg_query::{Facet, MEDIA_CASE, border_sql, condition_without};
+    use pg_query::{Counted, MEDIA_CASE, border_sql, condition_without};
     use strum::IntoEnumIterator;
     let conn = &catalog.conn;
     let (scope, scope_values) = scope(catalog.rules(), merged, recursive);
-    let count = |skip: Option<Facet>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
+    let count = |skip: Option<Counted>, select: &str, group: &str| -> Result<Vec<(String, i64)>> {
         let cond = condition_without(query, skip);
         let sql = format!(
             "SELECT {select}, count(*) FROM files f {FILE_JOINS} WHERE f.missing = 0 AND {scope} AND {} {group}",
@@ -807,13 +808,13 @@ fn facets_by_statements(catalog: &Catalog, merged: &Merged, recursive: bool, que
         |r| r.get(0),
     )?;
     let matching = count(None, "''", "")?.first().map_or(0, |r| r.1);
-    let mut types: Vec<(MediaType, i64)> = count(Some(Facet::Types), MEDIA_CASE, "GROUP BY 1")?
+    let mut types: Vec<(MediaType, i64)> = count(Some(Counted::Types), MEDIA_CASE, "GROUP BY 1")?
         .into_iter()
         .filter_map(|(t, n)| Some((MediaType::from_key(&t)?, n)))
         .collect();
     types.sort();
-    let exts = count(Some(Facet::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
-    let cond = condition_without(query, Some(Facet::Borders));
+    let exts = count(Some(Counted::Exts), "f.ext", "GROUP BY 1 ORDER BY 2 DESC, 1")?;
+    let cond = condition_without(query, Some(Counted::Borders));
     let mut borders = Vec::new();
     for b in BorderFacet::iter() {
         let sql = format!(

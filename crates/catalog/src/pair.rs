@@ -25,7 +25,7 @@ use rusqlite::{OptionalExtension, Transaction, params};
 
 use crate::core::Catalog;
 use crate::error::Result;
-use crate::schema::write_transaction;
+use crate::core::write_transaction;
 use crate::types::{folders_under, skipped_folders, under_params};
 
 /// What the pairing did, for the scan's report.

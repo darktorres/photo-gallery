@@ -19,8 +19,8 @@ query: model
 yandex: model
 
 # A database file's lifecycle, the catalog, the codecs' users and the job layer.
-schema: platform
-catalog: model platform query schema
+dbfile: platform
+catalog: dbfile model platform query
 edit: codec container metadata model
 exiftool: platform
 jobs: model platform
@@ -33,7 +33,7 @@ render: codec metadata model video
 
 # The passes, each its own crate.
 scan: catalog jobs model platform
-thumbcache: jobs model platform schema
+thumbcache: dbfile jobs model platform
 bench: analysis catalog codec model render thumbcache
 borders: analysis catalog jobs model platform
 import: analysis catalog dedup jobs model platform

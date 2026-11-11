@@ -27,7 +27,9 @@ pub mod writes;
 
 mod core;
 mod lifecycle;
+mod rebuild;
 mod types;
+mod work;
 mod writers;
 
 mod error;

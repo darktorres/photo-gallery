@@ -210,6 +210,11 @@ Each fix gets a test that fails before it.
     - `work.rs`: the work lists;
     - `schema.rs`: the schema.
 - Gate: `just test`, Linux checks, perf.
+- **Done in step 7.**
+  - `crates/schema` is `crates/dbfile` (`pg-dbfile`), its `lib.rs` split into `schema.rs`, `judge.rs`, `lock.rs` and `remove.rs`; every dependent, `deny.toml`, the layer file and the README follow.
+  - `judge.rs`: `Damage { NotADatabase, Corrupt }` with `Damage::of` and `in_chain`, `Expected::new(make_layout, seeds)` (built once, lazily), and `judge`/`judge_conn` with `Found { New, Usable, Differs, Foreign, Damaged }`. There is no `Older(version)`: the catalog keeps its versions' judgement (`expected(version)`, `mismatch`), as the cache keeps its own (an earlier build's unmarked cache, the cap, the owner); both use `Damage` and `Expected` in place of their own codes and `OnceLock`s.
+  - `remove.rs`: `move_aside` and `remove_database`; the cache's start over and the catalog's replacement use the latter. `Lock::take` uses `pg_platform::file::beside`, and so does the catalog (its copy is gone).
+  - The catalog: `rebuild.rs` (the file side and the row copy), `lifecycle.rs` (locks, holds, rules, marks), `work.rs` (the work lists), `schema.rs` (the schema). `write_transaction` is `core.rs`'s.
 
 ### M-25: the container formats are written where they are read
 

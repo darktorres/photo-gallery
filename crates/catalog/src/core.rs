@@ -7,7 +7,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 
 use anyhow::{Context, anyhow};
 use rusqlite::types::Type;
-use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, params};
+use rusqlite::{Connection, OpenFlags, OptionalExtension, Transaction, TransactionBehavior, params};
 
 use pg_model::format::Format;
 use pg_model::ids::{FileId, RootId, ScanId};
@@ -19,17 +19,25 @@ use pg_model::rules::{Path as RulePath, PathRules};
 
 use crate::error::{Error, Result};
 use crate::lifecycle::{
-    back_up, check_rules, db_file, in_use, mark_unheld_missing, pending_import_sql, rebuild, set_borders_version,
-    set_import_version, set_taken_zone, set_thumbs_version, take_lock, take_shared, try_exclusive, work_list,
+    check_rules, in_use, mark_unheld_missing, set_borders_version, set_import_version, set_taken_zone,
+    set_thumbs_version, take_lock, take_shared, try_exclusive,
 };
+use crate::rebuild::{back_up, db_file, rebuild};
 use crate::schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
-    write_transaction,
 };
+use crate::work::{pending_import_sql, work_list};
 use crate::types::{
     CropSource, Rebuilt, Root, Status, Versions, WorkItem, WriteTarget, folders_under, skipped_folders, under_params,
 };
 use crate::writers::{AnalysisWriter, BordersWriter, ScanWriter};
+
+/// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited
+/// for (`busy_timeout`) before anything is read. A deferred one that reads first and then writes can instead fail at
+/// once when another connection has committed in between (SQLITE_BUSY_SNAPSHOT), which no wait fixes.
+pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transaction<'_>> {
+    Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
+}
 
 pub struct Catalog {
     pub(crate) conn: Connection,
@@ -37,9 +45,9 @@ pub struct Catalog {
     pub(crate) rules: PathRules,
     /// The catalog this build moved aside to make this one, when [`Catalog::prepare`] made one.
     rebuilt: Option<Rebuilt>,
-    /// The shared hold on the file (`pg_schema::Live`) for as long as the catalog is open: a rebuild elsewhere waits
+    /// The shared hold on the file (`pg_dbfile::Live`) for as long as the catalog is open: a rebuild elsewhere waits
     /// for it to go. `None` for `:memory:`. Declared after `conn`, so it is released after the connection closes.
-    _live: Option<pg_schema::Live>,
+    _live: Option<pg_dbfile::Live>,
 }
 
 impl Catalog {
@@ -60,7 +68,7 @@ impl Catalog {
     /// judged before anything is written to it: its schema (every object, and the keys its creation seeds) must be the
     /// one this build makes for its version. One that isn't (an earlier layout, another build's, or not a database at
     /// all) is rebuilt: a new catalog in this build's layout is made beside it, the old rows are copied into it with
-    /// their ids (`carry_rows`), and the old file is moved aside (`pg_schema::move_aside`; see [`Catalog::rebuilt`]). A
+    /// their ids (`carry_rows`), and the old file is moved aside (`pg_dbfile::move_aside`; see [`Catalog::rebuilt`]). A
     /// row the copy can't take (a column the new layout needs that the old one lacks) fails the copy, and the new catalog
     /// is made empty, with the reason said. A catalog of this build's schema at an earlier version is migrated forward.
     /// Its version marks are set to `versions`. The library calls this once, before anything else opens the catalog. A
@@ -136,7 +144,7 @@ impl Catalog {
             .with_context(|| format!("catalog {}", path.display()))?;
         conn.execute_batch(SETTINGS)?;
         let current = current_version()?;
-        let version = pg_schema::user_version(&conn)?;
+        let version = pg_dbfile::user_version(&conn)?;
         if version != current {
             return Err(Error::Other(anyhow!(
                 "catalog {}: schema version {version}, not this build's {current}",

@@ -6,7 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
-use pg_schema::Live;
+use pg_dbfile::Live;
 
 /// A folder for one test, made fresh.
 fn scratch(name: &str) -> std::io::Result<PathBuf> {

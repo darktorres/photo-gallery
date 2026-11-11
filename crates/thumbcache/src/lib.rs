@@ -645,7 +645,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "fresh-file").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, None));
         let conn = Connection::open(cache_path(&dir)).unwrap();
-        assert_eq!(pg_schema::application_id(&conn).unwrap(), APPLICATION_ID);
+        assert_eq!(pg_dbfile::application_id(&conn).unwrap(), APPLICATION_ID);
         assert_eq!(conn.query_row("PRAGMA auto_vacuum", [], |r| r.get::<_, i64>(0)).unwrap(), 2);
         drop(conn);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -675,7 +675,7 @@ mod tests {
         Connection::open(cache_path(&dir)).unwrap().pragma_update(None, "application_id", 9).unwrap();
         let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
-        assert_eq!(pg_schema::application_id(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 9);
+        assert_eq!(pg_dbfile::application_id(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 9);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 
@@ -810,7 +810,7 @@ mod tests {
     fn a_damaged_cache_another_program_holds_is_not_moved() {
         let dir = test_folder(SCRATCH, "damaged-held").unwrap();
         std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
-        let held = pg_schema::Live::shared(&cache_path(&dir)).unwrap().unwrap();
+        let held = pg_dbfile::Live::shared(&cache_path(&dir)).unwrap().unwrap();
         let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), vec![b'x'; 8192]);
@@ -1145,7 +1145,7 @@ mod tests {
     fn read_usage_is_refused_while_a_start_over_holds_the_cache() {
         let dir = test_folder(SCRATCH, "usage-held").unwrap();
         drop(open(&dir, 1 << 30));
-        let held = pg_schema::Live::exclusive(&cache_path(&dir)).unwrap().expect("free");
+        let held = pg_dbfile::Live::exclusive(&cache_path(&dir)).unwrap().expect("free");
         assert!(ThumbCache::read_usage(&dir).is_err(), "held for a start over: not read");
         drop(held);
         assert!(ThumbCache::read_usage(&dir).unwrap().is_some(), "read once free");

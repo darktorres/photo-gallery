@@ -2,22 +2,13 @@
 //! version. A file is compared with [`expected`], the schema this build makes in memory from the same SQL, so the
 //! layout checked is the layout created.
 
-use std::path::Path;
-use std::sync::OnceLock;
-
 use anyhow::{Context, anyhow};
+use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
-use pg_schema::Schema;
-use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior};
+use rusqlite::Connection;
 
-use crate::error::{Error, Result};
-
-/// A transaction that writes: it takes the write lock when it begins, so a lock held by another connection is waited
-/// for (`busy_timeout`) before anything is read. A deferred one that reads first and then writes can instead fail at
-/// once when another connection has committed in between (SQLITE_BUSY_SNAPSHOT), which no wait fixes.
-pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transaction<'_>> {
-    Transaction::new_unchecked(conn, TransactionBehavior::Immediate)
-}
+use crate::core::write_transaction;
+use crate::error::Result;
 
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
 /// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
@@ -26,7 +17,7 @@ pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transacti
 /// the rows whose meaning changed instead of copying them as they are, and the baseline takes comment edits only (a
 /// catalog at version 1 is compared with it). A catalog whose schema differs from this build's at its version is
 /// rebuilt when it is prepared ([`crate::Catalog::prepare`]): a new catalog is made from the baseline and the
-/// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
+/// migrations and takes the old rows with their ids ([`crate::rebuild::carry_rows`]), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
 pub(crate) const MIGRATIONS: &[&str] = &[
@@ -281,9 +272,9 @@ pub(crate) fn current_version() -> Result<i64> {
 
 /// The version of the database at `conn`, or `None` when the file is not a database (SQLite can't read its header).
 pub(crate) fn version_of(conn: &Connection) -> Result<Option<i64>> {
-    match pg_schema::user_version(conn) {
+    match pg_dbfile::user_version(conn) {
         Ok(version) => Ok(Some(version)),
-        Err(e) if e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) => Ok(None),
+        Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => Ok(None),
         Err(e) => Err(e.into()),
     }
 }
@@ -339,13 +330,18 @@ pub(crate) fn expected_for(baseline: &str, migrations: &[&str], version: i64) ->
 /// The [`expected`] schema of the current version, built once per process (every connection's `Catalog::open` checks
 /// its file against it).
 pub(crate) fn current_expected() -> Result<&'static Schema> {
-    static CURRENT: OnceLock<Schema> = OnceLock::new();
-    if let Some(schema) = CURRENT.get() {
-        return Ok(schema);
-    }
-    let schema = expected(current_version()?)?;
-    Ok(CURRENT.get_or_init(|| schema))
+    Ok(CURRENT.schema()?)
 }
+
+/// This build's layout at its current version, as `pg_dbfile::Expected` makes it.
+fn current_layout(conn: &Connection) -> rusqlite::Result<()> {
+    let version = current_version().map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
+    bring_to(conn, BASELINE, MIGRATIONS, pg_platform::native::PATH_RULES, version)
+        .map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))
+}
+
+/// The current schema, made once per process.
+static CURRENT: Expected = Expected::new(current_layout, SEEDS);
 
 /// Why the file at `conn` is not this build's catalog at `version`, given `want` (its [`expected`] schema): `None` when
 /// it is. It reads only. A file that is not a database is not a catalog, and neither is one whose `application_id` is
@@ -353,182 +349,19 @@ pub(crate) fn current_expected() -> Result<&'static Schema> {
 pub(crate) fn mismatch(conn: &Connection, version: i64, want: &Schema) -> Result<Option<String>> {
     let found = match Schema::read(conn, SEEDS) {
         Ok(found) => found,
-        Err(e) if e.sqlite_error_code() == Some(rusqlite::ErrorCode::NotADatabase) => {
-            return Ok(Some("not a database".to_string()));
-        }
+        Err(e) if Damage::of(&e) == Some(Damage::NotADatabase) => return Ok(Some("not a database".to_string())),
         Err(e) => return Err(e.into()),
     };
     if let Some(difference) = found.difference(want) {
         return Ok(Some(difference.to_string()));
     }
     if version > 0 {
-        let id = pg_schema::application_id(conn)?;
+        let id = pg_dbfile::application_id(conn)?;
         if id != APPLICATION_ID {
             return Ok(Some(format!("application id {id}, not a catalog's")));
         }
     }
     Ok(None)
-}
-
-/// The tables a rebuild carries over from the old catalog, in the order their foreign keys need (a table comes after the
-/// tables it references). Every table of the current schema (the baseline's and the migrations') is here: none is derived, since a recomputed table would need a
-/// version mark to say when it is stale, and one is added only with the change that needs it.
-pub(crate) const CARRIED: &[&str] = &[
-    "meta",
-    "scans",
-    "folders",
-    "files",
-    "analysis",
-    "border_sides",
-    "border_marks",
-    "pdq_pairs",
-    "ratings",
-    "file_ratings",
-    "file_writes",
-    "roots",
-    "views",
-    "session",
-    "notices",
-    "file_failures",
-    "ledger_ack",
-];
-
-/// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`BASELINE`]: each table of [`CARRIED`],
-/// by column name (a column the old file lacks takes its default), with its ids kept. The `meta` rows the new catalog
-/// seeds are overwritten with the old values, except `path_rules`, which is this build's; a key the old file has and the
-/// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
-/// would rewrite the copied rows' `pending` and `seq`, and are made again from their own text after it. All of it is one
-/// transaction: a failure copies nothing, and the old file is not changed. `rules` are the rules the old file's paths
-/// were stored under (the caller has checked they are this build's): a saved view or the session that kept its folder
-/// as text (before the folders were typed) is converted to the typed form as it is copied.
-pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, rules: PathRules) -> Result<()> {
-    // The old file's name as SQLite takes it, bound as a BLOB: its bytes on Unix, and on Windows the UTF-8 of the alias
-    // for a folder with no UTF-8 name (`pg_platform::sqlite`).
-    let bound =
-        pg_platform::sqlite::attach_bytes(old).with_context(|| format!("{}: the old catalog", old.display()))?;
-    conn.execute("ATTACH DATABASE ?1 AS carried", [bound]).context("attaching the old catalog")?;
-    let copied = copy_tables(conn, rules);
-    conn.execute_batch("DETACH DATABASE carried")?;
-    copied
-}
-
-fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
-    let triggers: Vec<(String, String)> = conn
-        .prepare("SELECT name, sql FROM main.sqlite_schema WHERE type = 'trigger'")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    let tx = conn.transaction()?;
-    for (name, _) in &triggers {
-        tx.execute_batch(&format!("DROP TRIGGER main.\"{name}\""))?;
-    }
-    // The saved views' folders were text before they were typed (the stored form is the rules' bytes now).
-    let text_folders = column_type(&tx, "carried", "views", "folder")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
-    // The session was text keys before it was one row (version 5): its listing is read from them, after the copy.
-    let session_keys = table_columns(&tx, "carried", "session")?.iter().any(|c| c == "key");
-    // The queued writes' temp files were text too: a TEXT value stays TEXT in the BLOB column, so it is cast.
-    let text_temps =
-        column_type(&tx, "carried", "file_writes", "temp")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
-    for table in CARRIED {
-        let new_columns = table_columns(&tx, "main", table)?;
-        let old_columns = table_columns(&tx, "carried", table)?;
-        let common: Vec<&str> =
-            new_columns.iter().map(String::as_str).filter(|c| old_columns.iter().any(|o| o.as_str() == *c)).collect();
-        if common.is_empty() {
-            continue;
-        }
-        let columns = common.join(", ");
-        if *table == "meta" {
-            tx.execute(
-                &format!(
-                    "INSERT OR REPLACE INTO main.meta ({columns}) SELECT {columns} FROM carried.meta \
-                     WHERE key IN (SELECT key FROM main.meta) AND key <> 'path_rules'"
-                ),
-                [],
-            )?;
-        } else if *table == "file_writes" {
-            // A queued write whose value breaks its kind's rule (version 7's CHECK) was never valid: it is left out, as
-            // the migration drops it.
-            tx.execute(
-                &format!("INSERT OR IGNORE INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"),
-                [],
-            )?;
-        } else {
-            tx.execute(&format!("INSERT INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"), [])?;
-        }
-    }
-    if text_folders {
-        convert_text_folders(&tx, rules)?;
-    }
-    if session_keys {
-        carry_session_keys(&tx, rules, text_folders)?;
-    }
-    if text_temps {
-        tx.execute("UPDATE main.file_writes SET temp = CAST(temp AS BLOB) WHERE temp IS NOT NULL", [])?;
-    }
-    for (_, sql) in &triggers {
-        tx.execute_batch(sql)?;
-    }
-    tx.commit()?;
-    Ok(())
-}
-
-/// The saved views' folders, copied as text from a catalog before S-17.8: each becomes the rules' stored bytes. The
-/// text is split by the rules, so a folder that the old text named is the same folder; a NUL in it is refused, and the
-/// copy is rolled back with the rest.
-fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Result<()> {
-    let views: Vec<(String, Vec<u8>)> = tx
-        .prepare("SELECT name, CAST(folder AS BLOB) FROM main.views")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    for (name, text) in views {
-        let folder = rules
-            .parse_merged(&text)
-            .ok_or_else(|| Error::Other(anyhow!("saved view {name:?}: a NUL in its folder")))?;
-        tx.execute(
-            "UPDATE main.views SET folder = ?1 WHERE name = ?2",
-            rusqlite::params![rules.join_merged(&folder), name],
-        )?;
-    }
-    Ok(())
-}
-
-/// The session of a catalog from before version 5, text keys, carried as its one row: the listing the old keys
-/// named, each key the old reader's default where it was never saved. Its `folder` was the JSON of the folder's parts,
-/// or (`text_folders`: before S-17.8) the folder's text, split by the rules; a NUL in that text is refused, and the
-/// copy is rolled back with the rest. Nothing is written for a session never saved.
-fn carry_session_keys(tx: &rusqlite::Transaction<'_>, rules: PathRules, text_folders: bool) -> Result<()> {
-    let keys: Vec<(String, Vec<u8>)> = tx
-        .prepare("SELECT key, CAST(value AS BLOB) FROM carried.session")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    if keys.is_empty() {
-        return Ok(());
-    }
-    let value = |key: &str| keys.iter().find(|(k, _)| k == key).map(|(_, v)| String::from_utf8_lossy(v).into_owned());
-    let folder = match keys.iter().find(|(k, _)| k == "folder") {
-        Some((_, text)) if text_folders => {
-            rules.parse_merged(text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?
-        }
-        _ => pg_query::from_json(&value("folder").unwrap_or_default()),
-    };
-    let listing = pg_model::view::Listing {
-        folder,
-        recursive: value("recursive").is_none_or(|r| r == "true"),
-        sort: pg_query::from_json(&value("sort").unwrap_or_default()),
-        query: pg_query::from_json(&value("query").unwrap_or_default()),
-    };
-    crate::browse::writes::put_session(tx, rules, &listing)
-}
-
-/// The column names of `table` in `schema` (`main` or an attached database); none when the table isn't there.
-fn table_columns(conn: &Connection, schema: &str, table: &str) -> rusqlite::Result<Vec<String>> {
-    conn.prepare("SELECT name FROM pragma_table_info(?1, ?2)")?.query_map([table, schema], |r| r.get(0))?.collect()
-}
-
-/// The declared type of `table.column` in `schema`; `None` when the column isn't there.
-fn column_type(conn: &Connection, schema: &str, table: &str, column: &str) -> rusqlite::Result<Option<String>> {
-    conn.query_row("SELECT type FROM pragma_table_info(?1, ?2) WHERE name = ?3", [table, schema, column], |r| r.get(0))
-        .optional()
 }
 
 pub(crate) const BASELINE: &str = concat!(
@@ -864,10 +697,10 @@ END;
 mod tests {
     use super::*;
     use crate::browse::fixtures::under_both_rules;
-    use pg_schema::Difference;
+    use pg_dbfile::Difference;
 
     fn version(conn: &Connection) -> i64 {
-        pg_schema::user_version(conn).unwrap()
+        pg_dbfile::user_version(conn).unwrap()
     }
 
     /// A rebuild copies every table of the current schema, so a table a migration adds has to be listed in `CARRIED` (or
@@ -883,7 +716,7 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        let mut carried: Vec<String> = CARRIED.iter().map(|t| t.to_string()).collect();
+        let mut carried: Vec<String> = crate::rebuild::CARRIED.iter().map(|t| t.to_string()).collect();
         carried.sort();
         tables.sort();
         assert_eq!(carried, tables);

@@ -20,7 +20,7 @@ use pg_model::turns::Turns;
 
 use crate::Catalog;
 use crate::error::Result;
-use crate::schema::write_transaction;
+use crate::core::write_transaction;
 
 /// The longest error text kept (bytes; cut on a character's boundary).
 pub const ERROR_BYTES: usize = 1024;

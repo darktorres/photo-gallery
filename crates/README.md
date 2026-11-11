@@ -31,9 +31,12 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   memory for the window's log view (`docs/NOTIFICATIONS.md`). Only the window writes it; the command line prints to stderr.
 - `container` (`pg-container`): a file's containers walked without allocating: JPEG segments, PNG, RIFF (WebP) and
   GIF chunks, extended XMP packets, as byte ranges.
-- `schema` (`pg-schema`): the SQLite schema check the catalog and the thumbnail cache share: a file's `sqlite_schema`
-  compared with the one this build creates (comments and whitespace ignored), the seed rows, the application id, and
-  the lock that serializes a file's checks between processes.
+- `dbfile` (`pg-dbfile`): a SQLite database file's lifecycle, which the catalog and the thumbnail cache share, each
+  keeping its own policy: the schema check (a file's `sqlite_schema` compared with the one this build creates, comments
+  and whitespace ignored, and the seed rows), the judgement of what a file is before it is written (`judge`: new,
+  usable, another layout, another program's, damaged; the expected schema built once, `Expected`), the lock that
+  serializes a file's changes between processes and the holds on an open file, and its move aside and deletion with
+  its sidecars.
 - `metadata` (`pg-metadata`): ratings, dates, orientation and frame counts as the files hold them (XMP parsed as XML;
   the only XML parser).
 - `codec` (`pg-codec`): every format's decoder and encoder (libjpeg-turbo, PNG, GIF, WebP, TIFF, BMP), the resizer and
@@ -118,15 +121,15 @@ it, which is why `testkit` and `jobs-testkit` are leaves), that a `pub use` name
 `app/src/reexport.rs`, and the platform rule above. Module cycles inside a crate are `just modgraph`'s (the compiler's
 module graph and a text scan, `tools/modgraph`), with an empty allowlist; CI runs it on both targets.
 
-- `model`, `container` and `schema` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone,
-  and `log` on `model` and `platform`.
+- `model` and `container` depend on no crate here. `platform`, `client` and `yandex` depend on `model` alone, `dbfile`
+  on `platform` alone, and `log` on `model` and `platform`.
 - `desktop` is the only crate that links Qt. It depends on `app`, the application layer the window uses, and on
   `client`, `log`, `model`, `platform`, `render` and `trace`; it does not depend on `catalog`, `library`, `jobs`,
   `thumbcache`, `yandex` or `codec`. It reaches what it needs of them through `app`'s typed methods and
   `app::reexport`, and `app` does not depend on it. `cli` is the command line beside it, and `gallery` depends on
   `cli` and `desktop` (the latter behind its `desktop` feature).
 - External crates have a fixed set of users (`deny.toml`, `[bans]` wrappers, checked by `cargo deny`): SQLite in
-  `catalog`, `query`, `schema`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
+  `catalog`, `query`, `dbfile`, `thumbcache` and `bench`; `ureq` in `yandex`; FFmpeg in `video`; the image codecs in
   `codec` (plus the test fixtures and the few crates named there); `cxx-qt` in `desktop`; `quick-xml` in `metadata`.
 
 ## Where the old paths went
@@ -208,7 +211,7 @@ it was: QML edits show without a rebuild. QML errors go to the debugger output u
 `just lint` also checks that `pg-model` and `pg-client` build for WebAssembly (`wasm32-unknown-unknown`) and that the
 rustdoc has no warnings. `just check-linux` runs the Linux job's checks, clippy included, in the container (the Linux-only code). `just lint` needs `cargo binstall cargo-deny cargo-machete` once. `cargo deny check` covers advisories, licenses
 (the allowed list is in `deny.toml`), duplicate versions, and each dependency staying in its crates (Qt in `pg-desktop` alone, the image codecs in
-`pg-codec`, SQLite in `pg-catalog`, `pg-query`, `pg-schema` and `pg-thumbcache`);
+`pg-codec`, SQLite in `pg-catalog`, `pg-query`, `pg-dbfile` and `pg-thumbcache`);
 `cargo machete` finds unused dependencies. `just lint-qml` fails on any qmllint warning, and on any binding or
 function the QML compiler (qmlcachegen, as the build runs it) leaves to the interpreter instead of compiling to C++.
 It reads the Rust types from the last build, so build first (`tools/lint_qml.py` says why it lints a copy of the
@@ -237,7 +240,7 @@ where you were (folder, subfolders, filters, sort) are in the catalog. Each of t
 The catalog schema is a baseline (version 1) and the migrations after it (`MIGRATIONS` in
 `crates/catalog/src/schema.rs`; version 2 adds the change stamps for borders). The baseline is frozen: every schema
 change is a migration, and a catalog of this build's schema at an earlier version is migrated forward with its rows.
-Each start checks the catalog's schema against the one this build creates for its version (`pg-schema`). A difference
+Each start checks the catalog's schema against the one this build creates for its version (`pg-dbfile`). A difference
 (a changed column, index or trigger, an extra object, another application id) is rebuilt: a new catalog in this
 build's layout is made beside it, the old rows are copied into it with their ids (files, library folders, ratings,
 analysis, and the rest), and the old file is moved aside as `catalog.sqlite.replaced`. Nothing is deleted. Where a
@@ -301,7 +304,7 @@ the console they were typed in. PowerShell doesn't wait for a GUI program unless
   - Its layout version is 1. Before the first release a layout change edits the schema in place, and the cache is
     never migrated: it holds derived data only. A file of another version, layout or catalog is started over (its
     cap kept); one that is not a database, or that SQLite finds damaged (at the open, or at the day's check of the
-    totals), is moved aside to `thumbs.sqlite.bad` (`pg_schema::move_aside`) and made anew; a database that is not
+    totals), is moved aside to `thumbs.sqlite.bad` (`pg_dbfile::move_aside`) and made anew; a database that is not
     a cache is refused and left alone. A cache that can't be opened only means thumbnails aren't kept.
   - A stored JPEG that doesn't decode (bad bytes, which SQLite can't see, so no check finds it; the day's check of the
     totals reads only the entries): the read path finds it. The desktop decodes a cache hit as it is (`providers.rs`,

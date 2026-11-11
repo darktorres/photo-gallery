@@ -29,8 +29,8 @@ pub(crate) struct Store {
     pub(crate) path: PathBuf,
     pub(crate) inbox: Arc<Inbox>,
     pub(crate) writer: Service,
-    /// The shared hold on the file (`pg_schema::Live`), for as long as the cache is open.
-    pub(crate) _live: pg_schema::Live,
+    /// The shared hold on the file (`pg_dbfile::Live`), for as long as the cache is open.
+    pub(crate) _live: pg_dbfile::Live,
 }
 
 /// The writer's queue: the ops not yet done, in order, and whether more are taken. The writer is woken after each push.

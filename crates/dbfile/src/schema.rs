@@ -7,12 +7,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
-use std::fs::{File, OpenOptions, TryLockError};
-use std::io;
-use std::path::{Path, PathBuf};
-use std::time::Duration;
 
-use pg_platform::file::{beside, rename_no_replace};
 use rusqlite::Connection;
 
 /// The objects of a database and the seeded keys of some of its tables.
@@ -128,114 +123,6 @@ impl Schema {
     pub fn has_table(&self, name: &str) -> bool {
         self.objects.contains_key(&("table".to_string(), name.to_string()))
     }
-}
-
-/// How long [`Lock::take`] waits for another holder: about five seconds, as the connections' `busy_timeout`.
-const LOCK_TRIES: u32 = 100;
-const LOCK_WAIT: Duration = Duration::from_millis(50);
-
-/// A lock on a database file, held by a process that is about to change the file's layout, so that two such processes
-/// go one after the other and the second finds the first's result. The lock is a file beside the database
-/// (`<database>.lock`), which stays after the lock is released. It holds between processes of one operating system; a
-/// folder shared between two (Windows and WSL) needs the database's own transactions to be the guard.
-#[derive(Debug)]
-pub struct Lock {
-    _held: File,
-}
-
-impl Lock {
-    /// The lock on the database at `path`, waiting up to `LOCK_TRIES` tries for another holder to let go. `None` when
-    /// another still holds it after that.
-    pub fn take(path: &Path) -> io::Result<Option<Lock>> {
-        let mut name = path.as_os_str().to_owned();
-        name.push(".lock");
-        let file = OpenOptions::new().create(true).write(true).truncate(false).open(name)?;
-        for attempt in 0..LOCK_TRIES {
-            match file.try_lock() {
-                Ok(()) => return Ok(Some(Lock { _held: file })),
-                Err(TryLockError::Error(e)) => return Err(e),
-                Err(TryLockError::WouldBlock) if attempt + 1 < LOCK_TRIES => std::thread::sleep(LOCK_WAIT),
-                Err(TryLockError::WouldBlock) => {}
-            }
-        }
-        Ok(None)
-    }
-}
-
-/// A hold on a database file that a process has open: `<database>.live`, which stays after the hold is released. A
-/// process that has the file open (a catalog, a cache, for as long as it is open) holds it shared, and so does nothing
-/// to stop another such process. A process that would move the file aside or delete it (a catalog's rebuild, a cache
-/// started over) takes it exclusively, which fails while any other process or connection holds it. The contents are
-/// the transactions' business: this is about the file itself, which only a rebuild or a start over replaces. It holds
-/// between processes of one operating system, as [`Lock`] does.
-#[derive(Debug)]
-pub struct Live {
-    _held: File,
-}
-
-impl Live {
-    /// The shared hold on the database at `path`, for as long as the caller keeps it. It waits up to `LOCK_TRIES` tries
-    /// while an exclusive holder (a rebuild) lets go. `None` when one still holds the file after that.
-    pub fn shared(path: &Path) -> io::Result<Option<Live>> {
-        let file = open_live(path)?;
-        for attempt in 0..LOCK_TRIES {
-            match file.try_lock_shared() {
-                Ok(()) => return Ok(Some(Live { _held: file })),
-                Err(TryLockError::Error(e)) => return Err(e),
-                Err(TryLockError::WouldBlock) if attempt + 1 < LOCK_TRIES => std::thread::sleep(LOCK_WAIT),
-                Err(TryLockError::WouldBlock) => {}
-            }
-        }
-        Ok(None)
-    }
-
-    /// The exclusive hold on the database at `path`, for a change to the file itself. It doesn't wait: `None` when any
-    /// other process or connection holds the file, which then can't be changed.
-    pub fn exclusive(path: &Path) -> io::Result<Option<Live>> {
-        let file = open_live(path)?;
-        match file.try_lock() {
-            Ok(()) => Ok(Some(Live { _held: file })),
-            Err(TryLockError::WouldBlock) => Ok(None),
-            Err(TryLockError::Error(e)) => Err(e),
-        }
-    }
-}
-
-/// The `.live` file beside the database at `path`, made if it isn't there.
-fn open_live(path: &Path) -> io::Result<File> {
-    OpenOptions::new().create(true).write(true).truncate(false).open(beside(path, ".live"))
-}
-
-/// A database file's parts, the sidecars first: a `-wal` left beside a main file that moved would be replayed into
-/// whatever takes the name next.
-const PARTS: [&str; 4] = ["-wal", "-shm", "-journal", ""];
-
-/// Move the database at `path`, with its `-wal`, `-shm` and `-journal` files, aside to the first free name beside it:
-/// `<name><mark>`, then `<name><mark>.1`, and so on (a catalog that is replaced, `.replaced`; a thumbnail cache that is
-/// damaged, `.bad`). Returns the main file's new path. Nothing is deleted and nothing is overwritten: the user removes
-/// the moved files when they are no longer wanted. The sidecars move first, so the main file is never left at `path`
-/// without the changes its sidecars held. The parts share one name, so they are found free together; no connection to
-/// the database may be open, and the caller holds its [`Lock`] (and its exclusive [`Live`]), so no other process of
-/// ours takes a name between the check and the move. Each move never replaces a file all the same
-/// (`pg_platform::file::rename_no_replace`): one another program made in between fails the move, and is kept.
-pub fn move_aside(path: &Path, mark: &str) -> io::Result<PathBuf> {
-    let mut n = 0u32;
-    let base = loop {
-        let base = if n == 0 { mark.to_string() } else { format!("{mark}.{n}") };
-        if PARTS.iter().all(|part| !beside(path, &format!("{base}{part}")).exists()) {
-            break base;
-        }
-        n += 1;
-    };
-    for part in PARTS {
-        let from = beside(path, part);
-        if from.exists() {
-            let to = beside(path, &format!("{base}{part}"));
-            rename_no_replace(&from, &to)
-                .map_err(|e| io::Error::new(e.kind(), format!("can't move {} aside: {e}", from.display())))?;
-        }
-    }
-    Ok(beside(path, &base))
 }
 
 /// `sql` with what does not change its meaning taken out: comments and whitespace are dropped, unquoted words are
@@ -409,7 +296,7 @@ mod tests {
 
     #[test]
     fn a_file_that_is_not_a_database_is_an_error_to_read() {
-        let dir = std::env::temp_dir().join(format!("pg-schema-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("pg-dbfile-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("not-a-db.sqlite");
         std::fs::write(&path, vec![b'x'; 8192]).unwrap();
@@ -417,25 +304,6 @@ mod tests {
         let err = Schema::read(&conn, &[]).unwrap_err();
         assert_eq!(err.sqlite_error_code(), Some(rusqlite::ErrorCode::NotADatabase));
         drop(conn);
-        std::fs::remove_dir_all(&dir).unwrap();
-    }
-
-    /// The main file and its sidecars move together to the first free name, and nothing already there is overwritten.
-    #[test]
-    fn moving_aside_takes_the_sidecars_and_never_overwrites() {
-        let dir = std::env::temp_dir().join(format!("pg-schema-aside-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("db.sqlite");
-        std::fs::write(&path, b"first").unwrap();
-        std::fs::write(dir.join("db.sqlite-wal"), b"first wal").unwrap();
-        std::fs::write(dir.join("db.sqlite.bad-shm"), b"in the way").unwrap();
-        // `.bad` is taken (one of its parts is there), so `.bad.1` is the first free name.
-        let kept = move_aside(&path, ".bad").unwrap();
-        assert_eq!(kept, dir.join("db.sqlite.bad.1"));
-        assert_eq!(std::fs::read(&kept).unwrap(), b"first");
-        assert_eq!(std::fs::read(dir.join("db.sqlite.bad.1-wal")).unwrap(), b"first wal");
-        assert_eq!(std::fs::read(dir.join("db.sqlite.bad-shm")).unwrap(), b"in the way");
-        assert!(!path.exists() && !dir.join("db.sqlite-wal").exists());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 }

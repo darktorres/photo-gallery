@@ -74,7 +74,7 @@ pub struct Root {
 pub struct Rebuilt {
     /// Where the old catalog is now (beside the new one, with its `-wal`, `-shm` and `-journal` moved with it).
     pub kept: PathBuf,
-    /// The first difference from this build's schema, as [`pg_schema::Difference`] words it.
+    /// The first difference from this build's schema, as [`pg_dbfile::Difference`] words it.
     pub why: String,
     /// What the new catalog took from the old one (with their ids).
     pub carried: Carried,

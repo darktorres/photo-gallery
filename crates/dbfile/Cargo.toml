@@ -1,0 +1,16 @@
+[package]
+name = "pg-dbfile"
+edition.workspace = true
+version.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+# A SQLite database file's lifecycle, which the catalog and the thumbnail cache share: its shape compared with the shape
+# a build creates (by what the file defines rather than by its names or a version number), the judgement of what a file
+# is before anything is written to it, the lock that orders the processes changing its layout and the holds on an open
+# file, and its move aside and deletion with its sidecars, whose renames never replace a file (`pg-platform`).
+[dependencies]
+pg-platform = { path = "../platform" }
+rusqlite.workspace = true

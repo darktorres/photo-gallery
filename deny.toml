@@ -63,9 +63,9 @@ deny = [
     { crate = "zune-core", wrappers = ["pg-codec", "image", "zune-jpeg"] },
     # pdqhash is the reference PDQ, for pg-analysis's tests only (and it brings its own image 0.23).
     { crate = "pdqhash", wrappers = ["pg-analysis"] },
-    # SQLite is pg-catalog's and the thumbnail cache's, pg-schema's (the shared schema check), and pg-bench's (the catalog
+    # SQLite is pg-catalog's and the thumbnail cache's, pg-dbfile's (the shared schema check), and pg-bench's (the catalog
     # benches).
-    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-schema", "pg-thumbcache", "pg-bench"] },
+    { crate = "rusqlite", wrappers = ["pg-catalog", "pg-query", "pg-dbfile", "pg-thumbcache", "pg-bench"] },
     # ureq (the HTTP client) is pg-yandex's alone: the search and the downloads.
     { crate = "ureq", wrappers = ["pg-yandex"] },
 ]

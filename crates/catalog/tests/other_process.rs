@@ -41,7 +41,7 @@ fn holder() {
     let Some(path) = std::env::var_os("PG_CATALOG_HOLDER") else { return };
     let path = Path::new(&path);
     let _hold: Box<dyn std::any::Any> = if std::env::var("PG_CATALOG_MODE").unwrap() == "exclusive" {
-        Box::new(pg_schema::Live::exclusive(path).unwrap().expect("the holder gets the rebuild's hold"))
+        Box::new(pg_dbfile::Live::exclusive(path).unwrap().expect("the holder gets the rebuild's hold"))
     } else {
         Box::new(Catalog::open(path, pg_platform::native::PATH_RULES).expect("the holder opens the catalog"))
     };

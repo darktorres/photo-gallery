@@ -16,7 +16,7 @@ use pg_model::rules::{Path as RulePath, PathRules};
 use crate::Catalog;
 use crate::error::Result;
 use crate::ledger;
-use crate::schema::write_transaction;
+use crate::core::write_transaction;
 
 /// The most rows the inbox keeps that aren't dismissed ([`prune`]): past it, the oldest go, read ones first.
 pub const KEPT_ROWS: i64 = 1000;

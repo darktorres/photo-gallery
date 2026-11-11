@@ -85,7 +85,7 @@ pub fn rating_in_file_possible(kind: Kind, format: Option<Format>) -> bool {
 /// clearing writes 0 only into a file that holds a rating.
 pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, write_back: bool) -> Result<()> {
     let conn = &catalog.conn;
-    let tx = crate::schema::write_transaction(conn)?;
+    let tx = crate::core::write_transaction(conn)?;
     let file_id = file_id.get();
     match rating {
         Some(rating) => tx.execute(
@@ -146,7 +146,7 @@ pub fn set_rating(catalog: &Catalog, file_id: FileId, rating: Option<Rating>, wr
 /// it can and keeps the turn in the catalog otherwise. Turns add up until written.
 pub fn queue_rotation(catalog: &Catalog, file_id: FileId, turns: Turns) -> Result<()> {
     let conn = &catalog.conn;
-    let tx = crate::schema::write_transaction(conn)?;
+    let tx = crate::core::write_transaction(conn)?;
     let (file_id, turns) = (file_id.get(), turns.get());
     tx.execute(
         concat!(
@@ -273,7 +273,7 @@ pub fn done(catalog: &Catalog, job: &Job, effect: WriteEffect) -> Result<()> {
     let (file_id, kind) = (job.file_id.get(), job.kind().key());
     // What the queue records as written: the job's rating, or its turns.
     let written = job.write.stored();
-    let tx = crate::schema::write_transaction(conn)?;
+    let tx = crate::core::write_transaction(conn)?;
     match effect {
         WriteEffect::FileRating { rewrite, rating } => {
             file_rewritten(&tx, job.file_id, rewrite)?;

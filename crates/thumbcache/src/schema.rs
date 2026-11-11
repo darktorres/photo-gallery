@@ -2,12 +2,11 @@
 //! (kept, started over, or moved aside as damaged), and the writer's connection to it.
 
 use std::path::{Path, PathBuf};
-use std::sync::OnceLock;
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
 use pg_platform::sqlite::sqlite_path;
-use pg_schema::Schema;
+use pg_dbfile::{Damage, Expected, Schema};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
 use crate::config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, cache_version, default_cap_bytes};
@@ -107,37 +106,36 @@ enum Found {
     Foreign { why: String },
 }
 
-/// Why `e` says the file is damaged, if its code is one of SQLite's for that: not a database at all
-/// (`NotADatabase`), or a database whose pages don't hold together (`DatabaseCorrupt`). Any other failure (busy, no
-/// permission, a full disk) is not the file's fault, and stays an error.
+/// Why a damaged file is started over (`pg_dbfile::Damage`): the reason, and its account.
+fn why_damaged(damage: Damage) -> Why {
+    let reason = match damage {
+        Damage::NotADatabase => StartOverReason::NotADatabase,
+        Damage::Corrupt(_) => StartOverReason::Damaged,
+    };
+    Why { reason, detail: damage.to_string() }
+}
+
+/// Why `e` says the file is damaged (`Damage::of`); any other failure stays an error.
 fn damage(e: &rusqlite::Error) -> Option<Why> {
-    match e.sqlite_error_code() {
-        Some(rusqlite::ErrorCode::NotADatabase) => {
-            Some(Why { reason: StartOverReason::NotADatabase, detail: "it is not a database".to_string() })
-        }
-        Some(rusqlite::ErrorCode::DatabaseCorrupt) => {
-            Some(Why { reason: StartOverReason::Damaged, detail: format!("it is damaged ({e})") })
-        }
-        _ => None,
-    }
+    Damage::of(e).map(why_damaged)
 }
 
 /// [`damage`] for the first SQLite error in `e`'s chain.
 fn damage_in(e: &anyhow::Error) -> Option<Why> {
-    e.chain().filter_map(|cause| cause.downcast_ref::<rusqlite::Error>()).find_map(damage)
+    Damage::in_chain(e.as_ref()).map(why_damaged)
 }
 
-/// The cache's schema as this build makes it, for the comparison in [`judge`]. Made in memory, once per process: the
-/// catalog's id is not part of the schema (only the keys of its rows are compared, so any id will do here).
+/// The cache's layout as the expectation makes it: the catalog's id is not part of the schema (only the keys of its
+/// rows are compared, so any id will do here).
+fn expected_layout(conn: &Connection) -> rusqlite::Result<()> {
+    make_layout(conn, "", MAX_DEFAULT_CAP_BYTES)
+}
+
+/// The cache's schema as this build makes it, for the comparison in [`judge`]: made in memory, once per process.
+static EXPECTED: Expected = Expected::new(expected_layout, SEEDS);
+
 fn expected() -> Result<&'static Schema> {
-    static EXPECTED: OnceLock<Schema> = OnceLock::new();
-    if let Some(schema) = EXPECTED.get() {
-        return Ok(schema);
-    }
-    let conn = Connection::open_in_memory()?;
-    make_layout(&conn, "", MAX_DEFAULT_CAP_BYTES)?;
-    let schema = Schema::read(&conn, SEEDS)?;
-    Ok(EXPECTED.get_or_init(|| schema))
+    Ok(EXPECTED.schema()?)
 }
 
 /// Make the cache's layout in `conn`, an empty database: its tables ([`SCHEMA`]), its application id, the cap row and the
@@ -174,7 +172,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
     if schema.is_empty() {
         return Ok(Found::New);
     }
-    let id = pg_schema::application_id(conn)?;
+    let id = pg_dbfile::application_id(conn)?;
     // A cache of an earlier build has no application id, but it has the two tables every cache has.
     let ours = id == APPLICATION_ID || (id == 0 && schema.has_table("entries") && schema.has_table("limits"));
     if !ours {
@@ -190,7 +188,7 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
     } else {
         conn.query_row("SELECT cap FROM limits", [], |r| r.get::<_, i64>(0)).optional()?
     };
-    let version = pg_schema::user_version(conn)?;
+    let version = pg_dbfile::user_version(conn)?;
     let auto_vacuum: i64 = conn.query_row("PRAGMA auto_vacuum", [], |r| r.get(0))?;
     // The owner is read last: an earlier layout may have no `meta` table at all.
     let other_build = |detail: String| Some(Why { reason: StartOverReason::OtherBuild, detail });
@@ -216,12 +214,12 @@ fn read_found(conn: &Connection, catalog_id: &str, expected: &Schema) -> rusqlit
 
 /// What [`open_writer`] gives the cache: the writer's connection, why the file was started over and the path of
 /// [`Event::StartedOver`](crate::Event::StartedOver) (`None`: it was kept, or it is new), what the day's check of the totals fixed
-/// (`heal_if_due`), and the shared hold on the file (`pg_schema::Live`), kept for as long as the connection is.
+/// (`heal_if_due`), and the shared hold on the file (`pg_dbfile::Live`), kept for as long as the connection is.
 pub(crate) struct Writing {
     pub(crate) conn: Connection,
     pub(crate) started_over: Option<(Why, PathBuf)>,
     pub(crate) drift: Option<Drift>,
-    pub(crate) live: pg_schema::Live,
+    pub(crate) live: pg_dbfile::Live,
 }
 
 /// One try at the file ([`open_once`]): opened, or found damaged (the reason), with nothing of it held.
@@ -235,7 +233,7 @@ enum Attempt {
 /// that needs the exclusive hold, so no other program or connection has the file open (a start over is refused
 /// otherwise, and nothing is deleted). A file that is not a database, or one SQLite finds damaged when it is judged,
 /// opened or has its totals checked (`heal_if_due`), is moved aside to `<name>.bad` with its sidecars
-/// (`pg_schema::move_aside`, which overwrites nothing) and made anew once; it holds derived data only. A database
+/// (`pg_dbfile::move_aside`, which overwrites nothing) and made anew once; it holds derived data only. A database
 /// that is not a thumbnail cache is refused and left alone, and any other failure (busy, no permission, a full disk)
 /// stays an error. The lock beside the file is held while it is judged, checked and changed, so another process
 /// opening it finds the result.
@@ -245,7 +243,7 @@ pub(crate) fn open_writer(
     cap_bytes: Option<i64>,
     thumbs_version: i64,
 ) -> Result<Writing> {
-    let _lock = pg_schema::Lock::take(path)
+    let _lock = pg_dbfile::Lock::take(path)
         .with_context(|| format!("{}: its lock file", path.display()))?
         .ok_or_else(|| anyhow!("{}: another process is changing it", path.display()))?;
     let why = match open_once(path, catalog_id, cap_bytes, thumbs_version)? {
@@ -277,7 +275,7 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_versi
     // Taken before anything is removed, and kept until the new file is made: the exclusive hold says nothing else has
     // the file open. Without it, the file is not touched.
     let exclusive = if why.is_some() {
-        let held = pg_schema::Live::exclusive(path)
+        let held = pg_dbfile::Live::exclusive(path)
             .with_context(|| format!("{}: its open marker", path.display()))?
             .ok_or_else(|| {
                 anyhow!(
@@ -291,22 +289,14 @@ fn open_once(path: &Path, catalog_id: &str, cap_bytes: Option<i64>, thumbs_versi
         None
     };
     if why.is_some() {
-        // Sidecars first: a `-wal` left beside a new file would be replayed into it.
-        for suffix in ["-wal", "-shm", "-journal", ""] {
-            // The sidecar's name is the file's own units with the suffix (not its display form, which is lossy).
-            let mut name = path.as_os_str().to_owned();
-            name.push(suffix);
-            let file = PathBuf::from(name);
-            match std::fs::remove_file(&file) {
-                Ok(()) => {}
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                Err(e) => bail!(
-                    "{}: made for another catalog or layout, and can't be started over while another program has it \
-                     open: {e}",
-                    file.display()
-                ),
-            }
-        }
+        // With its sidecars, the sidecars first: a `-wal` left beside a new file would be replayed into it.
+        pg_dbfile::remove_database(path).map_err(|e| {
+            anyhow!(
+                "{}: made for another catalog or layout, and can't be started over while another program has it open: \
+                 {e}",
+                path.display()
+            )
+        })?;
     }
     let (conn, drift) = match ready(path, catalog_id, cap_bytes.or(cap), thumbs_version, !usable) {
         Ok(ready) => ready,
@@ -371,15 +361,15 @@ fn set_thumbs_version(conn: &mut Connection, current: i64) -> Result<()> {
 /// Only with the exclusive hold, so no other program or connection has it open; refused otherwise, with nothing moved.
 fn move_damaged(path: &Path, why: &str) -> Result<PathBuf> {
     let _exclusive =
-        pg_schema::Live::exclusive(path).with_context(|| format!("{}: its open marker", path.display()))?.ok_or_else(
+        pg_dbfile::Live::exclusive(path).with_context(|| format!("{}: its open marker", path.display()))?.ok_or_else(
             || anyhow!("{}: {why}, and can't be moved aside while another program has it open", path.display()),
         )?;
-    pg_schema::move_aside(path, ".bad").with_context(|| format!("{}: {why}, and can't be moved aside", path.display()))
+    pg_dbfile::move_aside(path, ".bad").with_context(|| format!("{}: {why}, and can't be moved aside", path.display()))
 }
 
-/// The shared hold a cache keeps while it is open (`pg_schema::Live`): it waits for a start over in progress to finish.
-pub(crate) fn hold_shared(path: &Path) -> Result<pg_schema::Live> {
-    pg_schema::Live::shared(path)
+/// The shared hold a cache keeps while it is open (`pg_dbfile::Live`): it waits for a start over in progress to finish.
+pub(crate) fn hold_shared(path: &Path) -> Result<pg_dbfile::Live> {
+    pg_dbfile::Live::shared(path)
         .with_context(|| format!("{}: its open marker", path.display()))?
         .ok_or_else(|| anyhow!("{}: another process is starting it over", path.display()))
 }

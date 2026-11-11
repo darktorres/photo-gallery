@@ -1,23 +1,14 @@
 //! The read side of browsing (PLAN §7): the folder tree (merged across drives), the files of a node filtered and
-//! sorted, what the viewer and the thumbnails need of one file, and the views and the session as they were saved.
-//! Nothing here writes; the commands are in [`super::writes`].
+//! sorted, and what the viewer and the thumbnails need of one file, each a method of `Catalog` in its module. Nothing
+//! here writes; the saved views and the session are `browse::views`'.
 
 mod changes;
 mod details;
-mod facets;
-mod grid;
+pub mod facets;
+pub(crate) mod grid;
 mod scope;
 mod state;
 mod tree;
-mod views;
-
-pub use changes::*;
-pub use details::*;
-pub use facets::*;
-pub use grid::*;
-pub use state::*;
-pub use tree::*;
-pub use views::*;
 
 #[cfg(test)]
 mod tests;

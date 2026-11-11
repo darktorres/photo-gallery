@@ -6,9 +6,8 @@ use pg_model::ids::{FileId, FolderId};
 use pg_model::rating::Rating;
 use pg_model::rules::PathRules;
 
-use crate::browse::read::{FILE_JOINS, list_grid};
+use crate::browse::read::grid::FILE_JOINS;
 use crate::fixture::{self, raw};
-use crate::writes::set_rating;
 use pg_model::query::{Query, Sort, SortKey};
 use pg_query::key_sql;
 
@@ -80,7 +79,7 @@ pub(crate) fn library(rules: PathRules) -> crate::Catalog {
             ..raw::AnalysisRow::image(id, size, mtime)
         };
         raw::insert_analysis(&c, &row);
-        set_rating(&c, FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
+        c.set_rating(FileId::new(id), Rating::new(rating).filter(|r| r.get() > 0), false).unwrap();
     }
     c
 }

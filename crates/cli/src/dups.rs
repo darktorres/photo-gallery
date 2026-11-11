@@ -72,19 +72,19 @@ pub(crate) fn report(catalog: &Catalog, group_distance: u32, show: usize) -> Res
 fn find(catalog: &Catalog, group_distance: u32) -> Result<Found> {
     let mut identical = Vec::with_capacity(IDENTITIES.len());
     for by in IDENTITIES {
-        let (groups, files) = dups::identical_groups(catalog, by)?;
+        let (groups, files) = catalog.identical_groups(by)?;
         identical.push((by, groups, files));
     }
-    let counts = dups::pdq_pairs_in_bands(catalog, &PDQ_BANDS)?;
+    let counts = catalog.pdq_pairs_in_bands(&PDQ_BANDS)?;
     let pdq_bands = PDQ_BANDS.iter().zip(counts).map(|(&(lo, hi), pairs)| (lo, hi, pairs)).collect();
 
     let mut uf = UnionFind::default();
     for by in IDENTITIES {
-        for (a, b) in dups::identical_edges(catalog, by)? {
+        for (a, b) in catalog.identical_edges(by)? {
             uf.union(a, b);
         }
     }
-    for (a, b) in dups::pdq_edges(catalog, group_distance)? {
+    for (a, b) in catalog.pdq_edges(group_distance)? {
         uf.union(a, b);
     }
     // Members in id order; groups by size, then by their smallest id: the first member of each group seen.

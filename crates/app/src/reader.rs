@@ -20,7 +20,7 @@ use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
 use pg_catalog::browse;
-use pg_catalog::browse::read::Facets;
+use pg_catalog::browse::read::facets::Facets;
 use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
@@ -206,7 +206,7 @@ impl Session {
 
     /// The folder tree, merged across drives (its kind's newest request, as with `submit`).
     pub fn tree(&self, deliver: impl FnOnce(Result<FolderTree>) + Send + 'static) {
-        self.submit(Kind::Tree, browse::read::folder_tree, move |r| deliver(r.map_err(Error::from)));
+        self.submit(Kind::Tree, pg_catalog::Catalog::folder_tree, move |r| deliver(r.map_err(Error::from)));
     }
 
     /// The files of `folder` (merged). The empty folder is every file with `recursive`, else the drive roots' own
@@ -221,7 +221,7 @@ impl Session {
     ) {
         self.submit(
             Kind::Grid,
-            move |c| browse::read::list_grid(c, &folder, recursive, &query, sort),
+            move |c| c.list_grid(&folder, recursive, &query, sort),
             move |r| deliver(r.map_err(Error::from)),
         );
     }
@@ -236,7 +236,7 @@ impl Session {
     ) {
         self.submit(
             Kind::Facets,
-            move |c| browse::read::facets(c, &folder, recursive, &query),
+            move |c| c.facets(&folder, recursive, &query),
             move |r| deliver(r.map_err(Error::from)),
         );
     }
@@ -270,11 +270,11 @@ impl Reading {
 
     /// A file's details, read now; `None` when the file is gone from the catalog.
     pub fn details(&self, file_id: FileId) -> Result<Option<Details>> {
-        self.catalogs.with_catalog(|c| browse::read::details(c, file_id))
+        self.catalogs.with_catalog(|c| c.details(file_id))
     }
 
     /// A file's grid entry as the catalog has it now; `None` when it is gone.
     pub fn entry(&self, file_id: FileId) -> Result<Option<Entry>> {
-        self.catalogs.with_catalog(|c| browse::read::entry(c, file_id))
+        self.catalogs.with_catalog(|c| c.grid_entry(file_id))
     }
 }

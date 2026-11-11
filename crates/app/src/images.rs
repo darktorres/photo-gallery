@@ -148,7 +148,7 @@ impl Images {
             let src = self.source(file_id)?;
             if !src.state.writing {
                 let result = read(&src);
-                if self.catalogs.with_catalog(|c| browse::read::file_state(c, file_id))? == Some(src.state) {
+                if self.catalogs.with_catalog(|c| c.file_state(file_id))? == Some(src.state) {
                     return result.map(|r| (src, r));
                 }
             }
@@ -160,7 +160,7 @@ impl Images {
     }
 
     fn source(&self, file_id: FileId) -> Result<FileSource> {
-        self.catalogs.with_catalog(|c| browse::read::file_source(c, file_id))?.ok_or(Error::UnknownFile(file_id))
+        self.catalogs.with_catalog(|c| c.file_source(file_id))?.ok_or(Error::UnknownFile(file_id))
     }
 
     /// A JPEG thumbnail `height` px high, and the quarter turns clockwise to show it turned by. When the cache keeps one at
@@ -268,7 +268,7 @@ impl Images {
     pub fn placeholder(&self, file_id: FileId) -> Result<Rgba> {
         let p = self
             .catalogs
-            .with_catalog(|c| browse::read::placeholder(c, file_id))?
+            .with_catalog(|c| c.placeholder(file_id))?
             .ok_or(Error::UnknownFile(file_id))?;
         let hash = p.hash.ok_or(Error::NotImported)?;
         display::placeholder(hash.as_slice(), p.turns).map_err(failed)
@@ -370,7 +370,7 @@ mod tests {
         loop {
             let held: Vec<FileId> = app
                 .catalogs()
-                .with_catalog(|c| pg_catalog::ledger::recorded(c, pg_model::notice::FilePass::Thumbs))
+                .with_catalog(|c| c.recorded_failures(pg_model::notice::FilePass::Thumbs))
                 .unwrap()
                 .into_iter()
                 .collect();

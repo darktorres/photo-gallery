@@ -23,11 +23,14 @@ pub mod fixture;
 pub mod inbox;
 pub mod ledger;
 pub mod pair;
-pub mod writes;
+pub mod queue;
 
+mod borders;
 mod core;
 mod lifecycle;
+mod lookup;
 mod rebuild;
+mod roots;
 mod types;
 mod work;
 mod writers;

@@ -56,6 +56,14 @@ pub fn can_hold_rating(format: Format) -> bool {
     !matches!(format, Format::Bmp)
 }
 
+/// Whether a file of `kind` and analyzed `format` (`None` when it isn't analyzed yet) may hold a rating of its own: an
+/// image (a video keeps its rating in the catalog, as rewriting it would copy GBs), whose format can hold one
+/// ([`can_hold_rating`]) or isn't known yet. The writer decides for an unknown format once it has read the file
+/// (`pg_writeback`).
+pub fn rating_in_file_possible(kind: crate::media::Kind, format: Option<Format>) -> bool {
+    kind == crate::media::Kind::Image && format.is_none_or(can_hold_rating)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

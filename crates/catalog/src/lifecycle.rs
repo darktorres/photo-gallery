@@ -415,11 +415,11 @@ mod tests {
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         let r = c.rebuilt().expect("moved aside");
         assert_eq!(r.carried, Carried::Rows { files: 0, folders: 0 });
-        let saved = crate::browse::read::views(&c).unwrap();
+        let saved = c.views().unwrap();
         assert_eq!(saved.len(), 1);
         let folder = pg_model::rules::Merged::from(vec![Name::from("pinterest"), Name::from("a")]);
         assert_eq!(saved[0].listing.folder, folder);
-        let session = crate::browse::read::session_listing(&c).unwrap().expect("carried");
+        let session = c.session_listing().unwrap().expect("carried");
         assert_eq!((session.folder, session.recursive), (folder, false));
         drop(c);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -456,7 +456,7 @@ mod tests {
         drop(old);
         let c = Catalog::prepare(&path, versions(), PathRules::Windows).unwrap();
         assert!(c.rebuilt().is_some(), "moved aside");
-        let job = crate::writes::next_ready(&c, 0).unwrap().expect("the queued copy");
+        let job = c.next_write(0).unwrap().expect("the queued copy");
         let temp = PathRules::Windows.parse(r"D:\p\.a.jpg.pg-write").unwrap();
         assert_eq!(job.temp, Some((temp, 3)));
         drop(c);
@@ -803,7 +803,6 @@ mod tests {
     /// A file whose extension this build doesn't hold (a build that held more recorded it) is marked missing when the
     /// catalog is prepared, so the grid lists the rest, and every count leaves it out.
     fn a_file_of_an_extension_not_held_is_missing_after_prepare(rules: PathRules) {
-        use crate::browse::read::{facets, folder_tree, list_grid};
         use pg_model::query::{Query, Sort};
 
         let dir = test_folder(SCRATCH, &format!("unheld-ext-{}", rules_name(rules))).unwrap();
@@ -834,11 +833,11 @@ mod tests {
         let missing: i64 = c.conn.query_row("SELECT missing FROM files WHERE ext = 'xyz'", [], |r| r.get(0)).unwrap();
         assert_eq!(missing, 1);
         let all = pg_model::rules::Merged::default();
-        assert_eq!(list_grid(&c, &all, true, &Query::default(), Sort::default()).unwrap().len(), 1);
+        assert_eq!(c.list_grid(&all, true, &Query::default(), Sort::default()).unwrap().len(), 1);
         let status = c.status().unwrap();
         assert_eq!((status.files, status.missing), (1, 1));
-        assert_eq!(folder_tree(&c).unwrap().total(), 1);
-        let counts = facets(&c, &all, true, &Query::default()).unwrap();
+        assert_eq!(c.folder_tree().unwrap().total(), 1);
+        let counts = c.facets(&all, true, &Query::default()).unwrap();
         assert_eq!(counts.total, 1);
         assert!(counts.exts.iter().all(|(ext, _)| ext != "xyz"), "{:?}", counts.exts);
         drop(c);

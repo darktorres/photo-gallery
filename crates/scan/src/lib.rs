@@ -13,7 +13,7 @@
 //! [`RulePath`] that the walk extends by its names, and a folder is opened by its units. Nothing is decoded lossily.
 //!
 //! Identity and pairing (S-17.7): a file is recorded by its volume and file ID; a file the catalog has no row for is
-//! paired at the end of the scan (`pg_catalog::pair::after_scan`), which is what makes a renumbered volume or a file moved
+//! paired at the end of the scan (`pg_catalog::Catalog::pair_after_scan`), which is what makes a renumbered volume or a file moved
 //! while the app was closed keep its ratings.
 
 use std::collections::{BTreeMap, BTreeSet};
@@ -428,7 +428,7 @@ fn walk<L: Listing>(catalog: &mut Catalog, root: &RulePath, ctl: &Control, liste
     tx.commit()?;
     // The pairing needs the tree looked through for tiers 2 and replacement, so it runs them only on a complete walk,
     // and outside the folders it skipped.
-    let pairing = pair::after_scan(catalog, root, scan_id, Coverage { complete, skipped: &skipped })?;
+    let pairing = catalog.pair_after_scan(root, scan_id, Coverage { complete, skipped: &skipped })?;
     stats.rebound = pairing.rebound;
     stats.replaced = pairing.replaced;
     stats.ambiguous = pairing.ambiguous;
@@ -688,7 +688,6 @@ mod tests {
     /// after a letter (`ΟΔΥΣΣΕΥΣ`, whose final sigma lowercases differently from a whole-word fold) lists its files,
     /// alone and with its subfolders, under both rules.
     fn scanned_folders_list_their_files_in_the_grid(rules: PathRules) {
-        use pg_catalog::browse::read::{details, list_grid};
         use pg_model::query::{Query, Sort};
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
@@ -702,10 +701,10 @@ mod tests {
         assert_eq!((stats.files, stats.errors), (3, 0));
         let names = |rel: &str, recursive: bool| -> Vec<String> {
             let folder = rules.merge(&rules.parse(&fake_path(rules, rel)).unwrap());
-            let entries = list_grid(&c, &folder, recursive, &Query::default(), Sort::default()).unwrap();
+            let entries = c.list_grid(&folder, recursive, &Query::default(), Sort::default()).unwrap();
             entries
                 .iter()
-                .filter_map(|e| details(&c, e.id).unwrap()?.path.parts.last().map(|n| n.display().into_owned()))
+                .filter_map(|e| c.details(e.id).unwrap()?.path.parts.last().map(|n| n.display().into_owned()))
                 .collect()
         };
         assert_eq!(names("ΑΣ", false), ["a.jpg"]);

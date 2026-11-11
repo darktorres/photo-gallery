@@ -149,7 +149,7 @@ impl Inbox {
         }
     }
 
-    /// The kept notices of `scope` are now `notices` (`pg_catalog::inbox::replace`).
+    /// The kept notices of `scope` are now `notices` (`pg_catalog::Catalog::replace_notices`).
     pub fn replace(&self, scope: KeyBuf, notices: Vec<Notice>) {
         if notices.is_empty() {
             self.clear(scope);
@@ -204,7 +204,7 @@ impl Inbox {
         self.listing().entries.iter().map(|e| e.id).filter(|id| matches!(id, EntryId::Ledger { .. })).collect()
     }
 
-    /// Try `pass`'s failed files again (`pg_catalog::ledger::retry`); `then` runs once that is written (the job is woken
+    /// Try `pass`'s failed files again (`pg_catalog::Catalog::retry_failures`); `then` runs once that is written (the job is woken
     /// to make them).
     pub fn retry(&self, pass: FilePass, then: Box<dyn FnOnce() + Send>) {
         self.send(Command::Retry(pass, then));
@@ -317,7 +317,7 @@ impl Writer {
                 return;
             }
         };
-        if let Err(e) = inbox::prune(&catalog, now()) {
+        if let Err(e) = catalog.prune_inbox(now()) {
             pg_log::warn("inbox", &format!("the inbox couldn't be pruned: {e:#}"));
         }
         // What the inbox held when the app started is not news: it is listed, not toasted.
@@ -346,7 +346,7 @@ impl Writer {
             if !failed {
                 let lost = self.lost.swap(0, Ordering::Relaxed);
                 if lost > 0 {
-                    match inbox::post(&catalog, &Notice::NoticesLost { count: lost }, now()) {
+                    match catalog.post_notice(&Notice::NoticesLost { count: lost }, now()) {
                         Ok(_) => wrote = true,
                         Err(_) => {
                             self.lost.fetch_add(lost, Ordering::Relaxed);
@@ -366,7 +366,7 @@ impl Writer {
     /// Read the inbox and publish what it lists; with `toast`, each entry that is news is toasted. `seen` is what the last
     /// read found.
     fn refresh(&self, catalog: &Catalog, seen: &mut BTreeMap<EntryId, Mark>, toast: bool) {
-        let read = inbox::marks(catalog).and_then(|marks| Ok((marks, inbox::entries(catalog, LISTED)?)));
+        let read = catalog.inbox_marks().and_then(|marks| Ok((marks, catalog.inbox_entries(LISTED)?)));
         let (marks, entries) = match read {
             Ok(read) => read,
             Err(e) => {
@@ -382,7 +382,7 @@ impl Writer {
             .collect();
         let unread = u64::try_from(marks.iter().filter(|m| !m.read).count()).unwrap_or(u64::MAX);
         *seen = marks.into_iter().map(|m| (m.id.entry(), m)).collect();
-        match ledger::any(catalog, FilePass::Thumbs) {
+        match catalog.any_failures(FilePass::Thumbs) {
             Ok(any) => self.thumb_failures.store(any, Ordering::Relaxed),
             Err(e) => pg_log::warn("inbox", &format!("the thumbnails' ledger couldn't be read: {e:#}")),
         }
@@ -410,19 +410,19 @@ impl Writer {
 fn apply(catalog: &Catalog, command: Command) -> pg_catalog::Result<bool> {
     let now = now();
     match command {
-        Command::Post(notice, at) => inbox::post(catalog, &notice, at),
-        Command::Replace(scope, notices, at) => inbox::replace(catalog, &scope.key(), &notices, at).map(|()| true),
-        Command::MarkRead(ids) => inbox::mark_read(catalog, &ids, now).map(|()| true),
-        Command::MarkAllRead(ledgers) => inbox::mark_all_read(catalog, &ledgers, now).map(|()| true),
-        Command::Dismiss(id) => inbox::dismiss(catalog, id, now).map(|()| true),
-        Command::DismissAll(ledgers) => inbox::dismiss_all(catalog, &ledgers, now).map(|()| true),
+        Command::Post(notice, at) => catalog.post_notice(&notice, at),
+        Command::Replace(scope, notices, at) => catalog.replace_notices(&scope.key(), &notices, at).map(|()| true),
+        Command::MarkRead(ids) => catalog.mark_read(&ids, now).map(|()| true),
+        Command::MarkAllRead(ledgers) => catalog.mark_all_read(&ledgers, now).map(|()| true),
+        Command::Dismiss(id) => catalog.dismiss(id, now).map(|()| true),
+        Command::DismissAll(ledgers) => catalog.dismiss_all(&ledgers, now).map(|()| true),
         Command::Retry(pass, then) => {
-            ledger::retry(catalog, pass)?;
+            catalog.retry_failures(pass)?;
             then();
             Ok(true)
         }
-        Command::ThumbFailed(failure) => ledger::record(catalog, FilePass::Thumbs, &[failure], now).map(|()| true),
-        Command::ThumbMade(file) => ledger::clear(catalog, FilePass::Thumbs, &[file]).map(|()| true),
+        Command::ThumbFailed(failure) => catalog.record_failures(FilePass::Thumbs, &[failure], now).map(|()| true),
+        Command::ThumbMade(file) => catalog.clear_failures(FilePass::Thumbs, &[file]).map(|()| true),
         Command::Poke => Ok(false),
     }
 }
@@ -496,7 +496,7 @@ mod tests {
         let sub = inbox.subscribe();
         next(&sub);
         let other = Catalog::open(&pg_library::catalog_path(&dir), pg_platform::native::PATH_RULES).unwrap();
-        inbox::post(&other, &failed("elsewhere"), now()).unwrap();
+        other.post_notice(&failed("elsewhere"), now()).unwrap();
         inbox.poke();
         let (toasts, listing) = next(&sub);
         assert_eq!(toasts, [failed("elsewhere")]);

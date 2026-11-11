@@ -26,7 +26,7 @@ impl Edit {
     /// Set (or clear) a file's rating, and queue it for the file when write-back is on.
     pub fn rate(&self, file_id: FileId, rating: Option<Rating>) -> Result<()> {
         let write_back = self.prefs.get().write_back;
-        self.catalogs.with_catalog(|c| pg_catalog::writes::set_rating(c, file_id, rating, write_back))?;
+        self.catalogs.with_catalog(|c| c.set_rating(file_id, rating, write_back))?;
         self.library.wake_writer();
         Ok(())
     }

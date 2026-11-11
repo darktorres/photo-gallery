@@ -29,7 +29,7 @@ pub(crate) const MIGRATIONS: &[&str] = &[
     TO_7_WRITE_CHECKS,
 ];
 
-/// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
+/// Version 2: `files.changed` (`Catalog::changes_since`) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
 /// its sides (`Catalog::store_borders`); a pairing's replacement deletes them, and the analysis with them. `files.seq`
 /// is not touched: the thumbnails are not made from the borders.
@@ -135,7 +135,7 @@ const TO_4_FAILURES: &str = concat!(
 );
 
 /// Version 5: the session is a listing (`pg_model::view::Listing`) in one row, with the saved views' columns, which the
-/// views' row code reads and writes (`browse::read::listing_at`, `browse::writes::listing_values`). It was a store of
+/// views' row code reads and writes (`browse::views::listing_at`, `listing_values`). It was a store of
 /// text keys (`folder` as the JSON of the folder's parts, `recursive` as `true` or `false`, `query`, `sort`); the row is
 /// made from them once, here. A part of the folder is a JSON string, or `{"b": "<hex>"}` for one that is not UTF-8
 /// (`Name`'s JSON), and the parts are joined by the separator of the catalog's rules, as a view's folder is stored. A
@@ -418,7 +418,7 @@ CREATE INDEX files_present ON files(folder_id) WHERE missing = 0;
 CREATE INDEX files_to_import ON files(volume, file_ref & 0xFFFFFFFFFFFF) WHERE missing = 0 AND pending = 1;
 -- The files changed since the thumbnail pass last looked (thumbs::pending_in).
 CREATE INDEX files_seq ON files(seq);
--- The files changed since a change number (browse::read::changes_since).
+-- The files changed since a change number (crate::Catalog::changes_since).
 CREATE INDEX files_changed ON files(changed);
 CREATE TABLE analysis(
     file_id     INTEGER PRIMARY KEY REFERENCES files(id) ON DELETE CASCADE,
@@ -551,7 +551,7 @@ CREATE TABLE file_writes(
     temp_value INTEGER,
     PRIMARY KEY(file_id, kind)
 );
--- The writer's next job (writes::next_ready orders by these): the interrupted copies first, then the oldest, read off
+-- The writer's next job (crate::Catalog::next_write orders by these): the interrupted copies first, then the oldest, read off
 -- the index in order, without sorting the whole queue for each job.
 CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
 

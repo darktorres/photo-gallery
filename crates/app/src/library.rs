@@ -312,7 +312,7 @@ impl LibraryService {
 
     /// Turn `file_id` by `turns` quarter turns (clockwise, as the grid shows it) and queue the rotation for the file.
     pub fn turn(&self, file_id: FileId, turns: pg_model::turns::Turns) -> Result<()> {
-        self.catalogs.with_catalog(|c| pg_catalog::writes::queue_rotation(c, file_id, turns))?;
+        self.catalogs.with_catalog(|c| c.queue_rotation(file_id, turns))?;
         self.wake_writer();
         Ok(())
     }

@@ -1,5 +1,5 @@
 //! What the viewer's details panel and the border overlay show of one file: its path, size and borders, read when
-//! the file is shown (`pg_catalog::browse::read::details`).
+//! the file is shown (`pg_catalog::Catalog::details`).
 
 use crate::detection;
 use crate::rules;

@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
-use pg_catalog::browse::{self, read::Facets};
+use pg_catalog::browse::{self, read::facets::Facets};
 use pg_catalog::{Catalog, Versions, WorkItem};
 use pg_model::grid::Entry;
 use pg_model::path::WorkList;
@@ -102,7 +102,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
     #[expect(clippy::panic, reason = "a folder literal that does not parse is a bug in the bench")]
     let Some(parsed) = RULES.parse(folder) else { panic!("a folder path of the layout: {folder}") };
     let folder = RULES.merge(&parsed);
-    let entries = or_stop(browse::read::list_grid(&catalog, &folder, recursive, &query, sort), "the grid's list");
+    let entries = or_stop(catalog.list_grid(&folder, recursive, &query, sort), "the grid's list");
     (catalog, black_box(entries))
 }
 
@@ -110,7 +110,7 @@ fn list((catalog, which): (Catalog, List)) -> (Catalog, Vec<Entry>) {
 #[library_benchmark]
 #[bench::all(setup = open_catalog)]
 fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
-    let tree = or_stop(browse::read::folder_tree(&catalog), "the folder tree");
+    let tree = or_stop(catalog.folder_tree(), "the folder tree");
     (catalog, black_box(tree))
 }
 
@@ -119,7 +119,7 @@ fn tree(catalog: Catalog) -> (Catalog, FolderTree) {
 #[bench::all(setup = open_catalog)]
 fn facets(catalog: Catalog) -> (Catalog, Facets) {
     let facets = or_stop(
-        browse::read::facets(&catalog, &pg_model::rules::Merged::default(), true, &Query::default()),
+        catalog.facets(&pg_model::rules::Merged::default(), true, &Query::default()),
         "the facets",
     );
     (catalog, black_box(facets))

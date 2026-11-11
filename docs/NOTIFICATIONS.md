@@ -48,7 +48,7 @@ folder. At most 1000 rows are listed; dismissed rows go after 30 days.
 - A **state** is one row per key. Posted again it is counted and holds the latest; if it says something new (its data
   changed) it is unread again, even if it was dismissed, and if not it keeps its marks: a problem that holds is not news
   each time. Its producer clears it once the problem is gone (`inbox::clear`), or replaces the whole set of a kind and
-  folder (`inbox::replace`: a complete scan of a library folder posts what it found and clears the rest).
+  folder (`Catalog::replace_notices`: a complete scan of a library folder posts what it found and clears the rest).
 - A notice about a folder no longer in the library is not kept.
 
 Before a catalog of an earlier version is migrated, it is copied aside as `catalog.sqlite.pre-v<N>.bak` (once): the
@@ -114,7 +114,7 @@ In the window: the status bar's job line says "N failed" as a link while a pass 
 `Library.failedPass`); a click opens the inbox at that pass's entry. A ledger entry's details are its newest 200 files
 (`FailedFiles`, `src/failed_files.rs`), each with its path, error and Reveal: the file's folder is listed with nothing
 filtered, and the file selected once it is shown (or a toast says the library no longer has it). The thumbnails'
-entry has Retry (`ledger::retry`: the rows go, and the files are listed again by the next pass, which the job is woken
+entry has Retry (`Catalog::retry_failures`: the rows go, and the files are listed again by the next pass, which the job is woken
 for); the import's has "Show the failed files", which lists every file whose analysis failed (the `failed` status, in
 every folder). Copy puts the entry and its files on the clipboard.
 

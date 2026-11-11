@@ -65,7 +65,7 @@ pub trait NoticeSink: Send + Sync {
     /// Tell the user `notice`.
     fn post(&self, notice: Notice);
     /// The kept notices of `scope`'s kind and folder (and part, if it has one) are now `notices`: the others no longer
-    /// hold (`pg_catalog::inbox::replace`).
+    /// hold (`pg_catalog::Catalog::replace_notices`).
     fn replace(&self, scope: KeyBuf, notices: Vec<Notice>);
     /// The kept notices `key` names no longer hold (a key with no part names every part).
     fn clear(&self, key: KeyBuf) {

@@ -27,7 +27,7 @@ use std::time::Duration;
 use anyhow::{Context, Result, bail};
 use pg_analysis::analyze::file_hash;
 use pg_catalog::{Catalog, WriteTarget};
-use pg_catalog::writes::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
+use pg_catalog::queue::{self, Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
 use pg_jobs::events::{Bus, Watch};
@@ -244,7 +244,7 @@ impl Inner {
         let mut exiftool: Option<ExifTool> = None;
         // One connection for every drain; after a drain that failed, a new one.
         let mut catalog: Option<Catalog> = None;
-        // Whether the stuck copies were given their attempts back (`writes::retry_copies`), once per start.
+        // Whether the stuck copies were given their attempts back (`Catalog::retry_write_copies`), once per start.
         let mut retried = false;
         while waker.wait(Some(IDLE_CHECK)) != Woke::Quit {
             if let Err(e) = self.open_and_drain(waker, &mut catalog, &mut exiftool, &mut retried) {
@@ -269,7 +269,7 @@ impl Inner {
             None => Catalog::open(&self.catalog_path, pg_platform::native::PATH_RULES)?,
         };
         if !*retried {
-            writes::retry_copies(&c)?;
+            c.retry_write_copies()?;
             *retried = true;
         }
         self.drain(waker, &c, exiftool)?;
@@ -289,11 +289,11 @@ impl Inner {
             }
             #[cfg(any(test, feature = "fault"))]
             fault::in_drain(self.fault);
-            let queued = writes::remaining(catalog)?;
+            let queued = catalog.writes_remaining()?;
             self.update_status(|s| s.queued = queued);
-            // Finishing interrupted copies first; then the oldest settled change (`writes::next_ready`).
-            let Some(job) = writes::next_ready(catalog, SETTLE_SECS)? else {
-                if writes::attemptable(catalog)? {
+            // Finishing interrupted copies first; then the oldest settled change (`Catalog::next_write`).
+            let Some(job) = catalog.next_write(SETTLE_SECS)? else {
+                if catalog.writes_attemptable()? {
                     // Come back when the newest change has settled (or at once for a new one); a stop ends the wait.
                     if waker.wait(Some(Duration::from_secs(u64::try_from(SETTLE_SECS)?))) == Woke::Quit {
                         return Ok(());
@@ -313,7 +313,7 @@ impl Inner {
                         shown_file(catalog, &job),
                         catalog.rules().display(temp)
                     );
-                    writes::failed(catalog, &job, &message, true)?;
+                    catalog.write_failed(&job, &message, true)?;
                     self.update_status(|s| {
                         s.error = Some(WriteError::Failed(Cause::Error(message)));
                         s.error_file = Some(job.file_id);
@@ -321,7 +321,7 @@ impl Inner {
                     // Left for the next idle check, as an offline file is.
                     return Ok(());
                 }
-                writes::drop_gone(catalog, &job)?;
+                catalog.drop_gone_write(&job)?;
                 self.update_status(|s| {
                     s.dropped = s.dropped.saturating_add(1);
                     s.last_dropped = Some(job.kind());
@@ -362,7 +362,7 @@ impl Inner {
                         }
                         _ => WriteError::Failed(cause),
                     };
-                    writes::failed(catalog, &job, &error.to_string(), offline)?;
+                    catalog.write_failed(&job, &error.to_string(), offline)?;
                     self.update_status(|s| {
                         s.error = Some(error);
                         s.error_file = Some(job.file_id);
@@ -391,11 +391,11 @@ impl Inner {
         let WriteTarget { path: path_rule, format: known, kind } = catalog.write_target(job.file_id)?;
 
         // Videos aren't rewritten (a copy of GBs per change): a turn stays in the catalog. A rating isn't queued for
-        // one (`writes::rating_in_file_possible` asks for an image first); one queued before that rule is done here.
+        // one (`queue::rating_in_file_possible` asks for an image first); one queued before that rule is done here.
         if kind == Kind::Video && job.temp.is_none() {
             match job.write {
                 Write::Turns(turns) => self.keep_turn_in_catalog(catalog, job, turns)?,
-                Write::Rating(_) => writes::done(catalog, job, WriteEffect::Nothing)?,
+                Write::Rating(_) => catalog.write_done(job, WriteEffect::Nothing)?,
             }
             return Ok(());
         }
@@ -417,7 +417,7 @@ impl Inner {
 
         // A rating for a format that can't hold one (known from the analysis) is done: the catalog keeps it.
         if job.kind() == WriteKind::Rating && known.is_some_and(|f| !pg_model::format::can_hold_rating(f)) {
-            return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
+            return Ok(catalog.write_done(job, WriteEffect::Nothing)?);
         }
         // Taken before the read: a save by another program after it shows when the original is opened for the copy.
         let before = stat(&path)?;
@@ -426,10 +426,10 @@ impl Inner {
             // Not a format the app reads (an analysis that failed, a file that isn't what its name says), or one that
             // can't hold a rating: a rating stays in the catalog, and the write is done. A turn can't be made.
             Some(f) if job.kind() == WriteKind::Rating && !pg_model::format::can_hold_rating(f) => {
-                return Ok(writes::done(catalog, job, WriteEffect::Nothing)?);
+                return Ok(catalog.write_done(job, WriteEffect::Nothing)?);
             }
             Some(f) => f,
-            None if job.kind() == WriteKind::Rating => return Ok(writes::done(catalog, job, WriteEffect::Nothing)?),
+            None if job.kind() == WriteKind::Rating => return Ok(catalog.write_done(job, WriteEffect::Nothing)?),
             None => bail!("{shown}: unknown format"),
         };
         let temp_rule = temp_of(&path_rule, job.kind());
@@ -500,7 +500,7 @@ impl Inner {
         fault::before_record(self.fault, &self.fault_fired, job, &self.catalog_path)?;
         // Nothing is recorded (the error, or the job's row gone since it was read): the original is not touched, and the
         // temp goes. A row gone means the write was cancelled; the job is over.
-        let recorded = match writes::record_temp(catalog, job, &temp_rule, job.write) {
+        let recorded = match catalog.record_write_temp(job, &temp_rule, job.write) {
             Ok(recorded) => recorded,
             Err(e) => {
                 drop(file);
@@ -562,7 +562,7 @@ impl Inner {
         write_into(copy.file, copy.data)?;
         let after = stat(path)?;
         let rewrite = Rewrite { before: Some(copy.before), after, metadata_only: copy.new_hash };
-        writes::done(catalog, job, Self::rewrote(job, rewrite))?;
+        catalog.write_done(job, Self::rewrote(job, rewrite))?;
         Ok(after)
     }
 
@@ -597,7 +597,7 @@ impl Inner {
         }
         let after = stat(path)?;
         let rewrite = Rewrite { before: None, after, metadata_only: None };
-        writes::done(catalog, &written, Self::rewrote(&written, rewrite))?;
+        catalog.write_done(&written, Self::rewrote(&written, rewrite))?;
         let _ = std::fs::remove_file(&temp_path);
         if job.kind() == WriteKind::Turns {
             self.pixels_changed();
@@ -615,7 +615,7 @@ impl Inner {
 
     /// A turn the file can't hold (`turns`, the job's) is kept in the catalog instead.
     fn keep_turn_in_catalog(&self, catalog: &Catalog, job: &Job, turns: Turns) -> Result<()> {
-        writes::done(catalog, job, WriteEffect::KeptInCatalog(turns))?;
+        catalog.write_done(job, WriteEffect::KeptInCatalog(turns))?;
         self.pixels_changed();
         Ok(())
     }

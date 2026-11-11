@@ -95,13 +95,62 @@ fn compare_keys(a: &Value, b: &Value, descending: bool) -> Ordering {
     if descending { by_value.reverse() } else { by_value }
 }
 
-/// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
-pub fn entry(catalog: &Catalog, file_id: FileId) -> Result<Option<Entry>> {
-    let conn = &catalog.conn;
-    Ok(conn
-        .prepare_cached(concat!("SELECT ", entry_columns!(), " FROM files f ", file_joins!(), " WHERE f.id = ?1"))?
-        .query_row([file_id.get()], entry_from_row)
-        .optional()?)
+impl Catalog {
+    /// Read an entry again (after its file was rated or turned), keeping its place in the list. `None` if it is gone.
+    pub fn grid_entry(&self, file_id: FileId) -> Result<Option<Entry>> {
+        let conn = &self.conn;
+        Ok(conn
+            .prepare_cached(concat!("SELECT ", entry_columns!(), " FROM files f ", file_joins!(), " WHERE f.id = ?1"))?
+            .query_row([file_id.get()], entry_from_row)
+            .optional()?)
+    }
+
+    /// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
+    ///
+    /// They are read in name order from the `files_order` index, so SQLite never sorts. Another order is a stable
+    /// sort here on that key alone, files without it last: files with the same key stay in name order.
+    ///
+    /// The list is sized by a count of the scope's files, read from the `files_order` index alone in the same read
+    /// transaction (the background job writes meanwhile): exact without filters, an upper bound with them.
+    pub fn list_grid(&self, folder: &Merged, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
+        let conn = &self.conn;
+        let (scope, mut values) = scope(self.rules(), folder, recursive);
+        let tx = conn.unchecked_transaction()?;
+        let bound: usize = tx.query_row(
+            &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
+            params_from_iter(&values),
+            |r| r.get(0),
+        )?;
+        let cond = condition(query);
+        values.extend(cond.params);
+        let mut stmt = tx.prepare(&grid_sql(&scope, &cond.sql, sort))?;
+        let mut rows = stmt.query(params_from_iter(values))?;
+        let entries = if key_sql(sort).is_none() {
+            let mut entries = Vec::with_capacity(bound);
+            while let Some(r) = rows.next()? {
+                entries.push(entry_from_row(r)?);
+            }
+            // What the filters left out.
+            if entries.len() < entries.capacity() / 4 * 3 {
+                entries.shrink_to_fit();
+            }
+            entries
+        } else {
+            let mut keyed = Vec::with_capacity(bound);
+            while let Some(r) = rows.next()? {
+                keyed.push((r.get::<_, Value>(SORT_COLUMN)?, entry_from_row(r)?));
+            }
+            keyed.sort_by(|(a, _), (b, _)| compare_keys(a, b, sort.descending));
+            // Collected in place, into the keyed list's allocation, which is a fifth larger than the entries need.
+            let mut entries: Vec<Entry> = keyed.into_iter().map(|(_, e)| e).collect();
+            entries.shrink_to_fit();
+            entries
+        };
+        drop(rows);
+        drop(stmt);
+        tx.commit()?;
+        Ok(entries)
+    }
 }
 
 /// `list_grid`'s query: the entries in name order, then the sort key if it isn't the name.
@@ -116,51 +165,4 @@ pub(super) fn grid_sql(scope: &str, cond: &str, sort: Sort) -> String {
          WHERE f.missing = 0 AND {scope} AND {cond}
          ORDER BY f.order_key {dir}, f.id {dir}"
     )
-}
-
-/// The present files of a view: a merged folder (optionally with everything below it), filtered and ordered.
-///
-/// They are read in name order from the `files_order` index, so SQLite never sorts. Another order is a stable
-/// sort here on that key alone, files without it last: files with the same key stay in name order.
-///
-/// The list is sized by a count of the scope's files, read from the `files_order` index alone in the same read
-/// transaction (the background job writes meanwhile): exact without filters, an upper bound with them.
-pub fn list_grid(catalog: &Catalog, folder: &Merged, recursive: bool, query: &Query, sort: Sort) -> Result<Vec<Entry>> {
-    let conn = &catalog.conn;
-    let (scope, mut values) = scope(catalog.rules(), folder, recursive);
-    let tx = conn.unchecked_transaction()?;
-    let bound: usize = tx.query_row(
-        &format!("SELECT count(*) FROM files f WHERE f.missing = 0 AND {scope}"),
-        params_from_iter(&values),
-        |r| r.get(0),
-    )?;
-    let cond = condition(query);
-    values.extend(cond.params);
-    let mut stmt = tx.prepare(&grid_sql(&scope, &cond.sql, sort))?;
-    let mut rows = stmt.query(params_from_iter(values))?;
-    let entries = if key_sql(sort).is_none() {
-        let mut entries = Vec::with_capacity(bound);
-        while let Some(r) = rows.next()? {
-            entries.push(entry_from_row(r)?);
-        }
-        // What the filters left out.
-        if entries.len() < entries.capacity() / 4 * 3 {
-            entries.shrink_to_fit();
-        }
-        entries
-    } else {
-        let mut keyed = Vec::with_capacity(bound);
-        while let Some(r) = rows.next()? {
-            keyed.push((r.get::<_, Value>(SORT_COLUMN)?, entry_from_row(r)?));
-        }
-        keyed.sort_by(|(a, _), (b, _)| compare_keys(a, b, sort.descending));
-        // Collected in place, into the keyed list's allocation, which is a fifth larger than the entries need.
-        let mut entries: Vec<Entry> = keyed.into_iter().map(|(_, e)| e).collect();
-        entries.shrink_to_fit();
-        entries
-    };
-    drop(rows);
-    drop(stmt);
-    tx.commit()?;
-    Ok(entries)
 }

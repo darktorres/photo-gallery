@@ -3,10 +3,9 @@ use super::*;
 use crate::browse::fixtures::{
     by, folder_of, ids, library, mixed_library, sorted_by_sqlite, spelled, under_both_rules,
 };
-use crate::browse::writes::save_view;
 use crate::fixture;
 use crate::fixture::raw;
-use crate::writes::{self, queue_rotation};
+use crate::queue;
 use pg_query::condition;
 use rusqlite::types::Value;
 
@@ -107,32 +106,32 @@ fn merged_folders_drop_the_anchor() {
 fn a_file_is_shown_turned_by_what_the_catalog_has_not_yet_put_in_its_pixels(rules: PathRules) {
     let c = library(rules);
     raw::set_thumbhash(&c, FileId::new(1), &[1]);
-    let state = || file_state(&c, FileId::new(1)).unwrap().unwrap();
-    let turns = || placeholder(&c, FileId::new(1)).unwrap().unwrap().turns;
+    let state = || c.file_state(FileId::new(1)).unwrap().unwrap();
+    let turns = || c.placeholder(FileId::new(1)).unwrap().unwrap().turns;
     let size = raw::file_size(&c, FileId::new(1));
     assert_eq!(state(), FileState { mtime: 3, size, rotation: Turns::new(0), turns: Turns::new(0), writing: false });
-    assert_eq!(file_source(&c, FileId::new(1)).unwrap().unwrap().state, state());
-    assert_eq!((turns(), placeholder(&c, FileId::new(1)).unwrap().unwrap().hash), (Turns::NONE, ThumbHash::new(&[1])));
+    assert_eq!(c.file_source(FileId::new(1)).unwrap().unwrap().state, state());
+    assert_eq!((turns(), c.placeholder(FileId::new(1)).unwrap().unwrap().hash), (Turns::NONE, ThumbHash::new(&[1])));
     // A turn asked for, not yet written.
-    queue_rotation(&c, FileId::new(1), Turns::new(3)).unwrap();
+    c.queue_rotation(FileId::new(1), Turns::new(3)).unwrap();
     assert_eq!((state().turns, turns()), (Turns::new(3), Turns::new(3)));
     // One kept in the catalog since the analysis, and one more asked for.
     raw::set_rotation(&c, FileId::new(1), Turns::new(1));
-    queue_rotation(&c, FileId::new(1), Turns::new(2)).unwrap();
+    c.queue_rotation(FileId::new(1), Turns::new(2)).unwrap();
     assert_eq!((state().rotation, state().turns, turns()), (Turns::new(1), Turns::new(1), Turns::new(2)));
     // Being written into the file.
     assert!(!state().writing);
-    let job = writes::Job {
+    let job = queue::Job {
         file_id: FileId::new(1),
         write: pg_model::write::Write::Turns(Turns::new(2)),
         temp: None,
         attempts: 0,
     };
     let temp = rules.parse(&spelled(rules, r"D:\p\b.jpg.tmp")).unwrap();
-    writes::record_temp(&c, &job, &temp, pg_model::write::Write::Turns(Turns::new(1))).unwrap();
+    c.record_write_temp(&job, &temp, pg_model::write::Write::Turns(Turns::new(1))).unwrap();
     assert!(state().writing);
-    assert_eq!(file_state(&c, FileId::new(99)).unwrap(), None);
-    assert!(placeholder(&c, FileId::new(99)).unwrap().is_none());
+    assert_eq!(c.file_state(FileId::new(99)).unwrap(), None);
+    assert!(c.placeholder(FileId::new(99)).unwrap().is_none());
 }
 
 under_both_rules!(
@@ -158,14 +157,14 @@ fn ratings_and_orders(rules: PathRules) {
     assert_eq!(ids(&c, "", true, &ratings(&[1, 2, 3, 4, 5]), Sort::default()), [1, 3]);
     assert_eq!(ids(&c, "", true, &ratings(&[2]), Sort::default()), [3]);
     assert_eq!(ids(&c, "", true, &ratings(&[0, 2]), Sort::default()), [2, 3, 4]);
-    let bmp = details(&c, FileId::new(4)).unwrap().unwrap();
+    let bmp = c.details(FileId::new(4)).unwrap().unwrap();
     assert!(!bmp.rating_in_file, "BMP keeps its rating in the catalog");
-    assert!(details(&c, FileId::new(1)).unwrap().unwrap().rating_in_file);
-    let found = details(&c, FileId::new(2)).unwrap().unwrap();
+    assert!(c.details(FileId::new(1)).unwrap().unwrap().rating_in_file);
+    let found = c.details(FileId::new(2)).unwrap().unwrap();
     assert_eq!(rules.display(&found.path), spelled(rules, r"E:\p\a.png"));
     assert_eq!((found.size, found.rating_in_file), (10, true));
     assert_eq!(found.border_sides, detection::Sides::new());
-    assert_eq!(details(&c, FileId::new(99)).unwrap(), None);
+    assert_eq!(c.details(FileId::new(99)).unwrap(), None);
 }
 
 under_both_rules!(ratings_and_orders, ratings_and_orders_windows, ratings_and_orders_posix);
@@ -174,7 +173,7 @@ under_both_rules!(ratings_and_orders, ratings_and_orders_windows, ratings_and_or
 /// whose analysis failed, and for an image not analyzed yet.
 fn the_details_follow_the_write_back_rule(rules: PathRules) {
     let c = mixed_library(rules);
-    let in_file = |id: i64| details(&c, FileId::new(id)).unwrap().unwrap().rating_in_file;
+    let in_file = |id: i64| c.details(FileId::new(id)).unwrap().unwrap().rating_in_file;
     assert_eq!([in_file(5), in_file(7), in_file(8)], [false, false, true], "video, analysis failed, not analyzed");
 }
 
@@ -190,7 +189,7 @@ fn folders_in_the_trees_order(rules: PathRules) {
     raw::add_folder(&c, 4, &spelled(rules, r"D:\p-x"));
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(4), "z.jpg", 1, 1)]).unwrap();
     assert_eq!(ids(&c, "", true, &Query::default(), Sort::default()), [2, 1, 3, 4, 9]);
-    let tree = folder_tree(&c).unwrap();
+    let tree = c.folder_tree().unwrap();
     let roots: Vec<String> = tree.children(None).map(|n| tree.name(n).display().into_owned()).collect();
     assert_eq!(roots, ["p", "p-x"]);
 }
@@ -203,7 +202,7 @@ fn the_tree_counts_what_the_grid_lists(rules: PathRules) {
     let c = library(rules);
     raw::add_folder(&c, 5, &spelled(rules, r"D:\"));
     fixture::insert(&c, &[fixture::File::new(FileId::new(9), FolderId::new(5), "root.jpg", 1, 1)]).unwrap();
-    let tree = folder_tree(&c).unwrap();
+    let tree = c.folder_tree().unwrap();
     let all = ids(&c, "", true, &Query::default(), Sort::default());
     let roots = ids(&c, "", false, &Query::default(), Sort::default());
     assert_eq!(roots, [9]);
@@ -407,7 +406,7 @@ fn real_tree_is_built_as_before() {
             Ok((r.get(0)?, r.get(1)?, r.get(2)?))
         });
     check_tree(rules, &rows);
-    let tree = folder_tree(&c).unwrap();
+    let tree = c.folder_tree().unwrap();
     if rules == PathRules::Windows {
         assert_eq!(flat(&tree), reference_tree(&rows));
     }
@@ -627,12 +626,11 @@ fn scopes_are_key_ranges() {
 /// Sized by the count: an unfiltered list exactly, a filtered or sorted one without much slack.
 fn lists_are_made_at_their_size(rules: PathRules) {
     let c = mixed_library(rules);
-    let all = list_grid(&c, &folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
+    let all = c.list_grid(&folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
     assert_eq!(all.capacity(), all.len());
-    let sorted = list_grid(&c, &folder_of(&c, ""), true, &Query::default(), by(SortKey::Size, true)).unwrap();
+    let sorted = c.list_grid(&folder_of(&c, ""), true, &Query::default(), by(SortKey::Size, true)).unwrap();
     assert_eq!(sorted.capacity(), sorted.len());
-    let one = list_grid(
-        &c,
+    let one = c.list_grid(
         &folder_of(&c, ""),
         true,
         &Query { ratings: vec![RatingFilter::try_from(5).unwrap()], ..Query::default() },
@@ -749,17 +747,17 @@ fn grid_lists_sort_as_sqlite_did(rules: PathRules) {
         }
     }
     // Each entry as read alone.
-    for e in list_grid(&c, &folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap() {
-        assert_eq!(entry(&c, e.id).unwrap(), Some(e));
+    for e in c.list_grid(&folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap() {
+        assert_eq!(c.grid_entry(e.id).unwrap(), Some(e));
     }
-    let entries = list_grid(&c, &folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
+    let entries = c.list_grid(&folder_of(&c, ""), true, &Query::default(), Sort::default()).unwrap();
     let get = |id: i64| *entries.iter().find(|e| e.id == FileId::new(id)).unwrap();
     let (clip, gif, broken) = (get(5), get(6), get(7));
     assert_eq!((clip.media_type(), clip.duration_ms(), clip.ext.name()), (MediaType::Video, Some(12000), "mp4"));
     assert_eq!((gif.media_type(), gif.duration_ms(), gif.ext.name()), (MediaType::Animated, None, "gif"));
     // Not imported (its analysis failed): no size yet, square.
     assert_eq!((broken.shown_size(), broken.aspect()), ((0, 0), 1.0));
-    assert_eq!(entry(&c, FileId::new(99)).unwrap(), None);
+    assert_eq!(c.grid_entry(FileId::new(99)).unwrap(), None);
 }
 
 under_both_rules!(
@@ -771,12 +769,12 @@ under_both_rules!(
 fn facet_counts(rules: PathRules) {
     let c = mixed_library(rules);
     let videos = Query { types: vec![MediaType::Video], ..Query::default() };
-    let f = facets(&c, &folder_of(&c, ""), true, &videos).unwrap();
+    let f = c.facets(&folder_of(&c, ""), true, &videos).unwrap();
     assert_eq!((f.total, f.matching), (8, 1));
     // A facet's own choices are counted without it; the other facets apply.
     assert_eq!(f.types, [(MediaType::Image, 6), (MediaType::Animated, 1), (MediaType::Video, 1)]);
     assert_eq!(f.exts, [("mp4".to_string(), 1)]);
-    let f = facets(&c, &folder_of(&c, "p"), false, &Query::default()).unwrap();
+    let f = c.facets(&folder_of(&c, "p"), false, &Query::default()).unwrap();
     assert_eq!(
         f.exts,
         [("jpg".to_string(), 3), ("gif".to_string(), 1), ("png".to_string(), 1), ("webp".to_string(), 1)]
@@ -847,7 +845,7 @@ fn the_facets_in_one_pass_are_the_counts_of_a_statement_per_facet(rules: PathRul
     for query in &queries {
         for (text, recursive) in [("", true), ("p", false), ("p", true)] {
             let merged = folder_of(&c, text);
-            let one_pass = facets(&c, &merged, recursive, query).unwrap();
+            let one_pass = c.facets(&merged, recursive, query).unwrap();
             let statements = facets_by_statements(&c, &merged, recursive, query).unwrap();
             assert_eq!(one_pass, statements, "{merged:?} recursive {recursive}: {query:?}");
         }
@@ -906,7 +904,7 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
     assert_eq!(ids(&c, "photos/Pics", false, &Query::default(), Sort::default()), [1]);
     assert_eq!(ids(&c, "photos/pics", false, &Query::default(), Sort::default()), [2]);
     assert_eq!(ids(&c, "photos", true, &Query::default(), Sort::default()), [1, 2]);
-    let tree = folder_tree(&c).unwrap();
+    let tree = c.folder_tree().unwrap();
     let photos = tree.children(None).next().unwrap();
     let below: Vec<String> = tree.children(Some(photos)).map(|n| tree.name(n).display().into_owned()).collect();
     assert_eq!(below, ["Pics", "pics"]);
@@ -918,11 +916,11 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
 fn a_saved_scope_matches_its_folder_whatever_the_case() {
     let c = library(PathRules::Windows);
     let view = SavedView { name: "upper".into(), listing: Listing { folder: folder_of(&c, "P"), ..Listing::default() } };
-    save_view(&c, &view).unwrap();
-    let saved = crate::browse::read::views(&c).unwrap().remove(0);
+    c.save_view(&view).unwrap();
+    let saved = c.views().unwrap().remove(0);
     assert_eq!(saved.listing.folder, folder_of(&c, "P"), "kept as it was saved");
     let listed = |folder: &Merged, recursive: bool| -> Vec<i64> {
-        list_grid(&c, folder, recursive, &Query::default(), Sort::default())
+        c.list_grid(folder, recursive, &Query::default(), Sort::default())
             .unwrap()
             .iter()
             .map(|e| e.id.get())
@@ -940,8 +938,8 @@ fn a_file_keeps_its_exact_name(rules: PathRules) {
     c.conn.execute("UPDATE files SET name = ?1 WHERE id = 1", [name.as_bytes()]).unwrap();
     let path = c.file_path(FileId::new(1)).unwrap().unwrap();
     assert_eq!(path.parts.last(), Some(&name));
-    assert_eq!(file_source(&c, FileId::new(1)).unwrap().unwrap().path, path);
-    assert_eq!(details(&c, FileId::new(1)).unwrap().unwrap().path, path);
+    assert_eq!(c.file_source(FileId::new(1)).unwrap().unwrap().path, path);
+    assert_eq!(c.details(FileId::new(1)).unwrap().unwrap().path, path);
     assert_eq!(c.file_path(FileId::new(99)).unwrap(), None);
 }
 

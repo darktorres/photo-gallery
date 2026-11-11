@@ -106,7 +106,7 @@ impl Unwritten {
             return;
         }
         let failures: Vec<LedgerFailure> = self.failures.iter().map(|(f, _)| f.clone()).collect();
-        if let Err(e) = ledger::record(catalog, FilePass::Thumbs, &failures, unix_now()) {
+        if let Err(e) = catalog.record_failures(FilePass::Thumbs, &failures, unix_now()) {
             for (_, seq) in &self.failures {
                 fold(first_failed, *seq);
             }
@@ -146,7 +146,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     let sep = catalog.rules().sep_byte();
     // The files the ledger holds: only those leave it when they are made (a clear of every file made would take the
     // catalog's write lock at every batch).
-    let known: BTreeSet<FileId> = ledger::recorded(&catalog, FilePass::Thumbs)?;
+    let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Thumbs)?;
     let mut batch = Vec::with_capacity(BATCH);
     // The thumbnails' buffers, back from the cache's writer with each batch (and from the ones not kept), for the
     // workers to make the next ones in: about a batch's worth and one per worker and slot, not one per file.
@@ -164,7 +164,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         spare.lock().unwrap_or_else(PoisonError::into_inner).extend(batch.drain(..).map(|t| t.data));
         if stored {
             stats.made += n;
-            if let Err(e) = ledger::clear(&catalog, FilePass::Thumbs, &made_known) {
+            if let Err(e) = catalog.clear_failures(FilePass::Thumbs, &made_known) {
                 stats.ledger_error.get_or_insert_with(|| format!("{e:#}"));
             }
         } else {
@@ -219,7 +219,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 // Kept only if made from the file as listed: not changed since (size and mtime, as the scanner
                 // decides), nor being rewritten by the app
                 // (pg_model::state::FileState). Otherwise tried again by the next pass, from its change number on.
-                Ok(data) => match pg_catalog::browse::read::file_state(&catalog, item.id)? {
+                Ok(data) => match catalog.file_state(item.id)? {
                     Some(s)
                         if !s.writing
                             && (s.mtime, s.size, s.rotation)
@@ -344,17 +344,17 @@ mod tests {
         assert_eq!(ctl.snapshot().phase, Phase::Idle, "the phase ended");
         // The ledger holds it, not to be tried again by the pass.
         let panicked = state::file_id(&c, "a.png").unwrap();
-        let [failed] = &ledger::files(&c, FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
+        let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
         assert_eq!((failed.file_id, failed.retry), (panicked, false));
         assert!(failed.error.contains("a fault"), "{}", failed.error);
         let second = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((second.needed, second.made, second.failed), (0, 0, 0), "the file that panicked is listed again");
         // The user's Retry, the fault gone: the file is made, and leaves the ledger.
         *PANIC_ON.lock().unwrap() = None;
-        ledger::retry(&c, FilePass::Thumbs).unwrap();
+        c.retry_failures(FilePass::Thumbs).unwrap();
         let third = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((third.needed, third.made, third.failed), (1, 1, 0));
-        assert!(ledger::recorded(&c, FilePass::Thumbs).unwrap().is_empty());
+        assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());
     }
 
     /// A file that doesn't decode is recorded and tried again by the next pass; once it decodes (it changed) it is made,
@@ -389,19 +389,19 @@ mod tests {
         let cache = ThumbCache::open(&dir, &c.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap();
         let first = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((first.needed, first.made, first.failed, first.unreadable), (3, 1, 2, 1));
-        let [failed] = &ledger::files(&c, FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
+        let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
         assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "a.png").unwrap(), true));
         // Both are tried again, and the recorded one is not news again.
-        let summary = ledger::entries(&c).unwrap();
+        let summary = c.ledger_entries().unwrap();
         let second = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((second.needed, second.failed), (2, 2));
-        assert_eq!(ledger::entries(&c).unwrap(), summary);
+        assert_eq!(c.ledger_entries().unwrap(), summary);
         // Mended in place (as a restored backup would be): it is made, and leaves the ledger.
         std::fs::write(&a, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         std::fs::File::options().write(true).open(&a).unwrap().set_modified(mtime).unwrap();
         let third = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((third.made, third.unreadable), (1, 1));
-        assert!(ledger::recorded(&c, FilePass::Thumbs).unwrap().is_empty());
+        assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());
     }
 
     fn versions() -> pg_catalog::Versions {

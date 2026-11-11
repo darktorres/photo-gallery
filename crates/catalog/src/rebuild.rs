@@ -282,7 +282,7 @@ fn carry_session_keys(tx: &rusqlite::Transaction<'_>, rules: PathRules, text_fol
         sort: pg_query::from_json(&value("sort").unwrap_or_default()),
         query: pg_query::from_json(&value("query").unwrap_or_default()),
     };
-    crate::browse::writes::put_session(tx, rules, &listing)
+    crate::browse::views::put_session(tx, rules, &listing)
 }
 
 /// The column names of `table` in `schema` (`main` or an attached database); none when the table isn't there.

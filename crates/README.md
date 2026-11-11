@@ -59,8 +59,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
 - `query` (`pg-query`): the query compiler: a `Query` (`pg-model`'s) becomes the SQL of its conditions and their
   parameters, and the SQL functions those conditions call (the catalog registers them on its connection).
 - `catalog` (`pg-catalog`): the SQLite catalog (WAL), the source of truth for files, analyses, pairs and ratings: the
-  schema, the writes, the reads (`browse`), the filters and sort (their SQL is `query`'s), the duplicate reports, the
-  inbox (`inbox`) and the files the passes failed on (`ledger`; `docs/NOTIFICATIONS.md`).
+  schema, the file-write queue (`queue`), the reads (`browse`), the filters and sort (their SQL is `query`'s), the
+  duplicate reports, the inbox (`inbox`) and the files the passes failed on (`ledger`; `docs/NOTIFICATIONS.md`). Its API
+  is `Catalog`'s methods, each concern's in an `impl Catalog` of its own module (`roots`, `lookup`, `work`, `borders`,
+  `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); `core` is the lifecycle.
 - `jobs` (`pg-jobs`): the parallel read/process/write pipeline the passes run on, the control a pass shares (progress,
   pause, stop), the job thread and schedule, the panics it catches and the event bus.
 - `thumbcache` (`pg-thumbcache`): the thumbnail cache, a SQLite file of its own (`thumbs.sqlite`), capped in bytes.
@@ -141,7 +143,7 @@ refactor. The dated logs in `docs/` keep the old paths; the table is for reading
 |---|---|
 | `core/src/{date,format,media,orientation,path,detection,analysis,state,view,pdq}.rs` (the types) | `model/src/` (the same names; `pdq.rs` is the PDQ record, the hasher is in `analysis`) |
 | `core/src/query.rs` | the query's types in `model/src/query.rs`, its SQL in `query/src/lib.rs` |
-| `core/src/catalog.rs` | `catalog/src/lib.rs` (the readers and writers are `catalog/src/browse/`, `writes.rs`, `dups.rs`) |
+| `core/src/catalog.rs` | `catalog/src/lib.rs` (the readers and writers are `catalog/src/browse/`, `queue.rs`, `dups.rs`) |
 | `core/src/browse.rs`, `browse/` | `catalog/src/browse.rs`, `catalog/src/browse/` |
 | `core/src/analyze.rs`, `borders.rs`, `pdq.rs` | `analysis/src/` (the same names) |
 | `core/src/pdq_index.rs` | `dedup/src/pdq_index.rs` |

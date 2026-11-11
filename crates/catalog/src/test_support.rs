@@ -3,7 +3,7 @@
 
 use crate::browse::fixtures::spelled;
 use crate::fixture::{self, raw};
-use crate::{Catalog, Recorded, ScannedFile, Versions, WorkItem, writes};
+use crate::{Catalog, Recorded, ScannedFile, Versions, WorkItem, queue};
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::analysis::{Analysis, Analyzed, ImageFacts, Media, PixelHashes, Taken, ThumbHash};
@@ -39,8 +39,8 @@ pub(crate) fn one_file(rules: PathRules) -> (Catalog, i64) {
 /// A turn the file can't hold, written by the writer: the catalog keeps it.
 pub(crate) fn turn_kept(c: &Catalog, id: FileId, turns: i64) {
     let turns = Turns::new(u8::try_from(turns).unwrap());
-    let job = writes::Job { file_id: id, write: pg_model::write::Write::Turns(turns), temp: None, attempts: 0 };
-    writes::done(c, &job, writes::WriteEffect::KeptInCatalog(turns)).unwrap();
+    let job = queue::Job { file_id: id, write: pg_model::write::Write::Turns(turns), temp: None, attempts: 0 };
+    c.write_done(&job, queue::WriteEffect::KeptInCatalog(turns)).unwrap();
 }
 
 /// Whether the import would analyze file `id` now.

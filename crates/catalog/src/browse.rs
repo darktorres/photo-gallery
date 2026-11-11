@@ -3,7 +3,7 @@
 //! saved views and where the user was.
 
 pub mod read;
-pub mod writes;
+pub(crate) mod views;
 
 #[cfg(test)]
 pub(crate) mod fixtures;

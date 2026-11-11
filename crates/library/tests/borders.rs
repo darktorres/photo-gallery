@@ -43,7 +43,7 @@ fn an_unreadable_file_stays_due_for_the_next_pass() {
     let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
     // Both looked at; the unreadable one stored nothing, and is no failure of the file's.
     assert_eq!((stats.files, stats.failed, stats.unreadable, stats.stored), (2, 1, 1, 1));
-    assert!(ledger::recorded(&c, FilePass::Borders).unwrap().is_empty());
+    assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 1, "an unreadable file must stay due");
     assert_eq!(state::borders_due(&c, "b.png").unwrap(), 0, "the readable one is done");
 
@@ -84,7 +84,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     rewrite(&vec![0; good.len()]);
     let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed, stats.unreadable, stats.stored), (1, 1, 0, 1));
-    let [failed] = &ledger::files(&c, FilePass::Borders, 10).unwrap()[..] else { panic!("one failure") };
+    let [failed] = &c.failed_files(FilePass::Borders, 10).unwrap()[..] else { panic!("one failure") };
     assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "a.png").unwrap(), false));
     assert_eq!(state::borders_due(&c, "a.png").unwrap(), 0, "not looked at again");
     // Mended, and due again: found, and gone from the ledger.
@@ -92,7 +92,7 @@ fn a_file_that_doesnt_decode_is_recorded_until_its_borders_are_found() {
     state::make_borders_due(&c, "a.png").unwrap();
     let stats = pg_borders::find(&mut c, &opts, &ctl).unwrap();
     assert_eq!((stats.files, stats.failed), (1, 0));
-    assert!(ledger::recorded(&c, FilePass::Borders).unwrap().is_empty());
+    assert!(c.recorded_failures(FilePass::Borders).unwrap().is_empty());
     drop(c);
     let _ = std::fs::remove_dir_all(Path::new(&dir));
 }

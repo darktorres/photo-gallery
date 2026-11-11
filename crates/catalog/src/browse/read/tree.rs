@@ -19,20 +19,22 @@ pub(super) const FOLDER_SIZES: &str = "SELECT count(*), coalesce(sum(length(path
     coalesce(sum(length(path) - length(CAST(replace(CAST(path AS TEXT), ?1, '') AS BLOB))), 0) + count(*)
     FROM folders";
 
-/// The merged tree of every folder holding present files, with their ancestors, built under the catalog's rules.
-pub fn folder_tree(catalog: &Catalog) -> Result<FolderTree> {
-    let conn = &catalog.conn;
-    let rules = catalog.rules();
-    let (folders, bytes, components): (usize, usize, usize) =
-        conn.query_row(FOLDER_SIZES, [rules.sep().to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
-    let mut stmt = conn.prepare(FOLDER_COUNTS)?;
-    let mut rows = stmt.query([])?;
-    let mut builder = TreeBuilder::with_capacity(rules, folders, bytes, components);
-    while let Some(r) = rows.next()? {
-        if let Some(stored) = r.get::<_, Option<Vec<u8>>>(1)? {
-            let path = rules.parse_bytes(&stored).ok_or_else(|| anyhow::anyhow!("a stored folder path has a NUL"))?;
-            builder.add(r.get(0)?, &path, r.get(2)?);
+impl Catalog {
+    /// The merged tree of every folder holding present files, with their ancestors, built under the catalog's rules.
+    pub fn folder_tree(&self) -> Result<FolderTree> {
+        let conn = &self.conn;
+        let rules = self.rules();
+        let (folders, bytes, components): (usize, usize, usize) =
+            conn.query_row(FOLDER_SIZES, [rules.sep().to_string()], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?;
+        let mut stmt = conn.prepare(FOLDER_COUNTS)?;
+        let mut rows = stmt.query([])?;
+        let mut builder = TreeBuilder::with_capacity(rules, folders, bytes, components);
+        while let Some(r) = rows.next()? {
+            if let Some(stored) = r.get::<_, Option<Vec<u8>>>(1)? {
+                let path = rules.parse_bytes(&stored).ok_or_else(|| anyhow::anyhow!("a stored folder path has a NUL"))?;
+                builder.add(r.get(0)?, &path, r.get(2)?);
+            }
         }
+        Ok(builder.build())
     }
-    Ok(builder.build())
 }

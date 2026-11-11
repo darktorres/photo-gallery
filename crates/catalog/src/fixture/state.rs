@@ -4,7 +4,7 @@
 //! fails with it.
 
 use crate::Catalog;
-use crate::writes::MAX_ATTEMPTS;
+use crate::queue::MAX_ATTEMPTS;
 use anyhow::Result;
 use pg_model::ids::FileId;
 use rusqlite::{OptionalExtension, params};
@@ -156,7 +156,7 @@ pub fn local_epoch(c: &Catalog, wall: i64) -> Result<i64> {
     Ok(c.conn.query_row("SELECT unixepoch(?1, 'unixepoch', 'localtime')", [wall], |r| r.get(0))?)
 }
 
-/// Writes still to be tried: their attempts are below the queue's limit. (The queue's own count, `writes::left_to_write`,
+/// Writes still to be tried: their attempts are below the queue's limit. (The queue's own count, `Catalog::left_to_write`,
 /// leaves out a failed write with no temp file, which is not tried again until its time comes.)
 pub fn writes_still_tried(c: &Catalog) -> Result<i64> {
     Ok(c.conn.query_row("SELECT count(*) FROM file_writes WHERE attempts < ?1", [MAX_ATTEMPTS], |r| r.get(0))?)

@@ -50,7 +50,7 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
     if items.is_empty() {
         return Ok(stats);
     }
-    let known: BTreeSet<FileId> = ledger::recorded(catalog, FilePass::Borders)?;
+    let known: BTreeSet<FileId> = catalog.recorded_failures(FilePass::Borders)?;
     // The phase ends when this is dropped, however the pass leaves.
     let _phase = ctl.begin(Phase::Borders, u64::try_from(items.len()).unwrap_or(u64::MAX));
     let mut batch: Vec<(usize, Result<FileBorders>)> = Vec::with_capacity(BATCH);
@@ -98,8 +98,8 @@ pub fn find(catalog: &mut Catalog, opts: &Options, ctl: &Control) -> Result<Stat
         tx.commit()?;
         // After the results are in: a failure is tried again only once the file changes, so a lost write loses only its
         // row, not the file.
-        let recorded = ledger::record(catalog, FilePass::Borders, &failures, unix_now())
-            .and_then(|()| ledger::clear(catalog, FilePass::Borders, &found_known));
+        let recorded = catalog.record_failures(FilePass::Borders, &failures, unix_now())
+            .and_then(|()| catalog.clear_failures(FilePass::Borders, &found_known));
         if let Err(e) = recorded {
             stats.ledger_error.get_or_insert_with(|| format!("{e:#}"));
         }

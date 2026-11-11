@@ -283,7 +283,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 None => say(&Line::StatusNoCache),
             }
             // The write errors are the writer's own text, listed under the counts.
-            for e in pg_catalog::writes::recent_errors(&catalog, 5)? {
+            for e in catalog.recent_write_errors(5)? {
                 println!("  {e}");
             }
         }
@@ -320,7 +320,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
 fn wait_for_writes(writer: &Writer, catalog: &Catalog) -> Result<()> {
     loop {
         std::thread::sleep(std::time::Duration::from_millis(500));
-        let left = pg_catalog::writes::left_to_write(catalog)?;
+        let left = catalog.left_to_write()?;
         if left == 0 {
             return Ok(());
         }

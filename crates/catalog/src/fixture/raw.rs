@@ -8,7 +8,7 @@ use std::path::Path;
 
 use crate::Catalog;
 use crate::lifecycle::{set_borders_version, set_import_version};
-use crate::writes;
+use crate::queue;
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_model::ids::FileId;
@@ -262,7 +262,7 @@ pub(crate) fn rating(c: &Catalog, id: i64) -> Option<u8> {
 
 /// What the file holds, as the import read it (`file_ratings`): the writer's own record of it.
 pub(crate) fn holds_rating(c: &Catalog, id: FileId, value: Option<Rating>) {
-    writes::set_file_rating(&c.conn, id, value).unwrap();
+    queue::set_file_rating(&c.conn, id, value).unwrap();
 }
 
 /// The value queued for a file's write of `kind` (`rating` or `rotation`), if one is queued.

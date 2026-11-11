@@ -682,6 +682,12 @@ Each fix gets a test that fails before it.
   - The 47 private helpers stay private free functions: a helper of one module is not part of the API.
   - NOTIFICATIONS_PLAN writes its notice and ledger functions as "free functions taking `&Catalog`". That plan lands before this step (see the order), so it writes them in this step's shape from the start: methods in an `impl Catalog` block of `notices.rs` and `ledger.rs`. This step then has nothing of that plan's to convert, and M-49 amends that plan's sentence.
 - Gate: `just test`, Linux checks, perf (the catalog is benched).
+- **Done in step 7.**
+  - `core.rs` is the lifecycle: `prepare`, `open`, `close`, `rules`, `rebuilt`, `catalog_id`, `data_version`, `cancel_when`, `release_memory`, `tx` and `Tx`'s writers.
+  - Each concern's methods are in an `impl Catalog` of its module: `roots.rs` (the roots and their scans: `begin_scan`, `finish_scan`, `mark_missing`), `lookup.rs` (a file by id or path, `files_under`, `write_target`, `crop_source`, `status`), `work.rs` (the passes' queues, beside `work_list`, which they read through: `pending_import`, `pending_borders`, `pdq_hashes`, `mark_pending`), `borders.rs` (`border_sides` and `set_border_mark`, one concern), `browse::read`'s modules, `browse::views`, `queue`, `dups`, `pair`, `inbox` and `ledger`. The review's `queues.rs` is `work.rs`: a module named `queues` beside the file-write `queue` would be two names for two things one letter apart.
+  - The free functions became methods, their callers changed; a name two modules shared is said once per concern (`inbox`'s `post_notice`, `replace_notices`, `clear_notices`, `inbox_entries`, `prune_inbox`; `ledger`'s `record_failures`, `recorded_failures`, `clear_failures`, `retry_failures`, `ledger_entries`, `failed_files`, `mark_ledger_read`, `dismiss_ledger`; `queue`'s `next_write`, `write_done`, `write_failed`, `record_write_temp`, `drop_gone_write`, `retry_write_copies`; the grid's `grid_entry`; `pair_after_scan`).
+  - `browse::read`'s globs are gone: `facets` is a public module for its `Facets`, `grid` a crate one for `FILE_JOINS`. With M-45's rename, the views and the session (read and written) are `browse::views`, and the file-write queue is `queue`.
+  - `rating_in_file_possible` is `pg_model::format`'s, beside `can_hold_rating`.
 
 ### M-45: one name per concept
 
@@ -705,6 +711,7 @@ Each fix gets a test that fails before it.
 - **One method with two names.** `pg_model::orientation::turns_swap(turns)` is `turns.swaps_axes()`. Fix: keep `Turns::swaps_axes` and change its five callers.
 - **Two `Prefs`.** `pg_client::controller::prefs::Prefs` is the grid's size; `pg_app::Prefs` is the preferences file. Fix: the client's becomes `size::GridSize`.
 - **Two `writes` modules in the catalog.** `crate::writes` is the file-write queue; `browse::writes` is the views and the session. Fix: `queue` and `browse::views` (with M-44).
+  - Done in step 7, with M-44.
 - **A failed file is recorded two ways.**
   - `pg_jobs::failure::Failure { path: String, error: String }` is a pass's stats, with 6 users.
   - `FileError { path: String, cause: Cause }` is used for the app's notices.

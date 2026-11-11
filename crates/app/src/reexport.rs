@@ -3,7 +3,7 @@
 //! folder facets (plain data), and the two checks the front end makes on the crates' behalf (the panic check, the cache's size parse). Nothing here is a call into a crate's data
 //! layer: the reads and writes are on the services that [`crate::App`] opens, and [`crate::Session`].
 
-pub use pg_catalog::browse::read::Facets;
+pub use pg_catalog::browse::read::facets::Facets;
 pub use pg_catalog::inbox::{Entry as InboxEntry, EntryId as InboxEntryId};
 pub use pg_catalog::ledger::FailedFile;
 pub use pg_jobs::events::Change;

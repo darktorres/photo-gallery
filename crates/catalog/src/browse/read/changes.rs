@@ -11,26 +11,26 @@ use pg_model::ids::FileId;
 
 use crate::Catalog;
 
-/// The files changed after change number `since`, in id order, and the catalog's change number now: pass that as
-/// `since` next time.
-pub fn changes_since(catalog: &Catalog, since: i64) -> Result<(Vec<FileId>, i64)> {
-    // One read snapshot: a change committed between the two reads would otherwise be numbered past the returned
-    // change number, and so never reported.
-    let snapshot = catalog.conn.unchecked_transaction()?;
-    let now: i64 = snapshot.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0))?;
-    let files = snapshot
-        .prepare_cached("SELECT id FROM files WHERE changed > ?1 ORDER BY id")?
-        .query_map([since], |r| Ok(FileId::new(r.get(0)?)))?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok((files, now))
+impl Catalog {
+    /// The files changed after change number `since`, in id order, and the catalog's change number now: pass that as
+    /// `since` next time.
+    pub fn changes_since(&self, since: i64) -> Result<(Vec<FileId>, i64)> {
+        // One read snapshot: a change committed between the two reads would otherwise be numbered past the returned
+        // change number, and so never reported.
+        let snapshot = self.conn.unchecked_transaction()?;
+        let now: i64 = snapshot.query_row("SELECT value FROM meta WHERE key = 'seq'", [], |r| r.get(0))?;
+        let files = snapshot
+            .prepare_cached("SELECT id FROM files WHERE changed > ?1 ORDER BY id")?
+            .query_map([since], |r| Ok(FileId::new(r.get(0)?)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok((files, now))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::browse::fixtures::library;
-    use crate::browse::writes::save_view;
-    use crate::writes::{queue_rotation, set_rating};
     use pg_model::rating::Rating;
     use pg_model::rules::PathRules;
     use pg_model::turns::Turns;
@@ -38,23 +38,22 @@ mod tests {
     #[test]
     fn each_user_visible_change_names_its_file() {
         let c = library(PathRules::Windows);
-        let (all, now) = changes_since(&c, 0).unwrap();
+        let (all, now) = c.changes_since(0).unwrap();
         assert!(all.len() >= 4, "every file the library made is a change: {all:?}");
         // Nothing has changed since `now`.
-        assert_eq!(changes_since(&c, now).unwrap(), (vec![], now));
+        assert_eq!(c.changes_since(now).unwrap(), (vec![], now));
 
-        set_rating(&c, FileId::new(1), Rating::new(3), false).unwrap();
+        c.set_rating(FileId::new(1), Rating::new(3), false).unwrap();
         c.set_border_mark(FileId::new(2), true).unwrap();
-        queue_rotation(&c, FileId::new(3), Turns::new(1)).unwrap();
-        let (changed, after) = changes_since(&c, now).unwrap();
+        c.queue_rotation(FileId::new(3), Turns::new(1)).unwrap();
+        let (changed, after) = c.changes_since(now).unwrap();
         assert_eq!(changed, [FileId::new(1), FileId::new(2), FileId::new(3)]);
         assert!(after > now);
         // What was seen at `after` is not reported again.
-        assert_eq!(changes_since(&c, after).unwrap(), (vec![], after));
+        assert_eq!(c.changes_since(after).unwrap(), (vec![], after));
 
         // A view is not a file's change.
-        save_view(
-            &c,
+        c.save_view(
             &pg_model::view::SavedView {
                 name: "v".into(),
                 listing: pg_model::view::Listing {
@@ -64,6 +63,6 @@ mod tests {
             },
         )
         .unwrap();
-        assert_eq!(changes_since(&c, after).unwrap(), (vec![], after));
+        assert_eq!(c.changes_since(after).unwrap(), (vec![], after));
     }
 }

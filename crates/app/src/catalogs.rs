@@ -57,10 +57,10 @@ impl Catalogs {
         self.with_catalog(|c| c.present_file_folder(file_id))
     }
 
-    /// The failed files of `pass`'s inbox entry, newest first, at most `limit` (`pg_catalog::ledger::files`): what the
+    /// The failed files of `pass`'s inbox entry, newest first, at most `limit` (`pg_catalog::Catalog::failed_files`): what the
     /// entry lists when it is opened.
     pub fn failed_files(&self, pass: FilePass, limit: usize) -> Result<Vec<FailedFile>> {
-        self.with_catalog(|c| ledger::files(c, pass, limit))
+        self.with_catalog(|c| c.failed_files(pass, limit))
     }
 
     /// Close the pooled connections, then the keeper, so the last connection to the file deletes its WAL. Returns the

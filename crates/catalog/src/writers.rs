@@ -400,7 +400,7 @@ mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
     use crate::fixture::{self, raw};
     use crate::test_support::*;
-    use crate::{Catalog, Recorded, ScannedFile, WorkItem, writes};
+    use crate::{Catalog, Recorded, ScannedFile, WorkItem, queue};
     use pg_analysis::analyze::IMPORT_VERSION;
     use pg_model::analysis::{Analysis, Taken, ThumbHash};
     use pg_model::detection::Detection;
@@ -533,13 +533,13 @@ mod tests {
         };
         let item = next_work(&c);
         // A write of the app's into it in progress: it may have been read part-written.
-        writes::queue_rotation(&c, item.id, Turns::new(3)).unwrap();
-        let job = writes::next_ready(&c, 0).unwrap().unwrap();
+        c.queue_rotation(item.id, Turns::new(3)).unwrap();
+        let job = c.next_write(0).unwrap().unwrap();
         let temp = rules.parse(&spelled(rules, r"D:\x\a.jpg.tmp")).unwrap();
-        writes::record_temp(&c, &job, &temp, 3).unwrap();
+        c.record_write_temp(&job, &temp, 3).unwrap();
         assert!(!stored(&mut c, &item));
         assert!(due(&c, item.id), "still due");
-        writes::done(&c, &job, writes::WriteEffect::Nothing).unwrap();
+        c.write_done(&job, queue::WriteEffect::Nothing).unwrap();
         // Changed since it was listed.
         scanned(&mut c, scan, "a.jpg", 11, 101);
         assert!(!stored(&mut c, &item));
@@ -679,12 +679,12 @@ mod tests {
         tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&found)).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [Some(0), Some(41), Some(0), Some(41)]);
-        assert_eq!(browse::read::border_sides(&c, item.id).unwrap(), found.sides);
+        assert_eq!(c.border_sides(item.id).unwrap(), found.sides);
         assert!(c.pending_borders().unwrap().is_empty());
 
         // The grid's entry, the filters and the sort.
         let list = |c: &Catalog, q: Query| -> Vec<pg_model::grid::Entry> {
-            browse::read::list_grid(c, &pg_model::rules::Merged::default(), true, &q, Sort::default()).unwrap()
+            c.list_grid(&pg_model::rules::Merged::default(), true, &q, Sort::default()).unwrap()
         };
         let entry = list(&c, Query::default()).remove(0);
         assert_eq!(entry.borders, pg_model::grid::Borders::Found);
@@ -694,7 +694,7 @@ mod tests {
         assert_eq!(list(&c, only(vec![BorderFacet::Black])).len(), 1);
         assert!(list(&c, only(vec![BorderFacet::Blur, BorderFacet::None])).is_empty());
         let counts =
-            browse::read::facets(&c, &pg_model::rules::Merged::default(), true, &Query::default()).unwrap().borders;
+            c.facets(&pg_model::rules::Merged::default(), true, &Query::default()).unwrap().borders;
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Black).unwrap().1, 1);
         assert_eq!(counts.iter().find(|(b, _)| *b == BorderFacet::Blur).unwrap().1, 0);
 
@@ -715,7 +715,7 @@ mod tests {
         tx.borders_writer().unwrap().store_borders(&due.items[0], Some(&Detection::none(400, 300))).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [Some(0); 4]);
-        assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
+        assert!(c.border_sides(item.id).unwrap().is_empty());
         assert!(c.pending_borders().unwrap().is_empty());
         assert_eq!(list(&c, Query::default())[0].borders, pg_model::grid::Borders::None);
         assert_eq!(raw::border_marks(&c), 1);
@@ -726,7 +726,7 @@ mod tests {
         tx.analysis_writer(versions().import).unwrap().store_analysis(&item, &stored_analysis(&analysis)).unwrap();
         tx.commit().unwrap();
         assert_eq!(raw::cut_sides(&c), [None; 4]);
-        assert!(browse::read::border_sides(&c, item.id).unwrap().is_empty());
+        assert!(c.border_sides(item.id).unwrap().is_empty());
         assert_eq!(c.pending_borders().unwrap().len(), 1);
     }
 
@@ -739,7 +739,6 @@ mod tests {
     /// The borders the grid shows are a change of the file (`changes_since`): storing them, a changed cut, removed
     /// sides and a removed analysis each stamp it. Its thumbnails' source (`files.seq`) is not touched.
     fn borders_stamp_the_file_as_changed_and_not_its_thumbnails(rules: PathRules) {
-        use crate::browse::read::changes_since;
         use pg_model::detection::{Edge, Kind as SideKind, Side};
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
@@ -767,12 +766,12 @@ mod tests {
         let thumbs = seq(&c);
         // Each step is a change of the file, after the change number before it.
         let stamped = |c: &Catalog, since: i64| -> i64 {
-            let (changed, now) = changes_since(c, since).unwrap();
+            let (changed, now) = c.changes_since(since).unwrap();
             assert_eq!(changed, [item.id]);
             assert_eq!(seq(c), thumbs, "the thumbnails' source is not changed");
             now
         };
-        let (_, before) = changes_since(&c, 0).unwrap();
+        let (_, before) = c.changes_since(0).unwrap();
 
         let top = Side {
             pass: 0,
@@ -794,7 +793,7 @@ mod tests {
 
         // The same cut written again changes nothing.
         c.conn.execute("UPDATE analysis SET cut_top = cut_top WHERE file_id = ?1", [item.id.get()]).unwrap();
-        assert_eq!(changes_since(&c, now).unwrap(), (vec![], now));
+        assert_eq!(c.changes_since(now).unwrap(), (vec![], now));
         c.conn.execute("UPDATE analysis SET cut_top = 7 WHERE file_id = ?1", [item.id.get()]).unwrap();
         let now = stamped(&c, now);
         c.conn.execute("DELETE FROM border_sides WHERE file_id = ?1", [item.id.get()]).unwrap();
@@ -863,10 +862,10 @@ mod tests {
         let names = |descending: bool| -> Vec<String> {
             let sort = Sort { key: SortKey::Borders, descending };
             let entries =
-                browse::read::list_grid(&c, &pg_model::rules::Merged::default(), true, &Query::default(), sort)
+                c.list_grid(&pg_model::rules::Merged::default(), true, &Query::default(), sort)
                     .unwrap();
             let name = |id| {
-                browse::read::details(&c, id).unwrap().unwrap().path.parts.last().map(|n| n.display().into_owned())
+                c.details(id).unwrap().unwrap().path.parts.last().map(|n| n.display().into_owned())
             };
             entries.iter().map(|e| name(e.id).unwrap_or_default()).collect()
         };
@@ -910,7 +909,7 @@ mod tests {
 
     fn set_rating(c: &Catalog, id: i64, n: u8) {
         let stars = Rating::new(n).filter(|r| r.get() > 0);
-        writes::set_rating(c, FileId::new(id), stars, false).unwrap();
+        c.set_rating(FileId::new(id), stars, false).unwrap();
     }
 
     /// The import's sync of the file's rating, in a transaction of its own.
@@ -940,7 +939,7 @@ mod tests {
         assert_eq!(raw::rating(&c, id), None);
         // A write of the app's own still queued wins over the file: a JPEG the app rates 3, queued for the file.
         raw::insert_analysis(&c, &raw::AnalysisRow { format: Some("jpeg"), ..raw::AnalysisRow::image(id, 10, 100) });
-        writes::set_rating(&c, FileId::new(id), Rating::new(3), true).unwrap();
+        c.set_rating(FileId::new(id), Rating::new(3), true).unwrap();
         sync_file(&mut c, id, Rating::new(1));
         assert_eq!(raw::rating(&c, id), Some(3));
     }
@@ -951,7 +950,7 @@ mod tests {
     /// import, which finds no rating in the file, keeps the catalog's while the write is queued.
     fn a_rating_made_before_the_import_is_kept_and_queued(rules: PathRules) {
         let (mut c, id) = one_file(rules);
-        writes::set_rating(&c, FileId::new(id), Rating::new(4), true).unwrap();
+        c.set_rating(FileId::new(id), Rating::new(4), true).unwrap();
         assert_eq!(raw::queued(&c, id, "rating"), Some(4), "queued with no analysis");
         sync_file(&mut c, id, None);
         assert_eq!(raw::rating(&c, id), Some(4));

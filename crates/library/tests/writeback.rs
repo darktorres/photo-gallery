@@ -144,7 +144,7 @@ fn ratings_and_turns_reach_the_files() {
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
         let rating = Rating::new(u8::try_from(n % 5 + 1).unwrap());
-        pg_catalog::writes::set_rating(&c, FileId::new(*id), rating, true).unwrap();
+        c.set_rating(FileId::new(*id), rating, true).unwrap();
     }
     writer.wake();
     wait_for_queue(&c).unwrap();
@@ -166,7 +166,7 @@ fn ratings_and_turns_reach_the_files() {
     // A turn: the files show turned; the analysis is redone with the new size.
     let originals: Vec<Rgb> = files.iter().map(|(p, _)| shown(p).unwrap()).collect();
     for (id, _) in &before {
-        pg_catalog::writes::queue_rotation(&c, FileId::new(*id), Turns::new(1)).unwrap();
+        c.queue_rotation(FileId::new(*id), Turns::new(1)).unwrap();
     }
     writer.wake();
     wait_for_queue(&c).unwrap();
@@ -194,7 +194,7 @@ fn ratings_and_turns_reach_the_files() {
     let placeholder_turns = |c: &Catalog| -> Vec<u8> {
         before
             .iter()
-            .map(|(id, _)| pg_catalog::browse::read::placeholder(c, FileId::new(*id)).unwrap().unwrap().turns.get())
+            .map(|(id, _)| c.placeholder(FileId::new(*id)).unwrap().unwrap().turns.get())
             .collect()
     };
     assert!(placeholder_turns(&c).iter().all(|&t| t == 1), "placeholders after the turn: {:?}", placeholder_turns(&c));
@@ -266,7 +266,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     let made = pg_thumbs::run(thumbs, &catalog_path, 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
-    pg_catalog::writes::set_rating(&c, FileId::new(jpeg_id), Rating::new(4), true).unwrap();
+    c.set_rating(FileId::new(jpeg_id), Rating::new(4), true).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
@@ -278,7 +278,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
 
     // A turn of the JPEG is written in place: its pixels are turned, and it keeps its rating. The clip's bytes are
     // left as they were (a video's turn stays in the catalog).
-    pg_catalog::writes::queue_rotation(&c, FileId::new(jpeg_id), Turns::new(1)).unwrap();
+    c.queue_rotation(FileId::new(jpeg_id), Turns::new(1)).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
@@ -340,7 +340,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
         "the status: {:?}",
         writer.status().error
     );
-    assert!(pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert!(c.file_state(id).unwrap().unwrap().writing);
     // And it waits at the cap: no more tries until a change or a start.
     std::thread::sleep(Duration::from_secs(3));
     assert_eq!(attempts(), 5);
@@ -357,7 +357,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     );
     assert!(!on_disk(&c, &temp).exists(), "the temp is still on disk");
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3), "the file holds the rating once the copy is done");
-    assert!(!pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert!(!c.file_state(id).unwrap().unwrap().writing);
     assert_eq!(writer.status().error, None);
 
     drop(writer);
@@ -380,7 +380,7 @@ fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Rating);
     std::fs::copy(&files[1].0, on_disk(&c, &temp)).unwrap();
     state::queue_finished_copy(&c, id, "rating", 3, &temp).unwrap();
-    pg_catalog::writes::set_rating(&c, id, Rating::new(5), true).unwrap();
+    c.set_rating(id, Rating::new(5), true).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
@@ -409,7 +409,7 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
     assert_ne!(rating_temp, turns_temp);
     std::fs::copy(&files[1].0, on_disk(&c, &rating_temp)).unwrap();
     state::queue_finished_copy(&c, id, "rating", 3, &rating_temp).unwrap();
-    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+    c.queue_rotation(id, Turns::new(1)).unwrap();
     let Some(held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
         pg_testkit::skip("the permissions don't stop this process from writing (root)");
         return;
@@ -443,7 +443,7 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     let (dir, files, catalog_path, c) = imported("refused").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
-    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+    c.queue_rotation(id, Turns::new(1)).unwrap();
     let Some(held) = hold(Path::new(&files[1].0), Access::Write).unwrap() else {
         pg_testkit::skip("the permissions don't stop this process from writing (root)");
         return;
@@ -457,7 +457,7 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     let row = state::write_row(&c, id).unwrap();
     assert_eq!(row.temp, None, "a temp was recorded though the copy never started");
     assert!(!on_disk(&c, &temp).exists(), "the temp is left on disk");
-    assert!(!pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert!(!c.file_state(id).unwrap().unwrap().writing);
     assert!(matches!(writer.status().error, Some(WriteError::Failed(_))), "{:?}", writer.status().error);
 
     drop(held);
@@ -495,7 +495,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
         path.parts.iter().rev().nth(1).is_some_and(|folder| folder.display().ends_with('.'))
     };
     let id = files.iter().map(|(id, _)| *id).find(|&id| in_dotted(id)).expect("the file in the dotted folder");
-    pg_catalog::writes::set_rating(&c, id, Rating::new(4), true).unwrap();
+    c.set_rating(id, Rating::new(4), true).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
@@ -526,7 +526,7 @@ fn a_file_saved_between_the_read_and_the_copy_is_read_again() {
     let mut saved = Cursor::new(Vec::new());
     pattern(32, 16).write_to(&mut saved, image::ImageFormat::Png).unwrap();
     let saved: &'static [u8] = Box::leak(saved.into_inner().into_boxed_slice());
-    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+    c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let fault = Fault::SaveBeforeCopy { file: id, with: saved };
@@ -562,7 +562,7 @@ fn a_finishing_copy_whose_temp_is_gone_completes() {
     );
     assert_eq!(writer.status().error, None);
     assert_eq!(state::file_rating_of(&c, id).unwrap(), Some(3));
-    assert!(!pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert!(!c.file_state(id).unwrap().unwrap().writing);
 
     drop(writer);
     drop(c);
@@ -586,17 +586,17 @@ fn a_read_only_original_is_counted_up_to_the_cap() {
         pg_testkit::skip("the permissions don't stop this process from writing (root)");
         return;
     }
-    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+    c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
-    let cap = pg_catalog::writes::MAX_ATTEMPTS;
+    let cap = pg_catalog::queue::MAX_ATTEMPTS;
     wait_until(120, || format!("{} attempts", attempts()), || attempts() >= cap);
     let row = state::write_row(&c, id).unwrap();
     assert!(row.error.is_some() && row.temp.is_none(), "{:?}", row.error);
-    assert_eq!(pg_catalog::writes::left_to_write(&c).unwrap(), 0, "nothing left to try");
+    assert_eq!(c.left_to_write().unwrap(), 0, "nothing left to try");
 
     drop(writer);
     std::fs::set_permissions(path, before).unwrap();
@@ -733,7 +733,7 @@ fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
     let (dir, _files, catalog_path, c) = imported("failcopy").unwrap();
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
-    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+    c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let fault = Fault::FailCopy(id);
@@ -755,7 +755,7 @@ fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
         "the status: {:?}",
         writer.status().error
     );
-    assert!(pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert!(c.file_state(id).unwrap().unwrap().writing);
 
     drop(writer);
     drop(c);
@@ -771,7 +771,7 @@ fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
     let (id, db_path) = state::file_and_path(&c, "b.png").unwrap();
     let temp = pg_writeback::temp_of(&db_path, WriteKind::Turns);
     let before = std::fs::read(&files[1].0).unwrap();
-    pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+    c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let fault = Fault::ForgetBeforeRecord(id);
@@ -784,7 +784,7 @@ fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
         || state::writes_queued(&c, id).unwrap() == 0 && !on_disk(&c, &temp).exists(),
     );
     assert_eq!(std::fs::read(&files[1].0).unwrap(), before, "the original is as it was");
-    assert!(!pg_catalog::browse::read::file_state(&c, id).unwrap().unwrap().writing);
+    assert!(!c.file_state(id).unwrap().unwrap().writing);
     assert_eq!(writer.status().error, None);
 
     drop(writer);
@@ -851,7 +851,7 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
     // Turns: a PNG's is rewritten without ExifTool.
     let (poisoned, healthy) = (state::file_id(&c, "a.jpg").unwrap(), state::file_id(&c, "b.png").unwrap());
     for id in [poisoned, healthy] {
-        pg_catalog::writes::queue_rotation(&c, id, Turns::new(1)).unwrap();
+        c.queue_rotation(id, Turns::new(1)).unwrap();
     }
 
     let (events, quiet) = Quiet::bus();
@@ -894,7 +894,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
     let ctl = Control::new();
     let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
     pg_scan::scan(&mut c, &root, &ctl).unwrap();
-    pg_catalog::writes::queue_rotation(&c, state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
+    c.queue_rotation(state::file_id(&c, "b.png").unwrap(), Turns::new(1)).unwrap();
 
     let (events, quiet) = Quiet::bus();
     let thumbs: &'static ThumbCache =
@@ -906,7 +906,7 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
         assert!(start.elapsed() < Duration::from_secs(60), "the writer is still running");
         std::thread::sleep(Duration::from_millis(50));
     }
-    assert_eq!(pg_catalog::writes::left_to_write(&c).unwrap(), 1, "the write is still queued");
+    assert_eq!(c.left_to_write().unwrap(), 1, "the write is still queued");
     drop(writer);
     drop(c);
     let _ = std::fs::remove_dir_all(dir.join("images"));

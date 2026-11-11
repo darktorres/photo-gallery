@@ -4,7 +4,6 @@
 
 use std::sync::Arc;
 
-use pg_catalog::browse;
 use pg_model::query::{Query, Sort};
 use pg_model::view::{Listing, SavedView};
 use pg_query::from_json;
@@ -34,27 +33,27 @@ impl Views {
 
     /// Where the user was at the last save: the default listing where nothing was saved, or it can't be read.
     pub fn listing(&self) -> Listing {
-        self.catalogs.with_catalog(browse::read::session_listing).ok().flatten().unwrap_or_default()
+        self.catalogs.with_catalog(pg_catalog::Catalog::session_listing).ok().flatten().unwrap_or_default()
     }
 
     /// Remember the listing for the next start.
     pub fn save_listing(&self, listing: &Listing) -> Result<()> {
-        self.catalogs.with_catalog(|c| browse::writes::save_session_listing(c, listing))
+        self.catalogs.with_catalog(|c| c.save_session_listing(listing))
     }
 
     /// The saved views, sorted by name.
     pub fn all(&self) -> Result<Vec<SavedView>> {
-        self.catalogs.with_catalog(browse::read::views)
+        self.catalogs.with_catalog(pg_catalog::Catalog::views)
     }
 
     /// Save (or replace) a view under its name.
     pub fn save(&self, view: &SavedView) -> Result<()> {
-        self.catalogs.with_catalog(|c| browse::writes::save_view(c, view))
+        self.catalogs.with_catalog(|c| c.save_view(view))
     }
 
     /// Delete the view of this name.
     pub fn delete(&self, name: &str) -> Result<()> {
-        self.catalogs.with_catalog(|c| browse::writes::delete_view(c, name))
+        self.catalogs.with_catalog(|c| c.delete_view(name))
     }
 
     /// The saved view by this name, if there is one.

@@ -63,7 +63,7 @@ pub(crate) fn before_copy(fault: Option<Fault>, fired: &AtomicBool, file: FileId
 pub(crate) fn before_record(
     fault: Option<Fault>,
     fired: &AtomicBool,
-    job: &pg_catalog::writes::Job,
+    job: &pg_catalog::queue::Job,
     catalog_path: &Path,
 ) -> anyhow::Result<()> {
     if let Some(Fault::ForgetBeforeRecord(forgotten)) = fault
@@ -71,7 +71,7 @@ pub(crate) fn before_record(
         && !fired.swap(true, Ordering::SeqCst)
     {
         let catalog = pg_catalog::Catalog::open(catalog_path, pg_platform::native::PATH_RULES)?;
-        pg_catalog::writes::drop_gone(&catalog, job)?;
+        catalog.drop_gone_write(job)?;
     }
     Ok(())
 }

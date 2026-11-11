@@ -211,8 +211,10 @@ impl qobject::Shell {
         }
     }
 
+    /// Whether the window has work still to show: the core's pauses, the inbox's writes (its marks and the listing
+    /// after them), and the expanded ledger's list being read.
     pub(crate) fn pending(&self) -> bool {
-        controller::with(|c| c.pending())
+        controller::with(|c| c.pending()) || !app::get().inbox().idle() || crate::failed_files::loading()
     }
 
     /// Shutdown: the saves that wait run now; a pause that would only show the list does not.

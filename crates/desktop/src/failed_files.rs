@@ -71,6 +71,16 @@ fn qt_int(n: impl TryInto<i32>) -> i32 {
     n.try_into().unwrap_or(i32::MAX)
 }
 
+thread_local! {
+    /// Whether the list is being read (the Qt thread's): the screenshot's settle check waits for it (`loading`).
+    static LOADING: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Whether the expanded ledger's list is still being read.
+pub(crate) fn loading() -> bool {
+    LOADING.get()
+}
+
 impl qobject::FailedFiles {
     pub(crate) fn data(&self, index: &QModelIndex, role: i32) -> QVariant {
         let Some(row) = usize::try_from(index.row()).ok().and_then(|row| self.rows.get(row)) else {
@@ -143,7 +153,8 @@ impl qobject::FailedFiles {
         };
         self.as_mut().put_loading(true);
         let list = self.qt_thread();
-        app::get().reading().session().failed_files(kind, SHOWN, move |read| {
+        let seen_to = crate::notices::seen_at_open(kind);
+        app::get().reading().session().failed_files(kind, SHOWN, seen_to, move |read| {
             // Fails only when the window is gone: nothing left to show it in.
             let _ = list.queue(move |list| list.delivered(asked, read));
         });
@@ -171,6 +182,7 @@ impl qobject::FailedFiles {
     }
 
     fn put_loading(mut self: Pin<&mut Self>, loading: bool) {
+        LOADING.set(loading);
         if self.loading != loading {
             self.as_mut().rust_mut().loading = loading;
             self.loading_changed();

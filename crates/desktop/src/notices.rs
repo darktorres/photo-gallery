@@ -19,6 +19,8 @@ pub(crate) mod state;
 use crate::notices_bridge::qobject;
 
 use core::pin::Pin;
+use std::cell::RefCell;
+use std::collections::BTreeMap;
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use cxx_qt::{CxxQtType, Threading};
@@ -32,6 +34,30 @@ use pg_model::rules::PathRules;
 use crate::app;
 use crate::failed_files::{kind_code, kind_of};
 use crate::list_diff::{self, Op};
+
+thread_local! {
+    /// Each ledger's acknowledgement mark as the user last saw it (the Qt thread's): while the inbox is closed, the
+    /// latest listing's; while it is open, the one it opened with (a ledger that appears meanwhile keeps its first).
+    /// Its list and its Copy say what was new then, whatever marking it read does meanwhile.
+    static SEEN_AT_OPEN: RefCell<BTreeMap<LedgerKind, i64>> = const { RefCell::new(BTreeMap::new()) };
+}
+
+/// `kind`'s mark as the user last saw it, if it was listed (`None`: the acknowledgement as it is now).
+pub(crate) fn seen_at_open(kind: LedgerKind) -> Option<i64> {
+    SEEN_AT_OPEN.with_borrow(|kept| kept.get(&kind).copied())
+}
+
+/// Keep the ledgers' marks of `rows`: all of them (`fresh`, the inbox closed), or only the ledgers not kept yet.
+fn keep_seen(rows: &[InboxEntry], fresh: bool) {
+    SEEN_AT_OPEN.with_borrow_mut(|kept| {
+        if fresh {
+            kept.clear();
+        }
+        for (kind, seen_to) in rows.iter().filter_map(|e| Some((ledger_kind(e.id)?, e.seen_to?))) {
+            kept.entry(kind).or_insert(seen_to);
+        }
+    });
+}
 
 const ROLE_TITLE: i32 = 256;
 const ROLE_BODY: i32 = 257;
@@ -303,6 +329,7 @@ impl qobject::Notices {
         self.as_mut().set_unread_count(qt_int(listing.unread));
         let passes = passes_of(&self.rows);
         self.as_mut().set_passes_shown(passes);
+        keep_seen(&self.rows, !self.viewing);
         if self.marking {
             self.mark_shown_read();
         }
@@ -359,6 +386,10 @@ impl qobject::Notices {
     pub(crate) fn set_viewing(mut self: Pin<&mut Self>, open: bool, active: bool) {
         if self.viewing != open {
             self.as_mut().rust_mut().viewing = open;
+            // The marks the inbox opens with stay while it is open (opening marks it read: what was new stays so).
+            if !open {
+                keep_seen(&self.rows, true);
+            }
             app::get().inbox().set_viewing(open);
         }
         self.as_mut().rust_mut().marking = open && active;
@@ -405,7 +436,7 @@ impl qobject::Notices {
             return;
         };
         let notices = self.qt_thread();
-        app::get().reading().session().copy_details(kind, COPIED_FILES, move |read| {
+        app::get().reading().session().copy_details(kind, COPIED_FILES, seen_at_open(kind), move |read| {
             let items = match read {
                 Ok(failed) => Some(failed.items),
                 Err(e) => {
@@ -467,7 +498,29 @@ mod tests {
     use super::*;
 
     fn entry(id: InboxEntryId, notice: Notice) -> InboxEntry {
-        InboxEntry { id, notice, counts: None, created: 0, updated: 0, read: false, decode_error: None }
+        InboxEntry { id, notice, counts: None, created: 0, updated: 0, read: false, decode_error: None, seen_to: None }
+    }
+
+    /// What a ledger's list calls new: past the mark of the latest listing while the inbox is closed, and past the mark
+    /// it opened with while it is open (opening marks it read, which moves the listed mark); a ledger that appears
+    /// while it is open keeps its first.
+    #[test]
+    fn a_ledgers_new_rows_are_those_new_when_the_inbox_opened() {
+        let ledger = |kind, seen_to| InboxEntry {
+            seen_to: Some(seen_to),
+            ..entry(InboxEntryId::Ledger { kind, seen: 0 }, Notice::ThumbsFailed { counts: None })
+        };
+        let thumbs = LedgerKind::File(FilePass::Thumbs);
+        keep_seen(&[ledger(thumbs, 3)], true);
+        keep_seen(&[ledger(thumbs, 5)], true);
+        assert_eq!(seen_at_open(thumbs), Some(5), "closed: the latest listing's");
+        // Open: the listing after the mark doesn't move it; a ledger new meanwhile is kept from its first listing.
+        keep_seen(&[ledger(thumbs, 9), ledger(LedgerKind::ScanFolders, 2)], false);
+        keep_seen(&[ledger(LedgerKind::ScanFolders, 7)], false);
+        assert_eq!((seen_at_open(thumbs), seen_at_open(LedgerKind::ScanFolders)), (Some(5), Some(2)));
+        // Closed again: the listing's.
+        keep_seen(&[ledger(thumbs, 9)], true);
+        assert_eq!((seen_at_open(thumbs), seen_at_open(LedgerKind::ScanFolders)), (Some(9), None));
     }
 
     /// An entry's key is its identity: a new revision of a row, a ledger listed up to a newer serial, keep it.

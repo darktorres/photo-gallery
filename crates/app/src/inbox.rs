@@ -165,7 +165,8 @@ struct Work {
     poke: bool,
     /// The inbox is closed: nothing more is queued, and the writer ends once it has written what is.
     stop: bool,
-    /// The last sequence number the writer has applied, and read the inbox after: what a test waits on.
+    /// The last sequence number the writer has applied, and read the inbox after: what `Inbox::idle` and a test
+    /// wait on.
     done: u64,
 }
 
@@ -458,6 +459,13 @@ impl Inbox {
         {
             pg_log::error("inbox", "the inbox's writer panicked");
         }
+    }
+
+    /// Whether the writer has nothing left to do: nothing queued, and what it took is written and the inbox read after
+    /// it. What the screenshot's settle check waits for (the inbox's marks and its listing are what it shows).
+    pub fn idle(&self) -> bool {
+        let work = self.shared.work();
+        !work.has_work() && work.done >= work.next
     }
 
     /// Wait until the writer has applied everything queued before this call, and read the inbox after it if that was

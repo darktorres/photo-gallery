@@ -49,6 +49,9 @@ pub struct Summary {
     pub read: bool,
     /// Read only while the inbox is viewed (`viewing`): `None` otherwise, and nothing renders a count then.
     pub counts: Option<Counts>,
+    /// The acknowledgement's mark when it was listed: the rows past it are new. The window keeps the one it had when
+    /// the inbox opened, so its list says what was new then, whatever marking it read does meanwhile.
+    pub seen_to: i64,
 }
 
 impl Summary {
@@ -164,8 +167,17 @@ impl Catalog {
     /// The failed files of `pass`'s entry, newest first, at most `limit`: the live rows (of files present, and for the
     /// import not pending, as the grid's failed filter has them).
     pub fn failed_files(&self, pass: FilePass, limit: usize) -> Result<Vec<FailedFile>> {
+        self.failed_files_since(pass, limit, None)
+    }
+
+    /// [`Catalog::failed_files`], new past `seen_to` (a [`Summary::seen_to`] the window kept) or, with `None`, past
+    /// the acknowledgement as it is now.
+    pub fn failed_files_since(&self, pass: FilePass, limit: usize, seen_to: Option<i64>) -> Result<Vec<FailedFile>> {
         let conn = &self.conn;
-        let seen_to = ack_on(conn, LedgerKind::File(pass))?.seen_to;
+        let seen_to = match seen_to {
+            Some(seen_to) => seen_to,
+            None => ack_on(conn, LedgerKind::File(pass))?.seen_to,
+        };
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let mut stmt = conn.prepare_cached(concat!(
             "SELECT f.id, (SELECT path FROM folders WHERE id = f.folder_id), f.name, l.error, l.retry, l.first_seen,
@@ -192,8 +204,16 @@ impl Catalog {
     /// The folders of the scans' ledger, grouped by the library folder that holds them (by its path, then theirs), at
     /// most `limit`: its expanded entry's detail.
     pub fn failed_folders(&self, limit: usize) -> Result<Vec<FailedFolder>> {
+        self.failed_folders_since(limit, None)
+    }
+
+    /// [`Catalog::failed_folders`], new past `seen_to` (as [`Catalog::failed_files_since`]).
+    pub fn failed_folders_since(&self, limit: usize, seen_to: Option<i64>) -> Result<Vec<FailedFolder>> {
         let conn = &self.conn;
-        let seen_to = ack_on(conn, LedgerKind::ScanFolders)?.seen_to;
+        let seen_to = match seen_to {
+            Some(seen_to) => seen_to,
+            None => ack_on(conn, LedgerKind::ScanFolders)?.seen_to,
+        };
         let limit = i64::try_from(limit).unwrap_or(i64::MAX);
         let rows: Vec<FolderRow> = conn
             .prepare_cached(
@@ -340,6 +360,7 @@ pub(crate) fn ledger_entries_on(conn: &Connection, viewing: bool) -> Result<Vec<
             updated: newest.first_seen,
             read: !state.unread,
             counts,
+            seen_to: ack.seen_to,
         });
     }
     Ok(out)
@@ -535,6 +556,11 @@ mod tests {
             [(3, true), (2, false), (1, false)]
         );
         assert_eq!(listed[0].path.parts.last().unwrap().display(), "3.jpg");
+        // Read against the mark the entry was listed with: once it is read, what was new then still is.
+        assert!(c.mark_ledger_read(THUMBS, again.newest, 16).unwrap());
+        assert!(c.failed_files(FilePass::Thumbs, 10).unwrap().iter().all(|f| !f.new));
+        let since = c.failed_files_since(FilePass::Thumbs, 10, Some(again.seen_to)).unwrap();
+        assert_eq!(since.iter().filter(|f| f.new).map(|f| f.file_id.get()).collect::<Vec<_>>(), [3]);
         // A retry lists the files again for the pass and empties the ledger.
         let before = raw::file_seq(&c, FileId::new(1));
         c.retry_failures(FilePass::Thumbs).unwrap();

@@ -49,6 +49,8 @@ pub struct Entry {
     /// Why a stored row of a kind this build knows couldn't be read (it then reads as [`Notice::Unknown`]): a bad
     /// payload, which the inbox logs. `None` for a row read, and for a retired or unknown kind (expected).
     pub decode_error: Option<String>,
+    /// A ledger's acknowledgement mark as listed ([`crate::ledger::Summary::seen_to`]); `None` for a row.
+    pub seen_to: Option<i64>,
 }
 
 /// What tells one listing of the inbox from the next ([`Catalog::inbox_marks`]): a row that is new, posted again (its
@@ -153,6 +155,7 @@ impl Catalog {
                     id: EntryId::Row { id: r.get(0)?, uid: r.get(1)?, rev: r.get(2)? },
                     notice,
                     decode_error: error,
+                    seen_to: None,
                     counts: Some(Counts { total: count(r.get(5)?), ..Counts::default() }),
                     created: r.get(6)?,
                     updated: r.get(7)?,
@@ -169,6 +172,7 @@ impl Catalog {
             updated: s.updated,
             read: s.read,
             decode_error: None,
+            seen_to: Some(s.seen_to),
         }));
         snapshot.commit()?;
         // Stable: rows of one time keep their order (newest id first).

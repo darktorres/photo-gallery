@@ -79,13 +79,18 @@ pub struct Failed {
     pub counts: Counts,
 }
 
-/// The detail of `kind`'s ledger, at most `limit` items.
-fn read_failed(c: &Catalog, kind: LedgerKind, limit: usize) -> pg_catalog::Result<Failed> {
+/// The detail of `kind`'s ledger, at most `limit` items, new past `seen_to` (the mark the window kept when the inbox
+/// opened; `None`: the acknowledgement as it is now).
+fn read_failed(c: &Catalog, kind: LedgerKind, limit: usize, seen_to: Option<i64>) -> pg_catalog::Result<Failed> {
     let items = match kind {
-        LedgerKind::File(pass) => FailedItems::Files(c.failed_files(pass, limit)?),
-        LedgerKind::ScanFolders => FailedItems::Folders(c.failed_folders(limit)?),
+        LedgerKind::File(pass) => FailedItems::Files(c.failed_files_since(pass, limit, seen_to)?),
+        LedgerKind::ScanFolders => FailedItems::Folders(c.failed_folders_since(limit, seen_to)?),
     };
-    let counts = c.ledger_counts(kind, &c.ledger_ack(kind)?)?;
+    let mut ack = c.ledger_ack(kind)?;
+    if let Some(seen_to) = seen_to {
+        ack.seen_to = seen_to;
+    }
+    let counts = c.ledger_counts(kind, &ack)?;
     Ok(Failed { kind, items, counts })
 }
 
@@ -271,14 +276,35 @@ impl Session {
 
     /// What `kind`'s expanded entry lists, at most `limit`, with its counts (its kind's newest request, as with
     /// `submit`): the list shows "loading" until it is delivered.
-    pub fn failed_files(&self, kind: LedgerKind, limit: usize, deliver: impl FnOnce(Result<Failed>) + Send + 'static) {
-        self.submit(Kind::FailedFiles, move |c| read_failed(c, kind, limit), move |r| deliver(r.map_err(Error::from)));
+    /// New is past `seen_to` (see `read_failed`).
+    pub fn failed_files(
+        &self,
+        kind: LedgerKind,
+        limit: usize,
+        seen_to: Option<i64>,
+        deliver: impl FnOnce(Result<Failed>) + Send + 'static,
+    ) {
+        self.submit(
+            Kind::FailedFiles,
+            move |c| read_failed(c, kind, limit, seen_to),
+            move |r| deliver(r.map_err(Error::from)),
+        );
     }
 
     /// What the inbox's Copy of `kind`'s entry adds to its words: its files (or folders), at most `limit`. Its own kind,
     /// so a Copy doesn't cancel the expanded list's read, nor that one the Copy.
-    pub fn copy_details(&self, kind: LedgerKind, limit: usize, deliver: impl FnOnce(Result<Failed>) + Send + 'static) {
-        self.submit(Kind::CopyDetails, move |c| read_failed(c, kind, limit), move |r| deliver(r.map_err(Error::from)));
+    pub fn copy_details(
+        &self,
+        kind: LedgerKind,
+        limit: usize,
+        seen_to: Option<i64>,
+        deliver: impl FnOnce(Result<Failed>) + Send + 'static,
+    ) {
+        self.submit(
+            Kind::CopyDetails,
+            move |c| read_failed(c, kind, limit, seen_to),
+            move |r| deliver(r.map_err(Error::from)),
+        );
     }
 
     /// The folder of `file_id` where a Reveal opens it, if the library shows the file (present); `None` for one gone or
@@ -405,7 +431,7 @@ mod tests {
         let release = hold(&session);
         for limit in [1, 10] {
             let deliver = deliver.clone();
-            session.failed_files(THUMBS, limit, move |r| deliver.send(r.map(|f| f.items.len())).unwrap());
+            session.failed_files(THUMBS, limit, None, move |r| deliver.send(r.map(|f| f.items.len())).unwrap());
         }
         drop(release);
         assert_eq!(got(&deliveries).unwrap(), 2, "the newer request's limit");
@@ -426,8 +452,8 @@ mod tests {
         let (copied, copied_got) = channel();
         let (revealed, revealed_got) = channel();
         let release = hold(&session);
-        session.failed_files(THUMBS, 1, move |r| failed.send(r).unwrap());
-        session.copy_details(THUMBS, 10, move |r| copied.send(r).unwrap());
+        session.failed_files(THUMBS, 1, None, move |r| failed.send(r).unwrap());
+        session.copy_details(THUMBS, 10, None, move |r| copied.send(r).unwrap());
         session.reveal_folder(FileId::new(1), move |r| revealed.send(r).unwrap());
         drop(release);
         let list = got(&failed_got).unwrap();
@@ -440,7 +466,7 @@ mod tests {
         assert_eq!(folder, pg_platform::native::PATH_RULES.split_file_name(&files[0].path).unwrap().0);
         // The scans' ledger is listed by its folders (none here).
         let (folders, folders_got) = channel();
-        session.failed_files(LedgerKind::ScanFolders, 10, move |r| folders.send(r).unwrap());
+        session.failed_files(LedgerKind::ScanFolders, 10, None, move |r| folders.send(r).unwrap());
         let list = got(&folders_got).unwrap();
         assert!(matches!(list.items, FailedItems::Folders(ref f) if f.is_empty()));
         assert_eq!(list.counts.total, 0);
@@ -477,8 +503,8 @@ mod tests {
         let (failed, failed_got) = channel();
         let (copied, copied_got) = channel();
         let (revealed, revealed_got) = channel();
-        session.failed_files(THUMBS, 10, move |r| failed.send(r.map(|_| ())).unwrap());
-        session.copy_details(THUMBS, 10, move |r| copied.send(r.map(|_| ())).unwrap());
+        session.failed_files(THUMBS, 10, None, move |r| failed.send(r.map(|_| ())).unwrap());
+        session.copy_details(THUMBS, 10, None, move |r| copied.send(r.map(|_| ())).unwrap());
         session.reveal_folder(FileId::new(1), move |r| revealed.send(r.map(|_| ())).unwrap());
         for result in [got(&failed_got), got(&copied_got), got(&revealed_got)] {
             let e = result.unwrap_err();

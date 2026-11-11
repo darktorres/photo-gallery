@@ -592,6 +592,7 @@ Each fix gets a test that fails before it.
   - `start_folder` takes `dirs`' lookup.
   - The argument bytes move to an `args` module.
 - Gate: Windows `just test`, Linux checks, `just shots` (the pickers).
+- **Done in step 8.** `pg_platform::picker::pick(start, owner)` on every system (`pick_with`, `start_units` and `has_drive_or_share` are private, `Dialog` is not exported); `pg_platform::dir::folders_in`; `start_folder(requested, var)` falls back to `dirs::user_folder(var)` (`USERPROFILE` on Windows, `HOME` elsewhere, absolute only); `pg_platform::args::{arg_bytes, after_first_equals}`. The desktop's picker names no platform, so `tools/boundaries.py` has no glue left; its tests of the platform's functions moved to `pg-platform`, and the dialog-borrow test went with `run_dialog` (the invokable holds no borrow across `pick`).
 
 ### M-41: an item lives with its only user
 

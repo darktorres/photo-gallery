@@ -20,11 +20,10 @@ Every directory under `crates/` is one package, named `pg-<directory>`. From the
   which of them this system's folders are checked by, `dir::ROOT_CHECK`; the scanner decides from them), a path given
   as the catalog keys it (`names::normalize_path`, with a typed error the client words), a file's size and last write
   time (`file::stat`), and message boxes. No other crate's production code names a platform
-  (`cfg(windows)`, `cfg(unix)`, `target_os`, `std::os::{windows,unix}`, `windows_sys`, `libloading::os`); the
-  exception is the desktop's glue that must name a type of one platform: the folder dialog's
-  (`pg_platform::picker::Dialog` exists on Windows only). The video player is handed an open file
-  (`file::player_handle`), the same call on every platform. `tools/boundaries.py` checks it, with the exception listed
-  there. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
+  (`cfg(windows)`, `cfg(unix)`, `target_os`, `std::os::{windows,unix}`, `windows_sys`, `libloading::os`): the folder
+  dialog is `picker::pick` on every system (`Unsupported` where the app's own picker over `dir::folders_in` is used),
+  and the video player is handed an open file (`file::player_handle`), the same call on every platform.
+  `tools/boundaries.py` checks it. A stored path reaches the disk through `names::disk_path` alone (the verbatim form on Windows, which keeps a
   folder ending in a dot or a space); `names::path_buf` is private to the crate.
 - `trace` (`pg-trace`): the startup stages, as plain C-named functions, for measuring them (`docs/PROFILING.md`).
 - `log` (`pg-log`): the app's log, `gallery.log`: JSON lines, capped and rotated, with this run's newest records in

@@ -1,6 +1,7 @@
-//! The per-user folder the app keeps its data in when nothing says where: `%LOCALAPPDATA%\PhotoGallery` on Windows, and
-//! `$XDG_DATA_HOME/photo-gallery` (or `~/.local/share/photo-gallery`) elsewhere. The environment is read through a lookup,
-//! so the tests give it one; the callers pass `std::env::var_os`.
+//! The per-user folders: the one the app keeps its data in when nothing says where (`%LOCALAPPDATA%\PhotoGallery` on
+//! Windows, and `$XDG_DATA_HOME/photo-gallery` or `~/.local/share/photo-gallery` elsewhere), and the user's own, where a
+//! folder dialog opens by default ([`user_folder`]). The environment is read through a lookup, so the tests give it one;
+//! the callers pass `std::env::var_os`.
 
 use std::ffi::OsString;
 use std::path::PathBuf;
@@ -9,6 +10,18 @@ use std::path::PathBuf;
 /// folder, when no variable gives an absolute folder: a catalog in a temporary folder is deleted by the system.
 pub fn default_home(var: impl Fn(&str) -> Option<OsString>) -> Result<PathBuf, String> {
     home_for(cfg!(windows), var)
+}
+
+/// The user's own folder under the environment `var` gives: `USERPROFILE` on Windows, `HOME` elsewhere, when it is an
+/// absolute folder.
+pub fn user_folder(var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    user_folder_for(cfg!(windows), var)
+}
+
+/// [`user_folder`] for the named OS, so both are tested on every host.
+fn user_folder_for(windows: bool, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
+    let name = if windows { "USERPROFILE" } else { "HOME" };
+    var(name).filter(|value| is_absolute_for(windows, &value.to_string_lossy())).map(PathBuf::from)
 }
 
 /// [`default_home`] for the named OS, so both are tested on every host.
@@ -50,6 +63,15 @@ mod tests {
     fn env(pairs: &[(&str, &str)]) -> impl Fn(&str) -> Option<OsString> {
         let map: BTreeMap<String, OsString> = pairs.iter().map(|(k, v)| (k.to_string(), OsString::from(v))).collect();
         move |name| map.get(name).cloned()
+    }
+
+    #[test]
+    fn the_users_folder_is_the_systems_own_variable() {
+        let both = env(&[("USERPROFILE", r"C:\Users\a"), ("HOME", "/home/a")]);
+        assert_eq!(user_folder_for(true, &both), Some(PathBuf::from(r"C:\Users\a")));
+        assert_eq!(user_folder_for(false, &both), Some(PathBuf::from("/home/a")));
+        assert_eq!(user_folder_for(false, env(&[("HOME", "relative")])), None);
+        assert_eq!(user_folder_for(true, env(&[])), None);
     }
 
     #[test]

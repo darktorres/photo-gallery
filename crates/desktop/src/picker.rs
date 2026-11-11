@@ -51,21 +51,7 @@ fn start_for(purpose: Purpose) -> Option<PathBuf> {
         Purpose::YandexSave => crate::app::get().yandex().start_folder(),
         Purpose::AddFolder | Purpose::SaveCrops => None,
     };
-    pg_platform::picker::start_folder(requested)
-}
-
-/// The folders in `dir`, by name (a folder's name is kept exactly: the path is the listing's own). An error when `dir`
-/// can't be read, or one of its entries can't.
-fn folders_in(dir: &Path) -> std::io::Result<Vec<PathBuf>> {
-    let mut folders = Vec::new();
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        if entry.file_type()?.is_dir() {
-            folders.push(entry.path());
-        }
-    }
-    folders.sort();
-    Ok(folders)
+    pg_platform::picker::start_folder(requested, std::env::var_os)
 }
 
 /// The display names of the listing's folders (the names as text: a dialog shows them, and the path is kept apart).
@@ -76,32 +62,6 @@ fn names_of(folders: &[PathBuf]) -> QStringList {
 /// The window the system's dialog belongs to: the app's (`main_window_handle`), None when no window is shown.
 fn owner() -> Option<usize> {
     Some(qobject::main_window_handle()).filter(|handle| *handle != 0)
-}
-
-/// The system's dialog for `purpose`: the folder it chose, with the purpose (None when the user cancelled).
-#[cfg(windows)]
-fn native(purpose: Purpose, start: Option<&Path>, owner: Option<usize>) -> std::io::Result<Option<Chosen>> {
-    let mut dialog = pg_platform::picker::Dialog::new()?;
-    run_dialog(&mut dialog, purpose, start, owner)
-}
-
-/// The system's dialog is Windows only; the app's own picker is used on the other systems.
-#[cfg(not(windows))]
-fn native(_: Purpose, _: Option<&Path>, _: Option<usize>) -> std::io::Result<Option<Chosen>> {
-    Err(std::io::Error::new(std::io::ErrorKind::Unsupported, "the native folder dialog is Windows only"))
-}
-
-/// Runs `dialog` for `purpose`: the folder it chose, with the purpose. The dialog runs app code while it is open (the
-/// deadlines and the events), so nothing of the picker's is borrowed across it.
-#[cfg(windows)]
-fn run_dialog(
-    dialog: &mut dyn pg_platform::picker::FolderDialog,
-    purpose: Purpose,
-    start: Option<&Path>,
-    owner: Option<usize>,
-) -> std::io::Result<Option<Chosen>> {
-    let start = pg_platform::picker::start_units(start);
-    Ok(pg_platform::picker::pick_with(dialog, start.as_deref(), owner)?.map(|path| (purpose, path)))
 }
 
 impl Default for PickerRust {
@@ -120,10 +80,11 @@ impl qobject::FolderPicker {
         let Some(purpose) = Purpose::from_code(purpose) else { return };
         let start = start_for(purpose);
         if pg_platform::picker::NATIVE {
-            // The system's dialog runs its own loop: nothing of the app is borrowed across it (`native`).
+            // The system's dialog runs its own loop, which runs app code (the deadlines and the events): nothing of the
+            // picker's is borrowed across it.
             let owner = owner();
-            match native(purpose, start.as_deref(), owner) {
-                Ok(Some(chosen)) => self.choose_path(chosen),
+            match pg_platform::picker::pick(start.as_deref(), owner) {
+                Ok(Some(path)) => self.choose_path((purpose, path)),
                 Ok(None) => {}
                 Err(e) => {
                     let call = pg_platform::picker::failed_call(&e).unwrap_or("the dialog");
@@ -139,7 +100,7 @@ impl qobject::FolderPicker {
             return;
         }
         let here = start.unwrap_or_else(|| PathBuf::from("/"));
-        let folders = match folders_in(&here) {
+        let folders = match pg_platform::dir::folders_in(&here) {
             Ok(folders) => folders,
             Err(e) => return self.report_unlisted(purpose, &here, &e),
         };
@@ -207,7 +168,7 @@ impl qobject::FolderPicker {
 
     /// The app's dialog now shows `folder` (and its folders).
     fn show_folder(mut self: Pin<&mut Self>, folder: PathBuf) {
-        let folders = match folders_in(&folder) {
+        let folders = match pg_platform::dir::folders_in(&folder) {
             Ok(folders) => folders,
             Err(e) => {
                 if let Some(purpose) = self.listing.as_ref().map(|l| l.purpose) {
@@ -235,125 +196,3 @@ impl qobject::FolderPicker {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use std::path::{Component, Path, PathBuf};
-
-    use super::folders_in;
-
-    /// A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
-    /// A path under a volume with no drive letter is not a drive or share, so the start folder keeps its path as given;
-    /// the drive and share forms are.
-    #[cfg(windows)]
-    #[test]
-    fn only_a_drive_or_a_share_is_given_in_its_canonical_form() {
-        use pg_platform::picker::has_drive_or_share;
-        assert!(has_drive_or_share(Path::new(r"\\?\C:\photos")));
-        assert!(has_drive_or_share(Path::new(r"C:\photos")));
-        assert!(has_drive_or_share(Path::new(r"\\?\UNC\server\share\a")));
-        assert!(has_drive_or_share(Path::new(r"\\server\share\a")));
-        assert!(!has_drive_or_share(Path::new(r"\\?\Volume{38788d0c-38dd-46ca-b547-211e9c17f3ac}\photos")));
-    }
-
-    #[test]
-    fn a_start_folder_is_given_in_its_real_form() {
-        let tree = Tree::new("start");
-        std::fs::create_dir(tree.0.join("inner")).unwrap();
-        let got = pg_platform::picker::start_folder(Some(tree.0.join("inner").join(".."))).expect("the start folder");
-        assert_eq!(got, std::fs::canonicalize(&tree.0).unwrap());
-        assert!(!got.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)));
-    }
-
-    /// A folder whose name is no UTF-8 (`pg_testkit::odd_name`).
-    fn odd_name() -> PathBuf {
-        PathBuf::from(pg_testkit::odd_name("odd"))
-    }
-
-    /// A temporary folder, removed when dropped.
-    struct Tree(PathBuf);
-
-    impl Tree {
-        fn new(tag: &str) -> Tree {
-            let root = std::env::temp_dir().join(format!("pg-picker-{tag}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&root);
-            std::fs::create_dir_all(&root).unwrap();
-            Tree(root)
-        }
-    }
-
-    impl Drop for Tree {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-
-    #[test]
-    fn the_folders_listed_are_the_folders_by_their_exact_names() {
-        let tree = Tree::new("listing");
-        let odd = tree.0.join(odd_name());
-        std::fs::create_dir(&odd).unwrap();
-        std::fs::create_dir(tree.0.join("Beta")).unwrap();
-        std::fs::create_dir(tree.0.join("alpha")).unwrap();
-        std::fs::write(tree.0.join("a file.txt"), b"x").unwrap();
-        let mut want = vec![tree.0.join("Beta"), tree.0.join("alpha"), odd];
-        want.sort();
-        assert_eq!(folders_in(&tree.0).unwrap(), want, "folders only, each by its exact path");
-    }
-
-    #[test]
-    fn a_folder_that_is_gone_is_an_error_not_an_empty_listing() {
-        let error = folders_in(Path::new("no-such-folder-for-the-picker-test")).unwrap_err();
-        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
-    }
-}
-
-#[cfg(all(test, windows))]
-mod dialog_tests {
-    use std::cell::RefCell;
-    use std::io;
-    use std::path::PathBuf;
-
-    use pg_platform::picker::{FolderDialog, ShellItem};
-
-    use super::{CHOSEN, Purpose, run_dialog};
-
-    /// What the dialog was opened with: its start folder's units and its owner.
-    type Opened = (Option<Vec<u16>>, Option<usize>);
-
-    /// A stand-in for the system's dialog: while it is open it uses the picker's own state (as a deadline or an event
-    /// would, through a mutable borrow), then answers with a folder whose name has a lone surrogate.
-    struct Fake {
-        opened: RefCell<Option<Opened>>,
-    }
-
-    struct Units(Vec<u16>);
-
-    impl ShellItem for Units {
-        fn file_system_path(&self) -> io::Result<Vec<u16>> {
-            Ok(self.0.clone())
-        }
-    }
-
-    impl FolderDialog for Fake {
-        fn run(&mut self, start: Option<&[u16]>, owner: Option<usize>) -> io::Result<bool> {
-            // A borrow held across the dialog by the picker would make these panic.
-            CHOSEN.with(|c| drop(c.borrow_mut()));
-            *self.opened.borrow_mut() = Some((start.map(<[u16]>::to_vec), owner));
-            Ok(true)
-        }
-
-        fn chosen(&self) -> io::Result<Option<Box<dyn ShellItem>>> {
-            Ok(Some(Box::new(Units(vec![0x43, 0x3A, 0x5C, 0x61, 0xD800]))))
-        }
-    }
-
-    #[test]
-    fn the_dialog_may_use_the_pickers_state_while_it_is_open() {
-        let mut fake = Fake { opened: RefCell::new(None) };
-        let start = PathBuf::from(r"C:\a");
-        let chosen = run_dialog(&mut fake, Purpose::SaveCrops, Some(&start), Some(0x40)).unwrap();
-        let path = pg_platform::names::disk_path_of(b"C:\\a\xED\xA0\x80");
-        assert_eq!(chosen, Some((Purpose::SaveCrops, path)), "the folder, exact and verbatim, for its purpose");
-        assert_eq!(fake.opened.into_inner(), Some((Some(vec![0x43, 0x3A, 0x5C, 0x61]), Some(0x40))));
-    }
-}

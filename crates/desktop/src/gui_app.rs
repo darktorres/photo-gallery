@@ -3,7 +3,7 @@
 //! (cpp/gui_app.cpp).
 
 use crate::gui_app_bridge::ffi;
-use pg_platform::names::arg_bytes;
+use pg_platform::args::arg_bytes;
 
 use std::ffi::OsString;
 

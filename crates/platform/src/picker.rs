@@ -1,13 +1,14 @@
 //! The folder dialog of Windows: the Explorer's own folder picker (`IFileOpenDialog`, folders only). The folder it gives
 //! comes back in the system's units, so a name with an unpaired surrogate is exact (a dialog's text would not be). On
-//! the other systems the app has its own picker (the desktop's folder picker, over a listing of the folders), so there
-//! is no native one here.
+//! the other systems the app has its own picker (the desktop's folder picker, over `dir::folders_in`), so [`pick`]
+//! is `Unsupported` there ([`NATIVE`] says which).
 //!
 //! Qt initializes COM on the GUI thread (a single-threaded apartment), so this initializes nothing, and it is called on
 //! that thread only. The dialog runs its own message loop while it is open: a caller holds no borrow of its state
 //! across the call. The dialog's steps are behind [`FolderDialog`] and [`ShellItem`], so `pick_with` is tested with a
 //! fake dialog; the Windows implementation is only the calls to the system.
 
+use std::ffi::OsString;
 use std::io;
 use std::path::{Path, PathBuf};
 
@@ -16,7 +17,7 @@ pub const NATIVE: bool = cfg!(windows);
 
 /// Whether `path` starts with a drive or a share (`C:\`, `\\?\C:\`, `\\server\share`), the forms the shell takes.
 #[cfg(windows)]
-pub fn has_drive_or_share(path: &Path) -> bool {
+fn has_drive_or_share(path: &Path) -> bool {
     use std::path::{Component, Prefix};
     matches!(
         path.components().next(),
@@ -29,7 +30,7 @@ pub fn has_drive_or_share(path: &Path) -> bool {
 
 /// Every other system has no drives or shares to tell apart: the test is always met.
 #[cfg(not(windows))]
-pub fn has_drive_or_share(_: &Path) -> bool {
+fn has_drive_or_share(_: &Path) -> bool {
     true
 }
 
@@ -39,8 +40,8 @@ pub fn has_drive_or_share(_: &Path) -> bool {
 /// as given is kept. The shell also normalizes every path it parses, which drops a folder's trailing dot or space, so
 /// a folder with such a name (or under one) starts the dialog at its nearest ancestor without one: the shell would
 /// otherwise open a sibling (`a` for `a.`), or refuse the verbatim form. Without a folder that is one now, the user's
-/// own (USERPROFILE, else HOME).
-pub fn start_folder(requested: Option<PathBuf>) -> Option<PathBuf> {
+/// own, under the environment `var` gives (`dirs::user_folder`; the callers pass `std::env::var_os`).
+pub fn start_folder(requested: Option<PathBuf>, var: impl Fn(&str) -> Option<OsString>) -> Option<PathBuf> {
     requested
         .map(|folder| match std::fs::canonicalize(&folder) {
             Ok(real) if has_drive_or_share(&real) => real,
@@ -48,7 +49,7 @@ pub fn start_folder(requested: Option<PathBuf>) -> Option<PathBuf> {
         })
         .filter(|folder| folder.is_dir())
         .map(|folder| reachable_by_shell(&folder))
-        .or_else(|| std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")).map(PathBuf::from))
+        .or_else(|| crate::dirs::user_folder(var))
 }
 
 /// `folder`, or its nearest ancestor whose names all survive the shell's normalization
@@ -61,7 +62,7 @@ fn reachable_by_shell(folder: &Path) -> PathBuf {
 
 /// The start folder in the shell's units, for `pick_with`.
 #[cfg(windows)]
-pub fn start_units(start: Option<&Path>) -> Option<Vec<u16>> {
+fn start_units(start: Option<&Path>) -> Option<Vec<u16>> {
     use std::os::windows::ffi::OsStrExt;
     start.map(|path| path.as_os_str().encode_wide().collect())
 }
@@ -74,7 +75,7 @@ pub use shell::{path_of_units, shell_path};
 /// Runs `dialog` and gives the folder it chose, exactly. None when the user cancelled. `start` is the folder the dialog
 /// opens in (its units), and `owner` the window it belongs to (None for none).
 #[cfg(windows)]
-pub fn pick_with(
+fn pick_with(
     dialog: &mut dyn FolderDialog,
     start: Option<&[u16]>,
     owner: Option<usize>,
@@ -88,7 +89,23 @@ pub fn pick_with(
 }
 
 #[cfg(windows)]
-pub use native::Dialog;
+use native::Dialog;
+
+/// The system's folder dialog, opened in `start` and owned by the window `owner` (its handle; None: unowned): the folder
+/// the user chose, exactly, or None when they cancelled. It runs its own message loop while it is open, so the caller
+/// holds no borrow of its state across the call. `Unsupported` off Windows, where the app's own picker is used
+/// ([`NATIVE`]).
+#[cfg(windows)]
+pub fn pick(start: Option<&Path>, owner: Option<usize>) -> io::Result<Option<PathBuf>> {
+    let mut dialog = Dialog::new()?;
+    pick_with(&mut dialog, start_units(start).as_deref(), owner)
+}
+
+/// The system's folder dialog is Windows only: the app's own picker is used here ([`NATIVE`]).
+#[cfg(not(windows))]
+pub fn pick(_start: Option<&Path>, _owner: Option<usize>) -> io::Result<Option<PathBuf>> {
+    Err(io::Error::new(io::ErrorKind::Unsupported, "the native folder dialog is Windows only"))
+}
 
 /// The system call of the dialog that failed, for an error the dialog gave (`None` for any other error). The log names
 /// it; the message the user sees is the system's text alone.
@@ -334,8 +351,47 @@ mod tests {
         std::fs::create_dir_all(&sibling).unwrap();
         let real = std::fs::canonicalize(&dir).unwrap();
         for asked in [verbatim(&dotted), verbatim(&dotted.join("inner"))] {
-            assert_eq!(super::start_folder(Some(asked.clone())), Some(real.clone()), "{}", asked.display());
+            assert_eq!(super::start_folder(Some(asked.clone()), |_| None), Some(real.clone()), "{}", asked.display());
         }
-        assert_eq!(super::start_folder(Some(sibling.clone())), Some(std::fs::canonicalize(&sibling).unwrap()));
+        assert_eq!(super::start_folder(Some(sibling.clone()), |_| None), Some(std::fs::canonicalize(&sibling).unwrap()));
+    }
+}
+
+#[cfg(test)]
+mod start_tests {
+    use std::path::{Component, Path};
+
+    /// A start folder given with a `..` part is opened in its real form: the shell refuses the path as it is.
+    #[test]
+    fn a_start_folder_is_given_in_its_real_form() {
+        let tree = pg_testkit::test_folder("scratch_picker", "pg-start-real").unwrap();
+        std::fs::create_dir(tree.join("inner")).unwrap();
+        let got = super::start_folder(Some(tree.join("inner").join("..")), |_| None).expect("the start folder");
+        assert_eq!(got, std::fs::canonicalize(&tree).unwrap());
+        assert!(!got.components().any(|c| matches!(c, Component::ParentDir | Component::CurDir)));
+        let _ = std::fs::remove_dir_all(&tree);
+    }
+
+    /// Without a folder, the dialog opens in the user's own.
+    #[test]
+    fn without_a_folder_the_dialog_opens_in_the_users() {
+        let home = std::env::current_dir().unwrap().into_os_string();
+        let var = |name: &str| (name == "USERPROFILE" || name == "HOME").then(|| home.clone());
+        let gone = Path::new("no-such-folder-for-the-start-test").to_path_buf();
+        assert_eq!(super::start_folder(Some(gone), var), Some(std::path::PathBuf::from(home.clone())));
+        assert_eq!(super::start_folder(None, |_| None), None);
+    }
+
+    /// A path under a volume with no drive letter is not a drive or share, so the start folder keeps its path as given;
+    /// the drive and share forms are.
+    #[cfg(windows)]
+    #[test]
+    fn only_a_drive_or_a_share_is_given_in_its_canonical_form() {
+        use super::has_drive_or_share;
+        assert!(has_drive_or_share(Path::new(r"\\?\C:\photos")));
+        assert!(has_drive_or_share(Path::new(r"C:\photos")));
+        assert!(has_drive_or_share(Path::new(r"\\?\UNC\server\share\a")));
+        assert!(has_drive_or_share(Path::new(r"\\server\share\a")));
+        assert!(!has_drive_or_share(Path::new(r"\\?\Volume{38788d0c-38dd-46ca-b547-211e9c17f3ac}\photos")));
     }
 }

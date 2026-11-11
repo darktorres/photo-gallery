@@ -16,6 +16,20 @@ use std::io;
 mod listing;
 pub use listing::Entry;
 
+/// The folders in `dir`, by name, sorted (a folder's name is kept exactly: the path is the listing's own): the in-app
+/// folder dialog's listing. An error when `dir` can't be read, or one of its entries can't.
+pub fn folders_in(dir: &std::path::Path) -> io::Result<Vec<std::path::PathBuf>> {
+    let mut folders = Vec::new();
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        if entry.file_type()?.is_dir() {
+            folders.push(entry.path());
+        }
+    }
+    folders.sort();
+    Ok(folders)
+}
+
 /// Which checks a folder of this system takes before it is scanned for its identities: the facts there are to decide
 /// from. Stated here, as [`crate::native::PATH_RULES`] is, so the scanner's policy names no platform.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -625,6 +639,33 @@ mod unix {
                 assert_eq!(volume_id(dev, Path::new("/proc")), None);
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod folders_tests {
+    use std::path::Path;
+
+    use super::folders_in;
+
+    #[test]
+    fn the_folders_listed_are_the_folders_by_their_exact_names() {
+        let tree = pg_testkit::test_folder("scratch_dir", "pg-folders-listing").unwrap();
+        let odd = tree.join(pg_testkit::odd_name("odd"));
+        std::fs::create_dir(&odd).unwrap();
+        std::fs::create_dir(tree.join("Beta")).unwrap();
+        std::fs::create_dir(tree.join("alpha")).unwrap();
+        std::fs::write(tree.join("a file.txt"), b"x").unwrap();
+        let mut want = vec![tree.join("Beta"), tree.join("alpha"), odd];
+        want.sort();
+        assert_eq!(folders_in(&tree).unwrap(), want, "folders only, each by its exact path");
+        let _ = std::fs::remove_dir_all(&tree);
+    }
+
+    #[test]
+    fn a_folder_that_is_gone_is_an_error_not_an_empty_listing() {
+        let error = folders_in(Path::new("no-such-folder-for-the-listing-test")).unwrap_err();
+        assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
     }
 }
 

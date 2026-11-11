@@ -36,9 +36,7 @@ REEXPORT_BOUNDARIES = {
     "crates/app/src/reexport.rs",
 }
 # Production code outside pg-platform that may name a platform, with the reason (ground rule 6).
-PLATFORM_GLUE = {
-    "crates/desktop/src/picker.rs": "the system's dialog is Windows' (pg_platform::picker::Dialog exists on Windows only)",
-}
+PLATFORM_GLUE: dict[str, str] = {}
 
 PLATFORM_WORD = re.compile(r"\b(windows|unix|target_os|target_family)\b")
 CFG = re.compile(r"\bcfg(?:_attr)?!?\s*\(")

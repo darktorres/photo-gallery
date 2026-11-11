@@ -40,7 +40,7 @@ fn parse(args: &[OsString]) -> Vec<Arg> {
 fn arg_of(arg: &OsString) -> Option<Arg> {
     let text = arg.to_string_lossy();
     let (name, value) = text.strip_prefix("--")?.split_once('=')?;
-    Some(Arg { name: name.to_string(), value: value.to_string(), exact: pg_platform::names::after_first_equals(arg)? })
+    Some(Arg { name: name.to_string(), value: value.to_string(), exact: pg_platform::args::after_first_equals(arg)? })
 }
 
 /// The part of `arg` after its first `=`, as the system holds it.

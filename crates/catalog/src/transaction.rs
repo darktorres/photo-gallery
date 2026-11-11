@@ -32,12 +32,10 @@ impl<'c> Deref for WriteTx<'c> {
 }
 
 impl WriteTx<'_> {
-    /// Commit, and end the hold.
+    /// Commit, and end the hold: `_hold` is dropped at the end of the body, after the commit it times.
     pub(crate) fn commit(self) -> rusqlite::Result<()> {
-        let WriteTx { inner, _hold: hold } = self;
-        let committed = inner.commit();
-        drop(hold);
-        committed
+        let WriteTx { inner, _hold } = self;
+        inner.commit()
     }
 }
 

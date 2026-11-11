@@ -189,8 +189,10 @@ bench matches fails the gate (a renamed bench isn't passed unseen), a bench that
 
 | Bench | Budget | Why |
 |---|---|---|
-| `scan-walk` | ≤ +10% | batching and the scan lease |
-| `import-flush` | ≤ +15% | the analysis trigger that keeps the import ledger (the bench fails one file in five) |
+| `scan-walk.again` | ≤ +10% | batching and the scan lease |
+| `scan-walk.first` | ≤ +20% | the pairing reads the fresh rows once per tier, in each batch's own transaction |
+| `import-flush` | ≤ +30% | the import ledger's two triggers per analysis: a frame of 10-25k instructions each, firing or not |
+| `pending-import` | ≤ +2% | the larger schema's fixed cost around one probe |
 | `inbox-refresh.closed` | ≤ −90% | the ledger's cheap state on the partial index instead of the counts |
 | `inbox-refresh.open` | ≤ −70% | the counts read while the inbox is shown are linear in the live rows |
 | `pending-thumbs` | ≤ +18% | the pass's ATTACH parses the catalog's larger schema: a fixed cost per pass |

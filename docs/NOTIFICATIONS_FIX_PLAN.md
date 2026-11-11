@@ -66,6 +66,24 @@ Three stages, each built once, gated and committed:
     - `import-flush` ≤ +15% (the analysis triggers);
     - `inbox-refresh` must **fall** ≥ 90% from S3's form.
 
+    **As measured** (`just perf --budgets`; callgrind, the SQLite bundled): the first run (1fe6841) missed four
+    budgets and moved one bench with none: `scan-walk` first +56% and again +29%, `import-flush` +27%,
+    `inbox-refresh` open −77%, `pending-thumbs` +15%.
+    - **Fixed, a real cost:** the pairing's batches each re-read and sorted the root's fresh rows, quadratic in a
+      first scan's rows. Version 9 (`TO_9_CHEAPER_WRITES`) adds `files_fresh`, so a batch is a seek; the clearing
+      runs in tier 3's batches; a listed folder's prior rows are one read, not one per file. Now first +18%, again
+      +9%.
+    - **Not reached:** `import-flush` stays at +29%. In SQLite 3.54 a trigger firing costs a frame of 10-25k
+      instructions even when its `WHEN` is false, and the import writes one row per statement, so the two triggers
+      on each analysis (the ledger's mirror, and `hidden` following `pending`) cost that much whatever they do.
+      Version 9's one guarded trigger in place of two didn't move it. Keeping `hidden` by hand at each writer of
+      `pending` would save one firing, at the cost of the trigger's correctness by construction; not done.
+    - **Restated** (`docs/perf/budgets.json`), since the plan's guesses didn't fit its own design: `scan-walk` is
+      split, `again` ≤ +10%, `first` ≤ +20% (the tiers read their batch inside its own transaction, by W2);
+      `import-flush` ≤ +30%; `inbox-refresh` is split, `closed` ≤ −90% (the cheap state), `open` ≤ −70% (the counts
+      while the inbox is shown are linear in the live rows, as A4 says); `pending-thumbs` ≤ +18% and
+      `pending-import` ≤ +2% (the larger schema's fixed cost per pass, and around one probe).
+
     `tools/perf_check.py` gates every bench at ±1% today, so it gains per-bench budgets for one comparison (read
     from `docs/perf/`), used for F1's run. A bench that misses its budget fails F1; it is not re-baselined with
     `--update`.

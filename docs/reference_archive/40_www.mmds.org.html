@@ -1,0 +1,940 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>Mining of Massive Datasets</title>
+<!-- Standard reset, fonts and grids -->
+<link rel="stylesheet" type="text/css" href="http://snap.stanford.edu/styles/reset-fonts-grids.css">
+<!-- styles for the whole website -->
+<link href="styles.css" rel="stylesheet" type="text/css" />
+</head>
+<body class="yui-skin-sam" id="yahoo-com">
+<div id="doc" class="yui-t1">
+<div id="hd">
+<!-- START: header -->
+<div id="header">
+<div id="header_left">
+<div id="header_left_content">
+<a href="http://i.stanford.edu/">Infolab</a>
+</div>
+</div>
+<div id="header_right">
+<div id="header_right_content">
+<a href="http://www.stanford.edu/">
+<img src="stanford.png" alt="Stanford University" width="153" height="22" />
+</a>
+</div>
+</div>
+</div>
+<!-- END: header -->
+</div>
+<!-- START: left column -->
+<div id="left-column" align="left">
+<br /><br />
+<center>
+<a href="http://www.stanford.edu/">
+<img id="snap-logo" src="http://snap.stanford.edu/images/seal.gif" alt="Stanford University"/>
+</a>
+</center>
+<ul id="links-under-menu">
+<li><a href="#top">Home</a></li>
+<li><a href="#book">Book &amp; Slides</a></li>
+<!--
+li><a href="#mooc">MOOC</a></li
+-->
+<li><a href="#courses">Stanford Courses</a></li>
+<li><a href="#support">Supporting Materials</a></li>
+</ul>
+<br>
+<center>
+<a href="#ver30"><img id="snap-logo" src="mmds_cover_v30.jpg" alt="Book cover Version 3.0"/></a>
+</center>
+<br><br>
+<center>
+<a href="#ver21"><img id="snap-logo" src="mmds_cover_v21.jpg" alt="Book cover Version 2.1"/></a>
+</center>
+<br><br>
+<center style="margin-top:5px;">
+<a href="#ver10"><img id="snap-logo" src="mmds_cover.jpg" alt="Book cover Version 1.0"/></a>
+</center>
+</div>
+<!-- END: left column -->
+<!-- START: right column -->
+<div id="right-column">
+<a name="top"></a>
+<br /><br />
+<!-- <div style="color:#ff8b00; font-size:36px; font-weight:bold;">Mining of Massive Datasets</div> -->
+<h1>Mining of Massive Datasets</h1>
+<div style="font-size:18px; font-weight:bold;">
+<a href="http://cs.stanford.edu/~jure/">Jure Leskovec</a>,
+<a href="https://twitter.com/anand_raj">Anand Rajaraman</a>,
+<a href="http://infolab.stanford.edu/~ullman/">Jeff Ullman</a>
+</div>
+<div class="call-out-green">
+Big-data is transforming the world. Here you will learn data mining and machine learning
+techniques to process large datasets and extract valuable knowledge from them.
+</div>
+<br>
+<a name="book"></a>
+<h2>The book</h2>
+<p>
+The book is based on <a href="http://cs.stanford.edu">Stanford Computer Science</a> course <a href="http://cs246.stanford.edu">CS246: Mining
+Massive Datasets</a> (and <a href="http://infolab.stanford.edu/~ullman/mining/2009/index.html">CS345A: Data
+Mining</a>).
+</p>
+<p>
+The book, like the course, is designed at the undergraduate computer science level with no formal prerequisites.
+To support deeper explorations, most of the chapters are supplemented with further reading references.</p>
+</p>
+<p>
+<a href="http://www.cambridge.org/academic/subjects/computer-science/knowledge-management-databases-and-data-mining/mining-massive-datasets-2nd-edition?format=HB">The
+Mining of Massive Datasets book</a> has been published by <a href="http://www.cambridge.org">Cambridge
+University Press</a>. You can get a 20% discount by applying the code MMDS20 at checkout.
+</p>
+<p>
+By agreement with the publisher, you can <a href="#ver21">download</a> the book for free from this page. <a href="http://www.cambridge.org">Cambridge University Press</a> does, however, retain copyright on the work, and we expect that you will obtain their permission and acknowledge our authorship if you republish parts or all of it.
+<!--We are sorry to have to mention this point, but we have evidence that other items we have published
+on the Web have been appropriated and republished under other names. It is easy to detect such misuse,
+by the way, as you will learn in Chapter 3.-->
+</p>
+<p>
+We welcome your feedback on the manuscript.
+</p>
+<br>
+
+<!--
+a name="mooc"></a>
+<h2>The MOOC (Massive Open Online Course)</h2>
+<p>
+We are running the third edition of an online course based on the Mining Massive Datases book:
+</p>
+<p>
+<b><a href="https://lagunita.stanford.edu/courses/course-v1:ComputerScience+MMDS+SelfPaced/about">Mining Massive Datasets MOOC</a></b>
+</p>
+<p>
+The course starts September 12 2015 and will run for 9 weeks with 7 weeks of lectures. Additional <a href="https://www.coursera.org/course/mmds">information and registration</a>.
+</p
+-->
+
+<br>
+<a name="ver30"></a>
+<h2>The 3rd edition of the book</h2>
+<p>
+The following is the third edition of the book.
+It contains new material on Spark, Tensorflow, minhashing, community-finding, simrank, graph algorithms, and decision trees.
+There is a new chapter 13, covering deep learning.
+</p>
+<p>
+We also offer a set of lecture slides that we use for teaching Stanford <a href="http://cs246.stanford.edu">CS246: Mining
+Massive Datasets</a> course. Note that the slides do not necessarily cover all the material convered in the corresponding chapters.
+</p>
+<br>
+<table style="width: 800px;">
+<tr style="border-bottom: 1px solid black">
+<th style="font-weight: bold; font-size: 90%; width: 100px; text-align: left;">Chapter</th>
+<th style="font-weight: bold; font-size: 90%; width: 360px; text-align: left;">Title</th>
+<th style="font-weight: bold; font-size: 90%; width: 60px; text-align: center;">Book</th>
+<th style="font-weight: bold; font-size: 90%; width: 130px; text-align: right;" colspan="3">Slides</th>
+<th style="font-weight: bold; font-size: 90%; width: 130px; text-align: center;" colspan="12">Videos</th>
+</tr>
+<tr>
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Preface and Table of Contents</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/preface.pdf">PDF</a></td>
+<td style="text-align: right;" colspan="3"> </td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 1</td>
+<td style="text-align: left;">Data Mining </td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch1n.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch01-intro.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch01-intro.pptx">PPT</a></td>
+<td style="text-align: right;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 2</td>
+<td style="text-align: left;">Map-Reduce and the New Software Stack</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch2n.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch02-mapreduce.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch02-mapreduce.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=jDlrfBLAIuQ">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=VEh91xTIEIU">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=4_Eco-v4wlI">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=jYjZ527n-ZU">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=EDDKdND4oO4">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=k3wCw6aqrhk">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=TMrZqpVvSmo">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=_QO9Gl-EGhQ">8</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 3</td>
+<td style="text-align: left;">Finding Similar Items</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch3n.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch03-lsh.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch03-lsh.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=c6xK9WgRFhI">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=96WOGPUgMfw">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=_1D35bN95Go">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=HDiswW6mF0E">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=Pl9zaxp8Nj8">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=EKPCuAycOdw">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=pENvMSvqgoA">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=VKMNA4UlEAI">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=arjbdAEf9c0">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=N8QQH7h9gPQ">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=Y4GMGHC-hrg">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=px6g9vaOCVc">12</a></td>
+<td><a href="https://www.youtube.com/watch?v=VqDuYZcDPI4">13</a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 4</td>
+<td style="text-align: left;">Mining Data Streams</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch4.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch04-streams1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch04-streams2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch04-streams1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch04-streams2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=uH2nVe08UN0">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=rHtqC315hdc">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=rWazMA5ORSg">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=nBMabNdj5B8">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=gbFIAA99GZU">5</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 5</td>
+<td style="text-align: left;">Link Analysis</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch5.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch05-linkanalysis1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch05-linkanalysis2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch05-linkanalysis1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch05-linkanalysis2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=bK934gcJMS4">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=Nvb1WVWoYt4">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=e2SZY3NbtQ8">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=CWzmnzB04eg">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=TSGQ4F1E6H8">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=VoYMFLvDnv0">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=BUuRL_dIpr0">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=Kd6YWBZgNHI">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=FFNAJUBEfHs">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=Y93J27otCWM">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=zydSN8C1Et4">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=QyVZzQWsD1Q">12</a></td>
+<td><a href="https://www.youtube.com/watch?v=mNBk9rmhUxc">13</a></td>
+<td><a href="https://www.youtube.com/watch?v=9bheA6knXdc">14</a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 6</td>
+<td style="text-align: left;">Frequent Itemsets</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch6.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch06-assocrules.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch06-assocrules.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=6Bl4wYJl3rY">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=n2E4Tzt_Teo">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=AGAkNiQnbjY">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=b-guME_xZiw">4</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 7</td>
+<td style="text-align: left;">Clustering</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch7.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch07-clustering.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch07-clustering.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=YdqTScQFKQs">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=U3sdWVqMWEc">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=mQQA2-yq4L4">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=pS38Ofy3Qig">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=bIr_GRGNyV4">5</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 8</td>
+<td style="text-align: left;">Advertising on the Web</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch8.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch08-advertising.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch08-advertising.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=iIX3rN2725A">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=pdV2TGRJILU">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=DqZK3u_gmNw">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=9Mj8ISjdhJw">4</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 9</td>
+<td style="text-align: left;">Recommendation Systems</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch9.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch09-recsys1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch09-recsys2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch09-recsys1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch09-recsys2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=hOQg2LQM4ec">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=IlqnNWuqToo">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=3Sl_nFQbLQA">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=Tsmom3S7zeE">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=8l4Xg9AnIjw">5</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 10</td>
+<td style="text-align: left;">Mining Social-Network Graphs</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch10n.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch10-graphs1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch10-graphs2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch10-graphs1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch10-graphs2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=MiKecKWbJhM">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=gqxLMdUazPc">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=34I03lF_JOU">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=qF71tuVRWc0">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=FtFzR7CAqIc">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=WBV-LrQKHL8">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=0Y70KwTreUM">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=Kiq58zZ5obk">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=AR7iFxM-NkA">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=KTh9lRaA9nA">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=TqEyfUttiNc">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=LGces1YIOro">12</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 11</td>
+<td style="text-align: left;">Dimensionality Reduction</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch11.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch11-dimred.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch11-dimred.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=SMvNwg9vraM">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=dt9iJPNFqaI">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=NeUccFkWYQw">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=iG517ZbIzMw">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=uk_sn-cbhc4">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=TOjyKVYDeNg">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=PzSshMESoug">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=AkaNE-Zep6Q">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=voihjWZi0Sk">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=EjPddX1nF8Q">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=nBMabNdj5B8">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=DCR9Ng9JVUk">12</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 12</td>
+<td style="text-align: left;">Large-Scale Machine Learning</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch12n.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch12-ml1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch12-ml2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch12-ml1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch12-ml2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=7fAd5VUvdXQ">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=ldn_PhFK8L8">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=jO6UnwiIEG4">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=p_OQOVA_tk4">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=IXi9GqbguSo">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=M5f18H-iSJQ">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=SGGjrYXqnYg">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=C3KXOQ6_7ak">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=IG0IKHs33_o">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=XzcJoshhgG8">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=PkyhiOqDMzc">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=w31h6luDHtw">12</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 13</td>
+<td style="text-align: left;">Neural Nets and Deep Learning</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch13.pdf">PDF</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+</tr>
+<tr>
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Index</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/indexn.pdf">PDF</a></td>
+<td style="text-align: right;" colspan="3"> </td>
+<td style="text-align: right;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></td>
+</tr>
+<tr style="border-bottom: 1px solid black; background-color: #eeeeee;">
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Errata</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/errata-v3.html">HTML</a></td>
+<td style="text-align: right;" colspan="3"> </td>
+<td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td>
+</tr>
+</table>
+<br>
+<p>
+Download the latest version of the book as a <a href="http://infolab.stanford.edu/~ullman/mmds/book0n.pdf">single big PDF file</a>
+(603 pages, 3.6 MB).
+</p>
+<p>
+The Errata for the third edition of the book: <a href="http://infolab.stanford.edu/~ullman/mmds/errata-v3.html">HTML</a>.
+</p>
+<p>
+<b>Download slides (PPT) in French:</b> <a href="./mmds/v2.1_fr/B4.pptx">Chapter 4</a>, <a href="./mmds/v2.1_fr/B5.pptx">Chapter 5</a>, <a href="./mmds/v2.1_fr/B8.pptx">Chapter 8</a>, <a href="./mmds/v2.1_fr/B9.pptx">Chapter 9</a>, <a href="./mmds/v2.1_fr/B10.pptx">Chapter 10</a>. Courtesy of Richard Khoury.
+</p>
+<p>
+<b>Note to the users of provided slides:</b> We would be delighted if you found this our material useful
+in giving your own lectures. Feel free to use these slides verbatim, or to modify them to fit
+your own needs. PowerPoint originals are available. If you make use of a significant portion of
+these slides in your own lecture, please include this message, or a link to our web site:
+<a href ="http://www.mmds.org/">http://www.mmds.org/</a>.
+</p>
+<p>
+Comments and corrections are
+most welcome. Please let us know if you are using these materials in your course and we will list and link to your course.
+</p>
+<br>
+<a name="courses"></a>
+<h2>Stanford big data courses</h2>
+<!--<p>
+Large-scale data mining is taught at Stanford as a sequence of two courses.
+<a href="http://cs246.stanford.edu/">CS246</a> is the first part, followed by <a href="http://cs341.stanford.edu/">CS341</a>. While <a href="http://cs246.stanford.edu/">CS246</a> discusses methods and algorithms for mining massive data sets, <a href="http://cs341.stanford.edu/">CS341</a> is a project-focused advanced class, where students work on large-scale data mining projects and have access to a large MapReduce cluster.
+</p>-->
+<h3>CS246</h3>
+<p>
+<a href="http://cs246.stanford.edu/">CS246: Mining Massive Datasets</a> is graduate level course that discusses data mining and machine learning algorithms for analyzing very large amounts of data. The emphasis is on Map Reduce as a tool for creating parallel algorithms that can process very large amounts of data.
+</p>
+<h3>CS341</h3>
+<p>
+<a href="http://cs341.stanford.edu/">CS341 Project in Mining Massive Data Sets</a> is an advanced project based course. Students work on data mining and machine learning algorithms for analyzing very large amounts of data. Both interesting big datasets as well as computational infrastructure (large MapReduce cluster) are provided by course staff.
+Generally, students first take <a href="http://cs246.stanford.edu/">CS246</a> followed by <a href="http://cs341.stanford.edu/">CS341</a>.
+</p>
+<p>
+<a href="http://cs341.stanford.edu/">CS341</a> is generously supported by
+<a href="http://www.amazon.com">Amazon</a> by giving us access to their
+<a href="http://aws.amazon.com/ec2/">EC2</a> platform.
+</p>
+<h3>CS224W</h3>
+<p>
+<a href="http://cs224w.stanford.edu/">CS224W: Social and Information Networks</a> is graduate level course that covers recent research on the structure and analysis of such large social and information networks and on models and algorithms that abstract their basic properties. Class explores how to practically analyze large scale network data and how to reason about it through models for network structure and evolution.
+</p>
+<h3>You can take Stanford courses!</h3>
+<p>
+If you are not a Stanford student, you can still take <a href="http://cs246.stanford.edu/">CS246</a> as well as <a href="http://cs224w.stanford.edu/">CS224W</a> or earn a
+<a href="http://scpd.stanford.edu/public/category/courseCategoryCertificateProfile.do?method=load&certificateId=10555807">
+Stanford Mining Massive Datasets graduate certificate</a> by completing a sequence of four Stanford Computer Science courses. A graduate certificate is a great way to keep the skills and knowledge in your field current. More information is available at the <a href="http://scpd.stanford.edu/public/category/courseCategoryCertificateProfile.do?method=load&certificateId=10555807"> Stanford Center for Professional Development (SCPD)</a>.
+</p>
+<!--
+<a name="othercourses"></a>
+<h2>Other courses</h2>
+-->
+<br>
+<a name="support"></a>
+<h2>Supporting materials</h2>
+<p>
+If you are an instructor interested in using the <a href="http://www.gradiance.com">Gradiance Automated Homework System</a> with this book, start by creating an account for yourself <a href="http://www.gradiance.com/services">here</a>. Then, email your chosen login and the request to become an instructor for the MMDS book to <a href="mailto:support@gradiance.com">support@gradiance.com</a>.
+You will then be able to create a class using these materials. Manuals explaining the use of the system are available
+<a href="http://www.gradiance.com/info.html">here</a>.
+</p>
+<p>
+Students who want to use the <a href="http://www.gradiance.com">Gradiance Automated
+Homework System</a> for self-study can register
+<a href="http://www.gradiance.com/services">here</a>. Then, use the class token <tt>1EDD8A1D</tt> to
+join the "omnibus class" for the MMDS book. See
+<a href="http://infolab.stanford.edu/~ullman/pub/stud-guide.html">The Student Guide</a>
+for more information.
+</p>
+<br>
+<h2>Previous versions of the book</h2>
+<br>
+<a name="ver21"></a>
+<h2>The 2nd edition of the book (v2.1)</h2>
+<p>
+The following is the second edition of the book. There are three new chapters, on mining large graphs, dimensionality reduction, and machine learning. There is also a revised Chapter 2 that treats map-reduce programming in a manner closer to how it is used in practice.
+</p>
+<p>
+Together with each chapter there is aslo a set of lecture slides that we use for teaching Stanford <a href="http://cs246.stanford.edu">CS246: Mining
+Massive Datasets</a> course. Note that the slides do not necessarily cover all the material convered in the corresponding chapters.
+</p>
+<br>
+<table style="width: 800px;">
+<tr style="border-bottom: 1px solid black">
+<th style="font-weight: bold; font-size: 90%; width: 100px; text-align: left;">Chapter</th>
+<th style="font-weight: bold; font-size: 90%; width: 360px; text-align: left;">Title</th>
+<th style="font-weight: bold; font-size: 90%; width: 60px; text-align: center;">Book</th>
+<th style="font-weight: bold; font-size: 90%; width: 130px; text-align: right;" colspan="3">Slides</th>
+<th style="font-weight: bold; font-size: 90%; width: 130px; text-align: center;" colspan="12">Videos</th>
+</tr>
+<tr>
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Preface and Table of Contents</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/preface.pdf">PDF</a></td>
+<td style="text-align: right;" colspan="3"> </td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 1</td>
+<td style="text-align: left;">Data Mining </td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch1.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch01-intro.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch01-intro.pptx">PPT</a></td>
+<td style="text-align: right;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 2</td>
+<td style="text-align: left;">Map-Reduce and the New Software Stack</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch2.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch02-mapreduce.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch02-mapreduce.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=jDlrfBLAIuQ">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=VEh91xTIEIU">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=4_Eco-v4wlI">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=jYjZ527n-ZU">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=EDDKdND4oO4">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=k3wCw6aqrhk">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=TMrZqpVvSmo">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=_QO9Gl-EGhQ">8</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 3</td>
+<td style="text-align: left;">Finding Similar Items</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch3.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch03-lsh.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch03-lsh.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=c6xK9WgRFhI">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=96WOGPUgMfw">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=_1D35bN95Go">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=HDiswW6mF0E">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=Pl9zaxp8Nj8">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=EKPCuAycOdw">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=pENvMSvqgoA">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=VKMNA4UlEAI">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=arjbdAEf9c0">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=N8QQH7h9gPQ">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=Y4GMGHC-hrg">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=px6g9vaOCVc">12</a></td>
+<td><a href="https://www.youtube.com/watch?v=VqDuYZcDPI4">13</a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 4</td>
+<td style="text-align: left;">Mining Data Streams</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch4.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch04-streams1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch04-streams2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch04-streams1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch04-streams2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=uH2nVe08UN0">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=rHtqC315hdc">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=rWazMA5ORSg">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=nBMabNdj5B8">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=gbFIAA99GZU">5</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 5</td>
+<td style="text-align: left;">Link Analysis</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch5.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch05-linkanalysis1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch05-linkanalysis2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch05-linkanalysis1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch05-linkanalysis2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=bK934gcJMS4">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=Nvb1WVWoYt4">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=e2SZY3NbtQ8">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=CWzmnzB04eg">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=TSGQ4F1E6H8">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=VoYMFLvDnv0">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=BUuRL_dIpr0">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=Kd6YWBZgNHI">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=FFNAJUBEfHs">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=Y93J27otCWM">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=zydSN8C1Et4">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=QyVZzQWsD1Q">12</a></td>
+<td><a href="https://www.youtube.com/watch?v=mNBk9rmhUxc">13</a></td>
+<td><a href="https://www.youtube.com/watch?v=9bheA6knXdc">14</a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 6</td>
+<td style="text-align: left;">Frequent Itemsets</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch6.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch06-assocrules.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch06-assocrules.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=6Bl4wYJl3rY">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=n2E4Tzt_Teo">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=AGAkNiQnbjY">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=b-guME_xZiw">4</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 7</td>
+<td style="text-align: left;">Clustering</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch7.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch07-clustering.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch07-clustering.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=YdqTScQFKQs">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=U3sdWVqMWEc">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=mQQA2-yq4L4">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=pS38Ofy3Qig">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=bIr_GRGNyV4">5</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 8</td>
+<td style="text-align: left;">Advertising on the Web</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch8.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch08-advertising.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch08-advertising.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=iIX3rN2725A">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=pdV2TGRJILU">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=DqZK3u_gmNw">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=9Mj8ISjdhJw">4</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 9</td>
+<td style="text-align: left;">Recommendation Systems</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch9.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch09-recsys1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch09-recsys2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch09-recsys1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch09-recsys2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=hOQg2LQM4ec">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=IlqnNWuqToo">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=3Sl_nFQbLQA">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=Tsmom3S7zeE">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=8l4Xg9AnIjw">5</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 10</td>
+<td style="text-align: left;">Mining Social-Network Graphs</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch10.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch10-graphs1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch10-graphs2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch10-graphs1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch10-graphs2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=MiKecKWbJhM">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=gqxLMdUazPc">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=34I03lF_JOU">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=qF71tuVRWc0">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=FtFzR7CAqIc">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=WBV-LrQKHL8">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=0Y70KwTreUM">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=Kiq58zZ5obk">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=AR7iFxM-NkA">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=KTh9lRaA9nA">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=TqEyfUttiNc">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=LGces1YIOro">12</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 11</td>
+<td style="text-align: left;">Dimensionality Reduction</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch11.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">&nbsp;</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch11-dimred.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch11-dimred.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=SMvNwg9vraM">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=dt9iJPNFqaI">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=NeUccFkWYQw">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=iG517ZbIzMw">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=uk_sn-cbhc4">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=TOjyKVYDeNg">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=PzSshMESoug">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=AkaNE-Zep6Q">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=voihjWZi0Sk">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=EjPddX1nF8Q">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=nBMabNdj5B8">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=DCR9Ng9JVUk">12</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 12</td>
+<td style="text-align: left;">Large-Scale Machine Learning</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch12.pdf">PDF</a></td>
+<td style="text-align: right;width: 40px;">Part 1:<br />Part 2:</td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch12-ml1.pdf">PDF</a><br /><a href="./mmds/v2.1/ch12-ml2.pdf">PDF</a></td>
+<td style="text-align: right;width: 30px;"><a href="./mmds/v2.1/ch12-ml1.pptx">PPT</a><br /><a href="./mmds/v2.1/ch12-ml2.pptx">PPT</a></td>
+<td style="text-align: right;" >
+<td><a href="https://www.youtube.com/watch?v=7fAd5VUvdXQ">1</a></td>
+<td><a href="https://www.youtube.com/watch?v=ldn_PhFK8L8">2</a></td>
+<td><a href="https://www.youtube.com/watch?v=jO6UnwiIEG4">3</a></td>
+<td><a href="https://www.youtube.com/watch?v=p_OQOVA_tk4">4</a></td>
+<td><a href="https://www.youtube.com/watch?v=IXi9GqbguSo">5</a></td>
+<td><a href="https://www.youtube.com/watch?v=M5f18H-iSJQ">6</a></td>
+<td><a href="https://www.youtube.com/watch?v=SGGjrYXqnYg">7</a></td>
+<td><a href="https://www.youtube.com/watch?v=C3KXOQ6_7ak">8</a></td>
+<td><a href="https://www.youtube.com/watch?v=IG0IKHs33_o">9</a></td>
+<td><a href="https://www.youtube.com/watch?v=XzcJoshhgG8">10</a></td>
+<td><a href="https://www.youtube.com/watch?v=PkyhiOqDMzc">11</a></td>
+<td><a href="https://www.youtube.com/watch?v=w31h6luDHtw">12</a></td>
+<td><a href=""></a></td>
+<td><a href=""></a></td>
+</td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Index</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/index.pdf">PDF</a></td>
+<td style="text-align: right;" colspan="3"> </td>
+<td style="text-align: right;"><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td><td></td></td>
+</tr>
+<tr style="border-bottom: 1px solid black;">
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Errata</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/errata-v2.html">HTML</a></td>
+<td style="text-align: right;" colspan="3"> </td>
+</tr>
+</table>
+<br>
+<p>
+Download the latest version of the book as a <a href="http://infolab.stanford.edu/~ullman/mmds/book.pdf">single big PDF file</a> (511 pages, 3 MB).
+</p>
+<p>
+Download the full version of the book with a hyper-linked table of contents that make it easy to jump around: <a href="http://infolab.stanford.edu/~ullman/mmds/bookL.pdf">PDF file</a> (513 pages, 3.69 MB).
+</p>
+<p>
+The Errata for the second edition of the book: <a href="http://infolab.stanford.edu/~ullman/mmds/errata-v2.html">HTML</a>.
+</p>
+<p>
+<b>Download slides (PPT) in French:</b> <a href="./mmds/v2.1_fr/B4.pptx">Chapter 4</a>, <a href="./mmds/v2.1_fr/B5.pptx">Chapter 5</a>, <a href="./mmds/v2.1_fr/B8.pptx">Chapter 8</a>, <a href="./mmds/v2.1_fr/B9.pptx">Chapter 9</a>, <a href="./mmds/v2.1_fr/B10.pptx">Chapter 10</a>. Courtesy of Richard Khoury.
+</p>
+<p>
+<b>Note to the users of provided slides:</b> We would be delighted if you found this our material useful
+in giving your own lectures. Feel free to use these slides verbatim, or to modify them to fit
+your own needs. PowerPoint originals are available. If you make use of a significant portion of
+these slides in your own lecture, please include this message, or a link to our web site:
+<a href ="http://www.mmds.org/">http://www.mmds.org/</a>.
+</p>
+<br>
+<a name="ver10"></a>
+<h2>Version 1.0</h2>
+<p>
+The following materials are equivalent to the published book, with errata corrected to July 4, 2012.
+</p>
+<table style="width: 700px;">
+<tr style="border-bottom: 1px solid black">
+<th style="font-weight: bold; font-size: 90%; width: 100px; text-align: left;">Chapter</th>
+<th style="font-weight: bold; font-size: 90%; width: 360px; text-align: center;">Title</th>
+<th style="font-weight: bold; font-size: 90%; width: 80px; text-align: center;">Book</th>
+</tr>
+<tr>
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Preface and Table of Contents</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/prefacea.pdf">PDF</a></td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 1</td>
+<td style="text-align: left;">Data Mining</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch1a.pdf">PDF</a></td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 2</td>
+<td style="text-align: left;">Large-Scale File Systems and Map-Reduce</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch2a.pdf">PDF</a></td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 3</td>
+<td style="text-align: left;">Finding Similar Items</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch3a.pdf">PDF</a></td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 4</td>
+<td style="text-align: left;">Mining Data Streams</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch4a.pdf">PDF</a></td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 5</td>
+<td style="text-align: left;">Link Analysis</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch5a.pdf">PDF</a></td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 6</td>
+<td style="text-align: left;">Frequent Itemsets</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch6a.pdf">PDF</a></td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 7</td>
+<td style="text-align: left;">Clustering</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch7a.pdf">PDF</a></td>
+</tr>
+<tr>
+<td style="text-align: left;">Chapter 8</td>
+<td style="text-align: left;">Advertising on the Web</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch8a.pdf">PDF</a></td>
+</tr>
+<tr style="background-color: #eeeeee;">
+<td style="text-align: left;">Chapter 9</td>
+<td style="text-align: left;">Recommendation Systems</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/ch9a.pdf">PDF</a></td>
+</tr>
+<tr>
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Index</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/indexa.pdf">PDF</a></td>
+</tr>
+<tr style="border-bottom: 1px solid black;background-color: #eeeeee;">
+<td style="text-align: left;"> </td>
+<td style="text-align: left;">Errata</td>
+<td style="text-align: center;"><a href="http://infolab.stanford.edu/~ullman/mmds/errata.html">HTML</a></td>
+</tr>
+</table>
+<p>
+Download the book as published <a href="http://infolab.stanford.edu/~ullman/mmds/booka.pdf">here</a> (340 pages, 2 MB).
+</p>
+</div>
+<!-- END: right column -->
+<!-- BEGIN: footer -->
+<div id="footer">
+The domain was kindly donated to us by <a href="http://ecorp.com/">eCorp.com</a>.
+</div>
+<!-- END: footer -->
+</div>
+<script>
+(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','//www.google-analytics.com/analytics.js','ga');
+ga('create', 'UA-342639-6', 'auto');
+ga('send', 'pageview');
+</script>
+</body>
+</html>

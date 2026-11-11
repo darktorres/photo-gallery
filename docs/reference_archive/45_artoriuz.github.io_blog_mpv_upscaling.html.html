@@ -1,0 +1,897 @@
+ <!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>Mathematically Evaluating mpv's Resampling Algorithms</title>
+    <link rel="icon" type="image/x-icon" href="../favicon.png">
+    <meta charset="utf-8" />
+    <link rel="stylesheet" type="text/css" href="./css/default.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=Roboto+Mono:ital,wght@0,100..700;1,100..700&family=Roboto+Slab:wght@100..900&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <header>
+        <hgroup>
+            <h1>
+                mpv Resampling
+            </h1>
+            <h2>A sequel in the making</h2>
+        </hgroup>
+    </header>
+    <nav>
+        <menu>
+            <a href="../index.html">Home</a>
+            <a href="https://github.com/Artoriuz">GitHub</a>
+            <a href="https://www.linkedin.com/in/jvrchrisostomo/">LinkedIn</a>
+        </menu>
+    </nav>
+    <section>
+        <h3 id="introduction">Introduction</h3>
+        <p>
+            This page is meant to be treated as a follow-up to this scaler comparison done with <a href="https://artoriuz.github.io/blog/imagemagick_resampling.html">ImageMagick</a>. I'm only going to talk about niche topics here,
+            so just refer to that other page if you only want to read about scalers.
+        </p>
+        <h3 id="gamma_upsampling">The Effect of the Downsampler in Upsampling Evaluation</h3>
+        <p>
+            All luma doublers are trained with artificial data, which means the LR images are obtained by downsampling the HR references. The implication here is that if the test procedure matches whatever was done to train a model,
+            the model will obviously score higher. This creates an unfair playing ground if these models are trained differently, as testing with images downsampled in linear light for example would greatly favour any models trained
+            with images that were equally downsampled in linear light. The choice of filter is also very important, as different filters produce images with different characteristics.
+        </p>
+        <p>
+            Downsampling in linear light dilates bright structures while eroding dark ones relative to downsampling in gamma light. This is generally accepted as correct but it might not always be ideal depending on the content.
+        </p>
+        <p>
+            Interestingly, most models seem to show better reconstruction quality when you feed them LR images that have been downsampled in gamma light, and pretty much all mpv shaders have been trained with
+            data downsampled in gamma light (including NNEDI3, FSRCNNX, RAVU, ArtCNN, etc). If we use images that have been downsampled in linear light, the model will produce images with dilated dark highlights
+            and eroded bright features. The exact opposite of what happens when you downsample in linear light. The model is simply learning how to "undo" what linear light downsampling "does", so this behaviour makes perfect sense.
+        </p>
+        <p>
+            For these reasons, the upsampling tests will be done with an image downsampled in gamma light.
+        </p>
+        <h3 id="upsampling_shaders">Upsampling Shaders</h3>
+        <p>
+            I still do not have a good way of automating mpv tests and therefore I'll have to stick to a single test image, which is going to be the luma portion of kumiko.png:
+        </p>
+        <p>
+            <img src="./images/mpv_upscaling/upsampling/kumiko.png" alt="kumiko" class="center" width="960" height="540">
+        </p>
+        <p>
+            Testing with a single image makes this very unscientific, but it is what it is.
+        </p>
+        <h3 id="upsampling_methodology">Upsampling Methodology</h3>
+        <p>
+            The following shaders were "benchmarked":
+            <ol>
+              <li><a href="https://github.com/Artoriuz/ArtCNN">ArtCNN</a></li>
+              <li><a href="https://github.com/bjin/mpv-prescalers">RAVU</a></li>
+            </ol>
+            I've also added a few built-in filters to the mix just to have some reference points.
+        </p>
+        <p>
+            The test image is downsampled with:
+        </p>
+        <code>magick convert kumiko.png -filter box -resize 50% downsampled.png</code>
+        <p>
+            The image is then upsampled back with:
+        </p>
+        <code>mpv --no-config --vo=gpu-next --no-hidpi-window-scale --window-scale=2.0 --pause=yes --screenshot-format=png --sigmoid-upscaling --deband=no --dither-depth=no --screenshot-high-bit-depth=no --glsl-shader="path/to/meme/shader" downsampled.png</code>
+        <h3 id="upsampling_results">Upsampling Results</h3>
+        <p>
+          <table><tbody>
+            <tr>
+              <td>Shader/Filter</td>
+              <td>MAE</td>
+              <td>PSNR</td>
+              <td>SSIM</td>
+              <td>MS-SSIM</td>
+              <td></td>
+              <td>MAE (N)</td>
+              <td>PSNR (N)</td>
+              <td>SSIM (N)</td>
+              <td>MS-SSIM (N)</td>
+              <td></td>
+              <td>Mean</td>
+            </tr>
+            <tr>
+              <td>ArtCNN_C4F32</td>
+              <td>2.25E-03</td>
+              <td>43.4749</td>
+              <td>0.9923</td>
+              <td>0.9986</td>
+              <td></td>
+              <td>1.0000</td>
+              <td>1.0000</td>
+              <td>1.0000</td>
+              <td>1.0000</td>
+              <td></td>
+              <td>1.0000</td>
+            </tr>
+            <tr>
+              <td>ArtCNN_C4F16</td>
+              <td>2.43E-03</td>
+              <td>42.6808</td>
+              <td>0.9916</td>
+              <td>0.9985</td>
+              <td></td>
+              <td>0.9447</td>
+              <td>0.9148</td>
+              <td>0.9639</td>
+              <td>0.9855</td>
+              <td></td>
+              <td>0.9522</td>
+            </tr>
+            <tr>
+              <td>ravu-zoom-ar-r3</td>
+              <td>3.14E-03</td>
+              <td>39.3867</td>
+              <td>0.9880</td>
+              <td>0.9982</td>
+              <td></td>
+              <td>0.7247</td>
+              <td>0.5613</td>
+              <td>0.7719</td>
+              <td>0.8670</td>
+              <td></td>
+              <td>0.7313</td>
+            </tr>
+            <tr>
+              <td>ravu-lite-ar-r4</td>
+              <td>3.17E-03</td>
+              <td>39.6571</td>
+              <td>0.9878</td>
+              <td>0.9982</td>
+              <td></td>
+              <td>0.7131</td>
+              <td>0.5904</td>
+              <td>0.7588</td>
+              <td>0.8613</td>
+              <td></td>
+              <td>0.7309</td>
+            </tr>
+            <tr>
+              <td>ravu-lite-ar-r3</td>
+              <td>3.26E-03</td>
+              <td>39.4102</td>
+              <td>0.9873</td>
+              <td>0.9981</td>
+              <td></td>
+              <td>0.6869</td>
+              <td>0.5639</td>
+              <td>0.7342</td>
+              <td>0.8566</td>
+              <td></td>
+              <td>0.7104</td>
+            </tr>
+            <tr>
+              <td>ravu-zoom-ar-r2</td>
+              <td>3.26E-03</td>
+              <td>38.8482</td>
+              <td>0.9872</td>
+              <td>0.9981</td>
+              <td></td>
+              <td>0.6854</td>
+              <td>0.5036</td>
+              <td>0.7279</td>
+              <td>0.8426</td>
+              <td></td>
+              <td>0.6899</td>
+            </tr>
+            <tr>
+              <td>ravu-lite-ar-r2</td>
+              <td>3.31E-03</td>
+              <td>38.7971</td>
+              <td>0.9870</td>
+              <td>0.9982</td>
+              <td></td>
+              <td>0.6703</td>
+              <td>0.4981</td>
+              <td>0.7172</td>
+              <td>0.8634</td>
+              <td></td>
+              <td>0.6872</td>
+            </tr>
+            <tr>
+              <td>lanczos</td>
+              <td>4.63E-03</td>
+              <td>36.5113</td>
+              <td>0.9799</td>
+              <td>0.9977</td>
+              <td></td>
+              <td>0.2600</td>
+              <td>0.2528</td>
+              <td>0.3407</td>
+              <td>0.7202</td>
+              <td></td>
+              <td>0.3934</td>
+            </tr>
+            <tr>
+              <td>polar_lanczossharp</td>
+              <td>4.85E-03</td>
+              <td>36.0673</td>
+              <td>0.9786</td>
+              <td>0.9974</td>
+              <td></td>
+              <td>0.1936</td>
+              <td>0.2052</td>
+              <td>0.2686</td>
+              <td>0.6012</td>
+              <td></td>
+              <td>0.3171</td>
+            </tr>
+            <tr>
+              <td>bilinear</td>
+              <td>5.47E-03</td>
+              <td>34.1550</td>
+              <td>0.9735</td>
+              <td>0.9955</td>
+              <td></td>
+              <td>0.0000</td>
+              <td>0.0000</td>
+              <td>0.0000</td>
+              <td>0.0000</td>
+              <td></td>
+              <td>0.0000</td>
+            </tr>
+          </tbody></table>
+        </p>
+    <h3 id="upsampling_commentary">Upsampling Commentary</h3>
+    <p>
+        As we can see in the table above, ArtCNN is seems to be the best option when it comes to luma doubling.
+    </p>
+    <p>
+        For lower scaling factors between 1x and 2x, you can expect this list to remain mostly the same as long as you use a sharp downsampling filter for the luma doublers. The choice of filter
+        actually has a huge impact on how sharp the final image will be, so sticking to the hermite default makes all doublers much softer than ravu-zoom for example. Also keep in mind that the difference between the shaders
+        also becomes smaller as you decrease the scaling factor.
+    </p>
+    <h3 id="chroma_shaders">Chroma Shaders</h3>
+    <p>
+      Using real anime content to test chroma shaders is difficult because we almost never have it available without chroma subsampling, so a promotional art will be used instead:
+    </p>
+    <p>
+        <img src="./images/mpv_upscaling/chroma/aoko.png" alt="Aoko" class="center" width="960" height="540">
+    </p>
+    <h3 id="chroma_methodology">Chroma Methodology</h3>
+    <p>
+      The following shaders were "benchmarked":
+      <ol>
+        <li><a href="https://github.com/Artoriuz/ArtCNN">ArtCNN</a></li>
+        <li><a href=https://github.com/Artoriuz/glsl-chroma-from-luma-prediction>Chroma From Luma Prediction</a></li>
+        <li><a href="https://github.com/Artoriuz/glsl-joint-bilateral">JointBilateral</a></li>
+        <li><a href="https://gist.github.com/igv/a015fc885d5c22e6891820ad89555637">KrigBilateral</a></li>
+      </ol>
+    </p>
+    <p>
+        A "near lossless" 420 version of aoko.png was created:
+    <br><br>
+    <code>avifenc aoko.png --min 0 --max 0 -y 420 420.avif</code>
+    </p>
+    <p>
+        mpv options remains the same with the exception that we don't need <inline_code>--window-scale=2.0</inline_code> anymore.
+    </p>
+    <h3 id="chroma_results">Chroma Results</h3>
+    <table><tbody>
+      <tr>
+        <td>Shader/Filter</td>
+        <td>MAE</td>
+        <td>PSNR</td>
+        <td>SSIM</td>
+        <td>MS-SSIM</td>
+        <td></td>
+        <td>MAE (N)</td>
+        <td>PSNR (N)</td>
+        <td>SSIM (N)</td>
+        <td>MS-SSIM (N)</td>
+        <td></td>
+        <td>Mean</td>
+      </tr>
+      <tr>
+        <td>ArtCNN_C4F32_Chroma</td>
+        <td>3.07E-03</td>
+        <td>43.6766</td>
+        <td>0.9911</td>
+        <td>0.9977</td>
+        <td></td>
+        <td>1.0000</td>
+        <td>1.0000</td>
+        <td>1.0000</td>
+        <td>1.0000</td>
+        <td></td>
+        <td>1.0000</td>
+      </tr>
+      <tr>
+        <td>cfl</td>
+        <td>3.73E-03</td>
+        <td>39.9866</td>
+        <td>0.9895</td>
+        <td>0.9977</td>
+        <td></td>
+        <td>0.8227</td>
+        <td>0.6108</td>
+        <td>0.9007</td>
+        <td>0.9923</td>
+        <td></td>
+        <td>0.8316</td>
+      </tr>
+      <tr>
+        <td>cfl_lite</td>
+        <td>3.81E-03</td>
+        <td>39.7656</td>
+        <td>0.9892</td>
+        <td>0.9976</td>
+        <td></td>
+        <td>0.8018</td>
+        <td>0.5875</td>
+        <td>0.8822</td>
+        <td>0.9668</td>
+        <td></td>
+        <td>0.8096</td>
+      </tr>
+      <tr>
+        <td>krigbilateral</td>
+        <td>4.22E-03</td>
+        <td>38.6022</td>
+        <td>0.9873</td>
+        <td>0.9976</td>
+        <td></td>
+        <td>0.6906</td>
+        <td>0.4647</td>
+        <td>0.7611</td>
+        <td>0.9518</td>
+        <td></td>
+        <td>0.7171</td>
+      </tr>
+      <tr>
+        <td>fastbilateral</td>
+        <td>4.37E-03</td>
+        <td>37.1016</td>
+        <td>0.9858</td>
+        <td>0.9974</td>
+        <td></td>
+        <td>0.6501</td>
+        <td>0.3064</td>
+        <td>0.6640</td>
+        <td>0.7962</td>
+        <td></td>
+        <td>0.6042</td>
+      </tr>
+      <tr>
+        <td>jointbilateral</td>
+        <td>4.60E-03</td>
+        <td>37.3093</td>
+        <td>0.9852</td>
+        <td>0.9973</td>
+        <td></td>
+        <td>0.5887</td>
+        <td>0.3283</td>
+        <td>0.6275</td>
+        <td>0.7394</td>
+        <td></td>
+        <td>0.5710</td>
+      </tr>
+      <tr>
+        <td>lanczos</td>
+        <td>5.70E-03</td>
+        <td>36.3881</td>
+        <td>0.9800</td>
+        <td>0.9972</td>
+        <td></td>
+        <td>0.2947</td>
+        <td>0.2312</td>
+        <td>0.2975</td>
+        <td>0.5954</td>
+        <td></td>
+        <td>0.3547</td>
+      </tr>
+      <tr>
+        <td>polar_lanczossharp</td>
+        <td>5.89E-03</td>
+        <td>35.9492</td>
+        <td>0.9795</td>
+        <td>0.9972</td>
+        <td></td>
+        <td>0.2442</td>
+        <td>0.1849</td>
+        <td>0.2628</td>
+        <td>0.6217</td>
+        <td></td>
+        <td>0.3284</td>
+      </tr>
+      <tr>
+        <td>bilinear</td>
+        <td>6.80E-03</td>
+        <td>34.1966</td>
+        <td>0.9753</td>
+        <td>0.9965</td>
+        <td></td>
+        <td>0.0000</td>
+        <td>0.0000</td>
+        <td>0.0000</td>
+        <td>0.0000</td>
+        <td></td>
+        <td>0.0000</td>
+      </tr>
+    </tbody></table>
+    <h3 id="chroma_commentary">Chroma Commentary</h3>
+    <p>
+        If we look at the numbers, ArtCNN is easily the best option. I actually wouldn't recommend using your resources on this unless you're playing native resolution video and your GPU has nothing better to do.
+    </p>
+    <p>
+        The other shaders all suffer from chromaloc issues and they can be easily fooled when there's no correlation between luma and chroma. I'd personally skip all of them.
+    </p>
+    <h3 id="antiring">Antiring</h3>
+    <p>
+        Antiringing solutions is a topic that I hadn't covered in the previous iteration of this page, but now that we have more than a single option we can also compare them.
+    </p>
+    <p>
+        In short, antiringing filters attempt to remove overshoots generated by sharp resampling filters when they meet a sharp intensity delta.
+        What is commonly referred to as ringing is simply consequential to the filter's impulse response.
+    </p>
+    <p>
+        The following image shows this very well:
+    </p>
+    <p>
+        <img src="./images/mpv_upscaling/antiring/ar_comparison.png" alt="ar_comparison" class="center" width="900" height="300">
+    </p>
+    <p>
+        The negative weights in the filter are there for it to be able to quickly respond to high-frequency transitions, but it makes the filter overshoot a little bit before reaching its final destination. The "intensity" of the ringing is
+        directly related to the magnitude of the secondary lobes. The second lobe, which is almost always negative, is responsible for the overshooting in can see in this example, but filters with more lobes ring once per lobe, and the ringing can
+        be "positive" as well (within the range set by the original pixels) with positive lobes. The "length" of the rings is directly related to the length of the lobes, which is why filters like polar lanczos have "longer" rings (the zero crossings
+        don't fall exactly at the integers, but rather slightly after them).
+    </p>
+    <h3 id="antiring_methodology">Antiring Methodology</h3>
+    <p>
+        The methodology here almost is equal to the one used for upsampling, with the only difference being that we have to include <inline_code>--scale-antiring</inline_code> to use mpv's (libplacebo's) native AR solution.
+    </p>
+    <p>
+        AR is only really necessary when you're using sharp filters, it makes no sense alongside blurry filters because blurry filters don't ring hard enough for it to be noticeable.
+        There are a few sharp memes that are worth trying with AR though if you feel adventurous, but generally speaking I think polar lanczossharp is pretty well balanced (a bit blurry even).
+    </p>
+    <p>
+        I previously had <a href="https://github.com/Artoriuz/glsl-pixel-clipper">Pixel Clipper</a> in this comparison but I don't think that's necessary anymore. This shader was written to fill the hole of mpv not supporting polar AR
+        at the time, but this is not true anymore. Pixel Clipper remains relatively useful if you want downscaling AR, but for upscaling you're probably better off using the native solution.
+    </p>
+    <h3 id="antiring_results">Antiring Results</h3>
+    <p>
+      <table><tbody>
+        <tr>
+          <td>Filter</td>
+          <td>MAE</td>
+          <td>PSNR</td>
+          <td>SSIM</td>
+          <td>MS-SSIM</td>
+          <td></td>
+          <td>MAE (N)</td>
+          <td>PSNR (N)</td>
+          <td>SSIM (N)</td>
+          <td>MS-SSIM (N)</td>
+          <td></td>
+          <td>Mean</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_80</td>
+          <td>4.51E-03</td>
+          <td>36.1752</td>
+          <td>0.9808</td>
+          <td>0.9975</td>
+          <td></td>
+          <td>0.9176</td>
+          <td>0.9824</td>
+          <td>0.9401</td>
+          <td>0.3244</td>
+          <td></td>
+          <td>0.7911</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_75</td>
+          <td>4.54E-03</td>
+          <td>36.1713</td>
+          <td>0.9807</td>
+          <td>0.9975</td>
+          <td></td>
+          <td>0.8791</td>
+          <td>0.9633</td>
+          <td>0.9125</td>
+          <td>0.4005</td>
+          <td></td>
+          <td>0.7889</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_85</td>
+          <td>4.50E-03</td>
+          <td>36.1777</td>
+          <td>0.9809</td>
+          <td>0.9975</td>
+          <td></td>
+          <td>0.9501</td>
+          <td>0.9945</td>
+          <td>0.9629</td>
+          <td>0.2471</td>
+          <td></td>
+          <td>0.7886</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_70</td>
+          <td>4.56E-03</td>
+          <td>36.1663</td>
+          <td>0.9807</td>
+          <td>0.9976</td>
+          <td></td>
+          <td>0.8360</td>
+          <td>0.9390</td>
+          <td>0.8813</td>
+          <td>0.4799</td>
+          <td></td>
+          <td>0.7841</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_90</td>
+          <td>4.48E-03</td>
+          <td>36.1787</td>
+          <td>0.9809</td>
+          <td>0.9975</td>
+          <td></td>
+          <td>0.9752</td>
+          <td>0.9994</td>
+          <td>0.9799</td>
+          <td>0.1694</td>
+          <td></td>
+          <td>0.7810</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_65</td>
+          <td>4.58E-03</td>
+          <td>36.1600</td>
+          <td>0.9806</td>
+          <td>0.9976</td>
+          <td></td>
+          <td>0.7886</td>
+          <td>0.9087</td>
+          <td>0.8452</td>
+          <td>0.5512</td>
+          <td></td>
+          <td>0.7734</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_95</td>
+          <td>4.48E-03</td>
+          <td>36.1788</td>
+          <td>0.9809</td>
+          <td>0.9975</td>
+          <td></td>
+          <td>0.9923</td>
+          <td>1.0000</td>
+          <td>0.9924</td>
+          <td>0.0857</td>
+          <td></td>
+          <td>0.7676</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_60</td>
+          <td>4.61E-03</td>
+          <td>36.1528</td>
+          <td>0.9805</td>
+          <td>0.9976</td>
+          <td></td>
+          <td>0.7389</td>
+          <td>0.8734</td>
+          <td>0.8058</td>
+          <td>0.6213</td>
+          <td></td>
+          <td>0.7599</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_100</td>
+          <td>4.47E-03</td>
+          <td>36.1775</td>
+          <td>0.9809</td>
+          <td>0.9974</td>
+          <td></td>
+          <td>1.0000</td>
+          <td>0.9934</td>
+          <td>1.0000</td>
+          <td>0.0000</td>
+          <td></td>
+          <td>0.7483</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_55</td>
+          <td>4.64E-03</td>
+          <td>36.1438</td>
+          <td>0.9804</td>
+          <td>0.9976</td>
+          <td></td>
+          <td>0.6850</td>
+          <td>0.8299</td>
+          <td>0.7597</td>
+          <td>0.6839</td>
+          <td></td>
+          <td>0.7396</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp_ar_50</td>
+          <td>4.67E-03</td>
+          <td>36.1339</td>
+          <td>0.9802</td>
+          <td>0.9976</td>
+          <td></td>
+          <td>0.6292</td>
+          <td>0.7815</td>
+          <td>0.7102</td>
+          <td>0.7393</td>
+          <td></td>
+          <td>0.7151</td>
+        </tr>
+        <tr>
+          <td>polar_lanczossharp</td>
+          <td>5.00E-03</td>
+          <td>35.9731</td>
+          <td>0.9785</td>
+          <td>0.9977</td>
+          <td></td>
+          <td>0.0000</td>
+          <td>0.0000</td>
+          <td>0.0000</td>
+          <td>1.0000</td>
+          <td></td>
+          <td>0.2500</td>
+        </tr>
+      </tbody></table>
+    </p>
+    <h3 id="antiring_commentary">Antiring Commentary</h3>
+    <p>
+        As you can see in the table above, the sweetspot for libplacebo's AR seems to be around 0.8 taking all the metrics into account. MS-SSIM is the only metric that does not like AR, and this behaviour can be easily
+        explained by the fact that it evaluates the image at various scales to come up with a score. Having some controlled overshoots is helping the image reach the intended intensity levels after downscaling here, which is
+        why MS-SSIM disagrees with SSIM (the metric it's based on). MS-SSIM supposedly models a viewer looking at the image from various viewing distances so you could make the argument that ringing becomes a smaller problem
+        as you move away from the display (and, in this case, you could also say that some ringing is actually good).
+    </p>
+    <p>
+        If we remove MS-SSIM from the equation the image with full AR becomes the top scorer and the list goes down from there perfectly in line with AR strength. Please remember that these numbers vary with the image,
+        filter and scaling factor.
+    </p>
+    <h3 id="downsampling_antiring">Downsampling Antiring</h3>
+    <p>
+        There's no fundamental difference in the math behind how output pixels are computed as far as filter weights are concerned, so filters with more than a single lobe will also ring when going down. This is often not as jarring and/or
+        noticeable because the filters we use to downscale are often less sharp and therefore their overshoots are less pronounced. mpv defaults to Hermite which doesn't ring at all.
+    </p>
+    <p>
+        Using polar filters to downscale in mpv is very resource intensive and generally just unnecessary, so I'll switch to Catrom in this section. Downscaling with Catrom produces fairly sharp results, but it's not comically sharp.
+        This filter is perfectly usable even without AR.
+    </p>
+    <p>
+        Native downscaling AR still seems to be broken at the time of writing, so I'll also only include numbers using Pixel Clipper here.
+    </p>
+    <h3 id="downsampling_antiring_methodology">Downsampling Antiring Methodology</h3>
+    <p>
+        My current method to evaluate downsampling filters is to concede that at 0.5x linear light box is as good as it gets, so I'll be using that as the "reference point" here.
+    </p>
+    <p>
+        The same kumiko.png test image was used to test downsampling AR, and it was downsampled with mpv as follows:
+    </p>
+    <code>
+        mpv --no-config --vo=gpu-next --gpu-api=vulkan --no-hidpi-window-scale --pause=yes --screenshot-format=png --deband=no --dither-depth=no --screenshot-high-bit-depth=no --correct-downscaling=no --linear-downscaling=yes --window-scale=0.5 --dscale=box kumiko.png
+    </code>
+    <p>
+        Some of these flags are redundant and the default behaviour, but please notice how you have to disable correct downscaling to get a real box filter (it'll get its radius extended and produce very blurry results otherwise).
+    </p>
+    <p>
+        The images were basically generated using the following command:
+    </p>
+    <code>mpv --no-config --vo=gpu-next --gpu-api=vulkan --no-hidpi-window-scale --pause=yes --screenshot-format=png --deband=no --dither-depth=no --screenshot-high-bit-depth=no --correct-downscaling=yes --linear-downscaling=yes --window-scale=0.5 --dscale=catmull_rom --glsl-shader="PixelClipper.glsl" kumiko.png</code>
+    <h3 id="downsampling_antiring_results">Downsampling Antiring Results</h3>
+    <p>
+      <table><tbody>
+        <tr>
+          <td>Filter</td>
+          <td>MAE</td>
+          <td>PSNR</td>
+          <td>SSIM</td>
+          <td>MS-SSIM</td>
+          <td></td>
+          <td>MAE (N)</td>
+          <td>PSNR (N)</td>
+          <td>SSIM (N)</td>
+          <td>MS-SSIM (N)</td>
+          <td></td>
+          <td>Mean</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_100</td>
+          <td>1.48E-03</td>
+          <td>45.3975</td>
+          <td>0.9971</td>
+          <td>0.9996</td>
+          <td></td>
+          <td>1.0000</td>
+          <td>1.0000</td>
+          <td>1.0000</td>
+          <td>1.0000</td>
+          <td></td>
+          <td>1.0000</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_95</td>
+          <td>1.51E-03</td>
+          <td>45.3115</td>
+          <td>0.9971</td>
+          <td>0.9996</td>
+          <td></td>
+          <td>0.9511</td>
+          <td>0.9764</td>
+          <td>0.9804</td>
+          <td>0.9941</td>
+          <td></td>
+          <td>0.9755</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_90</td>
+          <td>1.54E-03</td>
+          <td>45.1996</td>
+          <td>0.9970</td>
+          <td>0.9996</td>
+          <td></td>
+          <td>0.8988</td>
+          <td>0.9456</td>
+          <td>0.9533</td>
+          <td>0.9742</td>
+          <td></td>
+          <td>0.9430</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_85</td>
+          <td>1.57E-03</td>
+          <td>45.0609</td>
+          <td>0.9970</td>
+          <td>0.9996</td>
+          <td></td>
+          <td>0.8456</td>
+          <td>0.9075</td>
+          <td>0.9201</td>
+          <td>0.9436</td>
+          <td></td>
+          <td>0.9042</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_80</td>
+          <td>1.60E-03</td>
+          <td>44.8991</td>
+          <td>0.9969</td>
+          <td>0.9996</td>
+          <td></td>
+          <td>0.7918</td>
+          <td>0.8630</td>
+          <td>0.8815</td>
+          <td>0.9031</td>
+          <td></td>
+          <td>0.8598</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_75</td>
+          <td>1.63E-03</td>
+          <td>44.7168</td>
+          <td>0.9968</td>
+          <td>0.9996</td>
+          <td></td>
+          <td>0.7394</td>
+          <td>0.8129</td>
+          <td>0.8405</td>
+          <td>0.8655</td>
+          <td></td>
+          <td>0.8146</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_70</td>
+          <td>1.66E-03</td>
+          <td>44.5193</td>
+          <td>0.9967</td>
+          <td>0.9995</td>
+          <td></td>
+          <td>0.6873</td>
+          <td>0.7586</td>
+          <td>0.7988</td>
+          <td>0.8358</td>
+          <td></td>
+          <td>0.7701</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_65</td>
+          <td>1.69E-03</td>
+          <td>44.3107</td>
+          <td>0.9966</td>
+          <td>0.9995</td>
+          <td></td>
+          <td>0.6334</td>
+          <td>0.7013</td>
+          <td>0.7484</td>
+          <td>0.7838</td>
+          <td></td>
+          <td>0.7167</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_60</td>
+          <td>1.72E-03</td>
+          <td>44.0984</td>
+          <td>0.9966</td>
+          <td>0.9995</td>
+          <td></td>
+          <td>0.5818</td>
+          <td>0.6429</td>
+          <td>0.7004</td>
+          <td>0.7456</td>
+          <td></td>
+          <td>0.6677</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_55</td>
+          <td>1.75E-03</td>
+          <td>43.8862</td>
+          <td>0.9965</td>
+          <td>0.9995</td>
+          <td></td>
+          <td>0.5311</td>
+          <td>0.5846</td>
+          <td>0.6505</td>
+          <td>0.7033</td>
+          <td></td>
+          <td>0.6174</td>
+        </tr>
+        <tr>
+          <td>catrom_pc_50</td>
+          <td>1.78E-03</td>
+          <td>43.6738</td>
+          <td>0.9964</td>
+          <td>0.9995</td>
+          <td></td>
+          <td>0.4796</td>
+          <td>0.5262</td>
+          <td>0.5935</td>
+          <td>0.6386</td>
+          <td></td>
+          <td>0.5595</td>
+        </tr>
+        <tr>
+          <td>catrom</td>
+          <td>2.05E-03</td>
+          <td>41.7596</td>
+          <td>0.9953</td>
+          <td>0.9994</td>
+          <td></td>
+          <td>0.0000</td>
+          <td>0.0000</td>
+          <td>0.0000</td>
+          <td>0.0000</td>
+          <td></td>
+          <td>0.0000</td>
+        </tr>
+      </tbody></table>
+    </p>
+    <h3 id="downsampling_antiring_commentary">Downsampling Antiring Commentary</h3>
+    <p>
+        The first thing we can see is that AR seems to be a net-positive in general even taking MS-SSIM into account this time. The scores go down almost linearly and the difference is pretty sizeable.
+    </p>
+    <p>
+        As far as image quality goes there's probably no reason to be against using Pixel Clipper if you're downscaling with sharp filters.
+        Your only concern should be performance, and since PC needs its own shader pass the performance impact might not be negligible.
+    </p>
+    <h3 id="outro">Outro</h3>
+    <p>
+        I want to make it clear though that you shouldn't take the results as gospel. Mathematical image quality metrics do not always correlate perfectly with how humans perceive image quality,
+        and your personal preference is entirely subjective. You should take this page as what it is, a research that produces numbers, but you should not take these numbers for granted before
+        understanding what they actually mean.
+    </p>
+</section>
+        <br>
+        <br>
+        <nav>
+            <menu>
+                <a href="../index.html">Home</a>
+                <a href="#introduction">Introduction</a>
+                <a href="https://github.com/Artoriuz">GitHub</a>
+                <a href="https://www.linkedin.com/in/jvrchrisostomo/">LinkedIn</a>
+            </menu>
+        </nav>
+        <br>
+        <br>
+</body>
+</html>

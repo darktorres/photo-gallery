@@ -1,0 +1,67 @@
+no	status_or_source	bytes	sha256	file	url
+01	curl HTTP 200	284201	b7788afc3445124e339e586c71ef98ea27f50e902778d77013a3fbc9d6f99e16	01_github.com_idealo_imagededup.html	https://github.com/idealo/imagededup
+02	curl HTTP 200	296658	33e4efa29c663eee8a4dde0b311cf72b9a52708bfd8f6e3f41a2508ed6633e10	02_github.com_elisemercury_Duplicate-Image-Finder.html	https://github.com/elisemercury/Duplicate-Image-Finder
+03	curl HTTP 200	319359	4bee66658d958ff0cc0cc6c9d174ad641ce6fc64284813cbcd7640a4cfadad67	03_github.com_umbertogriffo_fast-near-duplicate-image-search.html	https://github.com/umbertogriffo/fast-near-duplicate-image-search
+04	curl HTTP 200	329764	6d7e3c11eacc551fa06b5ead3f5c041831db090182154c0390cbe3ce28e5df05	04_github.com_KDJDEV_imagehash-reverse-image-search-tutorial.html	https://github.com/KDJDEV/imagehash-reverse-image-search-tutorial
+05	raw file (.ipynb) via raw.githubusercontent.com HTTP 200	7053143	41d1815eff3594bb5d7e3df52b31cce75955a95a2a448cf0494d1daf1e4b3c9a	05_raw.githubusercontent.com_changsin_ClassifyImages_main_notebooks_dedupe_images.ipynb	https://github.com/changsin/ClassifyImages/blob/main/notebooks/dedupe_images.ipynb
+06	curl HTTP 200	199631	72a30b497a61a0b68bc211074ee511a70f451fec534ca516956182dbced4b5f6	06_github.com_fpingham_dataset-cleaner.html	https://github.com/fpingham/dataset-cleaner
+07	curl HTTP 200	232945	63ae804ad2f1a1ed247f0bca0b16b96e494675ba24e4673d865a25015045d0d1	07_github.com_mendesk_image-ndd-lsh.html	https://github.com/mendesk/image-ndd-lsh
+08	curl HTTP 200	9841	9c3478291f6718acbf71977cf98a89307edd1b89ccdf792cab16a3532b4c396e	08_vitali-fedulov.github.io_similar.pictures_research.html.html	https://vitali-fedulov.github.io/similar.pictures/research.html
+09	curl HTTP 200	144285	82596c53703f42b6b7ad655b4339d4380c815eb3085c7e5e48d68c89226ead62	09_towardsdatascience.com_a-guide-to-building-an-image-duplicate-finder-system-4a46021410f1.html	https://towardsdatascience.com/a-guide-to-building-an-image-duplicate-finder-system-4a46021410f1
+10	curl HTTP 200	148988	6a4b986e69c55930409c2c304cb9fd3c7f1865bd92622a4337ddf0127cfefff5	10_web.archive.org_web_20220303003104_https_towardsdatascience.com_how-to-build-an-image-dupl.html	https://web.archive.org/web/20220303003104/https://towardsdatascience.com/how-to-build-an-image-duplicate-finder-f8714ddca9d2
+11	curl HTTP 200	184542	971c249a129ff459b738473f0a4963ddb6c24f71ce31b7143010c660fe76ad78	11_medium.com_scrapehero_exploring-image-similarity-approaches-in-python-b8ca0a3ed5a3.html	https://medium.com/scrapehero/exploring-image-similarity-approaches-in-python-b8ca0a3ed5a3
+12	browser (Playwright)	1159150	39bd433864ca4e2dc2de1072f9de84a77903f43811ab1592a5d86eadd2de2145	12_stackoverflow.com_questions_10168686_image-processing-algorithm-improvement-for-coca-cola-.html	https://stackoverflow.com/questions/10168686/image-processing-algorithm-improvement-for-coca-cola-can-recognition?rq=2
+13	curl HTTP 200	260751	896ce53957e809ed02d7b8059c74d198f2df33b756784f287182e5f38882cb68	13_github.com_KhaLee2307_image-retrieval.html	https://github.com/KhaLee2307/image-retrieval
+14	curl HTTP 200	314676	24503bcd0b50aa9f058f6c8a63e346cdee7d75af1af11775a4ce3c619864f0e7	14_github.com_pochih_CBIR.html	https://github.com/pochih/CBIR
+15	curl HTTP 200	85736	d910a9a88aa60191e08c0841e0029ab161d05b59927c4ddb8803a8f1897f0a30	15_en.wikipedia.org_wiki_List_of_CBIR_engines.html	https://en.wikipedia.org/wiki/List_of_CBIR_engines
+16	curl HTTP 200	313564	d753c6dfe4e8ce3ca6f819cbc0a06328b5d9519ef25081f25de01486eb5c84fb	16_github.com_willard-yuan_awesome-cbir-papers.html	https://github.com/willard-yuan/awesome-cbir-papers
+17	curl HTTP 200	363911	fe9dd1c0464f20971f1ed4ae42041bcdf31443c5fad5da79902e7ff28cbc7746	17_github.com_shamangary_awesome-local-global-descriptor.html	https://github.com/shamangary/awesome-local-global-descriptor
+18	curl HTTP 200	299307	c155d82b042ae7adf6fe7cb7693e8f08797a5361e49ee94defbe099dfa33ac9d	18_github.com_facebookresearch_sscd-copy-detection.html	https://github.com/facebookresearch/sscd-copy-detection
+19	curl HTTP 200	219564	0b482f773b82fb6896aa407299d3b04355e2d693f15098800bd0289e2db3cfcb	19_github.com_mgaillard_CNNFeaturesRobustness.html	https://github.com/mgaillard/CNNFeaturesRobustness
+20	curl HTTP 200	407251	62f4f04737e44a1ad7d3ce85c3cd9bc33d73dc4687a4e42af2d2810e0e3e7b0b	20_github.com_rom1504_clip-retrieval.html	https://github.com/rom1504/clip-retrieval
+21	curl HTTP 200	368621	c6b4c6ea141f874908f9e1e660989420010de5b8be5937db0c4365177c551bce	21_github.com_Vincentqyw_image-matching-webui.html	https://github.com/Vincentqyw/image-matching-webui
+22	curl HTTP 200	1465487	69cd7422f630fe9a028b195ff5218d0b1ea22756f06c8b9f6ecfae357dee6741	22_huggingface.co_papers_trending.html	https://huggingface.co/papers/trending
+23	browser (Playwright)	269263	26baf34d58858faa8f6d9f15357dff02529110b934242c63f21459d6be8e613b	23_web.archive.org_web_20210827075824_https_paperswithcode.com_task_image-retrieval.html	https://web.archive.org/web/20210827075824/https://paperswithcode.com/task/image-retrieval
+24	browser (Playwright)	428137	89e1aa6945a632594657bf124d5edeee75de8830f28029ab749abfdaa9657ce1	24_ieeexplore.ieee.org_document_9950236_denied_.html	https://ieeexplore.ieee.org/document/9950236?denied=
+25	curl HTTP 200	168266	221f2670c3cac65ff376f216555c1db3bd07790cf37609639e84929085cc2cf2	25_arxiv.org_html_2410.19437v1.html	https://arxiv.org/html/2410.19437v1
+26	curl HTTP 200	45182	ae05a0376958c259ef2ce26d0029f53132fbaaba320dc6660153565f5994e793	26_idealo.github.io_imagededup_methods_cnn.html	https://idealo.github.io/imagededup/methods/cnn/
+27	curl HTTP 200	101912	1ae16077cb7e4c3c3511faf1e848f571ea7899357d9d395335a9308f696f33ee	27_engineering.fb.com_2017_03_29_data-infrastructure_faiss-a-library-for-efficient-similarity.html	https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/
+28	curl HTTP 200	305053	d4f8c0b0b9d14db522232f0e4ff0db17c1b3f3db422a938e6b8249ce9b6eb7dc	28_github.com_facebookresearch_faiss.html	https://github.com/facebookresearch/faiss
+29	curl HTTP 200	236894	d732c8632fbe7461152624912584fe3dc1afa302088115b3bc31a2da9cb88396	29_github.com_FALCONN-LIB_FALCONN.html	https://github.com/FALCONN-LIB/FALCONN
+30	curl HTTP 200	301359	f84777b7bd8fa3538a14624cd915e3c9c5a245affe81886dc88936ce6bee2883	30_github.com_spotify_annoy.html	https://github.com/spotify/annoy
+31	curl HTTP 200	271309	e92d291d2625ba18dcee8468039992d66bac7679ef81000eef0ef2d3801ef173	31_github.com_nmslib_nmslib.html	https://github.com/nmslib/nmslib
+32	curl HTTP 200	270095	7c1555a70a34228a1bf91788f97327f67cf2e5e7e7a90aacdd14621c1a622c8c	32_github.com_pixelogik_NearPy.html	https://github.com/pixelogik/NearPy
+33	curl HTTP 200	271065	385376fb976853cbedfef77e15f0ee29b127cee36a6b7fcf9731292523351474	33_github.com_google-research_google-research_tree_master_scann.html	https://github.com/google-research/google-research/tree/master/scann
+34	curl HTTP 200	372344	9bd72ff6229be8b2b8c8de32a13c7f770ad18d5c5c633bed1483aeee299f51b0	34_github.com_erikbern_ann-benchmarks.html	https://github.com/erikbern/ann-benchmarks
+35	curl HTTP 200	266709	9227f3d99d0028476dc574b4851d87e5cb257a33b0b573dbb38a64dcf64f050c	35_github.com_harsha-simhadri_big-ann-benchmarks.html	https://github.com/harsha-simhadri/big-ann-benchmarks
+36	curl HTTP 200	28944	5d49f94b1729c3de865b74f1c491db84d7236f00f461af53b7332b64bc9e16a0	36_big-ann-benchmarks.com_neurips23.html.html	https://big-ann-benchmarks.com/neurips23.html
+37	curl HTTP 200	550692	f0152e11fbe70973fbe1081b6db4f7d538cf01ae3e10569544e4e935aed9260e	37_github.com_milvus-io_milvus.html	https://github.com/milvus-io/milvus
+38	curl HTTP 200	218940	dadffb59c48e92ebc5e879ad66459701cc6ef3b62a94e225566153790c3accef	38_rom1504.medium.com_semantic-search-at-billions-scale-95f21695689a.html	https://rom1504.medium.com/semantic-search-at-billions-scale-95f21695689a
+39	curl HTTP 200	247454	04dda62c7a568923527ecc37a19196490bd921a0fa8ea18e80c4bb257dc2a37c	39_supabase.com_docs_guides_database_extensions_pgvector.html	https://supabase.com/docs/guides/database/extensions/pgvector
+40	curl over http (https failed certificate check)	51055	87bcd4270904bf53fae19e320280645f063231732898072cbc7f98eee793efba	40_www.mmds.org.html	https://www.mmds.org/
+41	curl HTTP 200	383117	61f5b118375edd79338a3e939a2290bac8f8dc8d4790f74ea71bfa1c6e0d2217	41_github.com_libvips_libvips.html	https://github.com/libvips/libvips
+42	curl HTTP 200	304146	3e96b28eaac6fa827bb7d4c9915bef060bc7de0095ffc5e255862f8bc987e71e	42_github.com_avaneev_avir.html	https://github.com/avaneev/avir
+43	curl HTTP 200	202328	5d23522c7880d077783b6e4093d9df4fbb243ab92d1aa8ab656168912d8c5d60	43_github.com_NVIDIA_CUDALibrarySamples_tree_master_nvJPEG.html	https://github.com/NVIDIA/CUDALibrarySamples/tree/master/nvJPEG
+44	curl HTTP 200	62257	48bbbe0a1eee36f2233cd55a2ebf0fe47f0694e1cb0e5e6056ff18be92eee377	44_artoriuz.github.io_blog_imagemagick_resampling.html.html	https://artoriuz.github.io/blog/imagemagick_resampling.html
+45	curl HTTP 200	31516	ad7a95231bfbdd6c976616ffdf4c811a778a94b90c63f7af077d1e228f4b8ce2	45_artoriuz.github.io_blog_mpv_upscaling.html.html	https://artoriuz.github.io/blog/mpv_upscaling.html
+46	curl HTTP 200	203359	a6c787c76d80d085a7bfeeb4bed7a8a5569367ed78e4fcef3acf293812d9f766	46_uploadcare.com_blog_fighting-jpeg-color-banding.html	https://uploadcare.com/blog/fighting-jpeg-color-banding/
+47	browser (Playwright)	131999	caa8623e366c6a7473348a9c5bc4c95113a9ef56c079172fff8d71f7f6263065	47_web.archive.org_web_20221118084637_https_zuru.tech_blog_the-dangers-behind-image-resizing.html	https://web.archive.org/web/20221118084637/https://zuru.tech/blog/the-dangers-behind-image-resizing
+48	browser (Playwright)	123610	b415c141377ce8f8024581d4e4e4da9cb6392bf0380d80559a816af856834db2	48_www.ericbrasseur.org_gamma.html.html	https://www.ericbrasseur.org/gamma.html
+49	curl HTTP 200	5599	b557dafc48dd40f0f46e960acaa2a7ab95ae2638afcff5d5c30a2d99a5f19de9	49_blurha.sh.html	https://blurha.sh/
+50	curl HTTP 200	457095	83e5158a07749fbb4fb3672954c5a69252a00104d95bb8d55142117ade2a7062	50_github.com_skyllc-ai_UltraFastFileSearch.html	https://github.com/skyllc-ai/UltraFastFileSearch
+51	curl HTTP 200	51487	0cd1317d68b63d752e47eb9da9445539e2c3f21571eaa638928ea5b71eb9c7d3	51_www.voidtools.com_support_everything_sdk.html	https://www.voidtools.com/support/everything/sdk/
+52	curl HTTP 200	368526	4ccf50e17c9b8ef8d3448f98117f1475bd18eea2b3ec7361a487c3afc1374f95	52_github.com_pkolaczk_fclones.html	https://github.com/pkolaczk/fclones
+53	curl HTTP 200	5176	eae656573173926b8011c931f19ef88c835440648ae45440eee68f20513890b9	53_www.extrema.is_blog_2022_02_01_photo-gallery-part-1.html	https://www.extrema.is/blog/2022/02/01/photo-gallery-part-1
+54	curl HTTP 200	392852	8988eb867e25e4eb1cc403c53bcb43427dac5524eaea0f824454338c7be57297	54_github.com_photoview_photoview.html	https://github.com/photoview/photoview
+55	curl HTTP 200	288350	917d643d8c0b82b1eeb51fe0309b6d786546629a82e86d52aad29e79cb43956c	55_github.com_dimsemenov_photoswipe-deep-zoom-plugin.html	https://github.com/dimsemenov/photoswipe-deep-zoom-plugin
+56	curl HTTP 200	280165	2dc2104caa72812a0b5ca996a4bf2e40d2065da78da77cd730c04bf874d7a067	56_github.com_hsa00000_Urocissa.html	https://github.com/hsa00000/Urocissa
+57	curl HTTP 200	444664	e1393bbbe575f0bf222e38185d3726ba615104117938b4e69a71bcd1742c1aef	57_github.com_meichthys_foss_photo_libraries.html	https://github.com/meichthys/foss_photo_libraries
+58	curl HTTP 200	146091	73a38b7be1dda22e55688cd66a33df961cb22784e2b9dcfd7dac58cfcef21760	58_www.resourcespace.com.html	https://www.resourcespace.com/
+59	curl HTTP 200	558506	b7cc33e79126a0e2ee8e06c4c76791c2a3786054ac8b99a19bd6c054066cfaab	59_pimcore.com_en.html	https://pimcore.com/en/
+60	curl HTTP 200	217027	e29af0c773219d60ffd9ecf68395921bd65cf68e19002b84821206931ed6bdcd	60_www.sunshinephotocart.com.html	https://www.sunshinephotocart.com/
+61	curl HTTP 200	572959	60b5aa6f8f665ab56b851800c3077592a69a197dc9c884bf161ce42b2bb22e29	61_www.elastic.co_demo-gallery_rag-app.html	https://www.elastic.co/demo-gallery/rag-app
+62	curl HTTP 200	393403	93f6a67176e51279deaf388dfc360b6c01a36ccce33cb26209932ec243145445	62_github.com_ultralytics_ultralytics.html	https://github.com/ultralytics/ultralytics
+63	curl HTTP 200	1321931	6513c63e6c480df45ae47fdebe7c7df49460dc0e0ca2fef3deae29ea50db045f	63_openmodeldb.info.html	https://openmodeldb.info/
+64	browser (Playwright)	49919	e4780ae3b16a9e7cdd01a22243c7b47e01ed3bfeb2945313c3eb6bb904342893	64_upscale.wiki_wiki_Official_Research_Models.html	https://upscale.wiki/wiki/Official_Research_Models
+65	curl HTTP 200	174681	1c082395f8e8d8ef31b7405b5118fbe2f4541a551ac371900e4175d596fdcc04	65_pyimagesearch.com.html	https://pyimagesearch.com/
+66	curl HTTP 200	29251	302cfea555e101907425789cc75ad2eb697973dd2f6bfa418f7ca0668356a460	66_news.ycombinator.com_item.html	https://news.ycombinator.com/item?id=39392582

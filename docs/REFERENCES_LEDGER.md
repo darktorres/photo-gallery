@@ -1,109 +1,111 @@
 # References ledger
 
-Reference links saved for this repository, recorded 2026-11-11. The list is the user's; the grouping is ours. Each URL
-is kept exactly as saved. Nothing here has been fetched or checked, so an entry is a pointer, not a claim that its
-content was read.
+Reference links saved for this repository. Recorded 2026-11-11; each row has a finding from a fetch on that date. The
+list is the user's; the grouping is ours.
 
-## Scope
+## How to read it
 
-- In: every link from the saved list, one row each.
-- Out: nothing was dropped. The Google search URL is kept as saved; it points to a query, not a source.
+- **Status**: `Fetched` means the page was read. `Partial` means it was read in part, or part of it was summarized
+  rather than read. `Failed` means no content was read; the reason is given.
+- **Repo relevance**: `High`, `Medium`, `Low`, or `None`, judged against the repo's docs (the cited doc is named where
+  one exists). `Already used` means the repo has already adopted or evaluated the thing.
+- Findings come from fetched pages. Facts about a project (stars, licence, dates) are as the page showed them on
+  2026-11-11. Nothing was run.
+- Each URL is kept as saved, except that `http://` is written as `https://`.
+- Failed rows marked `Playwright` were retried in a browser on 2026-11-11 and still failed.
 
 ## Duplicate and near-duplicate image detection
 
-| URL | Note |
-|---|---|
-| https://github.com/idealo/imagededup | Python library for finding duplicate images |
-| https://github.com/elisemercury/Duplicate-Image-Finder | Duplicate image finder tool |
-| https://github.com/umbertogriffo/fast-near-duplicate-image-search | Fast near-duplicate image search |
-| https://github.com/KDJDEV/imagehash-reverse-image-search-tutorial | Perceptual-hash reverse image search tutorial |
-| https://github.com/changsin/ClassifyImages/blob/main/notebooks/dedupe_images.ipynb | Notebook for deduplicating images |
-| https://github.com/fpingham/dataset-cleaner | Dataset cleaning tool |
-| https://github.com/mendesk/image-ndd-lsh | Image near-duplicate detection with LSH |
-| https://vitali-fedulov.github.io/similar.pictures/research.html | Research notes on the similar.pictures algorithm |
-| https://towardsdatascience.com/a-guide-to-building-an-image-duplicate-finder-system-4a46021410f1 | Guide: building an image duplicate finder |
-| https://towardsdatascience.com/how-to-build-an-image-duplicate-finder-f8714ddca9d2 | Guide: how to build an image duplicate finder |
-| https://medium.com/scrapehero/exploring-image-similarity-approaches-in-python-b8ca0a3ed5a3 | Survey of image similarity approaches in Python |
-| https://stackoverflow.com/questions/10168686/image-processing-algorithm-improvement-for-coca-cola-can-recognition?rq=2 | Stack Overflow: image processing for can recognition |
+| URL | Status | Finding | Repo relevance |
+|---|---|---|---|
+| <https://github.com/idealo/imagededup> | Fetched | Python package for exact and near duplicates. Offers pHash, dHash, aHash, wHash and CNN methods. Apache-2.0, 5.7k stars. README: CNNs suit near duplicates best; dHash is fastest for exact ones. | Low. The repo uses PDQ (`crates/dedup/src/pdq_index.rs`), not these hashes. |
+| <https://github.com/elisemercury/Duplicate-Image-Finder> | Fetched | difPy: no hashing; compares image tensors by MSE (0 means exact), checks rotation and dimensions. MIT, 553 stars. | Low. Brute-force comparison; not a scale fit. |
+| <https://github.com/umbertogriffo/fast-near-duplicate-image-search> | Fetched | Python CLI: pHash via ImageHash, hashes indexed in a KD-tree for nearest-neighbour lookup, t-SNE view. Apache-2.0, 163 stars. | Low. Same family as the repo's PDQ multi-index approach, at small scale. |
+| <https://github.com/KDJDEV/imagehash-reverse-image-search-tutorial> | Fetched | Tutorial: 64-bit dHash stored as bigint in PostgreSQL, Hamming-distance query through a BK-tree index (`pg-spgist_hamming`). Suggests starting at distance 3. | Low. Shows a DB-side Hamming index; the repo keeps its index in memory. |
+| <https://github.com/changsin/ClassifyImages/blob/main/notebooks/dedupe_images.ipynb> | Fetched (raw file, 7 MB) | Notebook "Scalable solutions to detect duplicate images". Exact duplicates by MD5 (`hashlib`). Near duplicates: VGG16 feature maps, then KMeans clusters, and each image is compared only with its cluster's centroid. | Low–Medium. The cluster-then-compare idea is the approach the ANN bake-off replaced; MD5 matches the repo's file hash. |
+| <https://github.com/fpingham/dataset-cleaner> | Fetched | Jupyter widgets for cleaning vision datasets: relabelling and suggested duplicate deletion for manual review. Warns that augmented copies look like duplicates. No hash named. | Low. Review-UI idea only. |
+| <https://github.com/mendesk/image-ndd-lsh> | Fetched | Proof of concept: 256-bit dHash signatures, split into 32 bands of 8 bits for bucketing, candidates checked by Hamming distance (threshold such as 0.8). 75 stars. | Medium. Banded LSH is the same idea as `pdq_index.rs`'s 16-chunk multi-index lookup, so use it as a cross-check. |
+| <https://vitali-fedulov.github.io/similar.pictures/research.html> | Fetched | Link list, no code. Points to a perceptual-hash comparison paper (ceur-ws.org/Vol-2904/81.pdf) and an article on hash functions for duplicates. Neither linked paper was fetched. | Low–Medium. Pointers only; the PDF is a candidate to read. |
+| <https://towardsdatascience.com/a-guide-to-building-an-image-duplicate-finder-system-4a46021410f1> | Fetched | Guide by Orjuwan Zaafarani (30 Apr 2022). Compares Euclidean distance, SSIM, image hashing, cosine similarity on features and CNN features (EfficientNet-b0) on Fruits360 and a 40-image SFBench set. Cosine on features dominates for speed and accuracy; CNN features are about 250x slower for similar accuracy; hashing is fastest. CNN features hold up best under 3D projection and rotation. | Medium. Matches the repo's split: PDQ for fast dedupe, SSCD embeddings for retrieval. |
+| <https://web.archive.org/web/20220303003104/https://towardsdatascience.com/how-to-build-an-image-duplicate-finder-f8714ddca9d2> | Fetched | Francisco Ingham, "How to build an image duplicate finder for your dataset" (25 Nov 2018, fastai). Takes activations from the last convolutional block of a ResNet, pools them to 4×4 with adaptive concat pooling, flattens, and compares with cosine similarity. Tested on Oxford-IIIT Pets and CIFAR-10; the author also reports near-duplicates that are really augmentations. The live page returns 404. | Medium. Another CNN-embedding baseline, like the imagededup CNN page. Its augmentation false positives are a warning for the planted-edit tests. |
+| <https://medium.com/scrapehero/exploring-image-similarity-approaches-in-python-b8ca0a3ed5a3> | Fetched | Survey by Vasista Reddy (ScrapeHero, 5 Sep 2023). Covers histogram comparison (OpenCV), SSIM (scikit-image; needs same-size images), SIFT and SURF features, and CNN features (ResNet, VGG, CLIP). A general survey with no benchmark. | Low. Background reading only. |
+| <https://stackoverflow.com/questions/10168686/image-processing-algorithm-improvement-for-coca-cola-can-recognition?rq=2> | Fetched | Question: spotting Coca-Cola cans in cluttered photos at any scale or rotation, with bottles present and cans partly hidden. The asker's HSV red filter, median filter, Canny and Generalised Hough Transform failed on hard cases. Top answer: SIFT, SURF or ORB keypoint matching, which handles scale, rotation and partial occlusion. Commenters note that keypoints cannot tell a can from a bottle, and a 2012 comment flags patents on SIFT and SURF. Second answer: scan for the logo's red-to-white rhythm along scan lines, then check for coke or a cap beside it to reject bottles. | Low. Logo detection, not duplicate detection. The limit commenters raise, that local features cannot separate similar-looking objects, applies to any feature-based search. |
 
 ## Content-based image retrieval and learned embeddings
 
-| URL | Note |
-|---|---|
-| https://github.com/KhaLee2307/image-retrieval | Image retrieval project |
-| https://github.com/pochih/CBIR | Content-based image retrieval |
-| https://en.wikipedia.org/wiki/List_of_CBIR_engines | List of CBIR engines |
-| https://github.com/willard-yuan/awesome-cbir-papers | Curated CBIR paper list |
-| https://github.com/shamangary/awesome-local-global-descriptor | Curated list of local and global image descriptors |
-| https://github.com/facebookresearch/sscd-copy-detection | Self-supervised copy detection (SSCD) |
-| https://github.com/mgaillard/CNNFeaturesRobustness | Robustness of CNN features |
-| https://github.com/rom1504/clip-retrieval | CLIP-based retrieval |
-| https://github.com/Vincentqyw/image-matching-webui | Web UI for image matching |
-| https://paperswithcode.com/task/image-retrieval | Image retrieval task page with papers and code |
-| https://ieeexplore.ieee.org/document/9950236?denied= | IEEE Xplore document 9950236 |
-| https://www.google.com/search?q=Convolutional+Neural+Network+duplicate+detection&oq=Convolutional+Neural+Network+duplicate+detection&aqs=chrome..69i57j33i160l2.4871j0j7&sourceid=chrome&ie=UTF-8 | Google search for CNN duplicate detection (a query, not a source) |
+| URL | Status | Finding | Repo relevance |
+|---|---|---|---|
+| <https://github.com/KhaLee2307/image-retrieval> | Fetched | CBIR project: VGG16, ResNet50, LBP and RGB-histogram features, FAISS index, Streamlit demo. MIT, 33 commits. No duplicate detection. | Low. Ranks by deep-feature similarity, not duplicates. |
+| <https://github.com/pochih/CBIR> | Fetched | CBIR fusing colour, Gabor, DAISY, edge, HOG, VGG19 and ResNet152 features, with random projection. 652 stars. Reports MAP@10 of 0.914 (VGG19) and 0.944 (ResNet152). | Low. Retrieval benchmark, not a duplicate pipeline. |
+| <https://en.wikipedia.org/wiki/List_of_CBIR_engines> | Fetched | Survey of commercial and open-source CBIR engines. Notable here: digiKam (GPL; duplicate detection, fuzzy search) and Pastec (LGPL, C++; near-duplicate retrieval via bag-of-visual-words on ORB). Last edited 17 March 2026. | Medium. A list of options to check; digiKam is the closest desktop comparison. |
+| <https://github.com/willard-yuan/awesome-cbir-papers> | Fetched | Curated paper list (1.8k stars). Its copy-detection section points to SSCD (CVPR 2022). | Medium. Its SSCD pointer leads to a model the repo uses. |
+| <https://github.com/shamangary/awesome-local-global-descriptor> | Fetched | Personal curated list of local and global descriptors. Global-retrieval section covers VLAD, NetVLAD, binary hashing, product quantisation, re-ranking and query expansion. No code. | Low–Medium. A reading list. |
+| <https://github.com/facebookresearch/sscd-copy-detection> | Fetched | Official code for SSCD (CVPR 2022). Archived, read-only since 31 Oct 2023. MIT. 512-d L2-normalised descriptors; cosine above 0.75 gives copies at about 90% precision on DISC. | **Already used.** SSCD embeddings drive the Tier 2 ANN bake-off (`docs/TIER2_ANN_BAKEOFF_PLAN.md`). |
+| <https://github.com/mgaillard/CNNFeaturesRobustness> | Fetched | Thesis tool measuring how robust CNN features are to image edits: per-layer Euclidean distances between edited and original images, against unrelated pairs. Keras, GPL-3.0. | Medium. Method for robustness testing, similar to the planted-edit set in the bake-off. Check the GPL before reusing code. |
+| <https://github.com/rom1504/clip-retrieval> | Fetched | Toolkit for CLIP embeddings, kNN indexes (faiss/autofaiss) and semantic search. Its `deduplicate` option drops results with duplicate embeddings. MIT, 2.8k stars. | Low. The repo's pipeline is SSCD and PDQ, not CLIP. |
+| <https://github.com/Vincentqyw/image-matching-webui> | Fetched | Gradio UI comparing keypoint matches between two images with about 50 matchers (LightGlue, LoFTR, DKM). Apache-2.0. RANSAC filtering is listed only as a wanted feature. | Low. Pairwise verification, not gallery search. |
+| <https://huggingface.co/papers/trending> | Fetched | The page the paperswithcode task URL redirects to: Hugging Face's trending papers list, covering many fields (agents, speech, robotics, finance). It is not an image-retrieval task page, and the original task page is gone. | Low. Use Hugging Face or arXiv search for current image-retrieval work. |
+| <https://web.archive.org/web/20210827075824/https://paperswithcode.com/task/image-retrieval> | Fetched | Papers with Code's Image Retrieval task page as archived on 27 Aug 2021: 323 papers, 24 benchmarks, 39 datasets. Leaderboards per dataset, each with the best model, paper and code link. Datasets include Oxford5k, Paris6k, Oxford105k, Par106k, ROxford and RParis (medium and hard), INRIA Holidays, Google Landmarks v2, CUB-200-2011, CARS196, In-Shop, DeepFashion, iNaturalist, NUS-WIDE and Flickr30K. Leading entries include CGD (multiple global descriptors), Offline Diffusion, CTL centroids and a ResNet101+ArcFace model on Google Landmarks v2. The per-model charts were not checked. | Medium. A map of public retrieval benchmarks, including ROxford/RParis and INRIA Holidays, that could serve as external test sets next to the repo's own planted-edit set. |
+| <https://ieeexplore.ieee.org/document/9950236?denied=> | Fetched | "Deep Perceptual Hash Based on Hash Center for Image Copyright Protection", Xiaohan Sun and Jiting Zhou, IEEE Access vol. 10 (open access). A CNN perceptual hash: training images are grouped by source, a Hadamard matrix gives each group a hash centre in Hamming space, and the CNN learns codes that converge to their centre. Reports F1, EER and ROC against state-of-the-art hashes. | Medium. A learned perceptual hash, a possible route past PDQ's robustness limits. Not compared with PDQ in the paper's summary. |
+| <https://arxiv.org/html/2410.19437v1> | Fetched | "Transductive Learning for Near-Duplicate Image Detection in Scanned Photo Collections" (Net, Folia, Casals, Gómez; arXiv 2410.19437, Oct 2024). Compares CNNs and Vision Transformers for near-duplicate detection in an archive of scanned photographs. Pre-trains on a large dataset, then fine-tunes with self-supervised learning on the unlabelled target collection. Beats the baselines on UKBench and a private dataset. Licence CC BY-NC-SA 4.0. | **High (method).** Close to this repo's problem: a photo collection with no labels. Fine-tuning on the library itself is an option to weigh against the SSCD embeddings. |
+| <https://idealo.github.io/imagededup/methods/cnn/> | Fetched | imagededup's CNN method page. A MobileNet v3 model, cut at its last convolutional layer, produces an encoding per image. `find_duplicates` and `find_duplicates_to_remove` work on the encodings. Batch size 64. | Medium. A ready encoder-based baseline for comparing against PDQ and SSCD on the same test set. |
 
 ## Approximate nearest-neighbour search and vector stores
 
-| URL | Note |
-|---|---|
-| https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/ | Meta engineering post introducing FAISS |
-| https://github.com/facebookresearch/faiss | FAISS |
-| https://github.com/FALCONN-LIB/FALCONN | FALCONN, locality-sensitive hashing library |
-| https://github.com/spotify/annoy | Annoy |
-| https://github.com/nmslib/nmslib | nmslib |
-| https://github.com/pixelogik/NearPy | NearPy, locality-sensitive hashing for Python |
-| https://github.com/google-research/google-research/tree/master/scann | ScaNN |
-| https://github.com/erikbern/ann-benchmarks | ANN benchmarks |
-| https://github.com/harsha-simhadri/big-ann-benchmarks | Big ANN benchmarks |
-| https://big-ann-benchmarks.com/neurips23.html | Big ANN benchmarks, NeurIPS 2023 track |
-| https://github.com/milvus-io/milvus | Milvus vector database |
-| https://rom1504.medium.com/semantic-search-at-billions-scale-95f21695689a | Semantic search at billions of items |
-| https://supabase.com/docs/guides/database/extensions/pgvector | pgvector in Supabase |
-| http://www.mmds.org/ | Mining of Massive Datasets (covers LSH and nearest-neighbour search) |
+| URL | Status | Finding | Repo relevance |
+|---|---|---|---|
+| <https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/> | Fetched | Meta's 2017 post introducing FAISS. Trade-offs of speed, memory and accuracy, with brute force as ground truth. Compressed vectors (product quantisation) let billion-scale indexes fit in RAM. | **Already used.** FAISS was one of the bake-off's index candidates. |
+| <https://github.com/facebookresearch/faiss> | Fetched | Similarity search and clustering for dense vectors. MIT, about 41k stars. HNSW, NSG and compressed (IVF/PQ) indexes; GPU variants. | **Already used.** Evaluated as FAISS IVF-PQ in the bake-off. The repo's Windows wheels lack SIMD kernels (`docs/FINDINGS.md`). |
+| <https://github.com/FALCONN-LIB/FALCONN> | Fetched | Header-only C++ LSH library (hyperplane and cross-polytope), cosine similarity, multi-probe queries. MIT, about 1.2k stars. | Low. An LSH option; the repo's bake-off did not test it. |
+| <https://github.com/spotify/annoy> | Fetched | Random-projection tree forest, saved as mmap-able static files. Not extendable after build. Apache-2.0, about 14k stars. | Low. The static-index limit rules it out for a growing library. |
+| <https://github.com/nmslib/nmslib> | Fetched | C++ library with HNSW (its fastest method by the README), VP-tree, NAPP and inverted files. Apache-2.0, about 3.6k stars. Older releases had GPL parts. | Low. HNSW is already covered by USearch in the bake-off. |
+| <https://github.com/pixelogik/NearPy> | Fetched | Python LSH framework, MIT, about 773 stars. Random and PCA projection hashes, in-memory or Redis buckets. | Low. Python prototype tool. |
+| <https://github.com/google-research/google-research/tree/master/scann> | Fetched | ScaNN: C++ core with Python bindings. Anisotropic quantisation (ICML 2020) and SOAR indexing (NeurIPS 2023). Needs AVX and FMA on x86. Licence not shown on this page. | Low–Medium. A strong ANN candidate. It was not in the bake-off, and the Windows SIMD gap noted in `docs/FINDINGS.md` would apply to it too. |
+| <https://github.com/erikbern/ann-benchmarks> | Fetched | Docker harness benchmarking ANN libraries; plots recall against speed. MIT, about 5.8k stars. README says it is no longer maintained (results April 2025). | Medium. Its recall-versus-speed method is the one the bake-off follows. |
+| <https://github.com/harsha-simhadri/big-ann-benchmarks> | Fetched | Billion-scale ANN benchmark framework, forked from ann-benchmarks. Hosts the NeurIPS '21 and '23 competitions. MIT, 771 commits. | Low–Medium. Reference for scale methodology; not an index. |
+| <https://big-ann-benchmarks.com/neurips23.html> | Fetched | NeurIPS '23 competition page: four tracks (filtered, out-of-distribution, sparse, streaming) at up to about 10M points. Leaderboard dated 1 March 2024. | Low. Context for the filtered-search problem. |
+| <https://github.com/milvus-io/milvus> | Fetched | Vector database for scale: distributed, Kubernetes-native, with scalar filters, hybrid (dense plus BM25 and SPLADE sparse) search and multi-tenancy. Index types: HNSW, IVF, FLAT, SCANN, DiskANN, with quantisation and mmap; GPU CAGRA via cuVS. Milvus Lite runs locally from pip. Apache-2.0, about 46k stars. | Low. A server-oriented system; this repo is a local desktop app. Milvus Lite is the only local-mode option. |
+| <https://rom1504.medium.com/semantic-search-at-billions-scale-95f21695689a> | Fetched | "Semantic search at billions scale" (Romain Beaumont, 31 Mar 2022). Distributed LAION-5B processing: img2dataset downloads, CLIP inference into embeddings, autofaiss indexes, and serving search from one 16 GB machine. | Medium. A worked index-building pipeline at scale, relevant to the ANN bake-off's scale plan. |
+| <https://supabase.com/docs/guides/database/extensions/pgvector> | Fetched | pgvector docs. With IVFFlat or HNSW, a filtered query can return fewer rows than LIMIT; the fix is pgvector's iterative index scans. | Low. The repo does not use Postgres for vectors (`docs/DATABASE.md`). |
+| <https://www.mmds.org/> | Fetched | Home page of "Mining of Massive Datasets" (Leskovec, Rajaraman, Ullman), third edition, free to download. Its topics include minhashing, Spark and deep learning. The minhashing and LSH material is the part to read. | Medium. A free reference for minhash and LSH, the ideas behind PDQ's multi-index lookup and the LSH proof of concept. |
 
 ## Image decoding, resampling and display quality
 
-| URL | Note |
-|---|---|
-| https://github.com/libvips/libvips | libvips image processing library |
-| https://github.com/avaneev/avir | AVIR image resampling library |
-| https://github.com/NVIDIA/CUDALibrarySamples/tree/master/nvJPEG | nvJPEG samples (GPU JPEG decode) |
-| https://artoriuz.github.io/blog/imagemagick_resampling.html | ImageMagick resampling |
-| https://artoriuz.github.io/blog/mpv_upscaling.html | mpv upscaling |
-| https://uploadcare.com/blog/fighting-jpeg-color-banding/ | Fighting JPEG colour banding |
-| https://zuru.tech/blog/the-dangers-behind-image-resizing | Hazards of image resizing |
-| http://www.ericbrasseur.org/gamma.html | Gamma-correct image resizing |
-| https://blurha.sh/ | BlurHash placeholders |
+| URL | Status | Finding | Repo relevance |
+|---|---|---|---|
+| <https://github.com/libvips/libvips> | Fetched | Demand-driven, threaded image library with low memory use; about 300 operations. LGPL-2.1+. Optional decoders: libjpeg-turbo, mozjpeg, libheif, libraw, PDFium. A community Rust binding exists. | **Already used as reference.** Named in the JPEG docs and the thumbnail docs. |
+| <https://github.com/avaneev/avir> | Fetched | Header-only C++ resizer for 8- and 16-bit images. Upsizes 2x first, then sinc-based filters with a Peaked Cosine window; optional sRGB gamma. LANCIR is up to 3x faster, 8-bit only. MIT, 504 stars. | Medium. Not in the repo docs. Worth comparing against `fast_image_resize` in `docs/THUMBNAIL_RESAMPLING.md`. |
+| <https://github.com/NVIDIA/CUDALibrarySamples/tree/master/nvJPEG> | Fetched | nvJPEG API samples: GPU decode with ROI, multiple decoder instances, encoder, resize. C/C++ with CUDA 11+. | **Already used as reference.** nvJPEG appears throughout `docs/JPEG_DECODERS.md` and `docs/JPEG_ENCODERS.md`. |
+| <https://artoriuz.github.io/blog/imagemagick_resampling.html> | Fetched | Compares about 32 ImageMagick filters on Manga109 (MAE, PSNR, SSIM, MS-SSIM). Box filter as the downscale reference; gamma-light versus linear-light; Lanczos family leads for upscaling. | Medium. Evidence for `docs/THUMBNAIL_RESAMPLING.md`'s filter choice. |
+| <https://artoriuz.github.io/blog/mpv_upscaling.html> | Fetched | mpv luma and chroma upscalers and antiringing on one test image. Gamma-light downsampled training data scores best; antiringing sweet spot about 0.8. | Low–Medium. Gamma-light point is relevant to resampling. |
+| <https://uploadcare.com/blog/fighting-jpeg-color-banding/> | Fetched | Article (21 June 2022) on JPEG colour banding at 2x density. Banding comes mostly from the top-left luma quantisation entry. Capping it (10 luma, 16 chroma) cut file size about 33% at similar quality. | Medium. Relevant to `docs/JPEG_ENCODERS.md`'s quantisation tables. Not checked against those tables. |
+| <https://web.archive.org/web/20221118084637/https://zuru.tech/blog/the-dangers-behind-image-resizing> | Fetched | Marco Venturelli, "The dangers behind image resizing" (9 Aug 2021). Compares OpenCV, Pillow, TensorFlow (with and without its anti-alias flag) and PyTorch on nearest, bilinear, bicubic, Lanczos and box filters, downscaling a 128 px circle by 4. Pillow is the only one that anti-aliases on downscale by default; OpenCV and PyTorch do not; TensorFlow matches OpenCV by default and Pillow with the flag on. The live page returns 404. | **High.** Directly on the resampling question in `docs/THUMBNAIL_RESAMPLING.md`: the libraries disagree on anti-aliasing. Check which filter the repo's resampler applies on downscale. |
+| <https://www.ericbrasseur.org/gamma.html> | Fetched | "Gamma error in picture scaling": most scaling software (Photoshop, Gimp, ImageMagick, Paint and others) scales in gamma-encoded space, which darkens detail. Shows a test image and lists fixes: correct software, correct settings, or linearise before scaling. | **Already used.** `docs/THUMBNAIL_RESAMPLING.md` cites "Brasseur, gamma article". Its point matches the repo's own gamma finding. |
+| <https://blurha.sh/> | Fetched | BlurHash project home: a string of about 20–30 characters stored with the image URL, decoded client-side to a blurred placeholder. Points to github.com/woltapp/blurhash (not fetched). | Medium. The repo chose **ThumbHash** for placeholders (`docs/FINDINGS.md`). BlurHash is the alternative. |
+| <https://github.com/skyllc-ai/UltraFastFileSearch> | Fetched | UFFS, a Rust NTFS search engine by Sky, LLC. Reads the MFT, builds a persisted index and answers queries from a background daemon, with CLI, TUI, API and MCP front ends. MPL-2.0. Its benchmark page reports a 68.5 s cold build over 25.9M records on 7 drives, 5.7 s warm from cache, and 0–3 ms daemon-side targeted queries. It also reports about 2.8× faster than Everything. Those are the author's own numbers. | **High (idea).** Same approach as `docs/NTFS_MFT_SCAN_PLAN.md`, with a persisted cache and a daemon. The benchmark figures are unverified here. MPL-2.0 is file-level copyleft, easier to reuse than the old CC BY-NC licence; check it before copying code. |
 
 ## File search and duplicate-file tools
 
-| URL | Note |
-|---|---|
-| https://github.com/githubrobbi/Ultra-Fast-File-Search | Fast file search |
-| https://www.voidtools.com/support/everything/sdk/ | Everything SDK (voidtools) |
-| https://github.com/pkolaczk/fclones | fclones, duplicate file finder |
+| URL | Status | Finding | Repo relevance |
+|---|---|---|---|
+| <https://www.voidtools.com/support/everything/sdk/> | Fetched | Everything SDK: a DLL wrapper over IPC to the Everything service, which must be running. Queries by search, regex and query. Thread-safe, x86 and x64. | **Considered and set aside.** `docs/NTFS_MFT_SCAN_PLAN.md` lists directories by handle (no admin) instead of Everything. |
+| <https://github.com/pkolaczk/fclones> | Fetched | Rust duplicate-file finder. Groups by size, then hashes the head, tail and full file; metro 128-bit by default; optional `--cache`. MIT, about 3k stars. | Low–Medium. The repo's file hash and staged checks cover the same ground. Useful as a benchmark. |
+| <https://www.extrema.is/blog/2022/02/01/photo-gallery-part-1> | Fetched | Introduction (1 Feb 2022) to a series on self-hosted galleries as a Google Photos replacement. Lists planned evaluations; no technical content on this page. | Low. Read the later parts for the evaluation criteria. |
+| <https://github.com/photoview/photoview> | Fetched | Self-hosted gallery, Go and React, AGPL-3.0, about 6.6k stars. Maps folders to albums, generates thumbnails during scanning, reads RAW and EXIF, detects faces. | **Already compared.** Listed in the docs' comparison table; AGPL matters if code is reused. |
+| <https://github.com/dimsemenov/photoswipe-deep-zoom-plugin> | Fetched | PhotoSwipe plugin for tile-based deep zoom (Deep Zoom and Zoomify formats). Tiles load only past the source size. Tiles can be made with libvips. About 75 stars. | Medium, if the web client needs deep zoom. `docs/WEB_CLIENT.md` covers that client. |
+| <https://github.com/hsa00000/Urocissa> | Fetched | Self-hosted gallery in Rust with Vue, for millions of photos. Keeps the DB in memory (about 0.49 GiB per million records), virtual scrolling, and/or/not search. MIT, about 299 stars. Face recognition not yet supported. | **Already compared.** `docs/UROCISSA_COMPARISON.md` (2026-11-03). Its cached filtered views are the main idea to take. |
+| <https://github.com/meichthys/foss_photo_libraries> | Fetched | Feature matrix of 17 self-hosted photo libraries (Chevereto, Damselfly, Ente, Immich, Photoprism, Photoview, Piwigo and others) with ✅/🚧/❌ marks and 0–10 subjective scores. Duplicate handling is listed for Immich, Ente, Lychee, Photoprism, Piwigo, Snapcrescent, both Nextcloud apps and Chevereto. Photoview is listed with none. | Medium. Shows Photoview has no duplicate handling, while Immich, Ente and Photoprism do. Use it to cross-check the comparison table. |
+| <https://github.com/resourcespace/resourcespace> | Fetched | ResourceSpace source repo: open-source DAM for photos, video, illustrations and audio. PHP (69%) and JavaScript (30%). 91 stars, 29 forks, last commit 11 Nov 2026 as shown on the page. The licence varies by file; the repo points to a `documentation/licenses` folder. The product feature claims (metadata search, format conversion, open API, share links, usage reporting) came from the marketing site and were not checked against the repo. | Low. Enterprise-oriented DAM, not a personal gallery. |
 
-## Photo gallery and digital asset management
+## Photo products, models, tutorials and other
 
-| URL | Note |
-|---|---|
-| https://www.extrema.is/blog/2022/02/01/photo-gallery-part-1 | Photo gallery, part 1 |
-| https://github.com/photoview/photoview | Photoview, self-hosted photo gallery |
-| https://github.com/dimsemenov/photoswipe-deep-zoom-plugin | PhotoSwipe deep-zoom plugin |
-| https://github.com/hsa00000/Urocissa | Urocissa photo gallery |
-| https://github.com/meichthys/foss_photo_libraries | List of FOSS photo library software |
-| https://www.resourcespace.com/ | ResourceSpace digital asset management |
-| https://pimcore.com/en/ | Pimcore |
-| https://www.sunshinephotocart.com/ | Sunshine Photo Cart |
-| https://www.elastic.co/demo-gallery/rag-app | Elastic demo gallery, RAG app |
-| https://news.ycombinator.com/item?id=39392582 | Hacker News discussion thread |
-
-## Models, tutorials and other
-
-| URL | Note |
-|---|---|
-| https://github.com/ultralytics/ultralytics | Ultralytics YOLO |
-| https://openmodeldb.info/ | Community database of upscaling models |
-| https://upscale.wiki/wiki/Official_Research_Models | Official upscaling research models |
-| https://pyimagesearch.com/ | PyImageSearch tutorials |
+| URL | Status | Finding | Repo relevance |
+|---|---|---|---|
+| <https://pimcore.com/en/> | Fetched | Marketing page for Pimcore, a data and experience platform: PIM, MDM, DAM, CDP, DXP and commerce, with AI agents for enrichment, translation and content generation. Its DAM covers licence rights and approval workflows, not image similarity. | None. Nothing here touches duplicate detection or image search. |
+| <https://www.sunshinephotocart.com/> | Fetched | WordPress plugin for client galleries and selling prints; FTP upload scanning, expiring galleries, watermarks, cloud offload. Free core, paid add-ons. | Low. WordPress, not this app's domain. |
+| <https://www.elastic.co/demo-gallery/rag-app> | Fetched | Click-through demo of an internal policy Q&A app on Elasticsearch. No code or pipeline steps. | Low. Only the retrieve-then-generate idea. |
+| <https://github.com/ultralytics/ultralytics> | Fetched | YOLO object detection, segmentation, pose and tracking in PyTorch. **AGPL-3.0**, with a paid enterprise option. About 63k stars. | Low for dedupe. AGPL matters if shipped. |
+| <https://openmodeldb.info/> | Fetched | 672 upscaling models, filterable by subject and purpose. Most are for anime, cartoon and restoration. Purposes include general upscaling, JPEG and compression removal, debanding, denoising and restoration. Architectures include ESRGAN, SPAN, HAT, RealPLKSR and Real-CUGAN. Each model has its own licence. Many preview images are broken. | Low–Medium. Relevant if learned upscaling is considered; `docs/THUMBNAIL_RESAMPLING.md` treats upscaling as interpolation. Its JPEG and compression-removal models are the nearest topic to the JPEG docs. |
+| <https://upscale.wiki/wiki/Official_Research_Models> | Fetched | "Official Research Models": models from the papers' authors (ESRGAN, SwinIR, RealSR, GFPGAN, CodeFormer, RestoreFormer), with licences as listed on their GitHub repos. The wiki says it has moved to openmodeldb.info. | Low–Medium. Superseded by OpenModelDB (see that row). |
+| <https://pyimagesearch.com/> | Fetched | Tutorial and course site (OpenCV, detection, Python). Headlines only; article bodies not read. | Low. |
+| <https://news.ycombinator.com/item?id=39392582> | Fetched | "Show HN: a Pinterest clone using SigLIP embeddings" (16 Feb 2024; 98 points, 21 comments). Comments raised duplicate results appearing side by side, and pgvector on Supabase versus Qdrant and Faiss. | Low. Anecdotal; the duplicate-results complaint matches a dedupe-in-results concern. |

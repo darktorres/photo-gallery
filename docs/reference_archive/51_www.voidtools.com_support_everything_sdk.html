@@ -1,0 +1,341 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<title>SDK - voidtools</title>
+<script>(function() {var curtheme=localStorage.getItem('theme');if(curtheme&&curtheme!=='system')document.documentElement.setAttribute('data-theme',curtheme);})();</script>
+<link rel="shortcut icon" href="/favicon.ico">
+<meta name="viewport" content="width=920">
+<meta name="author" content="webhost2">
+<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+<style>:root { --body-background-color: #f8f8f8;--body-color: #000000;--content-background-color: #ffffff;--bot-background-color: #f8f8f8;--bot-border-color: #C0C0C0;--top-background-color: #000000;--top-border-color: #bbbbbb;--menu-background-color: #F8F8F8;--menu-border-color: #bbbbbb;--menu-color: #000000;--menu-hover-background-color: #f8f8f8;--menu-current-background-color: #ffffff;--menu-current-before-background-color: #ffffff;--menu-current-hover-background-color: #ffffff;--search-background-color: #ffffff;--search-color: #000000;--search-border-color: #bbbbbb;--link-color: #0066CC;--visited-color: #551A8B;--button-background-color: #f8f8f8;--button-border-color: #bbbbbb;--button-color: #000000;--button-hover-background-color: #f8f8f8;--langsel-color: #000000;--langsel-border-color: #bbbbbb;--langsel-background-color: #ffffff;--langsel-hover-background-color: #ffffff;--themesel-color: #000000;--themesel-border-color: #bbbbbb;--themesel-background-color: #ffffff;--themesel-hover-background-color: #ffffff;--toc-border-color: #cccccc;--td-border-color: #cccccc;--de-url: url(/e2.png);--de15-url: url(/e3.png);--dot-url: url(/dot.png);--cli-url: url(/cli.png);--dc-url: url(/cl.png);--viv-url: url(/vivicon.png);--di-url: url(/h.png);--ds-url: url(/c.png);--textarea-background-color: #ffffff;--textarea-color: #000000;--textarea-border-color: #bbbbbb;--sledit-background-color: #ffffff;--sledit-color: #000000;--sledit-border-color: #bbbbbb;--slbutton-background-color: #F8F8F8;--slbutton-hover-background-color: #F8F8F8;--slbutton-active-background-color: #F8F8F8;--slbutton-color: #000000;--slbutton-border-color: #bbbbbb;--info-background-color: #E0F7F7;--info-border-color: #30B0B0;--warning-background-color: #F7F7E0;--warning-border-color: #B0B030;--code-background-color: #f8f8f8;--code-border-color: #bbbbbb;--h2-border-color: #bbbbbb;--hr-background-color: #bbbbbb;}@media (prefers-color-scheme: dark) {html:not([data-theme="light"]) {--body-background-color: #101010;--body-color: #f0f0f0;--content-background-color: #202020;--bot-background-color: #101010;--bot-border-color: #303030;--top-background-color: #000000;--top-border-color: #000000;--menu-background-color: #000000;--menu-border-color: #303030;--menu-color: #f0f0f0;--menu-hover-background-color: #303030;--menu-current-background-color: #202020;--menu-current-before-background-color: #303030;--menu-current-hover-background-color: #303030;--search-background-color: #101010;--search-color: #f0f0f0;--search-border-color: #303030;--link-color: #5080FF;--visited-color: #8050FF;--button-background-color: #303030;--button-border-color: #404040;--button-color: #f0f0f0;--button-hover-background-color: #404040;--langsel-color: #f0f0f0;--langsel-border-color: #303030;--langsel-background-color: #202020;--langsel-hover-background-color: #303030;--themesel-color: #f0f0f0;--themesel-border-color: #303030;--themesel-background-color: #202020;--themesel-hover-background-color: #303030;--toc-border-color: #404040;--td-border-color: #404040;--de-url: url(/e2d.png);--de15-url: url(/e3d.png);--dot-url: url(/dotd.png);--cli-url: url(/clid.png);--dc-url: url(/cld.png);--viv-url: url(/vivd.png);--di-url: url(/hd.png);--ds-url: url(/c.dark.png);--textarea-background-color: #101010;--textarea-color: #f0f0f0;--textarea-border-color: #404040;--sledit-background-color: #101010;--sledit-color: #f0f0f0;--sledit-border-color: #404040;--slbutton-background-color: #303030;--slbutton-hover-background-color: #404040;--slbutton-active-background-color: #303030;--slbutton-color: #f0f0f0;--slbutton-border-color: #404040;--info-background-color: #003535;--info-border-color: #008888;--warning-background-color: #353500;--warning-border-color: #888800;--code-background-color: #282828;--code-border-color: #404040;--h2-border-color: #404040;--hr-background-color: #404040;color-scheme: dark;}html:not([data-theme="light"]) a {color:var(--link-color);}html:not([data-theme="light"]) a:visited {color:var(--visited-color);}html:not([data-theme="light"]) .menuitem a:hover {text-decoration:none;}html:not([data-theme="light"]) .curmenuitem a:hover {text-decoration:none;}html:not([data-theme="light"]) .button:hover {text-decoration:none;}html:not([data-theme="light"]) textarea {background-color:var(--textarea-background-color);color:var(--textarea-color);border:1px solid var(--textarea-border-color);border-radius: 2px;}html:not([data-theme="light"]) .sledit {background-color:var(--sledit-background-color);color:var(--sledit-color);border:1px solid var(--sledit-border-color);border-radius: 2px;}html:not([data-theme="light"]) .slbutton {background-color:var(--slbutton-background-color);border:1px solid var(--slbutton-border-color);border-radius: 3px;color:var(--slbutton-color);padding: 3px 4px;}html:not([data-theme="light"]) .slbutton:hover {background-color:var(--slbutton-hover-background-color);}html:not([data-theme="light"]) .slbutton:active:hover {background-color:var(--slbutton-active-background-color);border:1px solid var(--slbutton-active-background-color);}html:not([data-theme="light"]) .menuitem {border-radius: 2px 2px 0px 0px;}html:not([data-theme="light"]) .curmenuitem {border-radius: 2px 2px 0px 0px;}}html[data-theme="light"] { --body-background-color: #f8f8f8;--body-color: #000000;--content-background-color: #ffffff;--bot-background-color: #f8f8f8;--bot-border-color: #C0C0C0;--top-background-color: #000000;--top-border-color: #bbbbbb;--menu-background-color: #F8F8F8;--menu-border-color: #bbbbbb;--menu-color: #000000;--menu-hover-background-color: #f8f8f8;--menu-current-background-color: #ffffff;--menu-current-before-background-color: #ffffff;--menu-current-hover-background-color: #ffffff;--search-background-color: #ffffff;--search-color: #000000;--search-border-color: #bbbbbb;--link-color: #0066CC;--visited-color: #551A8B;--button-background-color: #f8f8f8;--button-border-color: #bbbbbb;--button-color: #000000;--button-hover-background-color: #f8f8f8;--langsel-color: #000000;--langsel-border-color: #bbbbbb;--langsel-background-color: #ffffff;--langsel-hover-background-color: #ffffff;--themesel-color: #000000;--themesel-border-color: #bbbbbb;--themesel-background-color: #ffffff;--themesel-hover-background-color: #ffffff;--toc-border-color: #cccccc;--td-border-color: #cccccc;--de-url: url(/e2.png);--de15-url: url(/e3.png);--dot-url: url(/dot.png);--cli-url: url(/cli.png);--dc-url: url(/cl.png);--viv-url: url(/vivicon.png);--di-url: url(/h.png);--ds-url: url(/c.png);--textarea-background-color: #ffffff;--textarea-color: #000000;--textarea-border-color: #bbbbbb;--sledit-background-color: #ffffff;--sledit-color: #000000;--sledit-border-color: #bbbbbb;--slbutton-background-color: #F8F8F8;--slbutton-hover-background-color: #F8F8F8;--slbutton-active-background-color: #F8F8F8;--slbutton-color: #000000;--slbutton-border-color: #bbbbbb;--info-background-color: #E0F7F7;--info-border-color: #30B0B0;--warning-background-color: #F7F7E0;--warning-border-color: #B0B030;--code-background-color: #f8f8f8;--code-border-color: #bbbbbb;--h2-border-color: #bbbbbb;--hr-background-color: #bbbbbb;color-scheme: light;}html[data-theme="dark"] { --body-background-color: #101010;--body-color: #f0f0f0;--content-background-color: #202020;--bot-background-color: #101010;--bot-border-color: #303030;--top-background-color: #000000;--top-border-color: #000000;--menu-background-color: #000000;--menu-border-color: #303030;--menu-color: #f0f0f0;--menu-hover-background-color: #303030;--menu-current-background-color: #202020;--menu-current-before-background-color: #303030;--menu-current-hover-background-color: #303030;--search-background-color: #101010;--search-color: #f0f0f0;--search-border-color: #303030;--link-color: #5080FF;--visited-color: #8050FF;--button-background-color: #303030;--button-border-color: #404040;--button-color: #f0f0f0;--button-hover-background-color: #404040;--langsel-color: #f0f0f0;--langsel-border-color: #303030;--langsel-background-color: #202020;--langsel-hover-background-color: #303030;--themesel-color: #f0f0f0;--themesel-border-color: #303030;--themesel-background-color: #202020;--themesel-hover-background-color: #303030;--toc-border-color: #404040;--td-border-color: #404040;--de-url: url(/e2d.png);--de15-url: url(/e3d.png);--dot-url: url(/dotd.png);--cli-url: url(/clid.png);--dc-url: url(/cld.png);--viv-url: url(/vivd.png);--di-url: url(/hd.png);--ds-url: url(/c.dark.png);--textarea-background-color: #101010;--textarea-color: #f0f0f0;--textarea-border-color: #404040;--sledit-background-color: #101010;--sledit-color: #f0f0f0;--sledit-border-color: #404040;--slbutton-background-color: #303030;--slbutton-hover-background-color: #404040;--slbutton-active-background-color: #303030;--slbutton-color: #f0f0f0;--slbutton-border-color: #404040;--info-background-color: #003535;--info-border-color: #008888;--warning-background-color: #353500;--warning-border-color: #888800;--code-background-color: #282828;--code-border-color: #404040;--h2-border-color: #404040;--hr-background-color: #404040;color-scheme: dark;}html[data-theme="dark"] a {color:var(--link-color);}html[data-theme="dark"] a:visited { color:var(--visited-color);}html[data-theme="dark"] .menuitem a:hover {text-decoration:none;}html[data-theme="dark"] .curmenuitem a:hover {text-decoration:none;}html[data-theme="dark"] .button:hover {text-decoration:none;}html[data-theme="dark"] textarea {background-color:var(--textarea-background-color);color:var(--textarea-color);border:1px solid var(--textarea-border-color);border-radius: 2px;}html[data-theme="dark"] .sledit {background-color:var(--sledit-background-color);color:var(--sledit-color);border:1px solid var(--sledit-border-color);border-radius: 2px;}html[data-theme="dark"] .slbutton {background-color:var(--slbutton-background-color);border:1px solid var(--slbutton-border-color);border-radius: 3px;color:var(--slbutton-color);padding: 3px 4px;}html[data-theme="dark"] .slbutton:hover {background-color:var(--slbutton-hover-background-color);}html[data-theme="dark"] .slbutton:active:hover {background-color:var(--slbutton-active-background-color);border:1px solid var(--slbutton-active-background-color);}html[data-theme="dark"] .menuitem {border-radius: 2px 2px 0px 0px;}html[data-theme="dark"] .curmenuitem {border-radius: 2px 2px 0px 0px;}* {margin:0;padding:0;} body {min-width:720px;font-family:Arial,sans-serif;font-size:13px;color:#000000;text-align:left;background-color:#f8f8f8;padding:0px;margin:0px;}.top {background-color:#000000;height:110px;border-bottom:1px solid #bbbbbb;text-align:center;}.topcenter {background-color:#000000;margin:0 auto; width:720px;text-align:left;}h1 {font-size:2em;font-weight:normal;margin-bottom:12px;}.content h2 { font-weight:normal;font-size:1.4em;margin-bottom:12px;} img {border:0;vertical-align:bottom;}a {text-decoration:none;}a:hover {text-decoration:underline;}p {margin-bottom:4px;}input {margin-top:4px;}textarea {margin-top:4px;}.sledit {padding:2px;}.slbutton {cursor: pointer;padding:2px;}.menu {background-color:#F8F8F8;border-bottom:1px solid #bbbbbb;text-align:center;}.menucenter {background-color:#F8F8F8;margin:0 auto; width:720px;text-align:left;}.menuitem {float:left;position:relative;border-left:1px solid #F8F8F8;border-right:1px solid #F8F8F8;}.curmenuitem {float:left;background-color:#ffffff;position:relative;border-left:1px solid #bbbbbb;border-right:1px solid #bbbbbb;}.curmenuitem:after {content: "";position: absolute;bottom: -1px;left: 0;right: 0;height: 1px;background: #fff;}html .menuitem a, html .menuitem a:visited {color:#000;display:block;padding:8px 8px;}.search {float:right;}.search form {display:block; padding-left:8px; padding-right:8px;}.searchedit {background-color:#ffffff;color:#000;display:block;margin-top:5px;border:1px solid #bbbbbb;border-radius: 2px;}.searchedit input {margin:0px;padding-top:2px;padding-bottom:2px;padding-left:4px;padding-right:2px;vertical-align:middle;background-color:#ffffff;border: none;}.searchedit button {padding:2px;cursor: pointer;vertical-align:middle;background-color:#ffffff;border: none;}.searchedit input:focus {outline: none;}html .curmenuitem a, html .curmenuitem a:visited {color:#000;  display:block; padding:8px 8px}.endmenuitem {clear:both;}.content {background-color:#ffffff;text-align:center;}.contentcenter {background-color:#ffffff;margin:0 auto; width:720px;text-align:left;}.contentpadding {padding-top:32px;padding-bottom:32px;padding-left:8px;padding-right:8px;line-height: 1.4em;}.contentpadding ul { margin-top: 0.8em; margin-bottom: 0.9em; padding-left:16px; } .bot {background-color:#f8f8f8;border-top:1px solid #C0C0C0;text-align:center;}.botcenter {margin:0 auto; width:720px;background-color:#f8f8f8;text-align:center;height:48px;margin-top:16px;}.botcenter a {margin-left:16px;margin-right:16px;}.botpadding {padding:6px 8px;text-align:center;}.bot2 {background-color:#f8f8f8;height:64px;text-align:center;}.botcenter2 {margin:0 auto; width:720px;background-color:#f8f8f8;text-align:center;font-size:11px;}.botcenter2 a {}.langsel {display: inline;margin-left:16px;margin-right:16px;}.langsel select {border:1px solid #bbbbbb;background-color:#ffffff;padding:3px 4px;border-radius: 2px;}.langsel button {cursor: pointer;margin-left: 6px;padding:3px 4px;border:1px solid #bbbbbb;background-color:#f8f8f8;}.themesel {display: none;margin-left:16px;margin-right:16px;border-radius: 2px;}.themesel {border:1px solid #bbbbbb;background-color:#ffffff;padding:3px 4px;}.button {font-size:15px;text-align:center;float:left;display:block;background-color:#f8f8f8;border:1px solid #bbbbbb;border-radius: 2px;padding:12px;margin-bottom:12px;margin-right:12px;color:#000000;}html body .button {color:#000000;}.screenshot {float: left;margin-right:32px}.cli {display: inline-block;margin-left:6px;min-height:16px;background:url(/cli.png) no-repeat;background-position:left center;padding-left:20px;}.de {min-height:16px;background:url(/e2.png) no-repeat;background-position:left center;padding-left:20px;}span.de {margin-left:6px;display: inline-block;}.de15 {min-height:16px;background:url(/e15a.png) no-repeat;background-position:left center;padding-left:20px;}span.de15 {margin-left:6px;display: inline-block;}.de134 {display: inline-block;margin-left:6px;min-height:16px;background:url(/e2-1.3.png) no-repeat;background-position:left center;padding-left:20px;}.di {display: inline-block;margin-left:6px;min-height:16px;background:url(/h.png) no-repeat;background-position:left center;padding-left:20px;}.ds {display: inline-block;margin-left:6px;min-height:16px;background:url(/c.png) no-repeat;background-position:left center;padding-left:20px;}.dc {display: inline-block;margin-left:6px;min-height:16px;background:url(/cl.png) no-repeat;background-position:left center;padding-left:20px;}.viv {display: inline-block;margin-left:6px;min-height:16px;background:url(/vivicon.png) no-repeat;background-position:left center;padding-left:20px;}html .dltable {border-collapse:collapse;}html .dltable td {padding-left:0px;padding-right:24px;padding-top:8px;padding-bottom:8px;border-bottom:none;border-top:1px solid #C0C0C0;}.leftdot {min-height:16px;background:url(/dot.png) no-repeat;background-position:center center;width:12px;padding-left:12px;}code {white-space:nowrap;}.donatehistorytable {border-collapse: collapse;table-layout:fixed;}.donatehistorytable th {border-bottom:1px solid #bbbbbb;padding:8px;}.donatehistorytable td {border-bottom:1px solid #dddddd;padding:8px;}.donateline {width:204px;margin-left:12px;margin-right:12px;border:0;border-top:1px solid #ccc;}dl {}dd {margin-left:24px;}body {color:var(--body-color);background-color:var(--body-background-color);}.top {background-color:var(--top-background-color);border-bottom:1px solid var(--top-border-color);}.menu {background-color:var(--menu-background-color);border-bottom:1px solid var(--menu-border-color);}.menucenter {background-color:var(--menu-background-color);}.menuitem {border-left:1px solid var(--menu-background-color);border-right:1px solid var(--menu-background-color);}.menuitem:hover {background-color:var(--menu-hover-background-color);border-left:1px solid var(--menu-hover-background-color);border-right:1px solid var(--menu-hover-background-color);}.searchedit {background-color:var(--search-background-color);color:var(--search-color);border:1px solid var(--search-border-color);}.searchedit input {background-color:var(--search-background-color);color:var(--search-color);}.searchedit button {background-color:var(--search-background-color);color:var(--search-color);}.curmenuitem {background: var(--menu-current-background-color);border-left:1px solid var(--menu-border-color);border-right:1px solid var(--menu-border-color);}.curmenuitem:before {content: "";position: absolute;top: 0px;left: 0;right: 0;height: 1px;background: var(--menu-current-before-background-color);}.curmenuitem:after {content: "";position: absolute;bottom: -1px;left: 0;right: 0;height: 1px;background: var(--menu-current-background-color);}.curmenuitem:hover {background-color:var(--menu-current-hover-background-color);}html .curmenuitem a, html .curmenuitem a:visited {color:var(--menu-color);}html .menuitem a, html .menuitem a:visited {color:var(--menu-color);}.content {background-color:var(--content-background-color);}.contentcenter {background-color:var(--content-background-color);}.button {background-color:var(--button-background-color);border:1px solid var(--button-border-color);color:var(--button-color);}.button:hover {background-color:var(--button-hover-background-color);}html body .button, html body .button:visited {color:var(--button-color);}.bot {background-color:var(--bot-background-color);border-top:1px solid var(--bot-border-color);}.botcenter {background-color:var(--bot-background-color);}.bot2 {background-color:var(--bot-background-color);}.botcenter2 {background-color:var(--bot-background-color);}.langsel select {color:var(--langsel-color);border:1px solid var(--langsel-border-color);background-color:var(--langsel-background-color);}.langsel button {color:var(--langsel-color);border:1px solid var(--langsel-border-color);background-color:var(--langsel-background-color);}.langsel select:hover, .langsel select:focus {background-color:var(--langsel-hover-background-color);}.langsel button:hover {background-color:var(--langsel-hover-background-color);}.themesel {color:var(--themesel-color);border:1px solid var(--themesel-border-color);background-color:var(--themesel-background-color);}.themesel:hover, .themesel:focus {background-color:var(--themesel-hover-background-color);}html .dltable td {border-top:1px solid var(--td-border-color);}.de {background:var(--de-url) no-repeat;}.de15 {background:var(--de15-url) no-repeat;background-position:left center;}.leftdot {background:var(--dot-url) no-repeat;background-position:center center;}.cli {background:var(--cli-url) no-repeat;background-position:left center;}.dc {background:var(--dc-url) no-repeat;background-position:left center;}.viv {background:var(--viv-url) no-repeat;background-position:left center;}.di {background:var(--di-url) no-repeat;background-position:left center;}.ds {background:var(--ds-url) no-repeat;background-position:left center;}.donatehistorytable th {border-bottom:1px solid var(--td-border-color);}.donatehistorytable td {border-bottom:1px solid var(--td-border-color);}.donateline {border-top:1px solid var(--td-border-color);}.wikih2 { font-size:1.4em;line-height: 1.6em;} body {min-width:920px;}.wiki {background-color:#ffffff;text-align:center;}.wikicenter {background-color:#ffffff; margin:0 auto; width:920px;text-align:left;}.wikipadding {padding-top:32px;padding-bottom:32px;padding-left:12px;padding-right:12px;}.wikinav li {list-style-type:none;}.wikinav {float:left;min-height:50px;margin-right:24px;width:200px;overflow:auto;}.wikinav hr {border: 0;height: 1px;background-color: #bbbbbb;margin-left:12px;margin-right:60px;margin-top:6px;margin-bottom:6px;}.wikinavindent2 {margin-left:12px;white-space:nowrap;}.wikinavindent3 {margin-left:24px;white-space:nowrap;}.wikicontent {width:666px;line-height: 1.4em;float:right;min-height:50px;}.wikicontent ul { margin-left:26px; margin-top: 0.8em; margin-bottom: 0.9em; } .wikicontent table {border-collapse:collapse;margin-bottom:6px;}.wikicontent td, .wikicontent th {padding-right:24px;padding-top:8px;padding-bottom:8px;padding-left:8px;vertical-align:top;text-align:left;}.wikicontent td {border-bottom:1px solid #CCCCCC;border-top:1px solid #CCCCCC;}.wikinowrap {white-space:nowrap;}.wikiinfo {display: table;background-color: #F7E0E0;border:1px solid #30B0B0;border-radius: 2px;padding-top: 4px;padding-left: 8px;padding-right: 8px;margin-bottom: 4px;}.wikiwarn {display: table;background-color: #F7F7E0;border:1px solid #B0B030;border-radius: 2px;padding-top: 2px;padding-bottom: 2px;padding-left: 8px;padding-right: 8px;margin-top: 8px;margin-bottom: 8px;}.wikiinlinecode {display: inline-block;white-space:nowrap;background-color: #f8f8f8;border:1px solid #bbbbbb;border-radius: 2px;padding:2px 4px;margin:1px;}.wikicodebox {overflow: auto;display: block;background-color: #f8f8f8;border:1px solid #bbbbbb;border-radius: 2px;margin-top:8px;margin-bottom:8px;}.wikicodebox pre {padding: 8px 0 8px 8px;}.wikicodebox pre code {display: inline-block;padding-right: 8px;white-space: pre;}.wikiindent {margin-left: 32px;}.wiki h2 { font-weight:normal;font-size:1.4em;padding-bottom:4px;border-bottom: 1px solid #bbbbbb;} .wiki {background-color:var(--content-background-color);}.wikicenter {background-color:var(--content-background-color);}.wikicontent td {border-bottom:1px solid var(--td-border-color);border-top:1px solid var(--td-border-color);}.wikiinfo {background-color: var(--info-background-color);border:1px solid var(--info-border-color);}.wikiwarn {background-color: var(--warning-background-color);border:1px solid var(--warning-border-color);}.wikiinlinecode {background-color: var(--code-background-color);border:1px solid var(--code-border-color);}.wikicodebox {background-color: var(--code-background-color);border:1px solid var(--code-border-color);}.wiki h2 { border-bottom: 1px solid var(--h2-border-color);} .wiki hr { background-color: var(--hr-background-color);} .toc { border:1px solid #CCCCCC;padding:6px; border-radius: 2px;} .toc ul { list-style-type:none} .toclvl1 { white-space:nowrap;padding-bottom:6px; } .toclvl2 { margin-left:32px; white-space:nowrap;padding-bottom:6px; } .faqcontent ul {padding-left:16px; }.toc {border:1px solid var(--toc-border-color);}</style>
+<script>(function() {function getCurrentTheme() {return localStorage.getItem("theme") || "system";}function applyTheme(theme) {if (theme === "system") {document.documentElement.removeAttribute("data-theme");} else {document.documentElement.setAttribute("data-theme", theme);}}function applyThemeImages(theme) {var isDark = theme === "dark" ||(theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);var imgs = document.querySelectorAll("picture img");for (var i = 0; i < imgs.length; i++) {var img = imgs[i];var source = img.parentNode.querySelector("source");if (!source) continue;source.setAttribute("srcset",source.getAttribute(isDark ? "data-dark-src" : "data-light-src"));img.src = source.getAttribute("srcset");}}function init() {var theme = getCurrentTheme();var imgs = document.querySelectorAll("picture img");for (var i = 0; i < imgs.length; i++) {var source = imgs[i].parentNode.querySelector("source");if (!source) continue;source.setAttribute("data-light-src", imgs[i].getAttribute("src"));source.setAttribute("data-dark-src", source.getAttribute("srcset"));}applyTheme(theme);applyThemeImages(theme);var supportsDarkTheme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").media !== "not all";if (supportsDarkTheme) {var themesel = document.getElementById("themesel");if (themesel) {themesel.value = theme;themesel.onchange = function() {var t = this.value;localStorage.setItem("theme", t);applyTheme(t);applyThemeImages(t);};themesel.style.display = "inline";}}window.matchMedia("(prefers-color-scheme: dark)").addListener(function() {if (getCurrentTheme() === "system") applyThemeImages("system");});document.getElementById("langgo").style.display = "none";var langsel = document.querySelector(".langsel select");if (langsel) {langsel.onchange = function() {var lang = this.value;var url = window.location.pathname;url = url.replace(/^\/[a-z]{2}-[a-z]{2}\//i, "/");url = "/" + lang + url;url = url + window.location.search;window.location.href = url;};}}if (document.readyState === "loading") {document.addEventListener("DOMContentLoaded", init);} else {init();}})();</script>
+</head>
+<body>
+<div class="top">
+<div class="topcenter">
+<a href="/"><img alt="voidtools" src="/voidtools9.png" /></a>
+</div>
+</div>
+<div class="menu">
+<div class="menucenter">
+<div class="menuitem"><a href="/">Home</a></div>
+<div class="menuitem"><a href="/downloads/">Downloads</a></div>
+<div class="menuitem"><a href="/faq/">FAQ</a></div>
+<div class="curmenuitem"><a href="/support/everything/">Support</a></div>
+<div class="menuitem"><a href="/forum/">Forums</a></div>
+<div class="menuitem"><a href="/donate/">Donate</a></div>
+<div class="menuitem"><a href="/contact/">Contact</a></div>
+<div class="search"><form method="get" action="https://www.google.com/search"><div class="searchedit" ><input type="text" name="q" size="15" maxlength="200" value="" placeholder="Search" /><input type="hidden" name="sitesearch" value="www.voidtools.com" /><button type="submit"><picture><source srcset="/searchicond.png" media="(prefers-color-scheme: dark)"><img src="/searchicon.png" alt="Search" title="Search"></picture></button></div></form></div>
+<div class="endmenuitem"></div>
+</div>
+</div>
+<div class="wiki">
+<div class="wikicenter">
+<div class="wikipadding">
+<div class="wikinav">
+<ul>
+<li class="wikinavindent1"><p><a href="/support/everything/">Everything</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/installing_everything/">Installing Everything</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/using_everything/">Using Everything</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/searching/">Searching in Everything</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/search_syntax/">Search Syntax</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/search_modifiers/">Search Modifiers</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/search_functions/">Search Functions</a></p></li>
+<hr/>
+<li class="wikinavindent2"><p><a href="/support/everything/command_line_interface/">Command Line Interface</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/command_line_options/">Command Line Options</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/customizing/">Customizing</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/etp/">ETP Server</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/everything_server/">Everything Server</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/everything_service/">Everything Service</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/file_lists/">File Lists</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/find_duplicates/">Find Duplicates</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/folder_indexing/">Folder indexing</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/http/">HTTP Server</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/index_journal/">Index Journal</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/indexes/">Indexes</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/ini/">INI</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/keyboard_shortcuts/">Keyboard Shortcuts</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/multiple_instances/">Multiple Instances</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/options/">Options</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/plugins/">Plugins</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/previous_versions/">Previous Versions</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/properties/">Properties</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/recent_changes/">Recent Changes</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/result_omissions/">Result Omissions</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/results/">Results</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/run_history/">Run History</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/sdk/"><b>SDK</b></a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/c/">C</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/csharp/">C#</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/clarion/">Clarion</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_cleanup/">Everything_CleanUp</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_deleterunhistory/">Everything_DeleteRunHistory</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_exit/">Everything_Exit</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getbuildnumber/">Everything_GetBuildNumber</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getlasterror/">Everything_GetLastError</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getmajorversion/">Everything_GetMajorVersion</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getmatchcase/">Everything_GetMatchCase</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getmatchpath/">Everything_GetMatchPath</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getmatchwholeword/">Everything_GetMatchWholeWord</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getmax/">Everything_GetMax</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getminorversion/">Everything_GetMinorVersion</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getnumfileresults/">Everything_GetNumFileResults</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getnumfolderresults/">Everything_GetNumFolderResults</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getnumresults/">Everything_GetNumResults</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getoffset/">Everything_GetOffset</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getregex/">Everything_GetRegex</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getreplyid/">Everything_GetReplyID</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getreplywindow/">Everything_GetReplyWindow</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getrequestflags/">Everything_GetRequestFlags</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultattributes/">Everything_GetResultAttributes</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultdateaccessed/">Everything_GetResultDateAccessed</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultdatecreated/">Everything_GetResultDateCreated</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultdatemodified/">Everything_GetResultDateModified</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultdaterecentlychanged/">Everything_GetResultDateRecentlyChanged</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultdaterun/">Everything_GetResultDateRun</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultextension/">Everything_GetResultExtension</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultfilelistfilename/">Everything_GetResultFileListFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultfilename/">Everything_GetResultFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultfullpathname/">Everything_GetResultFullPathName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresulthighlightedfilename/">Everything_GetResultHighlightedFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresulthighlightedfullpathandfilename/">Everything_GetResultHighlightedFullPathAndFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresulthighlightedpath/">Everything_GetResultHighlightedPath</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultlistrequestflags/">Everything_GetResultListRequestFlags</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultlistsort/">Everything_GetResultListSort</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultpath/">Everything_GetResultPath</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultruncount/">Everything_GetResultRunCount</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getresultsize/">Everything_GetResultSize</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getrevision/">Everything_GetRevision</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getruncountfromfilename/">Everything_GetRunCountFromFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getsearch/">Everything_GetSearch</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_getsort/">Everything_GetSort</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_gettargetmachine/">Everything_GetTargetMachine</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_gettotfileresults/">Everything_GetTotFileResults</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_gettotfolderresults/">Everything_GetTotFolderResults</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_gettotresults/">Everything_GetTotResults</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_incruncountfromfilename/">Everything_IncRunCountFromFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isadmin/">Everything_IsAdmin</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isappdata/">Everything_IsAppData</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isdbloaded/">Everything_IsDBLoaded</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isfastsort/">Everything_IsFastSort</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isfileinfoindexed/">Everything_IsFileInfoIndexed</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isfileresult/">Everything_IsFileResult</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isfolderresult/">Everything_IsFolderResult</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isqueryreply/">Everything_IsQueryReply</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_isvolumeresult/">Everything_IsVolumeResult</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_query/">Everything_Query</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_rebuilddb/">Everything_RebuildDB</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_reset/">Everything_Reset</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_savedb/">Everything_SaveDB</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_saverunhistory/">Everything_SaveRunHistory</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setmatchcase/">Everything_SetMatchCase</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setmatchpath/">Everything_SetMatchPath</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setmatchwholeword/">Everything_SetMatchWholeWord</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setmax/">Everything_SetMax</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setoffset/">Everything_SetOffset</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setregex/">Everything_SetRegex</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setreplyid/">Everything_SetReplyID</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setreplywindow/">Everything_SetReplyWindow</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setrequestflags/">Everything_SetRequestFlags</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setruncountfromfilename/">Everything_SetRunCountFromFileName</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setsearch/">Everything_SetSearch</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_setsort/">Everything_SetSort</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_sortresultsbypath/">Everything_SortResultsByPath</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/everything_updateallfolderindexes/">Everything_UpdateAllFolderIndexes</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/ipc/">IPC</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/ipc_c_example/">IPC C Example</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/python/">Python</a></p></li>
+<li class="wikinavindent3"><p><a href="/support/everything/sdk/visual_basic/">Visual Basic</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/search_history/">Search History</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/supported_languages/">Supported Languages</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/translating/">Translating</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/troubleshooting/">Troubleshooting</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/uninstalling_everything/">Uninstalling Everything</a></p></li>
+<li class="wikinavindent2"><p><a href="/support/everything/whats_new/">What's New</a></p></li>
+</ul>
+</div>
+<div class="wikicontent">
+<h1 id="sdk">SDK</h1>
+The Everything SDK provides a DLL and Lib interface to Everything over <a href="/support/everything/sdk/ipc/">IPC</a>.<br/>
+It also provides methods for using WM_COPYDATA for <a href="/support/everything/sdk/ipc/">IPC</a>.<br/>
+Everything is required to run in the background.<br/>
+<br/>
+<br/>
+<br/>
+<h2 id="download">Download</h2>
+<br/>
+<a href="/Everything-SDK.zip">Everything-SDK.zip</a><br/>
+<br/>
+<br/>
+<br/>
+<h2 id="manipulating_the_search_state">Manipulating the search state</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_setsearch/">Everything_SetSearch</a></li>
+<li><a href="/support/everything/sdk/everything_setmatchpath/">Everything_SetMatchPath</a></li>
+<li><a href="/support/everything/sdk/everything_setmatchcase/">Everything_SetMatchCase</a></li>
+<li><a href="/support/everything/sdk/everything_setmatchwholeword/">Everything_SetMatchWholeWord</a></li>
+<li><a href="/support/everything/sdk/everything_setregex/">Everything_SetRegex</a></li>
+<li><a href="/support/everything/sdk/everything_setmax/">Everything_SetMax</a></li>
+<li><a href="/support/everything/sdk/everything_setoffset/">Everything_SetOffset</a></li>
+<li><a href="/support/everything/sdk/everything_setreplywindow/">Everything_SetReplyWindow</a></li>
+<li><a href="/support/everything/sdk/everything_setreplyid/">Everything_SetReplyID</a></li>
+<li><a href="/support/everything/sdk/everything_setsort/">Everything_SetSort</a></li>
+<li><a href="/support/everything/sdk/everything_setrequestflags/">Everything_SetRequestFlags</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="reading_the_search_state">Reading the search state</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_getsearch/">Everything_GetSearch</a></li>
+<li><a href="/support/everything/sdk/everything_getmatchpath/">Everything_GetMatchPath</a></li>
+<li><a href="/support/everything/sdk/everything_getmatchcase/">Everything_GetMatchCase</a></li>
+<li><a href="/support/everything/sdk/everything_getmatchwholeword/">Everything_GetMatchWholeWord</a></li>
+<li><a href="/support/everything/sdk/everything_getregex/">Everything_GetRegex</a></li>
+<li><a href="/support/everything/sdk/everything_getmax/">Everything_GetMax</a></li>
+<li><a href="/support/everything/sdk/everything_getoffset/">Everything_GetOffset</a></li>
+<li><a href="/support/everything/sdk/everything_getreplywindow/">Everything_GetReplyWindow</a></li>
+<li><a href="/support/everything/sdk/everything_getreplyid/">Everything_GetReplyID</a></li>
+<li><a href="/support/everything/sdk/everything_getlasterror/">Everything_GetLastError</a></li>
+<li><a href="/support/everything/sdk/everything_getsort/">Everything_GetSort</a></li>
+<li><a href="/support/everything/sdk/everything_getrequestflags/">Everything_GetRequestFlags</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="executing_the_query">Executing the query</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_query/">Everything_Query</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="check_for_query_reply">Check for query reply</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_isqueryreply/">Everything_IsQueryReply</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="manipulating_results">Manipulating results</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_sortresultsbypath/">Everything_SortResultsByPath</a></li>
+<li><a href="/support/everything/sdk/everything_reset/">Everything_Reset</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="reading_results">Reading results</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_getnumfileresults/">Everything_GetNumFileResults</a></li>
+<li><a href="/support/everything/sdk/everything_getnumfolderresults/">Everything_GetNumFolderResults</a></li>
+<li><a href="/support/everything/sdk/everything_getnumresults/">Everything_GetNumResults</a></li>
+<li><a href="/support/everything/sdk/everything_gettotfileresults/">Everything_GetTotFileResults</a></li>
+<li><a href="/support/everything/sdk/everything_gettotfolderresults/">Everything_GetTotFolderResults</a></li>
+<li><a href="/support/everything/sdk/everything_gettotresults/">Everything_GetTotResults</a></li>
+<li><a href="/support/everything/sdk/everything_isvolumeresult/">Everything_IsVolumeResult</a></li>
+<li><a href="/support/everything/sdk/everything_isfolderresult/">Everything_IsFolderResult</a></li>
+<li><a href="/support/everything/sdk/everything_isfileresult/">Everything_IsFileResult</a></li>
+<li><a href="/support/everything/sdk/everything_getresultfilename/">Everything_GetResultFileName</a></li>
+<li><a href="/support/everything/sdk/everything_getresultpath/">Everything_GetResultPath</a></li>
+<li><a href="/support/everything/sdk/everything_getresultfullpathname/">Everything_GetResultFullPathName</a></li>
+<li><a href="/support/everything/sdk/everything_getresultlistsort/">Everything_GetResultListSort</a></li>
+<li><a href="/support/everything/sdk/everything_getresultlistrequestflags/">Everything_GetResultListRequestFlags</a></li>
+<li><a href="/support/everything/sdk/everything_getresultextension/">Everything_GetResultExtension</a></li>
+<li><a href="/support/everything/sdk/everything_getresultsize/">Everything_GetResultSize</a></li>
+<li><a href="/support/everything/sdk/everything_getresultdatecreated/">Everything_GetResultDateCreated</a></li>
+<li><a href="/support/everything/sdk/everything_getresultdatemodified/">Everything_GetResultDateModified</a></li>
+<li><a href="/support/everything/sdk/everything_getresultdateaccessed/">Everything_GetResultDateAccessed</a></li>
+<li><a href="/support/everything/sdk/everything_getresultattributes/">Everything_GetResultAttributes</a></li>
+<li><a href="/support/everything/sdk/everything_getresultfilelistfilename/">Everything_GetResultFileListFileName</a></li>
+<li><a href="/support/everything/sdk/everything_getresultruncount/">Everything_GetResultRunCount</a></li>
+<li><a href="/support/everything/sdk/everything_getresultdaterun/">Everything_GetResultDateRun</a></li>
+<li><a href="/support/everything/sdk/everything_getresultdaterecentlychanged/">Everything_GetResultDateRecentlyChanged</a></li>
+<li><a href="/support/everything/sdk/everything_getresulthighlightedfilename/">Everything_GetResultHighlightedFileName</a></li>
+<li><a href="/support/everything/sdk/everything_getresulthighlightedpath/">Everything_GetResultHighlightedPath</a></li>
+<li><a href="/support/everything/sdk/everything_getresulthighlightedfullpathandfilename/">Everything_GetResultHighlightedFullPathAndFileName</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="general">General</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_reset/">Everything_Reset</a></li>
+<li><a href="/support/everything/sdk/everything_cleanup/">Everything_CleanUp</a></li>
+<li><a href="/support/everything/sdk/everything_getmajorversion/">Everything_GetMajorVersion</a></li>
+<li><a href="/support/everything/sdk/everything_getminorversion/">Everything_GetMinorVersion</a></li>
+<li><a href="/support/everything/sdk/everything_getrevision/">Everything_GetRevision</a></li>
+<li><a href="/support/everything/sdk/everything_getbuildnumber/">Everything_GetBuildNumber</a></li>
+<li><a href="/support/everything/sdk/everything_exit/">Everything_Exit</a></li>
+<li><a href="/support/everything/sdk/everything_isdbloaded/">Everything_IsDBLoaded</a></li>
+<li><a href="/support/everything/sdk/everything_isadmin/">Everything_IsAdmin</a></li>
+<li><a href="/support/everything/sdk/everything_isappdata/">Everything_IsAppData</a></li>
+<li><a href="/support/everything/sdk/everything_rebuilddb/">Everything_RebuildDB</a></li>
+<li><a href="/support/everything/sdk/everything_updateallfolderindexes/">Everything_UpdateAllFolderIndexes</a></li>
+<li><a href="/support/everything/sdk/everything_savedb/">Everything_SaveDB</a></li>
+<li><a href="/support/everything/sdk/everything_saverunhistory/">Everything_SaveRunHistory</a></li>
+<li><a href="/support/everything/sdk/everything_deleterunhistory/">Everything_DeleteRunHistory</a></li>
+<li><a href="/support/everything/sdk/everything_gettargetmachine/">Everything_GetTargetMachine</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="run_history">Run History</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/everything_getruncountfromfilename/">Everything_GetRunCountFromFileName</a></li>
+<li><a href="/support/everything/sdk/everything_setruncountfromfilename/">Everything_SetRunCountFromFileName</a></li>
+<li><a href="/support/everything/sdk/everything_incruncountfromfilename/">Everything_IncRunCountFromFileName</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="examples">Examples</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/c/">C/C++</a></li>
+<li><a href="/support/everything/sdk/csharp/">C#</a></li>
+<li><a href="https://github.com/dipique/everythingio">C# CLI Example by dipique</a></li>
+<li><a href="/support/everything/sdk/clarion/">Clarion</a></li>
+<li><a href="/support/everything/sdk/visual_basic/">Visual Basic</a></li>
+<li><a href="/support/everything/sdk/python/">Python</a></li>
+</ul>
+<br/>
+<br/>
+<h2 id="notes">Notes</h2>
+<br/>
+<ul>
+<li>The SDK is a basic <a href="/support/everything/sdk/ipc/">IPC</a> wrapper</li>
+<li>Requires "Everything" client to be running.</li>
+<li>ANSI / Unicode support.</li>
+<li>Thread safe.</li>
+<li>Support for blocking and non-blocking mode.</li>
+<li>x86 and x64 support.</li>
+</ul>
+<br/>
+<br/>
+<h2 id="see_also">See Also</h2>
+<br/>
+<ul>
+<li><a href="/support/everything/sdk/ipc/">IPC</a></li>
+</ul>
+<br/>
+</div>
+<div style="clear:both">
+</div>
+</div>
+</div>
+</div>
+<div class="bot">
+<div class="botcenter">
+<div class="botpadding">
+<a href="/about/">About voidtools</a><select class="themesel" id="themesel"><option value="system">(Default Theme)</option><option value="dark">Dark Theme</option><option value="light">Light Theme</option></select><form class="langsel" action="" method="get"><select name="lang" onchange="this.form.submit()"><option value="en-au">English (Australia)</option><option value="en-uk">English (United Kingdom)</option><option value="en-us" selected>English (United States)</option><option value="es-es">Español (España)</option><option value="es-ve">Español (Venezuela)</option><option value="he-il">עברית (Israel)</option><option value="ko-kr">한국어 (대한민국)</option><option value="ru-ru">Русский (Россия)</option><option value="tr-tr">Türkçe (Türkiye)</option><option value="uz-uz">Oʻzbekcha (Oʻzbekiston)</option><option value="zh-cn">简体中文 (中国)</option></select><button type="submit" id="langgo">Go</button></form></div>
+</div>
+</div>
+<div class="bot2">
+<div class="botcenter2">
+&copy; 2026 voidtools - <a href="/privacy/">Privacy</a>
+</div>
+</div>
+</body>
+</html>

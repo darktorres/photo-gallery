@@ -1,0 +1,2705 @@
+<!DOCTYPE HTML>
+<html lang="en">
+<!--
+                           .
+                        ,d88a,.b,
+                      ,d888888a,8b,                           88             
+                    ,d8888888888a,8b,       ,d                88             
+                                            88                88             
+8b,dPYba,,adPYba,   ,adPPYba,  8b,dPPYba, MM88MMM ,adPPYYba,  88  ,adPPYYba,
+88P'   "88"    "8a a8"     "8a 88P'   `"8a  88           `Y8  88         `Y8
+88      88      88 8b       d8 88       88  88    ,adPPPPP88  88  ,adPPPPP88
+88      88      88 `8a,   ,a8' 88       88  88,   88,    ,88  88  88,    ,88
+88      88      88  ``YbbdP''  88       88  `Y888 `"8bbdP'Y8b 88b ``8bbdP'Y8b
+
+                    `q3333333333a'8p'
+                      `q333333a'8p'
+                        `q33a''p'       
+                           `
+
+(c) Montala Limited 2014-2026. All rights reserved.
+-->
+<head>
+
+
+
+
+
+	
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8">
+    <title>Open Source Digital Asset Management (DAM) Software: ResourceSpace</title>	
+
+	
+<link rel="canonical" href="https://www.resourcespace.com" />
+
+
+
+
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="msvalidate.01" content="5A3FA78AF2E512F7B78CFB1EB99A43F5" />
+		
+    <meta name="Description" content="ResourceSpace is Open Source Digital Asset Management (DAM) software that offers considerable savings over proprietary systems." />
+
+    <link rel="icon" type="image/png" href="/img/favicon.png" />
+    <link rel="image_src" href="/img/sitethumb.png" />    
+
+    
+<!--- FontAwesome for icons-->
+<!--
+    <link rel="stylesheet" href="/node_modules/@fortawesome/fontawesome-pro/css/fontawesome.min.css">
+    <link rel="stylesheet" href="/node_modules/@fortawesome/fontawesome-pro/css/solid.min.css">
+    <link rel="stylesheet" href="/node_modules/@fortawesome/fontawesome-pro/css/brands.min.css">
+    <link rel="stylesheet" href="/node_modules/@fortawesome/fontawesome-pro/css/sharp-regular.min.css">
+-->
+    <link rel="stylesheet" href="/lib/lucide/lucide.css">
+
+
+    <link rel="stylesheet" href="/css/style.css?nc=1791192398">
+   <!--<link rel="stylesheet" href="/css/dark.css?nc=1741975408">-->
+    <link rel="stylesheet" href="/css/responsive.css?nc=1762173701" media="screen and (max-width:1199px)">      
+<!-- Tokens / primitives -->
+<link rel="stylesheet" href="/css/home/image.css" />
+<link rel="stylesheet" href="/css/home/flash.css" />
+
+<!-- Components -->
+<link rel="stylesheet" href="/css/home/feature.css" />
+<link rel="stylesheet" href="/css/home/badge.css" />
+<link rel="stylesheet" href="/css/home/card.css" />
+<link rel="stylesheet" href="/css/home/case-study-cover.css" />
+<link rel="stylesheet" href="/css/home/case-study.css" />
+<link rel="stylesheet" href="/css/home/testimonial.css" />
+<link rel="stylesheet" href="/css/home/download.css" />
+<link rel="stylesheet" href="/css/home/content-cta.css" />
+<link rel="stylesheet" href="/css/home/accordion.css" />
+<link rel="stylesheet" href="/css/home/bio.css" />
+<link rel="stylesheet" href="/css/home/controls.css" />
+<link rel="stylesheet" href="/css/home/pagination.css" />
+<link rel="stylesheet" href="/css/home/timeline.css" />
+<link rel="stylesheet" href="/css/home/context-nav.css" />
+<link rel="stylesheet" href="/css/home/titles.css" />
+<link rel="stylesheet" href="/css/home/ui-card.css" />
+<link rel="stylesheet" href="/css/home/form.css" />
+
+<!-- Page-level composites -->
+<link rel="stylesheet" href="/css/home/content-block.css" />
+<link rel="stylesheet" href="/css/home/hero.css" />
+<link rel="stylesheet" href="/css/home/homepage.css" />
+
+<link rel="stylesheet" href="/css/home/tokens.css" />
+<link rel="stylesheet" href="/css/home/header.css" />
+<link rel="stylesheet" href="/css/home/footer.css" />
+<link rel="stylesheet" href="/css/home/icons.css" />
+<link rel="stylesheet" href="/css/home/buttons.css" />
+<link rel="stylesheet" href="/css/home/typography.css" />
+
+<script src="/js/jquery-3.7.1.min.js"></script>
+<script src="/js/jquery-ui-1.13.3.custom/jquery-ui.min.js"></script>
+<script src="/js/jquery.marquee.min.js"></script>
+<script src="/js/card.js"></script>
+<script src='https://www.google.com/recaptcha/api.js'></script>
+<script>
+(function(){
+  const n='lastVisitedUrls',u=location.href,m=10;
+  let c=document.cookie.match('(^|;)\\s*'+n+'=([^;]*)'),a=[];
+  try{a=JSON.parse(decodeURIComponent(c?c[2]:""))}catch(e){}
+  a=a.filter(x=>x!==u);a.unshift(u);a=a.slice(0,m);
+  document.cookie=n+'='+encodeURIComponent(JSON.stringify(a))+';path=/;max-age='+(60*60*24*7);
+})();
+</script>
+</head>
+
+<body style='margin:0px' class="home-page">
+<!-- Google Tag Manager (noscript) -->
+<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-5KFVMVF"
+height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+<!-- End Google Tag Manager (noscript) -->
+
+<header class="rs-header rs-header--transparent">
+    <div class="rs-header__bar">
+      <a href="/" class="rs-header__brand" aria-label="ResourceSpace home">
+        <img class="rs-header__logo" src="/assets/header/logo.svg" alt="ResourceSpace" />
+      </a>
+      <nav class="rs-header__nav" id="rs-header-nav" aria-label="Primary">
+        <div class="rs-header__links">
+          <button type="button" class="rs-button rs-button--navigation-light" data-menu="features">
+            Features
+            <svg class="rs-header__chevron rs-icon"><use href="/assets/icons/lucide-sprite.svg#chevron-down"></use></svg>
+          </button>
+          <button type="button" class="rs-button rs-button--navigation-light" data-menu="sector">
+            Sectors
+            <svg class="rs-header__chevron rs-icon"><use href="/assets/icons/lucide-sprite.svg#chevron-down"></use></svg>
+          </button>
+          <button type="button" class="rs-button rs-button--navigation-light" data-menu="resources">
+            Resources
+            <svg class="rs-header__chevron rs-icon"><use href="/assets/icons/lucide-sprite.svg#chevron-down"></use></svg>
+          </button>
+          <button type="button" class="rs-button rs-button--navigation-light" data-menu="company">
+            Company
+            <svg class="rs-header__chevron rs-icon"><use href="/assets/icons/lucide-sprite.svg#chevron-down"></use></svg>
+          </button>
+          <!-- <button type="button" class="rs-button rs-button--navigation-light" data-menu="contact">
+            Contact
+            <svg class="rs-header__chevron rs-icon"><use href="/assets/icons/lucide-sprite.svg#chevron-down"></use></svg>
+          </button> -->
+        </div>
+        <div class="rs-header__actions">
+          <a href="/pricing" class="rs-button rs-button--pricing-white">Pricing</a>
+          <a href="/free" class="rs-button rs-button--outline-white">Start for free</a>
+          <a href="/book" class="rs-button rs-button--solid-green">Request a demo</a>
+        </div>
+      </nav>
+      <button type="button" class="rs-header__menu-toggle" aria-expanded="false" aria-controls="rs-header-nav" aria-label="Open menu">
+        <svg class="rs-icon rs-header__menu-icon rs-header__menu-icon--open"><use href="/assets/icons/lucide-sprite.svg#menu"></use></svg>
+        <svg class="rs-icon rs-header__menu-icon rs-header__menu-icon--close"><use href="/assets/icons/lucide-sprite.svg#x"></use></svg>
+      </button>
+    </div>
+    <div class="rs-header__overlay"></div>
+    <div class="rs-header__panels">
+      <div class="rs-mega-dropdown" data-menu-panel="features">
+        <div class="rs-mega-dropdown__card rs-mega-dropdown__card--features">
+          <h4 class="rs-heading rs-heading--h4 rs-mega-dropdown__card-heading">All the features you need</h4>
+          <p class="rs-body rs-body--small rs-mega-dropdown__card-body">Our friendly team can guide you through how our extensive feature list can be tailored to your exact needs</p>
+          <a href="/book" class="rs-button rs-button--solid-purple">Request a meeting</a>
+        </div>
+        <nav class="rs-mega-dropdown__list rs-mega-dropdown__list--grid" aria-label="Features menu">
+            <a href="/features/metadata" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#brain-circuit"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Metadata & AI</p>
+                <p class="rs-nav-dropdown-item__description">Transform your digital asset management with our AI tools</p>
+              </span>
+            </a>
+            <a href="/features/search" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#search"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Search</p>
+                <p class="rs-nav-dropdown-item__description">Locating your digital assets has never been faster or more accurate</p>
+              </span>
+            </a>
+            <!--<a href="/features/metadata" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#list-tree"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Metadata</p>
+                <p class="rs-nav-dropdown-item__description">Automated metadata tagging and processing, powering advanced asset search</p>
+              </span>
+            </a>-->
+            <a href="/features/workflow" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#git-pull-request"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Workflow</p>
+                <p class="rs-nav-dropdown-item__description">The DAM system that improves the way you work</p>
+              </span>
+            </a>
+            <a href="/features" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#brush"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Branding</p>
+                <p class="rs-nav-dropdown-item__description">Protect your brand identity and customise your DAM to feel part of your organisation</p>
+              </span>
+            </a>
+            <a href="/features/admin" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#chart-area"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Reporting &amp; analytics</p>
+                <p class="rs-nav-dropdown-item__description">Monitoring your asset performance and usage with reliable data processing</p>
+              </span>
+            </a>
+            <a href="/features/sharing" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#share-2"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Sharing</p>
+                <p class="rs-nav-dropdown-item__description">Easy collaboration for organising, sharing and distributing assets among colleagues</p>
+              </span>
+            </a>
+            <a href="/features/integration" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#plug"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Integrations</p>
+                <p class="rs-nav-dropdown-item__description">Work efficiently by integrating ResourceSpace with the other systems you rely on</p>
+              </span>
+            </a>
+            <a href="/features/security" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#lock"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Security &amp; permissions</p>
+                <p class="rs-nav-dropdown-item__description">Protect and secure files with advanced privacy settings</p>
+              </span>
+            </a>
+            <a href="/features/convert" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#wand-sparkles"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Automatic conversion</p>
+                <p class="rs-nav-dropdown-item__description">Your assets, in all the formats you need, automatically</p>
+              </span>
+            </a>
+        </nav>
+      </div>
+      <div class="rs-mega-dropdown" data-menu-panel="sector">
+        <div class="rs-mega-dropdown__card rs-mega-dropdown__card--sector">
+          <h4 class="rs-heading rs-heading--h4 rs-mega-dropdown__card-heading">Flexible to fit the specific needs of your sector</h4>
+          <p class="rs-body rs-body--small rs-mega-dropdown__card-body">We&rsquo;ll configure the perfect digital asset management system, carefully tailored to your sector</p>
+          <a href="/book" class="rs-button rs-button--solid-purple">Request a meeting</a>
+        </div>
+        <nav class="rs-mega-dropdown__list rs-mega-dropdown__list--grid" aria-label="Sector menu">
+            <a href="/sectors/arts-heritage" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#landmark"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Museums</p>
+                <p class="rs-nav-dropdown-item__description">Digital preservation, integration with your Collections Management System, condition reporting &ndash; find out why ResourceSpace is the number one choice for GLAM institutions.</p>
+              </span>
+            </a>
+            <a href="/sectors/academic" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#graduation-cap"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Academic</p>
+                <p class="rs-nav-dropdown-item__description">Secure content sharing, research preservation and powerful search &ndash; find out why ResourceSpace is the ideal DAM for schools, colleges and universities.</p>
+              </span>
+            </a>
+            <a href="/sectors/charity" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#heart"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Charities</p>
+                <p class="rs-nav-dropdown-item__description">Consent management, secure global sharing, usage tracking and flexible pricing &ndash; find out why ResourceSpace is trusted by charities and nonprofits worldwide.</p>
+              </span>
+            </a>
+            <a href="/sectors/product" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#swatch-book"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Brand and Product</p>
+                <p class="rs-nav-dropdown-item__description">Brand consistency, faster campaign delivery and seamless creative integrations &ndash; find out why ResourceSpace is the ideal DAM for product and marketing teams.</p>
+              </span>
+            </a>
+            <a href="/sectors/public-sector" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#user-star"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Public Sector</p>
+                <p class="rs-nav-dropdown-item__description">Secure access, compliance, cross-department collaboration and automated workflows &ndash; find out why ResourceSpace is the ideal DAM for public sector organisations.</p>
+              </span>
+            </a>
+            <a href="/userlist" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#building-2"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">User list</p>
+                <p class="rs-nav-dropdown-item__description">See which organisations across the nonprofit, arts and heritage, public, academic, product and brand sectors use ResourceSpace.</p>
+              </span>
+            </a>
+        </nav>
+      </div>
+      <div class="rs-mega-dropdown" data-menu-panel="resources">
+        <div class="rs-mega-dropdown__card rs-mega-dropdown__card--resources">
+          <h4 class="rs-heading rs-heading--h4 rs-mega-dropdown__card-heading">Knowledge base articles, case studies, partners, release videos &ndash; here&rsquo;s where you&rsquo;ll find lots of extra information about ResourceSpace</h4>
+          <a href="/book" class="rs-button rs-button--solid-purple">Request a meeting</a>
+        </div>
+        <nav class="rs-mega-dropdown__list rs-mega-dropdown__list--grid" aria-label="Resources menu">
+            <a href="/knowledge-base" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#book"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Knowledge base</p>
+                <p class="rs-nav-dropdown-item__description">Guides, tutorials and technical documentation</p>
+              </span>
+            </a>
+            <a href="/faq" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-question-mark"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">FAQs</p>
+                <p class="rs-nav-dropdown-item__description">Quick answers to common questions about ResourceSpace, including features, hosting, pricing and support.</p>
+              </span>
+            </a>
+            <a href="/casestudies" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-text"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Case Studies</p>
+                <p class="rs-nav-dropdown-item__description">Client success stories</p>
+              </span>
+            </a>
+            <a href="/whitepapers" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#scroll-text"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">White Papers</p>
+                <p class="rs-nav-dropdown-item__description">Detailed guides and advice about digital asset management software</p>
+              </span>
+            </a>
+            <a href="/integration-partners" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#handshake"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Integration Partners</p>
+                <p class="rs-nav-dropdown-item__description">Find details of experienced partners who can build bespoke integrations and connect ResourceSpace with your wider technology ecosystem.</p>
+              </span>
+            </a>
+            <a href="/blog" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#newspaper"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Blog</p>
+                <p class="rs-nav-dropdown-item__description">All the latest news and developments in digital asset management.</p>
+              </span>
+            </a>
+            <a href="/events" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#calendar"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Events</p>
+                <p class="rs-nav-dropdown-item__description">Join our free training webinars to get the most out of ResourceSpace, and view details about upcoming events where you can meet us in person.</p>
+              </span>
+            </a>
+            <a href="/versions" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#tag"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Versions</p>
+                <p class="rs-nav-dropdown-item__description">Details of new functionality included in our recent releases</p>
+              </span>
+            </a>
+            <a href="/roadmap" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#route"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Roadmap</p>
+                <p class="rs-nav-dropdown-item__description">New functionality currently in development</p>
+              </span>
+            </a>
+            <a href="/labs" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#flask-conical"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Labs</p>
+                <p class="rs-nav-dropdown-item__description">ResourceSpace Labs means all our clients get early access to the latest features and improvements &ndash; find out more here.</p>
+              </span>
+            </a>
+        </nav>
+      </div>
+      <div class="rs-mega-dropdown" data-menu-panel="company">
+        <div class="rs-mega-dropdown__card rs-mega-dropdown__card--company">
+          <h4 class="rs-heading rs-heading--h4 rs-mega-dropdown__card-heading">Ethical, employee owned and experienced &ndash; we&rsquo;re the experts in digital asset management</h4>
+          <p class="rs-body rs-body--small rs-mega-dropdown__card-body">We provide powerful DAM systems and bespoke consultancy and support to organisations of all types across the world.</p>
+          <a href="/book" class="rs-button rs-button--solid-purple">Request a meeting</a>
+        </div>
+        <nav class="rs-mega-dropdown__list rs-mega-dropdown__list--grid" aria-label="Company menu">
+            <a href="/about" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#info"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">About us</p>
+                <p class="rs-nav-dropdown-item__description">Learn more about the history of ResourceSpace and how it all started</p>
+              </span>
+            </a>
+            <a href="/team" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#square-user-round"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Meet the team</p>
+                <p class="rs-nav-dropdown-item__description">Find out more about the team behind ResourceSpace</p>
+              </span>
+            </a>
+            <a href="/jobs" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#shield-user"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Careers</p>
+                <p class="rs-nav-dropdown-item__description">Come and work for us!</p>
+              </span>
+            </a>            
+            <a href="/contact" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#mail"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Email us</p>
+                <p class="rs-nav-dropdown-item__description">Not ready to meet yet but still have questions? Email us.</p>
+              </span>
+            </a>            
+            <a href="/book" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#calendar"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Request a meeting</p>
+                <p class="rs-nav-dropdown-item__description">Keen to talk through your requirements or arrange a demonstration of ResourceSpace? Request a meeting with us.</p>
+              </span>
+            </a>
+        </nav>
+      </div>
+      <!-- <div class="rs-mega-dropdown" data-menu-panel="contact">
+        <div class="rs-mega-dropdown__card rs-mega-dropdown__card--contact">
+          <h4 class="rs-heading rs-heading--h4 rs-mega-dropdown__card-heading">Let&rsquo;s discuss your requirements</h4>
+          <p class="rs-body rs-body--small rs-mega-dropdown__card-body">We&rsquo;ve been providing clients with powerful digital asset management solutions since 2006. Our experience allows us to configure your system to solve your specific problems. ResourceSpace will improve efficiency, allow you to gain control over your digital assets and become an integral part of your organisation.</p>
+          <a href="/book" class="rs-button rs-button--solid-purple">Request a meeting</a>
+        </div>
+        <nav class="rs-mega-dropdown__list rs-mega-dropdown__list--grid" aria-label="Contact menu">
+            <a href="/book" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#calendar"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Request a meeting</p>
+                <p class="rs-nav-dropdown-item__description">Keen to talk through your requirements or arrange a demonstration of ResourceSpace? Request a meeting with us.</p>
+              </span>
+            </a>
+            <a href="/contact" class="rs-nav-dropdown-item">
+              <span class="rs-nav-dropdown-item__icon">
+                <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#mail"></use></svg>
+              </span>
+              <span class="rs-nav-dropdown-item__detail">
+                <p class="rs-nav-dropdown-item__title">Email us</p>
+                <p class="rs-nav-dropdown-item__description">Not ready to meet yet but still have questions? Email us.</p>
+              </span>
+            </a>
+        </nav>
+      </div> -->
+    </div>
+  </header>
+    <section class="rs-hero-v2" aria-label="ResourceSpace: digital asset management for every sector">
+    <div class="rs-hero-v2__bg" data-sector="museum" style="background-image: url('/assets/hero-backgrounds/museum.jpg');"></div>
+    <div class="rs-hero-v2__bg" data-sector="charity" style="background-image: url('/assets/hero-backgrounds/charity.jpg');"></div>
+    <div class="rs-hero-v2__bg" data-sector="education" style="background-image: url('/assets/hero-backgrounds/education.jpg');"></div>
+    <div class="rs-hero-v2__bg" data-sector="public" style="background-image: url('/assets/hero-backgrounds/public.jpg');"></div>
+    <div class="rs-hero-v2__bg" data-sector="brand" style="background-image: url('/assets/hero-backgrounds/brand.jpg');"></div>
+      <div class="rs-hero-v2__overlay" aria-hidden="true"></div>
+
+      <div class="rs-hero-v2__stage">
+        <div class="rs-hero-v2__content">
+          <img class="rs-hero-v2__crest" src="/assets/hero-backgrounds/royal-warrant.png" alt="By Appointment to His Majesty King Charles III, Montala Limited t/a ResourceSpace, Software Developers, Watchfield" />
+          <!-- <h1 class="rs-hero-v2__heading">An Enterprise-level DAM<br /> without the price tag</h1>
+          <div class="rs-hero-v2__text">
+            <p class="rs-hero-v2__body">Powerful Digital Asset Management - better for your budget, better for the planet</p>
+            <a href="/book" class="rs-button rs-button--solid-green">Request a demo</a>
+          </div> -->
+          <h1 class="rs-hero-v2__heading">Powerful DAM. Remarkably straightforward.</h1>
+          <div class="rs-hero-v2__text">
+            <p class="rs-hero-v2__body">Organise, control, integrate and share your digital assets with a flexible, secure, ethical platform with support from people who understand your organisation.</p>
+            <div class="rs-hero-v2__actions">
+              <a href="/book" class="rs-button rs-button--solid-green">Request a demo</a>
+              <a href="/free" class="rs-button rs-button--outline-white">Start for free</a>
+            </div>
+          </div>
+          
+        </div>
+
+        <div class="rs-hero-v2__ui-mock-frame">
+        <div class="rs-hero-v2__ui-mock rs-ui-mock" aria-hidden="true">
+          <div class="rs-ui-mock__content">
+            <div class="rs-ui-search-field">
+              <svg class="rs-ui-search-field__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#search"></use></svg>
+              <span class="rs-ui-search-field__text">Search assets</span>
+            </div>
+            <div class="rs-ui-mock__filter">
+          <button class="rs-ui-button rs-ui-button--current" tabindex="-1">Images</button>
+          <button class="rs-ui-button" tabindex="-1">Video</button>
+          <button class="rs-ui-button" tabindex="-1">Documents</button>
+          <button class="rs-ui-button" tabindex="-1">Audio</button>
+          <button class="rs-ui-button" tabindex="-1">Guidelines</button>
+            </div>
+            <div class="rs-ui-mock__grid">
+              <div class="rs-hero-v2__grid-stage">
+        <div class="rs-hero-v2__cards rs-hero-v2__cards--museum">
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/museum/finial.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Finial of a dragon's head</p>
+                <p class="rs-ui-card__filename">finial-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    9489
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    15
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/museum/helmet.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Helmet</p>
+                <p class="rs-ui-card__filename">helmet-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    5926
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--pending">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#clock-fading"></use></svg>
+                    Pending Review
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    16
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/museum/armbands.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Pair of gold armbands</p>
+                <p class="rs-ui-card__filename">armbands-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    8976
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    10
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/museum/manuscript.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Jaharis Byzantine Lectionary</p>
+                <p class="rs-ui-card__filename">jaharis-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    1398
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--archived">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-archive"></use></svg>
+                    Archived
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    6
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/museum/staurotheke.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">The Fieschi Morgan Staurotheke</p>
+                <p class="rs-ui-card__filename">staurotheke-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    9459
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    11
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/museum/lion.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Marble statue of a lion</p>
+                <p class="rs-ui-card__filename">lion-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    6639
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    19
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+        <div class="rs-hero-v2__cards rs-hero-v2__cards--charity">
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/charity/zebra.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Zebra</p>
+                <p class="rs-ui-card__filename">zebra-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    3362
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    1
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/charity/carrying-child.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Carrying child</p>
+                <p class="rs-ui-card__filename">child-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    6653
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--pending">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#clock-fading"></use></svg>
+                    Pending Review
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    12
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/charity/rainbow-field.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Rainbow field</p>
+                <p class="rs-ui-card__filename">field-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    8731
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    6
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/charity/bottle-guitar.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Bottle guitar</p>
+                <p class="rs-ui-card__filename">guitar-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    3681
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--archived">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-archive"></use></svg>
+                    Archived
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    14
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/charity/rhino-crossing.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Rhino crossing</p>
+                <p class="rs-ui-card__filename">rhino-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    9106
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    12
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/charity/mixed-patterns.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Mixed patterns</p>
+                <p class="rs-ui-card__filename">patterns-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    7929
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    6
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+        <div class="rs-hero-v2__cards rs-hero-v2__cards--education">
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/education/college-building.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">College building</p>
+                <p class="rs-ui-card__filename">college-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    7253
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    12
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/education/river-boating.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">River boating</p>
+                <p class="rs-ui-card__filename">river-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    1569
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--pending">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#clock-fading"></use></svg>
+                    Pending Review
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    19
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/education/campus-green.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Campus green</p>
+                <p class="rs-ui-card__filename">green-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    8010
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    3
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/education/house-entrance.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">House entrance</p>
+                <p class="rs-ui-card__filename">house-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    3050
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--archived">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-archive"></use></svg>
+                    Archived
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    6
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/education/bicycle-lanes.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Bicycle lanes</p>
+                <p class="rs-ui-card__filename">bicycle-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    6695
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    20
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/education/courtyard.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Courtyard</p>
+                <p class="rs-ui-card__filename">courtyard-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    3763
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    17
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+        <div class="rs-hero-v2__cards rs-hero-v2__cards--public">
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/public/district-road.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">District road</p>
+                <p class="rs-ui-card__filename">road-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    4845
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    15
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/public/sunrise.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Sunrise</p>
+                <p class="rs-ui-card__filename">sunrise-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    3608
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--pending">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#clock-fading"></use></svg>
+                    Pending Review
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    16
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/public/stream-geology.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Stream geology</p>
+                <p class="rs-ui-card__filename">stream-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    7497
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    8
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/public/islets-mountains.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Islets and mountains</p>
+                <p class="rs-ui-card__filename">islets_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    8089
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--archived">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-archive"></use></svg>
+                    Archived
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    14
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/public/hiking-trail.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Hiking trail</p>
+                <p class="rs-ui-card__filename">hiking-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    4669
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    1
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/public/lake.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Lake</p>
+                <p class="rs-ui-card__filename">lake-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    6093
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    10
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+        <div class="rs-hero-v2__cards rs-hero-v2__cards--brand">
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/brand/helmet-a1.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Helmet model a1</p>
+                <p class="rs-ui-card__filename">helmet1a-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    4951
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    13
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/brand/helmet-b2.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Helmet model b2</p>
+                <p class="rs-ui-card__filename">helmetb2-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    7162
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--pending">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#clock-fading"></use></svg>
+                    Pending Review
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    4
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/brand/helmet-c3.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Helmet model c3</p>
+                <p class="rs-ui-card__filename">helmet-c3-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    3009
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    2
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+          <div class="rs-ui-mock__row">
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/brand/outdoor-campaign-001.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Outdoor Campaign '26 001</p>
+                <p class="rs-ui-card__filename">outdoor-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    5430
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--archived">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-archive"></use></svg>
+                    Archived
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    2
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/brand/helmet-a1d4.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Helmet model a1d4</p>
+                <p class="rs-ui-card__filename">helmetd4-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    5593
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    18
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+            <article class="rs-ui-card">
+              <div class="rs-ui-card__image">
+                <img src="/assets/hero-cards/brand/outdoor-campaign-002.jpg" alt="" loading="lazy" />
+              </div>
+              <div class="rs-ui-card__content">
+                <p class="rs-ui-card__title">Outdoor Campaign '26 002</p>
+                <p class="rs-ui-card__filename">outdoor-2126708_1920.jpg</p>
+                <div class="rs-ui-card__pills">
+                  <span class="rs-ui-card-pill rs-ui-card-pill--id">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/hash-icon.svg" alt="" />
+                    7121
+                  </span>
+                  <span class="rs-ui-card-status rs-ui-card-status--active">
+                    <svg class="rs-ui-card-status__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#check"></use></svg>
+                    Active
+                  </span>
+                  <span class="rs-ui-card-pill rs-ui-card-pill--count">
+                    <img class="rs-ui-card-pill__icon" src="/assets/icons/ui-card/note-icon.svg" alt="" />
+                    18
+                  </span>
+                </div>
+                <div class="rs-ui-card__footer">
+                  <span class="rs-ui-card__filetype">
+                    <svg class="rs-ui-card__filetype-icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#file-image"></use></svg>
+                    JPG
+                  </span>
+                  <button class="rs-ui-card__add" aria-label="Add to selection" type="button" tabindex="-1">
+                    <svg class="rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-plus"></use></svg>
+                  </button>
+                </div>
+              </div>
+            </article>
+          </div>
+        </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </div>
+      </div>
+    </section>
+
+  <div class="rs-stat-pills-row">
+      <div class="rs-stat-pills rs-content-block-row__inner--wide">
+              <div class="rs-stat-pill">
+        <svg class="rs-stat-pill__icon rs-icon">
+            <use href="/assets/icons/lucide-sprite.svg#circle-check"></use>
+        </svg>
+        <p class="rs-stat-pill__label">Trusted by 500+ organisations worldwide</p>
+    </div>
+        <div class="rs-stat-pill">
+        <svg class="rs-stat-pill__icon rs-icon">
+            <use href="/assets/icons/lucide-sprite.svg#circle-check"></use>
+        </svg>
+        <p class="rs-stat-pill__label">4.9/5 customer rating</p>
+    </div>
+        <div class="rs-stat-pill">
+        <svg class="rs-stat-pill__icon rs-icon">
+            <use href="/assets/icons/lucide-sprite.svg#circle-check"></use>
+        </svg>
+        <p class="rs-stat-pill__label">10<span class="unit">%</span> profits to charity</p>
+    </div>
+        <div class="rs-stat-pill">
+        <svg class="rs-stat-pill__icon rs-icon">
+            <use href="/assets/icons/lucide-sprite.svg#circle-check"></use>
+        </svg>
+        <p class="rs-stat-pill__label">Climate positive by design</p>
+    </div>
+          </div>
+  </div>
+
+  <div class="rs-logo-marquee" aria-label="Organisations using ResourceSpace">
+    <div class="rs-logo-marquee__track">
+                  <a
+            href="https://www.343industries.com"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_943_468microsoft.png"
+            alt="Zones, LLC (acting for Microsoft / 343 Industries)"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.wwf.org.au"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_121_468wwf.png"
+            alt="WWF Australia"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.unicef.org"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_812_468unicef.png"
+            alt="Unicef UK"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.churchofengland.org/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1295_468cofe.png"
+            alt="Church of England Central Services"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://digital.nhs.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1039_468nhsdigital.png"
+            alt="CBA033 NHS England"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.rainforest-alliance.org/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_636_468rainforset.png"
+            alt="Rainforest Alliance"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.fairtrade.net"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_12_468flo2.png"
+            alt="Fairtrade Labelling Organizations International e.V."
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://iwc.int/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1135_468iwc.png"
+            alt="The International Whaling Commission"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.kawasaki.ca/en-ca/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1253_468kawasaki.png"
+            alt="Canadian Kawasaki Motors Inc."
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://lpo.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1471_468lpo.png"
+            alt="London Philharmonic Orchestra"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.mastercardfdn.org"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_239_468mc.png"
+            alt="The Mastercard Foundation"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.tomy.com"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_137_468tomy.png"
+            alt="Tomy International"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.redcross.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_553_468brc.png"
+            alt="British Red Cross"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.royalalberthall.com/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1332_468rah.png"
+            alt="Royal Albert Hall"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://911memorial.org/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1363_468911.png"
+            alt="National September 11 Memorial &amp; Museum"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.dec.org.uk"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_563_468dec.png"
+            alt="Disasters Emergency Committee"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.mssociety.org.uk"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_296_468ms_logo.png"
+            alt="MS Society UK"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.coloradocollege.edu/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1417_468colorado.png"
+            alt="Colorado College"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.gov.uk/government/organisations/uk-health-security-agency"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_493_468ukhsa.png"
+            alt="UK Health Security Agency"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.redcross.org.au/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1366_468au_redcross.png"
+            alt="Australian Red Cross"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.gov.uk/government/organisations/hm-revenue-customs"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_839_468hmrc.png"
+            alt="HMRC"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.princes-trust.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1217_468ptrust.png"
+            alt="The King&#039;s Trust"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://walkingscotland.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1469_468walkingscotland.png"
+            alt="Paths For All Partnership"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.scope.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1301_468scope.png"
+            alt="Scope"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.carlemuseum.org"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_578_468carle.png"
+            alt="The Eric Carle Museum of Picture Book Art"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.roteskreuz.at"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_793_468rotes.png"
+            alt="Osterreichisches Rotes Kreuz (Austrian Red Cross)"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://thamesreach.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1386_468thamesreach.png"
+            alt="Thames Reach"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.redcross.ie/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1227_468RS1004_IRCS_PrimaryLogo_RGB_web.png"
+            alt="Irish Red Cross"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://iwda.org.au/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1136_468iwda.png"
+            alt="International Womens Development Agency"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.bluecross.org.uk"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_117_197_199_358bluecross.png"
+            alt="Blue Cross"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://gggi.org/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1312_468gggi.png"
+            alt="Global Green Growth Institute"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.plan-international.org"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_15_468_55_56_821_468plan.png"
+            alt="Plan Limited"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.worldpressphoto.org/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1375_468worldpress.png"
+            alt="World Press Photo Foundation"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.unrefugees.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1340_468unhcr.png"
+            alt="UK for UNHCR"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://historicengland.org.uk/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1200_468historic_england.png"
+            alt="Historic England"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.ram.ac.uk"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_396_468ram.png"
+            alt="Royal Academy of Music"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://thenytrust.org/"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_1326_468nyct.png"
+            alt="The New York Community Trust"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.capgemini.com"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_347_468capgemini.png"
+            alt="Capgemini Service S.A.S."
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.ballet.org.uk"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_868_468enb.png"
+            alt="English National Ballet"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                            <a
+            href="https://www.lacma.org"
+            target="_blank"
+            class="rs-logo-marquee__strip"
+        >
+                <img
+            class="rs-logo-marquee__strip"
+            src="https://www.resourcespace.com/news_content/_55_56_289_468lacma_logo.png"
+            alt="Los Angeles County Museum of Art"
+            style="
+            filter: grayscale(100%) contrast(1.2);
+            max-height: 80%;
+            max-width: 90%;
+            width: auto;
+            height: auto;
+            object-fit: contain;"/>
+            </a>
+                    </div>
+  </div>
+
+  <div class="rs-testimonial-duo">
+    <div class="rs-content-block-row__inner--wide">
+      <div class="rs-testimonial rs-testimonial--text-only">
+        <div class="rs-testimonial__content">
+          <div class="rs-testimonial__quote">
+            <svg class="rs-icon rs-testimonial__quote-icon"><use href="/assets/icons/lucide-sprite.svg#message-square-quote"></use></svg>
+            <p class="rs-testimonial__quote-text">The TMS link is probably the biggest and most valuable customisation that we&rsquo;ve had because it&rsquo;s saved us decades of cross cataloguing!</p>
+          </div>
+          <div class="rs-testimonial__detail">
+            <div class="rs-testimonial__source">
+              <p class="rs-testimonial__name">Kate Blanch</p>
+              <p class="rs-testimonial__role">Data &amp; Digital Resources, The Walters Art Museum</p>
+            </div>
+            <div class="rs-testimonial-logo">
+              <img src="/assets/customer-logo-walters.svg" alt="The Walters Art Museum" />
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="rs-testimonial rs-testimonial--text-only">
+        <div class="rs-testimonial__content">
+          <div class="rs-testimonial__quote">
+            <svg class="rs-icon rs-testimonial__quote-icon"><use href="/assets/icons/lucide-sprite.svg#message-square-quote"></use></svg>
+            <p class="rs-testimonial__quote-text">ResourceSpace has empowered our staff to find and access the content they need independently while allowing us to keep centralised control of assets and metadata</p>
+          </div>
+          <div class="rs-testimonial__detail">
+            <div class="rs-testimonial__source">
+              <p class="rs-testimonial__name">Barney Guiton</p>
+              <p class="rs-testimonial__role">Content Manager, Disasters Emergency Committee</p>
+            </div>
+            <div class="rs-testimonial-logo">
+              <img src="/assets/homepage/dec-logo.png" alt="Disasters Emergency Committee" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rs-content-block-row--sectors-intro">
+<div class="rs-content-block-row__inner--wide">
+<h2 class="rs-heading rs-heading--h1 rs-content-block-row__heading">Every sector. One platform.</h2>
+<div class="rs-content-block-row__detail">
+<p class="rs-body rs-body--large">From museum collections to humanitarian campaigns, ResourceSpace is trusted by organisations who can&rsquo;t afford to get asset management wrong. We work with museums, charities, universities and public sector teams who need a DAM that understands their world &ndash; not just their file formats.</p>
+<a href="https://www.resourcespace.com/book" class="rs-button rs-button--solid-green">Request a demo</a></div>
+</div>
+</div>
+  <div class="rs-content-block-row--sectors-grid">
+<div class="rs-sector-grid">
+<div class="rs-sector-card rs-sector-card--wide">
+<div class="rs-feature-icon rs-feature-icon--60"><svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#landmark"></use></svg></div>
+<p class="rs-heading rs-heading--h4 rs-sector-card__heading">The DAM for arts &amp; heritage</p>
+<p class="rs-body rs-body--default rs-sector-card__body">See how ResourceSpace makes asset management work for 200+ museums, galleries, archives and performing arts organisations</p>
+<a href="https://www.resourcespace.com/sectors/arts-heritage" class="rs-sector-card__link"> See how museums use ResourceSpace <svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#arrow-right"></use></svg> </a></div>
+<div class="rs-sector-card rs-sector-card--wide">
+<div class="rs-feature-icon rs-feature-icon--60"><svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#heart-handshake"></use></svg></div>
+<p class="rs-heading rs-heading--h4 rs-sector-card__heading">The DAM for charities &amp; non-profits</p>
+<p class="rs-body rs-body--default rs-sector-card__body">We help make change possible for NGOs, charities, international development and campaigning orgs in 40+ countries</p>
+<a href="https://www.resourcespace.com/sectors/charity" class="rs-sector-card__link"> See how charities use ResourceSpace <svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#arrow-right"></use></svg> </a></div>
+<div class="rs-sector-card rs-sector-card--wide">
+<div class="rs-feature-icon rs-feature-icon--60"><svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#graduation-cap"></use></svg></div>
+<p class="rs-heading rs-heading--h4 rs-sector-card__heading">The DAM for education &amp; academia</p>
+<p class="rs-body rs-body--default rs-sector-card__body">ResourceSpace is deployed across many of the worlds most prestigious universities, research institutions and academic archives</p>
+<a href="https://www.resourcespace.com/sectors/academic" class="rs-sector-card__link"> See how institutions use ResourceSpace <svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#arrow-right"></use></svg> </a></div>
+<div class="rs-sector-card rs-sector-card--wide">
+<div class="rs-feature-icon rs-feature-icon--60"><svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#user-star"></use></svg></div>
+<p class="rs-heading rs-heading--h4 rs-sector-card__heading">The DAM for public sector organisations</p>
+<p class="rs-body rs-body--default rs-sector-card__body">ResourceSpace provides a central hub that can be easily tailored to the unique needs of the public sector</p>
+<a href="https://www.resourcespace.com/sectors/public-sector" class="rs-sector-card__link"> See how public sector organisations use ResourceSpace <svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#arrow-right"></use></svg> </a></div>
+<div class="rs-sector-card rs-sector-card--wide">
+<div class="rs-feature-icon rs-feature-icon--60"><svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#swatch-book"></use></svg></div>
+<p class="rs-heading rs-heading--h4 rs-sector-card__heading">The DAM for brand professionals</p>
+<p class="rs-body rs-body--default rs-sector-card__body">Agencies, in-house brand teams, publishers and media outlets rely on us for consistent communication with their audiences</p>
+<a href="https://www.resourcespace.com/sectors/product" class="rs-sector-card__link"> See how brands use ResourceSpace <svg class="rs-icon"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#arrow-right"></use></svg> </a></div>
+</div>
+</div>
+  <div class="rs-ai-section">
+    <div class="rs-content-block-row__inner--wide">
+      <div class="rs-ai-section__video">
+        <video muted loop preload="auto" autoplay="autoplay" data-setup="">
+            <source id="introvideosource" src="/video/RS990_RS_AI.mp4" type="video/mp4">
+        </video>
+        <button type="button" class="rs-video-toggle" aria-pressed="true" aria-label="Pause video">
+          <svg class="rs-icon rs-video-toggle__icon rs-video-toggle__icon--play"><use href="/assets/icons/lucide-sprite.svg#circle-play"></use></svg>
+          <svg class="rs-icon rs-video-toggle__icon rs-video-toggle__icon--pause"><use href="/assets/icons/lucide-sprite.svg#circle-pause"></use></svg>
+        </button>
+      </div>
+      <div class="rs-ai-section__content">
+        <h2 class="rs-heading rs-heading--h1"><p>AI that works for you. <br>Not the other way around.</p></h2>
+        <div class="rs-stat-pills">
+          <div class="rs-stat-pill rs-stat-pill--dark">
+            <svg class="rs-stat-pill__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-check"></use></svg>
+            <p class="rs-stat-pill__label">Privacy-focused AI</p>          </div>
+          <div class="rs-stat-pill rs-stat-pill--dark">
+            <svg class="rs-stat-pill__icon rs-icon"><use href="/assets/icons/lucide-sprite.svg#circle-check"></use></svg>
+            <p class="rs-stat-pill__label">GDPR compliant by design</p>          </div>
+        </div>
+        <p class="rs-body rs-body--large"><p>ResourceSpace AI is designed with privacy in mind. Your assets are only processed when required to provide the requested AI functionality, and are not used to train third-party models.</p></p>
+        <p><a href="https://www.resourcespace.com/features/metadata" class="rs-button rs-button--outline-white">How we use AI</a></p>      </div>
+    </div>
+  </div>
+
+  <div class="rs-why-section">
+    <div class="rs-content-block-row__inner--wide">
+    <div class="rs-why-section__intro">
+      <h2 class="rs-heading rs-heading--h1"><p>Open source. Ethical. Built for impact.</p></h2>
+      <div class="rs-why-section__logos">
+        <a href="https://www.bcorporation.net/en-us/"><img class="rs-homepage-bcorp-logo" src="/img/B-Corp-Logo-Black-RGB.png" alt="Certified B Corporation" /></a>
+        <img class="rs-homepage-eo-logo" src="/assets/homepage/proudly-employee-owned.png" alt="Proudly employee owned"/>
+      </div>
+    </div>
+    <div class="rs-sector-grid">
+        <div class="rs-sector-card rs-sector-card--compact">
+        <div class="rs-feature-icon rs-feature-icon--60">
+            <svg class="rs-icon">
+                <use href="/assets/icons/lucide-sprite.svg#handshake"></use>
+            </svg>
+        </div>
+        <p class="rs-heading rs-heading--h4 rs-sector-card__heading">Trusted by 500+ organisations</p>
+        <p class="rs-body rs-body--default rs-sector-card__body">From grassroots nonprofits to large scale enterprises, we help teams of all sizes.</p>
+    </div>
+        <div class="rs-sector-card rs-sector-card--compact">
+        <div class="rs-feature-icon rs-feature-icon--60">
+            <svg class="rs-icon">
+                <use href="/assets/icons/lucide-sprite.svg#medal"></use>
+            </svg>
+        </div>
+        <p class="rs-heading rs-heading--h4 rs-sector-card__heading">Rated 4.9 out of 5 by our customers</p>
+        <p class="rs-body rs-body--default rs-sector-card__body">Our users consistently rate us highly for reliability, support and ease of use.</p>
+    </div>
+        <div class="rs-sector-card rs-sector-card--compact">
+        <div class="rs-feature-icon rs-feature-icon--60">
+            <svg class="rs-icon">
+                <use href="/assets/icons/lucide-sprite.svg#hand-heart"></use>
+            </svg>
+        </div>
+        <p class="rs-heading rs-heading--h4 rs-sector-card__heading">We give 10<span class="unit">%</span> of profits to charity</p>
+        <p class="rs-body rs-body--default rs-sector-card__body">Since May 2024 we've donated &pound;410,000 to causes that make a real-world impact.</p>
+    </div>
+        <div class="rs-sector-card rs-sector-card--compact">
+        <div class="rs-feature-icon rs-feature-icon--60">
+            <svg class="rs-icon">
+                <use href="/assets/icons/lucide-sprite.svg#trees"></use>
+            </svg>
+        </div>
+        <p class="rs-heading rs-heading--h4 rs-sector-card__heading">Climate positive by design</p>
+        <p class="rs-body rs-body--default rs-sector-card__body">Green-powered data centres, tree planting, remote working - every part of our business helps us stay climate positive.</p>
+    </div>
+        </div>
+    </div>
+  </div>
+
+  <div class="rs-faq-section">
+    <div class="rs-content-block-row__inner--wide">
+    <div class="rs-faq-section__intro">
+      <h2 class="rs-heading rs-heading--h1"><p>Frequently asked questions</p></h2>
+      <p class="rs-body rs-body--large">We&rsquo;re confident that ResourceSpace is the right DAM for you. But we&rsquo;re sure you have questions, and these are some of the most common things people ask about ResourceSpace. Can&rsquo;t find your answer? Just get in touch and we&rsquo;ll be happy to help you work out what you need.</p>      <div class="rs-faq-section__actions">
+        <p><a href="https://www.resourcespace.com/faq" class="rs-button rs-button--solid-neutral">View all FAQs</a> <a href="https://www.resourcespace.com/contact" class="rs-text-link">Or ask us anything</a></p>      </div>
+    </div>
+
+    <div class="rs-accordion rs-faq-section__list">
+
+    <div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-1" id="faq-trigger-1"> <span class="rs-accordion-item__heading">What does open source mean?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-1" role="region" aria-labelledby="faq-trigger-1">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Open source means our source code is publicly available for anyone to inspect, audit or extend. There&rsquo;s no vendor lock-in, no hidden black box, and a global community helping to shape the product &ndash; while still being backed by a dedicated commercial support team.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-2" id="faq-trigger-2"> <span class="rs-accordion-item__heading">What types of organisations use ResourceSpace?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-2" role="region" aria-labelledby="faq-trigger-2">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Museums, galleries and archives, charities and NGOs, universities and academic institutions, public sector teams, and brand, marketing and media organisations &ndash; anyone who needs a central, well-governed home for their digital assets.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-3" id="faq-trigger-3"> <span class="rs-accordion-item__heading">How does ResourceSpace help teams manage digital assets more efficiently?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-3" role="region" aria-labelledby="faq-trigger-3">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Rich, structured metadata and powerful search mean teams find the right asset in seconds instead of digging through folders. Automated conversions, approval workflows and sharing tools then remove the manual admin around getting assets to the people who need them.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-4" id="faq-trigger-4"> <span class="rs-accordion-item__heading">Can ResourceSpace integrate with our existing systems and workflows?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-4" role="region" aria-labelledby="faq-trigger-4">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Yes. ResourceSpace has an open API and pre-built integrations with common collections management systems, CMS and social platforms, so it can slot into the tools your team already relies on rather than replacing them.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-5" id="faq-trigger-5"> <span class="rs-accordion-item__heading">How secure is ResourceSpace for sensitive or regulated data?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-5" role="region" aria-labelledby="faq-trigger-5">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Enterprise Single Sign-On and Multi-Factor Authentication, granular permissions, and consent management are all built in. ResourceSpace AI also runs on closed infrastructure, so sensitive or embargoed material never trains a third-party model.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-6" id="faq-trigger-6"> <span class="rs-accordion-item__heading">Does ResourceSpace support collaborative working across different teams or locations?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-6" role="region" aria-labelledby="faq-trigger-6">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Secure share links, public-facing portals and a user submission &amp; approval queue make it easy for colleagues, external partners and the public to contribute to and draw from the same central system, wherever they&rsquo;re working from.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-7" id="faq-trigger-7"> <span class="rs-accordion-item__heading">What support do you offer for onboarding and implementation?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-7" role="region" aria-labelledby="faq-trigger-7">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Every organisation gets a dedicated support team, a full knowledge base, and guided onboarding to get your metadata schema, permissions and workflows set up correctly from day one.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-8" id="faq-trigger-8"> <span class="rs-accordion-item__heading">Can I track how our digital assets are being used?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-8" role="region" aria-labelledby="faq-trigger-8">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Yes &ndash; built-in reporting and analytics show you what&rsquo;s being downloaded, by whom, and how often, so you can see exactly how your assets are performing and where usage rights need attention.</p>
+</div>
+</div>
+</div>
+<div class="rs-accordion-item"><button class="rs-accordion-item__trigger" aria-expanded="false" aria-controls="faq-panel-9" id="faq-trigger-9"> <span class="rs-accordion-item__heading">Can I try ResourceSpace for free before committing?</span> <span class="rs-accordion-icon" aria-hidden="true"> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--plus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#plus"></use></svg> <svg class="rs-icon rs-accordion-icon__glyph rs-accordion-icon__glyph--minus"><use href="https://www.resourcespace.com/assets/icons/lucide-sprite.svg#minus"></use></svg> </span> </button>
+<div class="rs-accordion-item__panel" id="faq-panel-9" role="region" aria-labelledby="faq-trigger-9">
+<div class="rs-accordion-item__panel-inner">
+<p class="rs-paragraph">Yes &ndash; request a demo and our team will set you up with a free trial so you can see ResourceSpace working with your own assets before you decide.</p>
+</div>
+</div>
+</div>
+    </div>
+    </div>
+  </div>
+
+  <div class="rs-content-block-row rs-content-block-row--global-cta">
+    <form method="post" action="/book" class="rs-form-cta rs-content-block-row__inner--wide">
+      <input type="hidden" name="source" value="homepage" />
+      <input type="hidden" name="type" value="qa_session" />
+      <p class="rs-form-cta__heading">How can we help you?</p>
+      <p class="rs-form-cta__body">Our friendly team is ready to help you decide if ResourceSpace is the right fit for your organisation.</p>
+
+      <div class="rs-form-cta__row">
+        <div class="rs-form-cta__field">
+          <div class="rs-form-field-label" style="margin-bottom: var(--space-8);">
+            <span class="rs-form-field-label__text">First name</span>
+          </div>
+          <div class="rs-text-input-field">
+            <input class="rs-text-input-field__input" type="text" name="first_name" />
+          </div>
+        </div>
+        <div class="rs-form-cta__field">
+          <div class="rs-form-field-label" style="margin-bottom: var(--space-8);">
+            <span class="rs-form-field-label__text">Last Name</span>
+          </div>
+          <div class="rs-text-input-field">
+            <input class="rs-text-input-field__input" type="text" name="last_name" />
+          </div>
+        </div>
+      </div>
+
+      <div class="rs-form-cta__row">
+        <div class="rs-form-cta__field">
+          <div class="rs-form-field-label" style="margin-bottom: var(--space-8);">
+            <span class="rs-form-field-label__text">Email address</span>
+          </div>
+          <div class="rs-text-input-field">
+            <input class="rs-text-input-field__input" type="email" name="email" />
+          </div>
+        </div>
+        <div class="rs-form-cta__field">
+          <div class="rs-form-field-label" style="margin-bottom: var(--space-8);">
+            <span class="rs-form-field-label__text">What brings you here?</span>
+          </div>
+          <div class="rs-dropdown-field">
+            <div class="rs-dropdown-field__control">
+              <select class="rs-dropdown-field__select" name="reason">
+                <option value="">Select option</option>
+                <option value="demo">I'd like a demo</option>
+                <option value="pricing">I have a pricing question</option>
+                <option value="support">I need support</option>
+                <option value="other">Something else</option>
+              </select>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-item">
+        <div class="g-recaptcha" data-sitekey="6Lc4sh0TAAAAAM0LLChzig1LBfxt5UCmlyIqIKXF"></div>
+      </div>
+
+      <button type="submit" class="rs-button rs-button--solid-light-on-purple">Request a demo</button>
+    </form>
+  </div>
+
+  	<!-- Animated pop up bar promoting Q&A session -->
+	<div class="kb_qa_popup" id="cookie_permit" style="z-index: 999;">
+	This site <a href="/privacy" class="privacy_link">uses cookies</a> for interactivity and analytics &nbsp;&nbsp;
+	<a class="btn btn-large btn-grey" href="#" target="_top" onClick="document.cookie = 'cookies_permitted=no; expires=' + new Date(2147483647 * 1000).toUTCString() + '; path=/';jQuery('#cookie_permit').fadeOut('fast');"><i class="fa fa-circle-xmark"></i> &nbsp; Reject cookies</a>
+	<a class="btn btn-large" href="#" target="_top" onClick="document.cookie = 'cookies_permitted=yes; expires=' + new Date(2147483647 * 1000).toUTCString() + '; path=/';jQuery('#cookie_permit').fadeOut('fast');"><i class="fa fa-thumbs-up"></i> &nbsp; Accept cookies</a>
+	</div>
+	<script>
+	//window.setTimeout("jQuery('#cookie_permit').animate({bottom:0},1000);",3000);
+        jQuery('#cookie_permit').animate({bottom:0},1000);
+        </script>
+	  <footer class="rs-footer">
+    <div class="rs-footer__inner">
+
+      <div class="rs-footer__menus">
+        <nav class="rs-footer-menu">
+          <p class="rs-footer-menu__header">Key links</p>
+          <ul class="rs-footer-menu__list">
+            <li><a href="/sectors/arts-heritage" class="rs-footer-menu__item">Museums</a></li>
+            <li><a href="/sectors/charity" class="rs-footer-menu__item">Charities</a></li>
+            <li><a href="/sectors//public-sector" class="rs-footer-menu__item">Public Sector</a></li>
+            <li><a href="/sectors/academic" class="rs-footer-menu__item">Academic</a></li>
+            <li><a href="/sectors/product" class="rs-footer-menu__item">Brand and Product</a></li>
+          </ul>
+        </nav>
+        <nav class="rs-footer-menu">
+          <p class="rs-footer-menu__header">Product</p>
+          <ul class="rs-footer-menu__list">
+            <li><a href="/pricing" class="rs-footer-menu__item">Pricing</a></li>
+            <li><a href="/versions" class="rs-footer-menu__item">Versions</a></li>
+            <li><a href="/roadmap" class="rs-footer-menu__item">Roadmap</a></li>
+            <li><a href="/pricing" class="rs-footer-menu__item">Hosting &amp; support</a></li>
+            <li><a href="/get" class="rs-footer-menu__item">Open source files</a></li>
+            <li><a href="/extranet" class="rs-footer-menu__item">Customer extranet</a></li>
+          </ul>
+        </nav>
+        <nav class="rs-footer-menu">
+          <p class="rs-footer-menu__header">Resources</p>
+          <ul class="rs-footer-menu__list">
+            <li><a href="/blog" class="rs-footer-menu__item">Blog</a></li>
+            <li><a href="/casestudies" class="rs-footer-menu__item">Case studies</a></li>
+            <li><a href="/knowledge-base" class="rs-footer-menu__item">Knowledge Base</a></li>
+            <li><a href="/whitepapers" class="rs-footer-menu__item">White papers</a></li>
+            <li><a href="/faq" class="rs-footer-menu__item">FAQ</a></li>
+          </ul>
+        </nav>
+        <nav class="rs-footer-menu">
+          <p class="rs-footer-menu__header">Company</p>
+          <ul class="rs-footer-menu__list">
+            <li><a href="/about" class="rs-footer-menu__item">About us</a></li>
+            <li><a href="/glossary" class="rs-footer-menu__item">Glossary</a></li>
+            <li><a href="/team" class="rs-footer-menu__item">Meet the team</a></li>
+            <li><a href="/employee-ownership" class="rs-footer-menu__item">Employee ownership</a></li>
+            <li><a href="/community" class="rs-footer-menu__item">Volunteering</a></li>
+            <li><a href="/jobs" class="rs-footer-menu__item">Careers</a></li>
+            <li><a href="/testimonials" class="rs-footer-menu__item">Testimonials</a></li>
+            <li><a href="/userlist" class="rs-footer-menu__item">User list</a></li>
+            <li><a href="/credits" class="rs-footer-menu__item">Credits</a></li>
+          </ul>
+        </nav>
+        <nav class="rs-footer-menu">
+          <p class="rs-footer-menu__header">Contact</p>
+          <ul class="rs-footer-menu__list">
+            <li><a href="/contact" class="rs-footer-menu__item">Contact us</a></li>
+            <li><a href="/book" class="rs-footer-menu__item">Request a demo</a></li>
+            <li><a href="/free" class="rs-footer-menu__item">Start for free</a></li>
+          </ul>
+        </nav>
+      </div>
+
+      <div class="rs-footer__logos">
+        <img class="rs-footer-logo rs-footer-logo--crown" src="/assets/footer-logo-crown.svg" alt="Crown Commercial Service Supplier" />
+        <img class="rs-footer-logo rs-footer-logo--employee-owned" src="/assets/footer-logo-employee-owned.png" alt="Proudly employee owned" />
+        <a href="https://www.bcorporation.net/en-us/">
+            <img class="rs-footer-logo rs-footer-bcorp" src="/img/B-Corp-Logo-White-RGB.png" alt="Certified B Corporation" />
+        </a>
+        <img class="rs-footer-logo rs-footer-logo--iso" src="/assets/footer-logo-iso27001.png" alt="ISO 27001 Certified ISOQAR" />
+        <img class="rs-footer-logo rs-footer-logo--ecologi" src="/assets/footer-logo-ecologi.png" alt="Ecologi climate action workforce" />
+      </div>
+
+      <div class="rs-footer__credit">
+        <div class="rs-footer__montala">
+          <div class="rs-footer__copy">
+            <p class="rs-footer__copyright">&copy;2026 Montala Limited. ResourceSpace and the ResourceSpace logo are trademarks of Montala Limited.</p>
+            <div class="rs-footer__legal">
+              <a href="/privacy" class="rs-footer-menu__item rs-footer-menu__item--small">Privacy policy</a>
+              <span class="rs-footer__legal-divider">|</span>
+              <a href="/website_terms" class="rs-footer-menu__item rs-footer-menu__item--small">Website Terms &amp; conditions</a>
+              <span class="rs-footer__legal-divider">|</span>
+              <a href="/terms" class="rs-footer-menu__item rs-footer-menu__item--small">ResourceSpace Terms &amp; conditions</a>
+              <span class="rs-footer__legal-divider">|</span>
+              <a href="/information_security_policy" class="rs-footer-menu__item rs-footer-menu__item--small">Information security policy</a>
+              <span class="rs-footer__legal-divider">|</span>
+              <a href="/environmental_policy" class="rs-footer-menu__item rs-footer-menu__item--small">Environmental policy</a>
+              <span class="rs-footer__legal-divider">|</span>
+              <a href="/policies" class="rs-footer-menu__item rs-footer-menu__item--small">All policies</a>
+            </div>
+          </div>
+          <div class="rs-footer__social">
+            <a href="https://x.com/ResourceSpace/" aria-label="X (Twitter)"><img src="/assets/footer-icon-twitter.svg" alt="" width="44" height="40" /></a>
+            <a href="https://uk.linkedin.com/showcase/resourcespace/" aria-label="LinkedIn"><img src="/assets/footer-icon-linkedin.svg" alt="" width="48" height="48" /></a>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </footer>
+  <script src="/js/home/header.js"></script>
+  <script src="/js/home/hero.js"></script>
+  <script src="/js/home/accordion.js"></script>
+  <script src="/js/home/video-toggle.js"></script>
+  <script>
+  $( function() {
+    $(".accordion" ).accordion({heightStyle: "content", heading: ".accordion-item-heading", collapsible: true, active: (typeof active_accordion !== 'undefined') ? active_accordion : 0});
+  } );
+  </script>
+<script type="application/ld+json">
+        {
+        "@context": "https://schema.org",
+        "@type": "Article",
+        "headline": "Open Source Digital Asset Management (DAM) Software: ResourceSpace",
+    "description": "",
+        "author":
+                {
+                "@type": "Organization",
+                "name": "ResourceSpace"
+                },
+        "publisher":
+                {
+                "@type": "Organization",
+                "name": "ResourceSpace",
+                "logo":
+                        {
+                        "@type": "ImageObject",
+                        "url": "https://www.resourcespace.com/img/RS_coloured_black.svg"
+                        }
+                },
+        "datePublished": "2026-11-11",
+        "mainEntityOfPage":
+                {
+                "@type": "WebPage",
+                "@id": "https://www.resourcespace.com"
+
+                }
+        }
+</script>
+
+
+  <script src='https://www.google.com/recaptcha/api.js'></script>
+<script>
+(function(){
+  const n='lastVisitedUrls',u=location.href,m=10;
+  let c=document.cookie.match('(^|;)\\s*'+n+'=([^;]*)'),a=[];
+  try{a=JSON.parse(decodeURIComponent(c?c[2]:""))}catch(e){}
+  a=a.filter(x=>x!==u);a.unshift(u);a=a.slice(0,m);
+  document.cookie=n+'='+encodeURIComponent(JSON.stringify(a))+';path=/;max-age='+(60*60*24*7);
+})();
+</script>
+
+</body>
+</html>

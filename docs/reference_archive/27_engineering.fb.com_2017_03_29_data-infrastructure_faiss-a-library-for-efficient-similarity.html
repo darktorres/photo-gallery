@@ -1,0 +1,1064 @@
+<!DOCTYPE html>
+<html lang="en-US">
+<head>
+	<meta charset="UTF-8">
+	<meta http-equiv="X-UA-Compatible" content="IE=edge">
+	<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+	<meta name="mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-capable" content="yes">
+	<meta name="apple-mobile-web-app-title" content="Engineering at Meta - Engineering at Meta Blog">
+	<meta property="fb:app_id" content="1425766027653270" />
+	<link rel="profile" href="http://gmpg.org/xfn/11">
+	<link rel="pingback" href="https://engineering.fb.com/xmlrpc.php">
+	<meta name='robots' content='index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1' />
+
+	<!-- This site is optimized with the Yoast SEO Premium plugin v19.3 (Yoast SEO v27.3) - https://yoast.com/product/yoast-seo-premium-wordpress/ -->
+	<title>Faiss: A library for efficient similarity search - Engineering at Meta</title>
+	<link rel="canonical" href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/" />
+	<meta name="twitter:label1" content="Written by" />
+	<meta name="twitter:data1" content="Hervé Jegou, Matthijs Douze, Jeff Johnson, changigi649" />
+	<meta name="twitter:label2" content="Est. reading time" />
+	<meta name="twitter:data2" content="13 minutes" />
+	<script type="application/ld+json" class="yoast-schema-graph">{"@context":"https:\/\/schema.org","@graph":[{"@type":"Article","@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#article","isPartOf":{"@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/"},"author":[{"@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/image\/82cee52488a79b87ad42c02ff2f0a8b6"},{"@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/image\/9dcfece64fd2e6aa2707cb04df04e015"},{"@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/image\/f4fef2fe40953b941cedf3cd42667b57"},{"@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/7167c692371a46d5bb5879bbd971c6c0"}],"headline":"Faiss: A library for efficient similarity search","datePublished":"2017-03-29T16:00:00+00:00","dateModified":"2025-05-08T19:22:50+00:00","mainEntityOfPage":{"@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/"},"wordCount":2476,"commentCount":0,"publisher":{"@id":"https:\/\/engineering.fb.com\/#organization"},"image":{"@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#primaryimage"},"thumbnailUrl":"https:\/\/engineering.fb.com\/wp-content\/uploads\/2017\/03\/faiss_logo.png","keywords":["C++","Open Source","Performance","Photos"],"articleSection":["AI Research","Data Infrastructure","ML Applications"],"inLanguage":"en-US","potentialAction":[{"@type":"CommentAction","name":"Comment","target":["https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#respond"]}]},{"@type":"WebPage","@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/","url":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/","name":"Faiss: A library for efficient similarity search - Engineering at Meta","isPartOf":{"@id":"https:\/\/engineering.fb.com\/#website"},"primaryImageOfPage":{"@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#primaryimage"},"image":{"@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#primaryimage"},"thumbnailUrl":"https:\/\/engineering.fb.com\/wp-content\/uploads\/2017\/03\/faiss_logo.png","datePublished":"2017-03-29T16:00:00+00:00","dateModified":"2025-05-08T19:22:50+00:00","breadcrumb":{"@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#breadcrumb"},"inLanguage":"en-US","potentialAction":[{"@type":"ReadAction","target":["https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/"]}]},{"@type":"ImageObject","inLanguage":"en-US","@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#primaryimage","url":"https:\/\/engineering.fb.com\/wp-content\/uploads\/2017\/03\/faiss_logo.png","contentUrl":"https:\/\/engineering.fb.com\/wp-content\/uploads\/2017\/03\/faiss_logo.png","width":960,"height":600},{"@type":"BreadcrumbList","@id":"https:\/\/engineering.fb.com\/2017\/03\/29\/data-infrastructure\/faiss-a-library-for-efficient-similarity-search\/#breadcrumb","itemListElement":[{"@type":"ListItem","position":1,"name":"Home","item":"https:\/\/engineering.fb.com\/"},{"@type":"ListItem","position":2,"name":"Faiss: A library for efficient similarity search"}]},{"@type":"WebSite","@id":"https:\/\/engineering.fb.com\/#website","url":"https:\/\/engineering.fb.com\/","name":"Engineering at Meta","description":"Engineering at Meta Blog","publisher":{"@id":"https:\/\/engineering.fb.com\/#organization"},"potentialAction":[{"@type":"SearchAction","target":{"@type":"EntryPoint","urlTemplate":"https:\/\/engineering.fb.com\/?s={search_term_string}"},"query-input":{"@type":"PropertyValueSpecification","valueRequired":true,"valueName":"search_term_string"}}],"inLanguage":"en-US"},{"@type":"Organization","@id":"https:\/\/engineering.fb.com\/#organization","name":"Meta","url":"https:\/\/engineering.fb.com\/","logo":{"@type":"ImageObject","inLanguage":"en-US","@id":"https:\/\/engineering.fb.com\/#\/schema\/logo\/image\/","url":"https:\/\/engineering.fb.com\/wp-content\/uploads\/2023\/08\/Meta_lockup_positive-primary_RGB.jpg","contentUrl":"https:\/\/engineering.fb.com\/wp-content\/uploads\/2023\/08\/Meta_lockup_positive-primary_RGB.jpg","width":29011,"height":12501,"caption":"Meta"},"image":{"@id":"https:\/\/engineering.fb.com\/#\/schema\/logo\/image\/"},"sameAs":["https:\/\/www.facebook.com\/Engineering\/","https:\/\/x.com\/fb_engineering"]},[],{"@type":"Person","@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/image\/82cee52488a79b87ad42c02ff2f0a8b6","name":"Hervé Jegou","image":{"@type":"ImageObject","inLanguage":"en-US","@id":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g23494c9101089ad44ae88ce9d2f56aac","url":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g","contentUrl":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g","caption":"Hervé Jegou"},"url":"https:\/\/engineering.fb.com\/author\/herve-jegou\/"},{"@type":"Person","@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/image\/9dcfece64fd2e6aa2707cb04df04e015","name":"Matthijs Douze","image":{"@type":"ImageObject","inLanguage":"en-US","@id":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g23494c9101089ad44ae88ce9d2f56aac","url":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g","contentUrl":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g","caption":"Matthijs Douze"},"url":"https:\/\/engineering.fb.com\/author\/matthijs-douze\/"},{"@type":"Person","@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/image\/f4fef2fe40953b941cedf3cd42667b57","name":"Jeff Johnson","image":{"@type":"ImageObject","inLanguage":"en-US","@id":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g23494c9101089ad44ae88ce9d2f56aac","url":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g","contentUrl":"https:\/\/secure.gravatar.com\/avatar\/?s=96&d=mm&r=g","caption":"Jeff Johnson"},"url":"https:\/\/engineering.fb.com\/author\/jeff-johnson\/"},{"@type":"Person","@id":"https:\/\/engineering.fb.com\/#\/schema\/person\/7167c692371a46d5bb5879bbd971c6c0","name":"changigi649","image":{"@type":"ImageObject","inLanguage":"en-US","@id":"https:\/\/secure.gravatar.com\/avatar\/a090692c0af9b5ed6f8071e0a05e3147f0ba61b52a51c0671d073d9adb4e198e?s=96&d=mm&r=g8fd1e2b34e75c09c4aea578e73cbde79","url":"https:\/\/secure.gravatar.com\/avatar\/a090692c0af9b5ed6f8071e0a05e3147f0ba61b52a51c0671d073d9adb4e198e?s=96&d=mm&r=g","contentUrl":"https:\/\/secure.gravatar.com\/avatar\/a090692c0af9b5ed6f8071e0a05e3147f0ba61b52a51c0671d073d9adb4e198e?s=96&d=mm&r=g","caption":"changigi649"},"url":"https:\/\/engineering.fb.com\/author\/changigi649\/"}]}</script>
+	<!-- / Yoast SEO Premium plugin. -->
+
+
+<link rel='dns-prefetch' href='//secure.gravatar.com' />
+<link rel='dns-prefetch' href='//v0.wordpress.com' />
+<link rel="alternate" type="application/rss+xml" title="Engineering at Meta &raquo; Feed" href="https://engineering.fb.com/feed/" />
+<link rel="alternate" type="application/rss+xml" title="Engineering at Meta &raquo; Comments Feed" href="https://engineering.fb.com/comments/feed/" />
+<link rel="alternate" type="application/rss+xml" title="Engineering at Meta &raquo; Faiss: A library for efficient similarity search Comments Feed" href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/feed/" />
+<link rel="alternate" title="oEmbed (JSON)" type="application/json+oembed" href="https://engineering.fb.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fengineering.fb.com%2F2017%2F03%2F29%2Fdata-infrastructure%2Ffaiss-a-library-for-efficient-similarity-search%2F" />
+<link rel="alternate" title="oEmbed (XML)" type="text/xml+oembed" href="https://engineering.fb.com/wp-json/oembed/1.0/embed?url=https%3A%2F%2Fengineering.fb.com%2F2017%2F03%2F29%2Fdata-infrastructure%2Ffaiss-a-library-for-efficient-similarity-search%2F&#038;format=xml" />
+<style id="wp-img-auto-sizes-contain-inline-css">
+img:is([sizes=auto i],[sizes^="auto," i]){contain-intrinsic-size:3000px 1500px}
+/*# sourceURL=wp-img-auto-sizes-contain-inline-css */
+</style>
+<style id="wp-emoji-styles-inline-css">
+
+	img.wp-smiley, img.emoji {
+		display: inline !important;
+		border: none !important;
+		box-shadow: none !important;
+		height: 1em !important;
+		width: 1em !important;
+		margin: 0 0.07em !important;
+		vertical-align: -0.1em !important;
+		background: none !important;
+		padding: 0 !important;
+	}
+/*# sourceURL=wp-emoji-styles-inline-css */
+</style>
+<style id="wp-block-library-inline-css">
+:root{--wp-block-synced-color:#7a00df;--wp-block-synced-color--rgb:122,0,223;--wp-bound-block-color:var(--wp-block-synced-color);--wp-editor-canvas-background:#ddd;--wp-admin-theme-color:#007cba;--wp-admin-theme-color--rgb:0,124,186;--wp-admin-theme-color-darker-10:#006ba1;--wp-admin-theme-color-darker-10--rgb:0,107,160.5;--wp-admin-theme-color-darker-20:#005a87;--wp-admin-theme-color-darker-20--rgb:0,90,135;--wp-admin-border-width-focus:2px}@media (min-resolution:192dpi){:root{--wp-admin-border-width-focus:1.5px}}.wp-element-button{cursor:pointer}:root .has-very-light-gray-background-color{background-color:#eee}:root .has-very-dark-gray-background-color{background-color:#313131}:root .has-very-light-gray-color{color:#eee}:root .has-very-dark-gray-color{color:#313131}:root .has-vivid-green-cyan-to-vivid-cyan-blue-gradient-background{background:linear-gradient(135deg,#00d084,#0693e3)}:root .has-purple-crush-gradient-background{background:linear-gradient(135deg,#34e2e4,#4721fb 50%,#ab1dfe)}:root .has-hazy-dawn-gradient-background{background:linear-gradient(135deg,#faaca8,#dad0ec)}:root .has-subdued-olive-gradient-background{background:linear-gradient(135deg,#fafae1,#67a671)}:root .has-atomic-cream-gradient-background{background:linear-gradient(135deg,#fdd79a,#004a59)}:root .has-nightshade-gradient-background{background:linear-gradient(135deg,#330968,#31cdcf)}:root .has-midnight-gradient-background{background:linear-gradient(135deg,#020381,#2874fc)}:root{--wp--preset--font-size--normal:16px;--wp--preset--font-size--huge:42px}.has-regular-font-size{font-size:1em}.has-larger-font-size{font-size:2.625em}.has-normal-font-size{font-size:var(--wp--preset--font-size--normal)}.has-huge-font-size{font-size:var(--wp--preset--font-size--huge)}:root .has-text-align-center{text-align:center}:root .has-text-align-left{text-align:left}:root .has-text-align-right{text-align:right}.has-fit-text{white-space:nowrap!important}#end-resizable-editor-section{display:none}.aligncenter{clear:both}.items-justified-left{justify-content:flex-start}.items-justified-center{justify-content:center}.items-justified-right{justify-content:flex-end}.items-justified-space-between{justify-content:space-between}.screen-reader-text{word-wrap:normal!important;border:0;clip-path:inset(50%);height:1px;margin:-1px;overflow:hidden;padding:0;position:absolute;width:1px;word-break:normal!important}.screen-reader-text:focus{background-color:#ddd;clip-path:none;color:#444;display:block;font-size:1em;height:auto;left:5px;line-height:normal;padding:15px 23px 14px;text-decoration:none;top:5px;width:auto;z-index:100000}html :where(.has-border-color){border-style:solid}html :where([style^=border-color],[style*=";border-color"],[style*="; border-color"]){border-style:solid}html :where([style^=border-top-color],[style*=";border-top-color"],[style*="; border-top-color"]){border-top-style:solid}html :where([style^=border-right-color],[style*=";border-right-color"],[style*="; border-right-color"]){border-right-style:solid}html :where([style^=border-bottom-color],[style*=";border-bottom-color"],[style*="; border-bottom-color"]){border-bottom-style:solid}html :where([style^=border-left-color],[style*=";border-left-color"],[style*="; border-left-color"]){border-left-style:solid}html :where([style^=border-width],[style*=";border-width"],[style*="; border-width"]){border-style:solid}html :where([style^=border-top-width],[style*=";border-top-width"],[style*="; border-top-width"]){border-top-style:solid}html :where([style^=border-right-width],[style*=";border-right-width"],[style*="; border-right-width"]){border-right-style:solid}html :where([style^=border-bottom-width],[style*=";border-bottom-width"],[style*="; border-bottom-width"]){border-bottom-style:solid}html :where([style^=border-left-width],[style*=";border-left-width"],[style*="; border-left-width"]){border-left-style:solid}html :where(img[class*=wp-image-]){height:auto;max-width:100%}:where(figure){margin:0 0 1em}html :where(.is-position-sticky){--wp-admin--admin-bar--position-offset:var(--wp-admin--admin-bar--height,0px)}@media screen and (max-width:600px){html :where(.is-position-sticky){--wp-admin--admin-bar--position-offset:0px}}
+
+/*# sourceURL=/wp-includes/css/dist/block-library/common.min.css */
+</style>
+<style id="classic-theme-styles-inline-css">
+/*! This file is auto-generated */
+.wp-block-button__link{color:#fff;background-color:#32373c;border-radius:9999px;box-shadow:none;text-decoration:none;padding:calc(.667em + 2px) calc(1.333em + 2px);font-size:1.125em}.wp-block-file__button{background:#32373c;color:#fff;text-decoration:none}
+/*# sourceURL=/wp-includes/css/classic-themes.min.css */
+</style>
+
+<style id="global-styles-inline-css">
+:root{--wp--preset--aspect-ratio--square: 1;--wp--preset--aspect-ratio--4-3: 4/3;--wp--preset--aspect-ratio--3-4: 3/4;--wp--preset--aspect-ratio--3-2: 3/2;--wp--preset--aspect-ratio--2-3: 2/3;--wp--preset--aspect-ratio--16-9: 16/9;--wp--preset--aspect-ratio--9-16: 9/16;--wp--preset--color--black: #000000;--wp--preset--color--cyan-bluish-gray: #abb8c3;--wp--preset--color--white: #ffffff;--wp--preset--color--pale-pink: #f78da7;--wp--preset--color--vivid-red: #cf2e2e;--wp--preset--color--luminous-vivid-orange: #ff6900;--wp--preset--color--luminous-vivid-amber: #fcb900;--wp--preset--color--light-green-cyan: #7bdcb5;--wp--preset--color--vivid-green-cyan: #00d084;--wp--preset--color--pale-cyan-blue: #8ed1fc;--wp--preset--color--vivid-cyan-blue: #0693e3;--wp--preset--color--vivid-purple: #9b51e0;--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple: linear-gradient(135deg,rgb(6,147,227) 0%,rgb(155,81,224) 100%);--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan: linear-gradient(135deg,rgb(122,220,180) 0%,rgb(0,208,130) 100%);--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange: linear-gradient(135deg,rgb(252,185,0) 0%,rgb(255,105,0) 100%);--wp--preset--gradient--luminous-vivid-orange-to-vivid-red: linear-gradient(135deg,rgb(255,105,0) 0%,rgb(207,46,46) 100%);--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray: linear-gradient(135deg,rgb(238,238,238) 0%,rgb(169,184,195) 100%);--wp--preset--gradient--cool-to-warm-spectrum: linear-gradient(135deg,rgb(74,234,220) 0%,rgb(151,120,209) 20%,rgb(207,42,186) 40%,rgb(238,44,130) 60%,rgb(251,105,98) 80%,rgb(254,248,76) 100%);--wp--preset--gradient--blush-light-purple: linear-gradient(135deg,rgb(255,206,236) 0%,rgb(152,150,240) 100%);--wp--preset--gradient--blush-bordeaux: linear-gradient(135deg,rgb(254,205,165) 0%,rgb(254,45,45) 50%,rgb(107,0,62) 100%);--wp--preset--gradient--luminous-dusk: linear-gradient(135deg,rgb(255,203,112) 0%,rgb(199,81,192) 50%,rgb(65,88,208) 100%);--wp--preset--gradient--pale-ocean: linear-gradient(135deg,rgb(255,245,203) 0%,rgb(182,227,212) 50%,rgb(51,167,181) 100%);--wp--preset--gradient--electric-grass: linear-gradient(135deg,rgb(202,248,128) 0%,rgb(113,206,126) 100%);--wp--preset--gradient--midnight: linear-gradient(135deg,rgb(2,3,129) 0%,rgb(40,116,252) 100%);--wp--preset--font-size--small: 13px;--wp--preset--font-size--medium: 20px;--wp--preset--font-size--large: 36px;--wp--preset--font-size--x-large: 42px;--wp--preset--spacing--20: 0.44rem;--wp--preset--spacing--30: 0.67rem;--wp--preset--spacing--40: 1rem;--wp--preset--spacing--50: 1.5rem;--wp--preset--spacing--60: 2.25rem;--wp--preset--spacing--70: 3.38rem;--wp--preset--spacing--80: 5.06rem;--wp--preset--shadow--natural: 6px 6px 9px rgba(0, 0, 0, 0.2);--wp--preset--shadow--deep: 12px 12px 50px rgba(0, 0, 0, 0.4);--wp--preset--shadow--sharp: 6px 6px 0px rgba(0, 0, 0, 0.2);--wp--preset--shadow--outlined: 6px 6px 0px -3px rgb(255, 255, 255), 6px 6px rgb(0, 0, 0);--wp--preset--shadow--crisp: 6px 6px 0px rgb(0, 0, 0);}.wp-block-button{--wp--preset--dimension--25: 25%;--wp--preset--dimension--50: 50%;--wp--preset--dimension--75: 75%;--wp--preset--dimension--100: 100%;}:where(body) { margin: 0; }:where(.is-layout-flex){gap: 0.5em;}:where(.is-layout-grid){gap: 0.5em;}body .is-layout-flex{display: flex;}.is-layout-flex{flex-wrap: wrap;align-items: center;}.is-layout-flex > :is(*, div){margin: 0;}body .is-layout-grid{display: grid;}.is-layout-grid > :is(*, div){margin: 0;}body{padding-top: 0px;padding-right: 0px;padding-bottom: 0px;padding-left: 0px;}:root :where(.wp-element-button, .wp-block-button__link){background-color: #32373c;border-width: 0;color: #fff;font-family: inherit;font-size: inherit;font-style: inherit;font-weight: inherit;letter-spacing: inherit;line-height: inherit;padding-top: calc(0.667em + 2px);padding-right: calc(1.333em + 2px);padding-bottom: calc(0.667em + 2px);padding-left: calc(1.333em + 2px);text-decoration: none;text-transform: inherit;}.has-black-color{color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-color{color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-color{color: var(--wp--preset--color--white) !important;}.has-pale-pink-color{color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-color{color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-color{color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-color{color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-color{color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-color{color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-color{color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-color{color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-color{color: var(--wp--preset--color--vivid-purple) !important;}.has-black-background-color{background-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-background-color{background-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-background-color{background-color: var(--wp--preset--color--white) !important;}.has-pale-pink-background-color{background-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-background-color{background-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-background-color{background-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-background-color{background-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-background-color{background-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-background-color{background-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-background-color{background-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-background-color{background-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-background-color{background-color: var(--wp--preset--color--vivid-purple) !important;}.has-black-border-color{border-color: var(--wp--preset--color--black) !important;}.has-cyan-bluish-gray-border-color{border-color: var(--wp--preset--color--cyan-bluish-gray) !important;}.has-white-border-color{border-color: var(--wp--preset--color--white) !important;}.has-pale-pink-border-color{border-color: var(--wp--preset--color--pale-pink) !important;}.has-vivid-red-border-color{border-color: var(--wp--preset--color--vivid-red) !important;}.has-luminous-vivid-orange-border-color{border-color: var(--wp--preset--color--luminous-vivid-orange) !important;}.has-luminous-vivid-amber-border-color{border-color: var(--wp--preset--color--luminous-vivid-amber) !important;}.has-light-green-cyan-border-color{border-color: var(--wp--preset--color--light-green-cyan) !important;}.has-vivid-green-cyan-border-color{border-color: var(--wp--preset--color--vivid-green-cyan) !important;}.has-pale-cyan-blue-border-color{border-color: var(--wp--preset--color--pale-cyan-blue) !important;}.has-vivid-cyan-blue-border-color{border-color: var(--wp--preset--color--vivid-cyan-blue) !important;}.has-vivid-purple-border-color{border-color: var(--wp--preset--color--vivid-purple) !important;}.has-vivid-cyan-blue-to-vivid-purple-gradient-background{background: var(--wp--preset--gradient--vivid-cyan-blue-to-vivid-purple) !important;}.has-light-green-cyan-to-vivid-green-cyan-gradient-background{background: var(--wp--preset--gradient--light-green-cyan-to-vivid-green-cyan) !important;}.has-luminous-vivid-amber-to-luminous-vivid-orange-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-amber-to-luminous-vivid-orange) !important;}.has-luminous-vivid-orange-to-vivid-red-gradient-background{background: var(--wp--preset--gradient--luminous-vivid-orange-to-vivid-red) !important;}.has-very-light-gray-to-cyan-bluish-gray-gradient-background{background: var(--wp--preset--gradient--very-light-gray-to-cyan-bluish-gray) !important;}.has-cool-to-warm-spectrum-gradient-background{background: var(--wp--preset--gradient--cool-to-warm-spectrum) !important;}.has-blush-light-purple-gradient-background{background: var(--wp--preset--gradient--blush-light-purple) !important;}.has-blush-bordeaux-gradient-background{background: var(--wp--preset--gradient--blush-bordeaux) !important;}.has-luminous-dusk-gradient-background{background: var(--wp--preset--gradient--luminous-dusk) !important;}.has-pale-ocean-gradient-background{background: var(--wp--preset--gradient--pale-ocean) !important;}.has-electric-grass-gradient-background{background: var(--wp--preset--gradient--electric-grass) !important;}.has-midnight-gradient-background{background: var(--wp--preset--gradient--midnight) !important;}.has-small-font-size{font-size: var(--wp--preset--font-size--small) !important;}.has-medium-font-size{font-size: var(--wp--preset--font-size--medium) !important;}.has-large-font-size{font-size: var(--wp--preset--font-size--large) !important;}.has-x-large-font-size{font-size: var(--wp--preset--font-size--x-large) !important;}
+/*# sourceURL=global-styles-inline-css */
+</style>
+
+<link rel='stylesheet' id='all-css-12' href='https://engineering.fb.com/_static/??-eJyNjt0KwjAMRl/ILMzJhhfio0jXxC2uP8O0DN/eWhAUb7xK8iXnENxWsDEkDgnTzJ4VbSSG61hijySa0GoJZ3EE9aLxEpqS7fCDXV2eJCh6TgZUEpdNXKTqav0hfIY3dOO0GrtA2zcH9JGyK5zO5s5kiB61lTD9rbhIsDjm8jFqtGIcuDhF/RpesrM/tcOxG/Z92w1PYktgpQ==' type='text/css' media='all' />
+<script type="text/javascript" src="https://engineering.fb.com/_static/??-eJzTLy/QzcxLzilNSS3WzwKiwtLUokoopZebmaeXVayjj0+Rbm5melFiSSpUsX2uraG5pbGRgamBmVEWAK9wIhs=" ></script><script type="text/javascript" src="https://engineering.fb.com/wp-content/themes/understrap/js/popper.min.js?m=1790870562g" ></script><script id="meta-site-cookies-js-before">
+window.MetaCookieAnalytics = {"measurementId":"G-0MPJMCK15K","previewBanner":false};
+//# sourceURL=meta-site-cookies-js-before
+</script>
+<script id="meta-site-cookies-js" src="https://engineering.fb.com/wp-content/plugins/meta-site-cookies/cookies.js?ver=1.8.4"></script>
+<link rel="https://api.w.org/" href="https://engineering.fb.com/wp-json/" /><link rel="alternate" title="JSON" type="application/json" href="https://engineering.fb.com/wp-json/wp/v2/posts/7390" /><link rel="EditURI" type="application/rsd+xml" title="RSD" href="https://engineering.fb.com/xmlrpc.php?rsd" />
+<meta name="generator" content="WordPress 7.1.4" />
+<link rel='shortlink' href='https://wp.me/pa0Lhq-1Vc' />
+<link rel="preload" href="https://engineering.fb.com/wp-content/themes/code-fb-com/fonts/FacebookReader-Medium.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link rel="preload" href="https://engineering.fb.com/wp-content/themes/code-fb-com/fonts/FacebookReader-Regular.woff2" as="font" type="font/woff2" crossorigin="anonymous"><link rel="preload" href="https://engineering.fb.com/wp-content/themes/code-fb-com/fonts/Optimistic_Display_W_Md.woff2" as="font" type="font/woff2" crossorigin="anonymous">
+<!-- Jetpack Open Graph Tags -->
+<meta property="og:type" content="article" />
+<meta property="og:title" content="Faiss: A library for efficient similarity search" />
+<meta property="og:url" content="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/" />
+<meta property="og:description" content="Visit the post for more." />
+<meta property="article:published_time" content="2017-03-29T16:00:00+00:00" />
+<meta property="article:modified_time" content="2025-05-08T19:22:50+00:00" />
+<meta property="og:site_name" content="Engineering at Meta" />
+<meta property="og:image" content="https://engineering.fb.com/wp-content/uploads/2017/03/faiss_logo.png" />
+<meta property="og:image:width" content="960" />
+<meta property="og:image:height" content="600" />
+<meta property="og:image:alt" content="" />
+<meta property="og:locale" content="en_US" />
+<meta name="twitter:text:title" content="Faiss: A library for efficient similarity search" />
+<meta name="twitter:image" content="https://engineering.fb.com/wp-content/uploads/2017/03/faiss_logo.png?w=640" />
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:description" content="Visit the post for more." />
+
+<!-- End Jetpack Open Graph Tags -->
+<style id="wp-custom-css">
+.table-of-contents {
+  position: sticky;
+  top: 20px;
+  background: #fff;
+  padding: 1em;
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  max-width: 250px;
+}
+</style>
+
+	<link rel="shortcut icon" href="https://engineering.fb.com/wp-content/themes/code-fb-com/favicon.ico" />
+</head>
+
+<body class="wp-singular post-template-default single single-post postid-7390 single-format-standard wp-theme-understrap wp-child-theme-code-fb-com group-blog">
+
+<div class="hfeed site" id="page">
+
+<!-- ******************* The Navbar Area ******************* -->
+<div class="wrapper-fluid wrapper-navbar" id="wrapper-navbar">
+	<a class="skip-link screen-reader-text sr-only" href="#content">
+	Skip to content	</a>
+
+	<nav class="navbar navbar-expand-std">
+
+			<div class="nav-container">
+	
+
+				<!-- Your site title as branding in the menu -->
+
+	<div class="nav-top-row">
+	
+		<h1 class="navbar-brand mb-0">
+			<a rel="home" href="https://engineering.fb.com/" title="Engineering at Meta">
+				<img class="navbar-brand-logo" src="https://engineering.fb.com/wp-content/themes/code-fb-com/img/logo-meta.svg" class="navbar-brand-logo" alt="Engineering at Meta" width="215" height="40" loading="lazy">
+			</a>
+		</h1>
+
+	<!-- end custom logo -->
+				<label for="search" class="screen-reader-text">Search this site</label>
+				<input type="text" id="search" name="search" class="form-control-lg navbar-search" autocomplete="off">
+
+				<button class="navbar-toggler navbar-searchbar-toggler"
+						type="button"
+						data-toggle="collapse"
+						data-target="#searchbarDropdown"
+						aria-controls="searchbarDropdown"
+						aria-expanded="false"
+						aria-label="Toggle navigation">
+					<img src="https://engineering.fb.com/wp-content/themes/code-fb-com/img/icon-search.svg"  class="navbar-mobile-search-icon" loading="lazy" width="24" height="25" />
+				</button>
+
+				<!-- desktop language menu (mobile language menu is implemented via jQuery)-->
+				<div class="notranslate nice-select navbar-language form-control">
+				</div>
+
+				<button class="navbar-toggler collapsed navbar-menu-toggler" type="button" data-toggle="collapse" data-target="#navbarNavDropdown" aria-controls="navbarNavDropdown" aria-expanded="false" aria-label="Toggle navigation">
+					<span class="icon-bar"></span>
+					<span class="icon-bar"></span>
+					<span class="icon-bar"></span>
+				</button>
+
+			</div>
+
+			<div class="navbar-border"></div>
+
+			<!-- The WordPress Menu goes here -->
+	<div id="navbarNavDropdown" class="collapse navbar-collapse"><ul id="main-menu" class="navbar-nav"><li id="menu-item-60" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-has-children nav-item menu-item-60 dropdown"><a title="Open Source" href="#" data-toggle="dropdown" class="nav-link dropdown-toggle">Open Source <span class="caret"></span><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 129 129" enable-background="new 0 0 129 129" width="12px" height="15px">
+							<polyline points="40 50 80 90 120 50" stroke="#adb1b8" stroke-width="10" stroke-linecap="butt" fill="none" stroke-linejoin="miter"/>
+						  </svg></a>
+<ul class=" dropdown-menu" role="menu">
+	<li id="menu-item-12330" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-12330"><a title="Open Source" href="https://engineering.fb.com/category/open-source/" class="nav-link">Open Source</a></li>
+	<li id="menu-item-12331" class="menu-item menu-item-type-custom menu-item-object-custom nav-item menu-item-12331"><a title="Meta Open Source" href="https://opensource.fb.com" class="nav-link">Meta Open Source</a></li>
+</ul>
+</li>
+<li id="menu-item-2686" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-has-children nav-item menu-item-2686 dropdown"><a title="Platforms" href="#" data-toggle="dropdown" class="nav-link dropdown-toggle">Platforms <span class="caret"></span><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 129 129" enable-background="new 0 0 129 129" width="12px" height="15px">
+							<polyline points="40 50 80 90 120 50" stroke="#adb1b8" stroke-width="10" stroke-linecap="butt" fill="none" stroke-linejoin="miter"/>
+						  </svg></a>
+<ul class=" dropdown-menu" role="menu">
+	<li id="menu-item-65" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-65"><a title="Android" href="https://engineering.fb.com/category/android/" class="nav-link">Android</a></li>
+	<li id="menu-item-66" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-66"><a title="iOS" href="https://engineering.fb.com/category/ios/" class="nav-link">iOS</a></li>
+	<li id="menu-item-67" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-67"><a title="Web" href="https://engineering.fb.com/category/web/" class="nav-link">Web</a></li>
+</ul>
+</li>
+<li id="menu-item-2682" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-has-children nav-item menu-item-2682 dropdown"><a title="Infrastructure Systems" href="#" data-toggle="dropdown" class="nav-link dropdown-toggle">Infrastructure Systems <span class="caret"></span><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 129 129" enable-background="new 0 0 129 129" width="12px" height="15px">
+							<polyline points="40 50 80 90 120 50" stroke="#adb1b8" stroke-width="10" stroke-linecap="butt" fill="none" stroke-linejoin="miter"/>
+						  </svg></a>
+<ul class=" dropdown-menu" role="menu">
+	<li id="menu-item-218" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-218"><a title="Core Infra" href="https://engineering.fb.com/category/core-infra/" class="nav-link">Core Infra</a></li>
+	<li id="menu-item-219" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent nav-item menu-item-219"><a title="Data Infrastructure" href="https://engineering.fb.com/category/data-infrastructure/" class="nav-link">Data Infrastructure</a></li>
+	<li id="menu-item-220" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-220"><a title="DevInfra" href="https://engineering.fb.com/category/developer-tools/" class="nav-link">DevInfra</a></li>
+	<li id="menu-item-226" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-226"><a title="Production Engineering" href="https://engineering.fb.com/category/production-engineering/" class="nav-link">Production Engineering</a></li>
+	<li id="menu-item-227" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-227"><a title="Security &amp; Privacy" href="https://engineering.fb.com/category/security/" class="nav-link">Security &amp; Privacy</a></li>
+	<li id="menu-item-18607" class="menu-item menu-item-type-custom menu-item-object-custom nav-item menu-item-18607"><a title="Research Publications" href="https://research.facebook.com/publications/research-areas/systems-infrastructure/" class="nav-link">Research Publications</a></li>
+</ul>
+</li>
+<li id="menu-item-2683" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-has-children nav-item menu-item-2683 dropdown"><a title="Physical Infrastructure" href="#" data-toggle="dropdown" class="nav-link dropdown-toggle">Physical Infrastructure <span class="caret"></span><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 129 129" enable-background="new 0 0 129 129" width="12px" height="15px">
+							<polyline points="40 50 80 90 120 50" stroke="#adb1b8" stroke-width="10" stroke-linecap="butt" fill="none" stroke-linejoin="miter"/>
+						  </svg></a>
+<ul class=" dropdown-menu" role="menu">
+	<li id="menu-item-215" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-215"><a title="Connectivity" href="https://engineering.fb.com/category/connectivity/" class="nav-link">Connectivity</a></li>
+	<li id="menu-item-216" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-216"><a title="Data Center Engineering" href="https://engineering.fb.com/category/data-center-engineering/" class="nav-link">Data Center Engineering</a></li>
+	<li id="menu-item-217" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-217"><a title="Networking &amp; Traffic" href="https://engineering.fb.com/category/networking-traffic/" class="nav-link">Networking &amp; Traffic</a></li>
+	<li id="menu-item-18608" class="menu-item menu-item-type-custom menu-item-object-custom nav-item menu-item-18608"><a title="Research Publications" href="https://research.facebook.com/publications/research-areas/networking-connectivity/" class="nav-link">Research Publications</a></li>
+</ul>
+</li>
+<li id="menu-item-2684" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-has-children nav-item menu-item-2684 dropdown"><a title="Video Engineering &amp; AR/VR" href="#" data-toggle="dropdown" class="nav-link dropdown-toggle">Video Engineering &amp; AR/VR <span class="caret"></span><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 129 129" enable-background="new 0 0 129 129" width="12px" height="15px">
+							<polyline points="40 50 80 90 120 50" stroke="#adb1b8" stroke-width="10" stroke-linecap="butt" fill="none" stroke-linejoin="miter"/>
+						  </svg></a>
+<ul class=" dropdown-menu" role="menu">
+	<li id="menu-item-225" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-225"><a title="Video Engineering" href="https://engineering.fb.com/category/video-engineering/" class="nav-link">Video Engineering</a></li>
+	<li id="menu-item-223" class="menu-item menu-item-type-taxonomy menu-item-object-category nav-item menu-item-223"><a title="Virtual Reality" href="https://engineering.fb.com/category/virtual-reality/" class="nav-link">Virtual Reality</a></li>
+	<li id="menu-item-13388" class="menu-item menu-item-type-custom menu-item-object-custom nav-item menu-item-13388"><a title="Research Publications" href="https://research.facebook.com/publications/research-areas/augmented-reality-virtual-reality/" class="nav-link">Research Publications</a></li>
+</ul>
+</li>
+<li id="menu-item-2685" class="menu-item menu-item-type-custom menu-item-object-custom menu-item-has-children nav-item menu-item-2685 dropdown"><a title="Artificial Intelligence" href="#" data-toggle="dropdown" class="nav-link dropdown-toggle">Artificial Intelligence <span class="caret"></span><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" version="1.1" viewBox="0 0 129 129" enable-background="new 0 0 129 129" width="12px" height="15px">
+							<polyline points="40 50 80 90 120 50" stroke="#adb1b8" stroke-width="10" stroke-linecap="butt" fill="none" stroke-linejoin="miter"/>
+						  </svg></a>
+<ul class=" dropdown-menu" role="menu">
+	<li id="menu-item-222" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent nav-item menu-item-222"><a title="ML Applications" href="https://engineering.fb.com/category/ml-applications/" class="nav-link">ML Applications</a></li>
+	<li id="menu-item-221" class="menu-item menu-item-type-taxonomy menu-item-object-category current-post-ancestor current-menu-parent current-post-parent nav-item menu-item-221"><a title="AI Research" href="https://engineering.fb.com/category/ai-research/" class="nav-link">AI Research</a></li>
+	<li id="menu-item-13387" class="menu-item menu-item-type-custom menu-item-object-custom nav-item menu-item-13387"><a title="Research Publications" href="https://ai.facebook.com/results/?content_types%5B0%5D=publication" class="nav-link">Research Publications</a></li>
+</ul>
+</li>
+<li id="menu-item-228" class="menu-item menu-item-type-custom menu-item-object-custom nav-item menu-item-228"><a title="Watch Videos" href="/videos" class="nav-link">Watch Videos</a></li>
+</ul></div>		</div><!-- .container -->
+	
+		<div class="search-container collapse" id="searchbarDropdown">
+			<div class="searchbar-search">
+				<div class="searchbar-container">
+
+					<div class="navbar-mobile-search-margin"></div>
+					<input type="text" name="search" placeholder="Search" class="form-control-lg navbar-mobile-search" autofocus autocomplete="off">
+					<button class="searchbar-clear">
+						<span class="icon-bar"></span>
+						<span class="icon-bar"></span>
+						<span class="icon-bar"></span>
+					</button>
+				</div>
+			</div>
+		</div>
+	</nav><!-- .site-navigation -->
+
+</div><!-- .wrapper-navbar end -->
+
+<div class="wrapper" id="single-wrapper">
+
+	<div class="single-container row" id="content" tabindex="-1">
+
+		<!-- Do the left sidebar check. -->
+		
+
+
+<div class="content-area" id="primary">
+		<main class="site-main" id="main">
+
+			
+				
+<article class="post-7390 post type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-7390">
+
+	<header class="entry-header">
+		<div class="entry-meta">
+			POSTED ON <span class="posted-on entry-date"><time class="published updated" datetime="2017-03-29">MARCH 29, 2017</time></span> TO <span class="cat-links"><a href="https://engineering.fb.com/category/ai-research/" rel="category tag">AI Research</a>, <a href="https://engineering.fb.com/category/data-infrastructure/" rel="category tag">Data Infrastructure</a>, <a href="https://engineering.fb.com/category/ml-applications/" rel="category tag">ML Applications</a></span>
+			<h1 class="entry-title"><div>Faiss: A library for efficient similarity search</div></h1>		</div><!-- .entry-meta -->
+
+	</header><!-- .entry-header -->
+
+			<figure id="post-feat-image-container">
+				<img width="960" height="600" src="https://engineering.fb.com/wp-content/uploads/2017/03/faiss_logo.png" class="wp-post-image" alt="" title="faiss_logo" />						</figure>
+		
+	<div class="entry-authors-social">
+					<div class="entry-authors">
+				By <a href="https://engineering.fb.com/author/herve-jegou/" title="Posts by Hervé Jegou" class="author url fn" rel="author">Hervé Jegou</a>, <a href="https://engineering.fb.com/author/matthijs-douze/" title="Posts by Matthijs Douze" class="author url fn" rel="author">Matthijs Douze</a>, <a href="https://engineering.fb.com/author/jeff-johnson/" title="Posts by Jeff Johnson" class="author url fn" rel="author">Jeff Johnson</a>			</div>
+			</div>
+
+			<div class="entry-paragraph">
+									</div>
+	
+	<div class="entry-content">
+
+		<p>This month, we released Facebook AI Similarity Search (Faiss), a library that allows us to quickly search for multimedia documents that are similar to each other — a challenge where traditional query search engines fall short. We&#8217;ve built nearest-neighbor search implementations for billion-scale data sets that are some 8.5x faster than the previous reported state-of-the-art, along with the fastest k-selection algorithm on the GPU known in the literature. This lets us break some records, including the first k-nearest-neighbor graph constructed on 1 billion high-dimensional vectors.</p>
+<h3>About similarity search</h3>
+<p>Traditional databases are made up of structured tables containing symbolic information. For example, an image collection would be represented as a table with one row per indexed photo. Each row contains information such as an image identifier and descriptive text. Rows can be linked to entries from other tables as well, such as an image with people in it being linked to a table of names.</p>
+<p>AI tools, like text embedding (word2vec) or convolutional neural net (CNN) descriptors trained with deep learning, generate high-dimensional vectors. These representations are much more powerful and flexible than a fixed symbolic representation, as we’ll explain in this post. Yet traditional databases that can be queried with SQL are not adapted to these new representations. First, the huge inflow of new multimedia items creates billions of vectors. Second, and more importantly, finding similar entries means finding similar high-dimensional vectors, which is inefficient if not impossible with standard query languages.</p>
+<h3>How can a vector representation be used?</h3>
+<p>Let’s say you have an image of a building — for example, the city hall of some midsize city whose name you forgot — and you’d like to find all other images of this building in the image collection. A key/value query that is typically used in SQL doesn’t help, because you’ve forgotten the name of the city.</p>
+<p>This is where similarity search kicks in. The vector representation for images is designed to produce similar vectors for similar images, where similar vectors are defined as those that are nearby in Euclidean space.</p>
+<p>Another application for vector representation is classification. Imagine you need a classifier that determines which images in a collection represent a daisy. Training the classifier is a well-known process: The algorithm takes as input images of daisies and images of non-daisies (cars, sheep, roses, cornflowers). If the classifier is linear, it outputs a classification vector whose property is that its dot product with the image vector reflects how likely it is that the image contains a daisy. Then the dot product can be computed with all entries in the collection and the images with the highest values are returned. This type of query is a “maximum inner-product” search.</p>
+<p>So, for similarity search and classification, we need the following operations:</p>
+<ul>
+<li>Given a query vector, return the list of database objects that are nearest to this vector in terms of Euclidean distance.</li>
+<li>Given a query vector, return the list of database objects that have the highest dot product with this vector.</li>
+</ul>
+<p>An added challenge is that we want to do these operations on a large scale, on billions of vectors.</p>
+<h3>Software packages</h3>
+<p>The software tools currently available aren’t sufficient for the database search operations described above. Traditional SQL database systems are impractical because they’re optimized for hash-based searches or 1D interval searches. The similarity search functions that are available in packages like OpenCV are severely limited in terms of scalability, as are other similarity search libraries considering “small” data sets (for example, only 1 million vectors). Other packages are research artifacts produced for a published paper to demonstrate performance in specific settings.</p>
+<p><img decoding="async" class="aligncenter size-full" src="https://engineering.fb.com/wp-content/uploads/2017/03/GOcmDQEFmV52jukHAAAAAAAqO6pvbj0JAAAB.jpg" width="736" height="402" /></p>
+<p>With Faiss, we introduce a library that addresses the limitations mentioned above. Among its advantages:</p>
+<ul>
+<li>Faiss provides several similarity search methods that span a wide spectrum of usage trade-offs.</li>
+<li>Faiss is optimized for memory usage and speed.</li>
+<li>Faiss offers a state-of-the-art GPU implementation for the most relevant indexing methods.</li>
+</ul>
+<h2>Evaluating similarity search</h2>
+<p>Once the vectors are extracted by learning machinery (from images, videos, text documents, and elsewhere), they’re ready to feed into the similarity search library.</p>
+<p>We have a reference brute-force algorithm that computes all the similarities — exactly and exhaustively — and returns the list of most similar elements. This provides the “gold standard” reference result list. Note that implementing the brute-force algorithm efficiently is not obvious, and it often feeds into the performance of other components.</p>
+<p>Similarity search can be made orders of magnitude faster if we’re willing to trade some accuracy; that is, deviate a bit from the reference result. For example, it may not matter much if the first and second results of an image similarity search are swapped, since they’re probably both correct results for a given query. Accelerating the search involves some pre-processing of the data set, an operation that we call indexing.</p>
+<p>This bring us to the three metrics of interest:</p>
+<ul>
+<li><strong>Speed.</strong> How long does it take to find the 10 (or some other number) most similar vectors to the query? Hopefully less time than the brute-force algorithm needs; otherwise, what’s the point of indexing?</li>
+<li><strong>Memory usage.</strong> How much RAM does the method require? More or less than the original vectors? Faiss supports searching only from RAM, as disk databases are orders of magnitude slower. Yes, even with SSDs.</li>
+<li><strong>Accuracy. </strong>How well does the returned list of results match the brute-force search results? Accuracy can be evaluated by counting the number of queries for which the true nearest neighbor is returned first in the result list (a measure called 1-recall@1), or by measuring the average fraction of 10 nearest neighbors that are returned in the 10 first results (the “10-intersection” measure).</li>
+</ul>
+<p>We usually evaluate the trade-off between speed and accuracy for a fixed memory usage. Faiss focuses on methods that compress the original vectors, because they’re the only ones that scale to data sets of billions of vectors: 32 bytes per vector takes up a lot of memory when 1 billion vectors must be indexed.</p>
+<p>Many indexing libraries exist for around 1 million vectors, which we call small scale. For example, <a href="https://github.com/searchivarius/nmslib">nmslib</a> contains very efficient algorithms for this. It’s faster than Faiss but requires significantly more storage.</p>
+<h3>Evaluation on 1 billion vectors</h3>
+<p>Because the engineering world doesn’t have a well-established benchmark for data sets of this size, we compare against research results.</p>
+<p>Precision is evaluated on <a href="https://github.com/arbabenko/GNOIMI">Deep1B</a>, a collection of 1 billion images. Each image has been processed by a convolutional neural net (CNN), and one of the activation maps of the CNN is kept as an image descriptor. These vectors can be compared with Euclidean distances to quantify how similar the images are.</p>
+<p>Deep1B comes with a small collection of query images, and the ground-truth similarity search results are provided from a brute-force algorithm on these images. Therefore, if we run a search algorithm we can evaluate the 1-recall@1 of the result.</p>
+<h3>Choosing the index</h3>
+<p>For the sake of evaluation, we limit the memory usage to 30 GB of RAM. This memory constraint guides our choice of an indexing method and parameters. In Faiss, indexing methods are represented as a string; in this case, OPQ20_80,IMI2x14,PQ20.</p>
+<p>The string indicates a pre-processing step (OPQ20_80) to apply to the vectors, a selection mechanism (IMI2x14) indicating how the database should be partitioned, and an encoding component (PQ20) indicating that vectors are encoded with a product quantizer (PQ) that generates 20-byte codes. Therefore the memory usage, including overheads, is below 30 GB of RAM.</p>
+<p>We know this sounds a bit technical, and that’s why the Faiss documentation provides guidelines on how to choose the index best adapted to your needs.</p>
+<p>Once the index type is chosen, indexing can begin. The algorithm processes the 1 billion vectors and puts them into an index. The index can be stored on disk or used immediately, and searches and additions/removals to the index can be interleaved.</p>
+<h3>Searching in the index</h3>
+<p>When the index is ready, a set of search-time parameters can be set to adjust the method. For the sake of evaluation, we perform searches in a single thread. Here, we need to optimize the trade-off between accuracy and search time, since memory usage is fixed. This means, for example, being able to set parameters that give a 1-recall@1 of 40 percent in the least possible search time.</p>
+<p>Fortunately, Faiss comes with an automatic tuning mechanism that scans the space of parameters and collects the ones that provide the best operating points; that is, the best possible search time given some accuracy, and vice versa. On Deep1B, the operating points can be visualized as a plot:</p>
+<p><img decoding="async" class="aligncenter size-full" src="https://engineering.fb.com/wp-content/uploads/2017/03/GBY6BQFv2uwynrIBAAAAAABF5_JEbj0JAAAB.jpg" width="736" height="525" /></p>
+<p>On this plot, we can read that getting a 1-recall@1 of 40 percent has a query time of less than 2 ms per vector, or that with a time budget of 0.5 ms we can reach 30 percent. A 2 ms query time translates to 500 queries per second (QPS) on a single core.</p>
+<p>This result can be compared against results from the most advanced research results in the field: “<a href="http://www.cv-foundation.org/openaccess/content_cvpr_2016/papers/Babenko_Efficient_Indexing_of_CVPR_2016_paper.pdf">Efficient Indexing of Billion-Scale Datasets of Deep Descriptors</a>” by Babenko and Lempitsky, CVPR 2016, the paper that introduced the Deep1B data set. They need 20 ms to obtain a 1-recall@1 of 45 percent.</p>
+<h2>Billion-scale data sets with GPUs</h2>
+<p>A lot of effort went into the <a href="https://arxiv.org/abs/1702.08734">GPU implementation</a>, yielding astonishing single-machine performance with native multi-GPU support. The GPU implementations are also drop-in replacements for their CPU equivalents, and you don’t need to know the CUDA API in order to exploit the GPUs. GPU Faiss supports all Nvidia GPUs introduced after 2012 (Kepler, compute capability 3.5+).</p>
+<p>We like to use the <a href="https://en.wikipedia.org/wiki/Roofline_model">roofline model</a> as a guide, which states that one should strive to saturate the memory bandwidth or the floating-point units. Faiss GPU is typically 5-10x faster on a single GPU than the corresponding Faiss CPU implementations. New Pascal-class hardware, like the P100, pushes this to 20x+.</p>
+<p>Some impressive numbers:</p>
+<ul>
+<li>With approximate indexing, a brute-force k-nearest-neighbor graph (k = 10) on 128D CNN descriptors of 95 million images of the <a href="http://webscope.sandbox.yahoo.com/catalog.php?datatype=i&amp;did=67">YFCC100M</a> data set with 10-intersection of 0.8 can be constructed in 35 minutes on four Maxwell Titan X GPUs, including index construction time.</li>
+<li>Billion-vector k-nearest-neighbor graphs are now easily within reach. One can make a brute-force k-NN graph (k = 10) of the Deep1B data set with 10-intersection of 0.65 in under 12 hours on four Maxwell Titan X GPUs, or 0.8 in under 12 hours on eight Pascal P100-PCIe GPUs. Lower-quality graphs can be produced in under 5 hours on the Titan X configuration.</li>
+<li>Other components achieve impressive performance. For instance, building the above Deep1B index requires k-means clustering 67.1 million 120-dim vectors to 262,144 centroids, which for 25 E-M iterations takes 139 minutes on the four Titan X GPUs (12.6 tflop/s of compute), or 43.8 minutes on eight P100 GPUs (40 tflop/s of compute). Note that the training set of the clustering does not need to fit in GPU memory, as the data is streamed to the GPU as needed without impact on the performance.</li>
+</ul>
+<h2>Under the hood</h2>
+<p>The Facebook AI Research team started developing Faiss in 2015, based on research results and a substantial engineering effort. For this library, we chose to focus on properly optimized versions of a few fundamental techniques. In particular, on the CPU side we make heavy use of:</p>
+<ul>
+<li><strong>Multi-threading </strong>to exploit multiple cores and perform parallel searches on multiple GPUs.</li>
+<li><strong>BLAS</strong> libraries for efficient exact distance computations via matrix/matrix multiplication. An efficient brute-force implementation cannot be optimal without using BLAS. BLAS/LAPACK is the only mandatory software dependency of Faiss.</li>
+<li>Machine <strong>SIMD</strong> vectorization and popcount are used to speed up distance computations for isolated vectors.</li>
+</ul>
+<h3>On the GPU side</h3>
+<p>For previous GPU implementations of similarity search, k-selection (finding the k-minimum or maximum elements) has been a performance problem, as typical CPU algorithms (heap selection, for example) are not GPU friendly. For Faiss GPU, we designed the fastest small k-selection algorithm (k &lt;= 1024) known in the literature. All intermediate state is kept entirely in registers, contributing to its high speed. It is able to k-select input data in a single pass, operating at up to 55 percent of peak possible performance, as given by peak GPU memory bandwidth. Because its state is retained solely in the register file, it is fusible with other kernels, lending itself to blazing-fast exact and approximate search algorithms.</p>
+<p>Much attention was paid to efficient tiling strategies and implementation of kernels used for approximate search. Multi-GPU support is provided by either sharding or replicating data; one is not limited to the memory available on a single GPU. Half-precision floating-point support (float16) is provided as well, with full float16 compute on supporting GPUs and intermediate float16 storage provided on earlier architectures. We found that encoding vectors as float16 yields speedup with almost no loss of accuracy.</p>
+<p>In short, constant overhead factors matter in the implementation. Faiss did much of the painful work of paying attention to engineering details.</p>
+<h2>Try it out</h2>
+<p>Faiss is implemented in C++ and has bindings in Python. To get started, get Faiss from GitHub, compile it, and import the Faiss module into Python. Faiss is fully integrated with numpy, and all functions take numpy arrays (in float32).</p>
+<h3>The index object</h3>
+<p>Faiss (both C++ and Python) provides instances of <code>Index</code>. Each <code>Index</code> subclass implements an indexing structure, to which vectors can be added and searched. For example, <code>IndexFlatL2</code> is a brute-force index that searches with L2 distances.</p>
+<pre><code class="language-clike">
+import faiss                   # make faiss available
+index = faiss.IndexFlatL2(d)   # build the index, d=size of vectors 
+# here we assume xb contains a n-by-d numpy matrix of type float32
+index.add(xb)                  # add vectors to the index
+print index.ntotal
+</code></pre>
+<p>This will display the number of indexed vectors. Adding to an <code>IndexFlat</code> just means copying them to the internal storage of the index, since there is no processing applied to the vectors.</p>
+<p>To perform a search:</p>
+<pre><code class="language-clike">
+# xq is a n2-by-d matrix with query vectors
+k = 4                          # we want 4 similar vectors
+D, I = index.search(xq, k)     # actual search
+print I
+</code></pre>
+<p>I is an integer matrix. The output is something like this:</p>
+<pre><code class="language-clike">
+[[  0 393 363  78]
+ [  1 555 277 364]
+ [  2 304 101  13]]
+</code></pre>
+<p>For the first vector of <code>xq</code>, the index of the most similar vectors in <code>xb</code> is 0 (0-based), the second most similar is #393, the third is #363, and so on. For the second vector of <code>xq</code>, the list of similar vectors is #1, #555, etc. In this case, the first three vectors of <code>xq</code> seem to be the same as the first three of <code>xb</code>.</p>
+<p>Matrix D is the matrix of squared distances. It has the same shape as I and indicates for each result vector at the query’s squared Euclidean distance.</p>
+<p>Faiss implements a dozen index types that are often compositions of other indices. The optional GPU version has exactly the same interface, and there are bridges to translate between CPU and GPU indices. The Python interface is mostly generated from the C++ to expose the C++ indices, so it’s easy to translate Python validation code to integrated C++.</p>
+<h2>Further reading</h2>
+<ul>
+<li>For a gentle introduction to the main Faiss features, see the <a href="https://github.com/facebookresearch/faiss/wiki/Getting-started-tutorial">tutorial</a>.</li>
+<li>The <a href="https://github.com/facebookresearch/faiss/wiki">documentation</a> gives many examples for different use cases.</li>
+<li>The distribution also contains many examples for both CPU and GPU, with evaluation scripts. See in particular the <a href="https://github.com/facebookresearch/faiss/tree/master/benchs">benchs/</a> subdirectory, which contains scripts that reproduce the research results.</li>
+<li><a href="https://arxiv.org/abs/1702.08734">Billion-scale similarity search with GPUs</a>, Jeff Johnson, Matthijs Douze, Hervé Jégou, ArXiv 2017</li>
+</ul>
+<div class="sharedaddy sd-sharing-enabled"><div class="robots-nocontent sd-block sd-social sd-social-icon-text sd-sharing"><h3 class="sd-title">Share this:</h3><div class="sd-content"><ul><li class="share-facebook"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-facebook-7390"
+				class="share-facebook sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=facebook"
+				target="_blank"
+				aria-labelledby="sharing-facebook-7390"
+				>
+				<span id="sharing-facebook-7390" hidden>Share on Facebook (Opens in new window)</span>
+				<span>Facebook</span>
+			</a></li><li class="share-threads"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-threads-7390"
+				class="share-threads sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=threads"
+				target="_blank"
+				aria-labelledby="sharing-threads-7390"
+				>
+				<span id="sharing-threads-7390" hidden>Share on Threads (Opens in new window)</span>
+				<span>Threads</span>
+			</a></li><li class="share-jetpack-whatsapp"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-whatsapp-7390"
+				class="share-jetpack-whatsapp sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=jetpack-whatsapp"
+				target="_blank"
+				aria-labelledby="sharing-whatsapp-7390"
+				>
+				<span id="sharing-whatsapp-7390" hidden>Share on WhatsApp (Opens in new window)</span>
+				<span>WhatsApp</span>
+			</a></li><li class="share-linkedin"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-linkedin-7390"
+				class="share-linkedin sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=linkedin"
+				target="_blank"
+				aria-labelledby="sharing-linkedin-7390"
+				>
+				<span id="sharing-linkedin-7390" hidden>Share on LinkedIn (Opens in new window)</span>
+				<span>LinkedIn</span>
+			</a></li><li class="share-reddit"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-reddit-7390"
+				class="share-reddit sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=reddit"
+				target="_blank"
+				aria-labelledby="sharing-reddit-7390"
+				>
+				<span id="sharing-reddit-7390" hidden>Share on Reddit (Opens in new window)</span>
+				<span>Reddit</span>
+			</a></li><li class="share-x"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-x-7390"
+				class="share-x sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=x"
+				target="_blank"
+				aria-labelledby="sharing-x-7390"
+				>
+				<span id="sharing-x-7390" hidden>Share on X (Opens in new window)</span>
+				<span>X</span>
+			</a></li><li class="share-bluesky"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-bluesky-7390"
+				class="share-bluesky sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=bluesky"
+				target="_blank"
+				aria-labelledby="sharing-bluesky-7390"
+				>
+				<span id="sharing-bluesky-7390" hidden>Share on Bluesky (Opens in new window)</span>
+				<span>Bluesky</span>
+			</a></li><li class="share-mastodon"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-mastodon-7390"
+				class="share-mastodon sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=mastodon"
+				target="_blank"
+				aria-labelledby="sharing-mastodon-7390"
+				>
+				<span id="sharing-mastodon-7390" hidden>Share on Mastodon (Opens in new window)</span>
+				<span>Mastodon</span>
+			</a></li><li class="share-custom share-custom-hackernews"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-custom-7390"
+				class="share-custom share-custom-hackernews sd-button share-icon"
+				href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=custom-1699562127"
+				target="_blank"
+				aria-labelledby="sharing-custom-7390"
+				>
+				<span id="sharing-custom-7390" hidden>Share on Hacker News (Opens in new window)</span>
+				<span style="background-image:url(&quot;https://news.ycombinator.com/y18.svg&quot;);">Hacker News</span>
+			</a></li><li class="share-email"><a rel="nofollow noopener noreferrer"
+				data-shared="sharing-email-7390"
+				class="share-email sd-button share-icon"
+				href="mailto:?subject=%5BShared%20Post%5D%20Faiss%3A%20A%20library%20for%20efficient%20similarity%20search&#038;body=https%3A%2F%2Fengineering.fb.com%2F2017%2F03%2F29%2Fdata-infrastructure%2Ffaiss-a-library-for-efficient-similarity-search%2F&#038;share=email"
+				target="_blank"
+				aria-labelledby="sharing-email-7390"
+				data-email-share-error-title="Do you have email set up?" data-email-share-error-text="If you&#039;re having problems sharing via email, you might not have email set up for your browser. You may need to create a new email yourself." data-email-share-nonce="d2e93a5b10" data-email-share-track-url="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/?share=email">
+				<span id="sharing-email-7390" hidden>Email a link to a friend (Opens in new window)</span>
+				<span>Email</span>
+			</a></li><li class="share-end"></li></ul></div></div></div>
+		
+	</div><!-- .entry-content -->
+
+
+</article><!-- #post-## -->
+
+<footer class="entry-footer">
+
+	<div>TAGS: &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://engineering.fb.com/tag/cpp/" rel="tag">C++</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://engineering.fb.com/tag/opensource/" rel="tag">Open Source</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://engineering.fb.com/tag/performance/" rel="tag">Performance</a>&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<a href="https://engineering.fb.com/tag/photos/" rel="tag">Photos</a></div>
+</footer><!-- .entry-footer -->
+
+<div class="fb-like"
+	 data-href="https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/"
+	 data-width=""
+	 data-layout="standard"
+	 data-action="like"
+	 data-size="small"
+	 data-share="true">
+</div>
+
+
+<div class="related-articles">
+	<div class="related-articles__header">
+		<h3 class="related-articles__header__headline">Read More in AI Research</h3>
+		<a
+			aria-label="View all articles in this AI Research"
+			class="related-articles__header__link"
+			href="https://engineering.fb.com/category/ai-research/"
+		>
+			View All		</a>
+	</div>
+
+	<div class="article-grids related-articles__grid">
+		<div class="row">
+							<div class="article-grid col-12 col-md-4">
+					
+<article class="post post-7390 type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-24907">
+	<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2026/10/Catching-JiTTests-Hero-3.png?w=580&amp;h=326&amp;crop=1" class="attachment-thumbnail size-thumbnail" alt="" loading="lazy" title="Catching JiTTests Hero 3" />
+<header class="entry-header">
+		<div class="entry-header__top">
+			<span class="posted-on">
+				<time class="entry-date published" datetime="2026-10-29T09:00:12-07:00">
+					OCT 29, 2026				</time>
+			</span>
+		</div>
+
+		<div class="entry-title">
+			<div>
+				<a href="https://engineering.fb.com/2026/10/29/security/catching-bugs-before-they-land-jittestings-human-on-the-loop-approach-at-full-scale/" rel="bookmark" aria-label="Read More about Catching Bugs Before They Land: JiTTesting’s Human-on-the-Loop Approach at Full Scale">
+					Catching Bugs Before They Land: JiTTesting’s Human-on-the-Loop Approach at Full Scale				</a>
+			</div>
+		</div>
+
+	</header><!-- .entry-header -->
+
+</article><!-- #post-## -->
+				</div><!-- /.article-grid -->
+							<div class="article-grid col-12 col-md-4">
+					
+<article class="post post-7390 type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-24851">
+	<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2026/10/PrivacyLib-Hero.png?w=580&amp;h=326&amp;crop=1" class="attachment-thumbnail size-thumbnail" alt="" loading="lazy" title="PrivacyLib Hero" />
+<header class="entry-header">
+		<div class="entry-header__top">
+			<span class="posted-on">
+				<time class="entry-date published" datetime="2026-10-27T09:00:12-07:00">
+					OCT 27, 2026				</time>
+			</span>
+		</div>
+
+		<div class="entry-title">
+			<div>
+				<a href="https://engineering.fb.com/2026/10/27/security/privacylib/" rel="bookmark" aria-label="Read More about PrivacyLib: Privacy Controls at the Data Access Boundary">
+					PrivacyLib: Privacy Controls at the Data Access Boundary				</a>
+			</div>
+		</div>
+
+	</header><!-- .entry-header -->
+
+</article><!-- #post-## -->
+				</div><!-- /.article-grid -->
+							<div class="article-grid col-12 col-md-4">
+					
+<article class="post post-7390 type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-24724">
+	<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2026/10/Meta-Thin-Orchestrator-Hero.png?w=580&amp;h=326&amp;crop=1" class="attachment-thumbnail size-thumbnail" alt="" loading="lazy" title="Meta Thin Orchestrator Hero" />
+<header class="entry-header">
+		<div class="entry-header__top">
+			<span class="posted-on">
+				<time class="entry-date published" datetime="2026-10-19T08:30:37-07:00">
+					OCT 19, 2026				</time>
+			</span>
+		</div>
+
+		<div class="entry-title">
+			<div>
+				<a href="https://engineering.fb.com/2026/10/19/ml-applications/thin-orchestrator-ai-agent-architecture/" rel="bookmark" aria-label="Read More about The Thin Orchestrator: How We Made Our AI Agents More Reliable by Giving the Router Less to Do">
+					The Thin Orchestrator: How We Made Our AI Agents More Reliable by Giving the Router Less to Do				</a>
+			</div>
+		</div>
+
+	</header><!-- .entry-header -->
+
+</article><!-- #post-## -->
+				</div><!-- /.article-grid -->
+							<div class="article-grid col-12 col-md-4">
+					
+<article class="post post-7390 type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-24419">
+	<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2026/08/Domain-Expert-AI-Hero-1.png?w=580&amp;h=326&amp;crop=1" class="attachment-thumbnail size-thumbnail" alt="" loading="lazy" />
+<header class="entry-header">
+		<div class="entry-header__top">
+			<span class="posted-on">
+				<time class="entry-date published" datetime="2026-09-02T02:00:29-07:00">
+					SEP 2, 2026				</time>
+			</span>
+		</div>
+
+		<div class="entry-title">
+			<div>
+				<a href="https://engineering.fb.com/2026/09/02/ml-applications/organizational-second-brain-ai-learns-from-experts/" rel="bookmark" aria-label="Read More about An Organizational Second Brain: Building an AI That Learns From Experts">
+					An Organizational Second Brain: Building an AI That Learns From Experts				</a>
+			</div>
+		</div>
+
+	</header><!-- .entry-header -->
+
+</article><!-- #post-## -->
+				</div><!-- /.article-grid -->
+							<div class="article-grid col-12 col-md-4">
+					
+<article class="post post-7390 type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-24167">
+	<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2026/07/Training-GEM-at-LLM-Scale-Hero.png?w=580&amp;h=326&amp;crop=1" class="attachment-thumbnail size-thumbnail" alt="" loading="lazy" />
+<header class="entry-header">
+		<div class="entry-header__top">
+			<span class="posted-on">
+				<time class="entry-date published" datetime="2026-08-03T11:00:17-07:00">
+					AUG 3, 2026				</time>
+			</span>
+		</div>
+
+		<div class="entry-title">
+			<div>
+				<a href="https://engineering.fb.com/2026/08/03/ml-applications/training-gem-at-llm-scale-meta-ads-recommendation-foundation-model/" rel="bookmark" aria-label="Read More about GEM Training: How Meta Doubled the Efficiency of Its LLM-Scale Ads Foundation Model">
+					GEM Training: How Meta Doubled the Efficiency of Its LLM-Scale Ads Foundation Model				</a>
+			</div>
+		</div>
+
+	</header><!-- .entry-header -->
+
+</article><!-- #post-## -->
+				</div><!-- /.article-grid -->
+							<div class="article-grid col-12 col-md-4">
+					
+<article class="post post-7390 type-post status-publish format-standard has-post-thumbnail hentry category-ai-research category-data-infrastructure category-ml-applications tag-cpp tag-opensource tag-performance tag-photos" id="post-24251">
+	<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2026/07/image2_6a0f44.jpg?w=580&amp;h=326&amp;crop=1" class="attachment-thumbnail size-thumbnail" alt="" loading="lazy" title="image2_6a0f44" />
+<header class="entry-header">
+		<div class="entry-header__top">
+			<span class="posted-on">
+				<time class="entry-date published" datetime="2026-07-15T10:00:52-07:00">
+					JUL 15, 2026				</time>
+			</span>
+		</div>
+
+		<div class="entry-title">
+			<div>
+				<a href="https://engineering.fb.com/2026/07/15/ai-research/exploring-hierarchical-interest-representation-for-meta-ads-deep-funnel-optimization/" rel="bookmark" aria-label="Read More about Exploring Hierarchical Interest Representation For Meta Ads Deep Funnel Optimization">
+					Exploring Hierarchical Interest Representation For Meta Ads Deep Funnel Optimization				</a>
+			</div>
+		</div>
+
+	</header><!-- .entry-header -->
+
+</article><!-- #post-## -->
+				</div><!-- /.article-grid -->
+					</div><!-- /.row -->
+	</div><!--/.article-grids -->
+
+</div><!-- /.related-articles -->
+
+					
+	 <!-- include the carousel nav here. -->
+
+		
+				
+<div class="comments-area" id="comments">
+
+	
+	
+	
+		<div id="respond" class="comment-respond">
+		<h3 id="reply-title" class="comment-reply-title">Leave a Reply</h3><p class="must-log-in">You must be <a href="https://engineering.fb.com/wp-login.php?redirect_to=https%3A%2F%2Fengineering.fb.com%2F2017%2F03%2F29%2Fdata-infrastructure%2Ffaiss-a-library-for-efficient-similarity-search%2F">logged in</a> to post a comment.</p>	</div><!-- #respond -->
+	
+</div><!-- #comments -->
+
+			
+		</main><!-- #main -->
+
+	</div><!-- #primary -->
+
+		<!-- Do the right sidebar check. -->
+	
+
+
+  
+<div class="col-md-4 widget-area" id="right-sidebar" role="complementary">
+	<aside id="fb_related_post_widget-4" class="widget widget_fb_related_post_widget"><h3 class="widget-title">Related Posts</h3><hr>
+            <div class="aside-related-projects"><div class="article-grid-redesign">
+              <article class="post-22423 post type-post status-publish has-post-thumbnail hentry" id="post-22423">
+								<a href="https://engineering.fb.com/2025/05/08/data-infrastructure/accelerating-gpu-indexes-in-faiss-with-nvidia-cuvs/" rel="bookmark" aria-label="Read More about Accelerating GPU indexes in Faiss with NVIDIA cuVS">
+									<img width="580" height="326" src="https://engineering.fb.com/wp-content/uploads/2017/03/faiss_logo.png?w=580&#038;h=326&#038;crop=1" class="wp-post-image" alt="" srcset="https://engineering.fb.com/wp-content/uploads/2017/03/faiss_logo.png?w=580&#038;h=326&#038;crop=1 580w, https://engineering.fb.com/wp-content/uploads/2017/03/faiss_logo.png?w=580&#038;h=326&#038;crop=1 326w" sizes="(max-width: 580px) 100vw, 580px" loading="lazy">
+									<header class="entry-header">
+										<span class="posted-on"><time class="entry-date published" datetime="May 08, 2025">May 08, 2025</time></span>
+										<h4 class="entry-title">Accelerating GPU indexes in Faiss with NVIDIA cuVS</h4>
+									</header><!-- .entry-header -->
+								</a>
+              </article><!-- #post-## -->
+              </div></div></aside><aside id="wpb_widget-3" class="widget widget_wpb_widget"><h3 class="widget-title">Related Positions</h3><hr><ul class="available-positions-list"><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/1047956890981577/>
+                      		<div class="job-description">
+                      			AI Specialist (Technical Leadership) - Product and Applied Research
+                      		</div>
+                      		<div class="job-location">
+                      			MENLO PARK, US
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/1111777265060830/>
+                      		<div class="job-description">
+                      			Software Engineer, PyTorch | Ingénieur logiciel, PyTorch
+                      		</div>
+                      		<div class="job-location">
+                      			VANCOUVER, CA
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/2432079507324778/>
+                      		<div class="job-description">
+                      			Research Scientist Intern,  AI Core Machine Learning (PhD)
+                      		</div>
+                      		<div class="job-location">
+                      			SUNNYVALE, US
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/2432079507324778/>
+                      		<div class="job-description">
+                      			Research Scientist Intern,  AI Core Machine Learning (PhD)
+                      		</div>
+                      		<div class="job-location">
+                      			MENLO PARK, US
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/1436360758394361/>
+                      		<div class="job-description">
+                      			Research Engineer, Robotics - Meta Superintelligence Labs
+                      		</div>
+                      		<div class="job-location">
+                      			MENLO PARK, US
+                      		</div>
+                          </a>
+                      	</li>		</ul>
+		<a href="https://www.metacareers.com">
+			<div class="btn available-positions-btn">
+				See All Jobs			</div>
+		</a>
+		</aside>
+</div><!-- #secondary -->
+
+
+
+	<!-- <php get_template_part('content-single-side-bar'); ?> -->
+
+	<!-- Do the right sidebar check. -->
+	
+</div><!-- Container end -->
+
+</div><!-- Wrapper end -->
+
+</div>
+
+	<!-- ******************* The Footer Full-width Widget Area ******************* -->
+
+	<div class="wrapper wrapper-community-outer">
+		<div class="wrapper-community">
+
+			<div class="community" tabindex="-1">
+
+				<div class="row">
+					<!-- community section is generated through WordPress widget -->
+					<div id="wpb_widget-2" class="footer-widget widget_wpb_widget widget-count-3 col-md-4"><h3 class="widget-title">Available Positions</h3><hr><ul class="available-positions-list"><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/1047956890981577/>
+                      		<div class="job-description">
+                      			AI Specialist (Technical Leadership) - Product and Applied Research
+                      		</div>
+                      		<div class="job-location">
+                      			MENLO PARK, US
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/1111777265060830/>
+                      		<div class="job-description">
+                      			Software Engineer, PyTorch | Ingénieur logiciel, PyTorch
+                      		</div>
+                      		<div class="job-location">
+                      			VANCOUVER, CA
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/2432079507324778/>
+                      		<div class="job-description">
+                      			Research Scientist Intern,  AI Core Machine Learning (PhD)
+                      		</div>
+                      		<div class="job-location">
+                      			SUNNYVALE, US
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/2432079507324778/>
+                      		<div class="job-description">
+                      			Research Scientist Intern,  AI Core Machine Learning (PhD)
+                      		</div>
+                      		<div class="job-location">
+                      			MENLO PARK, US
+                      		</div>
+                          </a>
+                      	</li><li class="available-positions-item">
+                          <a href=https://www.metacareers.com/jobs/1436360758394361/>
+                      		<div class="job-description">
+                      			Research Engineer, Robotics - Meta Superintelligence Labs
+                      		</div>
+                      		<div class="job-location">
+                      			MENLO PARK, US
+                      		</div>
+                          </a>
+                      	</li>		</ul>
+		<a href="https://www.metacareers.com">
+			<div class="btn available-positions-btn">
+				See All Jobs			</div>
+		</a>
+		</div><!-- .footer-widget --><div id="custom_html-2" class="widget_text footer-widget widget_custom_html widget-count-3 col-md-4"><h3 class="widget-title">Technology at Meta</h3><div class="textwidget custom-html-widget"><ul class="stay-connected-lists">
+	<li class="stay-connected-item">
+<img class="footer-fb-engineering stay-connected-item-left" src="/wp-content/themes/code-fb-com/img/meta_logo.png"  alt="footer-fb-engineering" loading="lazy" width="70" height="70">
+		<div class="stay-connected-item-right">
+			<div class="stay-connected-label">
+				Engineering at Meta - X
+			</div>
+			<a onclick='return twitterFollow("Meta_Engineers")'>
+			<button class="btn stay-connected-btn">
+				Follow
+				</button>
+			</a>
+		</div>
+	</li>
+	<li class="stay-connected-item">
+<img class="footer-fb-engineering stay-connected-item-left" src="/wp-content/themes/code-fb-com/img/meta_logo.png"  alt="footer-AI" loading="lazy" width="70" height="70">
+		<div class="stay-connected-item-right">
+			<div class="stay-connected-label">
+				AI at Meta
+			</div>
+			<a href="https://ai.meta.com/blog/">
+			<button class="btn stay-connected-btn">
+				Read
+			</button>
+			</a>
+		</div>
+	</li>
+<li class="stay-connected-item">
+<img class="footer-fb-engineering stay-connected-item-left" src="/wp-content/themes/code-fb-com/img/meta_logo.png"  alt="footer-developers" loading="lazy" width="70" height="70">
+		<div class="stay-connected-item-right">
+			<div class="stay-connected-label">
+				Meta Quest Blog
+			</div>
+			<a href="https://www.meta.com/blog/quest/">
+			<button class="btn stay-connected-btn">
+				Read
+			</button>
+			</a>
+		</div>
+	</li>
+
+	<li class="stay-connected-item">
+<img class="footer-fb-engineering stay-connected-item-left" src="/wp-content/themes/code-fb-com/img/meta_logo.png"  alt="footer-developers" loading="lazy" width="70" height="70">
+		<div class="stay-connected-item-right">
+			<div class="stay-connected-label">
+				Meta for Developers
+			</div>
+			<a href="https://developers.facebook.com/">
+			<button class="btn stay-connected-btn">
+				Read
+			</button>
+			</a>
+		</div>
+	</li>
+	<li class="stay-connected-item">
+<img class="footer-fb-engineering stay-connected-item-left" src="/wp-content/themes/code-fb-com/img/meta_logo.png"  alt="footer-bug-bounty" loading="lazy" width="70" height="70">
+		<div class="stay-connected-item-right">
+			<div class="stay-connected-label">
+				Meta Bug Bounty
+			</div>
+			<a href="https://bugbounty.meta.com/">
+			<button class="btn stay-connected-btn">
+				Learn more
+			</button>
+			</a>
+		</div>
+	</li>
+
+	<li class="stay-connected-item">
+		<img class="stay-connected-item-left" src="/wp-content/themes/code-fb-com/img/rss.png" alt="footer-rss" loading="lazy" width="70" height="70">
+		<div class="stay-connected-item-right">
+			<div class="stay-connected-label">
+				RSS
+			</div>
+			<a href="https://code.facebook.com/posts/rss/">
+			<button class="btn stay-connected-btn">
+				Subscribe
+			</button>
+			</a>
+		</div>
+	</li>
+</ul>
+</div></div><!-- .footer-widget --><div id="custom_html-3" class="widget_text footer-widget widget_custom_html widget-count-3 col-md-4"><h3 class="widget-title">Open Source</h3><div class="textwidget custom-html-widget"><p class="opensource-desc">
+	Meta believes in building community through open source technology. Explore our latest projects in Artificial Intelligence, Data Infrastructure, Development Tools, Front End, Languages, Platforms, Security, Virtual Reality, and more.
+</p>
+<ul class="opensource-cats">
+	<li class="opensource-cat">
+		<img src="/wp-content/themes/code-fb-com/img/android.png" alt="android" loading="lazy" width="50" height="59">
+		<div class="opensource-cap">
+			ANDROID
+		</div>
+	</li>
+	<li class="opensource-cat">
+		<img src="/wp-content/themes/code-fb-com/img/ios.png" alt="ios" loading="lazy" width="48" height="58">
+		<div class="opensource-cap">
+			iOS
+		</div>
+	</li>
+	<li class="opensource-cat">
+		<img src="/wp-content/themes/code-fb-com/img/web.png" alt="web" loading="lazy" width="55" height="49">
+		<div class="opensource-cap">		
+			WEB
+		</div>
+	</li>
+	<li class="opensource-cat">
+		<img src="/wp-content/themes/code-fb-com/img/backend.png" alt="backend" loading="lazy" width="56" height="51">
+		<div class="opensource-cap">
+			BACKEND
+		</div>
+	</li>
+	<li class="opensource-cat">
+		<img src="/wp-content/themes/code-fb-com/img/hardware.png" alt="hardware" loading="lazy" width="55" height="44">
+		<div class="opensource-cap">
+			HARDWARE
+		</div>
+	</li>
+</ul>
+
+<button class="btn opensource-btn" onclick="window.location.href='https://opensource.fb.com/'">
+	Learn More
+</button>
+
+</div></div><!-- .footer-widget -->
+				</div>
+
+			</div>
+			</div>
+
+	</div><!-- #wrapper-footer-full -->
+
+
+<div class="wrapper-footer" id="wrapper-footer">
+	<div class="inner-container">
+		<div class="footer">
+			<div class="row">
+				<div class="col-md-12">
+					<footer class="meta-footer" id="meta-footer">
+						<div class="site-info row justify-content-between">
+							<div class="col-md-5 meta-logo-container">
+								<a href="https://about.facebook.com/">
+									<img src="https://engineering.fb.com/wp-content/themes/code-fb-com/img/meta_logo_full.svg" width="89" height="18" alt="Meta" />
+								</a>
+								<div id="text-2" class="widget widget_text">			<div class="textwidget"><p>Engineering at Meta is a technical news resource for engineers interested in how we solve large-scale technical challenges at Meta.</p>
+</div>
+		</div>							</div>
+							<div class="col-md-6 footer-meta-links-container">
+														<ul class="meta-footer-links">
+									<li class="footer-link"><a href="https://engineering.fb.com">Home</a></li><li class="footer-link"><a href="https://about.meta.com/">Company Info</a></li><li class="footer-link"><a href="https://www.metacareers.com/?ref=engineering.fb.com">Careers</a></li>								</ul>
+							</div>
+						</div>
+					</footer>
+				</div>
+			</div>
+		</div>
+	</div>
+
+		<div class="footer">
+			<div class="row">
+
+				<div class="col-md-12">
+
+					<footer class="site-footer" id="colophon">
+						<div class="inner-container">
+							<div class="site-info row justify-content-between">
+
+								<div class="col-md-4 copyright-container">
+									<div class="copyright"> © 2026 Meta</div>
+								</div>
+
+								<!-- static footer -->
+								<div class="col-md-7 footer-links-container">
+									<ul class="footer-links">
+										<li class="footer-link"><a href="https://www.facebook.com/policies">Terms</a></li><li class="footer-link"><a href="https://www.facebook.com/privacy/policy">Privacy</a></li><li class="footer-link"><a href="https://engineering.fb.com/privacy/">Cookies</a></li><li class="footer-link"><a href="https://www.facebook.com/help">Help</a></li><li class="footer-link"><a href="https://engineering.fb.com/cookie-settings/">Cookie settings</a></li>									</ul>
+								</div>
+							</div>
+						</div><!-- .site-info -->
+
+					</footer><!-- #colophon -->
+
+				</div><!--col end -->
+
+			</div><!-- row end -->
+
+	</div><!-- //.inner-container -->
+</div><!-- wrapper end -->
+
+</div><!-- #page we need this extra closing tag here -->
+
+<script type="speculationrules">
+{"prefetch":[{"source":"document","where":{"and":[{"href_matches":"/*"},{"not":{"href_matches":["/wp-*.php","/wp-admin/*","/wp-content/uploads/*","/wp-content/*","/wp-content/plugins/*","/wp-content/themes/code-fb-com/*","/wp-content/themes/understrap/*","/*\\?(.+)"]}},{"not":{"selector_matches":"a[rel~=\"nofollow\"]"}},{"not":{"selector_matches":".no-prefetch, .no-prefetch a"}}]},"eagerness":"conservative"}]}
+</script>
+    <section class="meta-cookie-banner" id="MetaCookieBanner" aria-labelledby="cookie-banner-title" hidden>
+        <div class="meta-cookie-banner-inner">
+            <h2 id="cookie-banner-title">Allow the use of cookies by Meta on this browser?</h2>
+            <p>We (Meta Platforms Ireland Limited) use cookies on this site. Some of these are essential cookies which are required for the site to work as intended. We also use optional cookies to perform site analytics and measure the performance of content on this site. You have control over the optional cookies that we use. If you choose to "Decline optional cookies", you can continue to use the site but we will be unable to perform site analytics on this site using such cookies and similar technologies. <strong>Learn more about our cookies and third-party providers in our <a href="https://engineering.fb.com/privacy/">Cookies Notice</a>, or you can review or change your choices, including withdraw your consent, at any time in your <a href="https://engineering.fb.com/cookie-settings/">Settings page</a>.</strong></p>
+            <div class="meta-cookie-actions">
+                <button type="button" data-cookie-decline>Decline optional cookies</button>
+                <button type="button" data-cookie-accept>Allow all cookies</button>
+            </div>
+        </div>
+    </section>
+    
+	<script type="text/javascript">
+		window.WPCOM_sharing_counts = {"https://engineering.fb.com/2017/03/29/data-infrastructure/faiss-a-library-for-efficient-similarity-search/":7390};
+	</script>
+				
+					<noscript><iframe src="https://www.googletagmanager.com/ns.html?id=GTM-KZRLGZ8" height="0" width="0" style="display:none;visibility:hidden"></iframe></noscript>
+		
+					<noscript><img height="1" width="1" style="display:none" src="https://www.facebook.com/tr?id=660742068067366&ev=PageView&noscript=1"/></noscript>
+		<script id="child-understrap-scripts-js-extra">
+var loadmore_params = {"restfulURL":"https://engineering.fb.com/wp-json/fb/v1/loadmore","searchText":"","posts":"{\"page\":0,\"year\":2017,\"monthnum\":3,\"day\":29,\"name\":\"faiss-a-library-for-efficient-similarity-search\",\"category_name\":\"data-infrastructure\",\"error\":\"\",\"m\":\"\",\"p\":0,\"post_parent\":\"\",\"subpost\":\"\",\"subpost_id\":\"\",\"attachment\":\"\",\"attachment_id\":0,\"pagename\":\"\",\"page_id\":0,\"second\":\"\",\"minute\":\"\",\"hour\":\"\",\"w\":0,\"tag\":\"\",\"cat\":\"\",\"tag_id\":\"\",\"author\":\"\",\"author_name\":\"\",\"feed\":\"\",\"tb\":\"\",\"paged\":0,\"meta_key\":\"\",\"meta_value\":\"\",\"preview\":\"\",\"s\":\"\",\"sentence\":\"\",\"title\":\"\",\"fields\":\"all\",\"menu_order\":\"\",\"embed\":\"\",\"category__in\":[],\"category__not_in\":[],\"category__and\":[],\"post__in\":[],\"post__not_in\":[],\"post_name__in\":[],\"tag__in\":[],\"tag__not_in\":[],\"tag__and\":[],\"tag_slug__in\":[],\"tag_slug__and\":[],\"post_parent__in\":[],\"post_parent__not_in\":[],\"author__in\":[],\"author__not_in\":[],\"search_columns\":[],\"ignore_sticky_posts\":false,\"suppress_filters\":false,\"cache_results\":true,\"update_post_term_cache\":true,\"update_menu_item_cache\":false,\"lazy_load_term_meta\":true,\"update_post_meta_cache\":true,\"post_type\":\"\",\"posts_per_page\":12,\"nopaging\":false,\"comments_per_page\":\"50\",\"no_found_rows\":false,\"order\":\"DESC\"}","current_page":"1","max_page":"0","post_type":"post"};
+var search_params = {"ajaxurl":"https://engineering.fb.com/wp-admin/admin-ajax.php","posts":"{\"page\":0,\"year\":2017,\"monthnum\":3,\"day\":29,\"name\":\"faiss-a-library-for-efficient-similarity-search\",\"category_name\":\"data-infrastructure\",\"error\":\"\",\"m\":\"\",\"p\":0,\"post_parent\":\"\",\"subpost\":\"\",\"subpost_id\":\"\",\"attachment\":\"\",\"attachment_id\":0,\"pagename\":\"\",\"page_id\":0,\"second\":\"\",\"minute\":\"\",\"hour\":\"\",\"w\":0,\"tag\":\"\",\"cat\":\"\",\"tag_id\":\"\",\"author\":\"\",\"author_name\":\"\",\"feed\":\"\",\"tb\":\"\",\"paged\":0,\"meta_key\":\"\",\"meta_value\":\"\",\"preview\":\"\",\"s\":\"\",\"sentence\":\"\",\"title\":\"\",\"fields\":\"all\",\"menu_order\":\"\",\"embed\":\"\",\"category__in\":[],\"category__not_in\":[],\"category__and\":[],\"post__in\":[],\"post__not_in\":[],\"post_name__in\":[],\"tag__in\":[],\"tag__not_in\":[],\"tag__and\":[],\"tag_slug__in\":[],\"tag_slug__and\":[],\"post_parent__in\":[],\"post_parent__not_in\":[],\"author__in\":[],\"author__not_in\":[],\"search_columns\":[],\"ignore_sticky_posts\":false,\"suppress_filters\":false,\"cache_results\":true,\"update_post_term_cache\":true,\"update_menu_item_cache\":false,\"lazy_load_term_meta\":true,\"update_post_meta_cache\":true,\"post_type\":\"\",\"posts_per_page\":12,\"nopaging\":false,\"comments_per_page\":\"50\",\"no_found_rows\":false,\"order\":\"DESC\"}","current_page":"1","max_page":"0","article_filter":"132482dfb7"};
+var more_articles = {"next_article":{"label":"Next","permalink":"https://engineering.fb.com/2017/04/18/web/building-virtual-reality-experiences-on-the-web-with-react-vr/","title":"Building virtual reality experiences on the web with React VR","thumbnail":["https://engineering.fb.com/wp-content/uploads/2017/04/vr343.jpg?w=580&h=314&crop=1",580,314,true]},"prev_article":{"label":"Prev","permalink":"https://engineering.fb.com/2017/03/28/web/aria-grid-supporting-nonvisual-layout-and-keyboard-traversal/","title":"ARIA Grid: Supporting nonvisual layout and keyboard traversal","thumbnail":["https://engineering.fb.com/wp-content/uploads/2017/03/Untitled-1.jpg?w=580&h=300&crop=1",580,300,true]}};
+//# sourceURL=child-understrap-scripts-js-extra
+</script>
+<script id="child-understrap-scripts-js-before">
+if (!document.getElementById("facebook-jssdk")) { var metaCookieSdkMarker = document.createElement("script"); metaCookieSdkMarker.id = "facebook-jssdk"; metaCookieSdkMarker.type = "application/json"; metaCookieSdkMarker.textContent = "{}"; document.head.appendChild(metaCookieSdkMarker); }
+//# sourceURL=child-understrap-scripts-js-before
+</script>
+<script id="child-understrap-scripts-js" src="https://engineering.fb.com/wp-content/themes/code-fb-com/dist/js/child-theme.min.js?ver=meta-site-cookies-1.2.1"></script>
+<script type="text/javascript" src="https://engineering.fb.com/_static/??/wp-content/themes/code-fb-com/js/prism.js,/wp-content/plugins/meta-site-cookies/media.js?m=1791254704j" ></script><script id="sharing-js-js-extra">
+var sharing_js_options = {"lang":"en","counts":"1","is_stats_active":""};
+//# sourceURL=sharing-js-js-extra
+</script>
+<script id="sharing-js-js" src="https://engineering.fb.com/wp-content/mu-plugins/jetpack-16.4/_inc/build/sharedaddy/sharing.min.js?ver=16.4"></script>
+<script id="sharing-js-js-after">
+window.WPCOM_sharing_popups = window.WPCOM_sharing_popups || {};
+window.WPCOM_sharing_popups[ "facebook" ] = "menubar=1,resizable=1,width=600,height=400";
+window.WPCOM_sharing_popups = window.WPCOM_sharing_popups || {};
+window.WPCOM_sharing_popups[ "threads" ] = "menubar=1,resizable=1,width=600,height=400";
+window.WPCOM_sharing_popups = window.WPCOM_sharing_popups || {};
+window.WPCOM_sharing_popups[ "linkedin" ] = "menubar=1,resizable=1,width=580,height=450";
+window.WPCOM_sharing_popups = window.WPCOM_sharing_popups || {};
+window.WPCOM_sharing_popups[ "x" ] = "menubar=1,resizable=1,width=600,height=350";
+window.WPCOM_sharing_popups = window.WPCOM_sharing_popups || {};
+window.WPCOM_sharing_popups[ "bluesky" ] = "menubar=1,resizable=1,width=600,height=400";
+window.WPCOM_sharing_popups = window.WPCOM_sharing_popups || {};
+window.WPCOM_sharing_popups[ "mastodon" ] = "menubar=1,resizable=1,width=460,height=400";
+//# sourceURL=sharing-js-js-after
+</script>
+<script id="wp-emoji-settings" type="application/json">
+{"baseUrl":"https://s.w.org/images/core/emoji/17.0.2/72x72/","ext":".png","svgUrl":"https://s.w.org/images/core/emoji/17.0.2/svg/","svgExt":".svg","source":{"concatemoji":"https://engineering.fb.com/wp-includes/js/wp-emoji-release.min.js?ver=7.1.4"}}
+</script>
+<script type="module">
+/*! This file is auto-generated */
+var e="script#wp-emoji-settings",t=document.querySelector(e);if(!(t instanceof HTMLScriptElement))throw new Error("Element missing: "+e);const r=JSON.parse(t.text),s=(window._wpemojiSettings=r,"wpEmojiSettingsSupports"),o=["flag","emoji"];function i(e){try{var t={supportTests:e,timestamp:(new Date).valueOf()};sessionStorage.setItem(s,JSON.stringify(t))}catch(e){}}function c(e,t,n){e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(t,0,0);t=new Uint32Array(e.getImageData(0,0,e.canvas.width,e.canvas.height).data);e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(n,0,0);const r=new Uint32Array(e.getImageData(0,0,e.canvas.width,e.canvas.height).data);return t.every((e,t)=>e===r[t])}function p(e,t){e.clearRect(0,0,e.canvas.width,e.canvas.height),e.fillText(t,0,0);var n=e.getImageData(16,16,1,1);for(let e=0;e<n.data.length;e++)if(0!==n.data[e])return!1;return!0}function u(e,t,n,r){switch(t){case"flag":return n(e,"\ud83c\udff3\ufe0f\u200d\u26a7\ufe0f","\ud83c\udff3\ufe0f\u200b\u26a7\ufe0f")?!1:!n(e,"\ud83c\udde8\ud83c\uddf6","\ud83c\udde8\u200b\ud83c\uddf6")&&!n(e,"\ud83c\udff4\udb40\udc67\udb40\udc62\udb40\udc65\udb40\udc6e\udb40\udc67\udb40\udc7f","\ud83c\udff4\u200b\udb40\udc67\u200b\udb40\udc62\u200b\udb40\udc65\u200b\udb40\udc6e\u200b\udb40\udc67\u200b\udb40\udc7f");case"emoji":return!r(e,"\ud83e\u1fac8")}return!1}function f(e,t,n,r){let a;const s=(a="undefined"!=typeof WorkerGlobalScope&&self instanceof WorkerGlobalScope?new OffscreenCanvas(300,150):document.createElement("canvas")).getContext("2d",{willReadFrequently:!0}),o=(s.textBaseline="top",s.font="600 32px Arial",{});return e.forEach(e=>{o[e]=t(s,e,n,r)}),o}function a(e){var t=document.createElement("script");t.src=e,t.defer=!0,document.head.appendChild(t)}r.supports={everything:!0,everythingExceptFlag:!0},new Promise(t=>{let n=function(){try{var e=JSON.parse(sessionStorage.getItem(s));if("object"==typeof e&&"number"==typeof e.timestamp&&(new Date).valueOf()<e.timestamp+604800&&"object"==typeof e.supportTests)return e.supportTests}catch(e){}return null}();if(!n){if("undefined"!=typeof Worker&&"undefined"!=typeof OffscreenCanvas&&"undefined"!=typeof URL&&URL.createObjectURL&&"undefined"!=typeof Blob)try{var e="postMessage("+f.toString()+"("+[JSON.stringify(o),u.toString(),c.toString(),p.toString()].join(",")+"));",r=new Blob([e],{type:"text/javascript"});const a=new Worker(URL.createObjectURL(r),{name:"wpTestEmojiSupports"});return void(a.onmessage=e=>{i(n=e.data),a.terminate(),t(n)})}catch(e){}i(n=f(o,u,c,p))}t(n)}).then(e=>{for(const n in e)r.supports[n]=e[n],r.supports.everything=r.supports.everything&&r.supports[n],"flag"!==n&&(r.supports.everythingExceptFlag=r.supports.everythingExceptFlag&&r.supports[n]);var t;r.supports.everythingExceptFlag=r.supports.everythingExceptFlag&&!r.supports.flag,r.supports.everything||((t=r.source||{}).concatemoji?a(t.concatemoji):t.wpemoji&&t.twemoji&&(a(t.twemoji),a(t.wpemoji)))});
+//# sourceURL=https://engineering.fb.com/wp-includes/js/wp-emoji-loader.min.js
+</script>
+
+</body>
+
+</html>

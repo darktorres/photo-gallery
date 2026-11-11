@@ -146,7 +146,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 | D18 | WAL | `journal_size_limit` 64 MiB. WriteBatch commits at a frame budget F = 16 MiB/page (via cacheflush and CACHE_WRITE) and waits when the live WAL (PASSIVE checkpoint `pnLog`) is above WAL_CEILING = 512 MiB. | [F5], [U7]. |
 | D19 | Open API | `Catalog::open(path, rules, Role)` everywhere. New errors: `Rebuilding`, `Migrating`, `UpgradePending{steps}`, `RebuildBlocked`, `KeptChanged`, `NoSpace`, `OutOfSpace`. | |
 | D20 | Version recomputes | They become Upgrade steps. `prepare` writes the new mark and step keys in O(1). Pass A rewrites the flags in id order with no index writes (tri-state flags). Every reader goes through cursor-relative `pending_now!`/`taken_now!`, so it is exact. Fixed seeded step keys. | [U1], [U2], [PRF2]. Replaces round 1's 2.4 and the [S17] variant. |
-| D21 | Temp dir | `<catalog>.scratch/sqlite` (one ScratchRoot name). The directory is created first. On Windows it is aliased with `alias_of_folder`; on Unix the path bytes go to `sqlite3_temp_directory`. | [PRF16]. |
+| D21 | Temp dir | `<catalog>.scratch/sqlite` (one ScratchRoot name). The directory is created first. On Windows it is aliased with `openable_folder` (in the home's `sqlite-aliases`); on Unix the path bytes go to `sqlite3_temp_directory`. | [PRF16]. |
 | D22 | Counters | One seeded `counts` row: status, work totals, write queue, band and heavy-band, identity. Each family has its own recount cursor, `2^62` when idle. A definition can change only through a Migration Upgrade recount or a rebuild. Present pairs = Σ bands. | [S1], [U3], [G9]. |
 | D23 | Rebuild protocol | Move aside at Start into rollback-journal mode (refused if the file is in use). Manifest plus owner heartbeat. Chunked copy with FKs off. Indexes from exact text. Ordered FK merge. Derived state from sequential merges and ExtSort. Classified errors with corruption salvage. Swap by file identity. A `.rebuilt` note until it is acknowledged. | [F3], [U5], [S7]. |
 | D24 | Uniqueness | Every UNIQUE or PK constraint on a large rowid table becomes a named unique index. Every FK child column is indexed. Both are enforced by lints. | [F3], [S2], [S7]. |
@@ -174,7 +174,7 @@ All values are for 1B files unless noted. "NVMe" means a warm or cold NVMe catal
 ### Phase 0: Preconditions (the user's)
 
 - **0.1** The user lands the in-flight S-17 Unit E work before Phase 1 starts. Phases 1-2 depend on two parts of it:
-  - `crates/platform/src/sqlite.rs`: `sqlite_path`, `attach_bytes`, `alias_of_folder`;
+  - `crates/platform/src/sqlite.rs`: `openable_folder`, `attach_bytes`;
   - the `carry_rows` `attach_bytes` change.
 
   The unrelated untracked picker and yandex edits are the user's.

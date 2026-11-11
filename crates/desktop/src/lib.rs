@@ -132,10 +132,10 @@ pub fn run(args: &[OsString]) -> i32 {
     };
     // The log is appended to, so each run's part of it starts with its session's record: the build and where the data is.
     pg_log::init(
-        config.log_path.clone(),
-        &format!("gallery {}, data folder {}", env!("CARGO_PKG_VERSION"), config.home.display()),
+        config.layout.log().to_path_buf(),
+        &format!("gallery {}, data folder {}", env!("CARGO_PKG_VERSION"), config.layout.home().display()),
     );
-    panic_log::install(config.log_path.clone());
+    panic_log::install(config.layout.log().to_path_buf());
     // Sets the thumbnail cache's cap, kept in the cache (`gallery thumbs --cap-gb` too); unset, it stays.
     // A GUI program has no stderr to show a bad value on, so the reason goes to gallery.log.
     config.thumb_cap_bytes =

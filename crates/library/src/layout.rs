@@ -1,6 +1,7 @@
-//! Where the app keeps its data: the catalog folder (`catalog.sqlite`, and the thumbnail cache beside it), the preferences
-//! (`gallery.json`) and the log (`gallery.log`). All of it is resolved here, from the environment and the `--catalog-dir`
-//! flag, so the layout lives in one place.
+//! Where the app keeps its data: the catalog folder (`catalog.sqlite`, and the thumbnail cache `thumbs.sqlite` beside
+//! it), the preferences (`gallery.json`), the log (`gallery.log`), and the folder of SQLite's aliases (`sqlite-aliases`,
+//! `pg_platform::sqlite`). All of it is resolved and named here, from the environment and the `--catalog-dir` flag, so
+//! the layout lives in one place, and nothing of the app's is written outside the home.
 //!
 //! For now they share one home folder. The preferences, the log and the thumbnail cache belong in a config, state and
 //! cache folder of their own; moving each is a change to this module and its tests only.
@@ -64,9 +65,28 @@ impl Layout {
         &self.catalog_dir
     }
 
-    /// The catalog's database file ([`crate::catalog_path`] of the catalog folder).
+    /// The catalog's database file.
     pub fn catalog_path(&self) -> PathBuf {
-        crate::catalog_path(&self.catalog_dir)
+        self.catalog_dir.join("catalog.sqlite")
+    }
+
+    /// The thumbnail cache's database file, beside the catalog.
+    pub fn thumbs_path(&self) -> PathBuf {
+        self.catalog_dir.join("thumbs.sqlite")
+    }
+
+    /// Where SQLite's aliases to a catalog folder it can't name are made (Windows: a folder whose name has no UTF-8
+    /// form; `pg_platform::sqlite`): in the home, as everything else is.
+    pub fn sqlite_aliases(&self) -> PathBuf {
+        self.home.join("sqlite-aliases")
+    }
+
+    /// This layout with its catalog folder as SQLite opens it (`pg_platform::sqlite::openable_folder`): itself, or an
+    /// alias in [`Layout::sqlite_aliases`] made for it. The catalog folder must exist. What is opened (the catalog, the
+    /// cache) is opened through this one; what is shown is the layout itself.
+    pub fn for_sqlite(&self) -> std::io::Result<Layout> {
+        let catalog_dir = pg_platform::sqlite::openable_folder(&self.catalog_dir, &self.sqlite_aliases())?;
+        Ok(Layout { catalog_dir, ..self.clone() })
     }
 
     /// The preferences file.
@@ -148,7 +168,32 @@ mod tests {
     fn in_home_puts_everything_under_one_folder() {
         let layout = Layout::in_home("/scratch/run");
         assert_eq!(layout.catalog_dir(), Path::new("/scratch/run/catalog"));
+        assert_eq!(layout.catalog_path(), Path::new("/scratch/run/catalog/catalog.sqlite"));
+        assert_eq!(layout.thumbs_path(), Path::new("/scratch/run/catalog/thumbs.sqlite"));
         assert_eq!(layout.prefs(), Path::new("/scratch/run/gallery.json"));
         assert_eq!(layout.log(), Path::new("/scratch/run/gallery.log"));
+        assert_eq!(layout.sqlite_aliases(), Path::new("/scratch/run/sqlite-aliases"));
+    }
+
+    /// A catalog folder SQLite can't name (Windows: no UTF-8 form) is opened through an alias in the home: with the
+    /// home a scratch folder, opening a catalog there writes nothing outside it.
+    #[cfg(windows)]
+    #[test]
+    fn a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home() {
+        let home = pg_testkit::test_folder("scratch_aliases", "pg-layout").unwrap();
+        // "cat" with an unpaired surrogate (WTF-8 `ED A0 80`).
+        let odd = pg_platform::names::path_buf(b"cat\xED\xA0\x80");
+        let layout = Layout::resolve(
+            |name| (name == "PG_HOME").then(|| home.clone().into_os_string()),
+            Some(home.join(&odd)),
+        )
+        .unwrap();
+        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
+        let sqlite = layout.for_sqlite().unwrap();
+        assert!(sqlite.catalog_dir().starts_with(layout.sqlite_aliases()), "{}", sqlite.catalog_dir().display());
+        let catalog = crate::open_catalog(&sqlite).unwrap();
+        drop(catalog);
+        assert!(layout.catalog_path().exists(), "the catalog is in its own folder, through the alias");
+        std::fs::remove_dir_all(&home).unwrap();
     }
 }

@@ -8,7 +8,7 @@ use anyhow::Result;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
 use pg_model::turns::Turns;
-use pg_platform::sqlite::{attach_bytes, sqlite_path};
+use pg_platform::sqlite::attach_bytes;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::schema::{BUSY_TIMEOUT, CONNECTION_PRAGMAS};
@@ -20,7 +20,7 @@ use crate::types::{Pending, Snapshot, Source, ThumbWork};
 /// list are one moment's. With a `checked` number no later than the catalog's (a catalog restored from a copy
 /// would be behind), only the files changed since are read, through `files_seq`; otherwise every file.
 pub fn pending_in(cache: &Path, catalog: &Path, height: u32) -> Result<Pending> {
-    let conn = Connection::open(sqlite_path(cache)?)?;
+    let conn = Connection::open(cache)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     // The whole entries table fits in the page cache (~40 bytes an entry); the sort stays in memory.
     conn.execute_batch("PRAGMA query_only = ON; PRAGMA temp_store = MEMORY; PRAGMA cache_size = -131072;")?;
@@ -91,7 +91,7 @@ pub(crate) fn with_reader<R>(path: &Path, f: impl FnOnce(&Connection) -> Result<
         if let Some((_, conn)) = readers.iter().find(|(p, _)| p == path) {
             return f(conn);
         }
-        let conn = Connection::open(sqlite_path(path)?)?;
+        let conn = Connection::open(path)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         conn.execute_batch(CONNECTION_PRAGMAS)?;
         conn.execute_batch("PRAGMA query_only = ON;")?;

@@ -475,7 +475,7 @@ mod tests {
         drop(Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap());
         drop(Catalog::open(&path, pg_platform::native::PATH_RULES).unwrap());
         // The layout of before the queued temps were bytes: the rebuild carries the old file's rows, attached by name.
-        let old = Connection::open(pg_platform::sqlite::sqlite_path(&path).unwrap()).unwrap();
+        let old = Connection::open(&path).unwrap();
         old.execute_batch(
             r"DROP TABLE file_writes;
               CREATE TABLE file_writes(

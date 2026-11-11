@@ -55,9 +55,6 @@ fn whole_bytes(bytes: f64) -> i64 {
 }
 
 /// The cache file in the catalog folder.
-pub fn cache_path(dir: &Path) -> PathBuf {
-    dir.join("thumbs.sqlite")
-}
 
 /// A hit not touched for this long is touched again: least recently used to the hour, which is what eviction
 /// needs, without a write for every thumbnail shown.

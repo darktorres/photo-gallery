@@ -115,10 +115,10 @@ fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     // Before the match below moves out of `cli.command`: the data folders are read from the whole `cli`.
-    let layout = cli.layout()?;
-    let catalog_dir = layout.catalog_dir().to_path_buf();
+    // The catalog folder as SQLite opens it (an alias in the home for a folder it can't name).
+    let layout = cli.layout()?.for_sqlite()?;
     let catalog_path = layout.catalog_path();
-    let mut catalog = pg_library::open_catalog(&catalog_dir)?;
+    let mut catalog = pg_library::open_catalog(&layout)?;
     report_rebuilt(&catalog);
     let rules = catalog.rules();
     let start = Instant::now();
@@ -168,7 +168,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 // The cache is opened only then.
                 if !s.replaced_ids.is_empty() {
                     let (events, printer) = thumb_events();
-                    let cache = pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, None, events)?;
+                    let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?;
                     for (_, e) in pg_library::scans::forget_replaced(&cache, &s.replaced_ids) {
                         say(&Line::ThumbNotForgotten { root: name.clone(), error: format!("{e:#}") });
                     }
@@ -221,7 +221,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // also throttles reads on an idle disk and made the task 6.5× slower (64 vs 415 files/s on dups2).
             let opts = pipeline.options(if foreground { Priority::Normal } else { Priority::Idle });
             let (events, printer) = thumb_events();
-            let cache = pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, cap, events)?;
+            let cache = pg_library::open_thumbs(&layout, &catalog.catalog_id()?, cap, events)?;
             let s = pg_thumbs::run(&cache, &catalog_path, height, &opts, ctl)?;
             cache.flush();
             say(&Line::ThumbsNeeded {
@@ -274,7 +274,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 pairs: s.pdq_pairs.to_string(),
             });
             say(&Line::StatusWrites { queued: s.queued_writes.to_string(), failing: s.failed_writes.to_string() });
-            match ThumbCache::read_usage(&catalog_dir)? {
+            match ThumbCache::read_usage(&layout.thumbs_path())? {
                 Some(u) => say(&Line::StatusCache {
                     count: u.count.to_string(),
                     used: gigabytes(pg_model::num::signed(u.bytes)),
@@ -292,7 +292,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             // The cache is leaked, so its events print until the process ends.
             let (events, _printer) = thumb_events();
             let cache: &'static ThumbCache =
-                Box::leak(Box::new(pg_library::open_thumbs(&catalog_dir, &catalog.catalog_id()?, None, events)?));
+                Box::leak(Box::new(pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?));
             let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)))?;
             writer.wake();
             wait_for_writes(&writer, &catalog)?;
@@ -440,7 +440,7 @@ mod tests {
         state::queue_write(&catalog, state::file_id(&catalog, "a.png").unwrap(), "rating", 3).unwrap();
         let (events, quiet) = pg_jobs_testkit::Quiet::bus();
         let thumbs: &'static ThumbCache = Box::leak(Box::new(
-            ThumbCache::open(&dir, &catalog.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap(),
+            ThumbCache::open(&dir.join("thumbs.sqlite"), &catalog.catalog_id().unwrap(), Some(1 << 30), 1, events).unwrap(),
         ));
         drop(catalog);
         let writer =

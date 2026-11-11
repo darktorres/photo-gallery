@@ -439,9 +439,11 @@ mod tests {
 
     fn inbox(name: &str) -> (Arc<Inbox>, PathBuf) {
         let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
-        let catalog = pg_library::open_catalog(&dir).unwrap();
+        let layout = pg_library::layout::Layout::in_home(&dir);
+        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
+        let catalog = pg_library::open_catalog(&layout).unwrap();
         drop(catalog);
-        (Inbox::start(pg_library::catalog_path(&dir)).unwrap(), dir)
+        (Inbox::start(layout.catalog_path()).unwrap(), dir)
     }
 
     /// The next listing the inbox publishes, and the toasts before it.
@@ -495,7 +497,7 @@ mod tests {
         let (inbox, dir) = inbox("inbox-poke");
         let sub = inbox.subscribe();
         next(&sub);
-        let other = Catalog::open(&pg_library::catalog_path(&dir), pg_platform::native::PATH_RULES).unwrap();
+        let other = Catalog::open(&pg_library::layout::Layout::in_home(&dir).catalog_path(), pg_platform::native::PATH_RULES).unwrap();
         other.post_notice(&failed("elsewhere"), now()).unwrap();
         inbox.poke();
         let (toasts, listing) = next(&sub);

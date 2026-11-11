@@ -34,7 +34,7 @@ mod schema;
 mod types;
 mod writer;
 
-pub use config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, cache_path, default_cap_bytes, parse_cap_gb};
+pub use config::{CACHE_VERSION, MAX_DEFAULT_CAP_BYTES, default_cap_bytes, parse_cap_gb};
 pub use maintenance::Drift;
 pub use reader::pending_in;
 pub use types::{Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
@@ -47,7 +47,6 @@ use pg_jobs::events::Bus;
 use pg_jobs::service::Service;
 use pg_model::ids::FileId;
 use pg_model::path::WorkList;
-use pg_platform::sqlite::sqlite_path;
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 
 use crate::config::TOUCH_AGE_S;
@@ -89,7 +88,7 @@ impl ThumbCache {
     /// `crates/README.md`). `thumbs_version` is the thumbnailer's (`pg_render::THUMBS_VERSION`): a file whose mark is
     /// another forgets how far each height was checked, so the next passes look at every file again.
     pub fn open(
-        dir: &Path,
+        path: &Path,
         catalog_id: &str,
         cap_bytes: Option<i64>,
         thumbs_version: i64,
@@ -100,8 +99,7 @@ impl ThumbCache {
         {
             bail!("a thumbnail cache cap of {cap} bytes");
         }
-        let path = cache_path(dir);
-        let Writing { conn, started_over, drift, live } = open_writer(&path, catalog_id, cap_bytes, thumbs_version)?;
+        let Writing { conn, started_over, drift, live } = open_writer(path, catalog_id, cap_bytes, thumbs_version)?;
         if let Some((why, old)) = started_over {
             events.publish(Event::StartedOver { reason: why.reason, path: old, detail: why.detail });
         }
@@ -229,10 +227,9 @@ impl ThumbCache {
         answer.recv().map_err(|_| anyhow!("thumbnail cache writer stopped"))?
     }
 
-    /// What the cache in the catalog folder `dir` holds and may hold, read without opening it for writing (nothing
-    /// created, nothing deleted); none if there is no cache file.
-    pub fn read_usage(dir: &Path) -> Result<Option<Usage>> {
-        let path = cache_path(dir);
+    /// What the cache file at `path` holds and may hold, read without opening it for writing (nothing created, nothing
+    /// deleted); none if there is no cache file.
+    pub fn read_usage(path: &Path) -> Result<Option<Usage>> {
         if !path.exists() {
             return Ok(None);
         }
@@ -240,7 +237,7 @@ impl ThumbCache {
         let _live = hold_shared(&path)?;
         // Read-write, as the other connections are: a read-only one can't merge the WAL when it closes last, and
         // would leave the WAL and its index behind.
-        let conn = Connection::open_with_flags(sqlite_path(&path)?, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
+        let conn = Connection::open_with_flags(&path, OpenFlags::SQLITE_OPEN_READ_WRITE)?;
         conn.busy_timeout(BUSY_TIMEOUT)?;
         Ok(Some(conn.query_row("SELECT t.bytes, t.count, l.cap FROM totals t, limits l", [], |r| {
             Ok(Usage { bytes: r.get(0)?, count: r.get(1)?, cap: r.get(2)? })
@@ -335,6 +332,11 @@ impl Drop for ThumbCache {
 
 #[cfg(test)]
 mod tests {
+    /// The cache's file in the folder `dir`, as the layout names it (`pg_library::layout::Layout::thumbs_path`).
+    fn cache_path(dir: &Path) -> PathBuf {
+        dir.join("thumbs.sqlite")
+    }
+
     use super::*;
     use pg_catalog::fixture::state;
     use pg_model::ids::FolderId;
@@ -397,7 +399,7 @@ mod tests {
 
     fn open_quiet(dir: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Opened {
         let (events, watch) = Quiet::bus();
-        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, 1, events).unwrap();
+        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap_bytes, 1, events).unwrap();
         Opened { cache, _events: watch }
     }
 
@@ -410,7 +412,7 @@ mod tests {
     ) -> (ThumbCache, StartOverReason, PathBuf, String) {
         let bus = Arc::new(Bus::new(8));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(dir, catalog_id, cap_bytes, 1, bus).unwrap();
+        let cache = ThumbCache::open(&cache_path(dir), catalog_id, cap_bytes, 1, bus).unwrap();
         let mut taken = events.take().items.into_iter();
         let first = taken.next();
         assert!(taken.next().is_none(), "one event expected");
@@ -551,7 +553,7 @@ mod tests {
     #[test]
     fn one_cap_for_every_writer() {
         let dir = test_folder(SCRATCH, "cap").unwrap();
-        assert_eq!(ThumbCache::read_usage(&dir).unwrap(), None);
+        assert_eq!(ThumbCache::read_usage(&cache_path(&dir)).unwrap(), None);
         let first = open_quiet(&dir, CATALOG_ID, None);
         assert_eq!(first.cap().unwrap(), default_cap_bytes(&dir), "a new cache");
         assert!(first.put_batch(&mut (0..10).map(|i| thumb(i, 50, 1, 100)).collect(), None).unwrap());
@@ -563,9 +565,9 @@ mod tests {
         // Opened without one, the cap stays.
         drop(second);
         drop(open_quiet(&dir, CATALOG_ID, None));
-        let usage = ThumbCache::read_usage(&dir).unwrap().unwrap();
+        let usage = ThumbCache::read_usage(&cache_path(&dir)).unwrap().unwrap();
         assert_eq!((usage.cap, usage.bytes, usage.count), (500, first.totals().unwrap().0, first.totals().unwrap().1));
-        assert!(ThumbCache::open(&dir, CATALOG_ID, Some(-1), 1, Arc::new(Bus::new(1))).is_err());
+        assert!(ThumbCache::open(&cache_path(&dir), CATALOG_ID, Some(-1), 1, Arc::new(Bus::new(1))).is_err());
     }
 
     #[test]
@@ -673,7 +675,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "app-id-cache").unwrap();
         drop(open_quiet(&dir, CATALOG_ID, Some(999)));
         Connection::open(cache_path(&dir)).unwrap().pragma_update(None, "application_id", 9).unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(pg_dbfile::application_id(&Connection::open(cache_path(&dir)).unwrap()).unwrap(), 9);
         std::fs::remove_dir_all(&dir).unwrap();
@@ -685,7 +687,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "foreign-db").unwrap();
         Connection::open(cache_path(&dir)).unwrap().execute_batch("CREATE TABLE notes(text TEXT);").unwrap();
         let before = std::fs::read(cache_path(&dir)).unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("left alone"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), before);
         assert!(!bad_path(&dir).exists());
@@ -811,7 +813,7 @@ mod tests {
         let dir = test_folder(SCRATCH, "damaged-held").unwrap();
         std::fs::write(cache_path(&dir), vec![b'x'; 8192]).unwrap();
         let held = pg_dbfile::Live::shared(&cache_path(&dir)).unwrap().unwrap();
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("another program has it open"), "{e:#}");
         assert_eq!(std::fs::read(cache_path(&dir)).unwrap(), vec![b'x'; 8192]);
         assert!(!bad_path(&dir).exists());
@@ -914,7 +916,7 @@ mod tests {
         file.execute("UPDATE meta SET value = 0 WHERE key = 'healed'", []).unwrap();
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        let cache = ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), 1, bus).unwrap();
+        let cache = ThumbCache::open(&cache_path(&dir), CATALOG_ID, Some(1 << 30), 1, bus).unwrap();
         assert_eq!(events.take().items, vec![Event::TotalsFixed { kept: (999, 7), actual: (0, 0) }]);
         drop(cache);
     }
@@ -927,7 +929,7 @@ mod tests {
         // Within the day of the last check, an open doesn't check: the drift stays until the next day's open.
         let bus = Arc::new(Bus::new(4));
         let events = bus.subscribe();
-        drop(ThumbCache::open(&dir, CATALOG_ID, Some(1 << 30), 1, bus).unwrap());
+        drop(ThumbCache::open(&cache_path(&dir), CATALOG_ID, Some(1 << 30), 1, bus).unwrap());
         assert!(events.take().items.is_empty());
         let file = Connection::open(cache_path(&dir)).unwrap();
         assert_eq!(file.query_row("SELECT count FROM totals", [], |r| r.get::<_, i64>(0)).unwrap(), 7);
@@ -1105,7 +1107,7 @@ mod tests {
         drop(cache);
         let reopen = |version: i64| {
             let (events, watch) = Quiet::bus();
-            Opened { cache: ThumbCache::open(&dir, CATALOG_ID, None, version, events).unwrap(), _events: watch }
+            Opened { cache: ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, version, events).unwrap(), _events: watch }
         };
         assert!(reopen(1).pending(&catalog, 100).unwrap().snapshot.since_checked);
         let newer = reopen(2);
@@ -1146,9 +1148,9 @@ mod tests {
         let dir = test_folder(SCRATCH, "usage-held").unwrap();
         drop(open(&dir, 1 << 30));
         let held = pg_dbfile::Live::exclusive(&cache_path(&dir)).unwrap().expect("free");
-        assert!(ThumbCache::read_usage(&dir).is_err(), "held for a start over: not read");
+        assert!(ThumbCache::read_usage(&cache_path(&dir)).is_err(), "held for a start over: not read");
         drop(held);
-        assert!(ThumbCache::read_usage(&dir).unwrap().is_some(), "read once free");
+        assert!(ThumbCache::read_usage(&cache_path(&dir)).unwrap().is_some(), "read once free");
     }
 
     #[test]
@@ -1163,7 +1165,7 @@ mod tests {
         assert!(reopened.get_nearest(FileId::new(1), 100, src(5)).unwrap().is_none(), "file 1 is another file now");
         assert_eq!((reopened.totals().unwrap(), reopened.cap().unwrap()), ((0, 0), 12345));
         // Open elsewhere: it can't be deleted, so it isn't used.
-        let e = ThumbCache::open(&dir, CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
+        let e = ThumbCache::open(&cache_path(&dir), CATALOG_ID, None, 1, Arc::new(Bus::new(1))).err().expect("refused");
         assert!(format!("{e:#}").contains("another catalog"), "{e:#}");
     }
 

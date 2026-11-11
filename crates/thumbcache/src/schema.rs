@@ -5,7 +5,6 @@ use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use anyhow::{Context, Result, anyhow, bail};
-use pg_platform::sqlite::sqlite_path;
 use pg_dbfile::{Damage, Expected, Schema};
 use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 
@@ -155,7 +154,7 @@ fn judge(path: &Path, catalog_id: &str) -> Result<Found> {
         return Ok(Found::New);
     }
     let expected = expected()?;
-    let conn = Connection::open(sqlite_path(path)?)?;
+    let conn = Connection::open(path)?;
     match read_found(&conn, catalog_id, expected) {
         Ok(found) => Ok(found),
         Err(e) => match damage(&e) {
@@ -377,7 +376,7 @@ pub(crate) fn hold_shared(path: &Path) -> Result<pg_dbfile::Live> {
 /// A connection to the cache file, made with its layout if it is new (for catalog `catalog_id`), and the cap set if one
 /// is given and the file has the table for it. The file was judged by [`judge`] first, so only a new one is made here.
 fn open_file(path: &Path, catalog_id: &str, cap_bytes: Option<i64>) -> Result<Connection> {
-    let mut conn = Connection::open(sqlite_path(path)?)?;
+    let mut conn = Connection::open(path)?;
     conn.busy_timeout(BUSY_TIMEOUT)?;
     // auto_vacuum must be set before the first table exists. Setting it writes page 1 even when the file already has
     // it, so it is set only when it differs: a cache judged usable has it, and its open must write nothing before the

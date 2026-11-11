@@ -12,26 +12,22 @@ pub mod layout;
 pub mod runner;
 pub mod scans;
 
-/// The path of the catalog file in the catalog folder `dir`.
-pub fn catalog_path(dir: &std::path::Path) -> std::path::PathBuf {
-    dir.join("catalog.sqlite")
+/// The catalog of `layout` (one as SQLite opens it, `Layout::for_sqlite`), prepared for this build (`Catalog::prepare`
+/// with [`versions`], under the native rules). A catalog this build can't use is moved aside and rebuilt;
+/// [`pg_catalog::Catalog::rebuilt`] says so.
+pub fn open_catalog(layout: &layout::Layout) -> pg_catalog::Result<pg_catalog::Catalog> {
+    pg_catalog::Catalog::prepare(&layout.catalog_path(), versions(), pg_platform::native::PATH_RULES)
 }
 
-/// The catalog in the folder `dir`, prepared for this build (`Catalog::prepare` with [`versions`], under the native rules).
-/// A catalog this build can't use is moved aside and rebuilt; [`pg_catalog::Catalog::rebuilt`] says so.
-pub fn open_catalog(dir: &std::path::Path) -> pg_catalog::Result<pg_catalog::Catalog> {
-    pg_catalog::Catalog::prepare(&catalog_path(dir), versions(), pg_platform::native::PATH_RULES)
-}
-
-/// The thumbnail cache of the catalog `catalog_id`, in the folder `dir`, holding at most `cap` bytes (`None`: the cache's
-/// own cap), for this build's thumbnails (`pg_render::THUMBS_VERSION`). Its events go to `events`.
+/// The thumbnail cache of `layout` (as SQLite opens it) for the catalog `catalog_id`, holding at most `cap` bytes
+/// (`None`: the cache's own cap), for this build's thumbnails (`pg_render::THUMBS_VERSION`). Its events go to `events`.
 pub fn open_thumbs(
-    dir: &std::path::Path,
+    layout: &layout::Layout,
     catalog_id: &str,
     cap: Option<i64>,
     events: std::sync::Arc<pg_jobs::events::Bus<pg_thumbcache::Event>>,
 ) -> anyhow::Result<pg_thumbcache::ThumbCache> {
-    pg_thumbcache::ThumbCache::open(dir, catalog_id, cap, pg_render::THUMBS_VERSION, events)
+    pg_thumbcache::ThumbCache::open(&layout.thumbs_path(), catalog_id, cap, pg_render::THUMBS_VERSION, events)
 }
 
 /// The versions of the analyses this build makes, for `Catalog::prepare`: the library passes them when it prepares a

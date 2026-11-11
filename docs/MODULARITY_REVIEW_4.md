@@ -525,6 +525,11 @@ Each fix gets a test that fails before it.
   - `Config` holds the `Layout`.
   - Test: with `PG_HOME` set, opening a catalog in a folder with a non-UTF-8 name writes nothing outside the home.
 - Gate: Windows `just test` (the alias path is Windows'), Linux checks.
+- **Done in step 8.**
+  - `Layout` names `catalog_path`, `thumbs_path` and `sqlite_aliases` (`home/sqlite-aliases`). `pg_library::catalog_path` and `pg_thumbcache::cache_path` are gone: `open_catalog(&Layout)`, `open_thumbs(&Layout, ..)`, and `ThumbCache::open` and `read_usage` take the cache's file.
+  - Only a folder is aliased: `pg_platform::sqlite::openable_folder(folder, aliases)`, which `Layout::for_sqlite` applies once to the catalog folder. The app and the command line open everything through that layout, and show the layout itself; the catalog and the cache open the paths they are given (`sqlite_path` and `alias_of_folder` went), and `attach_bytes` takes such a path.
+  - `Config { layout, thumb_cap_bytes, yandex }`.
+  - Test: `a_catalog_folder_with_no_utf8_name_is_aliased_inside_the_home` (Windows), and Unix's `a_folder_is_used_as_it_is_on_unix`.
 
 ### M-37: the thumbnail cache reads the catalog through its views only
 

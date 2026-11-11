@@ -51,10 +51,12 @@ impl App {
     /// Open (and migrate) the catalog, the thumbnail cache, and the preferences. A cache that can't be opened only means
     /// thumbnails aren't kept (a notice says why). The library starts on first use ([`LibraryService::start`]).
     pub fn open(config: Config) -> Result<App> {
-        std::fs::create_dir_all(&config.catalog_dir)
-            .map_err(|e| failed(format!("{}: {e}", config.catalog_dir.display())))?;
-        let catalog_path = config.catalog_path();
-        let keeper = pg_library::open_catalog(&config.catalog_dir)?;
+        let shown = config.layout.catalog_dir();
+        std::fs::create_dir_all(shown).map_err(|e| failed(format!("{}: {e}", shown.display())))?;
+        // The catalog folder as SQLite opens it (an alias in the home for a folder it can't name).
+        let layout = config.layout.for_sqlite().map_err(|e| failed(format!("{}: {e}", shown.display())))?;
+        let catalog_path = layout.catalog_path();
+        let keeper = pg_library::open_catalog(&layout)?;
         let catalog_id = keeper.catalog_id()?;
         let rebuilt = keeper.rebuilt().cloned();
         let catalogs = Arc::new(Catalogs::new(catalog_path.clone(), keeper));
@@ -64,13 +66,13 @@ impl App {
         }
         let thumb_events = Arc::new(Bus::new(64));
         let forwarder = forward_thumb_events(thumb_events.clone(), inbox.clone())?;
-        let thumbs = pg_library::open_thumbs(&config.catalog_dir, &catalog_id, config.thumb_cap_bytes, thumb_events)
+        let thumbs = pg_library::open_thumbs(&layout, &catalog_id, config.thumb_cap_bytes, thumb_events)
             .unwrap_or_else(|e| {
                 inbox.post(Notice::CacheDisabled { error: tidy(&format!("{e:#}"), ERROR_CAP) });
                 ThumbCache::disabled()
             });
         let thumbs: &'static ThumbCache = Box::leak(Box::new(thumbs));
-        let prefs = Arc::new(PrefStore::open(config.prefs_path.clone(), inbox.clone()));
+        let prefs = Arc::new(PrefStore::open(config.layout.prefs().to_path_buf(), inbox.clone()));
         let makers = Arc::new(Makers::new());
         let reading = Reading::start(catalog_path.clone(), catalogs.clone())?;
         let library = Arc::new(LibraryService::new(catalog_path, catalogs.clone(), thumbs, inbox.clone()));

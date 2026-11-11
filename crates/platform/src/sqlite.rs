@@ -1,68 +1,46 @@
-//! The path SQLite opens, exact. On Unix SQLite takes a path's bytes as they are (rusqlite passes them), so the path is
-//! used as it is. On Windows SQLite takes a name as UTF-8, and rusqlite refuses any other: a folder whose name has no
-//! UTF-8 form (an unpaired surrogate) is reached through a directory junction whose name is ASCII. The junction is made
-//! here from the folder's exact UTF-16 units, and points at the folder on any local NTFS volume. SQLite's own files (the
-//! journal, the `-wal`) are then made in the folder, through the junction.
+//! The folder SQLite opens files in, exact. On Unix SQLite takes a path's bytes as they are (rusqlite passes them), so a
+//! folder is used as it is. On Windows SQLite takes a name as UTF-8, and rusqlite refuses any other: a folder whose name
+//! has no UTF-8 form (an unpaired surrogate) is reached through a directory junction whose name is ASCII, made in the
+//! alias folder the caller names (the data folder's `sqlite-aliases`, `pg_library::layout::Layout::sqlite_aliases`),
+//! from the folder's exact UTF-16 units; it points at the folder on any local NTFS volume. SQLite's own files (the
+//! journal, the `-wal`) are then made in the folder, through the junction. Nothing is made outside the alias folder.
 
 use std::io;
 use std::path::{Path, PathBuf};
 
-/// The path SQLite opens for `path`: `path` itself where SQLite can take it. On Windows, a file in a folder with no
-/// UTF-8 form is opened as `alias\name`, the alias being a junction to the folder (see `alias_of_folder`). A file
-/// whose own name has no UTF-8 form is an error there: the catalog's and the cache's file names are ASCII.
-pub fn sqlite_path(path: &Path) -> io::Result<PathBuf> {
+/// The folder SQLite opens files of `folder` in: `folder` itself where SQLite can take its name; on Windows, for a
+/// folder with no UTF-8 form, a junction to it made (or reused) in `aliases`. The files in it are named by the app
+/// (ASCII), so a path under the folder returned is one SQLite opens.
+pub fn openable_folder(folder: &Path, aliases: &Path) -> io::Result<PathBuf> {
     #[cfg(unix)]
     {
-        Ok(path.to_path_buf())
+        let _ = aliases;
+        Ok(folder.to_path_buf())
     }
     #[cfg(windows)]
     {
-        if path.to_str().is_some() {
-            return Ok(path.to_path_buf());
+        if folder.to_str().is_some() {
+            return Ok(folder.to_path_buf());
         }
-        let (Some(folder), Some(name)) = (path.parent(), path.file_name()) else {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "a path SQLite can't open"));
-        };
-        if name.to_str().is_none() {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                format!("{}: the file name has no UTF-8 form, which SQLite can't take on Windows", path.display()),
-            ));
-        }
-        Ok(alias_of_folder(folder)?.join(name))
+        windows::alias_under(aliases, folder)
     }
 }
 
-/// The file name SQLite is given for an ATTACH: the bytes of [`sqlite_path`] (on Unix, the path's own bytes, which
-/// SQLite takes as they are; on Windows, the alias's UTF-8). Bound as a BLOB, so no text conversion is made.
+/// The file name SQLite is given for an ATTACH of `path`, a path SQLite opens (under an [`openable_folder`]): on Unix
+/// the path's own bytes, which SQLite takes as they are; on Windows its UTF-8 (an error for a path with none). Bound as
+/// a BLOB, so no text conversion is made.
 pub fn attach_bytes(path: &Path) -> io::Result<Vec<u8>> {
-    let file = sqlite_path(path)?;
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
-        Ok(file.as_os_str().as_bytes().to_vec())
+        Ok(path.as_os_str().as_bytes().to_vec())
     }
     #[cfg(windows)]
     {
-        file.to_str()
+        path.to_str()
             .map(|text| text.as_bytes().to_vec())
-            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "an alias path with no UTF-8 form"))
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "a path with no UTF-8 form, which SQLite can't take"))
     }
-}
-
-/// The junction to `folder` (made or reused) in the first alias folder that can hold one: the local application data
-/// folder, then `ProgramData`. Each is `PhotoGallery\sqlite-aliases` under its variable. A typed error when neither can.
-#[cfg(windows)]
-pub fn alias_of_folder(folder: &Path) -> io::Result<PathBuf> {
-    let mut last = io::Error::other("no folder to hold the SQLite alias (LOCALAPPDATA and ProgramData are unset)");
-    for var in ["LOCALAPPDATA", "ProgramData"] {
-        let Some(base) = std::env::var_os(var) else { continue };
-        match windows::alias_under(&PathBuf::from(base).join("PhotoGallery").join("sqlite-aliases"), folder) {
-            Ok(link) => return Ok(link),
-            Err(e) => last = e,
-        }
-    }
-    Err(last)
 }
 
 #[cfg(windows)]
@@ -350,12 +328,14 @@ mod windows {
 
 #[cfg(all(test, unix))]
 mod tests {
-    use super::sqlite_path;
+    use super::openable_folder;
 
-    /// On Unix the path is used as it is, with any bytes.
+    /// On Unix the folder is used as it is, with any bytes, and nothing is made in the alias folder.
     #[test]
-    fn a_path_is_used_as_it_is_on_unix() {
-        let path = crate::names::path_buf(b"/tmp/odd\xFF/catalog.sqlite");
-        assert_eq!(sqlite_path(&path).unwrap(), path);
+    fn a_folder_is_used_as_it_is_on_unix() {
+        let folder = crate::names::path_buf(b"/tmp/odd\xFF");
+        let aliases = std::path::Path::new("/nonexistent/aliases");
+        assert_eq!(openable_folder(&folder, aliases).unwrap(), folder);
+        assert!(!aliases.exists());
     }
 }

@@ -8,7 +8,6 @@ use anyhow::{Context, anyhow};
 use pg_model::notice::Carried;
 use pg_model::rules::PathRules;
 use pg_platform::file::beside;
-use pg_platform::sqlite::sqlite_path;
 use rusqlite::{Connection, OptionalExtension};
 
 use crate::error::{Error, Result};
@@ -100,10 +99,10 @@ pub(crate) fn rebuild(old: Connection, path: &Path, rules: PathRules, why: Strin
     Ok(Rebuilt { kept, why, carried })
 }
 
-/// The file SQLite opens for the catalog at `path`: the path itself, or on Windows an alias for a folder whose name has
-/// no UTF-8 form (`pg_platform::sqlite`).
+/// The file SQLite opens for the catalog at `path`: the path itself, which the caller gave in a folder SQLite can open
+/// (`pg_platform::sqlite::openable_folder`).
 pub(crate) fn db_file(path: &Path) -> anyhow::Result<PathBuf> {
-    sqlite_path(path).with_context(|| format!("catalog {}", path.display()))
+    Ok(path.to_path_buf())
 }
 
 /// Make the catalog file `path` in this build's layout, with the rows of `from` copied into it when given

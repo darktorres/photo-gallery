@@ -8,13 +8,13 @@ Note (2026-11-06): the verdicts and line numbers are as of `c988b9c`, which is n
 
 ## Status at HEAD 362888c
 
-The 30 findings that are FIXED at HEAD have been removed from this document: 0–14, 16, 17, 20–23, 26, 28, 30–32, 34–37. The sections below are the 9 that remain.
+The 30 findings that are FIXED at HEAD have been removed from this document: 0–14, 16, 17, 20–23, 26, 28, 30–32, 34–37. Finding 18, stale at HEAD, has also been removed after its stale comment in `crates/model/src/ids.rs` was corrected. Finding 19, refuted at HEAD, has also been removed. The sections below are the 7 that remain.
 
 | Status | Count | Indices |
 |---|---|---|
 | STILL PRESENT (low) | 5 | 15, 27, 29, 33, 38 |
 | PARTLY still present (low) | 1 | 25 |
-| No live defect (stale or refuted stands) | 3 | 18, 19, 24 |
+| Open contract gap, no data defect (low) | 1 | 24 |
 
 Only 6 findings still describe a live defect, all rated low. The surrogate-name items are almost all fixed: exact names flow through `Name`/`RulePath`/`disk_path`, and the desktop picks folders by typed values rather than by display text.
 
@@ -53,39 +53,34 @@ The Greek sigma problem (findings 0 and 1) is not in that group. A folder whose 
 
 **Validation:** The u32 narrowing at lib.rs:350 is applied to the Exif IFD pointer, which is an offset, so DateTimeOriginal and DateTimeDigitized are silently lost for such files and analyze.rs:120 stores no date. The uint doc shows the u32 limit was chosen for values, not offsets, so the mismatch is real but rare. Severity lowered from medium to low for that reason.
 
-### 18. crates/platform/src/dir.rs:183
-
-**Status at HEAD 362888c:** STALE, confirmed. No 32-bit truncation remains. Unix volume identity is the file-system UUID, falling back to udev or `f_fsid` (`crates/platform/src/dir.rs:516-545`), and a device-number collision keeps the whole device number and is counted (`:459-470`). The stale comment is `crates/model/src/ids.rs:30`, which still says "the Unix device number whole" and contradicts `ids.rs:23`.
-
-**Verdict:** STALE. **Severity:** low → none.
-
-**Claim:** st_dev is a 64-bit device number, but the volume id is truncated to 32 bits, and the device number is not stable across reboots. Two devices can share one identity, and the same device can change identity.
-
-**Validation:** The truncation the finding describes is gone at HEAD: the Unix volume is a whole u64 and the plan and ledger both record it as done. Only a stale doc comment in ids.rs still describes the 32-bit cast, so the finding is stale rather than a live defect. The residual Linux device-number instability is a documented open item, not the truncation this finding claims.
-
-### 19. crates/platform/src/dir.rs:153
-
-**Status at HEAD 362888c:** No live defect; REFUTED stands. The 64-bit file ID is now at `crates/platform/src/dir.rs:399`. The scanner refuses any non-NTFS root before listing (`crates/scan/src/refusal.rs:61-64`, called from `crates/scan/src/lib.rs:282`), so a ReFS volume never reaches the 64-bit listing. The ReFS row is `docs/STORAGE.md:41`.
-
-**Verdict:** REFUTED. **Severity:** low → none.
-
-**Claim:** The 64-bit listing class cannot carry a 128-bit file ID (ReFS), so the identity loses its upper 64 bits on such volumes. The model's FileIdentity is documented as the file's identity, but the platform only supplies a truncation of it.
-
-**Validation:** The scanner refuses a non-NTFS root before it lists anything, so a ReFS volume never reaches the 64-bit listing and the claimed collision cannot occur. The documented refusal (STORAGE.md:39, ledger row REFACTOR_PLAN.md:823) matches the code, so the finding is refuted rather than a known limit.
-
 ### 24. crates/app/src/edit.rs:12
 
-**Status at HEAD 362888c:** No live defect; REFUTED stands. `Rating::new` still accepts 0 (`crates/model/src/rating.rs:24-29`), but the desktop maps 0 to `None` (`crates/desktop/src/gallery/edits.rs:77`), and the table's `CHECK (rating BETWEEN 1 AND 5)` rejects a stored 0 (`crates/catalog/src/schema.rs:647-649`).
+**Verdict (HEAD 362888c):** OPEN, a contract gap with no data defect. **Severity:** low.
 
-**Verdict:** REFUTED. **Severity:** low → none.
+**Claim:** The user-rating type admits 0 stars. `Rating` is shared with file ratings, where 0 is valid, so `Rating::new` accepts 0 (`crates/model/src/rating.rs:24-29`). `Edit::rate` takes `Option<Rating>` (`crates/app/src/edit.rs:27`), so the API accepts a 0 user rating. The model documents a user rating as 1 to 5, with 0 meaning no rating (None).
 
-**Claim:** The type of a user rating admits 0 stars, which the model documents as impossible for a user rating (1 to 5, with 0 meaning no rating, i.e. None). The only guard is in one caller; app::rate and set_rating store a 0 without a check.
+**Validation:** No data defect. The desktop maps 0 stars to `None` before calling `rate` (`crates/desktop/src/gallery/edits.rs:77`), and the `ratings` table's `CHECK (rating BETWEEN 1 AND 5)` (`crates/catalog/src/schema.rs:647-649`) rejects a stored 0, so a 0 errors rather than writing. The gap is that the type enforces none of this: the guarantee lives in one caller and in the schema.
 
-**Validation:** The CHECK constraint makes the scenario's stored 0 impossible: the call errors and nothing is written, so no file shows zero stars or writes Some(0) back. The API does lack a check of its own, which is a weaker contract, but it produces no data defect, so the finding is refuted.
+**Hardening (planned, not done):** split the one `Rating` type, which currently serves two domains.
+
+- **User ratings (1 to 5):** the `ratings` table, `Write::Rating` and `Command::Rate`. These become `UserRating`, whose constructor rejects 0. `Grid::Rate(stars)` (`crates/client/src/controller.rs:337`) then fails for 0 at the boundary, and "0 stars clears the rating" becomes an explicit `None` branch in the desktop instead of a `filter`. Callers to change: `crates/desktop/src/gallery/edits.rs:77`, `crates/catalog/src/writers.rs:1071`, `crates/catalog/src/browse/fixtures.rs:82`, and the user-rating read at `crates/catalog/src/browse/read/grid.rs:70`.
+- **File ratings (0 to 5):** the `file_ratings` table and metadata, where 0 means "explicitly unrated" (`crates/metadata/src/lib.rs:41`). These become `FileRating`, which keeps 0. The import read-back at `crates/catalog/src/writers.rs:373` and the metadata constructor at `crates/metadata/src/lib.rs:94` use it. Rejecting 0 here would make every import rewrite the `file_ratings` row of an explicit-0 file.
+
+Done when `Rating::new` no longer exists, `Edit::rate` takes `Option<UserRating>`, the desktop filter is gone, and the tests in `writers.rs` and `fixtures.rs` build with the new types. The wire format and the `CHECK` constraints stay unchanged.
+
+**History:** the c988b9c verdict was REFUTED, with the same no-data-defect reasoning. That verdict still holds. The section now tracks the contract gap above, not the original claim.
 
 ### 25. crates/app/src/prefs.rs:24
 
 **Status at HEAD 362888c:** PARTLY, still present (low). `app::Prefs.last_file` is `Option<FileId>` (`crates/app/src/prefs.rs:34-35`). The -1 sentinel survives only as the on-disk encoding (`prefs.rs:65-79`) and in the Qt bridge, which takes an i64 (`crates/desktop/src/settings.rs:40-41, 73-77`). The ambiguity remains at that bridge.
+
+**Fix (planned, not done):** persist the file's identity, not its catalog row id, and remove the sentinel at every layer. Row ids are local to a catalog and a rebuild reuses them, which is the defect in this finding. The file's identity (`FileIdentity`: volume plus NTFS file ID) already keeps a file's row across moves and renames.
+
+- **Persist identity:** `Prefs.last_file` becomes `Option<FileIdentity>`. At startup, resolve it to a `FileId` with one lookup on `files(volume, file_ref)`, which has a UNIQUE index. No match means nothing is selected.
+- **Disk format:** write `null` for none. Read a legacy negative number as none. Read a legacy non-negative number as a row id, resolve it once, and re-save it as an identity.
+- **Qt bridge:** `settings.rs` stops passing an `i64` with `-1` for none. The property carries an optional value, empty for none. The call sites change: `crates/desktop/qml/Main.qml:113` (assigns the sentinel) and `Main.qml:224` (compares it through `galleryModel.indexOf`).
+- **NULL identity:** a displaced row (`files.volume` NULL) has no identity to remember, so it selects nothing.
+- **Tests:** identity round-trip, a legacy `-1` reads as none, a legacy row id resolves once, and a rebuild that reuses a row id selects nothing for the other file.
 
 **Verdict:** PARTLY. **Severity:** low → low.
 

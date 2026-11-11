@@ -635,6 +635,11 @@ Each fix gets a test that fails before it.
   - The migration's number: NOTIFICATIONS_PLAN takes `TO_3` and `TO_4` (both only planned), and this migration takes the next free one. The pre-migration backup that plan's S2 adds covers it.
   - `session_set` goes; it is used only by tests.
 - Gate: `just test`, `just shots` (the start restores the listing), Linux checks.
+- **Done in step 6.**
+  - `SavedView { name, listing }`, the listing flattened in its JSON; `Listing::default` is the start with nothing saved. The three copies are gone.
+  - Migration `TO_5_SESSION` makes the session one row with the views' columns, in SQL: the folder's JSON parts are joined by the rules' separator (`json_each`, `unhex` for a part that is not UTF-8). A rebuild from an older file reads the old keys once (`schema::carry_session_keys`); `convert_text_folders` converts the views only.
+  - `browse::read::listing_at` and `browse::writes::listing_values` are the views' and the session's one reader and writer; `session_listing` and `save_session_listing` replace `session_get`, `session_set` and `session_set_many`. `app::views` knows no keys.
+  - The shots fixture writes the session in either layout, so a base from before this step still runs.
 
 ### M-44: the catalog's API has one shape per concern
 

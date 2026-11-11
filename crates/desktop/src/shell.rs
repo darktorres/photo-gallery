@@ -274,14 +274,7 @@ impl qobject::Shell {
         if name.is_empty() {
             return;
         }
-        let listing = controller::listing();
-        let view = SavedView {
-            name,
-            folder: listing.folder,
-            recursive: listing.recursive,
-            query: listing.query,
-            sort: listing.sort,
-        };
+        let view = SavedView { name, listing: controller::listing() };
         match app::get().views().save(&view) {
             Ok(()) => app::resolved_part("views-failed", ViewOp::Save.code()),
             Err(e) => views_failed(ViewOp::Save, &e),

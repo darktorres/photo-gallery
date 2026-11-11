@@ -57,9 +57,7 @@ pub fn update(listing: &mut Listing, event: Event) -> Vec<Command> {
         },
         Event::DescendingToggled => listing.sort.descending = !listing.sort.descending,
         Event::QueryChanged(query) => listing.query = query,
-        Event::ViewApplied(view) => {
-            *listing = Listing { folder: view.folder, recursive: view.recursive, sort: view.sort, query: view.query };
-        }
+        Event::ViewApplied(view) => *listing = view.listing,
         Event::Reveal(folder) => (listing.folder, listing.query) = (folder, Query::default()),
         Event::FailedImports => {
             listing.folder = Merged::default();

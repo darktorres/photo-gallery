@@ -25,7 +25,7 @@ use pg_model::rules::{Merged, PathRules};
 use pg_model::state::FileState;
 use pg_model::tree::{FolderTree, TreeBuilder};
 use pg_model::turns::Turns;
-use pg_model::view::SavedView;
+use pg_model::view::{Listing, SavedView};
 use pg_model::write::WriteKind;
 use rusqlite::params_from_iter;
 
@@ -913,16 +913,10 @@ fn posix_folders_are_case_sensitive_and_listed_apart() {
 #[test]
 fn a_saved_scope_matches_its_folder_whatever_the_case() {
     let c = library(PathRules::Windows);
-    let view = SavedView {
-        name: "upper".into(),
-        folder: folder_of(&c, "P"),
-        recursive: true,
-        query: Query::default(),
-        sort: Sort::default(),
-    };
+    let view = SavedView { name: "upper".into(), listing: Listing { folder: folder_of(&c, "P"), ..Listing::default() } };
     save_view(&c, &view).unwrap();
     let saved = crate::browse::read::views(&c).unwrap().remove(0);
-    assert_eq!(saved.folder, folder_of(&c, "P"), "kept as it was saved");
+    assert_eq!(saved.listing.folder, folder_of(&c, "P"), "kept as it was saved");
     let listed = |folder: &Merged, recursive: bool| -> Vec<i64> {
         list_grid(&c, folder, recursive, &Query::default(), Sort::default())
             .unwrap()

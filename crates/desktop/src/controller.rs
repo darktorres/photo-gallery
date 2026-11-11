@@ -78,7 +78,7 @@ fn start() -> Listing {
     if let Some(name) = options.apply_view
         && let Some(v) = app::get().views().view(&name).ok().flatten()
     {
-        listing = Listing { folder: v.folder, recursive: v.recursive, sort: v.sort, query: v.query };
+        listing = v.listing;
     }
     listing
 }

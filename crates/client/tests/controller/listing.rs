@@ -95,16 +95,15 @@ fn a_saved_view_replaces_the_listing_whole() {
     let mut listing = start();
     let view = SavedView {
         name: "gamma view".into(),
-        folder: folder("gamma"),
-        recursive: true,
-        query: Query { name: "cat".into(), ..Query::default() },
-        sort: Sort { key: SortKey::Size, descending: true },
+        listing: Listing {
+            folder: folder("gamma"),
+            recursive: true,
+            query: Query { name: "cat".into(), ..Query::default() },
+            sort: Sort { key: SortKey::Size, descending: true },
+        },
     };
     assert_eq!(update(&mut listing, Event::ViewApplied(view.clone())), OPEN);
-    assert_eq!(listing.folder, view.folder);
-    assert_eq!(listing.recursive, view.recursive);
-    assert_eq!(listing.sort, view.sort);
-    assert_eq!(listing.query, view.query);
+    assert_eq!(listing, view.listing);
 }
 
 /// A reveal shows the file's folder with nothing filtered (the sort and the subfolders kept), and selects the file in

@@ -18,13 +18,17 @@ pub struct Listing {
     pub query: Query,
 }
 
-/// A saved view (ImageRater's bookmarks): where, which files, in what order.
+/// The listing a start with nothing saved shows: every folder, with their subfolders, in the default order, unfiltered.
+impl Default for Listing {
+    fn default() -> Listing {
+        Listing { folder: Merged::default(), recursive: true, sort: Sort::default(), query: Query::default() }
+    }
+}
+
+/// A saved view (ImageRater's bookmarks): a listing with a name.
 #[derive(Clone, PartialEq, Debug, Serialize, Deserialize)]
 pub struct SavedView {
     pub name: String,
-    /// The folder, merged; empty for all folders.
-    pub folder: Merged,
-    pub recursive: bool,
-    pub query: Query,
-    pub sort: Sort,
+    #[serde(flatten)]
+    pub listing: Listing,
 }

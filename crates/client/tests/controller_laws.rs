@@ -140,10 +140,12 @@ proptest! {
         let odd = Merged::from(vec![Name::from_wide(&[0x61, 0xD800]), Name::from_raw(b"x\xFF")]);
         let view = SavedView {
             name: "odd".into(),
-            folder: odd.clone(),
-            recursive: index,
-            query: Query::default(),
-            sort: Sort { key: SortKey::Name, descending: index },
+            listing: Listing {
+                folder: odd.clone(),
+                recursive: index,
+                query: Query::default(),
+                sort: Sort { key: SortKey::Name, descending: index },
+            },
         };
         let events = [
             Event::Size(size),

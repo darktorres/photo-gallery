@@ -29,7 +29,7 @@ pub(crate) fn write_transaction(conn: &Connection) -> rusqlite::Result<Transacti
 /// migrations and takes the old rows with their ids ([`carry_rows`]), and the old file is moved aside. A catalog of
 /// this build's schema at an earlier version is migrated forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES];
+pub(crate) const MIGRATIONS: &[&str] = &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES, TO_5_SESSION];
 
 /// Version 2: `files.changed` (`browse::read::changes_since`) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -135,6 +135,39 @@ const TO_4_FAILURES: &str = concat!(
     "BEGIN\n    DELETE FROM file_failures WHERE file_id = new.id;\nEND;\n",
     "INSERT INTO meta(key, value) VALUES ('thumbs_version', 0);\n",
 );
+
+/// Version 5: the session is a listing (`pg_model::view::Listing`) in one row, with the saved views' columns, which the
+/// views' row code reads and writes (`browse::read::listing_at`, `browse::writes::listing_values`). It was a store of
+/// text keys (`folder` as the JSON of the folder's parts, `recursive` as `true` or `false`, `query`, `sort`); the row is
+/// made from them once, here. A part of the folder is a JSON string, or `{"b": "<hex>"}` for one that is not UTF-8
+/// (`Name`'s JSON), and the parts are joined by the separator of the catalog's rules, as a view's folder is stored. A
+/// folder that is not a JSON array is all folders, as the old reader took it; a key never saved takes the old reader's default.
+const TO_5_SESSION: &str = r#"CREATE TABLE session_row(
+    id        INTEGER PRIMARY KEY CHECK (id = 1),
+    folder    BLOB NOT NULL,     -- as views.folder
+    recursive INTEGER NOT NULL,
+    query     TEXT NOT NULL,     -- query::Query as JSON
+    sort      TEXT NOT NULL      -- query::Sort as JSON
+);
+INSERT INTO session_row(id, folder, recursive, query, sort)
+SELECT 1,
+    CAST(COALESCE((
+        SELECT group_concat(
+            CASE part.type WHEN 'text' THEN part.atom ELSE unhex(json_extract(part.value, '$.b')) END,
+            (SELECT CASE value WHEN 'windows' THEN '\' ELSE '/' END FROM meta WHERE key = 'path_rules')
+            ORDER BY part.key)
+        FROM json_each(
+            CASE WHEN json_valid(folder.value) AND json_type(folder.value) = 'array' THEN folder.value ELSE '[]' END
+        ) AS part
+    ), '') AS BLOB),
+    COALESCE((SELECT value FROM session WHERE key = 'recursive'), 'true') = 'true',
+    COALESCE((SELECT value FROM session WHERE key = 'query'), ''),
+    COALESCE((SELECT value FROM session WHERE key = 'sort'), '')
+FROM (SELECT COALESCE((SELECT value FROM session WHERE key = 'folder'), '[]') AS value) AS folder
+WHERE EXISTS (SELECT 1 FROM session);
+DROP TABLE session;
+ALTER TABLE session_row RENAME TO session;
+"#;
 
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
 /// schema, so a SQLite file that merely has the same tables is not taken for a catalog.
@@ -299,6 +332,8 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     }
     // The saved views' folders were text before they were typed (the stored form is the rules' bytes now).
     let text_folders = column_type(&tx, "carried", "views", "folder")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
+    // The session was text keys before it was one row (version 5): its listing is read from them, after the copy.
+    let session_keys = table_columns(&tx, "carried", "session")?.iter().any(|c| c == "key");
     // The queued writes' temp files were text too: a TEXT value stays TEXT in the BLOB column, so it is cast.
     let text_temps =
         column_type(&tx, "carried", "file_writes", "temp")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
@@ -326,6 +361,9 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     if text_folders {
         convert_text_folders(&tx, rules)?;
     }
+    if session_keys {
+        carry_session_keys(&tx, rules, text_folders)?;
+    }
     if text_temps {
         tx.execute("UPDATE main.file_writes SET temp = CAST(temp AS BLOB) WHERE temp IS NOT NULL", [])?;
     }
@@ -336,10 +374,9 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     Ok(())
 }
 
-/// The saved views' folders and the session's `folder`, copied as text from a catalog before S-17.8: each becomes the
-/// typed form (a view's folder is the rules' stored bytes, the session's is the JSON of the folder). The text is
-/// split by the rules, so a folder that the old text named is the same folder; a NUL in it is refused, and the copy
-/// is rolled back with the rest.
+/// The saved views' folders, copied as text from a catalog before S-17.8: each becomes the rules' stored bytes. The
+/// text is split by the rules, so a folder that the old text named is the same folder; a NUL in it is refused, and the
+/// copy is rolled back with the rest.
 fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Result<()> {
     let views: Vec<(String, Vec<u8>)> = tx
         .prepare("SELECT name, CAST(folder AS BLOB) FROM main.views")?
@@ -354,15 +391,35 @@ fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Res
             rusqlite::params![rules.join_merged(&folder), name],
         )?;
     }
-    let session: Option<Vec<u8>> = tx
-        .query_row("SELECT CAST(value AS BLOB) FROM main.session WHERE key = 'folder'", [], |r| r.get(0))
-        .optional()?;
-    if let Some(text) = session {
-        let folder =
-            rules.parse_merged(&text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?;
-        tx.execute("UPDATE main.session SET value = ?1 WHERE key = 'folder'", [pg_query::to_json(&folder)])?;
-    }
     Ok(())
+}
+
+/// The session of a catalog from before version 5, text keys, carried as its one row: the listing the old keys
+/// named, each key the old reader's default where it was never saved. Its `folder` was the JSON of the folder's parts,
+/// or (`text_folders`: before S-17.8) the folder's text, split by the rules; a NUL in that text is refused, and the
+/// copy is rolled back with the rest. Nothing is written for a session never saved.
+fn carry_session_keys(tx: &rusqlite::Transaction<'_>, rules: PathRules, text_folders: bool) -> Result<()> {
+    let keys: Vec<(String, Vec<u8>)> = tx
+        .prepare("SELECT key, CAST(value AS BLOB) FROM carried.session")?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
+        .collect::<rusqlite::Result<_>>()?;
+    if keys.is_empty() {
+        return Ok(());
+    }
+    let value = |key: &str| keys.iter().find(|(k, _)| k == key).map(|(_, v)| String::from_utf8_lossy(v).into_owned());
+    let folder = match keys.iter().find(|(k, _)| k == "folder") {
+        Some((_, text)) if text_folders => {
+            rules.parse_merged(text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?
+        }
+        _ => pg_query::from_json(&value("folder").unwrap_or_default()),
+    };
+    let listing = pg_model::view::Listing {
+        folder,
+        recursive: value("recursive").is_none_or(|r| r == "true"),
+        sort: pg_query::from_json(&value("sort").unwrap_or_default()),
+        query: pg_query::from_json(&value("query").unwrap_or_default()),
+    };
+    crate::browse::writes::put_session(tx, rules, &listing)
 }
 
 /// The column names of `table` in `schema` (`main` or an attached database); none when the table isn't there.
@@ -575,8 +632,7 @@ CREATE TABLE views(
     query     TEXT NOT NULL,     -- query::Query as JSON
     sort      TEXT NOT NULL      -- query::Sort as JSON
 );
--- Where the user was (the open view and the selected file), restored at start. `folder` is the JSON of the listing's
--- merged folder (an array of its parts, `[]` for all folders).
+-- The session as text keys, until version 5 makes it one row (TO_5_SESSION, where it is described).
 CREATE TABLE session(
     key   TEXT PRIMARY KEY,
     value TEXT NOT NULL
@@ -775,6 +831,39 @@ mod tests {
         expected_schemas_follow_the_version,
         expected_schemas_follow_the_version_windows,
         expected_schemas_follow_the_version_posix
+    );
+
+    /// Version 5 makes the session's text keys its one row: the folder's parts (one not UTF-8) joined by the rules'
+    /// separator, as a view's folder is stored, and the other keys as they were. A session never saved stays empty.
+    fn the_session_keys_become_its_row(rules: PathRules) {
+        let conn = Connection::open_in_memory().unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, BASELINE_VERSION + 3).unwrap();
+        conn.execute_batch(
+            r#"INSERT INTO session(key, value) VALUES
+                 ('folder', '["pinterest",{"b":"78ff"}]'), ('recursive', 'false'), ('sort', '{"key":"size"}');"#,
+        )
+        .unwrap();
+        bring_to(&conn, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        let row: (i64, Vec<u8>, bool, String, String) = conn
+            .query_row("SELECT id, folder, recursive, query, sort FROM session", [], |r| {
+                Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?))
+            })
+            .unwrap();
+        let folder = pg_model::rules::Merged::from(vec![
+            pg_model::name::Name::from("pinterest"),
+            pg_model::name::Name::from_raw(b"x\xFF"),
+        ]);
+        assert_eq!(row, (1, rules.join_merged(&folder), false, String::new(), r#"{"key":"size"}"#.to_string()));
+
+        let empty = Connection::open_in_memory().unwrap();
+        bring_to(&empty, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();
+        assert_eq!(empty.query_row("SELECT count(*) FROM session", [], |r| r.get::<_, i64>(0)).unwrap(), 0);
+    }
+
+    under_both_rules!(
+        the_session_keys_become_its_row,
+        the_session_keys_become_its_row_windows,
+        the_session_keys_become_its_row_posix
     );
 
     fn triggers(conn: &Connection) -> Vec<String> {

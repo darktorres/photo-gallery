@@ -1,5 +1,6 @@
-//! The browsing side's writes that aren't the file queue: a saved view, and the place the session was left at.
-//! The ratings and turns the user makes are in `crate::writes`.
+//! The browsing side's writes that aren't the file queue: a saved view, and the place the session was left at. Both are
+//! listings in the same columns (`browse::read::listing_at` reads them back). The ratings and turns the user makes are
+//! in `crate::writes`.
 
 use crate::error::Result;
 use rusqlite::{Connection, params};
@@ -7,15 +8,20 @@ use rusqlite::{Connection, params};
 use crate::Catalog;
 use pg_query::to_json;
 
-use pg_model::view::SavedView;
+use pg_model::rules::PathRules;
+use pg_model::view::{Listing, SavedView};
+
+/// A listing's column values, `folder` (stored under `rules`), `recursive`, `query` and `sort`, in that order.
+pub(crate) fn listing_values(rules: PathRules, listing: &Listing) -> (Vec<u8>, bool, String, String) {
+    (rules.join_merged(&listing.folder), listing.recursive, to_json(&listing.query), to_json(&listing.sort))
+}
 
 /// Save a view, replacing one of the same name.
 pub fn save_view(catalog: &Catalog, v: &SavedView) -> Result<()> {
-    let conn = &catalog.conn;
-    let folder = catalog.rules().join_merged(&v.folder);
-    conn.execute(
+    let (folder, recursive, query, sort) = listing_values(catalog.rules(), &v.listing);
+    catalog.conn.execute(
         "INSERT OR REPLACE INTO views(name, folder, recursive, query, sort) VALUES (?1, ?2, ?3, ?4, ?5)",
-        params![v.name, folder, v.recursive, to_json(&v.query), to_json(&v.sort)],
+        params![v.name, folder, recursive, query, sort],
     )?;
     Ok(())
 }
@@ -26,22 +32,18 @@ pub fn delete_view(catalog: &Catalog, name: &str) -> Result<()> {
     Ok(())
 }
 
-pub fn session_set(catalog: &Catalog, key: &str, value: &str) -> Result<()> {
-    put_session(&catalog.conn, key, value)
+/// Remember where the user is: the session's one row.
+pub fn save_session_listing(catalog: &Catalog, listing: &Listing) -> Result<()> {
+    put_session(&catalog.conn, catalog.rules(), listing)
 }
 
-fn put_session(conn: &Connection, key: &str, value: &str) -> Result<()> {
-    conn.execute("INSERT OR REPLACE INTO session(key, value) VALUES (?1, ?2)", [key, value])?;
-    Ok(())
-}
-
-/// Several session keys, in one transaction.
-pub fn session_set_many(catalog: &Catalog, values: &[(&str, &str)]) -> Result<()> {
-    let tx = crate::schema::write_transaction(&catalog.conn)?;
-    for (key, value) in values {
-        put_session(&tx, key, value)?;
-    }
-    tx.commit()?;
+/// The session's row on `conn` (the rebuild's copy writes it too).
+pub(crate) fn put_session(conn: &Connection, rules: PathRules, listing: &Listing) -> Result<()> {
+    let (folder, recursive, query, sort) = listing_values(rules, listing);
+    conn.execute(
+        "INSERT OR REPLACE INTO session(id, folder, recursive, query, sort) VALUES (1, ?1, ?2, ?3, ?4)",
+        params![folder, recursive, query, sort],
+    )?;
     Ok(())
 }
 
@@ -49,7 +51,7 @@ pub fn session_set_many(catalog: &Catalog, values: &[(&str, &str)]) -> Result<()
 mod tests {
     use super::*;
     use crate::browse::fixtures::{by, library, under_both_rules};
-    use crate::browse::read::{session_get, views};
+    use crate::browse::read::{session_listing, views};
     use pg_model::name::Name;
     use pg_model::query::{MediaType, Query, RatingFilter, SortKey};
     use pg_model::rules::{Merged, PathRules};
@@ -58,10 +60,12 @@ mod tests {
         let c = library(rules);
         let v = SavedView {
             name: "Unrated videos".into(),
-            folder: Merged::from(vec![Name::from("p")]),
-            recursive: true,
-            query: Query { types: vec![MediaType::Video], ratings: vec![RatingFilter::Unrated], ..Query::default() },
-            sort: by(SortKey::Size, true),
+            listing: Listing {
+                folder: Merged::from(vec![Name::from("p")]),
+                recursive: true,
+                query: Query { types: vec![MediaType::Video], ratings: vec![RatingFilter::Unrated], ..Query::default() },
+                sort: by(SortKey::Size, true),
+            },
         };
         save_view(&c, &v).unwrap();
         assert_eq!(views(&c).unwrap(), [v]);
@@ -85,30 +89,28 @@ mod tests {
         let folder = Merged::from(vec![Name::from_raw(b"x\xFF"), Name::from_wide(&[0x61, 0xD800])]);
         let v = SavedView {
             name: "odd".into(),
-            folder,
-            recursive: true,
-            query: Query::default(),
-            sort: by(SortKey::Name, false),
+            listing: Listing { folder, recursive: true, query: Query::default(), sort: by(SortKey::Name, false) },
         };
         save_view(&c, &v).unwrap();
         assert_eq!(views(&c).unwrap(), [v]);
     }
 
-    // The place's keys are stored as text and read back as they were written, several in one transaction, and a
-    // replaced key keeps its last value.
-    fn session_keys_read_back_as_written(rules: PathRules) {
+    // The session is one row: none before the first save, then the listing last saved, read back as it was written.
+    fn the_session_reads_back_its_last_listing(rules: PathRules) {
         let c = library(rules);
-        session_set_many(&c, &[("folder", "p\\q"), ("recursive", "false"), ("sort", "{}")]).unwrap();
-        session_set(&c, "sort", "{\"key\":\"size\"}").unwrap();
-        assert_eq!(session_get(&c, "folder").unwrap().as_deref(), Some("p\\q"));
-        assert_eq!(session_get(&c, "recursive").unwrap().as_deref(), Some("false"));
-        assert_eq!(session_get(&c, "sort").unwrap().as_deref(), Some("{\"key\":\"size\"}"));
-        assert_eq!(session_get(&c, "query").unwrap(), None);
+        assert_eq!(session_listing(&c).unwrap(), None);
+        let first = Listing { folder: Merged::from(vec![Name::from("p"), Name::from("q")]), ..Listing::default() };
+        save_session_listing(&c, &first).unwrap();
+        let second = Listing { recursive: false, sort: by(SortKey::Size, true), ..first };
+        save_session_listing(&c, &second).unwrap();
+        assert_eq!(session_listing(&c).unwrap(), Some(second));
+        let rows: i64 = c.conn.query_row("SELECT COUNT(*) FROM session", [], |r| r.get(0)).unwrap();
+        assert_eq!(rows, 1);
     }
 
     under_both_rules!(
-        session_keys_read_back_as_written,
-        session_keys_read_back_as_written_windows,
-        session_keys_read_back_as_written_posix
+        the_session_reads_back_its_last_listing,
+        the_session_reads_back_its_last_listing_windows,
+        the_session_reads_back_its_last_listing_posix
     );
 }

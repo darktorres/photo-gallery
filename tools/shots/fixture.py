@@ -73,6 +73,11 @@ def typed_folders(conn: sqlite3.Connection) -> bool:
     return any(name == "folder" and kind.upper() == "BLOB" for _, name, kind, *_ in columns)
 
 
+def session_row(conn: sqlite3.Connection) -> bool:
+    # The layout M-43 made: the session is one row (an `id` column), not text keys.
+    return any(name == "id" for _, name, *_ in conn.execute("pragma table_info(session)").fetchall())
+
+
 def views(catalog: Path) -> None:
     conn = sqlite3.connect(catalog)
     alpha = folder_path(conn, "folder-00")
@@ -84,14 +89,17 @@ def views(catalog: Path) -> None:
         "insert or replace into views(name, folder, recursive, query, sort) values (?, ?, ?, ?, ?)",
         ("alpha", view_folder, 1, "{}", '{"key":"name","descending":true}'),
     )
-    session = [
-        ("folder", session_folder),
-        ("recursive", "false"),
-        ("query", "{}"),
-        ("sort", '{"key":"name","descending":false}'),
-    ]
-    for key, value in session:
-        conn.execute("insert or replace into session(key, value) values (?, ?)", (key, value))
+    sort = '{"key":"name","descending":false}'
+    if session_row(conn):
+        # Version 5 (M-43): the session is one row in the views' columns, its folder stored as a view's is.
+        conn.execute(
+            "insert or replace into session(id, folder, recursive, query, sort) values (1, ?, ?, ?, ?)",
+            (beta.encode("utf-8"), 0, "{}", sort),
+        )
+    else:
+        session = [("folder", session_folder), ("recursive", "false"), ("query", "{}"), ("sort", sort)]
+        for key, value in session:
+            conn.execute("insert or replace into session(key, value) values (?, ?)", (key, value))
     conn.commit()
     conn.close()
 

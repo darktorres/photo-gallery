@@ -9,6 +9,10 @@ workspace = true
 
 # The pass that looks for the borders due in the library (`pg_analysis::borders` on each file, decoded at full size)
 # and stores them. Its tests need a catalog, and are `pg-library`'s (they prepare one with `pg_library::versions`).
+# The `fault` feature lets those tests make the detector panic on a file (`pg_borders::fault`).
+[features]
+fault = []
+
 [dependencies]
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }

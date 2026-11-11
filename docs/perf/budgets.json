@@ -1,0 +1,17 @@
+{
+  "comparison": "The notifications plan's F1 (storage, the writer and the scan) against the baseline F0 recorded; inbox-refresh against its S3 form, recorded at F1. Used once: just perf --budgets (tools/perf_check.py, tools/perf-compare.py). Changes are fractions of the baseline's count.",
+  "budgets": {
+    "scan-walk": {
+      "max": 0.10,
+      "why": "batching and the scan lease"
+    },
+    "import-flush": {
+      "max": 0.15,
+      "why": "the analysis triggers that keep the import ledger"
+    },
+    "inbox-refresh": {
+      "max": -0.90,
+      "why": "must fall by 90% or more: the ledger's cheap state on the partial index instead of the counts"
+    }
+  }
+}

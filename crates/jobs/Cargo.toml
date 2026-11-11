@@ -7,7 +7,8 @@ publish.workspace = true
 [lints]
 workspace = true
 
-# The model for the progress it reports (`pg_model::progress`): data the front ends word.
+# The model for the progress it reports (`pg_model::progress`) and the notices its workers post (`NoticeSink`): data
+# the front ends word.
 [dependencies]
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }

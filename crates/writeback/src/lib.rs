@@ -15,6 +15,10 @@
 //! A crash or a failure during step 2 leaves the row with its temp set: the next attempt (and the next start)
 //! finishes the copy from it. A recorded temp is never deleted before the write is recorded, nor given up: while the
 //! original may be part-written, it is the only whole copy of the new content.
+//!
+//! What the user is told is posted here, where it changes, through the writer's [`NoticeSink`]: its latest failure
+//! (`write-failed`, kept until the next success or until the write it names is dropped; [`write_failed_notice`]), and
+//! the writes it dropped because their files went (`write-dropped`, an event).
 
 use pg_model::ids::FileId;
 use pg_model::turns::Turns;
@@ -29,6 +33,7 @@ use pg_catalog::queue::{Job, MAX_ATTEMPTS, Rewrite, WriteEffect};
 use pg_catalog::{Catalog, WriteTarget};
 use pg_edit::rotate::{Outcome, rotate};
 use pg_exiftool::ExifTool;
+use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Watch};
 use pg_jobs::failure::Cause;
 use pg_jobs::panics;
@@ -37,6 +42,7 @@ use pg_metadata::{self, Meta, MetaScratch, patch_orientation};
 use pg_model::analysis::FileHash;
 use pg_model::format::Format;
 use pg_model::media::Kind;
+use pg_model::notice::{ERROR_CAP, Key, Notice, tidy};
 use pg_model::rules::Path as RulePath;
 
 use pg_model::write::{Write, WriteKind};
@@ -100,6 +106,27 @@ impl std::fmt::Display for WriteError {
     }
 }
 
+/// The notice of the writer's failure `error`: its cause (a panic's message, or the error's text, capped as a notice
+/// holds it), and for a copy that may be incomplete, the file and its copy.
+pub fn write_failed_notice(error: &WriteError) -> Notice {
+    let (cause, file, temp) = match error {
+        WriteError::Failed(cause) => (cause, None, None),
+        WriteError::CopyIncomplete { file, temp, cause } => (cause, Some(file.clone()), Some(temp.clone())),
+    };
+    let (error, panicked) = match cause {
+        Cause::Error(text) => (tidy(text, ERROR_CAP), false),
+        Cause::Panicked(message) => (tidy(message, ERROR_CAP), true),
+    };
+    Notice::WriteFailed { error, panicked, file, temp }
+}
+
+/// The writes a drain dropped because their files went, not yet told: how many, and the kind of the latest.
+#[derive(Default)]
+struct Dropped {
+    count: u64,
+    last: Option<WriteKind>,
+}
+
 /// The original a write changes, in the three forms its steps take: its disk path (std's calls), its path for the
 /// system's open that denies other writers, and its path as the messages show it.
 #[derive(Clone, Copy)]
@@ -140,6 +167,8 @@ struct Inner {
     turned: Watch<u64>,
     /// Told what changed (`Change::Writes`, `Change::Turned`).
     changes: Arc<Bus<Change>>,
+    /// Where what the user is told goes: the latest failure, and the writes dropped.
+    notices: Arc<dyn NoticeSink>,
     /// Where the tests ask it to fail.
     #[cfg(any(test, feature = "fault"))]
     fault: Option<fault::Fault>,
@@ -149,9 +178,30 @@ struct Inner {
 }
 
 impl Inner {
+    /// Every change to the status goes through here: the latest failure is told when it comes or changes (once: the
+    /// same failure again is not news), and its kept notice goes when it goes back to none (a write went through, or
+    /// the write it names was dropped).
     fn update_status(&self, change: impl FnOnce(&mut WriteStatus)) {
-        self.status.update(change);
+        let error = self.status.update(|s| {
+            let before = s.error.clone();
+            change(s);
+            (s.error != before).then(|| s.error.clone())
+        });
+        // Posted with the status let go: a post only queues.
+        match error {
+            Some(Some(error)) => self.notices.post(write_failed_notice(&error)),
+            Some(None) => self.notices.clear(Key::all("write-failed", None).to_buf()),
+            None => {}
+        }
         self.changes.publish(Change::Writes);
+    }
+
+    /// Tell the writes dropped since the last time, as one event.
+    fn tell_dropped(&self, dropped: &mut Dropped) {
+        let Dropped { count, last } = std::mem::take(dropped);
+        if let Some(write) = last.filter(|_| count > 0) {
+            self.notices.post(Notice::WriteDropped { write, count });
+        }
     }
 
     fn turned_once(&self) {
@@ -167,15 +217,21 @@ pub struct Writer {
 }
 
 impl Writer {
-    /// Start the writer thread. What it changes is published on `changes` (`Change`). An error if the thread can't be
-    /// spawned.
-    pub fn start(catalog_path: PathBuf, thumbs: &'static ThumbCache, changes: Arc<Bus<Change>>) -> Result<Writer> {
+    /// Start the writer thread. What it changes is published on `changes` (`Change`), and what it tells the user goes to
+    /// `notices`. An error if the thread can't be spawned.
+    pub fn start(
+        catalog_path: PathBuf,
+        thumbs: &'static ThumbCache,
+        changes: Arc<Bus<Change>>,
+        notices: Arc<dyn NoticeSink>,
+    ) -> Result<Writer> {
         Writer::spawn(Inner {
             catalog_path,
             thumbs,
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
             changes,
+            notices,
             #[cfg(any(test, feature = "fault"))]
             fault: None,
             #[cfg(any(test, feature = "fault"))]
@@ -191,6 +247,7 @@ impl Writer {
         thumbs: &'static ThumbCache,
         changes: Arc<Bus<Change>>,
         fault: fault::Fault,
+        notices: Arc<dyn NoticeSink>,
     ) -> Result<Writer> {
         Writer::spawn(Inner {
             catalog_path,
@@ -198,6 +255,7 @@ impl Writer {
             status: Watch::new(WriteStatus::default()),
             turned: Watch::new(0),
             changes,
+            notices,
             fault: Some(fault),
             fault_fired: std::sync::atomic::AtomicBool::new(false),
         })
@@ -276,12 +334,27 @@ impl Inner {
         Ok(())
     }
 
-    /// Work through the queue until nothing is ready; then wait for what is still settling.
+    /// Work through the queue until nothing is ready; then wait for what is still settling. The writes it dropped are
+    /// told as one event, before it waits and when it ends.
     ///
     /// A panic in a job is that job's failure (`panics::guard`), counted as any other. A panic outside one is not
     /// caught: nothing would record it, so a writer kept running would meet it again at once. It ends the thread, which
     /// [`Writer::is_running`] reports.
     fn drain(&self, waker: &Waker<'_>, catalog: &Catalog, exiftool: &mut Option<ExifTool>) -> Result<()> {
+        let mut dropped = Dropped::default();
+        let drained = self.drain_queue(waker, catalog, exiftool, &mut dropped);
+        self.tell_dropped(&mut dropped);
+        drained
+    }
+
+    /// [`Inner::drain`]'s loop, counting the writes it drops into `dropped`.
+    fn drain_queue(
+        &self,
+        waker: &Waker<'_>,
+        catalog: &Catalog,
+        exiftool: &mut Option<ExifTool>,
+        dropped: &mut Dropped,
+    ) -> Result<()> {
         loop {
             if waker.quitting() {
                 return Ok(());
@@ -293,6 +366,7 @@ impl Inner {
             // Finishing interrupted copies first; then the oldest settled change (`Catalog::next_write`).
             let Some(job) = catalog.next_write(SETTLE_SECS)? else {
                 if catalog.writes_attemptable()? {
+                    self.tell_dropped(dropped);
                     // Come back when the newest change has settled (or at once for a new one); a stop ends the wait.
                     if waker.wait(Some(Duration::from_secs(u64::try_from(SETTLE_SECS)?))) == Woke::Quit {
                         return Ok(());
@@ -321,6 +395,9 @@ impl Inner {
                     return Ok(());
                 }
                 catalog.drop_gone_write(&job)?;
+                // A lost edit is a fact, told once as an event (with the others this drain dropped), not a condition.
+                dropped.count = dropped.count.saturating_add(1);
+                dropped.last = Some(job.kind());
                 self.update_status(|s| {
                     s.dropped = s.dropped.saturating_add(1);
                     s.last_dropped = Some(job.kind());
@@ -643,7 +720,89 @@ fn shown_file(catalog: &Catalog, job: &Job) -> String {
 
 #[cfg(test)]
 mod tests {
+    use pg_jobs_testkit::{Call, Quiet, RecordingSink};
+
     use super::*;
+
+    /// The writer's state without its thread, telling `sink`.
+    fn writer_state(prefix: &str, sink: Arc<RecordingSink>) -> (Inner, Quiet<pg_thumbcache::Event>) {
+        let dir = pg_testkit::run_folder("scratch_writeback", prefix).unwrap();
+        let (events, quiet) = Quiet::bus();
+        let cache = ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            "a catalog",
+            pg_thumbcache::Cap::from_bytes(1 << 20),
+            1,
+            events,
+        )
+        .unwrap();
+        let inner = Inner {
+            catalog_path: dir.join("catalog.sqlite"),
+            thumbs: Box::leak(Box::new(cache)),
+            status: Watch::new(WriteStatus::default()),
+            turned: Watch::new(0),
+            changes: Arc::new(Bus::new(16)),
+            notices: sink,
+            fault: None,
+            fault_fired: std::sync::atomic::AtomicBool::new(false),
+        };
+        (inner, quiet)
+    }
+
+    /// The status's one choke point tells a failure when it comes or changes, not again while it holds, and clears it
+    /// when it goes; the drops are told as one event, with their count and the latest's kind.
+    #[test]
+    fn the_status_tells_a_failure_once_and_its_end_and_the_drops_as_one_event() {
+        let sink = RecordingSink::new();
+        let (inner, _quiet) = writer_state("writeback-status", sink.clone());
+        let failed = |text: &str| WriteError::Failed(Cause::Error(text.into()));
+        inner.update_status(|s| s.queued = 3);
+        assert!(sink.take().is_empty(), "no failure, nothing told");
+        inner.update_status(|s| s.error = Some(failed("disk full")));
+        inner.update_status(|s| s.error = Some(failed("disk full")));
+        inner.update_status(|s| s.error = Some(failed("read-only")));
+        inner.update_status(|s| s.error = None);
+        inner.update_status(|s| s.error = None);
+        assert_eq!(
+            sink.take(),
+            [
+                Call::Post(write_failed_notice(&failed("disk full"))),
+                Call::Post(write_failed_notice(&failed("read-only"))),
+                Call::Clear(Key::all("write-failed", None).to_buf()),
+            ]
+        );
+        let mut dropped = Dropped::default();
+        inner.tell_dropped(&mut dropped);
+        assert!(sink.take().is_empty(), "nothing dropped, nothing told");
+        dropped = Dropped { count: 2, last: Some(WriteKind::Turns) };
+        inner.tell_dropped(&mut dropped);
+        assert_eq!(sink.take(), [Call::Post(Notice::WriteDropped { write: WriteKind::Turns, count: 2 })]);
+        assert_eq!(dropped.count, 0, "told once");
+    }
+
+    #[test]
+    fn a_failure_is_told_with_its_cause_capped_and_an_incomplete_copy_names_its_files() {
+        let failed = WriteError::Failed(Cause::Error("x".repeat(ERROR_CAP + 10)));
+        let Notice::WriteFailed { error, panicked, file, temp } = write_failed_notice(&failed) else {
+            panic!("a write-failed notice")
+        };
+        assert!(error.len() <= ERROR_CAP && error.ends_with('…'), "{error}");
+        assert_eq!((panicked, file, temp), (false, None, None));
+        let incomplete = WriteError::CopyIncomplete {
+            file: r"D:\p\a.jpg".into(),
+            temp: r"D:\p\.a.jpg.rating.pg-write".into(),
+            cause: Cause::Panicked("boom".into()),
+        };
+        assert_eq!(
+            write_failed_notice(&incomplete),
+            Notice::WriteFailed {
+                error: "boom".into(),
+                panicked: true,
+                file: Some(r"D:\p\a.jpg".into()),
+                temp: Some(r"D:\p\.a.jpg.rating.pg-write".into()),
+            }
+        );
+    }
 
     #[test]
     fn an_incomplete_copy_names_the_file_and_its_temp() {

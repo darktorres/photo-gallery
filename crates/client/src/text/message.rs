@@ -242,6 +242,16 @@ messages! {
     DetailsNotLogged { log: String, error: String } => "details-not-logged",
     /// A notice as one line: its title, then its details.
     NoticeLine { title: String, body: String } => "notice-line",
+    /// How many of a ledger entry's failures came after the user dismissed it.
+    LedgerSinceDismissed { count: usize } => "ledger-since-dismissed",
+    /// A ledger's failed file, as Copy puts it: its path and its error.
+    FailedFileLine { path: String, error: String } => "failed-file-line",
+    /// Why a folder of the scans' ledger failed, by its reason's code.
+    FailedFolderReason { reason: String } => "failed-folder-reason",
+    /// A folder of the scans' ledger, as Copy puts it: its path, why (`FailedFolderReason`'s words) and the error.
+    FailedFolderLine { path: String, why: String, error: String } => "failed-folder-line",
+    /// The line above a library folder's failed folders, in a Copy.
+    FailedFolderGroup { root: String } => "failed-folder-group",
 }
 
 /// The line `message` reads as in the English words.

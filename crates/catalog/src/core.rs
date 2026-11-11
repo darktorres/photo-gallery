@@ -1,14 +1,17 @@
-//! The catalog's lifecycle: `Catalog` prepared, opened and closed, its transaction `Tx` and the writers it hands out.
-//! Uses `lifecycle`, `rebuild`, `writers`, `schema`, `types` and `error`. Every other concern's methods are in its own
-//! module's `impl Catalog` (`roots`, `lookup`, `work`, `borders`, `browse`, `queue`, `dups`, `pair`, `inbox`,
-//! `ledger`); this calls none of them.
+//! The catalog's lifecycle: `Catalog` prepared, opened and closed, its transaction `Tx` and the writers it hands out,
+//! and a walk's lease (`ScanLease`, which `Catalog::begin_scan` takes). Uses `lifecycle`, `rebuild`, `writers`,
+//! `schema`, `transaction`, `types` and `error`. Every other concern's methods are in its own module's `impl Catalog`
+//! (`roots`, `lookup`, `work`, `borders`, `browse`, `queue`, `dups`, `pair`, `inbox`, `ledger`); this calls none of
+//! them.
 
+use std::ops::{Deref, DerefMut};
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use anyhow::{Context, anyhow};
-use rusqlite::{Connection, OpenFlags, Transaction};
+use rusqlite::{Connection, OpenFlags};
 
 use pg_model::ids::ScanId;
 use pg_model::rules::{Path as RulePath, PathRules};
@@ -22,9 +25,9 @@ use crate::rebuild::{back_up, db_file, rebuild};
 use crate::schema::{
     BASELINE, MIGRATIONS, SETTINGS, bring_to, current_expected, current_version, expected, mismatch, version_of,
 };
-use crate::transaction::write_transaction;
+use crate::transaction::{WriteTx, write_transaction};
 use crate::types::{Rebuilt, Versions};
-use crate::writers::{AnalysisWriter, BordersWriter, ScanWriter};
+use crate::writers::{AnalysisWriter, BordersWriter, LedgerWriter, ScanWriter};
 
 pub struct Catalog {
     pub(crate) conn: Connection,
@@ -78,6 +81,11 @@ impl Catalog {
             }
             Some(found) => mismatch(&conn, found, &expected(found)?)?,
         };
+        // A catalog of this build's schema whose paths were stored under other rules is refused before anything is
+        // written to it: its migrations would convert its rows under these rules (a rebuild checks them itself).
+        if why.is_none() && version.is_some_and(|found| found > 0) {
+            check_rules(&conn, path, rules)?;
+        }
         // The lock order of a change: the exclusive hold first, kept through the change. Without it a change is refused
         // before anything is moved; a catalog that needs no change is held shared, below, as any open catalog is.
         let changes = why.is_some() || version.is_some_and(|found| found != current);
@@ -175,12 +183,19 @@ impl Catalog {
     pub fn release_memory(&self) -> Result<()> {
         Ok(self.conn.release_memory()?)
     }
+
+    /// How long a statement on this connection waits for a lock another connection holds before it fails with
+    /// `SQLITE_BUSY` ([`Error::is_busy`]). Every connection starts at 5 s (`SETTINGS`); a writer that retries on its
+    /// own, and checks for a stop between tries, sets a shorter one.
+    pub fn set_busy_timeout(&self, timeout: Duration) -> Result<()> {
+        Ok(self.conn.busy_timeout(timeout)?)
+    }
 }
 
-/// A transaction on the catalog. It hands out the writers of the scan, the import and the borders, so a batch of
-/// their writes commits together, with `commit`.
+/// A transaction on the catalog. It hands out the writers of the scan, the import, the borders and the failure
+/// ledger, so a batch of their writes commits together, with `commit`.
 pub struct Tx<'c> {
-    inner: Transaction<'c>,
+    inner: WriteTx<'c>,
     rules: PathRules,
 }
 
@@ -192,9 +207,16 @@ impl Catalog {
 }
 
 impl Tx<'_> {
-    /// The writer of the scan `scan` of `root`, in this transaction.
+    /// The writer of the scan `scan` of `root`, in this transaction. Making it renews the walk's lease (the heartbeat
+    /// of each batch the walk writes), and resolves the library folder that holds `root`, once, for the folder ledger.
     pub fn scan_writer(&self, scan: ScanId, root: &RulePath) -> Result<ScanWriter<'_>> {
         ScanWriter::new(&self.inner, scan, self.rules, root)
+    }
+
+    /// The writer of the failure ledger, in this transaction: what a batch failed on is stored with what it made, or
+    /// neither.
+    pub fn ledger_writer(&self) -> LedgerWriter<'_> {
+        LedgerWriter::new(&self.inner)
     }
 
     /// The writer of the analyses, in this transaction. `import` is the build's IMPORT_VERSION (`Versions::import`),
@@ -212,6 +234,79 @@ impl Tx<'_> {
     pub fn commit(self) -> Result<()> {
         Ok(self.inner.commit()?)
     }
+}
+
+/// A walk's lease of the folder it walks, which [`Catalog::begin_scan`] takes: while it holds, no other walk of a
+/// folder that overlaps it begins (one is inside the other), in this process or another, so two walks never interleave
+/// their writes. The walk renews it with each batch it writes (`Tx::scan_writer`, or [`ScanLease::renew`] while it
+/// waits); a lease with no heartbeat for `SCAN_LEASE_SECS` is taken to be a crashed walk's, and expires.
+///
+/// It is released at the end of a complete walk, in `Catalog::mark_missing`'s last transaction, or by
+/// [`ScanLease::release`], and in any case when it is dropped (a stop, an error or a panic leaves through here). It
+/// borrows the catalog and is used as it: the walk reads and writes through the lease.
+pub struct ScanLease<'c> {
+    catalog: &'c mut Catalog,
+    scan: ScanId,
+}
+
+impl<'c> ScanLease<'c> {
+    pub(crate) fn new(catalog: &'c mut Catalog, scan: ScanId) -> ScanLease<'c> {
+        ScanLease { catalog, scan }
+    }
+
+    /// The walk's `scans` row, which its writes are stamped with.
+    pub fn id(&self) -> ScanId {
+        self.scan
+    }
+
+    /// The walk is alive: its heartbeat is now. One short write, outside any transaction of the walk's. False when the
+    /// lease is gone (released, or expired and taken by another walk): the walk can no longer tell that it is alone.
+    pub fn renew(&self) -> Result<bool> {
+        let renewed = self
+            .catalog
+            .conn
+            .prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?
+            .execute([self.scan.get()])?;
+        Ok(renewed > 0)
+    }
+
+    /// Give the lease back now, with the error if it can't be (dropping it gives it back too, but says nothing).
+    pub fn release(self) -> Result<()> {
+        release_lease(&self.catalog.conn, self.scan)
+    }
+}
+
+impl Deref for ScanLease<'_> {
+    type Target = Catalog;
+
+    fn deref(&self) -> &Catalog {
+        &*self.catalog
+    }
+}
+
+impl DerefMut for ScanLease<'_> {
+    fn deref_mut(&mut self) -> &mut Catalog {
+        &mut *self.catalog
+    }
+}
+
+impl Drop for ScanLease<'_> {
+    /// A lease that can't be given back now (the catalog locked past the busy timeout) expires in `SCAN_LEASE_SECS`.
+    fn drop(&mut self) {
+        let _ = release_lease(&self.catalog.conn, self.scan);
+    }
+}
+
+/// Give back the lease of walk `scan`, on `conn`; nothing is written when it is gone already (a complete walk gave it
+/// back in its last transaction).
+pub(crate) fn release_lease(conn: &Connection, scan: ScanId) -> Result<()> {
+    let held: bool = conn
+        .prepare_cached("SELECT EXISTS(SELECT 1 FROM scan_leases WHERE id = ?1)")?
+        .query_row([scan.get()], |r| r.get(0))?;
+    if held {
+        conn.prepare_cached("DELETE FROM scan_leases WHERE id = ?1")?.execute([scan.get()])?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -271,7 +366,7 @@ mod tests {
 
     fn pending_follows_what_the_analysis_was_made_from(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         // New: pending.
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let first = next_work(&c);
@@ -323,7 +418,7 @@ mod tests {
         assert!(!due(&c, id));
         // Gone, then back: nothing to import, but the thumbnails look at it both times.
         let seq = raw::file_seq(&c, id);
-        let next = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let next = begin(&mut c, &p(rules, r"D:\x"));
         c.mark_missing(&p(rules, r"D:\x"), next, &[]).unwrap();
         let gone = raw::file_seq(&c, id);
         scanned(&mut c, next, "a.mp4", 13, 103);
@@ -340,33 +435,31 @@ mod tests {
     fn a_folder_the_scan_could_not_list_keeps_its_files(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         let put = |c: &mut Catalog, scan: pg_model::ids::ScanId, folder: &str, name: &str, file_ref: u64| {
+            let identity = FileIdentity::new(1, file_ref);
+            let prior = c.prior_states(&[identity]).unwrap().remove(0);
             let tx = c.tx().unwrap();
             let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
             let folder = writer.folder(&p(rules, folder)).unwrap();
             let ext = Ext::of_name(name).unwrap();
-            let identity = FileIdentity::new(1, file_ref);
-            writer
-                .upsert_file(
-                    &folder,
-                    &ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1, created: None },
-                )
-                .unwrap();
+            let file = ScannedFile { identity, name: &Name::from(name), ext, size: 1, mtime: 1, created: None, prior };
+            writer.upsert_file(&folder, &file).unwrap();
             drop(writer);
             tx.commit().unwrap();
         };
-        let first = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let first = begin(&mut c, &p(rules, r"D:\x"));
         put(&mut c, first, r"D:\x\ok", "a.jpg", 1);
         put(&mut c, first, r"D:\x\locked", "b.jpg", 2);
         put(&mut c, first, r"D:\x\locked\deep", "c.jpg", 3);
 
         // The next scan lists only D:\x\ok: D:\x\locked couldn't be read, so its files weren't seen, and aren't missing.
-        let next = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let next = begin(&mut c, &p(rules, r"D:\x"));
         put(&mut c, next, r"D:\x\ok", "a.jpg", 1);
-        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), next, &[p(rules, r"D:\x\locked")]).unwrap(), 0);
+        let locked = crate::Skip { path: p(rules, r"D:\x\locked"), reason: crate::SkipReason::Unreadable };
+        assert_eq!(c.mark_missing(&p(rules, r"D:\x"), next, &[locked]).unwrap(), 0);
         assert_eq!(raw::missing_count(&c), 0);
 
         // Once it can be listed again, a scan that doesn't see its files marks them.
-        let later = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let later = begin(&mut c, &p(rules, r"D:\x"));
         put(&mut c, later, r"D:\x\ok", "a.jpg", 1);
         assert_eq!(c.mark_missing(&p(rules, r"D:\x"), later, &[]).unwrap(), 2);
         assert_eq!(raw::missing_count(&c), 2);

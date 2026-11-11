@@ -53,15 +53,23 @@ pub(crate) fn state(c: &Catalog, id: FileId) -> (bool, i64) {
     (due(c, id), raw::file_seq(c, id))
 }
 
-/// The scanner finding file 7 on volume 1 in D:\x like this; whether that changed the catalog.
+/// A walk of `root` begun, its lease given back at once: the tests begin walks one after another, or several of one
+/// folder without ending them.
+pub(crate) fn begin(c: &mut Catalog, root: &RulePath) -> pg_model::ids::ScanId {
+    c.begin_scan(root).unwrap().id()
+}
+
+/// The scanner finding file 7 on volume 1 in D:\x like this, its folder listed just before; whether that changed the
+/// catalog.
 pub(crate) fn scanned(c: &mut Catalog, scan: pg_model::ids::ScanId, name: &str, size: u64, mtime: i64) -> bool {
     let rules = c.rules();
+    let identity = FileIdentity::new(1, 7);
+    let prior = c.prior_states(&[identity]).unwrap().remove(0);
     let tx = c.tx().unwrap();
     let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
     let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
     let ext = Ext::of_name(name).unwrap();
-    let file =
-        ScannedFile { identity: FileIdentity::new(1, 7), name: &Name::from(name), ext, size, mtime, created: None };
+    let file = ScannedFile { identity, name: &Name::from(name), ext, size, mtime, created: None, prior };
     let changed = writer.upsert_file(&folder, &file).unwrap() == Recorded::Changed;
     drop(writer);
     tx.commit().unwrap();

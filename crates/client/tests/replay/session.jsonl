@@ -5,11 +5,11 @@
 {"kind":"Update","now_ms":18,"event":{"Size":{"Chosen":220.0}},"commands":[{"Size":{"RowHeight":220}},{"Relayout":{"width":-24.0,"row_height":220}}]}
 {"kind":"Update","now_ms":18,"event":{"Panel":{"SetShowBorders":false}},"commands":[]}
 {"kind":"Update","now_ms":18,"event":{"Panel":{"SetFiltersOpen":true}},"commands":[{"Panel":{"FiltersOpen":true}}]}
-{"kind":"Update","now_ms":44,"event":"Reload","commands":[{"OpenList":{"listing":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}},"keep":true}}]}
+{"kind":"Update","now_ms":44,"event":"Reload","commands":[{"OpenList":{"listing":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}},"keep":true,"generation":1}}]}
 {"kind":"Update","now_ms":52,"event":{"TreeLoaded":{"folder_known":true}},"commands":[]}
 {"kind":"Update","now_ms":56,"event":{"GridResized":1254.0},"commands":[]}
 {"kind":"Update","now_ms":114,"event":"Timeout","commands":[{"Relayout":{"width":1254.0,"row_height":220}}]}
-{"kind":"Update","now_ms":115,"event":{"ListShown":{"count":12,"last_file":null}},"commands":[]}
+{"kind":"Update","now_ms":115,"event":{"ListShown":{"count":12,"last_file":null,"generation":1}},"commands":[]}
 {"kind":"Update","now_ms":130,"event":"ListPositioned","commands":["Started"]}
 {"kind":"Update","now_ms":132,"event":"RememberListing","commands":[{"SaveSession":{"folder":["GitHub","photo-gallery","target","shots","library","folder-00"],"recursive":true,"sort":{"key":"name","descending":true},"query":{}}}]}
 {"kind":"Update","now_ms":135,"event":{"CurrentChanged":0},"commands":[]}

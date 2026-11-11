@@ -4,7 +4,7 @@
 use std::path::PathBuf;
 
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, Notice, StartOverReason, tidy};
+use pg_model::notice::{ERROR_CAP, Key, KeyBuf, Notice, StartOverReason, tidy};
 use pg_model::path::{FilePath, WorkList};
 use pg_model::turns::Turns;
 
@@ -65,8 +65,12 @@ pub enum Event {
     TotalsFixed { kept: (i64, i64), actual: (i64, i64) },
     /// The times entries were shown could not be written; they stay queued for the next try.
     TouchesNotWritten { error: String },
+    /// The times entries were shown were written, the first time after [`Event::TouchesNotWritten`].
+    TouchesWritten,
     /// An on-demand thumbnail could not be stored (it was shown anyway).
     NotStored { error: String },
+    /// A thumbnail was stored, the first time after [`Event::NotStored`].
+    Stored,
     /// The WAL could not be merged when the writer closed.
     WalNotMerged { error: String },
     /// The cache file was started over when it was opened, for `reason`: because this build can't use it (made for
@@ -78,27 +82,66 @@ pub enum Event {
     StartedOver { reason: StartOverReason, path: PathBuf, detail: String },
 }
 
+/// What an [`Event`] does to the user's notices ([`Event::effect`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum Effect {
+    /// Tell the user this notice.
+    Post(Notice),
+    /// The kept notice this key names no longer holds (the writer recovered).
+    Clear(KeyBuf),
+}
+
 impl Event {
-    /// The notice that tells the user (the app's inbox, the command line).
-    pub fn into_notice(self) -> Notice {
-        let error = |e: String| tidy(&e, ERROR_CAP);
+    /// What the event does to the user's notices (the app's inbox; the command line prints only a [`Effect::Post`]):
+    /// a failure is a notice, and the writer's first success after one clears its kept notice.
+    pub fn effect(&self) -> Option<Effect> {
+        let error = |e: &str| tidy(e, ERROR_CAP);
+        let post = |notice| Some(Effect::Post(notice));
         match self {
             Event::TotalsFixed { kept: (kept_bytes, kept_count), actual: (bytes, count) } => {
-                Notice::CacheTotalsFixed { kept_bytes, kept_count, bytes, count }
+                post(Notice::CacheTotalsFixed {
+                    kept_bytes: *kept_bytes,
+                    kept_count: *kept_count,
+                    bytes: *bytes,
+                    count: *count,
+                })
             }
-            Event::TouchesNotWritten { error: e } => Notice::CacheTouchesNotWritten { error: error(e) },
-            Event::NotStored { error: e } => Notice::CacheNotStored { error: error(e) },
-            Event::WalNotMerged { error: e } => Notice::CacheWalNotMerged { error: error(e) },
-            Event::StartedOver { reason, path, detail } => {
-                Notice::CacheStartedOver { reason, path: path.display().to_string(), detail: error(detail) }
-            }
+            Event::TouchesNotWritten { error: e } => post(Notice::CacheTouchesNotWritten { error: error(e) }),
+            Event::TouchesWritten => Some(Effect::Clear(Key::all("cache-touches-not-written", None).to_buf())),
+            Event::NotStored { error: e } => post(Notice::CacheNotStored { error: error(e) }),
+            Event::Stored => Some(Effect::Clear(Key::all("cache-not-stored", None).to_buf())),
+            Event::WalNotMerged { error: e } => post(Notice::CacheWalNotMerged { error: error(e) }),
+            Event::StartedOver { reason, path, detail } => post(Notice::CacheStartedOver {
+                reason: *reason,
+                path: path.display().to_string(),
+                detail: error(detail),
+            }),
         }
     }
 }
+
 /// What a cache holds (bytes, entries) and may hold (`cap`, bytes).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub struct Usage {
     pub bytes: i64,
     pub count: i64,
     pub cap: i64,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A failure posts its notice, and the recovery after it clears that notice's key: the key the notice is kept under.
+    #[test]
+    fn a_recovery_clears_the_key_its_failure_is_kept_under() {
+        for (failure, recovery) in [
+            (Event::TouchesNotWritten { error: "busy".into() }, Event::TouchesWritten),
+            (Event::NotStored { error: "busy".into() }, Event::Stored),
+        ] {
+            let Some(Effect::Post(notice)) = failure.effect() else { panic!("{failure:?} posts") };
+            let pg_model::notice::Lifecycle::State(key, _) = notice.lifecycle() else { panic!("{notice:?} is kept") };
+            assert_eq!(recovery.effect(), Some(Effect::Clear(key.to_buf())), "{recovery:?}");
+        }
+    }
 }

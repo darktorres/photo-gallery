@@ -7,10 +7,12 @@ use std::thread::JoinHandle;
 use pg_catalog::Catalog;
 use pg_client::text;
 use pg_client::text::cli::{Line, line};
+use pg_jobs::NoticeSink;
 use pg_jobs::control::{Control, Event};
 use pg_jobs::events::Bus;
-use pg_model::notice::Notice;
+use pg_model::notice::{KeyBuf, Notice};
 use pg_model::progress::Progress;
+use pg_thumbcache::Effect;
 
 /// The thumbnail cache's events, on stderr with the progress as they come. A thread prints them, and ends once the
 /// cache that holds the bus is dropped: joining it then means the last one is out. A cache that is leaked (`gallery
@@ -20,21 +22,38 @@ pub(crate) fn thumb_events() -> (Arc<Bus<pg_thumbcache::Event>>, JoinHandle<()>)
     let events = bus.subscribe();
     let printer = std::thread::spawn(move || {
         while let Some(event) = events.recv() {
-            eprintln!("{}", thumb_event_text(&event));
+            if let Some(text) = thumb_event_text(&event) {
+                eprintln!("{text}");
+            }
         }
     });
     (bus, printer)
 }
 
-/// What a thumbnail cache event says, on the command line: its notice's words, and for a cache started over, the
-/// technical account too.
-fn thumb_event_text(event: &pg_thumbcache::Event) -> String {
-    let notice = event.clone().into_notice();
+/// What a thumbnail cache event says, on the command line: the words of the notice it posts, and for a cache started
+/// over, the technical account too. An event that only ends a kept notice (the cache's writer recovered) says nothing
+/// here: the command line keeps none.
+fn thumb_event_text(event: &pg_thumbcache::Event) -> Option<String> {
+    let Some(Effect::Post(notice)) = event.effect() else { return None };
     let line = text::notice_line(&notice, pg_platform::native::PATH_RULES);
-    match notice {
+    Some(match notice {
         Notice::CacheStartedOver { detail, .. } => text::cli::line(&Line::WithDetail { line, detail }),
         _ => line,
+    })
+}
+
+/// Where the command line's workers (the writer of `gallery write`) post: the words of each notice on stderr, as the
+/// cache's events are. It keeps no notices, so a replace or a clear says nothing, and there is nothing to read again.
+pub(crate) struct PrintingSink;
+
+impl NoticeSink for PrintingSink {
+    fn post(&self, notice: Notice) {
+        eprintln!("{}", text::notice_line(&notice, pg_platform::native::PATH_RULES));
     }
+
+    fn replace(&self, _scope: KeyBuf, _notices: Vec<Notice>) {}
+
+    fn poke(&self) {}
 }
 
 /// Says on stderr that the catalog was rebuilt, why, where the old file went, and what was carried over into the new one

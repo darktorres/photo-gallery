@@ -134,12 +134,33 @@ macro_rules! pending_files {
     };
 }
 
-/// No write of the app's into file `?1` is in progress (`file_writes.temp`, set once the complete new content is
+/// No write of the app's into file `?1` (or, as `not_being_written!(files)`, the `files` row written) is in progress (`file_writes.temp`, set once the complete new content is
 /// beside the file and the file is open for the copy, before the file is rewritten in place, and cleared in the
 /// transaction that records the result; a copy that keeps failing keeps it): what was read from it is what the
 /// catalog says, not a part-written file.
 macro_rules! not_being_written {
     () => {
         "NOT EXISTS(SELECT 1 FROM file_writes WHERE file_id = ?1 AND temp IS NOT NULL)"
+    };
+    // The same rule for the `files` row a statement is writing (the scan's upsert, whose `?1` is the volume).
+    (files) => {
+        "NOT EXISTS(SELECT 1 FROM file_writes WHERE file_id = files.id AND temp IS NOT NULL)"
+    };
+}
+
+/// The most Events (keyless notices) the inbox keeps: past it, the `notices_uid` trigger deletes the oldest, read ones
+/// first, at each insert (`TO_8_NOTIFY`). One source for the trigger's text and `inbox::KEPT_EVENTS`.
+macro_rules! kept_events {
+    () => {
+        1000
+    };
+}
+
+/// The ledger's rows the inbox shows: those of files that are present, and for the import also not pending
+/// (`file_failures.hidden`, kept by `files_failures_hidden`). Written out as the literal the partial index
+/// `file_failures_live` is made with, since SQLite uses a partial index only when the query repeats its condition.
+macro_rules! live_failures {
+    () => {
+        "hidden = 0"
     };
 }

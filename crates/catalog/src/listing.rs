@@ -1,5 +1,6 @@
 //! A listing in its four columns (`folder`, `recursive`, `query`, `sort`), as the saved views and the session store
-//! it: read, written, and the session's row put, which the views and the rebuild's copy both do. A leaf, below `core`.
+//! it: read, written, and the session's row put. The views and the migrations' conversion of the old session
+//! (`convert::convert_session`) use it. A leaf, below `core`.
 
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};
@@ -30,7 +31,7 @@ pub(crate) fn listing_values(rules: PathRules, listing: &Listing) -> (Vec<u8>, b
     (rules.join_merged(&listing.folder), listing.recursive, to_json(&listing.query), to_json(&listing.sort))
 }
 
-/// The session's row on `conn` (the rebuild's copy writes it too).
+/// The session's row on `conn`.
 pub(crate) fn put_session(conn: &Connection, rules: PathRules, listing: &Listing) -> Result<()> {
     let (folder, recursive, query, sort) = listing_values(rules, listing);
     conn.execute(

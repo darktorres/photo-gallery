@@ -356,8 +356,10 @@ mod tests {
             Err(e) => panic!("not Error::Original: {e:?}"),
             Ok(_) => panic!("a thumbnail of a file that isn't there"),
         }
+        app.shutdown();
         drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!dir.exists(), "nothing holds the app's files after the shutdown");
     }
 
     /// The thumbnails' ledger, once the inbox's writer holds `want` files (it writes in the background).
@@ -409,6 +411,105 @@ mod tests {
         std::fs::write(&file, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         assert!(app.images().thumbnail(key, 100, &mut Vec::new()).unwrap().made.is_some());
         assert!(ledger_until(&app, 0).is_empty());
+        app.stop().unwrap();
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// An app on a test folder whose catalog holds file `id`, `name` in the folder `images` (made), size 10 and mtime 0.
+    fn app_with(name: &str, id: i64, file: &'static str) -> (App, std::path::PathBuf, std::path::PathBuf) {
+        let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
+        let images = dir.join("images");
+        std::fs::create_dir_all(&images).unwrap();
+        let app = App::open(Config::in_home(&dir)).unwrap();
+        let folder = images.to_str().unwrap();
+        app.catalogs()
+            .with_catalog(|c| {
+                fixture::state::add_scan(c, 1, folder).unwrap();
+                fixture::state::add_folder(c, 1, folder).unwrap();
+                fixture::insert(c, &[File::new(FileId::new(id), FolderId::new(1), file, 10, 0)]).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        (app, images, dir)
+    }
+
+    /// The thumbnails' ledger once the inbox's writer has written what was sent to it.
+    fn ledger_now(app: &App) -> Vec<FileId> {
+        assert!(app.inbox().settle());
+        app.catalogs()
+            .with_catalog(|c| c.recorded_failures(pg_model::notice::FilePass::Thumbs))
+            .unwrap()
+            .into_iter()
+            .collect()
+    }
+
+    // Only a thumbnail that doesn't decode is recorded: an original that can't be read, a file being rewritten and a
+    // file the catalog doesn't have are not (none of them says anything about the file's bytes).
+    #[test]
+    fn only_an_undecodable_thumbnail_is_recorded() {
+        let (app, images, dir) = app_with("thumb-not-recorded", 1, "gone.jpg");
+        let thumb = |id| {
+            let key = ImageKey { file: FileId::new(id), version: None };
+            app.images().thumbnail(key, 100, &mut Vec::new())
+        };
+        assert!(matches!(thumb(1), Err(Error::Original(_))));
+        assert!(matches!(thumb(2), Err(Error::UnknownFile(_))));
+        // A write of the app's whose copy is in progress (its temp recorded): the request waits, then gives up.
+        std::fs::write(images.join("gone.jpg"), b"not a picture").unwrap();
+        let temp = pg_platform::native::PATH_RULES.parse(images.join("gone.jpg.tmp").to_str().unwrap()).unwrap();
+        app.catalogs()
+            .with_catalog(|c| {
+                fixture::state::queue_finished_copy(c, FileId::new(1), "rating", 3, &temp).unwrap();
+                Ok(())
+            })
+            .unwrap();
+        assert!(matches!(thumb(1), Err(Error::Rewriting(_))));
+        assert!(app.images().recent.lock().unwrap().is_empty());
+        assert!(ledger_now(&app).is_empty());
+        app.stop().unwrap();
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A thumbnail that doesn't decode is recorded even when a smaller one the cache keeps is shown instead (the
+    // record comes before the fallback), and it is logged once however often it is asked for.
+    #[test]
+    fn a_failure_is_recorded_before_the_smaller_fallback_and_logged_once() {
+        const ID: i64 = 7301;
+        let (app, images, dir) = app_with("thumb-fallback", ID, "bad.png");
+        std::fs::write(images.join("bad.png"), b"not a picture").unwrap();
+        let file = FileId::new(ID);
+        let source = thumbs::Source { mtime: 0, rotation: Turns::NONE };
+        app.images().keep(Keep { file_id: file, height: 50, source }, b"a smaller thumbnail".to_vec());
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while app.images().thumbs.get_nearest_into(file, 50, source, &mut Vec::new()).unwrap().is_none() {
+            assert!(Instant::now() < deadline, "the cache keeps the smaller thumbnail");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        let feed = pg_log::subscribe();
+        for _ in 0..3 {
+            let mut jpeg = Vec::new();
+            let shown = app.images().thumbnail(ImageKey { file, version: None }, 100, &mut jpeg).unwrap();
+            assert_eq!((shown.kept_at, jpeg.as_slice()), (Some(50), &b"a smaller thumbnail"[..]));
+        }
+        assert_eq!(ledger_now(&app), [file]);
+        let logged =
+            feed.new.try_iter().filter(|r| r.target == "thumbs" && r.message.starts_with("file 7301:")).count();
+        assert_eq!(logged, 1);
+        app.stop().unwrap();
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // The viewer's original: bytes that don't decode are `Undecodable`, an original that can't be opened is `Original`.
+    #[test]
+    fn the_full_image_tells_undecodable_from_unavailable() {
+        let (app, images, dir) = app_with("full-undecodable", 1, "bad.jpg");
+        assert!(matches!(app.images().full_image(FileId::new(1), View::Full), Err(Error::Original(_))));
+        // A JPEG's start, then nothing it can decode.
+        std::fs::write(images.join("bad.jpg"), b"\xFF\xD8\xFF\xE0 cut short").unwrap();
+        assert!(matches!(app.images().full_image(FileId::new(1), View::Full), Err(Error::Undecodable(_))));
         app.stop().unwrap();
         app.shutdown();
         let _ = std::fs::remove_dir_all(&dir);

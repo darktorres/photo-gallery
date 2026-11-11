@@ -2,6 +2,11 @@
 // new ones (LogModel, src/log_model.rs). A row is one line (the time, the level, what it is about, the message, elided);
 // a click shows the row's whole message and its detail below. Made the first time it is opened (Main's logLoader), then
 // kept. Escape or Close dismisses it; Tab stays within it.
+//
+// The view follows the newest record (`following`) until the user scrolls away from the end, and again once they scroll
+// back to it: the flag is set at the user's scroll only, since `atYEnd` read after an insert is stale. The selection is
+// the row's number (the `seq` role), which it keeps as the oldest rows are trimmed: it is found again after a trim, and
+// let go when its own row was trimmed.
 pragma ComponentBehavior: Bound
 
 import QtQuick
@@ -16,10 +21,49 @@ ModalOverlay {
     id: panel
     // The records (Main's LogModel).
     required property var records
-    // The row clicked: its message and detail are shown below the list (-1: none).
+    // The row clicked: its message and detail are shown below the list (-1: none), and its number (`seq`).
     property int selected: -1
+    property real selectedSeq: -1
     property string selectedText: ""
+    // The view stays at the newest record as records come.
+    property bool following: true
 
+    // The user scrolled (a drag, a flick, the wheel, the scroll bar): following again only at the end.
+    function scrolled() {
+        following = list.atYEnd
+    }
+
+    function select(row: int, seq: real, text: string) {
+        selected = row
+        selectedSeq = seq
+        selectedText = text
+    }
+
+    function unselect() {
+        selected = -1
+        selectedSeq = -1
+        selectedText = ""
+    }
+
+    // The rows move under the selection: records appended after it, the oldest trimmed before it (or with it).
+    Connections {
+        target: panel.records
+        function onRowsInserted(parent: var, first: int, last: int) {
+            if (panel.selected >= first)
+                panel.selected += last - first + 1
+        }
+        function onRowsRemoved(parent: var, first: int, last: int) {
+            if (panel.selected < 0)
+                return
+            if (panel.selected > last)
+                panel.selected -= last - first + 1
+            else if (panel.selected >= first)
+                panel.unselect()
+        }
+        function onModelReset() {
+            panel.unselect()
+        }
+    }
 
     Pane {
         anchors.centerIn: parent
@@ -44,9 +88,13 @@ ModalOverlay {
                 focus: true
                 activeFocusOnTab: true
                 KeyNavigation.backtab: closeButton
-                // The newest record is at the bottom, and the view stays there as records come while it is.
-                onCountChanged: if (atYEnd || count < 2) positionViewAtEnd()
-                ScrollBar.vertical: ScrollBar {}
+                // The newest record is at the bottom, and the view stays there as records come while it follows them.
+                onCountChanged: if (panel.following) positionViewAtEnd()
+                onMovementEnded: panel.scrolled()
+                onWheelScrolled: panel.scrolled()
+                ScrollBar.vertical: ScrollBar {
+                    onPressedChanged: if (!pressed) panel.scrolled()
+                }
                 delegate: Rectangle {
                     id: row
                     required property int index
@@ -55,9 +103,14 @@ ModalOverlay {
                     required property string target
                     required property string message
                     required property string detail
+                    required property real seq
+                    readonly property bool chosen: row.seq === panel.selectedSeq
                     width: list.width
                     height: 22
-                    color: panel.selected === row.index ? "#2f5f93" : (row.index % 2 ? "#242424" : "transparent")
+                    color: row.chosen ? "#2f5f93" : (row.index % 2 ? "#242424" : "transparent")
+                    Accessible.role: Accessible.ListItem
+                    Accessible.name: row.message
+                    Accessible.selected: row.chosen
                     RowLayout {
                         anchors.fill: parent
                         anchors.leftMargin: 6
@@ -85,10 +138,8 @@ ModalOverlay {
                         }
                     }
                     TapHandler {
-                        onTapped: {
-                            panel.selected = row.index
-                            panel.selectedText = row.detail.length > 0 ? row.message + "\n\n" + row.detail : row.message
-                        }
+                        onTapped: panel.select(row.index, row.seq,
+                                               row.detail.length > 0 ? row.message + "\n\n" + row.detail : row.message)
                     }
                 }
                 Label {

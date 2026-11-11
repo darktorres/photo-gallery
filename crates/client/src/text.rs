@@ -310,6 +310,41 @@ pub fn notice_line(notice: &Notice, rules: PathRules) -> String {
     render(&Message::NoticeLine { title, body })
 }
 
+/// What a ledger entry adds when it came back after the user dismissed it ("3 since you dismissed it", A1); empty for
+/// none.
+pub fn since_dismissed(count: u64) -> String {
+    if count == 0 {
+        return String::new();
+    }
+    render(&Message::LedgerSinceDismissed { count: usize::try_from(count).unwrap_or(usize::MAX) })
+}
+
+/// A ledger's failed file as the inbox's Copy puts it, one line: its path, displayed, and its error.
+pub fn failed_file_line(path: &str, error: &str) -> String {
+    render(&Message::FailedFileLine { path: path.to_string(), error: error.to_string() })
+}
+
+/// Why a folder of the scans' ledger failed ("it couldn't be read"), by its reason's code
+/// (`pg_catalog::FolderFailure::code`).
+pub fn failed_folder_reason(code: &str) -> String {
+    render(&Message::FailedFolderReason { reason: code.to_string() })
+}
+
+/// A folder of the scans' ledger as the inbox's Copy puts it, one line: its path, displayed, why (by its reason's code)
+/// and the error.
+pub fn failed_folder_line(path: &str, reason: &str, error: &str) -> String {
+    render(&Message::FailedFolderLine {
+        path: path.to_string(),
+        why: failed_folder_reason(reason),
+        error: error.to_string(),
+    })
+}
+
+/// The line a Copy puts above the failed folders of one library folder, `root` (displayed).
+pub fn failed_folder_group(root: &str) -> String {
+    render(&Message::FailedFolderGroup { root: root.to_string() })
+}
+
 /// The library's status line while the background work is paused: `pass` is the running pass's line, empty when none
 /// runs.
 pub fn paused_status(pass: &str) -> String {
@@ -417,7 +452,7 @@ pub fn internal_error(message: &str, log: &str, log_error: Option<&str>) -> Stri
 mod tests {
     use super::*;
     use pg_model::notice::Source;
-    use pg_model::notice::{ScanNote, StartOverReason};
+    use pg_model::notice::{LedgerCounts, ScanNote, StartOverReason};
     use pg_model::refusal::RefusedReason;
     use pg_model::write::WriteKind;
 
@@ -479,6 +514,11 @@ mod tests {
         rules.parse(path).unwrap()
     }
 
+    /// `path` as a notice's words set it: bidi-isolated (U+2068 … U+2069, `text/notice.rs`).
+    fn iso(path: &str) -> String {
+        format!("\u{2068}{path}\u{2069}")
+    }
+
     #[test]
     fn the_writers_notices_are_worded() {
         assert_eq!(
@@ -497,8 +537,12 @@ mod tests {
                 temp: Some("D:/.a.jpg.rating.pg-write".into()),
             })
             .1,
-            "D:/a.jpg may be incomplete: copying its change into it failed (disk full). Its whole new content is in \
-             D:/.a.jpg.rating.pg-write, and the copy is tried again."
+            format!(
+                "{} may be incomplete: copying its change into it failed (disk full). Its whole new content is in {}, \
+                 and the copy is tried again.",
+                iso("D:/a.jpg"),
+                iso("D:/.a.jpg.rating.pg-write")
+            )
         );
         assert_eq!(
             worded(&Notice::WriteFailed { error: "boom".into(), panicked: true, file: None, temp: None }).1,
@@ -532,12 +576,13 @@ mod tests {
             failed,
             first_error,
         };
-        assert_eq!(worded(&cropped(0, None)).1, "2 saved in D:/out; 1 had nothing to crop; none failed");
+        let out = iso("D:/out");
+        assert_eq!(worded(&cropped(0, None)).1, format!("2 saved in {out}; 1 had nothing to crop; none failed"));
         let first =
             pg_model::notice::FileFailure { path: "D:/a.jpg".into(), error: "disk full".into(), panicked: false };
         assert_eq!(
             worded(&cropped(1, Some(first))).1,
-            "2 saved in D:/out; 1 had nothing to crop; 1 failed, the first: D:/a.jpg: disk full"
+            format!("2 saved in {out}; 1 had nothing to crop; 1 failed, the first: {}: disk full", iso("D:/a.jpg"))
         );
     }
 
@@ -548,11 +593,11 @@ mod tests {
         assert_eq!(paused_status("Importing"), "Paused · Importing");
         assert_eq!(
             worded(&Notice::FolderAlreadyAdded { folder: d(rules, r"D:\Photos") }).0,
-            "D:\\Photos is already in the library"
+            format!("{} is already in the library", iso(r"D:\Photos"))
         );
         assert_eq!(
             worded(&Notice::FolderRefused { folder: d(rules, r"Z:\Photos"), reason: RefusedReason::NetworkDrive }).1,
-            "Z:\\Photos can't be added: its drive is a network drive"
+            format!("{} can't be added: its drive is a network drive", iso(r"Z:\Photos"))
         );
         assert_eq!(
             worded(&Notice::LibraryUnavailable { error: "no thread".into() }).1,
@@ -562,12 +607,18 @@ mod tests {
             worded(&Notice::ScanNote { root: d(rules, r"D:\p"), note: ScanNote::Duplicates, count: 2 }),
             (
                 "Duplicate paths skipped".to_string(),
-                "D:\\p: 2 files were skipped as duplicates (another path to the same file)".to_string()
+                format!("{}: 2 files were skipped as duplicates (another path to the same file)", iso(r"D:\p"))
             )
         );
+        // The scans' folder ledger is one entry: its counts when the inbox is viewed, and words of its own without.
+        let folders = |counts| Notice::ScanFoldersFailed { counts };
         assert_eq!(
-            worded(&Notice::ScanUnreadable { root: d(rules, r"D:\p"), count: 1 }).1,
-            "D:\\p: 1 folder couldn't be read, so its files weren't scanned"
+            worded(&folders(Some(LedgerCounts { new: 2, earlier: 1 }))),
+            ("Folders couldn't be scanned".to_string(), "2 new, 1 earlier".to_string())
+        );
+        assert_eq!(
+            worded(&folders(None)).1,
+            "Some folders couldn't be read, or the scan refuses them, so their files aren't in the library"
         );
         assert_eq!(
             notice_line(&Notice::RoundFailed { error: "disk full".into() }, rules),
@@ -614,8 +665,8 @@ mod tests {
         );
         assert_eq!(message::refused_reason(&unreadable(Fact::Volume)), "its volume can't be read: Access is denied.");
         assert_eq!(
-            worded(&Notice::RootRefused { root: d(PathRules::Windows, r"D:\p"), reason: RefusedReason::Link }).1,
-            "D:\\p is not scanned, because it is a link (a junction or a symbolic link). Remove it from the library to stop this notice."
+            worded(&Notice::FolderRefused { folder: d(PathRules::Windows, r"D:\p"), reason: RefusedReason::Link }).1,
+            format!("{} can't be added: it is a link (a junction or a symbolic link)", iso(r"D:\p"))
         );
         all.sort();
         all.dedup();
@@ -697,15 +748,37 @@ mod tests {
         let over = |reason, path: &str| Notice::CacheStartedOver { reason, path: path.into(), detail: "x".into() };
         assert_eq!(
             worded(&over(StartOverReason::Damaged, r"C:\cat\thumbs.sqlite.bad")).1,
-            "The cache was damaged, so it was started over; its thumbnails are made again. The old file is kept as \
-             C:\\cat\\thumbs.sqlite.bad"
+            format!(
+                "The cache was damaged, so it was started over; its thumbnails are made again. The old file is kept as {}",
+                iso(r"C:\cat\thumbs.sqlite.bad")
+            )
         );
         assert_eq!(
             worded(&over(StartOverReason::OtherCatalog, r"C:\cat\thumbs.sqlite")).1,
-            "The cache C:\\cat\\thumbs.sqlite was made for another catalog, so it was started over; its thumbnails are \
-             made again"
+            format!(
+                "The cache {} was made for another catalog, so it was started over; its thumbnails are made again",
+                iso(r"C:\cat\thumbs.sqlite")
+            )
         );
     }
+    /// A ledger entry back after a dismissal says how many failures came since; none says nothing. A ledger's files
+    /// and folders are worded for the Copy, a folder by its reason's code.
+    #[test]
+    fn a_ledgers_counts_and_lines_are_worded() {
+        assert_eq!(since_dismissed(0), "");
+        assert_eq!(since_dismissed(1), "1 since you dismissed it");
+        assert_eq!(since_dismissed(12), "12 since you dismissed it");
+        assert_eq!(failed_file_line(r"D:\a.jpg", "not a JPEG"), r"D:\a.jpg: not a JPEG");
+        assert_eq!(failed_folder_reason("unreadable"), "it couldn't be read");
+        assert_eq!(failed_folder_reason("mount-refused"), "it is a mount the scan refuses");
+        assert_eq!(failed_folder_reason("refused"), "the scan refuses it");
+        assert_eq!(
+            failed_folder_line(r"D:\p\q", "unreadable", "Access is denied."),
+            r"D:\p\q: it couldn't be read (Access is denied.)"
+        );
+        assert_eq!(failed_folder_group(r"D:\p"), r"In D:\p:");
+    }
+
     #[test]
     fn an_info_line_names_what_the_catalog_keeps() {
         let line = info("D:/a.jpg", (0, 0), 2_500_000, true, None);

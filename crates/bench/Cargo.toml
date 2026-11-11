@@ -13,6 +13,9 @@ workspace = true
 pg-analysis = { path = "../analysis" }
 pg-catalog = { path = "../catalog" }
 pg-codec = { path = "../codec" }
+# The scan's walk over a synthetic tree (`scan_with`, `synthetic`), and the job's control it runs under.
+pg-jobs = { path = "../jobs" }
+pg-scan = { path = "../scan", features = ["bench"] }
 pg-thumbcache = { path = "../thumbcache" }
 pg-render = { path = "../render" }
 pg-model = { path = "../model" }

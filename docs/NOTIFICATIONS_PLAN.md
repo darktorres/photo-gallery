@@ -1,9 +1,12 @@
 # Notifications plan: persistent inbox, failure ledger, dev log view
 
-Status (2026-11-10): S1, S2 and S3 done (see "S1 as built", "S2 as built" and "S3 as built" below). Re-checked against `d2cbc13`; delivered in
-three stages (S1, S2, S3), each its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
+Status (2026-11-11): S1, S2 and S3 done (see "S1 as built", "S2 as built" and "S3 as built" below), then corrected by
+[NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md) (status: implemented in one change; see git log), which three
+adversarial reviews of S1 to S3 called for. Re-checked against `d2cbc13`; delivered in three stages (S1, S2, S3), each
+its own commit. The reference for the code as it is: [NOTIFICATIONS.md](NOTIFICATIONS.md).
 
-**Since the plan (MODULARITY_REVIEW_4).** The code differs from the text below in four ways:
+**Since the plan (MODULARITY_REVIEW_4, and the fix plan).** The code differs from the text below in these ways. First,
+four from the modularity review:
 
 - `RootRefused` and `MountRefused` carry the typed `pg_model::refusal::RefusedReason`, which the client words (M-34),
   not a string.
@@ -14,6 +17,54 @@ three stages (S1, S2, S3), each its own commit. The reference for the code as it
 - The inbox's and the ledger's functions are methods in `impl Catalog` blocks of their modules (`inbox.rs`,
   `ledger.rs`: `post_notice`, `inbox_entries`, `record_failures`, `ledger_entries`, ...), not free functions (M-44).
 
+Then the fix plan's (migration `TO_8_NOTIFY`; the rules are in NOTIFICATIONS.md):
+
+- **A ledger's dismissal is a serial** (`ledger_ack.dismissed_to`), not a time: an entry dismissed and then read no
+  longer vanishes when the inbox opens, and comes back with its next row ("N since you dismissed it"). Marks move
+  forward only.
+- **Stored notices have a revision** (`notices.rev`), which a mark names, and a state toasts when its revision rises while
+  it is unread (once per `LOG_AGAIN`). Events are bounded by the `notices_uid` trigger (1000, oldest by insertion, read
+  first) and deleted when dismissed; states are bounded by their keys, and dismissed ones are purged after 30 days. The
+  writer's `KEPT_ROWS` bound over all rows is gone. "Mark all read" and "Clear all" cover the ids displayed.
+- **The import's ledger is rows** (`file_failures`, `pass = 'import'`), kept by triggers on `analysis`, not a join over
+  failed analyses with `files.seq` as the serial: a thumbnail Retry no longer re-badges the import. Rows of missing (and,
+  for the import, pending) files are hidden, not deleted (`file_failures.hidden`, the partial index `file_failures_live`),
+  and the inbox reads each ledger's cheap state (newest and oldest live rows), with counts only while it is viewed.
+- **Scan failures are a per-folder ledger** (`folder_failures`, the `scan-folders-failed` entry), written as the walk
+  goes and swept at the end of a complete walk. `ScanUnreadable`, `MountRefused` and `RootRefused` are retired codes
+  (`Notice::RETIRED`): their rows are deleted by the migration, and the next walk fills the ledger. `ScanNote`'s
+  conditions stay states, replaced by root walks; `replaced` and `rebound` are events.
+- **Every state names its resolver** (`Lifecycle::State(key, Resolver)`); the table in NOTIFICATIONS.md is the output of
+  `Notice::resolver_markdown`. `write-failed` and `write-stopped` are posted and cleared by the writer and the library
+  where they change (`NoticeSink` moved down to `pg-jobs`), not by the desktop's `refresh_writes`; `write-dropped` is an
+  event; the cache's failures clear at its first success after one (`Event::effect`).
+- **Borders' ledger rows are written in the borders transaction** (`Tx::ledger_writer`), so `LedgerNotWritten` is the
+  thumbnails' only (`LedgerOutcome`), and `pg_borders::Stats.ledger_error` is gone.
+- **The inbox's writer** is one work log with a condvar and one sequence across every op, not a bounded channel; a busy
+  catalog is tried again in order, `SQLITE_LOCKED` is not, and the close drains for at most 5 s.
+- **The scan holds no write lock across I/O or a pause**: batches in short transactions, a value guard against a
+  write-back in between, a scan lease between overlapping walks (`scan_leases`), and pairing and `mark_missing` in
+  batches. This was the real cause of the writer's lost commands: a paused scan held the catalog's write lock.
+- **The inbox's own catalog reads left the GUI thread** (the `Reader`'s `FailedFiles`, `CopyDetails` and
+  `RevealFolder`); the rest of the window's catalog work on that thread is [GUI_THREAD_PLAN.md](GUI_THREAD_PLAN.md).
+  The status bar's "N failed" links only to an entry that exists, and a pass announces its ledger writes through
+  `Control::ledger_changed`, so the entry follows within about 2 s. Reveal waits for its own listing (a generation).
+- **The log loses no record to contention** (one `RingGuard`; a panic inside the ring's hold is written `file_only`), and
+  a rotation never sleeps: rename aside first, an OS lock between processes, skip-then-fallback with one documented loss.
+
+Three corrections to the text below, from the fix plan's review of S1 to S3:
+
+- **`RatingPopup`'s reason.** S1 as built says it is "a popup the grid owns, closed by any other key". It is a fading
+  `Label` in `Viewer.qml` (`RatingPopup.qml`: shown for half a second over the next picture after a rating), which takes
+  no keys and has no open or close; that is why it is not a modal kind.
+- **`thumbs::run` opens its catalog after the empty-items return**, not before it as section 2's "Thumbs pass" says. It
+  is harmless: that path returns `stats.complete = true`, and the runner clears `unreadable-files:thumbs` from the stats,
+  so it needs no catalog.
+- **The `ids!` decision.** Section 1 has `code()` from `strum::IntoStaticStr`. The code keeps the `ids!` table as the
+  single source of the codes and the words' ids (and the retired codes); the serde tag is pinned by
+  `the_code_is_the_stored_kind` and the golden test (`notice/golden.jsonl`). strum would add a third mechanism, so the
+  notice doesn't use it (`pg-model` keeps strum for other enums).
+
 ## S1 as built
 
 S1 is as the plan says, with these differences, each the more proper of the two:
@@ -21,8 +72,9 @@ S1 is as the plan says, with these differences, each the more proper of the two:
 - The desktop depends on `pg-log` directly (`desktop: app client log model platform render trace`), not through
   `pg_app::reexport`: `pg-log` is a layer below `app`, like `pg-model` and `pg-platform`, which the desktop already
   names, and `app` does not use it in S1. S2's `Inbox` adds `log` to `app:`.
-- `RatingPopup` is not a modal kind: it is a popup the grid owns, closed by any other key, so a global key passes it
-  by. The kinds are `Inbox`, `Log`, `Library`, `SaveViewDialog`, `ViewsMenu`, `FolderPicker`, `Yandex`, `YandexPreview`.
+- `RatingPopup` is not a modal kind: it is a fading `Label` in `Viewer.qml` that shows a rating for half a second and
+  takes no keys, so there is nothing to open or close (corrected: this said "a popup the grid owns, closed by any other
+  key"). The kinds are `Inbox`, `Log`, `Library`, `SaveViewDialog`, `ViewsMenu`, `FolderPicker`, `Yandex`, `YandexPreview`.
 - Dev mode is saved by the controller's `Command::SaveDevMode`, which the shell carries out with `prefs().update`, not
   by a `Settings` property: the shortcut's rule (save on the key, not on the start seed) is the controller's, and it is
   tested there.

@@ -81,7 +81,7 @@ proptest! {
     #[test]
     fn the_start_finishes_once_whatever_the_order(order in 0usize..3, count in 1usize..12, last in 0usize..12) {
         let tree = Event::TreeLoaded { folder_known: true };
-        let shown = Event::ListShown { count, last_file: (last < count).then_some(last) };
+        let shown = Event::ListShown { count, last_file: (last < count).then_some(last), generation: 0 };
         let placed = Event::ListPositioned;
         // The list is shown before it is placed; the tree may come before, between or after them.
         let events = match order {
@@ -119,7 +119,7 @@ proptest! {
     #[test]
     fn item_keys_act_on_the_current_item_only(key in item_key(), item in 0usize..50) {
         let mut c = Controller::new(listing(""), 200, 1.0);
-        c.update(0, Event::ListShown { count: 60, last_file: None });
+        c.update(0, Event::ListShown { count: 60, last_file: None, generation: 0 });
         prop_assert!(c.update(1, Event::Key(key)).is_empty());
         c.update(2, Event::CurrentChanged(Some(item)));
         let acted = c.update(3, Event::Key(key));
@@ -180,7 +180,7 @@ fn saves_and_lists(commands: &[Command]) -> (usize, usize, usize) {
 #[test]
 fn a_pending_session_save_is_made_at_the_close_with_the_last_file() {
     let mut c = Controller::new(listing(""), 200, 1.0);
-    c.update(0, Event::ListShown { count: 10, last_file: None });
+    c.update(0, Event::ListShown { count: 10, last_file: None, generation: 0 });
     c.update(1, Event::CurrentChanged(Some(3)));
     let flushed = c.update(2, Event::Flush);
     assert_eq!(saves_and_lists(&flushed), (1, 1, 0), "{flushed:?}");
@@ -207,7 +207,7 @@ fn a_pending_query_is_saved_at_the_close_without_a_list() {
 #[test]
 fn a_pending_query_and_session_save_make_one_save_at_the_close() {
     let mut c = Controller::new(listing(""), 200, 1.0);
-    c.update(0, Event::ListShown { count: 10, last_file: None });
+    c.update(0, Event::ListShown { count: 10, last_file: None, generation: 0 });
     c.update(1, Event::CurrentChanged(Some(3)));
     c.update(2, Event::Listing(listing_event::Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));
     c.update(2, Event::QueryEdited);

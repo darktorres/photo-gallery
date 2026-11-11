@@ -27,6 +27,7 @@ use pg_client::sort::choice_index;
 use pg_model::ids::FileId;
 use pg_model::notice::{Notice, ViewOp};
 use pg_model::rating::Rating;
+use pg_model::rules::Path as RulePath;
 use pg_model::view::SavedView;
 
 use crate::{app, command_line, controller, deadline, folders, gallery, keymap};
@@ -68,6 +69,18 @@ fn row_event(kind: folders::RowKind) -> ListingEvent {
     }
 }
 
+/// Dev mode as the window starts: the run's `seed` (`command_line::dev_mode_seed`), else the preferences'. The
+/// preferences are read, never written.
+fn dev_mode_at_start(seed: Option<bool>, prefs: &pg_app::PrefStore) -> bool {
+    seed.unwrap_or_else(|| prefs.get().dev_mode)
+}
+
+/// Remember dev mode for the next start (the user turned it on or off). A save that fails is the preferences' to report;
+/// dev mode holds for this run either way.
+fn save_dev_mode(prefs: &pg_app::PrefStore, on: bool) {
+    let _ = prefs.update(|p| p.dev_mode = on);
+}
+
 /// The inbox says that the change `op` to the saved views failed, for `error`.
 fn views_failed(op: ViewOp, error: &impl std::fmt::Display) {
     app::post(Notice::ViewsFailed { op, error: app::error_text(error) });
@@ -99,10 +112,12 @@ impl qobject::Shell {
         self.dispatch(Event::TreeLoaded { folder_known });
     }
 
+    /// The list shown is the grid model's last applied (`gallery::APPLIED`, on this thread): its generation tells the
+    /// controller which `OpenList` it is, so a reveal waits for its own.
     pub(crate) fn list_shown(self: Pin<&mut Self>, last_file: i32, count: i32) {
         let count = usize::try_from(count).unwrap_or(0);
         let last_file = usize::try_from(last_file).ok();
-        self.dispatch(Event::ListShown { count, last_file });
+        self.dispatch(Event::ListShown { count, last_file, generation: gallery::applied() });
     }
 
     pub(crate) fn list_positioned(self: Pin<&mut Self>) {
@@ -171,9 +186,10 @@ impl qobject::Shell {
         self.dispatch(Event::Panel(panels::Event::SetViewerOpen(on)));
     }
 
+    /// Dev mode as the window starts: the run's seed (`--dev`, `PG_DEV`), else the preferences'. Only shown: a start
+    /// saves nothing (the controller's `SetDevMode` gives no `SaveDevMode`).
     pub(crate) fn seed_dev_mode(self: Pin<&mut Self>) {
-        let seeded = command_line::value("dev") == Some("1") || std::env::var_os("PG_DEV").is_some_and(|v| v == "1");
-        let on = seeded || app::get().prefs().get().dev_mode;
+        let on = dev_mode_at_start(command_line::dev_mode_seed(), app::get().prefs());
         self.dispatch(Event::Panel(panels::Event::SetDevMode(on)));
     }
 
@@ -290,24 +306,40 @@ impl qobject::Shell {
         self.as_mut().set_saved_views(view_names());
     }
 
-    /// Show the file `file_id` in its folder, nothing filtered (an inbox entry's Reveal): the controller lists the folder
-    /// and selects the file once it is shown (`Command::Reveal`). `false`, with a toast, when the library no longer has it.
-    pub(crate) fn reveal(self: Pin<&mut Self>, file_id: f64) -> bool {
+    /// Show the file `file_id` in its folder, nothing filtered (an inbox entry's Reveal). Its folder is read off the
+    /// window's thread (`pg_app::Session::reveal_folder`); when it is delivered, the controller lists the folder and
+    /// selects the file once its list is shown (`Command::Reveal`), and `revealShown` is emitted. A file the library
+    /// no longer has is a toast instead; a newer Reveal supersedes this one, whose delivery is dropped.
+    pub(crate) fn reveal(self: Pin<&mut Self>, file_id: f64) {
         let file = pg_model::num::f64_to_i64(file_id);
-        let folder = match app::get().catalogs().present_folder(FileId::new(file)) {
-            Ok(Some(folder)) => folder,
-            Ok(None) => {
-                app::post(Notice::FileNoLongerInLibrary);
-                return false;
+        let shell = self.qt_thread();
+        app::get().reading().session().reveal_folder(FileId::new(file), move |folder| {
+            // Fails only when the window is gone: nothing left to reveal in.
+            let _ = shell.queue(move |shell| shell.revealed(file, folder));
+        });
+    }
+
+    /// A Reveal's folder, delivered on the Qt thread: listed, or a toast when the file is no longer in the library.
+    fn revealed(mut self: Pin<&mut Self>, file: i64, folder: pg_app::Result<Option<RulePath>>) {
+        match folder {
+            Ok(Some(folder)) => {
+                let folder = pg_platform::native::PATH_RULES.merge(&folder);
+                self.as_mut().dispatch(Event::Reveal { file, folder });
+                self.later(|shell| shell.reveal_shown());
             }
-            Err(e) => {
-                pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e}"));
-                return false;
-            }
-        };
-        let folder = pg_platform::native::PATH_RULES.merge(&folder);
-        self.dispatch(Event::Reveal { file, folder });
-        true
+            Ok(None) => app::post(Notice::FileNoLongerInLibrary),
+            Err(e) => pg_log::warn("inbox", &format!("a file to reveal couldn't be read: {e}")),
+        }
+    }
+
+    /// Show the folder above the scans' failed folder at `row` of the expanded entry's list (`failed_files`), nothing
+    /// filtered: the folder itself couldn't be read, so its parent is where it shows. Then `revealShown`.
+    pub(crate) fn reveal_folder(mut self: Pin<&mut Self>, row: i32) {
+        let Some(folder) = crate::rows::row_of(row).and_then(crate::failed_files::shown_folder) else { return };
+        let rules = pg_platform::native::PATH_RULES;
+        let shown = rules.split_file_name(&folder).map_or(folder, |(parent, _)| parent);
+        self.as_mut().dispatch(Event::Listing(ListingEvent::Reveal(rules.merge(&shown))));
+        self.later(|shell| shell.reveal_shown());
     }
 
     /// List the files the import failed on, in every folder (an inbox entry's "Show the failed files").
@@ -411,8 +443,8 @@ impl qobject::Shell {
                 let i = to_i32(i);
                 self.as_mut().later(move |shell| shell.viewer_requested(i));
             }
-            Command::OpenList { listing, keep } => {
-                gallery::post(move |model| model.open_listing(listing, keep));
+            Command::OpenList { listing, keep, generation } => {
+                gallery::post(move |model| model.open_listing(listing, keep, generation));
                 self.as_mut().later(|shell| shell.listing_changed());
             }
             Command::Rate { item, rating } => {
@@ -450,10 +482,7 @@ impl qobject::Shell {
                 let kind = keymap::panel_kind_code(kind);
                 self.as_mut().later(move |shell| shell.panel_close_requested(kind));
             }
-            // A save that fails is the preferences' to report; dev mode holds for this run either way.
-            Command::SaveDevMode(on) => {
-                let _ = app::get().prefs().update(|p| p.dev_mode = on);
-            }
+            Command::SaveDevMode(on) => save_dev_mode(app::get().prefs(), on),
             Command::Size(change) => self.as_mut().size(change),
         }
     }
@@ -520,6 +549,39 @@ mod tests {
 
     use super::*;
     use crate::folders::RowKind;
+    use pg_client::controller::Controller;
+    use pg_client::keys::Global;
+
+    /// A seeded start shows dev mode and saves nothing: the preferences file is, byte for byte, what it was, whichever
+    /// way the run is seeded. The user's own switch afterwards is saved, so the check can fail.
+    #[test]
+    fn a_seeded_start_leaves_the_prefs_file_byte_identical() {
+        let home = pg_testkit::test_folder("scratch_desktop", "seeded-start").unwrap();
+        let config = pg_app::Config::in_home(&home);
+        let prefs_path = config.layout.prefs().to_path_buf();
+        let app = pg_app::App::open(config).unwrap();
+        app.prefs().update(|p| p.dev_mode = false).unwrap();
+        let before = std::fs::read(&prefs_path).unwrap();
+        // The commands as the shell carries them out: a `SaveDevMode` is the one that writes the preferences.
+        let run = |c: &mut Controller, event: Event| {
+            for command in c.update(0, event) {
+                if let Command::SaveDevMode(on) = command {
+                    save_dev_mode(app.prefs(), on);
+                }
+            }
+        };
+        let mut c = Controller::new(Listing::default(), 200, 1.0);
+        for seed in [Some(true), Some(false), None] {
+            let on = dev_mode_at_start(seed, app.prefs());
+            assert_eq!(on, seed.unwrap_or(false), "{seed:?}");
+            run(&mut c, Event::Panel(panels::Event::SetDevMode(on)));
+            assert_eq!(std::fs::read(&prefs_path).unwrap(), before, "{seed:?}");
+        }
+        run(&mut c, Event::Global(Global::DevMode));
+        assert_ne!(std::fs::read(&prefs_path).unwrap(), before, "the user's switch is saved");
+        app.shutdown();
+        let _ = std::fs::remove_dir_all(&home);
+    }
 
     /// A tree with files directly in `D:\` and in the folder `D:\p`: rows "All", "Drive roots", `p`.
     fn tree() -> Tree {

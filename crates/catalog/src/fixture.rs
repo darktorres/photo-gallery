@@ -37,6 +37,47 @@ impl File {
     }
 }
 
+/// While held, every ledger write (record or clear, on any connection of this process) fails: a ledger that can't be
+/// written, as an aborted statement would leave it. One at a time: the tests that hold it run one by one.
+pub struct LedgerWritesFail(());
+
+impl LedgerWritesFail {
+    pub fn start() -> LedgerWritesFail {
+        crate::writers::LEDGER_FAULT.store(true, std::sync::atomic::Ordering::SeqCst);
+        LedgerWritesFail(())
+    }
+}
+
+impl Drop for LedgerWritesFail {
+    fn drop(&mut self) {
+        crate::writers::LEDGER_FAULT.store(false, std::sync::atomic::Ordering::SeqCst);
+    }
+}
+
+/// The write transactions this thread begins, timed while this is held: how long each held the catalog's write lock,
+/// from its begin to its commit or rollback (`transaction::write_transaction`; every catalog write but the
+/// preparation's version marks takes it). What a test of a walk measures: no hold may span a listing or a pause.
+pub struct WriteHolds(());
+
+impl WriteHolds {
+    /// Start timing (one watch per thread: a second starts it over).
+    pub fn watch() -> WriteHolds {
+        crate::transaction::watch_holds();
+        WriteHolds(())
+    }
+
+    /// The holds that ended since the watch began or was last taken, in the order they ended.
+    pub fn take(&self) -> Vec<std::time::Duration> {
+        crate::transaction::take_holds()
+    }
+}
+
+impl Drop for WriteHolds {
+    fn drop(&mut self) {
+        crate::transaction::unwatch_holds();
+    }
+}
+
 /// A folder's stored bytes and key, from its path text (as the tests write it) under the catalog's rules.
 pub(crate) fn folder_row(c: &Catalog, path: &str) -> anyhow::Result<(Vec<u8>, Vec<u8>)> {
     let path = c.rules().parse(path).ok_or_else(|| anyhow!("{path:?} is not a test folder path"))?;

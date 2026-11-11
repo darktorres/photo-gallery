@@ -54,6 +54,7 @@ pub mod qobject {
         fn tree_loaded(self: Pin<&mut Shell>, folder_known: bool);
 
         /// A list of `count` items was shown. `lastFile`: the index in it of the file the last session left, -1 when none.
+        /// Which list it is, the shell reads from the grid model (the one it applied last).
         #[qinvokable]
         #[cxx_name = "listShown"]
         fn list_shown(self: Pin<&mut Shell>, last_file: i32, count: i32);
@@ -129,7 +130,8 @@ pub mod qobject {
         #[cxx_name = "setViewerOpen"]
         fn set_viewer_open(self: Pin<&mut Shell>, on: bool);
 
-        /// Dev mode as the window starts: the preferences', or on for this run with `--dev=1` or `PG_DEV=1` (not saved).
+        /// Dev mode as the window starts: the preferences', or for this run `--dev=1`/`--dev=0`, else `PG_DEV=1`/`0` (not
+        /// saved).
         #[qinvokable]
         #[cxx_name = "seedDevMode"]
         fn seed_dev_mode(self: Pin<&mut Shell>);
@@ -266,11 +268,23 @@ pub mod qobject {
         #[cxx_name = "applyView"]
         fn apply_view(self: Pin<&mut Shell>, name: &QString) -> bool;
 
-        /// Show a file in its folder with nothing filtered, and select it once the list is shown (an inbox entry's
-        /// Reveal). `false` when the library no longer has it (a toast says so). The filter bar then reloads the query,
-        /// and the tree shows the folder (`FolderModel.revealListing`).
+        /// Show a file in its folder with nothing filtered, and select it once its list is shown (an inbox entry's
+        /// Reveal). Its folder is read off the window's thread: once it is, the folder is listed and `revealShown` is
+        /// emitted; when the library no longer has the file, a toast says so instead.
         #[qinvokable]
-        fn reveal(self: Pin<&mut Shell>, file_id: f64) -> bool;
+        fn reveal(self: Pin<&mut Shell>, file_id: f64);
+
+        /// Show the folder above the scans' failed folder at `row` of the expanded inbox entry (`FailedFiles`), with
+        /// nothing filtered; then `revealShown`.
+        #[qinvokable]
+        #[cxx_name = "revealFolder"]
+        fn reveal_folder(self: Pin<&mut Shell>, row: i32);
+
+        /// A Reveal's folder is listed: the inbox and the viewer close, the filter bar reloads the query, and the tree
+        /// shows the folder (`FolderModel.revealListing`).
+        #[qsignal]
+        #[cxx_name = "revealShown"]
+        fn reveal_shown(self: Pin<&mut Shell>);
 
         /// List the files the import failed on, in every folder. The filter bar then reloads the query.
         #[qinvokable]

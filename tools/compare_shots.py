@@ -11,15 +11,19 @@ It was compare-shots.ps1.
 
 How it works:
 - A reference is tools/shots/reference/<sha10>/: one PNG per scenario and manifest.json, which holds the full commit, the
-  fixture's hash, the Qt folder, the wait, and each scenario's crop hashes and settle line. It is recorded once, from a
-  scratch worktree at target/shots/base (built into target/shots/base-target). A comparison builds only the working tree.
-  Recording over an existing reference replaces it.
+  fixtures' hashes (`fixtures`: one per template, and shot.log's), the Qt folder, the wait, and each scenario's crop
+  hashes and settle line. It is recorded once, from a scratch worktree at target/shots/base (built into
+  target/shots/base-target). A comparison builds only the working tree. Recording over an existing reference replaces it.
 - The fixture (tools/shots/fixture.py): a synthetic library (target/shots/library, made once; delete it to make another)
-  and, per side, a catalog built by that side's own binary (scan, import, thumbnails at 120 and 220 px) and saved as a
-  template. A comparison refuses a reference whose fixture hash differs from the library's.
-- Each run starts from a copy of its side's template catalog, fresh preferences, and the library as it was made: the
-  turn and rating keys write into the original files, so restore_library puts them back in place (same file, so the
-  catalog's identity holds; the timestamp is put back too).
+  and, per side, catalogs built by that side's own binary (scan, import, thumbnails at 120 and 220 px) and saved as
+  templates under target/shots/sides/<side>/<template>. `default` is the library's; `broken` adds the committed files
+  of tools/shots/broken (a JPEG the import fails), copied to the fixed target/shots/broken, as a second library folder,
+  for the inbox scenarios. A comparison refuses a reference whose hash for a scenario's template (or for shot.log, which
+  the log scenario reads) differs from this tree's. A manifest recorded before the templates has one `fixture` hash,
+  the default template's, and is still compared.
+- Each run starts from a copy of its side's template catalog, fresh preferences, notes.txt and tools/shots/shot.log, and
+  the library as it was made: the turn and rating keys write into the original files, so restore_library puts them back
+  in place (same file, so the catalog's identity holds; the timestamp is put back too), target/shots/broken included.
 - A difference is written as a diff image (the reference's pixels, with the differing ones red) under target/shots/diff.
   Each run's log and output stay under target/shots/runs/<side>/<scenario>/.
 
@@ -38,6 +42,7 @@ import hashlib
 import json
 import os
 import shutil
+import sqlite3
 import subprocess
 import sys
 import time
@@ -55,40 +60,79 @@ VENV_PYTHON = VENV / ("Scripts" if WINDOWS else "bin") / ("python.exe" if WINDOW
 FIXTURE_PY = HERE / "shots" / "fixture.py"
 REQUIREMENTS = HERE / "shots" / "requirements.txt"
 REF_ROOT = HERE / "shots" / "reference"
+# The broken template's library folder: the committed files under tools/shots/broken, copied to a fixed place (not the
+# repo's, which is a worktree's when recording), since the expanded inbox shows the file's path.
+BROKEN_SOURCE = HERE / "shots" / "broken"
+BROKEN = SHOTS / "broken"
+BROKEN_MTIME_NS = 1_717_200_000 * 1_000_000_000  # 2024-06-01 UTC: every copy has the same timestamp, whoever checked it out
+# When the broken template's failures were found, as the inbox shows it: fixed, so the inbox shots don't change with the
+# day the template was made (2026-01-01 09:00 UTC).
+BROKEN_FOUND_AT = 1_767_258_000
+# The log view's input (the `log` scenario), copied into each run's folder.
+SHOT_LOG = HERE / "shots" / "shot.log"
 MASCOT = (
     1  # every run shows one fixed mascot, not the random one a window picks, so the screenshots of a commit match its reference
 )
 
-# The matrix: name -> the hook arguments. {FIX} and {RUN} are the run's folder. The reference is recorded again whenever
-# these change.
+# The templates: `default` is the library's catalog; `broken` is that catalog with tools/shots/broken added as a second
+# library folder, scanned and imported (its file fails the import), for the inbox scenarios.
+DEFAULT = "default"
+BROKEN_TEMPLATE = "broken"
+TEMPLATES = (DEFAULT, BROKEN_TEMPLATE)
+# The manifest's key for shot.log, beside the templates': the scenarios that read it are checked against it too.
+LOG_INPUT = "shot.log"
+
+
+@dataclass(frozen=True)
+class Scenario:
+    """One entry of the matrix: the hook arguments, and the template catalog it starts from."""
+
+    hooks: tuple[str, ...]
+    template: str = DEFAULT
+
+    def inputs(self) -> list[str]:
+        """The manifest's fixture keys this scenario depends on: its template's, and shot.log's when a hook reads it."""
+        return [self.template, *([LOG_INPUT] if any(LOG_INPUT in hook for hook in self.hooks) else [])]
+
+
+def scenario(*hooks: str, template: str = DEFAULT) -> Scenario:
+    return Scenario(hooks, template)
+
+
+# The matrix: name -> the hook arguments (and the template, when it is not the default). {FIX} and {RUN} are the run's
+# folder. The reference is recorded again whenever these change.
 SCENARIOS = {
-    "default": [],
-    "size120": ["--size=120"],
-    "select5": ["--select=5"],
-    "view0": ["--view=0"],
-    "viewer-zoom": ["--view=0", "--zoom=2"],
-    "viewer-loupe-borders": ["--view=0", "--viewer-keys=LB"],
-    "viewer-zen": ["--view=0", "--viewer-keys=H"],
-    "viewer-one-to-one": ["--view=0", "--viewer-keys=1"],
-    "viewer-turn": ["--view=0", "--viewer-keys=>"],
-    "viewer-rate": ["--view=0", "--viewer-keys=r3"],
-    "filters": ["--filters=1"],
-    "query": ['--query={"exts":["png"]}'],
-    "sort": ['--sort={"key":"name","descending":true}'],
-    "menu-views": ["--menu=views"],
-    "library": ["--library=1"],
-    "apply-view": ["--apply-view=alpha"],
-    "save-view": ["--save-view=1"],
-    "borders": ["--borders=1"],
-    "find-similar": ["--find-similar={FIX}\\notes.txt"],
-    "save-crops": ["--save-crops={RUN}\\crops"],
-    "filters-view0": ["--filters=1", "--view=0"],
+    "default": scenario(),
+    "size120": scenario("--size=120"),
+    "select5": scenario("--select=5"),
+    "view0": scenario("--view=0"),
+    "viewer-zoom": scenario("--view=0", "--zoom=2"),
+    "viewer-loupe-borders": scenario("--view=0", "--viewer-keys=LB"),
+    "viewer-zen": scenario("--view=0", "--viewer-keys=H"),
+    "viewer-one-to-one": scenario("--view=0", "--viewer-keys=1"),
+    "viewer-turn": scenario("--view=0", "--viewer-keys=>"),
+    "viewer-rate": scenario("--view=0", "--viewer-keys=r3"),
+    "filters": scenario("--filters=1"),
+    "query": scenario('--query={"exts":["png"]}'),
+    "sort": scenario('--sort={"key":"name","descending":true}'),
+    "menu-views": scenario("--menu=views"),
+    "library": scenario("--library=1"),
+    "apply-view": scenario("--apply-view=alpha"),
+    "save-view": scenario("--save-view=1"),
+    "borders": scenario("--borders=1"),
+    "find-similar": scenario("--find-similar={FIX}\\notes.txt"),
+    "save-crops": scenario("--save-crops={RUN}\\crops"),
+    "filters-view0": scenario("--filters=1", "--view=0"),
+    "inbox": scenario("--inbox=1", template=BROKEN_TEMPLATE),
+    "inbox-expanded": scenario("--inbox=1", "--inbox-expand=import", template=BROKEN_TEMPLATE),
+    "dev-mode": scenario("--dev=1"),
+    "log": scenario("--dev=1", "--log=1", "--log-view={FIX}\\shot.log"),
 }
 # The pseudo-locale (S-19.3): every line of the front end in the pseudo-locale. No reference has it, so it is run on the
 # working tree only and its screenshot kept under target/shots/pseudo, for a look; it is not compared.
 PSEUDO = {
-    "pseudo-locale": ["--locale=pseudo"],
-    "pseudo-library": ["--locale=pseudo", "--library=1"],
+    "pseudo-locale": scenario("--locale=pseudo"),
+    "pseudo-library": scenario("--locale=pseudo", "--library=1"),
 }
 
 
@@ -174,15 +218,54 @@ def restore_library() -> None:
     for extra in sorted(path for path in LIBRARY.rglob("*") if path.is_file()):
         if not (PRISTINE / extra.relative_to(LIBRARY)).exists():
             extra.unlink()
+    if BROKEN.exists():
+        place_broken()
+
+
+def broken_files() -> list[Path]:
+    return sorted((path for path in BROKEN_SOURCE.rglob("*") if path.is_file()), key=lambda path: str(path).lower())
+
+
+def place_broken() -> None:
+    """target/shots/broken as tools/shots/broken has it, with the fixed timestamp. A file that is there already is written
+    in place (the same file, so the catalog's identity for it holds, as restore_library keeps the library's); files the
+    app added beside them are deleted."""
+    for file in broken_files():
+        live = BROKEN / file.relative_to(BROKEN_SOURCE)
+        live.parent.mkdir(parents=True, exist_ok=True)
+        data = file.read_bytes()
+        if not live.exists() or live.read_bytes() != data:
+            live.write_bytes(data)
+        if live.stat().st_mtime_ns != BROKEN_MTIME_NS:
+            os.utime(live, ns=(live.stat().st_atime_ns, BROKEN_MTIME_NS))
+    for extra in sorted(path for path in BROKEN.rglob("*") if path.is_file()):
+        if not (BROKEN_SOURCE / extra.relative_to(BROKEN)).exists():
+            extra.unlink()
 
 
 def fixture_hash() -> str:
-    """The fixture's identity: the pristine library's files and the generator. The lines are the same as the PowerShell
-    version's (a leading separator, the file's hash), so the references recorded with it still match."""
+    """The default template's identity: the pristine library's files and the generator. The lines are the same as the
+    PowerShell version's (a leading separator, the file's hash), so the references recorded with it still match."""
     files = sorted((path for path in PRISTINE.rglob("*") if path.is_file()), key=lambda path: str(path).lower())
     lines = [f"{os.sep}{file.relative_to(PRISTINE)} {sha256(file)}" for file in files]
     lines.append(f"fixture.py {sha256(FIXTURE_PY)}")
     return hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest().upper()
+
+
+def fixture_hashes() -> dict[str, str]:
+    """The manifest's `fixtures`: each template's identity, and shot.log's. The broken template is the default one with
+    tools/shots/broken added, so its hash covers the default's and the broken files' bytes."""
+    default = fixture_hash()
+    lines = [f"default {default}", *(f"{file.relative_to(BROKEN_SOURCE).as_posix()} {sha256(file)}" for file in broken_files())]
+    broken = hashlib.sha256("\n".join(lines).encode("utf-8")).hexdigest().upper()
+    return {DEFAULT: default, BROKEN_TEMPLATE: broken, LOG_INPUT: sha256(SHOT_LOG)}
+
+
+def manifest_fixtures(manifest: dict) -> dict[str, str]:
+    """A manifest's fixture hashes. One recorded before the templates has a single `fixture`: the default template's."""
+    if "fixtures" in manifest:
+        return dict(manifest["fixtures"])
+    return {DEFAULT: manifest["fixture"]}
 
 
 def fixture_step(*args: str) -> None:
@@ -199,21 +282,55 @@ def ensure_library() -> None:
         shutil.copytree(LIBRARY, PRISTINE)
 
 
-def new_template(exe: Path, folder: Path) -> Path:
+def pin_failure_times(catalog: Path) -> None:
+    """The failures the broken template recorded (its analyses, the ledger's rows, the inbox's notices), dated
+    BROKEN_FOUND_AT: what the inbox shows of them is the same whenever the template is made. Only times: no row is added
+    or removed, so the catalog stays as the passes left it."""
+    conn = sqlite3.connect(catalog)
+    try:
+        with conn:
+            conn.execute("UPDATE analysis SET analyzed = ?1 WHERE error IS NOT NULL", (BROKEN_FOUND_AT,))
+            conn.execute("UPDATE file_failures SET first_seen = ?1", (BROKEN_FOUND_AT,))
+            conn.execute("UPDATE notices SET created = ?1, updated = ?1", (BROKEN_FOUND_AT,))
+    finally:
+        conn.close()
+
+
+def new_template(exe: Path, folder: Path, template: str) -> Path:
     """One side's template catalog, made by the side's own binary, with everything the app would do in the background done:
     a run starts with nothing left to process. The borders pass runs last, since the app runs it after the import, and it
-    races the screenshot's wait while any file is still due."""
+    races the screenshot's wait while any file is still due.
+
+    `default` is made from nothing over the library. `broken` is made incrementally from the side's default template (the
+    sibling folder `default`, made first): its catalog copied, target/shots/broken added as a library folder, then the
+    same passes, which do only the new folder's work. Its import failure is recorded here, in another process, so a run
+    starts with it in the inbox's baseline and toasts nothing."""
     if folder.exists():
         shutil.rmtree(folder)
     catalog = folder / "catalog"
-    catalog.mkdir(parents=True)
     restore_library()
-    steps = [["scan", str(LIBRARY)], ["import"], ["thumbs", "--height", "120"], ["thumbs", "--height", "220"], ["borders"]]
+    if template == DEFAULT:
+        catalog.mkdir(parents=True)
+        root = LIBRARY
+    elif template == BROKEN_TEMPLATE:
+        base = folder.parent / DEFAULT
+        if not (base / "catalog").is_dir():
+            sys.exit(f"the broken template is made from the default one, and {base} has none")
+        folder.mkdir(parents=True)
+        shutil.copytree(base / "catalog", catalog)
+        place_broken()
+        root = BROKEN
+    else:
+        sys.exit(f"no template {template}")
+    steps = [["scan", str(root)], ["import"], ["thumbs", "--height", "120"], ["thumbs", "--height", "220"], ["borders"]]
     for step in steps:
         result = subprocess.run([str(exe), "--catalog-dir", str(catalog), *step], check=False)
         if result.returncode != 0:
             sys.exit(f"gallery {' '.join(step)} failed ({result.returncode})")
-    fixture_step("views", str(catalog / "catalog.sqlite"))
+    if template == DEFAULT:
+        fixture_step("views", str(catalog / "catalog.sqlite"))
+    else:
+        pin_failure_times(catalog / "catalog.sqlite")
     # The template catalog has background work left when this fails: see the fixture's report above.
     fixture_step("settled", str(catalog / "catalog.sqlite"))
     (folder / "notes.txt").write_text(
@@ -222,17 +339,18 @@ def new_template(exe: Path, folder: Path) -> Path:
     return folder
 
 
-def hook_arguments(hooks: list[str], run_folder: Path) -> list[str]:
+def hook_arguments(hooks: tuple[str, ...], run_folder: Path) -> list[str]:
     return [hook.replace("{FIX}", str(run_folder)).replace("{RUN}", str(run_folder)).replace("\\", os.sep) for hook in hooks]
 
 
-def invoke_shot(exe: Path, side: str, name: str, hooks: list[str], template: Path, wait: float) -> Shot:
+def invoke_shot(exe: Path, side: str, name: str, hooks: tuple[str, ...], template: Path, wait: float) -> Shot:
     run_folder = SHOTS / "runs" / side / name
     if run_folder.exists():
         shutil.rmtree(run_folder)
     run_folder.mkdir(parents=True)
     shutil.copytree(template / "catalog", run_folder / "catalog")
     shutil.copy(template / "notes.txt", run_folder)
+    shutil.copy(SHOT_LOG, run_folder)
     (run_folder / "crops").mkdir()
     restore_library()
     png = run_folder / "shot.png"
@@ -258,13 +376,19 @@ def invoke_shot(exe: Path, side: str, name: str, hooks: list[str], template: Pat
     return Shot(name, png, crops, "", settle)
 
 
-def run_side(exe: Path, side: str, scenarios: dict[str, list[str]], wait: float) -> list[Shot]:
-    """One side of the matrix: its template catalog from its own binary, then each scenario."""
-    template = new_template(exe, SHOTS / "sides" / side)
+def run_side(exe: Path, side: str, scenarios: dict[str, Scenario], wait: float) -> list[Shot]:
+    """One side of the matrix: its template catalogs from its own binary (SHOTS/sides/<side>/<template>), then each
+    scenario. Both templates are built, in order (broken is made from default), unless no scenario of the run uses
+    broken (--only, or the pseudo-locale runs)."""
+    needed = {entry.template for entry in scenarios.values()}
+    templates = {}
+    for template in TEMPLATES:
+        if template == DEFAULT or template in needed:
+            templates[template] = new_template(exe, SHOTS / "sides" / side / template, template)
     results = []
-    for name, hooks in scenarios.items():
+    for name, entry in scenarios.items():
         print(f"[{side}] {name}", flush=True)
-        results.append(invoke_shot(exe, side, name, hooks, template, wait))
+        results.append(invoke_shot(exe, side, name, entry.hooks, templates[entry.template], wait))
     return results
 
 
@@ -300,7 +424,7 @@ def save_reference(sha: str, results: list[Shot], wait: float, qmake: Path) -> P
     manifest = {
         "commit": sha,
         "recorded": time.strftime("%Y-%m-%d"),
-        "fixture": fixture_hash(),
+        "fixtures": fixture_hashes(),
         "qt": str(qmake),
         "wait": float(wait),
         "scenarios": rows,
@@ -364,7 +488,21 @@ def judge(name: str, before: Shot, after: Shot, expect: list[str], diff_folder: 
     return status, detail
 
 
-def reference_results(manifest: dict, reference: Path, scenarios: dict[str, list[str]]) -> list[Shot]:
+def changed_fixtures(manifest: dict, scenarios: dict[str, Scenario]) -> list[str]:
+    """The scenarios whose inputs (template, shot.log) hash differently from the reference's record of them. An input the
+    reference has no hash for is not checked: a reference recorded before it has none of the scenarios that use it, and
+    those are reported as not in the reference."""
+    recorded = manifest_fixtures(manifest)
+    current = fixture_hashes()
+    changed = []
+    for name, entry in scenarios.items():
+        keys = [key for key in entry.inputs() if key in recorded and recorded[key] != current[key]]
+        if keys:
+            changed.append(f"{name} ({', '.join(keys)})")
+    return changed
+
+
+def reference_results(manifest: dict, reference: Path, scenarios: dict[str, Scenario]) -> list[Shot]:
     results = []
     for name in scenarios:
         row = next((r for r in manifest["scenarios"] if r["scenario"] == name), None)
@@ -376,7 +514,7 @@ def reference_results(manifest: dict, reference: Path, scenarios: dict[str, list
     return results
 
 
-def record(args: argparse.Namespace, qmake: Path, scenarios: dict[str, list[str]]) -> None:
+def record(args: argparse.Namespace, qmake: Path, scenarios: dict[str, Scenario]) -> None:
     worktree, sha = update_base_worktree(args.record)
     base_exe = build_gallery(worktree, SHOTS / "base-target")
     ensure_library()
@@ -388,8 +526,8 @@ def record(args: argparse.Namespace, qmake: Path, scenarios: dict[str, list[str]
 def compare(
     args: argparse.Namespace,
     qmake: Path,
-    scenarios: dict[str, list[str]],
-    pseudo: dict[str, list[str]],
+    scenarios: dict[str, Scenario],
+    pseudo: dict[str, Scenario],
     expect: list[str],
 ) -> None:
     current_exe = build_gallery(REPO, None)
@@ -401,9 +539,13 @@ def compare(
         if manifest["qt"] != str(qmake):
             print(f"warning: the reference was recorded with Qt at {manifest['qt']}; this tree uses {qmake}", file=sys.stderr)
     ensure_library()
-    if manifest and manifest["fixture"] != fixture_hash():
+    changed = changed_fixtures(manifest, scenarios) if manifest else []
+    if manifest and changed:
         commit = manifest["commit"]
-        sys.exit(f"the fixture changed since {commit[:10]} was recorded; re-record it with just shots --record {commit}")
+        sys.exit(
+            f"the fixture changed since {commit[:10]} was recorded, for {'; '.join(changed)}; "
+            f"re-record it with just shots --record {commit}"
+        )
 
     # The sides to compare: the base is the reference, or the working tree itself with --self.
     if reference is None or manifest is None:
@@ -449,7 +591,7 @@ def compare(
     print(f"all {len(report)} scenarios as expected")
 
 
-def scenarios_matching(names: list[str]) -> tuple[dict[str, list[str]], dict[str, list[str]]]:
+def scenarios_matching(names: list[str]) -> tuple[dict[str, Scenario], dict[str, Scenario]]:
     """The matrix and the pseudo-locale runs, narrowed by --only."""
     if not names:
         return dict(SCENARIOS), dict(PSEUDO)

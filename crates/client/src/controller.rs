@@ -43,9 +43,13 @@ pub enum Event {
         folder_known: bool,
     },
     /// The list was shown with `count` rows; `last_file` is the index of the session's last file in it, if it has it.
+    /// `generation` is the [`Command::OpenList`] whose list it is (the one the model applied last); 0, never given, when
+    /// none was applied yet (and in a recording made before it was reported).
     ListShown {
         count: usize,
         last_file: Option<usize>,
+        #[serde(default)]
+        generation: u64,
     },
     /// The list shown is placed in the view: the start's last part.
     ListPositioned,
@@ -116,8 +120,11 @@ pub enum Command {
     Step { dx: i32, dy: i32 },
     /// Show the viewer at this item.
     ShowViewer(usize),
-    /// List the files of this listing (model: the grid model executes it). keep: the selection is kept, else the list shows from the top.
-    OpenList { listing: Listing, keep: bool },
+    /// List the files of this listing (model: the grid model executes it). keep: the selection is kept, else the list
+    /// shows from the top. `generation` names the list: each `OpenList` has a newer one than any before (one counter, the
+    /// controller's), the grid shows only the newest it asked for, and the window reports it back when the list is
+    /// shown (`Event::ListShown`).
+    OpenList { listing: Listing, keep: bool, generation: u64 },
     /// Set the rating of an item (model).
     Rate { item: usize, rating: Rating },
     /// Turn an item by quarter turns (model).
@@ -159,8 +166,11 @@ pub struct Controller {
     grid_size: GridSize,
     deadlines: Deadlines,
     grid_width: f64,
-    /// The file a reveal waits to select, once its list is shown.
-    reveal: Option<i64>,
+    /// The last `OpenList`'s generation: the next one is one more.
+    generation: u64,
+    /// The file a reveal waits to select, and the generation of the list it waits for: only that list's `ListShown`
+    /// selects it, and a newer list's drops it (the user went elsewhere).
+    reveal: Option<(i64, u64)>,
 }
 
 impl Controller {
@@ -174,6 +184,7 @@ impl Controller {
             grid_size: GridSize::with(row_height, scale),
             deadlines: Deadlines::default(),
             grid_width: 0.0,
+            generation: 0,
             reveal: None,
         }
     }
@@ -227,10 +238,10 @@ impl Controller {
     pub fn update(&mut self, now_ms: u64, event: Event) -> Vec<Command> {
         match event {
             Event::TreeLoaded { folder_known } => self.start(start::Event::TreeLoaded { folder_known }),
-            Event::ListShown { count, last_file } => {
+            Event::ListShown { count, last_file, generation } => {
                 let mut out = self.input_update(input::Event::ListShown { count });
                 out.extend(self.start(start::Event::ListShown { last_file }));
-                out.extend(self.reveal.take().map(Command::Reveal));
+                out.extend(self.reveal_shown(generation));
                 out
             }
             Event::ListPositioned => self.start(start::Event::ListPositioned),
@@ -261,15 +272,37 @@ impl Controller {
                 vec![Command::SaveSession(self.listing.clone())]
             }
             Event::Reveal { file, folder } => {
-                self.reveal = Some(file);
-                self.listing_event(listing::Event::Reveal(folder))
+                let out = self.listing_event(listing::Event::Reveal(folder));
+                // The reveal waits for the list it just asked for (always one: a reveal is a listing change).
+                self.reveal = out.iter().find_map(|c| match c {
+                    Command::OpenList { generation, .. } => Some((file, *generation)),
+                    _ => None,
+                });
+                out
             }
             Event::RememberListing => vec![Command::SaveSession(self.listing.clone())],
-            Event::Reload => vec![Command::OpenList { listing: self.listing.clone(), keep: true }],
+            Event::Reload => vec![self.open_list(true)],
             Event::FilesChanged => vec![Command::RefreshTurned],
             Event::Timeout => self.run_due(now_ms),
             Event::Flush => self.flush(),
         }
+    }
+
+    /// An `OpenList` of the listing as it is now, with the next generation: every `OpenList` is made here.
+    fn open_list(&mut self, keep: bool) -> Command {
+        self.generation += 1;
+        Command::OpenList { listing: self.listing.clone(), keep, generation: self.generation }
+    }
+
+    /// The reveal's `Command::Reveal` when the list shown is the one it waits for; a newer list drops it, an older one
+    /// (still shown before the reveal's arrives) leaves it waiting.
+    fn reveal_shown(&mut self, generation: u64) -> Option<Command> {
+        let (file, wanted) = self.reveal?;
+        if generation < wanted {
+            return None;
+        }
+        self.reveal = None;
+        (generation == wanted).then_some(Command::Reveal(file))
     }
 
     /// The gate's commands for `event`; the one that lists all folders is a listing change, as the window makes it.
@@ -390,7 +423,7 @@ impl Controller {
         commands
             .into_iter()
             .map(|c| match c {
-                listing::Command::OpenList => Command::OpenList { listing: self.listing.clone(), keep: false },
+                listing::Command::OpenList => self.open_list(false),
                 listing::Command::SaveSession => Command::SaveSession(self.listing.clone()),
             })
             .collect()
@@ -445,10 +478,7 @@ impl Controller {
 
     /// The listing's commands for its current state (the query's pause ended).
     fn listing_now(&mut self) -> Vec<Command> {
-        vec![
-            Command::OpenList { listing: self.listing.clone(), keep: false },
-            Command::SaveSession(self.listing.clone()),
-        ]
+        vec![self.open_list(false), Command::SaveSession(self.listing.clone())]
     }
 
     /// A saved view, applied (the listing's change, as the window reports it).

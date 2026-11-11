@@ -23,13 +23,22 @@ pub(crate) mod state;
 use crate::gallery_bridge::qobject;
 
 use core::pin::Pin;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 
 use cxx_qt::{CxxQtThread, Threading};
 
 thread_local! {
     /// The model's thread handle, kept at `register`. Only the GUI thread touches it.
     static MODEL: RefCell<Option<CxxQtThread<qobject::GalleryModel>>> = const { RefCell::new(None) };
+    /// The generation (`Command::OpenList`'s) of the list the model put in last, 0 before any: written by
+    /// `GalleryModel::apply` right after it swaps the entries in, and read by `Shell::list_shown` on the same thread,
+    /// since the shell reaches the model only through `post`, queued. The one record of what is applied.
+    pub(crate) static APPLIED: Cell<u64> = const { Cell::new(0) };
+}
+
+/// The generation of the list the grid shows now ([`APPLIED`]); 0 before any was shown.
+pub(crate) fn applied() -> u64 {
+    APPLIED.with(Cell::get)
 }
 
 /// Carry out `run` on the grid model, after the events already queued to it: the controller's model commands (rate,

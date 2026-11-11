@@ -1644,8 +1644,10 @@ dependencies = [
  "pg-analysis",
  "pg-catalog",
  "pg-codec",
+ "pg-jobs",
  "pg-model",
  "pg-render",
+ "pg-scan",
  "pg-testkit",
  "pg-thumbcache",
  "rusqlite",
@@ -1865,6 +1867,7 @@ name = "pg-jobs-testkit"
 version = "0.1.0"
 dependencies = [
  "pg-jobs",
+ "pg-model",
 ]
 
 [[package]]
@@ -1976,6 +1979,7 @@ dependencies = [
  "pg-jobs",
  "pg-model",
  "pg-platform",
+ "pg-testkit",
 ]
 
 [[package]]
@@ -2049,9 +2053,11 @@ dependencies = [
  "pg-edit",
  "pg-exiftool",
  "pg-jobs",
+ "pg-jobs-testkit",
  "pg-metadata",
  "pg-model",
  "pg-platform",
+ "pg-testkit",
  "pg-thumbcache",
 ]
 

@@ -6,7 +6,7 @@ pub(crate) mod state;
 
 use crate::command_line_bridge::qobject;
 
-use std::ffi::OsString;
+use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::sync::OnceLock;
 
@@ -72,6 +72,31 @@ pub(crate) fn start_options() -> StartOptions {
         sort: value("sort").map(pg_app::views::sort_from_json),
         apply_view: value("apply-view").map(str::to_owned),
     }
+}
+
+/// Dev mode as the start sets it for its run, never saved: `--dev=1` on and `--dev=0` off, else `PG_DEV` (`env`: `1`
+/// or `0`), else `None`, the preferences'. Another value says nothing, and the next source decides.
+fn dev_seed(args: &[Arg], env: Option<&OsStr>) -> Option<bool> {
+    let flag = |value: &str| match value.trim() {
+        "1" => Some(true),
+        "0" => Some(false),
+        _ => None,
+    };
+    args.iter()
+        .find(|a| a.name == "dev")
+        .and_then(|a| flag(&a.value))
+        .or_else(|| env.and_then(OsStr::to_str).and_then(flag))
+}
+
+/// Dev mode as this run's command line and environment seed it ([`dev_seed`]).
+pub(crate) fn dev_mode_seed() -> Option<bool> {
+    dev_seed(args(), std::env::var_os("PG_DEV").as_deref())
+}
+
+/// The log file the log view shows instead of the app's (`--log-view=<path>`, the screenshots' fixed log): read once,
+/// with nothing followed. The app's own logging is unchanged.
+pub(crate) fn log_view() -> Option<&'static Path> {
+    path("log-view")
 }
 
 /// Where a Yandex search or save gets its calls. The real client, unless `--yandex-fixture=<dir>` names a recorded
@@ -162,6 +187,30 @@ mod tests {
         assert_eq!(parsed.len(), 1);
         assert_eq!(parsed[0].name, "find-similar");
         assert_eq!(parsed[0].exact, value);
+    }
+
+    /// The arguments `list`, after a program name.
+    fn args_of(list: &[&str]) -> Vec<Arg> {
+        let mut all = vec![OsString::from("program")];
+        all.extend(list.iter().map(OsString::from));
+        parse(&all)
+    }
+
+    // Dev mode is the option's for the run, else the environment's, else the preferences' (`None`); a value that is
+    // neither 1 nor 0 leaves it to the next.
+    #[test]
+    fn dev_mode_is_seeded_by_the_option_then_the_environment() {
+        let on = Some(OsStr::new("1"));
+        let off = Some(OsStr::new("0"));
+        assert_eq!(dev_seed(&args_of(&[]), None), None);
+        assert_eq!(dev_seed(&args_of(&["--dev=1"]), None), Some(true));
+        assert_eq!(dev_seed(&args_of(&["--dev=0"]), on), Some(false), "the option wins");
+        assert_eq!(dev_seed(&args_of(&[]), on), Some(true));
+        assert_eq!(dev_seed(&args_of(&[]), off), Some(false));
+        assert_eq!(dev_seed(&args_of(&["--dev=yes"]), off), Some(false), "not a flag: the environment decides");
+        assert_eq!(dev_seed(&args_of(&["--dev=yes"]), Some(OsStr::new("true"))), None);
+        assert_eq!(dev_seed(&args_of(&["--dev=1", "--dev=0"]), None), Some(true), "the first is read");
+        assert_eq!(dev_seed(&args_of(&["--log=1"]), None), None);
     }
 
     // The numeric options read as they always did: the number, trimmed; the fallback otherwise.

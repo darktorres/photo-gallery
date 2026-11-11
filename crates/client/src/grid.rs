@@ -287,14 +287,19 @@ impl Grid {
         self.rows.len()
     }
 
-    /// Asks for a list: a new generation, which the list must still have to be shown. A refresh of the folder
-    /// shown keeps the selection, unless a folder change is still on its way (`loading`): a refresh asked meanwhile
-    /// mustn't keep a selection made in another folder.
-    pub fn request(&mut self, keep: bool, loading: bool) -> u64 {
-        self.generation += 1;
+    /// Asks for a list: `generation` is the controller's for it (`Command::OpenList`, newer than any asked before),
+    /// which the list must still have to be shown. A refresh of the folder shown keeps the selection, unless a folder
+    /// change is still on its way (`loading`): a refresh asked meanwhile mustn't keep a selection made in another
+    /// folder.
+    pub fn request(&mut self, keep: bool, loading: bool, generation: u64) {
+        self.generation = generation;
         self.keep = keep && (self.keep || !loading);
         self.edited.clear();
         self.turned = false;
+    }
+
+    /// The generation of the list asked for last (`request`).
+    pub fn generation(&self) -> u64 {
         self.generation
     }
 
@@ -549,22 +554,24 @@ mod tests {
     #[test]
     fn a_request_keeps_the_selection_only_for_a_refresh_of_the_list_shown() {
         let mut g = Grid::default();
-        let first = g.request(false, false);
+        g.request(false, false, 1);
         assert!(!g.keep());
         // A refresh asked while a folder change is still loading doesn't keep the selection made in that folder.
-        let second = g.request(true, true);
+        g.request(true, true, 2);
         assert!(!g.keep());
         // Once nothing is loading, a refresh keeps it.
-        let third = g.request(true, false);
+        g.request(true, false, 3);
         assert!(g.keep());
-        assert!(first < second && second < third);
+        // The generation is the one given: the controller's, never one of the grid's own.
+        assert_eq!(g.generation(), 3);
     }
 
     #[test]
     fn a_stale_list_is_dropped_and_a_list_under_the_viewer_is_held_until_it_closes() {
         let mut g = Grid::default();
-        let old = g.request(false, false);
-        let new = g.request(false, false);
+        let (old, new) = (1, 2);
+        g.request(false, false, old);
+        g.request(false, false, new);
         assert!(matches!(g.arrive(old, vec![entry(1, 1, 1)], false, |_| None), Arrival::Stale));
         let list = vec![entry(2, 1, 1)];
         assert!(matches!(g.arrive(new, list.clone(), true, |_| None), Arrival::Held));
@@ -576,12 +583,14 @@ mod tests {
     #[test]
     fn a_held_list_counts_as_held_only_while_it_is_the_newest_request() {
         let mut g = Grid::default();
-        let first = g.request(false, false);
+        let first = 1;
+        g.request(false, false, first);
         assert!(!g.is_held());
         assert!(matches!(g.arrive(first, vec![entry(1, 1, 1)], true, |_| None), Arrival::Held));
         assert!(g.is_held());
         // A newer list is asked for: the held one is stale and the newer one is still loading.
-        let second = g.request(false, true);
+        let second = 2;
+        g.request(false, true, second);
         assert!(!g.is_held());
         assert!(matches!(g.arrive(second, vec![entry(2, 1, 1)], false, |_| None), Arrival::Ready(_)));
         assert!(!g.is_held());
@@ -590,7 +599,8 @@ mod tests {
     #[test]
     fn files_edited_while_the_list_loaded_are_read_again_when_it_arrives() {
         let mut g = Grid::default();
-        let generation = g.request(false, false);
+        let generation = 7;
+        g.request(false, false, generation);
         g.swap_entries(vec![entry(1, 1, 1), entry(2, 1, 1)]);
         // Item 2 is rated while the list is still loading (loading is the desktop's flag).
         g.edit(1, true, |e| e.rating = Rating::new(5));

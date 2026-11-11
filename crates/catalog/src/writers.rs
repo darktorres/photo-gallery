@@ -1,27 +1,33 @@
-//! The writes of the scan, of the import (analyses, failures and the ratings they carry) and of the borders pass. Each
-//! writer borrows the transaction it is made in, so it is dropped before that commits. Uses `types` and `error`; its
-//! SQL macros are from `sql`.
+//! The writes of the scan, of the import (analyses, failures and the ratings they carry), of the borders pass and of
+//! the passes' failure ledger. Each writer borrows the transaction it is made in, so it is dropped before that commits.
+//! The ledger's set-based writes are functions over a connection ([`record_failures_on`], [`clear_failures_on`]), which
+//! `Catalog::record_failures`/`clear_failures` run in a transaction of their own and the [`LedgerWriter`] in its
+//! caller's. Uses `types`, `ledger::failure` and `error`; its SQL macros are from `sql`.
 
-use anyhow::Context;
-use rusqlite::{OptionalExtension, Statement, Transaction, params};
+use anyhow::{Context, anyhow};
+use rusqlite::{Connection, OptionalExtension, Statement, Transaction, params};
 
 use pg_model::analysis::Analyzed;
 use pg_model::detection::Detection;
 use pg_model::ids::{FileId, FileIdentity, FolderId, ScanId};
+use pg_model::notice::FilePass;
 use pg_model::rating::Rating;
 use pg_model::rules::{Path as RulePath, PathRules};
 
-use crate::error::Result;
+use crate::error::{Error, Result};
+use crate::ledger::failure::{Failure, tidy};
 use crate::types::{
-    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, Folder, Hit, Recorded, SET_FILE_RATING, SET_RATING, ScannedFile,
-    WorkItem, under_params,
+    DELETE_FILE_RATING, DELETE_RATING, DELETE_SIDES, FOLDER_FAILED, Folder, FolderFailure, Hit, Recorded,
+    SET_FILE_RATING, SET_RATING, ScannedFile, WorkItem, covering_root, under_params,
 };
 
 // The passes' writes: one writer per transaction, each statement prepared once for it rather than looked up in
 // rusqlite's statement cache per row (16 entries, which the import's statements alone would crowd). A writer
 // borrows its transaction, so it is dropped before the transaction commits.
 
-/// Write a file as a new row (or, on its identity, the same file's changed fields): unpaired, as `ScanWriter::file` says.
+/// Write a file as a new row (or, on its identity, the same file's changed fields, while the row is as the walk read it
+/// when it listed the folder: `f.prior`): unpaired, as `ScanWriter::file` says. The rows written: 0 when the row
+/// changed since the listing.
 fn write_file(file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, scan: i64, key: &[u8]) -> Result<usize> {
     let (volume, file_ref) = (f.identity.volume.cast_signed(), f.identity.file_index.cast_signed());
     let size = i64::try_from(f.size).context("a file's size")?;
@@ -37,7 +43,9 @@ fn write_file(file: &mut Statement<'_>, f: &ScannedFile, folder: &Folder, scan: 
         size,
         f.mtime,
         scan,
-        key
+        key,
+        f.prior.map(|p| p.size),
+        f.prior.map(|p| p.mtime)
     ])?)
 }
 
@@ -47,6 +55,9 @@ pub struct ScanWriter<'tx> {
     rules: PathRules,
     /// The scanned root's subtree (`under_params`): a row's folder is in it when it is `?1` or between `?2` and `?3`.
     under: [Vec<u8>; 3],
+    /// The library folder that holds the walked one (its id and its stored path), resolved once when the writer is
+    /// made; `None` when no library folder holds it (the folder ledger then records nothing).
+    covering: Option<(i64, Vec<u8>)>,
     folder_id: Statement<'tx>,
     new_folder: Statement<'tx>,
     known: Statement<'tx>,
@@ -56,21 +67,26 @@ pub struct ScanWriter<'tx> {
     backfill: Statement<'tx>,
     displace: Statement<'tx>,
     file: Statement<'tx>,
+    folder_failed: Statement<'tx>,
     /// The order key of the file being recorded.
     key: Vec<u8>,
 }
 
 impl<'tx> ScanWriter<'tx> {
+    /// The writer of the walk `scan` of `root`, in `tx`: the walk's lease is renewed (the heartbeat of each batch).
     pub(crate) fn new(
         tx: &'tx Transaction,
         scan: ScanId,
         rules: PathRules,
         root: &RulePath,
     ) -> Result<ScanWriter<'tx>> {
+        tx.prepare_cached("UPDATE scan_leases SET heartbeat = unixepoch() WHERE id = ?1")?.execute([scan.get()])?;
+        let covering = covering_root(tx, rules, root)?.map(|r| (r.id.get(), rules.join(&r.path)));
         Ok(ScanWriter {
             scan: scan.get(),
             rules,
             under: under_params(rules, root),
+            covering,
             folder_id: tx.prepare("SELECT id FROM folders WHERE path = ?1")?,
             new_folder: tx.prepare("INSERT INTO folders(path, key) VALUES (?1, ?2) RETURNING id")?,
             known: tx.prepare(
@@ -85,18 +101,43 @@ impl<'tx> ScanWriter<'tx> {
             backfill: tx.prepare("UPDATE files SET created = ?2 WHERE id = ?1 AND created IS NULL")?,
             displace: tx
                 .prepare("UPDATE files SET volume = NULL, file_ref = NULL, missing = 1, unpaired = 1 WHERE id = ?1")?,
-            // A new row is unpaired: the pairing at the end of the scan decides what it is (S-17.7 decision 4).
-            file: tx.prepare(
+            // A new row is unpaired: the pairing at the end of the scan decides what it is (S-17.7 decision 4). A row
+            // is updated only while it is as the walk read it when it listed the folder (`?12`, `?13`: NULL for none),
+            // and no write of the app's into it is in progress: `current::IS_CURRENT`'s size and mtime rule (a listing
+            // has no rotation). The values are compared, not a stamp: `files.seq` moves with imports and retries,
+            // which change nothing on disk.
+            file: tx.prepare(concat!(
                 "INSERT INTO files(volume, file_ref, created, folder_id, name, ext, kind, size, mtime, last_scan,
                     order_key, unpaired)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, 1)
                  ON CONFLICT(volume, file_ref) DO UPDATE SET
                     folder_id = excluded.folder_id, name = excluded.name, ext = excluded.ext, kind = excluded.kind,
                     size = excluded.size, mtime = excluded.mtime, last_scan = excluded.last_scan, missing = 0,
-                    order_key = excluded.order_key, created = coalesce(files.created, excluded.created)",
-            )?,
+                    order_key = excluded.order_key, created = coalesce(files.created, excluded.created)
+                 WHERE files.size IS ?12 AND files.mtime IS ?13 AND ",
+                not_being_written!(files)
+            ))?,
+            folder_failed: tx.prepare(FOLDER_FAILED)?,
             key: Vec::new(),
         })
+    }
+
+    /// Record a folder the walk couldn't take (`failure`: unreadable, or a mount it refuses) with its error, in the
+    /// folder ledger, as seen by this walk: the end of a complete walk of a folder above it sweeps the rows this walk
+    /// didn't see (`Catalog::mark_missing`). One already recorded keeps its serial, so it is not news again. Nothing is
+    /// written when no library folder holds the walked one, or it was removed since the writer was made. Whether a row
+    /// was written.
+    pub fn folder_failed(&mut self, path: &RulePath, failure: FolderFailure, error: &str) -> Result<bool> {
+        let Some((root, root_bytes)) = &self.covering else { return Ok(false) };
+        let written = self.folder_failed.execute(params![
+            root,
+            root_bytes,
+            self.rules.join(path),
+            failure.code(),
+            tidy(error),
+            self.scan
+        ])?;
+        Ok(written > 0)
     }
 
     /// The folder's row, made if it's new.
@@ -113,7 +154,9 @@ impl<'tx> ScanWriter<'tx> {
     /// Record a file the scan found, by identity (S-17.7 decision 2). A file moved or renamed keeps its row, and so
     /// does one whose `created` is unknown on either side. A hit whose `created` differs is a different file: the row
     /// is displaced (it keeps its id, folder, name, ratings and content, and loses its identity), and a new row is
-    /// made for the identity. A new row is `unpaired` until the pairing at the end of the scan.
+    /// made for the identity. A new row is `unpaired` until the pairing at the end of the scan. A row that changed
+    /// since the folder was listed (`f.prior`), or that the app is writing into, is only marked seen
+    /// ([`Recorded::Same`]): the listing is older than the row.
     pub fn upsert_file(&mut self, folder: &Folder, f: &ScannedFile) -> Result<Recorded> {
         let ScanWriter { scan, under, known, in_root, seen, backfill, displace, file, key, .. } = self;
         key.clear();
@@ -153,7 +196,10 @@ impl<'tx> ScanWriter<'tx> {
             seen.execute(params![hit.id, *scan])?;
             return Ok(Recorded::Same);
         }
-        write_file(file, f, folder, *scan, &key[..])?;
+        if write_file(file, f, folder, *scan, &key[..])? == 0 {
+            seen.execute(params![hit.id, *scan])?;
+            return Ok(Recorded::Same);
+        }
         Ok(Recorded::Changed)
     }
 
@@ -391,6 +437,116 @@ impl<'tx> BordersWriter<'tx> {
     }
 }
 
+/// The failure ledger's writes in a transaction of the caller's: the borders pass records and clears its rows in the
+/// transaction that stores the borders, so a failure to write the ledger stores nothing of the batch.
+pub struct LedgerWriter<'tx> {
+    conn: &'tx Connection,
+}
+
+impl<'tx> LedgerWriter<'tx> {
+    pub(crate) fn new(tx: &'tx Transaction) -> LedgerWriter<'tx> {
+        LedgerWriter { conn: tx }
+    }
+
+    /// `record_failures_on`: whether a row changed.
+    pub fn record(&mut self, pass: FilePass, failures: &[Failure], now: i64) -> Result<bool> {
+        record_failures_on(self.conn, pass, failures, now)
+    }
+
+    /// `clear_failures_on`: whether a row went.
+    pub fn clear(&mut self, pass: FilePass, files: &[FileId]) -> Result<bool> {
+        clear_failures_on(self.conn, pass, files)
+    }
+}
+
+/// The import's ledger is the triggers' (`analysis_import_*`, mirroring the failed analyses): no pass writes it.
+fn written_by_its_pass(pass: FilePass) -> Result<()> {
+    match pass {
+        FilePass::Thumbs | FilePass::Borders => Ok(()),
+        FilePass::Import => Err(Error::Other(anyhow!("the import's failures are kept by its analyses, not written"))),
+    }
+}
+
+/// Whether the test fixture makes the ledgers' writes fail ([`crate::fixture::LedgerWritesFail`]): the other crates'
+/// tests of a ledger that can't be written, in every process-wide connection at once.
+#[cfg(any(test, feature = "fixture"))]
+pub(crate) static LEDGER_FAULT: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+#[cfg(any(test, feature = "fixture"))]
+fn injected_ledger_fault() -> Result<()> {
+    if LEDGER_FAULT.load(std::sync::atomic::Ordering::SeqCst) {
+        return Err(Error::Other(anyhow!("the test fixture fails the ledger's writes")));
+    }
+    Ok(())
+}
+
+#[cfg(not(any(test, feature = "fixture")))]
+#[expect(clippy::unnecessary_wraps, reason = "the fixture's build can fail here")]
+fn injected_ledger_fault() -> Result<()> {
+    Ok(())
+}
+
+/// Record `failures` of `pass` (the thumbnails' or the borders'), found at `now`, on `conn`: one row per file, kept
+/// only while the catalog has the file as the pass read it (one changed or gone since is not recorded). A failure
+/// recorded already is updated only if its error or its retry changed, and keeps its serial. One statement for them
+/// all. Whether a row changed (`changes()`): a failure that holds writes nothing.
+pub(crate) fn record_failures_on(conn: &Connection, pass: FilePass, failures: &[Failure], now: i64) -> Result<bool> {
+    written_by_its_pass(pass)?;
+    injected_ledger_fault()?;
+    if failures.is_empty() {
+        return Ok(false);
+    }
+    let rows: Vec<serde_json::Value> = failures
+        .iter()
+        .map(|f| {
+            serde_json::json!([f.file_id.get(), f.mtime, f.size, f.rotation.get(), tidy(&f.error), i64::from(f.retry)])
+        })
+        .collect();
+    let rows = serde_json::to_string(&rows).map_err(anyhow::Error::from)?;
+    let changed = conn
+        .prepare_cached(
+            "INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen)
+         SELECT f.id, ?1, f.mtime, f.size, f.rotation, j.value ->> 4, j.value ->> 5, ?3
+         FROM json_each(?2) j CROSS JOIN files f ON f.id = j.value ->> 0
+         WHERE f.mtime = j.value ->> 1 AND f.size = j.value ->> 2 AND f.rotation = j.value ->> 3 AND f.missing = 0
+         ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error, retry = excluded.retry
+         WHERE file_failures.error IS NOT excluded.error OR file_failures.retry IS NOT excluded.retry",
+        )?
+        .execute(params![pass.code(), rows, now])?;
+    Ok(changed > 0)
+}
+
+/// The results of `files` were made by `pass` (the thumbnails' or the borders'): their rows go, on `conn`. Whether a
+/// row went.
+pub(crate) fn clear_failures_on(conn: &Connection, pass: FilePass, files: &[FileId]) -> Result<bool> {
+    written_by_its_pass(pass)?;
+    injected_ledger_fault()?;
+    if files.is_empty() {
+        return Ok(false);
+    }
+    let gone = conn
+        .prepare_cached("DELETE FROM file_failures WHERE pass = ?1 AND file_id IN (SELECT value FROM json_each(?2))")?
+        .execute(params![pass.code(), file_ids_json(files)?])?;
+    Ok(gone > 0)
+}
+
+/// Whether `pass`'s ledger holds any of `files`, on `conn`: a read, so a clear of what isn't there takes no write lock.
+pub(crate) fn failures_held(conn: &Connection, pass: FilePass, files: &[FileId]) -> Result<bool> {
+    if files.is_empty() {
+        return Ok(false);
+    }
+    Ok(conn
+        .prepare_cached(
+            "SELECT EXISTS(SELECT 1 FROM file_failures WHERE pass = ?1 AND file_id IN (SELECT value FROM json_each(?2)))",
+        )?
+        .query_row(params![pass.code(), file_ids_json(files)?], |r| r.get(0))?)
+}
+
+/// The ids of `files`, as the JSON array the ledger's statements read with `json_each`.
+fn file_ids_json(files: &[FileId]) -> Result<String> {
+    Ok(serde_json::to_string(&files.iter().map(|f| f.get()).collect::<Vec<_>>()).map_err(anyhow::Error::from)?)
+}
+
 #[cfg(test)]
 mod tests {
     use crate::browse::fixtures::{spelled, under_both_rules};
@@ -416,7 +572,7 @@ mod tests {
             let folder = rules.merge(&p(rules, r"D:\x"));
             rules.order_key(&rules.merged_key(&folder), &Name::from(name))
         };
-        let scans: Vec<ScanId> = (0..9).map(|_| c.begin_scan(&p(rules, r"D:\x")).unwrap()).collect();
+        let scans: Vec<ScanId> = (0..9).map(|_| begin(&mut c, &p(rules, r"D:\x"))).collect();
         assert!(scanned(&mut c, scans[0], "a.jpg", 10, 100), "new");
         // As it was: only marked seen by the scan.
         assert!(!scanned(&mut c, scans[1], "a.jpg", 10, 100));
@@ -450,6 +606,7 @@ mod tests {
     /// The scanner finding a file in D:\x with this identity and creation time (a.jpg, 10 bytes, mtime 100).
     fn found_as(c: &mut Catalog, scan: ScanId, identity: FileIdentity, created: Option<i64>) -> Recorded {
         let rules = c.rules();
+        let prior = c.prior_states(&[identity]).unwrap().remove(0);
         let tx = c.tx().unwrap();
         let mut writer = tx.scan_writer(scan, &p(rules, r"D:\x")).unwrap();
         let folder = writer.folder(&p(rules, r"D:\x")).unwrap();
@@ -460,6 +617,7 @@ mod tests {
             size: 10,
             mtime: 100,
             created,
+            prior,
         };
         let recorded = writer.upsert_file(&folder, &file).unwrap();
         drop(writer);
@@ -469,7 +627,7 @@ mod tests {
 
     fn a_volume_and_file_id_above_i64_max_are_kept_whole_and_found_again(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         let (volume, file) = (u64::MAX - 1, u64::MAX);
         assert_eq!(found_as(&mut c, scan, FileIdentity::new(volume, file), None), Recorded::Changed);
         let stored: (i64, i64) =
@@ -487,7 +645,7 @@ mod tests {
 
     fn a_creation_time_fills_in_once_and_a_different_one_is_a_different_file(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         let identity = FileIdentity::new(1, 7);
         // Unknown on the first scan (a file system that doesn't give it), then known: it is filled in.
         assert_eq!(found_as(&mut c, scan, identity, None), Recorded::Changed);
@@ -519,7 +677,7 @@ mod tests {
     fn what_was_read_from_a_file_is_kept_only_while_the_file_is_as_listed(rules: PathRules) {
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         c.add_root(&p(rules, r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let stored = |c: &mut Catalog, item: &WorkItem| {
             let tx = c.tx().unwrap();
@@ -621,7 +779,7 @@ mod tests {
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         c.add_root(&p(rules, r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let item = next_work(&c);
         let solid = |edge| Side {
@@ -737,7 +895,7 @@ mod tests {
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         c.add_root(&p(rules, r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         scanned(&mut c, scan, "a.jpg", 10, 100);
         let item = next_work(&c);
         let analysis = Analysis {
@@ -807,7 +965,7 @@ mod tests {
 
         let mut c = Catalog::prepare(Path::new(":memory:"), versions(), rules).unwrap();
         c.add_root(&p(rules, r"D:\x")).unwrap();
-        let scan = c.begin_scan(&p(rules, r"D:\x")).unwrap();
+        let scan = begin(&mut c, &p(rules, r"D:\x"));
         // 400 × 300 stored. b: none; c: 30 of 300 at the top (10%); d: 60 of 400 at the left (15%), but turned a
         // quarter (orientation 6), so 60 of the 400 upright rows; e: 90 at the top (30%), marked not a border.
         let files = [("b.jpg", 1, None), ("c.jpg", 1, Some([0, 30, 0, 0])), ("d.jpg", 6, Some([60, 0, 0, 0]))];
@@ -824,6 +982,7 @@ mod tests {
                 size: 10,
                 mtime: 100,
                 created: None,
+                prior: None,
             };
             writer.upsert_file(&folder, &file).unwrap();
             drop(writer);

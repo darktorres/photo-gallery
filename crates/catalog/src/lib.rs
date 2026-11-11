@@ -26,6 +26,7 @@ pub mod pair;
 pub mod queue;
 
 mod borders;
+mod convert;
 mod core;
 mod current;
 mod lifecycle;
@@ -42,11 +43,12 @@ mod error;
 pub use error::{Error, Result};
 mod schema;
 
-pub use self::core::{Catalog, Tx};
+pub use self::core::{Catalog, ScanLease, Tx};
 pub use types::{
-    CropSource, Folder, Listed, Rebuilt, Recorded, Root, ScannedFile, Status, Versions, WorkItem, WriteTarget,
+    CropSource, Folder, FolderFailure, Listed, Prior, Rebuilt, Recorded, Root, SCAN_LEASE_SECS, ScannedFile, Skip,
+    SkipReason, Status, Versions, WorkItem, WriteTarget,
 };
-pub use writers::{AnalysisWriter, BordersWriter, ScanWriter};
+pub use writers::{AnalysisWriter, BordersWriter, LedgerWriter, ScanWriter};
 
 #[cfg(test)]
 mod test_support;

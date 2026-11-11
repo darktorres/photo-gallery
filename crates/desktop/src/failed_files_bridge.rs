@@ -13,6 +13,8 @@ pub mod qobject {
         type QHash_i32_QByteArray = cxx_qt_lib::QHash<cxx_qt_lib::QHashPair_i32_QByteArray>;
         include!("cxx-qt-lib/qmodelindex.h");
         type QModelIndex = cxx_qt_lib::QModelIndex;
+        include!("cxx-qt-lib/qstring.h");
+        type QString = cxx_qt_lib::QString;
         include!("cxx-qt-lib/qvariant.h");
         type QVariant = cxx_qt_lib::QVariant;
     }
@@ -21,10 +23,16 @@ pub mod qobject {
         #[qobject]
         #[base = QAbstractListModel]
         #[qml_element]
-        /// How many files the ledger holds for the pass shown (the list shows the newest of them).
+        /// How many rows the ledger shown holds (the list shows the newest of them), as its read counted them.
         #[qproperty(i32, total, READ, NOTIFY, FINAL)]
+        /// The list asked for is being read (off the window's thread): the list says so until it is delivered.
+        #[qproperty(bool, loading, READ, NOTIFY, FINAL)]
+        /// Why the list couldn't be read, worded; empty when it was (or is being read).
+        #[qproperty(QString, error, READ, NOTIFY, FINAL)]
         type FailedFiles = super::FailedFilesRust;
     }
+
+    impl cxx_qt::Threading for FailedFiles {}
 
     unsafe extern "RustQt" {
         #[qinvokable]
@@ -49,8 +57,9 @@ pub mod qobject {
         #[cxx_name = "endResetModel"]
         fn end_reset_model(self: Pin<&mut FailedFiles>);
 
-        /// Show the failed files of a pass (a `Notices` row's `pass`: 0 the thumbnails, 1 the borders, 2 the import),
-        /// newest first; -1 shows none.
+        /// Show what a ledger lists (a `Notices` row's `pass`: 0 the thumbnails, 1 the borders, 2 the import, 3 the scans'
+        /// folders): asked for now, shown when its read is delivered (`loading` meanwhile); -1 shows none. Asked again
+        /// for the ledger shown, it is read again (its newest failure changed) and its rows stay until then.
         #[qinvokable]
         fn show(self: Pin<&mut FailedFiles>, pass: i32);
     }

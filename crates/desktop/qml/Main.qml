@@ -58,19 +58,21 @@ ApplicationWindow {
     // The log view is shown (dev mode); made the first time (logLoader).
     property bool logOpen: false
     onLogOpenChanged: if (logOpen) logLoader.active = true
-    // The inbox is shown; made the first time (inboxLoader). Opening it marks its entries read.
+    // The inbox is shown; made the first time (inboxLoader). While it is open the inbox reads its ledgers' counts, and
+    // while it is open in the active window what it shows is marked read (Notices.setViewing).
     property bool inboxOpen: false
     onInboxOpenChanged: {
         if (inboxOpen) {
             inboxLoader.active = true
-            inboxModel.markAllRead()
             inboxModel.dismissToast()
         } else {
-            inboxExpandRow = -1
+            inboxExpandPass = -1
         }
+        inboxModel.setViewing(inboxOpen, win.active)
     }
-    // The inbox's row to open with it (the status bar's "N failed": the pass's ledger; -1: none).
-    property int inboxExpandRow: -1
+    // The ledger whose entry opens with the inbox, and again when it appears (the status bar's "N failed": the pass's
+    // ledger; --inbox-expand; -1: none): a `pass` code, a bit of Notices.passes.
+    property int inboxExpandPass: -1
     // The start is over (Shell.started, the test hooks have run): the --screenshot hook waits for it.
     property bool ready: false
     // A list that arrived before the grid had a width: positioned once it is laid out (-2: none).
@@ -114,6 +116,8 @@ ApplicationWindow {
         onViewerRequested: (i) => viewerItem.show(i)
         onPanelOpenRequested: (kind) => win.openPanel(kind)
         onPanelCloseRequested: (kind) => win.closePanel(kind)
+        // A Reveal's folder is read and listed (Shell.reveal, Shell.revealFolder).
+        onRevealShown: win.showAsked()
     }
     // The core, for the screenshot hook's settle check: its pending pauses are asked (cpp/screenshot.cpp).
     readonly property var shellCore: shell
@@ -302,10 +306,10 @@ ApplicationWindow {
         grid.takeFocus()
     }
 
-    // An inbox entry's Reveal: the file in its folder, selected once shown; a file the library no longer has toasts.
+    // An inbox entry's Reveal: the file in its folder, selected once shown; a file the library no longer has toasts. The
+    // folder is read off the window's thread: the window follows when it is listed (Shell.revealShown).
     function revealFile(fileId: real) {
-        if (shell.reveal(fileId))
-            showAsked()
+        shell.reveal(fileId)
     }
 
     // Show item i in the grid: its row, brought into view. The selection is the model's (the shell sets it).
@@ -368,8 +372,13 @@ ApplicationWindow {
     FailedFiles {
         id: failedFilesModel
     }
-    // What another process changed in the inbox shows when the window comes back.
-    onActiveChanged: if (active) inboxModel.poke()
+    // What another process changed in the inbox shows when the window comes back; what the open inbox shows is read
+    // once the window is active again.
+    onActiveChanged: {
+        if (active)
+            inboxModel.poke()
+        inboxModel.setViewing(inboxOpen, active)
+    }
 
     // A modal panel opened or closed: the shell mirrors which are open, for the shortcuts' rule.
     function modalShown(kind: int, shown: bool) {
@@ -431,6 +440,7 @@ ApplicationWindow {
         onViewerRateRequested: (rating) => viewerItem.rate(rating)
         onLogPanelRequested: shell.globalAction(GlobalShortcuts.Log)
         onInboxPanelRequested: shell.globalAction(GlobalShortcuts.Inbox)
+        onInboxExpandRequested: (code) => win.inboxExpandPass = inboxModel.passOfCode(code)
     }
 
     Item {
@@ -485,15 +495,19 @@ ApplicationWindow {
             unread: inboxModel.unread
             status: library.status
             failed: library.failed
+            // A link only to what the inbox lists: the pass's ledger entry, or its unreadable files.
+            failedLinked: library.failedPass >= 0 && (inboxModel.passes & (1 << library.failedPass)) !== 0
             busy: library.busy
             paused: library.paused
             progress: library.progress
             devMode: shell.devMode
+            // The screenshots: an info toast stays up while the window settles (no timer runs).
+            toastHeld: testHooks.screenshot
             onLogRequested: shell.globalAction(GlobalShortcuts.Log)
             onToastExpired: inboxModel.dismissToast()
             onInboxRequested: shell.globalAction(GlobalShortcuts.Inbox)
             onFailedRequested: {
-                win.inboxExpandRow = inboxModel.rowOfPass(library.failedPass)
+                win.inboxExpandPass = library.failedPass
                 if (!win.inboxOpen)
                     shell.globalAction(GlobalShortcuts.Inbox)
             }
@@ -694,12 +708,17 @@ ApplicationWindow {
                     notices: inboxModel
                     failedFiles: failedFilesModel
                     failedTotal: failedFilesModel.total
-                    expandRow: win.inboxExpandRow
+                    failedLoading: failedFilesModel.loading
+                    failedError: failedFilesModel.error
+                    // The pass's ledger entry, once the inbox lists it (its bit of `passes`): this follows it appearing.
+                    expandRow: win.inboxExpandPass >= 0 && (inboxModel.passes & (1 << win.inboxExpandPass)) !== 0
+                        ? inboxModel.rowOfKey(inboxModel.passKey(win.inboxExpandPass)) : -1
                     onCopyRequested: (row) => inboxModel.copy(row)
                     onDismissRequested: (row) => inboxModel.dismiss(row)
                     onRetryRequested: (row) => inboxModel.retry(row)
                     onFilesRequested: (pass) => failedFilesModel.show(pass)
                     onRevealRequested: (fileId) => win.revealFile(fileId)
+                    onFolderRevealRequested: (row) => shell.revealFolder(row)
                     onShowFilesRequested: {
                         shell.showFailedImports()
                         win.showAsked()

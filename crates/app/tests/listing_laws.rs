@@ -65,8 +65,10 @@ proptest! {
                 read.push((app.views().listing(), listing));
             }
         }
+        app.shutdown();
         drop(app);
-        let _ = std::fs::remove_dir_all(&dir);
+        // After the shutdown nothing holds the app's files.
+        prop_assert!(std::fs::remove_dir_all(&dir).is_ok() && !dir.exists(), "{} is still held", dir.display());
         for (back, listing) in read {
             prop_assert_eq!(back, listing);
         }

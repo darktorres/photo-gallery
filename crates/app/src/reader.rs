@@ -1,5 +1,8 @@
 //! The window's catalog reads off its thread: the grid's files, the folder tree and the filter bar's counts (FINDINGS
-//! "Startup"). One thread with its own catalog connection runs them, one at a time, oldest request first.
+//! "Startup"), and the inbox's own reads: a ledger entry's files (or folders) when it is expanded, what Copy puts on the
+//! clipboard, and the folder a Reveal opens, so the inbox reads nothing on the window's thread. One thread with its own
+//! catalog connection runs them, one at a time, oldest request first. The inbox's reads are the user's, so waiting
+//! behind a listing that is running is acceptable: each has a kind of its own, so none cancels another.
 //!
 //! A `Session` is one client's end of it (the desktop has one). Each of its kinds keeps only its newest request: a
 //! request replaces that kind's request not yet started (and goes to the back), so typing in a filter or clicking
@@ -20,11 +23,13 @@ use std::thread::JoinHandle;
 
 use pg_catalog::Catalog;
 use pg_catalog::browse::read::facets::Facets;
+use pg_catalog::ledger::{Counts, FailedFile, FailedFolder};
 use pg_model::details::Details;
 use pg_model::grid::Entry;
 use pg_model::ids::FileId;
+use pg_model::notice::LedgerKind;
 use pg_model::query::{Query, Sort};
-use pg_model::rules::Merged;
+use pg_model::rules::{Merged, Path as RulePath};
 use pg_model::tree::FolderTree;
 
 use crate::catalogs::Catalogs;
@@ -36,6 +41,52 @@ pub enum Kind {
     Grid,
     Tree,
     Facets,
+    /// An expanded ledger entry's list ([`Session::failed_files`]).
+    FailedFiles,
+    /// What the inbox's Copy puts on the clipboard ([`Session::copy_details`]).
+    CopyDetails,
+    /// The folder a Reveal opens ([`Session::reveal_folder`]).
+    RevealFolder,
+}
+
+/// What a ledger entry lists: a pass's failed files, or the folders the scans couldn't take.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum FailedItems {
+    /// Newest first (`pg_catalog::Catalog::failed_files`).
+    Files(Vec<FailedFile>),
+    /// Grouped by the library folder that holds them (`pg_catalog::Catalog::failed_folders`).
+    Folders(Vec<FailedFolder>),
+}
+
+impl FailedItems {
+    pub fn len(&self) -> usize {
+        match self {
+            FailedItems::Files(files) => files.len(),
+            FailedItems::Folders(folders) => folders.len(),
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+}
+
+/// A ledger entry's detail: what it lists (at most the limit asked for) and its counts over all its rows, read together.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Failed {
+    pub kind: LedgerKind,
+    pub items: FailedItems,
+    pub counts: Counts,
+}
+
+/// The detail of `kind`'s ledger, at most `limit` items.
+fn read_failed(c: &Catalog, kind: LedgerKind, limit: usize) -> pg_catalog::Result<Failed> {
+    let items = match kind {
+        LedgerKind::File(pass) => FailedItems::Files(c.failed_files(pass, limit)?),
+        LedgerKind::ScanFolders => FailedItems::Folders(c.failed_folders(limit)?),
+    };
+    let counts = c.ledger_counts(kind, &c.ledger_ack(kind)?)?;
+    Ok(Failed { kind, items, counts })
 }
 
 /// A request, given the reader's connection (or why there is none).
@@ -217,6 +268,29 @@ impl Session {
             move |r| deliver(r.map_err(Error::from)),
         );
     }
+
+    /// What `kind`'s expanded entry lists, at most `limit`, with its counts (its kind's newest request, as with
+    /// `submit`): the list shows "loading" until it is delivered.
+    pub fn failed_files(&self, kind: LedgerKind, limit: usize, deliver: impl FnOnce(Result<Failed>) + Send + 'static) {
+        self.submit(Kind::FailedFiles, move |c| read_failed(c, kind, limit), move |r| deliver(r.map_err(Error::from)));
+    }
+
+    /// What the inbox's Copy of `kind`'s entry adds to its words: its files (or folders), at most `limit`. Its own kind,
+    /// so a Copy doesn't cancel the expanded list's read, nor that one the Copy.
+    pub fn copy_details(&self, kind: LedgerKind, limit: usize, deliver: impl FnOnce(Result<Failed>) + Send + 'static) {
+        self.submit(Kind::CopyDetails, move |c| read_failed(c, kind, limit), move |r| deliver(r.map_err(Error::from)));
+    }
+
+    /// The folder of `file_id` where a Reveal opens it, if the library shows the file (present); `None` for one gone or
+    /// missing (the front end says the file is no longer in the library). A newer Reveal supersedes it: its delivery is
+    /// dropped.
+    pub fn reveal_folder(&self, file_id: FileId, deliver: impl FnOnce(Result<Option<RulePath>>) + Send + 'static) {
+        self.submit(
+            Kind::RevealFolder,
+            move |c| c.present_file_folder(file_id),
+            move |r| deliver(r.map_err(Error::from)),
+        );
+    }
 }
 
 /// The catalog reads: the reader thread's session (the grid, the folder tree, the filter bar's counts), and the reads a
@@ -253,5 +327,164 @@ impl Reading {
     /// A file's grid entry as the catalog has it now; `None` when it is gone.
     pub fn entry(&self, file_id: FileId) -> Result<Option<Entry>> {
         self.catalogs.with_catalog(|c| c.grid_entry(file_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pg_catalog::fixture::{self, File};
+    use pg_catalog::ledger::Failure;
+    use pg_model::ids::FolderId;
+    use pg_model::notice::FilePass;
+    use pg_model::turns::Turns;
+    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::time::Duration;
+
+    const THUMBS: LedgerKind = LedgerKind::File(FilePass::Thumbs);
+
+    /// A catalog in a test folder holding files 1 and 2, both with a thumbnail failure, and the folder's path.
+    fn catalog(name: &str) -> (PathBuf, PathBuf) {
+        let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
+        let layout = pg_library::layout::Layout::in_home(&dir);
+        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
+        let c = pg_library::open_catalog(&layout).unwrap();
+        let folder = dir.to_str().unwrap();
+        fixture::state::add_scan(&c, 1, folder).unwrap();
+        fixture::state::add_folder(&c, 1, folder).unwrap();
+        let files = [
+            File::new(FileId::new(1), FolderId::new(1), "a.jpg", 10, 0),
+            File::new(FileId::new(2), FolderId::new(1), "b.jpg", 10, 0),
+        ];
+        fixture::insert(&c, &files).unwrap();
+        let failure = |id| Failure {
+            file_id: FileId::new(id),
+            mtime: 0,
+            size: 10,
+            rotation: Turns::NONE,
+            error: "x".into(),
+            retry: false,
+        };
+        c.record_failures(FilePass::Thumbs, &[failure(1), failure(2)], 1).unwrap();
+        drop(c);
+        (layout.catalog_path(), dir)
+    }
+
+    /// Hold the reader's thread until the sender is dropped (or sends), so the requests made meanwhile wait.
+    fn hold(session: &Session) -> Sender<()> {
+        let (release, held) = channel::<()>();
+        session.submit(
+            Kind::Grid,
+            move |_| {
+                let _ = held.recv();
+                Ok(())
+            },
+            |_: Result<(), ReadError>| {},
+        );
+        release
+    }
+
+    fn got<T>(deliveries: &Receiver<T>) -> T {
+        deliveries.recv_timeout(Duration::from_secs(20)).expect("delivered")
+    }
+
+    /// Every request made before this one has been run (the reader runs them oldest first).
+    fn settle(session: &Session) {
+        let (done, wait) = channel();
+        session.submit(Kind::Tree, |_| Ok(()), move |_: Result<(), ReadError>| done.send(()).unwrap());
+        got(&wait);
+    }
+
+    // A newer request for a ledger's list replaces the waiting one: only the newer is delivered.
+    #[test]
+    fn a_superseded_failed_files_request_is_not_delivered() {
+        let (path, dir) = catalog("reader-failed-superseded");
+        let reader = Reader::start(path).unwrap();
+        let session = Session::new(1, reader.clone());
+        let (deliver, deliveries) = channel();
+        let release = hold(&session);
+        for limit in [1, 10] {
+            let deliver = deliver.clone();
+            session.failed_files(THUMBS, limit, move |r| deliver.send(r.map(|f| f.items.len())).unwrap());
+        }
+        drop(release);
+        assert_eq!(got(&deliveries).unwrap(), 2, "the newer request's limit");
+        settle(&session);
+        assert!(deliveries.try_recv().is_err(), "the older one is not delivered");
+        reader.stop();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // The inbox's three kinds don't cancel each other: each is delivered, with what it read. The list's counts are over
+    // every row, whatever the limit.
+    #[test]
+    fn the_inboxs_kinds_dont_cancel_each_other() {
+        let (path, dir) = catalog("reader-three-kinds");
+        let reader = Reader::start(path).unwrap();
+        let session = Session::new(1, reader.clone());
+        let (failed, failed_got) = channel();
+        let (copied, copied_got) = channel();
+        let (revealed, revealed_got) = channel();
+        let release = hold(&session);
+        session.failed_files(THUMBS, 1, move |r| failed.send(r).unwrap());
+        session.copy_details(THUMBS, 10, move |r| copied.send(r).unwrap());
+        session.reveal_folder(FileId::new(1), move |r| revealed.send(r).unwrap());
+        drop(release);
+        let list = got(&failed_got).unwrap();
+        assert_eq!((list.kind, list.items.len(), list.counts.total, list.counts.new), (THUMBS, 1, 2, 2));
+        let FailedItems::Files(files) = got(&copied_got).unwrap().items else { panic!("files") };
+        let mut ids: Vec<i64> = files.iter().map(|f| f.file_id.get()).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, [1, 2]);
+        let folder = got(&revealed_got).unwrap().expect("a present file's folder");
+        assert_eq!(folder, pg_platform::native::PATH_RULES.split_file_name(&files[0].path).unwrap().0);
+        // The scans' ledger is listed by its folders (none here).
+        let (folders, folders_got) = channel();
+        session.failed_files(LedgerKind::ScanFolders, 10, move |r| folders.send(r).unwrap());
+        let list = got(&folders_got).unwrap();
+        assert!(matches!(list.items, FailedItems::Folders(ref f) if f.is_empty()));
+        assert_eq!(list.counts.total, 0);
+        reader.stop();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A newer Reveal supersedes the waiting one, whose delivery is dropped; a file the catalog doesn't have is `None`.
+    #[test]
+    fn a_superseded_reveal_is_dropped() {
+        let (path, dir) = catalog("reader-reveal");
+        let reader = Reader::start(path).unwrap();
+        let session = Session::new(1, reader.clone());
+        let (deliver, deliveries) = channel();
+        let release = hold(&session);
+        for file in [1, 99] {
+            let deliver = deliver.clone();
+            session.reveal_folder(FileId::new(file), move |r| deliver.send((file, r.unwrap())).unwrap());
+        }
+        drop(release);
+        assert_eq!(got(&deliveries), (99, None));
+        settle(&session);
+        assert!(deliveries.try_recv().is_err());
+        reader.stop();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // A read that can't be made is delivered as an error, for every kind.
+    #[test]
+    fn an_error_is_delivered_as_an_error() {
+        let dir = pg_testkit::test_folder("scratch_app", "reader-error").unwrap();
+        let reader = Reader::start(dir.join("no-such-catalog.sqlite")).unwrap();
+        let session = Session::new(1, reader.clone());
+        let (failed, failed_got) = channel();
+        let (copied, copied_got) = channel();
+        let (revealed, revealed_got) = channel();
+        session.failed_files(THUMBS, 10, move |r| failed.send(r.map(|_| ())).unwrap());
+        session.copy_details(THUMBS, 10, move |r| copied.send(r.map(|_| ())).unwrap());
+        session.reveal_folder(FileId::new(1), move |r| revealed.send(r.map(|_| ())).unwrap());
+        for result in [got(&failed_got), got(&copied_got), got(&revealed_got)] {
+            let e = result.unwrap_err();
+            assert!(e.to_string().contains("can't be opened"), "{e}");
+        }
+        reader.stop();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

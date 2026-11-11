@@ -141,6 +141,30 @@ impl ScanNote {
     pub fn is_warning(self) -> bool {
         matches!(self, ScanNote::Ambiguous | ScanNote::UnpairedWithData | ScanNote::VolumeFallback)
     }
+
+    /// How the inbox keeps the note, by what it describes (docs/NOTIFICATIONS.md): a condition of the library folder
+    /// (hard links and reparse points come out the same on every walk) is kept under `(root, code)` and replaced only by
+    /// the next walk of the whole folder; what one walk did (the rows it replaced or bound again) is an event of that
+    /// walk, with its count.
+    pub fn lifecycle(self) -> NoteLifecycle {
+        match self {
+            ScanNote::Duplicates
+            | ScanNote::SkippedReparse
+            | ScanNote::Ambiguous
+            | ScanNote::UnpairedWithData
+            | ScanNote::VolumeFallback => NoteLifecycle::Condition,
+            ScanNote::Replaced | ScanNote::Rebound => NoteLifecycle::Event,
+        }
+    }
+}
+
+/// What a [`ScanNote`] describes ([`ScanNote::lifecycle`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NoteLifecycle {
+    /// A condition of the library folder: a [`Lifecycle::State`] keyed `(root, code)`, resolved by [`Resolver::RootWalk`].
+    Condition,
+    /// What one walk did: a [`Lifecycle::Event`].
+    Event,
 }
 
 /// Why the thumbnail cache's file was started over when it was opened.
@@ -271,6 +295,48 @@ impl FilePass {
     }
 }
 
+/// A ledger the inbox shows as one entry, built when the inbox is read: a pass's failed files, or the folders the scans
+/// couldn't read (the catalog's per-folder ledger). Its code is what its acknowledgement is stored under
+/// (`ledger_ack.kind`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum LedgerKind {
+    File(FilePass),
+    ScanFolders,
+}
+
+impl LedgerKind {
+    /// Every ledger, in the inbox's order.
+    pub const ALL: [LedgerKind; 4] = [
+        LedgerKind::File(FilePass::Thumbs),
+        LedgerKind::File(FilePass::Borders),
+        LedgerKind::File(FilePass::Import),
+        LedgerKind::ScanFolders,
+    ];
+
+    /// The ledger's code: a pass's own, or `scan-folders`.
+    pub fn code(self) -> &'static str {
+        match self {
+            LedgerKind::File(pass) => pass.code(),
+            LedgerKind::ScanFolders => "scan-folders",
+        }
+    }
+
+    /// The ledger with `code` ([`LedgerKind::code`]), if any.
+    pub fn from_code(code: &str) -> Option<LedgerKind> {
+        LedgerKind::ALL.into_iter().find(|kind| kind.code() == code)
+    }
+
+    /// The ledger's entry, with its counts.
+    pub fn notice(self, counts: Option<LedgerCounts>) -> Notice {
+        match self {
+            LedgerKind::File(FilePass::Thumbs) => Notice::ThumbsFailed { counts },
+            LedgerKind::File(FilePass::Borders) => Notice::BordersFailed { counts },
+            LedgerKind::File(FilePass::Import) => Notice::ImportFailed { counts },
+            LedgerKind::ScanFolders => Notice::ScanFoldersFailed { counts },
+        }
+    }
+}
+
 /// A ledger entry's counts, read only while the inbox is open: the failures since the user last saw the entry, and the
 /// ones before.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -283,29 +349,16 @@ pub struct LedgerCounts {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum Notice {
-    // The scans.
-    /// Folders of a scan that couldn't be read.
-    ScanUnreadable {
-        root: RulePath,
-        count: u64,
-    },
+    // The scans. The folders a scan couldn't read, the mounts under them it refuses and a library folder it refuses are
+    // not notices: they are the catalog's per-folder ledger, one entry ([`Notice::ScanFoldersFailed`]). Their old kinds'
+    // codes are retired ([`Notice::RETIRED`]).
     /// A scan that failed. Its batches before the error are in.
     ScanFailed {
         root: RulePath,
         error: String,
     },
-    /// A folder the scanner refuses (decisions 6 and 13); it stays in the library until it is removed.
-    RootRefused {
-        root: RulePath,
-        reason: RefusedReason,
-    },
-    /// A folder under a scanned root, on another file system, that the scanner refuses: its files are not in the scan.
-    MountRefused {
-        root: RulePath,
-        mount: RulePath,
-        reason: RefusedReason,
-    },
-    /// What a scan of a folder counted that the user may want to know, `count` of them.
+    /// What a scan of a folder counted that the user may want to know, `count` of them. A condition of the folder is
+    /// kept; what one walk did is an event ([`ScanNote::lifecycle`]).
     ScanNote {
         root: RulePath,
         note: ScanNote,
@@ -407,7 +460,8 @@ pub enum Notice {
     },
     /// The writer stopped: nothing more is written into the files until the app starts again.
     WriteStopped,
-    /// Queued writes were dropped (their files went), `count` of them, the last of them a `write`.
+    /// Queued writes were dropped (their files went), `count` of them, the last of them a `write`: an event (a lost edit
+    /// is a fact, not a condition), posted by the writer.
     WriteDropped {
         write: WriteKind,
         count: u64,
@@ -494,6 +548,11 @@ pub enum Notice {
     ImportFailed {
         counts: Option<LedgerCounts>,
     },
+    /// Folders the scans couldn't read, or refuse (a mount under a library folder, or the library folder itself): the
+    /// catalog's per-folder ledger.
+    ScanFoldersFailed {
+        counts: Option<LedgerCounts>,
+    },
     /// Files a pass couldn't read (an offline drive, a file in use), `count` of them: retried by the next pass.
     UnreadableFiles {
         pass: FilePass,
@@ -531,23 +590,116 @@ pub enum Lifecycle<'a> {
     Event,
     /// Shown as a toast and logged, never kept: feedback on what the user just did.
     Transient,
-    /// One entry per pass, built from the failure ledger when the inbox is read; never stored.
-    Ledger(FilePass),
-    /// Kept under its key: a new post of the same key replaces it (and counts), and its producer clears it once the
-    /// problem is gone.
-    State(Key<'a>),
+    /// One entry per ledger, built from the catalog's ledger when the inbox is read; never stored.
+    Ledger(LedgerKind),
+    /// Kept under its key: a new post of the same key replaces it (and counts), and what resolves it ([`Resolver`])
+    /// clears it once the problem is gone. Every state names its resolver: one that has none doesn't compile.
+    State(Key<'a>, Resolver),
+}
+
+/// What clears a kept notice (a [`Lifecycle::State`]) once the problem is gone. A state about a library folder is also
+/// cleared when that folder is removed ([`Resolver::RootRemoval`], through the catalog's foreign key), whatever its
+/// resolver; [`Notice::resolvers`] lists both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Resolver {
+    /// The next success of the same operation.
+    NextSuccess(Op),
+    /// The next complete run of the pass (one that read every file it had to).
+    CompletePass(FilePass),
+    /// The writer's status, as it changes: an error gone back to none, a writer started again.
+    StatusPoll,
+    /// The thumbnail cache's writer, at its first success after a failure.
+    CacheRecovery,
+    /// The next save of the preferences.
+    NextSave,
+    /// The next complete walk of the whole library folder, which replaces the folder's kept notices with the ones it
+    /// found.
+    RootWalk,
+    /// The library folder's removal (always, for a state about a library folder).
+    RootRemoval,
+}
+
+impl Resolver {
+    /// The resolver's name, as the generated table in docs/NOTIFICATIONS.md writes it: `next-success(edit-rate)`.
+    pub fn name(self) -> String {
+        match self {
+            Resolver::NextSuccess(op) => format!("next-success({})", op.code()),
+            Resolver::CompletePass(pass) => format!("complete-pass({})", pass.code()),
+            Resolver::StatusPoll => "status-poll".to_string(),
+            Resolver::CacheRecovery => "cache-recovery".to_string(),
+            Resolver::NextSave => "next-save".to_string(),
+            Resolver::RootWalk => "root-walk".to_string(),
+            Resolver::RootRemoval => "root-removal".to_string(),
+        }
+    }
+}
+
+/// An operation whose next success clears its failure's state ([`Resolver::NextSuccess`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Op {
+    /// A round of the job.
+    Round,
+    /// A pass's write of its failures to the ledger.
+    LedgerWrite(FilePass),
+    /// The window's reads.
+    Listing,
+    RowRead,
+    Reload,
+    Facets,
+    Tree,
+    /// The window's save of its session.
+    Session,
+    /// A change to the saved views.
+    Views(ViewOp),
+    /// An edit.
+    Edit(EditOp),
+}
+
+impl Op {
+    /// The operation's code.
+    pub fn code(self) -> &'static str {
+        match self {
+            Op::Round => "round",
+            Op::LedgerWrite(FilePass::Thumbs) => "ledger-write-thumbs",
+            Op::LedgerWrite(FilePass::Borders) => "ledger-write-borders",
+            Op::LedgerWrite(FilePass::Import) => "ledger-write-import",
+            Op::Listing => "listing",
+            Op::RowRead => "row-read",
+            Op::Reload => "reload",
+            Op::Facets => "facets",
+            Op::Tree => "tree",
+            Op::Session => "session",
+            Op::Views(ViewOp::List) => "views-list",
+            Op::Views(ViewOp::Save) => "views-save",
+            Op::Views(ViewOp::Delete) => "views-delete",
+            Op::Edit(EditOp::Rate) => "edit-rate",
+            Op::Edit(EditOp::Rotate) => "edit-rotate",
+            Op::Edit(EditOp::MarkBorder) => "edit-mark-border",
+        }
+    }
+}
+
+/// One row of the resolver table ([`Notice::resolver_table`]): a kept kind and part, and what clears it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ResolverRow {
+    /// The kind's code.
+    pub code: &'static str,
+    /// The part's code, for a kind kept per part.
+    pub part: Option<&'static str>,
+    /// What clears it: its resolver, then [`Resolver::RootRemoval`] for a state about a library folder.
+    pub resolvers: Vec<Resolver>,
 }
 
 /// A kept notice's key: its kind's code, the library folder it is about (resolved to the folder of the library that
 /// holds it when it is posted, so removing that folder clears it), and the part of that folder's notices it is.
 ///
 /// A producer clears kept notices by a key too ([`Key::all`]): a key with no part clears every part of the kind and
-/// folder (a complete scan of a folder clears its refused mounts before it posts the ones it found).
+/// folder (a complete walk of a library folder replaces its notes).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Key<'a> {
     pub code: &'static str,
     pub root: Option<&'a RulePath>,
-    pub part: Option<Part<'a>>,
+    pub part: Option<Part>,
 }
 
 impl<'a> Key<'a> {
@@ -556,52 +708,31 @@ impl<'a> Key<'a> {
         Key { code, root, part: None }
     }
 
-    /// The key, owning its folders: to send it to another thread.
+    /// The key, owning its folder: to send it to another thread.
     pub fn to_buf(&self) -> KeyBuf {
-        KeyBuf {
-            code: self.code,
-            root: self.root.cloned(),
-            part: self.part.as_ref().map(|part| match part {
-                Part::Path(path) => PartBuf::Path((*path).clone()),
-                Part::Code(code) => PartBuf::Code(code),
-            }),
-        }
+        KeyBuf { code: self.code, root: self.root.cloned(), part: self.part }
     }
 }
 
-/// A [`Key`] that owns its folders.
+/// A [`Key`] that owns its folder.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct KeyBuf {
     pub code: &'static str,
     pub root: Option<RulePath>,
-    pub part: Option<PartBuf>,
-}
-
-/// A [`Part`] that owns its folder.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum PartBuf {
-    Path(RulePath),
-    Code(&'static str),
+    pub part: Option<Part>,
 }
 
 impl KeyBuf {
     pub fn key(&self) -> Key<'_> {
-        Key {
-            code: self.code,
-            root: self.root.as_ref(),
-            part: self.part.as_ref().map(|part| match part {
-                PartBuf::Path(path) => Part::Path(path),
-                PartBuf::Code(code) => Part::Code(code),
-            }),
-        }
+        Key { code: self.code, root: self.root.as_ref(), part: self.part }
     }
 }
 
-/// What tells two kept notices of one kind and folder apart.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum Part<'a> {
-    /// A folder under the root (a refused mount).
-    Path(&'a RulePath),
+/// What tells two kept notices of one kind and folder apart. A part is a code, never a folder: per-folder facts are the
+/// catalog's ledger (a key matches an exact part, and a folder's bytes can't be compared as the Windows rules compare
+/// names).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Part {
     /// A code: the note, the operation, the pass.
     Code(&'static str),
 }
@@ -623,10 +754,17 @@ pub enum Action {
 }
 
 /// The ids of each kind, from one table: its code (the stored tag), and its words' ids, `notice-<code>-title` and
-/// `-body`. A test checks the code against the serde tag.
+/// `-body`. A test checks the code against the serde tag. The retired codes are the kinds a build stored before they
+/// were removed: never used again, and a row of one reads as [`Notice::Unknown`] (it has no variant to read into).
 macro_rules! ids {
-    ($($variant:ident => $code:literal),* $(,)?) => {
+    ($($variant:ident => $code:literal),* $(,)?; retired: $($retired:literal),* $(,)?) => {
         impl Notice {
+            /// The codes of the kinds removed: never a kind's code again.
+            pub const RETIRED: &'static [&'static str] = &[$($retired),*];
+
+            /// The codes of the kinds this build has (each kind's [`Notice::code`]).
+            pub const CODES: &'static [&'static str] = &[$($code),*];
+
             /// The kind's code: the stored tag, permanent.
             pub fn code(&self) -> &'static str {
                 match self {
@@ -652,10 +790,7 @@ macro_rules! ids {
 }
 
 ids! {
-    ScanUnreadable => "scan-unreadable",
     ScanFailed => "scan-failed",
-    RootRefused => "root-refused",
-    MountRefused => "mount-refused",
     ScanNote => "scan-note",
     RoundFailed => "round-failed",
     RoundPanicked => "round-panicked",
@@ -694,25 +829,38 @@ ids! {
     ThumbsFailed => "thumbs-failed",
     BordersFailed => "borders-failed",
     ImportFailed => "import-failed",
+    ScanFoldersFailed => "scan-folders-failed",
     UnreadableFiles => "unreadable-files",
     LedgerNotWritten => "ledger-not-written",
     NoticesLost => "notices-lost",
     FileNoLongerInLibrary => "file-no-longer-in-library",
     UpdateAvailable => "update-available",
-    Unknown => "unknown",
+    Unknown => "unknown";
+    // The scans' per-folder facts, now the catalog's folder ledger (`scan-folders-failed`).
+    retired: "scan-unreadable", "mount-refused", "root-refused",
 }
 
 /// The most bytes of an error's text a notice keeps (its words add the rest).
 pub const ERROR_CAP: usize = 2048;
 
+/// The mark a cut text ends in.
+const ELLIPSIS: char = '…';
+
 /// `text` as a notice keeps it: each control character (a newline, a tab) becomes a space, so it is one line, and past
-/// `cap` bytes it is cut at a character's edge and ends in `…`.
+/// `cap` bytes it is cut at a character's edge and ends in `…`, the mark within the cap: the result is never more than
+/// `cap` bytes (under the mark's 3 bytes, a cut text is the characters that fit, with no mark).
 pub fn tidy(text: &str, cap: usize) -> String {
     let mut out = String::with_capacity(text.len().min(cap));
     for c in text.chars() {
         let c = if c.is_control() { ' ' } else { c };
         if out.len() + c.len_utf8() > cap {
-            out.push('…');
+            if ELLIPSIS.len_utf8() <= cap {
+                // Room for the mark: the characters it would pass the cap with go (an empty text always has it).
+                while out.len() + ELLIPSIS.len_utf8() > cap {
+                    out.pop();
+                }
+                out.push(ELLIPSIS);
+            }
             break;
         }
         out.push(c);
@@ -742,10 +890,7 @@ impl Notice {
             | Notice::FolderAlreadyAdded { .. }
             | Notice::FileNoLongerInLibrary
             | Notice::UpdateAvailable { .. } => Level::Info,
-            Notice::ScanUnreadable { .. }
-            | Notice::RootRefused { .. }
-            | Notice::MountRefused { .. }
-            | Notice::CacheFull { .. }
+            Notice::CacheFull { .. }
             | Notice::CatalogRebuilt { .. }
             | Notice::CatalogNotClosed { .. }
             | Notice::PrefsUnreadable { .. }
@@ -761,6 +906,7 @@ impl Notice {
             | Notice::ThumbsFailed { .. }
             | Notice::BordersFailed { .. }
             | Notice::ImportFailed { .. }
+            | Notice::ScanFoldersFailed { .. }
             | Notice::UnreadableFiles { .. }
             | Notice::LedgerNotWritten { .. }
             | Notice::NoticesLost { .. }
@@ -790,11 +936,7 @@ impl Notice {
     /// Its category in the inbox.
     pub fn source(&self) -> Source {
         match self {
-            Notice::ScanUnreadable { .. }
-            | Notice::ScanFailed { .. }
-            | Notice::RootRefused { .. }
-            | Notice::MountRefused { .. }
-            | Notice::ScanNote { .. } => Source::Scan,
+            Notice::ScanFailed { .. } | Notice::ScanNote { .. } | Notice::ScanFoldersFailed { .. } => Source::Scan,
             Notice::RoundFailed { .. }
             | Notice::RoundPanicked { .. }
             | Notice::RescanFailed { .. }
@@ -840,35 +982,44 @@ impl Notice {
     /// How the inbox keeps it.
     pub fn lifecycle(&self) -> Lifecycle<'_> {
         match self {
-            Notice::ScanUnreadable { root, .. } | Notice::RootRefused { root, .. } => self.key(Some(root), None),
-            Notice::MountRefused { root, mount, .. } => self.key(Some(root), Some(Part::Path(mount))),
-            Notice::ScanNote { root, note, .. } => self.key(Some(root), Some(Part::Code(note.code()))),
-            Notice::ViewsFailed { op, .. } => self.key(None, Some(Part::Code(op.code()))),
-            Notice::EditFailed { op, .. } => self.key(None, Some(Part::Code(op.code()))),
-            Notice::UnreadableFiles { pass, .. } | Notice::LedgerNotWritten { pass, .. } => {
-                self.key(None, Some(Part::Code(pass.code())))
+            Notice::ScanNote { root, note, .. } => match note.lifecycle() {
+                NoteLifecycle::Condition => self.key(Some(root), Some(Part::Code(note.code())), Resolver::RootWalk),
+                NoteLifecycle::Event => Lifecycle::Event,
+            },
+            Notice::ViewsFailed { op, .. } => {
+                self.key(None, Some(Part::Code(op.code())), Resolver::NextSuccess(Op::Views(*op)))
             }
-            Notice::RoundFailed { .. }
-            | Notice::CacheFull { .. }
-            | Notice::PrefsNotSaved { .. }
-            | Notice::CacheTouchesNotWritten { .. }
-            | Notice::CacheNotStored { .. }
-            | Notice::WriteFailed { .. }
-            | Notice::WriteStopped
-            | Notice::WriteDropped { .. }
-            | Notice::ListingFailed { .. }
-            | Notice::RowReadFailed { .. }
-            | Notice::ReloadFailed { .. }
-            | Notice::FacetsFailed { .. }
-            | Notice::TreeFailed { .. }
-            | Notice::SessionNotSaved { .. } => self.key(None, None),
-            Notice::ThumbsFailed { .. } => Lifecycle::Ledger(FilePass::Thumbs),
-            Notice::BordersFailed { .. } => Lifecycle::Ledger(FilePass::Borders),
-            Notice::ImportFailed { .. } => Lifecycle::Ledger(FilePass::Import),
+            Notice::EditFailed { op, .. } => {
+                self.key(None, Some(Part::Code(op.code())), Resolver::NextSuccess(Op::Edit(*op)))
+            }
+            Notice::UnreadableFiles { pass, .. } => {
+                self.key(None, Some(Part::Code(pass.code())), Resolver::CompletePass(*pass))
+            }
+            Notice::LedgerNotWritten { pass, .. } => {
+                self.key(None, Some(Part::Code(pass.code())), Resolver::NextSuccess(Op::LedgerWrite(*pass)))
+            }
+            Notice::RoundFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Round)),
+            Notice::CacheFull { .. } => self.key(None, None, Resolver::CompletePass(FilePass::Thumbs)),
+            Notice::PrefsNotSaved { .. } => self.key(None, None, Resolver::NextSave),
+            Notice::CacheTouchesNotWritten { .. } | Notice::CacheNotStored { .. } => {
+                self.key(None, None, Resolver::CacheRecovery)
+            }
+            Notice::WriteFailed { .. } | Notice::WriteStopped => self.key(None, None, Resolver::StatusPoll),
+            Notice::ListingFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Listing)),
+            Notice::RowReadFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::RowRead)),
+            Notice::ReloadFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Reload)),
+            Notice::FacetsFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Facets)),
+            Notice::TreeFailed { .. } => self.key(None, None, Resolver::NextSuccess(Op::Tree)),
+            Notice::SessionNotSaved { .. } => self.key(None, None, Resolver::NextSuccess(Op::Session)),
+            Notice::ThumbsFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Thumbs)),
+            Notice::BordersFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Borders)),
+            Notice::ImportFailed { .. } => Lifecycle::Ledger(LedgerKind::File(FilePass::Import)),
+            Notice::ScanFoldersFailed { .. } => Lifecycle::Ledger(LedgerKind::ScanFolders),
             Notice::FolderAlreadyAdded { .. } | Notice::FileNoLongerInLibrary | Notice::Unknown { .. } => {
                 Lifecycle::Transient
             }
-            Notice::ScanFailed { .. }
+            Notice::WriteDropped { .. }
+            | Notice::ScanFailed { .. }
             | Notice::RoundPanicked { .. }
             | Notice::Cropped { .. }
             | Notice::CropFailed { .. }
@@ -891,20 +1042,56 @@ impl Notice {
         }
     }
 
-    /// A kept notice of this kind, under `root` and `part`.
-    fn key<'a>(&self, root: Option<&'a RulePath>, part: Option<Part<'a>>) -> Lifecycle<'a> {
-        Lifecycle::State(Key { code: self.code(), root, part })
+    /// A kept notice of this kind, under `root` and `part`, cleared by `resolver`.
+    fn key<'a>(&self, root: Option<&'a RulePath>, part: Option<Part>, resolver: Resolver) -> Lifecycle<'a> {
+        Lifecycle::State(Key { code: self.code(), root, part }, resolver)
+    }
+
+    /// What clears it, for a kept notice: its resolver, then [`Resolver::RootRemoval`] when it is about a library
+    /// folder. Nothing for a notice that isn't kept.
+    pub fn resolvers(&self) -> Vec<Resolver> {
+        match self.lifecycle() {
+            Lifecycle::State(key, resolver) => {
+                let mut resolvers = vec![resolver];
+                if key.root.is_some() {
+                    resolvers.push(Resolver::RootRemoval);
+                }
+                resolvers
+            }
+            Lifecycle::Event | Lifecycle::Transient | Lifecycle::Ledger(_) => Vec::new(),
+        }
+    }
+
+    /// Every kept kind and part, and what clears it: the table docs/NOTIFICATIONS.md lists (generated by
+    /// [`Notice::resolver_markdown`], and compared by a test). In the samples' order, each part in its list's.
+    pub fn resolver_table() -> Vec<ResolverRow> {
+        Notice::samples()
+            .into_iter()
+            .flat_map(each_part)
+            .filter_map(|notice| {
+                let Lifecycle::State(key, _) = notice.lifecycle() else { return None };
+                let part = key.part.map(|Part::Code(code)| code);
+                Some(ResolverRow { code: key.code, part, resolvers: notice.resolvers() })
+            })
+            .collect()
+    }
+
+    /// The resolver table as docs/NOTIFICATIONS.md holds it: a Markdown table, a row per kept kind and part.
+    pub fn resolver_markdown() -> String {
+        let mut text = String::from("| Kind | Part | Cleared by |\n|---|---|---|\n");
+        for row in Notice::resolver_table() {
+            let part = row.part.map_or_else(|| "—".to_string(), |part| format!("`{part}`"));
+            let resolvers: Vec<String> = row.resolvers.iter().map(|r| format!("`{}`", r.name())).collect();
+            text.push_str(&format!("| `{}` | {part} | {} |\n", row.code, resolvers.join(", ")));
+        }
+        text
     }
 
     /// The library folder it is about, if any: the inbox ties it to the folder of the library that holds it, so it goes
     /// when that folder is removed, and a notice about a folder no longer in the library is not kept.
     pub fn root(&self) -> Option<&RulePath> {
         match self {
-            Notice::ScanUnreadable { root, .. }
-            | Notice::ScanFailed { root, .. }
-            | Notice::RootRefused { root, .. }
-            | Notice::MountRefused { root, .. }
-            | Notice::ScanNote { root, .. } => Some(root),
+            Notice::ScanFailed { root, .. } | Notice::ScanNote { root, .. } => Some(root),
             Notice::RoundFailed { .. }
             | Notice::RoundPanicked { .. }
             | Notice::CacheFull { .. }
@@ -943,6 +1130,8 @@ impl Notice {
             | Notice::ThumbsFailed { .. }
             | Notice::BordersFailed { .. }
             | Notice::ImportFailed { .. }
+            // The folder ledger's entry is about every library folder.
+            | Notice::ScanFoldersFailed { .. }
             | Notice::UnreadableFiles { .. }
             | Notice::LedgerNotWritten { .. }
             | Notice::NoticesLost { .. }
@@ -952,14 +1141,16 @@ impl Notice {
         }
     }
 
-    /// What the user can do from it, besides dismissing it. A ledger entry's rows also have [`Action::Reveal`], and a toast
-    /// [`Action::OpenInbox`].
+    /// What the user can do from it, besides dismissing it. A ledger entry's rows also have [`Action::Reveal`] (a
+    /// folder's opens its parent), and a toast [`Action::OpenInbox`].
     pub fn actions(&self) -> Vec<Action> {
         match self.lifecycle() {
             Lifecycle::Transient => Vec::new(),
-            Lifecycle::Ledger(FilePass::Import) => vec![Action::ShowFailedFiles, Action::CopyDetails],
-            Lifecycle::Ledger(FilePass::Thumbs) => vec![Action::Retry, Action::CopyDetails],
-            Lifecycle::Ledger(FilePass::Borders) | Lifecycle::Event | Lifecycle::State(_) => vec![Action::CopyDetails],
+            Lifecycle::Ledger(LedgerKind::File(FilePass::Import)) => vec![Action::ShowFailedFiles, Action::CopyDetails],
+            Lifecycle::Ledger(LedgerKind::File(FilePass::Thumbs)) => vec![Action::Retry, Action::CopyDetails],
+            Lifecycle::Ledger(LedgerKind::File(FilePass::Borders) | LedgerKind::ScanFolders)
+            | Lifecycle::Event
+            | Lifecycle::State(..) => vec![Action::CopyDetails],
         }
     }
 
@@ -967,15 +1158,11 @@ impl Notice {
     /// stored form's (every kind reads back).
     pub fn samples() -> Vec<Notice> {
         let root = sample_path(&["Photos"]);
-        let mount = sample_path(&["Photos", "card"]);
         let failure =
             FileFailure { path: r"D:\Photos\a.jpg".into(), error: "unexpected end of file".into(), panicked: false };
         let error = || "access is denied".to_string();
         vec![
-            Notice::ScanUnreadable { root: root.clone(), count: 3 },
             Notice::ScanFailed { root: root.clone(), error: error() },
-            Notice::RootRefused { root: root.clone(), reason: RefusedReason::RemovableDrive },
-            Notice::MountRefused { root: root.clone(), mount, reason: RefusedReason::Fat },
             Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 2 },
             Notice::RoundFailed { error: error() },
             Notice::RoundPanicked { message: "index out of bounds".into() },
@@ -1032,6 +1219,7 @@ impl Notice {
             Notice::ThumbsFailed { counts: Some(LedgerCounts { new: 1, earlier: 5 }) },
             Notice::BordersFailed { counts: Some(LedgerCounts { new: 0, earlier: 2 }) },
             Notice::ImportFailed { counts: Some(LedgerCounts { new: 3, earlier: 0 }) },
+            Notice::ScanFoldersFailed { counts: Some(LedgerCounts { new: 2, earlier: 1 }) },
             Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 7 },
             Notice::LedgerNotWritten { pass: FilePass::Borders, error: error() },
             Notice::NoticesLost { count: 4 },
@@ -1039,6 +1227,28 @@ impl Notice {
             Notice::UpdateAvailable { version: "1.2.0".into() },
             Notice::Unknown { code: "from-a-newer-build".into() },
         ]
+    }
+}
+
+/// `notice` once for each part its kind is kept under (each note, operation or pass), or itself for a kind with none.
+fn each_part(notice: Notice) -> Vec<Notice> {
+    match notice {
+        Notice::ScanNote { root, count, .. } => {
+            ScanNote::ALL.iter().map(|&note| Notice::ScanNote { root: root.clone(), note, count }).collect()
+        }
+        Notice::ViewsFailed { error, .. } => {
+            ViewOp::ALL.iter().map(|&op| Notice::ViewsFailed { op, error: error.clone() }).collect()
+        }
+        Notice::EditFailed { error, .. } => {
+            EditOp::ALL.iter().map(|&op| Notice::EditFailed { op, error: error.clone() }).collect()
+        }
+        Notice::UnreadableFiles { count, .. } => {
+            FilePass::ALL.iter().map(|&pass| Notice::UnreadableFiles { pass, count }).collect()
+        }
+        Notice::LedgerNotWritten { error, .. } => {
+            FilePass::ALL.iter().map(|&pass| Notice::LedgerNotWritten { pass, error: error.clone() }).collect()
+        }
+        other => vec![other],
     }
 }
 
@@ -1060,58 +1270,56 @@ mod tests {
     /// samples are checked to hold each.
     fn ordinal(notice: &Notice) -> usize {
         match notice {
-            Notice::ScanUnreadable { .. } => 0,
-            Notice::ScanFailed { .. } => 1,
-            Notice::RootRefused { .. } => 2,
-            Notice::MountRefused { .. } => 3,
-            Notice::ScanNote { .. } => 4,
-            Notice::RoundFailed { .. } => 5,
-            Notice::RoundPanicked { .. } => 6,
-            Notice::CacheFull { .. } => 7,
-            Notice::Cropped { .. } => 8,
-            Notice::CropFailed { .. } => 9,
-            Notice::CatalogRebuilt { .. } => 10,
-            Notice::CatalogNotClosed { .. } => 11,
-            Notice::PrefsUnreadable { .. } => 12,
-            Notice::PrefsNotSaved { .. } => 13,
-            Notice::CacheTotalsFixed { .. } => 14,
-            Notice::CacheTouchesNotWritten { .. } => 15,
-            Notice::CacheNotStored { .. } => 16,
-            Notice::CacheWalNotMerged { .. } => 17,
-            Notice::CacheStartedOver { .. } => 18,
-            Notice::CacheDisabled { .. } => 19,
-            Notice::WriteFailed { .. } => 20,
-            Notice::WriteStopped => 21,
-            Notice::WriteDropped { .. } => 22,
-            Notice::FolderAlreadyAdded { .. } => 23,
-            Notice::FolderRefused { .. } => 24,
-            Notice::FolderNotAdded { .. } => 25,
-            Notice::FolderNotRemoved { .. } => 26,
-            Notice::RescanFailed { .. } => 27,
-            Notice::LibraryUnavailable { .. } => 28,
-            Notice::FoldersUnreadable { .. } => 29,
-            Notice::PickerFailed { .. } => 30,
-            Notice::ListingFailed { .. } => 31,
-            Notice::RowReadFailed { .. } => 32,
-            Notice::ReloadFailed { .. } => 33,
-            Notice::FacetsFailed { .. } => 34,
-            Notice::TreeFailed { .. } => 35,
-            Notice::ViewsFailed { .. } => 36,
-            Notice::SessionNotSaved { .. } => 37,
-            Notice::EditFailed { .. } => 38,
-            Notice::ThumbsFailed { .. } => 39,
-            Notice::BordersFailed { .. } => 40,
-            Notice::ImportFailed { .. } => 41,
-            Notice::UnreadableFiles { .. } => 42,
-            Notice::LedgerNotWritten { .. } => 43,
-            Notice::NoticesLost { .. } => 44,
-            Notice::FileNoLongerInLibrary => 45,
-            Notice::UpdateAvailable { .. } => 46,
-            Notice::Unknown { .. } => 47,
+            Notice::ScanFailed { .. } => 0,
+            Notice::ScanNote { .. } => 1,
+            Notice::RoundFailed { .. } => 2,
+            Notice::RoundPanicked { .. } => 3,
+            Notice::CacheFull { .. } => 4,
+            Notice::Cropped { .. } => 5,
+            Notice::CropFailed { .. } => 6,
+            Notice::CatalogRebuilt { .. } => 7,
+            Notice::CatalogNotClosed { .. } => 8,
+            Notice::PrefsUnreadable { .. } => 9,
+            Notice::PrefsNotSaved { .. } => 10,
+            Notice::CacheTotalsFixed { .. } => 11,
+            Notice::CacheTouchesNotWritten { .. } => 12,
+            Notice::CacheNotStored { .. } => 13,
+            Notice::CacheWalNotMerged { .. } => 14,
+            Notice::CacheStartedOver { .. } => 15,
+            Notice::CacheDisabled { .. } => 16,
+            Notice::WriteFailed { .. } => 17,
+            Notice::WriteStopped => 18,
+            Notice::WriteDropped { .. } => 19,
+            Notice::FolderAlreadyAdded { .. } => 20,
+            Notice::FolderRefused { .. } => 21,
+            Notice::FolderNotAdded { .. } => 22,
+            Notice::FolderNotRemoved { .. } => 23,
+            Notice::RescanFailed { .. } => 24,
+            Notice::LibraryUnavailable { .. } => 25,
+            Notice::FoldersUnreadable { .. } => 26,
+            Notice::PickerFailed { .. } => 27,
+            Notice::ListingFailed { .. } => 28,
+            Notice::RowReadFailed { .. } => 29,
+            Notice::ReloadFailed { .. } => 30,
+            Notice::FacetsFailed { .. } => 31,
+            Notice::TreeFailed { .. } => 32,
+            Notice::ViewsFailed { .. } => 33,
+            Notice::SessionNotSaved { .. } => 34,
+            Notice::EditFailed { .. } => 35,
+            Notice::ThumbsFailed { .. } => 36,
+            Notice::BordersFailed { .. } => 37,
+            Notice::ImportFailed { .. } => 38,
+            Notice::ScanFoldersFailed { .. } => 39,
+            Notice::UnreadableFiles { .. } => 40,
+            Notice::LedgerNotWritten { .. } => 41,
+            Notice::NoticesLost { .. } => 42,
+            Notice::FileNoLongerInLibrary => 43,
+            Notice::UpdateAvailable { .. } => 44,
+            Notice::Unknown { .. } => 45,
         }
     }
 
-    const KINDS: usize = 48;
+    const KINDS: usize = 46;
 
     #[test]
     fn the_samples_hold_every_kind_once_in_order() {
@@ -1153,21 +1361,60 @@ mod tests {
         assert!(serde_json::to_string(&Notice::Unknown { code: "x".into() }).is_err());
     }
 
-    /// The stored form, pinned for a few kinds that cover each shape (a path, a typed reason, a nested value, a unit
-    /// kind, an optional field): it is what the catalog's rows hold, so a change here is a migration.
+    /// The stored form of every kind, pinned in `notice/golden.jsonl`: a line per sample, in the samples' order
+    /// (`Unknown` is never written). It is what the catalog's rows hold, so a change here is a migration. Each sample
+    /// is written as its line and its line reads back as the sample; a kind that differs is named, and the file as this
+    /// build writes it is printed, to compare (and, for a change that is meant, to replace the file with).
     #[test]
-    fn the_stored_form_is_pinned() {
+    fn every_kind_is_stored_as_its_golden_line() {
+        const GOLDEN: &str = include_str!("notice/golden.jsonl");
+        let written: Vec<Notice> =
+            Notice::samples().into_iter().filter(|n| !matches!(n, Notice::Unknown { .. })).collect();
+        let actual: Vec<String> = written.iter().map(|n| serde_json::to_string(n).unwrap()).collect();
+        let golden: Vec<&str> = GOLDEN.lines().filter(|l| !l.trim().is_empty()).collect();
+        let mut differ = Vec::new();
+        for (notice, text) in written.iter().zip(&actual) {
+            let line = golden
+                .iter()
+                .copied()
+                .find(|l| serde_json::from_str::<serde_json::Value>(l).is_ok_and(|v| v["kind"] == notice.code()));
+            match line {
+                None => differ.push(format!("{}: no golden line", notice.code())),
+                Some(line) if line != text => {
+                    differ.push(format!("{}: written {text}\n    golden  {line}", notice.code()));
+                }
+                Some(line) => match serde_json::from_str::<Notice>(line) {
+                    Ok(read) if read == *notice => {}
+                    read => differ.push(format!("{}: its line reads as {read:?}", notice.code())),
+                },
+            }
+        }
+        if golden.len() != actual.len() || golden.iter().zip(&actual).any(|(g, a)| g != a) {
+            differ.push(format!(
+                "the file holds {} lines for {} kinds, or not in the samples' order",
+                golden.len(),
+                actual.len()
+            ));
+        }
+        assert!(
+            differ.is_empty(),
+            "the stored form differs:\n{}\n\nnotice/golden.jsonl, as this build writes it:\n{}\n",
+            differ.join("\n"),
+            actual.join("\n")
+        );
+    }
+
+    /// The shapes the samples don't hold (an absent count, the other write kind, a reason with a field, a nested
+    /// tagged value), pinned too.
+    #[test]
+    fn the_other_shapes_are_pinned() {
         let golden = [
             (
-                Notice::ScanUnreadable { root: sample_path(&["Photos"]), count: 3 },
-                r#"{"kind":"scan-unreadable","root":{"anchor":"D:","parts":["Photos"]},"count":3}"#,
-            ),
-            (
-                Notice::RootRefused {
-                    root: sample_path(&[]),
+                Notice::FolderRefused {
+                    folder: sample_path(&[]),
                     reason: RefusedReason::NotNtfs { file_system: "FAT32".into() },
                 },
-                r#"{"kind":"root-refused","root":{"anchor":"D:","parts":[]},"reason":{"reason":"not-ntfs","file_system":"FAT32"}}"#,
+                r#"{"kind":"folder-refused","folder":{"anchor":"D:","parts":[]},"reason":{"reason":"not-ntfs","file_system":"FAT32"}}"#,
             ),
             (
                 Notice::ScanNote { root: sample_path(&[]), note: ScanNote::VolumeFallback, count: 1 },
@@ -1181,15 +1428,35 @@ mod tests {
                 },
                 r#"{"kind":"catalog-rebuilt","kept":"k","why":"w","carried":{"carried":"nothing","reason":"r"}}"#,
             ),
-            (Notice::WriteStopped, r#"{"kind":"write-stopped"}"#),
             (
                 Notice::WriteDropped { write: WriteKind::Turns, count: 2 },
                 r#"{"kind":"write-dropped","write":"rotation","count":2}"#,
             ),
             (Notice::ThumbsFailed { counts: None }, r#"{"kind":"thumbs-failed","counts":null}"#),
+            (Notice::ScanFoldersFailed { counts: None }, r#"{"kind":"scan-folders-failed","counts":null}"#),
         ];
         for (notice, text) in golden {
-            assert_eq!(serde_json::to_string(&notice).unwrap(), text);
+            assert_eq!(serde_json::to_string(&notice).unwrap(), text, "{}", notice.code());
+            assert_eq!(serde_json::from_str::<Notice>(text).unwrap(), notice, "{}", notice.code());
+        }
+    }
+
+    /// A retired code is no kind's, and a row of one doesn't read (the decoder makes it [`Notice::Unknown`]).
+    #[test]
+    fn a_retired_code_is_no_kind_and_its_rows_do_not_read() {
+        let codes: BTreeSet<&str> = Notice::samples().iter().map(Notice::code).collect();
+        let retired: BTreeSet<&str> = Notice::RETIRED.iter().copied().collect();
+        assert_eq!(retired.len(), Notice::RETIRED.len(), "a code retired twice");
+        for code in Notice::RETIRED {
+            assert!(!codes.contains(code), "{code} is retired and a kind's");
+        }
+        let rows = [
+            r#"{"kind":"scan-unreadable","root":{"anchor":"D:","parts":["Photos"]},"count":3}"#,
+            r#"{"kind":"mount-refused","root":{"anchor":"D:","parts":["Photos"]},"mount":{"anchor":"D:","parts":["Photos","card"]},"reason":{"reason":"fat"}}"#,
+            r#"{"kind":"root-refused","root":{"anchor":"D:","parts":["Photos"]},"reason":{"reason":"removable-drive"}}"#,
+        ];
+        for row in rows {
+            assert!(serde_json::from_str::<Notice>(row).is_err(), "{row} still reads");
         }
     }
 
@@ -1209,48 +1476,158 @@ mod tests {
         for notice in Notice::samples() {
             let lifecycle = notice.lifecycle();
             match (&notice, lifecycle) {
-                (Notice::ThumbsFailed { .. } | Notice::BordersFailed { .. } | Notice::ImportFailed { .. }, l) => {
+                (
+                    Notice::ThumbsFailed { .. }
+                    | Notice::BordersFailed { .. }
+                    | Notice::ImportFailed { .. }
+                    | Notice::ScanFoldersFailed { .. },
+                    l,
+                ) => {
                     assert!(matches!(l, Lifecycle::Ledger(_)), "{notice:?}");
                 }
                 (_, Lifecycle::Ledger(_)) => panic!("{notice:?} is no ledger entry"),
                 (_, Lifecycle::Transient) => assert!(notice.actions().is_empty(), "{notice:?}"),
-                (_, Lifecycle::Event | Lifecycle::State(_)) => assert!(!notice.actions().is_empty(), "{notice:?}"),
+                (_, Lifecycle::Event | Lifecycle::State(..)) => assert!(!notice.actions().is_empty(), "{notice:?}"),
             }
         }
+    }
+
+    /// Each ledger's entry is its own notice, and its code names it.
+    #[test]
+    fn each_ledger_has_its_entry() {
+        let codes: BTreeSet<&str> = LedgerKind::ALL.iter().map(|k| k.code()).collect();
+        assert_eq!(codes.len(), LedgerKind::ALL.len());
+        for kind in LedgerKind::ALL {
+            assert_eq!(LedgerKind::from_code(kind.code()), Some(kind));
+            assert_eq!(kind.notice(None).lifecycle(), Lifecycle::Ledger(kind));
+        }
+        assert_eq!(LedgerKind::from_code("scan-folders"), Some(LedgerKind::ScanFolders));
+        assert_eq!(LedgerKind::from_code("nothing"), None);
     }
 
     /// A kept notice's key names its kind by its code, and its folder is the notice's own.
     #[test]
     fn a_key_is_the_kinds_code_and_the_notices_folder() {
-        for notice in Notice::samples() {
-            if let Lifecycle::State(key) = notice.lifecycle() {
+        for notice in Notice::samples().into_iter().flat_map(each_part) {
+            if let Lifecycle::State(key, _) = notice.lifecycle() {
                 assert_eq!(key.code, notice.code());
                 assert_eq!(key.root, notice.root());
             }
         }
     }
 
-    /// Two kept notices of one kind for one folder are apart by their part: two refused mounts, two notes.
+    /// Two kept notices of one kind for one folder are apart by their part, and one part is one key whatever it says.
     #[test]
     fn a_folders_kept_notices_are_keyed_by_their_part() {
         let root = sample_path(&["Photos"]);
-        let a = Notice::MountRefused {
-            root: root.clone(),
-            mount: sample_path(&["Photos", "a"]),
-            reason: RefusedReason::Fat,
-        };
-        let b = Notice::MountRefused {
-            root: root.clone(),
-            mount: sample_path(&["Photos", "b"]),
-            reason: RefusedReason::Fat,
-        };
-        assert_ne!(a.lifecycle(), b.lifecycle());
-        let note = |note| Notice::ScanNote { root: root.clone(), note, count: 1 };
-        assert_ne!(note(ScanNote::Duplicates).lifecycle(), note(ScanNote::Rebound).lifecycle());
-        assert_eq!(
-            note(ScanNote::Duplicates).lifecycle(),
-            Notice::ScanNote { root, note: ScanNote::Duplicates, count: 9 }.lifecycle()
-        );
+        let note = |note, count| Notice::ScanNote { root: root.clone(), note, count };
+        assert_ne!(note(ScanNote::Duplicates, 1).lifecycle(), note(ScanNote::SkippedReparse, 1).lifecycle());
+        assert_eq!(note(ScanNote::Duplicates, 1).lifecycle(), note(ScanNote::Duplicates, 9).lifecycle());
+    }
+
+    /// The scan notes split by what they describe: the folder's conditions are kept under `(root, code)` until the
+    /// next walk of the whole folder; what one walk did is an event.
+    #[test]
+    fn a_scan_note_is_kept_as_a_condition_or_posted_as_an_event() {
+        let root = sample_path(&["Photos"]);
+        for note in ScanNote::ALL {
+            let expected = match note {
+                ScanNote::Duplicates
+                | ScanNote::SkippedReparse
+                | ScanNote::Ambiguous
+                | ScanNote::UnpairedWithData
+                | ScanNote::VolumeFallback => NoteLifecycle::Condition,
+                ScanNote::Replaced | ScanNote::Rebound => NoteLifecycle::Event,
+            };
+            assert_eq!(note.lifecycle(), expected, "{note:?}");
+            let notice = Notice::ScanNote { root: root.clone(), note, count: 2 };
+            match (note.lifecycle(), notice.lifecycle()) {
+                (NoteLifecycle::Condition, Lifecycle::State(key, Resolver::RootWalk)) => {
+                    assert_eq!(key, Key { code: "scan-note", root: Some(&root), part: Some(Part::Code(note.code())) });
+                }
+                (NoteLifecycle::Event, Lifecycle::Event) => {}
+                (_, lifecycle) => panic!("{note:?} is kept as {lifecycle:?}"),
+            }
+        }
+    }
+
+    /// A dropped write is a fact, not a condition: an event, with no key.
+    #[test]
+    fn a_dropped_write_is_an_event() {
+        let dropped = Notice::WriteDropped { write: WriteKind::Rating, count: 1 };
+        assert_eq!(dropped.lifecycle(), Lifecycle::Event);
+        assert!(dropped.resolvers().is_empty());
+    }
+
+    /// The cache's failures are kept, and cleared by the cache's writer at its first success after them.
+    #[test]
+    fn the_caches_failures_are_kept_until_the_cache_recovers() {
+        for notice in
+            [Notice::CacheTouchesNotWritten { error: "e".into() }, Notice::CacheNotStored { error: "e".into() }]
+        {
+            assert!(
+                matches!(
+                    notice.lifecycle(),
+                    Lifecycle::State(Key { root: None, part: None, .. }, Resolver::CacheRecovery)
+                ),
+                "{notice:?}"
+            );
+        }
+    }
+
+    /// The table in `docs/NOTIFICATIONS.md` is the generated one ([`Notice::resolver_markdown`]), so the doc says what
+    /// clears each kept kind as the code does.
+    #[test]
+    fn the_documented_resolver_table_is_the_generated_one() {
+        // Embedded at build time: the shared model reads no files.
+        let doc = include_str!("../../../docs/NOTIFICATIONS.md").replace("\r\n", "\n");
+        let table = Notice::resolver_markdown();
+        assert!(doc.contains(&table), "docs/NOTIFICATIONS.md's resolver table is not the generated one:\n{table}");
+    }
+
+    /// Every kept kind and part is in the resolver table once, with its resolver and, for one about a library folder,
+    /// the folder's removal; every resolver clears something.
+    #[test]
+    fn the_resolver_table_names_every_kept_kind_once() {
+        let table = Notice::resolver_table();
+        let keys: BTreeSet<(&str, Option<&str>)> = table.iter().map(|row| (row.code, row.part)).collect();
+        assert_eq!(keys.len(), table.len(), "a kind and part twice");
+        let kept = Notice::samples()
+            .into_iter()
+            .flat_map(each_part)
+            .filter(|n| matches!(n.lifecycle(), Lifecycle::State(..)))
+            .count();
+        assert_eq!(table.len(), kept);
+        for row in &table {
+            assert!(!row.resolvers.is_empty(), "{row:?}");
+            assert_eq!(row.resolvers.iter().filter(|r| **r != Resolver::RootRemoval).count(), 1, "{row:?}");
+        }
+        let row = |code, part| table.iter().find(|r| r.code == code && r.part == part).map(|r| r.resolvers.clone());
+        assert_eq!(row("scan-note", Some("duplicates")), Some(vec![Resolver::RootWalk, Resolver::RootRemoval]));
+        assert_eq!(row("scan-note", Some("replaced")), None);
+        assert_eq!(row("write-dropped", None), None);
+        assert_eq!(row("cache-not-stored", None), Some(vec![Resolver::CacheRecovery]));
+        assert_eq!(row("edit-failed", Some("rotate")), Some(vec![Resolver::NextSuccess(Op::Edit(EditOp::Rotate))]));
+        assert_eq!(row("unreadable-files", Some("import")), Some(vec![Resolver::CompletePass(FilePass::Import)]));
+        // Every resolver is some kept kind's.
+        let used: BTreeSet<&str> = table
+            .iter()
+            .flat_map(|r| r.resolvers.iter())
+            .map(|r| match r {
+                Resolver::NextSuccess(_) => "next-success",
+                Resolver::CompletePass(_) => "complete-pass",
+                Resolver::StatusPoll => "status-poll",
+                Resolver::CacheRecovery => "cache-recovery",
+                Resolver::NextSave => "next-save",
+                Resolver::RootWalk => "root-walk",
+                Resolver::RootRemoval => "root-removal",
+            })
+            .collect();
+        assert_eq!(used.len(), 7, "{used:?}");
+        let markdown = Notice::resolver_markdown();
+        assert_eq!(markdown.lines().count(), table.len() + 2);
+        assert!(markdown.contains("| `scan-note` | `duplicates` | `root-walk`, `root-removal` |"), "{markdown}");
+        assert!(markdown.contains("| `prefs-not-saved` | — | `next-save` |"), "{markdown}");
     }
 
     #[test]
@@ -1278,9 +1655,40 @@ mod tests {
     }
 
     #[test]
-    fn a_tidy_text_is_one_line_and_capped_at_a_character() {
+    fn a_tidy_text_is_one_line_and_capped_with_its_mark_inside_the_cap() {
         assert_eq!(tidy("a\nb\tc", 100), "a b c");
-        assert_eq!(tidy("ééé", 5), "éé…");
         assert_eq!(tidy("abc", 3), "abc");
+        assert_eq!(tidy("abcd", 3), "…");
+        assert_eq!(tidy("abcdef", 5), "ab…");
+        // é is 2 bytes, € 3, the mark 3.
+        assert_eq!(tidy("ééé", 6), "ééé");
+        assert_eq!(tidy("ééé", 5), "é…");
+        assert_eq!(tidy("éééé", 7), "éé…");
+        assert_eq!(tidy("éééé", 6), "é…");
+        assert_eq!(tidy("a€€", 7), "a€€");
+        assert_eq!(tidy("a€€", 6), "a…");
+        // Under the mark's bytes, the characters that fit.
+        assert_eq!(tidy("ab", 1), "a");
+        assert_eq!(tidy("éa", 1), "");
+        assert_eq!(tidy("abc", 0), "");
+    }
+
+    /// At every cap, a tidy text is at most the cap, and is the text's start (with the mark when cut).
+    #[test]
+    fn a_tidy_text_is_never_past_its_cap() {
+        for text in ["", "abc", "ééé€a", "a€é\nb", "€€€€", "😀a😀"] {
+            let whole = tidy(text, usize::MAX);
+            for cap in 0..=whole.len() + 1 {
+                let out = tidy(text, cap);
+                assert!(out.len() <= cap, "{text:?} at {cap}: {out:?}");
+                if whole.len() <= cap {
+                    assert_eq!(out, whole, "{text:?} at {cap}");
+                } else {
+                    let start = out.strip_suffix(ELLIPSIS).unwrap_or(&out);
+                    assert!(whole.starts_with(start), "{text:?} at {cap}: {out:?}");
+                    assert_eq!(out.ends_with(ELLIPSIS), cap >= ELLIPSIS.len_utf8(), "{text:?} at {cap}: {out:?}");
+                }
+            }
+        }
     }
 }

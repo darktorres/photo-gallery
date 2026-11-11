@@ -18,6 +18,10 @@ ListView {
     // is 24 (QQuickFlickable::wheelEvent).
     property real wheelLineHeight: 24
 
+    // A wheel's scroll came to rest (the view's own `movementEnded` is a drag's or a flick's): what the user scrolled to,
+    // for a view that follows its end (LogPanel).
+    signal wheelScrolled()
+
     // contentY's range, as QQuickFlickable / QQuickItemView compute it (-minYExtent … -maxYExtent). A ListView's
     // contentHeight and originY are estimates that firm up as rows are created, so this is re-read every frame.
     function clampContentY(y: real): real {
@@ -39,6 +43,7 @@ ListView {
         if (pixelY !== 0 && phase !== Qt.NoScrollPhase) {
             frames.stop()
             scroller.moveTo(clampContentY(scroller.destination - pixelY))
+            list.wheelScrolled()
             return
         }
         scroller.destination = clampContentY(
@@ -89,8 +94,10 @@ ListView {
             const rest = scroller.destination - list.contentY
             const done = Math.abs(rest) < 0.5
             scroller.moveTo(done ? scroller.destination : list.contentY + rest * (1 - Math.exp(-frameTime / scroller.tau)))
-            if (done)
+            if (done) {
                 stop()
+                list.wheelScrolled()
+            }
         }
     }
 }

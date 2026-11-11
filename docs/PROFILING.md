@@ -159,6 +159,43 @@ uncommitted work stays out and the build runs on the container's own disk. Argum
 `docs/perf/callgrind/<sha>.tar.zst` (the benched HEAD's short sha, committed). A run given a bench name (a filter) is partial and
 is not archived; options such as `--save-baseline` do not make a run partial. An option's value goes after `=`:
 `--save-baseline before` is refused, because `before` could be a bench name.
+
+**The large dataset** (2026-11-11, for the notifications' fix plan, [NOTIFICATIONS_FIX_PLAN.md](NOTIFICATIONS_FIX_PLAN.md)
+F0). Three catalog benches measure what the inbox and the scan do at scale:
+
+- `scan_walk` (`first`, `again`): `pg_scan::scan_with` over a synthetic tree (`pg-scan`'s `bench` feature,
+  `pg_scan::synthetic`: 100 folders of 100 files and 4 folders it can't open, so the folder ledger is written) into a
+  catalog in memory. No file system under it and no bench data, so it runs wherever the benches do. `again` walks the
+  same tree over the catalog that has it, as a rescan does.
+- `import_flush`: one import batch (500 files, one in five failing) stored in one transaction, on the large layout, so
+  the import ledger's triggers run over its 50,000 failures.
+- `inbox_refresh` (`closed`, `open`): `Catalog::ledger_entries` on the large layout, with the inbox closed (each ledger's
+  cheap state) and open (the counts too).
+
+The large layout is made like the default one, on the Windows side, under a name ending in `-large`
+(`v6-windows-rules-large`, the bench's `LARGE_LAYOUT`): `synthetic_library.py --profile large` (400 folders of 500
+files, a quarter of them broken JPEGs that the import fails, small pictures so the library is a few GB), the CLI's scan,
+import and thumbnails over it, then `bench_data.py v6-windows-rules-large <catalog folder> <bench-data>`; the commands are
+in `bench_data.py`'s docstring. For a `-large` layout `bench_data.py` also seeds the failure ledger to 100,000 rows
+(`--ledger-rows`; the import's own rows first, then thumbnails' and borders' rows), when the copy's schema has
+`file_failures.hidden`; an older schema is left unseeded, with a note.
+
+**Budgets** (`docs/perf/budgets.json`): a change that moves some counts on purpose is gated once by
+`just perf --budgets` instead of `--update`. Each budget names a bench (`scan-walk` matches gungraun's `scan_walk.<id>`;
+`-` and `_` are the same) and the range its change must fall in, as fractions of the baseline (`min`, `max`, either
+optional; `"max": -0.90` is "must fall by 90% or more"). The benches with no budget keep the ±1% tolerance. A budget no
+bench matches fails the gate (a renamed bench isn't passed unseen), a bench that misses its budget fails, and
+`--budgets` is refused with `--update`: a miss is not re-baselined. The budgets of the fix plan's F1:
+
+| Bench | Budget | Why |
+|---|---|---|
+| `scan-walk` | ≤ +10% | batching and the scan lease |
+| `import-flush` | ≤ +15% | the analysis triggers that keep the import ledger |
+| `inbox-refresh` | ≤ −90% | the ledger's cheap state on the partial index instead of the counts |
+
+What callgrind can't see (how long a write lock is held, an I/O wait) is measured by the scan crate's wall-clock tests
+(each write transaction of a 200k-file synthetic walk under a stated bound), not by a bench.
+
 Unpack an archive with
 `tar --zstd -xf docs/perf/callgrind/<sha>.tar.zst -C some/dir` (the container has zstd: `docker/apt-packages-bench.txt`). Read the results with `cgtab.py`, in the container (`just linux-shell`):
 

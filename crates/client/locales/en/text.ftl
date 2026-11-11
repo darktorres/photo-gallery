@@ -88,8 +88,8 @@ changes-unwritten = { $count ->
 # The latest failure when nothing is left queued (the change it was about went)
 write-queue-failed = A change couldn't be written into its file: { $error }
 
-# Why the scanner refuses a folder (`pg_model::refusal::RefusedReason`), selected by its code: the `$reason` of
-# the notices `root-refused`, `mount-refused` and `folder-refused`. `$file_system` is a file system's name, `$error` the system's error.
+# Why the scanner refuses a folder (`pg_model::refusal::RefusedReason`), selected by its code: the `$reason` of the
+# notice `folder-refused`. `$file_system` is a file system's name, `$error` the system's error.
 refused-reason = { $code ->
     [network-path] it is a network (UNC) path
     [unreadable-volume] its volume can't be read: { $error }
@@ -168,18 +168,11 @@ details-in-log = The details are in { $log }.
 details-not-logged = Writing them to { $log } failed ({ $error }).
 
 # The notices (`pg_model::notice::Notice`): each kind's title (the inbox row, the toast) and body (the details), by its
-# code. `$count` chooses a plural form and `$text` shows it; a path is as the system writes it.
-notice-scan-unreadable-title = Folders couldn't be read
-notice-scan-unreadable-body = { $count ->
-    [one] { $root }: { $text } folder couldn't be read, so its files weren't scanned
-   *[other] { $root }: { $text } folders couldn't be read, so their files weren't scanned
-}
+# code. `$count` chooses a plural form and `$text` shows it; a path is as the system writes it, isolated from the
+# words around it (U+2068 … U+2069, set with the value: `text/notice.rs`). The kinds retired (`scan-unreadable`,
+# `mount-refused`, `root-refused`: now the folders of `scan-folders-failed`) have no words.
 notice-scan-failed-title = A scan failed
 notice-scan-failed-body = { $root }: { $error }
-notice-root-refused-title = A folder isn't scanned
-notice-root-refused-body = { $root } is not scanned, because { $reason }. Remove it from the library to stop this notice.
-notice-mount-refused-title = A folder inside the library isn't scanned
-notice-mount-refused-body = { $mount } is not scanned, because { $reason }. The files there stay as the library has them.
 notice-scan-note-title = { $kind ->
     [duplicates] Duplicate paths skipped
     [reparse] Links indexed without being followed
@@ -317,6 +310,11 @@ notice-import-failed-body = { $counted ->
     [yes] { $new } new, { $earlier } earlier
    *[no] Some files couldn't be read to be imported
 }
+notice-scan-folders-failed-title = Folders couldn't be scanned
+notice-scan-folders-failed-body = { $counted ->
+    [yes] { $new } new, { $earlier } earlier
+   *[no] Some folders couldn't be read, or the scan refuses them, so their files aren't in the library
+}
 notice-unreadable-files-title = { $pass ->
     [thumbs] Files couldn't be read for their thumbnails
     [borders] Files couldn't be read for their borders
@@ -345,6 +343,22 @@ notice-unknown-title = A notice from a newer version
 notice-unknown-body = This version of the app can't read it ({ $code }).
 # A notice on one line (the command line, a copy of its details)
 notice-line = { $title }: { $body }
+# A ledger's entry that came back after the user dismissed it: how many of its failures came since (`$count`)
+ledger-since-dismissed = { $count ->
+    [one] { $text } since you dismissed it
+   *[other] { $text } since you dismissed it
+}
+# A ledger's failed file, one line of what the inbox's Copy puts on the clipboard
+failed-file-line = { $path }: { $error }
+# Why a folder of the scans' ledger failed, by its reason's code (`pg_catalog::FolderFailure::code`)
+failed-folder-reason = { $reason ->
+    [unreadable] it couldn't be read
+    [mount-refused] it is a mount the scan refuses
+   *[refused] the scan refuses it
+}
+# A folder of the scans' ledger, one line of the Copy: under its library folder's line (`failed-folder-group`)
+failed-folder-line = { $path }: { $why } ({ $error })
+failed-folder-group = In { $root }:
 
 # The inbox's categories (`pg_model::notice::Source`)
 source-scan = Scan

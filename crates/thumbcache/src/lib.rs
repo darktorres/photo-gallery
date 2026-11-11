@@ -37,7 +37,7 @@ mod writer;
 pub use config::{CACHE_VERSION, Cap, MAX_DEFAULT_CAP_BYTES, default_cap_bytes};
 pub use maintenance::Drift;
 pub use reader::pending_in;
-pub use types::{Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
+pub use types::{Effect, Event, FORMAT_JPEG, Pending, Snapshot, Source, Thumb, ThumbWork, Usage};
 
 use std::path::Path;
 use std::sync::{Arc, mpsc};

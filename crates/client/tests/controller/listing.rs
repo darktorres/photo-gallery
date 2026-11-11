@@ -120,9 +120,88 @@ fn a_reveal_lists_the_files_folder_and_selects_it_once_shown() {
 
     let mut c = Controller::new(start(), 200, 1.0);
     let out = c.update(0, Report::Reveal { file: 7, folder: folder("beta") });
+    let Some(generation) = generation_of(&out) else { panic!("{out:?}") };
     assert!(matches!(&out[..], [Do::OpenList { keep: false, .. }, Do::SaveSession(_)]), "{out:?}");
     assert_eq!(c.listing().folder, folder("beta"));
-    let shown = |c: &mut Controller| c.update(1, Report::ListShown { count: 3, last_file: None });
-    assert!(shown(&mut c).contains(&Do::Reveal(7)));
-    assert!(!shown(&mut c).contains(&Do::Reveal(7)), "once");
+    assert!(shown(&mut c, generation).contains(&Do::Reveal(7)));
+    assert!(!shown(&mut c, generation).contains(&Do::Reveal(7)), "once");
+}
+
+/// The generation of the `OpenList` among `commands`, if one is.
+fn generation_of(commands: &[Do]) -> Option<u64> {
+    commands.iter().find_map(|c| match c {
+        Do::OpenList { generation, .. } => Some(*generation),
+        _ => None,
+    })
+}
+
+/// The list of `generation` is shown (three rows).
+fn shown(c: &mut Controller, generation: u64) -> Vec<Do> {
+    c.update(1, Report::ListShown { count: 3, last_file: None, generation })
+}
+
+/// Every `OpenList` is stamped from the controller's one counter, at each of its sites (a reload, a listing change, a
+/// saved view, the query's pause): each is newer than any before.
+#[test]
+fn every_open_list_has_a_newer_generation() {
+    let mut c = Controller::new(start(), 200, 1.0);
+    let mut generations = Vec::new();
+    generations.extend(generation_of(&c.update(0, Report::Reload)));
+    generations.extend(generation_of(&c.update(0, Report::Listing(Event::OpenFolder(folder("beta"))))));
+    let view = SavedView { name: "v".into(), listing: start() };
+    generations.extend(generation_of(&c.apply_view(view)));
+    c.update(0, Report::Listing(Event::QueryChanged(Query { name: "x".into(), ..Query::default() })));
+    c.update(0, Report::QueryEdited);
+    let at = c.next_deadline().expect("the query's pause");
+    generations.extend(generation_of(&c.update(at, Report::Timeout)));
+    generations.extend(generation_of(&c.update(at, Report::Reload)));
+    assert_eq!(generations.len(), 5, "{generations:?}");
+    assert!(generations.windows(2).all(|w| w[0] < w[1]), "{generations:?}");
+    assert!(generations[0] > 0, "0 names no list (nothing applied yet)");
+}
+
+/// A reveal is consumed only by its own list's `ListShown`: a list shown before it (an older one, still on screen)
+/// leaves it waiting.
+#[test]
+fn a_reveal_waits_for_its_own_list() {
+    let mut c = Controller::new(start(), 200, 1.0);
+    let older = generation_of(&c.update(0, Report::Reload)).unwrap();
+    let out = c.update(0, Report::Reveal { file: 7, folder: folder("beta") });
+    let own = generation_of(&out).unwrap();
+    assert!(!shown(&mut c, older).contains(&Do::Reveal(7)), "the older list is not the reveal's");
+    assert!(!shown(&mut c, 0).contains(&Do::Reveal(7)), "nor is no list at all");
+    assert!(shown(&mut c, own).contains(&Do::Reveal(7)), "its own list selects it");
+}
+
+/// Going elsewhere before the reveal's list is shown drops it silently: the newer list's `ListShown` selects nothing,
+/// and neither does the reveal's list if it is shown after all.
+#[test]
+fn navigating_away_drops_a_reveal() {
+    let mut c = Controller::new(start(), 200, 1.0);
+    let own = generation_of(&c.update(0, Report::Reveal { file: 7, folder: folder("beta") })).unwrap();
+    let away = generation_of(&c.update(0, Report::Listing(Event::OpenFolder(folder("gamma"))))).unwrap();
+    assert!(away > own);
+    let out = shown(&mut c, away);
+    assert!(!out.iter().any(|d| matches!(d, Do::Reveal(_))), "{out:?}");
+    assert!(!shown(&mut c, own).iter().any(|d| matches!(d, Do::Reveal(_))), "dropped for good");
+}
+
+/// A second reveal replaces the first: only the second's list selects, and only its file.
+#[test]
+fn a_newer_reveal_replaces_the_waiting_one() {
+    let mut c = Controller::new(start(), 200, 1.0);
+    let first = generation_of(&c.update(0, Report::Reveal { file: 7, folder: folder("beta") })).unwrap();
+    let second = generation_of(&c.update(0, Report::Reveal { file: 8, folder: folder("gamma") })).unwrap();
+    assert!(!shown(&mut c, first).iter().any(|d| matches!(d, Do::Reveal(_))));
+    assert_eq!(
+        shown(&mut c, second).iter().filter(|d| matches!(d, Do::Reveal(_))).collect::<Vec<_>>(),
+        [&Do::Reveal(8)]
+    );
+}
+
+/// `ListShown`'s generation reads back from a recording made before it was reported, as 0.
+#[test]
+fn a_list_shown_recorded_without_its_generation_reads_as_0() {
+    let old: Report = serde_json::from_str(r#"{"ListShown":{"count":12,"last_file":null}}"#).unwrap();
+    assert_eq!(old, Report::ListShown { count: 12, last_file: None, generation: 0 });
 }

@@ -53,6 +53,59 @@ fn nested_modals_close_by_their_kind() {
     assert!(panels.modals().is_empty());
 }
 
+/// A kind opened again while it is open moves to the top, and is never in twice.
+#[test]
+fn a_duplicate_open_moves_the_kind_to_the_top() {
+    let mut panels = Panels::default();
+    panels.update(Event::PanelOpened(PanelKind::Inbox));
+    panels.update(Event::PanelOpened(PanelKind::Library));
+    panels.update(Event::PanelOpened(PanelKind::Inbox));
+    assert_eq!(panels.modals(), [PanelKind::Library, PanelKind::Inbox]);
+    panels.update(Event::PanelOpened(PanelKind::Inbox));
+    assert_eq!(panels.modals(), [PanelKind::Library, PanelKind::Inbox]);
+    // One close takes it off: no second entry was left behind.
+    panels.update(Event::PanelClosed(PanelKind::Inbox));
+    assert_eq!(panels.modals(), [PanelKind::Library]);
+    assert!(!panels.is_open(PanelKind::Inbox));
+}
+
+/// A close of a kind not open changes nothing, among other panels open too.
+#[test]
+fn a_close_of_a_kind_not_open_changes_nothing() {
+    let mut panels = Panels::default();
+    panels.update(Event::PanelOpened(PanelKind::ViewsMenu));
+    panels.update(Event::PanelClosed(PanelKind::Yandex));
+    assert_eq!(panels.modals(), [PanelKind::ViewsMenu]);
+}
+
+/// Nested panels closed out of their order each leave from where they are, and the rest keep their order.
+#[test]
+fn nested_closes_out_of_order_keep_the_others_order() {
+    let mut panels = Panels::default();
+    for kind in [PanelKind::Library, PanelKind::FolderPicker, PanelKind::Yandex, PanelKind::YandexPreview] {
+        panels.update(Event::PanelOpened(kind));
+    }
+    panels.update(Event::PanelClosed(PanelKind::FolderPicker));
+    assert_eq!(panels.modals(), [PanelKind::Library, PanelKind::Yandex, PanelKind::YandexPreview]);
+    panels.update(Event::PanelClosed(PanelKind::Library));
+    assert_eq!(panels.modals(), [PanelKind::Yandex, PanelKind::YandexPreview]);
+    panels.update(Event::PanelClosed(PanelKind::YandexPreview));
+    panels.update(Event::PanelClosed(PanelKind::Yandex));
+    assert!(panels.modals().is_empty());
+}
+
+/// However often each kind is reported opened, the panels open are at most every kind once.
+#[test]
+fn the_modals_are_bounded_by_the_kinds() {
+    let mut panels = Panels::default();
+    for _ in 0..3 {
+        for kind in PanelKind::ALL {
+            panels.update(Event::PanelOpened(kind));
+        }
+    }
+    assert_eq!(panels.modals(), PanelKind::ALL);
+}
+
 #[test]
 fn dev_mode_as_the_window_starts_reports_only_a_real_change() {
     let mut panels = Panels::default();

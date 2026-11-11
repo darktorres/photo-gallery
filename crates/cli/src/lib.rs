@@ -37,7 +37,9 @@ use pg_jobs::events::Bus;
 use pg_writeback::Writer;
 
 use args::{Cli, Command, PipelineArgs};
-use report::{Kept, changed_while_read, print_failures, report_pass, report_rebuilt, thumb_events, with_progress};
+use report::{
+    Kept, PrintingSink, changed_while_read, print_failures, report_pass, report_rebuilt, thumb_events, with_progress,
+};
 
 /// Whether these arguments (without the program name) ask for the command line rather than the app.
 /// Asked from the derive's list of commands (`Subcommand::has_subcommand`): clap's `Command` isn't built at an
@@ -94,8 +96,10 @@ fn gigabytes(bytes: f64) -> String {
     format!("{:.2}", bytes / 1e9)
 }
 
-/// What `gallery scan` says of a root it scanned in `seconds`: its counts, then the notices its result carries
-/// (`pg_library::scans::scan_notices`: unreadable folders, refused mounts, the notes), as the window's inbox words them.
+/// What `gallery scan` says of a root it scanned in `seconds`: its counts, then the notes its result carries
+/// (`pg_library::scans::scan_notices`: the folder's conditions, then what the walk did), as the window's inbox words
+/// them. The folders it couldn't read are listed apart, as the walk's skipped folders (`print_failures`); they are the
+/// catalog's folder ledger, which the inbox shows.
 fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -> Vec<String> {
     let summary = line(&Line::ScanSummary {
         root: rules.display(root),
@@ -107,7 +111,7 @@ fn scan_report(root: &RulePath, s: &ScanStats, rules: PathRules, seconds: f64) -
         seconds: secs(seconds),
     });
     let notices = pg_library::scans::scan_notices(root, s);
-    std::iter::once(summary).chain(notices.iter().map(|n| text::notice_line(n, rules))).collect()
+    std::iter::once(summary).chain(notices.all().map(|n| text::notice_line(n, rules))).collect()
 }
 
 fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
@@ -121,7 +125,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
     let start = Instant::now();
 
     match cli.command {
-        Command::Scan { roots } => {
+        Command::Scan { roots, wait } => {
             let roots: Vec<RulePath> = if roots.is_empty() {
                 catalog.roots()?.into_iter().map(|r| r.path).collect()
             } else {
@@ -147,13 +151,20 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             };
             for root in roots {
                 let name = rules.display(&root);
-                let s = match pg_scan::scan(&mut catalog, &root, ctl) {
+                let s = match scan_root(&mut catalog, &root, ctl, wait) {
                     Ok(s) => s,
-                    // A refused folder is reported and the others are still scanned; any other error stops the command.
+                    // A refused folder is reported and the others are still scanned (its refusal is in the catalog's
+                    // folder ledger, until a walk of it can run); any other error stops the command.
                     Err(pg_scan::ScanError::Refused(reason)) => {
-                        println!("{}", text::notice_line(&Notice::RootRefused { root: root.clone(), reason }, rules));
+                        println!(
+                            "{}",
+                            text::notice_line(&Notice::FolderRefused { folder: root.clone(), reason }, rules)
+                        );
                         continue;
                     }
+                    // Another process walks a folder that overlaps this one: said, and the command fails (`--wait`
+                    // waits for it instead).
+                    Err(busy @ pg_scan::ScanError::Busy { .. }) => bail!("{busy}"),
                     Err(pg_scan::ScanError::Failed(e)) => return Err(e),
                 };
                 let mut report = scan_report(&root, &s, rules, start.elapsed().as_secs_f64()).into_iter();
@@ -238,7 +249,11 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                 cap: gigabytes(pg_model::num::signed(cache.cap()?)),
                 seconds: secs(start.elapsed().as_secs_f64()),
             });
-            report_pass(FilePass::Thumbs, s.unreadable, s.ledger_error);
+            let ledger_error = match s.ledger {
+                pg_thumbs::LedgerOutcome::Failed(error) => Some(error),
+                pg_thumbs::LedgerOutcome::Untouched | pg_thumbs::LedgerOutcome::Written => None,
+            };
+            report_pass(FilePass::Thumbs, s.unreadable, ledger_error);
             drop(cache);
             let _ = printer.join();
         }
@@ -254,7 +269,8 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
                     stored: s.stored.to_string(),
                     seconds: secs(start.elapsed().as_secs_f64()),
                 });
-                report_pass(FilePass::Borders, s.unreadable, s.ledger_error);
+                // The borders' ledger is written with the borders, in their batch: a failure to write it failed the pass.
+                report_pass(FilePass::Borders, s.unreadable, None);
             }
         }
         Command::Status => {
@@ -291,7 +307,7 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
             let (events, _printer) = thumb_events();
             let cache: &'static ThumbCache =
                 Box::leak(Box::new(pg_library::open_thumbs(&layout, &catalog.catalog_id()?, None, events)?));
-            let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)))?;
+            let writer = Writer::start(catalog_path.clone(), cache, Arc::new(Bus::new(16)), Arc::new(PrintingSink))?;
             writer.wake();
             wait_for_writes(&writer, &catalog)?;
             if let Some(e) = writer.status().thumbnail_error {
@@ -310,6 +326,29 @@ fn run_command(cli: Cli, ctl: &Control) -> Result<()> {
         Command::Dups { distance, show } => dups::report(&catalog, distance, show)?,
     }
     Ok(())
+}
+
+/// Scan `root`; with `wait`, a walk refused because another process walks an overlapping folder is tried again, once a
+/// second, until that walk ends (or its lease expires), and the wait is said once on stderr.
+fn scan_root(
+    catalog: &mut Catalog,
+    root: &RulePath,
+    ctl: &Control,
+    wait: bool,
+) -> std::result::Result<ScanStats, pg_scan::ScanError> {
+    let mut said = false;
+    loop {
+        match pg_scan::scan(catalog, root, ctl) {
+            Err(busy @ pg_scan::ScanError::Busy { .. }) if wait && !ctl.stop_requested() => {
+                if !said {
+                    eprintln!("{busy}: waiting for it to end");
+                    said = true;
+                }
+                std::thread::sleep(std::time::Duration::from_secs(1));
+            }
+            other => return other,
+        }
+    }
 }
 
 /// `gallery write`'s wait: until nothing writable is left (failures past their retries stay queued and are reported).
@@ -393,26 +432,29 @@ mod tests {
         }
     }
 
-    /// `gallery scan` says what a scan's result carries, as the window's inbox does: a mount the scan refused is a
-    /// line of its own, after the counts.
+    /// `gallery scan` says what a scan's result carries, as the window's inbox does: each note a line of its own, after
+    /// the counts, the folder's conditions before what the walk did. A refused mount is the folder ledger's: no line.
     #[test]
-    fn gallery_scan_prints_a_refused_mount() {
+    fn gallery_scan_prints_its_notes() {
+        use pg_model::notice::ScanNote;
         use pg_model::refusal::RefusedReason;
 
         let rules = PathRules::Posix;
         let (root, mount) = (rules.parse("/photos").unwrap(), rules.parse("/photos/usb").unwrap());
         let reason = RefusedReason::NotNtfs { file_system: "vfat".into() };
-        let stats = ScanStats {
+        let mut stats = ScanStats {
             files: 3,
-            refused_mount_list: vec![pg_scan::RefusedMount { mount: mount.clone(), reason: reason.clone() }],
+            duplicates: 2,
+            refused_mounts: 1,
+            refused_mount_list: vec![pg_scan::RefusedMount { mount, reason }],
             ..ScanStats::default()
         };
+        stats.pairing.rebound = 1;
         let lines = scan_report(&root, &stats, rules, 1.25);
-        let refused = text::notice_line(&Notice::MountRefused { root: root.clone(), mount, reason }, rules);
-        assert_eq!(lines.len(), 2, "{lines:?}");
+        let note = |note, count| text::notice_line(&Notice::ScanNote { root: root.clone(), note, count }, rules);
+        assert_eq!(lines.len(), 3, "{lines:?}");
         assert!(lines[0].starts_with("/photos: 3 files in 0 folders"), "{lines:?}");
-        assert_eq!(lines[1], refused);
-        assert!(refused.contains("/photos/usb"), "{refused}");
+        assert_eq!(lines[1..], [note(ScanNote::Duplicates, 2), note(ScanNote::Rebound, 1)]);
     }
 
     #[test]
@@ -448,8 +490,9 @@ mod tests {
             .unwrap(),
         ));
         drop(catalog);
+        let sink: Arc<dyn pg_jobs::NoticeSink> = pg_jobs_testkit::RecordingSink::new();
         let writer =
-            Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain)
+            Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain, sink)
                 .unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {

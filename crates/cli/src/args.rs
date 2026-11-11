@@ -60,7 +60,13 @@ impl PipelineArgs {
 pub(crate) enum Command {
     /// Add folders to the library and record their image files (identity, size, mtime); files no longer there
     /// are marked missing. Without folders, rescans the whole library.
-    Scan { roots: Vec<PathBuf> },
+    Scan {
+        roots: Vec<PathBuf>,
+        /// When another process is scanning a folder that overlaps one of these (the app's job, another `gallery
+        /// scan`), wait for it to end instead of failing.
+        #[arg(long)]
+        wait: bool,
+    },
     /// Take a folder out of the library (its files are hidden, not deleted from the catalog).
     Remove { root: PathBuf },
     /// Analyze every new or changed file: hashes, PDQ (+ tier-1 pairs), dimensions, ThumbHash.

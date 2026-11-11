@@ -104,4 +104,4 @@ library_benchmark_group!(name = viewer, benchmarks = [viewer_still, viewer_poste
 
 include!("catalog.rs");
 
-main!(library_benchmark_groups = per_file, viewer, catalog);
+main!(library_benchmark_groups = per_file, viewer, catalog, scan);

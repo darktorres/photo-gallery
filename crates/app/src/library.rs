@@ -11,10 +11,12 @@ use std::sync::{Arc, Mutex, MutexGuard, OnceLock, PoisonError};
 use std::time::{Duration, Instant};
 
 use pg_catalog::Root;
+use pg_jobs::NoticeSink;
 use pg_jobs::events::{Bus, Change};
 use pg_library::folders::AddError;
-use pg_library::runner::{Generation, NoticeSink, Runner};
+use pg_library::runner::{Generation, Runner};
 use pg_model::ids::{FileId, RootId};
+use pg_model::notice::{Key, Notice};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_thumbcache::ThumbCache;
@@ -45,6 +47,9 @@ pub struct Library {
     catalog_path: PathBuf,
     thumbs: &'static ThumbCache,
     changes: Arc<Bus<Change>>,
+    /// Where the job's and the writer's notices go (the inbox): the writer posts its failures there, and the library its
+    /// stop ([`Library::tend`]).
+    notices: Arc<dyn NoticeSink>,
 }
 
 /// The writer and its restarts.
@@ -78,17 +83,22 @@ pub struct Status {
 }
 
 impl Library {
-    /// Start the job and the writer; they first finish whatever is pending.
+    /// Start the job and the writer; they first finish whatever is pending. The writer's states an earlier run kept
+    /// (`write-stopped`, `write-failed`) are cleared first: a new writer starts running and with no error, so neither
+    /// would otherwise see a change that clears it. Cleared before the writer starts, so a failure of its own, posted
+    /// after, is kept (the inbox writes in the order posted).
     pub(crate) fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
         thumb_height: u32,
         notices: Arc<dyn NoticeSink>,
     ) -> Result<Library> {
+        notices.clear(Key::all("write-stopped", None).to_buf());
+        notices.clear(Key::all("write-failed", None).to_buf());
         let changes = Arc::new(Bus::new(256));
-        let runner =
-            Runner::start(catalog_path.clone(), thumbs, thumb_height, changes.clone(), notices).map_err(failed)?;
-        let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone()).map_err(failed)?;
+        let runner = Runner::start(catalog_path.clone(), thumbs, thumb_height, changes.clone(), notices.clone())
+            .map_err(failed)?;
+        let writer = Writer::start(catalog_path.clone(), thumbs, changes.clone(), notices.clone()).map_err(failed)?;
         let slot = WriterSlot {
             writer,
             restarts: 0,
@@ -97,7 +107,7 @@ impl Library {
             given_up: false,
             stopping: false,
         };
-        Ok(Library { runner, writer: Mutex::new(slot), catalog_path, thumbs, changes })
+        Ok(Library { runner, writer: Mutex::new(slot), catalog_path, thumbs, changes, notices })
     }
 
     fn writer(&self) -> MutexGuard<'_, WriterSlot> {
@@ -105,7 +115,12 @@ impl Library {
     }
 
     /// Starts the writer again when its thread has ended (`Writer::is_running`), once its wait is over (see
-    /// `MAX_RESTARTS`). A writer that has run long enough clears the count.
+    /// `MAX_RESTARTS`). A writer that has run long enough clears the count. When the restarts are exhausted the writer
+    /// is given up, and `write-stopped` is posted there, once: a stop at shutdown, or a panic a restart recovers from,
+    /// posts nothing.
+    ///
+    /// Lock order: called with the writer slot held (`slot`), and a post takes only the inbox's work lock, so the order
+    /// is slot → `Work` (`crate::inbox::Inbox::push`), never the reverse.
     fn tend(&self, slot: &mut WriterSlot) {
         if slot.given_up || slot.stopping {
             return;
@@ -118,6 +133,8 @@ impl Library {
         }
         if slot.restarts >= MAX_RESTARTS {
             slot.given_up = true;
+            // Slot → Work (see above): the post only queues.
+            self.notices.post(Notice::WriteStopped);
             return;
         }
         let now = Instant::now();
@@ -127,7 +144,9 @@ impl Library {
         }
         slot.retry_at = None;
         slot.restarts += 1;
-        if let Ok(writer) = Writer::start(self.catalog_path.clone(), self.thumbs, self.changes.clone()) {
+        if let Ok(writer) =
+            Writer::start(self.catalog_path.clone(), self.thumbs, self.changes.clone(), self.notices.clone())
+        {
             // The old writer's thread has ended, so dropping it doesn't wait.
             slot.writer = writer;
             slot.started = now;
@@ -325,5 +344,76 @@ impl LibraryService {
             )),
             _ => Ok(()),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use pg_model::notice::KeyBuf;
+
+    /// What the library tells its sink, in order, by code.
+    #[derive(Default)]
+    struct Recording {
+        calls: Mutex<Vec<String>>,
+    }
+
+    impl Recording {
+        fn calls(&self) -> Vec<String> {
+            self.calls.lock().unwrap().clone()
+        }
+    }
+
+    impl NoticeSink for Recording {
+        fn post(&self, notice: Notice) {
+            self.calls.lock().unwrap().push(format!("post {}", notice.code()));
+        }
+        fn replace(&self, scope: KeyBuf, notices: Vec<Notice>) {
+            self.calls.lock().unwrap().push(format!("replace {} {}", scope.code, notices.len()));
+        }
+        fn clear(&self, key: KeyBuf) {
+            self.calls.lock().unwrap().push(format!("clear {}", key.code));
+        }
+        fn poke(&self) {}
+    }
+
+    fn library(name: &str) -> (Library, Arc<Recording>, PathBuf) {
+        let dir = pg_testkit::test_folder("scratch_app", name).unwrap();
+        let layout = pg_library::layout::Layout::in_home(&dir);
+        std::fs::create_dir_all(layout.catalog_dir()).unwrap();
+        drop(pg_library::open_catalog(&layout).unwrap());
+        let thumbs: &'static ThumbCache = Box::leak(Box::new(ThumbCache::disabled()));
+        let sink = Arc::new(Recording::default());
+        let library = Library::start(layout.catalog_path(), thumbs, 100, sink.clone()).unwrap();
+        (library, sink, dir)
+    }
+
+    // A start clears the writer's states an earlier run kept, before anything the new writer could post.
+    #[test]
+    fn a_start_clears_the_writers_states_first() {
+        let (library, sink, dir) = library("library-start");
+        assert_eq!(sink.calls()[..2], ["clear write-stopped", "clear write-failed"]);
+        assert!(library.stop());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // `write-stopped` is posted where the restarts run out, once; a writer stopped at shutdown posts nothing.
+    #[test]
+    fn write_stopped_is_posted_once_where_the_writer_is_given_up() {
+        let (library, sink, dir) = library("library-given-up");
+        {
+            let mut slot = library.writer();
+            slot.writer.stop();
+            slot.restarts = MAX_RESTARTS;
+            library.tend(&mut slot);
+            assert!(slot.given_up);
+            library.tend(&mut slot);
+        }
+        assert!(library.status().writer_stopped);
+        let stopped = |sink: &Recording| sink.calls().iter().filter(|c| *c == "post write-stopped").count();
+        assert_eq!(stopped(&sink), 1);
+        assert!(library.stop());
+        assert_eq!(stopped(&sink), 1, "a stop posts nothing");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -1,0 +1,12 @@
+2026-11-09 18:42:07 gallery 0.9 started
+2026-11-09 18:42:09 the viewer could not open D:\Photos\scan-001.tif
+thread 'viewer' panicked at crates/viewer/src/open.rs:41:9:
+stack backtrace:
+   0: pg_viewer::open::still
+{"t":1794301200000,"local":"2026-11-10 09:00:00","level":"info","target":"session","msg":"started: version 1.0, catalog schema 8","pid":4242,"session":1794301199500,"seq":0}
+{"t":1794301200250,"local":"2026-11-10 09:00:00","level":"info","target":"library","msg":"scan of 2 folders: 24 files, 0 new, 0 missing","pid":4242,"session":1794301199500,"seq":1}
+{"t":1794301201000,"local":"2026-11-10 09:00:01","level":"warning","target":"import","msg":"1 file could not be read","detail":"D:\\Photos\\broken\\broken.jpg: not a JPEG: no image after the header","pid":4242,"session":1794301199500,"seq":2}
+{"t":1794301202500,"local":"2026-11-10 09:00:02","level":"info","target":"thumbs","msg":"thumbnails at 220 px: 24 made","pid":4242,"session":1794301199500,"seq":3}
+{"t":1794301205000,"local":"2026-11-10 09:00:05","level":"error","target":"panic","msg":"panicked at crates/render/src/thumb.rs:88:13: index out of bounds","detail":"stack backtrace:\n   0: pg_render::thumb::make\n   1: pg_jobs::thumbs::run\n   2: std::thread::spawn","pid":4242,"session":1794301199500,"seq":4}
+{"t":1794301207000,"local":"2026-11-10 09:00:07","level":"warning","target":"video","msg":"FFmpeg is not on PATH: videos show no poster","pid":4242,"session":1794301199500,"seq":5}
+{"t":1794301210000,"local":"2026-11-10 09:00:10","level":"info","target":"session","msg":"settings saved","pid":4242,"session":1794301199500,"seq":6}

@@ -10,11 +10,12 @@
 //! The library prints nothing (its crates deny printing); what happens that the user should hear about is a
 //! [`pg_model::notice::Notice`] posted to the inbox, which the front end words and shows.
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
 
 use pg_jobs::events::Bus;
-use pg_thumbcache::ThumbCache;
+use pg_thumbcache::{Effect, ThumbCache};
 
 use crate::catalogs::Catalogs;
 use crate::config::Config;
@@ -45,6 +46,8 @@ pub struct App {
     edit: Edit,
     library: Arc<LibraryService>,
     yandex: Yandex,
+    /// [`App::shutdown`] has run: a second one (the drop's) does nothing.
+    shut: AtomicBool,
 }
 
 impl App {
@@ -90,6 +93,7 @@ impl App {
             reading,
             library,
             yandex,
+            shut: AtomicBool::new(false),
         })
     }
 
@@ -152,7 +156,11 @@ impl App {
     /// The end, after [`App::stop`] and once nothing borrows the app's images (so the front end may keep it in a `static`):
     /// the thumbnail cache writes what it holds and merges its WAL; then the catalog connections close, the keeper last,
     /// so the last connection to the file deletes its WAL. Afterwards the app has no connections; it must not be used.
+    /// Idempotent: the first call does it, and dropping the app calls it too.
     pub fn shutdown(&self) {
+        if self.shut.swap(true, Ordering::AcqRel) {
+            return;
+        }
         self.thumbs.close();
         // The cache's last events are posted before the inbox writes what it has queued and stops.
         if let Some(forwarder) = self.forwarder.lock().unwrap_or_else(PoisonError::into_inner).take()
@@ -169,16 +177,28 @@ impl App {
     }
 }
 
-/// Post the thumbnail cache's events to the inbox, on a thread that ends when the cache's bus is dropped. The writer
-/// thread owns that bus and drops it when it returns; `App::shutdown` stops it by closing the cache. An error if the
-/// thread can't be started.
+/// A front end that drops the app without [`App::shutdown`] still closes the cache, the inbox and the catalogs in their
+/// order. (One kept in a `static` is never dropped, and calls it itself.)
+impl Drop for App {
+    fn drop(&mut self) {
+        self.shutdown();
+    }
+}
+
+/// Apply the thumbnail cache's events to the inbox, on a thread that ends when the cache's bus is dropped: a failure is
+/// posted, and the first success after one clears it (`pg_thumbcache::Event::effect`). The writer thread owns that bus
+/// and drops it when it returns; `App::shutdown` stops it by closing the cache. An error if the thread can't be started.
 fn forward_thumb_events(events: Arc<Bus<pg_thumbcache::Event>>, inbox: Arc<Inbox>) -> Result<JoinHandle<()>> {
     let sub = events.subscribe();
     std::thread::Builder::new()
         .name("thumbnail events".into())
         .spawn(move || {
             while let Some(event) = sub.recv() {
-                inbox.post(event.into_notice());
+                match event.effect() {
+                    Some(Effect::Post(notice)) => inbox.post(notice),
+                    Some(Effect::Clear(key)) => inbox.clear(key),
+                    None => {}
+                }
             }
         })
         .map_err(|e| failed(format!("can't start the thumbnail event forwarder: {e}")))
@@ -230,5 +250,27 @@ mod tests {
         app.shutdown();
         drop(app);
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // The shutdown is idempotent, and the drop calls it: after either, nothing holds the app's files, so its folder can
+    // be removed.
+    #[test]
+    fn the_shutdown_is_idempotent_and_the_drop_calls_it() {
+        let dir = pg_testkit::test_folder("scratch_app", "shutdown-twice").unwrap();
+        let app = App::open(Config::in_home(&dir)).unwrap();
+        app.inbox().post(Notice::FolderNotAdded { error: "kept at the shutdown".into() });
+        app.stop().unwrap();
+        app.shutdown();
+        app.shutdown();
+        drop(app);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!dir.exists());
+        // Dropped without a shutdown: the drop does it.
+        let dir = pg_testkit::test_folder("scratch_app", "shutdown-by-drop").unwrap();
+        let app = App::open(Config::in_home(&dir)).unwrap();
+        app.stop().unwrap();
+        drop(app);
+        std::fs::remove_dir_all(&dir).unwrap();
+        assert!(!dir.exists());
     }
 }

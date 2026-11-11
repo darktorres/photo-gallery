@@ -18,7 +18,7 @@ use cxx_qt::{CxxQtType, Threading};
 use cxx_qt_lib::{QString, QStringList};
 use pg_app::reexport::{Cause, Change, WriteError};
 use pg_client::text::{self, Message};
-use pg_model::notice::{FilePass, Notice};
+use pg_model::notice::{FilePass, LedgerKind, Notice};
 use pg_model::progress::Phase;
 
 use crate::app;
@@ -63,18 +63,6 @@ fn cause_text(cause: &Cause) -> String {
     }
 }
 
-/// The notice of the writer's latest failure: its cause, and for a copy that may be incomplete, the file and its copy.
-fn write_failed(error: &WriteError) -> Notice {
-    let (cause, file, temp) = match error {
-        WriteError::Failed(cause) => (cause, None, None),
-        WriteError::CopyIncomplete { file, temp, cause } => (cause, Some(file.clone()), Some(temp.clone())),
-    };
-    let (error, panicked) = match cause {
-        Cause::Error(text) => (app::error_text(text), false),
-        Cause::Panicked(message) => (app::error_text(message), true),
-    };
-    Notice::WriteFailed { error, panicked, file, temp }
-}
 /// Why a folder's path couldn't be added, in the client's words.
 fn path_words(e: &pg_platform::names::NormalizeError) -> String {
     use pg_platform::names::{NormalizeError, shown};
@@ -187,28 +175,15 @@ impl qobject::Library {
             Phase::Import => Some(FilePass::Import),
             Phase::Idle | Phase::Scan { .. } | Phase::Crop => None,
         };
-        self.as_mut().set_failed_pass(crate::failed_files::pass_code(pass));
+        self.as_mut().set_failed_pass(crate::failed_files::kind_code(pass.map(LedgerKind::File)));
     }
 
-    /// The writer's queue and its latest failure, on the status line. The inbox is told a failure once (the same one
-    /// again is not news) and that it went once a write has gone through; that the writer stopped, once; and the writes
-    /// dropped since the last time (a drop is not a failure: it doesn't light `write_failed`).
+    /// The writer's queue and its latest failure, on the status line: display only. The inbox hears of the writer from
+    /// the writer and the library themselves (`write-failed` and `write-dropped` from the writer as its status changes,
+    /// `write-stopped` where its restarts run out), never from here.
     fn refresh_writes(mut self: Pin<&mut Self>) {
         let Some(library) = running() else { return };
-        let status = library.status();
-        if status.writer_stopped && !self.writer_stopped_shown {
-            self.as_mut().rust_mut().writer_stopped_shown = true;
-            app::post(Notice::WriteStopped);
-        }
-        let s = status.writes;
-        let failed = s.error.as_ref().map(write_failed);
-        if failed != self.write_failure {
-            match &failed {
-                Some(notice) => app::post(notice.clone()),
-                None => app::resolved("write-failed"),
-            }
-            self.as_mut().rust_mut().write_failure = failed;
-        }
+        let s = library.status().writes;
         let error = s.error.as_ref().map(|e| match e {
             WriteError::Failed(cause) | WriteError::CopyIncomplete { cause, .. } => cause_text(cause),
         });
@@ -217,14 +192,8 @@ impl qobject::Library {
             self.as_mut().set_writes(QString::from(&writes));
         }
         self.as_mut().set_write_failed(s.error.is_some());
-        if s.dropped > self.dropped_seen {
-            let new = s.dropped.saturating_sub(self.dropped_seen);
-            self.as_mut().rust_mut().dropped_seen = s.dropped;
-            if let Some(write) = s.last_dropped {
-                app::post(Notice::WriteDropped { write, count: u64::try_from(new).unwrap_or(u64::MAX) });
-            }
-        }
     }
+
     pub(crate) fn add_picked(mut self: Pin<&mut Self>) {
         if let Some(path) = picker::take(Purpose::AddFolder) {
             self.as_mut().add_path(&path);

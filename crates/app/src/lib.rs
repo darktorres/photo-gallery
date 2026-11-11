@@ -37,5 +37,5 @@ pub use images::{Images, Keep, Thumbnail};
 pub use inbox::{Inbox, InboxEvent, Listing};
 pub use library::{Library, LibraryService, Status};
 pub use prefs::{PrefStore, Prefs};
-pub use reader::{Kind, Reading, Session};
+pub use reader::{Failed, FailedItems, Kind, Reading, Session};
 pub use views::Views;

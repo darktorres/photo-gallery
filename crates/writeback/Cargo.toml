@@ -11,6 +11,7 @@ workspace = true
 # writes. Its dependencies: the catalog (the queue), the edit, the metadata and ExifTool (the writes), the thumbnail cache
 # (a rewritten file's thumbnails follow it), the jobs (its thread's control and panics), the model and the platform.
 # The `fault` feature lets the tests of the crates above start a writer that panics where they ask (`pg_writeback::fault`).
+# What it tells the user goes through the job layer's `NoticeSink` (`pg-jobs`), given by whoever starts it.
 [features]
 fault = []
 
@@ -24,3 +25,8 @@ pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 pg-thumbcache = { path = "../thumbcache" }
 anyhow.workspace = true
+
+# The notice sink that keeps what it is told (`RecordingSink`), and a run folder for the cache the writer's state holds.
+[dev-dependencies]
+pg-jobs-testkit = { path = "../jobs-testkit" }
+pg-testkit = { path = "../testkit" }

@@ -47,6 +47,7 @@ mod keymap_bridge;
 mod library;
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod library_bridge;
+mod list_diff;
 #[cfg(debug_assertions)]
 #[expect(unreachable_pub, reason = "cxx and cxx-qt write `pub` on every item they generate for a bridge")]
 mod live_reload;

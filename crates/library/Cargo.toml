@@ -42,3 +42,5 @@ pg-jobs-testkit = { path = "../jobs-testkit" }
 pg-video = { path = "../video" }
 # The writer's faults, for the test that a panic in a job doesn't end it.
 pg-writeback = { path = "../writeback", features = ["fault"] }
+# The detector's fault, for the test that a panic on a file is recorded in the ledger.
+pg-borders = { path = "../borders", features = ["fault"] }

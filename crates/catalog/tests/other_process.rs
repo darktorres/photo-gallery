@@ -23,7 +23,8 @@ fn wait_for(path: &Path, within: Duration) {
 }
 
 /// This test binary, run as a holder of the catalog at `path`: `open` holds it by opening the catalog, `exclusive` as a
-/// rebuild does. It makes `ready` once it has, and keeps the hold until `release` exists.
+/// rebuild does, `post` opens it and posts [`posted`] to its inbox. It makes `ready` once it has, and keeps the hold
+/// until `release` exists.
 fn spawn_holder(path: &Path, mode: &str, ready: &Path, release: &Path) -> std::io::Result<Child> {
     Command::new(std::env::current_exe()?)
         .args(["--exact", "holder"])
@@ -40,10 +41,15 @@ fn spawn_holder(path: &Path, mode: &str, ready: &Path, release: &Path) -> std::i
 fn holder() {
     let Some(path) = std::env::var_os("PG_CATALOG_HOLDER") else { return };
     let path = Path::new(&path);
-    let _hold: Box<dyn std::any::Any> = if std::env::var("PG_CATALOG_MODE").unwrap() == "exclusive" {
+    let mode = std::env::var("PG_CATALOG_MODE").unwrap();
+    let _hold: Box<dyn std::any::Any> = if mode == "exclusive" {
         Box::new(pg_dbfile::Live::exclusive(path).unwrap().expect("the holder gets the rebuild's hold"))
     } else {
-        Box::new(Catalog::open(path, pg_platform::native::PATH_RULES).expect("the holder opens the catalog"))
+        let c = Catalog::open(path, pg_platform::native::PATH_RULES).expect("the holder opens the catalog");
+        if mode == "post" {
+            assert!(c.post_notice(&posted(), 10).unwrap());
+        }
+        Box::new(c)
     };
     std::fs::write(std::env::var_os("PG_CATALOG_READY").unwrap(), b"").unwrap();
     wait_for(Path::new(&std::env::var_os("PG_CATALOG_RELEASE").unwrap()), Duration::from_secs(60));
@@ -74,6 +80,32 @@ fn a_catalog_open_in_another_process_is_not_rebuilt() {
     assert!(other.wait().unwrap().success(), "the holder ends");
     let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
     assert!(c.rebuilt().is_some(), "rebuilt once nothing else has it open");
+}
+
+/// What the `post` holder posts.
+fn posted() -> pg_model::notice::Notice {
+    pg_model::notice::Notice::FolderNotAdded { error: "posted by another process".into() }
+}
+
+/// A notice another process posts is seen here: the catalog's `data_version` moves (what the app's inbox polls), and
+/// the inbox lists it.
+#[test]
+fn a_notice_another_process_posts_is_seen() {
+    let dir: PathBuf = pg_testkit::test_folder("scratch_catalog", "other-process-post").unwrap();
+    let path = dir.join("catalog.sqlite");
+    let c = Catalog::prepare(&path, versions(), pg_platform::native::PATH_RULES).unwrap();
+    let before = c.data_version().unwrap();
+    assert!(c.inbox_entries(10, false).unwrap().is_empty());
+    let (ready, release) = (dir.join("ready"), dir.join("release"));
+    let mut other = spawn_holder(&path, "post", &ready, &release).unwrap();
+    wait_for(&ready, Duration::from_secs(60));
+    assert_ne!(c.data_version().unwrap(), before, "another connection's commit moves it");
+    let entries = c.inbox_entries(10, false).unwrap();
+    assert_eq!(entries.iter().map(|e| e.notice.clone()).collect::<Vec<_>>(), [posted()]);
+    std::fs::write(&release, b"").unwrap();
+    assert!(other.wait().unwrap().success(), "the holder ends");
+    drop(c);
+    std::fs::remove_dir_all(&dir).unwrap();
 }
 
 /// An open waits for a rebuild another process is making (it holds the catalog exclusively), and gets the catalog once

@@ -1,6 +1,7 @@
 //! The catalog's rebuild, both halves: the file side (the replacement made beside the catalog, the old file moved aside,
 //! the copy kept before a migration) and the row copy (`carry_rows`: every table's rows carried into the new layout, the
-//! old shapes converted once). `Catalog::prepare` decides when; this does it. Uses `schema`, `types` and `error`.
+//! old shapes converted by the migrations' own `Rust` steps). `Catalog::prepare` decides when; this does it. Uses
+//! `schema`, `convert`, `types` and `error`.
 
 use std::path::{Path, PathBuf};
 
@@ -8,10 +9,11 @@ use anyhow::{Context, anyhow};
 use pg_model::notice::Carried;
 use pg_model::rules::PathRules;
 use pg_platform::file::beside;
-use rusqlite::{Connection, OptionalExtension};
+use rusqlite::Connection;
 
+use crate::convert::{Source, column_type, table_columns};
 use crate::error::{Error, Result};
-use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, bring_to, current_version};
+use crate::schema::{BASELINE, MIGRATIONS, SETTINGS, Step, bring_to, current_version};
 use crate::types::Rebuilt;
 
 /// A count of rows the copy made (never negative), as the notice of the rebuild holds it.
@@ -126,8 +128,9 @@ fn remove_database(path: &Path) -> Result<()> {
 }
 
 /// The tables a rebuild carries over from the old catalog, in the order their foreign keys need (a table comes after the
-/// tables it references). Every table of the current schema (the baseline's and the migrations') is here: none is derived, since a recomputed table would need a
-/// version mark to say when it is stale, and one is added only with the change that needs it.
+/// tables it references). Every table of the current schema (the baseline's and the migrations') is here or in
+/// [`TRANSIENT`]: none is derived, since a recomputed table would need a version mark to say when it is stale, and one
+/// is added only with the change that needs it.
 pub(crate) const CARRIED: &[&str] = &[
     "meta",
     "scans",
@@ -141,6 +144,7 @@ pub(crate) const CARRIED: &[&str] = &[
     "file_ratings",
     "file_writes",
     "roots",
+    "folder_failures",
     "views",
     "session",
     "notices",
@@ -148,14 +152,21 @@ pub(crate) const CARRIED: &[&str] = &[
     "ledger_ack",
 ];
 
+/// The tables whose rows hold only while the processes that wrote them run: a rebuilt catalog starts without them. The
+/// scan leases (no walk runs across a rebuild, which needs the catalog to itself).
+#[cfg_attr(not(test), expect(dead_code, reason = "a rebuild copies none of them; the test of `CARRIED` reads it"))]
+pub(crate) const TRANSIENT: &[&str] = &["scan_leases"];
+
 /// Copies the rows of the catalog at `old` into `conn`, a new catalog made from [`BASELINE`]: each table of [`CARRIED`],
 /// by column name (a column the old file lacks takes its default), with its ids kept. The `meta` rows the new catalog
 /// seeds are overwritten with the old values, except `path_rules`, which is this build's; a key the old file has and the
 /// new one doesn't is not copied, so the keys stay the baseline's. The triggers are set aside for the copy, since they
 /// would rewrite the copied rows' `pending` and `seq`, and are made again from their own text after it. All of it is one
 /// transaction: a failure copies nothing, and the old file is not changed. `rules` are the rules the old file's paths
-/// were stored under (the caller has checked they are this build's): a saved view or the session that kept its folder
-/// as text (before the folders were typed) is converted to the typed form as it is copied.
+/// were stored under (the caller has checked they are this build's): a saved view that kept its folder as text (before
+/// the folders were typed) is converted to the typed form as it is copied. Then every `Rust` step of the migrations
+/// runs, in order, on the copy ([`Source::Carried`]): each finds the old shape it converts in the old file, so a file
+/// of any version is converted as its migrations would have, and one already converted is left as it is.
 pub(crate) fn carry_rows(conn: &mut Connection, old: &Path, rules: PathRules) -> Result<()> {
     // The old file's name as SQLite takes it, bound as a BLOB: its bytes on Unix, and on Windows the UTF-8 of the alias
     // for a folder with no UTF-8 name (`pg_platform::sqlite`).
@@ -178,8 +189,6 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     }
     // The saved views' folders were text before they were typed (the stored form is the rules' bytes now).
     let text_folders = column_type(&tx, "carried", "views", "folder")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
-    // The session was text keys before it was one row (version 5): its listing is read from them, after the copy.
-    let session_keys = table_columns(&tx, "carried", "session")?.iter().any(|c| c == "key");
     // The queued writes' temp files were text too: a TEXT value stays TEXT in the BLOB column, so it is cast.
     let text_temps =
         column_type(&tx, "carried", "file_writes", "temp")?.is_some_and(|t| t.eq_ignore_ascii_case("TEXT"));
@@ -202,7 +211,8 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
             )?;
         } else if *table == "file_writes" {
             // A queued write whose value breaks its kind's rule (version 7's CHECK) was never valid: it is left out, as
-            // the migration drops it.
+            // the migration drops it. This is the copy obeying the current layout's constraint, not a conversion of
+            // data: the insert can't take a row the CHECK refuses, so it is dropped here, before any `Rust` step runs.
             tx.execute(
                 &format!("INSERT OR IGNORE INTO main.{table} ({columns}) SELECT {columns} FROM carried.{table}"),
                 [],
@@ -214,8 +224,11 @@ fn copy_tables(conn: &mut Connection, rules: PathRules) -> Result<()> {
     if text_folders {
         convert_text_folders(&tx, rules)?;
     }
-    if session_keys {
-        carry_session_keys(&tx, rules, text_folders)?;
+    // The migrations' conversions, in order, before the triggers are back (they would fire on the converted rows).
+    for step in MIGRATIONS.iter().flat_map(|steps| steps.iter()) {
+        if let Step::Rust(convert) = *step {
+            convert(&tx, Source::Carried, rules)?;
+        }
     }
     if text_temps {
         tx.execute("UPDATE main.file_writes SET temp = CAST(temp AS BLOB) WHERE temp IS NOT NULL", [])?;
@@ -245,43 +258,4 @@ fn convert_text_folders(tx: &rusqlite::Transaction<'_>, rules: PathRules) -> Res
         )?;
     }
     Ok(())
-}
-
-/// The session of a catalog from before version 5, text keys, carried as its one row: the listing the old keys
-/// named, each key the old reader's default where it was never saved. Its `folder` was the JSON of the folder's parts,
-/// or (`text_folders`: before S-17.8) the folder's text, split by the rules; a NUL in that text is refused, and the
-/// copy is rolled back with the rest. Nothing is written for a session never saved.
-fn carry_session_keys(tx: &rusqlite::Transaction<'_>, rules: PathRules, text_folders: bool) -> Result<()> {
-    let keys: Vec<(String, Vec<u8>)> = tx
-        .prepare("SELECT key, CAST(value AS BLOB) FROM carried.session")?
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?
-        .collect::<rusqlite::Result<_>>()?;
-    if keys.is_empty() {
-        return Ok(());
-    }
-    let value = |key: &str| keys.iter().find(|(k, _)| k == key).map(|(_, v)| String::from_utf8_lossy(v).into_owned());
-    let folder = match keys.iter().find(|(k, _)| k == "folder") {
-        Some((_, text)) if text_folders => {
-            rules.parse_merged(text).ok_or_else(|| Error::Other(anyhow!("the session's folder has a NUL")))?
-        }
-        _ => pg_query::from_json(&value("folder").unwrap_or_default()),
-    };
-    let listing = pg_model::view::Listing {
-        folder,
-        recursive: value("recursive").is_none_or(|r| r == "true"),
-        sort: pg_query::from_json(&value("sort").unwrap_or_default()),
-        query: pg_query::from_json(&value("query").unwrap_or_default()),
-    };
-    crate::listing::put_session(tx, rules, &listing)
-}
-
-/// The column names of `table` in `schema` (`main` or an attached database); none when the table isn't there.
-fn table_columns(conn: &Connection, schema: &str, table: &str) -> rusqlite::Result<Vec<String>> {
-    conn.prepare("SELECT name FROM pragma_table_info(?1, ?2)")?.query_map([table, schema], |r| r.get(0))?.collect()
-}
-
-/// The declared type of `table.column` in `schema`; `None` when the column isn't there.
-fn column_type(conn: &Connection, schema: &str, table: &str, column: &str) -> rusqlite::Result<Option<String>> {
-    conn.query_row("SELECT type FROM pragma_table_info(?1, ?2) WHERE name = ?3", [table, schema, column], |r| r.get(0))
-        .optional()
 }

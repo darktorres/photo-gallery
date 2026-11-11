@@ -13,11 +13,16 @@ use std::path::{Path, PathBuf};
 use pg_analysis::analyze::IMPORT_VERSION;
 use pg_analysis::borders::BORDERS_VERSION;
 use pg_catalog::browse::read::facets::Facets;
+use pg_catalog::ledger::Summary;
 use pg_catalog::{Catalog, Versions, WorkItem};
+use pg_jobs::control::Control;
 use pg_model::grid::Entry;
 use pg_model::path::WorkList;
 use pg_model::query::{Query, RatingFilter, Sort, SortKey};
+use pg_model::rules::Path as RulePath;
 use pg_model::tree::FolderTree;
+use pg_scan::ScanStats;
+use pg_scan::synthetic::SyntheticTree;
 use pg_thumbcache::{self as thumbs, Pending};
 
 const DATA: &str = match option_env!("PG_BENCH_DATA") {
@@ -31,6 +36,10 @@ const DATA: &str = match option_env!("PG_BENCH_DATA") {
 // the session row, the thumbnail views, the typed queue), so its rows are v5's and a change between the two is the
 // code's; the cache's schema is unchanged.
 const LAYOUT: &str = "v6-windows-rules";
+// The large layout (tools/profiling/bench_data.py, `-large`): 200,000 files of the synthetic library's large profile,
+// 50,000 of them broken (the import's failures), and the failure ledger seeded to 100,000 rows. Made and named as
+// LAYOUT is; the inbox's refresh is measured on it.
+const LARGE_LAYOUT: &str = "v6-windows-rules-large";
 // The path rules the layout was made under (its meta.path_rules). Not pg_platform::native::PATH_RULES: the benches
 // run on Linux, where that is posix, and a catalog keeps the rules it was made with.
 const RULES: pg_model::rules::PathRules = pg_model::rules::PathRules::Windows;
@@ -43,7 +52,12 @@ fn run_dir() -> PathBuf {
 
 // Fresh copies of the layout's files in run/, in WAL mode like the app's.
 fn copy_data() -> PathBuf {
-    let (from, run) = (Path::new(DATA).join(LAYOUT), run_dir());
+    copy_layout(LAYOUT)
+}
+
+// Fresh copies of `layout`'s files in run/.
+fn copy_layout(layout: &str) -> PathBuf {
+    let (from, run) = (Path::new(DATA).join(layout), run_dir());
     or_stop(std::fs::create_dir_all(&run), run.display());
     for name in ["catalog.sqlite", "thumbs.sqlite"] {
         for suffix in ["-wal", "-shm"] {
@@ -56,14 +70,22 @@ fn copy_data() -> PathBuf {
     run
 }
 
+fn versions() -> Versions {
+    Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: 1 }
+}
+
 fn open_catalog() -> Catalog {
-    let versions = Versions { import: IMPORT_VERSION, borders: BORDERS_VERSION, thumbs: 1 };
-    let catalog = or_stop(Catalog::prepare(&copy_data().join("catalog.sqlite"), versions, RULES), "the catalog");
+    open_layout(LAYOUT)
+}
+
+fn open_layout(layout: &str) -> Catalog {
+    let catalog =
+        or_stop(Catalog::prepare(&copy_layout(layout).join("catalog.sqlite"), versions(), RULES), "the catalog");
     // A catalog that doesn't match this build's schema is moved aside and an empty one made: the bench would measure
     // nothing. Regenerate the data instead.
     assert!(
         catalog.rebuilt().is_none(),
-        "the {LAYOUT} data doesn't match this build's schema: regenerate it with tools/profiling/bench_data.py"
+        "the {layout} data doesn't match this build's schema: regenerate it with tools/profiling/bench_data.py"
     );
     or_stop(catalog.status(), "the catalog's status"); // reads the schema and the counts: the connection is warm before the measured code
     catalog
@@ -146,4 +168,101 @@ fn pending_thumbs(run: PathBuf) -> Pending {
     ))
 }
 
-library_benchmark_group!(name = catalog, benchmarks = [list, tree, facets, pending_import, pending_thumbs]);
+// The files of one import batch (pg-import's 500), each made due again (`Catalog::mark_pending`, as `import --again`
+// does), and the analysis the batch stores for each: the sample's. On the large layout, so the import ledger's triggers
+// run over its 50,000 failures.
+const IMPORT_BATCH: usize = 500;
+
+fn for_import_flush() -> (Catalog, Vec<WorkItem>, Analyzed) {
+    let catalog = open_layout(LARGE_LAYOUT);
+    let roots = or_stop(catalog.roots(), "the library folders");
+    #[expect(clippy::panic, reason = "a layout with no library folder is a bug in the bench data")]
+    let Some(root) = roots.first() else { panic!("the {LARGE_LAYOUT} catalog has no library folder") };
+    let mut ids = or_stop(catalog.files_under(&root.path), "the library's files");
+    ids.truncate(IMPORT_BATCH);
+    or_stop(catalog.mark_pending(&ids), "the files made due");
+    let mut items = or_stop(catalog.pending_import(false), "the import's work").items;
+    items.truncate(IMPORT_BATCH);
+    let mut analyzer = or_stop(Analyzer::new(), "the analyzer");
+    let analyzed = or_stop(analyzer.analyze(&read_sample(), Turns::NONE), "the sample's analysis");
+    (catalog, items, analyzed)
+}
+
+// One batch of the import stored (pg-import's flush): its analyses and failures (one in five), in one transaction, with
+// the triggers the catalog keeps on them (the import's failure ledger among them).
+#[library_benchmark]
+#[bench::batch(setup = for_import_flush)]
+fn import_flush((mut catalog, items, analyzed): (Catalog, Vec<WorkItem>, Analyzed)) -> Catalog {
+    let tx = or_stop(catalog.tx(), "the batch's transaction");
+    {
+        let mut writer = or_stop(tx.analysis_writer(IMPORT_VERSION), "the analysis writer");
+        for (i, item) in items.iter().enumerate() {
+            let stored = if i % 5 == 4 {
+                writer.store_failure(item, "bench: the analysis failed")
+            } else {
+                writer.store_analysis(item, &analyzed)
+            };
+            black_box(or_stop(stored, "a stored analysis"));
+        }
+    }
+    or_stop(tx.commit(), "the batch's commit");
+    catalog
+}
+
+fn for_refresh(viewing: bool) -> (Catalog, bool) {
+    (open_layout(LARGE_LAYOUT), viewing)
+}
+
+// The inbox's refresh of the failure ledgers on the large layout (`Catalog::ledger_entries`: each ledger's cheap state,
+// `Catalog::ledger_state`), with the inbox closed, and open (the counts read too).
+#[library_benchmark]
+#[bench::closed(args = (false), setup = for_refresh)]
+#[bench::open(args = (true), setup = for_refresh)]
+fn inbox_refresh((catalog, viewing): (Catalog, bool)) -> (Catalog, Vec<Summary>) {
+    let entries = or_stop(catalog.ledger_entries(viewing), "the ledgers' entries");
+    (catalog, black_box(entries))
+}
+
+library_benchmark_group!(
+    name = catalog,
+    benchmarks = [list, tree, facets, pending_import, pending_thumbs, import_flush, inbox_refresh]
+);
+
+// The scan's walk (pg-scan's `bench` feature: `scan_with` over a synthetic tree, no file system under it), into a
+// catalog in memory with the tree's folder as a library folder: 100 folders of 100 files, and 4 more it can't open
+// (the folder ledger's rows). `first` records every file; `again` walks the same tree over the catalog that has it, as
+// a rescan does (every file seen, none changed). No bench data: it runs wherever the benches do.
+const SCAN_FOLDERS: usize = 100;
+const SCAN_FILES: usize = 100;
+const SCAN_UNREADABLE: usize = 4;
+
+fn scan_root() -> RulePath {
+    #[expect(clippy::panic, reason = "a folder literal that does not parse is a bug in the bench")]
+    let Some(root) = RULES.parse(r"D:\bench\library") else { panic!("the synthetic library's folder") };
+    root
+}
+
+fn synthetic_tree(root: &RulePath) -> SyntheticTree {
+    SyntheticTree::new(RULES, root, SCAN_FOLDERS, SCAN_FILES, SCAN_UNREADABLE)
+}
+
+fn for_scan_walk(again: bool) -> (Catalog, RulePath, SyntheticTree, Control) {
+    let mut catalog = or_stop(Catalog::prepare(Path::new(":memory:"), versions(), RULES), "a catalog in memory");
+    let root = scan_root();
+    or_stop(catalog.add_root(&root), "the library folder");
+    if again {
+        or_stop(pg_scan::scan_with(&mut catalog, &root, &Control::new(), &mut synthetic_tree(&root)), "the first walk");
+    }
+    let tree = synthetic_tree(&root);
+    (catalog, root, tree, Control::new())
+}
+
+#[library_benchmark]
+#[bench::first(args = (false), setup = for_scan_walk)]
+#[bench::again(args = (true), setup = for_scan_walk)]
+fn scan_walk((mut catalog, root, mut tree, ctl): (Catalog, RulePath, SyntheticTree, Control)) -> (Catalog, ScanStats) {
+    let stats = or_stop(pg_scan::scan_with(&mut catalog, &root, &ctl, &mut tree), "the walk");
+    (catalog, black_box(stats))
+}
+
+library_benchmark_group!(name = scan, benchmarks = [scan_walk]);

@@ -51,8 +51,23 @@ pub struct Control {
     /// Called whenever what `snapshot` or `is_paused` says changes (progress, the pause), for an owner that
     /// reads them on its own thread instead of polling.
     hook: OnceLock<Box<dyn Fn() + Send + Sync>>,
+    /// Called when the pass changed the failure ledger ([`Control::ledger_changed`]): the runner pokes the inbox, which
+    /// reads the ledger again.
+    on_ledger: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// When the last progress event went out.
     last_event: Mutex<Instant>,
+}
+
+/// What a bounded checkpoint ([`Control::checkpoint_within`]) found.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Checkpoint {
+    /// Not paused (any more): go on.
+    Go,
+    /// A stop was asked for.
+    Stop,
+    /// Still paused after the wait: the caller does what a long wait needs (gives back what it holds, renews a lease),
+    /// and waits again.
+    Paused,
 }
 
 impl Control {
@@ -64,6 +79,7 @@ impl Control {
             progress: Watch::new(Running::idle()),
             events: Bus::new(EVENT_CAP),
             hook: OnceLock::new(),
+            on_ledger: OnceLock::new(),
             last_event: Mutex::new(Instant::now()),
         }
     }
@@ -104,6 +120,19 @@ impl Control {
         }
     }
 
+    /// The hook [`Control::ledger_changed`] calls from now on (set once: a second one is ignored).
+    pub fn on_ledger_change(&self, hook: impl Fn() + Send + Sync + 'static) {
+        let _ = self.on_ledger.set(Box::new(hook));
+    }
+
+    /// The pass changed the failure ledger (wrote or cleared rows, or committed a batch whose triggers may have): whoever
+    /// shows the ledger reads it again. Called on the pass's thread, after the commit.
+    pub fn ledger_changed(&self) {
+        if let Some(hook) = self.on_ledger.get() {
+            hook();
+        }
+    }
+
     pub fn is_paused(&self) -> bool {
         *self.paused.lock().unwrap_or_else(PoisonError::into_inner)
     }
@@ -126,6 +155,26 @@ impl Control {
                 return true;
             }
             paused = self.resumed.wait(paused).unwrap_or_else(PoisonError::into_inner);
+        }
+    }
+
+    /// [`Control::checkpoint`], waiting at most `wait` while paused: [`Checkpoint::Paused`] when the pause still holds
+    /// then. For a pass that holds something a long pause must not keep (a scan's lease, renewed between waits).
+    pub fn checkpoint_within(&self, wait: Duration) -> Checkpoint {
+        let deadline = Instant::now() + wait;
+        let mut paused = self.paused.lock().unwrap_or_else(PoisonError::into_inner);
+        loop {
+            if self.stop_requested() {
+                return Checkpoint::Stop;
+            }
+            if !*paused {
+                return Checkpoint::Go;
+            }
+            let left = deadline.saturating_duration_since(Instant::now());
+            if left.is_zero() {
+                return Checkpoint::Paused;
+            }
+            paused = self.resumed.wait_timeout(paused, left).unwrap_or_else(PoisonError::into_inner).0;
         }
     }
 
@@ -271,6 +320,32 @@ mod tests {
         assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
         ctl.set_paused(false);
         assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap(), ("other", true));
+    }
+
+    #[test]
+    fn a_bounded_checkpoint_says_paused_after_its_wait_and_goes_or_stops_at_once() {
+        let ctl = Control::new();
+        assert_eq!(ctl.checkpoint_within(Duration::from_secs(5)), Checkpoint::Go);
+        ctl.set_paused(true);
+        let began = Instant::now();
+        assert_eq!(ctl.checkpoint_within(Duration::from_millis(30)), Checkpoint::Paused);
+        assert!(began.elapsed() >= Duration::from_millis(30), "{:?}", began.elapsed());
+        ctl.request_stop();
+        assert_eq!(ctl.checkpoint_within(Duration::from_secs(5)), Checkpoint::Stop);
+    }
+
+    #[test]
+    fn a_ledger_change_calls_its_hook_and_nothing_without_one() {
+        let ctl = Control::new();
+        ctl.ledger_changed();
+        let calls = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let counted = calls.clone();
+        ctl.on_ledger_change(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
+        ctl.ledger_changed();
+        ctl.ledger_changed();
+        assert_eq!(calls.load(Ordering::SeqCst), 2);
     }
 
     #[test]

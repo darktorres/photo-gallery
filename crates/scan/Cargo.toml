@@ -7,6 +7,11 @@ publish.workspace = true
 [lints]
 workspace = true
 
+# The `bench` feature exposes the walk over any listing (`scan_with`) and a synthetic tree to walk (`synthetic`), for
+# the callgrind benches (`pg-bench`): no file system under the measured walk.
+[features]
+bench = []
+
 # The scanner: walks a folder tree and records each media file's identity, size and mtime. Its dependencies are the catalog, the job's control, the model and the platform's listing: no analysis, no codec.
 [dependencies]
 pg-catalog = { path = "../catalog" }
@@ -14,3 +19,9 @@ pg-jobs = { path = "../jobs" }
 pg-model = { path = "../model" }
 pg-platform = { path = "../platform" }
 anyhow.workspace = true
+
+# The catalog's test fixture (a second connection's writes, the write lock's holds), and run folders for the catalogs
+# on disk that a second connection reaches.
+[dev-dependencies]
+pg-catalog = { path = "../catalog", features = ["fixture"] }
+pg-testkit = { path = "../testkit" }

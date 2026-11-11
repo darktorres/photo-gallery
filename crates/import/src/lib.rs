@@ -81,6 +81,10 @@ pub fn import(catalog: &mut Catalog, opts: &Options, retry_errors: bool, ctl: &C
         }
         drop(writer);
         tx.commit()?;
+        // The import's failure ledger is kept by the catalog's triggers on the analyses, whose changes don't show in a
+        // statement's count: every batch committed may have moved it, so whoever shows it reads it again (cheap, and
+        // the reads coalesce).
+        ctl.ledger_changed();
         Ok(())
     };
 

@@ -5,23 +5,43 @@
 use anyhow::{Context, anyhow};
 use pg_dbfile::{Damage, Expected, Schema};
 use pg_model::rules::PathRules;
-use rusqlite::Connection;
+use rusqlite::{Connection, Transaction};
 
+use crate::convert::{Source, convert_notify, convert_session};
 use crate::error::Result;
 use crate::transaction::write_transaction;
 
+/// One step of a migration: SQL that changes the layout, or a conversion of rows (`crate::convert`), which reads the
+/// old shape from its [`Source`] and is shaped-guarded and idempotent. Every data conversion is a `Rust` step, so the
+/// rebuild's copy runs the same code (`rebuild::copy_tables` runs every `Rust` step with `Source::Carried`). `PathRules`:
+/// the rules the catalog's paths are stored under.
+#[derive(Clone, Copy)]
+pub(crate) enum Step {
+    Sql(&'static str),
+    Rust(fn(&Transaction<'_>, Source, PathRules) -> Result<()>),
+}
+
 /// Migrations (`PRAGMA user_version` counts them). A new catalog gets [`BASELINE`] at version [`BASELINE_VERSION`],
-/// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next.
+/// then every migration in turn; `MIGRATIONS[i]` takes version `BASELINE_VERSION + i` to the next, its steps in order,
+/// in one transaction with the version.
 ///
 /// The baseline is frozen: since the first migration (version 2), every schema change is a migration, which converts
 /// the rows whose meaning changed instead of copying them as they are, and the baseline takes comment edits only (a
 /// catalog at version 1 is compared with it). A catalog whose schema differs from this build's at its version is
 /// rebuilt when it is prepared (`Catalog::prepare`): a new catalog is made from the baseline and the
-/// migrations and takes the old rows with their ids (the rebuild's `carry_rows`), and the old file is moved aside. A catalog of
-/// this build's schema at an earlier version is migrated forward, keeping its rows.
+/// migrations and takes the old rows with their ids (the rebuild's `carry_rows`, which runs the migrations' `Rust`
+/// steps on them), and the old file is moved aside. A catalog of this build's schema at an earlier version is migrated
+/// forward, keeping its rows.
 pub(crate) const BASELINE_VERSION: i64 = 1;
-pub(crate) const MIGRATIONS: &[&str] =
-    &[TO_2_CHANGE_STAMPS, TO_3_NOTICES, TO_4_FAILURES, TO_5_SESSION, TO_6_THUMB_VIEWS, TO_7_WRITE_CHECKS];
+pub(crate) const MIGRATIONS: &[&[Step]] = &[
+    &[Step::Sql(TO_2_CHANGE_STAMPS)],
+    &[Step::Sql(TO_3_NOTICES)],
+    &[Step::Sql(TO_4_FAILURES)],
+    TO_5_SESSION,
+    &[Step::Sql(TO_6_THUMB_VIEWS)],
+    &[Step::Sql(TO_7_WRITE_CHECKS)],
+    TO_8_NOTIFY,
+];
 
 /// Version 2: `files.changed` (what a client that kept its list fetches again by) is stamped for what the grid shows of a file's borders,
 /// which the baseline's triggers missed. The borders pass writes the cut into the analysis after the import, and sets
@@ -116,37 +136,23 @@ const TO_4_FAILURES: &str = concat!(
 );
 
 /// Version 5: the session is a listing (`pg_model::view::Listing`) in one row, with the saved views' columns, which the
-/// views' row code reads and writes (`listing::listing_at`, `listing_values`). It was a store of
-/// text keys (`folder` as the JSON of the folder's parts, `recursive` as `true` or `false`, `query`, `sort`); the row is
-/// made from them once, here. A part of the folder is a JSON string, or `{"b": "<hex>"}` for one that is not UTF-8
-/// (`Name`'s JSON), and the parts are joined by the separator of the catalog's rules, as a view's folder is stored. A
-/// folder that is not a JSON array is all folders, as the old reader took it; a key never saved takes the old reader's default.
-const TO_5_SESSION: &str = r#"CREATE TABLE session_row(
+/// views' row code reads and writes (`listing::listing_at`, `listing_values`). It was a store of text keys; the row is
+/// made from them once, by `convert::convert_session`, between the new table's creation and the old one's drop. The
+/// steps' SQL is the text version 5 was first made with, so the layout it leaves is the one catalogs already have.
+const TO_5_SESSION: &[Step] = &[Step::Sql(TO_5_SESSION_ROW), Step::Rust(convert_session), Step::Sql(TO_5_SESSION_SWAP)];
+
+const TO_5_SESSION_ROW: &str = r"CREATE TABLE session_row(
     id        INTEGER PRIMARY KEY CHECK (id = 1),
     folder    BLOB NOT NULL,     -- as views.folder
     recursive INTEGER NOT NULL,
     query     TEXT NOT NULL,     -- query::Query as JSON
     sort      TEXT NOT NULL      -- query::Sort as JSON
 );
-INSERT INTO session_row(id, folder, recursive, query, sort)
-SELECT 1,
-    CAST(COALESCE((
-        SELECT group_concat(
-            CASE part.type WHEN 'text' THEN part.atom ELSE unhex(json_extract(part.value, '$.b')) END,
-            (SELECT CASE value WHEN 'windows' THEN '\' ELSE '/' END FROM meta WHERE key = 'path_rules')
-            ORDER BY part.key)
-        FROM json_each(
-            CASE WHEN json_valid(folder.value) AND json_type(folder.value) = 'array' THEN folder.value ELSE '[]' END
-        ) AS part
-    ), '') AS BLOB),
-    COALESCE((SELECT value FROM session WHERE key = 'recursive'), 'true') = 'true',
-    COALESCE((SELECT value FROM session WHERE key = 'query'), ''),
-    COALESCE((SELECT value FROM session WHERE key = 'sort'), '')
-FROM (SELECT COALESCE((SELECT value FROM session WHERE key = 'folder'), '[]') AS value) AS folder
-WHERE EXISTS (SELECT 1 FROM session);
-DROP TABLE session;
+";
+
+const TO_5_SESSION_SWAP: &str = "DROP TABLE session;
 ALTER TABLE session_row RENAME TO session;
-"#;
+";
 
 /// Version 6: the thumbnail cache reads the catalog through its views alone. `thumb_sources` decides which files can
 /// have a thumbnail (present, and analyzed without an error for the file as it is now), and gives a video's poster
@@ -220,6 +226,113 @@ CREATE INDEX file_writes_next ON file_writes((temp IS NULL), queued);
     stamp!("file_writes_stamp_delete", "DELETE", "file_writes", old),
 );
 
+/// Version 8: the inbox's storage as docs/NOTIFICATIONS.md describes it. The layout is added first, the rows are
+/// converted (`convert::convert_notify`), and the column they were converted from is dropped.
+const TO_8_NOTIFY: &[Step] = &[Step::Sql(TO_8_NOTIFY_ADD), Step::Rust(convert_notify), Step::Sql(TO_8_NOTIFY_DROP)];
+
+/// - **A ledger's dismissal is a serial** (`ledger_ack.dismissed_to`): the entry is shown while it has live rows and
+///   none was dismissed, or one came after the dismissal. Reading it later no longer hides it.
+/// - **A notice's revision** (`notices.rev`): it rises when a state's data changes, and a mark names the revision it
+///   was made for, so a mark sent for one never lands on the next.
+/// - **Events are bounded by `notices_uid`**: past `kept_events!()` keyless rows, each insert deletes the oldest by
+///   insertion (`uid`), read ones first, never the row inserted and never a state (bounded by its keys).
+/// - **`notices(kind, root)`**: what a clear reads to find whether it has anything to remove.
+/// - **The import's ledger is rows** (`pass = 'import'`), kept by the triggers on `analysis`: they mirror the failed
+///   analysis, with the state of the bytes it read, so a re-analysis of the same bytes keeps its serial and a changed
+///   file that fails again is new. `files_failures_stale` no longer touches them, nor any row when a file goes missing.
+/// - **`file_failures.hidden`**: the file is missing (or, for the import, pending), kept by `files_failures_hidden`; the
+///   inbox reads the rest through the partial index `file_failures_live`.
+/// - **The folders a walk couldn't read** (`folder_failures`): one row per folder, by its exact path, tied to the library
+///   folder that holds it; `walk` is the `scans` row of the walk that last saw it, which a later complete walk of a folder
+///   above it sweeps by (`Catalog::mark_missing`). `reason`: `unreadable` | `mount-refused` | `refused`.
+/// - **The scan leases** (`scan_leases`, transient: a rebuild carries none): one row per walk running (`id` its `scans`
+///   row), so two walks of overlapping folders never interleave (`Catalog::begin_scan`).
+const TO_8_NOTIFY_ADD: &str = concat!(
+    "ALTER TABLE ledger_ack ADD COLUMN dismissed_to INTEGER;
+ALTER TABLE notices ADD COLUMN rev INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX notices_kind_root ON notices(kind, root);
+DROP TRIGGER notices_uid;
+CREATE TRIGGER notices_uid AFTER INSERT ON notices BEGIN
+    ",
+    next_seq!(),
+    ";
+    UPDATE notices SET uid = ",
+    seq!(),
+    " WHERE id = new.id;
+    DELETE FROM notices WHERE new.key IS NULL AND id IN (
+        SELECT id FROM notices WHERE key IS NULL AND id <> new.id ORDER BY read IS NULL, uid
+        LIMIT max(0, (SELECT count(*) FROM notices WHERE key IS NULL) - ",
+    kept_events!(),
+    "));
+END;
+ALTER TABLE file_failures ADD COLUMN hidden INTEGER NOT NULL DEFAULT 0;
+CREATE INDEX file_failures_live ON file_failures(pass, serial) WHERE ",
+    live_failures!(),
+    ";
+DROP TRIGGER files_failures_stale;
+CREATE TRIGGER files_failures_stale AFTER UPDATE OF mtime, size, rotation ON files
+WHEN old.mtime IS NOT new.mtime OR old.size IS NOT new.size OR old.rotation IS NOT new.rotation
+BEGIN
+    DELETE FROM file_failures WHERE file_id = new.id AND pass <> 'import';
+END;
+CREATE TRIGGER files_failures_hidden AFTER UPDATE OF pending, missing ON files
+WHEN old.pending IS NOT new.pending OR old.missing IS NOT new.missing
+BEGIN
+    UPDATE file_failures SET hidden = (new.missing OR (pass = 'import' AND new.pending))
+    WHERE file_id = new.id AND hidden IS NOT (new.missing OR (pass = 'import' AND new.pending));
+END;
+CREATE TRIGGER analysis_import_failed AFTER INSERT ON analysis WHEN new.error IS NOT NULL BEGIN
+    DELETE FROM file_failures WHERE file_id = new.file_id AND pass = 'import'
+        AND (mtime IS NOT new.mtime OR size IS NOT new.size OR rotation IS NOT new.rotation);
+    INSERT INTO file_failures(file_id, pass, mtime, size, rotation, error, retry, first_seen, hidden)
+        SELECT new.file_id, 'import', new.mtime, new.size, new.rotation, new.error, 0, new.analyzed, f.missing
+        FROM files f WHERE f.id = new.file_id
+        ON CONFLICT(file_id, pass) DO UPDATE SET error = excluded.error
+        WHERE file_failures.error IS NOT excluded.error;
+END;
+CREATE TRIGGER analysis_import_fixed AFTER INSERT ON analysis WHEN new.error IS NULL BEGIN
+    DELETE FROM file_failures WHERE file_id = new.file_id AND pass = 'import';
+END;
+CREATE TRIGGER analysis_import_rewritten AFTER UPDATE OF size, mtime, rotation ON analysis WHEN new.error IS NOT NULL
+BEGIN
+    UPDATE file_failures SET size = new.size, mtime = new.mtime, rotation = new.rotation
+    WHERE file_id = new.file_id AND pass = 'import';
+END;
+CREATE TRIGGER analysis_import_removed AFTER DELETE ON analysis BEGIN
+    DELETE FROM file_failures WHERE file_id = old.file_id AND pass = 'import';
+END;
+CREATE TABLE folder_failures(
+    id         INTEGER PRIMARY KEY,
+    root       INTEGER NOT NULL REFERENCES roots(id) ON DELETE CASCADE,
+    path       BLOB NOT NULL UNIQUE,   -- exact bytes, as folders.path
+    reason     TEXT NOT NULL,          -- 'unreadable' | 'mount-refused' | 'refused'
+    error      TEXT NOT NULL,
+    walk       INTEGER NOT NULL,       -- the scans row of the walk that last saw it
+    serial     INTEGER NOT NULL DEFAULT 0,
+    first_seen INTEGER NOT NULL        -- Unix seconds
+);
+CREATE INDEX folder_failures_serial ON folder_failures(serial);
+CREATE INDEX folder_failures_root ON folder_failures(root);
+CREATE TRIGGER folder_failures_stamp AFTER INSERT ON folder_failures BEGIN
+    ",
+    next_seq!(),
+    ";
+    UPDATE folder_failures SET serial = ",
+    seq!(),
+    " WHERE id = new.id;
+END;
+CREATE TABLE scan_leases(
+    id        INTEGER PRIMARY KEY,     -- the walk's scans row
+    root      BLOB NOT NULL,           -- the folder it walks, as scans.root
+    holder    TEXT NOT NULL,           -- who walks it, for the refusal's words
+    heartbeat INTEGER NOT NULL         -- Unix seconds: renewed with each batch the walk writes
+);
+"
+);
+
+/// [`TO_8_NOTIFY`]'s last step: the acknowledgement's old dismissal time, converted.
+const TO_8_NOTIFY_DROP: &str = "ALTER TABLE ledger_ack DROP COLUMN dismissed;\n";
+
 /// The `application_id` header field of a catalog file (`PGCT`). Set when the file is made, and checked with its
 /// schema, so a SQLite file that merely has the same tables is not taken for a catalog.
 pub(crate) const APPLICATION_ID: i64 = 0x5047_4354;
@@ -250,13 +363,14 @@ pub(crate) fn version_of(conn: &Connection) -> Result<Option<i64>> {
 
 /// Bring the database at `conn` up to `target`, each step in its own write transaction. A new database (version 0)
 /// gets `baseline`, with its `path_rules` row for `rules`, the `application_id` and [`BASELINE_VERSION`]; a database at
-/// version `v` gets `migrations[v - BASELINE_VERSION]`, which takes it to `v + 1`. Each step reads the version inside
-/// its transaction, so a step another connection already made is not made again. A database at or past `target` is left
-/// alone; a failed step rolls back and leaves the database at the last good version.
+/// version `v` gets `migrations[v - BASELINE_VERSION]`, which takes it to `v + 1`: its steps in order (a `Rust` step with
+/// [`Source::Main`]), with the version, in one transaction. Each migration reads the version inside its transaction, so
+/// one another connection already made is not made again. A database at or past `target` is left alone; a failed step
+/// rolls back its migration and leaves the database at the last good version.
 pub(crate) fn bring_to(
     conn: &Connection,
     baseline: &str,
-    migrations: &[&str],
+    migrations: &[&[Step]],
     rules: PathRules,
     target: i64,
 ) -> Result<()> {
@@ -274,9 +388,15 @@ pub(crate) fn bring_to(
         } else {
             let index = usize::try_from(version - BASELINE_VERSION)
                 .with_context(|| format!("schema version {version}, older than the baseline {BASELINE_VERSION}"))?;
-            let sql =
+            let steps =
                 migrations.get(index).ok_or_else(|| anyhow!("schema version {version}: no migration takes it on"))?;
-            tx.execute_batch(sql).with_context(|| format!("migration to schema version {}", version + 1))?;
+            let context = || format!("migration to schema version {}", version + 1);
+            for step in steps.iter() {
+                match *step {
+                    Step::Sql(sql) => tx.execute_batch(sql).with_context(context)?,
+                    Step::Rust(convert) => convert(&tx, Source::Main, rules).with_context(context)?,
+                }
+            }
             tx.pragma_update(None, "user_version", version + 1)?;
         }
         tx.commit()?;
@@ -289,8 +409,9 @@ pub(crate) fn expected(version: i64) -> Result<Schema> {
     expected_for(BASELINE, MIGRATIONS, version)
 }
 
-/// [`expected`] for the given baseline and migrations.
-pub(crate) fn expected_for(baseline: &str, migrations: &[&str], version: i64) -> Result<Schema> {
+/// [`expected`] for the given baseline and migrations, made on an empty database: the `Sql` steps make the layout, and
+/// the `Rust` steps find no rows to convert.
+pub(crate) fn expected_for(baseline: &str, migrations: &[&[Step]], version: i64) -> Result<Schema> {
     let conn = Connection::open_in_memory()?;
     bring_to(&conn, baseline, migrations, pg_platform::native::PATH_RULES, version)?;
     Ok(Schema::read(&conn, SEEDS)?)
@@ -646,8 +767,8 @@ mod tests {
         pg_dbfile::user_version(conn).unwrap()
     }
 
-    /// A rebuild copies every table of the current schema, so a table a migration adds has to be listed in `CARRIED` (or
-    /// the rebuild would leave its rows behind without a word).
+    /// A rebuild copies every table of the current schema but the transient ones, so a table a migration adds has to be
+    /// listed in `CARRIED` or `TRANSIENT`, and in one only (or the rebuild would leave its rows behind without a word).
     #[test]
     fn carried_is_every_table_of_the_current_schema() {
         let conn = Connection::open_in_memory().unwrap();
@@ -659,27 +780,35 @@ mod tests {
             .unwrap()
             .collect::<rusqlite::Result<_>>()
             .unwrap();
-        let mut carried: Vec<String> = crate::rebuild::CARRIED.iter().map(|t| t.to_string()).collect();
-        carried.sort();
+        let (carried, transient) = (crate::rebuild::CARRIED, crate::rebuild::TRANSIENT);
+        assert!(carried.iter().all(|t| !transient.contains(t)), "carried and transient are disjoint");
+        let mut both: Vec<String> = carried.iter().chain(transient).map(|t| t.to_string()).collect();
+        both.sort();
         tables.sort();
-        assert_eq!(carried, tables);
+        assert_eq!(both, tables);
     }
+
+    /// One migration of SQL steps.
+    const EXTRA: &[Step] = &[Step::Sql("CREATE TABLE extra(x INTEGER);")];
+    const SEVEN: &[Step] = &[Step::Sql("INSERT INTO extra VALUES (7);")];
+    const NOT_SQL: &[Step] = &[Step::Sql("INSERT INTO extra VALUES (8);"), Step::Sql("NOT SQL")];
 
     fn migrations_apply_once_in_order_and_a_failed_one_rolls_back(rules: PathRules) {
         let conn = Connection::open_in_memory().unwrap();
         bring_to(&conn, BASELINE, &[], rules, BASELINE_VERSION).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION);
         // A later build adds two migrations: both run, in order, once.
-        let later = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);"];
+        let later = [EXTRA, SEVEN];
         bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION + 2).unwrap();
         bring_to(&conn, BASELINE, &later, rules, BASELINE_VERSION + 2).unwrap();
         assert_eq!(version(&conn), BASELINE_VERSION + 2);
         assert_eq!(conn.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
-        // A failed migration leaves the catalog at the last good version.
-        let broken = ["CREATE TABLE extra(x INTEGER);", "INSERT INTO extra VALUES (7);", "NOT SQL"];
+        // A failed migration leaves the catalog at the last good version, none of its steps made.
+        let broken = [EXTRA, SEVEN, NOT_SQL];
         let fresh = Connection::open_in_memory().unwrap();
         assert!(bring_to(&fresh, BASELINE, &broken, rules, BASELINE_VERSION + 3).is_err());
         assert_eq!(version(&fresh), BASELINE_VERSION + 2);
+        assert_eq!(fresh.query_row("SELECT count(*) FROM extra", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
     }
 
     under_both_rules!(
@@ -689,7 +818,7 @@ mod tests {
     );
 
     fn expected_schemas_follow_the_version(rules: PathRules) {
-        let later = ["CREATE TABLE extra(x INTEGER);"];
+        let later = [EXTRA];
         let at_one = expected_for(BASELINE, &later, BASELINE_VERSION).unwrap();
         let at_two = expected_for(BASELINE, &later, BASELINE_VERSION + 1).unwrap();
         assert!(matches!(at_one.difference(&at_two), Some(Difference::Missing { .. })));
@@ -727,7 +856,11 @@ mod tests {
             pg_model::name::Name::from("pinterest"),
             pg_model::name::Name::from_raw(b"x\xFF"),
         ]);
-        assert_eq!(row, (1, rules.join_merged(&folder), false, String::new(), r#"{"key":"size"}"#.to_string()));
+        assert_eq!((row.0, row.1, row.2), (1, rules.join_merged(&folder), false));
+        // The query never saved reads as the default; the sort as it was saved.
+        assert_eq!(pg_query::from_json::<pg_model::query::Query>(&row.3), pg_model::query::Query::default());
+        let sort: pg_model::query::Sort = pg_query::from_json(&row.4);
+        assert_eq!(sort, pg_model::query::Sort { key: pg_model::query::SortKey::Size, descending: false });
 
         let empty = Connection::open_in_memory().unwrap();
         bring_to(&empty, BASELINE, MIGRATIONS, rules, current_version().unwrap()).unwrap();

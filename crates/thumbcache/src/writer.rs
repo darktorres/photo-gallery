@@ -168,27 +168,68 @@ impl Touches {
     }
 }
 
+/// What the writer failed at and hasn't done since: the first success after a failure is an event too, so the kept
+/// notice of the failure goes (`Event::TouchesWritten`, `Event::Stored`).
+#[derive(Default)]
+struct Failing {
+    /// The touches couldn't be written (`Event::TouchesNotWritten`).
+    touches: bool,
+    /// A thumbnail couldn't be stored (`Event::NotStored`).
+    store: bool,
+}
+
+impl Failing {
+    /// A write of the touches went through, or failed.
+    fn touches(&mut self, written: Result<()>, events: &Bus<Event>) {
+        match written {
+            Ok(()) => {
+                if std::mem::take(&mut self.touches) {
+                    events.publish(Event::TouchesWritten);
+                }
+            }
+            Err(e) => {
+                self.touches = true;
+                events.publish(Event::TouchesNotWritten { error: format!("{e:#}") });
+            }
+        }
+    }
+
+    /// A thumbnail was stored: the first after a failure ends it.
+    fn stored(&mut self, events: &Bus<Event>) {
+        if std::mem::take(&mut self.store) {
+            events.publish(Event::Stored);
+        }
+    }
+
+    /// An on-demand thumbnail couldn't be stored.
+    fn not_stored(&mut self, error: &anyhow::Error, events: &Bus<Event>) {
+        self.store = true;
+        events.publish(Event::NotStored { error: format!("{error:#}") });
+    }
+}
+
 /// The writer's body: each queued op in order, and the touches flushed when they are due, until the queue is closed
 /// and empty. Then the touches are flushed and the WAL merged.
 pub(crate) fn write_loop(mut conn: Connection, inbox: &Inbox, events: &Bus<Event>, waker: &Waker<'_>) {
     // However the loop ends, the queue closes: no caller is left waiting for an answer that won't come.
     let _closing = Closing(inbox);
     let mut touches = Touches::default();
+    let mut failing = Failing::default();
     loop {
         // Read before the queue: `close` closes the queue before it quits, so a quit seen here means nothing more
         // will be queued, and an empty queue after it is the end.
         let quitting = waker.quitting();
         match inbox.next() {
-            Some(op) => apply(op, &mut conn, &mut touches, events),
+            Some(op) => apply(op, &mut conn, &mut touches, &mut failing, events),
             None if quitting => break,
             None => {
                 if waker.wait(touches.due()) == Woke::Idle {
-                    touches_failure(touches.flush(&mut conn), events);
+                    failing.touches(touches.flush(&mut conn), events);
                 }
             }
         }
     }
-    touches_failure(touches.flush(&mut conn), events);
+    failing.touches(touches.flush(&mut conn), events);
     // The writer's last act: the WAL merged into the file, so the file is whole even if the process ends before the
     // readers close (the last connection to close deletes the WAL, and a reader may still be open).
     if let Err(e) = conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE)") {
@@ -197,7 +238,7 @@ pub(crate) fn write_loop(mut conn: Connection, inbox: &Inbox, events: &Bus<Event
 }
 
 /// Does one op of the writer's queue.
-fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Event>) {
+fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, failing: &mut Failing, events: &Bus<Event>) {
     match op {
         Op::Touch(id) => {
             touches.ids.insert(id);
@@ -205,13 +246,17 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Even
         }
         Op::Put { thumbs, keep_height, reply } => {
             let stored = put(conn, &thumbs, keep_height, touches);
+            if matches!(stored, Ok(true)) {
+                failing.stored(events);
+            }
             let _ = reply.send((stored, thumbs));
         }
-        Op::PutOne(thumb) => {
-            if let Err(e) = put(conn, std::slice::from_ref(&thumb), None, touches) {
-                events.publish(Event::NotStored { error: format!("{e:#}") });
-            }
-        }
+        Op::PutOne(thumb) => match put(conn, std::slice::from_ref(&thumb), None, touches) {
+            // Stored, or no room for it (a full cache is no failure to store).
+            Ok(true) => failing.stored(events),
+            Ok(false) => {}
+            Err(e) => failing.not_stored(&e, events),
+        },
         Op::Retag { file_id, old_mtime, new_mtime, reply } => {
             let done = conn
                 .execute(
@@ -250,16 +295,9 @@ fn apply(op: Op, conn: &mut Connection, touches: &mut Touches, events: &Bus<Even
             let _ = reply.send(shrink(conn));
         }
         Op::Flush(reply) => {
-            touches_failure(touches.flush(conn), events);
+            failing.touches(touches.flush(conn), events);
             let _ = reply.send(());
         }
-    }
-}
-
-/// Touches that could not be written are an event; they stay queued for the next try.
-fn touches_failure(written: Result<()>, events: &Bus<Event>) {
-    if let Err(e) = written {
-        events.publish(Event::TouchesNotWritten { error: format!("{e:#}") });
     }
 }
 

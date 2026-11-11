@@ -17,6 +17,7 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use pg_catalog::Catalog;
+use pg_jobs::NoticeSink;
 use pg_jobs::control::Control;
 use pg_jobs::events::{Bus, Change};
 use pg_jobs::panics;
@@ -24,14 +25,20 @@ use pg_jobs::pipeline::Options;
 use pg_jobs::schedule::{self, Pass, Step};
 use pg_jobs::service::{Service, Waker, Woke};
 use pg_model::ids::FileId;
-use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, KeyBuf, Notice, Part, tidy};
+use pg_model::notice::{ERROR_CAP, FileFailure, FilePass, Key, Notice, Part, tidy};
 use pg_model::progress::Progress;
 use pg_model::rules::Path as RulePath;
 use pg_platform::priority::Priority;
 use pg_scan::ScanError;
 use pg_thumbcache::ThumbCache;
+use pg_thumbs::LedgerOutcome;
 
 use crate::scans;
+
+/// How long a walk refused by another walk's lease (an overlapping folder, in this process or another) waits before it
+/// is tried again, with nothing else to wake the job: a lease ends with its walk, or expires in
+/// `pg_catalog::SCAN_LEASE_SECS`.
+const BUSY_RETRY: Duration = Duration::from_secs(5);
 
 #[derive(Default)]
 struct Queue {
@@ -48,6 +55,9 @@ struct Inner {
     queue: Mutex<Queue>,
     /// The folder a scan is walking now ([`Runner::stop_scans_under`]).
     scanning: Mutex<Option<RulePath>>,
+    /// The scans refused because another walk of an overlapping folder held its lease: back in the queue at the next
+    /// round, which comes by [`BUSY_RETRY`] at the latest.
+    busy: Mutex<Vec<RulePath>>,
     thumb_height: AtomicU32,
     scans_done: AtomicU64,
     imports_done: AtomicU64,
@@ -56,20 +66,6 @@ struct Inner {
     notices: Arc<dyn NoticeSink>,
     /// Told what changed (`Change`), so the owner reads the new state instead of polling for it.
     changes: Arc<Bus<Change>>,
-}
-
-/// Where the job's notices go (the app's inbox, a test's list): what it ran into, how a job asked for went, and which of
-/// its kept notices no longer hold. Called on the job's thread: an implementation queues, it doesn't wait.
-pub trait NoticeSink: Send + Sync {
-    /// Tell the user `notice`.
-    fn post(&self, notice: Notice);
-    /// The kept notices of `scope`'s kind and folder (and part, if it has one) are now `notices`: the others no longer
-    /// hold (`pg_catalog::Catalog::replace_notices`).
-    fn replace(&self, scope: KeyBuf, notices: Vec<Notice>);
-    /// The kept notices `key` names no longer hold (a key with no part names every part).
-    fn clear(&self, key: KeyBuf) {
-        self.replace(key, Vec::new());
-    }
 }
 
 /// The notice of a crop job's file failure: its error capped as a notice holds it.
@@ -105,7 +101,8 @@ pub struct Runner {
 impl Runner {
     /// Start the job thread. It begins by importing whatever is pending and making the thumbnails still missing
     /// at `thumb_height`. What it changes is published on `changes` (`Change`), and what it tells the user goes to
-    /// `notices`. An error if the thread can't be spawned.
+    /// `notices`, which is poked whenever a pass changes the failure ledger (`Control::ledger_changed`). An error if
+    /// the thread can't be spawned.
     pub fn start(
         catalog_path: PathBuf,
         thumbs: &'static ThumbCache,
@@ -119,6 +116,7 @@ impl Runner {
             ctl: Control::new(),
             queue: Mutex::new(Queue::default()),
             scanning: Mutex::new(None),
+            busy: Mutex::new(Vec::new()),
             thumb_height: AtomicU32::new(thumb_height),
             scans_done: AtomicU64::new(0),
             imports_done: AtomicU64::new(0),
@@ -128,6 +126,9 @@ impl Runner {
         });
         let announce = inner.changes.clone();
         inner.ctl.on_change(move || announce.publish(Change::Progress));
+        // The inbox reads the ledger again when a pass changed it, within the pass, not only at the round's end.
+        let ledger = inner.notices.clone();
+        inner.ctl.on_ledger_change(move || ledger.poke());
         let job = inner.clone();
         let service =
             Service::start("background job", move |waker| job.run(waker)).context("start the background job")?;
@@ -164,6 +165,7 @@ impl Runner {
     pub fn stop_scans_under(&self, root: &RulePath) {
         let rules = pg_platform::native::PATH_RULES;
         self.inner.queue().scans.retain(|path| !rules.is_under(path, root));
+        self.inner.busy().retain(|path| !rules.is_under(path, root));
         let running = self.inner.scanning.lock().unwrap_or_else(PoisonError::into_inner).clone();
         if running.is_some_and(|path| rules.is_under(&path, root)) {
             self.wake_up();
@@ -226,6 +228,30 @@ impl Inner {
         self.queue.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// The scans refused by another walk's lease, waiting for their retry.
+    fn busy(&self) -> MutexGuard<'_, Vec<RulePath>> {
+        self.busy.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The walk of `path` was refused by another walk's lease: it is tried again later ([`BUSY_RETRY`]).
+    fn walk_busy(&self, path: RulePath) {
+        let mut busy = self.busy();
+        if !busy.contains(&path) {
+            busy.push(path);
+        }
+    }
+
+    /// The scans refused by a lease go back to the end of the queue, for this round to try again.
+    fn requeue_busy(&self) {
+        let busy = std::mem::take(&mut *self.busy());
+        let mut q = self.queue();
+        for path in busy {
+            if !q.scans.contains(&path) {
+                q.scans.push_back(path);
+            }
+        }
+    }
+
     fn notify(&self, notice: Notice) {
         self.notices.post(notice);
     }
@@ -244,12 +270,21 @@ impl Inner {
         }
     }
 
-    /// A pass wrote its failures to the ledger, or couldn't (`error`).
-    fn ledger_written(&self, pass: FilePass, error: Option<String>) {
-        match error {
-            Some(error) => self.notify(Notice::LedgerNotWritten { pass, error: tidy(&error, ERROR_CAP) }),
-            None => self.clear(Key { code: "ledger-not-written", root: None, part: Some(Part::Code(pass.code())) }),
+    /// What a pass's writes to the failure ledger came to: a failure is said; a write that went through clears what an
+    /// earlier failure said; a pass that wrote nothing says nothing (it is no success of the ledger's write).
+    fn ledger_written(&self, pass: FilePass, outcome: LedgerOutcome) {
+        match outcome {
+            LedgerOutcome::Failed(error) => {
+                self.notify(Notice::LedgerNotWritten { pass, error: tidy(&error, ERROR_CAP) });
+            }
+            LedgerOutcome::Written => self.ledger_not_written_gone(pass),
+            LedgerOutcome::Untouched => {}
         }
+    }
+
+    /// `pass`'s ledger was written: its kept `ledger-not-written` goes.
+    fn ledger_not_written_gone(&self, pass: FilePass) {
+        self.clear(Key { code: "ledger-not-written", root: None, part: Some(Part::Code(pass.code())) });
     }
 
     fn scanned(&self) {
@@ -268,8 +303,12 @@ impl Inner {
         // A round stopped by a new request starts the next one at once: the request is already queued.
         let mut again = false;
         loop {
-            if !again && waker.wait(None) != Woke::Work {
-                return;
+            if !again {
+                // A walk refused by another's lease is tried again after a while, with nothing else to wake the job.
+                let idle = (!self.busy().is_empty()).then_some(BUSY_RETRY);
+                if waker.wait(idle) == Woke::Quit {
+                    return;
+                }
             }
             again = false;
             // The stop the last request set is cleared here, then the quit is looked for: a quit asked after this
@@ -278,6 +317,7 @@ impl Inner {
             if waker.quitting() {
                 return;
             }
+            self.requeue_busy();
             match self.round_caught(&mut catalog) {
                 Ok(step) => {
                     // A round that ran is the end of a failed one's notice.
@@ -389,31 +429,32 @@ impl Pass<Cx<'_>> for Scans {
                             error: tidy(&format!("can't delete {}: {e}", rules.display(&temp)), ERROR_CAP),
                         });
                     }
+                    let found = scans::scan_notices(&path, &s);
+                    // What the walk did is said whatever folder it walked, and stopped or not: the pairing's binds and
+                    // replacements are in, and the walk that resumes doesn't do them again.
+                    for notice in found.events {
+                        cx.inner.notify(notice);
+                    }
                     if !s.complete {
                         cx.inner.queue().scans.push_front(path);
                         return Ok(Step::Preempted);
                     }
-                    let found = scans::scan_notices(&path, &s);
-                    // A complete walk of a whole library folder is what holds for it now: its kept notices are
-                    // replaced by the ones it found. A walk of a folder under it adds its own and clears nothing (the
-                    // rest of the library folder wasn't looked at).
+                    // A complete walk of a whole library folder is what holds for it now: its kept notes (the folder's
+                    // conditions) are replaced by the ones it found. A walk of a folder under it looked at part of the
+                    // folder only, so it changes none of them. The folders it couldn't read are the folder ledger's,
+                    // which the walk itself recorded and swept.
                     if library.contains(&path) {
-                        for code in SCAN_STATES {
-                            let of_code = found.iter().filter(|n| n.code() == code).cloned().collect();
-                            cx.inner.notices.replace(Key::all(code, Some(&path)).to_buf(), of_code);
-                        }
-                    } else {
-                        for notice in found {
-                            cx.inner.notify(notice);
-                        }
+                        cx.inner.notices.replace(Key::all("scan-note", Some(&path)).to_buf(), found.conditions);
                     }
                 }
-                Err(e) => {
-                    let notice = match e {
-                        ScanError::Refused(reason) => Notice::RootRefused { root: path, reason },
-                        ScanError::Failed(e) => Notice::ScanFailed { root: path, error: error_text(&e) },
-                    };
-                    cx.inner.notify(notice);
+                // Refused before any walk: the refusal is in the folder ledger (`pg_scan::scan` recorded it, and poked
+                // the inbox), until a walk of the folder can run.
+                Err(ScanError::Refused(_)) => {}
+                // Another walk of an overlapping folder holds its lease (in this process or another): nothing was
+                // written, and the scan is tried again once that walk can have ended.
+                Err(ScanError::Busy { .. }) => cx.inner.walk_busy(path),
+                Err(ScanError::Failed(e)) => {
+                    cx.inner.notify(Notice::ScanFailed { root: path, error: error_text(&e) });
                     // Its batches before the error are in.
                     cx.inner.scanned();
                 }
@@ -422,8 +463,6 @@ impl Pass<Cx<'_>> for Scans {
     }
 }
 
-/// The kept notices a scan of a library folder posts, which a complete walk of the whole folder replaces.
-const SCAN_STATES: [&str; 4] = ["scan-unreadable", "root-refused", "mount-refused", "scan-note"];
 /// Analyzes what the scans found.
 struct Import;
 
@@ -449,7 +488,12 @@ impl Pass<Cx<'_>> for Borders {
             cx.inner.imported();
         }
         cx.inner.files_read(FilePass::Borders, s.unreadable, s.complete);
-        cx.inner.ledger_written(FilePass::Borders, s.ledger_error);
+        // The borders' ledger rows are written in the transaction of the borders they go with (`pg_borders::find`): a
+        // failure to write them fails the batch, which is the round's failure, not a ledger's of its own. A batch that
+        // went in wrote its rows, which resolves a `ledger-not-written` an earlier build kept for the borders.
+        if s.files > 0 {
+            cx.inner.ledger_not_written_gone(FilePass::Borders);
+        }
         Ok(Step::Done)
     }
 }
@@ -468,7 +512,209 @@ impl Pass<Cx<'_>> for Thumbs {
             cx.inner.clear(Key::all("cache-full", None));
         }
         cx.inner.files_read(FilePass::Thumbs, s.unreadable, s.complete);
-        cx.inner.ledger_written(FilePass::Thumbs, s.ledger_error);
+        cx.inner.ledger_written(FilePass::Thumbs, s.ledger);
         Ok(Step::Done)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::time::Instant;
+
+    use pg_jobs_testkit::{Call, Quiet, RecordingSink};
+    use pg_model::notice::{KeyBuf, ScanNote};
+    use pg_platform::native::PATH_RULES;
+
+    use super::*;
+
+    /// A library folder `images` in a run folder, holding `names` (small PNGs), scanned and imported into the catalog
+    /// beside it: the run folder, the catalog's path, and the library folder.
+    fn library(prefix: &str, names: &[&str]) -> (PathBuf, PathBuf, RulePath) {
+        let dir = pg_testkit::run_folder_with("scratch_runner", prefix, &["images"]).unwrap();
+        for name in names {
+            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        }
+        let catalog_path = dir.join("catalog.sqlite");
+        let mut c = Catalog::prepare(&catalog_path, crate::versions(), PATH_RULES).unwrap();
+        let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+        assert!(c.add_root(&root).unwrap());
+        pg_scan::scan(&mut c, &root, &Control::new()).unwrap();
+        pg_import::import(&mut c, &Options::new(Priority::Normal), false, &Control::new()).unwrap();
+        (dir, catalog_path, root)
+    }
+
+    /// The thumbnail cache beside the catalog, holding at most `cap` bytes (`None`: the default), leaked as the job's
+    /// is, with the watch on its events.
+    fn thumbs(dir: &Path, catalog_path: &Path, cap: Option<i64>) -> (&'static ThumbCache, Quiet<pg_thumbcache::Event>) {
+        let id = Catalog::open(catalog_path, PATH_RULES).unwrap().catalog_id().unwrap();
+        let (events, quiet) = Quiet::bus();
+        let cap = cap.and_then(pg_thumbcache::Cap::from_bytes);
+        let cache = ThumbCache::open(&dir.join("thumbs.sqlite"), &id, cap, pg_render::THUMBS_VERSION, events).unwrap();
+        (Box::leak(Box::new(cache)), quiet)
+    }
+
+    /// The job's state without its thread: the test runs its passes one by one.
+    fn job(catalog_path: &Path, thumbs: &'static ThumbCache, sink: Arc<RecordingSink>) -> Inner {
+        Inner {
+            catalog_path: catalog_path.to_path_buf(),
+            thumbs,
+            ctl: Control::new(),
+            queue: Mutex::new(Queue::default()),
+            scanning: Mutex::new(None),
+            busy: Mutex::new(Vec::new()),
+            thumb_height: AtomicU32::new(64),
+            scans_done: AtomicU64::new(0),
+            imports_done: AtomicU64::new(0),
+            rounds: AtomicU64::new(0),
+            notices: sink,
+            changes: Arc::new(Bus::new(16)),
+        }
+    }
+
+    /// Run `pass` once on a connection of its own, as a round does.
+    fn run(pass: &mut dyn for<'a> Pass<Cx<'a>>, inner: &Inner) -> Step {
+        let mut catalog = Catalog::open(&inner.catalog_path, PATH_RULES).unwrap();
+        pass.run(&mut Cx { inner, catalog: &mut catalog }).unwrap()
+    }
+
+    /// Wait (30 s at most) until `done`.
+    fn wait_for(what: &str, done: impl Fn() -> bool) {
+        let began = Instant::now();
+        while !done() {
+            assert!(began.elapsed() < Duration::from_secs(30), "waited 30 s for {what}");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    }
+
+    fn kept(code: &'static str, part: Option<&'static str>) -> KeyBuf {
+        KeyBuf { code, root: None, part: part.map(Part::Code) }
+    }
+
+    /// A file that can't be read (here, gone since the import) is said, not recorded in the ledger; once nothing is
+    /// left to read, the next complete pass (its early return) clears what was said.
+    #[test]
+    fn an_offline_file_is_said_not_recorded_and_a_complete_pass_clears_it() {
+        let (dir, catalog_path, root) = library("runner-offline", &["a.png", "b.png"]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        std::fs::remove_file(dir.join("images").join("b.png")).unwrap();
+        run(&mut Thumbs, &inner);
+        assert_eq!(sink.posted(), [Notice::UnreadableFiles { pass: FilePass::Thumbs, count: 1 }]);
+        let c = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        assert!(c.failed_files(FilePass::Thumbs, 10).unwrap().is_empty(), "an unreadable file is in no ledger");
+        // The rescan finds it missing: the next pass has nothing to make, and is complete.
+        pg_scan::scan(&mut Catalog::open(&catalog_path, PATH_RULES).unwrap(), &root, &Control::new()).unwrap();
+        sink.take();
+        run(&mut Thumbs, &inner);
+        assert!(sink.posted().is_empty(), "{:?}", sink.calls());
+        assert!(sink.calls().contains(&Call::Clear(kept("unreadable-files", Some("thumbs")))), "{:?}", sink.calls());
+    }
+
+    /// A cache too small for one thumbnail is said; a complete pass (here, once its file left the library) clears it.
+    #[test]
+    fn a_full_cache_is_said_and_a_complete_pass_clears_it() {
+        let (dir, catalog_path, root) = library("runner-full", &["a.png"]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, Some(1));
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        run(&mut Thumbs, &inner);
+        assert_eq!(sink.posted(), [Notice::CacheFull { height: 64, made: 0 }]);
+        std::fs::remove_file(dir.join("images").join("a.png")).unwrap();
+        pg_scan::scan(&mut Catalog::open(&catalog_path, PATH_RULES).unwrap(), &root, &Control::new()).unwrap();
+        sink.take();
+        run(&mut Thumbs, &inner);
+        assert!(sink.calls().contains(&Call::Clear(kept("cache-full", None))), "{:?}", sink.calls());
+    }
+
+    /// A round that fails (its catalog can't be opened) is said; the next round that runs clears it.
+    #[test]
+    fn a_failed_round_is_said_and_the_next_round_clears_it() {
+        let (dir, catalog_path, _root) = library("runner-round", &[]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let aside = dir.join("aside.sqlite");
+        std::fs::rename(&catalog_path, &aside).unwrap();
+        let sink = RecordingSink::new();
+        let runner = Runner::start(catalog_path.clone(), cache, 64, Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        wait_for("the round's failure", || sink.posted().iter().any(|n| matches!(n, Notice::RoundFailed { .. })));
+        std::fs::rename(&aside, &catalog_path).unwrap();
+        runner.wake();
+        wait_for("the failure cleared", || sink.calls().contains(&Call::Clear(kept("round-failed", None))));
+        assert!(runner.stop(Duration::from_secs(30)));
+    }
+
+    /// The scan notes split by what they describe (`ScanNote::lifecycle`): a complete walk of the library folder
+    /// replaces the folder's conditions with what it found (here, a second path to a file: a hard link); a walk of a
+    /// folder inside it says nothing of them.
+    #[test]
+    fn only_a_walk_of_the_whole_library_folder_replaces_its_conditions() {
+        let (dir, catalog_path, root) = library("runner-notes", &["a.png"]);
+        let images = dir.join("images");
+        std::fs::create_dir_all(images.join("sub")).unwrap();
+        if std::fs::hard_link(images.join("a.png"), images.join("sub").join("b.png")).is_err() {
+            pg_testkit::skip("this file system makes no hard links");
+            return;
+        }
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        let sub = pg_platform::names::normalize_path(&images.join("sub")).unwrap();
+        inner.queue().scans.extend([root.clone(), sub]);
+        assert_eq!(run(&mut Scans, &inner), Step::Done);
+        let duplicates = Notice::ScanNote { root: root.clone(), note: ScanNote::Duplicates, count: 1 };
+        assert_eq!(sink.take(), [Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), vec![duplicates])]);
+    }
+
+    /// A walk refused by another's lease posts nothing, waits apart, and runs once it is put back after the lease ends.
+    #[test]
+    fn a_walk_refused_by_a_lease_is_tried_again_after_it() {
+        let (dir, catalog_path, root) = library("runner-busy", &["a.png"]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        let mut holder = Catalog::open(&catalog_path, PATH_RULES).unwrap();
+        let lease = holder.begin_scan(&root).unwrap();
+        inner.queue().scans.push_back(root.clone());
+        assert_eq!(run(&mut Scans, &inner), Step::Done);
+        assert_eq!(*inner.busy(), std::slice::from_ref(&root));
+        assert!(sink.calls().is_empty(), "{:?}", sink.calls());
+        drop(lease);
+        inner.requeue_busy();
+        assert!(inner.busy().is_empty());
+        assert_eq!(run(&mut Scans, &inner), Step::Done);
+        assert_eq!(sink.take(), [Call::Replace(Key::all("scan-note", Some(&root)).to_buf(), Vec::new())]);
+    }
+
+    /// The thumbnail pass's ledger outcome: a failure is said, a write clears what was said, and nothing written says
+    /// nothing.
+    #[test]
+    fn a_ledger_outcome_is_said_cleared_or_left() {
+        let (dir, catalog_path, _root) = library("runner-ledger", &[]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let inner = job(&catalog_path, cache, sink.clone());
+        inner.ledger_written(FilePass::Thumbs, LedgerOutcome::Untouched);
+        assert!(sink.take().is_empty());
+        inner.ledger_written(FilePass::Thumbs, LedgerOutcome::Failed("disk full".into()));
+        assert_eq!(
+            sink.take(),
+            [Call::Post(Notice::LedgerNotWritten { pass: FilePass::Thumbs, error: "disk full".into() })]
+        );
+        inner.ledger_written(FilePass::Thumbs, LedgerOutcome::Written);
+        assert_eq!(sink.take(), [Call::Clear(kept("ledger-not-written", Some("thumbs")))]);
+    }
+
+    /// The job pokes its sink when a pass says the ledger changed (`Control::ledger_changed`).
+    #[test]
+    fn a_ledger_change_pokes_the_sink() {
+        let (dir, catalog_path, _root) = library("runner-poke", &[]);
+        let (cache, _quiet) = thumbs(&dir, &catalog_path, None);
+        let sink = RecordingSink::new();
+        let runner = Runner::start(catalog_path.clone(), cache, 64, Arc::new(Bus::new(16)), sink.clone()).unwrap();
+        let before = sink.pokes();
+        runner.inner.ctl.ledger_changed();
+        assert_eq!(sink.pokes(), before + 1);
+        assert!(runner.stop(Duration::from_secs(30)));
     }
 }

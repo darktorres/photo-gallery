@@ -16,12 +16,12 @@ arguments, where it has any.
 | `doctor.py` | Checks the machine for what the build and tests need, and says how to fix each missing part | both | `just doctor` |
 | `setup_ffmpeg.py` | Fetches the pinned FFmpeg build: the archive, its SHA-256 checked before anything is unpacked | Windows | `just setup`, CI |
 | `qmltest.py` | The QML tests: Qt Quick Test, offscreen, on the QML that stays in QML | both | `just qmltest`, CI |
-| `compare_shots.py` | The screenshot comparison: the working tree against a recorded reference, pixel by pixel | both | `just shots` (`--record`, `--base`, `--self`, `--only`, `--expect`, `--python`) |
+| `compare_shots.py` | The screenshot comparison: the working tree against a recorded reference, pixel by pixel, from two template catalogs per side (`default`, and `broken` for the inbox scenarios); the manifest keeps a hash per template and for `shots/shot.log` | both | `just shots` (`--record`, `--base`, `--self`, `--only`, `--expect`, `--python`) |
 | `shots/fixture.py` | The screenshot matrix's fixture: the synthetic library, and the catalog's views and settle checks | both | `compare_shots.py` |
 | `linux.py` | The Linux side, in the `pg-dev` container: the checks of CI's Linux job, the benches, the fuzz run | both (drives Docker) | `just check-linux`, `just linux-build`, `just perf`, `just linux-bench`, `just fuzz-smoke`, `just linux-shell` |
-| `perf_check.py` | The instruction-count gate: the benches of the committed HEAD against the baseline | Linux (container) | `just perf` through `linux.py` |
+| `perf_check.py` | The instruction-count gate: the benches of the committed HEAD against the baseline, at ±1%, or with `--budgets` each bench named in `docs/perf/budgets.json` against its budget | Linux (container) | `just perf` through `linux.py` |
 | `fuzz_smoke.py` | Each fuzz target (`fuzz/`) for a short time | Linux (container) | `just fuzz-smoke` through `linux.py` |
-| `perf-compare.py` | The instruction-count comparison that `scan_timing.py` uses | both | by hand |
+| `perf-compare.py` | The instruction-count comparison (a baseline against a run, at a tolerance or per-bench budgets) | both | `perf_check.py`, `scan_timing.py`; by hand |
 | `fork-updates.py` | Checks the forks under github.com/darktorres against the newest release of each crate upstream | both | `.github/workflows/fork-updates.yml`; by hand |
 | `make_icon.py` | Makes the app icon from mascot 03, as a multi-size Windows icon | both | by hand, after changing the mascot |
 | `make_test_video.py` | The video reader's test input (`crates/video/tests/sample.mp4`), made with the FFmpeg on PATH | both | by hand |
@@ -29,10 +29,10 @@ arguments, where it has any.
 | `ci/pillow_pin.py` | Installs the Pillow pin of `eval/requirements.txt` for CI's eval tests | CI | `.github/workflows/ci.yml` |
 | `profiling/ci_setup.py` | The Linux system setup of CI: the apt packages, the FFmpeg and libclang links, Rust | Linux | `.github/workflows/ci.yml` |
 | `profiling/bench.py` | The callgrind benches of the committed HEAD, in the container | Linux (container) | `linux.py bench`, `perf_check.py` |
-| `profiling/bench_data.py` | The catalog benches' data, from a catalog folder | Linux | `bench.py` |
+| `profiling/bench_data.py` | The catalog benches' data, from a catalog folder; a `-large` layout gets its failure ledger seeded (`--ledger-rows`, 100,000 by default) | both | by hand, before `just perf` (`docs/PROFILING.md`) |
 | `profiling/make_bench_jpeg.py` | The per-file benches' input: a deterministic synthetic photo | both | `bench.py`; by hand |
 | `profiling/scan_timing.py` | The wall-clock timing of a library scan (three timed scans, each into its run's catalog) | Linux | by hand (`docs/PROFILING.md`) |
-| `profiling/synthetic_library.py` | A small synthetic photo library for profiling | both | `scan_timing.py`, the shots fixture |
+| `profiling/synthetic_library.py` | A synthetic photo library for profiling: small by default, or `--profile large` (200,000 files, a quarter of them broken JPEGs, `--broken`) for the large bench data | both | `scan_timing.py`, the shots fixture, `bench_data.py`'s data |
 | `profiling/cgtab.py` | Callgrind output as tables: self and inclusive cost, and the diff of two runs | both | by hand (`docs/PROFILING.md`) |
 | `profiling/callgraph/build.py` | Builds `callgraph.dll` into `target/pin` with the Pin kit (clang-cl, LLVM) | Windows only | by hand (`docs/PROFILING.md`) |
 | `profiling/callgraph/profile.py` | The instruction profile of the gallery under Pin, one file per thread | Windows only | by hand (`docs/PROFILING.md`) |
@@ -56,7 +56,11 @@ tests (`just test-eval`).
 - `static-qt/*.patch`: the local patches to Qt's sources (the app build and pg-video), as the static Qt build applies them.
 - `lint/`: the lint tools at their pins: `requirements.txt` (ruff, with hashes) and `package.json` with its lockfile
   (markdownlint-cli). `just lint-tools-setup` installs from them.
-- `shots/`: the screenshot fixture and its reference recordings (`reference/<sha10>/`).
+- `shots/`: the screenshot fixture and its reference recordings (`reference/<sha10>/`), and the inputs kept outside
+  `fixture.py` so its hash doesn't move for them: `broken/broken.jpg` (a valid SOI and APP0, then deterministic bytes
+  that are no JPEG: the import fails it, with the same error every time), which the `broken` template adds as a second
+  library folder from the fixed `target/shots/broken`, and `shot.log` (JSON records at fixed times, every level, a
+  multi-line detail, legacy plain lines), which the `log` scenario shows through `--log-view`.
 - `crate-layers.txt`: each crate's allowed normal dependencies on the workspace's crates, bottom layer first
   (`boundaries.py`).
 - `profiling/`, `modgraph/`: as in the table.

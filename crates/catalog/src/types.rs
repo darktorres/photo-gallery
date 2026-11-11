@@ -5,6 +5,7 @@
 use std::collections::BTreeSet;
 use std::path::PathBuf;
 
+use anyhow::anyhow;
 use rusqlite::types::Type;
 use rusqlite::{Connection, Row, params};
 
@@ -48,16 +49,102 @@ pub(crate) fn folders_under(conn: &Connection, rules: PathRules, path: &RulePath
     Ok(stmt.query_map(params![p1, p2, p3], |r| r.get(0))?.collect::<rusqlite::Result<_>>()?)
 }
 
-/// The folders a scan did not list: each folder of `skipped` (one it couldn't read, or a reparse folder it did not
-/// follow) and every folder below it. The scan saw nothing there, so neither the missing marks nor the pairing judge
-/// their rows.
-pub(crate) fn skipped_folders(conn: &Connection, rules: PathRules, skipped: &[RulePath]) -> Result<BTreeSet<i64>> {
+/// The folders a scan did not list: each folder of `skipped` (whatever the reason: one it couldn't read, a mount it
+/// refused, or a reparse folder it did not follow) and every folder below it. The scan saw nothing there, so neither
+/// the missing marks nor the pairing judge their rows.
+pub(crate) fn skipped_folders(conn: &Connection, rules: PathRules, skipped: &[Skip]) -> Result<BTreeSet<i64>> {
     let mut folders = BTreeSet::new();
-    for path in skipped {
-        folders.extend(folders_under(conn, rules, path)?);
+    for skip in skipped {
+        folders.extend(folders_under(conn, rules, &skip.path)?);
     }
     Ok(folders)
 }
+
+/// The library folders on `conn` (a transaction's too), by path, with their ids.
+pub(crate) fn roots_on(conn: &Connection, rules: PathRules) -> Result<Vec<Root>> {
+    let mut stmt = conn.prepare_cached("SELECT id, path FROM roots ORDER BY path")?;
+    let rows = stmt.query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, Vec<u8>>(1)?)))?;
+    let mut roots = Vec::new();
+    for row in rows {
+        let (id, bytes) = row?;
+        let path = rules.parse_bytes(&bytes).ok_or_else(|| anyhow!("a stored library path has a NUL"))?;
+        roots.push(Root { id: RootId::new(id), path });
+    }
+    Ok(roots)
+}
+
+/// The library folder `path` is, or is in, on `conn`: `None` when no folder of the library holds it. Library folders
+/// never nest (`Catalog::add_root`), so there is at most one. Resolved by the rules (`PathRules::is_under`), not in
+/// SQL: under the Windows rules names compare Unicode-lowercased, and SQLite's `lower()` is ASCII-only.
+pub(crate) fn covering_root(conn: &Connection, rules: PathRules, path: &RulePath) -> Result<Option<Root>> {
+    Ok(roots_on(conn, rules)?.into_iter().find(|r| rules.is_under(path, &r.path)))
+}
+
+/// The most rows a pass over a walk's results (`Catalog::mark_missing`, `Catalog::pair_after_scan`) writes in one
+/// transaction: each batch commits at once, so another writer waits for one batch at most, never for the pass.
+pub(crate) const WRITE_BATCH: usize = 1000;
+
+/// How long a scan lease lasts without a heartbeat (seconds): past it, the walk that held it is taken to have died
+/// (its process crashed), and another walk of an overlapping folder may start (`Catalog::begin_scan`).
+pub const SCAN_LEASE_SECS: i64 = 60;
+
+/// A folder a walk did not list, and why.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Skip {
+    pub path: RulePath,
+    pub reason: SkipReason,
+}
+
+/// Why a walk did not list a folder. All three leave the folder's rows unjudged (`Catalog::mark_missing`, the
+/// pairing). The first two are failures (`ScanWriter::folder_failed` records them): what lies below one was never
+/// looked at, so the end of the walk keeps the folder ledger's rows there. A reparse folder is not a failure: what lies
+/// below it can't be resolved while it is one, so its rows are swept.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SkipReason {
+    /// It couldn't be opened or listed.
+    Unreadable,
+    /// A mount the walk refuses (not a volume the library can hold: FAT, a removable drive, and so on).
+    RefusedMount,
+    /// A reparse point (a junction, a symbolic link), which the walk doesn't follow.
+    Reparse,
+}
+
+/// A folder of the folder ledger (`folder_failures`): why the walk couldn't take it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FolderFailure {
+    /// It couldn't be opened or listed (`SkipReason::Unreadable`).
+    Unreadable,
+    /// A mount under the walked folder that the walk refuses (`SkipReason::RefusedMount`).
+    MountRefused,
+    /// The walked folder itself was refused, before the walk began (`Catalog::folder_refused`).
+    Refused,
+}
+
+impl FolderFailure {
+    /// The stored `folder_failures.reason`.
+    pub fn code(self) -> &'static str {
+        match self {
+            FolderFailure::Unreadable => "unreadable",
+            FolderFailure::MountRefused => "mount-refused",
+            FolderFailure::Refused => "refused",
+        }
+    }
+
+    /// The failure of a stored reason; `None` for one this build doesn't know.
+    pub fn from_code(code: &str) -> Option<FolderFailure> {
+        let all = [FolderFailure::Unreadable, FolderFailure::MountRefused, FolderFailure::Refused];
+        all.into_iter().find(|f| f.code() == code)
+    }
+}
+
+/// The folder ledger's write (`ScanWriter::folder_failed`, `Catalog::folder_refused`): `?1` the covering library
+/// folder's id, `?2` its stored path (checked with the id, so a removed folder writes nothing and a reused id never
+/// binds a row to the wrong folder), `?3` the folder's stored path, `?4` the reason, `?5` the error, `?6` the walk. A
+/// folder already recorded keeps its serial and its first sighting.
+pub(crate) const FOLDER_FAILED: &str = "INSERT INTO folder_failures(root, path, reason, error, walk, first_seen)
+     SELECT ?1, ?3, ?4, ?5, ?6, unixepoch() WHERE EXISTS (SELECT 1 FROM roots WHERE id = ?1 AND path = ?2)
+     ON CONFLICT(path) DO UPDATE SET root = excluded.root, reason = excluded.reason, error = excluded.error,
+         walk = excluded.walk";
 
 /// A library folder: the user added it, and a rescan walks it again.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -171,6 +258,18 @@ pub struct ScannedFile<'a> {
     pub mtime: i64,
     /// Its creation time (FILETIME ticks), where the listing gives one (S-17.7 decision 2).
     pub created: Option<i64>,
+    /// The catalog's row for the identity when its folder was listed (`Catalog::prior_states`), read outside any
+    /// transaction; `None` when there was none. The row is written only while it is still so, and no write of the
+    /// app's into it is in progress: one changed since (a write-back between the listing and the batch's write) is
+    /// only marked seen, and the next walk lists its new state.
+    pub prior: Option<Prior>,
+}
+
+/// A file's row as a walk read it when it listed the file's folder: its size and mtime.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Prior {
+    pub size: i64,
+    pub mtime: i64,
 }
 
 /// A folder's row, with its part of its files' order key (`PathRules::folder_key`).
@@ -249,7 +348,8 @@ pub(crate) const DELETE_FILE_RATING: &str = "DELETE FROM file_ratings WHERE file
 /// What recording a file did (`ScanWriter::upsert_file`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Recorded {
-    /// Recorded as it was: only marked seen by this scan.
+    /// Recorded as it was, or the row changed since the folder was listed (its listing is older than the row): only
+    /// marked seen by this scan.
     Same,
     /// A new file, moved, renamed, rewritten, back from missing, or the file that now has an identity another row had.
     Changed,

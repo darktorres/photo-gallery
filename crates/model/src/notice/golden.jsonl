@@ -1,0 +1,45 @@
+{"kind":"scan-failed","root":{"anchor":"D:","parts":["Photos"]},"error":"access is denied"}
+{"kind":"scan-note","root":{"anchor":"D:","parts":["Photos"]},"note":"duplicates","count":2}
+{"kind":"round-failed","error":"access is denied"}
+{"kind":"round-panicked","message":"index out of bounds"}
+{"kind":"cache-full","height":220,"made":40}
+{"kind":"cropped","folder":"D:\\Crops","saved":5,"skipped":1,"failed":1,"first_error":{"path":"D:\\Photos\\a.jpg","error":"unexpected end of file","panicked":false}}
+{"kind":"crop-failed","error":"access is denied"}
+{"kind":"catalog-rebuilt","kept":"D:\\Gallery\\catalog.sqlite.bad","why":"table files: column added","carried":{"carried":"rows","files":1200,"folders":2}}
+{"kind":"catalog-not-closed","error":"access is denied"}
+{"kind":"prefs-unreadable","path":"D:\\Gallery\\gallery.json","error":"expected value at line 1","kept":"D:\\Gallery\\gallery.json.bad","keep_error":null}
+{"kind":"prefs-not-saved","path":"D:\\Gallery\\gallery.json","error":"access is denied"}
+{"kind":"cache-totals-fixed","kept_bytes":10,"kept_count":1,"bytes":20,"count":2}
+{"kind":"cache-touches-not-written","error":"access is denied"}
+{"kind":"cache-not-stored","error":"access is denied"}
+{"kind":"cache-wal-not-merged","error":"access is denied"}
+{"kind":"cache-started-over","reason":"damaged","path":"D:\\Gallery\\thumbs.sqlite.bad","detail":"database disk image is malformed"}
+{"kind":"cache-disabled","error":"access is denied"}
+{"kind":"write-failed","error":"access is denied","panicked":false,"file":"D:\\Photos\\a.jpg","temp":"D:\\Photos\\a.jpg.pg-tmp"}
+{"kind":"write-stopped"}
+{"kind":"write-dropped","write":"rating","count":2}
+{"kind":"folder-already-added","folder":{"anchor":"D:","parts":["Photos"]}}
+{"kind":"folder-refused","folder":{"anchor":"D:","parts":["Photos"]},"reason":{"reason":"network-drive"}}
+{"kind":"folder-not-added","error":"access is denied"}
+{"kind":"folder-not-removed","error":"access is denied"}
+{"kind":"rescan-failed","error":"access is denied"}
+{"kind":"library-unavailable","error":"access is denied"}
+{"kind":"folders-unreadable","error":"access is denied"}
+{"kind":"picker-failed","error":"access is denied"}
+{"kind":"listing-failed","error":"access is denied"}
+{"kind":"row-read-failed","error":"access is denied"}
+{"kind":"reload-failed","error":"access is denied"}
+{"kind":"facets-failed","error":"access is denied"}
+{"kind":"tree-failed","error":"access is denied"}
+{"kind":"views-failed","op":"save","error":"access is denied"}
+{"kind":"session-not-saved","error":"access is denied"}
+{"kind":"edit-failed","op":"rate","error":"access is denied"}
+{"kind":"thumbs-failed","counts":{"new":1,"earlier":5}}
+{"kind":"borders-failed","counts":{"new":0,"earlier":2}}
+{"kind":"import-failed","counts":{"new":3,"earlier":0}}
+{"kind":"scan-folders-failed","counts":{"new":2,"earlier":1}}
+{"kind":"unreadable-files","pass":"thumbs","count":7}
+{"kind":"ledger-not-written","pass":"borders","error":"access is denied"}
+{"kind":"notices-lost","count":4}
+{"kind":"file-no-longer-in-library"}
+{"kind":"update-available","version":"1.2.0"}

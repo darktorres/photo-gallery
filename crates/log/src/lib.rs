@@ -9,7 +9,9 @@
 mod file;
 mod record;
 
+use std::cell::Cell;
 use std::collections::VecDeque;
+use std::ops::{Deref, DerefMut};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
@@ -91,11 +93,13 @@ pub struct Feed {
 
 impl Feed {
     /// The records of the files (`read`) with this run's kept ones: the files' records, less the ones of this run the
-    /// feed already has, then the kept ones.
+    /// feed already has, then the kept ones. A record of this run written to the file only (a panic while its thread
+    /// held the ring, [`Record::file_only`]) is in neither `kept` nor `new`, so it is taken from the files whatever its
+    /// number.
     pub fn merge(&self, from_files: Vec<Record>) -> Vec<Record> {
         let mut all: Vec<Record> = from_files
             .into_iter()
-            .filter(|r| !(r.pid == self.pid && r.session == self.session && r.seq >= self.from_seq))
+            .filter(|r| r.file_only || !(r.pid == self.pid && r.session == self.session && r.seq >= self.from_seq))
             .collect();
         all.extend(self.kept.iter().cloned());
         all
@@ -107,10 +111,68 @@ struct Logger {
     file: OnceLock<LogFile>,
     /// Serialises the writes to the file.
     writing: Mutex<()>,
+    /// The records in memory and the subscribers: taken only through [`RingGuard`].
     ring: Mutex<Ring>,
     seq: AtomicU64,
     pid: u32,
     session: u64,
+    /// A test's fault, run (once) inside `keep_in` with the ring held: a panic there.
+    #[cfg(test)]
+    fault: Mutex<Option<fn(&Logger)>>,
+}
+
+thread_local! {
+    /// The ring this thread holds, by its address (0 for none): set by [`RingGuard::lock`], cleared when the guard is
+    /// dropped, unwinding included. The panic hook reads it, so a panic raised while its thread holds the ring doesn't
+    /// take it again (a std `Mutex` locked twice by one thread may deadlock).
+    static HOLDING: Cell<usize> = const { Cell::new(0) };
+}
+
+/// The ring, held: every acquisition of it goes through this (`keep`, the panic's `keep_unless_held`, `subscribe`), so
+/// the thread's flag is never set by one path and missed by another.
+struct RingGuard<'a> {
+    ring: MutexGuard<'a, Ring>,
+}
+
+impl<'a> RingGuard<'a> {
+    /// The ring, waiting for another thread that holds it. A panic while it was held left it as it was (a record is
+    /// whole or not there), so a poisoned lock is taken all the same.
+    fn lock(mutex: &'a Mutex<Ring>) -> RingGuard<'a> {
+        let ring = lock(mutex);
+        HOLDING.set(address(mutex));
+        RingGuard { ring }
+    }
+
+    /// Whether this thread holds `mutex`'s ring.
+    fn held_here(mutex: &Mutex<Ring>) -> bool {
+        HOLDING.get() == address(mutex)
+    }
+}
+
+impl Drop for RingGuard<'_> {
+    fn drop(&mut self) {
+        // Before the lock is let go (the fields drop after this): no other thread reads this thread's flag.
+        HOLDING.set(0);
+    }
+}
+
+impl Deref for RingGuard<'_> {
+    type Target = Ring;
+
+    fn deref(&self) -> &Ring {
+        &self.ring
+    }
+}
+
+impl DerefMut for RingGuard<'_> {
+    fn deref_mut(&mut self) -> &mut Ring {
+        &mut self.ring
+    }
+}
+
+/// A ring's identity for the thread's flag: its address, never 0.
+fn address(mutex: &Mutex<Ring>) -> usize {
+    std::ptr::from_ref(mutex).addr()
 }
 
 #[derive(Default)]
@@ -145,6 +207,8 @@ impl Logger {
             seq: AtomicU64::new(0),
             pid: std::process::id(),
             session: now_ms(),
+            #[cfg(test)]
+            fault: Mutex::new(None),
         }
     }
 
@@ -169,6 +233,7 @@ impl Logger {
             pid: self.pid,
             session: self.session,
             seq: 0,
+            file_only: false,
         }
     }
 
@@ -201,20 +266,25 @@ impl Logger {
     /// Number `record`, keep it in memory and send it to the subscribers, all under the ring's lock, so the numbers,
     /// the ring and each subscriber's order agree.
     fn keep(&self, record: Record) -> Record {
-        let mut ring = lock(&self.ring);
+        let mut ring = RingGuard::lock(&self.ring);
         self.keep_in(&mut ring, record)
     }
 
-    /// As `keep`, but when the ring's lock is taken (a panic while it was held) the record is numbered and not kept.
+    /// As `keep`, for the panic hook. Another thread that holds the ring is waited for, as `keep` waits. Only when this
+    /// thread holds it (the panic was raised inside `keep` or `subscribe`), which taking it again could deadlock, is
+    /// the record numbered and marked [`Record::file_only`], for the file alone: a subscriber's merge finds it there.
     fn keep_unless_held(&self, record: Record) -> Record {
-        match self.ring.try_lock() {
-            Ok(mut ring) => self.keep_in(&mut ring, record),
-            Err(TryLockError::Poisoned(p)) => self.keep_in(&mut p.into_inner(), record),
-            Err(TryLockError::WouldBlock) => Record { seq: self.seq.fetch_add(1, Ordering::Relaxed), ..record },
+        if RingGuard::held_here(&self.ring) {
+            return Record { seq: self.seq.fetch_add(1, Ordering::Relaxed), file_only: true, ..record };
         }
+        self.keep(record)
     }
 
     fn keep_in(&self, ring: &mut Ring, mut record: Record) -> Record {
+        #[cfg(test)]
+        if let Some(fault) = lock(&self.fault).take() {
+            fault(self);
+        }
         record.seq = self.seq.fetch_add(1, Ordering::Relaxed);
         ring.bytes += record.bytes();
         ring.records.push_back(record.clone());
@@ -227,7 +297,7 @@ impl Logger {
     }
 
     fn subscribe(&self) -> Feed {
-        let mut ring = lock(&self.ring);
+        let mut ring = RingGuard::lock(&self.ring);
         let (send, new) = channel();
         ring.subscribers.push(send);
         let kept: Vec<Record> = ring.records.iter().cloned().collect();
@@ -364,5 +434,87 @@ mod tests {
         }
         let records = read(&path, 3);
         assert_eq!(records.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["7", "8", "9"]);
+    }
+
+    /// A record logged while another thread holds the ring waits for it, and then is kept, sent and merged like any
+    /// other, once each.
+    #[test]
+    fn a_record_logged_while_another_thread_holds_the_ring_arrives_once() {
+        let (log, path) = logger("ring_held", FILE_CAP);
+        let feed = log.subscribe();
+        let held = RingGuard::lock(&log.ring);
+        std::thread::scope(|s| {
+            let waiting = s.spawn(|| log.log(Level::Warning, "t", "while held", None));
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            assert!(!waiting.is_finished(), "it waits for the ring");
+            drop(held);
+            waiting.join().unwrap();
+        });
+        let sent: Vec<String> = feed.new.try_iter().map(|r| r.message).collect();
+        assert_eq!(sent, ["while held"]);
+        let later = log.subscribe();
+        assert_eq!(later.kept.iter().filter(|r| r.message == "while held").count(), 1);
+        let merged = later.merge(read(&path, 100));
+        assert_eq!(merged.iter().filter(|r| r.message == "while held").count(), 1);
+    }
+
+    /// What the panic hook does for a panic raised inside `keep`: it runs on the panicking thread, with the ring still
+    /// held, before the unwinding.
+    fn panic_in_keep(log: &Logger) {
+        log.panic("panicked in keep", "   0: keep_in").unwrap();
+        panic!("panicked in keep");
+    }
+
+    /// A panic raised while its thread holds the ring is written to the file only (taking the ring again could
+    /// deadlock), and a subscriber's merge shows it once; the unwinding lets the ring go, and the log goes on.
+    #[test]
+    fn a_panic_inside_keep_is_written_to_the_file_and_merged_once() {
+        let (log, path) = logger("keep_panic", FILE_CAP);
+        let feed = log.subscribe();
+        let fault: fn(&Logger) = panic_in_keep;
+        *lock(&log.fault) = Some(fault);
+        let caught = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            log.log(Level::Info, "t", "being kept", None);
+        }));
+        assert!(caught.is_err());
+        assert!(!RingGuard::held_here(&log.ring), "the unwinding let the ring go");
+        log.log(Level::Info, "t", "after", None);
+
+        let records = read(&path, 100);
+        let panics: Vec<&Record> = records.iter().filter(|r| r.target == "panic").collect();
+        assert_eq!(panics.len(), 1);
+        assert!(panics[0].file_only);
+        assert_eq!(panics[0].message, "panicked in keep");
+        let sent: Vec<Record> = feed.new.try_iter().collect();
+        assert!(sent.iter().all(|r| r.target != "panic"), "a file-only record is not sent");
+        assert_eq!(sent.iter().map(|r| r.message.as_str()).collect::<Vec<_>>(), ["after"]);
+        let merged = feed.merge(records);
+        assert_eq!(merged.iter().filter(|r| r.target == "panic").count(), 1);
+        assert!(merged.iter().all(|r| r.message != "after"), "a kept record is not taken from the files");
+    }
+
+    /// Panics written without the file's lock (another thread holds it): each is one append of one line, so every line
+    /// reads back whole.
+    #[test]
+    fn panic_writes_without_the_lock_are_each_one_line() {
+        let (log, path) = logger("panic_threads", FILE_CAP);
+        let held = lock(&log.writing);
+        std::thread::scope(|s| {
+            for t in 0..2 {
+                let log = &log;
+                s.spawn(move || {
+                    for i in 0..200 {
+                        log.panic(&format!("{t}:{i}"), &"f".repeat(500)).unwrap();
+                    }
+                });
+            }
+        });
+        drop(held);
+        let text = std::fs::read_to_string(&path).unwrap();
+        let lines: Vec<&str> = text.lines().collect();
+        assert_eq!(lines.len(), 1 + 2 * 200);
+        for line in lines {
+            assert!(serde_json::from_str::<Record>(line).is_ok(), "{line}");
+        }
     }
 }

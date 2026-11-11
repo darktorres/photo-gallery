@@ -72,10 +72,17 @@ impl qobject::GalleryModel {
 
     /// Show the files of `listing` (a merged folder, with or without its subfolders, that pass its query, in its
     /// order). The list arrives later (`loaded`). With `keep` (the same listing, refreshed), the selection and `anchor`
-    /// stay with their files; otherwise the selection is cleared.
-    pub(crate) fn open_listing(mut self: Pin<&mut Self>, listing: pg_model::view::Listing, keep: bool) {
+    /// stay with their files; otherwise the selection is cleared. `generation` is the controller's for this list
+    /// (`Command::OpenList`): the grid shows it only while it is the newest asked for, and once it is shown the window
+    /// reports it back (`APPLIED`, `Shell::list_shown`).
+    pub(crate) fn open_listing(
+        mut self: Pin<&mut Self>,
+        listing: pg_model::view::Listing,
+        keep: bool,
+        generation: u64,
+    ) {
         let loading = self.loading;
-        let generation = self.as_mut().rust_mut().grid.request(keep, loading);
+        self.as_mut().rust_mut().grid.request(keep, loading, generation);
         // A list held for the viewer is stale now: the one asked for is loading.
         let holding = self.grid.is_held();
         self.as_mut().set_holding(holding);
@@ -134,6 +141,8 @@ impl qobject::GalleryModel {
             this.forget_details();
             this.grid.swap_entries(entries)
         };
+        // The list the window shows from now on: what its `ListShown` reports (`Shell::list_shown`).
+        super::APPLIED.with(|applied| applied.set(generation));
         self.as_mut().set_count(count);
         // The same folder read again: only the rows that changed change.
         let changed = if keep { Changed::List(&shown) } else { Changed::All };

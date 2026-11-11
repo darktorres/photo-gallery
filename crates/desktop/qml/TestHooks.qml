@@ -15,8 +15,11 @@
 //   --yandex-preview=<n>  with --find-similar: show result n at full size once the results are in
 //   --add-folder=<path>  add a folder to the library (as "Add folder…" does)
 //   --borders=1  show the borders (as B does) from the start
-//   --dev=1  dev mode for the run, not saved (read by the shell, in Rust; PG_DEV=1 too)   --log=1  open the log view (in
-//            dev mode)   --inbox=1  open the inbox
+//   --dev=1  dev mode for the run, not saved (read by the shell, in Rust; PG_DEV=1 too; --dev=0 off for the run)
+//   --log=1  open the log view (in dev mode)   --log-view=<path>  the log view shows that file, read once, following
+//            nothing (read by the log view, in Rust)
+//   --inbox=1  open the inbox   --inbox-expand=<ledger>  open that ledger's entry in it (thumbs, borders, import,
+//              scan-folders), when it is listed and again when it appears
 //   --save-crops=<folder>  save cropped copies of the listed files with borders found
 //                        (GalleryModel.saveCroppedCopiesPicked)
 //   --screenshot=<png>  save the window once it has settled (no image loading, no QML timer pending, no animation, no
@@ -50,6 +53,8 @@ Item {
     signal saveCropsRequested()
     signal logPanelRequested()
     signal inboxPanelRequested()
+    // The inbox's entry to open, by its ledger's code (--inbox-expand).
+    signal inboxExpandRequested(string code)
     // The viewer's calls (its functions), made by Main.
     signal viewerShowRequested(int index)
     signal viewerPlayRequested()
@@ -122,6 +127,8 @@ Item {
         if (commandLine.has("save-view")) saveViewDialogRequested()
         if (commandLine.has("find-similar")) similarRequested()
         if (commandLine.has("log")) logPanelRequested()
+        // Before the inbox opens, so it opens at the entry.
+        if (commandLine.has("inbox-expand")) inboxExpandRequested(commandLine.text("inbox-expand"))
         if (commandLine.has("inbox")) inboxPanelRequested()
     }
 

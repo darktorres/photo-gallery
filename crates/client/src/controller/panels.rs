@@ -4,7 +4,9 @@
 //! remembers the borders' setting; setting a flag to the value it has is no change. Nothing here calls Qt.
 //!
 //! The modal panels' open state is the QML's: each panel reports its opening and its closing (`PanelOpened`,
-//! `PanelClosed`), and this only mirrors them, for the global keys' rule (`Controller`'s `Global`).
+//! `PanelClosed`), and this only mirrors them, for the global keys' rule (`Controller`'s `Global`). The mirror is an
+//! ordered set: a kind is in it at most once, so it holds at most [`PanelKind::ALL`]'s length by construction, whatever
+//! the QML reports twice or never.
 use serde::{Deserialize, Serialize};
 
 /// A modal panel: one that takes the keys while it is open (a dialog, a menu, an overlay; not the viewer, whose keys are
@@ -51,9 +53,9 @@ pub enum Event {
     SetViewerOpen(bool),
     /// Dev mode on or off, as the window starts with it (the preferences, `--dev=1`, `PG_DEV=1`): not saved.
     SetDevMode(bool),
-    /// A modal panel opened.
+    /// A modal panel opened. One of a kind already open moves to the top (it is the newest open), never in twice.
     PanelOpened(PanelKind),
-    /// A modal panel closed: the one of that kind opened last.
+    /// A modal panel closed: that kind leaves the panels open, wherever it is among them.
     PanelClosed(PanelKind),
 }
 
@@ -73,7 +75,7 @@ pub struct Panels {
     show_borders: bool,
     viewer_open: bool,
     dev_mode: bool,
-    /// The modal panels open, oldest first.
+    /// The modal panels open, oldest first: an ordered set, each kind at most once.
     modals: Vec<PanelKind>,
 }
 
@@ -98,7 +100,7 @@ impl Panels {
         self.dev_mode
     }
 
-    /// The modal panels open, oldest first.
+    /// The modal panels open, oldest first, each kind once.
     pub fn modals(&self) -> &[PanelKind] {
         &self.modals
     }
@@ -118,13 +120,12 @@ impl Panels {
             Event::SetViewerOpen(on) => self.set_viewer(on),
             Event::SetDevMode(on) => self.set_dev_mode(on),
             Event::PanelOpened(kind) => {
+                self.modals.retain(|k| *k != kind);
                 self.modals.push(kind);
                 Vec::new()
             }
             Event::PanelClosed(kind) => {
-                if let Some(at) = self.modals.iter().rposition(|k| *k == kind) {
-                    self.modals.remove(at);
-                }
+                self.modals.retain(|k| *k != kind);
                 Vec::new()
             }
         }

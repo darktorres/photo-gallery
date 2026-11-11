@@ -2,7 +2,6 @@
 
 use cxx_qt_lib::{QString, QStringList};
 use pg_model::ids::RootId;
-use pg_model::notice::Notice;
 
 #[derive(Default)]
 #[expect(
@@ -23,10 +22,4 @@ pub struct LibraryRust {
     pub(crate) failed_pass: i32,
     pub(crate) writes: QString,
     pub(crate) write_failed: bool,
-    /// The writer's count of dropped writes (`WriteStatus::dropped`) already told: a notice is posted when it grows.
-    pub(super) dropped_seen: usize,
-    /// Whether the notice that the writer has stopped for good has been posted (it is posted once).
-    pub(super) writer_stopped_shown: bool,
-    /// The writer's failure the inbox was last told of: the same one again is not posted.
-    pub(super) write_failure: Option<Notice>,
 }

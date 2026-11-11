@@ -75,8 +75,15 @@ ui-inbox-show-files = Show the failed files
 ui-inbox-reveal = Reveal
 # A ledger's entry lists its newest failed files: how many it holds ($text) and how many are listed ($other)
 ui-inbox-more = The newest { $other } of { $text } files
+# The scans' ledger lists its folders: how many it holds ($text) and how many are listed ($other)
+ui-inbox-more-folders = { $other } of { $text } folders
+# A ledger's list while it is read, and when it couldn't be ($text: why)
+ui-inbox-loading = Loading…
+ui-inbox-unreadable = The list couldn't be read: { $text }
 # The status bar's link to the pass's failed files: its words are the pass line's (pass-failed); this names it
 ui-failed-link = Show the failed files
+# The pass's "N failed" when the inbox lists nothing of it yet (its failures aren't recorded yet): plain text, this its tooltip
+ui-failed-not-recorded = Not recorded in the inbox yet
 ui-log = Log
 ui-log-title = Log
 ui-log-empty = Nothing logged yet

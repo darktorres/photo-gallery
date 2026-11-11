@@ -17,10 +17,11 @@ use pg_codec::pixels::Rgb;
 use pg_jobs::control::Control;
 use pg_jobs::events::Bus;
 use pg_jobs::pipeline::Options;
-use pg_jobs_testkit::Quiet;
+use pg_jobs_testkit::{Call, Quiet, RecordingSink};
 use pg_metadata::{Meta, MetaScratch};
 use pg_model::format::Format;
 use pg_model::ids::FileId;
+use pg_model::notice::{Key, Notice};
 use pg_model::rating::Rating;
 use pg_model::turns::Turns;
 use pg_model::write::WriteKind;
@@ -153,7 +154,7 @@ fn ratings_and_turns_reach_the_files() {
         )
         .unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
 
     // Ratings: every format but BMP gets it in the file; nothing needs re-importing afterwards.
     for (n, (id, _)) in before.iter().enumerate() {
@@ -284,7 +285,7 @@ fn a_file_whose_name_is_not_utf8_is_imported_and_rated_in_place() {
     // The thumbnail pass makes both: the JPEG's, and the clip's (read by the video reader from its own bytes).
     let made = pg_thumbs::run(thumbs, &catalog_path, 64, &opts, &ctl).unwrap();
     assert_eq!((made.made, made.failed), (2, 0), "thumbnails of both files");
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     c.set_rating(FileId::new(jpeg_id), Rating::new(4), true).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
@@ -343,7 +344,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     };
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     // The queue's row, and then the status, which the writer sets after it.
@@ -370,7 +371,7 @@ fn a_finishing_copy_that_keeps_failing_keeps_its_temp_and_is_finished_later() {
     // The file is free, and the writer starts again: it tries the copy again, and finishes it.
     drop(held);
     drop(writer);
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_until(
         60,
@@ -405,7 +406,7 @@ fn a_rating_set_after_a_temp_was_recorded_is_written_after_the_copy() {
     c.set_rating(id, Rating::new(5), true).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
@@ -442,7 +443,7 @@ fn a_turn_leaves_the_temp_of_a_stuck_rating_alone() {
     };
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = |kind: &str| state::write_row_of(&c, id, kind).unwrap().attempts;
     wait_until(
@@ -476,7 +477,7 @@ fn a_fresh_write_whose_open_fails_leaves_no_temp_and_no_record() {
     };
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     wait_until(60, || format!("{} attempts", attempts()), || attempts() >= 1);
@@ -524,7 +525,7 @@ fn a_write_into_a_folder_ending_in_a_dot_reaches_that_folder_and_no_other() {
     c.set_rating(id, Rating::new(4), true).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);
@@ -560,7 +561,9 @@ fn a_file_saved_between_the_read_and_the_copy_is_read_again() {
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let fault = Fault::SaveBeforeCopy { file: id, with: saved };
-    let writer = Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault).unwrap();
+    let writer =
+        Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault, RecordingSink::new())
+            .unwrap();
     writer.wake();
     wait_until(60, || "the turn is still queued".into(), || state::writes_queued(&c, id).unwrap() == 0);
     let now = shown(&files[1].0).unwrap();
@@ -583,7 +586,7 @@ fn a_finishing_copy_whose_temp_is_gone_completes() {
     assert!(!on_disk(&c, &temp).exists());
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_until(
         60,
@@ -619,7 +622,7 @@ fn a_read_only_original_is_counted_up_to_the_cap() {
     c.queue_rotation(id, Turns::new(1)).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     let cap = pg_catalog::queue::MAX_ATTEMPTS;
@@ -657,7 +660,7 @@ fn a_rating_for_a_file_that_cant_hold_one_leaves_the_queue() {
     }
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     let left = || state::writes_queued(&c, bmp).unwrap() + state::writes_queued(&c, jpg).unwrap();
     wait_until(60, || format!("{} still queued", left()), || left() == 0);
@@ -689,7 +692,8 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     }
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let sink = RecordingSink::new();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), sink.clone()).unwrap();
     writer.wake();
     let queued = || state::writes_queued(&c, marked).unwrap();
     let attempts = || state::write_row(&c, deleted).unwrap().attempts;
@@ -720,7 +724,30 @@ fn a_write_for_a_file_that_is_gone_is_dropped_and_a_deleted_one_is_counted() {
     assert_eq!(status.dropped, 2);
     assert_eq!((status.error, status.error_file), (None, None), "the failure of a dropped write is still shown");
 
+    // The writer told it all: each drop (an event, its count with the drain's others), the deleted file's failure
+    // once (the same failure again is not news), and its end once its write was dropped.
     drop(writer);
+    let told = sink.take();
+    let dropped: u64 = told
+        .iter()
+        .filter_map(|call| match call {
+            Call::Post(Notice::WriteDropped { write: WriteKind::Rating, count }) => Some(*count),
+            _ => None,
+        })
+        .sum();
+    assert_eq!(dropped, 2, "{told:?}");
+    let failures = told.iter().filter(|call| matches!(call, Call::Post(Notice::WriteFailed { .. }))).count();
+    assert!(failures >= 1, "{told:?}");
+    let failure_calls: Vec<&Call> = told
+        .iter()
+        .filter(|call| match call {
+            Call::Post(notice) => matches!(notice, Notice::WriteFailed { .. }),
+            Call::Clear(key) => key.code == "write-failed",
+            Call::Replace(..) => false,
+        })
+        .collect();
+    assert_eq!(failure_calls.last(), Some(&&Call::Clear(Key::all("write-failed", None).to_buf())), "{told:?}");
+
     drop(c);
     quiet.check();
 }
@@ -737,7 +764,7 @@ fn a_copy_that_may_have_started_is_kept_while_its_file_is_missing() {
     state::mark_missing(&c, id).unwrap();
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     // The status is set after the job's failure is recorded in the queue.
     wait_until(60, || "the copy's failure is not shown".into(), || writer.status().error_file == Some(id));
@@ -767,7 +794,9 @@ fn a_copy_failing_after_its_temp_is_recorded_is_incomplete_at_the_cap() {
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let fault = Fault::FailCopy(id);
-    let writer = Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault).unwrap();
+    let writer =
+        Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault, RecordingSink::new())
+            .unwrap();
     writer.wake();
     let attempts = || state::write_row(&c, id).unwrap().attempts;
     // The queue's row, and then the status, which the writer sets after it.
@@ -805,7 +834,9 @@ fn a_job_cancelled_before_its_temp_is_recorded_leaves_the_original_as_it_was() {
 
     let (thumbs, quiet) = thumbs(&dir, &c).unwrap();
     let fault = Fault::ForgetBeforeRecord(id);
-    let writer = Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault).unwrap();
+    let writer =
+        Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), fault, RecordingSink::new())
+            .unwrap();
     writer.wake();
     // The row is gone at the record, and the temp (made before it) goes right after: both are done when the temp is.
     wait_until(
@@ -855,7 +886,7 @@ fn a_finished_rotation_copy_turns_the_analysis_back_as_a_normal_write_does() {
         )
         .unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
 
     let start = Instant::now();
@@ -903,9 +934,14 @@ fn a_job_that_panics_fails_alone_and_the_writer_goes_on() {
         )
         .unwrap(),
     ));
-    let writer =
-        Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInProcess(poisoned))
-            .unwrap();
+    let writer = Writer::start_with_fault(
+        catalog_path.clone(),
+        thumbs,
+        Arc::new(Bus::new(16)),
+        Fault::PanicInProcess(poisoned),
+        RecordingSink::new(),
+    )
+    .unwrap();
     writer.wake();
 
     let start = Instant::now();
@@ -953,8 +989,14 @@ fn a_panic_outside_a_job_ends_the_writer_and_says_so() {
         )
         .unwrap(),
     ));
-    let writer =
-        Writer::start_with_fault(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), Fault::PanicInDrain).unwrap();
+    let writer = Writer::start_with_fault(
+        catalog_path.clone(),
+        thumbs,
+        Arc::new(Bus::new(16)),
+        Fault::PanicInDrain,
+        RecordingSink::new(),
+    )
+    .unwrap();
     let start = Instant::now();
     while writer.is_running() {
         assert!(start.elapsed() < Duration::from_secs(60), "the writer is still running");
@@ -1006,7 +1048,7 @@ fn a_finishing_copy_carried_from_a_text_temp_is_finished() {
         )
         .unwrap(),
     ));
-    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16))).unwrap();
+    let writer = Writer::start(catalog_path.clone(), thumbs, Arc::new(Bus::new(16)), RecordingSink::new()).unwrap();
     writer.wake();
     wait_for_queue(&c).unwrap();
     assert_eq!(writer.status().error, None);

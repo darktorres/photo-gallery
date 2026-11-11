@@ -47,12 +47,40 @@ pub struct ThumbStats {
     /// Every file of the work was tried (not stopped, the cache not full): the next pass starts from this one's
     /// snapshot (`ThumbCache::checked`).
     pub complete: bool,
-    /// The failure ledger couldn't be written (the first error): the files it would have held are tried again by the
-    /// next pass.
-    pub ledger_error: Option<String>,
+    /// What the pass's writes to the failure ledger came to.
+    pub ledger: LedgerOutcome,
+}
+
+/// What a thumbnail pass's writes to the failure ledger came to. The ledger is in the catalog, apart from the cache the
+/// thumbnails go to, so it can fail on its own: then the files it would have held are tried again by the next pass.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum LedgerOutcome {
+    /// The pass had nothing to write or clear.
+    Untouched,
+    /// Every write and clear it made went through.
+    Written,
+    /// A write or a clear failed (the first error), whatever went through besides.
+    Failed(String),
+}
+
+impl LedgerOutcome {
+    /// A write or a clear went through.
+    fn written(&mut self) {
+        if *self == LedgerOutcome::Untouched {
+            *self = LedgerOutcome::Written;
+        }
+    }
+
+    /// A write or a clear failed with `error`: the first failure is kept.
+    fn failed(&mut self, error: &anyhow::Error) {
+        if !matches!(self, LedgerOutcome::Failed(_)) {
+            *self = LedgerOutcome::Failed(format!("{error:#}"));
+        }
+    }
 }
 
 /// What a failed thumbnail is, for what is done about it.
+#[derive(Debug, PartialEq, Eq)]
 enum Failed {
     /// It panicked: recorded, and tried again only once the file changes (it would panic again, and log its backtrace
     /// at every pass), or the user retries it, or a new thumbnailer comes.
@@ -81,6 +109,17 @@ impl Failed {
             None => Failed::Other,
         }
     }
+
+    /// Whether the ledger records it, and with which retry: `Some(true)` tried again by the next pass, `Some(false)`
+    /// only once the file changes (or the user retries it); `None` not recorded (tried again, and no failure of the
+    /// file's).
+    fn recorded(&self) -> Option<bool> {
+        match self {
+            Failed::Panicked => Some(false),
+            Failed::Undecodable => Some(true),
+            Failed::Unreadable | Failed::Other => None,
+        }
+    }
 }
 
 /// Unix seconds now.
@@ -101,17 +140,27 @@ struct Unwritten {
 }
 
 impl Unwritten {
-    fn write(&mut self, catalog: &Catalog, first_failed: &mut Option<i64>, error: &mut Option<String>) {
+    /// Write the failures waiting, in a transaction of their own. A write that changed rows is announced
+    /// (`Control::ledger_changed`); one that failed holds their files' change numbers back.
+    fn write(&mut self, catalog: &Catalog, first_failed: &mut Option<i64>, ledger: &mut LedgerOutcome, ctl: &Control) {
         self.since = Instant::now();
         if self.failures.is_empty() {
             return;
         }
         let failures: Vec<LedgerFailure> = self.failures.iter().map(|(f, _)| f.clone()).collect();
-        if let Err(e) = catalog.record_failures(FilePass::Thumbs, &failures, unix_now()) {
-            for (_, seq) in &self.failures {
-                fold(first_failed, *seq);
+        match catalog.record_failures(FilePass::Thumbs, &failures, unix_now()) {
+            Ok(changed) => {
+                ledger.written();
+                if changed {
+                    ctl.ledger_changed();
+                }
             }
-            error.get_or_insert_with(|| format!("{e:#}"));
+            Err(e) => {
+                for (_, seq) in &self.failures {
+                    fold(first_failed, *seq);
+                }
+                ledger.failed(&e.into());
+            }
         }
         self.failures.clear();
     }
@@ -133,7 +182,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         changed: 0,
         cache_full: false,
         complete: false,
-        ledger_error: None,
+        ledger: LedgerOutcome::Untouched,
     };
     if items.is_empty() {
         cache.checked(&snapshot, None)?;
@@ -183,11 +232,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
                 Err(e) => {
                     stats.failed += 1;
                     let failed = Failed::of(&e);
-                    let retry = match failed {
-                        Failed::Panicked => Some(false),
-                        Failed::Undecodable => Some(true),
-                        Failed::Unreadable | Failed::Other => None,
-                    };
+                    let retry = failed.recorded();
                     if matches!(failed, Failed::Unreadable) {
                         stats.unreadable += 1;
                     }
@@ -212,7 +257,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
             }
         }
         if unwritten.failures.len() >= BATCH || unwritten.since.elapsed() >= LEDGER_EVERY {
-            unwritten.write(&catalog, &mut first_failed, &mut stats.ledger_error);
+            unwritten.write(&catalog, &mut first_failed, &mut stats.ledger, ctl);
         }
         if thumbs.is_empty() {
             return Ok(true);
@@ -223,8 +268,16 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
         spare.lock().unwrap_or_else(PoisonError::into_inner).extend(thumbs.drain(..).map(|t| t.data));
         if stored {
             stats.made += n;
-            if let Err(e) = catalog.clear_failures(FilePass::Thumbs, &made_known) {
-                stats.ledger_error.get_or_insert_with(|| format!("{e:#}"));
+            if !made_known.is_empty() {
+                match catalog.clear_failures(FilePass::Thumbs, &made_known) {
+                    Ok(changed) => {
+                        stats.ledger.written();
+                        if changed {
+                            ctl.ledger_changed();
+                        }
+                    }
+                    Err(e) => stats.ledger.failed(&e.into()),
+                }
             }
         } else {
             stats.cache_full = true;
@@ -276,7 +329,7 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
     );
     drop(flush);
     // The failures are written whatever ended the pass (an error, a stop, the cache full), before its checkpoint.
-    unwritten.write(&catalog, &mut first_failed, &mut stats.ledger_error);
+    unwritten.write(&catalog, &mut first_failed, &mut stats.ledger, ctl);
     ran?;
     drop(phase);
     stats.complete = !stats.cache_full && tried == items.len();
@@ -288,7 +341,8 @@ pub fn run(cache: &ThumbCache, catalog_path: &Path, height: u32, opts: &Options,
 }
 #[cfg(test)]
 mod tests {
-    use std::sync::Mutex;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::{Arc, Mutex};
 
     use pg_catalog::fixture::state;
     use pg_jobs_testkit::Quiet;
@@ -330,11 +384,18 @@ mod tests {
         )
         .unwrap();
         let ctl = Control::new();
+        // The ledger's changes the pass announces (`Control::ledger_changed`).
+        let announced = Arc::new(AtomicUsize::new(0));
+        let counted = announced.clone();
+        ctl.on_ledger_change(move || {
+            counted.fetch_add(1, Ordering::SeqCst);
+        });
         let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
         pg_scan::scan(&mut c, &root, &ctl).unwrap();
         let opts = Options::new(Priority::Normal);
         pg_import::import(&mut c, &opts, false, &ctl).unwrap();
         *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+        let before = announced.load(Ordering::SeqCst);
 
         let (events, _quiet) = Quiet::bus();
         let cache = ThumbCache::open(
@@ -347,7 +408,8 @@ mod tests {
         .unwrap();
         let first = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((first.needed, first.made, first.failed, first.complete), (2, 1, 1, true));
-        assert_eq!((first.unreadable, first.ledger_error), (0, None));
+        assert_eq!((first.unreadable, first.ledger.clone()), (0, LedgerOutcome::Written));
+        assert_eq!(announced.load(Ordering::SeqCst), before + 1, "the ledger's write was announced");
         assert_eq!(ctl.snapshot().phase, Phase::Idle, "the phase ended");
         // The ledger holds it, not to be tried again by the pass.
         let panicked = state::file_id(&c, "a.png").unwrap();
@@ -356,12 +418,112 @@ mod tests {
         assert!(failed.error.contains("a fault"), "{}", failed.error);
         let second = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((second.needed, second.made, second.failed), (0, 0, 0), "the file that panicked is listed again");
+        assert_eq!(second.ledger, LedgerOutcome::Untouched, "an empty pass touches no ledger");
         // The user's Retry, the fault gone: the file is made, and leaves the ledger.
         *PANIC_ON.lock().unwrap() = None;
         c.retry_failures(FilePass::Thumbs).unwrap();
         let third = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((third.needed, third.made, third.failed), (1, 1, 0));
         assert!(c.recorded_failures(FilePass::Thumbs).unwrap().is_empty());
+        // The Retry deleted the row itself, so the made file clears nothing: nothing more is announced.
+        assert_eq!(third.ledger, LedgerOutcome::Untouched);
+        assert_eq!(announced.load(Ordering::SeqCst), before + 1);
+    }
+
+    /// What [`imported`] makes: the run folder, the catalog's path, the open catalog, the cache, and the watch on the
+    /// cache's events.
+    type Imported = (std::path::PathBuf, std::path::PathBuf, Catalog, ThumbCache, Quiet<pg_thumbcache::Event>);
+
+    /// A library folder in a run folder with `names` (small PNGs), scanned and imported, and a cache of `cap` bytes for
+    /// its catalog.
+    fn imported(prefix: &str, names: &[&str], cap: i64) -> Imported {
+        let dir = pg_testkit::run_folder_with("scratch_rate", prefix, &["images"]).unwrap();
+        for name in names {
+            std::fs::write(dir.join("images").join(name), pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
+        }
+        let catalog_path = dir.join("catalog.sqlite");
+        let mut c = Catalog::prepare(&catalog_path, versions(), pg_platform::native::PATH_RULES).unwrap();
+        let ctl = Control::new();
+        let root = pg_platform::names::normalize_path(&dir.join("images")).unwrap();
+        pg_scan::scan(&mut c, &root, &ctl).unwrap();
+        pg_import::import(&mut c, &Options::new(Priority::Normal), false, &ctl).unwrap();
+        let (events, quiet) = Quiet::bus();
+        let cache = ThumbCache::open(
+            &dir.join("thumbs.sqlite"),
+            &c.catalog_id().unwrap(),
+            pg_thumbcache::Cap::from_bytes(cap),
+            1,
+            events,
+        )
+        .unwrap();
+        (dir, catalog_path, c, cache, quiet)
+    }
+
+    /// A ledger that can't be written (its writes fail, as an aborted statement would) is `Failed`; the pass goes on,
+    /// and the file it would have recorded holds the pass's checkpoint back, so the next pass lists it again (here, one
+    /// that panics, which a recorded failure would keep out of the next pass).
+    #[test]
+    fn a_ledger_that_cant_be_written_fails_the_ledger_and_not_the_pass() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-ledger-fails", &["a.png", "b.png"], 1 << 30);
+        *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+        let opts = Options::new(Priority::Normal);
+        let failing = pg_catalog::fixture::LedgerWritesFail::start();
+        let first = run(&cache, &catalog_path, 64, &opts, &Control::new()).unwrap();
+        drop(failing);
+        assert!(matches!(first.ledger, LedgerOutcome::Failed(_)), "{:?}", first.ledger);
+        assert_eq!((first.made, first.failed, first.complete), (1, 1, true), "the pass went on");
+        assert!(c.failed_files(FilePass::Thumbs, 10).unwrap().is_empty(), "nothing was recorded");
+        // Its change number held the checkpoint back: the next pass lists it again, and records it.
+        let second = run(&cache, &catalog_path, 64, &opts, &Control::new()).unwrap();
+        *PANIC_ON.lock().unwrap() = None;
+        assert_eq!((second.needed, second.failed, second.ledger), (1, 1, LedgerOutcome::Written));
+        assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
+    }
+
+    /// The failures are written however the pass ends: here, with the cache full at the first batch.
+    #[test]
+    fn the_ledger_is_written_when_the_cache_fills() {
+        let _one = ONE_PASS.lock().unwrap_or_else(PoisonError::into_inner);
+        let (_dir, catalog_path, c, cache, _quiet) = imported("thumbs-ledger-full", &["a.png", "b.png"], 1);
+        *PANIC_ON.lock().unwrap() = Some(state::file_id(&c, "a.png").unwrap());
+        let first = run(&cache, &catalog_path, 64, &Options::new(Priority::Normal), &Control::new()).unwrap();
+        *PANIC_ON.lock().unwrap() = None;
+        assert!(first.cache_full && !first.complete);
+        assert_eq!(first.ledger, LedgerOutcome::Written);
+        assert_eq!(c.failed_files(FilePass::Thumbs, 10).unwrap().len(), 1);
+    }
+
+    /// A failure's kind, by its error's type, never its text: what the ledger records, and with which retry.
+    #[test]
+    fn a_failure_is_classified_by_its_type() {
+        use std::io::{Error as IoError, ErrorKind};
+
+        let eof = || anyhow::Error::from(IoError::new(ErrorKind::UnexpectedEof, "cut short"));
+        // A truncated file: an I/O error at its root, under the decoder's context, is no read failure.
+        let truncated =
+            anyhow::Error::from(MakeError::Undecodable(eof().context("decoding the JPEG"))).context("a.jpg");
+        assert_eq!((Failed::of(&truncated), Failed::of(&truncated).recorded()), (Failed::Undecodable, Some(true)));
+        let unreadable = anyhow::Error::from(MakeError::Unreadable(IoError::new(ErrorKind::NotFound, "gone")));
+        assert_eq!((Failed::of(&unreadable), Failed::of(&unreadable).recorded()), (Failed::Unreadable, None));
+        let panicked = anyhow::Error::new(panics::Panicked("boom".into()));
+        assert_eq!((Failed::of(&panicked), Failed::of(&panicked).recorded()), (Failed::Panicked, Some(false)));
+        // The pipeline's read of the file, before any decoder.
+        let read = eof().context("reading a.jpg");
+        assert_eq!((Failed::of(&read), Failed::of(&read).recorded()), (Failed::Unreadable, None));
+        let other = anyhow::anyhow!("something else");
+        assert_eq!((Failed::of(&other), Failed::of(&other).recorded()), (Failed::Other, None));
+    }
+
+    #[test]
+    fn a_ledger_outcome_keeps_its_first_failure() {
+        let mut outcome = LedgerOutcome::Untouched;
+        outcome.written();
+        assert_eq!(outcome, LedgerOutcome::Written);
+        outcome.failed(&anyhow::anyhow!("busy"));
+        outcome.written();
+        outcome.failed(&anyhow::anyhow!("later"));
+        assert_eq!(outcome, LedgerOutcome::Failed("busy".into()));
     }
 
     /// A file that doesn't decode is recorded and tried again by the next pass; once it decodes (it changed) it is made,
@@ -406,10 +568,10 @@ mod tests {
         let [failed] = &c.failed_files(FilePass::Thumbs, 10).unwrap()[..] else { panic!("one failure") };
         assert_eq!((failed.file_id, failed.retry), (state::file_id(&c, "a.png").unwrap(), true));
         // Both are tried again, and the recorded one is not news again.
-        let summary = c.ledger_entries().unwrap();
+        let summary = c.ledger_entries(false).unwrap();
         let second = run(&cache, &catalog_path, 64, &opts, &ctl).unwrap();
         assert_eq!((second.needed, second.failed), (2, 2));
-        assert_eq!(c.ledger_entries().unwrap(), summary);
+        assert_eq!(c.ledger_entries(false).unwrap(), summary);
         // Mended in place (as a restored backup would be): it is made, and leaves the ledger.
         std::fs::write(&a, pg_testkit::png_rgb(8, 8, &[128; 192]).unwrap()).unwrap();
         std::fs::File::options().write(true).open(&a).unwrap().set_modified(mtime).unwrap();

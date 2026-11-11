@@ -19,7 +19,7 @@ use pg_model::notice::Notice;
 use pg_model::progress::{Phase, Progress};
 use pg_model::query::{BorderFacet, Choice, DateRange, ListFacet, Query, Range, RatingFilter, Shape, Status};
 use pg_model::rules::PathRules;
-use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status};
+use pg_model::yandex::{RequestError, SaveFailure, Saved, SearchError, SimilarNote, Status as YandexStatus};
 
 use crate::input::day_text;
 pub use message::{Message, render};
@@ -390,16 +390,16 @@ fn yandex_failure(failure: &SaveFailure) -> String {
 }
 
 /// A Yandex search's or save's outcome, as the panel's status line shows it: empty for a search that ended with no note.
-pub fn yandex_status(status: &Status) -> String {
+pub fn yandex_status(status: &YandexStatus) -> String {
     match status {
-        Status::Working(phase) => yandex_phase(*phase),
-        Status::Searched(note) => note.as_ref().map_or_else(String::new, yandex_similar_note),
-        Status::SearchFailed(e) => yandex_search_error(e),
-        Status::Saved(Saved { folder, written, failed, first_error }) => {
+        YandexStatus::Working(phase) => yandex_phase(*phase),
+        YandexStatus::Searched(note) => note.as_ref().map_or_else(String::new, yandex_similar_note),
+        YandexStatus::SearchFailed(e) => yandex_search_error(e),
+        YandexStatus::Saved(Saved { folder, written, failed, first_error }) => {
             yandex_saved(*written, folder, *failed, first_error.as_ref().map(yandex_failure).as_deref())
         }
         // The panic that stopped it is in gallery.log (a thread the system refused is `YandexNotStarted`'s line).
-        Status::Stopped => render(&Message::YandexStopped),
+        YandexStatus::Stopped => render(&Message::YandexStopped),
     }
 }
 
@@ -636,7 +636,7 @@ mod tests {
             first_error: Some(SaveFailure::Download { url: "u".into(), error: RequestError::Captcha }),
         };
         assert_eq!(
-            yandex_status(&Status::Saved(failed)),
+            yandex_status(&YandexStatus::Saved(failed)),
             yandex_saved(
                 2,
                 "D:/out",
@@ -644,7 +644,7 @@ mod tests {
                 Some(&yandex_failure(&SaveFailure::Download { url: "u".into(), error: RequestError::Captcha }))
             )
         );
-        assert_eq!(yandex_status(&Status::Searched(None)), "", "a search with no note shows nothing");
+        assert_eq!(yandex_status(&YandexStatus::Searched(None)), "", "a search with no note shows nothing");
         assert_eq!(yandex_saved(1, "D:/out", 0, None), "Saved 1 file to D:/out");
         assert_eq!(yandex_saved(3, "D:/out", 0, None), "Saved 3 files to D:/out");
         assert_eq!(yandex_saved(2, "D:/out", 1, Some("disk full")), "Saved 2, 1 failed. First failure: disk full");

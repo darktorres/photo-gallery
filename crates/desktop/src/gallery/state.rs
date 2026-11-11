@@ -93,7 +93,7 @@ impl Default for GalleryRust {
 impl GalleryRust {
     /// The entry of an item as QML numbers it (`None` for -1, or past the list).
     pub(super) fn entry(&self, item: i32) -> Option<&Entry> {
-        crate::rows::row_of(item).and_then(|i| self.entry(i))
+        crate::rows::row_of(item).and_then(|i| self.grid.item(i))
     }
 
     /// The file of an item as QML numbers it (`None` for -1, or past the list).

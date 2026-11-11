@@ -2,6 +2,8 @@
 target-version = "py312"
 line-length = 130
 src = ["eval", "tools"]  # their modules import each other as first-party (from common import ...)
+# docs/reference_archive holds verbatim copies of upstream files (notebooks, pages); they are kept as saved, not linted.
+extend-exclude = ["docs/reference_archive"]
 
 [lint]
 select = [
